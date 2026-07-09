@@ -175,22 +175,33 @@ let test_map_rejects_duplicate_fields () =
   Cljml.Compiler.compile_string source
   |> expect_error "duplicate field :name"
 
-let test_print_outputs_record_values () =
+let test_println_outputs_record_values () =
   let source =
     {|
 (def x {:name "Ada", :age 36})
 (def y (assoc x :admin? true))
 (def z (dissoc y :age))
-(print z)
+(println z)
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "print_outputs_record_values" "{:name \"Ada\", :admin? true}\n"
+  assert_ocaml_runs "println_outputs_record_values" "{:name \"Ada\", :admin? true}\n"
     ocaml_source
 
-let test_print_rejects_unknown_symbols () =
-  Cljml.Compiler.compile_string {|(print missing)|}
+let test_println_rejects_unknown_symbols () =
+  Cljml.Compiler.compile_string {|(println missing)|}
   |> expect_error "unknown symbol missing"
+
+let test_print_and_println_match_clojure_output () =
+  let source =
+    {|
+(print "a")
+(print "b")
+(println "c")
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "print_and_println_match_clojure_output" "abc\n" ocaml_source
 
 let test_core_api_nested_calls_maps_and_vectors () =
   let source =
@@ -200,7 +211,7 @@ let test_core_api_nested_calls_maps_and_vectors () =
 (def next-age (+ (get user :age) 1))
 (def updated (assoc user :admin? true))
 (def label (str (get updated :name) ":" (get updated :admin?) ":" next-age ":" (count ages)))
-(print label)
+(println label)
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
@@ -212,14 +223,14 @@ let test_core_api_if_and_vector_ops () =
     {|
 (def xs (conj [1 2] 3))
 (def status (if (= (count xs) 3) "ok" "bad"))
-(print (str status ":" (first xs) ":" (nth xs 2)))
+(println (str status ":" (first xs) ":" (nth xs 2)))
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "core_api_if_and_vector_ops" "ok:1:3\n" ocaml_source
 
 let test_boolean_core_api () =
-  let source = {|(print (str (not false) ":" (nil? nil) ":" (some? 1)))|} in
+  let source = {|(println (str (not false) ":" (nil? nil) ":" (some? 1)))|} in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "boolean_core_api" "true:true:true\n" ocaml_source
 
@@ -230,7 +241,7 @@ let test_namespaces_resolve_qualified_and_current_symbols () =
 (def user {:name "Ada"})
 (ns app.main)
 (def label (str (get people.core/user :name) "!"))
-(print label)
+(println label)
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
@@ -244,7 +255,7 @@ let test_namespaces_prevent_unqualified_symbol_collisions () =
 (def x 1)
 (ns second.core)
 (def x 2)
-(print (str first.core/x ":" x))
+(println (str first.core/x ":" x))
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
@@ -258,7 +269,7 @@ let test_namespace_require_aliases () =
 (def user {:name "Ada"})
 (ns app.main
   (:require [people.core :as p]))
-(print (get p/user :name))
+(println (get p/user :name))
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
@@ -268,7 +279,7 @@ let test_keyword_lookup_syntax () =
   let source =
     {|
 (def user {:name "Ada", :age 36})
-(print (str (:name user) ":" (:age user)))
+(println (str (:name user) ":" (:age user)))
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
@@ -279,7 +290,7 @@ let test_typed_empty_vectors () =
     {|
 (def xs (vector-of :int))
 (def ys (conj xs 42))
-(print (str (empty? xs) ":" (count ys) ":" (first ys)))
+(println (str (empty? xs) ":" (count ys) ":" (first ys)))
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
@@ -296,7 +307,7 @@ let test_ocaml_module_require_aliases () =
   (:require [ocaml.Stdlib :as std]
             [ocaml.String :as string]))
 (def label (str (string/uppercase-ascii "ada") ":" (std/string-of-int 42)))
-(print label)
+(println label)
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
@@ -308,7 +319,7 @@ let test_typed_function_parameters () =
 (defn inc1 [^:int x] (+ x 1))
 (defn greet [^:string name] (str "hi " name))
 (def mapped (map (fn [^:int x] (+ x 1)) [1 2]))
-(print (str (inc1 41) ":" (greet "Ada") ":" (nth mapped 1)))
+(println (str (inc1 41) ":" (greet "Ada") ":" (nth mapped 1)))
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
@@ -333,7 +344,7 @@ let test_unannotated_function_parameters_infer_from_body () =
     {|
 (defn inc1 [x] (+ x 1))
 (defn flip [flag] (not flag))
-(print (str (inc1 41) ":" (flip false)))
+(println (str (inc1 41) ":" (flip false)))
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
@@ -364,15 +375,15 @@ let test_do_and_multi_form_bodies () =
   let source =
     {|
 (defn inc-and-log [^:int x]
-  (print (str "input:" x))
+  (println (str "input:" x))
   (+ x 1))
 (def result
   (let [base 41]
-    (print "inside-let")
+    (println "inside-let")
     (do
-      (print "inside-do")
+      (println "inside-do")
       (inc-and-log base))))
-(print (str "result:" result))
+(println (str "result:" result))
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
@@ -408,7 +419,7 @@ let test_let_defn_and_fn_values () =
 (def result (let [base 10
                   bumped (inc1 base)]
               (add2 bumped)))
-(print result)
+(println result)
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
@@ -422,7 +433,7 @@ let test_sequence_core_api_on_vectors () =
 (def filtered (filter (fn [x] (> x 2)) mapped))
 (def total (reduce (fn [acc x] (+ acc x)) 0 xs))
 (def tail (rest xs))
-(print (str (first mapped) ":" (nth mapped 2) ":" (count filtered) ":" total ":" (first tail) ":" (empty? tail)))
+(println (str (first mapped) ":" (nth mapped 2) ":" (count filtered) ":" total ":" (first tail) ":" (empty? tail)))
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
@@ -435,7 +446,7 @@ let test_function_helpers () =
 (def double (fn [x] (* x 2)))
 (def add10-after-double (comp add10 double))
 (def always-ok (constantly "ok"))
-(print (str (add10-after-double 4) ":" (identity 7) ":" (always-ok false) ":" (apply + [1 2 3])))
+(println (str (add10-after-double 4) ":" (identity 7) ":" (always-ok false) ":" (apply + [1 2 3])))
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
@@ -446,7 +457,7 @@ let test_set_core_api () =
     {|
 (def xs (hash-set 1 2 2 3))
 (def ys (disj xs 2))
-(print (str (contains? xs 2) ":" (contains? ys 2) ":" (count ys)))
+(println (str (contains? xs 2) ":" (contains? ys 2) ":" (count ys)))
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
@@ -459,7 +470,7 @@ let test_list_core_api () =
 (def ys (conj xs 1))
 (def zs (cons 0 ys))
 (def tail (rest zs))
-(print (str (first zs) ":" (nth tail 1) ":" (count zs) ":" (empty? (rest (rest (rest (rest zs)))))))
+(println (str (first zs) ":" (nth tail 1) ":" (count zs) ":" (empty? (rest (rest (rest (rest zs)))))))
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
@@ -472,7 +483,7 @@ let test_sequence_core_api_on_lists () =
 (def mapped (map (fn [x] (+ x 1)) xs))
 (def filtered (filter (fn [x] (> x 2)) mapped))
 (def total (reduce (fn [acc x] (+ acc x)) 0 xs))
-(print (str (first mapped) ":" (nth mapped 2) ":" (count filtered) ":" total))
+(println (str (first mapped) ":" (nth mapped 2) ":" (count filtered) ":" total))
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
@@ -483,7 +494,7 @@ let test_typed_empty_lists () =
     {|
 (def xs (list-of :int))
 (def ys (cons 42 xs))
-(print (str (empty? xs) ":" (count ys) ":" (first ys)))
+(println (str (empty? xs) ":" (count ys) ":" (first ys)))
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
@@ -521,7 +532,7 @@ let test_incremental_compilation_preserves_state () =
 (ns app.main
   (:require [people.core :as p]))
 (def updated (assoc p/user :admin? true))
-(print (str (:name updated) ":" (:admin? updated) ":" (:age updated)))
+(println (str (:name updated) ":" (:admin? updated) ":" (:age updated)))
 |}
     |> expect_ok
   in
@@ -533,7 +544,7 @@ let test_incremental_compilation_requires_prior_state () =
     {|
 (ns app.main
   (:require [people.core :as p]))
-(print (:name p/user))
+(println (:name p/user))
 |}
   |> expect_error_value "unknown symbol p/user"
 
@@ -543,8 +554,9 @@ let tests =
     ("assoc rejects changing an existing field type", test_assoc_rejects_type_changes);
     ("dissoc rejects unknown fields", test_dissoc_rejects_unknown_fields);
     ("map literals reject duplicate fields", test_map_rejects_duplicate_fields);
-    ("print outputs record values", test_print_outputs_record_values);
-    ("print rejects unknown symbols", test_print_rejects_unknown_symbols);
+    ("println outputs record values", test_println_outputs_record_values);
+    ("println rejects unknown symbols", test_println_rejects_unknown_symbols);
+    ("print and println match Clojure output", test_print_and_println_match_clojure_output);
     ( "core api supports nested calls, maps, and vectors",
       test_core_api_nested_calls_maps_and_vectors );
     ("core api supports if and vector ops", test_core_api_if_and_vector_ops);

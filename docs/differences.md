@@ -26,6 +26,8 @@ Function parameter types are inferred from body constraints where possible; anno
 
 `do`, `fn`, `defn`, and `let` bodies evaluate forms in order and return the final form's type.
 
+`print` and `println` follow Clojure's newline behavior.
+
 ## Macros
 
 Macros are not supported.

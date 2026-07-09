@@ -5,4 +5,4 @@
 (def z (dissoc y :age))
 (def ages (conj (vector-of :int) 36))
 (def label (str (string/uppercase-ascii (:name z)) ":" (:admin? z) ":" (count ages)))
-(print label)
+(println label)

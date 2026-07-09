@@ -262,7 +262,9 @@ and compile_call current_ns env name arg_forms =
   | "print" | "println" -> (
       match compile_args () with
       | Error _ as err -> err
-      | Ok [ arg ] -> Ok (typed TUnit ("print_endline (" ^ Codegen.print_expr arg ^ ")"))
+      | Ok [ arg ] ->
+          let printer = if name = "print" then "print_string" else "print_endline" in
+          Ok (typed TUnit (printer ^ " (" ^ Codegen.print_expr arg ^ ")"))
       | Ok _ -> Error.error (name ^ " expects 1 arguments"))
   | "list" -> compile_list current_ns env arg_forms
   | "list-of" -> compile_list_of arg_forms
@@ -892,8 +894,8 @@ let compile_top_level current_ns env next_type = function
                   next_type,
                   Emit ("let " ^ ocaml_name ^ " = " ^ expr.code) )
           | _ -> Error.error "defn body did not compile to a function"))
-  | FList (FSymbol "print" :: args) | FList (FSymbol "println" :: args) -> (
-      match compile_call current_ns env "print" args with
+  | FList (FSymbol (("print" | "println") as name) :: args) -> (
+      match compile_call current_ns env name args with
       | Error _ as err -> err
       | Ok expr -> Ok (current_ns, env, next_type, Emit ("let () = " ^ expr.code)))
   | FList (FSymbol "ns" :: FSymbol namespace :: clauses) -> (

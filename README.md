@@ -14,7 +14,7 @@ Supported prototype forms:
 (def z (dissoc y :age))
 (def ages (conj (vector-of :int) 36))
 (def label (str (string/uppercase-ascii (:name z)) ":" (:admin? z) ":" (count ages)))
-(print label)
+(println label)
 ```
 
 The compiler infers record-like map shapes automatically:
@@ -35,6 +35,8 @@ The compiler infers record-like map shapes automatically:
   parameter type explicit.
 - `do`, `fn`, `defn`, and `let` bodies can contain multiple forms; earlier
   forms are evaluated for effects and the final form supplies the value.
+- `print` writes without a trailing newline; `println` writes with a trailing
+  newline.
 - `list`, `list-of`, `cons`, `map`, `filter`, `reduce`, `apply`, `comp`,
   `partial`, `identity`, and `constantly` are supported for the current typed
   collection/function subset.
