@@ -1,0 +1,143 @@
+open Types
+
+let validate_unique_keywords pairs =
+  let rec loop seen = function
+    | [] -> Ok ()
+    | (keyword, _) :: rest ->
+        if List.mem keyword seen then Error.error ("duplicate field " ^ keyword)
+        else loop (keyword :: seen) rest
+  in
+  loop [] pairs
+
+let field_code target field =
+  match target.record_values with
+  | Some values -> (
+      match List.assoc_opt field values with
+      | Some code -> code
+      | None -> target.code ^ "." ^ field.ocaml_name)
+  | None -> target.code ^ "." ^ field.ocaml_name
+
+let values_for target fields =
+  List.map (fun (field : field) -> (field, field_code target field)) fields
+
+let assoc target fields keyword value =
+  match find_field keyword fields with
+  | Some field when not (Types.equal field.ty value.ty) ->
+      Error.error
+        (Printf.sprintf "cannot assoc %s as %s because it is already %s" keyword
+           (source_name value.ty) (source_name field.ty))
+  | Some _ ->
+      let values =
+        fields
+        |> List.map (fun (field : field) ->
+               let code =
+                 if field.keyword = keyword then value.code else field_code target field
+               in
+               (field, code))
+      in
+      Ok { ty = TRecord fields; code = "<record>"; record_values = Some values }
+  | None ->
+      let new_field = make_field keyword value.ty in
+      let old_fields = fields in
+      let fields = old_fields @ [ new_field ] in
+      let values = values_for target old_fields in
+      let values = values @ [ (new_field, value.code) ] in
+      Ok { ty = TRecord fields; code = "<record>"; record_values = Some values }
+
+let dissoc target fields keyword =
+  match find_field keyword fields with
+  | None -> Error.error ("cannot dissoc unknown field " ^ keyword)
+  | Some _ ->
+      let fields = List.filter (fun (field : field) -> field.keyword <> keyword) fields in
+      let values = values_for target fields in
+      Ok { ty = TRecord fields; code = "<record>"; record_values = Some values }
+
+let merge maps =
+  let merge_one fields values right =
+    match right.ty with
+    | TRecord right_fields ->
+        let right_values = values_for right right_fields in
+        let add_field (fields, values) (right_field : field) =
+          match find_field right_field.keyword fields with
+          | Some existing when not (Types.equal existing.ty right_field.ty) ->
+              Error.error
+                (Printf.sprintf "cannot merge %s as %s because it is already %s"
+                   right_field.keyword (source_name right_field.ty)
+                   (source_name existing.ty))
+          | Some existing ->
+              let values =
+                values
+                |> List.map (fun (field, code) ->
+                       if field.keyword = existing.keyword then
+                         (field, List.assoc right_field right_values)
+                       else (field, code))
+              in
+              Ok (fields, values)
+          | None ->
+              Ok
+                ( fields @ [ right_field ],
+                  values @ [ (right_field, List.assoc right_field right_values) ] )
+        in
+        List.fold_left
+          (fun acc field ->
+            match acc with
+            | Error _ as err -> err
+            | Ok acc -> add_field acc field)
+          (Ok (fields, values)) right_fields
+    | _ -> Error.error "merge expects maps"
+  in
+  match maps with
+  | [] -> Error.error "merge expects at least 1 map"
+  | first :: rest -> (
+      match first.ty with
+      | TRecord fields -> (
+          let values = values_for first fields in
+          let result =
+            List.fold_left
+              (fun acc right ->
+                match acc with
+                | Error _ as err -> err
+                | Ok (fields, values) -> merge_one fields values right)
+              (Ok (fields, values)) rest
+          in
+          match result with
+          | Error _ as err -> err
+          | Ok (fields, values) ->
+              Ok { ty = TRecord fields; code = "<record>"; record_values = Some values })
+      | _ -> Error.error "merge expects maps")
+
+let update_value target fields keyword value_ty value_code =
+  match find_field keyword fields with
+  | None -> Error.error ("cannot update unknown field " ^ keyword)
+  | Some field when not (Types.equal field.ty value_ty) ->
+      Error.error
+        (Printf.sprintf "cannot update %s as %s because it is already %s" keyword
+           (source_name value_ty) (source_name field.ty))
+  | Some _ ->
+      let values =
+        fields
+        |> List.map (fun (field : field) ->
+               if field.keyword = keyword then (field, value_code)
+               else (field, field_code target field))
+      in
+      Ok { ty = TRecord fields; code = "<record>"; record_values = Some values }
+
+let select_keys target fields keywords =
+  if keywords = [] then Error.error "select-keys requires at least one key"
+  else
+    let rec collect acc = function
+      | [] ->
+          let selected = List.rev acc in
+          let keyword_pairs =
+            selected |> List.map (fun (field : field) -> (field.keyword, field))
+          in
+          validate_unique_keywords keyword_pairs
+          |> Result.map (fun () ->
+                 let values = values_for target selected in
+                 { ty = TRecord selected; code = "<record>"; record_values = Some values })
+      | keyword :: rest -> (
+          match find_field keyword fields with
+          | Some field -> collect (field :: acc) rest
+          | None -> Error.error ("cannot select unknown field " ^ keyword))
+    in
+    collect [] keywords
