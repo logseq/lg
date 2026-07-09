@@ -228,8 +228,9 @@ whole-program or structure-item OCaml parser path.
 model as `compile_chunk`. Typed expression payloads are still OCaml snippets
 when represented by the explicit `Ocaml_ir.Raw` migration node and use
 `Parse.expression`. Scalar literals and identifiers already lower directly
-from `Ocaml_ir` to Parsetree. Parsetree is a backend representation here, not
-cljml's full type system.
+from `Ocaml_ir` to Parsetree, as do list/vector literals and `if`, `if-not`, and
+`when` roots. Parsetree is a backend representation here, not cljml's full type
+system.
 
 The typed standard library also includes a `clojure.string` namespace that can
 be required with `:as` or `:refer`. Its current subset includes `blank?`,

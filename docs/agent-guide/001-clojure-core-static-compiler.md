@@ -381,8 +381,9 @@ They do not test internal AST shapes directly.
   builders. Row type definitions, functions, and protocol implementations are
   grouped structured items. Modules recursively contain compiled items and
   lower directly to Parsetree. Typed expressions carry shared `Ocaml_ir`
-  nodes; scalar literals and identifiers are structured, while `Raw` is the
-  explicit fallback for expression categories still being migrated.
+  nodes; scalar literals, identifiers, list/vector construction, applications,
+  and conditionals are structured, while `Raw` is the explicit fallback for
+  expression categories still being migrated.
 - Preserve enough compiler state to support editor/server workflows without reparsing and rechecking unrelated chunks.
 - Use extensive integration tests before expanding each core API category.
 - The current `RCmerci/rrbvec` repository has an opam file but no package in the active opam index, so the prototype vendors its library source.

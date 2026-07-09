@@ -115,18 +115,21 @@ and compile_vector current_ns env forms =
       | Ok first_expr ->
           let rec loop acc = function
             | [] ->
-                let values = List.rev acc |> String.concat "; " in
+                let values =
+                  List.rev acc |> List.map (fun expr -> expr.ocaml_expr)
+                in
                 Ok
-                  (typed (TVector first_expr.ty)
-                     ("Rrbvec.of_list [" ^ values ^ "]"))
+                  (typed_ir (TVector first_expr.ty)
+                     (Ocaml_ir.Apply
+                        (Ocaml_ir.Ident "Rrbvec.of_list", [ Ocaml_ir.List values ])))
             | form :: rest -> (
                 match compile_expr current_ns env form with
                 | Error _ as err -> err
                 | Ok expr ->
-                    if Types.equal first_expr.ty expr.ty then loop (expr.code :: acc) rest
+                    if Types.equal first_expr.ty expr.ty then loop (expr :: acc) rest
                     else Error.error "vector elements must all have the same type")
           in
-          loop [ first_expr.code ] rest)
+          loop [ first_expr ] rest)
 
 and compile_map current_ns env pairs =
   let compile_pair = function
@@ -178,9 +181,11 @@ and compile_if current_ns env condition then_form else_form =
       | Ok () ->
           if Types.equal then_expr.ty else_expr.ty then
             Ok
-              (typed then_expr.ty
-                 ("(if " ^ condition.code ^ " then " ^ then_expr.code ^ " else "
-                ^ else_expr.code ^ ")"))
+              (typed_ir then_expr.ty
+                 (Ocaml_ir.If
+                    ( condition.ocaml_expr,
+                      then_expr.ocaml_expr,
+                      else_expr.ocaml_expr )))
           else Error.error "if branches must have same type")
 
 and compile_if_not current_ns env condition then_form else_form =
@@ -198,9 +203,12 @@ and compile_if_not current_ns env condition then_form else_form =
       | Ok () ->
           if Types.equal then_expr.ty else_expr.ty then
             Ok
-              (typed then_expr.ty
-                 ("(if not (" ^ condition.code ^ ") then " ^ then_expr.code ^ " else "
-                ^ else_expr.code ^ ")"))
+              (typed_ir then_expr.ty
+                 (Ocaml_ir.If
+                    ( Ocaml_ir.Apply
+                        (Ocaml_ir.Ident "not", [ condition.ocaml_expr ]),
+                      then_expr.ocaml_expr,
+                      else_expr.ocaml_expr )))
           else Error.error "if-not branches must have same type")
 
 and compile_when current_ns env condition body_forms =
@@ -216,8 +224,9 @@ and compile_when current_ns env condition body_forms =
       | Ok () ->
           if Types.equal body.ty TUnit || Types.equal body.ty TNil then
             Ok
-              (typed body.ty
-                 ("(if " ^ condition.code ^ " then " ^ body.code ^ " else ())"))
+              (typed_ir body.ty
+                 (Ocaml_ir.If
+                    (condition.ocaml_expr, body.ocaml_expr, Ocaml_ir.Unit)))
           else Error.error "when body must be unit or nil")
 
 and compile_cond current_ns env clauses =
@@ -761,16 +770,18 @@ and compile_list current_ns env forms =
       | Ok first_expr ->
           let rec loop acc = function
             | [] ->
-                let values = List.rev acc |> String.concat "; " in
-                Ok (typed (TList first_expr.ty) ("[" ^ values ^ "]"))
+                let values =
+                  List.rev acc |> List.map (fun expr -> expr.ocaml_expr)
+                in
+                Ok (typed_ir (TList first_expr.ty) (Ocaml_ir.List values))
             | form :: rest -> (
                 match compile_expr current_ns env form with
                 | Error _ as err -> err
                 | Ok expr ->
-                    if Types.equal first_expr.ty expr.ty then loop (expr.code :: acc) rest
+                    if Types.equal first_expr.ty expr.ty then loop (expr :: acc) rest
                     else Error.error "list elements must all have the same type")
           in
-          loop [ first_expr.code ] rest)
+          loop [ first_expr ] rest)
 
 and compile_list_star current_ns env arg_forms =
   match List.rev arg_forms with

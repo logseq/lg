@@ -9,8 +9,9 @@ first, then OCaml lowering:
 
 - cljml has its own Lisp AST and typed IR for static Clojure-like semantics.
 - Typed expressions carry an `Ocaml_ir` node shared by the source and
-  Parsetree backends. Scalar literals and identifiers are structured; `Raw`
-  marks expression categories that still need migration.
+  Parsetree backends. Scalar literals, identifiers, list/vector construction,
+  applications, and conditionals are structured; `Raw` marks expression
+  categories that still need migration.
 - The OCaml source backend remains the stable output path.
 - `Cljml.Compiler.compile_parsetree` lowers compiled items independently into
   `Parsetree.structure`. Structural records, ordinary top-level values,

@@ -2083,6 +2083,61 @@ let test_parsetree_backend_builds_native_scalar_expressions () =
       | _ -> failwith "expected one scalar value binding")
   | _ -> failwith "expected one scalar value binding"
 
+let test_parsetree_backend_builds_native_collection_expressions () =
+  let structure =
+    Cljml.Compiler.compile_parsetree
+      {|
+(def xs [1 2 3])
+(def ys (list 4 5 6))
+|}
+    |> expect_ok
+  in
+  let value_expression (item : Parsetree.structure_item) =
+    match item with
+    | { pstr_desc = Pstr_value (_, [ binding ]); _ } -> binding.pvb_expr
+    | _ -> failwith "expected one value binding"
+  in
+  match structure with
+  | [ vector_item; list_item ] ->
+      let vector_expr = value_expression vector_item in
+      let list_expr = value_expression list_item in
+      (match (vector_expr.pexp_desc, list_expr.pexp_desc) with
+      | Pexp_apply _, Pexp_construct _ ->
+          if not (vector_expr.pexp_loc.loc_ghost && list_expr.pexp_loc.loc_ghost) then
+            failwith "expected native collection expressions with ghost locations"
+      | _ -> failwith "expected vector application and list constructor expressions")
+  | _ -> failwith "expected vector and list value bindings"
+
+let test_parsetree_backend_builds_native_conditional_expressions () =
+  let structure =
+    Cljml.Compiler.compile_parsetree
+      {|
+(def answer (if true 42 0))
+(def fallback (if-not false 7 9))
+(when true (println "ready"))
+|}
+    |> expect_ok
+  in
+  let value_expression (item : Parsetree.structure_item) =
+    match item with
+    | { pstr_desc = Pstr_value (_, [ binding ]); _ } -> binding.pvb_expr
+    | _ -> failwith "expected one value binding"
+  in
+  match structure with
+  | [ if_item; if_not_item; when_item ] ->
+      let expressions =
+        List.map value_expression [ if_item; if_not_item; when_item ]
+      in
+      if
+        not
+          (List.for_all
+             (fun (expression : Parsetree.expression) ->
+               expression.pexp_loc.loc_ghost
+               && match expression.pexp_desc with Pexp_ifthenelse _ -> true | _ -> false)
+             expressions)
+      then failwith "expected native conditional expressions with ghost locations"
+  | _ -> failwith "expected three conditional value bindings"
+
 let test_incremental_parsetree_backend_preserves_state () =
   let state = Cljml.Compiler.empty_state in
   let state, people_structure =
@@ -2401,6 +2456,10 @@ let tests =
       test_parsetree_backend_builds_native_module_items );
     ( "parsetree backend builds native scalar expressions",
       test_parsetree_backend_builds_native_scalar_expressions );
+    ( "parsetree backend builds native collection expressions",
+      test_parsetree_backend_builds_native_collection_expressions );
+    ( "parsetree backend builds native conditional expressions",
+      test_parsetree_backend_builds_native_conditional_expressions );
     ( "incremental parsetree backend preserves state",
       test_incremental_parsetree_backend_preserves_state );
   ]
