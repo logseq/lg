@@ -934,6 +934,61 @@ let test_batched_core_functions_infer_int_params () =
   Cljml.Compiler.compile_string source
   |> expect_error "shifted called with incompatible arguments"
 
+let test_batched_sequence_functions_work () =
+  let source =
+    {|
+(def xs [1 2 3 4])
+(def parts (partition 2 [1 2 3 4 5]))
+(def all-parts (partition-all 2 [1 2 3 4 5]))
+(println
+  (str (pr-str (remove (fn [x] (even? x)) xs)) ":"
+       (pr-str (take-while (fn [x] (< x 4)) xs)) ":"
+       (pr-str (drop-while (fn [x] (< x 3)) xs)) ":"
+       (pr-str (distinct [1 2 2 3])) ":"
+       (pr-str (sort [3 1 2])) ":"
+       (pr-str (concat [1 2] (list 3 4))) ":"
+       (pr-str (vec (list 1 2))) ":"
+       (pr-str (set [2 1 2])) ":"
+       (pr-str (repeat 3 "x")) ":"
+       (pr-str (repeatedly 3 (fn [] 7))) ":"
+       (pr-str (interpose 0 [1 2 3])) ":"
+       (pr-str (interleave [1 2] [3 4 5])) ":"
+       (count parts) ":" (first (first parts)) ":" (first (second parts)) ":"
+       (count all-parts) ":" (count (last all-parts)) ":"
+       (pr-str (reductions (fn [acc x] (+ acc x)) 0 [1 2 3])) ":"
+       (pr-str (dedupe [1 1 2 2 1])) ":"
+       (pr-str (map-indexed (fn [i x] (+ i x)) [10 20])) ":"
+       (pr-str (filterv (fn [x] (odd? x)) [1 2 3])) ":"
+       (pr-str (mapv (fn [x] (inc x)) [1 2])) ":"
+       (reduce-kv (fn [acc i x] (+ acc (+ i x))) 0 [10 20])))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "batched_sequence_functions_work"
+    "[1 3]:[1 2 3]:[3 4]:[1 2 3]:(1 2 3):(1 2 3 4):[1 2]:#{1 2}:(\"x\" \"x\" \"x\"):(7 7 7):(1 0 2 0 3):(1 3 2 4):2:1:3:3:1:(0 1 3 6):[1 2 1]:(10 21):[1 3]:[2 3]:31\n"
+    ocaml_source
+
+let test_batched_sequence_functions_reject_type_mismatch () =
+  Cljml.Compiler.compile_string {|(def x (concat [1] ["two"]))|}
+  |> expect_error "concat element types must match"
+
+let test_batched_sequence_functions_reject_bad_functions () =
+  Cljml.Compiler.compile_string {|(def x (filterv (fn [^:string s] true) [1 2]))|}
+  |> expect_error "filterv expects a predicate matching collection elements"
+
+let test_batched_sequence_functions_reject_bad_counts () =
+  Cljml.Compiler.compile_string {|(def x (repeat "3" 1))|}
+  |> expect_error "repeat count must be int"
+
+let test_batched_sequence_functions_reject_bad_partition_size () =
+  Cljml.Compiler.compile_string {|(def x (partition 0 [1 2]))|}
+  |> expect_error "partition size must be positive"
+
+let test_batched_sequence_functions_reject_reduce_kv_non_vector () =
+  Cljml.Compiler.compile_string
+    {|(def x (reduce-kv (fn [acc i x] (+ acc x)) 0 (list 1 2)))|}
+  |> expect_error "reduce-kv expects a vector"
+
 let test_let_defn_and_fn_values () =
   let source =
     {|
@@ -1473,6 +1528,17 @@ let tests =
       test_batched_core_functions_reject_bad_arities );
     ( "batched core functions infer int params",
       test_batched_core_functions_infer_int_params );
+    ("batched sequence functions work", test_batched_sequence_functions_work);
+    ( "batched sequence functions reject type mismatch",
+      test_batched_sequence_functions_reject_type_mismatch );
+    ( "batched sequence functions reject bad functions",
+      test_batched_sequence_functions_reject_bad_functions );
+    ( "batched sequence functions reject bad counts",
+      test_batched_sequence_functions_reject_bad_counts );
+    ( "batched sequence functions reject bad partition size",
+      test_batched_sequence_functions_reject_bad_partition_size );
+    ( "batched sequence functions reject reduce-kv non-vector",
+      test_batched_sequence_functions_reject_reduce_kv_non_vector );
     ("let, defn, and fn values work", test_let_defn_and_fn_values);
     ("sequence core api works on vectors", test_sequence_core_api_on_vectors);
     ("function helpers work", test_function_helpers);

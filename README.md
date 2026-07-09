@@ -69,8 +69,12 @@ The compiler infers record-like map shapes automatically:
 - `=` and `not=` compare same-shaped structural maps field by field.
 - `range` produces an eager typed integer list.
 - `list`, `list-of`, `cons`, `second`, `last`, `peek`, `pop`, `map`,
-  `filter`, `reduce`, `apply`, `comp`, `partial`, `identity`, and
-  `constantly` are supported for the current typed collection/function subset.
+  `filter`, `remove`, `take-while`, `drop-while`, `distinct`, `dedupe`,
+  `sort`, `concat`, `vec`, `set`, `repeat`, `repeatedly`, `interpose`,
+  `interleave`, `partition`, `partition-all`, `reductions`, `map-indexed`,
+  `filterv`, `mapv`, `reduce`, `reduce-kv`, `apply`, `comp`, `partial`,
+  `identity`, and `constantly` are supported for the current typed
+  collection/function subset.
 - `apply` supports integer binary reducers over typed lists, vectors, and sets.
 - `get` supports vector indexes, and `nth` supports typed default values for
   lists and vectors.

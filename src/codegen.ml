@@ -17,7 +17,7 @@ let rec stringify_expr ?(pr = false) expr =
         | TInt -> "string_of_int"
         | TKeyword -> "(fun x -> x)"
         | TString ->
-            if pr then "Printf.sprintf \"%S\""
+            if pr then "(fun x -> Printf.sprintf \"%S\" x)"
             else Printf.sprintf "(fun x -> %S ^ x ^ %S)" "\"" "\""
         | TBool -> "string_of_bool"
         | TNil -> {|(fun _ -> "nil")|}
@@ -32,7 +32,7 @@ let rec stringify_expr ?(pr = false) expr =
         | TInt -> "string_of_int"
         | TKeyword -> "(fun x -> x)"
         | TString ->
-            if pr then "Printf.sprintf \"%S\""
+            if pr then "(fun x -> Printf.sprintf \"%S\" x)"
             else Printf.sprintf "(fun x -> %S ^ x ^ %S)" "\"" "\""
         | TBool -> "string_of_bool"
         | TNil -> {|(fun _ -> "nil")|}
@@ -47,7 +47,7 @@ let rec stringify_expr ?(pr = false) expr =
         | TInt -> "string_of_int"
         | TKeyword -> "(fun x -> x)"
         | TString ->
-            if pr then "Printf.sprintf \"%S\""
+            if pr then "(fun x -> Printf.sprintf \"%S\" x)"
             else Printf.sprintf "(fun x -> %S ^ x ^ %S)" "\"" "\""
         | TBool -> "string_of_bool"
         | TNil -> {|(fun _ -> "nil")|}

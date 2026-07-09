@@ -89,7 +89,7 @@ The compiler should support this syntax without macros.
 | Maps | `hash-map`, `get`, `assoc`, `dissoc`, `merge`, `update`, `select-keys`, `contains?`, `keys`, `vals` | 1 |
 | Vectors | `vector`, `conj`, `count`, `nth`, `get`, `assoc`, `update`, `contains?`, `subvec`, `first`, `second`, `last`, `peek`, `pop`, `rest` | 1 |
 | Lists | `list`, `list-of`, `cons`, `conj`, `count`, `nth`, `first`, `second`, `last`, `peek`, `pop`, `rest` | 2 |
-| Sequences | `seq`, `empty`, `empty?`, `into`, `take`, `drop`, `reverse`, `range`, `every?`, `not-any?`, `not-every?`, `map`, `filter`, `reduce` | 2 |
+| Sequences | `seq`, `empty`, `empty?`, `into`, `take`, `drop`, `reverse`, `range`, `every?`, `not-any?`, `not-every?`, `map`, `filter`, `remove`, `take-while`, `drop-while`, `distinct`, `dedupe`, `sort`, `concat`, `vec`, `set`, `repeat`, `repeatedly`, `interpose`, `interleave`, `partition`, `partition-all`, `reductions`, `map-indexed`, `filterv`, `mapv`, `reduce`, `reduce-kv` | 2 |
 | Functions | `apply`, `comp`, `partial`, `identity`, `constantly` | 2 |
 | Sets | `hash-set`, `set-of`, `conj`, `contains?`, `disj` | 3 |
 | Protocols | `defprotocol`, `extend-type`, static method dispatch by receiver type | 3 |
@@ -147,6 +147,10 @@ the element types match.
 
 `every?`, `not-any?`, and `not-every?` return typed booleans for list, vector,
 and set predicates.
+
+Sequence APIs are eager in the current runtime. The compiler prefers concrete
+typed lists, vectors, and sets over lazy seq objects until the type system has a
+dedicated sequence abstraction.
 
 `map`, `filter`, and `reduce` operate eagerly over lists, vectors, and sets.
 

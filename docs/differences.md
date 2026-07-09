@@ -83,7 +83,7 @@ legal OCaml identifiers while preserving source-level names.
 
 Vectors compile to `Rrbvec.t` persistent vectors.
 
-Lists compile to OCaml lists and support `list`, `list-of`, `cons`, `conj`, `first`, `second`, `last`, `peek`, `pop`, `rest`, `nth`, `count`, `map`, `filter`, and `reduce`.
+Lists compile to OCaml lists and support `list`, `list-of`, `cons`, `conj`, `first`, `second`, `last`, `peek`, `pop`, `rest`, `nth`, `count`, `map`, `filter`, `remove`, `take-while`, `drop-while`, `distinct`, `dedupe`, `sort`, `concat`, `vec`, `set`, `repeat`, `repeatedly`, `interpose`, `interleave`, `partition`, `partition-all`, `reductions`, `map-indexed`, `filterv`, `mapv`, `reduce`, and `reduce-kv` where the static element types line up.
 
 Vectors support `first`, `second`, `last`, `peek`, `pop`, `rest`, `nth`, `get`, `assoc`, `update`, `contains?`, `subvec`, and the current eager sequence operations.
 
@@ -105,6 +105,13 @@ the element types match.
 
 `every?`, `not-any?`, and `not-every?` return typed booleans for list, vector,
 and set predicates.
+
+Sequence operations are eager and return concrete typed collections. For example
+`mapv` and `filterv` return persistent vectors, `concat`, `sort`,
+`interpose`, `interleave`, `partition`, `partition-all`, `reductions`, and
+`map-indexed` return OCaml lists, and same-shape operations such as `remove`,
+`take-while`, `drop-while`, `distinct`, and `dedupe` preserve the input
+collection representation where practical.
 
 `range` returns an eager typed integer list.
 
