@@ -57,6 +57,7 @@ The compiler infers record-like map shapes automatically:
 - `+`, `*`, `-`, `/`, ordered comparisons, `=`, and `not=` follow
   Clojure-style arities where the current type system can represent them.
 - `=` and `not=` compare same-shaped structural maps field by field.
+- `range` produces an eager typed integer list.
 - `list`, `list-of`, `cons`, `second`, `last`, `peek`, `pop`, `map`,
   `filter`, `reduce`, `apply`, `comp`, `partial`, `identity`, and
   `constantly` are supported for the current typed collection/function subset.

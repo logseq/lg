@@ -91,6 +91,8 @@ the element types match.
 `every?`, `not-any?`, and `not-every?` return typed booleans for list and vector
 predicates.
 
+`range` returns an eager typed integer list.
+
 Empty vector literals still require explicit element typing.
 
 Use `(vector-of :int)`, `(vector-of :string)`, `(vector-of :bool)`, or `(vector-of :nil)` for typed empty vectors.

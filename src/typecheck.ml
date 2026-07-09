@@ -279,6 +279,7 @@ and compile_call current_ns env name arg_forms =
           Ok (typed TUnit (printer ^ " (" ^ Codegen.print_expr arg ^ ")"))
       | Ok _ -> Error.error (name ^ " expects 1 arguments"))
   | "list" -> compile_list current_ns env arg_forms
+  | "range" -> compile_range current_ns env arg_forms
   | "list-of" -> compile_list_of arg_forms
   | "cons" -> compile_cons current_ns env arg_forms
   | "vector" -> compile_vector current_ns env arg_forms
@@ -494,6 +495,53 @@ and compile_list current_ns env forms =
                     else Error.error "list elements must all have the same type")
           in
           loop [ first_expr.code ] rest)
+
+and compile_range current_ns env arg_forms =
+  let literal_zero = function FInt 0 -> true | _ -> false in
+  match arg_forms with
+  | [ end_form ] -> (
+      match compile_expr current_ns env end_form with
+      | Error _ as err -> err
+      | Ok end_expr ->
+          if Types.equal end_expr.ty TInt then
+            Ok
+              (typed (TList TInt)
+                 ("(let rec range acc current stop step = if current >= stop then List.rev acc else range (current :: acc) (current + step) stop step in range [] 0 ("
+                ^ end_expr.code ^ ") 1)"))
+          else Error.error "range arguments must be int")
+  | [ start_form; end_form ] -> (
+      match (compile_expr current_ns env start_form, compile_expr current_ns env end_form) with
+      | (Error _ as err), _ -> err
+      | _, (Error _ as err) -> err
+      | Ok start_expr, Ok end_expr ->
+          if Types.equal start_expr.ty TInt && Types.equal end_expr.ty TInt then
+            Ok
+              (typed (TList TInt)
+                 ("(let rec range acc current stop step = if current >= stop then List.rev acc else range (current :: acc) (current + step) stop step in range [] ("
+                ^ start_expr.code ^ ") (" ^ end_expr.code ^ ") 1)"))
+          else Error.error "range arguments must be int")
+  | [ start_form; end_form; step_form ] ->
+      if literal_zero step_form then Error.error "range step cannot be 0"
+      else (
+        match
+          ( compile_expr current_ns env start_form,
+            compile_expr current_ns env end_form,
+            compile_expr current_ns env step_form )
+        with
+        | (Error _ as err), _, _ -> err
+        | _, (Error _ as err), _ -> err
+        | _, _, (Error _ as err) -> err
+        | Ok start_expr, Ok end_expr, Ok step_expr ->
+            if
+              Types.equal start_expr.ty TInt && Types.equal end_expr.ty TInt
+              && Types.equal step_expr.ty TInt
+            then
+              Ok
+                (typed (TList TInt)
+                   ("(let rec range acc current stop step = if step = 0 then invalid_arg \"range step cannot be 0\" else if (step > 0 && current >= stop) || (step < 0 && current <= stop) then List.rev acc else range (current :: acc) (current + step) stop step in range [] ("
+                  ^ start_expr.code ^ ") (" ^ end_expr.code ^ ") (" ^ step_expr.code ^ "))"))
+            else Error.error "range arguments must be int")
+  | _ -> Error.error "range expects end, start/end, or start/end/step"
 
 and compile_list_of arg_forms =
   match arg_forms with

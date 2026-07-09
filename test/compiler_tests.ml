@@ -828,6 +828,25 @@ let test_sequence_core_api_on_lists () =
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "sequence_core_api_on_lists" "2:4:2:6\n" ocaml_source
 
+let test_range_core_api () =
+  let source =
+    {|
+(println (str (pr-str (range 4)) ":" (pr-str (range 2 6)) ":"
+              (pr-str (range 2 10 3)) ":" (pr-str (range 5 0 -2))))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "range_core_api" "(0 1 2 3):(2 3 4 5):(2 5 8):(5 3 1)\n"
+    ocaml_source
+
+let test_range_rejects_zero_step () =
+  Cljml.Compiler.compile_string {|(def xs (range 1 10 0))|}
+  |> expect_error "range step cannot be 0"
+
+let test_range_rejects_non_int_arguments () =
+  Cljml.Compiler.compile_string {|(def xs (range "4"))|}
+  |> expect_error "range arguments must be int"
+
 let test_take_and_drop_core_api () =
   let source =
     {|
@@ -1125,6 +1144,9 @@ let tests =
     ("set core api works", test_set_core_api);
     ("list core api works", test_list_core_api);
     ("sequence core api works on lists", test_sequence_core_api_on_lists);
+    ("range core api works", test_range_core_api);
+    ("range rejects zero step", test_range_rejects_zero_step);
+    ("range rejects non-int arguments", test_range_rejects_non_int_arguments);
     ("take and drop core api works", test_take_and_drop_core_api);
     ("take and drop reject non-int counts", test_take_and_drop_reject_non_int_counts);
     ( "take and drop reject unsupported collections",
