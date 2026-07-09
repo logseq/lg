@@ -82,6 +82,10 @@ The compiler infers record-like map shapes automatically:
   bindings into the current namespace.
 - `(:require [ocaml.String :as string])` can alias a small typed table of OCaml
   host functions.
+- `defprotocol` and `extend-type` support a first static protocol subset.
+  Dispatch is resolved at compile time from the first argument type, and
+  namespace aliases such as `labels/label` work when the protocol namespace has
+  been compiled and required.
 - `(:name user)` works as keyword lookup syntax for structural maps.
 - `(keys user)` returns a persistent vector of keyword values, and `(vals user)`
   returns a persistent vector when all map values have the same type.

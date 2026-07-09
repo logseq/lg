@@ -1030,7 +1030,7 @@ and compile_function_arg current_ns env = function
 
 and compile_named_function_call current_ns env name arg_forms =
   match lookup_function current_ns env name with
-  | Error _ as err -> err
+  | Error _ -> compile_protocol_call current_ns env name arg_forms
   | Ok fn -> (
       match compile_args_for current_ns env arg_forms with
       | Error _ as err -> err
@@ -1043,6 +1043,41 @@ and compile_named_function_call current_ns env name arg_forms =
                       param_tys args ->
               Ok (typed ret (apply_code fn.code (List.map (fun arg -> arg.code) args)))
           | TFn _ -> Error.error (name ^ " called with incompatible arguments")
+          | _ -> Error.error (name ^ " is not callable")))
+
+and compile_protocol_call current_ns env name arg_forms =
+  match Protocol.lookup_marker current_ns env name with
+  | None -> Error.error ("unknown function " ^ name)
+  | Some marker -> (
+      match compile_args_for current_ns env arg_forms with
+      | Error _ as err -> err
+      | Ok args -> (
+          match marker.ty with
+          | TFn (param_tys, _ret) when List.length param_tys <> List.length args ->
+              Error.error (name ^ " called with incompatible arguments")
+          | TFn (_, _) -> (
+              match args with
+              | [] -> Error.error (name ^ " called with incompatible arguments")
+              | receiver :: _ -> (
+                  match Protocol.lookup_impl current_ns env name receiver.ty with
+                  | None ->
+                      Error.error
+                        ("no protocol implementation for " ^ name ^ " and "
+                       ^ source_name receiver.ty)
+                  | Some impl -> (
+                      match impl.ty with
+                      | TFn (param_tys, ret)
+                        when List.length param_tys = List.length args
+                             && List.for_all2
+                                  (fun expected arg ->
+                                    Types.compatible ~expected ~actual:arg.ty)
+                                  param_tys args ->
+                          Ok
+                            (typed ret
+                               (apply_code impl.ocaml_name
+                                  (List.map (fun arg -> arg.code) args)))
+                      | TFn _ -> Error.error (name ^ " called with incompatible arguments")
+                      | _ -> Error.error (name ^ " is not callable"))))
           | _ -> Error.error (name ^ " is not callable")))
 
 and compile_rest current_ns env arg_forms =
@@ -1459,6 +1494,90 @@ and compile_args_for current_ns env arg_forms =
   in
   loop [] arg_forms
 
+let compile_defprotocol current_ns env next_type protocol_name method_forms =
+  match Protocol.defprotocol_bindings current_ns protocol_name method_forms with
+  | Error _ as err -> err
+  | Ok bindings ->
+      Ok
+        ( current_ns,
+          env @ bindings,
+          next_type,
+          Emit ("(* protocol " ^ protocol_name ^ " *)") )
+
+let compile_extend_type current_ns env next_type receiver_keyword protocol_name method_forms =
+  match Type_annotation.of_keyword receiver_keyword with
+  | Error _ as err -> err
+  | Ok receiver_ty ->
+      let compile_method env = function
+        | FList (FSymbol method_name :: params :: body_forms) -> (
+            match Protocol.lookup_marker current_ns env method_name with
+            | None ->
+                Error.error
+                  ("protocol " ^ protocol_name ^ " does not define method " ^ method_name)
+            | Some marker when marker.ocaml_name <> protocol_name ->
+                Error.error
+                  ("protocol " ^ protocol_name ^ " does not define method " ^ method_name)
+            | Some marker -> (
+                match Protocol.annotate_receiver receiver_ty params with
+                | Error _ as err -> err
+                | Ok params -> (
+                    match compile_fn current_ns env params body_forms with
+                    | Error _ as err -> err
+                    | Ok expr -> (
+                        match (marker.ty, expr.ty) with
+                        | TFn (expected_params, _), TFn (actual_params, _)
+                          when List.length expected_params <> List.length actual_params ->
+                            Error.error (method_name ^ " called with incompatible arguments")
+                        | TFn (_expected_params, expected_ret), TFn (actual_params, actual_ret)
+                          -> (
+                            match actual_params with
+                            | [] ->
+                                Error.error
+                                  "protocol methods must have a receiver parameter"
+                            | actual_receiver :: _ ->
+                                if not (Types.equal receiver_ty actual_receiver) then
+                                  Error.error
+                                    ("protocol implementation receiver must be "
+                                   ^ source_name receiver_ty)
+                                else if not (Types.equal expected_ret actual_ret) then
+                                  Error.error
+                                    ("protocol method " ^ method_name ^ " must return "
+                                   ^ source_name expected_ret)
+                                else (
+                                  match Protocol.impl_name method_name receiver_ty with
+                                  | None ->
+                                      Error.error
+                                        ("protocol implementations do not support receiver type "
+                                       ^ source_name receiver_ty)
+                                  | Some impl_key_name ->
+                                      let ocaml_name =
+                                        Protocol.impl_ocaml_name current_ns
+                                          protocol_name method_name receiver_ty
+                                      in
+                                      let env_key =
+                                        Names.namespaced_key current_ns impl_key_name
+                                      in
+                                      let binding = { ocaml_name; ty = expr.ty } in
+                                      Ok
+                                        ( env @ [ (env_key, binding) ],
+                                          "let " ^ ocaml_name ^ " = " ^ expr.code )))
+                        | _ -> Error.error "protocol method did not compile to a function"))))
+        | _ -> Error.error "extend-type methods must be (method-name [params] body)"
+      in
+      let rec loop env code_parts = function
+        | [] ->
+            Ok
+              ( current_ns,
+                env,
+                next_type,
+                Emit (String.concat "\n\n" (List.rev code_parts)) )
+        | method_form :: rest -> (
+            match compile_method env method_form with
+            | Error _ as err -> err
+            | Ok (env, code) -> loop env (code :: code_parts) rest)
+      in
+      loop env [] method_forms
+
 let compile_top_level current_ns env next_type = function
   | FList [ FSymbol "def"; FSymbol name; expr_form ] -> (
       match compile_expr current_ns env expr_form with
@@ -1500,6 +1619,13 @@ let compile_top_level current_ns env next_type = function
                   next_type,
                   Emit ("let " ^ ocaml_name ^ " = " ^ expr.code) )
           | _ -> Error.error "defn body did not compile to a function"))
+  | FList (FSymbol "defprotocol" :: FSymbol protocol_name :: method_forms) ->
+      compile_defprotocol current_ns env next_type protocol_name method_forms
+  | FList
+      (FSymbol "extend-type" :: FKeyword receiver_keyword :: FSymbol protocol_name
+      :: method_forms) ->
+      compile_extend_type current_ns env next_type receiver_keyword protocol_name
+        method_forms
   | FList (FSymbol (("print" | "println") as name) :: args) -> (
       match compile_call current_ns env name args with
       | Error _ as err -> err
@@ -1530,7 +1656,9 @@ let compile_top_level current_ns env next_type = function
           (match apply_specs env specs with
           | Error _ as err -> err
           | Ok env -> Ok (namespace, env, next_type, Emit ("(* ns " ^ namespace ^ " *)"))))
-  | _ -> Error.error "expected top-level def, print, println, or ns form"
+  | _ ->
+      Error.error
+        "expected top-level def, defn, defprotocol, extend-type, print, println, or ns form"
 
 type state = {
   current_ns : string;

@@ -501,6 +501,69 @@ let test_unannotated_function_parameters_reject_missing_structural_map_fields ()
   Cljml.Compiler.compile_string source
   |> expect_error "next-age called with incompatible arguments"
 
+let test_static_protocols_dispatch_by_receiver_type () =
+  let source =
+    {|
+(defprotocol Labelled
+  (label [x] :string))
+(extend-type :int
+  Labelled
+  (label [x] (str "int:" x)))
+(extend-type :string
+  Labelled
+  (label [x] (str "str:" x)))
+(println (str (label 7) ":" (label "Ada")))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "static_protocols_dispatch_by_receiver_type"
+    "int:7:str:Ada\n" ocaml_source
+
+let test_static_protocols_reject_missing_implementation () =
+  let source =
+    {|
+(defprotocol Labelled
+  (label [x] :string))
+(extend-type :int
+  Labelled
+  (label [x] (str "int:" x)))
+(def bad (label true))
+|}
+  in
+  Cljml.Compiler.compile_string source
+  |> expect_error "no protocol implementation for label and bool"
+
+let test_static_protocols_reject_return_type_mismatch () =
+  let source =
+    {|
+(defprotocol Labelled
+  (label [x] :string))
+(extend-type :int
+  Labelled
+  (label [x] (+ x 1)))
+|}
+  in
+  Cljml.Compiler.compile_string source
+  |> expect_error "protocol method label must return string"
+
+let test_static_protocols_work_through_namespace_aliases () =
+  let source =
+    {|
+(ns labels.core)
+(defprotocol Labelled
+  (label [x] :string))
+(extend-type :int
+  Labelled
+  (label [x] (str "int:" x)))
+(ns app.main
+  (:require [labels.core :as labels]))
+(println (labels/label 9))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "static_protocols_work_through_namespace_aliases" "int:9\n"
+    ocaml_source
+
 let test_do_and_multi_form_bodies () =
   let source =
     {|
@@ -1180,6 +1243,29 @@ let test_incremental_compilation_requires_prior_state () =
 |}
   |> expect_error_value "unknown symbol p/user"
 
+let test_incremental_compilation_preserves_protocols () =
+  let state = Cljml.Compiler.empty_state in
+  let state, protocol_ocaml =
+    Cljml.Compiler.compile_chunk state
+      {|
+(defprotocol Labelled
+  (label [x] :string))
+(extend-type :int
+  Labelled
+  (label [x] (str "int:" x)))
+|}
+    |> expect_ok
+  in
+  let _state, call_ocaml =
+    Cljml.Compiler.compile_chunk state
+      {|
+(println (label 42))
+|}
+    |> expect_ok
+  in
+  assert_ocaml_runs "incremental_compilation_preserves_protocols" "int:42\n"
+    (protocol_ocaml ^ "\n\n" ^ call_ocaml)
+
 let tests =
   [
     ("records, assoc, and dissoc generate typed OCaml", test_records_assoc_and_dissoc);
@@ -1230,6 +1316,14 @@ let tests =
       test_unannotated_function_parameters_infer_structural_map_fields );
     ( "unannotated function parameters reject missing structural map fields",
       test_unannotated_function_parameters_reject_missing_structural_map_fields );
+    ( "static protocols dispatch by receiver type",
+      test_static_protocols_dispatch_by_receiver_type );
+    ( "static protocols reject missing implementations",
+      test_static_protocols_reject_missing_implementation );
+    ( "static protocols reject return type mismatch",
+      test_static_protocols_reject_return_type_mismatch );
+    ( "static protocols work through namespace aliases",
+      test_static_protocols_work_through_namespace_aliases );
     ("do and multi-form bodies work", test_do_and_multi_form_bodies);
     ("fn rejects empty body", test_fn_rejects_empty_body);
     ("vectors reject mixed element types", test_vectors_reject_mixed_element_types);
@@ -1330,6 +1424,8 @@ let tests =
       test_incremental_compilation_preserves_state );
     ( "incremental compilation requires prior state",
       test_incremental_compilation_requires_prior_state );
+    ( "incremental compilation preserves protocols",
+      test_incremental_compilation_preserves_protocols );
   ]
 
 let () =

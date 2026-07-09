@@ -36,6 +36,8 @@ Keyword lookup in typed contexts can infer structural map field requirements for
 
 Function calls can pass wider structural maps when the callee only requires a known subset of fields.
 
+Protocols are a static subset of Clojure protocols. `defprotocol` records typed method signatures, and `extend-type` emits ordinary OCaml functions for supported receiver types. Calls dispatch at compile time from the first argument type, so there is no runtime protocol table, dynamic extension, metadata dispatch, or reflection.
+
 `do`, `fn`, `defn`, and `let` bodies evaluate forms in order and return the final form's type.
 
 `print` and `println` follow Clojure's newline behavior.
@@ -66,6 +68,8 @@ Qualified symbols can reference previously compiled namespaces.
 `(:require [some.ns :refer [name]])` refers previously compiled namespace bindings into the current namespace.
 
 Incremental compilation preserves namespace, alias, refer, type counter, and binding state across source chunks.
+
+Protocol signatures and implementations are preserved in the same incremental compiler state. Namespace aliases can qualify protocol method calls, for example `labels/label`, after the protocol namespace has been compiled and required.
 
 Clojure symbols and keywords that would emit OCaml reserved words are munged as
 legal OCaml identifiers while preserving source-level names.

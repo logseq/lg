@@ -74,6 +74,7 @@ The compiler should support this syntax without macros.
 | `let` | `(let [x 1] (+ x 2))` | 2 |
 | `fn` | `(fn [x] (+ x 1))` | 2 |
 | `defn` | `(defn inc1 [x] (+ x 1))` | 2 |
+| Static protocols | `(defprotocol Labelled (label [x] :string))` | 3 |
 | Namespace form | `(ns app.main)` | 1 |
 
 ## Core API Roadmap
@@ -90,6 +91,7 @@ The compiler should support this syntax without macros.
 | Sequences | `seq`, `empty`, `empty?`, `into`, `take`, `drop`, `reverse`, `range`, `every?`, `not-any?`, `not-every?`, `map`, `filter`, `reduce` | 2 |
 | Functions | `apply`, `comp`, `partial`, `identity`, `constantly` | 2 |
 | Sets | `hash-set`, `set-of`, `conj`, `contains?`, `disj` | 3 |
+| Protocols | `defprotocol`, `extend-type`, static method dispatch by receiver type | 3 |
 
 ## Type System
 
@@ -100,6 +102,12 @@ Scalar types are `int`, `string`, `keyword`, `bool`, `nil`, and `unit`.
 Arithmetic starts as integer-only; ratio-producing Clojure arities such as unary `/` are documented differences until numeric tower support exists.
 
 Type predicates are resolved from static cljml types.
+
+Protocols are represented as compile-time method signatures plus generated
+implementation functions. The current subset supports scalar receiver type
+keywords such as `:int` and `:string`, checks implementation return types
+against the protocol signature, and dispatches method calls by the first
+argument's static type.
 
 `subs` supports two- and three-argument typed string slicing.
 
@@ -215,6 +223,9 @@ Same-shaped structural maps compare field by field with `=` and `not=`.
 21. Expose a public incremental API that can compile a source chunk into emitted OCaml while returning the next compiler state.
 
 22. Keep incremental output deterministic and compatible with whole-file compilation.
+
+23. Preserve static protocol signatures and implementations in the same
+    incremental compiler state used for ordinary namespace bindings.
 
 ## Phase 1 Task List
 
