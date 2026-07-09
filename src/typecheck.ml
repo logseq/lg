@@ -1425,17 +1425,29 @@ and compile_set_of arg_forms =
   | _ -> Error.error "set-of expects one type keyword"
 
 and compile_disj current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [ collection; value ] -> (
-      match collection.ty with
-      | TSet inner when Types.equal inner value.ty ->
-          Ok
-            (typed collection.ty
-               ("List.filter (fun item -> item <> " ^ value.code ^ ") " ^ collection.code))
-      | TSet _ -> Error.error "disj value type must match set element type"
-      | _ -> Error.error "disj expects a set")
-  | Ok _ -> Error.error "disj expects set and value"
+  match arg_forms with
+  | collection_form :: value_forms -> (
+      match compile_expr current_ns env collection_form with
+      | Error _ as err -> err
+      | Ok collection -> (
+          match collection.ty with
+          | TSet inner ->
+              let rec remove_values code = function
+                | [] -> Ok (typed collection.ty code)
+                | value_form :: rest -> (
+                    match compile_expr current_ns env value_form with
+                    | Error _ as err -> err
+                    | Ok value ->
+                        if Types.equal inner value.ty then
+                          remove_values
+                            ("List.filter (fun item -> item <> " ^ value.code ^ ") (" ^ code
+                           ^ ")")
+                            rest
+                        else Error.error "disj value type must match set element type")
+              in
+              remove_values collection.code value_forms
+          | _ -> Error.error "disj expects a set"))
+  | [] -> Error.error "disj expects a set"
 
 and compile_args_for current_ns env arg_forms =
   let rec loop acc = function

@@ -111,6 +111,8 @@ Sets currently compile to sorted unique OCaml lists and support `hash-set`,
 `set-of`, `conj`, `disj`, `contains?`, `every?`, `not-any?`, `not-every?`,
 `map`, `filter`, and `reduce`.
 
+`disj` accepts zero or more same-typed values after the set.
+
 `apply` currently supports integer binary reducers over typed lists, vectors,
 and sets.
 

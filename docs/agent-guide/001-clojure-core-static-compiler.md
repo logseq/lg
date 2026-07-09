@@ -135,6 +135,8 @@ and set predicates.
 
 `apply` supports integer binary reducers over typed lists, vectors, and sets.
 
+`disj` accepts zero or more same-typed values after the set.
+
 Map literal types are structural records keyed by Clojure keywords.
 
 `hash-map` creates structural records from keyword/value pairs.

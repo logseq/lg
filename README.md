@@ -76,6 +76,7 @@ The compiler infers record-like map shapes automatically:
   sets.
 - `hash-set`, `set-of`, `conj`, `disj`, and `contains?` are supported for
   homogeneous sets, and `map`, `filter`, and `reduce` work over sets.
+- `disj` accepts zero or more same-typed values after the set.
 - `(:require [some.ns :as alias])` can alias previously compiled namespaces.
 - `(:require [some.ns :refer [user]])` can refer previously compiled namespace
   bindings into the current namespace.

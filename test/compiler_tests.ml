@@ -835,17 +835,23 @@ let test_set_core_api () =
 (def xs (hash-set 1 2 2 3))
 (def ys (conj xs 4))
 (def zs (conj ys 2))
-(def slim (disj zs 2))
+(def same (disj zs))
+(def slim (disj same 2 4))
 (println (str (contains? xs 2) ":" (contains? slim 2) ":" (count ys) ":"
-              (pr-str ys) ":" (pr-str slim)))
+              (pr-str ys) ":" (pr-str same) ":" (pr-str slim)))
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "set_core_api" "true:false:4:#{1 2 3 4}:#{1 3 4}\n" ocaml_source
+  assert_ocaml_runs "set_core_api" "true:false:4:#{1 2 3 4}:#{1 2 3 4}:#{1 3}\n"
+    ocaml_source
 
 let test_conj_rejects_set_type_mismatch () =
   Cljml.Compiler.compile_string {|(def xs (conj (hash-set 1) "two"))|}
   |> expect_error "conj value type must match set element type"
+
+let test_disj_rejects_set_type_mismatch () =
+  Cljml.Compiler.compile_string {|(def xs (disj (hash-set 1) 1 "two"))|}
+  |> expect_error "disj value type must match set element type"
 
 let test_set_sequence_core_api () =
   let source =
@@ -1275,6 +1281,7 @@ let tests =
     ("apply rejects bad set reducers", test_apply_rejects_bad_set_reducers);
     ("set core api works", test_set_core_api);
     ("conj rejects set type mismatch", test_conj_rejects_set_type_mismatch);
+    ("disj rejects set type mismatch", test_disj_rejects_set_type_mismatch);
     ("set sequence core api works", test_set_sequence_core_api);
     ( "set sequence predicates reject bad predicates",
       test_set_sequence_predicates_reject_bad_predicates );
