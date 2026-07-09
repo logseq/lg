@@ -1229,7 +1229,14 @@ and compile_map_call current_ns env arg_forms =
                    ("Rrbvec.map " ^ fn.code ^ " (" ^ collection.code ^ ")"))
           | TFn _, TVector _ -> Error.error "map function argument type does not match vector"
           | _, TVector _ -> Error.error "map expects a function"
-          | _ -> Error.error "map expects a vector"))
+          | TFn ([ param_ty ], ret), TSet inner when Types.equal param_ty inner ->
+              Ok
+                (typed (TSet ret)
+                   ("List.sort_uniq compare (List.map " ^ fn.code ^ " ("
+                  ^ collection.code ^ "))"))
+          | TFn _, TSet _ -> Error.error "map function argument type does not match set"
+          | _, TSet _ -> Error.error "map expects a function"
+          | _ -> Error.error "map expects a list, vector, or set"))
   | _ -> Error.error "map expects function and collection"
 
 and compile_filter current_ns env arg_forms =
@@ -1252,7 +1259,13 @@ and compile_filter current_ns env arg_forms =
                    ("Rrbvec.filter " ^ fn.code ^ " (" ^ collection.code ^ ")"))
           | TFn _, TVector _ -> Error.error "filter expects a predicate matching vector elements"
           | _, TVector _ -> Error.error "filter expects a function"
-          | _ -> Error.error "filter expects a vector"))
+          | TFn ([ param_ty ], TBool), TSet inner when Types.equal param_ty inner ->
+              Ok
+                (typed collection.ty
+                   ("List.filter " ^ fn.code ^ " (" ^ collection.code ^ ")"))
+          | TFn _, TSet _ -> Error.error "filter expects a predicate matching set elements"
+          | _, TSet _ -> Error.error "filter expects a function"
+          | _ -> Error.error "filter expects a list, vector, or set"))
   | _ -> Error.error "filter expects function and collection"
 
 and compile_reduce current_ns env arg_forms =

@@ -128,6 +128,8 @@ the element types match.
 `every?`, `not-any?`, and `not-every?` return typed booleans for list, vector,
 and set predicates.
 
+`map`, `filter`, and `reduce` operate eagerly over lists, vectors, and sets.
+
 Map literal types are structural records keyed by Clojure keywords.
 
 `hash-map` creates structural records from keyword/value pairs.

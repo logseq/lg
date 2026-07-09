@@ -864,6 +864,26 @@ let test_reduce_rejects_bad_set_reducers () =
   Cljml.Compiler.compile_string {|(def x (reduce (fn [acc x] (str acc x)) 0 (hash-set 1 2)))|}
   |> expect_error "reduce function type does not match init and set"
 
+let test_set_map_and_filter_core_api () =
+  let source =
+    {|
+(def xs (hash-set 1 2 3))
+(def mapped (map (fn [x] (+ x 1)) xs))
+(def filtered (filter (fn [x] (> x 2)) mapped))
+(println (str (pr-str mapped) ":" (pr-str filtered)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "set_map_and_filter_core_api" "#{2 3 4}:#{3 4}\n" ocaml_source
+
+let test_set_map_rejects_function_type_mismatch () =
+  Cljml.Compiler.compile_string {|(def xs (map (fn [^:string x] x) (hash-set 1 2)))|}
+  |> expect_error "map function argument type does not match set"
+
+let test_set_filter_rejects_non_bool_predicates () =
+  Cljml.Compiler.compile_string {|(def xs (filter (fn [x] (+ x 1)) (hash-set 1 2)))|}
+  |> expect_error "filter expects a predicate matching set elements"
+
 let test_list_core_api () =
   let source =
     {|
@@ -1242,6 +1262,11 @@ let tests =
     ( "set sequence predicates reject bad predicates",
       test_set_sequence_predicates_reject_bad_predicates );
     ("reduce rejects bad set reducers", test_reduce_rejects_bad_set_reducers);
+    ("set map and filter core api works", test_set_map_and_filter_core_api);
+    ( "set map rejects function type mismatch",
+      test_set_map_rejects_function_type_mismatch );
+    ( "set filter rejects non-bool predicates",
+      test_set_filter_rejects_non_bool_predicates );
     ("list core api works", test_list_core_api);
     ("sequence core api works on lists", test_sequence_core_api_on_lists);
     ("range core api works", test_range_core_api);

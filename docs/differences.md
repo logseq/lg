@@ -105,8 +105,8 @@ Use `(list-of :int)`, `(list-of :string)`, `(list-of :keyword)`, `(list-of :bool
 Use `(set-of :int)`, `(set-of :string)`, `(set-of :keyword)`, `(set-of :bool)`, or `(set-of :nil)` for typed empty sets.
 
 Sets currently compile to sorted unique OCaml lists and support `hash-set`,
-`set-of`, `conj`, `disj`, `contains?`, `every?`, `not-any?`, `not-every?`, and
-`reduce`.
+`set-of`, `conj`, `disj`, `contains?`, `every?`, `not-any?`, `not-every?`,
+`map`, `filter`, and `reduce`.
 
 Keywords are statically distinct from strings, although the current runtime
 representation is still an OCaml string.
