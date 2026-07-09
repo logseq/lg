@@ -2194,6 +2194,9 @@ let test_parsetree_backend_builds_native_record_field_expressions () =
   expect_structured_value_expression
     {|(def user {:name "Ada", :age 36})(def age (get user :age))|}
 
+let test_parsetree_backend_builds_native_boolean_expressions () =
+  expect_structured_value_expression {|(def result (not false))|}
+
 let test_incremental_parsetree_backend_preserves_state () =
   let state = Cljml.Compiler.empty_state in
   let state, people_structure =
@@ -2532,6 +2535,8 @@ let tests =
       test_parsetree_backend_builds_native_comparison_expressions );
     ( "parsetree backend builds native record field expressions",
       test_parsetree_backend_builds_native_record_field_expressions );
+    ( "parsetree backend builds native boolean expressions",
+      test_parsetree_backend_builds_native_boolean_expressions );
     ( "incremental parsetree backend preserves state",
       test_incremental_parsetree_backend_preserves_state );
   ]

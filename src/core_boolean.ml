@@ -8,19 +8,19 @@ let one_arg name args =
 let type_predicate name predicate args =
   match one_arg name args with
   | Error _ as err -> err
-  | Ok arg -> Ok (typed TBool (string_of_bool (predicate arg.ty)))
+  | Ok arg -> Ok (typed_ir TBool (Ocaml_ir.Bool (predicate arg.ty)))
 
 let compile_not args =
   match one_arg "not" args with
   | Error _ as err -> err
   | Ok arg ->
-      let code =
+      let expression =
         match arg.ty with
-        | TBool -> "not (" ^ arg.code ^ ")"
-        | TNil -> "(let _ = " ^ arg.code ^ " in true)"
-        | _ -> "(let _ = " ^ arg.code ^ " in false)"
+        | TBool -> Ocaml_ir.Prefix ("not", arg.ocaml_expr)
+        | TNil -> Ocaml_ir.Sequence [ arg.ocaml_expr; Ocaml_ir.Bool true ]
+        | _ -> Ocaml_ir.Sequence [ arg.ocaml_expr; Ocaml_ir.Bool false ]
       in
-      Ok (typed TBool code)
+      Ok (typed_ir TBool expression)
 
 let compile_predicate name args expected_ty =
   type_predicate name (fun actual_ty -> Types.equal actual_ty expected_ty) args
@@ -33,8 +33,10 @@ let compile_bool_literal_predicate name args expected =
   | Error _ as err -> err
   | Ok arg ->
       if Types.equal arg.ty TBool then
-        Ok (typed TBool ("(" ^ arg.code ^ " = " ^ string_of_bool expected ^ ")"))
-      else Ok (typed TBool "false")
+        Ok
+          (typed_ir TBool
+             (Ocaml_ir.Infix ("=", arg.ocaml_expr, Ocaml_ir.Bool expected)))
+      else Ok (typed_ir TBool (Ocaml_ir.Bool false))
 
 let compile_type_predicate name predicate args = type_predicate name predicate args
 
