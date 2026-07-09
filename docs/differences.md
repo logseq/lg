@@ -67,6 +67,9 @@ Qualified symbols can reference previously compiled namespaces.
 
 Incremental compilation preserves namespace, alias, refer, type counter, and binding state across source chunks.
 
+Clojure symbols and keywords that would emit OCaml reserved words are munged as
+legal OCaml identifiers while preserving source-level names.
+
 ## Collections
 
 Vectors compile to `Rrbvec.t` persistent vectors.

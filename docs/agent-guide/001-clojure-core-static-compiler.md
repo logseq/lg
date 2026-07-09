@@ -194,6 +194,8 @@ Same-shaped structural maps compare field by field with `=` and `not=`.
 16. Add a ClojureDart-style compatibility document that records cljml differences from JVM Clojure.
 
 17. Treat symbol munging as a dedicated compiler module, not local string replacement.
+    `Names` owns source-to-OCaml identifier munging, including OCaml reserved
+    words and digit-leading generated names.
 
 18. Extend `ns` parsing to handle `:require` aliases and refers for cljml namespaces and OCaml package/module interop.
 

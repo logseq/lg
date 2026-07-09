@@ -1,3 +1,67 @@
+let ocaml_keywords =
+  [
+    "and";
+    "as";
+    "assert";
+    "begin";
+    "class";
+    "constraint";
+    "do";
+    "done";
+    "downto";
+    "else";
+    "end";
+    "exception";
+    "external";
+    "false";
+    "for";
+    "fun";
+    "function";
+    "functor";
+    "if";
+    "in";
+    "include";
+    "inherit";
+    "initializer";
+    "lazy";
+    "let";
+    "match";
+    "method";
+    "mod";
+    "module";
+    "mutable";
+    "new";
+    "nonrec";
+    "object";
+    "of";
+    "open";
+    "or";
+    "private";
+    "rec";
+    "sig";
+    "struct";
+    "then";
+    "to";
+    "true";
+    "try";
+    "type";
+    "val";
+    "virtual";
+    "when";
+    "while";
+    "with";
+  ]
+
+let legalize_ocaml_identifier candidate =
+  let candidate =
+    if candidate = "" then "value_"
+    else
+      match candidate.[0] with
+      | '0' .. '9' -> "value_" ^ candidate
+      | _ -> candidate
+  in
+  if List.mem candidate ocaml_keywords then candidate ^ "_" else candidate
+
 let sanitize_name name =
   let buffer = Buffer.create (String.length name) in
   String.iter
@@ -10,7 +74,7 @@ let sanitize_name name =
       | _ -> Buffer.add_char buffer '_')
     name;
   let candidate = Buffer.contents buffer in
-  if candidate = "" then "value_" else candidate
+  legalize_ocaml_identifier candidate
 
 let keyword_to_ocaml_name keyword =
   let raw =

@@ -40,6 +40,8 @@ The compiler infers record-like map shapes automatically:
 - `(update xs 0 inc)` updates a persistent vector index.
 - `(ns examples.person)` scopes unqualified symbols and avoids generated OCaml
   name collisions.
+- Clojure symbols and keywords that collide with OCaml reserved words are
+  munged when emitted as OCaml identifiers.
 - `(defn inc1 [x] (+ x 1))`, `(fn [x] ...)`, and `(let [...] ...)` are
   supported for typed function workflows.
 - Function parameter types are inferred from body constraints where possible.

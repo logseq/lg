@@ -314,6 +314,21 @@ let test_namespaces_prevent_unqualified_symbol_collisions () =
   assert_ocaml_runs "namespaces_prevent_unqualified_symbol_collisions" "1:2\n"
     ocaml_source
 
+let test_ocaml_keyword_names_are_munged () =
+  let source =
+    {|
+(def type 1)
+(def module 2)
+(defn bump [match] (+ match 1))
+(def record {:type "person", :module "core"})
+(println
+  (let [object (bump type)]
+    (str object ":" module ":" (:type record) ":" (:module record))))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "ocaml_keyword_names_are_munged" "2:2:person:core\n" ocaml_source
+
 let test_namespace_require_aliases () =
   let source =
     {|
@@ -1088,6 +1103,7 @@ let tests =
       test_namespaces_resolve_qualified_and_current_symbols );
     ( "namespaces prevent unqualified symbol collisions",
       test_namespaces_prevent_unqualified_symbol_collisions );
+    ("ocaml keyword names are munged", test_ocaml_keyword_names_are_munged);
     ("namespace require aliases work", test_namespace_require_aliases);
     ("namespace require refer works", test_namespace_require_refer);
     ( "namespace require refer rejects unknown symbols",
