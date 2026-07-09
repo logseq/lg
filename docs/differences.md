@@ -240,6 +240,9 @@ The integer core lowers arithmetic, division/remainder, `min`/`max`, bitwise
 operators, shifts, `inc`/`dec`, and integer predicates directly through the
 shared expression IR.
 
+Equality and ordered integer comparisons also lower directly. Record equality
+still uses the explicit fallback for individual field projections.
+
 The typed standard library also includes a `clojure.string` namespace that can
 be required with `:as` or `:refer`. Its current subset includes `blank?`,
 `capitalize`, `ends-with?`, `includes?`, `index-of`, `join`, `last-index-of`,

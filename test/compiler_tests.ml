@@ -2186,6 +2186,10 @@ let test_parsetree_backend_builds_native_integer_expressions () =
   expect_structured_value_expression
     {|(def result (bit-or (+ 1 2) (bit-shift-left 1 2)))|}
 
+let test_parsetree_backend_builds_native_comparison_expressions () =
+  expect_structured_value_expression
+    {|(def result (< 1 2 3))|}
+
 let test_incremental_parsetree_backend_preserves_state () =
   let state = Cljml.Compiler.empty_state in
   let state, people_structure =
@@ -2520,6 +2524,8 @@ let tests =
       test_parsetree_backend_builds_native_cond_expressions );
     ( "parsetree backend builds native integer expressions",
       test_parsetree_backend_builds_native_integer_expressions );
+    ( "parsetree backend builds native comparison expressions",
+      test_parsetree_backend_builds_native_comparison_expressions );
     ( "incremental parsetree backend preserves state",
       test_incremental_parsetree_backend_preserves_state );
   ]
