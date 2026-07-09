@@ -1573,6 +1573,50 @@ let test_map_rejects_non_function_argument () =
   Cljml.Compiler.compile_string {|(def xs (map 1 [1 2]))|}
   |> expect_error "map expects a function"
 
+let test_module_definitions_work () =
+  let source =
+    {|
+(module Math
+  (def answer 42)
+  (defn add2 [x] (+ x 2)))
+(module User
+  (def label "Ada")
+  (module Name
+    (defn greet [name] (str "hi " name))))
+(println (str (Math/add2 Math/answer) ":" User/label ":" (User.Name/greet "Grace")))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "module_definitions_work" "44:Ada:hi Grace\n" ocaml_source
+
+let test_module_definitions_reject_expressions () =
+  Cljml.Compiler.compile_string
+    {|
+(module Math
+  (println "side effect"))
+|}
+  |> expect_error "module forms must be def, defn, or module"
+
+let test_incremental_compilation_preserves_modules () =
+  let state = Cljml.Compiler.empty_state in
+  let state, module_ocaml =
+    Cljml.Compiler.compile_chunk state
+      {|
+(module Math
+  (defn add2 [x] (+ x 2)))
+|}
+    |> expect_ok
+  in
+  let _state, app_ocaml =
+    Cljml.Compiler.compile_chunk state
+      {|
+(println (Math/add2 40))
+|}
+    |> expect_ok
+  in
+  assert_ocaml_runs "incremental_compilation_preserves_modules" "42\n"
+    (module_ocaml ^ "\n\n" ^ app_ocaml)
+
 let test_incremental_compilation_preserves_state () =
   let state = Cljml.Compiler.empty_state in
   let state, people_ocaml =
@@ -1846,6 +1890,10 @@ let tests =
     ("peek rejects unsupported collections", test_peek_rejects_unsupported_collections);
     ("let rejects odd binding forms", test_let_rejects_odd_binding_forms);
     ("map rejects non-function argument", test_map_rejects_non_function_argument);
+    ("module definitions work", test_module_definitions_work);
+    ("module definitions reject expressions", test_module_definitions_reject_expressions);
+    ( "incremental compilation preserves modules",
+      test_incremental_compilation_preserves_modules );
     ( "incremental compilation preserves state",
       test_incremental_compilation_preserves_state );
     ( "incremental compilation requires prior state",

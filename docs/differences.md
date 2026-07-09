@@ -89,6 +89,11 @@ Incremental compilation preserves namespace, alias, refer, type counter, and bin
 
 Protocol signatures and implementations are preserved in the same incremental compiler state. Namespace aliases can qualify protocol method calls, for example `labels/label`, after the protocol namespace has been compiled and required.
 
+`module` emits an OCaml module and registers bindings for qualified calls such
+as `Math/add2`. The current static subset allows `def`, `defn`, and nested
+`module` forms inside a module. Module signatures, functors, `open`, and module
+aliases are not supported yet.
+
 Clojure symbols and keywords that would emit OCaml reserved words are munged as
 legal OCaml identifiers while preserving source-level names.
 

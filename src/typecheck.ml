@@ -2363,6 +2363,89 @@ let compile_extend_type current_ns env next_type receiver_keyword protocol_name 
       in
       loop env [] method_forms
 
+let module_binding_key module_path name = module_path ^ "/" ^ name
+
+let module_binding_ocaml_name module_path name =
+  Names.module_path_to_ocaml module_path ^ "." ^ Names.sanitize_name name
+
+let rec compile_module current_ns env next_type module_path module_segment forms =
+  let rec compile_module_form env public_bindings next_type code_parts = function
+    | FList [ FSymbol "def"; FSymbol name; expr_form ] -> (
+        match compile_expr module_path env expr_form with
+        | Error _ as err -> err
+        | Ok expr ->
+            let local_name = Names.sanitize_name name in
+            let key = module_binding_key module_path name in
+            let local_binding = { ocaml_name = local_name; ty = expr.ty } in
+            let public_binding =
+              { ocaml_name = module_binding_ocaml_name module_path name; ty = expr.ty }
+            in
+            (match expr.ty with
+            | TRecord fields -> (
+                match expr.record_values with
+                | None -> Error.error "internal error: record expression missing values"
+                | Some values ->
+                    let type_name = "t" ^ string_of_int next_type in
+                    let code =
+                      Codegen.emit_record_def local_name type_name fields values
+                    in
+                    Ok
+                      ( env @ [ (key, local_binding) ],
+                        public_bindings @ [ (key, public_binding) ],
+                        next_type + 1,
+                        code :: code_parts ))
+            | _ ->
+                Ok
+                  ( env @ [ (key, local_binding) ],
+                    public_bindings @ [ (key, public_binding) ],
+                    next_type,
+                    ("let " ^ local_name ^ " = " ^ expr.code) :: code_parts )))
+    | FList (FSymbol "defn" :: FSymbol name :: params :: body_forms) -> (
+        match compile_fn module_path env params body_forms with
+        | Error _ as err -> err
+        | Ok expr -> (
+            match expr.ty with
+            | TFn _ ->
+                let local_name = Names.sanitize_name name in
+                let key = module_binding_key module_path name in
+                let local_binding = { ocaml_name = local_name; ty = expr.ty } in
+                let public_binding =
+                  { ocaml_name = module_binding_ocaml_name module_path name; ty = expr.ty }
+                in
+                Ok
+                  ( env @ [ (key, local_binding) ],
+                    public_bindings @ [ (key, public_binding) ],
+                    next_type,
+                    ("let " ^ local_name ^ " = " ^ expr.code) :: code_parts )
+            | _ -> Error.error "defn body did not compile to a function"))
+    | FList (FSymbol "module" :: FSymbol nested_segment :: nested_forms) -> (
+        let nested_path = module_path ^ "." ^ nested_segment in
+        match compile_module current_ns env next_type nested_path nested_segment nested_forms with
+        | Error _ as err -> err
+        | Ok (_current_ns, nested_public_bindings, next_type, nested_code) ->
+            Ok
+              ( env @ nested_public_bindings,
+                public_bindings @ nested_public_bindings,
+                next_type,
+                nested_code :: code_parts ))
+    | _ -> Error.error "module forms must be def, defn, or module"
+  and loop env public_bindings next_type code_parts = function
+    | [] ->
+        let module_name = Names.module_segment_to_ocaml module_segment in
+        let body = code_parts |> List.rev |> String.concat "\n\n" in
+        Ok
+          ( current_ns,
+            public_bindings,
+            next_type,
+            "module " ^ module_name ^ " = struct\n" ^ body ^ "\nend" )
+    | form :: rest -> (
+        match compile_module_form env public_bindings next_type code_parts form with
+        | Error _ as err -> err
+        | Ok (env, public_bindings, next_type, code_parts) ->
+            loop env public_bindings next_type code_parts rest)
+  in
+  loop env [] next_type [] forms
+
 let compile_top_level current_ns env next_type = function
   | FList [ FSymbol "def"; FSymbol name; expr_form ] -> (
       match compile_expr current_ns env expr_form with
@@ -2411,6 +2494,11 @@ let compile_top_level current_ns env next_type = function
       :: method_forms) ->
       compile_extend_type current_ns env next_type receiver_keyword protocol_name
         method_forms
+  | FList (FSymbol "module" :: FSymbol module_name :: forms) -> (
+      match compile_module current_ns env next_type module_name module_name forms with
+      | Error _ as err -> err
+      | Ok (current_ns, module_bindings, next_type, code) ->
+          Ok (current_ns, env @ module_bindings, next_type, Emit code))
   | FList (FSymbol (("print" | "println") as name) :: args) -> (
       match compile_call current_ns env name args with
       | Error _ as err -> err

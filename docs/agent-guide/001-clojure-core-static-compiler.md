@@ -77,6 +77,7 @@ The compiler should support this syntax without macros.
 | `defn` | `(defn inc1 [x] (+ x 1))` | 2 |
 | Static protocols | `(defprotocol Labelled (label [x] :string))` | 3 |
 | Namespace form | `(ns app.main)` | 1 |
+| Module form | `(module Math (defn add2 [x] (+ x 2)))` | 3 |
 
 ## Core API Roadmap
 
@@ -124,6 +125,11 @@ implementation functions. The current subset supports scalar receiver type
 keywords such as `:int` and `:string`, checks implementation return types
 against the protocol signature, and dispatches method calls by the first
 argument's static type.
+
+Modules compile to OCaml modules. The current static subset supports `def`,
+`defn`, and nested `module` forms in module bodies, and qualified calls such as
+`Math/add2` resolve through the type environment. Module signatures and functors
+are out of scope for the current common subset.
 
 `subs` supports two- and three-argument typed string slicing.
 

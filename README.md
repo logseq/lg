@@ -41,6 +41,9 @@ The compiler infers record-like map shapes automatically:
 - `(update xs 0 inc)` updates a persistent vector index.
 - `(ns examples.person)` scopes unqualified symbols and avoids generated OCaml
   name collisions.
+- `(module Math (defn add2 [x] (+ x 2)))` emits an OCaml module, and
+  `Math/add2` resolves to that module binding. The current subset supports
+  `def`, `defn`, and nested `module` forms inside a module.
 - Clojure symbols and keywords that collide with OCaml reserved words are
   munged when emitted as OCaml identifiers.
 - `(defn inc1 [x] (+ x 1))`, `(fn [x] ...)`, and `(let [...] ...)` are

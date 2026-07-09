@@ -92,3 +92,14 @@ let namespaced_key current_ns name =
 let ocaml_binding_name current_ns name =
   if current_ns = "" then sanitize_name name
   else sanitize_name (current_ns ^ "_" ^ name)
+
+let module_segment_to_ocaml name =
+  let sanitized = sanitize_name name in
+  if sanitized = "" then "Module_"
+  else
+    String.make 1 (Char.uppercase_ascii sanitized.[0])
+    ^ String.sub sanitized 1 (String.length sanitized - 1)
+
+let module_path_to_ocaml path =
+  path |> String.split_on_char '.' |> List.map module_segment_to_ocaml
+  |> String.concat "."
