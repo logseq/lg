@@ -295,6 +295,32 @@ let test_ocaml_module_require_aliases () =
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "ocaml_module_require_aliases" "ADA:42\n" ocaml_source
 
+let test_typed_function_parameters () =
+  let source =
+    {|
+(defn inc1 [^:int x] (+ x 1))
+(defn greet [^:string name] (str "hi " name))
+(def mapped (map (fn [^:int x] (+ x 1)) [1 2]))
+(print (str (inc1 41) ":" (greet "Ada") ":" (nth mapped 1)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "typed_function_parameters" "42:hi Ada:3\n" ocaml_source
+
+let test_typed_function_parameters_reject_bad_calls () =
+  let source =
+    {|
+(defn inc1 [^:int x] (+ x 1))
+(def bad (inc1 "Ada"))
+|}
+  in
+  Cljml.Compiler.compile_string source
+  |> expect_error "inc1 called with incompatible arguments"
+
+let test_typed_function_parameters_reject_bad_bodies () =
+  Cljml.Compiler.compile_string {|(defn bad [^:string x] (+ x 1))|}
+  |> expect_error "expected int arguments for +"
+
 let test_vectors_reject_mixed_element_types () =
   Cljml.Compiler.compile_string {|(def xs [1 "two"])|}
   |> expect_error "vector elements must all have the same type"
@@ -393,6 +419,11 @@ let tests =
     ("typed empty vectors work", test_typed_empty_vectors);
     ("vector-of rejects unknown types", test_vector_of_rejects_unknown_types);
     ("ocaml module require aliases work", test_ocaml_module_require_aliases);
+    ("typed function parameters work", test_typed_function_parameters);
+    ( "typed function parameters reject bad calls",
+      test_typed_function_parameters_reject_bad_calls );
+    ( "typed function parameters reject bad bodies",
+      test_typed_function_parameters_reject_bad_bodies );
     ("vectors reject mixed element types", test_vectors_reject_mixed_element_types);
     ("arithmetic rejects non-int arguments", test_arithmetic_rejects_non_int_arguments);
     ("get rejects unknown map fields", test_get_rejects_unknown_map_fields);

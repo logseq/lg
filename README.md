@@ -29,6 +29,8 @@ The compiler infers record-like map shapes automatically:
   name collisions.
 - `(defn inc1 [x] (+ x 1))`, `(fn [x] ...)`, and `(let [...] ...)` are
   supported for typed function workflows.
+- Function parameters can use `^:int`, `^:string`, `^:bool`, or `^:nil`
+  annotations, for example `(fn [^:int x] (+ x 1))`.
 - `map`, `filter`, `reduce`, `apply`, `comp`, `partial`, `identity`, and
   `constantly` are supported for the current typed vector/function subset.
 - `hash-set`, `disj`, and `contains?` are supported for homogeneous sets.

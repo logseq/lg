@@ -22,6 +22,8 @@ Keyword call syntax such as `(:name user)` is supported for structural maps.
 
 `if` branches must have the same type.
 
+Function parameter annotations such as `^:int` and `^:string` are checked at function bodies and call sites.
+
 ## Macros
 
 Macros are not supported.
