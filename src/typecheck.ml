@@ -1,10 +1,6 @@
 open Ast
 open Types
 
-let ensure_int_args name args =
-  if List.for_all (fun arg -> Types.equal arg.ty TInt) args then Ok ()
-  else Error.error ("expected int arguments for " ^ name)
-
 let ensure_bool expr =
   if Types.equal expr.ty TBool then Ok () else Error.error "if condition must be bool"
 
@@ -522,13 +518,13 @@ and compile_call current_ns env name arg_forms =
       match compile_args () with
       | Error _ as err -> err
       | Ok args -> (
-          match ensure_int_args name args with
+          match Core_int.expect_int_args name args with
           | Error _ as err -> err
-          | Ok () -> compile_int_operator name args))
+          | Ok () -> Core_int.compile_operator name args))
   | "inc" ->
-      compile_unary_int current_ns env name (fun code -> "(" ^ code ^ " + 1)") arg_forms
+      compile_int_unary_call current_ns env name (fun code -> "(" ^ code ^ " + 1)") arg_forms
   | "dec" ->
-      compile_unary_int current_ns env name (fun code -> "(" ^ code ^ " - 1)") arg_forms
+      compile_int_unary_call current_ns env name (fun code -> "(" ^ code ^ " - 1)") arg_forms
   | "=" | "not=" | "<" | "<=" | ">" | ">=" -> (
       match compile_args () with
       | Error _ as err -> err
@@ -557,19 +553,23 @@ and compile_call current_ns env name arg_forms =
       | Error _ as err -> err
       | Ok args -> Core_predicate.compile name args)
   | "zero?" ->
-      compile_unary_int current_ns env name (fun code -> "(" ^ code ^ " = 0)") arg_forms
+      compile_int_unary_call current_ns env name (fun code -> "(" ^ code ^ " = 0)") arg_forms
       |> Result.map (fun expr -> { expr with ty = TBool })
   | "pos?" ->
-      compile_unary_int current_ns env name (fun code -> "(" ^ code ^ " > 0)") arg_forms
+      compile_int_unary_call current_ns env name (fun code -> "(" ^ code ^ " > 0)") arg_forms
       |> Result.map (fun expr -> { expr with ty = TBool })
   | "neg?" ->
-      compile_unary_int current_ns env name (fun code -> "(" ^ code ^ " < 0)") arg_forms
+      compile_int_unary_call current_ns env name (fun code -> "(" ^ code ^ " < 0)") arg_forms
       |> Result.map (fun expr -> { expr with ty = TBool })
   | "even?" ->
-      compile_unary_int current_ns env name (fun code -> "(" ^ code ^ " mod 2 = 0)") arg_forms
+      compile_int_unary_call current_ns env name
+        (fun code -> "(" ^ code ^ " mod 2 = 0)")
+        arg_forms
       |> Result.map (fun expr -> { expr with ty = TBool })
   | "odd?" ->
-      compile_unary_int current_ns env name (fun code -> "(" ^ code ^ " mod 2 <> 0)") arg_forms
+      compile_int_unary_call current_ns env name
+        (fun code -> "(" ^ code ^ " mod 2 <> 0)")
+        arg_forms
       |> Result.map (fun expr -> { expr with ty = TBool })
   | "int?" -> compile_type_predicate current_ns env name (function TInt -> true | _ -> false) arg_forms
   | "number?" ->
@@ -621,14 +621,25 @@ and compile_call current_ns env name arg_forms =
           in
           Ok (typed TString code))
   | "subs" -> compile_subs current_ns env arg_forms
-  | "max" | "min" -> compile_int_min_max current_ns env name arg_forms
-  | "quot" | "rem" | "mod" -> compile_binary_int current_ns env name arg_forms
+  | "max" | "min" -> (
+      match compile_args () with
+      | Error _ as err -> err
+      | Ok args -> Core_int.compile_min_max name args)
+  | "quot" | "rem" | "mod" -> (
+      match compile_args () with
+      | Error _ as err -> err
+      | Ok args -> Core_int.compile_binary name args)
   | "bit-and" | "bit-or" | "bit-xor" ->
-      compile_variadic_int_operator current_ns env name arg_forms
+      (match compile_args () with
+      | Error _ as err -> err
+      | Ok args -> Core_int.compile_variadic_bitwise name args)
   | "bit-not" ->
-      compile_unary_int current_ns env name (fun code -> "lnot (" ^ code ^ ")") arg_forms
+      compile_int_unary_call current_ns env name (fun code -> "lnot (" ^ code ^ ")")
+        arg_forms
   | "bit-shift-left" | "bit-shift-right" ->
-      compile_binary_int current_ns env name arg_forms
+      (match compile_args () with
+      | Error _ as err -> err
+      | Ok args -> Core_int.compile_binary name args)
   | "pr-str" -> (
       match compile_args () with
       | Error _ as err -> err
@@ -735,101 +746,10 @@ and compile_call current_ns env name arg_forms =
   | "empty" -> compile_empty_value current_ns env arg_forms
   | _ -> compile_named_function_call current_ns env name arg_forms
 
-and compile_int_operator name args =
-  match (name, args) with
-  | "+", [] -> Ok (typed TInt "0")
-  | "*", [] -> Ok (typed TInt "1")
-  | "/", ([] | [ _ ]) -> Error.error "/ expects at least 2 arguments"
-  | _, [] -> Error.error (name ^ " expects at least 1 arguments")
-  | _, [ arg ] when name = "-" -> Ok (typed TInt ("(-" ^ arg.code ^ ")"))
-  | _, [ arg ] -> Ok (typed TInt arg.code)
-  | _, first :: rest ->
-      let op =
-        match name with
-        | "+" -> " + "
-        | "-" -> " - "
-        | "*" -> " * "
-        | "/" -> " / "
-        | _ -> " "
-      in
-      let code =
-        rest |> List.fold_left (fun acc arg -> "(" ^ acc ^ op ^ arg.code ^ ")") first.code
-      in
-      Ok (typed TInt code)
-
-and compile_unary_int current_ns env name build_code arg_forms =
-  match arg_forms with
-  | [ form ] -> (
-      match compile_expr current_ns env form with
-      | Error _ as err -> err
-      | Ok arg ->
-          if Types.equal arg.ty TInt then Ok (typed TInt (build_code arg.code))
-          else Error.error ("expected int arguments for " ^ name))
-  | _ -> Error.error (name ^ " expects 1 arguments")
-
-and compile_binary_int current_ns env name arg_forms =
+and compile_int_unary_call current_ns env name build_code arg_forms =
   match compile_args_for current_ns env arg_forms with
   | Error _ as err -> err
-  | Ok [ left; right ] ->
-      if Types.equal left.ty TInt && Types.equal right.ty TInt then
-        let code =
-          match name with
-          | "quot" -> "(" ^ left.code ^ " / " ^ right.code ^ ")"
-          | "rem" -> "(" ^ left.code ^ " mod " ^ right.code ^ ")"
-          | "mod" ->
-              "(((" ^ left.code ^ " mod " ^ right.code ^ ") + " ^ right.code ^ ") mod "
-              ^ right.code ^ ")"
-          | "bit-shift-left" -> "(" ^ left.code ^ " lsl " ^ right.code ^ ")"
-          | "bit-shift-right" -> "(" ^ left.code ^ " asr " ^ right.code ^ ")"
-          | _ -> left.code
-        in
-        Ok (typed TInt code)
-      else Error.error ("expected int arguments for " ^ name)
-  | Ok _ -> Error.error (name ^ " expects 2 arguments")
-
-and compile_int_min_max current_ns env name arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [] -> Error.error (name ^ " expects at least 1 arguments")
-  | Ok args ->
-      if List.for_all (fun arg -> Types.equal arg.ty TInt) args then
-        let fn = if name = "max" then "max" else "min" in
-        let code =
-          match args with
-          | [] -> assert false
-          | first :: rest ->
-              rest
-              |> List.fold_left
-                   (fun acc arg -> fn ^ " (" ^ acc ^ ") (" ^ arg.code ^ ")")
-                   first.code
-        in
-        Ok (typed TInt code)
-      else Error.error ("expected int arguments for " ^ name)
-
-and compile_variadic_int_operator current_ns env name arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [] -> Error.error (name ^ " expects at least 1 arguments")
-  | Ok args ->
-      if List.for_all (fun arg -> Types.equal arg.ty TInt) args then
-        let op =
-          match name with
-          | "bit-and" -> "land"
-          | "bit-or" -> "lor"
-          | "bit-xor" -> "lxor"
-          | _ -> assert false
-        in
-        let code =
-          match args with
-          | [] -> assert false
-          | first :: rest ->
-              rest
-              |> List.fold_left
-                   (fun acc arg -> "(" ^ acc ^ " " ^ op ^ " " ^ arg.code ^ ")")
-                   first.code
-        in
-        Ok (typed TInt code)
-      else Error.error ("expected int arguments for " ^ name)
+  | Ok args -> Core_int.compile_unary name args build_code
 
 and compile_not current_ns env arg_forms =
   match compile_args_for current_ns env arg_forms with
