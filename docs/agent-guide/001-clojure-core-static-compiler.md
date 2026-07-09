@@ -155,7 +155,7 @@ Map literal types are structural records keyed by Clojure keywords.
 
 17. Treat symbol munging as a dedicated compiler module, not local string replacement.
 
-18. Extend `ns` parsing to handle `:require` aliases for OCaml package/module interop.
+18. Extend `ns` parsing to handle `:require` aliases and refers for cljml namespaces and OCaml package/module interop.
 
 19. Keep ClojureDart as a reference for non-JVM dialect ergonomics and compatibility documentation.
 
@@ -222,7 +222,7 @@ Keyword lookup syntax like `(:name user)` is supported in addition to `(get user
 
 Should Clojure sequence APIs be eager by default or backed by OCaml `Seq.t`.
 
-cljml mirrors ClojureDart's `ns` `:require` shape for a small typed OCaml host interop table, for example `[ocaml.String :as string]`.
+cljml mirrors ClojureDart's `ns` `:require` shape for a small typed OCaml host interop table, for example `[ocaml.String :as string]` or `[ocaml.String :refer [length]]`.
 
 ## Testing Details
 

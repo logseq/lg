@@ -964,20 +964,31 @@ let compile_top_level current_ns env next_type = function
       | Error _ as err -> err
       | Ok expr -> Ok (current_ns, env, next_type, Emit ("let () = " ^ expr.code)))
   | FList (FSymbol "ns" :: FSymbol namespace :: clauses) -> (
-      match Ns_require.parse_aliases clauses with
+      match Ns_require.parse_requires clauses with
       | Error _ as err -> err
-      | Ok aliases ->
-          let env =
-            aliases
-            |> List.fold_left
-                 (fun env (required_ns, alias) ->
-                   if String.starts_with ~prefix:"ocaml." required_ns then
-                     Ns_require.add_ocaml_alias_bindings env required_ns alias
-                   else
-                     Ns_require.add_namespace_alias_bindings env required_ns alias)
-                 env
+      | Ok specs ->
+          let rec apply_specs env = function
+            | [] -> Ok env
+            | Ns_require.Alias { namespace = required_ns; alias } :: rest ->
+                let env =
+                  if String.starts_with ~prefix:"ocaml." required_ns then
+                    Ns_require.add_ocaml_alias_bindings env required_ns alias
+                  else Ns_require.add_namespace_alias_bindings env required_ns alias
+                in
+                apply_specs env rest
+            | Ns_require.Refer { namespace = required_ns; names } :: rest ->
+                let result =
+                  if String.starts_with ~prefix:"ocaml." required_ns then
+                    Ns_require.add_ocaml_refer_bindings env namespace required_ns names
+                  else Ns_require.add_namespace_refer_bindings env namespace required_ns names
+                in
+                (match result with
+                | Error _ as err -> err
+                | Ok env -> apply_specs env rest)
           in
-          Ok (namespace, env, next_type, Emit ("(* ns " ^ namespace ^ " *)")))
+          (match apply_specs env specs with
+          | Error _ as err -> err
+          | Ok env -> Ok (namespace, env, next_type, Emit ("(* ns " ^ namespace ^ " *)"))))
   | _ -> Error.error "expected top-level def, print, println, or ns form"
 
 type state = {

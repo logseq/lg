@@ -275,6 +275,32 @@ let test_namespace_require_aliases () =
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "namespace_require_aliases" "Ada\n" ocaml_source
 
+let test_namespace_require_refer () =
+  let source =
+    {|
+(ns people.core)
+(def user {:name "Ada"})
+(defn shout [^:string name] (str name "!"))
+(ns app.main
+  (:require [people.core :refer [user shout]]))
+(println (shout (:name user)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "namespace_require_refer" "Ada!\n" ocaml_source
+
+let test_namespace_require_refer_rejects_unknown_symbol () =
+  let source =
+    {|
+(ns people.core)
+(def user {:name "Ada"})
+(ns app.main
+  (:require [people.core :refer [missing]]))
+|}
+  in
+  Cljml.Compiler.compile_string source
+  |> expect_error "cannot refer unknown symbol people.core/missing"
+
 let test_keyword_lookup_syntax () =
   let source =
     {|
@@ -312,6 +338,19 @@ let test_ocaml_module_require_aliases () =
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "ocaml_module_require_aliases" "ADA:42\n" ocaml_source
+
+let test_ocaml_module_require_refer () =
+  let source =
+    {|
+(ns host.demo
+  (:require [ocaml.Stdlib :refer [string-of-int]]
+            [ocaml.String :refer [uppercase-ascii]]))
+(def label (str (uppercase-ascii "ada") ":" (string-of-int 42)))
+(println label)
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "ocaml_module_require_refer" "ADA:42\n" ocaml_source
 
 let test_typed_function_parameters () =
   let source =
@@ -664,10 +703,14 @@ let tests =
     ( "namespaces prevent unqualified symbol collisions",
       test_namespaces_prevent_unqualified_symbol_collisions );
     ("namespace require aliases work", test_namespace_require_aliases);
+    ("namespace require refer works", test_namespace_require_refer);
+    ( "namespace require refer rejects unknown symbols",
+      test_namespace_require_refer_rejects_unknown_symbol );
     ("keyword lookup syntax works", test_keyword_lookup_syntax);
     ("typed empty vectors work", test_typed_empty_vectors);
     ("vector-of rejects unknown types", test_vector_of_rejects_unknown_types);
     ("ocaml module require aliases work", test_ocaml_module_require_aliases);
+    ("ocaml module require refer works", test_ocaml_module_require_refer);
     ("typed function parameters work", test_typed_function_parameters);
     ( "typed function parameters reject bad calls",
       test_typed_function_parameters_reject_bad_calls );

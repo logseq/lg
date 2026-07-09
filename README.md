@@ -47,6 +47,8 @@ The compiler infers record-like map shapes automatically:
   `constantly` are supported for the current typed collection/function subset.
 - `hash-set`, `disj`, and `contains?` are supported for homogeneous sets.
 - `(:require [some.ns :as alias])` can alias previously compiled namespaces.
+- `(:require [some.ns :refer [user]])` can refer previously compiled namespace
+  bindings into the current namespace.
 - `(:require [ocaml.String :as string])` can alias a small typed table of OCaml
   host functions.
 - `(:name user)` works as keyword lookup syntax for structural maps.

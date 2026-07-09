@@ -46,7 +46,9 @@ Qualified symbols can reference previously compiled namespaces.
 
 `(:require [some.ns :as alias])` aliases previously compiled namespace bindings.
 
-Incremental compilation preserves namespace, alias, type counter, and binding state across source chunks.
+`(:require [some.ns :refer [name]])` refers previously compiled namespace bindings into the current namespace.
+
+Incremental compilation preserves namespace, alias, refer, type counter, and binding state across source chunks.
 
 ## Collections
 
@@ -77,6 +79,6 @@ Sequence APIs are eager.
 
 Direct OCaml package interop is limited to an explicit typed host table.
 
-Currently supported examples include `ocaml.Stdlib` aliases for `string-of-int` and `int-of-string`, and `ocaml.String` aliases for `uppercase-ascii` and `length`.
+Currently supported examples include `ocaml.Stdlib` aliases or refers for `string-of-int` and `int-of-string`, and `ocaml.String` aliases or refers for `uppercase-ascii` and `length`.
 
 The planned direction follows ClojureDart's approach of making host package aliases explicit in `ns`.
