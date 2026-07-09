@@ -9,13 +9,15 @@ let validate_unique_keywords pairs =
   in
   loop [] pairs
 
-let field_code target field =
+let field_expr target field =
   match target.record_values with
   | Some values -> (
       match List.assoc_opt field values with
-      | Some code -> code
-      | None -> target.code ^ "." ^ field.ocaml_name)
-  | None -> target.code ^ "." ^ field.ocaml_name
+      | Some code -> Ocaml_ir.Raw code
+      | None -> Ocaml_ir.Field (target.ocaml_expr, field.ocaml_name))
+  | None -> Ocaml_ir.Field (target.ocaml_expr, field.ocaml_name)
+
+let field_code target field = field_expr target field |> Ocaml_ir.to_source
 
 let values_for target fields =
   List.map (fun (field : field) -> (field, field_code target field)) fields

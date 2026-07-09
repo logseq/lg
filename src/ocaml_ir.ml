@@ -24,6 +24,7 @@ type t =
   | Match of t * (pattern * t) list
   | Infix of string * t * t
   | Prefix of string * t
+  | Field of t * string
 
 let rec pattern_to_source = function
   | PVar name -> name
@@ -86,6 +87,7 @@ let rec to_source = function
       "(" ^ to_source left ^ " " ^ operator ^ " " ^ to_source right ^ ")"
   | Prefix (operator, expression) ->
       "(" ^ operator ^ " " ^ to_source expression ^ ")"
+  | Field (target, field_name) -> to_source target ^ "." ^ field_name
 
 let loc = Location.none
 let lid value = Location.mkloc value loc
@@ -276,3 +278,10 @@ and to_parsetree ~context = function
             (Ast_helper.Exp.apply ~loc
                (Ast_helper.Exp.ident ~loc (lid (longident_of_string operator)))
                [ (Asttypes.Nolabel, expression) ]))
+  | Field (target, field_name) -> (
+      match to_parsetree ~context target with
+      | Error _ as err -> err
+      | Ok target ->
+          Ok
+            (Ast_helper.Exp.field ~loc target
+               (lid (longident_of_string field_name))))

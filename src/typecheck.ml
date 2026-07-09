@@ -1031,7 +1031,10 @@ and compile_get current_ns env arg_forms =
           match target.ty with
           | TRecord fields -> (
               match find_field keyword fields with
-              | Some field -> Ok (typed field.ty (Structural_map.field_code target field))
+              | Some field ->
+                  Ok
+                    (typed_ir field.ty
+                       (Structural_map.field_expr target field))
               | None -> Error.error ("unknown field " ^ keyword))
           | _ -> Error.error "get expects a map"))
   | [ target_form; index_form ] -> (
@@ -1055,7 +1058,9 @@ and compile_get current_ns env arg_forms =
           | TRecord fields -> (
               match find_field keyword fields with
               | Some field when Types.equal field.ty default.ty ->
-                  Ok (typed field.ty (Structural_map.field_code target field))
+                  Ok
+                    (typed_ir field.ty
+                       (Structural_map.field_expr target field))
               | Some field ->
                   Error.error
                     ("get default for " ^ keyword ^ " must be " ^ source_name field.ty)
