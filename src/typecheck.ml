@@ -1324,13 +1324,22 @@ and compile_contains current_ns env arg_forms =
   let compile_collection_contains target value =
     match (target.ty, value.ty) with
     | TSet inner, _ when Types.equal inner value.ty ->
-        Ok (typed TBool ("List.mem (" ^ value.code ^ ") (" ^ target.code ^ ")"))
+        Ok
+          (typed_ir TBool
+             (Ocaml_ir.Apply
+                (Ocaml_ir.Ident "List.mem", [ value.ocaml_expr; target.ocaml_expr ])))
     | TSet _, _ -> Error.error "contains? value type must match set element type"
     | TVector _, TInt ->
         Ok
-          (typed TBool
-             ("((" ^ value.code ^ ") >= 0 && (" ^ value.code ^ ") < Rrbvec.length ("
-            ^ target.code ^ "))"))
+          (typed_ir TBool
+             (Ocaml_ir.Infix
+                ( "&&",
+                  Ocaml_ir.Infix (">=", value.ocaml_expr, Ocaml_ir.Int 0),
+                  Ocaml_ir.Infix
+                    ( "<",
+                      value.ocaml_expr,
+                      Ocaml_ir.Apply
+                        (Ocaml_ir.Ident "Rrbvec.length", [ target.ocaml_expr ]) ) )))
     | TVector _, _ -> Error.error "contains? vector index must be int"
     | _ -> Error.error "contains? expects a map, set, or vector"
   in
@@ -1341,10 +1350,12 @@ and compile_contains current_ns env arg_forms =
       | Ok target -> (
           match target.ty with
           | TRecord fields ->
-              Ok (typed TBool (string_of_bool (Option.is_some (find_field keyword fields))))
+              Ok
+                (typed_ir TBool
+                   (Ocaml_ir.Bool (Option.is_some (find_field keyword fields))))
           | _ ->
               compile_collection_contains target
-                (typed TKeyword (Codegen.ocaml_string_literal keyword))))
+                (typed_ir TKeyword (Ocaml_ir.String keyword))))
   | target_form :: value_form :: [] -> (
       match (compile_expr current_ns env target_form, compile_expr current_ns env value_form) with
       | (Error _ as err), _ -> err
