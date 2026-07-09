@@ -305,6 +305,7 @@ and compile_call current_ns env name arg_forms =
   | "into" -> compile_into current_ns env arg_forms
   | "take" -> compile_take_drop current_ns env "take" arg_forms
   | "drop" -> compile_take_drop current_ns env "drop" arg_forms
+  | "reverse" -> compile_reverse current_ns env arg_forms
   | "map" -> compile_map_call current_ns env arg_forms
   | "filter" -> compile_filter current_ns env arg_forms
   | "reduce" -> compile_reduce current_ns env arg_forms
@@ -1046,6 +1047,16 @@ and compile_take_drop current_ns env name arg_forms =
             Ok (typed collection.ty ("Rrbvec.of_list (" ^ code ^ ")"))
         | _ -> Error.error (name ^ " expects a list or vector"))
   | Ok _ -> Error.error (name ^ " expects count and collection")
+
+and compile_reverse current_ns env arg_forms =
+  match compile_args_for current_ns env arg_forms with
+  | Error _ as err -> err
+  | Ok [ collection ] -> (
+      match collection.ty with
+      | TList _ -> Ok (typed collection.ty ("List.rev (" ^ collection.code ^ ")"))
+      | TVector _ -> Ok (typed collection.ty ("Rrbvec.rev (" ^ collection.code ^ ")"))
+      | _ -> Error.error "reverse expects a list or vector")
+  | Ok _ -> Error.error "reverse expects 1 arguments"
 
 and compile_map_call current_ns env arg_forms =
   match arg_forms with

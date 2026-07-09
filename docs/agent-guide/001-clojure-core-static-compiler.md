@@ -87,7 +87,7 @@ The compiler should support this syntax without macros.
 | Maps | `hash-map`, `get`, `assoc`, `dissoc`, `merge`, `update`, `select-keys`, `contains?`, `keys`, `vals` | 1 |
 | Vectors | `vector`, `conj`, `count`, `nth`, `get`, `assoc`, `update`, `contains?`, `subvec`, `first`, `second`, `last`, `peek`, `pop`, `rest` | 1 |
 | Lists | `list`, `list-of`, `cons`, `conj`, `count`, `nth`, `first`, `second`, `last`, `peek`, `pop`, `rest` | 2 |
-| Sequences | `seq`, `empty`, `empty?`, `into`, `take`, `drop`, `map`, `filter`, `reduce` | 2 |
+| Sequences | `seq`, `empty`, `empty?`, `into`, `take`, `drop`, `reverse`, `map`, `filter`, `reduce` | 2 |
 | Functions | `apply`, `comp`, `partial`, `identity`, `constantly` | 2 |
 | Sets | `hash-set`, `contains?`, `disj` | 3 |
 
@@ -118,6 +118,8 @@ List types are homogeneous as `list<T>` and compile to OCaml lists.
 the element types match.
 
 `take` and `drop` return same-typed list or vector slices.
+
+`reverse` returns a same-typed reversed list or vector.
 
 Map literal types are structural records keyed by Clojure keywords.
 

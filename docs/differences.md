@@ -84,6 +84,8 @@ the element types match.
 
 `take` and `drop` return same-typed list or vector slices.
 
+`reverse` returns a same-typed reversed list or vector.
+
 Empty vector literals still require explicit element typing.
 
 Use `(vector-of :int)`, `(vector-of :string)`, `(vector-of :bool)`, or `(vector-of :nil)` for typed empty vectors.

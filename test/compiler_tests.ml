@@ -804,6 +804,21 @@ let test_take_and_drop_reject_unsupported_collections () =
   Cljml.Compiler.compile_string {|(def x (drop 1 (hash-set 1)))|}
   |> expect_error "drop expects a list or vector"
 
+let test_reverse_core_api () =
+  let source =
+    {|
+(def xs [1 2 3])
+(def ys (list 1 2 3))
+(println (str (pr-str (reverse xs)) ":" (pr-str (reverse ys))))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "reverse_core_api" "[3 2 1]:(3 2 1)\n" ocaml_source
+
+let test_reverse_rejects_unsupported_collections () =
+  Cljml.Compiler.compile_string {|(def x (reverse (hash-set 1)))|}
+  |> expect_error "reverse expects a list or vector"
+
 let test_empty_core_api () =
   let source =
     {|
@@ -1046,6 +1061,8 @@ let tests =
     ("take and drop reject non-int counts", test_take_and_drop_reject_non_int_counts);
     ( "take and drop reject unsupported collections",
       test_take_and_drop_reject_unsupported_collections );
+    ("reverse core api works", test_reverse_core_api);
+    ("reverse rejects unsupported collections", test_reverse_rejects_unsupported_collections);
     ("empty core api works", test_empty_core_api);
     ("empty rejects unsupported values", test_empty_rejects_unsupported_values);
     ("into core api works", test_into_core_api);

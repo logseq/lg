@@ -25,7 +25,7 @@ let rec stringify_expr ?(pr = false) expr =
         | _ -> {|(fun _ -> "<value>")|}
       in
       {|("(" ^ String.concat " " (List.map |}
-      ^ mapper ^ " " ^ expr.code ^ {|) ^ ")")|}
+      ^ mapper ^ " (" ^ expr.code ^ {|)) ^ ")")|}
   | TVector inner ->
       let mapper =
         match inner with
@@ -53,7 +53,7 @@ let rec stringify_expr ?(pr = false) expr =
         | TNil -> {|(fun _ -> "nil")|}
         | _ -> {|(fun _ -> "<value>")|}
       in
-      {|("#{" ^ String.concat " " (List.map |} ^ mapper ^ " " ^ expr.code ^ {|) ^ "}")|}
+      {|("#{" ^ String.concat " " (List.map |} ^ mapper ^ " (" ^ expr.code ^ {|)) ^ "}")|}
   | TFn _ -> {|"<function>"|}
   | TRecord fields -> (
       match expr.record_values with
