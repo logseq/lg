@@ -321,6 +321,7 @@ and compile_call current_ns env name arg_forms =
   | "identity" -> compile_identity current_ns env arg_forms
   | "constantly" -> compile_constantly current_ns env arg_forms
   | "hash-set" -> compile_hash_set current_ns env arg_forms
+  | "set-of" -> compile_set_of arg_forms
   | "disj" -> compile_disj current_ns env arg_forms
   | "empty" -> compile_empty_value current_ns env arg_forms
   | _ -> compile_named_function_call current_ns env name arg_forms
@@ -1369,6 +1370,14 @@ and compile_hash_set current_ns env arg_forms =
                     else Error.error "hash-set elements must all have the same type")
           in
           loop [ first_expr.code ] rest)
+
+and compile_set_of arg_forms =
+  match arg_forms with
+  | [ FKeyword keyword ] -> (
+      match Type_annotation.of_keyword keyword with
+      | Error _ -> Error.error ("unknown set element type " ^ keyword)
+      | Ok element_ty -> Ok (typed (TSet element_ty) "[]"))
+  | _ -> Error.error "set-of expects one type keyword"
 
 and compile_disj current_ns env arg_forms =
   match compile_args_for current_ns env arg_forms with

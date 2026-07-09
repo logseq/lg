@@ -89,7 +89,7 @@ The compiler should support this syntax without macros.
 | Lists | `list`, `list-of`, `cons`, `conj`, `count`, `nth`, `first`, `second`, `last`, `peek`, `pop`, `rest` | 2 |
 | Sequences | `seq`, `empty`, `empty?`, `into`, `take`, `drop`, `reverse`, `range`, `every?`, `not-any?`, `not-every?`, `map`, `filter`, `reduce` | 2 |
 | Functions | `apply`, `comp`, `partial`, `identity`, `constantly` | 2 |
-| Sets | `hash-set`, `contains?`, `disj` | 3 |
+| Sets | `hash-set`, `set-of`, `contains?`, `disj` | 3 |
 
 ## Type System
 
@@ -256,7 +256,8 @@ Arithmetic should reject strings, bools, vectors, maps, nil, and unit.
 
 Should cljml eventually use a persistent map library in addition to `Rrbvec` for vectors.
 
-Empty vectors currently use explicit helper annotations such as `(vector-of :int)`.
+Empty collections can use explicit helper annotations such as `(vector-of :int)`,
+`(list-of :int)`, and `(set-of :int)`.
 
 Keyword lookup syntax like `(:name user)` is supported in addition to `(get user :name)`.
 

@@ -68,7 +68,8 @@ The compiler infers record-like map shapes automatically:
 - `take` and `drop` return same-typed list or vector slices.
 - `reverse` returns a same-typed reversed list or vector.
 - `every?`, `not-any?`, and `not-every?` work on typed lists and vectors.
-- `hash-set`, `disj`, and `contains?` are supported for homogeneous sets.
+- `hash-set`, `set-of`, `disj`, and `contains?` are supported for homogeneous
+  sets.
 - `(:require [some.ns :as alias])` can alias previously compiled namespaces.
 - `(:require [some.ns :refer [user]])` can refer previously compiled namespace
   bindings into the current namespace.
@@ -78,6 +79,7 @@ The compiler infers record-like map shapes automatically:
 - `(keys user)` returns a persistent vector of keyword values.
 - `(vector-of :int)` creates an explicitly typed empty persistent vector.
 - `(list-of :int)` creates an explicitly typed empty list.
+- `(set-of :int)` creates an explicitly typed empty set.
 - Updating an existing field with a different type is rejected.
 - `Cljml.Compiler.compile_chunk` supports incremental compilation by returning
   the next compiler state plus the OCaml emitted for the current source chunk.

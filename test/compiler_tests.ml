@@ -933,6 +933,23 @@ let test_into_rejects_element_type_mismatch () =
   Cljml.Compiler.compile_string {|(def x (into [1] ["two"]))|}
   |> expect_error "into source element type must match target element type"
 
+let test_typed_empty_sets () =
+  let source =
+    {|
+(def xs (set-of :int))
+(def ys (into xs [1 2 2 3]))
+(def zs (disj ys 2))
+(println (str (empty? xs) ":" (count ys) ":" (contains? ys 2) ":"
+              (contains? zs 2) ":" (pr-str zs)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "typed_empty_sets" "true:3:true:false:#{1 3}\n" ocaml_source
+
+let test_set_of_rejects_unknown_types () =
+  Cljml.Compiler.compile_string {|(def xs (set-of :record))|}
+  |> expect_error "unknown set element type :record"
+
 let test_nth_supports_default_values () =
   let source =
     {|
@@ -1160,6 +1177,8 @@ let tests =
     ("empty rejects unsupported values", test_empty_rejects_unsupported_values);
     ("into core api works", test_into_core_api);
     ("into rejects element type mismatch", test_into_rejects_element_type_mismatch);
+    ("typed empty sets work", test_typed_empty_sets);
+    ("set-of rejects unknown types", test_set_of_rejects_unknown_types);
     ("nth supports default values", test_nth_supports_default_values);
     ("nth rejects default type mismatch", test_nth_rejects_default_type_mismatch);
     ("typed empty lists work", test_typed_empty_lists);

@@ -99,6 +99,8 @@ Use `(vector-of :int)`, `(vector-of :string)`, `(vector-of :bool)`, or `(vector-
 
 Use `(list-of :int)`, `(list-of :string)`, `(list-of :bool)`, or `(list-of :nil)` for typed empty lists.
 
+Use `(set-of :int)`, `(set-of :string)`, `(set-of :bool)`, or `(set-of :nil)` for typed empty sets.
+
 Sets currently compile to sorted unique OCaml lists.
 
 Keywords are statically distinct from strings, although the current runtime
