@@ -934,6 +934,54 @@ let test_batched_core_functions_infer_int_params () =
   Cljml.Compiler.compile_string source
   |> expect_error "shifted called with incompatible arguments"
 
+let test_batched_numeric_scalar_core_functions_work () =
+  let source =
+    {|
+(println
+  (str (integer? 1) ":" (integer? "1") ":"
+       (nat-int? 0) ":" (nat-int? -1) ":" (nat-int? "0") ":"
+       (pos-int? 1) ":" (pos-int? 0) ":"
+       (neg-int? -1) ":" (neg-int? 0) ":"
+       (boolean true) ":" (boolean false) ":" (boolean nil) ":" (boolean "x") ":"
+       (bit-set 0 2) ":" (bit-clear 7 1) ":" (bit-flip 4 2) ":"
+       (bit-test 4 2) ":" (bit-test 4 1) ":" (bit-shift-right-zero-fill -1 1) ":"
+       (unchecked-add 1 2) ":" (unchecked-add-int 1 2) ":"
+       (unchecked-subtract 5 3) ":" (unchecked-subtract-int 5 3) ":"
+       (unchecked-multiply 3 4) ":" (unchecked-multiply-int 3 4) ":"
+       (unchecked-divide-int 7 2) ":" (unchecked-remainder-int 7 2) ":"
+       (unchecked-inc 4) ":" (unchecked-inc-int 4) ":"
+       (unchecked-dec 4) ":" (unchecked-dec-int 4) ":"
+       (unchecked-negate 4) ":" (unchecked-negate-int 4) ":"
+       (name :user/name) ":" (name "Ada") ":" (keyword "admin?") ":" (keyword :ready)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "batched_numeric_scalar_core_functions_work"
+    "true:false:true:false:false:true:false:true:false:true:false:false:true:4:5:0:true:false:4611686018427387903:3:3:2:2:12:12:3:1:5:5:3:3:-4:-4:name:Ada::admin?::ready\n"
+    ocaml_source
+
+let test_batched_numeric_scalar_core_functions_reject_non_int_bit_args () =
+  Cljml.Compiler.compile_string {|(def x (bit-set 1 "2"))|}
+  |> expect_error "expected int arguments for bit-set"
+
+let test_batched_numeric_scalar_core_functions_reject_unchecked_arity () =
+  Cljml.Compiler.compile_string {|(def x (unchecked-add 1))|}
+  |> expect_error "unchecked-add expects 2 arguments"
+
+let test_batched_numeric_scalar_core_functions_reject_bad_name_arg () =
+  Cljml.Compiler.compile_string {|(def x (name 1))|}
+  |> expect_error "name expects keyword or string"
+
+let test_batched_numeric_scalar_core_functions_infer_int_params () =
+  let source =
+    {|
+(defn clear-second [x] (bit-clear x 1))
+(def bad (clear-second "7"))
+|}
+  in
+  Cljml.Compiler.compile_string source
+  |> expect_error "clear-second called with incompatible arguments"
+
 let test_batched_sequence_functions_work () =
   let source =
     {|
@@ -1528,6 +1576,16 @@ let tests =
       test_batched_core_functions_reject_bad_arities );
     ( "batched core functions infer int params",
       test_batched_core_functions_infer_int_params );
+    ( "batched numeric/scalar core functions work",
+      test_batched_numeric_scalar_core_functions_work );
+    ( "batched numeric/scalar core functions reject non-int bit args",
+      test_batched_numeric_scalar_core_functions_reject_non_int_bit_args );
+    ( "batched numeric/scalar core functions reject unchecked arity",
+      test_batched_numeric_scalar_core_functions_reject_unchecked_arity );
+    ( "batched numeric/scalar core functions reject bad name arg",
+      test_batched_numeric_scalar_core_functions_reject_bad_name_arg );
+    ( "batched numeric/scalar core functions infer int params",
+      test_batched_numeric_scalar_core_functions_infer_int_params );
     ("batched sequence functions work", test_batched_sequence_functions_work);
     ( "batched sequence functions reject type mismatch",
       test_batched_sequence_functions_reject_type_mismatch );

@@ -57,15 +57,21 @@ The compiler infers record-like map shapes automatically:
   forms such as `(when flag (println "ready"))` can appear at file scope.
 - `print` writes without a trailing newline; `println` writes with a trailing
   newline.
-- `int?`, `string?`, `keyword?`, `boolean?`, `vector?`, `list?`, `seq?`,
-  `set?`, `map?`, `number?`, `fn?`, `coll?`, `associative?`, `indexed?`,
-  `seqable?`, and `counted?` are supported as static type predicates.
+- `int?`, `integer?`, `number?`, `nat-int?`, `pos-int?`, `neg-int?`,
+  `string?`, `keyword?`, `boolean?`, `vector?`, `list?`, `seq?`, `set?`,
+  `map?`, `fn?`, `coll?`, `associative?`, `indexed?`, `seqable?`, and
+  `counted?` are supported as static type predicates.
+- `boolean`, `name`, and `keyword` are supported for the current scalar subset.
 - `subs` supports two- and three-argument typed string slicing.
 - `+`, `*`, `-`, `/`, ordered comparisons, `=`, and `not=` follow
   Clojure-style arities where the current type system can represent them.
 - `zero?`, `pos?`, `neg?`, `even?`, `odd?`, `max`, `min`, `quot`, `rem`,
   `mod`, `bit-and`, `bit-or`, `bit-xor`, `bit-not`, `bit-shift-left`, and
   `bit-shift-right` are supported for integers.
+- `bit-set`, `bit-clear`, `bit-flip`, `bit-test`, `bit-shift-right-zero-fill`,
+  and unchecked integer aliases such as `unchecked-add`, `unchecked-add-int`,
+  `unchecked-inc`, and `unchecked-negate-int` compile to OCaml integer
+  operations.
 - `=` and `not=` compare same-shaped structural maps field by field.
 - `range` produces an eager typed integer list.
 - `list`, `list-of`, `cons`, `second`, `last`, `peek`, `pop`, `map`,

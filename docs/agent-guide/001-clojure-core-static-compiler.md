@@ -83,9 +83,10 @@ The compiler should support this syntax without macros.
 | Category | Functions | Phase |
 | --- | --- | --- |
 | Printing | `print`, `println`, `pr-str` | 1 |
-| Boolean and predicates | `not`, `true?`, `false?`, `nil?`, `some?`, `int?`, `number?`, `string?`, `keyword?`, `boolean?`, `vector?`, `list?`, `seq?`, `set?`, `map?`, `fn?`, `coll?`, `associative?`, `indexed?`, `seqable?`, `counted?` | 1 |
-| Arithmetic | `+`, `-`, `*`, `/`, `inc`, `dec`, `<`, `<=`, `>`, `>=`, `=`, `not=`, `zero?`, `pos?`, `neg?`, `even?`, `odd?`, `max`, `min`, `quot`, `rem`, `mod`, `bit-and`, `bit-or`, `bit-xor`, `bit-not`, `bit-shift-left`, `bit-shift-right` | 1 |
+| Boolean and predicates | `not`, `true?`, `false?`, `nil?`, `some?`, `boolean`, `int?`, `integer?`, `number?`, `nat-int?`, `pos-int?`, `neg-int?`, `string?`, `keyword?`, `boolean?`, `vector?`, `list?`, `seq?`, `set?`, `map?`, `fn?`, `coll?`, `associative?`, `indexed?`, `seqable?`, `counted?` | 1 |
+| Arithmetic | `+`, `-`, `*`, `/`, `inc`, `dec`, `<`, `<=`, `>`, `>=`, `=`, `not=`, `zero?`, `pos?`, `neg?`, `even?`, `odd?`, `max`, `min`, `quot`, `rem`, `mod`, `bit-and`, `bit-or`, `bit-xor`, `bit-not`, `bit-set`, `bit-clear`, `bit-flip`, `bit-test`, `bit-shift-left`, `bit-shift-right`, `bit-shift-right-zero-fill`, `unchecked-add`, `unchecked-add-int`, `unchecked-subtract`, `unchecked-subtract-int`, `unchecked-multiply`, `unchecked-multiply-int`, `unchecked-divide-int`, `unchecked-remainder-int`, `unchecked-inc`, `unchecked-inc-int`, `unchecked-dec`, `unchecked-dec-int`, `unchecked-negate`, `unchecked-negate-int` | 1 |
 | Strings | `str`, `subs` | 1 |
+| Scalars | `name`, `keyword` | 1 |
 | Maps | `hash-map`, `get`, `assoc`, `dissoc`, `merge`, `update`, `select-keys`, `contains?`, `keys`, `vals` | 1 |
 | Vectors | `vector`, `conj`, `count`, `nth`, `get`, `assoc`, `update`, `contains?`, `subvec`, `first`, `second`, `last`, `peek`, `pop`, `rest` | 1 |
 | Lists | `list`, `list-of`, `cons`, `conj`, `count`, `nth`, `first`, `second`, `last`, `peek`, `pop`, `rest` | 2 |
@@ -105,6 +106,10 @@ Arithmetic starts as integer-only; ratio-producing Clojure arities such as unary
 Type predicates are resolved from static cljml types. This includes scalar
 predicates and collection capability predicates such as `coll?`,
 `associative?`, `indexed?`, `seqable?`, and `counted?`.
+
+Scalar helpers such as `boolean`, `name`, and `keyword` are implemented for the
+types currently represented in cljml. Unchecked integer operations lower
+directly to OCaml integer operators.
 
 `if-not`, `when`, and `cond` are compiler-recognized forms in the static core.
 `cond` requires an `:else` branch until cljml has a union type for implicit nil.

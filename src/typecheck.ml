@@ -330,6 +330,16 @@ and compile_call current_ns env name arg_forms =
   | "some?" -> compile_some_predicate current_ns env arg_forms
   | "true?" -> compile_bool_literal_predicate current_ns env name arg_forms true
   | "false?" -> compile_bool_literal_predicate current_ns env name arg_forms false
+  | "integer?" | "nat-int?" | "pos-int?" | "neg-int?" | "boolean" | "bit-set"
+  | "bit-clear" | "bit-flip" | "bit-test" | "bit-shift-right-zero-fill"
+  | "unchecked-add" | "unchecked-add-int" | "unchecked-subtract"
+  | "unchecked-subtract-int" | "unchecked-multiply" | "unchecked-multiply-int"
+  | "unchecked-divide-int" | "unchecked-remainder-int" | "unchecked-inc"
+  | "unchecked-inc-int" | "unchecked-dec" | "unchecked-dec-int"
+  | "unchecked-negate" | "unchecked-negate-int" | "name" | "keyword" -> (
+      match compile_args () with
+      | Error _ as err -> err
+      | Ok args -> Core_scalar.compile name args)
   | "zero?" ->
       compile_unary_int current_ns env name (fun code -> "(" ^ code ^ " = 0)") arg_forms
       |> Result.map (fun expr -> { expr with ty = TBool })

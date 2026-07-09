@@ -46,13 +46,16 @@ Top-level expression forms are supported and emit `let _ = ...`; top-level map l
 
 `print` and `println` follow Clojure's newline behavior.
 
-Type predicates such as `int?`, `string?`, `keyword?`, `boolean?`, `vector?`,
-`list?`, `seq?`, `set?`, `map?`, `number?`, `fn?`, `coll?`, `associative?`,
-`indexed?`, `seqable?`, and `counted?` are resolved from static cljml types.
+Type predicates such as `int?`, `integer?`, `number?`, `nat-int?`, `pos-int?`,
+`neg-int?`, `string?`, `keyword?`, `boolean?`, `vector?`, `list?`, `seq?`,
+`set?`, `map?`, `fn?`, `coll?`, `associative?`, `indexed?`, `seqable?`, and
+`counted?` are resolved from static cljml types or direct OCaml integer checks.
 
 `subs` supports two- and three-argument typed string slicing.
 
-Arithmetic is currently integer-only. `+` and `*` support Clojure identity arities, ordered comparisons can be chained, same-typed `=` and `not=` are supported, same-shaped structural maps compare field by field, and `/` requires at least two integer arguments because cljml does not yet have ratios. Integer helpers include `zero?`, `pos?`, `neg?`, `even?`, `odd?`, `max`, `min`, `quot`, `rem`, `mod`, `bit-and`, `bit-or`, `bit-xor`, `bit-not`, `bit-shift-left`, and `bit-shift-right`.
+Arithmetic is currently integer-only. `+` and `*` support Clojure identity arities, ordered comparisons can be chained, same-typed `=` and `not=` are supported, same-shaped structural maps compare field by field, and `/` requires at least two integer arguments because cljml does not yet have ratios. Integer helpers include `zero?`, `pos?`, `neg?`, `even?`, `odd?`, `max`, `min`, `quot`, `rem`, `mod`, `bit-and`, `bit-or`, `bit-xor`, `bit-not`, `bit-set`, `bit-clear`, `bit-flip`, `bit-test`, `bit-shift-left`, `bit-shift-right`, and `bit-shift-right-zero-fill`. Unchecked integer functions map directly to OCaml integer operators, so their exact overflow behavior follows the OCaml target.
+
+`boolean`, `name`, and `keyword` are supported for the current scalar subset. `name` works on strings and keywords, and `keyword` works on strings and keywords.
 
 ## Macros
 

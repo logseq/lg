@@ -93,12 +93,56 @@ let infer_params ~lookup_function_ty params body_forms =
           | "min"
           | "bit-and"
           | "bit-or"
-          | "bit-xor" )
+          | "bit-xor"
+          | "unchecked-add"
+          | "unchecked-add-int"
+          | "unchecked-subtract"
+          | "unchecked-subtract-int"
+          | "unchecked-multiply"
+          | "unchecked-multiply-int" )
         :: args) ->
         infer_expected_all TInt params args
-    | FList [ FSymbol ("inc" | "dec" | "zero?" | "pos?" | "neg?" | "even?" | "odd?" | "bit-not"); arg ] ->
+    | FList
+        [
+          FSymbol
+            ( "inc"
+            | "dec"
+            | "zero?"
+            | "pos?"
+            | "neg?"
+            | "even?"
+            | "odd?"
+            | "nat-int?"
+            | "pos-int?"
+            | "neg-int?"
+            | "bit-not"
+            | "unchecked-inc"
+            | "unchecked-inc-int"
+            | "unchecked-dec"
+            | "unchecked-dec-int"
+            | "unchecked-negate"
+            | "unchecked-negate-int" );
+          arg;
+        ] ->
         infer_expected TInt params arg
-    | FList [ FSymbol ("quot" | "rem" | "mod" | "bit-shift-left" | "bit-shift-right"); left; right ] -> (
+    | FList
+        [
+          FSymbol
+            ( "quot"
+            | "rem"
+            | "mod"
+            | "bit-shift-left"
+            | "bit-shift-right"
+            | "bit-set"
+            | "bit-clear"
+            | "bit-flip"
+            | "bit-test"
+            | "bit-shift-right-zero-fill"
+            | "unchecked-divide-int"
+            | "unchecked-remainder-int" );
+          left;
+          right;
+        ] -> (
         match infer_expected TInt params left with
         | Error _ as err -> err
         | Ok params -> infer_expected TInt params right)
