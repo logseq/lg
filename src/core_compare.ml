@@ -10,8 +10,7 @@ let rec equality_expr left right =
                  {
                    ty = field.ty;
                    code = Structural_map.field_code left field;
-                   ocaml_expr =
-                     Ocaml_ir.Raw (Structural_map.field_code left field);
+                   ocaml_expr = Structural_map.field_expr left field;
                    record_values = None;
                  }
                in
@@ -19,8 +18,7 @@ let rec equality_expr left right =
                  {
                    ty = field.ty;
                    code = Structural_map.field_code right field;
-                   ocaml_expr =
-                     Ocaml_ir.Raw (Structural_map.field_code right field);
+                   ocaml_expr = Structural_map.field_expr right field;
                    record_values = None;
                  }
                in
