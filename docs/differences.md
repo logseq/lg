@@ -42,6 +42,8 @@ Qualified symbols can reference previously compiled namespaces.
 
 `(:require [some.ns :as alias])` aliases previously compiled namespace bindings.
 
+Incremental compilation preserves namespace, alias, type counter, and binding state across source chunks.
+
 ## Collections
 
 Vectors compile to `Rrbvec.t` persistent vectors.

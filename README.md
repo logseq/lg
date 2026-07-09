@@ -42,6 +42,8 @@ The compiler infers record-like map shapes automatically:
 - `(:name user)` works as keyword lookup syntax for structural maps.
 - `(vector-of :int)` creates an explicitly typed empty persistent vector.
 - Updating an existing field with a different type is rejected.
+- `Cljml.Compiler.compile_chunk` supports incremental compilation by returning
+  the next compiler state plus the OCaml emitted for the current source chunk.
 
 See [docs/differences.md](docs/differences.md) for current differences from
 JVM Clojure.

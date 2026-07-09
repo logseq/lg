@@ -858,13 +858,33 @@ let compile_top_level current_ns env next_type = function
           Ok (namespace, env, next_type, Emit ("(* ns " ^ namespace ^ " *)")))
   | _ -> Error.error "expected top-level def, print, println, or ns form"
 
-let compile_forms forms =
+type state = {
+  current_ns : string;
+  env : (string * binding) list;
+  next_type : int;
+  items : compiled_item list;
+}
+
+let empty_state = { current_ns = ""; env = []; next_type = 1; items = [] }
+
+let compile_forms_incremental state forms =
   let rec loop current_ns env next_type items = function
-    | [] -> Ok (List.rev items)
+    | [] -> Ok (current_ns, env, next_type, List.rev items)
     | form :: rest -> (
         match compile_top_level current_ns env next_type form with
         | Error _ as err -> err
         | Ok (current_ns, env, next_type, item) ->
             loop current_ns env next_type (item :: items) rest)
   in
-  loop "" [] 1 [] forms
+  match loop state.current_ns state.env state.next_type [] forms with
+  | Error _ as err -> err
+  | Ok (current_ns, env, next_type, new_items) ->
+      let next_state =
+        { current_ns; env; next_type; items = state.items @ new_items }
+      in
+      Ok (next_state, new_items)
+
+let compile_forms forms =
+  match compile_forms_incremental empty_state forms with
+  | Error _ as err -> err
+  | Ok (_state, items) -> Ok items

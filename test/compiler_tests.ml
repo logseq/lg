@@ -11,6 +11,13 @@ let expect_error expected = function
         failwith
           (Printf.sprintf "expected error %S, got %S" expected err.message)
 
+let expect_error_value expected = function
+  | Ok _ -> failwith "expected compilation error, got successful result"
+  | Error (err : Cljml.Compiler.compile_error) ->
+      if err.message <> expected then
+        failwith
+          (Printf.sprintf "expected error %S, got %S" expected err.message)
+
 let assert_equal_string expected actual =
   if actual <> expected then
     failwith (Printf.sprintf "expected:\n%s\nactual:\n%s" expected actual)
@@ -421,6 +428,38 @@ let test_map_rejects_non_function_argument () =
   Cljml.Compiler.compile_string {|(def xs (map 1 [1 2]))|}
   |> expect_error "map expects a function"
 
+let test_incremental_compilation_preserves_state () =
+  let state = Cljml.Compiler.empty_state in
+  let state, people_ocaml =
+    Cljml.Compiler.compile_chunk state
+      {|
+(ns people.core)
+(def user {:name "Ada", :age 36})
+|}
+    |> expect_ok
+  in
+  let _state, app_ocaml =
+    Cljml.Compiler.compile_chunk state
+      {|
+(ns app.main
+  (:require [people.core :as p]))
+(def updated (assoc p/user :admin? true))
+(print (str (:name updated) ":" (:admin? updated) ":" (:age updated)))
+|}
+    |> expect_ok
+  in
+  assert_ocaml_runs "incremental_compilation_preserves_state"
+    "Ada:true:36\n" (people_ocaml ^ "\n\n" ^ app_ocaml)
+
+let test_incremental_compilation_requires_prior_state () =
+  Cljml.Compiler.compile_chunk Cljml.Compiler.empty_state
+    {|
+(ns app.main
+  (:require [people.core :as p]))
+(print (:name p/user))
+|}
+  |> expect_error_value "unknown symbol p/user"
+
 let tests =
   [
     ("records, assoc, and dissoc generate typed OCaml", test_records_assoc_and_dissoc);
@@ -459,6 +498,10 @@ let tests =
     ("set core api works", test_set_core_api);
     ("let rejects odd binding forms", test_let_rejects_odd_binding_forms);
     ("map rejects non-function argument", test_map_rejects_non_function_argument);
+    ( "incremental compilation preserves state",
+      test_incremental_compilation_preserves_state );
+    ( "incremental compilation requires prior state",
+      test_incremental_compilation_requires_prior_state );
   ]
 
 let () =
