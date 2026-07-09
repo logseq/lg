@@ -203,6 +203,13 @@ Direct OCaml package interop is limited to an explicit typed host table.
 
 Currently supported examples include `ocaml.Stdlib` aliases or refers for `string-of-int` and `int-of-string`, and `ocaml.String` aliases or refers for `uppercase-ascii` and `length`.
 
+The stable backend still emits OCaml source from cljml's typed IR. The
+Parsetree backend is currently a skeleton for ReasonML-style integration:
+`Cljml.Compiler.compile_parsetree` type checks cljml first, lowers through the
+current OCaml source backend, parses the generated source into
+`Parsetree.structure`, and lets OCaml printer/tooling consume that structure.
+Parsetree is a backend representation here, not cljml's full type system.
+
 The typed standard library also includes a `clojure.string` namespace that can
 be required with `:as` or `:refer`. Its current subset includes `blank?`,
 `capitalize`, `ends-with?`, `includes?`, `index-of`, `join`, `last-index-of`,

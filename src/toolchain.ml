@@ -8,6 +8,12 @@ type typed_result = {
   items : Types.compiled_item list;
 }
 
+type parsetree_result = {
+  ast : Ast.form list;
+  items : Types.compiled_item list;
+  structure : Parsetree.structure;
+}
+
 type state = Typecheck.state
 
 module type FRONTEND = sig
@@ -29,7 +35,17 @@ module Cljml_frontend : FRONTEND = struct
 end
 
 module Ocaml_backend : BACKEND = struct
-  let implementation typed = Codegen.emit_program typed.items
+  let implementation (typed : typed_result) = Codegen.emit_program typed.items
+end
+
+module Ocaml_parsetree_backend = struct
+  let implementation typed =
+    let source = Ocaml_backend.implementation typed in
+    match Ocaml_parsetree.parse_implementation source with
+    | Error _ as err -> err
+    | Ok structure -> Ok { ast = typed.ast; items = typed.items; structure }
+
+  let print = Ocaml_parsetree.print_implementation
 end
 
 let empty_state = Typecheck.empty_state
@@ -51,6 +67,19 @@ let implementation source =
       match typecheck parsed with
       | Error _ as err -> err
       | Ok typed -> Ok (Ocaml_backend.implementation typed))
+
+let implementation_parsetree source =
+  match Cljml_frontend.implementation source with
+  | Error _ as err -> err
+  | Ok parsed -> (
+      match typecheck parsed with
+      | Error _ as err -> err
+      | Ok typed -> (
+          match Ocaml_parsetree_backend.implementation typed with
+          | Error _ as err -> err
+          | Ok result -> Ok result.structure))
+
+let print_parsetree = Ocaml_parsetree_backend.print
 
 let compile_chunk state source =
   match Cljml_frontend.implementation source with

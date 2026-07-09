@@ -1909,6 +1909,21 @@ let test_incremental_compilation_preserves_protocols () =
   assert_ocaml_runs "incremental_compilation_preserves_protocols" "int:42\n"
     (protocol_ocaml ^ "\n\n" ^ call_ocaml)
 
+let test_parsetree_backend_prints_runnable_ocaml () =
+  let source =
+    {|
+(def user {:name "Ada", :age 36})
+(println (str (:name user) ":" (:age user)))
+|}
+  in
+  let structure = Cljml.Compiler.compile_parsetree source |> expect_ok in
+  let ocaml_source = Cljml.Compiler.print_parsetree structure in
+  assert_ocaml_runs "parsetree_backend_prints_runnable_ocaml" "Ada:36\n" ocaml_source
+
+let test_parsetree_backend_preserves_static_errors () =
+  Cljml.Compiler.compile_parsetree {|(def x (+ 1 "two"))|}
+  |> expect_error_value "expected int arguments for +"
+
 let tests =
   [
     ("records, assoc, and dissoc generate typed OCaml", test_records_assoc_and_dissoc);
@@ -2175,6 +2190,10 @@ let tests =
       test_incremental_compilation_requires_prior_state );
     ( "incremental compilation preserves protocols",
       test_incremental_compilation_preserves_protocols );
+    ( "parsetree backend prints runnable ocaml",
+      test_parsetree_backend_prints_runnable_ocaml );
+    ( "parsetree backend preserves static errors",
+      test_parsetree_backend_preserves_static_errors );
   ]
 
 let () =

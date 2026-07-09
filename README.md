@@ -4,6 +4,17 @@
 The current backend emits OCaml, so generated programs can be checked by the
 OCaml compiler and can later interoperate with OCaml packages.
 
+The compiler pipeline is intentionally split into cljml syntax and typing
+first, then OCaml lowering:
+
+- cljml has its own Lisp AST and typed IR for static Clojure-like semantics.
+- The OCaml source backend remains the stable output path.
+- `Cljml.Compiler.compile_parsetree` is the first Parsetree backend skeleton:
+  it lowers the typed result to OCaml source, parses that source into
+  `Parsetree.structure`, and lets OCaml's printer/tooling consume the result.
+- Parsetree is not used as cljml's full type system, and this direction does
+  not introduce nilable sequences or lazy seqs.
+
 Supported prototype forms:
 
 ```clojure
