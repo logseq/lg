@@ -297,11 +297,14 @@ and compile_call current_ns env name arg_forms =
   | _ -> compile_named_function_call current_ns env name arg_forms
 
 and compile_int_operator name args =
-  match args with
-  | [] -> Error.error (name ^ " expects at least 1 arguments")
-  | [ arg ] when name = "-" -> Ok (typed TInt ("(-" ^ arg.code ^ ")"))
-  | [ arg ] -> Ok (typed TInt arg.code)
-  | first :: rest ->
+  match (name, args) with
+  | "+", [] -> Ok (typed TInt "0")
+  | "*", [] -> Ok (typed TInt "1")
+  | "/", ([] | [ _ ]) -> Error.error "/ expects at least 2 arguments"
+  | _, [] -> Error.error (name ^ " expects at least 1 arguments")
+  | _, [ arg ] when name = "-" -> Ok (typed TInt ("(-" ^ arg.code ^ ")"))
+  | _, [ arg ] -> Ok (typed TInt arg.code)
+  | _, first :: rest ->
       let op =
         match name with
         | "+" -> " + "
@@ -328,15 +331,24 @@ and compile_unary_int current_ns env name build_code arg_forms =
 and compile_comparison current_ns env name arg_forms =
   match compile_args_for current_ns env arg_forms with
   | Error _ as err -> err
-  | Ok [ left; right ] ->
+  | Ok ([] | [ _ ]) -> Ok (typed TBool "true")
+  | Ok args ->
+      let pairwise_codes op args =
+        let rec loop acc = function
+          | left :: ((right :: _) as rest) ->
+              loop (("(" ^ left.code ^ " " ^ op ^ " " ^ right.code ^ ")") :: acc) rest
+          | _ -> List.rev acc
+        in
+        loop [] args
+      in
       if name = "=" then
-        if Types.equal left.ty right.ty then
-          Ok (typed TBool ("(" ^ left.code ^ " = " ^ right.code ^ ")"))
+        let first = List.hd args in
+        if List.for_all (fun arg -> Types.equal first.ty arg.ty) args then
+          Ok (typed TBool (String.concat " && " (pairwise_codes "=" args)))
         else Error.error "= arguments must have the same type"
-      else if Types.equal left.ty TInt && Types.equal right.ty TInt then
-        Ok (typed TBool ("(" ^ left.code ^ " " ^ name ^ " " ^ right.code ^ ")"))
+      else if List.for_all (fun arg -> Types.equal arg.ty TInt) args then
+        Ok (typed TBool (String.concat " && " (pairwise_codes name args)))
       else Error.error ("expected int arguments for " ^ name)
-  | Ok _ -> Error.error (name ^ " expects 2 arguments")
 
 and compile_not current_ns env arg_forms =
   match compile_args_for current_ns env arg_forms with

@@ -37,6 +37,8 @@ The compiler infers record-like map shapes automatically:
   forms are evaluated for effects and the final form supplies the value.
 - `print` writes without a trailing newline; `println` writes with a trailing
   newline.
+- `+`, `*`, `-`, `/`, and chained comparisons follow Clojure-style arities
+  where the current integer-only type system can represent them.
 - `list`, `list-of`, `cons`, `map`, `filter`, `reduce`, `apply`, `comp`,
   `partial`, `identity`, and `constantly` are supported for the current typed
   collection/function subset.

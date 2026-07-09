@@ -28,6 +28,8 @@ Function parameter types are inferred from body constraints where possible; anno
 
 `print` and `println` follow Clojure's newline behavior.
 
+Arithmetic is currently integer-only. `+` and `*` support Clojure identity arities, comparisons can be chained, and `/` requires at least two integer arguments because cljml does not yet have ratios.
+
 ## Macros
 
 Macros are not supported.

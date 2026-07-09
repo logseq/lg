@@ -402,6 +402,28 @@ let test_arithmetic_rejects_non_int_arguments () =
   Cljml.Compiler.compile_string {|(def x (+ 1 "two"))|}
   |> expect_error "expected int arguments for +"
 
+let test_arithmetic_core_arities () =
+  let source =
+    {|
+(println (str (+) ":" (*) ":" (+ 1 2 3) ":" (- 5) ":" (- 10 3 2) ":" (/ 8 2 2)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "arithmetic_core_arities" "0:1:6:-5:5:2\n" ocaml_source
+
+let test_integer_division_rejects_unsupported_arities () =
+  Cljml.Compiler.compile_string {|(def x (/ 10))|}
+  |> expect_error "/ expects at least 2 arguments"
+
+let test_chained_comparisons () =
+  let source =
+    {|
+(println (str (< 1 2 3) ":" (< 1 3 2) ":" (= 1 1 1) ":" (= 1 1 2)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "chained_comparisons" "true:false:true:false\n" ocaml_source
+
 let test_get_rejects_unknown_map_fields () =
   let source = {|(def user {:name "Ada"})(def x (get user :age))|} in
   Cljml.Compiler.compile_string source |> expect_error "unknown field :age"
@@ -585,6 +607,10 @@ let tests =
     ("fn rejects empty body", test_fn_rejects_empty_body);
     ("vectors reject mixed element types", test_vectors_reject_mixed_element_types);
     ("arithmetic rejects non-int arguments", test_arithmetic_rejects_non_int_arguments);
+    ("arithmetic core arities work", test_arithmetic_core_arities);
+    ( "integer division rejects unsupported arities",
+      test_integer_division_rejects_unsupported_arities );
+    ("chained comparisons work", test_chained_comparisons);
     ("get rejects unknown map fields", test_get_rejects_unknown_map_fields);
     ("if rejects branch type mismatch", test_if_rejects_branch_type_mismatch);
     ("let, defn, and fn values work", test_let_defn_and_fn_values);
