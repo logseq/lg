@@ -303,6 +303,8 @@ and compile_call current_ns env name arg_forms =
   | "seq" -> compile_seq current_ns env arg_forms
   | "empty?" -> compile_empty current_ns env arg_forms
   | "into" -> compile_into current_ns env arg_forms
+  | "take" -> compile_take_drop current_ns env "take" arg_forms
+  | "drop" -> compile_take_drop current_ns env "drop" arg_forms
   | "map" -> compile_map_call current_ns env arg_forms
   | "filter" -> compile_filter current_ns env arg_forms
   | "reduce" -> compile_reduce current_ns env arg_forms
@@ -1013,6 +1015,37 @@ and compile_into current_ns env arg_forms =
               Error.error "into source element type must match target element type"
           | _ -> Error.error "into target must be a collection"))
   | Ok _ -> Error.error "into expects target and source collections"
+
+and take_list_code count_code list_code =
+  "(let rec take n xs = if n <= 0 then [] else match xs with [] -> [] | x :: rest -> x :: take (n - 1) rest in take ("
+  ^ count_code ^ ") (" ^ list_code ^ "))"
+
+and drop_list_code count_code list_code =
+  "(let rec drop n xs = if n <= 0 then xs else match xs with [] -> [] | _ :: rest -> drop (n - 1) rest in drop ("
+  ^ count_code ^ ") (" ^ list_code ^ "))"
+
+and compile_take_drop current_ns env name arg_forms =
+  match compile_args_for current_ns env arg_forms with
+  | Error _ as err -> err
+  | Ok [ count; collection ] -> (
+      if not (Types.equal count.ty TInt) then Error.error (name ^ " count must be int")
+      else
+        match collection.ty with
+        | TList _ ->
+            let code =
+              if name = "take" then take_list_code count.code collection.code
+              else drop_list_code count.code collection.code
+            in
+            Ok (typed collection.ty code)
+        | TVector _ ->
+            let list_code = "Rrbvec.to_list (" ^ collection.code ^ ")" in
+            let code =
+              if name = "take" then take_list_code count.code list_code
+              else drop_list_code count.code list_code
+            in
+            Ok (typed collection.ty ("Rrbvec.of_list (" ^ code ^ ")"))
+        | _ -> Error.error (name ^ " expects a list or vector"))
+  | Ok _ -> Error.error (name ^ " expects count and collection")
 
 and compile_map_call current_ns env arg_forms =
   match arg_forms with

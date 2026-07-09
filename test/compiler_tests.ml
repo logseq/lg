@@ -783,6 +783,27 @@ let test_sequence_core_api_on_lists () =
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "sequence_core_api_on_lists" "2:4:2:6\n" ocaml_source
 
+let test_take_and_drop_core_api () =
+  let source =
+    {|
+(def xs [1 2 3 4])
+(def ys (list 1 2 3 4))
+(println (str (pr-str (take 2 xs)) ":" (pr-str (drop 2 xs)) ":"
+              (pr-str (take 9 ys)) ":" (pr-str (drop 9 ys))))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "take_and_drop_core_api" "[1 2]:[3 4]:(1 2 3 4):()\n"
+    ocaml_source
+
+let test_take_and_drop_reject_non_int_counts () =
+  Cljml.Compiler.compile_string {|(def x (take "2" [1 2]))|}
+  |> expect_error "take count must be int"
+
+let test_take_and_drop_reject_unsupported_collections () =
+  Cljml.Compiler.compile_string {|(def x (drop 1 (hash-set 1)))|}
+  |> expect_error "drop expects a list or vector"
+
 let test_empty_core_api () =
   let source =
     {|
@@ -1021,6 +1042,10 @@ let tests =
     ("set core api works", test_set_core_api);
     ("list core api works", test_list_core_api);
     ("sequence core api works on lists", test_sequence_core_api_on_lists);
+    ("take and drop core api works", test_take_and_drop_core_api);
+    ("take and drop reject non-int counts", test_take_and_drop_reject_non_int_counts);
+    ( "take and drop reject unsupported collections",
+      test_take_and_drop_reject_unsupported_collections );
     ("empty core api works", test_empty_core_api);
     ("empty rejects unsupported values", test_empty_rejects_unsupported_values);
     ("into core api works", test_into_core_api);
