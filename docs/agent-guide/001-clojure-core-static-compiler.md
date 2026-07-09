@@ -83,15 +83,15 @@ The compiler should support this syntax without macros.
 | Category | Functions | Phase |
 | --- | --- | --- |
 | Printing | `print`, `println`, `pr-str` | 1 |
-| Boolean and predicates | `not`, `true?`, `false?`, `nil?`, `some?`, `boolean`, `int?`, `integer?`, `number?`, `nat-int?`, `pos-int?`, `neg-int?`, `string?`, `keyword?`, `boolean?`, `vector?`, `list?`, `seq?`, `set?`, `map?`, `fn?`, `coll?`, `associative?`, `indexed?`, `seqable?`, `counted?` | 1 |
+| Boolean and predicates | `not`, `true?`, `false?`, `nil?`, `some?`, `boolean`, `int?`, `integer?`, `number?`, `nat-int?`, `pos-int?`, `neg-int?`, `string?`, `keyword?`, `boolean?`, `vector?`, `list?`, `seq?`, `set?`, `map?`, `fn?`, `coll?`, `associative?`, `indexed?`, `seqable?`, `counted?`, `any?`, `rational?`, `ratio?`, `float?`, `double?`, `decimal?`, `simple-keyword?`, `qualified-keyword?`, `ident?`, `simple-ident?`, `qualified-ident?`, `sequential?`, `reversible?`, `sorted?` | 1 |
 | Arithmetic | `+`, `-`, `*`, `/`, `inc`, `dec`, `<`, `<=`, `>`, `>=`, `=`, `not=`, `zero?`, `pos?`, `neg?`, `even?`, `odd?`, `max`, `min`, `quot`, `rem`, `mod`, `bit-and`, `bit-or`, `bit-xor`, `bit-not`, `bit-set`, `bit-clear`, `bit-flip`, `bit-test`, `bit-shift-left`, `bit-shift-right`, `bit-shift-right-zero-fill`, `unchecked-add`, `unchecked-add-int`, `unchecked-subtract`, `unchecked-subtract-int`, `unchecked-multiply`, `unchecked-multiply-int`, `unchecked-divide-int`, `unchecked-remainder-int`, `unchecked-inc`, `unchecked-inc-int`, `unchecked-dec`, `unchecked-dec-int`, `unchecked-negate`, `unchecked-negate-int` | 1 |
 | Strings | `str`, `subs`, `clojure.string/blank?`, `clojure.string/capitalize`, `clojure.string/ends-with?`, `clojure.string/includes?`, `clojure.string/index-of`, `clojure.string/join`, `clojure.string/last-index-of`, `clojure.string/lower-case`, `clojure.string/re-quote-replacement`, `clojure.string/replace`, `clojure.string/replace-first`, `clojure.string/reverse`, `clojure.string/split`, `clojure.string/split-lines`, `clojure.string/starts-with?`, `clojure.string/trim`, `clojure.string/trim-newline`, `clojure.string/triml`, `clojure.string/trimr`, `clojure.string/upper-case` | 1 |
 | Scalars | `name`, `keyword` | 1 |
 | Maps | `hash-map`, `get`, `assoc`, `dissoc`, `merge`, `update`, `select-keys`, `contains?`, `keys`, `vals` | 1 |
 | Vectors | `vector`, `conj`, `count`, `nth`, `get`, `assoc`, `update`, `contains?`, `subvec`, `first`, `second`, `last`, `peek`, `pop`, `rest` | 1 |
 | Lists | `list`, `list-of`, `cons`, `conj`, `count`, `nth`, `first`, `second`, `last`, `peek`, `pop`, `rest` | 2 |
-| Sequences | `seq`, `empty`, `empty?`, `into`, `take`, `drop`, `reverse`, `range`, `every?`, `not-any?`, `not-every?`, `map`, `filter`, `remove`, `take-while`, `drop-while`, `distinct`, `dedupe`, `sort`, `concat`, `vec`, `set`, `repeat`, `repeatedly`, `interpose`, `interleave`, `partition`, `partition-all`, `reductions`, `map-indexed`, `filterv`, `mapv`, `reduce`, `reduce-kv` | 2 |
-| Functions | `apply`, `comp`, `partial`, `identity`, `constantly` | 2 |
+| Sequences | `seq`, `empty`, `empty?`, `into`, `take`, `drop`, `reverse`, `range`, `every?`, `not-any?`, `not-every?`, `map`, `filter`, `remove`, `take-while`, `drop-while`, `distinct`, `dedupe`, `sort`, `concat`, `vec`, `set`, `repeat`, `repeatedly`, `interpose`, `interleave`, `partition`, `partition-all`, `reductions`, `map-indexed`, `filterv`, `mapv`, `reduce`, `reduce-kv`, `butlast`, `take-last`, `drop-last`, `take-nth`, `split-at`, `split-with`, `partition-by`, `bounded-count`, `dorun`, `doall` | 2 |
+| Functions | `apply`, `comp`, `partial`, `identity`, `constantly`, `run!` | 2 |
 | Sets | `hash-set`, `set-of`, `conj`, `contains?`, `disj` | 3 |
 | Protocols | `defprotocol`, `extend-type`, static method dispatch by receiver type | 3 |
 
@@ -105,7 +105,9 @@ Arithmetic starts as integer-only; ratio-producing Clojure arities such as unary
 
 Type predicates are resolved from static cljml types. This includes scalar
 predicates and collection capability predicates such as `coll?`,
-`associative?`, `indexed?`, `seqable?`, and `counted?`.
+`associative?`, `indexed?`, `seqable?`, `counted?`, `sequential?`,
+`reversible?`, and `sorted?`. Numeric tower predicates currently reflect the
+integer-only runtime.
 
 Scalar helpers such as `boolean`, `name`, and `keyword` are implemented for the
 types currently represented in cljml. Unchecked integer operations lower
@@ -157,7 +159,9 @@ Sequence APIs are eager in the current runtime. The compiler prefers concrete
 typed lists, vectors, and sets over lazy seq objects until the type system has a
 dedicated sequence abstraction.
 
-`map`, `filter`, and `reduce` operate eagerly over lists, vectors, and sets.
+`map`, `filter`, `reduce`, `butlast`, `take-last`, `drop-last`, `take-nth`,
+`split-at`, `split-with`, `partition-by`, `bounded-count`, `dorun`, `doall`,
+and `run!` operate eagerly over concrete typed collections.
 
 `apply` supports integer binary reducers over typed lists, vectors, and sets.
 

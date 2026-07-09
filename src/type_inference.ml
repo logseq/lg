@@ -57,6 +57,9 @@ let infer_params ~lookup_function_ty params body_forms =
           | Ok params -> loop params rest)
     in
     loop params forms
+  and infer_collection params = function
+    | FSymbol name -> constrain_symbol (TVector TAny) params name
+    | form -> infer_form params form
   and infer_known_call name params args =
     match lookup_function_ty name with
     | Ok (TFn (param_tys, _ret)) when List.length param_tys = List.length args ->
@@ -184,6 +187,34 @@ let infer_params ~lookup_function_ty params body_forms =
                   | Ok params -> infer_clauses params rest))
         in
         infer_clauses params clauses
+    | FList
+        [
+          FSymbol "split-with";
+          FList (FSymbol "fn" :: _fn_params :: [ body_form ]);
+          collection;
+        ] -> (
+        match infer_expected TBool params body_form with
+        | Error _ as err -> err
+        | Ok params -> infer_collection params collection)
+    | FList
+        [
+          FSymbol "partition-by";
+          FList (FSymbol "fn" :: _fn_params :: body_forms);
+          collection;
+        ] -> (
+        match infer_all params body_forms with
+        | Error _ as err -> err
+        | Ok params -> infer_collection params collection)
+    | FList [ FSymbol ("butlast" | "dorun" | "doall"); collection ] ->
+        infer_collection params collection
+    | FList [ FSymbol ("take-last" | "drop-last" | "take-nth" | "split-at" | "bounded-count"); count; collection ] -> (
+        match infer_expected TInt params count with
+        | Error _ as err -> err
+        | Ok params -> infer_collection params collection)
+    | FList [ FSymbol "run!"; FList (FSymbol "fn" :: _fn_params :: body_forms); collection ] -> (
+        match infer_all params body_forms with
+        | Error _ as err -> err
+        | Ok params -> infer_collection params collection)
     | FList (FSymbol "do" :: body_forms) -> infer_all params body_forms
     | FList (FSymbol "let" :: bindings :: body_forms) ->
         infer_let params bindings body_forms

@@ -1,2 +1,3 @@
 (library
- (name cljml))
+ (name cljml)
+ (libraries rrbvec))

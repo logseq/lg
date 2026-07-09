@@ -60,7 +60,11 @@ The compiler infers record-like map shapes automatically:
 - `int?`, `integer?`, `number?`, `nat-int?`, `pos-int?`, `neg-int?`,
   `string?`, `keyword?`, `boolean?`, `vector?`, `list?`, `seq?`, `set?`,
   `map?`, `fn?`, `coll?`, `associative?`, `indexed?`, `seqable?`, and
-  `counted?` are supported as static type predicates.
+  `counted?` are supported as static type predicates. `any?`, `rational?`,
+  `ratio?`, `float?`, `double?`, `decimal?`, `simple-keyword?`,
+  `qualified-keyword?`, `ident?`, `simple-ident?`, `qualified-ident?`,
+  `sequential?`, `reversible?`, and `sorted?` are also supported for the
+  current static type subset.
 - `boolean`, `name`, and `keyword` are supported for the current scalar subset.
 - `subs` supports two- and three-argument typed string slicing.
 - `+`, `*`, `-`, `/`, ordered comparisons, `=`, and `not=` follow
@@ -79,8 +83,10 @@ The compiler infers record-like map shapes automatically:
   `sort`, `concat`, `vec`, `set`, `repeat`, `repeatedly`, `interpose`,
   `interleave`, `partition`, `partition-all`, `reductions`, `map-indexed`,
   `filterv`, `mapv`, `reduce`, `reduce-kv`, `apply`, `comp`, `partial`,
-  `identity`, and `constantly` are supported for the current typed
-  collection/function subset.
+  `identity`, `constantly`, `butlast`, `take-last`, `drop-last`, `take-nth`,
+  `split-at`, `split-with`, `partition-by`, `bounded-count`, `dorun`,
+  `doall`, and `run!` are supported for the current typed collection/function
+  subset.
 - `apply` supports integer binary reducers over typed lists, vectors, and sets.
 - `get` supports vector indexes, and `nth` supports typed default values for
   lists and vectors.
@@ -134,7 +140,13 @@ Compile the example to OCaml:
 dune exec bin/cljml_cli.exe -- examples/person.cljml -o /tmp/person.ml
 ocamlopt -I _build/default/vendor/rrbvec \
   -I _build/default/vendor/rrbvec/.rrbvec.objs/byte \
-  -o /tmp/person _build/default/vendor/rrbvec/rrbvec.cmxa /tmp/person.ml
+  -I _build/default/src \
+  -I _build/default/src/.cljml.objs/byte \
+  -I _build/default/src/.cljml.objs/native \
+  -o /tmp/person \
+  _build/default/vendor/rrbvec/rrbvec.cmxa \
+  _build/default/src/cljml.cmxa \
+  /tmp/person.ml
 ```
 
 Run the example:

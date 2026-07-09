@@ -40,6 +40,16 @@ let rrbvec_build_dir () = Filename.concat (repo_root ()) "_build/default/vendor/
 
 let rrbvec_cmi_dir () = Filename.concat (rrbvec_build_dir ()) ".rrbvec.objs/byte"
 
+let cljml_build_dir () = Filename.concat (repo_root ()) "_build/default/src"
+
+let cljml_byte_cmi_dir () = Filename.concat (cljml_build_dir ()) ".cljml.objs/byte"
+
+let cljml_native_cmi_dir () = Filename.concat (cljml_build_dir ()) ".cljml.objs/native"
+
+let cljml_cmxa () = Filename.concat (cljml_build_dir ()) "cljml.cmxa"
+
+let rrbvec_cmxa () = Filename.concat (rrbvec_build_dir ()) "rrbvec.cmxa"
+
 let assert_ocaml_compiles name ocaml_source =
   let dir = Filename.concat (Filename.get_temp_dir_name ()) "cljml-tests" in
   let () =
@@ -48,9 +58,11 @@ let assert_ocaml_compiles name ocaml_source =
   let ml_path = Filename.concat dir (name ^ ".ml") in
   write_file ml_path ocaml_source;
   let cmd =
-    Printf.sprintf "ocamlc -I %s -I %s -c %s"
+    Printf.sprintf "ocamlc -I %s -I %s -I %s -I %s -c %s"
       (Filename.quote (rrbvec_build_dir ()))
       (Filename.quote (rrbvec_cmi_dir ()))
+      (Filename.quote (cljml_build_dir ()))
+      (Filename.quote (cljml_byte_cmi_dir ()))
       (Filename.quote (Filename.basename ml_path))
   in
   match Sys.command ("cd " ^ Filename.quote dir ^ " && " ^ cmd) with
@@ -78,12 +90,16 @@ let assert_ocaml_runs name expected_output ocaml_source =
   let output_path = Filename.concat dir (name ^ ".out") in
   write_file ml_path ocaml_source;
   let compile_cmd =
-    Printf.sprintf "cd %s && ocamlopt -I %s -I %s -o %s %s %s"
+    Printf.sprintf "cd %s && ocamlopt -I %s -I %s -I %s -I %s -I %s -o %s %s %s %s"
       (Filename.quote dir)
       (Filename.quote (rrbvec_build_dir ()))
       (Filename.quote (rrbvec_cmi_dir ()))
+      (Filename.quote (cljml_build_dir ()))
+      (Filename.quote (cljml_byte_cmi_dir ()))
+      (Filename.quote (cljml_native_cmi_dir ()))
       (Filename.quote (Filename.basename exe_path))
-      (Filename.quote (Filename.concat (rrbvec_build_dir ()) "rrbvec.cmxa"))
+      (Filename.quote (rrbvec_cmxa ()))
+      (Filename.quote (cljml_cmxa ()))
       (Filename.quote (Filename.basename ml_path))
   in
   let run_cmd =
@@ -1040,6 +1056,58 @@ let test_clojure_string_namespace_rejects_unknown_refer () =
 |}
   |> expect_error "cannot refer unknown symbol clojure.string/missing"
 
+let test_batched_predicate_collection_core_functions_work () =
+  let source =
+    {|
+(def xs [1 2 3 4 5])
+(def split (split-at 2 xs))
+(def splitw (split-with (fn [x] (< x 4)) xs))
+(def parts (partition-by (fn [x] (even? x)) [1 3 2 4 5]))
+(println
+  (str (any? nil) ":" (rational? 1) ":" (rational? "1") ":"
+       (ratio? 1) ":" (float? 1) ":" (double? 1) ":" (decimal? 1) ":"
+       (simple-keyword? :name) ":" (simple-keyword? :user/name) ":"
+       (qualified-keyword? :user/name) ":" (qualified-keyword? :name) ":"
+       (ident? :name) ":" (simple-ident? :name) ":" (qualified-ident? :user/name) ":"
+       (sequential? xs) ":" (sequential? (hash-set 1)) ":"
+       (reversible? xs) ":" (reversible? (hash-set 1)) ":"
+       (sorted? xs) ":" (bounded-count 3 xs) ":" (bounded-count 9 xs) ":"
+       (pr-str (butlast xs)) ":" (pr-str (take-last 2 xs)) ":"
+       (pr-str (drop-last 2 xs)) ":" (pr-str (take-nth 2 xs)) ":"
+       (count split) ":" (pr-str (first split)) ":" (pr-str (second split)) ":"
+       (pr-str (first splitw)) ":" (pr-str (second splitw)) ":"
+       (count parts) ":" (count (first parts)) ":" (first (second parts)) ":"
+       (nil? (dorun xs)) ":" (pr-str (doall xs))))
+(run! (fn [^:int x] (println (str "item:" x))) [1 2])
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "batched_predicate_collection_core_functions_work"
+    "true:true:false:false:false:false:false:true:false:true:false:true:true:true:true:false:true:false:false:3:5:[1 2 3 4]:[4 5]:[1 2 3]:[1 3 5]:2:[1 2]:[3 4 5]:[1 2 3]:[4 5]:3:2:2:true:[1 2 3 4 5]\nitem:1\nitem:2\n"
+    ocaml_source
+
+let test_batched_predicate_collection_core_functions_reject_bad_counts () =
+  Cljml.Compiler.compile_string {|(def x (take-nth 0 [1 2]))|}
+  |> expect_error "take-nth n must be positive"
+
+let test_batched_predicate_collection_core_functions_reject_bad_predicates () =
+  Cljml.Compiler.compile_string {|(def x (split-with (fn [^:string s] true) [1 2]))|}
+  |> expect_error "split-with expects a predicate matching collection elements"
+
+let test_batched_predicate_collection_core_functions_reject_bad_run_function () =
+  Cljml.Compiler.compile_string {|(def x (run! (fn [^:string s] (println s)) [1 2]))|}
+  |> expect_error "run! function type does not match collection"
+
+let test_batched_predicate_collection_core_functions_infer_bool_params () =
+  let source =
+    {|
+(defn prefix [flag xs] (split-with (fn [x] flag) xs))
+(def bad (prefix 1 [1 2]))
+|}
+  in
+  Cljml.Compiler.compile_string source
+  |> expect_error "prefix called with incompatible arguments"
+
 let test_batched_sequence_functions_work () =
   let source =
     {|
@@ -1652,6 +1720,16 @@ let tests =
       test_clojure_string_namespace_rejects_bad_args );
     ( "clojure.string namespace rejects unknown refer",
       test_clojure_string_namespace_rejects_unknown_refer );
+    ( "batched predicate/collection core functions work",
+      test_batched_predicate_collection_core_functions_work );
+    ( "batched predicate/collection core functions reject bad counts",
+      test_batched_predicate_collection_core_functions_reject_bad_counts );
+    ( "batched predicate/collection core functions reject bad predicates",
+      test_batched_predicate_collection_core_functions_reject_bad_predicates );
+    ( "batched predicate/collection core functions reject bad run function",
+      test_batched_predicate_collection_core_functions_reject_bad_run_function );
+    ( "batched predicate/collection core functions infer bool params",
+      test_batched_predicate_collection_core_functions_infer_bool_params );
     ("batched sequence functions work", test_batched_sequence_functions_work);
     ( "batched sequence functions reject type mismatch",
       test_batched_sequence_functions_reject_type_mismatch );

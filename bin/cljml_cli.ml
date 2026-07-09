@@ -42,16 +42,31 @@ let rrbvec_build_dir () =
 
 let rrbvec_cmi_dir () = Filename.concat (rrbvec_build_dir ()) ".rrbvec.objs/byte"
 
+let cljml_build_dir () =
+  Filename.concat (find_repo_root (Sys.getcwd ())) "_build/default/src"
+
+let cljml_byte_cmi_dir () = Filename.concat (cljml_build_dir ()) ".cljml.objs/byte"
+
+let cljml_native_cmi_dir () = Filename.concat (cljml_build_dir ()) ".cljml.objs/native"
+
+let rrbvec_cmxa () = Filename.concat (rrbvec_build_dir ()) "rrbvec.cmxa"
+
+let cljml_cmxa () = Filename.concat (cljml_build_dir ()) "cljml.cmxa"
+
 let run_ocaml_source ocaml_source =
   let ml_path = Filename.temp_file "cljml" ".ml" in
   let exe_path = Filename.temp_file "cljml" ".exe" in
   write_output (Some ml_path) ocaml_source;
   let compile_cmd =
-    Printf.sprintf "ocamlopt -I %s -I %s -o %s %s %s"
+    Printf.sprintf "ocamlopt -I %s -I %s -I %s -I %s -I %s -o %s %s %s %s"
       (Filename.quote (rrbvec_build_dir ()))
       (Filename.quote (rrbvec_cmi_dir ()))
+      (Filename.quote (cljml_build_dir ()))
+      (Filename.quote (cljml_byte_cmi_dir ()))
+      (Filename.quote (cljml_native_cmi_dir ()))
       (Filename.quote exe_path)
-      (Filename.quote (Filename.concat (rrbvec_build_dir ()) "rrbvec.cmxa"))
+      (Filename.quote (rrbvec_cmxa ()))
+      (Filename.quote (cljml_cmxa ()))
       (Filename.quote ml_path)
   in
   match Sys.command compile_cmd with
