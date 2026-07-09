@@ -2170,6 +2170,14 @@ let test_parsetree_backend_builds_native_function_expressions () =
 let test_parsetree_backend_builds_native_sequence_expressions () =
   expect_structured_value_expression {|(def result (do 1 2 3))|}
 
+let test_parsetree_backend_builds_native_let_expressions () =
+  expect_structured_value_expression
+    {|(def result (let [x 1 y (+ x 1)] (+ y 1)))|}
+
+let test_parsetree_backend_builds_native_match_expressions () =
+  expect_structured_value_expression
+    {|(def result (match [1 2] [x y] (+ x y)))|}
+
 let test_incremental_parsetree_backend_preserves_state () =
   let state = Cljml.Compiler.empty_state in
   let state, people_structure =
@@ -2496,6 +2504,10 @@ let tests =
       test_parsetree_backend_builds_native_function_expressions );
     ( "parsetree backend builds native sequence expressions",
       test_parsetree_backend_builds_native_sequence_expressions );
+    ( "parsetree backend builds native match expressions",
+      test_parsetree_backend_builds_native_match_expressions );
+    ( "parsetree backend builds native let expressions",
+      test_parsetree_backend_builds_native_let_expressions );
     ( "incremental parsetree backend preserves state",
       test_incremental_parsetree_backend_preserves_state );
   ]

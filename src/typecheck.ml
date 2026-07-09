@@ -286,23 +286,28 @@ and compile_match current_ns env target_form clauses =
     match compile_expr current_ns env form with
     | Error _ as err -> err
     | Ok pattern ->
-        if Types.equal expected_ty pattern.ty then Ok pattern.code
+        if Types.equal expected_ty pattern.ty then
+          (match form with
+          | FInt value -> Ok (Ocaml_ir.PInt value)
+          | FString value | FKeyword value -> Ok (Ocaml_ir.PString value)
+          | FBool value -> Ok (Ocaml_ir.PBool value)
+          | FNil -> Ok Ocaml_ir.PUnit
+          | _ -> Error.error "unsupported match pattern")
         else Error.error "match pattern type must match target"
   in
   let rec compile_pattern target_ty pattern =
     match (target_ty, pattern) with
-    | _, FSymbol "_" -> Ok ("_", [])
+    | _, FSymbol "_" -> Ok (Ocaml_ir.PAny, [])
     | _, FSymbol name ->
         let ocaml_name = Names.sanitize_name name in
         Ok
-          ( ocaml_name,
+          ( Ocaml_ir.PVar ocaml_name,
             [ (Names.namespaced_key current_ns name, Types.binding ocaml_name target_ty) ] )
-    | TInt, FInt value -> Ok (string_of_int value, [])
-    | TString, FString value -> Ok (Codegen.ocaml_string_literal value, [])
-    | TKeyword, FKeyword keyword -> Ok (Codegen.ocaml_string_literal keyword, [])
-    | TBool, FBool true -> Ok ("true", [])
-    | TBool, FBool false -> Ok ("false", [])
-    | TNil, FNil -> Ok ("()", [])
+    | TInt, FInt value -> Ok (Ocaml_ir.PInt value, [])
+    | TString, FString value -> Ok (Ocaml_ir.PString value, [])
+    | TKeyword, FKeyword keyword -> Ok (Ocaml_ir.PString keyword, [])
+    | TBool, FBool value -> Ok (Ocaml_ir.PBool value, [])
+    | TNil, FNil -> Ok (Ocaml_ir.PUnit, [])
     | TList inner, FVector patterns ->
         compile_list_like_pattern inner patterns
     | TVector inner, FVector patterns ->
@@ -314,15 +319,17 @@ and compile_match current_ns env target_form clauses =
         | FVector _ -> Error.error "match collection pattern must match target collection"
         | _ -> Error.error "unsupported match pattern")
   and compile_list_like_pattern inner patterns =
-    let rec loop pattern_codes bindings = function
-      | [] -> Ok ("[" ^ String.concat "; " (List.rev pattern_codes) ^ "]", bindings)
+    let rec loop compiled_patterns bindings = function
+      | [] -> Ok (List.rev compiled_patterns, bindings)
       | pattern :: rest -> (
           match compile_pattern inner pattern with
           | Error _ as err -> err
-          | Ok (pattern_code, pattern_bindings) ->
-              loop (pattern_code :: pattern_codes) (bindings @ pattern_bindings) rest)
+          | Ok (compiled_pattern, pattern_bindings) ->
+              loop (compiled_pattern :: compiled_patterns)
+                (bindings @ pattern_bindings) rest)
     in
     loop [] [] patterns
+    |> Result.map (fun (patterns, bindings) -> (Ocaml_ir.PList patterns, bindings))
   in
   let compile_clause target_ty (pattern_form, result_form) =
     match compile_pattern target_ty pattern_form with
@@ -336,10 +343,11 @@ and compile_match current_ns env target_form clauses =
   | (Error _ as err), _ -> err
   | _, (Error _ as err) -> err
   | Ok target, Ok pairs -> (
-      let target_code =
+      let target_expr =
         match target.ty with
-        | TVector _ -> "Rrbvec.to_list (" ^ target.code ^ ")"
-        | _ -> target.code
+        | TVector _ ->
+            Ocaml_ir.Apply (Ocaml_ir.Ident "Rrbvec.to_list", [ target.ocaml_expr ])
+        | _ -> target.ocaml_expr
       in
       let rec compile_clauses acc = function
         | [] -> Ok (List.rev acc)
@@ -353,13 +361,13 @@ and compile_match current_ns env target_form clauses =
       | Ok [] -> Error.error "match requires pattern/result pairs"
       | Ok ((_, first_result) :: _ as clauses) ->
           if List.for_all (fun (_, result) -> Types.equal first_result.ty result.ty) clauses then
-            let cases =
-              clauses
-              |> List.map (fun (pattern_code, result) ->
-                     "| " ^ pattern_code ^ " -> " ^ result.code)
-              |> String.concat " "
-            in
-            Ok (typed first_result.ty ("(match " ^ target_code ^ " with " ^ cases ^ ")"))
+            Ok
+              (typed_ir first_result.ty
+                 (Ocaml_ir.Match
+                    ( target_expr,
+                      clauses
+                      |> List.map (fun (pattern, result) ->
+                             (pattern, result.ocaml_expr)) )))
           else Error.error "match branches must have same type")
 
 and compile_body current_ns env empty_error forms =
@@ -381,7 +389,7 @@ and compile_let current_ns env bindings body_forms =
       if List.length forms mod 2 <> 0 then
         Error.error "let bindings require an even number of forms"
       else
-        let rec bind env code_parts = function
+        let rec bind env code_parts ir_bindings = function
           | [] -> (
               match
                 compile_body current_ns env "let body requires at least one form"
@@ -389,11 +397,19 @@ and compile_let current_ns env bindings body_forms =
               with
               | Error _ as err -> err
               | Ok body ->
-                  let code =
-                    code_parts
-                    |> List.fold_left (fun acc binding_code -> binding_code ^ " in " ^ acc) body.code
-                  in
-                  Ok (typed body.ty ("(" ^ code ^ ")")))
+                  (match ir_bindings with
+                  | Some bindings ->
+                      Ok
+                        (typed_ir body.ty
+                           (Ocaml_ir.Let (List.rev bindings, body.ocaml_expr)))
+                  | None ->
+                      let code =
+                        code_parts
+                        |> List.fold_left
+                             (fun acc binding_code -> binding_code ^ " in " ^ acc)
+                             body.code
+                      in
+                      Ok (typed body.ty ("(" ^ code ^ ")"))))
           | pattern :: value_form :: rest -> (
               match compile_expr current_ns env value_form with
               | Error _ as err -> err
@@ -404,14 +420,26 @@ and compile_let current_ns env bindings body_forms =
                       let env_bindings =
                         bindings
                         |> List.map (fun (binding : Destructure.local_binding) ->
-                               ( Names.namespaced_key current_ns binding.source_name,
+                                ( Names.namespaced_key current_ns binding.source_name,
                                  Types.binding binding.ocaml_name binding.ty ))
                       in
                       let code_bindings = bindings |> List.map Destructure.let_code in
-                      bind (env @ env_bindings) (List.rev_append code_bindings code_parts) rest))
+                      let ir_bindings =
+                        match (ir_bindings, pattern) with
+                        | Some bindings, FSymbol "_" ->
+                            Some ((Ocaml_ir.PAny, value.ocaml_expr) :: bindings)
+                        | Some bindings, FSymbol name ->
+                            Some
+                              ( (Ocaml_ir.PVar (Names.sanitize_name name), value.ocaml_expr)
+                              :: bindings )
+                        | _ -> None
+                      in
+                      bind (env @ env_bindings)
+                        (List.rev_append code_bindings code_parts)
+                        ir_bindings rest))
           | [ _ ] -> Error.error "let bindings require an even number of forms"
         in
-        bind env [] forms
+        bind env [] (Some []) forms
   | _ -> Error.error "let bindings must be a vector"
 
 and prepare_fn current_ns env params body_forms =

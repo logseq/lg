@@ -1,6 +1,11 @@
 type pattern =
   | PVar of string
+  | PAny
   | PUnit
+  | PInt of int
+  | PString of string
+  | PBool of bool
+  | PList of pattern list
   | PConstraint of pattern * string
 
 type t =
@@ -15,10 +20,18 @@ type t =
   | If of t * t * t
   | Fun of pattern list * t
   | Sequence of t list
+  | Let of (pattern * t) list * t
+  | Match of t * (pattern * t) list
 
 let rec pattern_to_source = function
   | PVar name -> name
+  | PAny -> "_"
   | PUnit -> "()"
+  | PInt value -> string_of_int value
+  | PString value -> Printf.sprintf "%S" value
+  | PBool value -> string_of_bool value
+  | PList patterns ->
+      "[" ^ (patterns |> List.map pattern_to_source |> String.concat "; ") ^ "]"
   | PConstraint (pattern, type_name) ->
       "(" ^ pattern_to_source pattern ^ " : " ^ type_name ^ ")"
 
@@ -54,6 +67,19 @@ let rec to_source = function
           "(let _ = " ^ to_source expression ^ " in "
           ^ to_source (Sequence rest)
           ^ ")")
+  | Let (bindings, body) ->
+      List.fold_right
+        (fun (pattern, value) acc ->
+          "(let " ^ pattern_to_source pattern ^ " = " ^ to_source value
+          ^ " in " ^ acc ^ ")")
+        bindings (to_source body)
+  | Match (target, cases) ->
+      "(match " ^ to_source target ^ " with "
+      ^ (cases
+        |> List.map (fun (pattern, body) ->
+               "| " ^ pattern_to_source pattern ^ " -> " ^ to_source body)
+        |> String.concat " ")
+      ^ ")"
 
 let loc = Location.none
 let lid value = Location.mkloc value loc
@@ -79,10 +105,29 @@ let parse_expression ~context source =
 
 let rec pattern_to_parsetree = function
   | PVar name -> Ast_helper.Pat.var ~loc (str name)
+  | PAny -> Ast_helper.Pat.any ~loc ()
   | PUnit -> Ast_helper.Pat.construct ~loc (lid (Longident.Lident "()")) None
+  | PInt value -> Ast_helper.Pat.constant ~loc (Ast_helper.Const.int ~loc value)
+  | PString value ->
+      Ast_helper.Pat.constant ~loc (Ast_helper.Const.string ~loc value)
+  | PBool value ->
+      Ast_helper.Pat.construct ~loc
+        (lid (Longident.Lident (string_of_bool value)))
+        None
+  | PList patterns -> pattern_list_to_parsetree patterns
   | PConstraint (pattern, type_name) ->
       Ast_helper.Pat.constraint_ ~loc (pattern_to_parsetree pattern)
         (Ast_helper.Typ.constr ~loc (lid (longident_of_string type_name)) [])
+
+and pattern_list_to_parsetree = function
+  | [] -> Ast_helper.Pat.construct ~loc (lid (Longident.Lident "[]")) None
+  | pattern :: rest ->
+      let pair =
+        Ast_helper.Pat.tuple ~loc
+          [ (None, pattern_to_parsetree pattern); (None, pattern_list_to_parsetree rest) ]
+          Closed
+      in
+      Ast_helper.Pat.construct ~loc (lid (Longident.Lident "::")) (Some ([], pair))
 
 let function_parameter pattern =
   {
@@ -174,3 +219,37 @@ and to_parsetree ~context = function
                 Ok (Ast_helper.Exp.let_ ~loc Asttypes.Nonrecursive [ binding ] body))
       in
       build expressions)
+  | Let (bindings, body) -> (
+      match to_parsetree ~context body with
+      | Error _ as err -> err
+      | Ok body ->
+          let rec build = function
+            | [] -> Ok body
+            | (pattern, value) :: rest -> (
+                match (to_parsetree ~context value, build rest) with
+                | (Error _ as err), _ -> err
+                | _, (Error _ as err) -> err
+                | Ok value, Ok body ->
+                    let binding =
+                      Ast_helper.Vb.mk ~loc (pattern_to_parsetree pattern) value
+                    in
+                    Ok (Ast_helper.Exp.let_ ~loc Asttypes.Nonrecursive [ binding ] body))
+          in
+          build bindings)
+  | Match (target, cases) -> (
+      match to_parsetree ~context target with
+      | Error _ as err -> err
+      | Ok target ->
+          let rec build_cases acc = function
+            | [] -> Ok (List.rev acc)
+            | (pattern, body) :: rest -> (
+                match to_parsetree ~context body with
+                | Error _ as err -> err
+                | Ok body ->
+                    build_cases
+                      (Ast_helper.Exp.case (pattern_to_parsetree pattern) body :: acc)
+                      rest)
+          in
+          match build_cases [] cases with
+          | Error _ as err -> err
+          | Ok cases -> Ok (Ast_helper.Exp.match_ ~loc target cases))
