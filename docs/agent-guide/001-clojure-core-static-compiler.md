@@ -66,6 +66,7 @@ The compiler should support this syntax without macros.
 | Symbols | `x`, `user-name` | 1 |
 | Keywords | `:name`, `:admin?` | 1 |
 | Lists as calls | `(+ 1 2)` | 1 |
+| Lists as data | `(list 1 2 3)` | 2 |
 | Vectors | `[1 2 3]` | 1 |
 | Maps | `{:name "Ada" :age 36}` | 1 |
 | `def` | `(def x 1)` | 1 |
@@ -85,6 +86,7 @@ The compiler should support this syntax without macros.
 | Strings | `str` | 1 |
 | Maps | `get`, `assoc`, `dissoc`, `contains?`, `keys`, `vals` | 1 |
 | Vectors | `vector`, `conj`, `count`, `nth`, `first`, `rest` | 1 |
+| Lists | `list`, `list-of`, `cons`, `conj`, `count`, `nth`, `first`, `rest` | 2 |
 | Sequences | `seq`, `empty?`, `map`, `filter`, `reduce` | 2 |
 | Functions | `apply`, `comp`, `partial`, `identity`, `constantly` | 2 |
 | Sets | `hash-set`, `contains?`, `disj` | 3 |
@@ -97,6 +99,8 @@ It should infer ordinary function parameter types from source-level constraints 
 Scalar types are `int`, `string`, `bool`, `nil`, and `unit`.
 
 Vector types are homogeneous as `vector<T>` and compile to `Rrbvec.t`.
+
+List types are homogeneous as `list<T>` and compile to OCaml lists.
 
 Map literal types are structural records keyed by Clojure keywords.
 

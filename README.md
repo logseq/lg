@@ -22,6 +22,7 @@ The compiler infers record-like map shapes automatically:
 - `{:name "Ada", :age 36}` becomes an OCaml record with `string` and `int`
   fields.
 - `[36 37 38]` becomes an `Rrbvec.t` persistent vector.
+- `(list 1 2 3)` becomes a typed OCaml list.
 - `(assoc x :admin? true)` produces a new record shape with an added `bool`
   field.
 - `(dissoc y :age)` produces a new record shape with that field removed.
@@ -34,14 +35,16 @@ The compiler infers record-like map shapes automatically:
   parameter type explicit.
 - `do`, `fn`, `defn`, and `let` bodies can contain multiple forms; earlier
   forms are evaluated for effects and the final form supplies the value.
-- `map`, `filter`, `reduce`, `apply`, `comp`, `partial`, `identity`, and
-  `constantly` are supported for the current typed vector/function subset.
+- `list`, `list-of`, `cons`, `map`, `filter`, `reduce`, `apply`, `comp`,
+  `partial`, `identity`, and `constantly` are supported for the current typed
+  collection/function subset.
 - `hash-set`, `disj`, and `contains?` are supported for homogeneous sets.
 - `(:require [some.ns :as alias])` can alias previously compiled namespaces.
 - `(:require [ocaml.String :as string])` can alias a small typed table of OCaml
   host functions.
 - `(:name user)` works as keyword lookup syntax for structural maps.
 - `(vector-of :int)` creates an explicitly typed empty persistent vector.
+- `(list-of :int)` creates an explicitly typed empty list.
 - Updating an existing field with a different type is rejected.
 - `Cljml.Compiler.compile_chunk` supports incremental compilation by returning
   the next compiler state plus the OCaml emitted for the current source chunk.

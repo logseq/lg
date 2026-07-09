@@ -264,6 +264,9 @@ and compile_call current_ns env name arg_forms =
       | Error _ as err -> err
       | Ok [ arg ] -> Ok (typed TUnit ("print_endline (" ^ Codegen.print_expr arg ^ ")"))
       | Ok _ -> Error.error (name ^ " expects 1 arguments"))
+  | "list" -> compile_list current_ns env arg_forms
+  | "list-of" -> compile_list_of arg_forms
+  | "cons" -> compile_cons current_ns env arg_forms
   | "vector" -> compile_vector current_ns env arg_forms
   | "vector-of" -> compile_vector_of arg_forms
   | "count" -> compile_count current_ns env arg_forms
@@ -367,12 +370,41 @@ and compile_count current_ns env arg_forms =
   | Error _ as err -> err
   | Ok [ arg ] -> (
       match arg.ty with
+      | TList _ -> Ok (typed TInt ("List.length (" ^ arg.code ^ ")"))
       | TVector _ -> Ok (typed TInt ("Rrbvec.length " ^ arg.code))
       | TSet _ -> Ok (typed TInt ("List.length " ^ arg.code))
       | TRecord fields -> Ok (typed TInt (string_of_int (List.length fields)))
       | TString -> Ok (typed TInt ("String.length " ^ arg.code))
       | _ -> Error.error "count expects a collection or string")
   | Ok _ -> Error.error "count expects 1 arguments"
+
+and compile_list current_ns env forms =
+  match forms with
+  | [] -> Error.error "empty list requires a type annotation"
+  | first :: rest -> (
+      match compile_expr current_ns env first with
+      | Error _ as err -> err
+      | Ok first_expr ->
+          let rec loop acc = function
+            | [] ->
+                let values = List.rev acc |> String.concat "; " in
+                Ok (typed (TList first_expr.ty) ("[" ^ values ^ "]"))
+            | form :: rest -> (
+                match compile_expr current_ns env form with
+                | Error _ as err -> err
+                | Ok expr ->
+                    if Types.equal first_expr.ty expr.ty then loop (expr.code :: acc) rest
+                    else Error.error "list elements must all have the same type")
+          in
+          loop [ first_expr.code ] rest)
+
+and compile_list_of arg_forms =
+  match arg_forms with
+  | [ FKeyword keyword ] -> (
+      match Type_annotation.of_keyword keyword with
+      | Error _ as err -> err
+      | Ok element_ty -> Ok (typed (TList element_ty) "[]"))
+  | _ -> Error.error "list-of expects one type keyword"
 
 and compile_vector_of arg_forms =
   match arg_forms with
@@ -387,21 +419,36 @@ and compile_conj current_ns env arg_forms =
   | Error _ as err -> err
   | Ok [ collection; value ] -> (
       match collection.ty with
+      | TList inner when Types.equal inner value.ty ->
+          Ok (typed collection.ty ("(" ^ value.code ^ " :: (" ^ collection.code ^ "))"))
+      | TList _ -> Error.error "conj value type must match list element type"
       | TVector inner when Types.equal inner value.ty ->
           Ok
             (typed collection.ty
                ("Rrbvec.push_back (" ^ collection.code ^ ") (" ^ value.code ^ ")"))
       | TVector _ -> Error.error "conj value type must match vector element type"
-      | _ -> Error.error "conj expects a vector")
+      | _ -> Error.error "conj expects a list or vector")
   | Ok _ -> Error.error "conj expects 2 arguments"
+
+and compile_cons current_ns env arg_forms =
+  match compile_args_for current_ns env arg_forms with
+  | Error _ as err -> err
+  | Ok [ value; collection ] -> (
+      match collection.ty with
+      | TList inner when Types.equal inner value.ty ->
+          Ok (typed collection.ty ("(" ^ value.code ^ " :: (" ^ collection.code ^ "))"))
+      | TList _ -> Error.error "cons value type must match list element type"
+      | _ -> Error.error "cons expects a value and list")
+  | Ok _ -> Error.error "cons expects value and list"
 
 and compile_first current_ns env arg_forms =
   match compile_args_for current_ns env arg_forms with
   | Error _ as err -> err
   | Ok [ collection ] -> (
       match collection.ty with
+      | TList inner -> Ok (typed inner ("List.hd (" ^ collection.code ^ ")"))
       | TVector inner -> Ok (typed inner ("Rrbvec.nth (" ^ collection.code ^ ") 0"))
-      | _ -> Error.error "first expects a vector")
+      | _ -> Error.error "first expects a list or vector")
   | Ok _ -> Error.error "first expects 1 arguments"
 
 and compile_nth current_ns env arg_forms =
@@ -409,10 +456,13 @@ and compile_nth current_ns env arg_forms =
   | Error _ as err -> err
   | Ok [ collection; index ] -> (
       match (collection.ty, index.ty) with
+      | TList inner, TInt ->
+          Ok (typed inner ("List.nth (" ^ collection.code ^ ") (" ^ index.code ^ ")"))
+      | TList _, _ -> Error.error "nth index must be int"
       | TVector inner, TInt ->
           Ok (typed inner ("Rrbvec.nth (" ^ collection.code ^ ") (" ^ index.code ^ ")"))
       | TVector _, _ -> Error.error "nth index must be int"
-      | _ -> Error.error "nth expects a vector")
+      | _ -> Error.error "nth expects a list or vector")
   | Ok _ -> Error.error "nth expects 2 arguments"
 
 and compile_get current_ns env arg_forms =
@@ -575,9 +625,10 @@ and compile_rest current_ns env arg_forms =
   | Error _ as err -> err
   | Ok [ collection ] -> (
       match collection.ty with
+      | TList _ -> Ok (typed collection.ty ("List.tl (" ^ collection.code ^ ")"))
       | TVector _ ->
           Ok (typed collection.ty ("Rrbvec.of_list (List.tl (Rrbvec.to_list " ^ collection.code ^ "))"))
-      | _ -> Error.error "rest expects a vector")
+      | _ -> Error.error "rest expects a list or vector")
   | Ok _ -> Error.error "rest expects 1 arguments"
 
 and compile_seq current_ns env arg_forms =
@@ -585,7 +636,7 @@ and compile_seq current_ns env arg_forms =
   | Error _ as err -> err
   | Ok [ collection ] -> (
       match collection.ty with
-      | TVector _ | TSet _ -> Ok collection
+      | TList _ | TVector _ | TSet _ -> Ok collection
       | _ -> Error.error "seq expects a collection")
   | Ok _ -> Error.error "seq expects 1 arguments"
 
@@ -594,6 +645,7 @@ and compile_empty current_ns env arg_forms =
   | Error _ as err -> err
   | Ok [ collection ] -> (
       match collection.ty with
+      | TList _ -> Ok (typed TBool ("((" ^ collection.code ^ ") = [])"))
       | TVector _ -> Ok (typed TBool ("Rrbvec.is_empty " ^ collection.code))
       | TSet _ -> Ok (typed TBool ("(" ^ collection.code ^ " = [])"))
       | TString -> Ok (typed TBool ("(" ^ collection.code ^ " = \"\")"))
@@ -608,6 +660,12 @@ and compile_map_call current_ns env arg_forms =
       | _, (Error _ as err) -> err
       | Ok fn, Ok collection -> (
           match (fn.ty, collection.ty) with
+          | TFn ([ param_ty ], ret), TList inner when Types.equal param_ty inner ->
+              Ok
+                (typed (TList ret)
+                   ("List.map " ^ fn.code ^ " (" ^ collection.code ^ ")"))
+          | TFn _, TList _ -> Error.error "map function argument type does not match list"
+          | _, TList _ -> Error.error "map expects a function"
           | TFn ([ param_ty ], ret), TVector inner when Types.equal param_ty inner ->
               Ok
                 (typed (TVector ret)
@@ -625,6 +683,12 @@ and compile_filter current_ns env arg_forms =
       | _, (Error _ as err) -> err
       | Ok fn, Ok collection -> (
           match (fn.ty, collection.ty) with
+          | TFn ([ param_ty ], TBool), TList inner when Types.equal param_ty inner ->
+              Ok
+                (typed collection.ty
+                   ("List.filter " ^ fn.code ^ " (" ^ collection.code ^ ")"))
+          | TFn _, TList _ -> Error.error "filter expects a predicate matching list elements"
+          | _, TList _ -> Error.error "filter expects a function"
           | TFn ([ param_ty ], TBool), TVector inner when Types.equal param_ty inner ->
               Ok
                 (typed collection.ty
@@ -647,9 +711,17 @@ and compile_reduce current_ns env arg_forms =
       | _, _, (Error _ as err) -> err
       | Ok fn, Ok init, Ok collection -> (
           match (fn.ty, collection.ty) with
-          | TFn ([ acc_ty; item_ty ], ret), TVector inner
+          | TFn ([ acc_ty; item_ty ], ret), TList inner
             when Types.equal acc_ty init.ty && Types.equal item_ty inner && Types.equal ret init.ty ->
               Ok
+                (typed init.ty
+                   ("List.fold_left " ^ fn.code ^ " (" ^ init.code ^ ") ("
+                  ^ collection.code ^ ")"))
+          | TFn _, TList _ -> Error.error "reduce function type does not match init and list"
+          | _, TList _ -> Error.error "reduce expects a function"
+          | TFn ([ acc_ty; item_ty ], ret), TVector inner
+            when Types.equal acc_ty init.ty && Types.equal item_ty inner && Types.equal ret init.ty ->
+             Ok
                 (typed init.ty
                    ("Rrbvec.fold_left " ^ fn.code ^ " (" ^ init.code ^ ") ("
                   ^ collection.code ^ ")"))
@@ -666,6 +738,10 @@ and compile_apply current_ns env arg_forms =
       | _, (Error _ as err) -> err
       | Ok fn, Ok collection -> (
           match (fn.ty, collection.ty) with
+          | TFn ([ TInt; TInt ], TInt), TList TInt ->
+              Ok (typed TInt ("List.fold_left " ^ fn.code ^ " 0 (" ^ collection.code ^ ")"))
+          | TFn _, TList _ -> Error.error "apply currently supports int binary reducers"
+          | _, TList _ -> Error.error "apply expects a function"
           | TFn ([ TInt; TInt ], TInt), TVector TInt ->
               Ok (typed TInt ("Rrbvec.fold_left " ^ fn.code ^ " 0 (" ^ collection.code ^ ")"))
           | TFn _, TVector _ -> Error.error "apply currently supports int binary reducers"

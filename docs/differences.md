@@ -48,9 +48,13 @@ Incremental compilation preserves namespace, alias, type counter, and binding st
 
 Vectors compile to `Rrbvec.t` persistent vectors.
 
+Lists compile to OCaml lists and support `list`, `list-of`, `cons`, `conj`, `first`, `rest`, `nth`, `count`, `map`, `filter`, and `reduce`.
+
 Empty vector literals still require explicit element typing.
 
 Use `(vector-of :int)`, `(vector-of :string)`, `(vector-of :bool)`, or `(vector-of :nil)` for typed empty vectors.
+
+Use `(list-of :int)`, `(list-of :string)`, `(list-of :bool)`, or `(list-of :nil)` for typed empty lists.
 
 Sets currently compile to sorted unique OCaml lists.
 

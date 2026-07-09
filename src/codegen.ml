@@ -10,6 +10,20 @@ let rec stringify_expr ?(pr = false) expr =
   | TNil -> {|"nil"|}
   | TUnit -> {|""|}
   | TAny -> expr.code
+  | TList inner ->
+      let mapper =
+        match inner with
+        | TInt -> "string_of_int"
+        | TString ->
+            if pr then "Printf.sprintf \"%S\""
+            else Printf.sprintf "(fun x -> %S ^ x ^ %S)" "\"" "\""
+        | TBool -> "string_of_bool"
+        | TNil -> {|(fun _ -> "nil")|}
+        | TAny -> "(fun _ -> \"<value>\")"
+        | _ -> {|(fun _ -> "<value>")|}
+      in
+      {|("(" ^ String.concat " " (List.map |}
+      ^ mapper ^ " " ^ expr.code ^ {|) ^ ")")|}
   | TVector inner ->
       let mapper =
         match inner with

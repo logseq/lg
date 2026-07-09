@@ -5,6 +5,7 @@ type ty =
   | TNil
   | TUnit
   | TAny
+  | TList of ty
   | TVector of ty
   | TSet of ty
   | TFn of ty list * ty
@@ -43,6 +44,7 @@ let rec equal left right =
   | TAny, _ | _, TAny -> true
   | TInt, TInt | TString, TString | TBool, TBool | TNil, TNil | TUnit, TUnit ->
       true
+  | TList left, TList right -> equal left right
   | TVector left, TVector right -> equal left right
   | TSet left, TSet right -> equal left right
   | TFn (left_args, left_ret), TFn (right_args, right_ret) ->
@@ -63,6 +65,7 @@ let rec source_name = function
   | TNil -> "nil"
   | TUnit -> "unit"
   | TAny -> "any"
+  | TList ty -> "list<" ^ source_name ty ^ ">"
   | TVector ty -> "vector<" ^ source_name ty ^ ">"
   | TSet ty -> "set<" ^ source_name ty ^ ">"
   | TFn (args, ret) ->
@@ -77,6 +80,7 @@ let rec ocaml_name = function
   | TNil -> "unit"
   | TUnit -> "unit"
   | TAny -> "'a"
+  | TList inner -> ocaml_name inner ^ " list"
   | TVector inner -> ocaml_name inner ^ " Rrbvec.t"
   | TSet inner -> ocaml_name inner ^ " list"
   | TFn (args, ret) ->

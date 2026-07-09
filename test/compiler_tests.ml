@@ -452,6 +452,51 @@ let test_set_core_api () =
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "set_core_api" "true:false:2\n" ocaml_source
 
+let test_list_core_api () =
+  let source =
+    {|
+(def xs (list 2 3))
+(def ys (conj xs 1))
+(def zs (cons 0 ys))
+(def tail (rest zs))
+(print (str (first zs) ":" (nth tail 1) ":" (count zs) ":" (empty? (rest (rest (rest (rest zs)))))))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "list_core_api" "0:2:4:true\n" ocaml_source
+
+let test_sequence_core_api_on_lists () =
+  let source =
+    {|
+(def xs (list 1 2 3))
+(def mapped (map (fn [x] (+ x 1)) xs))
+(def filtered (filter (fn [x] (> x 2)) mapped))
+(def total (reduce (fn [acc x] (+ acc x)) 0 xs))
+(print (str (first mapped) ":" (nth mapped 2) ":" (count filtered) ":" total))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "sequence_core_api_on_lists" "2:4:2:6\n" ocaml_source
+
+let test_typed_empty_lists () =
+  let source =
+    {|
+(def xs (list-of :int))
+(def ys (cons 42 xs))
+(print (str (empty? xs) ":" (count ys) ":" (first ys)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "typed_empty_lists" "true:1:42\n" ocaml_source
+
+let test_lists_reject_mixed_element_types () =
+  Cljml.Compiler.compile_string {|(def xs (list 1 "two"))|}
+  |> expect_error "list elements must all have the same type"
+
+let test_conj_rejects_list_type_mismatch () =
+  Cljml.Compiler.compile_string {|(def xs (conj (list 1) "two"))|}
+  |> expect_error "conj value type must match list element type"
+
 let test_let_rejects_odd_binding_forms () =
   Cljml.Compiler.compile_string {|(def x (let [a 1 b] a))|}
   |> expect_error "let bindings require an even number of forms"
@@ -534,6 +579,11 @@ let tests =
     ("sequence core api works on vectors", test_sequence_core_api_on_vectors);
     ("function helpers work", test_function_helpers);
     ("set core api works", test_set_core_api);
+    ("list core api works", test_list_core_api);
+    ("sequence core api works on lists", test_sequence_core_api_on_lists);
+    ("typed empty lists work", test_typed_empty_lists);
+    ("lists reject mixed element types", test_lists_reject_mixed_element_types);
+    ("conj rejects list type mismatch", test_conj_rejects_list_type_mismatch);
     ("let rejects odd binding forms", test_let_rejects_odd_binding_forms);
     ("map rejects non-function argument", test_map_rejects_non_function_argument);
     ( "incremental compilation preserves state",
