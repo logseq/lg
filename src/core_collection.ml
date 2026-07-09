@@ -57,16 +57,20 @@ let pop collection =
   | _ -> Error.error "pop expects a list or vector"
 
 let rest collection =
+  let list_rest target =
+    Ocaml_ir.Match
+      ( target,
+        [ (Ocaml_ir.PList [], Ocaml_ir.List []);
+          (Ocaml_ir.PCons (Ocaml_ir.PAny, Ocaml_ir.PVar "rest"), Ocaml_ir.Ident "rest") ] )
+  in
   match collection.ty with
   | TList _ | TSet _ ->
-      Ok
-        (typed collection.ty
-           ("(match " ^ collection.code ^ " with [] -> [] | _ :: rest -> rest)"))
+      Ok (typed_ir collection.ty (list_rest collection.ocaml_expr))
   | TVector _ ->
       Ok
-        (typed collection.ty
-           ("Rrbvec.of_list (match Rrbvec.to_list " ^ collection.code
-          ^ " with [] -> [] | _ :: rest -> rest)"))
+        (typed_ir collection.ty
+           (apply "Rrbvec.of_list"
+              [ list_rest (apply "Rrbvec.to_list" [ collection.ocaml_expr ]) ]))
   | _ -> Error.error "rest expects a list, vector, or set"
 
 let seq collection =

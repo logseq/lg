@@ -6,6 +6,7 @@ type pattern =
   | PString of string
   | PBool of bool
   | PList of pattern list
+  | PCons of pattern * pattern
   | PConstraint of pattern * string
 
 type t =
@@ -35,6 +36,7 @@ let rec pattern_to_source = function
   | PBool value -> string_of_bool value
   | PList patterns ->
       "[" ^ (patterns |> List.map pattern_to_source |> String.concat "; ") ^ "]"
+  | PCons (head, tail) -> pattern_to_source head ^ " :: " ^ pattern_to_source tail
   | PConstraint (pattern, type_name) ->
       "(" ^ pattern_to_source pattern ^ " : " ^ type_name ^ ")"
 
@@ -123,6 +125,13 @@ let rec pattern_to_parsetree = function
         (lid (Longident.Lident (string_of_bool value)))
         None
   | PList patterns -> pattern_list_to_parsetree patterns
+  | PCons (head, tail) ->
+      let pair =
+        Ast_helper.Pat.tuple ~loc
+          [ (None, pattern_to_parsetree head); (None, pattern_to_parsetree tail) ]
+          Closed
+      in
+      Ast_helper.Pat.construct ~loc (lid (Longident.Lident "::")) (Some ([], pair))
   | PConstraint (pattern, type_name) ->
       Ast_helper.Pat.constraint_ ~loc (pattern_to_parsetree pattern)
         (Ast_helper.Typ.constr ~loc (lid (longident_of_string type_name)) [])
