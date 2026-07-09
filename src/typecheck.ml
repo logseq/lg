@@ -2197,25 +2197,28 @@ and compile_hash_set current_ns env arg_forms =
       | Ok first_expr ->
           let rec loop values = function
             | [] ->
-                let values = List.rev values |> String.concat "; " in
                 Ok
-                  (typed (TSet first_expr.ty)
-                     ("List.sort_uniq compare [" ^ values ^ "]"))
+                  (typed_ir (TSet first_expr.ty)
+                     (Ocaml_ir.Apply
+                        ( Ocaml_ir.Ident "List.sort_uniq",
+                          [ Ocaml_ir.Ident "compare";
+                            Ocaml_ir.List (List.rev values) ] )))
             | form :: rest -> (
                 match compile_expr current_ns env form with
                 | Error _ as err -> err
                 | Ok expr ->
-                    if Types.equal first_expr.ty expr.ty then loop (expr.code :: values) rest
+                    if Types.equal first_expr.ty expr.ty then
+                      loop (expr.ocaml_expr :: values) rest
                     else Error.error "hash-set elements must all have the same type")
           in
-          loop [ first_expr.code ] rest)
+          loop [ first_expr.ocaml_expr ] rest)
 
 and compile_set_of arg_forms =
   match arg_forms with
   | [ FKeyword keyword ] -> (
       match Type_annotation.of_keyword keyword with
       | Error _ -> Error.error ("unknown set element type " ^ keyword)
-      | Ok element_ty -> Ok (typed (TSet element_ty) "[]"))
+      | Ok element_ty -> Ok (typed_ir (TSet element_ty) (Ocaml_ir.List [])))
   | _ -> Error.error "set-of expects one type keyword"
 
 and compile_disj current_ns env arg_forms =

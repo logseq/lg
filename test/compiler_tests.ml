@@ -2227,6 +2227,9 @@ let test_parsetree_backend_builds_native_map_vector_expressions () =
 let test_parsetree_backend_builds_native_contains_expressions () =
   expect_structured_value_expression {|(def present? (contains? {:name "Ada"} :name))|}
 
+let test_parsetree_backend_builds_native_set_constructor_expressions () =
+  expect_structured_value_expression {|(def ids (hash-set 3 1 2))|}
+
 let test_incremental_parsetree_backend_preserves_state () =
   let state = Cljml.Compiler.empty_state in
   let state, people_structure =
@@ -2587,6 +2590,8 @@ let tests =
       test_parsetree_backend_builds_native_map_vector_expressions );
     ( "parsetree backend builds native contains expressions",
       test_parsetree_backend_builds_native_contains_expressions );
+    ( "parsetree backend builds native set constructor expressions",
+      test_parsetree_backend_builds_native_set_constructor_expressions );
     ( "incremental parsetree backend preserves state",
       test_incremental_parsetree_backend_preserves_state );
   ]
