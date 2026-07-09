@@ -994,18 +994,27 @@ and compile_subvec current_ns env arg_forms =
       match (vector.ty, start.ty) with
       | TVector _, TInt ->
           Ok
-            (typed vector.ty
-               ("Option.get (Rrbvec.subvec (" ^ vector.code ^ ") (" ^ start.code
-              ^ ") (Rrbvec.length (" ^ vector.code ^ ")))"))
+            (typed_ir vector.ty
+               (Ocaml_ir.Apply
+                  ( Ocaml_ir.Ident "Option.get",
+                    [ Ocaml_ir.Apply
+                        ( Ocaml_ir.Ident "Rrbvec.subvec",
+                          [ vector.ocaml_expr;
+                            start.ocaml_expr;
+                            Ocaml_ir.Apply
+                              (Ocaml_ir.Ident "Rrbvec.length", [ vector.ocaml_expr ]) ] ) ] )))
       | TVector _, _ -> Error.error "subvec indexes must be int"
       | _ -> Error.error "subvec expects a vector")
   | Ok [ vector; start; stop ] -> (
       match (vector.ty, start.ty, stop.ty) with
       | TVector _, TInt, TInt ->
           Ok
-            (typed vector.ty
-               ("Option.get (Rrbvec.subvec (" ^ vector.code ^ ") (" ^ start.code
-              ^ ") (" ^ stop.code ^ "))"))
+            (typed_ir vector.ty
+               (Ocaml_ir.Apply
+                  ( Ocaml_ir.Ident "Option.get",
+                    [ Ocaml_ir.Apply
+                        ( Ocaml_ir.Ident "Rrbvec.subvec",
+                          [ vector.ocaml_expr; start.ocaml_expr; stop.ocaml_expr ] ) ] )))
       | TVector _, _, _ -> Error.error "subvec indexes must be int"
       | _ -> Error.error "subvec expects a vector")
   | Ok _ -> Error.error "subvec expects vector, start, and optional stop"
@@ -1016,10 +1025,16 @@ and compile_nth current_ns env arg_forms =
   | Ok [ collection; index ] -> (
       match (collection.ty, index.ty) with
       | TList inner, TInt ->
-          Ok (typed inner ("List.nth (" ^ collection.code ^ ") (" ^ index.code ^ ")"))
+          Ok
+            (typed_ir inner
+               (Ocaml_ir.Apply
+                  (Ocaml_ir.Ident "List.nth", [ collection.ocaml_expr; index.ocaml_expr ])))
       | TList _, _ -> Error.error "nth index must be int"
       | TVector inner, TInt ->
-          Ok (typed inner ("Rrbvec.nth (" ^ collection.code ^ ") (" ^ index.code ^ ")"))
+          Ok
+            (typed_ir inner
+               (Ocaml_ir.Apply
+                  (Ocaml_ir.Ident "Rrbvec.nth", [ collection.ocaml_expr; index.ocaml_expr ])))
       | TVector _, _ -> Error.error "nth index must be int"
       | _ -> Error.error "nth expects a list or vector")
   | Ok [ collection; index; default ] -> (
