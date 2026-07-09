@@ -207,10 +207,11 @@ callee are present with compatible types.
 
 Static destructuring is supported for `let`, `fn`, and `defn`. Associative
 destructuring works on structural maps with `:keys`, direct `{local :keyword}`
-bindings, and `:as`; sequential destructuring works on typed vectors and lists
-with fixed positional bindings and `:as`. Destructured function parameters
-infer row-shaped structural map requirements, so callers may pass wider maps
-when the required fields are present.
+bindings, scalar literal `:or` defaults, and `:as`; sequential destructuring
+works on typed vectors and lists with fixed positional bindings, `& rest`, and
+`:as`. Destructured function parameters infer row-shaped structural map
+requirements, so callers may pass wider maps when the required fields are
+present.
 
 Generated OCaml preserves row-polymorphic calls by emitting a narrow record type
 for each row-shaped function parameter and projecting wider structural records

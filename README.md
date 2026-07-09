@@ -49,9 +49,9 @@ The compiler infers record-like map shapes automatically:
 - `(defn inc1 [x] (+ x 1))`, `(fn [x] ...)`, and `(let [...] ...)` are
   supported for typed function workflows.
 - `let`, `fn`, and `defn` support a static destructuring subset. Map
-  destructuring supports `{:keys [...]}`, `{local :keyword}`, and `:as` for
-  structural maps; vector destructuring supports fixed positions and `:as` for
-  typed vectors and lists.
+  destructuring supports `{:keys [...]}`, `{local :keyword}`, scalar literal
+  `:or` defaults, and `:as` for structural maps; vector/list destructuring
+  supports fixed positions, `& rest`, and `:as` for typed vectors and lists.
 - Function parameter types are inferred from body constraints where possible.
   Keyword lookup constraints such as `(:age person)` can infer required
   structural map fields when the field value type is known from context.

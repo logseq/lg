@@ -38,11 +38,12 @@ Function calls can pass wider structural maps when the callee only requires a kn
 
 `let`, `fn`, and `defn` support a static destructuring subset inspired by
 Clojure destructuring. Associative destructuring works on structural maps with
-`:keys`, direct `{local :keyword}` bindings, and `:as`. Sequential
-destructuring works on typed vectors and lists with fixed positional bindings
-and `:as`. Variadic `&` destructuring, default values, keyword argument
-destructuring, and nil-padding are not supported yet because the current OCaml
-runtime representation has no nilable collection element type.
+`:keys`, direct `{local :keyword}` bindings, scalar literal `:or` defaults, and
+`:as`. Sequential destructuring works on typed vectors and lists with fixed
+positional bindings, `& rest`, and `:as`. Keyword argument destructuring,
+non-literal default expressions, and nil-padding are not supported yet because
+the current OCaml runtime representation has no nilable collection element
+type.
 
 Row polymorphism is represented in cljml's static type compatibility: a
 function parameter inferred as a structural map with fields `:name` and `:age`

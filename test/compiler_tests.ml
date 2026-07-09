@@ -1253,6 +1253,25 @@ let test_destructuring_supports_direct_keyword_bindings () =
   assert_ocaml_runs "destructuring_supports_direct_keyword_bindings" "Ada:36\n"
     ocaml_source
 
+let test_destructuring_supports_rest_and_defaults () =
+  let source =
+    {|
+(def sparse {:name "Ada"})
+(def full {:name "Grace", :age 37})
+(def numbers [10 20 30 40])
+(defn summarize [[x y & more :as all]]
+  (str (+ x 0) ":" (+ y 0) ":" (count more) ":" (count all)))
+(let [{:keys [name age] :or {age 0}} sparse
+      {full-age :age missing-score :score :or {missing-score 100}} full
+      [x & xs :as all] numbers]
+  (println (str name ":" age ":" full-age ":" missing-score ":" x ":" (first xs) ":"
+                (count xs) ":" (count all) ":" (summarize numbers))))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "destructuring_supports_rest_and_defaults"
+    "Ada:0:37:100:10:20:3:4:10:20:2:4\n" ocaml_source
+
 let test_destructuring_preserves_row_polymorphic_function_calls () =
   let source =
     {|
@@ -1294,6 +1313,15 @@ let test_destructuring_rejects_missing_map_fields () =
 let test_destructuring_rejects_unsupported_let_sources () =
   Cljml.Compiler.compile_string {|(def x (let [{:keys [name]} [1 2]] name))|}
   |> expect_error "map destructuring expects a map"
+
+let test_destructuring_rejects_bad_rest_binding () =
+  Cljml.Compiler.compile_string {|(def x (let [[head &] [1 2]] head))|}
+  |> expect_error "sequential destructuring & must be followed by a symbol"
+
+let test_destructuring_rejects_bad_or_defaults () =
+  Cljml.Compiler.compile_string
+    {|(def x (let [{:keys [age] :or [age 0]} {:name "Ada"}] age))|}
+  |> expect_error "map destructuring :or expects a map"
 
 let test_sequence_core_api_on_vectors () =
   let source =
@@ -2015,6 +2043,8 @@ let tests =
     ("destructuring works in let and functions", test_destructuring_in_let_and_functions);
     ( "destructuring supports direct keyword bindings",
       test_destructuring_supports_direct_keyword_bindings );
+    ( "destructuring supports rest and defaults",
+      test_destructuring_supports_rest_and_defaults );
     ( "destructuring preserves row polymorphic function calls",
       test_destructuring_preserves_row_polymorphic_function_calls );
     ( "row polymorphic functions accept different map shapes",
@@ -2023,6 +2053,10 @@ let tests =
       test_destructuring_rejects_missing_map_fields );
     ( "destructuring rejects unsupported let sources",
       test_destructuring_rejects_unsupported_let_sources );
+    ( "destructuring rejects bad rest binding",
+      test_destructuring_rejects_bad_rest_binding );
+    ( "destructuring rejects bad or defaults",
+      test_destructuring_rejects_bad_or_defaults );
     ("sequence core api works on vectors", test_sequence_core_api_on_vectors);
     ("function helpers work", test_function_helpers);
     ("common higher-order helpers work", test_common_higher_order_helpers);
