@@ -944,17 +944,24 @@ and compile_conj current_ns env arg_forms =
       let add_value collection value =
         match collection.ty with
         | TList inner when Types.equal inner value.ty ->
-            Ok (typed collection.ty ("(" ^ value.code ^ " :: (" ^ collection.code ^ "))"))
+            Ok
+              (typed_ir collection.ty
+                 (Ocaml_ir.Cons (value.ocaml_expr, collection.ocaml_expr)))
         | TList _ -> Error.error "conj value type must match list element type"
         | TVector inner when Types.equal inner value.ty ->
             Ok
-              (typed collection.ty
-                 ("Rrbvec.push_back (" ^ collection.code ^ ") (" ^ value.code ^ ")"))
+              (typed_ir collection.ty
+                 (Ocaml_ir.Apply
+                    ( Ocaml_ir.Ident "Rrbvec.push_back",
+                      [ collection.ocaml_expr; value.ocaml_expr ] )))
         | TVector _ -> Error.error "conj value type must match vector element type"
         | TSet inner when Types.equal inner value.ty ->
             Ok
-              (typed collection.ty
-                 ("List.sort_uniq compare (" ^ value.code ^ " :: (" ^ collection.code ^ "))"))
+              (typed_ir collection.ty
+                 (Ocaml_ir.Apply
+                    ( Ocaml_ir.Ident "List.sort_uniq",
+                      [ Ocaml_ir.Ident "compare";
+                        Ocaml_ir.Cons (value.ocaml_expr, collection.ocaml_expr) ] )))
         | TSet _ -> Error.error "conj value type must match set element type"
         | _ -> Error.error "conj expects a list, vector, or set"
       in
@@ -973,7 +980,9 @@ and compile_cons current_ns env arg_forms =
   | Ok [ value; collection ] -> (
       match collection.ty with
       | TList inner when Types.equal inner value.ty ->
-          Ok (typed collection.ty ("(" ^ value.code ^ " :: (" ^ collection.code ^ "))"))
+          Ok
+            (typed_ir collection.ty
+               (Ocaml_ir.Cons (value.ocaml_expr, collection.ocaml_expr)))
       | TList _ -> Error.error "cons value type must match list element type"
       | _ -> Error.error "cons expects a value and list")
   | Ok _ -> Error.error "cons expects value and list"
