@@ -286,6 +286,7 @@ and compile_call current_ns env name arg_forms =
   | "rest" -> compile_rest current_ns env arg_forms
   | "seq" -> compile_seq current_ns env arg_forms
   | "empty?" -> compile_empty current_ns env arg_forms
+  | "into" -> compile_into current_ns env arg_forms
   | "map" -> compile_map_call current_ns env arg_forms
   | "filter" -> compile_filter current_ns env arg_forms
   | "reduce" -> compile_reduce current_ns env arg_forms
@@ -840,6 +841,46 @@ and compile_empty_value current_ns env arg_forms =
       | TString -> Ok (typed TString {|""|})
       | _ -> Error.error "empty expects a collection or string")
   | Ok _ -> Error.error "empty expects 1 arguments"
+
+and collection_to_list_code collection =
+  match collection.ty with
+  | TList inner -> Ok (inner, collection.code)
+  | TVector inner -> Ok (inner, "Rrbvec.to_list (" ^ collection.code ^ ")")
+  | TSet inner -> Ok (inner, collection.code)
+  | _ -> Error.error "into source must be a collection"
+
+and compile_into current_ns env arg_forms =
+  match compile_args_for current_ns env arg_forms with
+  | Error _ as err -> err
+  | Ok [ target; source ] -> (
+      match collection_to_list_code source with
+      | Error _ as err -> err
+      | Ok (source_inner, source_list_code) -> (
+          match target.ty with
+          | TVector target_inner when Types.equal target_inner source_inner -> (
+              match source.ty with
+              | TVector _ ->
+                  Ok
+                    (typed target.ty
+                       ("Rrbvec.append (" ^ target.code ^ ") (" ^ source.code ^ ")"))
+              | _ ->
+                  Ok
+                    (typed target.ty
+                       ("Rrbvec.append_list (" ^ target.code ^ ") (" ^ source_list_code ^ ")")))
+          | TList target_inner when Types.equal target_inner source_inner ->
+              Ok
+                (typed target.ty
+                   ("List.fold_left (fun acc item -> item :: acc) (" ^ target.code ^ ") ("
+                  ^ source_list_code ^ ")"))
+          | TSet target_inner when Types.equal target_inner source_inner ->
+              Ok
+                (typed target.ty
+                   ("List.sort_uniq compare ((" ^ target.code ^ ") @ (" ^ source_list_code
+                  ^ "))"))
+          | TVector _ | TList _ | TSet _ ->
+              Error.error "into source element type must match target element type"
+          | _ -> Error.error "into target must be a collection"))
+  | Ok _ -> Error.error "into expects target and source collections"
 
 and compile_map_call current_ns env arg_forms =
   match arg_forms with

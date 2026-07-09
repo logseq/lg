@@ -735,6 +735,22 @@ let test_empty_rejects_unsupported_values () =
   Cljml.Compiler.compile_string {|(def x (empty 1))|}
   |> expect_error "empty expects a collection or string"
 
+let test_into_core_api () =
+  let source =
+    {|
+(def xs (into [1] (list 2 3)))
+(def ys (into (list-of :int) [1 2 3]))
+(def zs (into (hash-set 1) [1 2 2 3]))
+(println (str (pr-str xs) ":" (pr-str ys) ":" (pr-str zs)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "into_core_api" "[1 2 3]:(3 2 1):#{1 2 3}\n" ocaml_source
+
+let test_into_rejects_element_type_mismatch () =
+  Cljml.Compiler.compile_string {|(def x (into [1] ["two"]))|}
+  |> expect_error "into source element type must match target element type"
+
 let test_nth_supports_default_values () =
   let source =
     {|
@@ -911,6 +927,8 @@ let tests =
     ("sequence core api works on lists", test_sequence_core_api_on_lists);
     ("empty core api works", test_empty_core_api);
     ("empty rejects unsupported values", test_empty_rejects_unsupported_values);
+    ("into core api works", test_into_core_api);
+    ("into rejects element type mismatch", test_into_rejects_element_type_mismatch);
     ("nth supports default values", test_nth_supports_default_values);
     ("nth rejects default type mismatch", test_nth_rejects_default_type_mismatch);
     ("typed empty lists work", test_typed_empty_lists);
