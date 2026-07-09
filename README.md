@@ -24,6 +24,8 @@ The compiler infers record-like map shapes automatically:
 - `[36 37 38]` becomes an `Rrbvec.t` persistent vector.
 - `(list 1 2 3)` becomes a typed OCaml list.
 - `:admin?` is a distinct `keyword` value in the static type system.
+- `(hash-map :name "Ada" :age 36)` creates the same structural map shape as a
+  map literal.
 - `(assoc x :age 36 :admin? true)` produces a new record shape with added or
   updated fields.
 - `(dissoc y :age :admin?)` produces a new record shape with those fields

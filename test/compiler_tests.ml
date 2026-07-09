@@ -175,6 +175,24 @@ let test_map_rejects_duplicate_fields () =
   Cljml.Compiler.compile_string source
   |> expect_error "duplicate field :name"
 
+let test_hash_map_constructs_structural_maps () =
+  let source =
+    {|
+(def user (hash-map :name "Ada" :age 36))
+(println (str (:name user) ":" (:age user)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "hash_map_constructs_structural_maps" "Ada:36\n" ocaml_source
+
+let test_hash_map_rejects_duplicate_fields () =
+  Cljml.Compiler.compile_string {|(def x (hash-map :name "Ada" :name "Grace"))|}
+  |> expect_error "duplicate field :name"
+
+let test_hash_map_rejects_odd_key_value_forms () =
+  Cljml.Compiler.compile_string {|(def x (hash-map :name "Ada" :age))|}
+  |> expect_error "hash-map expects keyword/value pairs"
+
 let test_println_outputs_record_values () =
   let source =
     {|
@@ -770,6 +788,9 @@ let tests =
     ("assoc rejects changing an existing field type", test_assoc_rejects_type_changes);
     ("dissoc rejects unknown fields", test_dissoc_rejects_unknown_fields);
     ("map literals reject duplicate fields", test_map_rejects_duplicate_fields);
+    ("hash-map constructs structural maps", test_hash_map_constructs_structural_maps);
+    ("hash-map rejects duplicate fields", test_hash_map_rejects_duplicate_fields);
+    ("hash-map rejects odd key value forms", test_hash_map_rejects_odd_key_value_forms);
     ("println outputs record values", test_println_outputs_record_values);
     ("println rejects unknown symbols", test_println_rejects_unknown_symbols);
     ("print and println match Clojure output", test_print_and_println_match_clojure_output);

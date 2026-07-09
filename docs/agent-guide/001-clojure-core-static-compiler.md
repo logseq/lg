@@ -84,7 +84,7 @@ The compiler should support this syntax without macros.
 | Boolean | `not`, `true?`, `false?`, `nil?`, `some?` | 1 |
 | Arithmetic | `+`, `-`, `*`, `/`, `inc`, `dec`, `<`, `<=`, `>`, `>=`, `=` | 1 |
 | Strings | `str` | 1 |
-| Maps | `get`, `assoc`, `dissoc`, `merge`, `update`, `select-keys`, `contains?`, `keys`, `vals` | 1 |
+| Maps | `hash-map`, `get`, `assoc`, `dissoc`, `merge`, `update`, `select-keys`, `contains?`, `keys`, `vals` | 1 |
 | Vectors | `vector`, `conj`, `count`, `nth`, `first`, `second`, `last`, `peek`, `pop`, `rest` | 1 |
 | Lists | `list`, `list-of`, `cons`, `conj`, `count`, `nth`, `first`, `second`, `last`, `peek`, `pop`, `rest` | 2 |
 | Sequences | `seq`, `empty?`, `map`, `filter`, `reduce` | 2 |
@@ -104,6 +104,8 @@ Vector types are homogeneous as `vector<T>` and compile to `Rrbvec.t`.
 List types are homogeneous as `list<T>` and compile to OCaml lists.
 
 Map literal types are structural records keyed by Clojure keywords.
+
+`hash-map` creates structural records from keyword/value pairs.
 
 Keyword lookup in a typed context can infer structural map field requirements
 for unannotated function parameters.

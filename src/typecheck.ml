@@ -282,6 +282,7 @@ and compile_call current_ns env name arg_forms =
   | "contains?" -> compile_contains current_ns env arg_forms
   | "keys" -> compile_keys current_ns env arg_forms
   | "vals" -> compile_vals current_ns env arg_forms
+  | "hash-map" -> compile_hash_map current_ns env arg_forms
   | "rest" -> compile_rest current_ns env arg_forms
   | "seq" -> compile_seq current_ns env arg_forms
   | "empty?" -> compile_empty current_ns env arg_forms
@@ -598,6 +599,20 @@ and compile_merge current_ns env arg_forms =
   match compile_args_for current_ns env arg_forms with
   | Error _ as err -> err
   | Ok maps -> Structural_map.merge maps
+
+and compile_hash_map current_ns env arg_forms =
+  let rec parse_pairs acc = function
+    | [] -> Ok (List.rev acc)
+    | FKeyword keyword :: value_form :: rest ->
+        parse_pairs ((FKeyword keyword, value_form) :: acc) rest
+    | _ -> Error.error "hash-map expects keyword/value pairs"
+  in
+  if arg_forms = [] || List.length arg_forms mod 2 <> 0 then
+    Error.error "hash-map expects keyword/value pairs"
+  else
+    match parse_pairs [] arg_forms with
+    | Error _ as err -> err
+    | Ok pairs -> compile_map current_ns env pairs
 
 and compile_update current_ns env arg_forms =
   match arg_forms with

@@ -12,6 +12,8 @@ Vectors are homogeneous.
 
 Maps are structural records when created from map literals.
 
+`hash-map` creates structural records from keyword/value pairs.
+
 `assoc` can add one or more fields to a structural map, but it cannot change the type of an existing field.
 
 `dissoc` can remove one or more known fields from a structural map.
