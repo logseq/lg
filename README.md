@@ -31,6 +31,8 @@ The compiler infers record-like map shapes automatically:
 - `(get x :missing default)` returns a typed default when the field is absent.
 - `merge`, `update`, and `select-keys` work on structural maps when field
   keys are known statically.
+- `(update x :age + 1)` passes the current field value plus extra arguments to
+  the update function.
 - `(ns examples.person)` scopes unqualified symbols and avoids generated OCaml
   name collisions.
 - `(defn inc1 [x] (+ x 1))`, `(fn [x] ...)`, and `(let [...] ...)` are

@@ -601,30 +601,46 @@ and compile_merge current_ns env arg_forms =
 
 and compile_update current_ns env arg_forms =
   match arg_forms with
-  | target_form :: FKeyword keyword :: fn_form :: [] -> (
-      match (compile_expr current_ns env target_form, compile_function_arg current_ns env fn_form) with
-      | (Error _ as err), _ -> err
-      | _, (Error _ as err) -> err
-      | Ok target, Ok fn -> (
+  | target_form :: FKeyword keyword :: fn_form :: extra_forms -> (
+      match
+        ( compile_expr current_ns env target_form,
+          compile_function_arg current_ns env fn_form,
+          compile_args_for current_ns env extra_forms )
+      with
+      | (Error _ as err), _, _ -> err
+      | _, (Error _ as err), _ -> err
+      | _, _, (Error _ as err) -> err
+      | Ok target, Ok fn, Ok extra_args -> (
           match target.ty with
           | TRecord fields -> (
               match find_field keyword fields with
               | None -> Error.error ("cannot update unknown field " ^ keyword)
               | Some field -> (
                   match fn.ty with
-                  | TFn ([ param_ty ], ret)
-                    when Types.equal param_ty field.ty && Types.equal ret field.ty ->
+                  | TFn (param_tys, ret)
+                    when List.length param_tys = List.length extra_args + 1
+                         && Types.compatible ~expected:(List.hd param_tys)
+                              ~actual:field.ty
+                         && List.for_all2
+                              (fun expected arg -> Types.compatible ~expected ~actual:arg.ty)
+                              (drop 1 param_tys) extra_args
+                         && Types.equal ret field.ty ->
                       let old_code = Structural_map.field_code target field in
-                      let value_code = apply_code fn.code [ old_code ] in
+                      let value_code =
+                        apply_code fn.code
+                          (old_code :: List.map (fun arg -> arg.code) extra_args)
+                      in
                       Structural_map.update_value target fields keyword ret value_code
-                  | TFn ([ _ ], ret) ->
+                  | TFn (_param_tys, ret) when not (Types.equal ret field.ty) ->
                       Error.error
                         (Printf.sprintf "cannot update %s as %s because it is already %s"
                            keyword (source_name ret) (source_name field.ty))
-                  | TFn _ -> Error.error "update function must accept one argument"
+                  | TFn _ ->
+                      Error.error
+                        "update function arguments do not match field and extra arguments"
                   | _ -> Error.error "update expects a function"))
           | _ -> Error.error "update expects a map"))
-  | _ -> Error.error "update expects map, keyword, and function"
+  | _ -> Error.error "update expects map, keyword, function, and optional arguments"
 
 and compile_select_keys current_ns env arg_forms =
   match arg_forms with

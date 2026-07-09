@@ -121,6 +121,9 @@ callee are present with compatible types.
 
 `merge` and `update` preserve existing field types for overlapping keys.
 
+`update` passes the existing field value followed by any extra arguments to the
+update function.
+
 `get` on a structural map and literal keyword returns that field type.
 
 Three-argument `get` returns a typed default when the literal key is absent.

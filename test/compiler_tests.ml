@@ -583,6 +583,22 @@ let test_update_rejects_type_changes () =
   Cljml.Compiler.compile_string source
   |> expect_error "cannot update :age as string because it is already int"
 
+let test_update_supports_extra_arguments () =
+  let source =
+    {|
+(def user {:name "Ada", :age 36})
+(def older (update user :age + 1))
+(println (str (:name older) ":" (:age older)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "update_supports_extra_arguments" "Ada:37\n" ocaml_source
+
+let test_update_rejects_extra_argument_type_mismatch () =
+  let source = {|(def bad (update {:age 36} :age + "one"))|} in
+  Cljml.Compiler.compile_string source
+  |> expect_error "update function arguments do not match field and extra arguments"
+
 let test_select_keys_rejects_unknown_fields () =
   Cljml.Compiler.compile_string {|(def bad (select-keys {:name "Ada"} [:age]))|}
   |> expect_error "cannot select unknown field :age"
@@ -812,6 +828,9 @@ let tests =
     ( "merge rejects incompatible overlapping fields",
       test_merge_rejects_incompatible_overlapping_fields );
     ("update rejects type changes", test_update_rejects_type_changes);
+    ("update supports extra arguments", test_update_supports_extra_arguments);
+    ( "update rejects extra argument type mismatch",
+      test_update_rejects_extra_argument_type_mismatch );
     ("select-keys rejects unknown fields", test_select_keys_rejects_unknown_fields);
     ("if rejects branch type mismatch", test_if_rejects_branch_type_mismatch);
     ("let, defn, and fn values work", test_let_defn_and_fn_values);

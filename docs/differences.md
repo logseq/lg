@@ -20,6 +20,8 @@ Maps are structural records when created from map literals.
 
 Three-argument `get` can return a default for an absent literal key; when the key is present, the default must match the field type.
 
+`update` can pass extra arguments after the update function, but the function must return the existing field type.
+
 Keyword call syntax such as `(:name user)` is supported for structural maps.
 
 `if` branches must have the same type.
