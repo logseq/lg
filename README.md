@@ -9,12 +9,12 @@ first, then OCaml lowering:
 
 - cljml has its own Lisp AST and typed IR for static Clojure-like semantics.
 - The OCaml source backend remains the stable output path.
-- `Cljml.Compiler.compile_parsetree` is the first Parsetree backend skeleton:
-  it lowers the typed result to OCaml source, parses that source into
-  `Parsetree.structure`, and lets OCaml's printer/tooling consume the result.
+- `Cljml.Compiler.compile_parsetree` lowers compiled items independently into
+  `Parsetree.structure`. Structural record type/value items are constructed
+  directly; remaining source-backed items are parsed at item boundaries.
 - `Cljml.Compiler.compile_chunk_parsetree` uses the same incremental compiler
-  state as `compile_chunk`, but returns a parsed OCaml structure for the
-  current chunk.
+  state as `compile_chunk`, but returns an OCaml structure for the current
+  chunk.
 - Parsetree is not used as cljml's full type system, and this direction does
   not introduce nilable sequences or lazy seqs.
 

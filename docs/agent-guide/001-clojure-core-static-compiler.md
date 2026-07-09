@@ -376,6 +376,9 @@ They do not test internal AST shapes directly.
 - Keep tests behavior-oriented.
 - Keep CLI behavior compatible with the existing prototype.
 - Keep whole-file and incremental compilation paths sharing the same frontend, typechecker, and backend modules.
+- Lower compiled items independently in the Parsetree backend. Structural
+  record definitions use direct Parsetree builders; source-backed items remain
+  an explicit migration boundary until their expression IR is structured.
 - Preserve enough compiler state to support editor/server workflows without reparsing and rechecking unrelated chunks.
 - Use extensive integration tests before expanding each core API category.
 - The current `RCmerci/rrbvec` repository has an opam file but no package in the active opam index, so the prototype vendors its library source.

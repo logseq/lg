@@ -1970,6 +1970,20 @@ let test_parsetree_backend_preserves_static_errors () =
   Cljml.Compiler.compile_parsetree {|(def x (+ 1 "two"))|}
   |> expect_error_value "expected int arguments for +"
 
+let test_parsetree_backend_builds_native_record_items () =
+  let structure =
+    Cljml.Compiler.compile_parsetree {|(def user {:name "Ada", :age 36})|}
+    |> expect_ok
+  in
+  match structure with
+  | type_item :: value_item :: _ -> (
+      match (type_item.pstr_desc, value_item.pstr_desc) with
+      | Pstr_type _, Pstr_value _ ->
+          if not (type_item.pstr_loc.loc_ghost && value_item.pstr_loc.loc_ghost) then
+            failwith "expected native record structure items with ghost locations"
+      | _ -> failwith "expected record type and value structure items")
+  | _ -> failwith "expected record type and value structure items"
+
 let test_incremental_parsetree_backend_preserves_state () =
   let state = Cljml.Compiler.empty_state in
   let state, people_structure =
@@ -2276,6 +2290,8 @@ let tests =
       test_parsetree_backend_prints_runnable_ocaml );
     ( "parsetree backend preserves static errors",
       test_parsetree_backend_preserves_static_errors );
+    ( "parsetree backend builds native record items",
+      test_parsetree_backend_builds_native_record_items );
     ( "incremental parsetree backend preserves state",
       test_incremental_parsetree_backend_preserves_state );
   ]

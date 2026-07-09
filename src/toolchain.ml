@@ -39,9 +39,8 @@ module Ocaml_backend : BACKEND = struct
 end
 
 module Ocaml_parsetree_backend = struct
-  let implementation typed =
-    let source = Ocaml_backend.implementation typed in
-    match Ocaml_parsetree.parse_implementation source with
+  let implementation (typed : typed_result) =
+    match Ocaml_parsetree.structure_of_items typed.items with
     | Error _ as err -> err
     | Ok structure -> Ok { ast = typed.ast; items = typed.items; structure }
 
