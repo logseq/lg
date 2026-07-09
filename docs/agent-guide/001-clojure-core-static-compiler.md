@@ -5,6 +5,7 @@ Goal: Build cljml into a statically typed Clojure-syntax language that compiles 
 Architecture: cljml should follow the same broad shape as ReasonML: parse a source syntax into an AST, type check that AST against a typed core language, then emit normal OCaml.
 The frontend keeps Clojure surface syntax, while the backend emits OCaml data structures and functions so generated code can use the OCaml compiler and OCaml packages.
 The implementation should mirror ReasonML's toolchain boundary: a frontend parses source into an AST, a type/lowering phase builds typed items, and a backend prints OCaml.
+cljml should also support incremental compilation: callers must be able to parse, typecheck, and emit one source chunk while preserving namespace state, aliases, generated type counters, and previously compiled bindings for later chunks.
 
 Tech Stack: OCaml 5.4.1, Dune, generated OCaml backend, `RCmerci/rrbvec` for persistent vectors, integration tests that compile and run emitted OCaml.
 
@@ -29,6 +30,10 @@ ClojureDart is the reference model for Clojure dialect ergonomics over a non-JVM
 Its docs emphasize explicit host differences, namespace import behavior, symbol munging, and host package interop as first-class compiler concerns.
 cljml should follow that posture for OCaml packages and should keep a documented differences surface instead of silently diverging from Clojure.
 
+API compatibility, runtime representation, and performance must be balanced explicitly.
+The source-level API should stay close to Clojure, but the typed core should prefer predictable OCaml representations over runtime dynamism.
+When exact Clojure behavior would require slow dynamic dispatch or weak static types, cljml should document the difference, choose a typed representation, and add tests that lock in that behavior.
+
 ## Testing Plan
 
 I will add integration tests that compile cljml source strings to OCaml, compile the emitted OCaml with `ocamlc`, run the result, and assert stdout.
@@ -38,6 +43,16 @@ I will test Clojure-style forms using vector literals, map literals, ordinary pr
 I will test static type errors for heterogeneous vectors, invalid arithmetic arguments, `get` on unknown map fields, `assoc` changing an existing field type, and `if` branch type mismatch.
 
 I will test command-line behavior through `dune exec bin/cljml_cli.exe -- --run examples/person.cljml`.
+
+I will add extensive tests across these layers:
+
+- Reader/parser behavior for Clojure syntax accepted by cljml.
+- Typechecker success and failure cases for every supported core API.
+- Generated OCaml compilation and execution for user-visible behavior.
+- Namespace and alias resolution across multiple namespaces.
+- Incremental compilation state across source chunks.
+- Runtime representation checks for persistent vectors and structural maps where behavior depends on representation.
+- CLI smoke tests for file compilation and `--run`.
 
 NOTE: I will write *all* tests before I add any implementation behavior.
 
@@ -134,6 +149,12 @@ Map literal types are structural records keyed by Clojure keywords.
 
 19. Keep ClojureDart as a reference for non-JVM dialect ergonomics and compatibility documentation.
 
+20. Add an incremental compiler state that persists current namespace, top-level environment, generated record type counter, and emitted items.
+
+21. Expose a public incremental API that can compile a source chunk into emitted OCaml while returning the next compiler state.
+
+22. Keep incremental output deterministic and compatible with whole-file compilation.
+
 ## Phase 1 Task List
 
 1. Write failing integration tests for nested calls, vector literals, map field access, `if`, arithmetic, `str`, and collection printing.
@@ -210,6 +231,9 @@ They do not test internal AST shapes directly.
 - Keep macros out of the reader and evaluator.
 - Keep tests behavior-oriented.
 - Keep CLI behavior compatible with the existing prototype.
+- Keep whole-file and incremental compilation paths sharing the same frontend, typechecker, and backend modules.
+- Preserve enough compiler state to support editor/server workflows without reparsing and rechecking unrelated chunks.
+- Use extensive integration tests before expanding each core API category.
 - The current `RCmerci/rrbvec` repository has an opam file but no package in the active opam index, so the prototype vendors its library source.
 
 ## Question
