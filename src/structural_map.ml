@@ -13,14 +13,14 @@ let field_expr target field =
   match target.record_values with
   | Some values -> (
       match List.assoc_opt field values with
-      | Some code -> Ocaml_ir.Raw code
+      | Some expression -> expression
       | None -> Ocaml_ir.Field (target.ocaml_expr, field.ocaml_name))
   | None -> Ocaml_ir.Field (target.ocaml_expr, field.ocaml_name)
 
 let field_code target field = field_expr target field |> Ocaml_ir.to_source
 
 let values_for target fields =
-  List.map (fun (field : field) -> (field, field_code target field)) fields
+  List.map (fun (field : field) -> (field, field_expr target field)) fields
 
 let record_expr fields values =
   {
@@ -40,10 +40,11 @@ let assoc target fields keyword value =
       let values =
         fields
         |> List.map (fun (field : field) ->
-               let code =
-                 if field.keyword = keyword then value.code else field_code target field
+               let expression =
+                 if field.keyword = keyword then value.ocaml_expr
+                 else field_expr target field
                in
-               (field, code))
+               (field, expression))
       in
       Ok (record_expr fields values)
   | None ->
@@ -51,7 +52,7 @@ let assoc target fields keyword value =
       let old_fields = fields in
       let fields = old_fields @ [ new_field ] in
       let values = values_for target old_fields in
-      let values = values @ [ (new_field, value.code) ] in
+      let values = values @ [ (new_field, value.ocaml_expr) ] in
       Ok (record_expr fields values)
 
 let rec assoc_many target pairs =
@@ -95,10 +96,10 @@ let merge maps =
           | Some existing ->
               let values =
                 values
-                |> List.map (fun (field, code) ->
+                |> List.map (fun (field, expression) ->
                        if field.keyword = existing.keyword then
                          (field, List.assoc right_field right_values)
-                       else (field, code))
+                       else (field, expression))
               in
               Ok (fields, values)
           | None ->
@@ -134,7 +135,7 @@ let merge maps =
               Ok (record_expr fields values))
       | _ -> Error.error "merge expects maps")
 
-let update_value target fields keyword value_ty value_code =
+let update_value target fields keyword value_ty value_expr =
   match find_field keyword fields with
   | None -> Error.error ("cannot update unknown field " ^ keyword)
   | Some field when not (Types.equal field.ty value_ty) ->
@@ -145,8 +146,8 @@ let update_value target fields keyword value_ty value_code =
       let values =
         fields
         |> List.map (fun (field : field) ->
-               if field.keyword = keyword then (field, value_code)
-               else (field, field_code target field))
+               if field.keyword = keyword then (field, value_expr)
+               else (field, field_expr target field))
       in
       Ok (record_expr fields values)
 

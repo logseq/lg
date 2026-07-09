@@ -37,12 +37,12 @@ let rec core_type = function
         args (core_type ret)
   | Types.TRecord _ -> type_constructor "record" []
 
-let parse_record_values var_name values =
+let record_values_to_parsetree var_name values =
   let rec loop acc = function
     | [] -> Ok (List.rev acc)
-    | ((field : Types.field), code) :: rest -> (
+    | ((field : Types.field), expression) :: rest -> (
         let context = "record " ^ var_name ^ " field " ^ field.keyword in
-        match parse_expression ~context code with
+        match Ocaml_ir.to_parsetree ~context expression with
         | Error _ as err -> err
         | Ok expr ->
             loop ((lid (Longident.Lident field.ocaml_name), expr) :: acc) rest)
@@ -62,7 +62,7 @@ let record_type_definition type_name fields =
 
 let record_definition var_name type_name fields values =
   let type_item = record_type_definition type_name fields in
-  match parse_record_values var_name values with
+  match record_values_to_parsetree var_name values with
   | Error _ as err -> err
   | Ok record_fields ->
       let record_expr = Ast_helper.Exp.record ~loc record_fields None in

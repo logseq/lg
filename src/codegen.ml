@@ -64,13 +64,13 @@ let rec stringify_expr ?(pr = false) expr =
       | Some values ->
           let parts =
             values
-            |> List.map (fun ((field : field), code) ->
+            |> List.map (fun ((field : field), expression) ->
                    let part =
                      stringify_expr ~pr:true
                        {
                          ty = field.ty;
-                         code;
-                         ocaml_expr = Ocaml_ir.Raw code;
+                         code = Ocaml_ir.to_source expression;
+                         ocaml_expr = expression;
                          record_values = None;
                        }
                    in
@@ -114,8 +114,9 @@ let emit_type type_name (fields : field list) =
 let emit_record_def var_name type_name (fields : field list) values =
   let values =
     values
-    |> List.map (fun ((field : field), code) ->
-           Printf.sprintf "  %s = %s;" field.ocaml_name code)
+    |> List.map (fun ((field : field), expression) ->
+           Printf.sprintf "  %s = %s;" field.ocaml_name
+             (Ocaml_ir.to_source expression))
     |> String.concat "\n"
   in
   Printf.sprintf "%s\n\nlet %s : %s = {\n%s\n}" (emit_type type_name fields)

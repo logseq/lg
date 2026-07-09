@@ -150,7 +150,7 @@ and compile_map current_ns env pairs =
                in
                let values =
                  List.map2
-                   (fun field (_keyword, value) -> (field, value.code))
+                   (fun field (_keyword, value) -> (field, value.ocaml_expr))
                    fields pairs
                in
                {
@@ -1208,12 +1208,13 @@ and compile_update current_ns env arg_forms =
                               (fun expected arg -> Types.compatible ~expected ~actual:arg.ty)
                               (drop 1 param_tys) extra_args
                          && Types.equal ret field.ty ->
-                      let old_code = Structural_map.field_code target field in
-                      let value_code =
-                        apply_code fn.code
-                          (old_code :: List.map (fun arg -> arg.code) extra_args)
+                      let value_expr =
+                        Ocaml_ir.Apply
+                          ( fn.ocaml_expr,
+                            Structural_map.field_expr target field
+                            :: List.map (fun arg -> arg.ocaml_expr) extra_args )
                       in
-                      Structural_map.update_value target fields keyword ret value_code
+                      Structural_map.update_value target fields keyword ret value_expr
                   | TFn (_param_tys, ret) when not (Types.equal ret field.ty) ->
                       Error.error
                         (Printf.sprintf "cannot update %s as %s because it is already %s"

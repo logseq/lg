@@ -29,7 +29,7 @@ type typed_expr = {
   ty : ty;
   code : string;
   ocaml_expr : Ocaml_ir.t;
-  record_values : (field * string) list option;
+  record_values : (field * Ocaml_ir.t) list option;
 }
 
 type value_pattern =
@@ -56,7 +56,7 @@ type compiled_item =
       var_name : string;
       type_name : string;
       fields : field list;
-      values : (field * string) list;
+      values : (field * Ocaml_ir.t) list;
     }
 
 let typed ty code =
