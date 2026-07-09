@@ -92,6 +92,7 @@ The compiler should support this syntax without macros.
 ## Type System
 
 The first type system should be explicit and structural.
+It should infer ordinary function parameter types from source-level constraints where possible, while allowing optional annotations for ambiguous cases.
 
 Scalar types are `int`, `string`, `bool`, `nil`, and `unit`.
 

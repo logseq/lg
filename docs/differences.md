@@ -22,7 +22,7 @@ Keyword call syntax such as `(:name user)` is supported for structural maps.
 
 `if` branches must have the same type.
 
-Function parameter annotations such as `^:int` and `^:string` are checked at function bodies and call sites.
+Function parameter types are inferred from body constraints where possible; annotations such as `^:int` and `^:string` are optional explicit hints.
 
 `do`, `fn`, `defn`, and `let` bodies evaluate forms in order and return the final form's type.
 

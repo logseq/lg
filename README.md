@@ -29,8 +29,9 @@ The compiler infers record-like map shapes automatically:
   name collisions.
 - `(defn inc1 [x] (+ x 1))`, `(fn [x] ...)`, and `(let [...] ...)` are
   supported for typed function workflows.
-- Function parameters can use `^:int`, `^:string`, `^:bool`, or `^:nil`
-  annotations, for example `(fn [^:int x] (+ x 1))`.
+- Function parameter types are inferred from body constraints where possible.
+  Optional `^:int`, `^:string`, `^:bool`, or `^:nil` annotations can make a
+  parameter type explicit.
 - `do`, `fn`, `defn`, and `let` bodies can contain multiple forms; earlier
   forms are evaluated for effects and the final form supplies the value.
 - `map`, `filter`, `reduce`, `apply`, `comp`, `partial`, `identity`, and

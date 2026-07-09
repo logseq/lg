@@ -328,6 +328,38 @@ let test_typed_function_parameters_reject_bad_bodies () =
   Cljml.Compiler.compile_string {|(defn bad [^:string x] (+ x 1))|}
   |> expect_error "expected int arguments for +"
 
+let test_unannotated_function_parameters_infer_from_body () =
+  let source =
+    {|
+(defn inc1 [x] (+ x 1))
+(defn flip [flag] (not flag))
+(print (str (inc1 41) ":" (flip false)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "unannotated_function_parameters_infer_from_body" "42:true\n"
+    ocaml_source
+
+let test_unannotated_function_parameters_reject_bad_int_calls () =
+  let source =
+    {|
+(defn inc1 [x] (+ x 1))
+(def bad (inc1 "Ada"))
+|}
+  in
+  Cljml.Compiler.compile_string source
+  |> expect_error "inc1 called with incompatible arguments"
+
+let test_unannotated_function_parameters_reject_bad_bool_calls () =
+  let source =
+    {|
+(defn flip [flag] (not flag))
+(def bad (flip 1))
+|}
+  in
+  Cljml.Compiler.compile_string source
+  |> expect_error "flip called with incompatible arguments"
+
 let test_do_and_multi_form_bodies () =
   let source =
     {|
@@ -486,6 +518,12 @@ let tests =
       test_typed_function_parameters_reject_bad_calls );
     ( "typed function parameters reject bad bodies",
       test_typed_function_parameters_reject_bad_bodies );
+    ( "unannotated function parameters infer from body",
+      test_unannotated_function_parameters_infer_from_body );
+    ( "unannotated function parameters reject bad int calls",
+      test_unannotated_function_parameters_reject_bad_int_calls );
+    ( "unannotated function parameters reject bad bool calls",
+      test_unannotated_function_parameters_reject_bad_bool_calls );
     ("do and multi-form bodies work", test_do_and_multi_form_bodies);
     ("fn rejects empty body", test_fn_rejects_empty_body);
     ("vectors reject mixed element types", test_vectors_reject_mixed_element_types);

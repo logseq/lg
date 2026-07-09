@@ -191,30 +191,38 @@ and compile_fn current_ns env params body_forms =
   match Type_annotation.parse_params params with
   | Error _ as err -> err
   | Ok params ->
-      let param_bindings =
-        params
-        |> List.map (fun (name, ty) ->
-               let ocaml_name = Names.sanitize_name name in
-               let env_key = Names.namespaced_key current_ns name in
-               (env_key, { ocaml_name; ty }))
+      let lookup_function_ty name =
+        match lookup_function current_ns env name with
+        | Ok fn -> Ok fn.ty
+        | Error _ as err -> err
       in
-      let env = env @ param_bindings in
-      match
-        compile_body current_ns env "function body requires at least one form"
-          body_forms
-      with
+      match Type_inference.infer_params ~lookup_function_ty params body_forms with
       | Error _ as err -> err
-      | Ok body ->
-          let params =
-            param_bindings |> List.map (fun (_key, binding) -> binding.ocaml_name)
+      | Ok params ->
+          let param_bindings =
+            params
+            |> List.map (fun (name, ty) ->
+                   let ocaml_name = Names.sanitize_name name in
+                   let env_key = Names.namespaced_key current_ns name in
+                   (env_key, { ocaml_name; ty }))
           in
-          let param_tys =
-            param_bindings
-            |> List.map (fun (_key, (binding : binding)) -> binding.ty)
-          in
-          Ok
-            (typed (TFn (param_tys, body.ty))
-               ("(fun " ^ String.concat " " params ^ " -> " ^ body.code ^ ")"))
+          let env = env @ param_bindings in
+          match
+            compile_body current_ns env "function body requires at least one form"
+              body_forms
+          with
+          | Error _ as err -> err
+          | Ok body ->
+              let params =
+                param_bindings |> List.map (fun (_key, binding) -> binding.ocaml_name)
+              in
+              let param_tys =
+                param_bindings
+                |> List.map (fun (_key, (binding : binding)) -> binding.ty)
+              in
+              Ok
+                (typed (TFn (param_tys, body.ty))
+                   ("(fun " ^ String.concat " " params ^ " -> " ^ body.code ^ ")"))
 
 and compile_call current_ns env name arg_forms =
   let compile_args () = compile_args_for current_ns env arg_forms in
