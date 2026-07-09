@@ -2206,6 +2206,9 @@ let test_parsetree_backend_builds_native_collection_core_expressions () =
 let test_parsetree_backend_builds_native_collection_match_expressions () =
   expect_structured_value_expression {|(def result (rest (list 1 2 3)))|}
 
+let test_parsetree_backend_builds_native_function_combinator_expressions () =
+  expect_structured_value_expression {|(def result (constantly 42))|}
+
 let test_incremental_parsetree_backend_preserves_state () =
   let state = Cljml.Compiler.empty_state in
   let state, people_structure =
@@ -2552,6 +2555,8 @@ let tests =
       test_parsetree_backend_builds_native_collection_core_expressions );
     ( "parsetree backend builds native collection match expressions",
       test_parsetree_backend_builds_native_collection_match_expressions );
+    ( "parsetree backend builds native function combinator expressions",
+      test_parsetree_backend_builds_native_function_combinator_expressions );
     ( "incremental parsetree backend preserves state",
       test_incremental_parsetree_backend_preserves_state );
   ]

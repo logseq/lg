@@ -1935,16 +1935,16 @@ and compile_comp current_ns env arg_forms =
           match check_chain fns with
           | Error _ as err -> err
           | Ok (arg_ty, ret_ty) ->
-              let code =
-                let inner =
-                  List.rev fns
-                  |> List.fold_left
-                       (fun acc fn -> apply_code fn.code [ acc ])
-                       "x"
-                in
-                "(fun x -> " ^ inner ^ ")"
+              let inner =
+                List.rev fns
+                |> List.fold_left
+                     (fun expression fn ->
+                       Ocaml_ir.Apply (fn.ocaml_expr, [ expression ]))
+                     (Ocaml_ir.Ident "x")
               in
-              Ok (typed (TFn ([ arg_ty ], ret_ty)) code)))
+              Ok
+                (typed_ir (TFn ([ arg_ty ], ret_ty))
+                   (Ocaml_ir.Fun ([ Ocaml_ir.PVar "x" ], inner)))))
 
 and compile_partial current_ns env arg_forms =
   match arg_forms with
@@ -1983,7 +1983,10 @@ and compile_identity current_ns env arg_forms =
 and compile_constantly current_ns env arg_forms =
   match compile_args_for current_ns env arg_forms with
   | Error _ as err -> err
-  | Ok [ value ] -> Ok (typed (TFn ([ TAny ], value.ty)) ("(fun _ -> " ^ value.code ^ ")"))
+  | Ok [ value ] ->
+      Ok
+        (typed_ir (TFn ([ TAny ], value.ty))
+           (Ocaml_ir.Fun ([ Ocaml_ir.PAny ], value.ocaml_expr)))
   | Ok _ -> Error.error "constantly expects 1 arguments"
 
 and compile_complement current_ns env arg_forms =
@@ -1995,8 +1998,11 @@ and compile_complement current_ns env arg_forms =
           match fn.ty with
           | TFn ([ arg_ty ], TBool) ->
               Ok
-                (typed (TFn ([ arg_ty ], TBool))
-                   ("(fun x -> not " ^ apply_code fn.code [ "x" ] ^ ")"))
+                (typed_ir (TFn ([ arg_ty ], TBool))
+                   (Ocaml_ir.Fun
+                      ( [ Ocaml_ir.PVar "x" ],
+                        Ocaml_ir.Prefix
+                          ("not", Ocaml_ir.Apply (fn.ocaml_expr, [ Ocaml_ir.Ident "x" ])) )))
           | TFn _ -> Error.error "complement expects a predicate"
           | _ -> Error.error "complement expects a function"))
   | _ -> Error.error "complement expects 1 function"
