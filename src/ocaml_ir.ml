@@ -22,6 +22,8 @@ type t =
   | Sequence of t list
   | Let of (pattern * t) list * t
   | Match of t * (pattern * t) list
+  | Infix of string * t * t
+  | Prefix of string * t
 
 let rec pattern_to_source = function
   | PVar name -> name
@@ -80,6 +82,10 @@ let rec to_source = function
                "| " ^ pattern_to_source pattern ^ " -> " ^ to_source body)
         |> String.concat " ")
       ^ ")"
+  | Infix (operator, left, right) ->
+      "(" ^ to_source left ^ " " ^ operator ^ " " ^ to_source right ^ ")"
+  | Prefix (operator, expression) ->
+      "(" ^ operator ^ " " ^ to_source expression ^ ")"
 
 let loc = Location.none
 let lid value = Location.mkloc value loc
@@ -253,3 +259,20 @@ and to_parsetree ~context = function
           match build_cases [] cases with
           | Error _ as err -> err
           | Ok cases -> Ok (Ast_helper.Exp.match_ ~loc target cases))
+  | Infix (operator, left, right) -> (
+      match (to_parsetree ~context left, to_parsetree ~context right) with
+      | (Error _ as err), _ -> err
+      | _, (Error _ as err) -> err
+      | Ok left, Ok right ->
+          Ok
+            (Ast_helper.Exp.apply ~loc
+               (Ast_helper.Exp.ident ~loc (lid (longident_of_string operator)))
+               [ (Asttypes.Nolabel, left); (Asttypes.Nolabel, right) ]))
+  | Prefix (operator, expression) -> (
+      match to_parsetree ~context expression with
+      | Error _ as err -> err
+      | Ok expression ->
+          Ok
+            (Ast_helper.Exp.apply ~loc
+               (Ast_helper.Exp.ident ~loc (lid (longident_of_string operator)))
+               [ (Asttypes.Nolabel, expression) ]))

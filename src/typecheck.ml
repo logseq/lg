@@ -266,14 +266,13 @@ and compile_cond current_ns env clauses =
               (fun (_test, value) -> Types.equal value.ty else_expr.ty)
               pairs
           then
-            let code =
+            let expression =
               List.fold_right
                 (fun (test, value) acc ->
-                  "(if " ^ test.code ^ " then " ^ value.code ^ " else " ^ acc
-                  ^ ")")
-                pairs else_expr.code
+                  Ocaml_ir.If (test.ocaml_expr, value.ocaml_expr, acc))
+                pairs else_expr.ocaml_expr
             in
-            Ok (typed else_expr.ty code)
+            Ok (typed_ir else_expr.ty expression)
           else Error.error "cond branches must have same type")
 
 and compile_match current_ns env target_form clauses =
@@ -571,9 +570,13 @@ and compile_call current_ns env name arg_forms =
           | Error _ as err -> err
           | Ok () -> Core_int.compile_operator name args))
   | "inc" ->
-      compile_int_unary_call current_ns env name (fun code -> "(" ^ code ^ " + 1)") arg_forms
+      compile_int_unary_call current_ns env name
+        (fun expression -> Ocaml_ir.Infix ("+", expression, Ocaml_ir.Int 1))
+        arg_forms
   | "dec" ->
-      compile_int_unary_call current_ns env name (fun code -> "(" ^ code ^ " - 1)") arg_forms
+      compile_int_unary_call current_ns env name
+        (fun expression -> Ocaml_ir.Infix ("-", expression, Ocaml_ir.Int 1))
+        arg_forms
   | "=" | "not=" | "<" | "<=" | ">" | ">=" -> (
       match compile_args () with
       | Error _ as err -> err
@@ -601,22 +604,36 @@ and compile_call current_ns env name arg_forms =
       | Error _ as err -> err
       | Ok args -> Core_predicate.compile name args)
   | "zero?" ->
-      compile_int_unary_call current_ns env name (fun code -> "(" ^ code ^ " = 0)") arg_forms
+      compile_int_unary_call current_ns env name
+        (fun expression -> Ocaml_ir.Infix ("=", expression, Ocaml_ir.Int 0))
+        arg_forms
       |> Result.map (fun expr -> { expr with ty = TBool })
   | "pos?" ->
-      compile_int_unary_call current_ns env name (fun code -> "(" ^ code ^ " > 0)") arg_forms
+      compile_int_unary_call current_ns env name
+        (fun expression -> Ocaml_ir.Infix (">", expression, Ocaml_ir.Int 0))
+        arg_forms
       |> Result.map (fun expr -> { expr with ty = TBool })
   | "neg?" ->
-      compile_int_unary_call current_ns env name (fun code -> "(" ^ code ^ " < 0)") arg_forms
+      compile_int_unary_call current_ns env name
+        (fun expression -> Ocaml_ir.Infix ("<", expression, Ocaml_ir.Int 0))
+        arg_forms
       |> Result.map (fun expr -> { expr with ty = TBool })
   | "even?" ->
       compile_int_unary_call current_ns env name
-        (fun code -> "(" ^ code ^ " mod 2 = 0)")
+        (fun expression ->
+          Ocaml_ir.Infix
+            ( "=",
+              Ocaml_ir.Infix ("mod", expression, Ocaml_ir.Int 2),
+              Ocaml_ir.Int 0 ))
         arg_forms
       |> Result.map (fun expr -> { expr with ty = TBool })
   | "odd?" ->
       compile_int_unary_call current_ns env name
-        (fun code -> "(" ^ code ^ " mod 2 <> 0)")
+        (fun expression ->
+          Ocaml_ir.Infix
+            ( "<>",
+              Ocaml_ir.Infix ("mod", expression, Ocaml_ir.Int 2),
+              Ocaml_ir.Int 0 ))
         arg_forms
       |> Result.map (fun expr -> { expr with ty = TBool })
   | "str" -> (
@@ -643,7 +660,8 @@ and compile_call current_ns env name arg_forms =
       | Error _ as err -> err
       | Ok args -> Core_int.compile_variadic_bitwise name args)
   | "bit-not" ->
-      compile_int_unary_call current_ns env name (fun code -> "lnot (" ^ code ^ ")")
+      compile_int_unary_call current_ns env name
+        (fun expression -> Ocaml_ir.Prefix ("lnot", expression))
         arg_forms
   | "bit-shift-left" | "bit-shift-right" ->
       (match compile_args () with

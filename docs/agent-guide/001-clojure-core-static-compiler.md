@@ -383,9 +383,9 @@ They do not test internal AST shapes directly.
   lower directly to Parsetree. Typed expressions carry shared `Ocaml_ir`
   nodes; scalar literals, identifiers, list/vector construction, applications,
   conditionals, ordinary functions, typed parameter patterns, and multi-form
-  sequencing, simple local bindings, and static matches are structured, while
-  `Raw` is the explicit fallback for expression categories still being
-  migrated.
+  sequencing, simple local bindings, static matches, and the integer core are
+  structured, while `Raw` is the explicit fallback for expression categories
+  still being migrated.
 - Preserve enough compiler state to support editor/server workflows without reparsing and rechecking unrelated chunks.
 - Use extensive integration tests before expanding each core API category.
 - The current `RCmerci/rrbvec` repository has an opam file but no package in the active opam index, so the prototype vendors its library source.

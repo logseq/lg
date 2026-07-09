@@ -1,38 +1,40 @@
 open Types
 
+let int value = Ocaml_ir.Int value
+
+let fold_infix operator first rest =
+  List.fold_left
+    (fun expression arg -> Ocaml_ir.Infix (operator, expression, arg.ocaml_expr))
+    first.ocaml_expr rest
+
 let expect_int_args name args =
   if List.for_all (fun arg -> Types.equal arg.ty TInt) args then Ok ()
   else Error.error ("expected int arguments for " ^ name)
 
 let compile_operator name args =
   match (name, args) with
-  | "+", [] -> Ok (typed TInt "0")
-  | "*", [] -> Ok (typed TInt "1")
+  | "+", [] -> Ok (typed_ir TInt (int 0))
+  | "*", [] -> Ok (typed_ir TInt (int 1))
   | "/", ([] | [ _ ]) -> Error.error "/ expects at least 2 arguments"
   | _, [] -> Error.error (name ^ " expects at least 1 arguments")
-  | _, [ arg ] when name = "-" -> Ok (typed TInt ("(-" ^ arg.code ^ ")"))
-  | _, [ arg ] -> Ok (typed TInt arg.code)
+  | _, [ arg ] when name = "-" ->
+      Ok (typed_ir TInt (Ocaml_ir.Prefix ("~-", arg.ocaml_expr)))
+  | _, [ arg ] -> Ok (typed_ir TInt arg.ocaml_expr)
   | _, first :: rest ->
       let op =
         match name with
-        | "+" -> " + "
-        | "-" -> " - "
-        | "*" -> " * "
-        | "/" -> " / "
+        | "+" -> "+"
+        | "-" -> "-"
+        | "*" -> "*"
+        | "/" -> "/"
         | _ -> " "
       in
-      let code =
-        rest
-        |> List.fold_left
-             (fun acc arg -> "(" ^ acc ^ op ^ arg.code ^ ")")
-             first.code
-      in
-      Ok (typed TInt code)
+      Ok (typed_ir TInt (fold_infix op first rest))
 
-let compile_unary name args build_code =
+let compile_unary name args build_expr =
   match args with
   | [ arg ] ->
-      if Types.equal arg.ty TInt then Ok (typed TInt (build_code arg.code))
+      if Types.equal arg.ty TInt then Ok (typed_ir TInt (build_expr arg.ocaml_expr))
       else Error.error ("expected int arguments for " ^ name)
   | _ -> Error.error (name ^ " expects 1 arguments")
 
@@ -40,18 +42,23 @@ let compile_binary name args =
   match args with
   | [ left; right ] ->
       if Types.equal left.ty TInt && Types.equal right.ty TInt then
-        let code =
+        let expression =
           match name with
-          | "quot" -> "(" ^ left.code ^ " / " ^ right.code ^ ")"
-          | "rem" -> "(" ^ left.code ^ " mod " ^ right.code ^ ")"
+          | "quot" -> Ocaml_ir.Infix ("/", left.ocaml_expr, right.ocaml_expr)
+          | "rem" -> Ocaml_ir.Infix ("mod", left.ocaml_expr, right.ocaml_expr)
           | "mod" ->
-              "(((" ^ left.code ^ " mod " ^ right.code ^ ") + " ^ right.code
-              ^ ") mod " ^ right.code ^ ")"
-          | "bit-shift-left" -> "(" ^ left.code ^ " lsl " ^ right.code ^ ")"
-          | "bit-shift-right" -> "(" ^ left.code ^ " asr " ^ right.code ^ ")"
-          | _ -> left.code
+              Ocaml_ir.Infix
+                ( "mod",
+                  Ocaml_ir.Infix
+                    ( "+",
+                      Ocaml_ir.Infix ("mod", left.ocaml_expr, right.ocaml_expr),
+                      right.ocaml_expr ),
+                  right.ocaml_expr )
+          | "bit-shift-left" -> Ocaml_ir.Infix ("lsl", left.ocaml_expr, right.ocaml_expr)
+          | "bit-shift-right" -> Ocaml_ir.Infix ("asr", left.ocaml_expr, right.ocaml_expr)
+          | _ -> left.ocaml_expr
         in
-        Ok (typed TInt code)
+        Ok (typed_ir TInt expression)
       else Error.error ("expected int arguments for " ^ name)
   | _ -> Error.error (name ^ " expects 2 arguments")
 
@@ -61,16 +68,17 @@ let compile_min_max name args =
   | _ ->
       if List.for_all (fun arg -> Types.equal arg.ty TInt) args then
         let fn = if name = "max" then "max" else "min" in
-        let code =
+        let expression =
           match args with
           | [] -> assert false
           | first :: rest ->
-              rest
-              |> List.fold_left
-                   (fun acc arg -> fn ^ " (" ^ acc ^ ") (" ^ arg.code ^ ")")
-                   first.code
+              List.fold_left
+                (fun expression arg ->
+                  Ocaml_ir.Apply
+                    (Ocaml_ir.Ident fn, [ expression; arg.ocaml_expr ]))
+                first.ocaml_expr rest
         in
-        Ok (typed TInt code)
+        Ok (typed_ir TInt expression)
       else Error.error ("expected int arguments for " ^ name)
 
 let compile_variadic_bitwise name args =
@@ -85,14 +93,11 @@ let compile_variadic_bitwise name args =
           | "bit-xor" -> "lxor"
           | _ -> assert false
         in
-        let code =
+        let expression =
           match args with
           | [] -> assert false
           | first :: rest ->
-              rest
-              |> List.fold_left
-                   (fun acc arg -> "(" ^ acc ^ " " ^ op ^ " " ^ arg.code ^ ")")
-                   first.code
+              fold_infix op first rest
         in
-        Ok (typed TInt code)
+        Ok (typed_ir TInt expression)
       else Error.error ("expected int arguments for " ^ name)

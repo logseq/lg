@@ -236,6 +236,10 @@ and nested `Pexp_let` sequencing. Simple local `let` bindings and static
 an explicit expression-level `Raw` fallback. Parsetree is a backend
 representation here, not cljml's full type system.
 
+The integer core lowers arithmetic, division/remainder, `min`/`max`, bitwise
+operators, shifts, `inc`/`dec`, and integer predicates directly through the
+shared expression IR.
+
 The typed standard library also includes a `clojure.string` namespace that can
 be required with `:as` or `:refer`. Its current subset includes `blank?`,
 `capitalize`, `ends-with?`, `includes?`, `index-of`, `join`, `last-index-of`,
