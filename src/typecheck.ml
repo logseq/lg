@@ -2200,6 +2200,8 @@ let compile_top_level current_ns env next_type = function
                 let env =
                   if String.starts_with ~prefix:"ocaml." required_ns then
                     Ns_require.add_ocaml_alias_bindings env required_ns alias
+                  else if required_ns = "clojure.string" then
+                    Ns_require.add_clojure_string_alias_bindings env alias
                   else Ns_require.add_namespace_alias_bindings env required_ns alias
                 in
                 apply_specs env rest
@@ -2207,6 +2209,8 @@ let compile_top_level current_ns env next_type = function
                 let result =
                   if String.starts_with ~prefix:"ocaml." required_ns then
                     Ns_require.add_ocaml_refer_bindings env namespace required_ns names
+                  else if required_ns = "clojure.string" then
+                    Ns_require.add_clojure_string_refer_bindings env namespace names
                   else Ns_require.add_namespace_refer_bindings env namespace required_ns names
                 in
                 (match result with

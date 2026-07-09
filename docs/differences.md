@@ -150,4 +150,12 @@ Direct OCaml package interop is limited to an explicit typed host table.
 
 Currently supported examples include `ocaml.Stdlib` aliases or refers for `string-of-int` and `int-of-string`, and `ocaml.String` aliases or refers for `uppercase-ascii` and `length`.
 
+The typed standard library also includes a `clojure.string` namespace that can
+be required with `:as` or `:refer`. Its current subset includes `blank?`,
+`capitalize`, `ends-with?`, `includes?`, `index-of`, `join`, `last-index-of`,
+`lower-case`, `re-quote-replacement`, `replace`, `replace-first`, `reverse`,
+`split`, `split-lines`, `starts-with?`, `trim`, `trim-newline`, `triml`,
+`trimr`, and `upper-case`. `replace` and `split` currently use literal string
+matches, not regex patterns.
+
 The planned direction follows ClojureDart's approach of making host package aliases explicit in `ns`.

@@ -100,6 +100,11 @@ The compiler infers record-like map shapes automatically:
   bindings into the current namespace.
 - `(:require [ocaml.String :as string])` can alias a small typed table of OCaml
   host functions.
+- `(:require [clojure.string :as str])` can alias a typed `clojure.string`
+  subset: `blank?`, `capitalize`, `ends-with?`, `includes?`, `index-of`,
+  `join`, `last-index-of`, `lower-case`, `re-quote-replacement`, `replace`,
+  `replace-first`, `reverse`, `split`, `split-lines`, `starts-with?`, `trim`,
+  `trim-newline`, `triml`, `trimr`, and `upper-case`.
 - `defprotocol` and `extend-type` support a first static protocol subset.
   Dispatch is resolved at compile time from the first argument type, and
   namespace aliases such as `labels/label` work when the protocol namespace has

@@ -982,6 +982,64 @@ let test_batched_numeric_scalar_core_functions_infer_int_params () =
   Cljml.Compiler.compile_string source
   |> expect_error "clear-second called with incompatible arguments"
 
+let test_clojure_string_namespace_batch_works () =
+  let source =
+    {|
+(ns app.strings
+  (:require [clojure.string :as str]))
+(println
+  (str/join "|"
+    [(str/upper-case "ada")
+     (str/lower-case "ADA")
+     (str/capitalize "aDA")
+     (str/reverse "abc")
+     (str/trim "  hi  ")
+     (str/triml "  left")
+     (str/trimr "right  ")
+     (str/trim-newline "line\n")
+     (str/replace "banana" "na" "NA")
+     (str/replace-first "banana" "na" "NA")
+     (str/re-quote-replacement "$1")]))
+(println
+  (str (str/blank? "  ") ":" (str/includes? "clojure" "oj") ":"
+       (str/starts-with? "clojure" "clo") ":" (str/ends-with? "clojure" "ure") ":"
+       (str/index-of "banana" "na") ":" (str/last-index-of "banana" "na") ":"
+       (pr-str (str/split "a,b,c" ",")) ":" (pr-str (str/split-lines "a\nb"))))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "clojure_string_namespace_batch_works"
+    "ADA|ada|Ada|cba|hi|left|right|line|baNANA|baNAna|$1\ntrue:true:true:true:2:4:[\"a\" \"b\" \"c\"]:[\"a\" \"b\"]\n"
+    ocaml_source
+
+let test_clojure_string_namespace_refer_works () =
+  let source =
+    {|
+(ns app.strings
+  (:require [clojure.string :refer [upper-case trim]]))
+(println (str (upper-case (trim " ada "))))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "clojure_string_namespace_refer_works" "ADA\n" ocaml_source
+
+let test_clojure_string_namespace_rejects_bad_args () =
+  Cljml.Compiler.compile_string
+    {|
+(ns app.strings
+  (:require [clojure.string :as str]))
+(def x (str/upper-case 1))
+|}
+  |> expect_error "str/upper-case called with incompatible arguments"
+
+let test_clojure_string_namespace_rejects_unknown_refer () =
+  Cljml.Compiler.compile_string
+    {|
+(ns app.strings
+  (:require [clojure.string :refer [missing]]))
+|}
+  |> expect_error "cannot refer unknown symbol clojure.string/missing"
+
 let test_batched_sequence_functions_work () =
   let source =
     {|
@@ -1586,6 +1644,14 @@ let tests =
       test_batched_numeric_scalar_core_functions_reject_bad_name_arg );
     ( "batched numeric/scalar core functions infer int params",
       test_batched_numeric_scalar_core_functions_infer_int_params );
+    ( "clojure.string namespace batch works",
+      test_clojure_string_namespace_batch_works );
+    ( "clojure.string namespace refer works",
+      test_clojure_string_namespace_refer_works );
+    ( "clojure.string namespace rejects bad args",
+      test_clojure_string_namespace_rejects_bad_args );
+    ( "clojure.string namespace rejects unknown refer",
+      test_clojure_string_namespace_rejects_unknown_refer );
     ("batched sequence functions work", test_batched_sequence_functions_work);
     ( "batched sequence functions reject type mismatch",
       test_batched_sequence_functions_reject_type_mismatch );

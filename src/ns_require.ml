@@ -53,6 +53,23 @@ let add_namespace_refer_bindings env current_ns namespace names =
   in
   loop env names
 
+let add_clojure_string_alias_bindings env alias =
+  env
+  @ (Core_string.bindings
+    |> List.map (fun (name, binding) -> (alias ^ "/" ^ name, binding)))
+
+let add_clojure_string_refer_bindings env current_ns names =
+  let rec loop acc = function
+    | [] -> Ok acc
+    | name :: rest -> (
+        match List.assoc_opt name Core_string.bindings with
+        | Some binding ->
+            let target_key = Names.namespaced_key current_ns name in
+            loop (acc @ [ (target_key, binding) ]) rest
+        | None -> Error.error ("cannot refer unknown symbol clojure.string/" ^ name))
+  in
+  loop env names
+
 let add_ocaml_alias_bindings env module_name alias =
   env
   @ (ocaml_host_functions module_name
