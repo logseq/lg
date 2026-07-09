@@ -562,6 +562,20 @@ let test_chained_comparisons () =
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "chained_comparisons" "true:false:true:false\n" ocaml_source
 
+let test_not_equal_core_api () =
+  let source =
+    {|
+(println (str (not= 1 2) ":" (not= "Ada" "Ada") ":" (not= :name :age) ":"
+              (not= true true false) ":" (not= 1)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "not_equal_core_api" "true:false:true:true:false\n" ocaml_source
+
+let test_not_equal_rejects_mixed_types () =
+  Cljml.Compiler.compile_string {|(def x (not= 1 "1"))|}
+  |> expect_error "not= arguments must have the same type"
+
 let test_get_rejects_unknown_map_fields () =
   let source = {|(def user {:name "Ada"})(def x (get user :age))|} in
   Cljml.Compiler.compile_string source |> expect_error "unknown field :age"
@@ -1060,6 +1074,8 @@ let tests =
     ( "integer division rejects unsupported arities",
       test_integer_division_rejects_unsupported_arities );
     ("chained comparisons work", test_chained_comparisons);
+    ("not= core api works", test_not_equal_core_api);
+    ("not= rejects mixed types", test_not_equal_rejects_mixed_types);
     ("get rejects unknown map fields", test_get_rejects_unknown_map_fields);
     ("get supports default values", test_get_supports_default_values);
     ( "get rejects default type mismatch for known fields",

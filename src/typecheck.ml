@@ -232,7 +232,7 @@ and compile_call current_ns env name arg_forms =
       compile_unary_int current_ns env name (fun code -> "(" ^ code ^ " + 1)") arg_forms
   | "dec" ->
       compile_unary_int current_ns env name (fun code -> "(" ^ code ^ " - 1)") arg_forms
-  | "=" | "<" | "<=" | ">" | ">=" -> compile_comparison current_ns env name arg_forms
+  | "=" | "not=" | "<" | "<=" | ">" | ">=" -> compile_comparison current_ns env name arg_forms
   | "not" -> compile_not current_ns env arg_forms
   | "nil?" -> compile_predicate current_ns env name arg_forms TNil
   | "some?" -> compile_some_predicate current_ns env arg_forms
@@ -357,7 +357,7 @@ and compile_unary_int current_ns env name build_code arg_forms =
 and compile_comparison current_ns env name arg_forms =
   match compile_args_for current_ns env arg_forms with
   | Error _ as err -> err
-  | Ok ([] | [ _ ]) -> Ok (typed TBool "true")
+  | Ok ([] | [ _ ]) -> Ok (typed TBool (if name = "not=" then "false" else "true"))
   | Ok args ->
       let pairwise_codes op args =
         let rec loop acc = function
@@ -367,11 +367,13 @@ and compile_comparison current_ns env name arg_forms =
         in
         loop [] args
       in
-      if name = "=" then
+      if name = "=" || name = "not=" then
         let first = List.hd args in
         if List.for_all (fun arg -> Types.equal first.ty arg.ty) args then
-          Ok (typed TBool (String.concat " && " (pairwise_codes "=" args)))
-        else Error.error "= arguments must have the same type"
+          let equal_code = String.concat " && " (pairwise_codes "=" args) in
+          let code = if name = "not=" then "not (" ^ equal_code ^ ")" else equal_code in
+          Ok (typed TBool code)
+        else Error.error (name ^ " arguments must have the same type")
       else if List.for_all (fun arg -> Types.equal arg.ty TInt) args then
         Ok (typed TBool (String.concat " && " (pairwise_codes name args)))
       else Error.error ("expected int arguments for " ^ name)

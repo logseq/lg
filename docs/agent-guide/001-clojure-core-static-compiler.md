@@ -82,7 +82,7 @@ The compiler should support this syntax without macros.
 | --- | --- | --- |
 | Printing | `print`, `println`, `pr-str` | 1 |
 | Boolean | `not`, `true?`, `false?`, `nil?`, `some?`, `int?`, `string?`, `keyword?`, `boolean?`, `vector?`, `list?`, `set?`, `map?` | 1 |
-| Arithmetic | `+`, `-`, `*`, `/`, `inc`, `dec`, `<`, `<=`, `>`, `>=`, `=` | 1 |
+| Arithmetic | `+`, `-`, `*`, `/`, `inc`, `dec`, `<`, `<=`, `>`, `>=`, `=`, `not=` | 1 |
 | Strings | `str`, `subs` | 1 |
 | Maps | `hash-map`, `get`, `assoc`, `dissoc`, `merge`, `update`, `select-keys`, `contains?`, `keys`, `vals` | 1 |
 | Vectors | `vector`, `conj`, `count`, `nth`, `get`, `assoc`, `update`, `contains?`, `subvec`, `first`, `second`, `last`, `peek`, `pop`, `rest` | 1 |
