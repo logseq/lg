@@ -636,46 +636,37 @@ and compile_call current_ns env name arg_forms =
   | "vals" -> compile_vals current_ns env arg_forms
   | "hash-map" | "array-map" | "sorted-map" -> compile_hash_map current_ns env arg_forms
   | "rest" | "seq" | "empty?" -> compile_collection_call current_ns env name arg_forms
-  | "into" -> compile_into current_ns env arg_forms
+  | "into" -> compile_sequence_transform_call current_ns env name arg_forms
   | "take" | "drop" -> compile_collection_call current_ns env name arg_forms
-  | "butlast" -> compile_butlast current_ns env arg_forms
-  | "take-last" | "drop-last" -> compile_take_drop_last current_ns env name arg_forms
-  | "take-nth" -> compile_take_nth current_ns env arg_forms
+  | "butlast" | "take-last" | "drop-last" | "take-nth" ->
+      compile_sequence_transform_call current_ns env name arg_forms
   | "next" | "nthnext" | "nthrest" | "ffirst" | "fnext" | "nfirst" | "nnext"
   | "rseq" -> (
       match compile_args () with
       | Error _ as err -> err
       | Ok args -> Core_sequence.compile name args)
   | "some" -> compile_some current_ns env arg_forms
-  | "split-at" -> compile_split_at current_ns env arg_forms
+  | "split-at" -> compile_sequence_transform_call current_ns env name arg_forms
   | "split-with" -> compile_split_with current_ns env arg_forms
   | "partition-by" -> compile_partition_by current_ns env arg_forms
-  | "bounded-count" -> compile_bounded_count current_ns env arg_forms
-  | "dorun" -> compile_dorun current_ns env arg_forms
-  | "doall" -> compile_doall current_ns env arg_forms
+  | "bounded-count" | "dorun" | "doall" ->
+      compile_sequence_transform_call current_ns env name arg_forms
   | "run!" -> compile_run_bang current_ns env arg_forms
   | "reverse" -> compile_collection_call current_ns env name arg_forms
   | "every?" | "not-any?" | "not-every?" ->
       compile_sequence_bool_predicate current_ns env name arg_forms
   | "map" -> compile_map_call current_ns env arg_forms
   | "filter" -> compile_filter current_ns env arg_forms
-  | "remove" -> compile_remove current_ns env arg_forms
-  | "take-while" | "drop-while" ->
-      compile_take_drop_while current_ns env name arg_forms
-  | "distinct" -> compile_distinct current_ns env arg_forms
-  | "dedupe" -> compile_dedupe current_ns env arg_forms
-  | "sort" -> compile_sort current_ns env arg_forms
+  | "remove" | "take-while" | "drop-while" | "distinct" | "dedupe" | "sort" ->
+      compile_sequence_transform_call current_ns env name arg_forms
   | "sort-by" -> compile_sort_by current_ns env arg_forms
-  | "concat" -> compile_concat current_ns env arg_forms
+  | "concat" -> compile_sequence_transform_call current_ns env name arg_forms
   | "mapcat" -> compile_mapcat current_ns env arg_forms
-  | "vec" -> compile_vec current_ns env arg_forms
-  | "set" -> compile_set current_ns env arg_forms
-  | "repeat" -> compile_repeat current_ns env arg_forms
+  | "vec" | "set" | "repeat" ->
+      compile_sequence_transform_call current_ns env name arg_forms
   | "repeatedly" -> compile_repeatedly current_ns env arg_forms
-  | "interpose" -> compile_interpose current_ns env arg_forms
-  | "interleave" -> compile_interleave current_ns env arg_forms
-  | "partition" -> compile_partition current_ns env false arg_forms
-  | "partition-all" -> compile_partition current_ns env true arg_forms
+  | "interpose" | "interleave" | "partition" | "partition-all" ->
+      compile_sequence_transform_call current_ns env name arg_forms
   | "reductions" -> compile_reductions current_ns env arg_forms
   | "map-indexed" -> compile_map_indexed current_ns env arg_forms
   | "filterv" -> compile_filterv current_ns env arg_forms
@@ -714,6 +705,25 @@ and compile_collection_call current_ns env name arg_forms =
   match compile_args_for current_ns env arg_forms with
   | Error _ as err -> err
   | Ok args -> Core_collection.compile name args
+
+and compile_sequence_transform_call current_ns env name arg_forms =
+  match (name, arg_forms) with
+  | ("partition" | "partition-all"), FInt size :: _ when size <= 0 ->
+      Error.error (name ^ " size must be positive")
+  | "take-nth", FInt count :: _ when count <= 0 ->
+      Error.error "take-nth n must be positive"
+  | ("remove" | "take-while" | "drop-while"), [ fn_form; collection_form ] -> (
+      match
+        ( compile_function_arg current_ns env fn_form,
+          compile_expr current_ns env collection_form )
+      with
+      | (Error _ as err), _ -> err
+      | _, (Error _ as err) -> err
+      | Ok fn, Ok collection -> Core_sequence_transform.compile name [ fn; collection ])
+  | _ -> (
+      match compile_args_for current_ns env arg_forms with
+      | Error _ as err -> err
+      | Ok args -> Core_sequence_transform.compile name args)
 
 and compile_subs current_ns env arg_forms =
   match compile_args_for current_ns env arg_forms with
@@ -1329,104 +1339,10 @@ and compile_protocol_call current_ns env name arg_forms =
           | _ -> Error.error (name ^ " is not callable")))
 
 and collection_to_list_code collection =
-  match collection.ty with
-  | TList inner -> Ok (inner, collection.code)
-  | TVector inner -> Ok (inner, "Rrbvec.to_list (" ^ collection.code ^ ")")
-  | TSet inner -> Ok (inner, collection.code)
-  | _ -> Error.error "into source must be a collection"
+  Core_sequence_transform.collection_to_list_code collection
 
 and collection_from_list_code collection_ty list_code =
-  match collection_ty with
-  | TList _ -> list_code
-  | TVector _ -> "Rrbvec.of_list (" ^ list_code ^ ")"
-  | TSet _ -> "List.sort_uniq compare (" ^ list_code ^ ")"
-  | _ -> list_code
-
-and compile_remove current_ns env arg_forms =
-  match arg_forms with
-  | fn_form :: collection_form :: [] -> (
-      match (compile_function_arg current_ns env fn_form, compile_expr current_ns env collection_form) with
-      | (Error _ as err), _ -> err
-      | _, (Error _ as err) -> err
-      | Ok fn, Ok collection -> (
-          match (fn.ty, collection_to_list_code collection) with
-          | TFn ([ param_ty ], TBool), Ok (inner, list_code) when Types.equal param_ty inner ->
-              let code =
-                "List.filter (fun item -> not ("
-                ^ apply_code fn.code [ "item" ]
-                ^ ")) (" ^ list_code ^ ")"
-              in
-              Ok (typed collection.ty (collection_from_list_code collection.ty code))
-          | TFn _, Ok _ ->
-              Error.error "remove expects a predicate matching collection elements"
-          | _, Ok _ -> Error.error "remove expects a function"
-          | _, Error _ -> Error.error "remove expects a list, vector, or set"))
-  | _ -> Error.error "remove expects function and collection"
-
-and compile_take_drop_while current_ns env name arg_forms =
-  match arg_forms with
-  | fn_form :: collection_form :: [] -> (
-      match (compile_function_arg current_ns env fn_form, compile_expr current_ns env collection_form) with
-      | (Error _ as err), _ -> err
-      | _, (Error _ as err) -> err
-      | Ok fn, Ok collection -> (
-          match (fn.ty, collection_to_list_code collection) with
-          | TFn ([ param_ty ], TBool), Ok (inner, list_code) when Types.equal param_ty inner ->
-              let list_code =
-                if name = "take-while" then
-                  "(let rec take_while xs = match xs with item :: rest when "
-                  ^ apply_code fn.code [ "item" ]
-                  ^ " -> item :: take_while rest | _ -> [] in take_while (" ^ list_code
-                  ^ "))"
-                else
-                  "(let rec drop_while xs = match xs with item :: rest when "
-                  ^ apply_code fn.code [ "item" ]
-                  ^ " -> drop_while rest | rest -> rest in drop_while (" ^ list_code
-                  ^ "))"
-              in
-              Ok (typed collection.ty (collection_from_list_code collection.ty list_code))
-          | TFn _, Ok _ ->
-              Error.error (name ^ " expects a predicate matching collection elements")
-          | _, Ok _ -> Error.error (name ^ " expects a function")
-          | _, Error _ -> Error.error (name ^ " expects a list, vector, or set")))
-  | _ -> Error.error (name ^ " expects function and collection")
-
-and compile_distinct current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [ collection ] -> (
-      match collection_to_list_code collection with
-      | Error _ -> Error.error "distinct expects a list, vector, or set"
-      | Ok (_inner, list_code) ->
-          let code =
-            "(let rec distinct seen acc xs = match xs with [] -> List.rev acc | item :: rest -> if List.mem item seen then distinct seen acc rest else distinct (item :: seen) (item :: acc) rest in distinct [] [] ("
-            ^ list_code ^ "))"
-          in
-          Ok (typed collection.ty (collection_from_list_code collection.ty code)))
-  | Ok _ -> Error.error "distinct expects 1 arguments"
-
-and compile_dedupe current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [ collection ] -> (
-      match collection_to_list_code collection with
-      | Error _ -> Error.error "dedupe expects a list, vector, or set"
-      | Ok (_inner, list_code) ->
-          let code =
-            "(let rec dedupe acc xs = match xs with [] -> List.rev acc | item :: rest -> (match acc with previous :: _ when previous = item -> dedupe acc rest | _ -> dedupe (item :: acc) rest) in dedupe [] ("
-            ^ list_code ^ "))"
-          in
-          Ok (typed collection.ty (collection_from_list_code collection.ty code)))
-  | Ok _ -> Error.error "dedupe expects 1 arguments"
-
-and compile_sort current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [ collection ] -> (
-      match collection_to_list_code collection with
-      | Error _ -> Error.error "sort expects a list, vector, or set"
-      | Ok (inner, list_code) -> Ok (typed (TList inner) ("List.sort compare (" ^ list_code ^ ")")))
-  | Ok _ -> Error.error "sort expects 1 arguments"
+  Core_sequence_transform.collection_from_list_code collection_ty list_code
 
 and comparable_type = function
   | TInt | TString | TSymbol | TKeyword | TBool | TAny -> true
@@ -1453,28 +1369,6 @@ and compile_sort_by current_ns env arg_forms =
           | _, Ok _ -> Error.error "sort-by expects a function"
           | _, Error _ -> Error.error "sort-by expects a collection"))
   | _ -> Error.error "sort-by expects function and collection"
-
-and compile_concat current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [] -> Error.error "concat expects at least 1 collection"
-  | Ok collections -> (
-      let rec loop element_ty codes = function
-        | [] -> Ok (element_ty, List.rev codes)
-        | collection :: rest -> (
-            match collection_to_list_code collection with
-            | Error _ -> Error.error "concat expects collections"
-            | Ok (inner, code) -> (
-                match element_ty with
-                | None -> loop (Some inner) (code :: codes) rest
-                | Some element_ty ->
-                    if Types.equal element_ty inner then loop (Some element_ty) (code :: codes) rest
-                    else Error.error "concat element types must match"))
-      in
-      match loop None [] collections with
-      | Error _ as err -> err
-      | Ok (None, _) -> Error.error "concat expects at least 1 collection"
-      | Ok (Some inner, codes) -> Ok (typed (TList inner) ("List.concat [" ^ String.concat "; " codes ^ "]")))
 
 and compile_mapcat current_ns env arg_forms =
   match arg_forms with
@@ -1505,36 +1399,6 @@ and compile_mapcat current_ns env arg_forms =
           | _, Error _ -> Error.error "mapcat expects a collection"))
   | _ -> Error.error "mapcat expects function and collection"
 
-and compile_vec current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [ collection ] -> (
-      match collection_to_list_code collection with
-      | Error _ -> Error.error "vec expects a list, vector, or set"
-      | Ok (inner, list_code) -> Ok (typed (TVector inner) ("Rrbvec.of_list (" ^ list_code ^ ")")))
-  | Ok _ -> Error.error "vec expects 1 arguments"
-
-and compile_set current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [ collection ] -> (
-      match collection_to_list_code collection with
-      | Error _ -> Error.error "set expects a list, vector, or set"
-      | Ok (inner, list_code) -> Ok (typed (TSet inner) ("List.sort_uniq compare (" ^ list_code ^ ")")))
-  | Ok _ -> Error.error "set expects 1 arguments"
-
-and compile_repeat current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [ count; value ] ->
-      if Types.equal count.ty TInt then
-        Ok
-          (typed (TList value.ty)
-             ("(let rec repeat acc n = if n <= 0 then acc else repeat ("
-            ^ value.code ^ " :: acc) (n - 1) in repeat [] (" ^ count.code ^ "))"))
-      else Error.error "repeat count must be int"
-  | Ok _ -> Error.error "repeat expects count and value"
-
 and compile_repeatedly current_ns env arg_forms =
   match arg_forms with
   | count_form :: fn_form :: [] -> (
@@ -1554,65 +1418,6 @@ and compile_repeatedly current_ns env arg_forms =
             | TFn _ -> Error.error "repeatedly expects a zero-argument function"
             | _ -> Error.error "repeatedly expects a function"))
   | _ -> Error.error "repeatedly expects count and function"
-
-and compile_interpose current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [ separator; collection ] -> (
-      match collection_to_list_code collection with
-      | Error _ -> Error.error "interpose expects a collection"
-      | Ok (inner, list_code) ->
-          if Types.equal separator.ty inner then
-            Ok
-              (typed (TList inner)
-                 ("(let rec interpose acc xs = match xs with [] -> List.rev acc | [item] -> List.rev (item :: acc) | item :: rest -> interpose ("
-                ^ separator.code ^ " :: item :: acc) rest in interpose [] (" ^ list_code
-                ^ "))"))
-          else Error.error "interpose separator type must match collection elements")
-  | Ok _ -> Error.error "interpose expects separator and collection"
-
-and compile_interleave current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [ left; right ] -> (
-      match (collection_to_list_code left, collection_to_list_code right) with
-      | Error _, _ | _, Error _ -> Error.error "interleave expects collections"
-      | Ok (left_inner, left_code), Ok (right_inner, right_code) ->
-          if Types.equal left_inner right_inner then
-            Ok
-              (typed (TList left_inner)
-                 ("(let rec interleave acc left right = match (left, right) with item_left :: rest_left, item_right :: rest_right -> interleave (item_right :: item_left :: acc) rest_left rest_right | _ -> List.rev acc in interleave [] ("
-                ^ left_code ^ ") (" ^ right_code ^ "))"))
-          else Error.error "interleave element types must match")
-  | Ok _ -> Error.error "interleave expects two collections"
-
-and compile_partition current_ns env include_partial arg_forms =
-  let name = if include_partial then "partition-all" else "partition" in
-  match arg_forms with
-  | FInt size :: _ when size <= 0 -> Error.error (name ^ " size must be positive")
-  | size_form :: collection_form :: [] -> (
-      match (compile_expr current_ns env size_form, compile_expr current_ns env collection_form) with
-      | (Error _ as err), _ -> err
-      | _, (Error _ as err) -> err
-      | Ok size, Ok collection -> (
-          if not (Types.equal size.ty TInt) then Error.error (name ^ " size must be int")
-          else
-            match collection_to_list_code collection with
-            | Error _ -> Error.error (name ^ " expects a collection")
-            | Ok (inner, list_code) ->
-                let code =
-                  if include_partial then
-                    "(let rec take n acc xs = if n = 0 then (List.rev acc, xs) else match xs with [] -> (List.rev acc, []) | item :: rest -> take (n - 1) (item :: acc) rest in let rec partition_all acc xs = match xs with [] -> List.rev acc | _ -> let chunk, rest = take "
-                    ^ size.code ^ " [] xs in partition_all (chunk :: acc) rest in partition_all [] ("
-                    ^ list_code ^ "))"
-                  else
-                    "(let rec take n acc xs = if n = 0 then Some (List.rev acc, xs) else match xs with [] -> None | item :: rest -> take (n - 1) (item :: acc) rest in let rec partition acc xs = match take "
-                    ^ size.code
-                    ^ " [] xs with Some (chunk, rest) -> partition (chunk :: acc) rest | None -> List.rev acc in partition [] ("
-                    ^ list_code ^ "))"
-                in
-                Ok (typed (TList (TList inner)) code)))
-  | _ -> Error.error (name ^ " expects size and collection")
 
 and compile_reductions current_ns env arg_forms =
   match arg_forms with
@@ -1656,85 +1461,6 @@ and compile_reductions current_ns env arg_forms =
           | _, Ok _ -> Error.error "reductions expects a function"
           | _, Error _ -> Error.error "reductions expects a collection"))
   | _ -> Error.error "reductions expects function, optional init, and collection"
-
-and compile_butlast current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [ collection ] -> (
-      match collection_to_list_code collection with
-      | Error _ -> Error.error "butlast expects a collection"
-      | Ok (_inner, list_code) ->
-          let code =
-            "(let rec butlast acc xs = match xs with [] | [_] -> List.rev acc | item :: rest -> butlast (item :: acc) rest in butlast [] ("
-            ^ list_code ^ "))"
-          in
-          Ok (typed collection.ty (collection_from_list_code collection.ty code)))
-  | Ok _ -> Error.error "butlast expects 1 arguments"
-
-and compile_take_drop_last current_ns env name arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [ count; collection ] -> (
-      if not (Types.equal count.ty TInt) then Error.error (name ^ " count must be int")
-      else
-        match collection_to_list_code collection with
-        | Error _ -> Error.error (name ^ " expects a collection")
-        | Ok (_inner, list_code) ->
-            let length_code = "List.length source" in
-            let code =
-              if name = "take-last" then
-                "(let source = " ^ list_code ^ " in let drop_count = max 0 ("
-                ^ length_code ^ " - (" ^ count.code ^ ")) in "
-                ^ Core_collection.drop_list_code "drop_count" "source" ^ ")"
-              else
-                "(let source = " ^ list_code ^ " in let keep_count = max 0 ("
-                ^ length_code ^ " - (" ^ count.code ^ ")) in "
-                ^ Core_collection.take_list_code "keep_count" "source" ^ ")"
-            in
-            Ok (typed collection.ty (collection_from_list_code collection.ty code)))
-  | Ok _ -> Error.error (name ^ " expects count and collection")
-
-and compile_take_nth current_ns env arg_forms =
-  match arg_forms with
-  | FInt n :: _ when n <= 0 -> Error.error "take-nth n must be positive"
-  | count_form :: collection_form :: [] -> (
-      match (compile_expr current_ns env count_form, compile_expr current_ns env collection_form) with
-      | (Error _ as err), _ -> err
-      | _, (Error _ as err) -> err
-      | Ok count, Ok collection ->
-          if not (Types.equal count.ty TInt) then Error.error "take-nth n must be int"
-          else
-            match collection_to_list_code collection with
-            | Error _ -> Error.error "take-nth expects a collection"
-            | Ok (_inner, list_code) ->
-                let code =
-                  "(let rec take_nth index acc xs = match xs with [] -> List.rev acc | item :: rest -> if index mod ("
-                  ^ count.code
-                  ^ ") = 0 then take_nth (index + 1) (item :: acc) rest else take_nth (index + 1) acc rest in take_nth 0 [] ("
-                  ^ list_code ^ "))"
-                in
-                Ok (typed collection.ty (collection_from_list_code collection.ty code)))
-  | _ -> Error.error "take-nth expects n and collection"
-
-and compile_split_at current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [ count; collection ] ->
-      if not (Types.equal count.ty TInt) then Error.error "split-at count must be int"
-      else
-        (match collection_to_list_code collection with
-        | Error _ -> Error.error "split-at expects a collection"
-        | Ok (_inner, list_code) ->
-            let left =
-              collection_from_list_code collection.ty
-                (Core_collection.take_list_code count.code list_code)
-            in
-            let right =
-              collection_from_list_code collection.ty
-                (Core_collection.drop_list_code count.code list_code)
-            in
-            Ok (typed (TVector collection.ty) ("Rrbvec.of_list [" ^ left ^ "; " ^ right ^ "]")))
-  | Ok _ -> Error.error "split-at expects count and collection"
 
 and compile_split_with current_ns env arg_forms =
   match arg_forms with
@@ -1784,36 +1510,6 @@ and compile_partition_by current_ns env arg_forms =
           | _, Ok _ -> Error.error "partition-by expects a function"
           | _, Error _ -> Error.error "partition-by expects a collection"))
   | _ -> Error.error "partition-by expects function and collection"
-
-and compile_bounded_count current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [ limit; collection ] ->
-      if not (Types.equal limit.ty TInt) then Error.error "bounded-count limit must be int"
-      else
-        (match collection_to_list_code collection with
-        | Error _ -> Error.error "bounded-count expects a collection"
-        | Ok (_inner, list_code) ->
-            Ok (typed TInt ("min (" ^ limit.code ^ ") (List.length (" ^ list_code ^ "))")))
-  | Ok _ -> Error.error "bounded-count expects limit and collection"
-
-and compile_dorun current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [ collection ] -> (
-      match collection_to_list_code collection with
-      | Error _ -> Error.error "dorun expects a collection"
-      | Ok (_inner, _list_code) -> Ok (typed TNil "()"))
-  | Ok _ -> Error.error "dorun expects 1 arguments"
-
-and compile_doall current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [ collection ] -> (
-      match collection_to_list_code collection with
-      | Error _ -> Error.error "doall expects a collection"
-      | Ok _ -> Ok collection)
-  | Ok _ -> Error.error "doall expects 1 arguments"
 
 and compile_run_bang current_ns env arg_forms =
   match arg_forms with
@@ -1912,39 +1608,6 @@ and compile_reduce_kv current_ns env arg_forms =
           | _, TVector _ -> Error.error "reduce-kv expects a function"
           | _ -> Error.error "reduce-kv expects a vector"))
   | _ -> Error.error "reduce-kv expects function, init, and vector"
-
-and compile_into current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [ target; source ] -> (
-      match collection_to_list_code source with
-      | Error _ as err -> err
-      | Ok (source_inner, source_list_code) -> (
-          match target.ty with
-          | TVector target_inner when Types.equal target_inner source_inner -> (
-              match source.ty with
-              | TVector _ ->
-                  Ok
-                    (typed target.ty
-                       ("Rrbvec.append (" ^ target.code ^ ") (" ^ source.code ^ ")"))
-              | _ ->
-                  Ok
-                    (typed target.ty
-                       ("Rrbvec.append_list (" ^ target.code ^ ") (" ^ source_list_code ^ ")")))
-          | TList target_inner when Types.equal target_inner source_inner ->
-              Ok
-                (typed target.ty
-                   ("List.fold_left (fun acc item -> item :: acc) (" ^ target.code ^ ") ("
-                  ^ source_list_code ^ ")"))
-          | TSet target_inner when Types.equal target_inner source_inner ->
-              Ok
-                (typed target.ty
-                   ("List.sort_uniq compare ((" ^ target.code ^ ") @ (" ^ source_list_code
-                  ^ "))"))
-          | TVector _ | TList _ | TSet _ ->
-              Error.error "into source element type must match target element type"
-          | _ -> Error.error "into target must be a collection"))
-  | Ok _ -> Error.error "into expects target and source collections"
 
 and compile_some current_ns env arg_forms =
   match arg_forms with

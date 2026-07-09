@@ -119,6 +119,8 @@ The compiler infers record-like map shapes automatically:
   `take-last`, `drop-last`, `take-nth`, `split-at`, `split-with`,
   `partition-by`, `bounded-count`, `dorun`, `doall`, and `run!` are supported
   for the current typed collection/function subset.
+- `interleave` accepts two or more same-element-type collections and stops when
+  the shortest input is exhausted.
 - `apply` supports integer binary reducers over typed lists, vectors, and sets,
   including fixed leading integer arguments before the final collection.
 - `get` supports vector indexes, and `nth` supports typed default values for

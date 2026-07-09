@@ -169,6 +169,9 @@ eager because cljml does not yet have lazy seqs.
 
 `range` returns an eager typed integer list.
 
+`interleave` accepts two or more typed list, vector, or set inputs with the same
+element type. It eagerly returns an OCaml list and stops at the shortest input.
+
 Empty vector literals still require explicit element typing.
 
 Use `(vector-of :int)`, `(vector-of :string)`, `(vector-of :symbol)`, `(vector-of :keyword)`, `(vector-of :bool)`, or `(vector-of :nil)` for typed empty vectors.

@@ -180,6 +180,9 @@ dedicated sequence abstraction.
 `bounded-count`, `dorun`, `doall`, and `run!` operate eagerly over concrete
 typed collections.
 
+`interleave` accepts two or more same-element-type collections, returns an
+eager typed list, and stops when the shortest input is exhausted.
+
 `apply` supports integer binary reducers over typed lists, vectors, and sets,
 including fixed leading integer arguments before the final collection.
 
@@ -361,6 +364,8 @@ They do not test internal AST shapes directly.
 ## Implementation Details
 
 - Keep implementation separated into `Ast`, `Lexer`, `Parser`, `Toolchain`, `Typecheck`, `Codegen`, and support modules.
+- Keep common collection and eager sequence lowering in focused core modules
+  rather than growing `Typecheck` with runtime code templates.
 - Use structural record types for maps.
 - Use `Rrbvec.t` for Phase 1 vectors.
 - Use generated helper functions only when necessary.

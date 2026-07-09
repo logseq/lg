@@ -1215,6 +1215,25 @@ let test_batched_sequence_functions_reject_reduce_kv_non_vector () =
     {|(def x (reduce-kv (fn [acc i x] (+ acc x)) 0 (list 1 2)))|}
   |> expect_error "reduce-kv expects a vector"
 
+let test_interleave_accepts_multiple_collections () =
+  let source =
+    {|
+(def xs (interleave [1 2 3] (list 10 20) (hash-set 100 200 300)))
+(println (pr-str xs))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "interleave_accepts_multiple_collections"
+    "(1 10 100 2 20 200)\n" ocaml_source
+
+let test_interleave_rejects_later_type_mismatches () =
+  Cljml.Compiler.compile_string {|(def x (interleave [1] (list 2) ["three"]))|}
+  |> expect_error "interleave element types must match"
+
+let test_interleave_requires_two_collections () =
+  Cljml.Compiler.compile_string {|(def x (interleave [1 2]))|}
+  |> expect_error "interleave expects at least two collections"
+
 let test_additional_sequence_helpers_work () =
   let source =
     {|
@@ -2144,6 +2163,12 @@ let tests =
       test_batched_sequence_functions_reject_bad_partition_size );
     ( "batched sequence functions reject reduce-kv non-vector",
       test_batched_sequence_functions_reject_reduce_kv_non_vector );
+    ( "interleave accepts multiple collections",
+      test_interleave_accepts_multiple_collections );
+    ( "interleave rejects later type mismatches",
+      test_interleave_rejects_later_type_mismatches );
+    ( "interleave requires two collections",
+      test_interleave_requires_two_collections );
     ("additional sequence helpers work", test_additional_sequence_helpers_work);
     ( "additional sequence helpers reject bad counts",
       test_additional_sequence_helpers_reject_bad_counts );
