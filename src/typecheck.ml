@@ -19,10 +19,15 @@ let rec drop n xs =
   if n <= 0 then xs
   else match xs with [] -> [] | _ :: rest -> drop (n - 1) rest
 
-let lookup_function current_ns env name =
+let lookup_binding current_ns env name =
   match List.assoc_opt (Names.namespaced_key current_ns name) env with
-  | Some (binding : binding) -> Ok (typed binding.ty binding.ocaml_name)
-  | None -> (
+  | Some (binding : binding) -> Ok binding
+  | None -> Error.error ("unknown function " ^ name)
+
+let lookup_function current_ns env name =
+  match lookup_binding current_ns env name with
+  | Ok binding -> Ok (typed binding.ty binding.ocaml_name)
+  | Error _ -> (
       match name with
       | "+" -> Ok (typed (TFn ([ TInt; TInt ], TInt)) "(fun a b -> a + b)")
       | "-" -> Ok (typed (TFn ([ TInt; TInt ], TInt)) "(fun a b -> a - b)")
@@ -32,6 +37,42 @@ let lookup_function current_ns env name =
       | "dec" -> Ok (typed (TFn ([ TInt ], TInt)) "(fun x -> x - 1)")
       | "not" -> Ok (typed (TFn ([ TBool ], TBool)) "not")
       | _ -> Error.error ("unknown function " ^ name))
+
+type compiled_fn_parts = {
+  param_bindings : (string * binding) list;
+  destructured_bindings : Destructure.local_binding list;
+  body : typed_expr;
+}
+
+let row_param_type_names prefix param_tys =
+  param_tys
+  |> List.mapi (fun index -> function
+       | TRecord _ -> Some (prefix ^ "_row" ^ string_of_int index)
+       | _ -> None)
+
+let row_type_defs row_type_names param_tys =
+  List.map2
+    (fun row_type_name param_ty ->
+      match (row_type_name, param_ty) with
+      | Some type_name, TRecord fields -> Some (Codegen.emit_type type_name fields)
+      | _ -> None)
+    row_type_names param_tys
+  |> List.filter_map Fun.id
+
+let row_project_code type_name fields arg =
+  let source = "__row_source" in
+  let values =
+    fields
+    |> List.map (fun (field : field) ->
+           field.ocaml_name ^ " = " ^ source ^ "." ^ field.ocaml_name)
+    |> String.concat "; "
+  in
+  "(let " ^ source ^ " = " ^ arg.code ^ " in ({" ^ values ^ "} : " ^ type_name ^ "))"
+
+let row_arg_code row_type_name expected_ty arg =
+  match (row_type_name, expected_ty, arg.ty) with
+  | Some type_name, TRecord fields, TRecord _ -> row_project_code type_name fields arg
+  | _ -> arg.code
 
 let rec compile_expr current_ns (env : (string * binding) list) = function
   | FInt value -> Ok (typed TInt (string_of_int value))
@@ -242,7 +283,9 @@ and compile_match current_ns env target_form clauses =
     | _, FSymbol "_" -> Ok ("_", [])
     | _, FSymbol name ->
         let ocaml_name = Names.sanitize_name name in
-        Ok (ocaml_name, [ (Names.namespaced_key current_ns name, { ocaml_name; ty = target_ty }) ])
+        Ok
+          ( ocaml_name,
+            [ (Names.namespaced_key current_ns name, Types.binding ocaml_name target_ty) ] )
     | TInt, FInt value -> Ok (string_of_int value, [])
     | TString, FString value -> Ok (Codegen.ocaml_string_literal value, [])
     | TKeyword, FKeyword keyword -> Ok (Codegen.ocaml_string_literal keyword, [])
@@ -349,7 +392,7 @@ and compile_let current_ns env bindings body_forms =
                         bindings
                         |> List.map (fun (binding : Destructure.local_binding) ->
                                ( Names.namespaced_key current_ns binding.source_name,
-                                 { ocaml_name = binding.ocaml_name; ty = binding.ty } ))
+                                 Types.binding binding.ocaml_name binding.ty ))
                       in
                       let code_bindings = bindings |> List.map Destructure.let_code in
                       bind (env @ env_bindings) (List.rev_append code_bindings code_parts) rest))
@@ -358,7 +401,7 @@ and compile_let current_ns env bindings body_forms =
         bind env [] forms
   | _ -> Error.error "let bindings must be a vector"
 
-and compile_fn current_ns env params body_forms =
+and prepare_fn current_ns env params body_forms =
   match Destructure.parse_param_specs params with
   | Error _ as err -> err
   | Ok specs ->
@@ -401,63 +444,74 @@ and compile_fn current_ns env params body_forms =
           match build [] specs with
           | Error _ as err -> err
           | Ok typed_specs ->
-          let param_bindings =
-            typed_specs
-            |> List.map (fun ((spec : Destructure.param_spec), ty) ->
-                   ( Names.namespaced_key current_ns spec.source_name,
-                     { ocaml_name = spec.ocaml_name; ty } ))
-          in
-          let param_targets =
-            typed_specs
-            |> List.map (fun ((spec : Destructure.param_spec), ty) ->
-                   (spec, typed ty spec.ocaml_name))
-          in
-          let destructured_bindings =
-            let rec loop acc = function
-              | [] -> Ok (List.rev acc)
-              | (spec, target) :: rest ->
-                  if not spec.Destructure.destructured then loop acc rest
-                  else (
-                    match Destructure.bind_pattern target spec.pattern with
-                    | Error _ as err -> err
-                    | Ok bindings -> loop (List.rev_append bindings acc) rest)
-            in
-            loop [] param_targets
-          in
-          (match destructured_bindings with
-          | Error _ as err -> err
-          | Ok destructured_bindings ->
-          let local_bindings =
-            destructured_bindings
-            |> List.map (fun (binding : Destructure.local_binding) ->
-                   ( Names.namespaced_key current_ns binding.source_name,
-                     { ocaml_name = binding.ocaml_name; ty = binding.ty } ))
-          in
-          let env = env @ param_bindings @ local_bindings in
-          match
-            compile_body current_ns env "function body requires at least one form"
-              body_forms
-          with
-          | Error _ as err -> err
-          | Ok body ->
-              let params =
-                param_bindings |> List.map (fun (_key, binding) -> binding.ocaml_name)
+              let param_bindings =
+                typed_specs
+                |> List.map (fun ((spec : Destructure.param_spec), ty) ->
+                       ( Names.namespaced_key current_ns spec.source_name,
+                         Types.binding spec.ocaml_name ty ))
               in
-              let param_tys =
-                param_bindings
-                |> List.map (fun (_key, (binding : binding)) -> binding.ty)
+              let param_targets =
+                typed_specs
+                |> List.map (fun ((spec : Destructure.param_spec), ty) ->
+                       (spec, typed ty spec.ocaml_name))
               in
-              let param_code =
-                match params with [] -> "()" | _ -> String.concat " " params
+              let destructured_bindings =
+                let rec loop acc = function
+                  | [] -> Ok (List.rev acc)
+                  | (spec, target) :: rest ->
+                      if not spec.Destructure.destructured then loop acc rest
+                      else (
+                        match Destructure.bind_pattern target spec.pattern with
+                        | Error _ as err -> err
+                        | Ok bindings -> loop (List.rev_append bindings acc) rest)
+                in
+                loop [] param_targets
               in
-              let body_code =
-                destructured_bindings
-                |> List.map Destructure.let_code
-                |> List.fold_left (fun acc binding_code -> binding_code ^ " in " ^ acc) body.code
-              in
-              Ok
-                (typed (TFn (param_tys, body.ty))
-                   ("(fun " ^ param_code ^ " -> " ^ body_code ^ ")")))
+              (match destructured_bindings with
+              | Error _ as err -> err
+              | Ok destructured_bindings ->
+                  let local_bindings =
+                    destructured_bindings
+                    |> List.map (fun (binding : Destructure.local_binding) ->
+                           ( Names.namespaced_key current_ns binding.source_name,
+                             Types.binding binding.ocaml_name binding.ty ))
+                  in
+                  let env = env @ param_bindings @ local_bindings in
+                  match
+                    compile_body current_ns env "function body requires at least one form"
+                      body_forms
+                  with
+                  | Error _ as err -> err
+                  | Ok body -> Ok { param_bindings; destructured_bindings; body })
+
+and fn_code ?(row_param_type_names = []) parts =
+  let param_names =
+    parts.param_bindings |> List.map (fun (_key, binding) -> binding.ocaml_name)
+  in
+  let param_tys =
+    parts.param_bindings |> List.map (fun (_key, (binding : binding)) -> binding.ty)
+  in
+  let annotated_params =
+    param_names
+    |> List.mapi (fun index name ->
+           match List.nth_opt row_param_type_names index with
+           | Some (Some type_name) -> "(" ^ name ^ " : " ^ type_name ^ ")"
+           | _ -> name)
+  in
+  let param_code =
+    match annotated_params with [] -> "()" | _ -> String.concat " " annotated_params
+  in
+  let body_code =
+    parts.destructured_bindings
+    |> List.map Destructure.let_code
+    |> List.fold_left (fun acc binding_code -> binding_code ^ " in " ^ acc) parts.body.code
+  in
+  typed (TFn (param_tys, parts.body.ty)) ("(fun " ^ param_code ^ " -> " ^ body_code ^ ")")
+
+and compile_fn current_ns env params body_forms =
+  match prepare_fn current_ns env params body_forms with
+  | Error _ as err -> err
+  | Ok parts -> Ok (fn_code parts)
 
 and compile_call current_ns env name arg_forms =
   let compile_args () = compile_args_for current_ns env arg_forms in
@@ -1463,7 +1517,7 @@ and compile_function_arg current_ns env = function
   | form -> compile_expr current_ns env form
 
 and compile_named_function_call current_ns env name arg_forms =
-  match lookup_function current_ns env name with
+  match lookup_binding current_ns env name with
   | Error _ -> compile_protocol_call current_ns env name arg_forms
   | Ok fn -> (
       match compile_args_for current_ns env arg_forms with
@@ -1475,7 +1529,14 @@ and compile_named_function_call current_ns env name arg_forms =
                  && List.for_all2
                       (fun expected arg -> Types.compatible ~expected ~actual:arg.ty)
                       param_tys args ->
-              Ok (typed ret (apply_code fn.code (List.map (fun arg -> arg.code) args)))
+              let arg_codes =
+                args
+                |> List.mapi (fun index arg ->
+                       let row_type_name = List.nth_opt fn.row_param_types index |> Option.join in
+                       let expected_ty = List.nth param_tys index in
+                       row_arg_code row_type_name expected_ty arg)
+              in
+              Ok (typed ret (apply_code fn.ocaml_name arg_codes))
           | TFn _ -> Error.error (name ^ " called with incompatible arguments")
           | _ -> Error.error (name ^ " is not callable")))
 
@@ -2491,7 +2552,7 @@ let compile_extend_type current_ns env next_type receiver_keyword protocol_name 
                                       let env_key =
                                         Names.namespaced_key current_ns impl_key_name
                                       in
-                                      let binding = { ocaml_name; ty = expr.ty } in
+                                      let binding = Types.binding ocaml_name expr.ty in
                                       Ok
                                         ( env @ [ (env_key, binding) ],
                                           "let " ^ ocaml_name ^ " = " ^ expr.code )))
@@ -2525,9 +2586,9 @@ let rec compile_module current_ns env next_type module_path module_segment forms
         | Ok expr ->
             let local_name = Names.sanitize_name name in
             let key = module_binding_key module_path name in
-            let local_binding = { ocaml_name = local_name; ty = expr.ty } in
+            let local_binding = Types.binding local_name expr.ty in
             let public_binding =
-              { ocaml_name = module_binding_ocaml_name module_path name; ty = expr.ty }
+              Types.binding (module_binding_ocaml_name module_path name) expr.ty
             in
             (match expr.ty with
             | TRecord fields -> (
@@ -2550,22 +2611,36 @@ let rec compile_module current_ns env next_type module_path module_segment forms
                     next_type,
                     ("let " ^ local_name ^ " = " ^ expr.code) :: code_parts )))
     | FList (FSymbol "defn" :: FSymbol name :: params :: body_forms) -> (
-        match compile_fn module_path env params body_forms with
+        match prepare_fn module_path env params body_forms with
         | Error _ as err -> err
-        | Ok expr -> (
+        | Ok parts -> (
+            let local_name = Names.sanitize_name name in
+            let public_name = module_binding_ocaml_name module_path name in
+            let param_tys =
+              parts.param_bindings
+              |> List.map (fun (_key, (binding : binding)) -> binding.ty)
+            in
+            let local_row_types = row_param_type_names local_name param_tys in
+            let public_row_types = row_param_type_names public_name param_tys in
+            let expr = fn_code ~row_param_type_names:local_row_types parts in
             match expr.ty with
             | TFn _ ->
-                let local_name = Names.sanitize_name name in
                 let key = module_binding_key module_path name in
-                let local_binding = { ocaml_name = local_name; ty = expr.ty } in
+                let local_binding =
+                  Types.binding ~row_param_types:local_row_types local_name expr.ty
+                in
                 let public_binding =
-                  { ocaml_name = module_binding_ocaml_name module_path name; ty = expr.ty }
+                  Types.binding ~row_param_types:public_row_types public_name expr.ty
+                in
+                let type_defs = row_type_defs local_row_types param_tys in
+                let code =
+                  String.concat "\n\n" (type_defs @ [ "let " ^ local_name ^ " = " ^ expr.code ])
                 in
                 Ok
                   ( env @ [ (key, local_binding) ],
                     public_bindings @ [ (key, public_binding) ],
                     next_type,
-                    ("let " ^ local_name ^ " = " ^ expr.code) :: code_parts )
+                    code :: code_parts )
             | _ -> Error.error "defn body did not compile to a function"))
     | FList (FSymbol "module" :: FSymbol nested_segment :: nested_forms) -> (
         let nested_path = module_path ^ "." ^ nested_segment in
@@ -2608,33 +2683,43 @@ let compile_top_level current_ns env next_type = function
               | None -> Error.error "internal error: record expression missing values"
               | Some values ->
                   let type_name = "t" ^ string_of_int next_type in
-                  let binding = { ocaml_name; ty = TRecord fields } in
+                  let binding = Types.binding ocaml_name (TRecord fields) in
                   Ok
                     ( current_ns,
                       env @ [ (env_key, binding) ],
                       next_type + 1,
                       Record_def { var_name = ocaml_name; type_name; fields; values } ))
           | _ ->
-              let binding = { ocaml_name; ty = expr.ty } in
+              let binding = Types.binding ocaml_name expr.ty in
               Ok
                 ( current_ns,
                   env @ [ (env_key, binding) ],
                   next_type,
                   Emit ("let " ^ ocaml_name ^ " = " ^ expr.code) )))
   | FList (FSymbol "defn" :: FSymbol name :: params :: body_forms) -> (
-      match compile_fn current_ns env params body_forms with
+      match prepare_fn current_ns env params body_forms with
       | Error _ as err -> err
-      | Ok expr -> (
+      | Ok parts -> (
+          let ocaml_name = Names.ocaml_binding_name current_ns name in
+          let param_tys =
+            parts.param_bindings
+            |> List.map (fun (_key, (binding : binding)) -> binding.ty)
+          in
+          let row_param_types = row_param_type_names ocaml_name param_tys in
+          let expr = fn_code ~row_param_type_names:row_param_types parts in
           match expr.ty with
           | TFn _ ->
-              let ocaml_name = Names.ocaml_binding_name current_ns name in
               let env_key = Names.namespaced_key current_ns name in
-              let binding = { ocaml_name; ty = expr.ty } in
+              let binding = Types.binding ~row_param_types ocaml_name expr.ty in
+              let type_defs = row_type_defs row_param_types param_tys in
+              let code =
+                String.concat "\n\n" (type_defs @ [ "let " ^ ocaml_name ^ " = " ^ expr.code ])
+              in
               Ok
                 ( current_ns,
                   env @ [ (env_key, binding) ],
                   next_type,
-                  Emit ("let " ^ ocaml_name ^ " = " ^ expr.code) )
+                  Emit code )
           | _ -> Error.error "defn body did not compile to a function"))
   | FList (FSymbol "defprotocol" :: FSymbol protocol_name :: method_forms) ->
       compile_defprotocol current_ns env next_type protocol_name method_forms

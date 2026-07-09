@@ -1266,6 +1266,20 @@ let test_destructuring_preserves_row_polymorphic_function_calls () =
   assert_ocaml_runs "destructuring_preserves_row_polymorphic_function_calls" "hi Ada\n"
     ocaml_source
 
+let test_row_polymorphic_functions_accept_different_map_shapes () =
+  let source =
+    {|
+(def user {:name "Ada", :age 36})
+(def pet {:name "Milo", :species "cat"})
+(defn greeting [{:keys [name]}]
+  (str "hi " name))
+(println (str (greeting user) ":" (greeting pet)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "row_polymorphic_functions_accept_different_map_shapes"
+    "hi Ada:hi Milo\n" ocaml_source
+
 let test_destructuring_rejects_missing_map_fields () =
   let source =
     {|
@@ -1953,6 +1967,8 @@ let tests =
       test_destructuring_supports_direct_keyword_bindings );
     ( "destructuring preserves row polymorphic function calls",
       test_destructuring_preserves_row_polymorphic_function_calls );
+    ( "row polymorphic functions accept different map shapes",
+      test_row_polymorphic_functions_accept_different_map_shapes );
     ( "destructuring rejects missing map fields",
       test_destructuring_rejects_missing_map_fields );
     ( "destructuring rejects unsupported let sources",

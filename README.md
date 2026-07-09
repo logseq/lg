@@ -55,6 +55,9 @@ The compiler infers record-like map shapes automatically:
 - Function parameter types are inferred from body constraints where possible.
   Keyword lookup constraints such as `(:age person)` can infer required
   structural map fields when the field value type is known from context.
+  Row-shaped structural map parameters can accept wider maps with the required
+  fields; the compiler projects wide records to generated narrow row records
+  before calling the OCaml function.
   Optional `^:int`, `^:string`, `^:symbol`, `^:keyword`, `^:bool`, or `^:nil`
   annotations can make a parameter type explicit.
 - `do`, `fn`, `defn`, and `let` bodies can contain multiple forms; earlier

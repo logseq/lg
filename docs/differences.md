@@ -46,10 +46,11 @@ runtime representation has no nilable collection element type.
 
 Row polymorphism is represented in cljml's static type compatibility: a
 function parameter inferred as a structural map with fields `:name` and `:age`
-can be called with a wider map that also has other fields. The current OCaml
-record backend still relies on generated record field access, so fully open
-runtime rows across arbitrary same-field record types remain a future runtime
-representation concern.
+can be called with a wider map that also has other fields. For generated OCaml,
+cljml emits a narrow record type for row-shaped function parameters and
+projects wider map records into that narrow row at the call site. This keeps
+the runtime representation as OCaml records while allowing one function to
+accept different structural map shapes that share the required fields.
 
 Protocols are a static subset of Clojure protocols. `defprotocol` records typed method signatures, and `extend-type` emits ordinary OCaml functions for supported receiver types. Calls dispatch at compile time from the first argument type, so there is no runtime protocol table, dynamic extension, metadata dispatch, or reflection.
 

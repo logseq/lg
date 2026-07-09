@@ -14,14 +14,14 @@ type require_spec =
 let ocaml_host_functions = function
   | "ocaml.Stdlib" ->
       [
-        ("string-of-int", { ocaml_name = "string_of_int"; ty = TFn ([ TInt ], TString) });
-        ("int-of-string", { ocaml_name = "int_of_string"; ty = TFn ([ TString ], TInt) });
+        ("string-of-int", Types.binding "string_of_int" (TFn ([ TInt ], TString)));
+        ("int-of-string", Types.binding "int_of_string" (TFn ([ TString ], TInt)));
       ]
   | "ocaml.String" ->
       [
         ( "uppercase-ascii",
-          { ocaml_name = "String.uppercase_ascii"; ty = TFn ([ TString ], TString) } );
-        ("length", { ocaml_name = "String.length"; ty = TFn ([ TString ], TInt) });
+          Types.binding "String.uppercase_ascii" (TFn ([ TString ], TString)) );
+        ("length", Types.binding "String.length" (TFn ([ TString ], TInt)));
       ]
   | _ -> []
 

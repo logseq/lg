@@ -202,6 +202,12 @@ with fixed positional bindings and `:as`. Destructured function parameters
 infer row-shaped structural map requirements, so callers may pass wider maps
 when the required fields are present.
 
+Generated OCaml preserves row-polymorphic calls by emitting a narrow record type
+for each row-shaped function parameter and projecting wider structural records
+to that narrow type at call sites. This avoids replacing maps with dynamic
+dictionaries while still allowing shared-field function reuse across different
+map shapes.
+
 `keys` returns a homogeneous `vector<keyword>`.
 
 `assoc` returns a new structural record type when adding one or more fields.

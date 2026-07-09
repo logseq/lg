@@ -55,7 +55,7 @@ let parse_method_signature = function
 
 let marker_binding protocol_name signature =
   let params = List.init signature.arity (fun _ -> TAny) in
-  { ocaml_name = protocol_name; ty = TFn (params, signature.return_ty) }
+  Types.binding protocol_name (TFn (params, signature.return_ty))
 
 let defprotocol_bindings current_ns protocol_name method_forms =
   let rec loop acc = function

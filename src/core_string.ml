@@ -4,7 +4,7 @@ let runtime name = "Cljml.Runtime_string." ^ name
 
 let fn args ret = TFn (args, ret)
 
-let binding name ocaml_name ty = (name, { ocaml_name; ty })
+let binding name ocaml_name ty = (name, Types.binding ocaml_name ty)
 
 let bindings =
   [

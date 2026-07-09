@@ -22,6 +22,7 @@ and field = {
 type binding = {
   ocaml_name : string;
   ty : ty;
+  row_param_types : string option list;
 }
 
 type typed_expr = {
@@ -40,6 +41,9 @@ type compiled_item =
     }
 
 let typed ty code = { ty; code; record_values = None }
+
+let binding ?(row_param_types = []) ocaml_name ty =
+  { ocaml_name; ty; row_param_types }
 
 let rec equal left right =
   match (left, right) with
