@@ -153,6 +153,8 @@ update function.
 
 Three-argument `get` returns a typed default when the literal key is absent.
 
+Same-shaped structural maps compare field by field with `=` and `not=`.
+
 `if` requires a bool condition and same-type branches.
 
 ## Architecture Tasks

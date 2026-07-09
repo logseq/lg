@@ -576,6 +576,20 @@ let test_not_equal_rejects_mixed_types () =
   Cljml.Compiler.compile_string {|(def x (not= 1 "1"))|}
   |> expect_error "not= arguments must have the same type"
 
+let test_collection_equality_core_api () =
+  let source =
+    {|
+(def ada {:name "Ada", :age 36})
+(def ada2 {:name "Ada", :age 36})
+(def grace {:name "Grace", :age 36})
+(println (str (= [1 2] [1 2]) ":" (= (list 1 2) (list 2 1)) ":"
+              (= (hash-set 2 1) (hash-set 1 2)) ":" (not= [1 2] [2 1]) ":"
+              (= ada ada2) ":" (not= ada grace)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "collection_equality_core_api" "true:false:true:true:true:true\n" ocaml_source
+
 let test_get_rejects_unknown_map_fields () =
   let source = {|(def user {:name "Ada"})(def x (get user :age))|} in
   Cljml.Compiler.compile_string source |> expect_error "unknown field :age"
@@ -1076,6 +1090,7 @@ let tests =
     ("chained comparisons work", test_chained_comparisons);
     ("not= core api works", test_not_equal_core_api);
     ("not= rejects mixed types", test_not_equal_rejects_mixed_types);
+    ("collection equality core api works", test_collection_equality_core_api);
     ("get rejects unknown map fields", test_get_rejects_unknown_map_fields);
     ("get supports default values", test_get_supports_default_values);
     ( "get rejects default type mismatch for known fields",

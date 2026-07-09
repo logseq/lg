@@ -45,7 +45,7 @@ Type predicates such as `int?`, `string?`, `keyword?`, `boolean?`, `vector?`,
 
 `subs` supports two- and three-argument typed string slicing.
 
-Arithmetic is currently integer-only. `+` and `*` support Clojure identity arities, ordered comparisons can be chained, same-typed `=` and `not=` are supported, and `/` requires at least two integer arguments because cljml does not yet have ratios.
+Arithmetic is currently integer-only. `+` and `*` support Clojure identity arities, ordered comparisons can be chained, same-typed `=` and `not=` are supported, same-shaped structural maps compare field by field, and `/` requires at least two integer arguments because cljml does not yet have ratios.
 
 ## Macros
 

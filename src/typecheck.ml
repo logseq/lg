@@ -367,10 +367,34 @@ and compile_comparison current_ns env name arg_forms =
         in
         loop [] args
       in
+      let rec equality_code left right =
+        match left.ty with
+        | TRecord fields ->
+            let parts =
+              fields
+              |> List.map (fun (field : field) ->
+                     let left_field =
+                       { ty = field.ty; code = Structural_map.field_code left field; record_values = None }
+                     in
+                     let right_field =
+                       { ty = field.ty; code = Structural_map.field_code right field; record_values = None }
+                     in
+                     equality_code left_field right_field)
+            in
+            if parts = [] then "true" else "(" ^ String.concat " && " parts ^ ")"
+        | _ -> "(" ^ left.code ^ " = " ^ right.code ^ ")"
+      in
+      let pairwise_equality_codes args =
+        let rec loop acc = function
+          | left :: ((right :: _) as rest) -> loop (equality_code left right :: acc) rest
+          | _ -> List.rev acc
+        in
+        loop [] args
+      in
       if name = "=" || name = "not=" then
         let first = List.hd args in
         if List.for_all (fun arg -> Types.equal first.ty arg.ty) args then
-          let equal_code = String.concat " && " (pairwise_codes "=" args) in
+          let equal_code = String.concat " && " (pairwise_equality_codes args) in
           let code = if name = "not=" then "not (" ^ equal_code ^ ")" else equal_code in
           Ok (typed TBool code)
         else Error.error (name ^ " arguments must have the same type")

@@ -56,6 +56,7 @@ The compiler infers record-like map shapes automatically:
 - `subs` supports two- and three-argument typed string slicing.
 - `+`, `*`, `-`, `/`, ordered comparisons, `=`, and `not=` follow
   Clojure-style arities where the current type system can represent them.
+- `=` and `not=` compare same-shaped structural maps field by field.
 - `list`, `list-of`, `cons`, `second`, `last`, `peek`, `pop`, `map`,
   `filter`, `reduce`, `apply`, `comp`, `partial`, `identity`, and
   `constantly` are supported for the current typed collection/function subset.
