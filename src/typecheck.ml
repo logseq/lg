@@ -529,7 +529,10 @@ and compile_call current_ns env name arg_forms =
       compile_unary_int current_ns env name (fun code -> "(" ^ code ^ " + 1)") arg_forms
   | "dec" ->
       compile_unary_int current_ns env name (fun code -> "(" ^ code ^ " - 1)") arg_forms
-  | "=" | "not=" | "<" | "<=" | ">" | ">=" -> compile_comparison current_ns env name arg_forms
+  | "=" | "not=" | "<" | "<=" | ">" | ">=" -> (
+      match compile_args () with
+      | Error _ as err -> err
+      | Ok args -> Core_compare.compile name args)
   | "not" -> compile_not current_ns env arg_forms
   | "nil?" -> compile_predicate current_ns env name arg_forms TNil
   | "some?" -> compile_some_predicate current_ns env arg_forms
@@ -826,54 +829,6 @@ and compile_variadic_int_operator current_ns env name arg_forms =
                    first.code
         in
         Ok (typed TInt code)
-      else Error.error ("expected int arguments for " ^ name)
-
-and compile_comparison current_ns env name arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok ([] | [ _ ]) -> Ok (typed TBool (if name = "not=" then "false" else "true"))
-  | Ok args ->
-      let pairwise_codes op args =
-        let rec loop acc = function
-          | left :: ((right :: _) as rest) ->
-              loop (("(" ^ left.code ^ " " ^ op ^ " " ^ right.code ^ ")") :: acc) rest
-          | _ -> List.rev acc
-        in
-        loop [] args
-      in
-      let rec equality_code left right =
-        match left.ty with
-        | TRecord fields ->
-            let parts =
-              fields
-              |> List.map (fun (field : field) ->
-                     let left_field =
-                       { ty = field.ty; code = Structural_map.field_code left field; record_values = None }
-                     in
-                     let right_field =
-                       { ty = field.ty; code = Structural_map.field_code right field; record_values = None }
-                     in
-                     equality_code left_field right_field)
-            in
-            if parts = [] then "true" else "(" ^ String.concat " && " parts ^ ")"
-        | _ -> "(" ^ left.code ^ " = " ^ right.code ^ ")"
-      in
-      let pairwise_equality_codes args =
-        let rec loop acc = function
-          | left :: ((right :: _) as rest) -> loop (equality_code left right :: acc) rest
-          | _ -> List.rev acc
-        in
-        loop [] args
-      in
-      if name = "=" || name = "not=" then
-        let first = List.hd args in
-        if List.for_all (fun arg -> Types.equal first.ty arg.ty) args then
-          let equal_code = String.concat " && " (pairwise_equality_codes args) in
-          let code = if name = "not=" then "not (" ^ equal_code ^ ")" else equal_code in
-          Ok (typed TBool code)
-        else Error.error (name ^ " arguments must have the same type")
-      else if List.for_all (fun arg -> Types.equal arg.ty TInt) args then
-        Ok (typed TBool (String.concat " && " (pairwise_codes name args)))
       else Error.error ("expected int arguments for " ^ name)
 
 and compile_not current_ns env arg_forms =
