@@ -1,3 +1,8 @@
+type pattern =
+  | PVar of string
+  | PUnit
+  | PConstraint of pattern * string
+
 type t =
   | Raw of string
   | Int of int
@@ -8,6 +13,14 @@ type t =
   | List of t list
   | Apply of t * t list
   | If of t * t * t
+  | Fun of pattern list * t
+  | Sequence of t list
+
+let rec pattern_to_source = function
+  | PVar name -> name
+  | PUnit -> "()"
+  | PConstraint (pattern, type_name) ->
+      "(" ^ pattern_to_source pattern ^ " : " ^ type_name ^ ")"
 
 let rec to_source = function
   | Raw source -> source
@@ -28,6 +41,19 @@ let rec to_source = function
   | If (condition, then_expr, else_expr) ->
       "(if " ^ to_source condition ^ " then " ^ to_source then_expr ^ " else "
       ^ to_source else_expr ^ ")"
+  | Fun (patterns, body) ->
+      let patterns = match patterns with [] -> [ PUnit ] | _ -> patterns in
+      "(fun "
+      ^ (patterns |> List.map pattern_to_source |> String.concat " ")
+      ^ " -> " ^ to_source body ^ ")"
+  | Sequence expressions -> (
+      match expressions with
+      | [] -> "()"
+      | [ expression ] -> to_source expression
+      | expression :: rest ->
+          "(let _ = " ^ to_source expression ^ " in "
+          ^ to_source (Sequence rest)
+          ^ ")")
 
 let loc = Location.none
 let lid value = Location.mkloc value loc
@@ -50,6 +76,19 @@ let parse_expression ~context source =
     Error.error
       ("generated OCaml expression did not parse in " ^ context ^ ": "
      ^ Printexc.to_string exn)
+
+let rec pattern_to_parsetree = function
+  | PVar name -> Ast_helper.Pat.var ~loc (str name)
+  | PUnit -> Ast_helper.Pat.construct ~loc (lid (Longident.Lident "()")) None
+  | PConstraint (pattern, type_name) ->
+      Ast_helper.Pat.constraint_ ~loc (pattern_to_parsetree pattern)
+        (Ast_helper.Typ.constr ~loc (lid (longident_of_string type_name)) [])
+
+let function_parameter pattern =
+  {
+    Parsetree.pparam_loc = loc;
+    pparam_desc = Pparam_val (Asttypes.Nolabel, None, pattern_to_parsetree pattern);
+  }
 
 let rec list_to_parsetree ~context = function
   | [] ->
@@ -113,3 +152,25 @@ and to_parsetree ~context = function
       | _, _, (Error _ as err) -> err
       | Ok condition, Ok then_expr, Ok else_expr ->
           Ok (Ast_helper.Exp.ifthenelse ~loc condition then_expr (Some else_expr)))
+  | Fun (patterns, body) -> (
+      let patterns = match patterns with [] -> [ PUnit ] | _ -> patterns in
+      match to_parsetree ~context body with
+      | Error _ as err -> err
+      | Ok body ->
+          Ok
+            (Ast_helper.Exp.function_ ~loc
+               (List.map function_parameter patterns)
+               None (Pfunction_body body)))
+  | Sequence expressions -> (
+      let rec build = function
+        | [] -> Ok (Ast_helper.Exp.construct ~loc (lid (Longident.Lident "()")) None)
+        | [ expression ] -> to_parsetree ~context expression
+        | expression :: rest -> (
+            match (to_parsetree ~context expression, build rest) with
+            | (Error _ as err), _ -> err
+            | _, (Error _ as err) -> err
+            | Ok expression, Ok body ->
+                let binding = Ast_helper.Vb.mk ~loc (Ast_helper.Pat.any ~loc ()) expression in
+                Ok (Ast_helper.Exp.let_ ~loc Asttypes.Nonrecursive [ binding ] body))
+      in
+      build expressions)

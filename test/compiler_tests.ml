@@ -18,6 +18,32 @@ let expect_error_value expected = function
         failwith
           (Printf.sprintf "expected error %S, got %S" expected err.message)
 
+let typecheck_items source =
+  match Cljml.Lexer.tokenize source with
+  | Error (err : Cljml.Error.t) ->
+      failwith ("expected successful lexing, got: " ^ err.message)
+  | Ok tokens -> (
+      match Cljml.Parser.parse tokens with
+      | Error (err : Cljml.Error.t) ->
+          failwith ("expected successful parsing, got: " ^ err.message)
+      | Ok forms -> Cljml.Typecheck.compile_forms forms |> expect_ok)
+
+let expect_structured_value_expression source =
+  let rec find_value_expression = function
+    | [] -> None
+    | Cljml.Types.Value_binding { expression; _ } :: _ -> Some expression
+    | Cljml.Types.Group items :: rest -> (
+        match find_value_expression items with
+        | Some _ as expression -> expression
+        | None -> find_value_expression rest)
+    | _ :: rest -> find_value_expression rest
+  in
+  match typecheck_items source |> find_value_expression with
+  | Some (Cljml.Ocaml_ir.Raw _) ->
+      failwith "expected a structured OCaml IR expression, got Raw"
+  | Some _ -> ()
+  | None -> failwith "expected a value binding"
+
 let assert_equal_string expected actual =
   if actual <> expected then
     failwith (Printf.sprintf "expected:\n%s\nactual:\n%s" expected actual)
@@ -2138,6 +2164,12 @@ let test_parsetree_backend_builds_native_conditional_expressions () =
       then failwith "expected native conditional expressions with ghost locations"
   | _ -> failwith "expected three conditional value bindings"
 
+let test_parsetree_backend_builds_native_function_expressions () =
+  expect_structured_value_expression {|(defn identity-value [x] x)|}
+
+let test_parsetree_backend_builds_native_sequence_expressions () =
+  expect_structured_value_expression {|(def result (do 1 2 3))|}
+
 let test_incremental_parsetree_backend_preserves_state () =
   let state = Cljml.Compiler.empty_state in
   let state, people_structure =
@@ -2460,6 +2492,10 @@ let tests =
       test_parsetree_backend_builds_native_collection_expressions );
     ( "parsetree backend builds native conditional expressions",
       test_parsetree_backend_builds_native_conditional_expressions );
+    ( "parsetree backend builds native function expressions",
+      test_parsetree_backend_builds_native_function_expressions );
+    ( "parsetree backend builds native sequence expressions",
+      test_parsetree_backend_builds_native_sequence_expressions );
     ( "incremental parsetree backend preserves state",
       test_incremental_parsetree_backend_preserves_state );
   ]

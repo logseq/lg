@@ -371,7 +371,9 @@ and compile_body current_ns env empty_error forms =
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok expr, Ok body ->
-          Ok (typed body.ty ("(let _ = " ^ expr.code ^ " in " ^ body.code ^ ")")))
+          Ok
+            (typed_ir body.ty
+               (Ocaml_ir.Sequence [ expr.ocaml_expr; body.ocaml_expr ])))
 
 and compile_let current_ns env bindings body_forms =
   match bindings with
@@ -502,22 +504,28 @@ and fn_code ?(row_param_type_names = []) parts =
   let param_tys =
     parts.param_bindings |> List.map (fun (_key, (binding : binding)) -> binding.ty)
   in
-  let annotated_params =
+  let param_patterns =
     param_names
     |> List.mapi (fun index name ->
            match List.nth_opt row_param_type_names index with
-           | Some (Some type_name) -> "(" ^ name ^ " : " ^ type_name ^ ")"
-           | _ -> name)
+           | Some (Some type_name) ->
+               Ocaml_ir.PConstraint (Ocaml_ir.PVar name, type_name)
+           | _ -> Ocaml_ir.PVar name)
   in
-  let param_code =
-    match annotated_params with [] -> "()" | _ -> String.concat " " annotated_params
+  let body_expr =
+    match parts.destructured_bindings with
+    | [] -> parts.body.ocaml_expr
+    | bindings ->
+        let body_code =
+          bindings
+          |> List.map Destructure.let_code
+          |> List.fold_left
+               (fun acc binding_code -> binding_code ^ " in " ^ acc)
+               parts.body.code
+        in
+        Ocaml_ir.Raw body_code
   in
-  let body_code =
-    parts.destructured_bindings
-    |> List.map Destructure.let_code
-    |> List.fold_left (fun acc binding_code -> binding_code ^ " in " ^ acc) parts.body.code
-  in
-  typed (TFn (param_tys, parts.body.ty)) ("(fun " ^ param_code ^ " -> " ^ body_code ^ ")")
+  typed_ir (TFn (param_tys, parts.body.ty)) (Ocaml_ir.Fun (param_patterns, body_expr))
 
 and compile_fn current_ns env params body_forms =
   match prepare_fn current_ns env params body_forms with
