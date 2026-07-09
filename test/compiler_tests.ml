@@ -845,6 +845,95 @@ let test_if_rejects_branch_type_mismatch () =
   Cljml.Compiler.compile_string {|(def x (if true 1 "one"))|}
   |> expect_error "if branches must have same type"
 
+let test_conditional_forms_work () =
+  let source =
+    {|
+(def status (if-not false "open" "closed"))
+(def label
+  (cond
+    false "bad"
+    (= status "open") "ready"
+    :else "unknown"))
+(when (= label "ready")
+  (println "when-fired"))
+(println (str status ":" label))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "conditional_forms_work" "when-fired\nopen:ready\n" ocaml_source
+
+let test_if_not_rejects_branch_type_mismatch () =
+  Cljml.Compiler.compile_string {|(def x (if-not true 1 "one"))|}
+  |> expect_error "if-not branches must have same type"
+
+let test_cond_rejects_missing_else () =
+  Cljml.Compiler.compile_string {|(def x (cond false 1))|}
+  |> expect_error "cond requires an :else branch"
+
+let test_cond_rejects_branch_type_mismatch () =
+  Cljml.Compiler.compile_string {|(def x (cond false 1 :else "one"))|}
+  |> expect_error "cond branches must have same type"
+
+let test_cond_rejects_non_bool_tests () =
+  Cljml.Compiler.compile_string {|(def x (cond 1 "one" :else "fallback"))|}
+  |> expect_error "cond tests must be bool"
+
+let test_when_rejects_value_body () =
+  Cljml.Compiler.compile_string {|(def x (when true 1))|}
+  |> expect_error "when body must be unit or nil"
+
+let test_conditional_forms_infer_bool_params () =
+  let source =
+    {|
+(defn status [flag]
+  (if-not flag "closed" "open"))
+(def bad (status 1))
+|}
+  in
+  Cljml.Compiler.compile_string source
+  |> expect_error "status called with incompatible arguments"
+
+let test_batched_core_functions_work () =
+  let source =
+    {|
+(def xs [1 2 3])
+(def ys (list 1 2 3))
+(def user {:name "Ada"})
+(def f (fn [x] x))
+(println
+  (str (zero? 0) ":" (pos? 3) ":" (neg? -1) ":" (even? 4) ":" (odd? 5) ":"
+       (number? 1) ":" (number? "1") ":"
+       (max 1 5 3) ":" (min 1 -2 3) ":" (quot 7 2) ":" (rem 7 2) ":" (mod -1 5) ":"
+       (bit-and 7 3 1) ":" (bit-or 4 1 2) ":" (bit-xor 7 3) ":" (bit-not 0) ":"
+       (bit-shift-left 1 3) ":" (bit-shift-right 8 1) ":"
+       (fn? f) ":" (fn? 1) ":" (coll? xs) ":" (coll? "x") ":"
+       (associative? user) ":" (associative? ys) ":" (indexed? xs) ":" (indexed? user) ":"
+       (seqable? "abc") ":" (seqable? 1) ":" (counted? user) ":" (counted? f)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "batched_core_functions_work"
+    "true:true:true:true:true:true:false:5:-2:3:1:4:1:7:4:-1:8:4:true:false:true:false:true:false:true:false:true:false:true:false\n"
+    ocaml_source
+
+let test_batched_core_functions_reject_non_int_arguments () =
+  Cljml.Compiler.compile_string {|(def x (zero? "0"))|}
+  |> expect_error "expected int arguments for zero?"
+
+let test_batched_core_functions_reject_bad_arities () =
+  Cljml.Compiler.compile_string {|(def x (quot 1))|}
+  |> expect_error "quot expects 2 arguments"
+
+let test_batched_core_functions_infer_int_params () =
+  let source =
+    {|
+(defn shifted [x] (bit-shift-left x 1))
+(def bad (shifted "1"))
+|}
+  in
+  Cljml.Compiler.compile_string source
+  |> expect_error "shifted called with incompatible arguments"
+
 let test_let_defn_and_fn_values () =
   let source =
     {|
@@ -1369,6 +1458,21 @@ let tests =
     ("contains supports vector indexes", test_contains_supports_vector_indexes);
     ("contains rejects vector non-int indexes", test_contains_rejects_vector_non_int_indexes);
     ("if rejects branch type mismatch", test_if_rejects_branch_type_mismatch);
+    ("conditional forms work", test_conditional_forms_work);
+    ("if-not rejects branch type mismatch", test_if_not_rejects_branch_type_mismatch);
+    ("cond rejects missing else", test_cond_rejects_missing_else);
+    ("cond rejects branch type mismatch", test_cond_rejects_branch_type_mismatch);
+    ("cond rejects non-bool tests", test_cond_rejects_non_bool_tests);
+    ("when rejects value body", test_when_rejects_value_body);
+    ( "conditional forms infer bool params",
+      test_conditional_forms_infer_bool_params );
+    ("batched core functions work", test_batched_core_functions_work);
+    ( "batched core functions reject non-int arguments",
+      test_batched_core_functions_reject_non_int_arguments );
+    ( "batched core functions reject bad arities",
+      test_batched_core_functions_reject_bad_arities );
+    ( "batched core functions infer int params",
+      test_batched_core_functions_infer_int_params );
     ("let, defn, and fn values work", test_let_defn_and_fn_values);
     ("sequence core api works on vectors", test_sequence_core_api_on_vectors);
     ("function helpers work", test_function_helpers);

@@ -83,9 +83,25 @@ let infer_params ~lookup_function_ty params body_forms =
         | Ok params -> infer_all params body_forms)
     | _ -> infer_all params body_forms
   and infer_form params = function
-    | FList (FSymbol ("+" | "-" | "*" | "/") :: args) ->
+    | FList
+        (FSymbol
+          ( "+"
+          | "-"
+          | "*"
+          | "/"
+          | "max"
+          | "min"
+          | "bit-and"
+          | "bit-or"
+          | "bit-xor" )
+        :: args) ->
         infer_expected_all TInt params args
-    | FList [ FSymbol ("inc" | "dec"); arg ] -> infer_expected TInt params arg
+    | FList [ FSymbol ("inc" | "dec" | "zero?" | "pos?" | "neg?" | "even?" | "odd?" | "bit-not"); arg ] ->
+        infer_expected TInt params arg
+    | FList [ FSymbol ("quot" | "rem" | "mod" | "bit-shift-left" | "bit-shift-right"); left; right ] -> (
+        match infer_expected TInt params left with
+        | Error _ as err -> err
+        | Ok params -> infer_expected TInt params right)
     | FList (FSymbol ("<" | "<=" | ">" | ">=") :: args) ->
         infer_expected_all TInt params args
     | FList [ FSymbol "not"; arg ] -> infer_expected TBool params arg
@@ -96,6 +112,34 @@ let infer_params ~lookup_function_ty params body_forms =
             match infer_form params then_form with
             | Error _ as err -> err
             | Ok params -> infer_form params else_form))
+    | FList [ FSymbol "if-not"; condition; then_form; else_form ] -> (
+        match infer_expected TBool params condition with
+        | Error _ as err -> err
+        | Ok params -> (
+            match infer_form params then_form with
+            | Error _ as err -> err
+            | Ok params -> infer_form params else_form))
+    | FList (FSymbol "when" :: condition :: body_forms) -> (
+        match infer_expected TBool params condition with
+        | Error _ as err -> err
+        | Ok params -> infer_all params body_forms)
+    | FList (FSymbol "cond" :: clauses) ->
+        let rec infer_clauses params = function
+          | [] -> Ok params
+          | [ form ] -> infer_form params form
+          | FKeyword ":else" :: value_form :: rest -> (
+              match infer_form params value_form with
+              | Error _ as err -> err
+              | Ok params -> infer_clauses params rest)
+          | test_form :: value_form :: rest -> (
+              match infer_expected TBool params test_form with
+              | Error _ as err -> err
+              | Ok params -> (
+                  match infer_form params value_form with
+                  | Error _ as err -> err
+                  | Ok params -> infer_clauses params rest))
+        in
+        infer_clauses params clauses
     | FList (FSymbol "do" :: body_forms) -> infer_all params body_forms
     | FList (FSymbol "let" :: bindings :: body_forms) ->
         infer_let params bindings body_forms

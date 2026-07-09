@@ -40,14 +40,19 @@ Protocols are a static subset of Clojure protocols. `defprotocol` records typed 
 
 `do`, `fn`, `defn`, and `let` bodies evaluate forms in order and return the final form's type.
 
+`if-not`, `when`, and `cond` are compiler-recognized forms rather than macros. `when` currently supports unit or nil bodies, and `cond` requires an `:else` branch because cljml does not yet have a union type for implicit nil results.
+
+Top-level expression forms are supported and emit `let _ = ...`; top-level map literals still need a `def` because structural maps require generated record definitions.
+
 `print` and `println` follow Clojure's newline behavior.
 
 Type predicates such as `int?`, `string?`, `keyword?`, `boolean?`, `vector?`,
-`list?`, `seq?`, `set?`, and `map?` are resolved from static cljml types.
+`list?`, `seq?`, `set?`, `map?`, `number?`, `fn?`, `coll?`, `associative?`,
+`indexed?`, `seqable?`, and `counted?` are resolved from static cljml types.
 
 `subs` supports two- and three-argument typed string slicing.
 
-Arithmetic is currently integer-only. `+` and `*` support Clojure identity arities, ordered comparisons can be chained, same-typed `=` and `not=` are supported, same-shaped structural maps compare field by field, and `/` requires at least two integer arguments because cljml does not yet have ratios.
+Arithmetic is currently integer-only. `+` and `*` support Clojure identity arities, ordered comparisons can be chained, same-typed `=` and `not=` are supported, same-shaped structural maps compare field by field, and `/` requires at least two integer arguments because cljml does not yet have ratios. Integer helpers include `zero?`, `pos?`, `neg?`, `even?`, `odd?`, `max`, `min`, `quot`, `rem`, `mod`, `bit-and`, `bit-or`, `bit-xor`, `bit-not`, `bit-shift-left`, and `bit-shift-right`.
 
 ## Macros
 

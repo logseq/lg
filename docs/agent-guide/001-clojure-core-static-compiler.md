@@ -71,6 +71,7 @@ The compiler should support this syntax without macros.
 | Maps | `{:name "Ada" :age 36}` | 1 |
 | `def` | `(def x 1)` | 1 |
 | `if` | `(if admin? "yes" "no")` | 1 |
+| Conditional forms | `(if-not ready? "wait" "go")`, `(when ready? (println "go"))`, `(cond ready? "go" :else "wait")` | 3 |
 | `let` | `(let [x 1] (+ x 2))` | 2 |
 | `fn` | `(fn [x] (+ x 1))` | 2 |
 | `defn` | `(defn inc1 [x] (+ x 1))` | 2 |
@@ -82,8 +83,8 @@ The compiler should support this syntax without macros.
 | Category | Functions | Phase |
 | --- | --- | --- |
 | Printing | `print`, `println`, `pr-str` | 1 |
-| Boolean | `not`, `true?`, `false?`, `nil?`, `some?`, `int?`, `string?`, `keyword?`, `boolean?`, `vector?`, `list?`, `seq?`, `set?`, `map?` | 1 |
-| Arithmetic | `+`, `-`, `*`, `/`, `inc`, `dec`, `<`, `<=`, `>`, `>=`, `=`, `not=` | 1 |
+| Boolean and predicates | `not`, `true?`, `false?`, `nil?`, `some?`, `int?`, `number?`, `string?`, `keyword?`, `boolean?`, `vector?`, `list?`, `seq?`, `set?`, `map?`, `fn?`, `coll?`, `associative?`, `indexed?`, `seqable?`, `counted?` | 1 |
+| Arithmetic | `+`, `-`, `*`, `/`, `inc`, `dec`, `<`, `<=`, `>`, `>=`, `=`, `not=`, `zero?`, `pos?`, `neg?`, `even?`, `odd?`, `max`, `min`, `quot`, `rem`, `mod`, `bit-and`, `bit-or`, `bit-xor`, `bit-not`, `bit-shift-left`, `bit-shift-right` | 1 |
 | Strings | `str`, `subs` | 1 |
 | Maps | `hash-map`, `get`, `assoc`, `dissoc`, `merge`, `update`, `select-keys`, `contains?`, `keys`, `vals` | 1 |
 | Vectors | `vector`, `conj`, `count`, `nth`, `get`, `assoc`, `update`, `contains?`, `subvec`, `first`, `second`, `last`, `peek`, `pop`, `rest` | 1 |
@@ -101,7 +102,15 @@ It should infer ordinary function parameter types from source-level constraints 
 Scalar types are `int`, `string`, `keyword`, `bool`, `nil`, and `unit`.
 Arithmetic starts as integer-only; ratio-producing Clojure arities such as unary `/` are documented differences until numeric tower support exists.
 
-Type predicates are resolved from static cljml types.
+Type predicates are resolved from static cljml types. This includes scalar
+predicates and collection capability predicates such as `coll?`,
+`associative?`, `indexed?`, `seqable?`, and `counted?`.
+
+`if-not`, `when`, and `cond` are compiler-recognized forms in the static core.
+`cond` requires an `:else` branch until cljml has a union type for implicit nil.
+
+Top-level expression forms are emitted as `let _ = ...`; top-level structural
+map literals still need `def` so the compiler can emit record definitions.
 
 Protocols are represented as compile-time method signatures plus generated
 implementation functions. The current subset supports scalar receiver type

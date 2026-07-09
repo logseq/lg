@@ -51,13 +51,21 @@ The compiler infers record-like map shapes automatically:
   can make a parameter type explicit.
 - `do`, `fn`, `defn`, and `let` bodies can contain multiple forms; earlier
   forms are evaluated for effects and the final form supplies the value.
+- `if-not`, `when`, and `cond` are compiler-recognized conditional forms.
+  `cond` requires an `:else` branch in the current static subset.
+- Top-level expression forms are evaluated with `let _ = ...`, so side-effect
+  forms such as `(when flag (println "ready"))` can appear at file scope.
 - `print` writes without a trailing newline; `println` writes with a trailing
   newline.
 - `int?`, `string?`, `keyword?`, `boolean?`, `vector?`, `list?`, `seq?`,
-  `set?`, and `map?` are supported as static type predicates.
+  `set?`, `map?`, `number?`, `fn?`, `coll?`, `associative?`, `indexed?`,
+  `seqable?`, and `counted?` are supported as static type predicates.
 - `subs` supports two- and three-argument typed string slicing.
 - `+`, `*`, `-`, `/`, ordered comparisons, `=`, and `not=` follow
   Clojure-style arities where the current type system can represent them.
+- `zero?`, `pos?`, `neg?`, `even?`, `odd?`, `max`, `min`, `quot`, `rem`,
+  `mod`, `bit-and`, `bit-or`, `bit-xor`, `bit-not`, `bit-shift-left`, and
+  `bit-shift-right` are supported for integers.
 - `=` and `not=` compare same-shaped structural maps field by field.
 - `range` produces an eager typed integer list.
 - `list`, `list-of`, `cons`, `second`, `last`, `peek`, `pop`, `map`,

@@ -57,6 +57,11 @@ let rec compile_expr current_ns (env : (string * binding) list) = function
   | FList (FKeyword _ :: _) -> Error.error "keyword lookup expects one argument"
   | FList (FSymbol "if" :: condition :: then_form :: else_form :: []) ->
       compile_if current_ns env condition then_form else_form
+  | FList (FSymbol "if-not" :: condition :: then_form :: else_form :: []) ->
+      compile_if_not current_ns env condition then_form else_form
+  | FList (FSymbol "when" :: condition :: body_forms) ->
+      compile_when current_ns env condition body_forms
+  | FList (FSymbol "cond" :: clauses) -> compile_cond current_ns env clauses
   | FList (FSymbol name :: args) -> compile_call current_ns env name args
   | FList [] -> Error.error "empty list is not callable"
   | FList _ -> Error.error "call head must be a symbol"
@@ -132,6 +137,90 @@ and compile_if current_ns env condition then_form else_form =
                  ("(if " ^ condition.code ^ " then " ^ then_expr.code ^ " else "
                 ^ else_expr.code ^ ")"))
           else Error.error "if branches must have same type")
+
+and compile_if_not current_ns env condition then_form else_form =
+  match
+    ( compile_expr current_ns env condition,
+      compile_expr current_ns env then_form,
+      compile_expr current_ns env else_form )
+  with
+  | (Error _ as err), _, _ -> err
+  | _, (Error _ as err), _ -> err
+  | _, _, (Error _ as err) -> err
+  | Ok condition, Ok then_expr, Ok else_expr -> (
+      match ensure_bool condition with
+      | Error _ as err -> err
+      | Ok () ->
+          if Types.equal then_expr.ty else_expr.ty then
+            Ok
+              (typed then_expr.ty
+                 ("(if not (" ^ condition.code ^ ") then " ^ then_expr.code ^ " else "
+                ^ else_expr.code ^ ")"))
+          else Error.error "if-not branches must have same type")
+
+and compile_when current_ns env condition body_forms =
+  match
+    ( compile_expr current_ns env condition,
+      compile_body current_ns env "when body requires at least one form" body_forms )
+  with
+  | (Error _ as err), _ -> err
+  | _, (Error _ as err) -> err
+  | Ok condition, Ok body -> (
+      match ensure_bool condition with
+      | Error _ as err -> err
+      | Ok () ->
+          if Types.equal body.ty TUnit || Types.equal body.ty TNil then
+            Ok
+              (typed body.ty
+                 ("(if " ^ condition.code ^ " then " ^ body.code ^ " else ())"))
+          else Error.error "when body must be unit or nil")
+
+and compile_cond current_ns env clauses =
+  let parse_pairs clauses =
+    let rec loop acc = function
+      | [] -> Error.error "cond requires an :else branch"
+      | [ _ ] -> Error.error "cond requires test/expression pairs"
+      | FKeyword ":else" :: else_form :: [] -> Ok (List.rev acc, else_form)
+      | FKeyword ":else" :: _ -> Error.error "cond :else must be last"
+      | test_form :: value_form :: rest -> loop ((test_form, value_form) :: acc) rest
+    in
+    loop [] clauses
+  in
+  let compile_test form =
+    match compile_expr current_ns env form with
+    | Error _ as err -> err
+    | Ok test ->
+        if Types.equal test.ty TBool then Ok test else Error.error "cond tests must be bool"
+  in
+  let rec compile_pairs acc = function
+    | [] -> Ok (List.rev acc)
+    | (test_form, value_form) :: rest -> (
+        match (compile_test test_form, compile_expr current_ns env value_form) with
+        | (Error _ as err), _ -> err
+        | _, (Error _ as err) -> err
+        | Ok test, Ok value -> compile_pairs ((test, value) :: acc) rest)
+  in
+  match parse_pairs clauses with
+  | Error _ as err -> err
+  | Ok (pairs, else_form) -> (
+      match (compile_pairs [] pairs, compile_expr current_ns env else_form) with
+      | (Error _ as err), _ -> err
+      | _, (Error _ as err) -> err
+      | Ok pairs, Ok else_expr ->
+          if
+            List.for_all
+              (fun (_test, value) -> Types.equal value.ty else_expr.ty)
+              pairs
+          then
+            let code =
+              List.fold_right
+                (fun (test, value) acc ->
+                  "(if " ^ test.code ^ " then " ^ value.code ^ " else " ^ acc
+                  ^ ")")
+                pairs else_expr.code
+            in
+            Ok (typed else_expr.ty code)
+          else Error.error "cond branches must have same type")
 
 and compile_body current_ns env empty_error forms =
   match forms with
@@ -238,7 +327,24 @@ and compile_call current_ns env name arg_forms =
   | "some?" -> compile_some_predicate current_ns env arg_forms
   | "true?" -> compile_bool_literal_predicate current_ns env name arg_forms true
   | "false?" -> compile_bool_literal_predicate current_ns env name arg_forms false
+  | "zero?" ->
+      compile_unary_int current_ns env name (fun code -> "(" ^ code ^ " = 0)") arg_forms
+      |> Result.map (fun expr -> { expr with ty = TBool })
+  | "pos?" ->
+      compile_unary_int current_ns env name (fun code -> "(" ^ code ^ " > 0)") arg_forms
+      |> Result.map (fun expr -> { expr with ty = TBool })
+  | "neg?" ->
+      compile_unary_int current_ns env name (fun code -> "(" ^ code ^ " < 0)") arg_forms
+      |> Result.map (fun expr -> { expr with ty = TBool })
+  | "even?" ->
+      compile_unary_int current_ns env name (fun code -> "(" ^ code ^ " mod 2 = 0)") arg_forms
+      |> Result.map (fun expr -> { expr with ty = TBool })
+  | "odd?" ->
+      compile_unary_int current_ns env name (fun code -> "(" ^ code ^ " mod 2 <> 0)") arg_forms
+      |> Result.map (fun expr -> { expr with ty = TBool })
   | "int?" -> compile_type_predicate current_ns env name (function TInt -> true | _ -> false) arg_forms
+  | "number?" ->
+      compile_type_predicate current_ns env name (function TInt -> true | _ -> false) arg_forms
   | "string?" ->
       compile_type_predicate current_ns env name (function TString -> true | _ -> false) arg_forms
   | "keyword?" ->
@@ -255,6 +361,26 @@ and compile_call current_ns env name arg_forms =
       compile_type_predicate current_ns env name (function TSet _ -> true | _ -> false) arg_forms
   | "map?" ->
       compile_type_predicate current_ns env name (function TRecord _ -> true | _ -> false) arg_forms
+  | "fn?" ->
+      compile_type_predicate current_ns env name (function TFn _ -> true | _ -> false) arg_forms
+  | "coll?" ->
+      compile_type_predicate current_ns env name
+        (function TList _ | TVector _ | TSet _ | TRecord _ -> true | _ -> false)
+        arg_forms
+  | "associative?" ->
+      compile_type_predicate current_ns env name
+        (function TVector _ | TRecord _ -> true | _ -> false)
+        arg_forms
+  | "indexed?" ->
+      compile_type_predicate current_ns env name (function TVector _ -> true | _ -> false) arg_forms
+  | "seqable?" ->
+      compile_type_predicate current_ns env name
+        (function TString | TList _ | TVector _ | TSet _ | TRecord _ -> true | _ -> false)
+        arg_forms
+  | "counted?" ->
+      compile_type_predicate current_ns env name
+        (function TString | TList _ | TVector _ | TSet _ | TRecord _ -> true | _ -> false)
+        arg_forms
   | "str" -> (
       match compile_args () with
       | Error _ as err -> err
@@ -266,6 +392,14 @@ and compile_call current_ns env name arg_forms =
           in
           Ok (typed TString code))
   | "subs" -> compile_subs current_ns env arg_forms
+  | "max" | "min" -> compile_int_min_max current_ns env name arg_forms
+  | "quot" | "rem" | "mod" -> compile_binary_int current_ns env name arg_forms
+  | "bit-and" | "bit-or" | "bit-xor" ->
+      compile_variadic_int_operator current_ns env name arg_forms
+  | "bit-not" ->
+      compile_unary_int current_ns env name (fun code -> "lnot (" ^ code ^ ")") arg_forms
+  | "bit-shift-left" | "bit-shift-right" ->
+      compile_binary_int current_ns env name arg_forms
   | "pr-str" -> (
       match compile_args () with
       | Error _ as err -> err
@@ -357,6 +491,70 @@ and compile_unary_int current_ns env name build_code arg_forms =
           if Types.equal arg.ty TInt then Ok (typed TInt (build_code arg.code))
           else Error.error ("expected int arguments for " ^ name))
   | _ -> Error.error (name ^ " expects 1 arguments")
+
+and compile_binary_int current_ns env name arg_forms =
+  match compile_args_for current_ns env arg_forms with
+  | Error _ as err -> err
+  | Ok [ left; right ] ->
+      if Types.equal left.ty TInt && Types.equal right.ty TInt then
+        let code =
+          match name with
+          | "quot" -> "(" ^ left.code ^ " / " ^ right.code ^ ")"
+          | "rem" -> "(" ^ left.code ^ " mod " ^ right.code ^ ")"
+          | "mod" ->
+              "(((" ^ left.code ^ " mod " ^ right.code ^ ") + " ^ right.code ^ ") mod "
+              ^ right.code ^ ")"
+          | "bit-shift-left" -> "(" ^ left.code ^ " lsl " ^ right.code ^ ")"
+          | "bit-shift-right" -> "(" ^ left.code ^ " asr " ^ right.code ^ ")"
+          | _ -> left.code
+        in
+        Ok (typed TInt code)
+      else Error.error ("expected int arguments for " ^ name)
+  | Ok _ -> Error.error (name ^ " expects 2 arguments")
+
+and compile_int_min_max current_ns env name arg_forms =
+  match compile_args_for current_ns env arg_forms with
+  | Error _ as err -> err
+  | Ok [] -> Error.error (name ^ " expects at least 1 arguments")
+  | Ok args ->
+      if List.for_all (fun arg -> Types.equal arg.ty TInt) args then
+        let fn = if name = "max" then "max" else "min" in
+        let code =
+          match args with
+          | [] -> assert false
+          | first :: rest ->
+              rest
+              |> List.fold_left
+                   (fun acc arg -> fn ^ " (" ^ acc ^ ") (" ^ arg.code ^ ")")
+                   first.code
+        in
+        Ok (typed TInt code)
+      else Error.error ("expected int arguments for " ^ name)
+
+and compile_variadic_int_operator current_ns env name arg_forms =
+  match compile_args_for current_ns env arg_forms with
+  | Error _ as err -> err
+  | Ok [] -> Error.error (name ^ " expects at least 1 arguments")
+  | Ok args ->
+      if List.for_all (fun arg -> Types.equal arg.ty TInt) args then
+        let op =
+          match name with
+          | "bit-and" -> "land"
+          | "bit-or" -> "lor"
+          | "bit-xor" -> "lxor"
+          | _ -> assert false
+        in
+        let code =
+          match args with
+          | [] -> assert false
+          | first :: rest ->
+              rest
+              |> List.fold_left
+                   (fun acc arg -> "(" ^ acc ^ " " ^ op ^ " " ^ arg.code ^ ")")
+                   first.code
+        in
+        Ok (typed TInt code)
+      else Error.error ("expected int arguments for " ^ name)
 
 and compile_comparison current_ns env name arg_forms =
   match compile_args_for current_ns env arg_forms with
@@ -1656,9 +1854,15 @@ let compile_top_level current_ns env next_type = function
           (match apply_specs env specs with
           | Error _ as err -> err
           | Ok env -> Ok (namespace, env, next_type, Emit ("(* ns " ^ namespace ^ " *)"))))
-  | _ ->
-      Error.error
-        "expected top-level def, defn, defprotocol, extend-type, print, println, or ns form"
+  | form -> (
+      match compile_expr current_ns env form with
+      | Error _ ->
+          Error.error
+            "expected top-level def, defn, defprotocol, extend-type, print, println, ns, or expression form"
+      | Ok expr -> (
+          match expr.record_values with
+          | Some _ -> Error.error "top-level map literals must be bound with def"
+          | None -> Ok (current_ns, env, next_type, Emit ("let _ = " ^ expr.code))))
 
 type state = {
   current_ns : string;
