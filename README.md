@@ -29,6 +29,11 @@ first, then OCaml lowering:
 - Parsetree is not used as cljml's full type system, and this direction does
   not introduce nilable sequences or lazy seqs.
 
+Sets use persistent OCaml `Set.Make` modules rather than list-backed values.
+The current runtime provides comparators for `int`, `string` (including
+keywords and symbols), and `bool`; generated comparators for record and other
+composite element types are the next runtime extension.
+
 Supported prototype forms:
 
 ```clojure

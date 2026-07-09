@@ -249,6 +249,12 @@ empty collections, collection prepend/update operations, indexing, and `rest`.
 Recursive sequence helpers and complex destructuring remain explicit `Raw`
 migration boundaries.
 
+`hash-set`, `sorted-set`, `set-of`, `conj`, `disj`, `contains?`, set equality,
+set sequence conversion, and set printing now use persistent OCaml `Set.Make`
+instances. Primitive static element types use built-in runtime comparators;
+record and composite set comparators require compiler-generated modules and
+are not yet supported.
+
 The typed standard library also includes a `clojure.string` namespace that can
 be required with `:as` or `:refer`. Its current subset includes `blank?`,
 `capitalize`, `ends-with?`, `includes?`, `index-of`, `join`, `last-index-of`,

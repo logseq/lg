@@ -13,14 +13,20 @@ let collection_to_list_code collection =
   match collection.ty with
   | TList inner -> Ok (inner, collection.code)
   | TVector inner -> Ok (inner, "Rrbvec.to_list (" ^ collection.code ^ ")")
-  | TSet inner -> Ok (inner, collection.code)
+  | TSet inner ->
+      Types.set_module_name inner
+      |> Result.map (fun set_module ->
+             (inner, set_module ^ ".elements (" ^ collection.code ^ ")"))
   | _ -> Error.error "collection value is not sequenceable"
 
 let collection_from_list_code collection_ty list_code =
   match collection_ty with
   | TList _ -> list_code
   | TVector _ -> "Rrbvec.of_list (" ^ list_code ^ ")"
-  | TSet _ -> "List.sort_uniq compare (" ^ list_code ^ ")"
+  | TSet inner -> (
+      match Types.set_module_name inner with
+      | Ok set_module -> set_module ^ ".of_list (" ^ list_code ^ ")"
+      | Error _ -> list_code)
   | _ -> list_code
 
 let remove fn collection =
@@ -111,7 +117,9 @@ let set collection =
   match collection_to_list_code collection with
   | Error _ -> Error.error "set expects a list, vector, or set"
   | Ok (inner, list_code) ->
-      Ok (typed (TSet inner) ("List.sort_uniq compare (" ^ list_code ^ ")"))
+      Types.set_module_name inner
+      |> Result.map (fun set_module ->
+             typed (TSet inner) (set_module ^ ".of_list (" ^ list_code ^ ")"))
 
 let repeat count value =
   if Types.equal count.ty TInt then
@@ -280,10 +288,11 @@ let into target source =
                ("List.fold_left (fun acc item -> item :: acc) (" ^ target.code ^ ") ("
               ^ source_list_code ^ ")"))
       | TSet target_inner when Types.equal target_inner source_inner ->
-          Ok
-            (typed target.ty
-               ("List.sort_uniq compare ((" ^ target.code ^ ") @ (" ^ source_list_code
-              ^ "))"))
+          Types.set_module_name target_inner
+          |> Result.map (fun set_module ->
+                 typed target.ty
+                   (set_module ^ ".of_list (" ^ set_module ^ ".elements "
+                  ^ target.code ^ " @ " ^ source_list_code ^ ")"))
       | TVector _ | TList _ | TSet _ ->
           Error.error "into source element type must match target element type"
       | _ -> Error.error "into target must be a collection")

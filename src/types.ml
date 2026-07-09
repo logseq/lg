@@ -136,10 +136,19 @@ let rec ocaml_name = function
   | TAny -> "'a"
   | TList inner -> ocaml_name inner ^ " list"
   | TVector inner -> ocaml_name inner ^ " Rrbvec.t"
-  | TSet inner -> ocaml_name inner ^ " list"
+  | TSet TInt -> "Cljml.Core_set.Int_set.t"
+  | TSet (TString | TSymbol | TKeyword) -> "Cljml.Core_set.String_set.t"
+  | TSet TBool -> "Cljml.Core_set.Bool_set.t"
+  | TSet inner -> "unsupported_set<" ^ ocaml_name inner ^ ">"
   | TFn (args, ret) ->
       (args |> List.map ocaml_name |> String.concat " -> ") ^ " -> " ^ ocaml_name ret
   | TRecord _ -> "record"
+
+let set_module_name = function
+  | TInt -> Ok "Cljml.Core_set.Int_set"
+  | TString | TSymbol | TKeyword -> Ok "Cljml.Core_set.String_set"
+  | TBool -> Ok "Cljml.Core_set.Bool_set"
+  | ty -> Error.error ("sets require a generated comparator for " ^ source_name ty)
 
 let find_field keyword fields =
   List.find_opt (fun field -> field.keyword = keyword) fields

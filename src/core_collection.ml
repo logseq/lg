@@ -14,7 +14,11 @@ let apply name args = Ocaml_ir.Apply (Ocaml_ir.Ident name, args)
 
 let count collection =
   match collection.ty with
-  | TList _ | TSet _ -> Ok (typed_ir TInt (apply "List.length" [ collection.ocaml_expr ]))
+  | TList _ -> Ok (typed_ir TInt (apply "List.length" [ collection.ocaml_expr ]))
+  | TSet inner ->
+      Types.set_module_name inner
+      |> Result.map (fun set_module ->
+             typed_ir TInt (apply (set_module ^ ".cardinal") [ collection.ocaml_expr ]))
   | TVector _ -> Ok (typed_ir TInt (apply "Rrbvec.length" [ collection.ocaml_expr ]))
   | TRecord fields -> Ok (typed_ir TInt (Ocaml_ir.Int (List.length fields)))
   | TString -> Ok (typed_ir TInt (apply "String.length" [ collection.ocaml_expr ]))
@@ -22,20 +26,34 @@ let count collection =
 
 let first collection =
   match collection.ty with
-  | TList inner | TSet inner -> Ok (typed_ir inner (apply "List.hd" [ collection.ocaml_expr ]))
+  | TList inner -> Ok (typed_ir inner (apply "List.hd" [ collection.ocaml_expr ]))
+  | TSet inner ->
+      Types.set_module_name inner
+      |> Result.map (fun set_module ->
+             typed_ir inner (apply (set_module ^ ".min_elt") [ collection.ocaml_expr ]))
   | TVector inner -> Ok (typed_ir inner (apply "Rrbvec.nth" [ collection.ocaml_expr; Ocaml_ir.Int 0 ]))
   | _ -> Error.error "first expects a list, vector, or set"
 
 let second collection =
   match collection.ty with
-  | TList inner | TSet inner -> Ok (typed_ir inner (apply "List.nth" [ collection.ocaml_expr; Ocaml_ir.Int 1 ]))
+  | TList inner -> Ok (typed_ir inner (apply "List.nth" [ collection.ocaml_expr; Ocaml_ir.Int 1 ]))
+  | TSet inner ->
+      Types.set_module_name inner
+      |> Result.map (fun set_module ->
+             typed_ir inner
+               (apply "List.nth"
+                  [ apply (set_module ^ ".elements") [ collection.ocaml_expr ]; Ocaml_ir.Int 1 ]))
   | TVector inner -> Ok (typed_ir inner (apply "Rrbvec.nth" [ collection.ocaml_expr; Ocaml_ir.Int 1 ]))
   | _ -> Error.error "second expects a list, vector, or set"
 
 let last collection =
   match collection.ty with
-  | TList inner | TSet inner ->
+  | TList inner ->
       Ok (typed_ir inner (apply "List.hd" [ apply "List.rev" [ collection.ocaml_expr ] ]))
+  | TSet inner ->
+      Types.set_module_name inner
+      |> Result.map (fun set_module ->
+             typed_ir inner (apply (set_module ^ ".max_elt") [ collection.ocaml_expr ]))
   | TVector inner ->
       Ok (typed_ir inner (apply "Option.get" [ apply "Rrbvec.peek_back" [ collection.ocaml_expr ] ]))
   | _ -> Error.error "last expects a list, vector, or set"
@@ -64,8 +82,14 @@ let rest collection =
           (Ocaml_ir.PCons (Ocaml_ir.PAny, Ocaml_ir.PVar "rest"), Ocaml_ir.Ident "rest") ] )
   in
   match collection.ty with
-  | TList _ | TSet _ ->
+  | TList _ ->
       Ok (typed_ir collection.ty (list_rest collection.ocaml_expr))
+  | TSet inner ->
+      Types.set_module_name inner
+      |> Result.map (fun set_module ->
+             typed_ir collection.ty
+               (apply (set_module ^ ".of_list")
+                  [ list_rest (apply (set_module ^ ".elements") [ collection.ocaml_expr ]) ]))
   | TVector _ ->
       Ok
         (typed_ir collection.ty
@@ -80,14 +104,22 @@ let seq collection =
 
 let empty_question collection =
   match collection.ty with
-  | TList _ | TSet _ -> Ok (typed_ir TBool (Ocaml_ir.Infix ("=", collection.ocaml_expr, Ocaml_ir.List [])))
+  | TList _ -> Ok (typed_ir TBool (Ocaml_ir.Infix ("=", collection.ocaml_expr, Ocaml_ir.List [])) )
+  | TSet inner ->
+      Types.set_module_name inner
+      |> Result.map (fun set_module ->
+             typed_ir TBool (apply (set_module ^ ".is_empty") [ collection.ocaml_expr ]))
   | TVector _ -> Ok (typed_ir TBool (apply "Rrbvec.is_empty" [ collection.ocaml_expr ]))
   | TString -> Ok (typed_ir TBool (Ocaml_ir.Infix ("=", collection.ocaml_expr, Ocaml_ir.String "")))
   | _ -> Error.error "empty? expects a collection or string"
 
 let empty collection =
   match collection.ty with
-  | TList _ | TSet _ -> Ok (typed_ir collection.ty (Ocaml_ir.List []))
+  | TList _ -> Ok (typed_ir collection.ty (Ocaml_ir.List []))
+  | TSet inner ->
+      Types.set_module_name inner
+      |> Result.map (fun set_module ->
+             typed_ir collection.ty (Ocaml_ir.Ident (set_module ^ ".empty")))
   | TVector _ -> Ok (typed_ir collection.ty (Ocaml_ir.Ident "Rrbvec.empty"))
   | TString -> Ok (typed_ir TString (Ocaml_ir.String ""))
   | _ -> Error.error "empty expects a collection or string"

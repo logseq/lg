@@ -14,6 +14,15 @@ let loc = Location.none
 let str value = Location.mkloc value loc
 let lid value = Location.mkloc value loc
 
+let longident_of_string name =
+  match String.split_on_char '.' name with
+  | [] -> Longident.Lident name
+  | first :: rest ->
+      List.fold_left
+        (fun path segment ->
+          Longident.Ldot (lid path, str segment))
+        (Longident.Lident first) rest
+
 let type_constructor name args =
   Ast_helper.Typ.constr ~loc (lid (Longident.Lident name)) args
 
@@ -23,7 +32,13 @@ let rec core_type = function
   | Types.TBool -> type_constructor "bool" []
   | Types.TNil | Types.TUnit -> type_constructor "unit" []
   | Types.TAny -> Ast_helper.Typ.var ~loc "a"
-  | Types.TList inner | Types.TSet inner -> type_constructor "list" [ core_type inner ]
+  | Types.TList inner -> type_constructor "list" [ core_type inner ]
+  | Types.TSet inner -> (
+      match Types.set_module_name inner with
+      | Ok set_module ->
+          Ast_helper.Typ.constr ~loc
+            (lid (longident_of_string (set_module ^ ".t"))) []
+      | Error _ -> type_constructor "unsupported_set" [ core_type inner ])
   | Types.TVector inner ->
       Ast_helper.Typ.constr ~loc
         (lid

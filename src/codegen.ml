@@ -57,7 +57,12 @@ let rec stringify_expr ?(pr = false) expr =
         | TNil -> {|(fun _ -> "nil")|}
         | _ -> {|(fun _ -> "<value>")|}
       in
-      {|("#{" ^ String.concat " " (List.map |} ^ mapper ^ " (" ^ expr.code ^ {|)) ^ "}")|}
+      let values =
+        match Types.set_module_name inner with
+        | Ok set_module -> set_module ^ ".elements (" ^ expr.code ^ ")"
+        | Error _ -> "[]"
+      in
+      {|("#{" ^ String.concat " " (List.map |} ^ mapper ^ " (" ^ values ^ {|)) ^ "}")|}
   | TFn _ -> {|"<function>"|}
   | TRecord fields -> (
       match expr.record_values with

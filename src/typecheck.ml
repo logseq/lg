@@ -956,12 +956,12 @@ and compile_conj current_ns env arg_forms =
                       [ collection.ocaml_expr; value.ocaml_expr ] )))
         | TVector _ -> Error.error "conj value type must match vector element type"
         | TSet inner when Types.equal inner value.ty ->
-            Ok
-              (typed_ir collection.ty
-                 (Ocaml_ir.Apply
-                    ( Ocaml_ir.Ident "List.sort_uniq",
-                      [ Ocaml_ir.Ident "compare";
-                        Ocaml_ir.Cons (value.ocaml_expr, collection.ocaml_expr) ] )))
+            Types.set_module_name inner
+            |> Result.map (fun set_module ->
+                   typed_ir collection.ty
+                     (Ocaml_ir.Apply
+                        ( Ocaml_ir.Ident (set_module ^ ".add"),
+                          [ value.ocaml_expr; collection.ocaml_expr ] )))
         | TSet _ -> Error.error "conj value type must match set element type"
         | _ -> Error.error "conj expects a list, vector, or set"
       in
@@ -1324,10 +1324,12 @@ and compile_contains current_ns env arg_forms =
   let compile_collection_contains target value =
     match (target.ty, value.ty) with
     | TSet inner, _ when Types.equal inner value.ty ->
-        Ok
-          (typed_ir TBool
-             (Ocaml_ir.Apply
-                (Ocaml_ir.Ident "List.mem", [ value.ocaml_expr; target.ocaml_expr ])))
+        Types.set_module_name inner
+        |> Result.map (fun set_module ->
+               typed_ir TBool
+                 (Ocaml_ir.Apply
+                    (Ocaml_ir.Ident (set_module ^ ".mem"),
+                     [ value.ocaml_expr; target.ocaml_expr ])))
     | TSet _, _ -> Error.error "contains? value type must match set element type"
     | TVector _, TInt ->
         Ok
@@ -1781,8 +1783,13 @@ and compile_sequence_bool_predicate current_ns env name arg_forms =
               Error.error (name ^ " expects a predicate matching vector elements")
           | _, TVector _ -> Error.error (name ^ " expects a function")
           | TFn ([ param_ty ], TBool), TSet inner when Types.equal param_ty inner ->
-              let all_code = "List.for_all " ^ predicate_code ^ " (" ^ collection.code ^ ")" in
-              Ok (typed TBool (build all_code))
+              Types.set_module_name inner
+              |> Result.map (fun set_module ->
+                     let all_code =
+                       "List.for_all " ^ predicate_code ^ " (" ^ set_module
+                       ^ ".elements (" ^ collection.code ^ "))"
+                     in
+                     typed TBool (build all_code))
           | TFn _, TSet _ -> Error.error (name ^ " expects a predicate matching set elements")
           | _, TSet _ -> Error.error (name ^ " expects a function")
           | _ -> Error.error (name ^ " expects a list, vector, or set")))
@@ -1809,10 +1816,12 @@ and compile_map_call current_ns env arg_forms =
           | TFn _, TVector _ -> Error.error "map function argument type does not match vector"
           | _, TVector _ -> Error.error "map expects a function"
           | TFn ([ param_ty ], ret), TSet inner when Types.equal param_ty inner ->
-              Ok
-                (typed (TSet ret)
-                   ("List.sort_uniq compare (List.map " ^ fn.code ^ " ("
-                  ^ collection.code ^ "))"))
+              Result.bind (Types.set_module_name ret) (fun result_module ->
+                  Types.set_module_name inner
+                  |> Result.map (fun source_module ->
+                         typed (TSet ret)
+                           (result_module ^ ".of_list (List.map " ^ fn.code ^ " ("
+                          ^ source_module ^ ".elements (" ^ collection.code ^ ")))")))
           | TFn _, TSet _ -> Error.error "map function argument type does not match set"
           | _, TSet _ -> Error.error "map expects a function"
           | _ -> Error.error "map expects a list, vector, or set"))
@@ -1839,9 +1848,11 @@ and compile_filter current_ns env arg_forms =
           | TFn _, TVector _ -> Error.error "filter expects a predicate matching vector elements"
           | _, TVector _ -> Error.error "filter expects a function"
           | TFn ([ param_ty ], TBool), TSet inner when Types.equal param_ty inner ->
-              Ok
-                (typed collection.ty
-                   ("List.filter " ^ fn.code ^ " (" ^ collection.code ^ ")"))
+              Types.set_module_name inner
+              |> Result.map (fun set_module ->
+                     typed collection.ty
+                       (set_module ^ ".of_list (List.filter " ^ fn.code ^ " ("
+                      ^ set_module ^ ".elements (" ^ collection.code ^ ")))"))
           | TFn _, TSet _ -> Error.error "filter expects a predicate matching set elements"
           | _, TSet _ -> Error.error "filter expects a function"
           | _ -> Error.error "filter expects a list, vector, or set"))
@@ -1878,10 +1889,11 @@ and compile_reduce current_ns env arg_forms =
           | _, TVector _ -> Error.error "reduce expects a function"
           | TFn ([ acc_ty; item_ty ], ret), TSet inner
             when Types.equal acc_ty init.ty && Types.equal item_ty inner && Types.equal ret init.ty ->
-              Ok
-                (typed init.ty
-                   ("List.fold_left " ^ fn.code ^ " (" ^ init.code ^ ") ("
-                  ^ collection.code ^ ")"))
+              Types.set_module_name inner
+              |> Result.map (fun set_module ->
+                     typed init.ty
+                       ("List.fold_left " ^ fn.code ^ " (" ^ init.code ^ ") ("
+                      ^ set_module ^ ".elements (" ^ collection.code ^ "))"))
           | TFn _, TSet _ -> Error.error "reduce function type does not match init and set"
           | _, TSet _ -> Error.error "reduce expects a function"
           | _ -> Error.error "reduce expects a list, vector, or set"))
@@ -2197,12 +2209,12 @@ and compile_hash_set current_ns env arg_forms =
       | Ok first_expr ->
           let rec loop values = function
             | [] ->
-                Ok
-                  (typed_ir (TSet first_expr.ty)
-                     (Ocaml_ir.Apply
-                        ( Ocaml_ir.Ident "List.sort_uniq",
-                          [ Ocaml_ir.Ident "compare";
-                            Ocaml_ir.List (List.rev values) ] )))
+                Types.set_module_name first_expr.ty
+                |> Result.map (fun set_module ->
+                       typed_ir (TSet first_expr.ty)
+                         (Ocaml_ir.Apply
+                            ( Ocaml_ir.Ident (set_module ^ ".of_list"),
+                              [ Ocaml_ir.List (List.rev values) ] )))
             | form :: rest -> (
                 match compile_expr current_ns env form with
                 | Error _ as err -> err
@@ -2218,7 +2230,10 @@ and compile_set_of arg_forms =
   | [ FKeyword keyword ] -> (
       match Type_annotation.of_keyword keyword with
       | Error _ -> Error.error ("unknown set element type " ^ keyword)
-      | Ok element_ty -> Ok (typed_ir (TSet element_ty) (Ocaml_ir.List [])))
+      | Ok element_ty ->
+          Types.set_module_name element_ty
+          |> Result.map (fun set_module ->
+                 typed_ir (TSet element_ty) (Ocaml_ir.Ident (set_module ^ ".empty"))))
   | _ -> Error.error "set-of expects one type keyword"
 
 and compile_disj current_ns env arg_forms =
@@ -2229,20 +2244,23 @@ and compile_disj current_ns env arg_forms =
       | Ok collection -> (
           match collection.ty with
           | TSet inner ->
-              let rec remove_values code = function
-                | [] -> Ok (typed collection.ty code)
+              let rec remove_values expression = function
+                | [] -> Ok (typed_ir collection.ty expression)
                 | value_form :: rest -> (
                     match compile_expr current_ns env value_form with
                     | Error _ as err -> err
                     | Ok value ->
                         if Types.equal inner value.ty then
-                          remove_values
-                            ("List.filter (fun item -> item <> " ^ value.code ^ ") (" ^ code
-                           ^ ")")
-                            rest
+                          Result.bind (Types.set_module_name inner)
+                            (fun set_module ->
+                              remove_values
+                                (Ocaml_ir.Apply
+                                   ( Ocaml_ir.Ident (set_module ^ ".remove"),
+                                     [ value.ocaml_expr; expression ] ))
+                                rest)
                         else Error.error "disj value type must match set element type")
               in
-              remove_values collection.code value_forms
+              remove_values collection.ocaml_expr value_forms
           | _ -> Error.error "disj expects a set"))
   | [] -> Error.error "disj expects a set"
 
