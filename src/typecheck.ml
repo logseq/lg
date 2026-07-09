@@ -799,18 +799,28 @@ and compile_subs current_ns env arg_forms =
       match (source.ty, start.ty) with
       | TString, TInt ->
           Ok
-            (typed TString
-               ("String.sub (" ^ source.code ^ ") (" ^ start.code ^ ") (String.length ("
-              ^ source.code ^ ") - (" ^ start.code ^ "))"))
+            (typed_ir TString
+               (Ocaml_ir.Apply
+                  ( Ocaml_ir.Ident "String.sub",
+                    [ source.ocaml_expr;
+                      start.ocaml_expr;
+                      Ocaml_ir.Infix
+                        ( "-",
+                          Ocaml_ir.Apply
+                            (Ocaml_ir.Ident "String.length", [ source.ocaml_expr ]),
+                          start.ocaml_expr ) ] )))
       | TString, _ -> Error.error "subs indexes must be int"
       | _ -> Error.error "subs expects a string")
   | Ok [ source; start; stop ] -> (
       match (source.ty, start.ty, stop.ty) with
       | TString, TInt, TInt ->
           Ok
-            (typed TString
-               ("String.sub (" ^ source.code ^ ") (" ^ start.code ^ ") ((" ^ stop.code
-              ^ ") - (" ^ start.code ^ "))"))
+            (typed_ir TString
+               (Ocaml_ir.Apply
+                  ( Ocaml_ir.Ident "String.sub",
+                    [ source.ocaml_expr;
+                      start.ocaml_expr;
+                      Ocaml_ir.Infix ("-", stop.ocaml_expr, start.ocaml_expr) ] )))
       | TString, _, _ -> Error.error "subs indexes must be int"
       | _ -> Error.error "subs expects a string")
   | Ok _ -> Error.error "subs expects string, start, and optional end"
