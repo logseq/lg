@@ -81,7 +81,7 @@ The compiler should support this syntax without macros.
 | Category | Functions | Phase |
 | --- | --- | --- |
 | Printing | `print`, `println`, `pr-str` | 1 |
-| Boolean | `not`, `true?`, `false?`, `nil?`, `some?`, `int?`, `string?`, `keyword?`, `boolean?`, `vector?`, `list?`, `set?`, `map?` | 1 |
+| Boolean | `not`, `true?`, `false?`, `nil?`, `some?`, `int?`, `string?`, `keyword?`, `boolean?`, `vector?`, `list?`, `seq?`, `set?`, `map?` | 1 |
 | Arithmetic | `+`, `-`, `*`, `/`, `inc`, `dec`, `<`, `<=`, `>`, `>=`, `=`, `not=` | 1 |
 | Strings | `str`, `subs` | 1 |
 | Maps | `hash-map`, `get`, `assoc`, `dissoc`, `merge`, `update`, `select-keys`, `contains?`, `keys`, `vals` | 1 |

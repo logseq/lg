@@ -249,6 +249,8 @@ and compile_call current_ns env name arg_forms =
       compile_type_predicate current_ns env name (function TVector _ -> true | _ -> false) arg_forms
   | "list?" ->
       compile_type_predicate current_ns env name (function TList _ -> true | _ -> false) arg_forms
+  | "seq?" ->
+      compile_type_predicate current_ns env name (function TList _ -> true | _ -> false) arg_forms
   | "set?" ->
       compile_type_predicate current_ns env name (function TSet _ -> true | _ -> false) arg_forms
   | "map?" ->

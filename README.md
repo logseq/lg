@@ -51,8 +51,8 @@ The compiler infers record-like map shapes automatically:
   forms are evaluated for effects and the final form supplies the value.
 - `print` writes without a trailing newline; `println` writes with a trailing
   newline.
-- `int?`, `string?`, `keyword?`, `boolean?`, `vector?`, `list?`, `set?`, and
-  `map?` are supported as static type predicates.
+- `int?`, `string?`, `keyword?`, `boolean?`, `vector?`, `list?`, `seq?`,
+  `set?`, and `map?` are supported as static type predicates.
 - `subs` supports two- and three-argument typed string slicing.
 - `+`, `*`, `-`, `/`, ordered comparisons, `=`, and `not=` follow
   Clojure-style arities where the current type system can represent them.

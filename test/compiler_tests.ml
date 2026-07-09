@@ -258,12 +258,12 @@ let test_type_predicates () =
 (println
   (str (int? 1) ":" (string? "Ada") ":" (keyword? :name) ":" (boolean? true) ":"
        (vector? [1]) ":" (list? (list 1)) ":" (set? (hash-set 1)) ":" (map? {:name "Ada"}) ":"
-       (vector? (list 1)) ":" (map? [1])))
+       (seq? (list 1)) ":" (seq? [1]) ":" (vector? (list 1)) ":" (map? [1])))
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "type_predicates"
-    "true:true:true:true:true:true:true:true:false:false\n" ocaml_source
+    "true:true:true:true:true:true:true:true:true:false:false:false\n" ocaml_source
 
 let test_type_predicates_reject_wrong_arity () =
   Cljml.Compiler.compile_string {|(def x (vector? [1] [2]))|}

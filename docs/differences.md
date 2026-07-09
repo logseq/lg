@@ -41,7 +41,7 @@ Function calls can pass wider structural maps when the callee only requires a kn
 `print` and `println` follow Clojure's newline behavior.
 
 Type predicates such as `int?`, `string?`, `keyword?`, `boolean?`, `vector?`,
-`list?`, `set?`, and `map?` are resolved from static cljml types.
+`list?`, `seq?`, `set?`, and `map?` are resolved from static cljml types.
 
 `subs` supports two- and three-argument typed string slicing.
 
