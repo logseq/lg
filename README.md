@@ -24,9 +24,11 @@ The compiler infers record-like map shapes automatically:
 - `[36 37 38]` becomes an `Rrbvec.t` persistent vector.
 - `(list 1 2 3)` becomes a typed OCaml list.
 - `:admin?` is a distinct `keyword` value in the static type system.
-- `(assoc x :admin? true)` produces a new record shape with an added `bool`
-  field.
-- `(dissoc y :age)` produces a new record shape with that field removed.
+- `(assoc x :age 36 :admin? true)` produces a new record shape with added or
+  updated fields.
+- `(dissoc y :age :admin?)` produces a new record shape with those fields
+  removed.
+- `(get x :missing default)` returns a typed default when the field is absent.
 - `merge`, `update`, and `select-keys` work on structural maps when field
   keys are known statically.
 - `(ns examples.person)` scopes unqualified symbols and avoids generated OCaml

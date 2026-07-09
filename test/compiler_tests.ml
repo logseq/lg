@@ -514,6 +514,46 @@ let test_get_rejects_unknown_map_fields () =
   let source = {|(def user {:name "Ada"})(def x (get user :age))|} in
   Cljml.Compiler.compile_string source |> expect_error "unknown field :age"
 
+let test_get_supports_default_values () =
+  let source =
+    {|
+(def user {:name "Ada", :age 36})
+(println (str (get user :age 0) ":" (get user :admin? false)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "get_supports_default_values" "36:false\n" ocaml_source
+
+let test_get_rejects_default_type_mismatch_for_known_fields () =
+  Cljml.Compiler.compile_string {|(def x (get {:age 36} :age "unknown"))|}
+  |> expect_error "get default for :age must be int"
+
+let test_assoc_supports_multiple_pairs () =
+  let source =
+    {|
+(def user {:name "Ada"})
+(def updated (assoc user :age 36 :admin? true))
+(println (str (:name updated) ":" (:age updated) ":" (:admin? updated)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "assoc_supports_multiple_pairs" "Ada:36:true\n" ocaml_source
+
+let test_assoc_rejects_odd_key_value_pairs () =
+  Cljml.Compiler.compile_string {|(def bad (assoc {:name "Ada"} :age))|}
+  |> expect_error "assoc expects map followed by keyword/value pairs"
+
+let test_dissoc_supports_multiple_keys () =
+  let source =
+    {|
+(def user {:name "Ada", :age 36, :admin? true})
+(def slim (dissoc user :age :admin?))
+(println (str (:name slim) ":" (count slim)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "dissoc_supports_multiple_keys" "Ada:1\n" ocaml_source
+
 let test_map_merge_update_and_select_keys () =
   let source =
     {|
@@ -762,6 +802,12 @@ let tests =
       test_integer_division_rejects_unsupported_arities );
     ("chained comparisons work", test_chained_comparisons);
     ("get rejects unknown map fields", test_get_rejects_unknown_map_fields);
+    ("get supports default values", test_get_supports_default_values);
+    ( "get rejects default type mismatch for known fields",
+      test_get_rejects_default_type_mismatch_for_known_fields );
+    ("assoc supports multiple pairs", test_assoc_supports_multiple_pairs);
+    ("assoc rejects odd key value pairs", test_assoc_rejects_odd_key_value_pairs);
+    ("dissoc supports multiple keys", test_dissoc_supports_multiple_keys);
     ("map merge, update, and select-keys work", test_map_merge_update_and_select_keys);
     ( "merge rejects incompatible overlapping fields",
       test_merge_rejects_incompatible_overlapping_fields );

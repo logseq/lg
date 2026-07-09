@@ -113,15 +113,17 @@ callee are present with compatible types.
 
 `keys` returns a homogeneous `vector<keyword>`.
 
-`assoc` returns a new structural record type when adding a field.
+`assoc` returns a new structural record type when adding one or more fields.
 
 `assoc` rejects changing an existing field to a different type.
 
-`dissoc` returns a new structural record type when removing a field.
+`dissoc` returns a new structural record type when removing one or more fields.
 
 `merge` and `update` preserve existing field types for overlapping keys.
 
 `get` on a structural map and literal keyword returns that field type.
+
+Three-argument `get` returns a typed default when the literal key is absent.
 
 `if` requires a bool condition and same-type branches.
 

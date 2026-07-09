@@ -44,6 +44,15 @@ let assoc target fields keyword value =
       let values = values @ [ (new_field, value.code) ] in
       Ok { ty = TRecord fields; code = "<record>"; record_values = Some values }
 
+let rec assoc_many target pairs =
+  match (target.ty, pairs) with
+  | TRecord _fields, [] -> Ok target
+  | TRecord fields, (keyword, value) :: rest -> (
+      match assoc target fields keyword value with
+      | Error _ as err -> err
+      | Ok target -> assoc_many target rest)
+  | _ -> Error.error "assoc expects a map"
+
 let dissoc target fields keyword =
   match find_field keyword fields with
   | None -> Error.error ("cannot dissoc unknown field " ^ keyword)
@@ -51,6 +60,15 @@ let dissoc target fields keyword =
       let fields = List.filter (fun (field : field) -> field.keyword <> keyword) fields in
       let values = values_for target fields in
       Ok { ty = TRecord fields; code = "<record>"; record_values = Some values }
+
+let rec dissoc_many target keywords =
+  match (target.ty, keywords) with
+  | TRecord _fields, [] -> Ok target
+  | TRecord fields, keyword :: rest -> (
+      match dissoc target fields keyword with
+      | Error _ as err -> err
+      | Ok target -> dissoc_many target rest)
+  | _ -> Error.error "dissoc expects a map"
 
 let merge maps =
   let merge_one fields values right =

@@ -538,30 +538,61 @@ and compile_get current_ns env arg_forms =
               | None -> Error.error ("unknown field " ^ keyword))
           | _ -> Error.error "get expects a map"))
   | [ _; _ ] -> Error.error "get key must be a keyword"
-  | _ -> Error.error "get expects 2 arguments"
+  | [ target_form; FKeyword keyword; default_form ] -> (
+      match
+        (compile_expr current_ns env target_form, compile_expr current_ns env default_form)
+      with
+      | (Error _ as err), _ -> err
+      | _, (Error _ as err) -> err
+      | Ok target, Ok default -> (
+          match target.ty with
+          | TRecord fields -> (
+              match find_field keyword fields with
+              | Some field when Types.equal field.ty default.ty ->
+                  Ok (typed field.ty (Structural_map.field_code target field))
+              | Some field ->
+                  Error.error
+                    ("get default for " ^ keyword ^ " must be " ^ source_name field.ty)
+              | None -> Ok default)
+          | _ -> Error.error "get expects a map"))
+  | [ _; _; _ ] -> Error.error "get key must be a keyword"
+  | _ -> Error.error "get expects 2 or 3 arguments"
 
 and compile_assoc current_ns env arg_forms =
   match arg_forms with
-  | target_form :: FKeyword keyword :: value_form :: [] -> (
-      match (compile_expr current_ns env target_form, compile_expr current_ns env value_form) with
-      | (Error _ as err), _ -> err
-      | _, (Error _ as err) -> err
-      | Ok target, Ok value -> (
-          match target.ty with
-          | TRecord fields -> Structural_map.assoc target fields keyword value
-          | _ -> Error.error "assoc expects a map"))
-  | _ -> Error.error "assoc expects map, keyword, and value"
+  | target_form :: pair_forms ->
+      let rec compile_pairs acc = function
+        | [] -> Ok (List.rev acc)
+        | FKeyword keyword :: value_form :: rest -> (
+            match compile_expr current_ns env value_form with
+            | Error _ as err -> err
+            | Ok value -> compile_pairs ((keyword, value) :: acc) rest)
+        | _ -> Error.error "assoc expects map followed by keyword/value pairs"
+      in
+      if pair_forms = [] || List.length pair_forms mod 2 <> 0 then
+        Error.error "assoc expects map followed by keyword/value pairs"
+      else (
+        match (compile_expr current_ns env target_form, compile_pairs [] pair_forms) with
+        | (Error _ as err), _ -> err
+        | _, (Error _ as err) -> err
+        | Ok target, Ok pairs -> Structural_map.assoc_many target pairs)
+  | _ -> Error.error "assoc expects map followed by keyword/value pairs"
 
 and compile_dissoc current_ns env arg_forms =
   match arg_forms with
-  | target_form :: FKeyword keyword :: [] -> (
+  | target_form :: key_forms -> (
+      let rec parse_keys acc = function
+        | [] -> Ok (List.rev acc)
+        | FKeyword keyword :: rest -> parse_keys (keyword :: acc) rest
+        | _ -> Error.error "dissoc expects map followed by keywords"
+      in
       match compile_expr current_ns env target_form with
       | Error _ as err -> err
       | Ok target -> (
-          match target.ty with
-          | TRecord fields -> Structural_map.dissoc target fields keyword
-          | _ -> Error.error "dissoc expects a map"))
-  | _ -> Error.error "dissoc expects map and keyword"
+          match parse_keys [] key_forms with
+          | Error _ as err -> err
+          | Ok keywords -> Structural_map.dissoc_many target keywords))
+  | _ -> Error.error "dissoc expects map followed by keywords"
 
 and compile_merge current_ns env arg_forms =
   match compile_args_for current_ns env arg_forms with

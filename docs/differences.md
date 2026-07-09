@@ -12,11 +12,13 @@ Vectors are homogeneous.
 
 Maps are structural records when created from map literals.
 
-`assoc` can add a field to a structural map, but it cannot change the type of an existing field.
+`assoc` can add one or more fields to a structural map, but it cannot change the type of an existing field.
 
-`dissoc` can remove a known field from a structural map.
+`dissoc` can remove one or more known fields from a structural map.
 
 `get` on a structural map requires a literal keyword that exists in the map type.
+
+Three-argument `get` can return a default for an absent literal key; when the key is present, the default must match the field type.
 
 Keyword call syntax such as `(:name user)` is supported for structural maps.
 
