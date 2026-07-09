@@ -548,6 +548,23 @@ let test_keys_return_keyword_values () =
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "keys_return_keyword_values" "[:name :age]\n" ocaml_source
 
+let test_vals_return_homogeneous_values () =
+  let source =
+    {|
+(def counts {:a 1, :b 2})
+(def more-counts (assoc counts :c 3))
+(println (str (pr-str (vals counts)) ":" (pr-str (vals more-counts)) ":"
+              (pr-str (vals (assoc {:x 10} :y 20)))))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "vals_return_homogeneous_values" "[1 2]:[1 2 3]:[10 20]\n"
+    ocaml_source
+
+let test_vals_rejects_heterogeneous_values () =
+  Cljml.Compiler.compile_string {|(def xs (vals {:name "Ada", :age 36}))|}
+  |> expect_error "vals requires all map values to have the same type"
+
 let test_vectors_reject_mixed_keyword_and_string_elements () =
   Cljml.Compiler.compile_string {|(def xs [:name "name"])|}
   |> expect_error "vector elements must all have the same type"
@@ -1147,6 +1164,8 @@ let tests =
     ("vectors reject mixed element types", test_vectors_reject_mixed_element_types);
     ("keyword values print as keywords", test_keyword_values_print_as_keywords);
     ("keys return keyword values", test_keys_return_keyword_values);
+    ("vals return homogeneous values", test_vals_return_homogeneous_values);
+    ("vals rejects heterogeneous values", test_vals_rejects_heterogeneous_values);
     ( "vectors reject mixed keyword and string elements",
       test_vectors_reject_mixed_keyword_and_string_elements );
     ("arithmetic rejects non-int arguments", test_arithmetic_rejects_non_int_arguments);

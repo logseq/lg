@@ -78,7 +78,8 @@ The compiler infers record-like map shapes automatically:
 - `(:require [ocaml.String :as string])` can alias a small typed table of OCaml
   host functions.
 - `(:name user)` works as keyword lookup syntax for structural maps.
-- `(keys user)` returns a persistent vector of keyword values.
+- `(keys user)` returns a persistent vector of keyword values, and `(vals user)`
+  returns a persistent vector when all map values have the same type.
 - `(vector-of :int)`, `(list-of :int)`, and `(set-of :int)` create explicitly
   typed empty collections; `:keyword` is supported alongside the other scalar
   type keywords.

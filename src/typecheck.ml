@@ -1011,7 +1011,7 @@ and compile_vals current_ns env arg_forms =
           if List.for_all (fun (field : field) -> Types.equal first.ty field.ty) rest then
             let values =
               (first :: rest)
-              |> List.map (fun (field : field) -> target.code ^ "." ^ field.ocaml_name)
+              |> List.map (fun (field : field) -> Structural_map.field_code target field)
               |> String.concat "; "
             in
             Ok (typed (TVector first.ty) ("Rrbvec.of_list [" ^ values ^ "]"))

@@ -111,7 +111,7 @@ representation is still an OCaml string.
 
 Maps currently compile to OCaml records when their keys are known statically.
 
-Structural map helpers include `merge`, `update`, and `select-keys`. Overlapping fields in `merge` and updated fields in `update` must keep their existing static type.
+Structural map helpers include `merge`, `update`, `select-keys`, `keys`, and `vals`. Overlapping fields in `merge` and updated fields in `update` must keep their existing static type, and `vals` requires all selected map values to have the same type.
 
 Sequence APIs are eager.
 
