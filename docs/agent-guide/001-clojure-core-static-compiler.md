@@ -85,7 +85,7 @@ The compiler should support this syntax without macros.
 | Arithmetic | `+`, `-`, `*`, `/`, `inc`, `dec`, `<`, `<=`, `>`, `>=`, `=` | 1 |
 | Strings | `str` | 1 |
 | Maps | `hash-map`, `get`, `assoc`, `dissoc`, `merge`, `update`, `select-keys`, `contains?`, `keys`, `vals` | 1 |
-| Vectors | `vector`, `conj`, `count`, `nth`, `get`, `first`, `second`, `last`, `peek`, `pop`, `rest` | 1 |
+| Vectors | `vector`, `conj`, `count`, `nth`, `get`, `assoc`, `update`, `contains?`, `first`, `second`, `last`, `peek`, `pop`, `rest` | 1 |
 | Lists | `list`, `list-of`, `cons`, `conj`, `count`, `nth`, `first`, `second`, `last`, `peek`, `pop`, `rest` | 2 |
 | Sequences | `seq`, `empty`, `empty?`, `into`, `map`, `filter`, `reduce` | 2 |
 | Functions | `apply`, `comp`, `partial`, `identity`, `constantly` | 2 |
@@ -100,6 +100,9 @@ Scalar types are `int`, `string`, `keyword`, `bool`, `nil`, and `unit`.
 Arithmetic starts as integer-only; ratio-producing Clojure arities such as unary `/` are documented differences until numeric tower support exists.
 
 Vector types are homogeneous as `vector<T>` and compile to `Rrbvec.t`.
+
+Vectors are associative collections: integer indexes work with `get`, `assoc`,
+`update`, and `contains?`.
 
 List types are homogeneous as `list<T>` and compile to OCaml lists.
 

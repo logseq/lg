@@ -16,13 +16,15 @@ Maps are structural records when created from map literals.
 
 `assoc` can add one or more fields to a structural map, but it cannot change the type of an existing field.
 
+`assoc` can update one or more persistent vector indexes when the replacement values match the element type.
+
 `dissoc` can remove one or more known fields from a structural map.
 
 `get` on a structural map requires a literal keyword that exists in the map type.
 
 Three-argument `get` can return a default for an absent literal key; when the key is present, the default must match the field type.
 
-`update` can pass extra arguments after the update function, but the function must return the existing field type.
+`update` can pass extra arguments after the update function, but the function must return the existing field or vector element type.
 
 Keyword call syntax such as `(:name user)` is supported for structural maps.
 
@@ -66,7 +68,7 @@ Vectors compile to `Rrbvec.t` persistent vectors.
 
 Lists compile to OCaml lists and support `list`, `list-of`, `cons`, `conj`, `first`, `second`, `last`, `peek`, `pop`, `rest`, `nth`, `count`, `map`, `filter`, and `reduce`.
 
-Vectors support `first`, `second`, `last`, `peek`, `pop`, `rest`, `nth`, `get`, and the current eager sequence operations.
+Vectors support `first`, `second`, `last`, `peek`, `pop`, `rest`, `nth`, `get`, `assoc`, `update`, `contains?`, and the current eager sequence operations.
 
 Three-argument `nth` returns a typed default for out-of-range list and vector indexes.
 

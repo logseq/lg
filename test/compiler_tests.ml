@@ -575,6 +575,25 @@ let test_assoc_rejects_odd_key_value_pairs () =
   Cljml.Compiler.compile_string {|(def bad (assoc {:name "Ada"} :age))|}
   |> expect_error "assoc expects map followed by keyword/value pairs"
 
+let test_assoc_supports_vector_indexes () =
+  let source =
+    {|
+(def xs [1 2 3])
+(def ys (assoc xs 0 10 2 30))
+(println (pr-str ys))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "assoc_supports_vector_indexes" "[10 2 30]\n" ocaml_source
+
+let test_assoc_rejects_vector_value_type_mismatch () =
+  Cljml.Compiler.compile_string {|(def x (assoc [1 2] 0 "one"))|}
+  |> expect_error "assoc vector value must match element type"
+
+let test_assoc_rejects_vector_non_int_indexes () =
+  Cljml.Compiler.compile_string {|(def x (assoc [1 2] "0" 9))|}
+  |> expect_error "assoc vector index must be int"
+
 let test_dissoc_supports_multiple_keys () =
   let source =
     {|
@@ -631,9 +650,38 @@ let test_update_rejects_extra_argument_type_mismatch () =
   Cljml.Compiler.compile_string source
   |> expect_error "update function arguments do not match field and extra arguments"
 
+let test_update_supports_vector_indexes () =
+  let source =
+    {|
+(def xs [1 2 3])
+(def ys (update xs 1 + 40))
+(println (pr-str ys))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "update_supports_vector_indexes" "[1 42 3]\n" ocaml_source
+
+let test_update_rejects_vector_index_type_mismatch () =
+  Cljml.Compiler.compile_string {|(def x (update [1 2] "0" inc))|}
+  |> expect_error "update vector index must be int"
+
 let test_select_keys_rejects_unknown_fields () =
   Cljml.Compiler.compile_string {|(def bad (select-keys {:name "Ada"} [:age]))|}
   |> expect_error "cannot select unknown field :age"
+
+let test_contains_supports_vector_indexes () =
+  let source =
+    {|
+(def xs [1 2])
+(println (str (contains? xs 0) ":" (contains? xs 2) ":" (contains? xs -1)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "contains_supports_vector_indexes" "true:false:false\n" ocaml_source
+
+let test_contains_rejects_vector_non_int_indexes () =
+  Cljml.Compiler.compile_string {|(def x (contains? [1 2] "0"))|}
+  |> expect_error "contains? vector index must be int"
 
 let test_if_rejects_branch_type_mismatch () =
   Cljml.Compiler.compile_string {|(def x (if true 1 "one"))|}
@@ -909,6 +957,10 @@ let tests =
       test_get_rejects_vector_default_type_mismatch );
     ("assoc supports multiple pairs", test_assoc_supports_multiple_pairs);
     ("assoc rejects odd key value pairs", test_assoc_rejects_odd_key_value_pairs);
+    ("assoc supports vector indexes", test_assoc_supports_vector_indexes);
+    ( "assoc rejects vector value type mismatch",
+      test_assoc_rejects_vector_value_type_mismatch );
+    ("assoc rejects vector non-int indexes", test_assoc_rejects_vector_non_int_indexes);
     ("dissoc supports multiple keys", test_dissoc_supports_multiple_keys);
     ("map merge, update, and select-keys work", test_map_merge_update_and_select_keys);
     ( "merge rejects incompatible overlapping fields",
@@ -917,7 +969,12 @@ let tests =
     ("update supports extra arguments", test_update_supports_extra_arguments);
     ( "update rejects extra argument type mismatch",
       test_update_rejects_extra_argument_type_mismatch );
+    ("update supports vector indexes", test_update_supports_vector_indexes);
+    ( "update rejects vector index type mismatch",
+      test_update_rejects_vector_index_type_mismatch );
     ("select-keys rejects unknown fields", test_select_keys_rejects_unknown_fields);
+    ("contains supports vector indexes", test_contains_supports_vector_indexes);
+    ("contains rejects vector non-int indexes", test_contains_rejects_vector_non_int_indexes);
     ("if rejects branch type mismatch", test_if_rejects_branch_type_mismatch);
     ("let, defn, and fn values work", test_let_defn_and_fn_values);
     ("sequence core api works on vectors", test_sequence_core_api_on_vectors);

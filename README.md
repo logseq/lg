@@ -28,6 +28,7 @@ The compiler infers record-like map shapes automatically:
   map literal.
 - `(assoc x :age 36 :admin? true)` produces a new record shape with added or
   updated fields.
+- `(assoc [1 2 3] 1 42)` updates a persistent vector index.
 - `(dissoc y :age :admin?)` produces a new record shape with those fields
   removed.
 - `(get x :missing default)` returns a typed default when the field is absent.
@@ -35,6 +36,7 @@ The compiler infers record-like map shapes automatically:
   keys are known statically.
 - `(update x :age + 1)` passes the current field value plus extra arguments to
   the update function.
+- `(update xs 0 inc)` updates a persistent vector index.
 - `(ns examples.person)` scopes unqualified symbols and avoids generated OCaml
   name collisions.
 - `(defn inc1 [x] (+ x 1))`, `(fn [x] ...)`, and `(let [...] ...)` are

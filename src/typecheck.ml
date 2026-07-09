@@ -609,22 +609,62 @@ and compile_get current_ns env arg_forms =
 and compile_assoc current_ns env arg_forms =
   match arg_forms with
   | target_form :: pair_forms ->
-      let rec compile_pairs acc = function
+      let rec compile_record_pairs acc = function
         | [] -> Ok (List.rev acc)
         | FKeyword keyword :: value_form :: rest -> (
             match compile_expr current_ns env value_form with
             | Error _ as err -> err
-            | Ok value -> compile_pairs ((keyword, value) :: acc) rest)
+            | Ok value -> compile_record_pairs ((keyword, value) :: acc) rest)
         | _ -> Error.error "assoc expects map followed by keyword/value pairs"
       in
-      if pair_forms = [] || List.length pair_forms mod 2 <> 0 then
-        Error.error "assoc expects map followed by keyword/value pairs"
-      else (
-        match (compile_expr current_ns env target_form, compile_pairs [] pair_forms) with
-        | (Error _ as err), _ -> err
-        | _, (Error _ as err) -> err
-        | Ok target, Ok pairs -> Structural_map.assoc_many target pairs)
-  | _ -> Error.error "assoc expects map followed by keyword/value pairs"
+      let rec compile_vector_pairs acc = function
+        | [] -> Ok (List.rev acc)
+        | index_form :: value_form :: rest -> (
+            match
+              ( compile_expr current_ns env index_form,
+                compile_expr current_ns env value_form )
+            with
+            | (Error _ as err), _ -> err
+            | _, (Error _ as err) -> err
+            | Ok index, Ok value -> compile_vector_pairs ((index, value) :: acc) rest)
+        | _ -> Error.error "assoc expects collection followed by key/value pairs"
+      in
+      (match compile_expr current_ns env target_form with
+      | Error _ as err -> err
+      | Ok target -> (
+          if pair_forms = [] || List.length pair_forms mod 2 <> 0 then
+            match target.ty with
+            | TRecord _ -> Error.error "assoc expects map followed by keyword/value pairs"
+            | TVector _ -> Error.error "assoc expects vector followed by index/value pairs"
+            | _ -> Error.error "assoc expects collection followed by key/value pairs"
+          else
+            match target.ty with
+            | TRecord _ -> (
+                match compile_record_pairs [] pair_forms with
+                | Error _ as err -> err
+                | Ok pairs -> Structural_map.assoc_many target pairs)
+            | TVector inner -> (
+                match compile_vector_pairs [] pair_forms with
+                | Error _ as err -> err
+                | Ok pairs ->
+                    let rec apply_pairs code = function
+                      | [] -> Ok code
+                      | (index, value) :: rest ->
+                          if not (Types.equal index.ty TInt) then
+                            Error.error "assoc vector index must be int"
+                          else if not (Types.equal value.ty inner) then
+                            Error.error "assoc vector value must match element type"
+                          else
+                            apply_pairs
+                              ("Rrbvec.set (" ^ code ^ ") (" ^ index.code ^ ") ("
+                             ^ value.code ^ ")")
+                              rest
+                    in
+                    (match apply_pairs target.code pairs with
+                    | Error _ as err -> err
+                    | Ok code -> Ok (typed target.ty code)))
+            | _ -> Error.error "assoc expects a map or vector"))
+  | _ -> Error.error "assoc expects collection followed by key/value pairs"
 
 and compile_dissoc current_ns env arg_forms =
   match arg_forms with
@@ -702,7 +742,48 @@ and compile_update current_ns env arg_forms =
                         "update function arguments do not match field and extra arguments"
                   | _ -> Error.error "update expects a function"))
           | _ -> Error.error "update expects a map"))
-  | _ -> Error.error "update expects map, keyword, function, and optional arguments"
+  | target_form :: index_form :: fn_form :: extra_forms -> (
+      match
+        ( compile_expr current_ns env target_form,
+          compile_expr current_ns env index_form,
+          compile_function_arg current_ns env fn_form,
+          compile_args_for current_ns env extra_forms )
+      with
+      | (Error _ as err), _, _, _ -> err
+      | _, (Error _ as err), _, _ -> err
+      | _, _, (Error _ as err), _ -> err
+      | _, _, _, (Error _ as err) -> err
+      | Ok target, Ok index, Ok fn, Ok extra_args -> (
+          match (target.ty, index.ty) with
+          | TVector inner, TInt -> (
+              match fn.ty with
+              | TFn (param_tys, ret)
+                when List.length param_tys = List.length extra_args + 1
+                     && Types.compatible ~expected:(List.hd param_tys) ~actual:inner
+                     && List.for_all2
+                          (fun expected arg -> Types.compatible ~expected ~actual:arg.ty)
+                          (drop 1 param_tys) extra_args
+                     && Types.equal ret inner ->
+                  let old_code = "Rrbvec.nth (" ^ target.code ^ ") (" ^ index.code ^ ")" in
+                  let value_code =
+                    apply_code fn.code
+                      (old_code :: List.map (fun arg -> arg.code) extra_args)
+                  in
+                  Ok
+                    (typed target.ty
+                       ("Rrbvec.set (" ^ target.code ^ ") (" ^ index.code ^ ") ("
+                      ^ value_code ^ ")"))
+              | TFn (_param_tys, ret) when not (Types.equal ret inner) ->
+                  Error.error
+                    ("cannot update vector element as " ^ source_name ret
+                   ^ " because it is already " ^ source_name inner)
+              | TFn _ ->
+                  Error.error
+                    "update function arguments do not match vector element and extra arguments"
+              | _ -> Error.error "update expects a function")
+          | TVector _, _ -> Error.error "update vector index must be int"
+          | _ -> Error.error "update expects a map or vector"))
+  | _ -> Error.error "update expects collection, key/index, function, and optional arguments"
 
 and compile_select_keys current_ns env arg_forms =
   match arg_forms with
@@ -737,12 +818,18 @@ and compile_contains current_ns env arg_forms =
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok target, Ok value -> (
-          match target.ty with
-          | TSet inner when Types.equal inner value.ty ->
+          match (target.ty, value.ty) with
+          | TSet inner, _ when Types.equal inner value.ty ->
               Ok (typed TBool ("List.mem (" ^ value.code ^ ") (" ^ target.code ^ ")"))
-          | TSet _ -> Error.error "contains? value type must match set element type"
-          | _ -> Error.error "contains? expects a map or set"))
-  | _ -> Error.error "contains? expects map and keyword"
+          | TSet _, _ -> Error.error "contains? value type must match set element type"
+          | TVector _, TInt ->
+              Ok
+                (typed TBool
+                   ("((" ^ value.code ^ ") >= 0 && (" ^ value.code ^ ") < Rrbvec.length ("
+                  ^ target.code ^ "))"))
+          | TVector _, _ -> Error.error "contains? vector index must be int"
+          | _ -> Error.error "contains? expects a map, set, or vector"))
+  | _ -> Error.error "contains? expects collection and key"
 
 and compile_keys current_ns env arg_forms =
   match compile_args_for current_ns env arg_forms with
