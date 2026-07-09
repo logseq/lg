@@ -12,9 +12,11 @@ first, then OCaml lowering:
   Parsetree backends. Scalar literals, identifiers, list/vector construction,
   applications, conditionals, ordinary functions, parameter constraints,
   multi-form sequencing, simple `let` bindings, and static `match` expressions
-  are structured. Integer arithmetic, integer predicates, bitwise operators,
-  and comparisons also lower directly; `Raw` marks expression categories that
-  still need migration.
+  are structured. Integer arithmetic, predicates, bitwise operators,
+  comparisons, string slicing, function combinators, record field access and
+  values, plus common collection constructors, updates, accessors, and `rest`
+  also lower directly; `Raw` marks expression categories that still need
+  migration.
 - The OCaml source backend remains the stable output path.
 - `Cljml.Compiler.compile_parsetree` lowers compiled items independently into
   `Parsetree.structure`. Structural records, ordinary top-level values,

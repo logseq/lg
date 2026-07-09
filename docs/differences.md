@@ -240,8 +240,14 @@ The integer core lowers arithmetic, division/remainder, `min`/`max`, bitwise
 operators, shifts, `inc`/`dec`, and integer predicates directly through the
 shared expression IR.
 
-Equality and ordered integer comparisons also lower directly. Record equality
-still uses the explicit fallback for individual field projections.
+Equality and ordered integer comparisons also lower directly. Recursive record
+equality remains an explicit migration boundary.
+
+The structured expression subset now also covers string slicing, function
+composition/partial application, direct record fields and record values, typed
+empty collections, collection prepend/update operations, indexing, and `rest`.
+Recursive sequence helpers and complex destructuring remain explicit `Raw`
+migration boundaries.
 
 The typed standard library also includes a `clojure.string` namespace that can
 be required with `:as` or `:refer`. Its current subset includes `blank?`,
