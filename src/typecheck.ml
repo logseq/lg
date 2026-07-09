@@ -1962,13 +1962,17 @@ and compile_partial current_ns env arg_forms =
                 let remaining_names =
                   remaining_tys |> List.mapi (fun index _ -> "arg" ^ string_of_int index)
                 in
-                let code =
-                  "(fun " ^ String.concat " " remaining_names ^ " -> "
-                  ^ apply_code fn.code
-                      (List.map (fun arg -> arg.code) fixed_args @ remaining_names)
-                  ^ ")"
+                let remaining_exprs =
+                  remaining_names |> List.map (fun name -> Ocaml_ir.Ident name)
                 in
-                Ok (typed (TFn (remaining_tys, ret)) code)
+                Ok
+                  (typed_ir (TFn (remaining_tys, ret))
+                     (Ocaml_ir.Fun
+                        ( List.map (fun name -> Ocaml_ir.PVar name) remaining_names,
+                          Ocaml_ir.Apply
+                            ( fn.ocaml_expr,
+                              List.map (fun arg -> arg.ocaml_expr) fixed_args
+                              @ remaining_exprs ))))
               else Error.error "partial fixed arguments do not match function"
           | TFn _ -> Error.error "partial requires fewer arguments than function arity"
           | _ -> Error.error "partial expects a function"))
