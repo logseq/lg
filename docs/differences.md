@@ -66,7 +66,9 @@ Vectors compile to `Rrbvec.t` persistent vectors.
 
 Lists compile to OCaml lists and support `list`, `list-of`, `cons`, `conj`, `first`, `second`, `last`, `peek`, `pop`, `rest`, `nth`, `count`, `map`, `filter`, and `reduce`.
 
-Vectors support `first`, `second`, `last`, `peek`, `pop`, `rest`, `nth`, and the current eager sequence operations.
+Vectors support `first`, `second`, `last`, `peek`, `pop`, `rest`, `nth`, `get`, and the current eager sequence operations.
+
+Three-argument `nth` returns a typed default for out-of-range list and vector indexes.
 
 Empty vector literals still require explicit element typing.
 

@@ -524,7 +524,25 @@ and compile_nth current_ns env arg_forms =
           Ok (typed inner ("Rrbvec.nth (" ^ collection.code ^ ") (" ^ index.code ^ ")"))
       | TVector _, _ -> Error.error "nth index must be int"
       | _ -> Error.error "nth expects a list or vector")
-  | Ok _ -> Error.error "nth expects 2 arguments"
+  | Ok [ collection; index; default ] -> (
+      match (collection.ty, index.ty) with
+      | TList inner, TInt when Types.equal inner default.ty ->
+          Ok
+            (typed inner
+               ("(if (" ^ index.code ^ ") < 0 then " ^ default.code
+              ^ " else try List.nth (" ^ collection.code ^ ") (" ^ index.code
+              ^ ") with Failure _ -> " ^ default.code ^ ")"))
+      | TList _, TInt -> Error.error "nth default must match collection element type"
+      | TList _, _ -> Error.error "nth index must be int"
+      | TVector inner, TInt when Types.equal inner default.ty ->
+          Ok
+            (typed inner
+               ("(match Rrbvec.nth_opt (" ^ collection.code ^ ") (" ^ index.code
+              ^ ") with Some value -> value | None -> " ^ default.code ^ ")"))
+      | TVector _, TInt -> Error.error "nth default must match collection element type"
+      | TVector _, _ -> Error.error "nth index must be int"
+      | _ -> Error.error "nth expects a list or vector")
+  | Ok _ -> Error.error "nth expects 2 or 3 arguments"
 
 and compile_get current_ns env arg_forms =
   match arg_forms with
@@ -538,7 +556,16 @@ and compile_get current_ns env arg_forms =
               | Some field -> Ok (typed field.ty (Structural_map.field_code target field))
               | None -> Error.error ("unknown field " ^ keyword))
           | _ -> Error.error "get expects a map"))
-  | [ _; _ ] -> Error.error "get key must be a keyword"
+  | [ target_form; index_form ] -> (
+      match (compile_expr current_ns env target_form, compile_expr current_ns env index_form) with
+      | (Error _ as err), _ -> err
+      | _, (Error _ as err) -> err
+      | Ok target, Ok index -> (
+          match (target.ty, index.ty) with
+          | TVector inner, TInt ->
+              Ok (typed inner ("Rrbvec.nth (" ^ target.code ^ ") (" ^ index.code ^ ")"))
+          | TVector _, _ -> Error.error "get vector index must be int"
+          | _ -> Error.error "get key must be a keyword"))
   | [ target_form; FKeyword keyword; default_form ] -> (
       match
         (compile_expr current_ns env target_form, compile_expr current_ns env default_form)
@@ -556,7 +583,25 @@ and compile_get current_ns env arg_forms =
                     ("get default for " ^ keyword ^ " must be " ^ source_name field.ty)
               | None -> Ok default)
           | _ -> Error.error "get expects a map"))
-  | [ _; _; _ ] -> Error.error "get key must be a keyword"
+  | [ target_form; index_form; default_form ] -> (
+      match
+        ( compile_expr current_ns env target_form,
+          compile_expr current_ns env index_form,
+          compile_expr current_ns env default_form )
+      with
+      | (Error _ as err), _, _ -> err
+      | _, (Error _ as err), _ -> err
+      | _, _, (Error _ as err) -> err
+      | Ok target, Ok index, Ok default -> (
+          match (target.ty, index.ty) with
+          | TVector inner, TInt when Types.equal inner default.ty ->
+              Ok
+                (typed inner
+                   ("(match Rrbvec.nth_opt (" ^ target.code ^ ") (" ^ index.code
+                  ^ ") with Some value -> value | None -> " ^ default.code ^ ")"))
+          | TVector _, TInt -> Error.error "get default for vector must match element type"
+          | TVector _, _ -> Error.error "get vector index must be int"
+          | _ -> Error.error "get key must be a keyword"))
   | _ -> Error.error "get expects 2 or 3 arguments"
 
 and compile_assoc current_ns env arg_forms =

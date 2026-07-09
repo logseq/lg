@@ -85,7 +85,7 @@ The compiler should support this syntax without macros.
 | Arithmetic | `+`, `-`, `*`, `/`, `inc`, `dec`, `<`, `<=`, `>`, `>=`, `=` | 1 |
 | Strings | `str` | 1 |
 | Maps | `hash-map`, `get`, `assoc`, `dissoc`, `merge`, `update`, `select-keys`, `contains?`, `keys`, `vals` | 1 |
-| Vectors | `vector`, `conj`, `count`, `nth`, `first`, `second`, `last`, `peek`, `pop`, `rest` | 1 |
+| Vectors | `vector`, `conj`, `count`, `nth`, `get`, `first`, `second`, `last`, `peek`, `pop`, `rest` | 1 |
 | Lists | `list`, `list-of`, `cons`, `conj`, `count`, `nth`, `first`, `second`, `last`, `peek`, `pop`, `rest` | 2 |
 | Sequences | `seq`, `empty?`, `map`, `filter`, `reduce` | 2 |
 | Functions | `apply`, `comp`, `partial`, `identity`, `constantly` | 2 |
@@ -102,6 +102,8 @@ Arithmetic starts as integer-only; ratio-producing Clojure arities such as unary
 Vector types are homogeneous as `vector<T>` and compile to `Rrbvec.t`.
 
 List types are homogeneous as `list<T>` and compile to OCaml lists.
+
+`nth` supports a typed default value for out-of-range list and vector indexes.
 
 Map literal types are structural records keyed by Clojure keywords.
 

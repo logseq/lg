@@ -53,6 +53,8 @@ The compiler infers record-like map shapes automatically:
 - `list`, `list-of`, `cons`, `second`, `last`, `peek`, `pop`, `map`,
   `filter`, `reduce`, `apply`, `comp`, `partial`, `identity`, and
   `constantly` are supported for the current typed collection/function subset.
+- `get` supports vector indexes, and `nth` supports typed default values for
+  lists and vectors.
 - `hash-set`, `disj`, and `contains?` are supported for homogeneous sets.
 - `(:require [some.ns :as alias])` can alias previously compiled namespaces.
 - `(:require [some.ns :refer [user]])` can refer previously compiled namespace

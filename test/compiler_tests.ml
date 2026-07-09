@@ -546,6 +546,20 @@ let test_get_rejects_default_type_mismatch_for_known_fields () =
   Cljml.Compiler.compile_string {|(def x (get {:age 36} :age "unknown"))|}
   |> expect_error "get default for :age must be int"
 
+let test_get_supports_vectors () =
+  let source =
+    {|
+(def xs [10 20 30])
+(println (str (get xs 1) ":" (get xs 9 99)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "get_supports_vectors" "20:99\n" ocaml_source
+
+let test_get_rejects_vector_default_type_mismatch () =
+  Cljml.Compiler.compile_string {|(def x (get [1 2] 9 "missing"))|}
+  |> expect_error "get default for vector must match element type"
+
 let test_assoc_supports_multiple_pairs () =
   let source =
     {|
@@ -704,6 +718,21 @@ let test_sequence_core_api_on_lists () =
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "sequence_core_api_on_lists" "2:4:2:6\n" ocaml_source
 
+let test_nth_supports_default_values () =
+  let source =
+    {|
+(def xs [1 2])
+(def ys (list 3 4))
+(println (str (nth xs 5 99) ":" (nth ys 5 88)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "nth_supports_default_values" "99:88\n" ocaml_source
+
+let test_nth_rejects_default_type_mismatch () =
+  Cljml.Compiler.compile_string {|(def x (nth [1 2] 5 "missing"))|}
+  |> expect_error "nth default must match collection element type"
+
 let test_typed_empty_lists () =
   let source =
     {|
@@ -842,6 +871,9 @@ let tests =
     ("get supports default values", test_get_supports_default_values);
     ( "get rejects default type mismatch for known fields",
       test_get_rejects_default_type_mismatch_for_known_fields );
+    ("get supports vectors", test_get_supports_vectors);
+    ( "get rejects vector default type mismatch",
+      test_get_rejects_vector_default_type_mismatch );
     ("assoc supports multiple pairs", test_assoc_supports_multiple_pairs);
     ("assoc rejects odd key value pairs", test_assoc_rejects_odd_key_value_pairs);
     ("dissoc supports multiple keys", test_dissoc_supports_multiple_keys);
@@ -860,6 +892,8 @@ let tests =
     ("set core api works", test_set_core_api);
     ("list core api works", test_list_core_api);
     ("sequence core api works on lists", test_sequence_core_api_on_lists);
+    ("nth supports default values", test_nth_supports_default_values);
+    ("nth rejects default type mismatch", test_nth_rejects_default_type_mismatch);
     ("typed empty lists work", test_typed_empty_lists);
     ("lists reject mixed element types", test_lists_reject_mixed_element_types);
     ("conj rejects list type mismatch", test_conj_rejects_list_type_mismatch);
