@@ -268,6 +268,14 @@ let test_boolean_core_api () =
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "boolean_core_api" "true:true:true\n" ocaml_source
 
+let test_not_uses_static_clojure_truthiness () =
+  let source =
+    {|(println (str (not nil) ":" (not false) ":" (not 0) ":" (not "Ada") ":" (not [1])))|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "not_uses_static_clojure_truthiness" "true:true:false:false:false\n"
+    ocaml_source
+
 let test_type_predicates () =
   let source =
     {|
@@ -1964,6 +1972,8 @@ let tests =
       test_core_api_nested_calls_maps_and_vectors );
     ("core api supports if and vector ops", test_core_api_if_and_vector_ops);
     ("boolean core api works", test_boolean_core_api);
+    ( "not uses static Clojure truthiness",
+      test_not_uses_static_clojure_truthiness );
     ("type predicates work", test_type_predicates);
     ("type predicates reject wrong arity", test_type_predicates_reject_wrong_arity);
     ("subs core api works", test_subs_core_api);

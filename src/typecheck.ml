@@ -529,11 +529,10 @@ and compile_call current_ns env name arg_forms =
       match compile_args () with
       | Error _ as err -> err
       | Ok args -> Core_compare.compile name args)
-  | "not" -> compile_not current_ns env arg_forms
-  | "nil?" -> compile_predicate current_ns env name arg_forms TNil
-  | "some?" -> compile_some_predicate current_ns env arg_forms
-  | "true?" -> compile_bool_literal_predicate current_ns env name arg_forms true
-  | "false?" -> compile_bool_literal_predicate current_ns env name arg_forms false
+  | "not" | "nil?" | "some?" | "true?" | "false?" | "int?" | "number?"
+  | "string?" | "keyword?" | "boolean?" | "vector?" | "list?" | "seq?" | "set?"
+  | "map?" | "fn?" | "coll?" | "associative?" | "indexed?" | "seqable?" | "counted?"
+    -> compile_boolean_call current_ns env name arg_forms
   | "integer?" | "nat-int?" | "pos-int?" | "neg-int?" | "boolean" | "bit-set"
   | "bit-clear" | "bit-flip" | "bit-test" | "bit-shift-right-zero-fill"
   | "unchecked-add" | "unchecked-add-int" | "unchecked-subtract"
@@ -571,45 +570,6 @@ and compile_call current_ns env name arg_forms =
         (fun code -> "(" ^ code ^ " mod 2 <> 0)")
         arg_forms
       |> Result.map (fun expr -> { expr with ty = TBool })
-  | "int?" -> compile_type_predicate current_ns env name (function TInt -> true | _ -> false) arg_forms
-  | "number?" ->
-      compile_type_predicate current_ns env name (function TInt -> true | _ -> false) arg_forms
-  | "string?" ->
-      compile_type_predicate current_ns env name (function TString -> true | _ -> false) arg_forms
-  | "keyword?" ->
-      compile_type_predicate current_ns env name (function TKeyword -> true | _ -> false) arg_forms
-  | "boolean?" ->
-      compile_type_predicate current_ns env name (function TBool -> true | _ -> false) arg_forms
-  | "vector?" ->
-      compile_type_predicate current_ns env name (function TVector _ -> true | _ -> false) arg_forms
-  | "list?" ->
-      compile_type_predicate current_ns env name (function TList _ -> true | _ -> false) arg_forms
-  | "seq?" ->
-      compile_type_predicate current_ns env name (function TList _ -> true | _ -> false) arg_forms
-  | "set?" ->
-      compile_type_predicate current_ns env name (function TSet _ -> true | _ -> false) arg_forms
-  | "map?" ->
-      compile_type_predicate current_ns env name (function TRecord _ -> true | _ -> false) arg_forms
-  | "fn?" ->
-      compile_type_predicate current_ns env name (function TFn _ -> true | _ -> false) arg_forms
-  | "coll?" ->
-      compile_type_predicate current_ns env name
-        (function TList _ | TVector _ | TSet _ | TRecord _ -> true | _ -> false)
-        arg_forms
-  | "associative?" ->
-      compile_type_predicate current_ns env name
-        (function TVector _ | TRecord _ -> true | _ -> false)
-        arg_forms
-  | "indexed?" ->
-      compile_type_predicate current_ns env name (function TVector _ -> true | _ -> false) arg_forms
-  | "seqable?" ->
-      compile_type_predicate current_ns env name
-        (function TString | TList _ | TVector _ | TSet _ | TRecord _ -> true | _ -> false)
-        arg_forms
-  | "counted?" ->
-      compile_type_predicate current_ns env name
-        (function TString | TList _ | TVector _ | TSet _ | TRecord _ -> true | _ -> false)
-        arg_forms
   | "str" -> (
       match compile_args () with
       | Error _ as err -> err
@@ -751,40 +711,10 @@ and compile_int_unary_call current_ns env name build_code arg_forms =
   | Error _ as err -> err
   | Ok args -> Core_int.compile_unary name args build_code
 
-and compile_not current_ns env arg_forms =
+and compile_boolean_call current_ns env name arg_forms =
   match compile_args_for current_ns env arg_forms with
   | Error _ as err -> err
-  | Ok [ arg ] ->
-      if Types.equal arg.ty TBool then Ok (typed TBool ("not " ^ arg.code))
-      else Error.error "not expects bool"
-  | Ok _ -> Error.error "not expects 1 arguments"
-
-and compile_predicate current_ns env name arg_forms expected_ty =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [ arg ] -> Ok (typed TBool (string_of_bool (Types.equal arg.ty expected_ty)))
-  | Ok _ -> Error.error (name ^ " expects 1 arguments")
-
-and compile_some_predicate current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [ arg ] -> Ok (typed TBool (string_of_bool (not (Types.equal arg.ty TNil))))
-  | Ok _ -> Error.error "some? expects 1 arguments"
-
-and compile_bool_literal_predicate current_ns env name arg_forms expected =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [ arg ] ->
-      if Types.equal arg.ty TBool then
-        Ok (typed TBool ("(" ^ arg.code ^ " = " ^ string_of_bool expected ^ ")"))
-      else Ok (typed TBool "false")
-  | Ok _ -> Error.error (name ^ " expects 1 arguments")
-
-and compile_type_predicate current_ns env name predicate arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [ arg ] -> Ok (typed TBool (string_of_bool (predicate arg.ty)))
-  | Ok _ -> Error.error (name ^ " expects 1 arguments")
+  | Ok args -> Core_boolean.compile name args
 
 and compile_count current_ns env arg_forms =
   match compile_args_for current_ns env arg_forms with

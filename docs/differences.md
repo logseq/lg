@@ -69,6 +69,11 @@ Top-level expression forms are supported and emit `let _ = ...`; top-level map l
 
 `print` and `println` follow Clojure's newline behavior.
 
+`not` follows Clojure truthiness for the values represented by cljml: `false`
+and `nil` are falsey, while integers, strings, collections, keywords, symbols,
+and records are truthy. The argument is still evaluated before the boolean
+result is produced.
+
 Type predicates such as `int?`, `integer?`, `number?`, `nat-int?`, `pos-int?`,
 `neg-int?`, `string?`, `keyword?`, `boolean?`, `vector?`, `list?`, `seq?`,
 `set?`, `map?`, `fn?`, `coll?`, `associative?`, `indexed?`, `seqable?`, and

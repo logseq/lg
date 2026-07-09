@@ -85,6 +85,8 @@ The compiler infers record-like map shapes automatically:
   forms such as `(when flag (println "ready"))` can appear at file scope.
 - `print` writes without a trailing newline; `println` writes with a trailing
   newline.
+- `not` follows Clojure truthiness for the statically represented values:
+  only `false` and `nil` are falsey; other values are truthy.
 - `int?`, `integer?`, `number?`, `nat-int?`, `pos-int?`, `neg-int?`,
   `string?`, `keyword?`, `boolean?`, `vector?`, `list?`, `seq?`, `set?`,
   `map?`, `fn?`, `coll?`, `associative?`, `indexed?`, `seqable?`, and
