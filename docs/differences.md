@@ -124,12 +124,13 @@ legal OCaml identifiers while preserving source-level names.
 
 Vectors compile to `Rrbvec.t` persistent vectors.
 
-Lists compile to OCaml lists and support `list`, `list*`, `list-of`, `cons`, `conj`, `first`, `second`, `last`, `peek`, `pop`, `rest`, `nth`, `count`, `map`, `filter`, `remove`, `take-while`, `drop-while`, `distinct`, `dedupe`, `sort`, `sort-by`, `concat`, `mapcat`, `vec`, `set`, `repeat`, `repeatedly`, `interpose`, `interleave`, `partition`, `partition-all`, `reductions`, `map-indexed`, `filterv`, `mapv`, `reduce`, `reduce-kv`, `butlast`, `take-last`, `drop-last`, `take-nth`, `split-at`, `split-with`, `partition-by`, `bounded-count`, `dorun`, `doall`, and `run!` where the static element types line up.
+Lists compile to OCaml lists and support `list`, `list*`, `list-of`, `cons`, `conj`, `first`, `second`, `last`, `peek`, `pop`, `rest`, `next`, `nthnext`, `nthrest`, `ffirst`, `fnext`, `nfirst`, `nnext`, `rseq`, `nth`, `count`, `map`, `filter`, `remove`, `some`, `take-while`, `drop-while`, `distinct`, `dedupe`, `sort`, `sort-by`, `concat`, `mapcat`, `vec`, `set`, `repeat`, `repeatedly`, `interpose`, `interleave`, `partition`, `partition-all`, `reductions`, `map-indexed`, `filterv`, `mapv`, `reduce`, `reduce-kv`, `butlast`, `take-last`, `drop-last`, `take-nth`, `split-at`, `split-with`, `partition-by`, `bounded-count`, `dorun`, `doall`, and `run!` where the static element types line up.
 
-Vectors support `first`, `second`, `last`, `peek`, `pop`, `rest`, `nth`, `get`, `assoc`, `update`, `contains?`, `subvec`, and the current eager sequence operations.
+Vectors support `first`, `second`, `last`, `peek`, `pop`, `rest`, `next`, `nthnext`, `nthrest`, `ffirst`, `fnext`, `nfirst`, `nnext`, `rseq`, `nth`, `get`, `assoc`, `update`, `contains?`, `subvec`, and the current eager sequence operations.
 
-`rest` returns a same-typed empty list or vector when called on an empty list
-or vector.
+`rest` and `next` return a same-typed empty list or vector when called on an
+empty list or vector because cljml does not yet have a nilable sequence result
+type.
 
 Three-argument `nth` returns a typed default for out-of-range list and vector indexes.
 
@@ -144,8 +145,8 @@ the element types match.
 
 `reverse` returns a same-typed reversed list or vector.
 
-`every?`, `not-any?`, and `not-every?` return typed booleans for list, vector,
-and set predicates.
+`every?`, `not-any?`, `not-every?`, and the current static subset of `some`
+return typed booleans for list, vector, and set predicates.
 
 Sequence operations are eager and return concrete typed collections. For example
 `mapv` and `filterv` return persistent vectors, `concat`, `sort`,
@@ -153,9 +154,9 @@ Sequence operations are eager and return concrete typed collections. For example
 `map-indexed` return OCaml lists, `split-at` and `split-with` return persistent
 vectors of the input collection representation, and same-shape operations such
 as `remove`, `take-while`, `drop-while`, `distinct`, `dedupe`, `butlast`,
-`take-last`, `drop-last`, and `take-nth` preserve the input collection
-representation where practical. `dorun` and `doall` are eager because cljml
-does not yet have lazy seqs.
+`take-last`, `drop-last`, `take-nth`, `nthnext`, `nthrest`, and `rseq` preserve
+the input collection representation where practical. `dorun` and `doall` are
+eager because cljml does not yet have lazy seqs.
 
 `range` returns an eager typed integer list.
 

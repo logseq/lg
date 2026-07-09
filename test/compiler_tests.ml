@@ -1207,6 +1207,43 @@ let test_batched_sequence_functions_reject_reduce_kv_non_vector () =
     {|(def x (reduce-kv (fn [acc i x] (+ acc x)) 0 (list 1 2)))|}
   |> expect_error "reduce-kv expects a vector"
 
+let test_additional_sequence_helpers_work () =
+  let source =
+    {|
+(def xs [1 2 3 4])
+(def nested [[1 2] [3 4] [5 6]])
+(println
+  (str (pr-str (next xs)) ":"
+       (pr-str (nthnext xs 2)) ":"
+       (pr-str (nthrest xs 3)) ":"
+       (ffirst nested) ":"
+       (pr-str (fnext nested)) ":"
+       (pr-str (nfirst nested)) ":"
+       (count (nnext nested)) ":"
+       (ffirst (nnext nested)) ":"
+       (pr-str (rseq xs)) ":"
+       (some (fn [x] (> x 3)) xs) ":"
+       (some (fn [x] (> x 9)) xs) ":"
+       (pr-str (reductions + [1 2 3 4]))))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "additional_sequence_helpers_work"
+    "[2 3 4]:[3 4]:[4]:1:[3 4]:[2]:1:5:[4 3 2 1]:true:false:(1 3 6 10)\n"
+    ocaml_source
+
+let test_additional_sequence_helpers_reject_bad_counts () =
+  Cljml.Compiler.compile_string {|(def x (nthnext [1 2] "1"))|}
+  |> expect_error "nthnext count must be int"
+
+let test_additional_sequence_helpers_reject_bad_some_predicate () =
+  Cljml.Compiler.compile_string {|(def x (some (fn [x] (inc x)) [1 2]))|}
+  |> expect_error "some expects a predicate matching collection elements"
+
+let test_additional_sequence_helpers_reject_bad_reductions_arity () =
+  Cljml.Compiler.compile_string {|(def x (reductions +))|}
+  |> expect_error "reductions expects function, optional init, and collection"
+
 let test_let_defn_and_fn_values () =
   let source =
     {|
@@ -2039,6 +2076,13 @@ let tests =
       test_batched_sequence_functions_reject_bad_partition_size );
     ( "batched sequence functions reject reduce-kv non-vector",
       test_batched_sequence_functions_reject_reduce_kv_non_vector );
+    ("additional sequence helpers work", test_additional_sequence_helpers_work);
+    ( "additional sequence helpers reject bad counts",
+      test_additional_sequence_helpers_reject_bad_counts );
+    ( "additional sequence helpers reject bad some predicate",
+      test_additional_sequence_helpers_reject_bad_some_predicate );
+    ( "additional sequence helpers reject bad reductions arity",
+      test_additional_sequence_helpers_reject_bad_reductions_arity );
     ("let, defn, and fn values work", test_let_defn_and_fn_values);
     ("destructuring works in let and functions", test_destructuring_in_let_and_functions);
     ( "destructuring supports direct keyword bindings",

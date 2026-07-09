@@ -673,6 +673,12 @@ and compile_call current_ns env name arg_forms =
   | "butlast" -> compile_butlast current_ns env arg_forms
   | "take-last" | "drop-last" -> compile_take_drop_last current_ns env name arg_forms
   | "take-nth" -> compile_take_nth current_ns env arg_forms
+  | "next" | "nthnext" | "nthrest" | "ffirst" | "fnext" | "nfirst" | "nnext"
+  | "rseq" -> (
+      match compile_args () with
+      | Error _ as err -> err
+      | Ok args -> Core_sequence.compile name args)
+  | "some" -> compile_some current_ns env arg_forms
   | "split-at" -> compile_split_at current_ns env arg_forms
   | "split-with" -> compile_split_with current_ns env arg_forms
   | "partition-by" -> compile_partition_by current_ns env arg_forms
@@ -1924,6 +1930,23 @@ and compile_partition current_ns env include_partial arg_forms =
 
 and compile_reductions current_ns env arg_forms =
   match arg_forms with
+  | fn_form :: collection_form :: [] -> (
+      match (compile_function_arg current_ns env fn_form, compile_expr current_ns env collection_form) with
+      | (Error _ as err), _ -> err
+      | _, (Error _ as err) -> err
+      | Ok fn, Ok collection -> (
+          match (fn.ty, collection_to_list_code collection) with
+          | TFn ([ acc_ty; item_ty ], ret), Ok (inner, list_code)
+            when Types.equal acc_ty inner && Types.equal item_ty inner && Types.equal ret inner ->
+              Ok
+                (typed (TList inner)
+                   ("(match " ^ list_code
+                  ^ " with [] -> [] | first :: rest -> let rec reductions current acc xs = match xs with [] -> List.rev acc | item :: tail -> let next = "
+                  ^ apply_code fn.code [ "current"; "item" ]
+                  ^ " in reductions next (next :: acc) tail in reductions first [first] rest)"))
+          | TFn _, Ok _ -> Error.error "reductions function type does not match collection"
+          | _, Ok _ -> Error.error "reductions expects a function"
+          | _, Error _ -> Error.error "reductions expects a collection"))
   | fn_form :: init_form :: collection_form :: [] -> (
       match
         ( compile_function_arg current_ns env fn_form,
@@ -1946,7 +1969,7 @@ and compile_reductions current_ns env arg_forms =
           | TFn _, Ok _ -> Error.error "reductions function type does not match init and collection"
           | _, Ok _ -> Error.error "reductions expects a function"
           | _, Error _ -> Error.error "reductions expects a collection"))
-  | _ -> Error.error "reductions expects function, init, and collection"
+  | _ -> Error.error "reductions expects function, optional init, and collection"
 
 and compile_butlast current_ns env arg_forms =
   match compile_args_for current_ns env arg_forms with
@@ -2271,6 +2294,21 @@ and compile_reverse current_ns env arg_forms =
       | TVector _ -> Ok (typed collection.ty ("Rrbvec.rev (" ^ collection.code ^ ")"))
       | _ -> Error.error "reverse expects a list or vector")
   | Ok _ -> Error.error "reverse expects 1 arguments"
+
+and compile_some current_ns env arg_forms =
+  match arg_forms with
+  | fn_form :: collection_form :: [] -> (
+      match (compile_function_arg current_ns env fn_form, compile_expr current_ns env collection_form) with
+      | (Error _ as err), _ -> err
+      | _, (Error _ as err) -> err
+      | Ok fn, Ok collection -> (
+          match (fn.ty, collection_to_list_code collection) with
+          | TFn ([ param_ty ], TBool), Ok (inner, list_code) when Types.equal param_ty inner ->
+              Ok (typed TBool ("List.exists " ^ fn.code ^ " (" ^ list_code ^ ")"))
+          | TFn _, Ok _ -> Error.error "some expects a predicate matching collection elements"
+          | _, Ok _ -> Error.error "some expects a function"
+          | _, Error _ -> Error.error "some expects a collection"))
+  | _ -> Error.error "some expects function and collection"
 
 and compile_sequence_bool_predicate current_ns env name arg_forms =
   match arg_forms with
