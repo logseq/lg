@@ -64,6 +64,21 @@ let rec equal left right =
            left right
   | _ -> false
 
+let rec compatible ~expected ~actual =
+  match (expected, actual) with
+  | TAny, _ | _, TAny -> true
+  | TRecord expected_fields, TRecord actual_fields ->
+      expected_fields
+      |> List.for_all (fun expected_field ->
+             match
+               List.find_opt
+                 (fun actual_field -> actual_field.keyword = expected_field.keyword)
+                 actual_fields
+             with
+             | Some actual_field -> compatible ~expected:expected_field.ty ~actual:actual_field.ty
+             | None -> false)
+  | _ -> equal expected actual
+
 let rec source_name = function
   | TInt -> "int"
   | TString -> "string"

@@ -410,6 +410,29 @@ let test_unannotated_function_parameters_reject_bad_bool_calls () =
   Cljml.Compiler.compile_string source
   |> expect_error "flip called with incompatible arguments"
 
+let test_unannotated_function_parameters_infer_structural_map_fields () =
+  let source =
+    {|
+(def user {:name "Ada", :age 36})
+(defn next-age [person] (+ (:age person) 1))
+(println (str (next-age user)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "unannotated_function_parameters_infer_structural_map_fields" "37\n"
+    ocaml_source
+
+let test_unannotated_function_parameters_reject_missing_structural_map_fields () =
+  let source =
+    {|
+(def user {:name "Ada"})
+(defn next-age [person] (+ (get person :age) 1))
+(def bad (next-age user))
+|}
+  in
+  Cljml.Compiler.compile_string source
+  |> expect_error "next-age called with incompatible arguments"
+
 let test_do_and_multi_form_bodies () =
   let source =
     {|
@@ -722,6 +745,10 @@ let tests =
       test_unannotated_function_parameters_reject_bad_int_calls );
     ( "unannotated function parameters reject bad bool calls",
       test_unannotated_function_parameters_reject_bad_bool_calls );
+    ( "unannotated function parameters infer structural map fields",
+      test_unannotated_function_parameters_infer_structural_map_fields );
+    ( "unannotated function parameters reject missing structural map fields",
+      test_unannotated_function_parameters_reject_missing_structural_map_fields );
     ("do and multi-form bodies work", test_do_and_multi_form_bodies);
     ("fn rejects empty body", test_fn_rejects_empty_body);
     ("vectors reject mixed element types", test_vectors_reject_mixed_element_types);

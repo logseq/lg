@@ -34,6 +34,8 @@ The compiler infers record-like map shapes automatically:
 - `(defn inc1 [x] (+ x 1))`, `(fn [x] ...)`, and `(let [...] ...)` are
   supported for typed function workflows.
 - Function parameter types are inferred from body constraints where possible.
+  Keyword lookup constraints such as `(:age person)` can infer required
+  structural map fields when the field value type is known from context.
   Optional `^:int`, `^:string`, `^:bool`, or `^:nil` annotations can make a
   parameter type explicit.
 - `do`, `fn`, `defn`, and `let` bodies can contain multiple forms; earlier

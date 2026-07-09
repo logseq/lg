@@ -24,6 +24,10 @@ Keyword call syntax such as `(:name user)` is supported for structural maps.
 
 Function parameter types are inferred from body constraints where possible; annotations such as `^:int` and `^:string` are optional explicit hints.
 
+Keyword lookup in typed contexts can infer structural map field requirements for unannotated function parameters.
+
+Function calls can pass wider structural maps when the callee only requires a known subset of fields.
+
 `do`, `fn`, `defn`, and `let` bodies evaluate forms in order and return the final form's type.
 
 `print` and `println` follow Clojure's newline behavior.

@@ -682,7 +682,9 @@ and compile_named_function_call current_ns env name arg_forms =
           match fn.ty with
           | TFn (param_tys, ret)
             when List.length param_tys = List.length args
-                 && List.for_all2 Types.equal param_tys (List.map (fun arg -> arg.ty) args) ->
+                 && List.for_all2
+                      (fun expected arg -> Types.compatible ~expected ~actual:arg.ty)
+                      param_tys args ->
               Ok (typed ret (apply_code fn.code (List.map (fun arg -> arg.code) args)))
           | TFn _ -> Error.error (name ^ " called with incompatible arguments")
           | _ -> Error.error (name ^ " is not callable")))

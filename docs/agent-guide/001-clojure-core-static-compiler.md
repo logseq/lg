@@ -105,6 +105,12 @@ List types are homogeneous as `list<T>` and compile to OCaml lists.
 
 Map literal types are structural records keyed by Clojure keywords.
 
+Keyword lookup in a typed context can infer structural map field requirements
+for unannotated function parameters.
+
+Function calls can pass wider structural maps when all fields required by the
+callee are present with compatible types.
+
 `keys` returns a homogeneous `vector<keyword>`.
 
 `assoc` returns a new structural record type when adding a field.

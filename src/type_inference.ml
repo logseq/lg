@@ -12,9 +12,32 @@ let constrain_symbol expected_ty params name =
   | Some TAny -> Ok (replace_param name expected_ty params)
   | Some _existing_ty -> Ok params
 
+let add_record_field_constraint name keyword field_ty params =
+  let merge_fields fields =
+    match find_field keyword fields with
+    | None -> Ok (make_field keyword field_ty :: fields)
+    | Some field when Types.equal field.ty field_ty -> Ok fields
+    | Some field ->
+        Error.error
+          ("cannot infer " ^ keyword ^ " as " ^ Types.source_name field_ty
+         ^ " because it is already " ^ Types.source_name field.ty)
+  in
+  match List.assoc_opt name params with
+  | None -> Ok params
+  | Some TAny -> Ok (replace_param name (TRecord [ make_field keyword field_ty ]) params)
+  | Some (TRecord fields) -> (
+      match merge_fields fields with
+      | Error _ as err -> err
+      | Ok fields -> Ok (replace_param name (TRecord fields) params))
+  | Some _existing_ty -> Ok params
+
 let infer_params ~lookup_function_ty params body_forms =
   let rec infer_expected expected_ty params = function
     | FSymbol name -> constrain_symbol expected_ty params name
+    | FList [ FKeyword keyword; FSymbol name ] ->
+        add_record_field_constraint name keyword expected_ty params
+    | FList [ FSymbol "get"; FSymbol name; FKeyword keyword ] ->
+        add_record_field_constraint name keyword expected_ty params
     | form -> infer_form params form
   and infer_all params forms =
     let rec loop params = function
