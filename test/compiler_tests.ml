@@ -424,12 +424,13 @@ let test_typed_function_parameters () =
     {|
 (defn inc1 [^:int x] (+ x 1))
 (defn greet [^:string name] (str "hi " name))
+(defn key-label [^:keyword key] (str key "!"))
 (def mapped (map (fn [^:int x] (+ x 1)) [1 2]))
-(println (str (inc1 41) ":" (greet "Ada") ":" (nth mapped 1)))
+(println (str (inc1 41) ":" (greet "Ada") ":" (key-label :admin?) ":" (nth mapped 1)))
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "typed_function_parameters" "42:hi Ada:3\n" ocaml_source
+  assert_ocaml_runs "typed_function_parameters" "42:hi Ada::admin?!:3\n" ocaml_source
 
 let test_typed_function_parameters_reject_bad_calls () =
   let source =
@@ -965,6 +966,19 @@ let test_set_of_rejects_unknown_types () =
   Cljml.Compiler.compile_string {|(def xs (set-of :record))|}
   |> expect_error "unknown set element type :record"
 
+let test_keyword_type_annotations_for_empty_collections () =
+  let source =
+    {|
+(def xs (conj (vector-of :keyword) :name))
+(def ys (conj (list-of :keyword) :age))
+(def zs (into (set-of :keyword) [:name :name :age]))
+(println (str (pr-str xs) ":" (pr-str ys) ":" (contains? zs :age) ":" (pr-str zs)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "keyword_type_annotations_for_empty_collections"
+    "[:name]:(:age):true:#{:age :name}\n" ocaml_source
+
 let test_nth_supports_default_values () =
   let source =
     {|
@@ -1195,6 +1209,8 @@ let tests =
     ("into rejects element type mismatch", test_into_rejects_element_type_mismatch);
     ("typed empty sets work", test_typed_empty_sets);
     ("set-of rejects unknown types", test_set_of_rejects_unknown_types);
+    ( "keyword type annotations for empty collections work",
+      test_keyword_type_annotations_for_empty_collections );
     ("nth supports default values", test_nth_supports_default_values);
     ("nth rejects default type mismatch", test_nth_rejects_default_type_mismatch);
     ("typed empty lists work", test_typed_empty_lists);

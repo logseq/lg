@@ -47,8 +47,8 @@ The compiler infers record-like map shapes automatically:
 - Function parameter types are inferred from body constraints where possible.
   Keyword lookup constraints such as `(:age person)` can infer required
   structural map fields when the field value type is known from context.
-  Optional `^:int`, `^:string`, `^:bool`, or `^:nil` annotations can make a
-  parameter type explicit.
+  Optional `^:int`, `^:string`, `^:keyword`, `^:bool`, or `^:nil` annotations
+  can make a parameter type explicit.
 - `do`, `fn`, `defn`, and `let` bodies can contain multiple forms; earlier
   forms are evaluated for effects and the final form supplies the value.
 - `print` writes without a trailing newline; `println` writes with a trailing
@@ -79,9 +79,9 @@ The compiler infers record-like map shapes automatically:
   host functions.
 - `(:name user)` works as keyword lookup syntax for structural maps.
 - `(keys user)` returns a persistent vector of keyword values.
-- `(vector-of :int)` creates an explicitly typed empty persistent vector.
-- `(list-of :int)` creates an explicitly typed empty list.
-- `(set-of :int)` creates an explicitly typed empty set.
+- `(vector-of :int)`, `(list-of :int)`, and `(set-of :int)` create explicitly
+  typed empty collections; `:keyword` is supported alongside the other scalar
+  type keywords.
 - Updating an existing field with a different type is rejected.
 - `Cljml.Compiler.compile_chunk` supports incremental compilation by returning
   the next compiler state plus the OCaml emitted for the current source chunk.

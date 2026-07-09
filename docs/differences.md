@@ -30,7 +30,7 @@ Keyword call syntax such as `(:name user)` is supported for structural maps.
 
 `if` branches must have the same type.
 
-Function parameter types are inferred from body constraints where possible; annotations such as `^:int` and `^:string` are optional explicit hints.
+Function parameter types are inferred from body constraints where possible; annotations such as `^:int`, `^:string`, and `^:keyword` are optional explicit hints.
 
 Keyword lookup in typed contexts can infer structural map field requirements for unannotated function parameters.
 
@@ -98,11 +98,11 @@ predicates.
 
 Empty vector literals still require explicit element typing.
 
-Use `(vector-of :int)`, `(vector-of :string)`, `(vector-of :bool)`, or `(vector-of :nil)` for typed empty vectors.
+Use `(vector-of :int)`, `(vector-of :string)`, `(vector-of :keyword)`, `(vector-of :bool)`, or `(vector-of :nil)` for typed empty vectors.
 
-Use `(list-of :int)`, `(list-of :string)`, `(list-of :bool)`, or `(list-of :nil)` for typed empty lists.
+Use `(list-of :int)`, `(list-of :string)`, `(list-of :keyword)`, `(list-of :bool)`, or `(list-of :nil)` for typed empty lists.
 
-Use `(set-of :int)`, `(set-of :string)`, `(set-of :bool)`, or `(set-of :nil)` for typed empty sets.
+Use `(set-of :int)`, `(set-of :string)`, `(set-of :keyword)`, `(set-of :bool)`, or `(set-of :nil)` for typed empty sets.
 
 Sets currently compile to sorted unique OCaml lists.
 

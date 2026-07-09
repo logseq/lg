@@ -955,6 +955,19 @@ and compile_select_keys current_ns env arg_forms =
   | _ -> Error.error "select-keys expects map and key vector"
 
 and compile_contains current_ns env arg_forms =
+  let compile_collection_contains target value =
+    match (target.ty, value.ty) with
+    | TSet inner, _ when Types.equal inner value.ty ->
+        Ok (typed TBool ("List.mem (" ^ value.code ^ ") (" ^ target.code ^ ")"))
+    | TSet _, _ -> Error.error "contains? value type must match set element type"
+    | TVector _, TInt ->
+        Ok
+          (typed TBool
+             ("((" ^ value.code ^ ") >= 0 && (" ^ value.code ^ ") < Rrbvec.length ("
+            ^ target.code ^ "))"))
+    | TVector _, _ -> Error.error "contains? vector index must be int"
+    | _ -> Error.error "contains? expects a map, set, or vector"
+  in
   match arg_forms with
   | target_form :: FKeyword keyword :: [] -> (
       match compile_expr current_ns env target_form with
@@ -963,23 +976,14 @@ and compile_contains current_ns env arg_forms =
           match target.ty with
           | TRecord fields ->
               Ok (typed TBool (string_of_bool (Option.is_some (find_field keyword fields))))
-            | _ -> Error.error "contains? expects a map"))
+          | _ ->
+              compile_collection_contains target
+                (typed TKeyword (Codegen.ocaml_string_literal keyword))))
   | target_form :: value_form :: [] -> (
       match (compile_expr current_ns env target_form, compile_expr current_ns env value_form) with
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
-      | Ok target, Ok value -> (
-          match (target.ty, value.ty) with
-          | TSet inner, _ when Types.equal inner value.ty ->
-              Ok (typed TBool ("List.mem (" ^ value.code ^ ") (" ^ target.code ^ ")"))
-          | TSet _, _ -> Error.error "contains? value type must match set element type"
-          | TVector _, TInt ->
-              Ok
-                (typed TBool
-                   ("((" ^ value.code ^ ") >= 0 && (" ^ value.code ^ ") < Rrbvec.length ("
-                  ^ target.code ^ "))"))
-          | TVector _, _ -> Error.error "contains? vector index must be int"
-          | _ -> Error.error "contains? expects a map, set, or vector"))
+      | Ok target, Ok value -> compile_collection_contains target value)
   | _ -> Error.error "contains? expects collection and key"
 
 and compile_keys current_ns env arg_forms =

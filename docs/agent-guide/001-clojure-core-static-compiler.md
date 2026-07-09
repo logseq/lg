@@ -259,7 +259,7 @@ Arithmetic should reject strings, bools, vectors, maps, nil, and unit.
 Should cljml eventually use a persistent map library in addition to `Rrbvec` for vectors.
 
 Empty collections can use explicit helper annotations such as `(vector-of :int)`,
-`(list-of :int)`, and `(set-of :int)`.
+`(list-of :keyword)`, and `(set-of :keyword)`.
 
 Keyword lookup syntax like `(:name user)` is supported in addition to `(get user :name)`.
 
