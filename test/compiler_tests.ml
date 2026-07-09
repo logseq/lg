@@ -252,6 +252,23 @@ let test_boolean_core_api () =
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "boolean_core_api" "true:true:true\n" ocaml_source
 
+let test_type_predicates () =
+  let source =
+    {|
+(println
+  (str (int? 1) ":" (string? "Ada") ":" (keyword? :name) ":" (boolean? true) ":"
+       (vector? [1]) ":" (list? (list 1)) ":" (set? (hash-set 1)) ":" (map? {:name "Ada"}) ":"
+       (vector? (list 1)) ":" (map? [1])))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "type_predicates"
+    "true:true:true:true:true:true:true:true:false:false\n" ocaml_source
+
+let test_type_predicates_reject_wrong_arity () =
+  Cljml.Compiler.compile_string {|(def x (vector? [1] [2]))|}
+  |> expect_error "vector? expects 1 arguments"
+
 let test_namespaces_resolve_qualified_and_current_symbols () =
   let source =
     {|
@@ -928,6 +945,8 @@ let tests =
       test_core_api_nested_calls_maps_and_vectors );
     ("core api supports if and vector ops", test_core_api_if_and_vector_ops);
     ("boolean core api works", test_boolean_core_api);
+    ("type predicates work", test_type_predicates);
+    ("type predicates reject wrong arity", test_type_predicates_reject_wrong_arity);
     ( "namespaces resolve qualified and current symbols",
       test_namespaces_resolve_qualified_and_current_symbols );
     ( "namespaces prevent unqualified symbol collisions",

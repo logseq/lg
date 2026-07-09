@@ -81,7 +81,7 @@ The compiler should support this syntax without macros.
 | Category | Functions | Phase |
 | --- | --- | --- |
 | Printing | `print`, `println`, `pr-str` | 1 |
-| Boolean | `not`, `true?`, `false?`, `nil?`, `some?` | 1 |
+| Boolean | `not`, `true?`, `false?`, `nil?`, `some?`, `int?`, `string?`, `keyword?`, `boolean?`, `vector?`, `list?`, `set?`, `map?` | 1 |
 | Arithmetic | `+`, `-`, `*`, `/`, `inc`, `dec`, `<`, `<=`, `>`, `>=`, `=` | 1 |
 | Strings | `str` | 1 |
 | Maps | `hash-map`, `get`, `assoc`, `dissoc`, `merge`, `update`, `select-keys`, `contains?`, `keys`, `vals` | 1 |
@@ -98,6 +98,8 @@ It should infer ordinary function parameter types from source-level constraints 
 
 Scalar types are `int`, `string`, `keyword`, `bool`, `nil`, and `unit`.
 Arithmetic starts as integer-only; ratio-producing Clojure arities such as unary `/` are documented differences until numeric tower support exists.
+
+Type predicates are resolved from static cljml types.
 
 Vector types are homogeneous as `vector<T>` and compile to `Rrbvec.t`.
 

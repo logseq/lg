@@ -40,6 +40,9 @@ Function calls can pass wider structural maps when the callee only requires a kn
 
 `print` and `println` follow Clojure's newline behavior.
 
+Type predicates such as `int?`, `string?`, `keyword?`, `boolean?`, `vector?`,
+`list?`, `set?`, and `map?` are resolved from static cljml types.
+
 Arithmetic is currently integer-only. `+` and `*` support Clojure identity arities, comparisons can be chained, and `/` requires at least two integer arguments because cljml does not yet have ratios.
 
 ## Macros

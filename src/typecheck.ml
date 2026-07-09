@@ -238,6 +238,21 @@ and compile_call current_ns env name arg_forms =
   | "some?" -> compile_some_predicate current_ns env arg_forms
   | "true?" -> compile_bool_literal_predicate current_ns env name arg_forms true
   | "false?" -> compile_bool_literal_predicate current_ns env name arg_forms false
+  | "int?" -> compile_type_predicate current_ns env name (function TInt -> true | _ -> false) arg_forms
+  | "string?" ->
+      compile_type_predicate current_ns env name (function TString -> true | _ -> false) arg_forms
+  | "keyword?" ->
+      compile_type_predicate current_ns env name (function TKeyword -> true | _ -> false) arg_forms
+  | "boolean?" ->
+      compile_type_predicate current_ns env name (function TBool -> true | _ -> false) arg_forms
+  | "vector?" ->
+      compile_type_predicate current_ns env name (function TVector _ -> true | _ -> false) arg_forms
+  | "list?" ->
+      compile_type_predicate current_ns env name (function TList _ -> true | _ -> false) arg_forms
+  | "set?" ->
+      compile_type_predicate current_ns env name (function TSet _ -> true | _ -> false) arg_forms
+  | "map?" ->
+      compile_type_predicate current_ns env name (function TRecord _ -> true | _ -> false) arg_forms
   | "str" -> (
       match compile_args () with
       | Error _ as err -> err
@@ -382,6 +397,12 @@ and compile_bool_literal_predicate current_ns env name arg_forms expected =
       if Types.equal arg.ty TBool then
         Ok (typed TBool ("(" ^ arg.code ^ " = " ^ string_of_bool expected ^ ")"))
       else Ok (typed TBool "false")
+  | Ok _ -> Error.error (name ^ " expects 1 arguments")
+
+and compile_type_predicate current_ns env name predicate arg_forms =
+  match compile_args_for current_ns env arg_forms with
+  | Error _ as err -> err
+  | Ok [ arg ] -> Ok (typed TBool (string_of_bool (predicate arg.ty)))
   | Ok _ -> Error.error (name ^ " expects 1 arguments")
 
 and compile_count current_ns env arg_forms =
