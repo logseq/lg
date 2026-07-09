@@ -72,6 +72,7 @@ The compiler should support this syntax without macros.
 | `def` | `(def x 1)` | 1 |
 | `if` | `(if admin? "yes" "no")` | 1 |
 | Conditional forms | `(if-not ready? "wait" "go")`, `(when ready? (println "go"))`, `(cond ready? "go" :else "wait")` | 3 |
+| Static match | `(match x 0 "zero" _ "other")` | 3 |
 | `let` | `(let [x 1] (+ x 2))` | 2 |
 | `fn` | `(fn [x] (+ x 1))` | 2 |
 | `defn` | `(defn inc1 [x] (+ x 1))` | 2 |
@@ -116,6 +117,11 @@ operations lower directly to OCaml integer operators.
 
 `if-not`, `when`, and `cond` are compiler-recognized forms in the static core.
 `cond` requires an `:else` branch until cljml has a union type for implicit nil.
+
+`match` is a compiler-recognized static pattern form. The current subset
+supports scalar literal patterns, `_`, symbol binders, and fixed-length
+list/vector patterns. Literal patterns participate in parameter type inference;
+exhaustiveness checking is out of scope for the current common subset.
 
 Top-level expression forms are emitted as `let _ = ...`; top-level structural
 map literals still need `def` so the compiler can emit record definitions.

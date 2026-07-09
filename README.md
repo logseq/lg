@@ -57,6 +57,9 @@ The compiler infers record-like map shapes automatically:
   forms are evaluated for effects and the final form supplies the value.
 - `if-not`, `when`, and `cond` are compiler-recognized conditional forms.
   `cond` requires an `:else` branch in the current static subset.
+- `match` is a compiler-recognized static pattern form. It supports scalar
+  literal patterns, `_`, symbol binders, and fixed-length list/vector patterns
+  such as `[]`, `[x]`, and `[x y]`.
 - Top-level expression forms are evaluated with `let _ = ...`, so side-effect
   forms such as `(when flag (println "ready"))` can appear at file scope.
 - `print` writes without a trailing newline; `println` writes with a trailing

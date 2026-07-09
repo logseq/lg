@@ -1573,6 +1573,55 @@ let test_map_rejects_non_function_argument () =
   Cljml.Compiler.compile_string {|(def xs (map 1 [1 2]))|}
   |> expect_error "map expects a function"
 
+let test_match_expression_works () =
+  let source =
+    {|
+(defn describe [x]
+  (match x
+    0 "zero"
+    1 "one"
+    n (str "n=" n)))
+(def empty-list-score (match (list-of :int) [] 0 _ 99))
+(def one-list-score (match (list 7) [] 0 [x] x _ 99))
+(def two-list-score (match (list 3 4) [] 0 [x] x [x y] (+ x y) _ 99))
+(def many-list-score (match (list 1 2 3) [] 0 [x] x [x y] (+ x y) _ 99))
+(def empty-vector-score (match (vector-of :int) [] 0 _ 99))
+(def one-vector-score (match [7] [] 0 [x] x _ 99))
+(def two-vector-score (match [3 4] [] 0 [x] x [x y] (+ x y) _ 99))
+(def many-vector-score (match [1 2 3] [] 0 [x] x [x y] (+ x y) _ 99))
+(println
+  (str (describe 0) ":" (describe 2) ":"
+       empty-list-score ":" one-list-score ":" two-list-score ":" many-list-score ":"
+       empty-vector-score ":" one-vector-score ":" two-vector-score ":" many-vector-score))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "match_expression_works" "zero:n=2:0:7:7:99:0:7:7:99\n"
+    ocaml_source
+
+let test_match_rejects_branch_type_mismatch () =
+  Cljml.Compiler.compile_string {|(def x (match 1 0 "zero" _ 1))|}
+  |> expect_error "match branches must have same type"
+
+let test_match_rejects_bad_clause_count () =
+  Cljml.Compiler.compile_string {|(def x (match 1 0 "zero" _))|}
+  |> expect_error "match requires pattern/result pairs"
+
+let test_match_rejects_pattern_type_mismatch () =
+  Cljml.Compiler.compile_string {|(def x (match 1 "1" 1 _ 0))|}
+  |> expect_error "match pattern type must match target"
+
+let test_match_infers_target_type_from_patterns () =
+  Cljml.Compiler.compile_string
+    {|
+(defn describe [x]
+  (match x
+    0 "zero"
+    n (str "n=" n)))
+(def bad (describe "x"))
+|}
+  |> expect_error "describe called with incompatible arguments"
+
 let test_module_definitions_work () =
   let source =
     {|
@@ -1890,6 +1939,11 @@ let tests =
     ("peek rejects unsupported collections", test_peek_rejects_unsupported_collections);
     ("let rejects odd binding forms", test_let_rejects_odd_binding_forms);
     ("map rejects non-function argument", test_map_rejects_non_function_argument);
+    ("match expression works", test_match_expression_works);
+    ("match rejects branch type mismatch", test_match_rejects_branch_type_mismatch);
+    ("match rejects bad clause count", test_match_rejects_bad_clause_count);
+    ("match rejects pattern type mismatch", test_match_rejects_pattern_type_mismatch);
+    ("match infers target type from patterns", test_match_infers_target_type_from_patterns);
     ("module definitions work", test_module_definitions_work);
     ("module definitions reject expressions", test_module_definitions_reject_expressions);
     ( "incremental compilation preserves modules",

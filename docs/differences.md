@@ -42,6 +42,12 @@ Protocols are a static subset of Clojure protocols. `defprotocol` records typed 
 
 `if-not`, `when`, and `cond` are compiler-recognized forms rather than macros. `when` currently supports unit or nil bodies, and `cond` requires an `:else` branch because cljml does not yet have a union type for implicit nil results.
 
+`match` is a compiler-recognized static pattern form rather than a macro. The
+current subset supports scalar literal patterns, `_`, symbol binders, and
+fixed-length list/vector patterns written with vector pattern syntax. Pattern
+literals can constrain unannotated function parameters. There is no
+exhaustiveness checker yet.
+
 Top-level expression forms are supported and emit `let _ = ...`; top-level map literals still need a `def` because structural maps require generated record definitions.
 
 `print` and `println` follow Clojure's newline behavior.

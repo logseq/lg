@@ -85,6 +85,32 @@ let infer_params ~lookup_function_ty params body_forms =
         | Error _ as err -> err
         | Ok params -> infer_all params body_forms)
     | _ -> infer_all params body_forms
+  and infer_match params target clauses =
+    let pattern_type = function
+      | FInt _ -> Some TInt
+      | FString _ -> Some TString
+      | FKeyword _ -> Some TKeyword
+      | FBool _ -> Some TBool
+      | FNil -> Some TNil
+      | _ -> None
+    in
+    let rec infer_clauses params = function
+      | [] -> Ok params
+      | [ form ] -> infer_form params form
+      | pattern :: result :: rest ->
+          let params =
+            match pattern_type pattern with
+            | Some expected_ty -> infer_expected expected_ty params target
+            | None -> infer_form params target
+          in
+          (match params with
+          | Error _ as err -> err
+          | Ok params -> (
+              match infer_form params result with
+              | Error _ as err -> err
+              | Ok params -> infer_clauses params rest))
+    in
+    infer_clauses params clauses
   and infer_form params = function
     | FList
         (FSymbol
@@ -187,6 +213,8 @@ let infer_params ~lookup_function_ty params body_forms =
                   | Ok params -> infer_clauses params rest))
         in
         infer_clauses params clauses
+    | FList (FSymbol "match" :: target :: clauses) ->
+        infer_match params target clauses
     | FList
         [
           FSymbol "split-with";

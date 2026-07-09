@@ -62,6 +62,8 @@ let rec compile_expr current_ns (env : (string * binding) list) = function
   | FList (FSymbol "when" :: condition :: body_forms) ->
       compile_when current_ns env condition body_forms
   | FList (FSymbol "cond" :: clauses) -> compile_cond current_ns env clauses
+  | FList (FSymbol "match" :: target :: clauses) ->
+      compile_match current_ns env target clauses
   | FList (FSymbol name :: args) -> compile_call current_ns env name args
   | FList [] -> Error.error "empty list is not callable"
   | FList _ -> Error.error "call head must be a symbol"
@@ -221,6 +223,90 @@ and compile_cond current_ns env clauses =
             in
             Ok (typed else_expr.ty code)
           else Error.error "cond branches must have same type")
+
+and compile_match current_ns env target_form clauses =
+  let rec parse_pairs acc = function
+    | [] -> Ok (List.rev acc)
+    | [ _ ] -> Error.error "match requires pattern/result pairs"
+    | pattern :: result :: rest -> parse_pairs ((pattern, result) :: acc) rest
+  in
+  let literal_pattern expected_ty form =
+    match compile_expr current_ns env form with
+    | Error _ as err -> err
+    | Ok pattern ->
+        if Types.equal expected_ty pattern.ty then Ok pattern.code
+        else Error.error "match pattern type must match target"
+  in
+  let rec compile_pattern target_ty pattern =
+    match (target_ty, pattern) with
+    | _, FSymbol "_" -> Ok ("_", [])
+    | _, FSymbol name ->
+        let ocaml_name = Names.sanitize_name name in
+        Ok (ocaml_name, [ (Names.namespaced_key current_ns name, { ocaml_name; ty = target_ty }) ])
+    | TInt, FInt value -> Ok (string_of_int value, [])
+    | TString, FString value -> Ok (Codegen.ocaml_string_literal value, [])
+    | TKeyword, FKeyword keyword -> Ok (Codegen.ocaml_string_literal keyword, [])
+    | TBool, FBool true -> Ok ("true", [])
+    | TBool, FBool false -> Ok ("false", [])
+    | TNil, FNil -> Ok ("()", [])
+    | TList inner, FVector patterns ->
+        compile_list_like_pattern inner patterns
+    | TVector inner, FVector patterns ->
+        compile_list_like_pattern inner patterns
+    | _ -> (
+        match pattern with
+        | FInt _ | FString _ | FKeyword _ | FBool _ | FNil ->
+            literal_pattern target_ty pattern |> Result.map (fun code -> (code, []))
+        | FVector _ -> Error.error "match collection pattern must match target collection"
+        | _ -> Error.error "unsupported match pattern")
+  and compile_list_like_pattern inner patterns =
+    let rec loop pattern_codes bindings = function
+      | [] -> Ok ("[" ^ String.concat "; " (List.rev pattern_codes) ^ "]", bindings)
+      | pattern :: rest -> (
+          match compile_pattern inner pattern with
+          | Error _ as err -> err
+          | Ok (pattern_code, pattern_bindings) ->
+              loop (pattern_code :: pattern_codes) (bindings @ pattern_bindings) rest)
+    in
+    loop [] [] patterns
+  in
+  let compile_clause target_ty (pattern_form, result_form) =
+    match compile_pattern target_ty pattern_form with
+    | Error _ as err -> err
+    | Ok (pattern_code, bindings) -> (
+        match compile_expr current_ns (env @ bindings) result_form with
+        | Error _ as err -> err
+        | Ok result -> Ok (pattern_code, result))
+  in
+  match (compile_expr current_ns env target_form, parse_pairs [] clauses) with
+  | (Error _ as err), _ -> err
+  | _, (Error _ as err) -> err
+  | Ok target, Ok pairs -> (
+      let target_code =
+        match target.ty with
+        | TVector _ -> "Rrbvec.to_list (" ^ target.code ^ ")"
+        | _ -> target.code
+      in
+      let rec compile_clauses acc = function
+        | [] -> Ok (List.rev acc)
+        | pair :: rest -> (
+            match compile_clause target.ty pair with
+            | Error _ as err -> err
+            | Ok clause -> compile_clauses (clause :: acc) rest)
+      in
+      match compile_clauses [] pairs with
+      | Error _ as err -> err
+      | Ok [] -> Error.error "match requires pattern/result pairs"
+      | Ok ((_, first_result) :: _ as clauses) ->
+          if List.for_all (fun (_, result) -> Types.equal first_result.ty result.ty) clauses then
+            let cases =
+              clauses
+              |> List.map (fun (pattern_code, result) ->
+                     "| " ^ pattern_code ^ " -> " ^ result.code)
+              |> String.concat " "
+            in
+            Ok (typed first_result.ty ("(match " ^ target_code ^ " with " ^ cases ^ ")"))
+          else Error.error "match branches must have same type")
 
 and compile_body current_ns env empty_error forms =
   match forms with
