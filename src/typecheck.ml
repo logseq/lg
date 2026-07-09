@@ -1358,12 +1358,14 @@ and compile_keys current_ns env arg_forms =
   | Ok [ target ] -> (
       match target.ty with
       | TRecord fields ->
-          let values =
-            fields
-            |> List.map (fun (field : field) -> Codegen.ocaml_string_literal field.keyword)
-            |> String.concat "; "
-          in
-          Ok (typed (TVector TKeyword) ("Rrbvec.of_list [" ^ values ^ "]"))
+          Ok
+            (typed_ir (TVector TKeyword)
+               (Ocaml_ir.Apply
+                  ( Ocaml_ir.Ident "Rrbvec.of_list",
+                    [ Ocaml_ir.List
+                        (fields
+                        |> List.map (fun (field : field) ->
+                               Ocaml_ir.String field.keyword)) ] )))
       | _ -> Error.error "keys expects a map")
   | Ok _ -> Error.error "keys expects 1 arguments"
 
@@ -1375,12 +1377,14 @@ and compile_vals current_ns env arg_forms =
       | TRecord [] -> Error.error "vals requires a non-empty map"
       | TRecord (first :: rest) ->
           if List.for_all (fun (field : field) -> Types.equal first.ty field.ty) rest then
-            let values =
-              (first :: rest)
-              |> List.map (fun (field : field) -> Structural_map.field_code target field)
-              |> String.concat "; "
-            in
-            Ok (typed (TVector first.ty) ("Rrbvec.of_list [" ^ values ^ "]"))
+            Ok
+              (typed_ir (TVector first.ty)
+                 (Ocaml_ir.Apply
+                    ( Ocaml_ir.Ident "Rrbvec.of_list",
+                      [ Ocaml_ir.List
+                          ((first :: rest)
+                          |> List.map (fun (field : field) ->
+                                 Structural_map.field_expr target field)) ] )))
           else Error.error "vals requires all map values to have the same type"
       | _ -> Error.error "vals expects a map")
   | Ok _ -> Error.error "vals expects 1 arguments"
