@@ -573,7 +573,12 @@ and compile_conj current_ns env arg_forms =
             (typed collection.ty
                ("Rrbvec.push_back (" ^ collection.code ^ ") (" ^ value.code ^ ")"))
       | TVector _ -> Error.error "conj value type must match vector element type"
-      | _ -> Error.error "conj expects a list or vector")
+      | TSet inner when Types.equal inner value.ty ->
+          Ok
+            (typed collection.ty
+               ("List.sort_uniq compare (" ^ value.code ^ " :: (" ^ collection.code ^ "))"))
+      | TSet _ -> Error.error "conj value type must match set element type"
+      | _ -> Error.error "conj expects a list, vector, or set")
   | Ok _ -> Error.error "conj expects 2 arguments"
 
 and compile_cons current_ns env arg_forms =

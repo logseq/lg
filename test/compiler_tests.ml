@@ -828,12 +828,19 @@ let test_set_core_api () =
   let source =
     {|
 (def xs (hash-set 1 2 2 3))
-(def ys (disj xs 2))
-(println (str (contains? xs 2) ":" (contains? ys 2) ":" (count ys)))
+(def ys (conj xs 4))
+(def zs (conj ys 2))
+(def slim (disj zs 2))
+(println (str (contains? xs 2) ":" (contains? slim 2) ":" (count ys) ":"
+              (pr-str ys) ":" (pr-str slim)))
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "set_core_api" "true:false:2\n" ocaml_source
+  assert_ocaml_runs "set_core_api" "true:false:4:#{1 2 3 4}:#{1 3 4}\n" ocaml_source
+
+let test_conj_rejects_set_type_mismatch () =
+  Cljml.Compiler.compile_string {|(def xs (conj (hash-set 1) "two"))|}
+  |> expect_error "conj value type must match set element type"
 
 let test_list_core_api () =
   let source =
@@ -1208,6 +1215,7 @@ let tests =
     ("sequence core api works on vectors", test_sequence_core_api_on_vectors);
     ("function helpers work", test_function_helpers);
     ("set core api works", test_set_core_api);
+    ("conj rejects set type mismatch", test_conj_rejects_set_type_mismatch);
     ("list core api works", test_list_core_api);
     ("sequence core api works on lists", test_sequence_core_api_on_lists);
     ("range core api works", test_range_core_api);

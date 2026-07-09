@@ -70,8 +70,8 @@ The compiler infers record-like map shapes automatically:
 - `take` and `drop` return same-typed list or vector slices.
 - `reverse` returns a same-typed reversed list or vector.
 - `every?`, `not-any?`, and `not-every?` work on typed lists and vectors.
-- `hash-set`, `set-of`, `disj`, and `contains?` are supported for homogeneous
-  sets.
+- `hash-set`, `set-of`, `conj`, `disj`, and `contains?` are supported for
+  homogeneous sets.
 - `(:require [some.ns :as alias])` can alias previously compiled namespaces.
 - `(:require [some.ns :refer [user]])` can refer previously compiled namespace
   bindings into the current namespace.

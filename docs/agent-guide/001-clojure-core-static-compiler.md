@@ -89,7 +89,7 @@ The compiler should support this syntax without macros.
 | Lists | `list`, `list-of`, `cons`, `conj`, `count`, `nth`, `first`, `second`, `last`, `peek`, `pop`, `rest` | 2 |
 | Sequences | `seq`, `empty`, `empty?`, `into`, `take`, `drop`, `reverse`, `range`, `every?`, `not-any?`, `not-every?`, `map`, `filter`, `reduce` | 2 |
 | Functions | `apply`, `comp`, `partial`, `identity`, `constantly` | 2 |
-| Sets | `hash-set`, `set-of`, `contains?`, `disj` | 3 |
+| Sets | `hash-set`, `set-of`, `conj`, `contains?`, `disj` | 3 |
 
 ## Type System
 
