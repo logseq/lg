@@ -530,6 +530,25 @@ let test_conj_rejects_list_type_mismatch () =
   Cljml.Compiler.compile_string {|(def xs (conj (list 1) "two"))|}
   |> expect_error "conj value type must match list element type"
 
+let test_collection_positional_helpers () =
+  let source =
+    {|
+(def xs [1 2 3])
+(def ys (list 1 2 3))
+(def xp (pop xs))
+(def yp (pop ys))
+(println (str (second xs) ":" (last xs) ":" (peek xs) ":" (count xp) ":" (last xp) ":"
+              (second ys) ":" (last ys) ":" (peek ys) ":" (count yp) ":" (first yp)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "collection_positional_helpers" "2:3:3:2:2:2:3:1:2:2\n"
+    ocaml_source
+
+let test_peek_rejects_unsupported_collections () =
+  Cljml.Compiler.compile_string {|(def x (peek (hash-set 1)))|}
+  |> expect_error "peek expects a list or vector"
+
 let test_let_rejects_odd_binding_forms () =
   Cljml.Compiler.compile_string {|(def x (let [a 1 b] a))|}
   |> expect_error "let bindings require an even number of forms"
@@ -622,6 +641,8 @@ let tests =
     ("typed empty lists work", test_typed_empty_lists);
     ("lists reject mixed element types", test_lists_reject_mixed_element_types);
     ("conj rejects list type mismatch", test_conj_rejects_list_type_mismatch);
+    ("collection positional helpers work", test_collection_positional_helpers);
+    ("peek rejects unsupported collections", test_peek_rejects_unsupported_collections);
     ("let rejects odd binding forms", test_let_rejects_odd_binding_forms);
     ("map rejects non-function argument", test_map_rejects_non_function_argument);
     ( "incremental compilation preserves state",

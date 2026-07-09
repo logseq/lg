@@ -85,8 +85,8 @@ The compiler should support this syntax without macros.
 | Arithmetic | `+`, `-`, `*`, `/`, `inc`, `dec`, `<`, `<=`, `>`, `>=`, `=` | 1 |
 | Strings | `str` | 1 |
 | Maps | `get`, `assoc`, `dissoc`, `contains?`, `keys`, `vals` | 1 |
-| Vectors | `vector`, `conj`, `count`, `nth`, `first`, `rest` | 1 |
-| Lists | `list`, `list-of`, `cons`, `conj`, `count`, `nth`, `first`, `rest` | 2 |
+| Vectors | `vector`, `conj`, `count`, `nth`, `first`, `second`, `last`, `peek`, `pop`, `rest` | 1 |
+| Lists | `list`, `list-of`, `cons`, `conj`, `count`, `nth`, `first`, `second`, `last`, `peek`, `pop`, `rest` | 2 |
 | Sequences | `seq`, `empty?`, `map`, `filter`, `reduce` | 2 |
 | Functions | `apply`, `comp`, `partial`, `identity`, `constantly` | 2 |
 | Sets | `hash-set`, `contains?`, `disj` | 3 |

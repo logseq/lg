@@ -39,9 +39,9 @@ The compiler infers record-like map shapes automatically:
   newline.
 - `+`, `*`, `-`, `/`, and chained comparisons follow Clojure-style arities
   where the current integer-only type system can represent them.
-- `list`, `list-of`, `cons`, `map`, `filter`, `reduce`, `apply`, `comp`,
-  `partial`, `identity`, and `constantly` are supported for the current typed
-  collection/function subset.
+- `list`, `list-of`, `cons`, `second`, `last`, `peek`, `pop`, `map`,
+  `filter`, `reduce`, `apply`, `comp`, `partial`, `identity`, and
+  `constantly` are supported for the current typed collection/function subset.
 - `hash-set`, `disj`, and `contains?` are supported for homogeneous sets.
 - `(:require [some.ns :as alias])` can alias previously compiled namespaces.
 - `(:require [ocaml.String :as string])` can alias a small typed table of OCaml

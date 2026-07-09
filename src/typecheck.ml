@@ -274,6 +274,10 @@ and compile_call current_ns env name arg_forms =
   | "count" -> compile_count current_ns env arg_forms
   | "conj" -> compile_conj current_ns env arg_forms
   | "first" -> compile_first current_ns env arg_forms
+  | "second" -> compile_second current_ns env arg_forms
+  | "last" -> compile_last current_ns env arg_forms
+  | "peek" -> compile_peek current_ns env arg_forms
+  | "pop" -> compile_pop current_ns env arg_forms
   | "nth" -> compile_nth current_ns env arg_forms
   | "get" -> compile_get current_ns env arg_forms
   | "assoc" -> compile_assoc current_ns env arg_forms
@@ -464,6 +468,51 @@ and compile_first current_ns env arg_forms =
       | TVector inner -> Ok (typed inner ("Rrbvec.nth (" ^ collection.code ^ ") 0"))
       | _ -> Error.error "first expects a list or vector")
   | Ok _ -> Error.error "first expects 1 arguments"
+
+and compile_second current_ns env arg_forms =
+  match compile_args_for current_ns env arg_forms with
+  | Error _ as err -> err
+  | Ok [ collection ] -> (
+      match collection.ty with
+      | TList inner -> Ok (typed inner ("List.nth (" ^ collection.code ^ ") 1"))
+      | TVector inner -> Ok (typed inner ("Rrbvec.nth (" ^ collection.code ^ ") 1"))
+      | _ -> Error.error "second expects a list or vector")
+  | Ok _ -> Error.error "second expects 1 arguments"
+
+and compile_last current_ns env arg_forms =
+  match compile_args_for current_ns env arg_forms with
+  | Error _ as err -> err
+  | Ok [ collection ] -> (
+      match collection.ty with
+      | TList inner -> Ok (typed inner ("List.hd (List.rev (" ^ collection.code ^ "))"))
+      | TVector inner ->
+          Ok (typed inner ("Option.get (Rrbvec.peek_back (" ^ collection.code ^ "))"))
+      | _ -> Error.error "last expects a list or vector")
+  | Ok _ -> Error.error "last expects 1 arguments"
+
+and compile_peek current_ns env arg_forms =
+  match compile_args_for current_ns env arg_forms with
+  | Error _ as err -> err
+  | Ok [ collection ] -> (
+      match collection.ty with
+      | TList inner -> Ok (typed inner ("List.hd (" ^ collection.code ^ ")"))
+      | TVector inner ->
+          Ok (typed inner ("Option.get (Rrbvec.peek_back (" ^ collection.code ^ "))"))
+      | _ -> Error.error "peek expects a list or vector")
+  | Ok _ -> Error.error "peek expects 1 arguments"
+
+and compile_pop current_ns env arg_forms =
+  match compile_args_for current_ns env arg_forms with
+  | Error _ as err -> err
+  | Ok [ collection ] -> (
+      match collection.ty with
+      | TList _ -> Ok (typed collection.ty ("List.tl (" ^ collection.code ^ ")"))
+      | TVector _ ->
+          Ok
+            (typed collection.ty
+               ("snd (Option.get (Rrbvec.pop_back (" ^ collection.code ^ ")))"))
+      | _ -> Error.error "pop expects a list or vector")
+  | Ok _ -> Error.error "pop expects 1 arguments"
 
 and compile_nth current_ns env arg_forms =
   match compile_args_for current_ns env arg_forms with

@@ -52,7 +52,9 @@ Incremental compilation preserves namespace, alias, type counter, and binding st
 
 Vectors compile to `Rrbvec.t` persistent vectors.
 
-Lists compile to OCaml lists and support `list`, `list-of`, `cons`, `conj`, `first`, `rest`, `nth`, `count`, `map`, `filter`, and `reduce`.
+Lists compile to OCaml lists and support `list`, `list-of`, `cons`, `conj`, `first`, `second`, `last`, `peek`, `pop`, `rest`, `nth`, `count`, `map`, `filter`, and `reduce`.
+
+Vectors support `first`, `second`, `last`, `peek`, `pop`, `rest`, `nth`, and the current eager sequence operations.
 
 Empty vector literals still require explicit element typing.
 
