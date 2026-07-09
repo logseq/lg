@@ -220,8 +220,9 @@ Parsetree backend no longer reparses the whole generated program: it lowers
 compiled items independently, constructs structural record definitions
 directly as `Pstr_type` and `Pstr_value`, and directly constructs ordinary
 top-level value/effect bindings. Namespace and protocol marker comments do not
-produce AST nodes. Compound `defn`, protocol implementation, and module items
-remain source-backed and are parsed at their item boundary.
+produce AST nodes. Row type definitions, `defn`, and protocol implementation
+bindings are also structured items. Module items remain source-backed and are
+parsed at their item boundary.
 `Cljml.Compiler.compile_chunk_parsetree` follows the same incremental state
 model as `compile_chunk`. Expression lowering still needs to move from source
 snippets to direct Parsetree builders. Parsetree is a backend representation

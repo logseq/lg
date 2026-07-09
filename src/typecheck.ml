@@ -57,6 +57,15 @@ let row_type_defs row_type_names param_tys =
     row_type_names param_tys
   |> List.filter_map Fun.id
 
+let row_type_items row_type_names param_tys =
+  List.map2
+    (fun row_type_name param_ty ->
+      match (row_type_name, param_ty) with
+      | Some type_name, TRecord fields -> Some (Type_def { type_name; fields })
+      | _ -> None)
+    row_type_names param_tys
+  |> List.filter_map Fun.id
+
 let row_project_code type_name fields arg =
   let source = "__row_source" in
   let values =
@@ -2184,21 +2193,25 @@ let compile_extend_type current_ns env next_type receiver_keyword protocol_name 
                                       let binding = Types.binding ocaml_name expr.ty in
                                       Ok
                                         ( env @ [ (env_key, binding) ],
-                                          "let " ^ ocaml_name ^ " = " ^ expr.code )))
+                                          Value_binding
+                                            {
+                                              pattern = Named ocaml_name;
+                                              expression = expr.code;
+                                            } )))
                         | _ -> Error.error "protocol method did not compile to a function"))))
         | _ -> Error.error "extend-type methods must be (method-name [params] body)"
       in
-      let rec loop env code_parts = function
+      let rec loop env items = function
         | [] ->
             Ok
               ( current_ns,
                 env,
                 next_type,
-                Emit (String.concat "\n\n" (List.rev code_parts)) )
+                Group (List.rev items) )
         | method_form :: rest -> (
             match compile_method env method_form with
             | Error _ as err -> err
-            | Ok (env, code) -> loop env (code :: code_parts) rest)
+            | Ok (env, item) -> loop env (item :: items) rest)
       in
       loop env [] method_forms
 
@@ -2341,15 +2354,16 @@ let compile_top_level current_ns env next_type = function
           | TFn _ ->
               let env_key = Names.namespaced_key current_ns name in
               let binding = Types.binding ~row_param_types ocaml_name expr.ty in
-              let type_defs = row_type_defs row_param_types param_tys in
-              let code =
-                String.concat "\n\n" (type_defs @ [ "let " ^ ocaml_name ^ " = " ^ expr.code ])
+              let type_items = row_type_items row_param_types param_tys in
+              let value_item =
+                Value_binding
+                  { pattern = Named ocaml_name; expression = expr.code }
               in
               Ok
                 ( current_ns,
                   env @ [ (env_key, binding) ],
                   next_type,
-                  Emit code )
+                  Group (type_items @ [ value_item ]) )
           | _ -> Error.error "defn body did not compile to a function"))
   | FList (FSymbol "defprotocol" :: FSymbol protocol_name :: method_forms) ->
       compile_defprotocol current_ns env next_type protocol_name method_forms

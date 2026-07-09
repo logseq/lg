@@ -56,7 +56,7 @@ let parse_record_values var_name values =
   in
   loop [] values
 
-let record_definition var_name type_name fields values =
+let record_type_definition type_name fields =
   let label_declarations =
     fields
     |> List.map (fun (field : Types.field) ->
@@ -65,6 +65,10 @@ let record_definition var_name type_name fields values =
   let type_declaration =
     Ast_helper.Type.mk ~loc ~kind:(Ptype_record label_declarations) (str type_name)
   in
+  Ast_helper.Str.type_ ~loc Nonrecursive [ type_declaration ]
+
+let record_definition var_name type_name fields values =
+  let type_item = record_type_definition type_name fields in
   match parse_record_values var_name values with
   | Error _ as err -> err
   | Ok record_fields ->
@@ -78,8 +82,7 @@ let record_definition var_name type_name fields values =
           annotated_expr
       in
       Ok
-        [ Ast_helper.Str.type_ ~loc Nonrecursive [ type_declaration ];
-          Ast_helper.Str.value ~loc Nonrecursive [ value_binding ] ]
+        [ type_item; Ast_helper.Str.value ~loc Nonrecursive [ value_binding ] ]
 
 let value_pattern = function
   | Types.Named name -> Ast_helper.Pat.var ~loc (str name)
@@ -102,7 +105,7 @@ let value_binding pattern expression =
       in
       Ok [ Ast_helper.Str.value ~loc Nonrecursive [ binding ] ]
 
-let structure_of_item index = function
+let rec structure_of_item index = function
   | Types.Emit source ->
       parse_implementation
         ~filename:("<cljml-generated-item-" ^ string_of_int index ^ ">")
@@ -110,10 +113,13 @@ let structure_of_item index = function
   | Types.Value_binding { pattern; expression } ->
       value_binding pattern expression
   | Types.Comment _ -> Ok []
+  | Types.Type_def { type_name; fields } ->
+      Ok [ record_type_definition type_name fields ]
+  | Types.Group items -> structure_of_items items
   | Types.Record_def { var_name; type_name; fields; values } ->
       record_definition var_name type_name fields values
 
-let structure_of_items items =
+and structure_of_items items =
   let rec loop index acc = function
     | [] -> Ok (List.concat (List.rev acc))
     | item :: rest -> (

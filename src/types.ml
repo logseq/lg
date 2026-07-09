@@ -43,6 +43,11 @@ type compiled_item =
       expression : string;
     }
   | Comment of string
+  | Type_def of {
+      type_name : string;
+      fields : field list;
+    }
+  | Group of compiled_item list
   | Record_def of {
       var_name : string;
       type_name : string;

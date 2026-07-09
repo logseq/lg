@@ -2004,6 +2004,42 @@ let test_parsetree_backend_builds_native_value_items () =
       | _ -> failwith "expected definition and effect value structure items")
   | _ -> failwith "expected exactly two value structure items"
 
+let test_parsetree_backend_builds_native_defn_items () =
+  let structure =
+    Cljml.Compiler.compile_parsetree
+      {|(defn user-name [{:keys [name]}] name)|}
+    |> expect_ok
+  in
+  match structure with
+  | [ type_item; value_item ] -> (
+      match (type_item.pstr_desc, value_item.pstr_desc) with
+      | Pstr_type _, Pstr_value _ ->
+          if not (type_item.pstr_loc.loc_ghost && value_item.pstr_loc.loc_ghost) then
+            failwith "expected native defn structure items with ghost locations"
+      | _ -> failwith "expected row type and function value structure items")
+  | _ -> failwith "expected row type and function value structure items"
+
+let test_parsetree_backend_builds_native_protocol_items () =
+  let structure =
+    Cljml.Compiler.compile_parsetree
+      {|
+(defprotocol Labelled
+  (label [x] :string))
+(extend-type :int
+  Labelled
+  (label [x] (str "int:" x)))
+|}
+    |> expect_ok
+  in
+  match structure with
+  | [ item ] -> (
+      match item.pstr_desc with
+      | Pstr_value _ ->
+          if not item.pstr_loc.loc_ghost then
+            failwith "expected native protocol value item with a ghost location"
+      | _ -> failwith "expected protocol implementation value item")
+  | _ -> failwith "expected one protocol implementation value item"
+
 let test_incremental_parsetree_backend_preserves_state () =
   let state = Cljml.Compiler.empty_state in
   let state, people_structure =
@@ -2314,6 +2350,10 @@ let tests =
       test_parsetree_backend_builds_native_record_items );
     ( "parsetree backend builds native value items",
       test_parsetree_backend_builds_native_value_items );
+    ( "parsetree backend builds native defn items",
+      test_parsetree_backend_builds_native_defn_items );
+    ( "parsetree backend builds native protocol items",
+      test_parsetree_backend_builds_native_protocol_items );
     ( "incremental parsetree backend preserves state",
       test_incremental_parsetree_backend_preserves_state );
   ]

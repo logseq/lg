@@ -111,7 +111,7 @@ let emit_record_def var_name type_name (fields : field list) values =
   Printf.sprintf "%s\n\nlet %s : %s = {\n%s\n}" (emit_type type_name fields)
     var_name type_name values
 
-let emit_item = function
+let rec emit_item = function
   | Emit code -> code
   | Value_binding { pattern; expression } ->
       let pattern =
@@ -122,6 +122,8 @@ let emit_item = function
       in
       "let " ^ pattern ^ " = " ^ expression
   | Comment text -> "(* " ^ text ^ " *)"
+  | Type_def { type_name; fields } -> emit_type type_name fields
+  | Group items -> items |> List.map emit_item |> String.concat "\n\n"
   | Record_def { var_name; type_name; fields; values } ->
       emit_record_def var_name type_name fields values
 
