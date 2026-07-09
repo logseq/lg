@@ -221,12 +221,14 @@ compiled items independently, constructs structural record definitions
 directly as `Pstr_type` and `Pstr_value`, and directly constructs ordinary
 top-level value/effect bindings. Namespace and protocol marker comments do not
 produce AST nodes. Row type definitions, `defn`, and protocol implementation
-bindings are also structured items. Module items remain source-backed and are
-parsed at their item boundary.
+bindings are also structured items. Nested modules are represented recursively
+and lower directly to `Pstr_module` and `Pmod_structure`; there is no remaining
+whole-program or structure-item OCaml parser path.
 `Cljml.Compiler.compile_chunk_parsetree` follows the same incremental state
-model as `compile_chunk`. Expression lowering still needs to move from source
-snippets to direct Parsetree builders. Parsetree is a backend representation
-here, not cljml's full type system.
+model as `compile_chunk`. Typed expression payloads are still OCaml snippets
+and use `Parse.expression`; expression lowering still needs to move to a
+structured expression IR. Parsetree is a backend representation here, not
+cljml's full type system.
 
 The typed standard library also includes a `clojure.string` namespace that can
 be required with `:as` or `:refer`. Its current subset includes `blank?`,

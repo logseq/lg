@@ -379,8 +379,9 @@ They do not test internal AST shapes directly.
 - Lower compiled items independently in the Parsetree backend. Structural
   record definitions and ordinary top-level bindings use direct Parsetree
   builders. Row type definitions, functions, and protocol implementations are
-  grouped structured items. Modules remain the final source-backed structure
-  item boundary until their body representation is structured.
+  grouped structured items. Modules recursively contain compiled items and
+  lower directly to Parsetree. Typed expression payloads remain the final
+  source-backed boundary until their representation is structured.
 - Preserve enough compiler state to support editor/server workflows without reparsing and rechecking unrelated chunks.
 - Use extensive integration tests before expanding each core API category.
 - The current `RCmerci/rrbvec` repository has an opam file but no package in the active opam index, so the prototype vendors its library source.

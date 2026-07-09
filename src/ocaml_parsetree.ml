@@ -1,13 +1,6 @@
 open Asttypes
 open Parsetree
 
-let parse_implementation ?(filename = "<cljml-generated>") source =
-  let lexbuf = Lexing.from_string source in
-  Location.init lexbuf filename;
-  try Ok (Parse.implementation lexbuf)
-  with exn ->
-    Error.error ("generated OCaml did not parse: " ^ Printexc.to_string exn)
-
 let parse_expression ~context source =
   let lexbuf = Lexing.from_string source in
   Location.init lexbuf context;
@@ -105,29 +98,34 @@ let value_binding pattern expression =
       in
       Ok [ Ast_helper.Str.value ~loc Nonrecursive [ binding ] ]
 
-let rec structure_of_item index = function
-  | Types.Emit source ->
-      parse_implementation
-        ~filename:("<cljml-generated-item-" ^ string_of_int index ^ ">")
-        source
+let rec structure_of_item = function
   | Types.Value_binding { pattern; expression } ->
       value_binding pattern expression
   | Types.Comment _ -> Ok []
   | Types.Type_def { type_name; fields } ->
       Ok [ record_type_definition type_name fields ]
   | Types.Group items -> structure_of_items items
+  | Types.Module_def { module_name; items } -> (
+      match structure_of_items items with
+      | Error _ as err -> err
+      | Ok body ->
+          let module_expr = Ast_helper.Mod.structure ~loc body in
+          let module_binding =
+            Ast_helper.Mb.mk ~loc (Location.mkloc (Some module_name) loc) module_expr
+          in
+          Ok [ Ast_helper.Str.module_ ~loc module_binding ])
   | Types.Record_def { var_name; type_name; fields; values } ->
       record_definition var_name type_name fields values
 
 and structure_of_items items =
-  let rec loop index acc = function
+  let rec loop acc = function
     | [] -> Ok (List.concat (List.rev acc))
     | item :: rest -> (
-        match structure_of_item index item with
+        match structure_of_item item with
         | Error _ as err -> err
-        | Ok structure -> loop (index + 1) (structure :: acc) rest)
+        | Ok structure -> loop (structure :: acc) rest)
   in
-  loop 1 [] items
+  loop [] items
 
 let print_implementation structure =
   Format.asprintf "%a@." Pprintast.structure structure

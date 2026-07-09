@@ -37,7 +37,6 @@ type value_pattern =
   | Ignore_pattern
 
 type compiled_item =
-  | Emit of string
   | Value_binding of {
       pattern : value_pattern;
       expression : string;
@@ -48,6 +47,10 @@ type compiled_item =
       fields : field list;
     }
   | Group of compiled_item list
+  | Module_def of {
+      module_name : string;
+      items : compiled_item list;
+    }
   | Record_def of {
       var_name : string;
       type_name : string;

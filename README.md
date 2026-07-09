@@ -12,7 +12,8 @@ first, then OCaml lowering:
 - `Cljml.Compiler.compile_parsetree` lowers compiled items independently into
   `Parsetree.structure`. Structural records, ordinary top-level values,
   effects, row type definitions, functions, protocol implementations, and
-  comments are constructed directly. Module items remain source-backed.
+  nested modules are constructed directly. Typed expression payloads are the
+  remaining source-backed backend boundary.
 - `Cljml.Compiler.compile_chunk_parsetree` uses the same incremental compiler
   state as `compile_chunk`, but returns an OCaml structure for the current
   chunk.

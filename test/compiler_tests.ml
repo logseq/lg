@@ -2040,6 +2040,33 @@ let test_parsetree_backend_builds_native_protocol_items () =
       | _ -> failwith "expected protocol implementation value item")
   | _ -> failwith "expected one protocol implementation value item"
 
+let test_parsetree_backend_builds_native_module_items () =
+  let structure =
+    Cljml.Compiler.compile_parsetree
+      {|
+(module Math
+  (def answer 42)
+  (module Nested
+    (def value 7)))
+|}
+    |> expect_ok
+  in
+  match structure with
+  | [ module_item ] -> (
+      match module_item.pstr_desc with
+      | Pstr_module binding -> (
+          match binding.pmb_expr.pmod_desc with
+          | Pmod_structure [ value_item; nested_item ] ->
+              if not
+                   (module_item.pstr_loc.loc_ghost
+                   && binding.pmb_expr.pmod_loc.loc_ghost
+                   && value_item.pstr_loc.loc_ghost
+                   && nested_item.pstr_loc.loc_ghost)
+              then failwith "expected native nested module items with ghost locations"
+          | _ -> failwith "expected value and nested module body items")
+      | _ -> failwith "expected module structure item")
+  | _ -> failwith "expected one module structure item"
+
 let test_incremental_parsetree_backend_preserves_state () =
   let state = Cljml.Compiler.empty_state in
   let state, people_structure =
@@ -2354,6 +2381,8 @@ let tests =
       test_parsetree_backend_builds_native_defn_items );
     ( "parsetree backend builds native protocol items",
       test_parsetree_backend_builds_native_protocol_items );
+    ( "parsetree backend builds native module items",
+      test_parsetree_backend_builds_native_module_items );
     ( "incremental parsetree backend preserves state",
       test_incremental_parsetree_backend_preserves_state );
   ]

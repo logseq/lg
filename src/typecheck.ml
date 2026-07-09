@@ -48,15 +48,6 @@ let row_param_type_names prefix param_tys =
        | TRecord _ -> Some (prefix ^ "_row" ^ string_of_int index)
        | _ -> None)
 
-let row_type_defs row_type_names param_tys =
-  List.map2
-    (fun row_type_name param_ty ->
-      match (row_type_name, param_ty) with
-      | Some type_name, TRecord fields -> Some (Codegen.emit_type type_name fields)
-      | _ -> None)
-    row_type_names param_tys
-  |> List.filter_map Fun.id
-
 let row_type_items row_type_names param_tys =
   List.map2
     (fun row_type_name param_ty ->
@@ -2221,7 +2212,7 @@ let module_binding_ocaml_name module_path name =
   Names.module_path_to_ocaml module_path ^ "." ^ Names.sanitize_name name
 
 let rec compile_module current_ns env next_type module_path module_segment forms =
-  let rec compile_module_form env public_bindings next_type code_parts = function
+  let rec compile_module_form env public_bindings next_type items = function
     | FList [ FSymbol "def"; FSymbol name; expr_form ] -> (
         match compile_expr module_path env expr_form with
         | Error _ as err -> err
@@ -2238,20 +2229,25 @@ let rec compile_module current_ns env next_type module_path module_segment forms
                 | None -> Error.error "internal error: record expression missing values"
                 | Some values ->
                     let type_name = "t" ^ string_of_int next_type in
-                    let code =
-                      Codegen.emit_record_def local_name type_name fields values
+                    let item =
+                      Record_def
+                        { var_name = local_name; type_name; fields; values }
                     in
                     Ok
                       ( env @ [ (key, local_binding) ],
                         public_bindings @ [ (key, public_binding) ],
                         next_type + 1,
-                        code :: code_parts ))
+                        item :: items ))
             | _ ->
+                let item =
+                  Value_binding
+                    { pattern = Named local_name; expression = expr.code }
+                in
                 Ok
                   ( env @ [ (key, local_binding) ],
                     public_bindings @ [ (key, public_binding) ],
                     next_type,
-                    ("let " ^ local_name ^ " = " ^ expr.code) :: code_parts )))
+                    item :: items )))
     | FList (FSymbol "defn" :: FSymbol name :: params :: body_forms) -> (
         match prepare_fn module_path env params body_forms with
         | Error _ as err -> err
@@ -2274,41 +2270,41 @@ let rec compile_module current_ns env next_type module_path module_segment forms
                 let public_binding =
                   Types.binding ~row_param_types:public_row_types public_name expr.ty
                 in
-                let type_defs = row_type_defs local_row_types param_tys in
-                let code =
-                  String.concat "\n\n" (type_defs @ [ "let " ^ local_name ^ " = " ^ expr.code ])
+                let type_items = row_type_items local_row_types param_tys in
+                let value_item =
+                  Value_binding
+                    { pattern = Named local_name; expression = expr.code }
                 in
                 Ok
                   ( env @ [ (key, local_binding) ],
                     public_bindings @ [ (key, public_binding) ],
                     next_type,
-                    code :: code_parts )
+                    Group (type_items @ [ value_item ]) :: items )
             | _ -> Error.error "defn body did not compile to a function"))
     | FList (FSymbol "module" :: FSymbol nested_segment :: nested_forms) -> (
         let nested_path = module_path ^ "." ^ nested_segment in
         match compile_module current_ns env next_type nested_path nested_segment nested_forms with
         | Error _ as err -> err
-        | Ok (_current_ns, nested_public_bindings, next_type, nested_code) ->
+        | Ok (_current_ns, nested_public_bindings, next_type, nested_item) ->
             Ok
               ( env @ nested_public_bindings,
                 public_bindings @ nested_public_bindings,
                 next_type,
-                nested_code :: code_parts ))
+                nested_item :: items ))
     | _ -> Error.error "module forms must be def, defn, or module"
-  and loop env public_bindings next_type code_parts = function
+  and loop env public_bindings next_type items = function
     | [] ->
         let module_name = Names.module_segment_to_ocaml module_segment in
-        let body = code_parts |> List.rev |> String.concat "\n\n" in
         Ok
           ( current_ns,
             public_bindings,
             next_type,
-            "module " ^ module_name ^ " = struct\n" ^ body ^ "\nend" )
+            Module_def { module_name; items = List.rev items } )
     | form :: rest -> (
-        match compile_module_form env public_bindings next_type code_parts form with
+        match compile_module_form env public_bindings next_type items form with
         | Error _ as err -> err
-        | Ok (env, public_bindings, next_type, code_parts) ->
-            loop env public_bindings next_type code_parts rest)
+        | Ok (env, public_bindings, next_type, items) ->
+            loop env public_bindings next_type items rest)
   in
   loop env [] next_type [] forms
 
@@ -2375,8 +2371,8 @@ let compile_top_level current_ns env next_type = function
   | FList (FSymbol "module" :: FSymbol module_name :: forms) -> (
       match compile_module current_ns env next_type module_name module_name forms with
       | Error _ as err -> err
-      | Ok (current_ns, module_bindings, next_type, code) ->
-          Ok (current_ns, env @ module_bindings, next_type, Emit code))
+      | Ok (current_ns, module_bindings, next_type, item) ->
+          Ok (current_ns, env @ module_bindings, next_type, item))
   | FList (FSymbol (("print" | "println") as name) :: args) -> (
       match compile_call current_ns env name args with
       | Error _ as err -> err

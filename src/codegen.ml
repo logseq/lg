@@ -112,7 +112,6 @@ let emit_record_def var_name type_name (fields : field list) values =
     var_name type_name values
 
 let rec emit_item = function
-  | Emit code -> code
   | Value_binding { pattern; expression } ->
       let pattern =
         match pattern with
@@ -124,6 +123,9 @@ let rec emit_item = function
   | Comment text -> "(* " ^ text ^ " *)"
   | Type_def { type_name; fields } -> emit_type type_name fields
   | Group items -> items |> List.map emit_item |> String.concat "\n\n"
+  | Module_def { module_name; items } ->
+      let body = items |> List.map emit_item |> String.concat "\n\n" in
+      "module " ^ module_name ^ " = struct\n" ^ body ^ "\nend"
   | Record_def { var_name; type_name; fields; values } ->
       emit_record_def var_name type_name fields values
 
