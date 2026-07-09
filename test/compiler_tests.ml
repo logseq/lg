@@ -269,6 +269,23 @@ let test_type_predicates_reject_wrong_arity () =
   Cljml.Compiler.compile_string {|(def x (vector? [1] [2]))|}
   |> expect_error "vector? expects 1 arguments"
 
+let test_subs_core_api () =
+  let source =
+    {|
+(println (str (subs "clojure" 3) ":" (subs "clojure" 1 4)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "subs_core_api" "jure:loj\n" ocaml_source
+
+let test_subs_rejects_non_string_sources () =
+  Cljml.Compiler.compile_string {|(def x (subs 123 1))|}
+  |> expect_error "subs expects a string"
+
+let test_subs_rejects_non_int_indexes () =
+  Cljml.Compiler.compile_string {|(def x (subs "abc" "1"))|}
+  |> expect_error "subs indexes must be int"
+
 let test_namespaces_resolve_qualified_and_current_symbols () =
   let source =
     {|
@@ -1000,6 +1017,9 @@ let tests =
     ("boolean core api works", test_boolean_core_api);
     ("type predicates work", test_type_predicates);
     ("type predicates reject wrong arity", test_type_predicates_reject_wrong_arity);
+    ("subs core api works", test_subs_core_api);
+    ("subs rejects non-string sources", test_subs_rejects_non_string_sources);
+    ("subs rejects non-int indexes", test_subs_rejects_non_int_indexes);
     ( "namespaces resolve qualified and current symbols",
       test_namespaces_resolve_qualified_and_current_symbols );
     ( "namespaces prevent unqualified symbol collisions",

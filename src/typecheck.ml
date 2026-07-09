@@ -263,6 +263,7 @@ and compile_call current_ns env name arg_forms =
             | _ -> args |> List.map (Codegen.stringify_expr ~pr:false) |> String.concat " ^ "
           in
           Ok (typed TString code))
+  | "subs" -> compile_subs current_ns env arg_forms
   | "pr-str" -> (
       match compile_args () with
       | Error _ as err -> err
@@ -422,6 +423,29 @@ and compile_count current_ns env arg_forms =
       | TString -> Ok (typed TInt ("String.length " ^ arg.code))
       | _ -> Error.error "count expects a collection or string")
   | Ok _ -> Error.error "count expects 1 arguments"
+
+and compile_subs current_ns env arg_forms =
+  match compile_args_for current_ns env arg_forms with
+  | Error _ as err -> err
+  | Ok [ source; start ] -> (
+      match (source.ty, start.ty) with
+      | TString, TInt ->
+          Ok
+            (typed TString
+               ("String.sub (" ^ source.code ^ ") (" ^ start.code ^ ") (String.length ("
+              ^ source.code ^ ") - (" ^ start.code ^ "))"))
+      | TString, _ -> Error.error "subs indexes must be int"
+      | _ -> Error.error "subs expects a string")
+  | Ok [ source; start; stop ] -> (
+      match (source.ty, start.ty, stop.ty) with
+      | TString, TInt, TInt ->
+          Ok
+            (typed TString
+               ("String.sub (" ^ source.code ^ ") (" ^ start.code ^ ") ((" ^ stop.code
+              ^ ") - (" ^ start.code ^ "))"))
+      | TString, _, _ -> Error.error "subs indexes must be int"
+      | _ -> Error.error "subs expects a string")
+  | Ok _ -> Error.error "subs expects string, start, and optional end"
 
 and compile_list current_ns env forms =
   match forms with

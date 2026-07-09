@@ -53,6 +53,7 @@ The compiler infers record-like map shapes automatically:
   newline.
 - `int?`, `string?`, `keyword?`, `boolean?`, `vector?`, `list?`, `set?`, and
   `map?` are supported as static type predicates.
+- `subs` supports two- and three-argument typed string slicing.
 - `+`, `*`, `-`, `/`, and chained comparisons follow Clojure-style arities
   where the current integer-only type system can represent them.
 - `list`, `list-of`, `cons`, `second`, `last`, `peek`, `pop`, `map`,
