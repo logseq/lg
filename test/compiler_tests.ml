@@ -818,11 +818,16 @@ let test_function_helpers () =
 (def double (fn [x] (* x 2)))
 (def add10-after-double (comp add10 double))
 (def always-ok (constantly "ok"))
-(println (str (add10-after-double 4) ":" (identity 7) ":" (always-ok false) ":" (apply + [1 2 3])))
+(println (str (add10-after-double 4) ":" (identity 7) ":" (always-ok false) ":"
+              (apply + [1 2 3]) ":" (apply + (hash-set 1 2 3))))
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "function_helpers" "18:7:ok:6\n" ocaml_source
+  assert_ocaml_runs "function_helpers" "18:7:ok:6:6\n" ocaml_source
+
+let test_apply_rejects_bad_set_reducers () =
+  Cljml.Compiler.compile_string {|(def x (apply + (hash-set "a" "b")))|}
+  |> expect_error "apply currently supports int binary reducers"
 
 let test_set_core_api () =
   let source =
@@ -1256,6 +1261,7 @@ let tests =
     ("let, defn, and fn values work", test_let_defn_and_fn_values);
     ("sequence core api works on vectors", test_sequence_core_api_on_vectors);
     ("function helpers work", test_function_helpers);
+    ("apply rejects bad set reducers", test_apply_rejects_bad_set_reducers);
     ("set core api works", test_set_core_api);
     ("conj rejects set type mismatch", test_conj_rejects_set_type_mismatch);
     ("set sequence core api works", test_set_sequence_core_api);

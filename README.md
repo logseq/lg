@@ -63,6 +63,7 @@ The compiler infers record-like map shapes automatically:
 - `list`, `list-of`, `cons`, `second`, `last`, `peek`, `pop`, `map`,
   `filter`, `reduce`, `apply`, `comp`, `partial`, `identity`, and
   `constantly` are supported for the current typed collection/function subset.
+- `apply` supports integer binary reducers over typed lists, vectors, and sets.
 - `get` supports vector indexes, and `nth` supports typed default values for
   lists and vectors.
 - `empty` returns a same-typed empty list, vector, set, or string.

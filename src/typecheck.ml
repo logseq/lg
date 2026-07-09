@@ -1324,7 +1324,11 @@ and compile_apply current_ns env arg_forms =
               Ok (typed TInt ("Rrbvec.fold_left " ^ fn.code ^ " 0 (" ^ collection.code ^ ")"))
           | TFn _, TVector _ -> Error.error "apply currently supports int binary reducers"
           | _, TVector _ -> Error.error "apply expects a function"
-          | _ -> Error.error "apply expects a vector"))
+          | TFn ([ TInt; TInt ], TInt), TSet TInt ->
+              Ok (typed TInt ("List.fold_left " ^ fn.code ^ " 0 (" ^ collection.code ^ ")"))
+          | TFn _, TSet _ -> Error.error "apply currently supports int binary reducers"
+          | _, TSet _ -> Error.error "apply expects a function"
+          | _ -> Error.error "apply expects a list, vector, or set"))
   | _ -> Error.error "apply expects function and collection"
 
 and compile_comp current_ns env arg_forms =

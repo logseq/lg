@@ -130,6 +130,8 @@ and set predicates.
 
 `map`, `filter`, and `reduce` operate eagerly over lists, vectors, and sets.
 
+`apply` supports integer binary reducers over typed lists, vectors, and sets.
+
 Map literal types are structural records keyed by Clojure keywords.
 
 `hash-map` creates structural records from keyword/value pairs.

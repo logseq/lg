@@ -108,6 +108,9 @@ Sets currently compile to sorted unique OCaml lists and support `hash-set`,
 `set-of`, `conj`, `disj`, `contains?`, `every?`, `not-any?`, `not-every?`,
 `map`, `filter`, and `reduce`.
 
+`apply` currently supports integer binary reducers over typed lists, vectors,
+and sets.
+
 Keywords are statically distinct from strings, although the current runtime
 representation is still an OCaml string.
 
