@@ -12,6 +12,9 @@ first, then OCaml lowering:
 - `Cljml.Compiler.compile_parsetree` is the first Parsetree backend skeleton:
   it lowers the typed result to OCaml source, parses that source into
   `Parsetree.structure`, and lets OCaml's printer/tooling consume the result.
+- `Cljml.Compiler.compile_chunk_parsetree` uses the same incremental compiler
+  state as `compile_chunk`, but returns a parsed OCaml structure for the
+  current chunk.
 - Parsetree is not used as cljml's full type system, and this direction does
   not introduce nilable sequences or lazy seqs.
 

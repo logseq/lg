@@ -1924,6 +1924,30 @@ let test_parsetree_backend_preserves_static_errors () =
   Cljml.Compiler.compile_parsetree {|(def x (+ 1 "two"))|}
   |> expect_error_value "expected int arguments for +"
 
+let test_incremental_parsetree_backend_preserves_state () =
+  let state = Cljml.Compiler.empty_state in
+  let state, people_structure =
+    Cljml.Compiler.compile_chunk_parsetree state
+      {|
+(ns people.core)
+(def user {:name "Ada", :age 36})
+|}
+    |> expect_ok
+  in
+  let _state, app_structure =
+    Cljml.Compiler.compile_chunk_parsetree state
+      {|
+(ns app.main
+  (:require [people.core :as p]))
+(println (str (:name p/user) ":" (:age p/user)))
+|}
+    |> expect_ok
+  in
+  let people_ocaml = Cljml.Compiler.print_parsetree people_structure in
+  let app_ocaml = Cljml.Compiler.print_parsetree app_structure in
+  assert_ocaml_runs "incremental_parsetree_backend_preserves_state" "Ada:36\n"
+    (people_ocaml ^ "\n\n" ^ app_ocaml)
+
 let tests =
   [
     ("records, assoc, and dissoc generate typed OCaml", test_records_assoc_and_dissoc);
@@ -2194,6 +2218,8 @@ let tests =
       test_parsetree_backend_prints_runnable_ocaml );
     ( "parsetree backend preserves static errors",
       test_parsetree_backend_preserves_static_errors );
+    ( "incremental parsetree backend preserves state",
+      test_incremental_parsetree_backend_preserves_state );
   ]
 
 let () =

@@ -208,7 +208,9 @@ Parsetree backend is currently a skeleton for ReasonML-style integration:
 `Cljml.Compiler.compile_parsetree` type checks cljml first, lowers through the
 current OCaml source backend, parses the generated source into
 `Parsetree.structure`, and lets OCaml printer/tooling consume that structure.
-Parsetree is a backend representation here, not cljml's full type system.
+`Cljml.Compiler.compile_chunk_parsetree` follows the same incremental state
+model as `compile_chunk`. Parsetree is a backend representation here, not
+cljml's full type system.
 
 The typed standard library also includes a `clojure.string` namespace that can
 be required with `:as` or `:refer`. Its current subset includes `blank?`,

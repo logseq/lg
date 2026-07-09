@@ -88,3 +88,14 @@ let compile_chunk state source =
       match typecheck_incremental state parsed with
       | Error _ as err -> err
       | Ok (state, typed) -> Ok (state, Ocaml_backend.implementation typed))
+
+let compile_chunk_parsetree state source =
+  match Cljml_frontend.implementation source with
+  | Error _ as err -> err
+  | Ok parsed -> (
+      match typecheck_incremental state parsed with
+      | Error _ as err -> err
+      | Ok (state, typed) -> (
+          match Ocaml_parsetree_backend.implementation typed with
+          | Error _ as err -> err
+          | Ok result -> Ok (state, result.structure)))
