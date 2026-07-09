@@ -55,6 +55,7 @@ The compiler infers record-like map shapes automatically:
   `constantly` are supported for the current typed collection/function subset.
 - `get` supports vector indexes, and `nth` supports typed default values for
   lists and vectors.
+- `empty` returns a same-typed empty list, vector, set, or string.
 - `hash-set`, `disj`, and `contains?` are supported for homogeneous sets.
 - `(:require [some.ns :as alias])` can alias previously compiled namespaces.
 - `(:require [some.ns :refer [user]])` can refer previously compiled namespace

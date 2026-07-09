@@ -718,6 +718,23 @@ let test_sequence_core_api_on_lists () =
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "sequence_core_api_on_lists" "2:4:2:6\n" ocaml_source
 
+let test_empty_core_api () =
+  let source =
+    {|
+(def xs (empty [1 2]))
+(def ys (empty (list 1 2)))
+(def zs (empty (hash-set 1 2)))
+(def s (empty "Ada"))
+(println (str (empty? xs) ":" (empty? ys) ":" (empty? zs) ":" (= s "")))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "empty_core_api" "true:true:true:true\n" ocaml_source
+
+let test_empty_rejects_unsupported_values () =
+  Cljml.Compiler.compile_string {|(def x (empty 1))|}
+  |> expect_error "empty expects a collection or string"
+
 let test_nth_supports_default_values () =
   let source =
     {|
@@ -892,6 +909,8 @@ let tests =
     ("set core api works", test_set_core_api);
     ("list core api works", test_list_core_api);
     ("sequence core api works on lists", test_sequence_core_api_on_lists);
+    ("empty core api works", test_empty_core_api);
+    ("empty rejects unsupported values", test_empty_rejects_unsupported_values);
     ("nth supports default values", test_nth_supports_default_values);
     ("nth rejects default type mismatch", test_nth_rejects_default_type_mismatch);
     ("typed empty lists work", test_typed_empty_lists);

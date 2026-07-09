@@ -87,7 +87,7 @@ The compiler should support this syntax without macros.
 | Maps | `hash-map`, `get`, `assoc`, `dissoc`, `merge`, `update`, `select-keys`, `contains?`, `keys`, `vals` | 1 |
 | Vectors | `vector`, `conj`, `count`, `nth`, `get`, `first`, `second`, `last`, `peek`, `pop`, `rest` | 1 |
 | Lists | `list`, `list-of`, `cons`, `conj`, `count`, `nth`, `first`, `second`, `last`, `peek`, `pop`, `rest` | 2 |
-| Sequences | `seq`, `empty?`, `map`, `filter`, `reduce` | 2 |
+| Sequences | `seq`, `empty`, `empty?`, `map`, `filter`, `reduce` | 2 |
 | Functions | `apply`, `comp`, `partial`, `identity`, `constantly` | 2 |
 | Sets | `hash-set`, `contains?`, `disj` | 3 |
 
@@ -104,6 +104,8 @@ Vector types are homogeneous as `vector<T>` and compile to `Rrbvec.t`.
 List types are homogeneous as `list<T>` and compile to OCaml lists.
 
 `nth` supports a typed default value for out-of-range list and vector indexes.
+
+`empty` returns a same-typed empty list, vector, set, or string.
 
 Map literal types are structural records keyed by Clojure keywords.
 

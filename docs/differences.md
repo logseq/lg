@@ -70,6 +70,8 @@ Vectors support `first`, `second`, `last`, `peek`, `pop`, `rest`, `nth`, `get`, 
 
 Three-argument `nth` returns a typed default for out-of-range list and vector indexes.
 
+`empty` returns a same-typed empty list, vector, set, or string.
+
 Empty vector literals still require explicit element typing.
 
 Use `(vector-of :int)`, `(vector-of :string)`, `(vector-of :bool)`, or `(vector-of :nil)` for typed empty vectors.

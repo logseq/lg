@@ -296,6 +296,7 @@ and compile_call current_ns env name arg_forms =
   | "constantly" -> compile_constantly current_ns env arg_forms
   | "hash-set" -> compile_hash_set current_ns env arg_forms
   | "disj" -> compile_disj current_ns env arg_forms
+  | "empty" -> compile_empty_value current_ns env arg_forms
   | _ -> compile_named_function_call current_ns env name arg_forms
 
 and compile_int_operator name args =
@@ -827,6 +828,18 @@ and compile_empty current_ns env arg_forms =
       | TString -> Ok (typed TBool ("(" ^ collection.code ^ " = \"\")"))
       | _ -> Error.error "empty? expects a collection or string")
   | Ok _ -> Error.error "empty? expects 1 arguments"
+
+and compile_empty_value current_ns env arg_forms =
+  match compile_args_for current_ns env arg_forms with
+  | Error _ as err -> err
+  | Ok [ collection ] -> (
+      match collection.ty with
+      | TList _ -> Ok (typed collection.ty "[]")
+      | TVector _ -> Ok (typed collection.ty "Rrbvec.empty")
+      | TSet _ -> Ok (typed collection.ty "[]")
+      | TString -> Ok (typed TString {|""|})
+      | _ -> Error.error "empty expects a collection or string")
+  | Ok _ -> Error.error "empty expects 1 arguments"
 
 and compile_map_call current_ns env arg_forms =
   match arg_forms with
