@@ -66,6 +66,8 @@ The compiler infers record-like map shapes automatically:
 - `apply` supports integer binary reducers over typed lists, vectors, and sets.
 - `get` supports vector indexes, and `nth` supports typed default values for
   lists and vectors.
+- `rest` returns a same-typed empty list or vector when called on an empty
+  list or vector.
 - `empty` returns a same-typed empty list, vector, set, or string.
 - `into` transfers elements between typed list, vector, and set collections.
 - `take` and `drop` return same-typed list or vector slices.

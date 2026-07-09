@@ -1050,9 +1050,15 @@ and compile_rest current_ns env arg_forms =
   | Error _ as err -> err
   | Ok [ collection ] -> (
       match collection.ty with
-      | TList _ -> Ok (typed collection.ty ("List.tl (" ^ collection.code ^ ")"))
+      | TList _ ->
+          Ok
+            (typed collection.ty
+               ("(match " ^ collection.code ^ " with [] -> [] | _ :: rest -> rest)"))
       | TVector _ ->
-          Ok (typed collection.ty ("Rrbvec.of_list (List.tl (Rrbvec.to_list " ^ collection.code ^ "))"))
+          Ok
+            (typed collection.ty
+               ("Rrbvec.of_list (match Rrbvec.to_list " ^ collection.code
+              ^ " with [] -> [] | _ :: rest -> rest)"))
       | _ -> Error.error "rest expects a list or vector")
   | Ok _ -> Error.error "rest expects 1 arguments"
 

@@ -112,6 +112,9 @@ Vectors are associative collections: integer indexes work with `get`, `assoc`,
 
 List types are homogeneous as `list<T>` and compile to OCaml lists.
 
+`rest` returns a same-typed empty list or vector when called on an empty list
+or vector.
+
 `nth` supports a typed default value for out-of-range list and vector indexes.
 
 `empty` returns a same-typed empty list, vector, set, or string.

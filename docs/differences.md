@@ -78,6 +78,9 @@ Lists compile to OCaml lists and support `list`, `list-of`, `cons`, `conj`, `fir
 
 Vectors support `first`, `second`, `last`, `peek`, `pop`, `rest`, `nth`, `get`, `assoc`, `update`, `contains?`, `subvec`, and the current eager sequence operations.
 
+`rest` returns a same-typed empty list or vector when called on an empty list
+or vector.
+
 Three-argument `nth` returns a typed default for out-of-range list and vector indexes.
 
 `subvec` returns an `Rrbvec.t` persistent vector slice.

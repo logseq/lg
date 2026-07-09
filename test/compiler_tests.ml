@@ -1076,6 +1076,17 @@ let test_typed_empty_lists () =
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "typed_empty_lists" "true:1:42\n" ocaml_source
 
+let test_rest_is_empty_safe () =
+  let source =
+    {|
+(def xs (rest (list-of :int)))
+(def ys (rest (vector-of :int)))
+(println (str (empty? xs) ":" (pr-str xs) ":" (empty? ys) ":" (pr-str ys)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "rest_is_empty_safe" "true:():true:[]\n" ocaml_source
+
 let test_lists_reject_mixed_element_types () =
   Cljml.Compiler.compile_string {|(def xs (list 1 "two"))|}
   |> expect_error "list elements must all have the same type"
@@ -1298,6 +1309,7 @@ let tests =
     ("nth supports default values", test_nth_supports_default_values);
     ("nth rejects default type mismatch", test_nth_rejects_default_type_mismatch);
     ("typed empty lists work", test_typed_empty_lists);
+    ("rest is empty-safe", test_rest_is_empty_safe);
     ("lists reject mixed element types", test_lists_reject_mixed_element_types);
     ("conj rejects list type mismatch", test_conj_rejects_list_type_mismatch);
     ("collection positional helpers work", test_collection_positional_helpers);
