@@ -306,6 +306,8 @@ and compile_call current_ns env name arg_forms =
   | "take" -> compile_take_drop current_ns env "take" arg_forms
   | "drop" -> compile_take_drop current_ns env "drop" arg_forms
   | "reverse" -> compile_reverse current_ns env arg_forms
+  | "every?" | "not-any?" | "not-every?" ->
+      compile_sequence_bool_predicate current_ns env name arg_forms
   | "map" -> compile_map_call current_ns env arg_forms
   | "filter" -> compile_filter current_ns env arg_forms
   | "reduce" -> compile_reduce current_ns env arg_forms
@@ -1057,6 +1059,40 @@ and compile_reverse current_ns env arg_forms =
       | TVector _ -> Ok (typed collection.ty ("Rrbvec.rev (" ^ collection.code ^ ")"))
       | _ -> Error.error "reverse expects a list or vector")
   | Ok _ -> Error.error "reverse expects 1 arguments"
+
+and compile_sequence_bool_predicate current_ns env name arg_forms =
+  match arg_forms with
+  | fn_form :: collection_form :: [] -> (
+      match (compile_function_arg current_ns env fn_form, compile_expr current_ns env collection_form) with
+      | (Error _ as err), _ -> err
+      | _, (Error _ as err) -> err
+      | Ok fn, Ok collection -> (
+          let build all_code =
+            match name with
+            | "every?" -> all_code
+            | "not-any?" -> all_code
+            | "not-every?" -> "not (" ^ all_code ^ ")"
+            | _ -> all_code
+          in
+          let predicate_code =
+            match name with
+            | "not-any?" -> "(fun item -> not (" ^ apply_code fn.code [ "item" ] ^ "))"
+            | _ -> fn.code
+          in
+          match (fn.ty, collection.ty) with
+          | TFn ([ param_ty ], TBool), TList inner when Types.equal param_ty inner ->
+              let all_code = "List.for_all " ^ predicate_code ^ " (" ^ collection.code ^ ")" in
+              Ok (typed TBool (build all_code))
+          | TFn _, TList _ -> Error.error (name ^ " expects a predicate matching list elements")
+          | _, TList _ -> Error.error (name ^ " expects a function")
+          | TFn ([ param_ty ], TBool), TVector inner when Types.equal param_ty inner ->
+              let all_code = "Rrbvec.for_all " ^ predicate_code ^ " (" ^ collection.code ^ ")" in
+              Ok (typed TBool (build all_code))
+          | TFn _, TVector _ ->
+              Error.error (name ^ " expects a predicate matching vector elements")
+          | _, TVector _ -> Error.error (name ^ " expects a function")
+          | _ -> Error.error (name ^ " expects a list or vector")))
+  | _ -> Error.error (name ^ " expects function and collection")
 
 and compile_map_call current_ns env arg_forms =
   match arg_forms with

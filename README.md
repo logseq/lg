@@ -64,6 +64,7 @@ The compiler infers record-like map shapes automatically:
 - `into` transfers elements between typed list, vector, and set collections.
 - `take` and `drop` return same-typed list or vector slices.
 - `reverse` returns a same-typed reversed list or vector.
+- `every?`, `not-any?`, and `not-every?` work on typed lists and vectors.
 - `hash-set`, `disj`, and `contains?` are supported for homogeneous sets.
 - `(:require [some.ns :as alias])` can alias previously compiled namespaces.
 - `(:require [some.ns :refer [user]])` can refer previously compiled namespace

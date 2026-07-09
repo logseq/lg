@@ -86,6 +86,9 @@ the element types match.
 
 `reverse` returns a same-typed reversed list or vector.
 
+`every?`, `not-any?`, and `not-every?` return typed booleans for list and vector
+predicates.
+
 Empty vector literals still require explicit element typing.
 
 Use `(vector-of :int)`, `(vector-of :string)`, `(vector-of :bool)`, or `(vector-of :nil)` for typed empty vectors.

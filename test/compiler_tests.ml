@@ -819,6 +819,23 @@ let test_reverse_rejects_unsupported_collections () =
   Cljml.Compiler.compile_string {|(def x (reverse (hash-set 1)))|}
   |> expect_error "reverse expects a list or vector"
 
+let test_sequence_boolean_predicates () =
+  let source =
+    {|
+(def xs [2 4 6])
+(def ys (list 1 2 3))
+(println (str (every? (fn [x] (> x 0)) xs) ":"
+              (not-any? (fn [x] (> x 10)) xs) ":"
+              (not-every? (fn [x] (> x 1)) ys)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "sequence_boolean_predicates" "true:true:true\n" ocaml_source
+
+let test_sequence_boolean_predicates_reject_non_bool_predicates () =
+  Cljml.Compiler.compile_string {|(def x (every? (fn [x] (+ x 1)) [1 2]))|}
+  |> expect_error "every? expects a predicate matching vector elements"
+
 let test_empty_core_api () =
   let source =
     {|
@@ -1063,6 +1080,9 @@ let tests =
       test_take_and_drop_reject_unsupported_collections );
     ("reverse core api works", test_reverse_core_api);
     ("reverse rejects unsupported collections", test_reverse_rejects_unsupported_collections);
+    ("sequence boolean predicates work", test_sequence_boolean_predicates);
+    ( "sequence boolean predicates reject non-bool predicates",
+      test_sequence_boolean_predicates_reject_non_bool_predicates );
     ("empty core api works", test_empty_core_api);
     ("empty rejects unsupported values", test_empty_rejects_unsupported_values);
     ("into core api works", test_into_core_api);
