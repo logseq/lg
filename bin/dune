@@ -1,0 +1,3 @@
+(executable
+ (name cljml_cli)
+ (libraries cljml rrbvec))

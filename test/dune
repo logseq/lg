@@ -1,0 +1,3 @@
+(test
+ (name compiler_tests)
+ (libraries cljml unix rrbvec))

@@ -1,0 +1,7 @@
+(ns examples.person)
+(def x {:name "Ada", :age 36})
+(def y (assoc x :admin? true))
+(def z (dissoc y :age))
+(def ages [36 37 38])
+(def label (str (get z :name) ":" (get z :admin?) ":" (count ages)))
+(print label)
