@@ -144,8 +144,12 @@ let rec compile_expr current_ns (env : (string * binding) list) = function
       | None -> Error.error ("unknown symbol " ^ name))
   | FVector forms -> compile_vector current_ns env forms
   | FMap pairs -> compile_map current_ns env pairs
-  | FList [ FSymbol "let"; bindings; body ] -> compile_let current_ns env bindings body
-  | FList [ FSymbol "fn"; params; body ] -> compile_fn current_ns env params body
+  | FList (FSymbol "let" :: bindings :: body_forms) ->
+      compile_let current_ns env bindings body_forms
+  | FList (FSymbol "fn" :: params :: body_forms) ->
+      compile_fn current_ns env params body_forms
+  | FList (FSymbol "do" :: body_forms) ->
+      compile_body current_ns env "do requires at least one form" body_forms
   | FList [ FKeyword keyword; target ] ->
       compile_get current_ns env [ target; FKeyword keyword ]
   | FList (FKeyword _ :: _) -> Error.error "keyword lookup expects one argument"
@@ -227,7 +231,18 @@ and compile_if current_ns env condition then_form else_form =
                 ^ else_expr.code ^ ")"))
           else Error.error "if branches must have same type")
 
-and compile_let current_ns env bindings body =
+and compile_body current_ns env empty_error forms =
+  match forms with
+  | [] -> Error.error empty_error
+  | [ form ] -> compile_expr current_ns env form
+  | form :: rest -> (
+      match (compile_expr current_ns env form, compile_body current_ns env empty_error rest) with
+      | (Error _ as err), _ -> err
+      | _, (Error _ as err) -> err
+      | Ok expr, Ok body ->
+          Ok (typed body.ty ("(let _ = " ^ expr.code ^ " in " ^ body.code ^ ")")))
+
+and compile_let current_ns env bindings body_forms =
   match bindings with
   | FVector forms ->
       if List.length forms mod 2 <> 0 then
@@ -235,7 +250,10 @@ and compile_let current_ns env bindings body =
       else
         let rec bind env code_parts = function
           | [] -> (
-              match compile_expr current_ns env body with
+              match
+                compile_body current_ns env "let body requires at least one form"
+                  body_forms
+              with
               | Error _ as err -> err
               | Ok body ->
                   let code =
@@ -261,7 +279,7 @@ and compile_let current_ns env bindings body =
         bind env [] forms
   | _ -> Error.error "let bindings must be a vector"
 
-and compile_fn current_ns env params body =
+and compile_fn current_ns env params body_forms =
   match parse_params params with
   | Error _ as err -> err
   | Ok params ->
@@ -273,7 +291,10 @@ and compile_fn current_ns env params body =
                (env_key, { ocaml_name; ty }))
       in
       let env = env @ param_bindings in
-      match compile_expr current_ns env body with
+      match
+        compile_body current_ns env "function body requires at least one form"
+          body_forms
+      with
       | Error _ as err -> err
       | Ok body ->
           let params =
@@ -864,8 +885,8 @@ let compile_top_level current_ns env next_type = function
                   env @ [ (env_key, binding) ],
                   next_type,
                   Emit ("let " ^ ocaml_name ^ " = " ^ expr.code) )))
-  | FList [ FSymbol "defn"; FSymbol name; params; body ] -> (
-      match compile_fn current_ns env params body with
+  | FList (FSymbol "defn" :: FSymbol name :: params :: body_forms) -> (
+      match compile_fn current_ns env params body_forms with
       | Error _ as err -> err
       | Ok expr -> (
           match expr.ty with

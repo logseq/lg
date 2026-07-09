@@ -31,6 +31,8 @@ The compiler infers record-like map shapes automatically:
   supported for typed function workflows.
 - Function parameters can use `^:int`, `^:string`, `^:bool`, or `^:nil`
   annotations, for example `(fn [^:int x] (+ x 1))`.
+- `do`, `fn`, `defn`, and `let` bodies can contain multiple forms; earlier
+  forms are evaluated for effects and the final form supplies the value.
 - `map`, `filter`, `reduce`, `apply`, `comp`, `partial`, `identity`, and
   `constantly` are supported for the current typed vector/function subset.
 - `hash-set`, `disj`, and `contains?` are supported for homogeneous sets.

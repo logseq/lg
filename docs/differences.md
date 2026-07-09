@@ -24,6 +24,8 @@ Keyword call syntax such as `(:name user)` is supported for structural maps.
 
 Function parameter annotations such as `^:int` and `^:string` are checked at function bodies and call sites.
 
+`do`, `fn`, `defn`, and `let` bodies evaluate forms in order and return the final form's type.
+
 ## Macros
 
 Macros are not supported.

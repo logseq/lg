@@ -321,6 +321,29 @@ let test_typed_function_parameters_reject_bad_bodies () =
   Cljml.Compiler.compile_string {|(defn bad [^:string x] (+ x 1))|}
   |> expect_error "expected int arguments for +"
 
+let test_do_and_multi_form_bodies () =
+  let source =
+    {|
+(defn inc-and-log [^:int x]
+  (print (str "input:" x))
+  (+ x 1))
+(def result
+  (let [base 41]
+    (print "inside-let")
+    (do
+      (print "inside-do")
+      (inc-and-log base))))
+(print (str "result:" result))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "do_and_multi_form_bodies"
+    "inside-let\ninside-do\ninput:41\nresult:42\n" ocaml_source
+
+let test_fn_rejects_empty_body () =
+  Cljml.Compiler.compile_string {|(def f (fn [x]))|}
+  |> expect_error "function body requires at least one form"
+
 let test_vectors_reject_mixed_element_types () =
   Cljml.Compiler.compile_string {|(def xs [1 "two"])|}
   |> expect_error "vector elements must all have the same type"
@@ -424,6 +447,8 @@ let tests =
       test_typed_function_parameters_reject_bad_calls );
     ( "typed function parameters reject bad bodies",
       test_typed_function_parameters_reject_bad_bodies );
+    ("do and multi-form bodies work", test_do_and_multi_form_bodies);
+    ("fn rejects empty body", test_fn_rejects_empty_body);
     ("vectors reject mixed element types", test_vectors_reject_mixed_element_types);
     ("arithmetic rejects non-int arguments", test_arithmetic_rejects_non_int_arguments);
     ("get rejects unknown map fields", test_get_rejects_unknown_map_fields);
