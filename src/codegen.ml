@@ -113,6 +113,15 @@ let emit_record_def var_name type_name (fields : field list) values =
 
 let emit_item = function
   | Emit code -> code
+  | Value_binding { pattern; expression } ->
+      let pattern =
+        match pattern with
+        | Named name -> name
+        | Unit_pattern -> "()"
+        | Ignore_pattern -> "_"
+      in
+      "let " ^ pattern ^ " = " ^ expression
+  | Comment text -> "(* " ^ text ^ " *)"
   | Record_def { var_name; type_name; fields; values } ->
       emit_record_def var_name type_name fields values
 

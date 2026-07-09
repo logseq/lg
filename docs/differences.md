@@ -218,11 +218,14 @@ Currently supported examples include `ocaml.Stdlib` aliases or refers for `strin
 The stable backend still emits OCaml source from cljml's typed IR. The
 Parsetree backend no longer reparses the whole generated program: it lowers
 compiled items independently, constructs structural record definitions
-directly as `Pstr_type` and `Pstr_value`, and parses remaining source-backed
-items at their item boundary. `Cljml.Compiler.compile_chunk_parsetree` follows
-the same incremental state model as `compile_chunk`. Expression and module
-lowering still need to move from source snippets to direct Parsetree builders.
-Parsetree is a backend representation here, not cljml's full type system.
+directly as `Pstr_type` and `Pstr_value`, and directly constructs ordinary
+top-level value/effect bindings. Namespace and protocol marker comments do not
+produce AST nodes. Compound `defn`, protocol implementation, and module items
+remain source-backed and are parsed at their item boundary.
+`Cljml.Compiler.compile_chunk_parsetree` follows the same incremental state
+model as `compile_chunk`. Expression lowering still needs to move from source
+snippets to direct Parsetree builders. Parsetree is a backend representation
+here, not cljml's full type system.
 
 The typed standard library also includes a `clojure.string` namespace that can
 be required with `:as` or `:refer`. Its current subset includes `blank?`,

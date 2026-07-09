@@ -81,11 +81,35 @@ let record_definition var_name type_name fields values =
         [ Ast_helper.Str.type_ ~loc Nonrecursive [ type_declaration ];
           Ast_helper.Str.value ~loc Nonrecursive [ value_binding ] ]
 
+let value_pattern = function
+  | Types.Named name -> Ast_helper.Pat.var ~loc (str name)
+  | Types.Unit_pattern ->
+      Ast_helper.Pat.construct ~loc (lid (Longident.Lident "()")) None
+  | Types.Ignore_pattern -> Ast_helper.Pat.any ~loc ()
+
+let value_binding pattern expression =
+  let context =
+    match pattern with
+    | Types.Named name -> "value " ^ name
+    | Types.Unit_pattern -> "top-level effect"
+    | Types.Ignore_pattern -> "top-level expression"
+  in
+  match parse_expression ~context expression with
+  | Error _ as err -> err
+  | Ok expression ->
+      let binding =
+        Ast_helper.Vb.mk ~loc (value_pattern pattern) expression
+      in
+      Ok [ Ast_helper.Str.value ~loc Nonrecursive [ binding ] ]
+
 let structure_of_item index = function
   | Types.Emit source ->
       parse_implementation
         ~filename:("<cljml-generated-item-" ^ string_of_int index ^ ">")
         source
+  | Types.Value_binding { pattern; expression } ->
+      value_binding pattern expression
+  | Types.Comment _ -> Ok []
   | Types.Record_def { var_name; type_name; fields; values } ->
       record_definition var_name type_name fields values
 

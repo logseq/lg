@@ -10,8 +10,9 @@ first, then OCaml lowering:
 - cljml has its own Lisp AST and typed IR for static Clojure-like semantics.
 - The OCaml source backend remains the stable output path.
 - `Cljml.Compiler.compile_parsetree` lowers compiled items independently into
-  `Parsetree.structure`. Structural record type/value items are constructed
-  directly; remaining source-backed items are parsed at item boundaries.
+  `Parsetree.structure`. Structural records, ordinary top-level values,
+  effects, and comments are constructed directly; compound source-backed
+  items are parsed at item boundaries.
 - `Cljml.Compiler.compile_chunk_parsetree` uses the same incremental compiler
   state as `compile_chunk`, but returns an OCaml structure for the current
   chunk.

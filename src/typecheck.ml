@@ -2126,7 +2126,7 @@ let compile_defprotocol current_ns env next_type protocol_name method_forms =
         ( current_ns,
           env @ bindings,
           next_type,
-          Emit ("(* protocol " ^ protocol_name ^ " *)") )
+          Comment ("protocol " ^ protocol_name) )
 
 let compile_extend_type current_ns env next_type receiver_keyword protocol_name method_forms =
   match Type_annotation.of_keyword receiver_keyword with
@@ -2324,7 +2324,8 @@ let compile_top_level current_ns env next_type = function
                 ( current_ns,
                   env @ [ (env_key, binding) ],
                   next_type,
-                  Emit ("let " ^ ocaml_name ^ " = " ^ expr.code) )))
+                  Value_binding
+                    { pattern = Named ocaml_name; expression = expr.code } )))
   | FList (FSymbol "defn" :: FSymbol name :: params :: body_forms) -> (
       match prepare_fn current_ns env params body_forms with
       | Error _ as err -> err
@@ -2365,7 +2366,13 @@ let compile_top_level current_ns env next_type = function
   | FList (FSymbol (("print" | "println") as name) :: args) -> (
       match compile_call current_ns env name args with
       | Error _ as err -> err
-      | Ok expr -> Ok (current_ns, env, next_type, Emit ("let () = " ^ expr.code)))
+      | Ok expr ->
+          Ok
+            ( current_ns,
+              env,
+              next_type,
+              Value_binding
+                { pattern = Unit_pattern; expression = expr.code } ))
   | FList (FSymbol "ns" :: FSymbol namespace :: clauses) -> (
       match Ns_require.parse_requires clauses with
       | Error _ as err -> err
@@ -2395,7 +2402,7 @@ let compile_top_level current_ns env next_type = function
           in
           (match apply_specs env specs with
           | Error _ as err -> err
-          | Ok env -> Ok (namespace, env, next_type, Emit ("(* ns " ^ namespace ^ " *)"))))
+          | Ok env -> Ok (namespace, env, next_type, Comment ("ns " ^ namespace))))
   | form -> (
       match compile_expr current_ns env form with
       | Error _ ->
@@ -2404,7 +2411,13 @@ let compile_top_level current_ns env next_type = function
       | Ok expr -> (
           match expr.record_values with
           | Some _ -> Error.error "top-level map literals must be bound with def"
-          | None -> Ok (current_ns, env, next_type, Emit ("let _ = " ^ expr.code))))
+          | None ->
+              Ok
+                ( current_ns,
+                  env,
+                  next_type,
+                  Value_binding
+                    { pattern = Ignore_pattern; expression = expr.code } )))
 
 type state = {
   current_ns : string;

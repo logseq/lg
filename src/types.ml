@@ -31,8 +31,18 @@ type typed_expr = {
   record_values : (field * string) list option;
 }
 
+type value_pattern =
+  | Named of string
+  | Unit_pattern
+  | Ignore_pattern
+
 type compiled_item =
   | Emit of string
+  | Value_binding of {
+      pattern : value_pattern;
+      expression : string;
+    }
+  | Comment of string
   | Record_def of {
       var_name : string;
       type_name : string;

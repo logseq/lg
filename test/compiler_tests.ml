@@ -1984,6 +1984,26 @@ let test_parsetree_backend_builds_native_record_items () =
       | _ -> failwith "expected record type and value structure items")
   | _ -> failwith "expected record type and value structure items"
 
+let test_parsetree_backend_builds_native_value_items () =
+  let structure =
+    Cljml.Compiler.compile_parsetree
+      {|
+(def answer 42)
+(println answer)
+|}
+    |> expect_ok
+  in
+  match structure with
+  | [ definition; effect_item ] -> (
+      match (definition.pstr_desc, effect_item.pstr_desc) with
+      | Pstr_value _, Pstr_value _ ->
+          if not
+               (definition.pstr_loc.loc_ghost && effect_item.pstr_loc.loc_ghost)
+          then
+            failwith "expected native value structure items with ghost locations"
+      | _ -> failwith "expected definition and effect value structure items")
+  | _ -> failwith "expected exactly two value structure items"
+
 let test_incremental_parsetree_backend_preserves_state () =
   let state = Cljml.Compiler.empty_state in
   let state, people_structure =
@@ -2292,6 +2312,8 @@ let tests =
       test_parsetree_backend_preserves_static_errors );
     ( "parsetree backend builds native record items",
       test_parsetree_backend_builds_native_record_items );
+    ( "parsetree backend builds native value items",
+      test_parsetree_backend_builds_native_value_items );
     ( "incremental parsetree backend preserves state",
       test_incremental_parsetree_backend_preserves_state );
   ]
