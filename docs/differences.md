@@ -133,9 +133,13 @@ Lists compile to OCaml lists and support `list`, `list*`, `list-of`, `cons`, `co
 
 Vectors support `first`, `second`, `last`, `peek`, `pop`, `rest`, `next`, `nthnext`, `nthrest`, `ffirst`, `fnext`, `nfirst`, `nnext`, `rseq`, `nth`, `get`, `assoc`, `update`, `contains?`, `subvec`, and the current eager sequence operations.
 
-`rest` and `next` return a same-typed empty list or vector when called on an
-empty list or vector because cljml does not yet have a nilable sequence result
-type.
+`rest` preserves the concrete list, vector, or set type and returns a same-typed
+empty collection at the end. `next` has the same empty-safe behavior for lists
+and vectors. This differs from Clojure's seq return types because cljml does not
+have a nilable or lazy sequence result type.
+
+`first`, `second`, and `last` accept typed lists, vectors, and sets. Set
+iteration follows cljml's canonical sorted-list runtime representation.
 
 Three-argument `nth` returns a typed default for out-of-range list and vector indexes.
 

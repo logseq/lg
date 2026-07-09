@@ -123,8 +123,8 @@ The compiler infers record-like map shapes automatically:
   including fixed leading integer arguments before the final collection.
 - `get` supports vector indexes, and `nth` supports typed default values for
   lists and vectors.
-- `rest` returns a same-typed empty list or vector when called on an empty
-  list or vector.
+- `first`, `second`, and `last` work on typed lists, vectors, and sets.
+- `rest` preserves the concrete list, vector, or set type and is empty-safe.
 - `empty` returns a same-typed empty list, vector, set, or string.
 - `into` transfers elements between typed list, vector, and set collections.
 - `take` and `drop` return same-typed list or vector slices.
@@ -133,8 +133,9 @@ The compiler infers record-like map shapes automatically:
   sets.
 - `array-map` and `sorted-map` create structural maps like `hash-map` in the
   current static subset.
-- `hash-set`, `sorted-set`, `set-of`, `conj`, `disj`, and `contains?` are supported for
-  homogeneous sets, and `map`, `filter`, and `reduce` work over sets.
+- `hash-set`, `sorted-set`, `set-of`, `conj`, `disj`, and `contains?` are
+  supported for homogeneous sets, and common eager sequence helpers work over
+  sets where their result has a statically representable type.
 - `conj` accepts one or more same-typed values after a list, vector, or set.
 - `disj` accepts zero or more same-typed values after the set.
 - `(:require [some.ns :as alias])` can alias previously compiled namespaces.

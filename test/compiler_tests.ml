@@ -1466,6 +1466,25 @@ let test_set_core_api () =
   assert_ocaml_runs "set_core_api" "true:false:4:#{1 2 3 4}:#{1 2 3 4}:#{1 3}\n"
     ocaml_source
 
+let test_set_positional_sequence_helpers () =
+  let source =
+    {|
+(def xs (hash-set 3 1 2))
+(def tail (rest xs))
+(def empty-tail (rest (set-of :int)))
+(println
+  (str (first xs) ":" (second xs) ":" (last xs) ":"
+       (count tail) ":" (contains? tail 1) ":" (empty? empty-tail)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "set_positional_sequence_helpers" "1:2:3:2:false:true\n"
+    ocaml_source
+
+let test_set_positional_sequence_helpers_reject_non_collections () =
+  Cljml.Compiler.compile_string {|(def x (first 1))|}
+  |> expect_error "first expects a list, vector, or set"
+
 let test_conj_rejects_set_type_mismatch () =
   Cljml.Compiler.compile_string {|(def xs (conj (hash-set 1) "two"))|}
   |> expect_error "conj value type must match set element type"
@@ -2163,6 +2182,10 @@ let tests =
       test_common_higher_order_helpers_reject_compare_type_mismatch );
     ("apply rejects bad set reducers", test_apply_rejects_bad_set_reducers);
     ("set core api works", test_set_core_api);
+    ( "set positional sequence helpers work",
+      test_set_positional_sequence_helpers );
+    ( "set positional sequence helpers reject non-collections",
+      test_set_positional_sequence_helpers_reject_non_collections );
     ("conj rejects set type mismatch", test_conj_rejects_set_type_mismatch);
     ("disj rejects set type mismatch", test_disj_rejects_set_type_mismatch);
     ("set sequence core api works", test_set_sequence_core_api);

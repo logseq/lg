@@ -619,13 +619,10 @@ and compile_call current_ns env name arg_forms =
   | "cons" -> compile_cons current_ns env arg_forms
   | "vector" -> compile_vector current_ns env arg_forms
   | "vector-of" -> compile_vector_of arg_forms
-  | "count" -> compile_count current_ns env arg_forms
+  | "count" -> compile_collection_call current_ns env name arg_forms
   | "conj" -> compile_conj current_ns env arg_forms
-  | "first" -> compile_first current_ns env arg_forms
-  | "second" -> compile_second current_ns env arg_forms
-  | "last" -> compile_last current_ns env arg_forms
-  | "peek" -> compile_peek current_ns env arg_forms
-  | "pop" -> compile_pop current_ns env arg_forms
+  | "first" | "second" | "last" | "peek" | "pop" ->
+      compile_collection_call current_ns env name arg_forms
   | "subvec" -> compile_subvec current_ns env arg_forms
   | "nth" -> compile_nth current_ns env arg_forms
   | "get" -> compile_get current_ns env arg_forms
@@ -638,12 +635,9 @@ and compile_call current_ns env name arg_forms =
   | "keys" -> compile_keys current_ns env arg_forms
   | "vals" -> compile_vals current_ns env arg_forms
   | "hash-map" | "array-map" | "sorted-map" -> compile_hash_map current_ns env arg_forms
-  | "rest" -> compile_rest current_ns env arg_forms
-  | "seq" -> compile_seq current_ns env arg_forms
-  | "empty?" -> compile_empty current_ns env arg_forms
+  | "rest" | "seq" | "empty?" -> compile_collection_call current_ns env name arg_forms
   | "into" -> compile_into current_ns env arg_forms
-  | "take" -> compile_take_drop current_ns env "take" arg_forms
-  | "drop" -> compile_take_drop current_ns env "drop" arg_forms
+  | "take" | "drop" -> compile_collection_call current_ns env name arg_forms
   | "butlast" -> compile_butlast current_ns env arg_forms
   | "take-last" | "drop-last" -> compile_take_drop_last current_ns env name arg_forms
   | "take-nth" -> compile_take_nth current_ns env arg_forms
@@ -660,7 +654,7 @@ and compile_call current_ns env name arg_forms =
   | "dorun" -> compile_dorun current_ns env arg_forms
   | "doall" -> compile_doall current_ns env arg_forms
   | "run!" -> compile_run_bang current_ns env arg_forms
-  | "reverse" -> compile_reverse current_ns env arg_forms
+  | "reverse" -> compile_collection_call current_ns env name arg_forms
   | "every?" | "not-any?" | "not-every?" ->
       compile_sequence_bool_predicate current_ns env name arg_forms
   | "map" -> compile_map_call current_ns env arg_forms
@@ -703,7 +697,7 @@ and compile_call current_ns env name arg_forms =
   | "hash-set" | "sorted-set" -> compile_hash_set current_ns env arg_forms
   | "set-of" -> compile_set_of arg_forms
   | "disj" -> compile_disj current_ns env arg_forms
-  | "empty" -> compile_empty_value current_ns env arg_forms
+  | "empty" -> compile_collection_call current_ns env name arg_forms
   | _ -> compile_named_function_call current_ns env name arg_forms
 
 and compile_int_unary_call current_ns env name build_code arg_forms =
@@ -716,18 +710,10 @@ and compile_boolean_call current_ns env name arg_forms =
   | Error _ as err -> err
   | Ok args -> Core_boolean.compile name args
 
-and compile_count current_ns env arg_forms =
+and compile_collection_call current_ns env name arg_forms =
   match compile_args_for current_ns env arg_forms with
   | Error _ as err -> err
-  | Ok [ arg ] -> (
-      match arg.ty with
-      | TList _ -> Ok (typed TInt ("List.length (" ^ arg.code ^ ")"))
-      | TVector _ -> Ok (typed TInt ("Rrbvec.length (" ^ arg.code ^ ")"))
-      | TSet _ -> Ok (typed TInt ("List.length (" ^ arg.code ^ ")"))
-      | TRecord fields -> Ok (typed TInt (string_of_int (List.length fields)))
-      | TString -> Ok (typed TInt ("String.length (" ^ arg.code ^ ")"))
-      | _ -> Error.error "count expects a collection or string")
-  | Ok _ -> Error.error "count expects 1 arguments"
+  | Ok args -> Core_collection.compile name args
 
 and compile_subs current_ns env arg_forms =
   match compile_args_for current_ns env arg_forms with
@@ -901,61 +887,6 @@ and compile_cons current_ns env arg_forms =
       | TList _ -> Error.error "cons value type must match list element type"
       | _ -> Error.error "cons expects a value and list")
   | Ok _ -> Error.error "cons expects value and list"
-
-and compile_first current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [ collection ] -> (
-      match collection.ty with
-      | TList inner -> Ok (typed inner ("List.hd (" ^ collection.code ^ ")"))
-      | TVector inner -> Ok (typed inner ("Rrbvec.nth (" ^ collection.code ^ ") 0"))
-      | _ -> Error.error "first expects a list or vector")
-  | Ok _ -> Error.error "first expects 1 arguments"
-
-and compile_second current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [ collection ] -> (
-      match collection.ty with
-      | TList inner -> Ok (typed inner ("List.nth (" ^ collection.code ^ ") 1"))
-      | TVector inner -> Ok (typed inner ("Rrbvec.nth (" ^ collection.code ^ ") 1"))
-      | _ -> Error.error "second expects a list or vector")
-  | Ok _ -> Error.error "second expects 1 arguments"
-
-and compile_last current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [ collection ] -> (
-      match collection.ty with
-      | TList inner -> Ok (typed inner ("List.hd (List.rev (" ^ collection.code ^ "))"))
-      | TVector inner ->
-          Ok (typed inner ("Option.get (Rrbvec.peek_back (" ^ collection.code ^ "))"))
-      | _ -> Error.error "last expects a list or vector")
-  | Ok _ -> Error.error "last expects 1 arguments"
-
-and compile_peek current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [ collection ] -> (
-      match collection.ty with
-      | TList inner -> Ok (typed inner ("List.hd (" ^ collection.code ^ ")"))
-      | TVector inner ->
-          Ok (typed inner ("Option.get (Rrbvec.peek_back (" ^ collection.code ^ "))"))
-      | _ -> Error.error "peek expects a list or vector")
-  | Ok _ -> Error.error "peek expects 1 arguments"
-
-and compile_pop current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [ collection ] -> (
-      match collection.ty with
-      | TList _ -> Ok (typed collection.ty ("List.tl (" ^ collection.code ^ ")"))
-      | TVector _ ->
-          Ok
-            (typed collection.ty
-               ("snd (Option.get (Rrbvec.pop_back (" ^ collection.code ^ ")))"))
-      | _ -> Error.error "pop expects a list or vector")
-  | Ok _ -> Error.error "pop expects 1 arguments"
 
 and compile_subvec current_ns env arg_forms =
   match compile_args_for current_ns env arg_forms with
@@ -1397,56 +1328,6 @@ and compile_protocol_call current_ns env name arg_forms =
                       | _ -> Error.error (name ^ " is not callable"))))
           | _ -> Error.error (name ^ " is not callable")))
 
-and compile_rest current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [ collection ] -> (
-      match collection.ty with
-      | TList _ ->
-          Ok
-            (typed collection.ty
-               ("(match " ^ collection.code ^ " with [] -> [] | _ :: rest -> rest)"))
-      | TVector _ ->
-          Ok
-            (typed collection.ty
-               ("Rrbvec.of_list (match Rrbvec.to_list " ^ collection.code
-              ^ " with [] -> [] | _ :: rest -> rest)"))
-      | _ -> Error.error "rest expects a list or vector")
-  | Ok _ -> Error.error "rest expects 1 arguments"
-
-and compile_seq current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [ collection ] -> (
-      match collection.ty with
-      | TList _ | TVector _ | TSet _ -> Ok collection
-      | _ -> Error.error "seq expects a collection")
-  | Ok _ -> Error.error "seq expects 1 arguments"
-
-and compile_empty current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [ collection ] -> (
-      match collection.ty with
-      | TList _ -> Ok (typed TBool ("((" ^ collection.code ^ ") = [])"))
-      | TVector _ -> Ok (typed TBool ("Rrbvec.is_empty " ^ collection.code))
-      | TSet _ -> Ok (typed TBool ("(" ^ collection.code ^ " = [])"))
-      | TString -> Ok (typed TBool ("(" ^ collection.code ^ " = \"\")"))
-      | _ -> Error.error "empty? expects a collection or string")
-  | Ok _ -> Error.error "empty? expects 1 arguments"
-
-and compile_empty_value current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [ collection ] -> (
-      match collection.ty with
-      | TList _ -> Ok (typed collection.ty "[]")
-      | TVector _ -> Ok (typed collection.ty "Rrbvec.empty")
-      | TSet _ -> Ok (typed collection.ty "[]")
-      | TString -> Ok (typed TString {|""|})
-      | _ -> Error.error "empty expects a collection or string")
-  | Ok _ -> Error.error "empty expects 1 arguments"
-
 and collection_to_list_code collection =
   match collection.ty with
   | TList inner -> Ok (inner, collection.code)
@@ -1804,11 +1685,11 @@ and compile_take_drop_last current_ns env name arg_forms =
               if name = "take-last" then
                 "(let source = " ^ list_code ^ " in let drop_count = max 0 ("
                 ^ length_code ^ " - (" ^ count.code ^ ")) in "
-                ^ drop_list_code "drop_count" "source" ^ ")"
+                ^ Core_collection.drop_list_code "drop_count" "source" ^ ")"
               else
                 "(let source = " ^ list_code ^ " in let keep_count = max 0 ("
                 ^ length_code ^ " - (" ^ count.code ^ ")) in "
-                ^ take_list_code "keep_count" "source" ^ ")"
+                ^ Core_collection.take_list_code "keep_count" "source" ^ ")"
             in
             Ok (typed collection.ty (collection_from_list_code collection.ty code)))
   | Ok _ -> Error.error (name ^ " expects count and collection")
@@ -1844,8 +1725,14 @@ and compile_split_at current_ns env arg_forms =
         (match collection_to_list_code collection with
         | Error _ -> Error.error "split-at expects a collection"
         | Ok (_inner, list_code) ->
-            let left = collection_from_list_code collection.ty (take_list_code count.code list_code) in
-            let right = collection_from_list_code collection.ty (drop_list_code count.code list_code) in
+            let left =
+              collection_from_list_code collection.ty
+                (Core_collection.take_list_code count.code list_code)
+            in
+            let right =
+              collection_from_list_code collection.ty
+                (Core_collection.drop_list_code count.code list_code)
+            in
             Ok (typed (TVector collection.ty) ("Rrbvec.of_list [" ^ left ^ "; " ^ right ^ "]")))
   | Ok _ -> Error.error "split-at expects count and collection"
 
@@ -2058,47 +1945,6 @@ and compile_into current_ns env arg_forms =
               Error.error "into source element type must match target element type"
           | _ -> Error.error "into target must be a collection"))
   | Ok _ -> Error.error "into expects target and source collections"
-
-and take_list_code count_code list_code =
-  "(let rec take n xs = if n <= 0 then [] else match xs with [] -> [] | x :: rest -> x :: take (n - 1) rest in take ("
-  ^ count_code ^ ") (" ^ list_code ^ "))"
-
-and drop_list_code count_code list_code =
-  "(let rec drop n xs = if n <= 0 then xs else match xs with [] -> [] | _ :: rest -> drop (n - 1) rest in drop ("
-  ^ count_code ^ ") (" ^ list_code ^ "))"
-
-and compile_take_drop current_ns env name arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [ count; collection ] -> (
-      if not (Types.equal count.ty TInt) then Error.error (name ^ " count must be int")
-      else
-        match collection.ty with
-        | TList _ ->
-            let code =
-              if name = "take" then take_list_code count.code collection.code
-              else drop_list_code count.code collection.code
-            in
-            Ok (typed collection.ty code)
-        | TVector _ ->
-            let list_code = "Rrbvec.to_list (" ^ collection.code ^ ")" in
-            let code =
-              if name = "take" then take_list_code count.code list_code
-              else drop_list_code count.code list_code
-            in
-            Ok (typed collection.ty ("Rrbvec.of_list (" ^ code ^ ")"))
-        | _ -> Error.error (name ^ " expects a list or vector"))
-  | Ok _ -> Error.error (name ^ " expects count and collection")
-
-and compile_reverse current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
-  | Error _ as err -> err
-  | Ok [ collection ] -> (
-      match collection.ty with
-      | TList _ -> Ok (typed collection.ty ("List.rev (" ^ collection.code ^ ")"))
-      | TVector _ -> Ok (typed collection.ty ("Rrbvec.rev (" ^ collection.code ^ ")"))
-      | _ -> Error.error "reverse expects a list or vector")
-  | Ok _ -> Error.error "reverse expects 1 arguments"
 
 and compile_some current_ns env arg_forms =
   match arg_forms with
