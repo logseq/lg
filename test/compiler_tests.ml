@@ -2212,6 +2212,9 @@ let test_parsetree_backend_builds_native_function_combinator_expressions () =
 let test_parsetree_backend_builds_native_partial_expressions () =
   expect_structured_value_expression {|(def add-ten (partial + 10))|}
 
+let test_parsetree_backend_builds_native_empty_collection_expressions () =
+  expect_structured_value_expression {|(def xs (vector-of :int))|}
+
 let test_incremental_parsetree_backend_preserves_state () =
   let state = Cljml.Compiler.empty_state in
   let state, people_structure =
@@ -2562,6 +2565,8 @@ let tests =
       test_parsetree_backend_builds_native_function_combinator_expressions );
     ( "parsetree backend builds native partial expressions",
       test_parsetree_backend_builds_native_partial_expressions );
+    ( "parsetree backend builds native empty collection expressions",
+      test_parsetree_backend_builds_native_empty_collection_expressions );
     ( "incremental parsetree backend preserves state",
       test_incremental_parsetree_backend_preserves_state );
   ]

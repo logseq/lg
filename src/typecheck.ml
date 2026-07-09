@@ -925,7 +925,7 @@ and compile_list_of arg_forms =
   | [ FKeyword keyword ] -> (
       match Type_annotation.of_keyword keyword with
       | Error _ as err -> err
-      | Ok element_ty -> Ok (typed (TList element_ty) "[]"))
+      | Ok element_ty -> Ok (typed_ir (TList element_ty) (Ocaml_ir.List [])))
   | _ -> Error.error "list-of expects one type keyword"
 
 and compile_vector_of arg_forms =
@@ -933,7 +933,8 @@ and compile_vector_of arg_forms =
   | [ FKeyword keyword ] -> (
       match Type_annotation.of_keyword keyword with
       | Error _ as err -> err
-      | Ok element_ty -> Ok (typed (TVector element_ty) "Rrbvec.empty"))
+      | Ok element_ty ->
+          Ok (typed_ir (TVector element_ty) (Ocaml_ir.Ident "Rrbvec.empty")))
   | _ -> Error.error "vector-of expects one type keyword"
 
 and compile_conj current_ns env arg_forms =
