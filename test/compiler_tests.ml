@@ -1222,6 +1222,65 @@ let test_let_defn_and_fn_values () =
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "let_defn_and_fn_values" "13\n" ocaml_source
 
+let test_destructuring_in_let_and_functions () =
+  let source =
+    {|
+(def user {:name "Ada", :age 36, :admin? true})
+(def numbers [10 20 30])
+(defn label [{:keys [name age] :as person}]
+  (str name ":" (+ age 0) ":" (= person person)))
+(defn first-two [[x y :as all]]
+  (str (+ x 0) ":" (+ y 0) ":" (count all)))
+(let [{:keys [name age] :as person} user
+      [x y :as all] numbers]
+  (println (str name ":" age ":" (:admin? person) ":" x ":" y ":" (count all)
+                ":" (label user) ":" (first-two numbers))))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "destructuring_in_let_and_functions"
+    "Ada:36:true:10:20:3:Ada:36:true:10:20:3\n" ocaml_source
+
+let test_destructuring_supports_direct_keyword_bindings () =
+  let source =
+    {|
+(def user {:name "Ada", :age 36})
+(let [{display-name :name years :age} user]
+  (println (str display-name ":" years)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "destructuring_supports_direct_keyword_bindings" "Ada:36\n"
+    ocaml_source
+
+let test_destructuring_preserves_row_polymorphic_function_calls () =
+  let source =
+    {|
+(def user {:name "Ada", :age 36, :admin? true})
+(defn greeting [{:keys [name]}]
+  (str "hi " name))
+(println (greeting user))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "destructuring_preserves_row_polymorphic_function_calls" "hi Ada\n"
+    ocaml_source
+
+let test_destructuring_rejects_missing_map_fields () =
+  let source =
+    {|
+(def user {:name "Ada"})
+(defn next-age [{:keys [age]}] (+ age 1))
+(def bad (next-age user))
+|}
+  in
+  Cljml.Compiler.compile_string source
+  |> expect_error "next-age called with incompatible arguments"
+
+let test_destructuring_rejects_unsupported_let_sources () =
+  Cljml.Compiler.compile_string {|(def x (let [{:keys [name]} [1 2]] name))|}
+  |> expect_error "map destructuring expects a map"
+
 let test_sequence_core_api_on_vectors () =
   let source =
     {|
@@ -1889,6 +1948,15 @@ let tests =
     ( "batched sequence functions reject reduce-kv non-vector",
       test_batched_sequence_functions_reject_reduce_kv_non_vector );
     ("let, defn, and fn values work", test_let_defn_and_fn_values);
+    ("destructuring works in let and functions", test_destructuring_in_let_and_functions);
+    ( "destructuring supports direct keyword bindings",
+      test_destructuring_supports_direct_keyword_bindings );
+    ( "destructuring preserves row polymorphic function calls",
+      test_destructuring_preserves_row_polymorphic_function_calls );
+    ( "destructuring rejects missing map fields",
+      test_destructuring_rejects_missing_map_fields );
+    ( "destructuring rejects unsupported let sources",
+      test_destructuring_rejects_unsupported_let_sources );
     ("sequence core api works on vectors", test_sequence_core_api_on_vectors);
     ("function helpers work", test_function_helpers);
     ("apply rejects bad set reducers", test_apply_rejects_bad_set_reducers);

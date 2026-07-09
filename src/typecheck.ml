@@ -335,47 +335,105 @@ and compile_let current_ns env bindings body_forms =
               | Ok body ->
                   let code =
                     code_parts
-                    |> List.fold_left
-                         (fun acc (name, value_code) ->
-                           "let " ^ name ^ " = " ^ value_code ^ " in " ^ acc)
-                         body.code
+                    |> List.fold_left (fun acc binding_code -> binding_code ^ " in " ^ acc) body.code
                   in
                   Ok (typed body.ty ("(" ^ code ^ ")")))
-          | FSymbol name :: value_form :: rest -> (
+          | pattern :: value_form :: rest -> (
               match compile_expr current_ns env value_form with
               | Error _ as err -> err
-              | Ok value ->
-                  let ocaml_name = Names.sanitize_name name in
-                  let env_key = Names.namespaced_key current_ns name in
-                  let binding = { ocaml_name; ty = value.ty } in
-                  bind (env @ [ (env_key, binding) ])
-                    ((ocaml_name, value.code) :: code_parts)
-                    rest)
-          | _ -> Error.error "let binding names must be symbols"
+              | Ok value -> (
+                  match Destructure.bind_pattern value pattern with
+                  | Error _ as err -> err
+                  | Ok bindings ->
+                      let env_bindings =
+                        bindings
+                        |> List.map (fun (binding : Destructure.local_binding) ->
+                               ( Names.namespaced_key current_ns binding.source_name,
+                                 { ocaml_name = binding.ocaml_name; ty = binding.ty } ))
+                      in
+                      let code_bindings = bindings |> List.map Destructure.let_code in
+                      bind (env @ env_bindings) (List.rev_append code_bindings code_parts) rest))
+          | [ _ ] -> Error.error "let bindings require an even number of forms"
         in
         bind env [] forms
   | _ -> Error.error "let bindings must be a vector"
 
 and compile_fn current_ns env params body_forms =
-  match Type_annotation.parse_params params with
+  match Destructure.parse_param_specs params with
   | Error _ as err -> err
-  | Ok params ->
+  | Ok specs ->
       let lookup_function_ty name =
         match lookup_function current_ns env name with
         | Ok fn -> Ok fn.ty
         | Error _ as err -> err
       in
-      match Type_inference.infer_params ~lookup_function_ty params body_forms with
+      let inference_params =
+        specs
+        |> List.fold_left
+             (fun acc (spec : Destructure.param_spec) ->
+               let param_ty = Option.value spec.explicit_ty ~default:TAny in
+               let acc = (spec.source_name, param_ty) :: acc in
+               if spec.destructured then
+                 Destructure.pattern_names spec.pattern
+                 |> List.fold_left (fun acc name -> (name, TAny) :: acc) acc
+               else acc)
+             []
+        |> List.rev
+      in
+      match Type_inference.infer_params ~lookup_function_ty inference_params body_forms with
       | Error _ as err -> err
-      | Ok params ->
-          let param_bindings =
-            params
-            |> List.map (fun (name, ty) ->
-                   let ocaml_name = Names.sanitize_name name in
-                   let env_key = Names.namespaced_key current_ns name in
-                   (env_key, { ocaml_name; ty }))
+      | Ok inferred ->
+          let lookup_inferred name =
+            inferred |> List.assoc_opt name |> Option.value ~default:TAny
           in
-          let env = env @ param_bindings in
+          let infer_spec_ty (spec : Destructure.param_spec) =
+            if spec.destructured then
+              Destructure.infer_pattern_type spec.pattern lookup_inferred
+            else Ok (lookup_inferred spec.source_name)
+          in
+          let rec build acc = function
+            | [] -> Ok (List.rev acc)
+            | spec :: rest -> (
+                match infer_spec_ty spec with
+                | Error _ as err -> err
+                | Ok ty -> build ((spec, ty) :: acc) rest)
+          in
+          match build [] specs with
+          | Error _ as err -> err
+          | Ok typed_specs ->
+          let param_bindings =
+            typed_specs
+            |> List.map (fun ((spec : Destructure.param_spec), ty) ->
+                   ( Names.namespaced_key current_ns spec.source_name,
+                     { ocaml_name = spec.ocaml_name; ty } ))
+          in
+          let param_targets =
+            typed_specs
+            |> List.map (fun ((spec : Destructure.param_spec), ty) ->
+                   (spec, typed ty spec.ocaml_name))
+          in
+          let destructured_bindings =
+            let rec loop acc = function
+              | [] -> Ok (List.rev acc)
+              | (spec, target) :: rest ->
+                  if not spec.Destructure.destructured then loop acc rest
+                  else (
+                    match Destructure.bind_pattern target spec.pattern with
+                    | Error _ as err -> err
+                    | Ok bindings -> loop (List.rev_append bindings acc) rest)
+            in
+            loop [] param_targets
+          in
+          (match destructured_bindings with
+          | Error _ as err -> err
+          | Ok destructured_bindings ->
+          let local_bindings =
+            destructured_bindings
+            |> List.map (fun (binding : Destructure.local_binding) ->
+                   ( Names.namespaced_key current_ns binding.source_name,
+                     { ocaml_name = binding.ocaml_name; ty = binding.ty } ))
+          in
+          let env = env @ param_bindings @ local_bindings in
           match
             compile_body current_ns env "function body requires at least one form"
               body_forms
@@ -392,9 +450,14 @@ and compile_fn current_ns env params body_forms =
               let param_code =
                 match params with [] -> "()" | _ -> String.concat " " params
               in
+              let body_code =
+                destructured_bindings
+                |> List.map Destructure.let_code
+                |> List.fold_left (fun acc binding_code -> binding_code ^ " in " ^ acc) body.code
+              in
               Ok
                 (typed (TFn (param_tys, body.ty))
-                   ("(fun " ^ param_code ^ " -> " ^ body.code ^ ")"))
+                   ("(fun " ^ param_code ^ " -> " ^ body_code ^ ")")))
 
 and compile_call current_ns env name arg_forms =
   let compile_args () = compile_args_for current_ns env arg_forms in
@@ -783,10 +846,10 @@ and compile_count current_ns env arg_forms =
   | Ok [ arg ] -> (
       match arg.ty with
       | TList _ -> Ok (typed TInt ("List.length (" ^ arg.code ^ ")"))
-      | TVector _ -> Ok (typed TInt ("Rrbvec.length " ^ arg.code))
-      | TSet _ -> Ok (typed TInt ("List.length " ^ arg.code))
+      | TVector _ -> Ok (typed TInt ("Rrbvec.length (" ^ arg.code ^ ")"))
+      | TSet _ -> Ok (typed TInt ("List.length (" ^ arg.code ^ ")"))
       | TRecord fields -> Ok (typed TInt (string_of_int (List.length fields)))
-      | TString -> Ok (typed TInt ("String.length " ^ arg.code))
+      | TString -> Ok (typed TInt ("String.length (" ^ arg.code ^ ")"))
       | _ -> Error.error "count expects a collection or string")
   | Ok _ -> Error.error "count expects 1 arguments"
 

@@ -76,6 +76,7 @@ The compiler should support this syntax without macros.
 | `let` | `(let [x 1] (+ x 2))` | 2 |
 | `fn` | `(fn [x] (+ x 1))` | 2 |
 | `defn` | `(defn inc1 [x] (+ x 1))` | 2 |
+| Static destructuring | `(let [{:keys [name]} user] name)` | 3 |
 | Static protocols | `(defprotocol Labelled (label [x] :string))` | 3 |
 | Namespace form | `(ns app.main)` | 1 |
 | Module form | `(module Math (defn add2 [x] (+ x 2)))` | 3 |
@@ -193,6 +194,13 @@ for unannotated function parameters.
 
 Function calls can pass wider structural maps when all fields required by the
 callee are present with compatible types.
+
+Static destructuring is supported for `let`, `fn`, and `defn`. Associative
+destructuring works on structural maps with `:keys`, direct `{local :keyword}`
+bindings, and `:as`; sequential destructuring works on typed vectors and lists
+with fixed positional bindings and `:as`. Destructured function parameters
+infer row-shaped structural map requirements, so callers may pass wider maps
+when the required fields are present.
 
 `keys` returns a homogeneous `vector<keyword>`.
 

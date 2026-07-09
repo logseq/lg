@@ -36,6 +36,21 @@ Keyword lookup in typed contexts can infer structural map field requirements for
 
 Function calls can pass wider structural maps when the callee only requires a known subset of fields.
 
+`let`, `fn`, and `defn` support a static destructuring subset inspired by
+Clojure destructuring. Associative destructuring works on structural maps with
+`:keys`, direct `{local :keyword}` bindings, and `:as`. Sequential
+destructuring works on typed vectors and lists with fixed positional bindings
+and `:as`. Variadic `&` destructuring, default values, keyword argument
+destructuring, and nil-padding are not supported yet because the current OCaml
+runtime representation has no nilable collection element type.
+
+Row polymorphism is represented in cljml's static type compatibility: a
+function parameter inferred as a structural map with fields `:name` and `:age`
+can be called with a wider map that also has other fields. The current OCaml
+record backend still relies on generated record field access, so fully open
+runtime rows across arbitrary same-field record types remain a future runtime
+representation concern.
+
 Protocols are a static subset of Clojure protocols. `defprotocol` records typed method signatures, and `extend-type` emits ordinary OCaml functions for supported receiver types. Calls dispatch at compile time from the first argument type, so there is no runtime protocol table, dynamic extension, metadata dispatch, or reflection.
 
 `do`, `fn`, `defn`, and `let` bodies evaluate forms in order and return the final form's type.
