@@ -7,12 +7,13 @@ OCaml compiler and can later interoperate with OCaml packages.
 Supported prototype forms:
 
 ```clojure
-(ns examples.person)
+(ns examples.person
+  (:require [ocaml.String :as string]))
 (def x {:name "Ada", :age 36})
 (def y (assoc x :admin? true))
 (def z (dissoc y :age))
-(def ages [36 37 38])
-(def label (str (get z :name) ":" (get z :admin?) ":" (count ages)))
+(def ages (conj (vector-of :int) 36))
+(def label (str (string/uppercase-ascii (:name z)) ":" (:admin? z) ":" (count ages)))
 (print label)
 ```
 
@@ -32,6 +33,10 @@ The compiler infers record-like map shapes automatically:
   `constantly` are supported for the current typed vector/function subset.
 - `hash-set`, `disj`, and `contains?` are supported for homogeneous sets.
 - `(:require [some.ns :as alias])` can alias previously compiled namespaces.
+- `(:require [ocaml.String :as string])` can alias a small typed table of OCaml
+  host functions.
+- `(:name user)` works as keyword lookup syntax for structural maps.
+- `(vector-of :int)` creates an explicitly typed empty persistent vector.
 - Updating an existing field with a different type is rejected.
 
 See [docs/differences.md](docs/differences.md) for current differences from

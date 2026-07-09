@@ -18,6 +18,8 @@ Maps are structural records when created from map literals.
 
 `get` on a structural map requires a literal keyword that exists in the map type.
 
+Keyword call syntax such as `(:name user)` is supported for structural maps.
+
 `if` branches must have the same type.
 
 ## Macros
@@ -40,6 +42,10 @@ Qualified symbols can reference previously compiled namespaces.
 
 Vectors compile to `Rrbvec.t` persistent vectors.
 
+Empty vector literals still require explicit element typing.
+
+Use `(vector-of :int)`, `(vector-of :string)`, `(vector-of :bool)`, or `(vector-of :nil)` for typed empty vectors.
+
 Sets currently compile to sorted unique OCaml lists.
 
 Maps currently compile to OCaml records when their keys are known statically.
@@ -48,6 +54,8 @@ Sequence APIs are eager.
 
 ## Host interop
 
-Direct OCaml package interop is not implemented yet.
+Direct OCaml package interop is limited to an explicit typed host table.
+
+Currently supported examples include `ocaml.Stdlib` aliases for `string-of-int` and `int-of-string`, and `ocaml.String` aliases for `uppercase-ascii` and `length`.
 
 The planned direction follows ClojureDart's approach of making host package aliases explicit in `ns`.

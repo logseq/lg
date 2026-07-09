@@ -257,6 +257,44 @@ let test_namespace_require_aliases () =
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "namespace_require_aliases" "Ada\n" ocaml_source
 
+let test_keyword_lookup_syntax () =
+  let source =
+    {|
+(def user {:name "Ada", :age 36})
+(print (str (:name user) ":" (:age user)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "keyword_lookup_syntax" "Ada:36\n" ocaml_source
+
+let test_typed_empty_vectors () =
+  let source =
+    {|
+(def xs (vector-of :int))
+(def ys (conj xs 42))
+(print (str (empty? xs) ":" (count ys) ":" (first ys)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "typed_empty_vectors" "true:1:42\n" ocaml_source
+
+let test_vector_of_rejects_unknown_types () =
+  Cljml.Compiler.compile_string {|(def xs (vector-of :record))|}
+  |> expect_error "unknown vector element type :record"
+
+let test_ocaml_module_require_aliases () =
+  let source =
+    {|
+(ns host.demo
+  (:require [ocaml.Stdlib :as std]
+            [ocaml.String :as string]))
+(def label (str (string/uppercase-ascii "ada") ":" (std/string-of-int 42)))
+(print label)
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "ocaml_module_require_aliases" "ADA:42\n" ocaml_source
+
 let test_vectors_reject_mixed_element_types () =
   Cljml.Compiler.compile_string {|(def xs [1 "two"])|}
   |> expect_error "vector elements must all have the same type"
@@ -351,6 +389,10 @@ let tests =
     ( "namespaces prevent unqualified symbol collisions",
       test_namespaces_prevent_unqualified_symbol_collisions );
     ("namespace require aliases work", test_namespace_require_aliases);
+    ("keyword lookup syntax works", test_keyword_lookup_syntax);
+    ("typed empty vectors work", test_typed_empty_vectors);
+    ("vector-of rejects unknown types", test_vector_of_rejects_unknown_types);
+    ("ocaml module require aliases work", test_ocaml_module_require_aliases);
     ("vectors reject mixed element types", test_vectors_reject_mixed_element_types);
     ("arithmetic rejects non-int arguments", test_arithmetic_rejects_non_int_arguments);
     ("get rejects unknown map fields", test_get_rejects_unknown_map_fields);

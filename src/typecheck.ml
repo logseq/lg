@@ -40,6 +40,24 @@ let add_alias_bindings env namespace alias =
   in
   env @ alias_entries
 
+let add_ocaml_alias_bindings env module_name alias =
+  let host_functions =
+    match module_name with
+    | "ocaml.Stdlib" ->
+        [
+          ("string-of-int", { ocaml_name = "string_of_int"; ty = TFn ([ TInt ], TString) });
+          ("int-of-string", { ocaml_name = "int_of_string"; ty = TFn ([ TString ], TInt) });
+        ]
+    | "ocaml.String" ->
+        [
+          ( "uppercase-ascii",
+            { ocaml_name = "String.uppercase_ascii"; ty = TFn ([ TString ], TString) } );
+          ("length", { ocaml_name = "String.length"; ty = TFn ([ TString ], TInt) });
+        ]
+    | _ -> []
+  in
+  env @ List.map (fun (name, binding) -> (alias ^ "/" ^ name, binding)) host_functions
+
 let parse_require_aliases clauses =
   let parse_require_entry = function
     | FVector [ FSymbol namespace; FKeyword ":as"; FSymbol alias ] -> Ok (namespace, alias)
@@ -83,6 +101,13 @@ let parse_params = function
       loop [] params
   | _ -> Error.error "function parameters must be a vector"
 
+let type_of_keyword = function
+  | ":int" -> Ok TInt
+  | ":string" -> Ok TString
+  | ":bool" -> Ok TBool
+  | ":nil" -> Ok TNil
+  | keyword -> Error.error ("unknown vector element type " ^ keyword)
+
 let lookup_function current_ns env name =
   match List.assoc_opt (Names.namespaced_key current_ns name) env with
   | Some (binding : binding) -> Ok (typed binding.ty binding.ocaml_name)
@@ -109,6 +134,9 @@ let rec compile_expr current_ns (env : (string * binding) list) = function
   | FMap pairs -> compile_map current_ns env pairs
   | FList [ FSymbol "let"; bindings; body ] -> compile_let current_ns env bindings body
   | FList [ FSymbol "fn"; params; body ] -> compile_fn current_ns env params body
+  | FList [ FKeyword keyword; target ] ->
+      compile_get current_ns env [ target; FKeyword keyword ]
+  | FList (FKeyword _ :: _) -> Error.error "keyword lookup expects one argument"
   | FList (FSymbol "if" :: condition :: then_form :: else_form :: []) ->
       compile_if current_ns env condition then_form else_form
   | FList (FSymbol name :: args) -> compile_call current_ns env name args
@@ -285,6 +313,7 @@ and compile_call current_ns env name arg_forms =
       | Ok [ arg ] -> Ok (typed TUnit ("print_endline (" ^ Codegen.print_expr arg ^ ")"))
       | Ok _ -> Error.error (name ^ " expects 1 arguments"))
   | "vector" -> compile_vector current_ns env arg_forms
+  | "vector-of" -> compile_vector_of arg_forms
   | "count" -> compile_count current_ns env arg_forms
   | "conj" -> compile_conj current_ns env arg_forms
   | "first" -> compile_first current_ns env arg_forms
@@ -392,6 +421,14 @@ and compile_count current_ns env arg_forms =
       | TString -> Ok (typed TInt ("String.length " ^ arg.code))
       | _ -> Error.error "count expects a collection or string")
   | Ok _ -> Error.error "count expects 1 arguments"
+
+and compile_vector_of arg_forms =
+  match arg_forms with
+  | [ FKeyword keyword ] -> (
+      match type_of_keyword keyword with
+      | Error _ as err -> err
+      | Ok element_ty -> Ok (typed (TVector element_ty) "Rrbvec.empty"))
+  | _ -> Error.error "vector-of expects one type keyword"
 
 and compile_conj current_ns env arg_forms =
   match compile_args_for current_ns env arg_forms with
@@ -839,7 +876,9 @@ let compile_top_level current_ns env next_type = function
             aliases
             |> List.fold_left
                  (fun env (required_ns, alias) ->
-                   add_alias_bindings env required_ns alias)
+                   if String.starts_with ~prefix:"ocaml." required_ns then
+                     add_ocaml_alias_bindings env required_ns alias
+                   else add_alias_bindings env required_ns alias)
                  env
           in
           Ok (namespace, env, next_type, Emit ("(* ns " ^ namespace ^ " *)")))

@@ -1,7 +1,8 @@
-(ns examples.person)
+(ns examples.person
+  (:require [ocaml.String :as string]))
 (def x {:name "Ada", :age 36})
 (def y (assoc x :admin? true))
 (def z (dissoc y :age))
-(def ages [36 37 38])
-(def label (str (get z :name) ":" (get z :admin?) ":" (count ages)))
+(def ages (conj (vector-of :int) 36))
+(def label (str (string/uppercase-ascii (:name z)) ":" (:admin? z) ":" (count ages)))
 (print label)

@@ -185,13 +185,13 @@ Arithmetic should reject strings, bools, vectors, maps, nil, and unit.
 
 Should cljml eventually use a persistent map library in addition to `Rrbvec` for vectors.
 
-Should empty collections use explicit type annotations, delayed inference, or polymorphic empty values.
+Empty vectors currently use explicit helper annotations such as `(vector-of :int)`.
 
-Should keyword lookup syntax like `(:name user)` be supported in addition to `(get user :name)`.
+Keyword lookup syntax like `(:name user)` is supported in addition to `(get user :name)`.
 
 Should Clojure sequence APIs be eager by default or backed by OCaml `Seq.t`.
 
-Should cljml mirror ClojureDart's `ns` `:require` shape for OCaml modules, for example `[ocaml.stdlib :as s]`, or use a separate host interop namespace.
+cljml mirrors ClojureDart's `ns` `:require` shape for a small typed OCaml host interop table, for example `[ocaml.String :as string]`.
 
 ## Testing Details
 
