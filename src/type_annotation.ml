@@ -4,6 +4,7 @@ open Types
 let of_keyword = function
   | ":int" -> Ok TInt
   | ":string" -> Ok TString
+  | ":symbol" -> Ok TSymbol
   | ":keyword" -> Ok TKeyword
   | ":bool" -> Ok TBool
   | ":nil" -> Ok TNil

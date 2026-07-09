@@ -986,7 +986,7 @@ let test_batched_numeric_scalar_core_functions_reject_unchecked_arity () =
 
 let test_batched_numeric_scalar_core_functions_reject_bad_name_arg () =
   Cljml.Compiler.compile_string {|(def x (name 1))|}
-  |> expect_error "name expects keyword or string"
+  |> expect_error "name expects keyword, string, or symbol"
 
 let test_batched_numeric_scalar_core_functions_infer_int_params () =
   let source =
@@ -1107,6 +1107,50 @@ let test_batched_predicate_collection_core_functions_infer_bool_params () =
   in
   Cljml.Compiler.compile_string source
   |> expect_error "prefix called with incompatible arguments"
+
+let test_batched_identifier_and_constructor_core_functions_work () =
+  let source =
+    {|
+(def simple (symbol "ready"))
+(def qualified (symbol "user" "name"))
+(def kw (keyword qualified))
+(def kw2 (keyword "user" "id"))
+(def names (vector-of :symbol))
+(def more-names (conj names simple qualified))
+(def m1 (array-map :name "Ada" :age 36))
+(def m2 (sorted-map :ready true))
+(def s1 (sorted-set 3 1 2 2))
+(def listed (list* 1 2 [3 4]))
+(println
+  (str (name qualified) ":" (namespace qualified) ":" (name kw) ":" (namespace kw) ":"
+       (name kw2) ":" (namespace kw2) ":" (pr-str more-names) ":"
+       (:name m1) ":" (:ready m2) ":" (pr-str s1) ":" (pr-str listed) ":"
+       (symbol? simple) ":" (symbol? :ready) ":"
+       (simple-symbol? simple) ":" (simple-symbol? qualified) ":"
+       (qualified-symbol? qualified) ":" (qualified-symbol? simple) ":"
+       (ident? simple) ":" (simple-ident? simple) ":" (qualified-ident? qualified)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "batched_identifier_and_constructor_core_functions_work"
+    "name:user:name:user:id:user:[ready user/name]:Ada:true:#{1 2 3}:(1 2 3 4):true:false:true:false:true:false:true:true:true\n"
+    ocaml_source
+
+let test_batched_identifier_and_constructor_core_functions_reject_bad_symbol_args () =
+  Cljml.Compiler.compile_string {|(def x (symbol 1))|}
+  |> expect_error "symbol expects string, keyword, or symbol"
+
+let test_batched_identifier_and_constructor_core_functions_reject_bad_keyword_args () =
+  Cljml.Compiler.compile_string {|(def x (keyword "user" 1))|}
+  |> expect_error "keyword namespace and name must be string, keyword, or symbol"
+
+let test_batched_identifier_and_constructor_core_functions_reject_bad_namespace_args () =
+  Cljml.Compiler.compile_string {|(def x (namespace 1))|}
+  |> expect_error "namespace expects keyword or symbol"
+
+let test_batched_identifier_and_constructor_core_functions_reject_bad_list_star_tail () =
+  Cljml.Compiler.compile_string {|(def x (list* 1 2 3))|}
+  |> expect_error "list* final argument must be a collection"
 
 let test_batched_sequence_functions_work () =
   let source =
@@ -1730,6 +1774,16 @@ let tests =
       test_batched_predicate_collection_core_functions_reject_bad_run_function );
     ( "batched predicate/collection core functions infer bool params",
       test_batched_predicate_collection_core_functions_infer_bool_params );
+    ( "batched identifier/constructor core functions work",
+      test_batched_identifier_and_constructor_core_functions_work );
+    ( "batched identifier/constructor core functions reject bad symbol args",
+      test_batched_identifier_and_constructor_core_functions_reject_bad_symbol_args );
+    ( "batched identifier/constructor core functions reject bad keyword args",
+      test_batched_identifier_and_constructor_core_functions_reject_bad_keyword_args );
+    ( "batched identifier/constructor core functions reject bad namespace args",
+      test_batched_identifier_and_constructor_core_functions_reject_bad_namespace_args );
+    ( "batched identifier/constructor core functions reject bad list* tail",
+      test_batched_identifier_and_constructor_core_functions_reject_bad_list_star_tail );
     ("batched sequence functions work", test_batched_sequence_functions_work);
     ( "batched sequence functions reject type mismatch",
       test_batched_sequence_functions_reject_type_mismatch );

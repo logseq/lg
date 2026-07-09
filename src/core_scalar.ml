@@ -51,27 +51,88 @@ let keyword_name_code keyword_code =
   ^ keyword_code
   ^ " in let without_prefix = if String.length keyword > 0 && keyword.[0] = ':' then String.sub keyword 1 (String.length keyword - 1) else keyword in match String.rindex_opt without_prefix '/' with None -> without_prefix | Some index -> String.sub without_prefix (index + 1) (String.length without_prefix - index - 1))"
 
+let identifier_body_code code =
+  "(let value = "
+  ^ code
+  ^ " in if String.length value > 0 && value.[0] = ':' then String.sub value 1 (String.length value - 1) else value)"
+
+let identifier_name_code code =
+  "(let body = "
+  ^ identifier_body_code code
+  ^ " in match String.rindex_opt body '/' with None -> body | Some index -> String.sub body (index + 1) (String.length body - index - 1))"
+
+let identifier_namespace_code code =
+  "(let body = "
+  ^ identifier_body_code code
+  ^ " in match String.rindex_opt body '/' with None -> \"\" | Some index -> String.sub body 0 index)"
+
+let identifier_body_expr name arg =
+  match arg.ty with
+  | TString | TSymbol | TKeyword -> Ok (identifier_body_code arg.code)
+  | _ -> Error.error (name ^ " expects string, keyword, or symbol")
+
 let compile_name name args =
   match one_arg name args with
   | Error _ as err -> err
   | Ok arg -> (
       match arg.ty with
       | TString -> Ok (typed TString arg.code)
-      | TKeyword -> Ok (typed TString (keyword_name_code arg.code))
-      | _ -> Error.error "name expects keyword or string")
+      | TKeyword | TSymbol -> Ok (typed TString (identifier_name_code arg.code))
+      | _ -> Error.error "name expects keyword, string, or symbol")
 
 let compile_keyword name args =
+  let keyword_code code =
+    "(let value = "
+    ^ code
+    ^ " in if String.length value > 0 && value.[0] = ':' then value else \":\" ^ value)"
+  in
+  match args with
+  | [ arg ] -> (
+      match arg.ty with
+      | TKeyword -> Ok arg
+      | TString | TSymbol -> Ok (typed TKeyword (keyword_code arg.code))
+      | _ -> Error.error "keyword expects keyword, string, or symbol")
+  | [ namespace_arg; name_arg ] -> (
+      match (identifier_body_expr name namespace_arg, identifier_body_expr name name_arg) with
+      | Error _, _ | _, Error _ ->
+          Error.error "keyword namespace and name must be string, keyword, or symbol"
+      | Ok namespace_code, Ok name_code ->
+          Ok
+            (typed TKeyword
+               ("(let namespace = "
+              ^ namespace_code
+              ^ " in let name = "
+              ^ name_code
+              ^ " in if namespace = \"\" then \":\" ^ name else \":\" ^ namespace ^ \"/\" ^ name)")))
+  | _ -> Error.error "keyword expects 1 or 2 arguments"
+
+let compile_namespace name args =
   match one_arg name args with
   | Error _ as err -> err
   | Ok arg -> (
       match arg.ty with
-      | TKeyword -> Ok arg
-      | TString ->
+      | TKeyword | TSymbol -> Ok (typed TString (identifier_namespace_code arg.code))
+      | _ -> Error.error "namespace expects keyword or symbol")
+
+let compile_symbol name args =
+  match args with
+  | [ arg ] -> (
+      match identifier_body_expr name arg with
+      | Error _ -> Error.error "symbol expects string, keyword, or symbol"
+      | Ok code -> Ok (typed TSymbol code))
+  | [ namespace_arg; name_arg ] -> (
+      match (identifier_body_expr name namespace_arg, identifier_body_expr name name_arg) with
+      | Error _, _ | _, Error _ ->
+          Error.error "symbol namespace and name must be string, keyword, or symbol"
+      | Ok namespace_code, Ok name_code ->
           Ok
-            (typed TKeyword
-               ("(let value = " ^ arg.code
-              ^ " in if String.length value > 0 && value.[0] = ':' then value else \":\" ^ value)"))
-      | _ -> Error.error "keyword expects keyword or string")
+            (typed TSymbol
+               ("(let namespace = "
+              ^ namespace_code
+              ^ " in let name = "
+              ^ name_code
+              ^ " in if namespace = \"\" then name else namespace ^ \"/\" ^ name)")))
+  | _ -> Error.error "symbol expects 1 or 2 arguments"
 
 let compile name args =
   match name with
@@ -107,5 +168,7 @@ let compile name args =
   | "unchecked-dec" | "unchecked-dec-int" -> int_unary name args (fun code -> "(" ^ code ^ " - 1)")
   | "unchecked-negate" | "unchecked-negate-int" -> int_unary name args (fun code -> "(-" ^ code ^ ")")
   | "name" -> compile_name name args
+  | "namespace" -> compile_namespace name args
   | "keyword" -> compile_keyword name args
+  | "symbol" -> compile_symbol name args
   | _ -> Error.error ("unknown function " ^ name)

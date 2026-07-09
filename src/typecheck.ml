@@ -336,13 +336,15 @@ and compile_call current_ns env name arg_forms =
   | "unchecked-subtract-int" | "unchecked-multiply" | "unchecked-multiply-int"
   | "unchecked-divide-int" | "unchecked-remainder-int" | "unchecked-inc"
   | "unchecked-inc-int" | "unchecked-dec" | "unchecked-dec-int"
-  | "unchecked-negate" | "unchecked-negate-int" | "name" | "keyword" -> (
+  | "unchecked-negate" | "unchecked-negate-int" | "name" | "namespace" | "keyword"
+  | "symbol" -> (
       match compile_args () with
       | Error _ as err -> err
       | Ok args -> Core_scalar.compile name args)
   | "any?" | "rational?" | "ratio?" | "float?" | "double?" | "decimal?"
-  | "simple-keyword?" | "qualified-keyword?" | "ident?" | "simple-ident?"
-  | "qualified-ident?" | "sequential?" | "reversible?" | "sorted?" -> (
+  | "symbol?" | "simple-symbol?" | "qualified-symbol?" | "simple-keyword?"
+  | "qualified-keyword?" | "ident?" | "simple-ident?" | "qualified-ident?"
+  | "sequential?" | "reversible?" | "sorted?" -> (
       match compile_args () with
       | Error _ as err -> err
       | Ok args -> Core_predicate.compile name args)
@@ -432,6 +434,7 @@ and compile_call current_ns env name arg_forms =
           Ok (typed TUnit (printer ^ " (" ^ Codegen.print_expr arg ^ ")"))
       | Ok _ -> Error.error (name ^ " expects 1 arguments"))
   | "list" -> compile_list current_ns env arg_forms
+  | "list*" -> compile_list_star current_ns env arg_forms
   | "range" -> compile_range current_ns env arg_forms
   | "list-of" -> compile_list_of arg_forms
   | "cons" -> compile_cons current_ns env arg_forms
@@ -455,7 +458,7 @@ and compile_call current_ns env name arg_forms =
   | "contains?" -> compile_contains current_ns env arg_forms
   | "keys" -> compile_keys current_ns env arg_forms
   | "vals" -> compile_vals current_ns env arg_forms
-  | "hash-map" -> compile_hash_map current_ns env arg_forms
+  | "hash-map" | "array-map" | "sorted-map" -> compile_hash_map current_ns env arg_forms
   | "rest" -> compile_rest current_ns env arg_forms
   | "seq" -> compile_seq current_ns env arg_forms
   | "empty?" -> compile_empty current_ns env arg_forms
@@ -503,7 +506,7 @@ and compile_call current_ns env name arg_forms =
   | "partial" -> compile_partial current_ns env arg_forms
   | "identity" -> compile_identity current_ns env arg_forms
   | "constantly" -> compile_constantly current_ns env arg_forms
-  | "hash-set" -> compile_hash_set current_ns env arg_forms
+  | "hash-set" | "sorted-set" -> compile_hash_set current_ns env arg_forms
   | "set-of" -> compile_set_of arg_forms
   | "disj" -> compile_disj current_ns env arg_forms
   | "empty" -> compile_empty_value current_ns env arg_forms
@@ -744,6 +747,32 @@ and compile_list current_ns env forms =
           in
           loop [ first_expr.code ] rest)
 
+and compile_list_star current_ns env arg_forms =
+  match List.rev arg_forms with
+  | [] -> Error.error "list* expects values and final collection"
+  | final_form :: prefix_forms_rev -> (
+      match compile_expr current_ns env final_form with
+      | Error _ as err -> err
+      | Ok final -> (
+          match collection_to_list_code final with
+          | Error _ -> Error.error "list* final argument must be a collection"
+          | Ok (inner, final_list_code) -> (
+              let prefix_forms = List.rev prefix_forms_rev in
+              match compile_args_for current_ns env prefix_forms with
+              | Error _ as err -> err
+              | Ok prefix_args ->
+                  if List.for_all (fun arg -> Types.equal inner arg.ty) prefix_args then
+                    let prefix_code =
+                      prefix_args |> List.map (fun arg -> arg.code) |> String.concat "; "
+                    in
+                    let list_code =
+                      match prefix_args with
+                      | [] -> final_list_code
+                      | _ -> "[" ^ prefix_code ^ "] @ (" ^ final_list_code ^ ")"
+                    in
+                    Ok (typed (TList inner) list_code)
+                  else Error.error "list* value type must match final collection element type")))
+
 and compile_range current_ns env arg_forms =
   let literal_zero = function FInt 0 -> true | _ -> false in
   match arg_forms with
@@ -810,23 +839,32 @@ and compile_vector_of arg_forms =
 and compile_conj current_ns env arg_forms =
   match compile_args_for current_ns env arg_forms with
   | Error _ as err -> err
-  | Ok [ collection; value ] -> (
-      match collection.ty with
-      | TList inner when Types.equal inner value.ty ->
-          Ok (typed collection.ty ("(" ^ value.code ^ " :: (" ^ collection.code ^ "))"))
-      | TList _ -> Error.error "conj value type must match list element type"
-      | TVector inner when Types.equal inner value.ty ->
-          Ok
-            (typed collection.ty
-               ("Rrbvec.push_back (" ^ collection.code ^ ") (" ^ value.code ^ ")"))
-      | TVector _ -> Error.error "conj value type must match vector element type"
-      | TSet inner when Types.equal inner value.ty ->
-          Ok
-            (typed collection.ty
-               ("List.sort_uniq compare (" ^ value.code ^ " :: (" ^ collection.code ^ "))"))
-      | TSet _ -> Error.error "conj value type must match set element type"
-      | _ -> Error.error "conj expects a list, vector, or set")
-  | Ok _ -> Error.error "conj expects 2 arguments"
+  | Ok (collection :: values) when values <> [] ->
+      let add_value collection value =
+        match collection.ty with
+        | TList inner when Types.equal inner value.ty ->
+            Ok (typed collection.ty ("(" ^ value.code ^ " :: (" ^ collection.code ^ "))"))
+        | TList _ -> Error.error "conj value type must match list element type"
+        | TVector inner when Types.equal inner value.ty ->
+            Ok
+              (typed collection.ty
+                 ("Rrbvec.push_back (" ^ collection.code ^ ") (" ^ value.code ^ ")"))
+        | TVector _ -> Error.error "conj value type must match vector element type"
+        | TSet inner when Types.equal inner value.ty ->
+            Ok
+              (typed collection.ty
+                 ("List.sort_uniq compare (" ^ value.code ^ " :: (" ^ collection.code ^ "))"))
+        | TSet _ -> Error.error "conj value type must match set element type"
+        | _ -> Error.error "conj expects a list, vector, or set"
+      in
+      values
+      |> List.fold_left
+           (fun acc value ->
+             match acc with
+             | Error _ as err -> err
+             | Ok collection -> add_value collection value)
+           (Ok collection)
+  | Ok _ -> Error.error "conj expects collection and values"
 
 and compile_cons current_ns env arg_forms =
   match compile_args_for current_ns env arg_forms with

@@ -83,16 +83,16 @@ The compiler should support this syntax without macros.
 | Category | Functions | Phase |
 | --- | --- | --- |
 | Printing | `print`, `println`, `pr-str` | 1 |
-| Boolean and predicates | `not`, `true?`, `false?`, `nil?`, `some?`, `boolean`, `int?`, `integer?`, `number?`, `nat-int?`, `pos-int?`, `neg-int?`, `string?`, `keyword?`, `boolean?`, `vector?`, `list?`, `seq?`, `set?`, `map?`, `fn?`, `coll?`, `associative?`, `indexed?`, `seqable?`, `counted?`, `any?`, `rational?`, `ratio?`, `float?`, `double?`, `decimal?`, `simple-keyword?`, `qualified-keyword?`, `ident?`, `simple-ident?`, `qualified-ident?`, `sequential?`, `reversible?`, `sorted?` | 1 |
+| Boolean and predicates | `not`, `true?`, `false?`, `nil?`, `some?`, `boolean`, `int?`, `integer?`, `number?`, `nat-int?`, `pos-int?`, `neg-int?`, `string?`, `keyword?`, `symbol?`, `boolean?`, `vector?`, `list?`, `seq?`, `set?`, `map?`, `fn?`, `coll?`, `associative?`, `indexed?`, `seqable?`, `counted?`, `any?`, `rational?`, `ratio?`, `float?`, `double?`, `decimal?`, `simple-keyword?`, `qualified-keyword?`, `simple-symbol?`, `qualified-symbol?`, `ident?`, `simple-ident?`, `qualified-ident?`, `sequential?`, `reversible?`, `sorted?` | 1 |
 | Arithmetic | `+`, `-`, `*`, `/`, `inc`, `dec`, `<`, `<=`, `>`, `>=`, `=`, `not=`, `zero?`, `pos?`, `neg?`, `even?`, `odd?`, `max`, `min`, `quot`, `rem`, `mod`, `bit-and`, `bit-or`, `bit-xor`, `bit-not`, `bit-set`, `bit-clear`, `bit-flip`, `bit-test`, `bit-shift-left`, `bit-shift-right`, `bit-shift-right-zero-fill`, `unchecked-add`, `unchecked-add-int`, `unchecked-subtract`, `unchecked-subtract-int`, `unchecked-multiply`, `unchecked-multiply-int`, `unchecked-divide-int`, `unchecked-remainder-int`, `unchecked-inc`, `unchecked-inc-int`, `unchecked-dec`, `unchecked-dec-int`, `unchecked-negate`, `unchecked-negate-int` | 1 |
 | Strings | `str`, `subs`, `clojure.string/blank?`, `clojure.string/capitalize`, `clojure.string/ends-with?`, `clojure.string/includes?`, `clojure.string/index-of`, `clojure.string/join`, `clojure.string/last-index-of`, `clojure.string/lower-case`, `clojure.string/re-quote-replacement`, `clojure.string/replace`, `clojure.string/replace-first`, `clojure.string/reverse`, `clojure.string/split`, `clojure.string/split-lines`, `clojure.string/starts-with?`, `clojure.string/trim`, `clojure.string/trim-newline`, `clojure.string/triml`, `clojure.string/trimr`, `clojure.string/upper-case` | 1 |
-| Scalars | `name`, `keyword` | 1 |
-| Maps | `hash-map`, `get`, `assoc`, `dissoc`, `merge`, `update`, `select-keys`, `contains?`, `keys`, `vals` | 1 |
+| Scalars | `name`, `namespace`, `keyword`, `symbol` | 1 |
+| Maps | `hash-map`, `array-map`, `sorted-map`, `get`, `assoc`, `dissoc`, `merge`, `update`, `select-keys`, `contains?`, `keys`, `vals` | 1 |
 | Vectors | `vector`, `conj`, `count`, `nth`, `get`, `assoc`, `update`, `contains?`, `subvec`, `first`, `second`, `last`, `peek`, `pop`, `rest` | 1 |
-| Lists | `list`, `list-of`, `cons`, `conj`, `count`, `nth`, `first`, `second`, `last`, `peek`, `pop`, `rest` | 2 |
+| Lists | `list`, `list*`, `list-of`, `cons`, `conj`, `count`, `nth`, `first`, `second`, `last`, `peek`, `pop`, `rest` | 2 |
 | Sequences | `seq`, `empty`, `empty?`, `into`, `take`, `drop`, `reverse`, `range`, `every?`, `not-any?`, `not-every?`, `map`, `filter`, `remove`, `take-while`, `drop-while`, `distinct`, `dedupe`, `sort`, `concat`, `vec`, `set`, `repeat`, `repeatedly`, `interpose`, `interleave`, `partition`, `partition-all`, `reductions`, `map-indexed`, `filterv`, `mapv`, `reduce`, `reduce-kv`, `butlast`, `take-last`, `drop-last`, `take-nth`, `split-at`, `split-with`, `partition-by`, `bounded-count`, `dorun`, `doall` | 2 |
 | Functions | `apply`, `comp`, `partial`, `identity`, `constantly`, `run!` | 2 |
-| Sets | `hash-set`, `set-of`, `conj`, `contains?`, `disj` | 3 |
+| Sets | `hash-set`, `sorted-set`, `set-of`, `conj`, `contains?`, `disj` | 3 |
 | Protocols | `defprotocol`, `extend-type`, static method dispatch by receiver type | 3 |
 
 ## Type System
@@ -100,7 +100,7 @@ The compiler should support this syntax without macros.
 The first type system should be explicit and structural.
 It should infer ordinary function parameter types from source-level constraints where possible, while allowing optional annotations for ambiguous cases.
 
-Scalar types are `int`, `string`, `keyword`, `bool`, `nil`, and `unit`.
+Scalar types are `int`, `string`, `symbol`, `keyword`, `bool`, `nil`, and `unit`.
 Arithmetic starts as integer-only; ratio-producing Clojure arities such as unary `/` are documented differences until numeric tower support exists.
 
 Type predicates are resolved from static cljml types. This includes scalar
@@ -109,9 +109,9 @@ predicates and collection capability predicates such as `coll?`,
 `reversible?`, and `sorted?`. Numeric tower predicates currently reflect the
 integer-only runtime.
 
-Scalar helpers such as `boolean`, `name`, and `keyword` are implemented for the
-types currently represented in cljml. Unchecked integer operations lower
-directly to OCaml integer operators.
+Scalar helpers such as `boolean`, `name`, `namespace`, `keyword`, and `symbol`
+are implemented for the types currently represented in cljml. Unchecked integer
+operations lower directly to OCaml integer operators.
 
 `if-not`, `when`, and `cond` are compiler-recognized forms in the static core.
 `cond` requires an `:else` branch until cljml has a union type for implicit nil.
@@ -165,11 +165,16 @@ and `run!` operate eagerly over concrete typed collections.
 
 `apply` supports integer binary reducers over typed lists, vectors, and sets.
 
+`conj` accepts one or more same-typed values after a list, vector, or set.
+
 `disj` accepts zero or more same-typed values after the set.
 
 Map literal types are structural records keyed by Clojure keywords.
 
 `hash-map` creates structural records from keyword/value pairs.
+
+`array-map` and `sorted-map` share the same structural map representation as
+`hash-map` in the current static subset.
 
 Keyword lookup in a typed context can infer structural map field requirements
 for unannotated function parameters.

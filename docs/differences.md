@@ -51,16 +51,21 @@ Type predicates such as `int?`, `integer?`, `number?`, `nat-int?`, `pos-int?`,
 `set?`, `map?`, `fn?`, `coll?`, `associative?`, `indexed?`, `seqable?`, and
 `counted?` are resolved from static cljml types or direct OCaml integer checks.
 `any?`, `rational?`, `ratio?`, `float?`, `double?`, `decimal?`,
-`simple-keyword?`, `qualified-keyword?`, `ident?`, `simple-ident?`,
-`qualified-ident?`, `sequential?`, `reversible?`, and `sorted?` are also
-static predicates in the current subset. Numeric tower predicates reflect the
-integer-only runtime, so ratio and floating predicates currently return false.
+`simple-keyword?`, `qualified-keyword?`, `symbol?`, `simple-symbol?`,
+`qualified-symbol?`, `ident?`, `simple-ident?`, `qualified-ident?`,
+`sequential?`, `reversible?`, and `sorted?` are also static predicates in the
+current subset. Numeric tower predicates reflect the integer-only runtime, so
+ratio and floating predicates currently return false.
 
 `subs` supports two- and three-argument typed string slicing.
 
 Arithmetic is currently integer-only. `+` and `*` support Clojure identity arities, ordered comparisons can be chained, same-typed `=` and `not=` are supported, same-shaped structural maps compare field by field, and `/` requires at least two integer arguments because cljml does not yet have ratios. Integer helpers include `zero?`, `pos?`, `neg?`, `even?`, `odd?`, `max`, `min`, `quot`, `rem`, `mod`, `bit-and`, `bit-or`, `bit-xor`, `bit-not`, `bit-set`, `bit-clear`, `bit-flip`, `bit-test`, `bit-shift-left`, `bit-shift-right`, and `bit-shift-right-zero-fill`. Unchecked integer functions map directly to OCaml integer operators, so their exact overflow behavior follows the OCaml target.
 
-`boolean`, `name`, and `keyword` are supported for the current scalar subset. `name` works on strings and keywords, and `keyword` works on strings and keywords.
+`boolean`, `name`, `namespace`, `keyword`, and `symbol` are supported for the
+current scalar subset. `name` works on strings, keywords, and symbols.
+`namespace` works on keywords and symbols, but returns `""` for unqualified
+identifiers because cljml does not yet have a typed optional string or nilable
+string. `keyword` and `symbol` work on strings, keywords, and symbols.
 
 ## Macros
 
@@ -91,7 +96,7 @@ legal OCaml identifiers while preserving source-level names.
 
 Vectors compile to `Rrbvec.t` persistent vectors.
 
-Lists compile to OCaml lists and support `list`, `list-of`, `cons`, `conj`, `first`, `second`, `last`, `peek`, `pop`, `rest`, `nth`, `count`, `map`, `filter`, `remove`, `take-while`, `drop-while`, `distinct`, `dedupe`, `sort`, `concat`, `vec`, `set`, `repeat`, `repeatedly`, `interpose`, `interleave`, `partition`, `partition-all`, `reductions`, `map-indexed`, `filterv`, `mapv`, `reduce`, `reduce-kv`, `butlast`, `take-last`, `drop-last`, `take-nth`, `split-at`, `split-with`, `partition-by`, `bounded-count`, `dorun`, `doall`, and `run!` where the static element types line up.
+Lists compile to OCaml lists and support `list`, `list*`, `list-of`, `cons`, `conj`, `first`, `second`, `last`, `peek`, `pop`, `rest`, `nth`, `count`, `map`, `filter`, `remove`, `take-while`, `drop-while`, `distinct`, `dedupe`, `sort`, `concat`, `vec`, `set`, `repeat`, `repeatedly`, `interpose`, `interleave`, `partition`, `partition-all`, `reductions`, `map-indexed`, `filterv`, `mapv`, `reduce`, `reduce-kv`, `butlast`, `take-last`, `drop-last`, `take-nth`, `split-at`, `split-with`, `partition-by`, `bounded-count`, `dorun`, `doall`, and `run!` where the static element types line up.
 
 Vectors support `first`, `second`, `last`, `peek`, `pop`, `rest`, `nth`, `get`, `assoc`, `update`, `contains?`, `subvec`, and the current eager sequence operations.
 
@@ -128,25 +133,29 @@ does not yet have lazy seqs.
 
 Empty vector literals still require explicit element typing.
 
-Use `(vector-of :int)`, `(vector-of :string)`, `(vector-of :keyword)`, `(vector-of :bool)`, or `(vector-of :nil)` for typed empty vectors.
+Use `(vector-of :int)`, `(vector-of :string)`, `(vector-of :symbol)`, `(vector-of :keyword)`, `(vector-of :bool)`, or `(vector-of :nil)` for typed empty vectors.
 
-Use `(list-of :int)`, `(list-of :string)`, `(list-of :keyword)`, `(list-of :bool)`, or `(list-of :nil)` for typed empty lists.
+Use `(list-of :int)`, `(list-of :string)`, `(list-of :symbol)`, `(list-of :keyword)`, `(list-of :bool)`, or `(list-of :nil)` for typed empty lists.
 
-Use `(set-of :int)`, `(set-of :string)`, `(set-of :keyword)`, `(set-of :bool)`, or `(set-of :nil)` for typed empty sets.
+Use `(set-of :int)`, `(set-of :string)`, `(set-of :symbol)`, `(set-of :keyword)`, `(set-of :bool)`, or `(set-of :nil)` for typed empty sets.
 
 Sets currently compile to sorted unique OCaml lists and support `hash-set`,
-`set-of`, `conj`, `disj`, `contains?`, `every?`, `not-any?`, `not-every?`,
+`sorted-set`, `set-of`, `conj`, `disj`, `contains?`, `every?`, `not-any?`, `not-every?`,
 `map`, `filter`, and `reduce`.
+
+`conj` accepts one or more same-typed values after a list, vector, or set.
 
 `disj` accepts zero or more same-typed values after the set.
 
 `apply` currently supports integer binary reducers over typed lists, vectors,
 and sets.
 
-Keywords are statically distinct from strings, although the current runtime
-representation is still an OCaml string.
+Keywords and symbols are statically distinct from strings, although the current
+runtime representation is still an OCaml string.
 
 Maps currently compile to OCaml records when their keys are known statically.
+`array-map` and `sorted-map` currently share the same structural map
+representation as `hash-map`.
 
 Structural map helpers include `merge`, `update`, `select-keys`, `keys`, and `vals`. Overlapping fields in `merge` and updated fields in `update` must keep their existing static type, and `vals` requires all selected map values to have the same type.
 

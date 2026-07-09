@@ -23,7 +23,8 @@ The compiler infers record-like map shapes automatically:
   fields.
 - `[36 37 38]` becomes an `Rrbvec.t` persistent vector.
 - `(list 1 2 3)` becomes a typed OCaml list.
-- `:admin?` is a distinct `keyword` value in the static type system.
+- `:admin?` is a distinct `keyword` value in the static type system, and
+  `(symbol "user" "name")` creates a distinct `symbol` value.
 - `(hash-map :name "Ada" :age 36)` creates the same structural map shape as a
   map literal.
 - `(assoc x :age 36 :admin? true)` produces a new record shape with added or
@@ -47,8 +48,8 @@ The compiler infers record-like map shapes automatically:
 - Function parameter types are inferred from body constraints where possible.
   Keyword lookup constraints such as `(:age person)` can infer required
   structural map fields when the field value type is known from context.
-  Optional `^:int`, `^:string`, `^:keyword`, `^:bool`, or `^:nil` annotations
-  can make a parameter type explicit.
+  Optional `^:int`, `^:string`, `^:symbol`, `^:keyword`, `^:bool`, or `^:nil`
+  annotations can make a parameter type explicit.
 - `do`, `fn`, `defn`, and `let` bodies can contain multiple forms; earlier
   forms are evaluated for effects and the final form supplies the value.
 - `if-not`, `when`, and `cond` are compiler-recognized conditional forms.
@@ -62,10 +63,11 @@ The compiler infers record-like map shapes automatically:
   `map?`, `fn?`, `coll?`, `associative?`, `indexed?`, `seqable?`, and
   `counted?` are supported as static type predicates. `any?`, `rational?`,
   `ratio?`, `float?`, `double?`, `decimal?`, `simple-keyword?`,
-  `qualified-keyword?`, `ident?`, `simple-ident?`, `qualified-ident?`,
-  `sequential?`, `reversible?`, and `sorted?` are also supported for the
-  current static type subset.
-- `boolean`, `name`, and `keyword` are supported for the current scalar subset.
+  `qualified-keyword?`, `symbol?`, `simple-symbol?`, `qualified-symbol?`,
+  `ident?`, `simple-ident?`, `qualified-ident?`, `sequential?`, `reversible?`,
+  and `sorted?` are also supported for the current static type subset.
+- `boolean`, `name`, `namespace`, `keyword`, and `symbol` are supported for the
+  current scalar subset.
 - `subs` supports two- and three-argument typed string slicing.
 - `+`, `*`, `-`, `/`, ordered comparisons, `=`, and `not=` follow
   Clojure-style arities where the current type system can represent them.
@@ -78,7 +80,7 @@ The compiler infers record-like map shapes automatically:
   operations.
 - `=` and `not=` compare same-shaped structural maps field by field.
 - `range` produces an eager typed integer list.
-- `list`, `list-of`, `cons`, `second`, `last`, `peek`, `pop`, `map`,
+- `list`, `list*`, `list-of`, `cons`, `second`, `last`, `peek`, `pop`, `map`,
   `filter`, `remove`, `take-while`, `drop-while`, `distinct`, `dedupe`,
   `sort`, `concat`, `vec`, `set`, `repeat`, `repeatedly`, `interpose`,
   `interleave`, `partition`, `partition-all`, `reductions`, `map-indexed`,
@@ -98,8 +100,11 @@ The compiler infers record-like map shapes automatically:
 - `reverse` returns a same-typed reversed list or vector.
 - `every?`, `not-any?`, and `not-every?` work on typed lists, vectors, and
   sets.
-- `hash-set`, `set-of`, `conj`, `disj`, and `contains?` are supported for
+- `array-map` and `sorted-map` create structural maps like `hash-map` in the
+  current static subset.
+- `hash-set`, `sorted-set`, `set-of`, `conj`, `disj`, and `contains?` are supported for
   homogeneous sets, and `map`, `filter`, and `reduce` work over sets.
+- `conj` accepts one or more same-typed values after a list, vector, or set.
 - `disj` accepts zero or more same-typed values after the set.
 - `(:require [some.ns :as alias])` can alias previously compiled namespaces.
 - `(:require [some.ns :refer [user]])` can refer previously compiled namespace
@@ -119,8 +124,8 @@ The compiler infers record-like map shapes automatically:
 - `(keys user)` returns a persistent vector of keyword values, and `(vals user)`
   returns a persistent vector when all map values have the same type.
 - `(vector-of :int)`, `(list-of :int)`, and `(set-of :int)` create explicitly
-  typed empty collections; `:keyword` is supported alongside the other scalar
-  type keywords.
+  typed empty collections; `:symbol` and `:keyword` are supported alongside
+  the other scalar type keywords.
 - Updating an existing field with a different type is rejected.
 - `Cljml.Compiler.compile_chunk` supports incremental compilation by returning
   the next compiler state plus the OCaml emitted for the current source chunk.

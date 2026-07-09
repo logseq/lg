@@ -1,6 +1,7 @@
 type ty =
   | TInt
   | TString
+  | TSymbol
   | TKeyword
   | TBool
   | TNil
@@ -45,6 +46,7 @@ let rec equal left right =
   | TAny, _ | _, TAny -> true
   | TInt, TInt
   | TString, TString
+  | TSymbol, TSymbol
   | TKeyword, TKeyword
   | TBool, TBool
   | TNil, TNil
@@ -82,6 +84,7 @@ let rec compatible ~expected ~actual =
 let rec source_name = function
   | TInt -> "int"
   | TString -> "string"
+  | TSymbol -> "symbol"
   | TKeyword -> "keyword"
   | TBool -> "bool"
   | TNil -> "nil"
@@ -98,6 +101,7 @@ let rec source_name = function
 let rec ocaml_name = function
   | TInt -> "int"
   | TString -> "string"
+  | TSymbol -> "string"
   | TKeyword -> "string"
   | TBool -> "bool"
   | TNil -> "unit"

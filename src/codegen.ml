@@ -6,6 +6,7 @@ let rec stringify_expr ?(pr = false) expr =
   match expr.ty with
   | TInt -> "string_of_int (" ^ expr.code ^ ")"
   | TString -> if pr then "Printf.sprintf \"%S\" (" ^ expr.code ^ ")" else expr.code
+  | TSymbol -> expr.code
   | TKeyword -> expr.code
   | TBool -> "string_of_bool (" ^ expr.code ^ ")"
   | TNil -> {|"nil"|}
@@ -15,6 +16,7 @@ let rec stringify_expr ?(pr = false) expr =
       let mapper =
         match inner with
         | TInt -> "string_of_int"
+        | TSymbol -> "(fun x -> x)"
         | TKeyword -> "(fun x -> x)"
         | TString ->
             if pr then "(fun x -> Printf.sprintf \"%S\" x)"
@@ -30,6 +32,7 @@ let rec stringify_expr ?(pr = false) expr =
       let mapper =
         match inner with
         | TInt -> "string_of_int"
+        | TSymbol -> "(fun x -> x)"
         | TKeyword -> "(fun x -> x)"
         | TString ->
             if pr then "(fun x -> Printf.sprintf \"%S\" x)"
@@ -45,6 +48,7 @@ let rec stringify_expr ?(pr = false) expr =
       let mapper =
         match inner with
         | TInt -> "string_of_int"
+        | TSymbol -> "(fun x -> x)"
         | TKeyword -> "(fun x -> x)"
         | TString ->
             if pr then "(fun x -> Printf.sprintf \"%S\" x)"
