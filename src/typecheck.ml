@@ -73,15 +73,14 @@ let row_arg_code row_type_name expected_ty arg =
   | _ -> arg.code
 
 let rec compile_expr current_ns (env : (string * binding) list) = function
-  | FInt value -> Ok (typed TInt (string_of_int value))
-  | FString value -> Ok (typed TString (Codegen.ocaml_string_literal value))
-  | FBool true -> Ok (typed TBool "true")
-  | FBool false -> Ok (typed TBool "false")
-  | FNil -> Ok (typed TNil "()")
-  | FKeyword keyword -> Ok (typed TKeyword (Codegen.ocaml_string_literal keyword))
+  | FInt value -> Ok (typed_ir TInt (Ocaml_ir.Int value))
+  | FString value -> Ok (typed_ir TString (Ocaml_ir.String value))
+  | FBool value -> Ok (typed_ir TBool (Ocaml_ir.Bool value))
+  | FNil -> Ok (typed_ir TNil Ocaml_ir.Unit)
+  | FKeyword keyword -> Ok (typed_ir TKeyword (Ocaml_ir.String keyword))
   | FSymbol name -> (
       match List.assoc_opt (Names.namespaced_key current_ns name) env with
-      | Some binding -> Ok (typed binding.ty binding.ocaml_name)
+      | Some binding -> Ok (typed_ir binding.ty (Ocaml_ir.Ident binding.ocaml_name))
       | None -> Error.error ("unknown symbol " ^ name))
   | FVector forms -> compile_vector current_ns env forms
   | FMap pairs -> compile_map current_ns env pairs
@@ -151,7 +150,12 @@ and compile_map current_ns env pairs =
                    (fun field (_keyword, value) -> (field, value.code))
                    fields pairs
                in
-               { ty = TRecord fields; code = "<record>"; record_values = Some values })
+               {
+                 ty = TRecord fields;
+                 code = "<record>";
+                 ocaml_expr = Ocaml_ir.Raw "<record>";
+                 record_values = Some values;
+               })
     | pair :: rest -> (
         match compile_pair pair with
         | Ok pair -> loop (pair :: acc) rest
@@ -2187,7 +2191,7 @@ let compile_extend_type current_ns env next_type receiver_keyword protocol_name 
                                           Value_binding
                                             {
                                               pattern = Named ocaml_name;
-                                              expression = expr.code;
+                                              expression = expr.ocaml_expr;
                                             } )))
                         | _ -> Error.error "protocol method did not compile to a function"))))
         | _ -> Error.error "extend-type methods must be (method-name [params] body)"
@@ -2241,7 +2245,7 @@ let rec compile_module current_ns env next_type module_path module_segment forms
             | _ ->
                 let item =
                   Value_binding
-                    { pattern = Named local_name; expression = expr.code }
+                    { pattern = Named local_name; expression = expr.ocaml_expr }
                 in
                 Ok
                   ( env @ [ (key, local_binding) ],
@@ -2273,7 +2277,7 @@ let rec compile_module current_ns env next_type module_path module_segment forms
                 let type_items = row_type_items local_row_types param_tys in
                 let value_item =
                   Value_binding
-                    { pattern = Named local_name; expression = expr.code }
+                    { pattern = Named local_name; expression = expr.ocaml_expr }
                 in
                 Ok
                   ( env @ [ (key, local_binding) ],
@@ -2334,7 +2338,7 @@ let compile_top_level current_ns env next_type = function
                   env @ [ (env_key, binding) ],
                   next_type,
                   Value_binding
-                    { pattern = Named ocaml_name; expression = expr.code } )))
+                    { pattern = Named ocaml_name; expression = expr.ocaml_expr } )))
   | FList (FSymbol "defn" :: FSymbol name :: params :: body_forms) -> (
       match prepare_fn current_ns env params body_forms with
       | Error _ as err -> err
@@ -2353,7 +2357,7 @@ let compile_top_level current_ns env next_type = function
               let type_items = row_type_items row_param_types param_tys in
               let value_item =
                 Value_binding
-                  { pattern = Named ocaml_name; expression = expr.code }
+                  { pattern = Named ocaml_name; expression = expr.ocaml_expr }
               in
               Ok
                 ( current_ns,
@@ -2382,7 +2386,7 @@ let compile_top_level current_ns env next_type = function
               env,
               next_type,
               Value_binding
-                { pattern = Unit_pattern; expression = expr.code } ))
+                { pattern = Unit_pattern; expression = expr.ocaml_expr } ))
   | FList (FSymbol "ns" :: FSymbol namespace :: clauses) -> (
       match Ns_require.parse_requires clauses with
       | Error _ as err -> err
@@ -2427,7 +2431,7 @@ let compile_top_level current_ns env next_type = function
                   env,
                   next_type,
                   Value_binding
-                    { pattern = Ignore_pattern; expression = expr.code } )))
+                    { pattern = Ignore_pattern; expression = expr.ocaml_expr } )))
 
 type state = {
   current_ns : string;

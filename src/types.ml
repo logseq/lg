@@ -28,6 +28,7 @@ type binding = {
 type typed_expr = {
   ty : ty;
   code : string;
+  ocaml_expr : Ocaml_ir.t;
   record_values : (field * string) list option;
 }
 
@@ -39,7 +40,7 @@ type value_pattern =
 type compiled_item =
   | Value_binding of {
       pattern : value_pattern;
-      expression : string;
+      expression : Ocaml_ir.t;
     }
   | Comment of string
   | Type_def of {
@@ -58,7 +59,11 @@ type compiled_item =
       values : (field * string) list;
     }
 
-let typed ty code = { ty; code; record_values = None }
+let typed ty code =
+  { ty; code; ocaml_expr = Ocaml_ir.Raw code; record_values = None }
+
+let typed_ir ty ocaml_expr =
+  { ty; code = Ocaml_ir.to_source ocaml_expr; ocaml_expr; record_values = None }
 
 let binding ?(row_param_types = []) ocaml_name ty =
   { ocaml_name; ty; row_param_types }

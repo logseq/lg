@@ -20,6 +20,14 @@ let field_code target field =
 let values_for target fields =
   List.map (fun (field : field) -> (field, field_code target field)) fields
 
+let record_expr fields values =
+  {
+    ty = TRecord fields;
+    code = "<record>";
+    ocaml_expr = Ocaml_ir.Raw "<record>";
+    record_values = Some values;
+  }
+
 let assoc target fields keyword value =
   match find_field keyword fields with
   | Some field when not (Types.equal field.ty value.ty) ->
@@ -35,14 +43,14 @@ let assoc target fields keyword value =
                in
                (field, code))
       in
-      Ok { ty = TRecord fields; code = "<record>"; record_values = Some values }
+      Ok (record_expr fields values)
   | None ->
       let new_field = make_field keyword value.ty in
       let old_fields = fields in
       let fields = old_fields @ [ new_field ] in
       let values = values_for target old_fields in
       let values = values @ [ (new_field, value.code) ] in
-      Ok { ty = TRecord fields; code = "<record>"; record_values = Some values }
+      Ok (record_expr fields values)
 
 let rec assoc_many target pairs =
   match (target.ty, pairs) with
@@ -59,7 +67,7 @@ let dissoc target fields keyword =
   | Some _ ->
       let fields = List.filter (fun (field : field) -> field.keyword <> keyword) fields in
       let values = values_for target fields in
-      Ok { ty = TRecord fields; code = "<record>"; record_values = Some values }
+      Ok (record_expr fields values)
 
 let rec dissoc_many target keywords =
   match (target.ty, keywords) with
@@ -121,7 +129,7 @@ let merge maps =
           match result with
           | Error _ as err -> err
           | Ok (fields, values) ->
-              Ok { ty = TRecord fields; code = "<record>"; record_values = Some values })
+              Ok (record_expr fields values))
       | _ -> Error.error "merge expects maps")
 
 let update_value target fields keyword value_ty value_code =
@@ -138,7 +146,7 @@ let update_value target fields keyword value_ty value_code =
                if field.keyword = keyword then (field, value_code)
                else (field, field_code target field))
       in
-      Ok { ty = TRecord fields; code = "<record>"; record_values = Some values }
+      Ok (record_expr fields values)
 
 let select_keys target fields keywords =
   if keywords = [] then Error.error "select-keys requires at least one key"
@@ -152,7 +160,7 @@ let select_keys target fields keywords =
           validate_unique_keywords keyword_pairs
           |> Result.map (fun () ->
                  let values = values_for target selected in
-                 { ty = TRecord selected; code = "<record>"; record_values = Some values })
+                 record_expr selected values)
       | keyword :: rest -> (
           match find_field keyword fields with
           | Some field -> collect (field :: acc) rest

@@ -2067,6 +2067,22 @@ let test_parsetree_backend_builds_native_module_items () =
       | _ -> failwith "expected module structure item")
   | _ -> failwith "expected one module structure item"
 
+let test_parsetree_backend_builds_native_scalar_expressions () =
+  let structure =
+    Cljml.Compiler.compile_parsetree {|(def answer 42)|} |> expect_ok
+  in
+  match structure with
+  | [ item ] -> (
+      match item.pstr_desc with
+      | Pstr_value (_, [ binding ]) -> (
+          match binding.pvb_expr.pexp_desc with
+          | Pexp_constant _ ->
+              if not binding.pvb_expr.pexp_loc.loc_ghost then
+                failwith "expected native scalar expression with a ghost location"
+          | _ -> failwith "expected scalar constant expression")
+      | _ -> failwith "expected one scalar value binding")
+  | _ -> failwith "expected one scalar value binding"
+
 let test_incremental_parsetree_backend_preserves_state () =
   let state = Cljml.Compiler.empty_state in
   let state, people_structure =
@@ -2383,6 +2399,8 @@ let tests =
       test_parsetree_backend_builds_native_protocol_items );
     ( "parsetree backend builds native module items",
       test_parsetree_backend_builds_native_module_items );
+    ( "parsetree backend builds native scalar expressions",
+      test_parsetree_backend_builds_native_scalar_expressions );
     ( "incremental parsetree backend preserves state",
       test_incremental_parsetree_backend_preserves_state );
   ]

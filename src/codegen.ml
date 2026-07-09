@@ -67,7 +67,12 @@ let rec stringify_expr ?(pr = false) expr =
             |> List.map (fun ((field : field), code) ->
                    let part =
                      stringify_expr ~pr:true
-                       { ty = field.ty; code; record_values = None }
+                       {
+                         ty = field.ty;
+                         code;
+                         ocaml_expr = Ocaml_ir.Raw code;
+                         record_values = None;
+                       }
                    in
                    Printf.sprintf "%S ^ %s" (field.keyword ^ " ") part)
             |> String.concat {| ^ ", " ^ |}
@@ -80,7 +85,12 @@ let rec stringify_expr ?(pr = false) expr =
                    let code = expr.code ^ "." ^ field.ocaml_name in
                    let part =
                      stringify_expr ~pr:true
-                       { ty = field.ty; code; record_values = None }
+                       {
+                         ty = field.ty;
+                         code;
+                         ocaml_expr = Ocaml_ir.Raw code;
+                         record_values = None;
+                       }
                    in
                    Printf.sprintf "%S ^ %s" (field.keyword ^ " ") part)
             |> String.concat {| ^ ", " ^ |}
@@ -119,7 +129,7 @@ let rec emit_item = function
         | Unit_pattern -> "()"
         | Ignore_pattern -> "_"
       in
-      "let " ^ pattern ^ " = " ^ expression
+      "let " ^ pattern ^ " = " ^ Ocaml_ir.to_source expression
   | Comment text -> "(* " ^ text ^ " *)"
   | Type_def { type_name; fields } -> emit_type type_name fields
   | Group items -> items |> List.map emit_item |> String.concat "\n\n"

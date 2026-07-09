@@ -90,7 +90,7 @@ let value_binding pattern expression =
     | Types.Unit_pattern -> "top-level effect"
     | Types.Ignore_pattern -> "top-level expression"
   in
-  match parse_expression ~context expression with
+  match Ocaml_ir.to_parsetree ~context expression with
   | Error _ as err -> err
   | Ok expression ->
       let binding =
