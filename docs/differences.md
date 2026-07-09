@@ -123,7 +123,7 @@ legal OCaml identifiers while preserving source-level names.
 
 Vectors compile to `Rrbvec.t` persistent vectors.
 
-Lists compile to OCaml lists and support `list`, `list*`, `list-of`, `cons`, `conj`, `first`, `second`, `last`, `peek`, `pop`, `rest`, `nth`, `count`, `map`, `filter`, `remove`, `take-while`, `drop-while`, `distinct`, `dedupe`, `sort`, `concat`, `vec`, `set`, `repeat`, `repeatedly`, `interpose`, `interleave`, `partition`, `partition-all`, `reductions`, `map-indexed`, `filterv`, `mapv`, `reduce`, `reduce-kv`, `butlast`, `take-last`, `drop-last`, `take-nth`, `split-at`, `split-with`, `partition-by`, `bounded-count`, `dorun`, `doall`, and `run!` where the static element types line up.
+Lists compile to OCaml lists and support `list`, `list*`, `list-of`, `cons`, `conj`, `first`, `second`, `last`, `peek`, `pop`, `rest`, `nth`, `count`, `map`, `filter`, `remove`, `take-while`, `drop-while`, `distinct`, `dedupe`, `sort`, `sort-by`, `concat`, `mapcat`, `vec`, `set`, `repeat`, `repeatedly`, `interpose`, `interleave`, `partition`, `partition-all`, `reductions`, `map-indexed`, `filterv`, `mapv`, `reduce`, `reduce-kv`, `butlast`, `take-last`, `drop-last`, `take-nth`, `split-at`, `split-with`, `partition-by`, `bounded-count`, `dorun`, `doall`, and `run!` where the static element types line up.
 
 Vectors support `first`, `second`, `last`, `peek`, `pop`, `rest`, `nth`, `get`, `assoc`, `update`, `contains?`, `subvec`, and the current eager sequence operations.
 
@@ -174,8 +174,15 @@ Sets currently compile to sorted unique OCaml lists and support `hash-set`,
 
 `disj` accepts zero or more same-typed values after the set.
 
-`apply` currently supports integer binary reducers over typed lists, vectors,
-and sets.
+Function helpers include `apply`, `comp`, `partial`, `identity`, `constantly`,
+`complement`, `every-pred`, `some-fn`, and `juxt` for the current unary or
+integer-reducer subset. `apply` currently supports integer binary reducers over
+typed lists, vectors, and sets, with optional fixed leading integer arguments.
+`some-fn` returns a typed boolean in this subset rather than an arbitrary truthy
+value.
+
+Comparison helpers include `distinct?`, `compare`, `max-key`, and `min-key` for
+same-typed comparable scalar values.
 
 Keywords and symbols are statically distinct from strings, although the current
 runtime representation is still an OCaml string.

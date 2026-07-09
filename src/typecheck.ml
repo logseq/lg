@@ -19,6 +19,8 @@ let rec drop n xs =
   if n <= 0 then xs
   else match xs with [] -> [] | _ :: rest -> drop (n - 1) rest
 
+let option_for_all predicate = function None -> true | Some value -> predicate value
+
 let lookup_binding current_ns env name =
   match List.assoc_opt (Names.namespaced_key current_ns name) env with
   | Some (binding : binding) -> Ok binding
@@ -689,7 +691,9 @@ and compile_call current_ns env name arg_forms =
   | "distinct" -> compile_distinct current_ns env arg_forms
   | "dedupe" -> compile_dedupe current_ns env arg_forms
   | "sort" -> compile_sort current_ns env arg_forms
+  | "sort-by" -> compile_sort_by current_ns env arg_forms
   | "concat" -> compile_concat current_ns env arg_forms
+  | "mapcat" -> compile_mapcat current_ns env arg_forms
   | "vec" -> compile_vec current_ns env arg_forms
   | "set" -> compile_set current_ns env arg_forms
   | "repeat" -> compile_repeat current_ns env arg_forms
@@ -709,6 +713,13 @@ and compile_call current_ns env name arg_forms =
   | "partial" -> compile_partial current_ns env arg_forms
   | "identity" -> compile_identity current_ns env arg_forms
   | "constantly" -> compile_constantly current_ns env arg_forms
+  | "complement" -> compile_complement current_ns env arg_forms
+  | "every-pred" -> compile_predicate_combinator current_ns env "every-pred" arg_forms
+  | "some-fn" -> compile_predicate_combinator current_ns env "some-fn" arg_forms
+  | "juxt" -> compile_juxt current_ns env arg_forms
+  | "distinct?" -> compile_distinct_question current_ns env arg_forms
+  | "compare" -> compile_compare current_ns env arg_forms
+  | "max-key" | "min-key" -> compile_key_extreme current_ns env name arg_forms
   | "hash-set" | "sorted-set" -> compile_hash_set current_ns env arg_forms
   | "set-of" -> compile_set_of arg_forms
   | "disj" -> compile_disj current_ns env arg_forms
@@ -1725,6 +1736,32 @@ and compile_sort current_ns env arg_forms =
       | Ok (inner, list_code) -> Ok (typed (TList inner) ("List.sort compare (" ^ list_code ^ ")")))
   | Ok _ -> Error.error "sort expects 1 arguments"
 
+and comparable_type = function
+  | TInt | TString | TSymbol | TKeyword | TBool | TAny -> true
+  | _ -> false
+
+and compile_sort_by current_ns env arg_forms =
+  match arg_forms with
+  | fn_form :: collection_form :: [] -> (
+      match (compile_function_arg current_ns env fn_form, compile_expr current_ns env collection_form) with
+      | (Error _ as err), _ -> err
+      | _, (Error _ as err) -> err
+      | Ok fn, Ok collection -> (
+          match (fn.ty, collection_to_list_code collection) with
+          | TFn ([ param_ty ], key_ty), Ok (inner, list_code)
+            when Types.equal param_ty inner && comparable_type key_ty ->
+              Ok
+                (typed (TList inner)
+                   ("List.sort (fun left right -> Stdlib.compare "
+                  ^ apply_code fn.code [ "left" ]
+                  ^ " " ^ apply_code fn.code [ "right" ] ^ ") (" ^ list_code ^ ")"))
+          | TFn ([ param_ty ], _), Ok (inner, _) when not (Types.equal param_ty inner) ->
+              Error.error "sort-by key function must match collection elements"
+          | TFn _, Ok _ -> Error.error "sort-by key function must return a comparable value"
+          | _, Ok _ -> Error.error "sort-by expects a function"
+          | _, Error _ -> Error.error "sort-by expects a collection"))
+  | _ -> Error.error "sort-by expects function and collection"
+
 and compile_concat current_ns env arg_forms =
   match compile_args_for current_ns env arg_forms with
   | Error _ as err -> err
@@ -1746,6 +1783,35 @@ and compile_concat current_ns env arg_forms =
       | Error _ as err -> err
       | Ok (None, _) -> Error.error "concat expects at least 1 collection"
       | Ok (Some inner, codes) -> Ok (typed (TList inner) ("List.concat [" ^ String.concat "; " codes ^ "]")))
+
+and compile_mapcat current_ns env arg_forms =
+  match arg_forms with
+  | fn_form :: collection_form :: [] -> (
+      match (compile_function_arg current_ns env fn_form, compile_expr current_ns env collection_form) with
+      | (Error _ as err), _ -> err
+      | _, (Error _ as err) -> err
+      | Ok fn, Ok collection -> (
+          match (fn.ty, collection_to_list_code collection) with
+          | TFn ([ param_ty ], TList ret_inner), Ok (inner, list_code)
+            when Types.equal param_ty inner ->
+              Ok (typed (TList ret_inner) ("List.concat (List.map " ^ fn.code ^ " (" ^ list_code ^ "))"))
+          | TFn ([ param_ty ], TVector ret_inner), Ok (inner, list_code)
+            when Types.equal param_ty inner ->
+              Ok
+                (typed (TList ret_inner)
+                   ("List.concat (List.map (fun item -> Rrbvec.to_list "
+                  ^ apply_code fn.code [ "item" ] ^ ") (" ^ list_code ^ "))"))
+          | TFn ([ param_ty ], TSet ret_inner), Ok (inner, list_code)
+            when Types.equal param_ty inner ->
+              Ok
+                (typed (TList ret_inner)
+                   ("List.concat (List.map " ^ fn.code ^ " (" ^ list_code ^ "))"))
+          | TFn ([ param_ty ], _), Ok (inner, _) when not (Types.equal param_ty inner) ->
+              Error.error "mapcat function argument type does not match collection"
+          | TFn _, Ok _ -> Error.error "mapcat function must return a collection"
+          | _, Ok _ -> Error.error "mapcat expects a function"
+          | _, Error _ -> Error.error "mapcat expects a collection"))
+  | _ -> Error.error "mapcat expects function and collection"
 
 and compile_vec current_ns env arg_forms =
   match compile_args_for current_ns env arg_forms with
@@ -2345,44 +2411,103 @@ and compile_reduce current_ns env arg_forms =
   | _ -> Error.error "reduce expects function, init, and collection"
 
 and compile_apply current_ns env arg_forms =
+  let rec split_last acc = function
+    | [] -> None
+    | [ last ] -> Some (List.rev acc, last)
+    | item :: rest -> split_last (item :: acc) rest
+  in
   match arg_forms with
-  | fn_form :: collection_form :: [] -> (
-      match (compile_function_arg current_ns env fn_form, compile_expr current_ns env collection_form) with
-      | (Error _ as err), _ -> err
-      | _, (Error _ as err) -> err
-      | Ok fn, Ok collection -> (
-          match (fn.ty, collection.ty) with
-          | TFn ([ TInt; TInt ], TInt), TList TInt ->
-              Ok (typed TInt ("List.fold_left " ^ fn.code ^ " 0 (" ^ collection.code ^ ")"))
-          | TFn _, TList _ -> Error.error "apply currently supports int binary reducers"
-          | _, TList _ -> Error.error "apply expects a function"
-          | TFn ([ TInt; TInt ], TInt), TVector TInt ->
-              Ok (typed TInt ("Rrbvec.fold_left " ^ fn.code ^ " 0 (" ^ collection.code ^ ")"))
-          | TFn _, TVector _ -> Error.error "apply currently supports int binary reducers"
-          | _, TVector _ -> Error.error "apply expects a function"
-          | TFn ([ TInt; TInt ], TInt), TSet TInt ->
-              Ok (typed TInt ("List.fold_left " ^ fn.code ^ " 0 (" ^ collection.code ^ ")"))
-          | TFn _, TSet _ -> Error.error "apply currently supports int binary reducers"
-          | _, TSet _ -> Error.error "apply expects a function"
-          | _ -> Error.error "apply expects a list, vector, or set"))
+  | fn_form :: rest -> (
+      match split_last [] rest with
+      | None -> Error.error "apply expects function and collection"
+      | Some (fixed_forms, collection_form) -> (
+          match
+            ( compile_function_arg current_ns env fn_form,
+              compile_args_for current_ns env fixed_forms,
+              compile_expr current_ns env collection_form )
+          with
+          | (Error _ as err), _, _ -> err
+          | _, (Error _ as err), _ -> err
+          | _, _, (Error _ as err) -> err
+          | Ok fn, Ok fixed_args, Ok collection -> (
+              match collection_to_list_code collection with
+              | Error _ -> Error.error "apply expects a list, vector, or set"
+              | Ok (inner, list_code) -> (
+                  match fn.ty with
+                  | TFn ([ TInt; TInt ], TInt)
+                    when Types.equal inner TInt
+                         && List.for_all (fun arg -> Types.equal arg.ty TInt) fixed_args ->
+                      let fixed_code =
+                        match fixed_args with
+                        | [] -> ""
+                        | _ ->
+                            "["
+                            ^ (fixed_args
+                              |> List.map (fun arg -> arg.code)
+                              |> String.concat "; ")
+                            ^ "] @ "
+                      in
+                      Ok
+                        (typed TInt
+                           ("List.fold_left " ^ fn.code ^ " 0 (" ^ fixed_code ^ "("
+                          ^ list_code ^ "))"))
+                  | TFn ([ TInt; TInt ], TInt) ->
+                      Error.error "apply currently supports int binary reducers"
+                  | TFn _ -> Error.error "apply currently supports int binary reducers"
+                  | _ -> Error.error "apply expects a function"))))
   | _ -> Error.error "apply expects function and collection"
 
 and compile_comp current_ns env arg_forms =
   match arg_forms with
-  | [ left_form; right_form ] -> (
-      match (compile_function_arg current_ns env left_form, compile_function_arg current_ns env right_form) with
-      | (Error _ as err), _ -> err
-      | _, (Error _ as err) -> err
-      | Ok left, Ok right -> (
-          match (left.ty, right.ty) with
-          | TFn ([ left_arg ], left_ret), TFn ([ right_arg ], right_ret)
-            when Types.equal left_arg right_ret ->
-              Ok
-                (typed (TFn ([ right_arg ], left_ret))
-                   ("(fun x -> " ^ apply_code left.code [ apply_code right.code [ "x" ] ] ^ ")"))
-          | TFn _, TFn _ -> Error.error "comp function types do not line up"
-          | _ -> Error.error "comp expects functions"))
-  | _ -> Error.error "comp expects 2 functions"
+  | [] -> Error.error "comp expects at least 1 function"
+  | _ -> (
+      let compiled =
+        arg_forms
+        |> List.fold_left
+             (fun acc form ->
+               match acc with
+               | Error _ as err -> err
+               | Ok fns -> (
+                   match compile_function_arg current_ns env form with
+                   | Error _ as err -> err
+                   | Ok fn -> Ok (fn :: fns)))
+             (Ok [])
+        |> Result.map List.rev
+      in
+      match compiled with
+      | Error _ as err -> err
+      | Ok fns -> (
+          let rec check_chain = function
+            | [] -> Error.error "comp expects at least 1 function"
+            | [ fn ] -> (
+                match fn.ty with
+                | TFn ([ arg ], ret) -> Ok (arg, ret)
+                | TFn _ -> Error.error "comp expects unary functions"
+                | _ -> Error.error "comp expects functions")
+            | left :: (right :: _ as rest) -> (
+                match (left.ty, right.ty) with
+                | TFn ([ left_arg ], _left_ret), TFn ([ _right_arg ], right_ret)
+                  when Types.equal left_arg right_ret ->
+                    check_chain rest |> Result.map (fun (arg, _ret) ->
+                        match List.hd fns with
+                        | { ty = TFn ([ _ ], final_ret); _ } -> (arg, final_ret)
+                        | _ -> (arg, right_ret))
+                | TFn _, TFn _ -> Error.error "comp function types do not line up"
+                | _ -> Error.error "comp expects functions")
+          in
+          match check_chain fns with
+          | Error _ as err -> err
+          | Ok (arg_ty, ret_ty) ->
+              let code =
+                let inner =
+                  List.rev fns
+                  |> List.fold_left
+                       (fun acc fn -> apply_code fn.code [ acc ])
+                       "x"
+                in
+                "(fun x -> " ^ inner ^ ")"
+              in
+              Ok (typed (TFn ([ arg_ty ], ret_ty)) code)))
 
 and compile_partial current_ns env arg_forms =
   match arg_forms with
@@ -2423,6 +2548,158 @@ and compile_constantly current_ns env arg_forms =
   | Error _ as err -> err
   | Ok [ value ] -> Ok (typed (TFn ([ TAny ], value.ty)) ("(fun _ -> " ^ value.code ^ ")"))
   | Ok _ -> Error.error "constantly expects 1 arguments"
+
+and compile_complement current_ns env arg_forms =
+  match arg_forms with
+  | [ fn_form ] -> (
+      match compile_function_arg current_ns env fn_form with
+      | Error _ as err -> err
+      | Ok fn -> (
+          match fn.ty with
+          | TFn ([ arg_ty ], TBool) ->
+              Ok
+                (typed (TFn ([ arg_ty ], TBool))
+                   ("(fun x -> not " ^ apply_code fn.code [ "x" ] ^ ")"))
+          | TFn _ -> Error.error "complement expects a predicate"
+          | _ -> Error.error "complement expects a function"))
+  | _ -> Error.error "complement expects 1 function"
+
+and compile_predicate_combinator current_ns env name arg_forms =
+  let compile_fns =
+    arg_forms
+    |> List.fold_left
+         (fun acc form ->
+           match acc with
+           | Error _ as err -> err
+           | Ok fns -> (
+               match compile_function_arg current_ns env form with
+               | Error _ as err -> err
+               | Ok fn -> Ok (fn :: fns)))
+         (Ok [])
+    |> Result.map List.rev
+  in
+  match compile_fns with
+  | Error _ as err -> err
+  | Ok [] -> Error.error (name ^ " expects at least 1 predicate")
+  | Ok fns -> (
+      let rec collect arg_ty codes = function
+        | [] -> Ok (arg_ty, List.rev codes)
+        | fn :: rest -> (
+            match fn.ty with
+            | TFn ([ current_arg ], TBool)
+              when option_for_all (fun arg_ty -> Types.equal arg_ty current_arg) arg_ty ->
+                collect (Some current_arg) (apply_code fn.code [ "x" ] :: codes) rest
+            | TFn _ ->
+                Error.error (name ^ " expects predicates with the same argument type")
+            | _ -> Error.error (name ^ " expects predicates"))
+      in
+      match collect None [] fns with
+      | Error _ as err -> err
+      | Ok (None, _) -> Error.error (name ^ " expects at least 1 predicate")
+      | Ok (Some arg_ty, codes) ->
+          let op = if name = "every-pred" then " && " else " || " in
+          Ok
+            (typed (TFn ([ arg_ty ], TBool))
+               ("(fun x -> " ^ String.concat op codes ^ ")")))
+
+and compile_juxt current_ns env arg_forms =
+  let compile_fns =
+    arg_forms
+    |> List.fold_left
+         (fun acc form ->
+           match acc with
+           | Error _ as err -> err
+           | Ok fns -> (
+               match compile_function_arg current_ns env form with
+               | Error _ as err -> err
+               | Ok fn -> Ok (fn :: fns)))
+         (Ok [])
+    |> Result.map List.rev
+  in
+  match compile_fns with
+  | Error _ as err -> err
+  | Ok [] -> Error.error "juxt expects at least 1 function"
+  | Ok fns -> (
+      let rec collect arg_ty ret_ty codes = function
+        | [] -> Ok (arg_ty, ret_ty, List.rev codes)
+        | fn :: rest -> (
+            match fn.ty with
+            | TFn ([ current_arg ], current_ret)
+              when option_for_all (fun arg_ty -> Types.equal arg_ty current_arg) arg_ty
+                   && option_for_all (fun ret_ty -> Types.equal ret_ty current_ret) ret_ty ->
+                collect (Some current_arg) (Some current_ret)
+                  (apply_code fn.code [ "x" ] :: codes)
+                  rest
+            | TFn ([ current_arg ], _)
+              when option_for_all (fun arg_ty -> Types.equal arg_ty current_arg) arg_ty ->
+                Error.error "juxt functions must return the same type"
+            | TFn _ -> Error.error "juxt functions must accept the same argument type"
+            | _ -> Error.error "juxt expects functions")
+      in
+      match collect None None [] fns with
+      | Error _ as err -> err
+      | Ok (Some arg_ty, Some ret_ty, codes) ->
+          Ok
+            (typed (TFn ([ arg_ty ], TVector ret_ty))
+               ("(fun x -> Rrbvec.of_list [" ^ String.concat "; " codes ^ "])"))
+      | Ok _ -> Error.error "juxt expects at least 1 function")
+
+and compile_distinct_question current_ns env arg_forms =
+  match compile_args_for current_ns env arg_forms with
+  | Error _ as err -> err
+  | Ok ([] | [ _ ]) -> Ok (typed TBool "true")
+  | Ok (first :: _ as args) ->
+      if List.for_all (fun arg -> Types.equal first.ty arg.ty) args then
+        let values = args |> List.map (fun arg -> arg.code) |> String.concat "; " in
+        let len = string_of_int (List.length args) in
+        Ok
+          (typed TBool
+             ("(List.length (List.sort_uniq compare [" ^ values ^ "]) = " ^ len ^ ")"))
+      else Error.error "distinct? arguments must have the same type"
+
+and compile_compare current_ns env arg_forms =
+  match compile_args_for current_ns env arg_forms with
+  | Error _ as err -> err
+  | Ok [ left; right ] ->
+      if not (Types.equal left.ty right.ty) then
+        Error.error "compare arguments must have the same type"
+      else if not (comparable_type left.ty) then
+        Error.error "compare expects comparable arguments"
+      else Ok (typed TInt ("Stdlib.compare (" ^ left.code ^ ") (" ^ right.code ^ ")"))
+  | Ok _ -> Error.error "compare expects 2 arguments"
+
+and compile_key_extreme current_ns env name arg_forms =
+  match arg_forms with
+  | fn_form :: value_forms when value_forms <> [] -> (
+      match (compile_function_arg current_ns env fn_form, compile_args_for current_ns env value_forms) with
+      | (Error _ as err), _ -> err
+      | _, (Error _ as err) -> err
+      | Ok fn, Ok values -> (
+          let first = List.hd values in
+          if not (List.for_all (fun value -> Types.equal first.ty value.ty) values) then
+            Error.error (name ^ " values must have the same type")
+          else
+            match fn.ty with
+            | TFn ([ arg_ty ], key_ty)
+              when Types.compatible ~expected:arg_ty ~actual:first.ty
+                   && comparable_type key_ty ->
+                let rest = List.tl values in
+                let compare_op = if name = "max-key" then "> 0" else "< 0" in
+                let code =
+                  match rest with
+                  | [] -> first.code
+                  | _ ->
+                      "(let key_fn = " ^ fn.code
+                      ^ " in let choose best item = if Stdlib.compare (key_fn item) (key_fn best) "
+                      ^ compare_op ^ " then item else best in List.fold_left choose ("
+                      ^ first.code ^ ") ["
+                      ^ (rest |> List.map (fun value -> value.code) |> String.concat "; ")
+                      ^ "])"
+                in
+                Ok (typed first.ty code)
+            | TFn _ -> Error.error (name ^ " expects a key function matching values")
+            | _ -> Error.error (name ^ " expects a function")))
+  | _ -> Error.error (name ^ " expects function and values")
 
 and compile_hash_set current_ns env arg_forms =
   match arg_forms with

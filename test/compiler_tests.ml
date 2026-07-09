@@ -1323,6 +1323,56 @@ let test_function_helpers () =
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "function_helpers" "18:7:ok:6:6\n" ocaml_source
 
+let test_common_higher_order_helpers () =
+  let source =
+    {|
+(def mapcat-list (mapcat (fn [x] (list x (inc x))) [1 2 3]))
+(def mapcat-vector (mapcat (fn [x] [x (inc x)]) (list 1 2)))
+(def sorted (sort-by (fn [x] (- 0 x)) [1 3 2]))
+(def not-even? (complement (fn [x] (even? x))))
+(def small-even? (every-pred (fn [x] (even? x)) (fn [x] (< x 10))))
+(def odd-or-large? (some-fn (fn [x] (odd? x)) (fn [x] (> x 10))))
+(def neighbors (juxt (fn [x] (dec x)) (fn [x] x) (fn [x] (inc x))))
+(def piped (comp (fn [x] (+ x 1)) (fn [x] (* x 2)) (fn [x] (+ x 3))))
+(println
+  (str (pr-str mapcat-list) ":"
+       (pr-str mapcat-vector) ":"
+       (pr-str sorted) ":"
+       (not-even? 3) ":" (not-even? 4) ":"
+       (small-even? 8) ":" (small-even? 11) ":"
+       (odd-or-large? 4) ":" (odd-or-large? 11) ":"
+       (pr-str (neighbors 10)) ":"
+       (piped 4) ":"
+       (apply + 1 2 [3 4]) ":"
+       (distinct? 1 2 3) ":" (distinct? 1 2 1) ":"
+       (compare 1 2) ":" (compare "b" "a") ":"
+       (max-key (fn [x] x) 1 4 2) ":"
+       (min-key (fn [x] x) 1 4 2)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "common_higher_order_helpers"
+    "(1 2 2 3 3 4):(1 2 2 3):(3 2 1):true:false:true:false:false:true:[9 10 11]:15:10:true:false:-1:1:4:1\n"
+    ocaml_source
+
+let test_common_higher_order_helpers_reject_bad_mapcat_result () =
+  Cljml.Compiler.compile_string {|(def x (mapcat (fn [x] (inc x)) [1 2]))|}
+  |> expect_error "mapcat function must return a collection"
+
+let test_common_higher_order_helpers_reject_bad_predicates () =
+  Cljml.Compiler.compile_string
+    {|(def f (every-pred (fn [x] (inc x)) (fn [x] true)))|}
+  |> expect_error "every-pred expects predicates with the same argument type"
+
+let test_common_higher_order_helpers_reject_mixed_juxt_returns () =
+  Cljml.Compiler.compile_string
+    {|(def f (juxt (fn [x] (+ x 1)) (fn [x] (even? x))))|}
+  |> expect_error "juxt functions must return the same type"
+
+let test_common_higher_order_helpers_reject_compare_type_mismatch () =
+  Cljml.Compiler.compile_string {|(def x (compare 1 "1"))|}
+  |> expect_error "compare arguments must have the same type"
+
 let test_apply_rejects_bad_set_reducers () =
   Cljml.Compiler.compile_string {|(def x (apply + (hash-set "a" "b")))|}
   |> expect_error "apply currently supports int binary reducers"
@@ -1975,6 +2025,15 @@ let tests =
       test_destructuring_rejects_unsupported_let_sources );
     ("sequence core api works on vectors", test_sequence_core_api_on_vectors);
     ("function helpers work", test_function_helpers);
+    ("common higher-order helpers work", test_common_higher_order_helpers);
+    ( "common higher-order helpers reject bad mapcat result",
+      test_common_higher_order_helpers_reject_bad_mapcat_result );
+    ( "common higher-order helpers reject bad predicates",
+      test_common_higher_order_helpers_reject_bad_predicates );
+    ( "common higher-order helpers reject mixed juxt returns",
+      test_common_higher_order_helpers_reject_mixed_juxt_returns );
+    ( "common higher-order helpers reject compare type mismatch",
+      test_common_higher_order_helpers_reject_compare_type_mismatch );
     ("apply rejects bad set reducers", test_apply_rejects_bad_set_reducers);
     ("set core api works", test_set_core_api);
     ("conj rejects set type mismatch", test_conj_rejects_set_type_mismatch);

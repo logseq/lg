@@ -93,8 +93,9 @@ The compiler should support this syntax without macros.
 | Maps | `hash-map`, `array-map`, `sorted-map`, `get`, `assoc`, `dissoc`, `merge`, `update`, `select-keys`, `contains?`, `keys`, `vals` | 1 |
 | Vectors | `vector`, `conj`, `count`, `nth`, `get`, `assoc`, `update`, `contains?`, `subvec`, `first`, `second`, `last`, `peek`, `pop`, `rest` | 1 |
 | Lists | `list`, `list*`, `list-of`, `cons`, `conj`, `count`, `nth`, `first`, `second`, `last`, `peek`, `pop`, `rest` | 2 |
-| Sequences | `seq`, `empty`, `empty?`, `into`, `take`, `drop`, `reverse`, `range`, `every?`, `not-any?`, `not-every?`, `map`, `filter`, `remove`, `take-while`, `drop-while`, `distinct`, `dedupe`, `sort`, `concat`, `vec`, `set`, `repeat`, `repeatedly`, `interpose`, `interleave`, `partition`, `partition-all`, `reductions`, `map-indexed`, `filterv`, `mapv`, `reduce`, `reduce-kv`, `butlast`, `take-last`, `drop-last`, `take-nth`, `split-at`, `split-with`, `partition-by`, `bounded-count`, `dorun`, `doall` | 2 |
-| Functions | `apply`, `comp`, `partial`, `identity`, `constantly`, `run!` | 2 |
+| Sequences | `seq`, `empty`, `empty?`, `into`, `take`, `drop`, `reverse`, `range`, `every?`, `not-any?`, `not-every?`, `map`, `filter`, `remove`, `take-while`, `drop-while`, `distinct`, `dedupe`, `sort`, `sort-by`, `concat`, `mapcat`, `vec`, `set`, `repeat`, `repeatedly`, `interpose`, `interleave`, `partition`, `partition-all`, `reductions`, `map-indexed`, `filterv`, `mapv`, `reduce`, `reduce-kv`, `butlast`, `take-last`, `drop-last`, `take-nth`, `split-at`, `split-with`, `partition-by`, `bounded-count`, `dorun`, `doall` | 2 |
+| Functions | `apply`, `comp`, `partial`, `identity`, `constantly`, `complement`, `every-pred`, `some-fn`, `juxt`, `run!` | 2 |
+| Comparison helpers | `distinct?`, `compare`, `max-key`, `min-key` | 2 |
 | Sets | `hash-set`, `sorted-set`, `set-of`, `conj`, `contains?`, `disj` | 3 |
 | Protocols | `defprotocol`, `extend-type`, static method dispatch by receiver type | 3 |
 
@@ -172,11 +173,20 @@ Sequence APIs are eager in the current runtime. The compiler prefers concrete
 typed lists, vectors, and sets over lazy seq objects until the type system has a
 dedicated sequence abstraction.
 
-`map`, `filter`, `reduce`, `butlast`, `take-last`, `drop-last`, `take-nth`,
-`split-at`, `split-with`, `partition-by`, `bounded-count`, `dorun`, `doall`,
-and `run!` operate eagerly over concrete typed collections.
+`map`, `filter`, `mapcat`, `sort-by`, `reduce`, `butlast`, `take-last`,
+`drop-last`, `take-nth`, `split-at`, `split-with`, `partition-by`,
+`bounded-count`, `dorun`, `doall`, and `run!` operate eagerly over concrete
+typed collections.
 
-`apply` supports integer binary reducers over typed lists, vectors, and sets.
+`apply` supports integer binary reducers over typed lists, vectors, and sets,
+including fixed leading integer arguments before the final collection.
+
+Function helpers such as `comp`, `partial`, `identity`, `constantly`,
+`complement`, `every-pred`, `some-fn`, and `juxt` are typed over the currently
+represented unary function subset. `some-fn` returns a static boolean.
+
+Comparison helpers `distinct?`, `compare`, `max-key`, and `min-key` are
+supported for same-typed comparable scalar values.
 
 `conj` accepts one or more same-typed values after a list, vector, or set.
 

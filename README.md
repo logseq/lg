@@ -97,12 +97,14 @@ The compiler infers record-like map shapes automatically:
   `filter`, `remove`, `take-while`, `drop-while`, `distinct`, `dedupe`,
   `sort`, `concat`, `vec`, `set`, `repeat`, `repeatedly`, `interpose`,
   `interleave`, `partition`, `partition-all`, `reductions`, `map-indexed`,
-  `filterv`, `mapv`, `reduce`, `reduce-kv`, `apply`, `comp`, `partial`,
-  `identity`, `constantly`, `butlast`, `take-last`, `drop-last`, `take-nth`,
-  `split-at`, `split-with`, `partition-by`, `bounded-count`, `dorun`,
-  `doall`, and `run!` are supported for the current typed collection/function
-  subset.
-- `apply` supports integer binary reducers over typed lists, vectors, and sets.
+  `filterv`, `mapv`, `mapcat`, `sort-by`, `reduce`, `reduce-kv`, `apply`,
+  `comp`, `partial`, `identity`, `constantly`, `complement`, `every-pred`,
+  `some-fn`, `juxt`, `distinct?`, `compare`, `max-key`, `min-key`, `butlast`,
+  `take-last`, `drop-last`, `take-nth`, `split-at`, `split-with`,
+  `partition-by`, `bounded-count`, `dorun`, `doall`, and `run!` are supported
+  for the current typed collection/function subset.
+- `apply` supports integer binary reducers over typed lists, vectors, and sets,
+  including fixed leading integer arguments before the final collection.
 - `get` supports vector indexes, and `nth` supports typed default values for
   lists and vectors.
 - `rest` returns a same-typed empty list or vector when called on an empty
