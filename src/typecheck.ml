@@ -272,6 +272,7 @@ and compile_call current_ns env name arg_forms =
   | "last" -> compile_last current_ns env arg_forms
   | "peek" -> compile_peek current_ns env arg_forms
   | "pop" -> compile_pop current_ns env arg_forms
+  | "subvec" -> compile_subvec current_ns env arg_forms
   | "nth" -> compile_nth current_ns env arg_forms
   | "get" -> compile_get current_ns env arg_forms
   | "assoc" -> compile_assoc current_ns env arg_forms
@@ -513,6 +514,29 @@ and compile_pop current_ns env arg_forms =
                ("snd (Option.get (Rrbvec.pop_back (" ^ collection.code ^ ")))"))
       | _ -> Error.error "pop expects a list or vector")
   | Ok _ -> Error.error "pop expects 1 arguments"
+
+and compile_subvec current_ns env arg_forms =
+  match compile_args_for current_ns env arg_forms with
+  | Error _ as err -> err
+  | Ok [ vector; start ] -> (
+      match (vector.ty, start.ty) with
+      | TVector _, TInt ->
+          Ok
+            (typed vector.ty
+               ("Option.get (Rrbvec.subvec (" ^ vector.code ^ ") (" ^ start.code
+              ^ ") (Rrbvec.length (" ^ vector.code ^ ")))"))
+      | TVector _, _ -> Error.error "subvec indexes must be int"
+      | _ -> Error.error "subvec expects a vector")
+  | Ok [ vector; start; stop ] -> (
+      match (vector.ty, start.ty, stop.ty) with
+      | TVector _, TInt, TInt ->
+          Ok
+            (typed vector.ty
+               ("Option.get (Rrbvec.subvec (" ^ vector.code ^ ") (" ^ start.code
+              ^ ") (" ^ stop.code ^ "))"))
+      | TVector _, _, _ -> Error.error "subvec indexes must be int"
+      | _ -> Error.error "subvec expects a vector")
+  | Ok _ -> Error.error "subvec expects vector, start, and optional stop"
 
 and compile_nth current_ns env arg_forms =
   match compile_args_for current_ns env arg_forms with

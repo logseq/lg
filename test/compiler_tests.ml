@@ -848,6 +848,26 @@ let test_collection_positional_helpers () =
   assert_ocaml_runs "collection_positional_helpers" "2:3:3:2:2:2:3:1:2:2\n"
     ocaml_source
 
+let test_subvec_core_api () =
+  let source =
+    {|
+(def xs [1 2 3 4])
+(def tail (subvec xs 1))
+(def middle (subvec xs 1 3))
+(println (str (pr-str tail) ":" (pr-str middle)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "subvec_core_api" "[2 3 4]:[2 3]\n" ocaml_source
+
+let test_subvec_rejects_non_vector_sources () =
+  Cljml.Compiler.compile_string {|(def x (subvec (list 1 2) 0))|}
+  |> expect_error "subvec expects a vector"
+
+let test_subvec_rejects_non_int_indexes () =
+  Cljml.Compiler.compile_string {|(def x (subvec [1 2] "0"))|}
+  |> expect_error "subvec indexes must be int"
+
 let test_peek_rejects_unsupported_collections () =
   Cljml.Compiler.compile_string {|(def x (peek (hash-set 1)))|}
   |> expect_error "peek expects a list or vector"
@@ -992,6 +1012,9 @@ let tests =
     ("lists reject mixed element types", test_lists_reject_mixed_element_types);
     ("conj rejects list type mismatch", test_conj_rejects_list_type_mismatch);
     ("collection positional helpers work", test_collection_positional_helpers);
+    ("subvec core api works", test_subvec_core_api);
+    ("subvec rejects non-vector sources", test_subvec_rejects_non_vector_sources);
+    ("subvec rejects non-int indexes", test_subvec_rejects_non_int_indexes);
     ("peek rejects unsupported collections", test_peek_rejects_unsupported_collections);
     ("let rejects odd binding forms", test_let_rejects_odd_binding_forms);
     ("map rejects non-function argument", test_map_rejects_non_function_argument);

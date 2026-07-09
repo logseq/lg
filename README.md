@@ -29,6 +29,7 @@ The compiler infers record-like map shapes automatically:
 - `(assoc x :age 36 :admin? true)` produces a new record shape with added or
   updated fields.
 - `(assoc [1 2 3] 1 42)` updates a persistent vector index.
+- `(subvec [1 2 3] 1 3)` returns a persistent vector slice.
 - `(dissoc y :age :admin?)` produces a new record shape with those fields
   removed.
 - `(get x :missing default)` returns a typed default when the field is absent.
