@@ -91,8 +91,8 @@ the element types match.
 
 `reverse` returns a same-typed reversed list or vector.
 
-`every?`, `not-any?`, and `not-every?` return typed booleans for list and vector
-predicates.
+`every?`, `not-any?`, and `not-every?` return typed booleans for list, vector,
+and set predicates.
 
 `range` returns an eager typed integer list.
 
@@ -105,7 +105,8 @@ Use `(list-of :int)`, `(list-of :string)`, `(list-of :keyword)`, `(list-of :bool
 Use `(set-of :int)`, `(set-of :string)`, `(set-of :keyword)`, `(set-of :bool)`, or `(set-of :nil)` for typed empty sets.
 
 Sets currently compile to sorted unique OCaml lists and support `hash-set`,
-`set-of`, `conj`, `disj`, and `contains?`.
+`set-of`, `conj`, `disj`, `contains?`, `every?`, `not-any?`, `not-every?`, and
+`reduce`.
 
 Keywords are statically distinct from strings, although the current runtime
 representation is still an OCaml string.

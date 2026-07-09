@@ -842,6 +842,28 @@ let test_conj_rejects_set_type_mismatch () =
   Cljml.Compiler.compile_string {|(def xs (conj (hash-set 1) "two"))|}
   |> expect_error "conj value type must match set element type"
 
+let test_set_sequence_core_api () =
+  let source =
+    {|
+(def xs (hash-set 1 2 3))
+(def all-positive? (every? (fn [x] (> x 0)) xs))
+(def none-large? (not-any? (fn [x] (> x 10)) xs))
+(def not-all-greater-than-one? (not-every? (fn [x] (> x 1)) xs))
+(def total (reduce (fn [acc x] (+ acc x)) 0 xs))
+(println (str all-positive? ":" none-large? ":" not-all-greater-than-one? ":" total))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "set_sequence_core_api" "true:true:true:6\n" ocaml_source
+
+let test_set_sequence_predicates_reject_bad_predicates () =
+  Cljml.Compiler.compile_string {|(def x (every? (fn [x] (+ x 1)) (hash-set 1 2)))|}
+  |> expect_error "every? expects a predicate matching set elements"
+
+let test_reduce_rejects_bad_set_reducers () =
+  Cljml.Compiler.compile_string {|(def x (reduce (fn [acc x] (str acc x)) 0 (hash-set 1 2)))|}
+  |> expect_error "reduce function type does not match init and set"
+
 let test_list_core_api () =
   let source =
     {|
@@ -1216,6 +1238,10 @@ let tests =
     ("function helpers work", test_function_helpers);
     ("set core api works", test_set_core_api);
     ("conj rejects set type mismatch", test_conj_rejects_set_type_mismatch);
+    ("set sequence core api works", test_set_sequence_core_api);
+    ( "set sequence predicates reject bad predicates",
+      test_set_sequence_predicates_reject_bad_predicates );
+    ("reduce rejects bad set reducers", test_reduce_rejects_bad_set_reducers);
     ("list core api works", test_list_core_api);
     ("sequence core api works on lists", test_sequence_core_api_on_lists);
     ("range core api works", test_range_core_api);

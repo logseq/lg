@@ -125,8 +125,8 @@ the element types match.
 
 `range` returns an eager typed integer list.
 
-`every?`, `not-any?`, and `not-every?` return typed booleans for list and vector
-predicates.
+`every?`, `not-any?`, and `not-every?` return typed booleans for list, vector,
+and set predicates.
 
 Map literal types are structural records keyed by Clojure keywords.
 

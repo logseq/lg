@@ -1201,7 +1201,12 @@ and compile_sequence_bool_predicate current_ns env name arg_forms =
           | TFn _, TVector _ ->
               Error.error (name ^ " expects a predicate matching vector elements")
           | _, TVector _ -> Error.error (name ^ " expects a function")
-          | _ -> Error.error (name ^ " expects a list or vector")))
+          | TFn ([ param_ty ], TBool), TSet inner when Types.equal param_ty inner ->
+              let all_code = "List.for_all " ^ predicate_code ^ " (" ^ collection.code ^ ")" in
+              Ok (typed TBool (build all_code))
+          | TFn _, TSet _ -> Error.error (name ^ " expects a predicate matching set elements")
+          | _, TSet _ -> Error.error (name ^ " expects a function")
+          | _ -> Error.error (name ^ " expects a list, vector, or set")))
   | _ -> Error.error (name ^ " expects function and collection")
 
 and compile_map_call current_ns env arg_forms =
@@ -1279,7 +1284,15 @@ and compile_reduce current_ns env arg_forms =
                   ^ collection.code ^ ")"))
           | TFn _, TVector _ -> Error.error "reduce function type does not match init and vector"
           | _, TVector _ -> Error.error "reduce expects a function"
-          | _ -> Error.error "reduce expects a vector"))
+          | TFn ([ acc_ty; item_ty ], ret), TSet inner
+            when Types.equal acc_ty init.ty && Types.equal item_ty inner && Types.equal ret init.ty ->
+              Ok
+                (typed init.ty
+                   ("List.fold_left " ^ fn.code ^ " (" ^ init.code ^ ") ("
+                  ^ collection.code ^ ")"))
+          | TFn _, TSet _ -> Error.error "reduce function type does not match init and set"
+          | _, TSet _ -> Error.error "reduce expects a function"
+          | _ -> Error.error "reduce expects a list, vector, or set"))
   | _ -> Error.error "reduce expects function, init, and collection"
 
 and compile_apply current_ns env arg_forms =
