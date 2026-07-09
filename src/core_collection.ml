@@ -10,48 +10,50 @@ let two_args name args =
   | [ left; right ] -> Ok (left, right)
   | _ -> Error.error (name ^ " expects count and collection")
 
+let apply name args = Ocaml_ir.Apply (Ocaml_ir.Ident name, args)
+
 let count collection =
   match collection.ty with
-  | TList _ | TSet _ -> Ok (typed TInt ("List.length (" ^ collection.code ^ ")"))
-  | TVector _ -> Ok (typed TInt ("Rrbvec.length (" ^ collection.code ^ ")"))
-  | TRecord fields -> Ok (typed TInt (string_of_int (List.length fields)))
-  | TString -> Ok (typed TInt ("String.length (" ^ collection.code ^ ")"))
+  | TList _ | TSet _ -> Ok (typed_ir TInt (apply "List.length" [ collection.ocaml_expr ]))
+  | TVector _ -> Ok (typed_ir TInt (apply "Rrbvec.length" [ collection.ocaml_expr ]))
+  | TRecord fields -> Ok (typed_ir TInt (Ocaml_ir.Int (List.length fields)))
+  | TString -> Ok (typed_ir TInt (apply "String.length" [ collection.ocaml_expr ]))
   | _ -> Error.error "count expects a collection or string"
 
 let first collection =
   match collection.ty with
-  | TList inner | TSet inner -> Ok (typed inner ("List.hd (" ^ collection.code ^ ")"))
-  | TVector inner -> Ok (typed inner ("Rrbvec.nth (" ^ collection.code ^ ") 0"))
+  | TList inner | TSet inner -> Ok (typed_ir inner (apply "List.hd" [ collection.ocaml_expr ]))
+  | TVector inner -> Ok (typed_ir inner (apply "Rrbvec.nth" [ collection.ocaml_expr; Ocaml_ir.Int 0 ]))
   | _ -> Error.error "first expects a list, vector, or set"
 
 let second collection =
   match collection.ty with
-  | TList inner | TSet inner -> Ok (typed inner ("List.nth (" ^ collection.code ^ ") 1"))
-  | TVector inner -> Ok (typed inner ("Rrbvec.nth (" ^ collection.code ^ ") 1"))
+  | TList inner | TSet inner -> Ok (typed_ir inner (apply "List.nth" [ collection.ocaml_expr; Ocaml_ir.Int 1 ]))
+  | TVector inner -> Ok (typed_ir inner (apply "Rrbvec.nth" [ collection.ocaml_expr; Ocaml_ir.Int 1 ]))
   | _ -> Error.error "second expects a list, vector, or set"
 
 let last collection =
   match collection.ty with
   | TList inner | TSet inner ->
-      Ok (typed inner ("List.hd (List.rev (" ^ collection.code ^ "))"))
+      Ok (typed_ir inner (apply "List.hd" [ apply "List.rev" [ collection.ocaml_expr ] ]))
   | TVector inner ->
-      Ok (typed inner ("Option.get (Rrbvec.peek_back (" ^ collection.code ^ "))"))
+      Ok (typed_ir inner (apply "Option.get" [ apply "Rrbvec.peek_back" [ collection.ocaml_expr ] ]))
   | _ -> Error.error "last expects a list, vector, or set"
 
 let peek collection =
   match collection.ty with
-  | TList inner -> Ok (typed inner ("List.hd (" ^ collection.code ^ ")"))
+  | TList inner -> Ok (typed_ir inner (apply "List.hd" [ collection.ocaml_expr ]))
   | TVector inner ->
-      Ok (typed inner ("Option.get (Rrbvec.peek_back (" ^ collection.code ^ "))"))
+      Ok (typed_ir inner (apply "Option.get" [ apply "Rrbvec.peek_back" [ collection.ocaml_expr ] ]))
   | _ -> Error.error "peek expects a list or vector"
 
 let pop collection =
   match collection.ty with
-  | TList _ -> Ok (typed collection.ty ("List.tl (" ^ collection.code ^ ")"))
+  | TList _ -> Ok (typed_ir collection.ty (apply "List.tl" [ collection.ocaml_expr ]))
   | TVector _ ->
       Ok
-        (typed collection.ty
-           ("snd (Option.get (Rrbvec.pop_back (" ^ collection.code ^ ")))"))
+        (typed_ir collection.ty
+           (apply "snd" [ apply "Option.get" [ apply "Rrbvec.pop_back" [ collection.ocaml_expr ] ] ]))
   | _ -> Error.error "pop expects a list or vector"
 
 let rest collection =
@@ -74,16 +76,16 @@ let seq collection =
 
 let empty_question collection =
   match collection.ty with
-  | TList _ | TSet _ -> Ok (typed TBool ("((" ^ collection.code ^ ") = [])"))
-  | TVector _ -> Ok (typed TBool ("Rrbvec.is_empty " ^ collection.code))
-  | TString -> Ok (typed TBool ("(" ^ collection.code ^ " = \"\")"))
+  | TList _ | TSet _ -> Ok (typed_ir TBool (Ocaml_ir.Infix ("=", collection.ocaml_expr, Ocaml_ir.List [])))
+  | TVector _ -> Ok (typed_ir TBool (apply "Rrbvec.is_empty" [ collection.ocaml_expr ]))
+  | TString -> Ok (typed_ir TBool (Ocaml_ir.Infix ("=", collection.ocaml_expr, Ocaml_ir.String "")))
   | _ -> Error.error "empty? expects a collection or string"
 
 let empty collection =
   match collection.ty with
-  | TList _ | TSet _ -> Ok (typed collection.ty "[]")
-  | TVector _ -> Ok (typed collection.ty "Rrbvec.empty")
-  | TString -> Ok (typed TString {|""|})
+  | TList _ | TSet _ -> Ok (typed_ir collection.ty (Ocaml_ir.List []))
+  | TVector _ -> Ok (typed_ir collection.ty (Ocaml_ir.Ident "Rrbvec.empty"))
+  | TString -> Ok (typed_ir TString (Ocaml_ir.String ""))
   | _ -> Error.error "empty expects a collection or string"
 
 let take_list_code count_code list_code =
@@ -115,8 +117,8 @@ let take_drop name count collection =
 
 let reverse collection =
   match collection.ty with
-  | TList _ -> Ok (typed collection.ty ("List.rev (" ^ collection.code ^ ")"))
-  | TVector _ -> Ok (typed collection.ty ("Rrbvec.rev (" ^ collection.code ^ ")"))
+  | TList _ -> Ok (typed_ir collection.ty (apply "List.rev" [ collection.ocaml_expr ]))
+  | TVector _ -> Ok (typed_ir collection.ty (apply "Rrbvec.rev" [ collection.ocaml_expr ]))
   | _ -> Error.error "reverse expects a list or vector"
 
 let compile name args =
