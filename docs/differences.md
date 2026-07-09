@@ -66,6 +66,8 @@ Sets currently compile to sorted unique OCaml lists.
 
 Maps currently compile to OCaml records when their keys are known statically.
 
+Structural map helpers include `merge`, `update`, and `select-keys`. Overlapping fields in `merge` and updated fields in `update` must keep their existing static type.
+
 Sequence APIs are eager.
 
 ## Host interop

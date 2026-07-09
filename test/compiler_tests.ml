@@ -428,6 +428,39 @@ let test_get_rejects_unknown_map_fields () =
   let source = {|(def user {:name "Ada"})(def x (get user :age))|} in
   Cljml.Compiler.compile_string source |> expect_error "unknown field :age"
 
+let test_map_merge_update_and_select_keys () =
+  let source =
+    {|
+(def user {:name "Ada", :age 36})
+(def admin {:age 37, :admin? true})
+(def merged (merge user admin))
+(def updated (update merged :age inc))
+(def selected (select-keys updated [:name :admin?]))
+(println (str (:name selected) ":" (:admin? selected) ":" (:age updated) ":" (count selected)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "map_merge_update_and_select_keys" "Ada:true:38:2\n" ocaml_source
+
+let test_merge_rejects_incompatible_overlapping_fields () =
+  let source = {|(def bad (merge {:age 36} {:age "old"}))|} in
+  Cljml.Compiler.compile_string source
+  |> expect_error "cannot merge :age as string because it is already int"
+
+let test_update_rejects_type_changes () =
+  let source =
+    {|
+(defn stringify-age [x] (str x))
+(def bad (update {:age 36} :age stringify-age))
+|}
+  in
+  Cljml.Compiler.compile_string source
+  |> expect_error "cannot update :age as string because it is already int"
+
+let test_select_keys_rejects_unknown_fields () =
+  Cljml.Compiler.compile_string {|(def bad (select-keys {:name "Ada"} [:age]))|}
+  |> expect_error "cannot select unknown field :age"
+
 let test_if_rejects_branch_type_mismatch () =
   Cljml.Compiler.compile_string {|(def x (if true 1 "one"))|}
   |> expect_error "if branches must have same type"
@@ -631,6 +664,11 @@ let tests =
       test_integer_division_rejects_unsupported_arities );
     ("chained comparisons work", test_chained_comparisons);
     ("get rejects unknown map fields", test_get_rejects_unknown_map_fields);
+    ("map merge, update, and select-keys work", test_map_merge_update_and_select_keys);
+    ( "merge rejects incompatible overlapping fields",
+      test_merge_rejects_incompatible_overlapping_fields );
+    ("update rejects type changes", test_update_rejects_type_changes);
+    ("select-keys rejects unknown fields", test_select_keys_rejects_unknown_fields);
     ("if rejects branch type mismatch", test_if_rejects_branch_type_mismatch);
     ("let, defn, and fn values work", test_let_defn_and_fn_values);
     ("sequence core api works on vectors", test_sequence_core_api_on_vectors);

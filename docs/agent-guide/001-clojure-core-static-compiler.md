@@ -84,7 +84,7 @@ The compiler should support this syntax without macros.
 | Boolean | `not`, `true?`, `false?`, `nil?`, `some?` | 1 |
 | Arithmetic | `+`, `-`, `*`, `/`, `inc`, `dec`, `<`, `<=`, `>`, `>=`, `=` | 1 |
 | Strings | `str` | 1 |
-| Maps | `get`, `assoc`, `dissoc`, `contains?`, `keys`, `vals` | 1 |
+| Maps | `get`, `assoc`, `dissoc`, `merge`, `update`, `select-keys`, `contains?`, `keys`, `vals` | 1 |
 | Vectors | `vector`, `conj`, `count`, `nth`, `first`, `second`, `last`, `peek`, `pop`, `rest` | 1 |
 | Lists | `list`, `list-of`, `cons`, `conj`, `count`, `nth`, `first`, `second`, `last`, `peek`, `pop`, `rest` | 2 |
 | Sequences | `seq`, `empty?`, `map`, `filter`, `reduce` | 2 |
@@ -110,6 +110,8 @@ Map literal types are structural records keyed by Clojure keywords.
 `assoc` rejects changing an existing field to a different type.
 
 `dissoc` returns a new structural record type when removing a field.
+
+`merge` and `update` preserve existing field types for overlapping keys.
 
 `get` on a structural map and literal keyword returns that field type.
 

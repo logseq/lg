@@ -24,6 +24,14 @@ let apply_code fn_code arg_codes =
   | [] -> fn_code
   | _ -> parenthesize (fn_code ^ " " ^ (arg_codes |> List.map parenthesize |> String.concat " "))
 
+let record_field_code target field =
+  match target.record_values with
+  | Some values -> (
+      match List.assoc_opt field values with
+      | Some code -> code
+      | None -> target.code ^ "." ^ field.ocaml_name)
+  | None -> target.code ^ "." ^ field.ocaml_name
+
 let rec drop n xs =
   if n <= 0 then xs
   else match xs with [] -> [] | _ :: rest -> drop (n - 1) rest
@@ -37,6 +45,9 @@ let lookup_function current_ns env name =
       | "-" -> Ok (typed (TFn ([ TInt; TInt ], TInt)) "(fun a b -> a - b)")
       | "*" -> Ok (typed (TFn ([ TInt; TInt ], TInt)) "(fun a b -> a * b)")
       | "/" -> Ok (typed (TFn ([ TInt; TInt ], TInt)) "(fun a b -> a / b)")
+      | "inc" -> Ok (typed (TFn ([ TInt ], TInt)) "(fun x -> x + 1)")
+      | "dec" -> Ok (typed (TFn ([ TInt ], TInt)) "(fun x -> x - 1)")
+      | "not" -> Ok (typed (TFn ([ TBool ], TBool)) "not")
       | _ -> Error.error ("unknown function " ^ name))
 
 let rec compile_expr current_ns (env : (string * binding) list) = function
@@ -282,6 +293,9 @@ and compile_call current_ns env name arg_forms =
   | "get" -> compile_get current_ns env arg_forms
   | "assoc" -> compile_assoc current_ns env arg_forms
   | "dissoc" -> compile_dissoc current_ns env arg_forms
+  | "merge" -> compile_merge current_ns env arg_forms
+  | "update" -> compile_update current_ns env arg_forms
+  | "select-keys" -> compile_select_keys current_ns env arg_forms
   | "contains?" -> compile_contains current_ns env arg_forms
   | "keys" -> compile_keys current_ns env arg_forms
   | "vals" -> compile_vals current_ns env arg_forms
@@ -537,7 +551,7 @@ and compile_get current_ns env arg_forms =
           match target.ty with
           | TRecord fields -> (
               match find_field keyword fields with
-              | Some field -> Ok (typed field.ty (target.code ^ "." ^ field.ocaml_name))
+              | Some field -> Ok (typed field.ty (record_field_code target field))
               | None -> Error.error ("unknown field " ^ keyword))
           | _ -> Error.error "get expects a map"))
   | [ _; _ ] -> Error.error "get key must be a keyword"
@@ -563,7 +577,7 @@ and compile_assoc current_ns env arg_forms =
                     |> List.map (fun (field : field) ->
                            let code =
                              if field.keyword = keyword then value.code
-                             else target.code ^ "." ^ field.ocaml_name
+                             else record_field_code target field
                            in
                            (field, code))
                   in
@@ -573,7 +587,7 @@ and compile_assoc current_ns env arg_forms =
                   let fields = fields @ [ new_field ] in
                   let values =
                     List.map
-                      (fun (field : field) -> (field, target.code ^ "." ^ field.ocaml_name))
+                      (fun (field : field) -> (field, record_field_code target field))
                       fields
                   in
                   let values =
@@ -603,11 +617,141 @@ and compile_dissoc current_ns env arg_forms =
                   let values =
                     fields
                     |> List.map (fun (field : field) ->
-                           (field, target.code ^ "." ^ field.ocaml_name))
+                           (field, record_field_code target field))
                   in
                   Ok { ty = TRecord fields; code = "<record>"; record_values = Some values })
           | _ -> Error.error "dissoc expects a map"))
   | _ -> Error.error "dissoc expects map and keyword"
+
+and compile_merge current_ns env arg_forms =
+  match compile_args_for current_ns env arg_forms with
+  | Error _ as err -> err
+  | Ok [] -> Error.error "merge expects at least 1 map"
+  | Ok (first :: rest) ->
+      let record_values expr fields =
+        List.map (fun (field : field) -> (field, record_field_code expr field)) fields
+      in
+      let merge_one fields values right =
+        match right.ty with
+        | TRecord right_fields ->
+            let right_values = record_values right right_fields in
+            let add_field (fields, values) (right_field : field) =
+              match find_field right_field.keyword fields with
+              | Some existing when not (Types.equal existing.ty right_field.ty) ->
+                  Error.error
+                    (Printf.sprintf "cannot merge %s as %s because it is already %s"
+                       right_field.keyword (source_name right_field.ty)
+                       (source_name existing.ty))
+              | Some existing ->
+                  let values =
+                    values
+                    |> List.map (fun (field, code) ->
+                           if field.keyword = existing.keyword then
+                             (field, List.assoc right_field right_values)
+                           else (field, code))
+                  in
+                  Ok (fields, values)
+              | None ->
+                  Ok
+                    ( fields @ [ right_field ],
+                      values @ [ (right_field, List.assoc right_field right_values) ] )
+            in
+            List.fold_left
+              (fun acc field ->
+                match acc with
+                | Error _ as err -> err
+                | Ok acc -> add_field acc field)
+              (Ok (fields, values)) right_fields
+        | _ -> Error.error "merge expects maps"
+      in
+      (match first.ty with
+      | TRecord fields ->
+          let values = record_values first fields in
+          let result =
+            List.fold_left
+              (fun acc right ->
+                match acc with
+                | Error _ as err -> err
+                | Ok (fields, values) -> merge_one fields values right)
+              (Ok (fields, values)) rest
+          in
+          (match result with
+          | Error _ as err -> err
+          | Ok (fields, values) ->
+              Ok { ty = TRecord fields; code = "<record>"; record_values = Some values })
+      | _ -> Error.error "merge expects maps")
+
+and compile_update current_ns env arg_forms =
+  match arg_forms with
+  | target_form :: FKeyword keyword :: fn_form :: [] -> (
+      match (compile_expr current_ns env target_form, compile_function_arg current_ns env fn_form) with
+      | (Error _ as err), _ -> err
+      | _, (Error _ as err) -> err
+      | Ok target, Ok fn -> (
+          match target.ty with
+          | TRecord fields -> (
+              match find_field keyword fields with
+              | None -> Error.error ("cannot update unknown field " ^ keyword)
+              | Some field -> (
+                  match fn.ty with
+                  | TFn ([ param_ty ], ret)
+                    when Types.equal param_ty field.ty && Types.equal ret field.ty ->
+                      let old_code = record_field_code target field in
+                      let values =
+                        fields
+                        |> List.map (fun (current : field) ->
+                               if current.keyword = keyword then
+                                 (current, apply_code fn.code [ old_code ])
+                               else (current, record_field_code target current))
+                      in
+                      Ok { ty = TRecord fields; code = "<record>"; record_values = Some values }
+                  | TFn ([ _ ], ret) ->
+                      Error.error
+                        (Printf.sprintf "cannot update %s as %s because it is already %s"
+                           keyword (source_name ret) (source_name field.ty))
+                  | TFn _ -> Error.error "update function must accept one argument"
+                  | _ -> Error.error "update expects a function"))
+          | _ -> Error.error "update expects a map"))
+  | _ -> Error.error "update expects map, keyword, and function"
+
+and compile_select_keys current_ns env arg_forms =
+  match arg_forms with
+  | [ target_form; FVector key_forms ] -> (
+      if key_forms = [] then Error.error "select-keys requires at least one key"
+      else
+        match compile_expr current_ns env target_form with
+        | Error _ as err -> err
+        | Ok target -> (
+            match target.ty with
+            | TRecord fields ->
+                let rec collect acc = function
+                  | [] ->
+                      let selected = List.rev acc in
+                      let keyword_pairs =
+                        selected |> List.map (fun (field : field) -> (field.keyword, field))
+                      in
+                      validate_unique_keywords keyword_pairs
+                      |> Result.map (fun () ->
+                             let values =
+                               selected
+                               |> List.map (fun field ->
+                                      (field, record_field_code target field))
+                             in
+                             {
+                               ty = TRecord selected;
+                               code = "<record>";
+                               record_values = Some values;
+                             })
+                  | FKeyword keyword :: rest -> (
+                      match find_field keyword fields with
+                      | Some field -> collect (field :: acc) rest
+                      | None -> Error.error ("cannot select unknown field " ^ keyword))
+                  | _ -> Error.error "select-keys expects a vector of keywords"
+                in
+                collect [] key_forms
+            | _ -> Error.error "select-keys expects a map"))
+  | [ _; _ ] -> Error.error "select-keys expects a vector of keywords"
+  | _ -> Error.error "select-keys expects map and key vector"
 
 and compile_contains current_ns env arg_forms =
   match arg_forms with

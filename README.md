@@ -26,6 +26,8 @@ The compiler infers record-like map shapes automatically:
 - `(assoc x :admin? true)` produces a new record shape with an added `bool`
   field.
 - `(dissoc y :age)` produces a new record shape with that field removed.
+- `merge`, `update`, and `select-keys` work on structural maps when field
+  keys are known statically.
 - `(ns examples.person)` scopes unqualified symbols and avoids generated OCaml
   name collisions.
 - `(defn inc1 [x] (+ x 1))`, `(fn [x] ...)`, and `(let [...] ...)` are
