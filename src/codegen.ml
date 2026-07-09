@@ -6,6 +6,7 @@ let rec stringify_expr ?(pr = false) expr =
   match expr.ty with
   | TInt -> "string_of_int (" ^ expr.code ^ ")"
   | TString -> if pr then "Printf.sprintf \"%S\" (" ^ expr.code ^ ")" else expr.code
+  | TKeyword -> expr.code
   | TBool -> "string_of_bool (" ^ expr.code ^ ")"
   | TNil -> {|"nil"|}
   | TUnit -> {|""|}
@@ -14,6 +15,7 @@ let rec stringify_expr ?(pr = false) expr =
       let mapper =
         match inner with
         | TInt -> "string_of_int"
+        | TKeyword -> "(fun x -> x)"
         | TString ->
             if pr then "Printf.sprintf \"%S\""
             else Printf.sprintf "(fun x -> %S ^ x ^ %S)" "\"" "\""
@@ -28,6 +30,7 @@ let rec stringify_expr ?(pr = false) expr =
       let mapper =
         match inner with
         | TInt -> "string_of_int"
+        | TKeyword -> "(fun x -> x)"
         | TString ->
             if pr then "Printf.sprintf \"%S\""
             else Printf.sprintf "(fun x -> %S ^ x ^ %S)" "\"" "\""
@@ -37,11 +40,12 @@ let rec stringify_expr ?(pr = false) expr =
         | _ -> {|(fun _ -> "<value>")|}
       in
       {|("[" ^ String.concat " " (List.map |}
-      ^ mapper ^ " (Rrbvec.to_list " ^ expr.code ^ {|)) ^ "]")|}
+      ^ mapper ^ " (Rrbvec.to_list (" ^ expr.code ^ {|))) ^ "]")|}
   | TSet inner ->
       let mapper =
         match inner with
         | TInt -> "string_of_int"
+        | TKeyword -> "(fun x -> x)"
         | TString ->
             if pr then "Printf.sprintf \"%S\""
             else Printf.sprintf "(fun x -> %S ^ x ^ %S)" "\"" "\""

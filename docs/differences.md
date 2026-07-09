@@ -64,6 +64,9 @@ Use `(list-of :int)`, `(list-of :string)`, `(list-of :bool)`, or `(list-of :nil)
 
 Sets currently compile to sorted unique OCaml lists.
 
+Keywords are statically distinct from strings, although the current runtime
+representation is still an OCaml string.
+
 Maps currently compile to OCaml records when their keys are known statically.
 
 Structural map helpers include `merge`, `update`, and `select-keys`. Overlapping fields in `merge` and updated fields in `update` must keep their existing static type.

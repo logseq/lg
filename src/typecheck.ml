@@ -39,7 +39,7 @@ let rec compile_expr current_ns (env : (string * binding) list) = function
   | FBool true -> Ok (typed TBool "true")
   | FBool false -> Ok (typed TBool "false")
   | FNil -> Ok (typed TNil "()")
-  | FKeyword keyword -> Ok (typed TString (Codegen.ocaml_string_literal keyword))
+  | FKeyword keyword -> Ok (typed TKeyword (Codegen.ocaml_string_literal keyword))
   | FSymbol name -> (
       match List.assoc_opt (Names.namespaced_key current_ns name) env with
       | Some binding -> Ok (typed binding.ty binding.ocaml_name)
@@ -646,7 +646,7 @@ and compile_keys current_ns env arg_forms =
             |> List.map (fun (field : field) -> Codegen.ocaml_string_literal field.keyword)
             |> String.concat "; "
           in
-          Ok (typed (TVector TString) ("Rrbvec.of_list [" ^ values ^ "]"))
+          Ok (typed (TVector TKeyword) ("Rrbvec.of_list [" ^ values ^ "]"))
       | _ -> Error.error "keys expects a map")
   | Ok _ -> Error.error "keys expects 1 arguments"
 

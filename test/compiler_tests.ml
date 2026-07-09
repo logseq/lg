@@ -398,6 +398,30 @@ let test_vectors_reject_mixed_element_types () =
   Cljml.Compiler.compile_string {|(def xs [1 "two"])|}
   |> expect_error "vector elements must all have the same type"
 
+let test_keyword_values_print_as_keywords () =
+  let source =
+    {|
+(println (str :admin? ":" (pr-str :admin?)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "keyword_values_print_as_keywords" ":admin?::admin?\n"
+    ocaml_source
+
+let test_keys_return_keyword_values () =
+  let source =
+    {|
+(def user {:name "Ada", :age 36})
+(println (pr-str (keys user)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "keys_return_keyword_values" "[:name :age]\n" ocaml_source
+
+let test_vectors_reject_mixed_keyword_and_string_elements () =
+  Cljml.Compiler.compile_string {|(def xs [:name "name"])|}
+  |> expect_error "vector elements must all have the same type"
+
 let test_arithmetic_rejects_non_int_arguments () =
   Cljml.Compiler.compile_string {|(def x (+ 1 "two"))|}
   |> expect_error "expected int arguments for +"
@@ -658,6 +682,10 @@ let tests =
     ("do and multi-form bodies work", test_do_and_multi_form_bodies);
     ("fn rejects empty body", test_fn_rejects_empty_body);
     ("vectors reject mixed element types", test_vectors_reject_mixed_element_types);
+    ("keyword values print as keywords", test_keyword_values_print_as_keywords);
+    ("keys return keyword values", test_keys_return_keyword_values);
+    ( "vectors reject mixed keyword and string elements",
+      test_vectors_reject_mixed_keyword_and_string_elements );
     ("arithmetic rejects non-int arguments", test_arithmetic_rejects_non_int_arguments);
     ("arithmetic core arities work", test_arithmetic_core_arities);
     ( "integer division rejects unsupported arities",

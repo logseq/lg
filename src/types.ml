@@ -1,6 +1,7 @@
 type ty =
   | TInt
   | TString
+  | TKeyword
   | TBool
   | TNil
   | TUnit
@@ -42,7 +43,12 @@ let typed ty code = { ty; code; record_values = None }
 let rec equal left right =
   match (left, right) with
   | TAny, _ | _, TAny -> true
-  | TInt, TInt | TString, TString | TBool, TBool | TNil, TNil | TUnit, TUnit ->
+  | TInt, TInt
+  | TString, TString
+  | TKeyword, TKeyword
+  | TBool, TBool
+  | TNil, TNil
+  | TUnit, TUnit ->
       true
   | TList left, TList right -> equal left right
   | TVector left, TVector right -> equal left right
@@ -61,6 +67,7 @@ let rec equal left right =
 let rec source_name = function
   | TInt -> "int"
   | TString -> "string"
+  | TKeyword -> "keyword"
   | TBool -> "bool"
   | TNil -> "nil"
   | TUnit -> "unit"
@@ -76,6 +83,7 @@ let rec source_name = function
 let rec ocaml_name = function
   | TInt -> "int"
   | TString -> "string"
+  | TKeyword -> "string"
   | TBool -> "bool"
   | TNil -> "unit"
   | TUnit -> "unit"

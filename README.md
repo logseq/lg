@@ -23,6 +23,7 @@ The compiler infers record-like map shapes automatically:
   fields.
 - `[36 37 38]` becomes an `Rrbvec.t` persistent vector.
 - `(list 1 2 3)` becomes a typed OCaml list.
+- `:admin?` is a distinct `keyword` value in the static type system.
 - `(assoc x :admin? true)` produces a new record shape with an added `bool`
   field.
 - `(dissoc y :age)` produces a new record shape with that field removed.
@@ -49,6 +50,7 @@ The compiler infers record-like map shapes automatically:
 - `(:require [ocaml.String :as string])` can alias a small typed table of OCaml
   host functions.
 - `(:name user)` works as keyword lookup syntax for structural maps.
+- `(keys user)` returns a persistent vector of keyword values.
 - `(vector-of :int)` creates an explicitly typed empty persistent vector.
 - `(list-of :int)` creates an explicitly typed empty list.
 - Updating an existing field with a different type is rejected.

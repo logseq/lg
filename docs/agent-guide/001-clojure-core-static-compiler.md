@@ -96,7 +96,7 @@ The compiler should support this syntax without macros.
 The first type system should be explicit and structural.
 It should infer ordinary function parameter types from source-level constraints where possible, while allowing optional annotations for ambiguous cases.
 
-Scalar types are `int`, `string`, `bool`, `nil`, and `unit`.
+Scalar types are `int`, `string`, `keyword`, `bool`, `nil`, and `unit`.
 Arithmetic starts as integer-only; ratio-producing Clojure arities such as unary `/` are documented differences until numeric tower support exists.
 
 Vector types are homogeneous as `vector<T>` and compile to `Rrbvec.t`.
@@ -104,6 +104,8 @@ Vector types are homogeneous as `vector<T>` and compile to `Rrbvec.t`.
 List types are homogeneous as `list<T>` and compile to OCaml lists.
 
 Map literal types are structural records keyed by Clojure keywords.
+
+`keys` returns a homogeneous `vector<keyword>`.
 
 `assoc` returns a new structural record type when adding a field.
 
