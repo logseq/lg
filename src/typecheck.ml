@@ -1445,6 +1445,26 @@ and compile_function_arg current_ns env = function
   | FSymbol name -> lookup_function current_ns env name
   | form -> compile_expr current_ns env form
 
+and compile_function_arg_for_collection current_ns env element_ty = function
+  | FList (FSymbol "fn" :: FVector [ FSymbol name ] :: body_forms) ->
+      let binding = Types.binding (Names.sanitize_name name) element_ty in
+      let function_env =
+        env @ [ (Names.namespaced_key current_ns name, binding) ]
+      in
+      compile_body current_ns function_env "function body requires at least one form"
+        body_forms
+      |> Result.map (fun body ->
+             let pattern =
+               match element_ty with
+               | TNamed_record record ->
+                   Ocaml_ir.PConstraint
+                     (Ocaml_ir.PVar binding.ocaml_name, record.type_name)
+               | _ -> Ocaml_ir.PVar binding.ocaml_name
+             in
+             typed_ir (TFn ([ element_ty ], body.ty))
+               (Ocaml_ir.Fun ([ pattern ], body.ocaml_expr)))
+  | form -> compile_function_arg current_ns env form
+
 and compile_named_function_call current_ns env name arg_forms =
   match lookup_binding current_ns env name with
   | Error _ -> compile_protocol_call current_ns env name arg_forms
@@ -1845,10 +1865,18 @@ and compile_sequence_bool_predicate current_ns env name arg_forms =
 and compile_map_call current_ns env arg_forms =
   match arg_forms with
   | fn_form :: collection_form :: [] -> (
-      match (compile_function_arg current_ns env fn_form, compile_expr current_ns env collection_form) with
-      | (Error _ as err), _ -> err
-      | _, (Error _ as err) -> err
-      | Ok fn, Ok collection -> (
+      match compile_expr current_ns env collection_form with
+      | Error _ as err -> err
+      | Ok collection ->
+          let fn =
+            match collection.ty with
+            | TList inner | TVector inner | TSet inner ->
+                compile_function_arg_for_collection current_ns env inner fn_form
+            | _ -> compile_function_arg current_ns env fn_form
+          in
+          (match fn with
+          | Error _ as err -> err
+          | Ok fn -> (
           match (fn.ty, collection.ty) with
           | TFn ([ param_ty ], ret), TList inner when Types.equal param_ty inner ->
               Ok
@@ -1873,7 +1901,7 @@ and compile_map_call current_ns env arg_forms =
                           ^ source_module ^ ".elements (" ^ collection.code ^ ")))")))
           | TFn _, TSet _ -> Error.error "map function argument type does not match set"
           | _, TSet _ -> Error.error "map expects a function"
-          | _ -> Error.error "map expects a list, vector, or set"))
+          | _ -> Error.error "map expects a list, vector, or set")))
   | _ -> Error.error "map expects function and collection"
 
 and compile_filter current_ns env arg_forms =

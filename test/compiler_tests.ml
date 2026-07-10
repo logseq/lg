@@ -1538,7 +1538,7 @@ let test_sets_support_named_records () =
 (def updated (conj users ada-copy))
 (def matching (filter (fn [user] (= (:name user) "Ada")) updated))
 (def all-ada? (every? (fn [user] (= (:name user) "Ada")) updated))
-(def ages (map (fn [user] (+ (:age user) 0)) updated))
+(def ages (map (fn [user] (:age user)) updated))
 (def trimmed (disj updated ada-copy))
 (def rebuilt (set [ada-copy]))
 (println (str (count matching) ":" (contains? matching ada) ":" all-ada? ":"
