@@ -20,7 +20,8 @@ let count collection =
       |> Result.map (fun set_module ->
              typed_ir TInt (apply (set_module ^ ".cardinal") [ collection.ocaml_expr ]))
   | TVector _ -> Ok (typed_ir TInt (apply "Rrbvec.length" [ collection.ocaml_expr ]))
-  | TRecord fields -> Ok (typed_ir TInt (Ocaml_ir.Int (List.length fields)))
+  | TRecord fields | TNamed_record { fields; _ } ->
+      Ok (typed_ir TInt (Ocaml_ir.Int (List.length fields)))
   | TString -> Ok (typed_ir TInt (apply "String.length" [ collection.ocaml_expr ]))
   | _ -> Error.error "count expects a collection or string"
 

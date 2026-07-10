@@ -69,8 +69,42 @@ let row_project_code type_name fields arg =
 
 let row_arg_code row_type_name expected_ty arg =
   match (row_type_name, expected_ty, arg.ty) with
-  | Some type_name, TRecord fields, TRecord _ -> row_project_code type_name fields arg
+  | Some type_name, TRecord fields,
+    (TRecord _ | TNamed_record _) ->
+      row_project_code type_name fields arg
   | _ -> arg.code
+
+let coerce_set_element element_ty value =
+  match element_ty with
+  | TNamed_record expected -> (
+      match value.ty with
+      | TNamed_record actual when actual.type_name = expected.type_name ->
+          Ok value.ocaml_expr
+      | (TRecord actual_fields | TNamed_record { fields = actual_fields; _ })
+        when Types.compatible ~expected:element_ty ~actual:value.ty ->
+          let rec project_fields acc = function
+            | [] -> Ok (List.rev acc)
+            | (field : field) :: rest -> (
+                match find_field field.keyword actual_fields with
+                | None -> Error.error "set record coercion is missing a field"
+                | Some actual_field ->
+                    project_fields
+                      ((field.ocaml_name, Structural_map.field_expr value actual_field) :: acc)
+                      rest)
+          in
+          project_fields [] expected.fields
+          |> Result.map (fun fields -> Ocaml_ir.Record (fields, Some expected.type_name))
+      | _ -> Error.error "set value type must match record element type")
+  | _ ->
+      if Types.equal element_ty value.ty then Ok value.ocaml_expr
+      else Error.error "set value type must match element type"
+
+let constrain_record_function_argument fn element_ty =
+  match (fn.ocaml_expr, element_ty) with
+  | Ocaml_ir.Fun ([ Ocaml_ir.PVar name ], body), TNamed_record record ->
+      Ocaml_ir.Fun ([ Ocaml_ir.PConstraint (Ocaml_ir.PVar name, record.type_name) ], body)
+      |> Ocaml_ir.to_source
+  | _ -> fn.code
 
 let rec compile_expr current_ns (env : (string * binding) list) = function
   | FInt value -> Ok (typed_ir TInt (Ocaml_ir.Int value))
@@ -956,12 +990,13 @@ and compile_conj current_ns env arg_forms =
                       [ collection.ocaml_expr; value.ocaml_expr ] )))
         | TVector _ -> Error.error "conj value type must match vector element type"
         | TSet inner when Types.equal inner value.ty ->
-            Types.set_module_name inner
-            |> Result.map (fun set_module ->
-                   typed_ir collection.ty
-                     (Ocaml_ir.Apply
-                        ( Ocaml_ir.Ident (set_module ^ ".add"),
-                          [ value.ocaml_expr; collection.ocaml_expr ] )))
+            Result.bind (Types.set_module_name inner) (fun set_module ->
+                   coerce_set_element inner value
+                   |> Result.map (fun value ->
+                          typed_ir collection.ty
+                            (Ocaml_ir.Apply
+                               ( Ocaml_ir.Ident (set_module ^ ".add"),
+                                 [ value; collection.ocaml_expr ] ))))
         | TSet _ -> Error.error "conj value type must match set element type"
         | _ -> Error.error "conj expects a list, vector, or set"
       in
@@ -1064,7 +1099,7 @@ and compile_get current_ns env arg_forms =
       | Error _ as err -> err
       | Ok target -> (
           match target.ty with
-          | TRecord fields -> (
+          | TRecord fields | TNamed_record { fields; _ } -> (
               match find_field keyword fields with
               | Some field ->
                   Ok
@@ -1090,7 +1125,7 @@ and compile_get current_ns env arg_forms =
       | _, (Error _ as err) -> err
       | Ok target, Ok default -> (
           match target.ty with
-          | TRecord fields -> (
+          | TRecord fields | TNamed_record { fields; _ } -> (
               match find_field keyword fields with
               | Some field when Types.equal field.ty default.ty ->
                   Ok
@@ -1150,12 +1185,13 @@ and compile_assoc current_ns env arg_forms =
       | Ok target -> (
           if pair_forms = [] || List.length pair_forms mod 2 <> 0 then
             match target.ty with
-            | TRecord _ -> Error.error "assoc expects map followed by keyword/value pairs"
+            | TRecord _ | TNamed_record _ ->
+                Error.error "assoc expects map followed by keyword/value pairs"
             | TVector _ -> Error.error "assoc expects vector followed by index/value pairs"
             | _ -> Error.error "assoc expects collection followed by key/value pairs"
           else
             match target.ty with
-            | TRecord _ -> (
+            | TRecord _ | TNamed_record _ -> (
                 match compile_record_pairs [] pair_forms with
                 | Error _ as err -> err
                 | Ok pairs -> Structural_map.assoc_many target pairs)
@@ -1230,7 +1266,7 @@ and compile_update current_ns env arg_forms =
       | _, _, (Error _ as err) -> err
       | Ok target, Ok fn, Ok extra_args -> (
           match target.ty with
-          | TRecord fields -> (
+          | TRecord fields | TNamed_record { fields; _ } -> (
               match find_field keyword fields with
               | None -> Error.error ("cannot update unknown field " ^ keyword)
               | Some field -> (
@@ -1315,7 +1351,8 @@ and compile_select_keys current_ns env arg_forms =
       | _, (Error _ as err) -> err
       | Ok target, Ok keywords -> (
           match target.ty with
-          | TRecord fields -> Structural_map.select_keys target fields keywords
+          | TRecord fields | TNamed_record { fields; _ } ->
+              Structural_map.select_keys target fields keywords
           | _ -> Error.error "select-keys expects a map"))
   | [ _; _ ] -> Error.error "select-keys expects a vector of keywords"
   | _ -> Error.error "select-keys expects map and key vector"
@@ -1324,12 +1361,13 @@ and compile_contains current_ns env arg_forms =
   let compile_collection_contains target value =
     match (target.ty, value.ty) with
     | TSet inner, _ when Types.equal inner value.ty ->
-        Types.set_module_name inner
-        |> Result.map (fun set_module ->
-               typed_ir TBool
-                 (Ocaml_ir.Apply
-                    (Ocaml_ir.Ident (set_module ^ ".mem"),
-                     [ value.ocaml_expr; target.ocaml_expr ])))
+        Result.bind (Types.set_module_name inner) (fun set_module ->
+               coerce_set_element inner value
+               |> Result.map (fun value ->
+                      typed_ir TBool
+                        (Ocaml_ir.Apply
+                           (Ocaml_ir.Ident (set_module ^ ".mem"),
+                            [ value; target.ocaml_expr ]))))
     | TSet _, _ -> Error.error "contains? value type must match set element type"
     | TVector _, TInt ->
         Ok
@@ -1351,7 +1389,7 @@ and compile_contains current_ns env arg_forms =
       | Error _ as err -> err
       | Ok target -> (
           match target.ty with
-          | TRecord fields ->
+          | TRecord fields | TNamed_record { fields; _ } ->
               Ok
                 (typed_ir TBool
                    (Ocaml_ir.Bool (Option.is_some (find_field keyword fields))))
@@ -1370,7 +1408,7 @@ and compile_keys current_ns env arg_forms =
   | Error _ as err -> err
   | Ok [ target ] -> (
       match target.ty with
-      | TRecord fields ->
+      | TRecord fields | TNamed_record { fields; _ } ->
           Ok
             (typed_ir (TVector TKeyword)
                (Ocaml_ir.Apply
@@ -1387,8 +1425,9 @@ and compile_vals current_ns env arg_forms =
   | Error _ as err -> err
   | Ok [ target ] -> (
       match target.ty with
-      | TRecord [] -> Error.error "vals requires a non-empty map"
-      | TRecord (first :: rest) ->
+      | TRecord [] | TNamed_record { fields = []; _ } ->
+          Error.error "vals requires a non-empty map"
+      | TRecord (first :: rest) | TNamed_record { fields = first :: rest; _ } ->
           if List.for_all (fun (field : field) -> Types.equal first.ty field.ty) rest then
             Ok
               (typed_ir (TVector first.ty)
@@ -1782,7 +1821,8 @@ and compile_sequence_bool_predicate current_ns env name arg_forms =
           | TFn _, TVector _ ->
               Error.error (name ^ " expects a predicate matching vector elements")
           | _, TVector _ -> Error.error (name ^ " expects a function")
-          | TFn ([ param_ty ], TBool), TSet inner when Types.equal param_ty inner ->
+          | TFn ([ param_ty ], TBool), TSet inner
+            when Types.compatible ~expected:param_ty ~actual:inner ->
               Types.set_module_name inner
               |> Result.map (fun set_module ->
                      let all_code =
@@ -1847,11 +1887,13 @@ and compile_filter current_ns env arg_forms =
                    ("Rrbvec.filter " ^ fn.code ^ " (" ^ collection.code ^ ")"))
           | TFn _, TVector _ -> Error.error "filter expects a predicate matching vector elements"
           | _, TVector _ -> Error.error "filter expects a function"
-          | TFn ([ param_ty ], TBool), TSet inner when Types.equal param_ty inner ->
+          | TFn ([ param_ty ], TBool), TSet inner
+            when Types.compatible ~expected:param_ty ~actual:inner ->
               Types.set_module_name inner
               |> Result.map (fun set_module ->
+                     let fn_code = constrain_record_function_argument fn inner in
                      typed collection.ty
-                       (set_module ^ ".of_list (List.filter " ^ fn.code ^ " ("
+                       (set_module ^ ".of_list (List.filter " ^ fn_code ^ " ("
                       ^ set_module ^ ".elements (" ^ collection.code ^ ")))"))
           | TFn _, TSet _ -> Error.error "filter expects a predicate matching set elements"
           | _, TSet _ -> Error.error "filter expects a function"
@@ -2209,21 +2251,27 @@ and compile_hash_set current_ns env arg_forms =
       | Ok first_expr ->
           let rec loop values = function
             | [] ->
-                Types.set_module_name first_expr.ty
-                |> Result.map (fun set_module ->
-                       typed_ir (TSet first_expr.ty)
-                         (Ocaml_ir.Apply
-                            ( Ocaml_ir.Ident (set_module ^ ".of_list"),
-                              [ Ocaml_ir.List (List.rev values) ] )))
+                Result.bind (Types.set_module_name first_expr.ty) (fun set_module ->
+                       let rec coerce_values acc = function
+                         | [] -> Ok (List.rev acc)
+                         | value :: rest ->
+                             Result.bind (coerce_set_element first_expr.ty value)
+                               (fun value -> coerce_values (value :: acc) rest)
+                       in
+                       coerce_values [] (List.rev values)
+                       |> Result.map (fun values ->
+                              typed_ir (TSet first_expr.ty)
+                                (Ocaml_ir.Apply
+                                   ( Ocaml_ir.Ident (set_module ^ ".of_list"),
+                                     [ Ocaml_ir.List values ] ))))
             | form :: rest -> (
                 match compile_expr current_ns env form with
                 | Error _ as err -> err
                 | Ok expr ->
-                    if Types.equal first_expr.ty expr.ty then
-                      loop (expr.ocaml_expr :: values) rest
+                    if Types.equal first_expr.ty expr.ty then loop (expr :: values) rest
                     else Error.error "hash-set elements must all have the same type")
           in
-          loop [ first_expr.ocaml_expr ] rest)
+          loop [ first_expr ] rest)
 
 and compile_set_of arg_forms =
   match arg_forms with
@@ -2253,11 +2301,12 @@ and compile_disj current_ns env arg_forms =
                         if Types.equal inner value.ty then
                           Result.bind (Types.set_module_name inner)
                             (fun set_module ->
-                              remove_values
-                                (Ocaml_ir.Apply
-                                   ( Ocaml_ir.Ident (set_module ^ ".remove"),
-                                     [ value.ocaml_expr; expression ] ))
-                                rest)
+                              Result.bind (coerce_set_element inner value) (fun value ->
+                                     remove_values
+                                       (Ocaml_ir.Apply
+                                          ( Ocaml_ir.Ident (set_module ^ ".remove"),
+                                            [ value; expression ] ))
+                                       rest))
                         else Error.error "disj value type must match set element type")
               in
               remove_values collection.ocaml_expr value_forms
@@ -2385,9 +2434,29 @@ let rec compile_module current_ns env next_type module_path module_segment forms
                 | None -> Error.error "internal error: record expression missing values"
                 | Some values ->
                     let type_name = "t" ^ string_of_int next_type in
+                    let set_module_name = "Set_" ^ type_name in
+                    let local_record_ty =
+                      Types.named_record ~type_name ~set_module_name fields
+                    in
+                    let public_record_ty =
+                      Types.named_record
+                        ~type_name:(Names.module_path_to_ocaml module_path ^ "." ^ type_name)
+                        ~set_module_name:
+                          (Names.module_path_to_ocaml module_path ^ "." ^ set_module_name)
+                        fields
+                    in
+                    let local_binding = Types.binding local_name local_record_ty in
+                    let public_binding =
+                      Types.binding (module_binding_ocaml_name module_path name)
+                        public_record_ty
+                    in
                     let item =
                       Record_def
-                        { var_name = local_name; type_name; fields; values }
+                        { var_name = local_name;
+                          type_name;
+                          set_module_name;
+                          fields;
+                          values }
                     in
                     Ok
                       ( env @ [ (key, local_binding) ],
@@ -2477,12 +2546,21 @@ let compile_top_level current_ns env next_type = function
               | None -> Error.error "internal error: record expression missing values"
               | Some values ->
                   let type_name = "t" ^ string_of_int next_type in
-                  let binding = Types.binding ocaml_name (TRecord fields) in
+                  let set_module_name = "Set_" ^ type_name in
+                  let binding =
+                    Types.binding ocaml_name
+                      (Types.named_record ~type_name ~set_module_name fields)
+                  in
                   Ok
                     ( current_ns,
                       env @ [ (env_key, binding) ],
                       next_type + 1,
-                      Record_def { var_name = ocaml_name; type_name; fields; values } ))
+                      Record_def
+                        { var_name = ocaml_name;
+                          type_name;
+                          set_module_name;
+                          fields;
+                          values } ))
           | _ ->
               let binding = Types.binding ocaml_name expr.ty in
               Ok

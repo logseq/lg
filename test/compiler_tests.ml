@@ -160,6 +160,12 @@ let test_records_assoc_and_dissoc () =
   age : int;
 }
 
+module Set_t1 = Set.Make (struct
+  type t = t1
+
+  let compare = Stdlib.compare
+end)
+
 let x : t1 = {
   name = "Ada";
   age = 36;
@@ -171,6 +177,12 @@ type t2 = {
   admin_ : bool;
 }
 
+module Set_t2 = Set.Make (struct
+  type t = t2
+
+  let compare = Stdlib.compare
+end)
+
 let y : t2 = {
   name = x.name;
   age = x.age;
@@ -181,6 +193,12 @@ type t3 = {
   name : string;
   admin_ : bool;
 }
+
+module Set_t3 = Set.Make (struct
+  type t = t3
+
+  let compare = Stdlib.compare
+end)
 
 let z : t3 = {
   name = y.name;
@@ -1511,6 +1529,20 @@ let test_set_core_api () =
   assert_ocaml_runs "set_core_api" "true:false:4:#{1 2 3 4}:#{1 2 3 4}:#{1 3}\n"
     ocaml_source
 
+let test_sets_support_named_records () =
+  let source =
+    {|
+(def ada {:name "Ada", :age 36})
+(def ada-copy {:name "Ada", :age 36})
+(def users (hash-set ada ada-copy))
+(def updated (conj users ada-copy))
+(def matching (filter (fn [user] (= (:name user) "Ada")) updated))
+(println (str (count matching) ":" (contains? matching ada)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "sets_support_named_records" "1:true\n" ocaml_source
+
 let test_set_positional_sequence_helpers () =
   let source =
     {|
@@ -1949,6 +1981,38 @@ let test_incremental_compilation_preserves_state () =
   assert_ocaml_runs "incremental_compilation_preserves_state"
     "Ada:true:36\n" (people_ocaml ^ "\n\n" ^ app_ocaml)
 
+let test_incremental_compilation_preserves_record_sets () =
+  let state = Cljml.Compiler.empty_state in
+  let state, people_ocaml =
+    Cljml.Compiler.compile_chunk state
+      {|
+(def ada {:name "Ada", :age 36})
+|}
+    |> expect_ok
+  in
+  let _state, app_ocaml =
+    Cljml.Compiler.compile_chunk state
+      {|
+(def users (hash-set ada))
+(println (str (count users) ":" (contains? users ada)))
+|}
+    |> expect_ok
+  in
+  assert_ocaml_runs "incremental_compilation_preserves_record_sets" "1:true\n"
+    (people_ocaml ^ "\n\n" ^ app_ocaml)
+
+let test_module_definitions_support_record_sets () =
+  let source =
+    {|
+(module People
+  (def ada {:name "Ada", :age 36})
+  (def users (hash-set ada)))
+(println (str (count People/users) ":" (contains? People/users People/ada)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "module_definitions_support_record_sets" "1:true\n" ocaml_source
+
 let test_incremental_compilation_requires_prior_state () =
   Cljml.Compiler.compile_chunk Cljml.Compiler.empty_state
     {|
@@ -1991,6 +2055,18 @@ let test_parsetree_backend_prints_runnable_ocaml () =
   let structure = Cljml.Compiler.compile_parsetree source |> expect_ok in
   let ocaml_source = Cljml.Compiler.print_parsetree structure in
   assert_ocaml_runs "parsetree_backend_prints_runnable_ocaml" "Ada:36\n" ocaml_source
+
+let test_parsetree_backend_supports_record_sets () =
+  let source =
+    {|
+(def ada {:name "Ada", :age 36})
+(def users (hash-set ada))
+(println (str (count users) ":" (contains? users ada)))
+|}
+  in
+  let structure = Cljml.Compiler.compile_parsetree source |> expect_ok in
+  let ocaml_source = Cljml.Compiler.print_parsetree structure in
+  assert_ocaml_runs "parsetree_backend_supports_record_sets" "1:true\n" ocaml_source
 
 let test_parsetree_backend_preserves_static_errors () =
   Cljml.Compiler.compile_parsetree {|(def x (+ 1 "two"))|}
@@ -2467,6 +2543,7 @@ let tests =
       test_common_higher_order_helpers_reject_compare_type_mismatch );
     ("apply rejects bad set reducers", test_apply_rejects_bad_set_reducers);
     ("set core api works", test_set_core_api);
+    ("sets support named records", test_sets_support_named_records);
     ( "set positional sequence helpers work",
       test_set_positional_sequence_helpers );
     ( "set positional sequence helpers reject non-collections",
@@ -2528,12 +2605,18 @@ let tests =
       test_incremental_compilation_preserves_modules );
     ( "incremental compilation preserves state",
       test_incremental_compilation_preserves_state );
+    ( "incremental compilation preserves record sets",
+      test_incremental_compilation_preserves_record_sets );
+    ( "module definitions support record sets",
+      test_module_definitions_support_record_sets );
     ( "incremental compilation requires prior state",
       test_incremental_compilation_requires_prior_state );
     ( "incremental compilation preserves protocols",
       test_incremental_compilation_preserves_protocols );
     ( "parsetree backend prints runnable ocaml",
       test_parsetree_backend_prints_runnable_ocaml );
+    ( "parsetree backend supports record sets",
+      test_parsetree_backend_supports_record_sets );
     ( "parsetree backend preserves static errors",
       test_parsetree_backend_preserves_static_errors );
     ( "parsetree backend builds native record items",

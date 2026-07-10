@@ -30,9 +30,12 @@ first, then OCaml lowering:
   not introduce nilable sequences or lazy seqs.
 
 Sets use persistent OCaml `Set.Make` modules rather than list-backed values.
-The current runtime provides comparators for `int`, `string` (including
-keywords and symbols), and `bool`; generated comparators for record and other
-composite element types are the next runtime extension.
+The runtime provides comparators for `int`, `string` (including keywords and
+symbols), and `bool`. Every top-level structural map is emitted as a named
+OCaml record with a sibling `Set.Make` module using `Stdlib.compare`, so records
+can be set elements without sacrificing static types. Same-shaped records are
+projected to the set element record type at `hash-set`, `conj`, `contains?`, and
+`disj` boundaries.
 
 Supported prototype forms:
 

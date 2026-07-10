@@ -178,6 +178,8 @@ let infer_params ~lookup_function_ty params body_forms =
     | FList (FSymbol ("<" | "<=" | ">" | ">=") :: args) ->
         infer_expected_all TInt params args
     | FList [ FSymbol "not"; arg ] -> infer_expected TBool params arg
+    | FList [ FKeyword keyword; FSymbol name ] ->
+        add_record_field_constraint name keyword TAny params
     | FList (FSymbol "str" :: args) ->
         infer_expected_all TString params args
     | FList [ FSymbol "if"; condition; then_form; else_form ] -> (

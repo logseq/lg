@@ -27,6 +27,7 @@ type t =
   | Prefix of string * t
   | Field of t * string
   | Cons of t * t
+  | Record of (string * t) list * string option
 
 let rec pattern_to_source = function
   | PVar name -> name
@@ -92,6 +93,14 @@ let rec to_source = function
       "(" ^ operator ^ " " ^ to_source expression ^ ")"
   | Field (target, field_name) -> to_source target ^ "." ^ field_name
   | Cons (head, tail) -> "(" ^ to_source head ^ " :: " ^ to_source tail ^ ")"
+  | Record (fields, type_name) ->
+      let fields =
+        fields
+        |> List.map (fun (name, value) -> name ^ " = " ^ to_source value)
+        |> String.concat "; "
+      in
+      let value = "{" ^ fields ^ "}" in
+      (match type_name with None -> value | Some name -> "(" ^ value ^ " : " ^ name ^ ")")
 
 let loc = Location.none
 let lid value = Location.mkloc value loc
@@ -305,3 +314,22 @@ and to_parsetree ~context = function
           Ok
             (Ast_helper.Exp.construct ~loc (lid (Longident.Lident "::"))
                (Some pair)))
+  | Record (fields, type_name) ->
+      let rec build_fields acc = function
+        | [] -> Ok (List.rev acc)
+        | (name, value) :: rest -> (
+            match to_parsetree ~context value with
+            | Error _ as err -> err
+            | Ok value ->
+                build_fields
+                  ((lid (longident_of_string name), value) :: acc)
+                  rest)
+      in
+      build_fields [] fields
+      |> Result.map (fun fields ->
+             let expression = Ast_helper.Exp.record ~loc fields None in
+             match type_name with
+             | None -> expression
+             | Some name ->
+                 Ast_helper.Exp.constraint_ ~loc expression
+                   (Ast_helper.Typ.constr ~loc (lid (longident_of_string name)) []))

@@ -2,19 +2,14 @@ open Types
 
 let rec equality_expr left right =
   match left.ty with
-  | TSet TInt ->
-      Ocaml_ir.Apply
-        ( Ocaml_ir.Ident "Cljml.Core_set.Int_set.equal",
-          [ left.ocaml_expr; right.ocaml_expr ] )
-  | TSet (TString | TSymbol | TKeyword) ->
-      Ocaml_ir.Apply
-        ( Ocaml_ir.Ident "Cljml.Core_set.String_set.equal",
-          [ left.ocaml_expr; right.ocaml_expr ] )
-  | TSet TBool ->
-      Ocaml_ir.Apply
-        ( Ocaml_ir.Ident "Cljml.Core_set.Bool_set.equal",
-          [ left.ocaml_expr; right.ocaml_expr ] )
-  | TRecord fields ->
+  | TSet inner -> (
+      match Types.set_module_name inner with
+      | Ok set_module ->
+          Ocaml_ir.Apply
+            ( Ocaml_ir.Ident (set_module ^ ".equal"),
+              [ left.ocaml_expr; right.ocaml_expr ] )
+      | Error _ -> Ocaml_ir.Bool false)
+  | TRecord fields | TNamed_record { fields; _ } ->
       let parts =
         fields
         |> List.map (fun (field : field) ->

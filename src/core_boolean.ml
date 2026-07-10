@@ -54,17 +54,28 @@ let compile name args =
   | "vector?" -> compile_type_predicate name (function TVector _ -> true | _ -> false) args
   | "list?" | "seq?" -> compile_type_predicate name (function TList _ -> true | _ -> false) args
   | "set?" -> compile_type_predicate name (function TSet _ -> true | _ -> false) args
-  | "map?" -> compile_type_predicate name (function TRecord _ -> true | _ -> false) args
+  | "map?" ->
+      compile_type_predicate
+        name
+        (function TRecord _ | TNamed_record _ -> true | _ -> false)
+        args
   | "fn?" -> compile_type_predicate name (function TFn _ -> true | _ -> false) args
   | "coll?" ->
       compile_type_predicate name
-        (function TList _ | TVector _ | TSet _ | TRecord _ -> true | _ -> false)
+        (function
+          | TList _ | TVector _ | TSet _ | TRecord _ | TNamed_record _ -> true
+          | _ -> false)
         args
   | "associative?" ->
-      compile_type_predicate name (function TVector _ | TRecord _ -> true | _ -> false) args
+      compile_type_predicate
+        name
+        (function TVector _ | TRecord _ | TNamed_record _ -> true | _ -> false)
+        args
   | "indexed?" -> compile_type_predicate name (function TVector _ -> true | _ -> false) args
   | "seqable?" | "counted?" ->
       compile_type_predicate name
-        (function TString | TList _ | TVector _ | TSet _ | TRecord _ -> true | _ -> false)
+        (function
+          | TString | TList _ | TVector _ | TSet _ | TRecord _ | TNamed_record _ -> true
+          | _ -> false)
         args
   | _ -> Error.error ("unknown function " ^ name)

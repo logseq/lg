@@ -245,7 +245,7 @@ let infer_pattern_type pattern lookup_local_ty =
 
 let bind_map (target : typed_expr) pairs =
   match target.ty with
-  | TRecord fields -> (
+  | TRecord fields | TNamed_record { fields; _ } -> (
       match parse_map_pattern pairs with
       | Error _ as err -> err
       | Ok parsed ->

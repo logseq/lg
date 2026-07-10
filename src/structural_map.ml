@@ -57,8 +57,8 @@ let assoc target fields keyword value =
 
 let rec assoc_many target pairs =
   match (target.ty, pairs) with
-  | TRecord _fields, [] -> Ok target
-  | TRecord fields, (keyword, value) :: rest -> (
+  | (TRecord _fields | TNamed_record { fields = _fields; _ }), [] -> Ok target
+  | (TRecord fields | TNamed_record { fields; _ }), (keyword, value) :: rest -> (
       match assoc target fields keyword value with
       | Error _ as err -> err
       | Ok target -> assoc_many target rest)
@@ -74,8 +74,8 @@ let dissoc target fields keyword =
 
 let rec dissoc_many target keywords =
   match (target.ty, keywords) with
-  | TRecord _fields, [] -> Ok target
-  | TRecord fields, keyword :: rest -> (
+  | (TRecord _fields | TNamed_record { fields = _fields; _ }), [] -> Ok target
+  | (TRecord fields | TNamed_record { fields; _ }), keyword :: rest -> (
       match dissoc target fields keyword with
       | Error _ as err -> err
       | Ok target -> dissoc_many target rest)
@@ -84,7 +84,7 @@ let rec dissoc_many target keywords =
 let merge maps =
   let merge_one fields values right =
     match right.ty with
-    | TRecord right_fields ->
+    | TRecord right_fields | TNamed_record { fields = right_fields; _ } ->
         let right_values = values_for right right_fields in
         let add_field (fields, values) (right_field : field) =
           match find_field right_field.keyword fields with
@@ -119,7 +119,7 @@ let merge maps =
   | [] -> Error.error "merge expects at least 1 map"
   | first :: rest -> (
       match first.ty with
-      | TRecord fields -> (
+      | TRecord fields | TNamed_record { fields; _ } -> (
           let values = values_for first fields in
           let result =
             List.fold_left

@@ -51,6 +51,9 @@ let rec core_type = function
         (fun arg result -> Ast_helper.Typ.arrow ~loc Nolabel (core_type arg) result)
         args (core_type ret)
   | Types.TRecord _ -> type_constructor "record" []
+  | Types.TNamed_record record ->
+      Ast_helper.Typ.constr ~loc
+        (lid (longident_of_string record.type_name)) []
 
 let record_values_to_parsetree var_name values =
   let rec loop acc = function
@@ -75,8 +78,34 @@ let record_type_definition type_name fields =
   in
   Ast_helper.Str.type_ ~loc Nonrecursive [ type_declaration ]
 
-let record_definition var_name type_name fields values =
+let set_module_definition module_name element_ty =
+  let type_declaration =
+    Ast_helper.Type.mk ~loc ~manifest:(core_type element_ty) (str "t")
+  in
+  let compare_binding =
+    Ast_helper.Vb.mk ~loc (Ast_helper.Pat.var ~loc (str "compare"))
+      (Ast_helper.Exp.ident ~loc (lid (longident_of_string "Stdlib.compare")))
+  in
+  let comparator =
+    Ast_helper.Mod.structure ~loc
+      [ Ast_helper.Str.type_ ~loc Nonrecursive [ type_declaration ];
+        Ast_helper.Str.value ~loc Nonrecursive [ compare_binding ] ]
+  in
+  let set_make =
+    Ast_helper.Mod.ident ~loc (lid (longident_of_string "Set.Make"))
+  in
+  let module_expr = Ast_helper.Mod.apply ~loc set_make comparator in
+  let module_binding =
+    Ast_helper.Mb.mk ~loc (Location.mkloc (Some module_name) loc) module_expr
+  in
+  Ast_helper.Str.module_ ~loc module_binding
+
+let record_definition var_name type_name set_module_name fields values =
   let type_item = record_type_definition type_name fields in
+  let set_item =
+    set_module_definition set_module_name
+      (Types.named_record ~type_name ~set_module_name fields)
+  in
   match record_values_to_parsetree var_name values with
   | Error _ as err -> err
   | Ok record_fields ->
@@ -90,7 +119,9 @@ let record_definition var_name type_name fields values =
           annotated_expr
       in
       Ok
-        [ type_item; Ast_helper.Str.value ~loc Nonrecursive [ value_binding ] ]
+        [ type_item;
+          set_item;
+          Ast_helper.Str.value ~loc Nonrecursive [ value_binding ] ]
 
 let value_pattern = function
   | Types.Named name -> Ast_helper.Pat.var ~loc (str name)
@@ -129,8 +160,8 @@ let rec structure_of_item = function
             Ast_helper.Mb.mk ~loc (Location.mkloc (Some module_name) loc) module_expr
           in
           Ok [ Ast_helper.Str.module_ ~loc module_binding ])
-  | Types.Record_def { var_name; type_name; fields; values } ->
-      record_definition var_name type_name fields values
+  | Types.Record_def { var_name; type_name; set_module_name; fields; values } ->
+      record_definition var_name type_name set_module_name fields values
 
 and structure_of_items items =
   let rec loop acc = function

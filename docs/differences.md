@@ -139,7 +139,8 @@ and vectors. This differs from Clojure's seq return types because cljml does not
 have a nilable or lazy sequence result type.
 
 `first`, `second`, and `last` accept typed lists, vectors, and sets. Set
-iteration follows cljml's canonical sorted-list runtime representation.
+iteration follows the canonical order from the underlying OCaml `Set.Make`
+instance.
 
 Three-argument `nth` returns a typed default for out-of-range list and vector indexes.
 
@@ -251,9 +252,11 @@ migration boundaries.
 
 `hash-set`, `sorted-set`, `set-of`, `conj`, `disj`, `contains?`, set equality,
 set sequence conversion, and set printing now use persistent OCaml `Set.Make`
-instances. Primitive static element types use built-in runtime comparators;
-record and composite set comparators require compiler-generated modules and
-are not yet supported.
+instances. Primitive static element types use built-in runtime comparators.
+Each named structural map record emits a sibling `Set.Make` comparator module,
+and same-shaped records are explicitly projected at set mutation and membership
+boundaries. This preserves static record types while retaining Clojure-style
+structural map compatibility.
 
 The typed standard library also includes a `clojure.string` namespace that can
 be required with `:as` or `:refer`. Its current subset includes `blank?`,

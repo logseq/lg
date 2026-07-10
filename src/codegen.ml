@@ -64,7 +64,7 @@ let rec stringify_expr ?(pr = false) expr =
       in
       {|("#{" ^ String.concat " " (List.map |} ^ mapper ^ " (" ^ values ^ {|)) ^ "}")|}
   | TFn _ -> {|"<function>"|}
-  | TRecord fields -> (
+  | (TRecord fields | TNamed_record { fields; _ }) -> (
       match expr.record_values with
       | Some values ->
           let parts =
@@ -116,7 +116,12 @@ let emit_type type_name (fields : field list) =
   in
   Printf.sprintf "type %s = {\n%s\n}" type_name fields
 
-let emit_record_def var_name type_name (fields : field list) values =
+let emit_set_module module_name type_name =
+  Printf.sprintf
+    "module %s = Set.Make (struct\n  type t = %s\n\n  let compare = Stdlib.compare\nend)"
+    module_name type_name
+
+let emit_record_def var_name type_name set_module_name (fields : field list) values =
   let values =
     values
     |> List.map (fun ((field : field), expression) ->
@@ -124,7 +129,9 @@ let emit_record_def var_name type_name (fields : field list) values =
              (Ocaml_ir.to_source expression))
     |> String.concat "\n"
   in
-  Printf.sprintf "%s\n\nlet %s : %s = {\n%s\n}" (emit_type type_name fields)
+  Printf.sprintf "%s\n\n%s\n\nlet %s : %s = {\n%s\n}"
+    (emit_type type_name fields)
+    (emit_set_module set_module_name type_name)
     var_name type_name values
 
 let rec emit_item = function
@@ -142,8 +149,8 @@ let rec emit_item = function
   | Module_def { module_name; items } ->
       let body = items |> List.map emit_item |> String.concat "\n\n" in
       "module " ^ module_name ^ " = struct\n" ^ body ^ "\nend"
-  | Record_def { var_name; type_name; fields; values } ->
-      emit_record_def var_name type_name fields values
+  | Record_def { var_name; type_name; set_module_name; fields; values } ->
+      emit_record_def var_name type_name set_module_name fields values
 
 let emit_program items =
   items |> List.map emit_item |> String.concat "\n\n" |> fun body -> body ^ "\n"
