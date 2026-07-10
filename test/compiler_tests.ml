@@ -1537,11 +1537,18 @@ let test_sets_support_named_records () =
 (def users (hash-set ada ada-copy))
 (def updated (conj users ada-copy))
 (def matching (filter (fn [user] (= (:name user) "Ada")) updated))
-(println (str (count matching) ":" (contains? matching ada)))
+(def all-ada? (every? (fn [user] (= (:name user) "Ada")) updated))
+(def ages (map (fn [user] (+ (:age user) 0)) updated))
+(def trimmed (disj updated ada-copy))
+(def rebuilt (set [ada-copy]))
+(println (str (count matching) ":" (contains? matching ada) ":" all-ada? ":"
+              (count ages) ":" (contains? ages 36) ":" (count trimmed) ":"
+              (contains? rebuilt ada)))
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "sets_support_named_records" "1:true\n" ocaml_source
+  assert_ocaml_runs "sets_support_named_records" "1:true:true:1:true:0:true\n"
+    ocaml_source
 
 let test_sets_support_primitive_lists_and_vectors () =
   let source =

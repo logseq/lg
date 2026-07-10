@@ -1825,6 +1825,13 @@ and compile_sequence_bool_predicate current_ns env name arg_forms =
             when Types.compatible ~expected:param_ty ~actual:inner ->
               Types.set_module_name inner
               |> Result.map (fun set_module ->
+                     let fn_code = constrain_record_function_argument fn inner in
+                     let predicate_code =
+                       match name with
+                       | "not-any?" ->
+                           "(fun item -> not (" ^ apply_code fn_code [ "item" ] ^ "))"
+                       | _ -> fn_code
+                     in
                      let all_code =
                        "List.for_all " ^ predicate_code ^ " (" ^ set_module
                        ^ ".elements (" ^ collection.code ^ "))"
@@ -1855,12 +1862,14 @@ and compile_map_call current_ns env arg_forms =
                    ("Rrbvec.map " ^ fn.code ^ " (" ^ collection.code ^ ")"))
           | TFn _, TVector _ -> Error.error "map function argument type does not match vector"
           | _, TVector _ -> Error.error "map expects a function"
-          | TFn ([ param_ty ], ret), TSet inner when Types.equal param_ty inner ->
+          | TFn ([ param_ty ], ret), TSet inner
+            when Types.compatible ~expected:param_ty ~actual:inner ->
               Result.bind (Types.set_module_name ret) (fun result_module ->
                   Types.set_module_name inner
                   |> Result.map (fun source_module ->
+                         let fn_code = constrain_record_function_argument fn inner in
                          typed (TSet ret)
-                           (result_module ^ ".of_list (List.map " ^ fn.code ^ " ("
+                           (result_module ^ ".of_list (List.map " ^ fn_code ^ " ("
                           ^ source_module ^ ".elements (" ^ collection.code ^ ")))")))
           | TFn _, TSet _ -> Error.error "map function argument type does not match set"
           | _, TSet _ -> Error.error "map expects a function"
