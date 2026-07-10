@@ -1,3 +1,10 @@
 (test
  (name compiler_tests)
  (libraries cljml unix rrbvec))
+
+(rule
+ (alias runtest)
+ (deps cli_smoke.sh ../bin/cljml_cli.exe ../examples/person.cljml)
+ (action
+  (run sh %{dep:cli_smoke.sh} %{exe:../bin/cljml_cli.exe}
+   %{dep:../examples/person.cljml})))
