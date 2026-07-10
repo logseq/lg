@@ -1566,6 +1566,18 @@ let test_sets_support_primitive_lists_and_vectors () =
     "1:true:2:true:#{(1 2)}:#{[1 2] [2 3]}\n"
     ocaml_source
 
+let test_sets_support_nested_composite_elements () =
+  let source =
+    {|
+(def paths (hash-set [[1 2] [3 4]] [[1 2] [3 4]]))
+(def updated (conj paths [[5 6]]))
+(println (str (count updated) ":" (contains? updated [[5 6]])))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "sets_support_nested_composite_elements" "2:true\n"
+    ocaml_source
+
 let test_set_positional_sequence_helpers () =
   let source =
     {|
@@ -2614,6 +2626,8 @@ let tests =
     ("sets support named records", test_sets_support_named_records);
     ( "sets support primitive lists and vectors",
       test_sets_support_primitive_lists_and_vectors );
+    ( "sets support nested composite elements",
+      test_sets_support_nested_composite_elements );
     ( "set positional sequence helpers work",
       test_set_positional_sequence_helpers );
     ( "set positional sequence helpers reject non-collections",

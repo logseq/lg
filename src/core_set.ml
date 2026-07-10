@@ -44,3 +44,9 @@ module Bool_vector_set = Set.Make (struct
 
   let compare = Stdlib.compare
 end)
+
+module Int_vector_vector_set = Set.Make (struct
+  type t = int Rrbvec.t Rrbvec.t
+
+  let compare = Stdlib.compare
+end)

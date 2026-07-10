@@ -173,6 +173,7 @@ and set_module_name = function
   | TVector (TString | TSymbol | TKeyword) ->
       Ok "Cljml.Core_set.String_vector_set"
   | TVector TBool -> Ok "Cljml.Core_set.Bool_vector_set"
+  | TVector (TVector TInt) -> Ok "Cljml.Core_set.Int_vector_vector_set"
   | TNamed_record record -> Ok record.set_module_name
   | ty -> Error.error ("sets require a generated comparator for " ^ source_name ty)
 
