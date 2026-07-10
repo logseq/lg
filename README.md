@@ -31,9 +31,10 @@ first, then OCaml lowering:
 
 Sets use persistent OCaml `Set.Make` modules rather than list-backed values.
 The runtime provides comparators for `int`, `string` (including keywords and
-symbols), and `bool`. Every top-level structural map is emitted as a named
-OCaml record with a sibling `Set.Make` module using `Stdlib.compare`, so records
-can be set elements without sacrificing static types. Same-shaped records are
+symbols), and `bool`, plus typed `list` and `Rrbvec` vector values containing
+those scalar types. Every top-level structural map is emitted as a named OCaml
+record with a sibling `Set.Make` module using `Stdlib.compare`, so records can
+be set elements without sacrificing static types. Same-shaped records are
 projected to the set element record type at `hash-set`, `conj`, `contains?`, and
 `disj` boundaries.
 

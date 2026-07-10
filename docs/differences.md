@@ -253,6 +253,8 @@ migration boundaries.
 `hash-set`, `sorted-set`, `set-of`, `conj`, `disj`, `contains?`, set equality,
 set sequence conversion, and set printing now use persistent OCaml `Set.Make`
 instances. Primitive static element types use built-in runtime comparators.
+Lists and persistent vectors of the supported scalar element types also use
+dedicated persistent `Set.Make` instances.
 Each named structural map record emits a sibling `Set.Make` comparator module,
 and same-shaped records are explicitly projected at set mutation and membership
 boundaries. This preserves static record types while retaining Clojure-style

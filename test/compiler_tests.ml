@@ -1543,6 +1543,22 @@ let test_sets_support_named_records () =
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "sets_support_named_records" "1:true\n" ocaml_source
 
+let test_sets_support_primitive_lists_and_vectors () =
+  let source =
+    {|
+(def list-values (hash-set (list 1 2) (list 1 2)))
+(def vector-values (hash-set [1 2] [1 2]))
+(def more-vectors (conj vector-values [2 3]))
+(println (str (count list-values) ":" (contains? list-values (list 1 2)) ":"
+              (count more-vectors) ":" (contains? more-vectors [2 3]) ":"
+              (pr-str list-values) ":" (pr-str more-vectors)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "sets_support_primitive_lists_and_vectors"
+    "1:true:2:true:#{(1 2)}:#{[1 2] [2 3]}\n"
+    ocaml_source
+
 let test_set_positional_sequence_helpers () =
   let source =
     {|
@@ -2001,6 +2017,26 @@ let test_incremental_compilation_preserves_record_sets () =
   assert_ocaml_runs "incremental_compilation_preserves_record_sets" "1:true\n"
     (people_ocaml ^ "\n\n" ^ app_ocaml)
 
+let test_incremental_compilation_preserves_composite_sets () =
+  let state = Cljml.Compiler.empty_state in
+  let state, collections_ocaml =
+    Cljml.Compiler.compile_chunk state
+      {|
+(def values (hash-set [1 2]))
+|}
+    |> expect_ok
+  in
+  let _state, app_ocaml =
+    Cljml.Compiler.compile_chunk state
+      {|
+(def updated (conj values [2 3]))
+(println (str (count updated) ":" (contains? updated [2 3])))
+|}
+    |> expect_ok
+  in
+  assert_ocaml_runs "incremental_compilation_preserves_composite_sets" "2:true\n"
+    (collections_ocaml ^ "\n\n" ^ app_ocaml)
+
 let test_module_definitions_support_record_sets () =
   let source =
     {|
@@ -2012,6 +2048,18 @@ let test_module_definitions_support_record_sets () =
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "module_definitions_support_record_sets" "1:true\n" ocaml_source
+
+let test_module_definitions_support_composite_sets () =
+  let source =
+    {|
+(module Groups
+  (def values (hash-set (list 1 2))))
+(println (str (count Groups/values) ":" (contains? Groups/values (list 1 2))))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "module_definitions_support_composite_sets" "1:true\n"
+    ocaml_source
 
 let test_incremental_compilation_requires_prior_state () =
   Cljml.Compiler.compile_chunk Cljml.Compiler.empty_state
@@ -2067,6 +2115,19 @@ let test_parsetree_backend_supports_record_sets () =
   let structure = Cljml.Compiler.compile_parsetree source |> expect_ok in
   let ocaml_source = Cljml.Compiler.print_parsetree structure in
   assert_ocaml_runs "parsetree_backend_supports_record_sets" "1:true\n" ocaml_source
+
+let test_parsetree_backend_supports_composite_sets () =
+  let source =
+    {|
+(def values (hash-set [1 2]))
+(def updated (conj values [2 3]))
+(println (str (count updated) ":" (contains? updated [2 3])))
+|}
+  in
+  let structure = Cljml.Compiler.compile_parsetree source |> expect_ok in
+  let ocaml_source = Cljml.Compiler.print_parsetree structure in
+  assert_ocaml_runs "parsetree_backend_supports_composite_sets" "2:true\n"
+    ocaml_source
 
 let test_parsetree_backend_preserves_static_errors () =
   Cljml.Compiler.compile_parsetree {|(def x (+ 1 "two"))|}
@@ -2544,6 +2605,8 @@ let tests =
     ("apply rejects bad set reducers", test_apply_rejects_bad_set_reducers);
     ("set core api works", test_set_core_api);
     ("sets support named records", test_sets_support_named_records);
+    ( "sets support primitive lists and vectors",
+      test_sets_support_primitive_lists_and_vectors );
     ( "set positional sequence helpers work",
       test_set_positional_sequence_helpers );
     ( "set positional sequence helpers reject non-collections",
@@ -2607,8 +2670,12 @@ let tests =
       test_incremental_compilation_preserves_state );
     ( "incremental compilation preserves record sets",
       test_incremental_compilation_preserves_record_sets );
+    ( "incremental compilation preserves composite sets",
+      test_incremental_compilation_preserves_composite_sets );
     ( "module definitions support record sets",
       test_module_definitions_support_record_sets );
+    ( "module definitions support composite sets",
+      test_module_definitions_support_composite_sets );
     ( "incremental compilation requires prior state",
       test_incremental_compilation_requires_prior_state );
     ( "incremental compilation preserves protocols",
@@ -2617,6 +2684,8 @@ let tests =
       test_parsetree_backend_prints_runnable_ocaml );
     ( "parsetree backend supports record sets",
       test_parsetree_backend_supports_record_sets );
+    ( "parsetree backend supports composite sets",
+      test_parsetree_backend_supports_composite_sets );
     ( "parsetree backend preserves static errors",
       test_parsetree_backend_preserves_static_errors );
     ( "parsetree backend builds native record items",

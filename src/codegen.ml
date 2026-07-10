@@ -46,16 +46,14 @@ let rec stringify_expr ?(pr = false) expr =
       ^ mapper ^ " (Rrbvec.to_list (" ^ expr.code ^ {|))) ^ "]")|}
   | TSet inner ->
       let mapper =
-        match inner with
-        | TInt -> "string_of_int"
-        | TSymbol -> "(fun x -> x)"
-        | TKeyword -> "(fun x -> x)"
-        | TString ->
-            if pr then "(fun x -> Printf.sprintf \"%S\" x)"
-            else Printf.sprintf "(fun x -> %S ^ x ^ %S)" "\"" "\""
-        | TBool -> "string_of_bool"
-        | TNil -> {|(fun _ -> "nil")|}
-        | _ -> {|(fun _ -> "<value>")|}
+        let value =
+          stringify_expr ~pr
+            { ty = inner;
+              code = "value";
+              ocaml_expr = Ocaml_ir.Ident "value";
+              record_values = None }
+        in
+        "(fun value -> " ^ value ^ ")"
       in
       let values =
         match Types.set_module_name inner with
