@@ -144,6 +144,11 @@ let signature_item = function
       in
       Ast_helper.Sig.module_ ~loc
         (Ast_helper.Md.mk ~loc (Location.mkloc (Some module_name) loc) module_type)
+  | Signature_include { module_signature } ->
+      let module_type =
+        Ast_helper.Mty.ident ~loc (lid (longident_of_string module_signature))
+      in
+      Ast_helper.Sig.include_ ~loc (Ast_helper.Incl.mk ~loc module_type)
 
 let module_signature_definition signature_name items =
   let module_type =

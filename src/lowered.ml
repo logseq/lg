@@ -19,6 +19,7 @@ type signature_item =
       module_name : string;
       module_signature : string;
     }
+  | Signature_include of { module_signature : string }
 
 type variant_constructor = {
   constructor_name : string;

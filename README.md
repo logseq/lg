@@ -126,8 +126,9 @@ The compiler infers record-like map shapes automatically:
   `'a box`, while `(type box [a] :ocaml/option<param/a>)` declares a manifest
   `'a box = 'a option`. `(module Inner InnerSig)` adds a nested module item to
   a signature. Known nested values remain available through functor parameters,
-  for example `M.Inner/value`, while module inclusion is checked by OCaml.
-  Parameter relationships are checked by OCaml.
+  for example `M.Inner/value`. `(include BaseSig)` includes another module type
+  and propagates its known values into functor parameter scope. Module and
+  signature inclusion, plus parameter relationships, are checked by OCaml.
   `(module Math MathSig ...)` emits an ascribed module whose signature match is
   checked by OCaml. `(module-functor Make [M MathSig] ...)`
   emits an OCaml functor. Multiple name/signature pairs declare a curried

@@ -225,6 +225,8 @@ manifest. cljml validates parameter scope, while OCaml checks signature
 matching. Nested module items use `(module Inner InnerSig)`. Their known value
 metadata is exposed through functor parameter paths such as `M.Inner/value`,
 and OCaml checks that implementations include the declared nested module.
+`(include BaseSig)` emits an OCaml signature include and exposes the included
+signature's known values through concrete modules and functor parameters.
 `(module Name Signature ...)` emits an ascribed module whose signature match is
 checked by OCaml.
 `module-functor` emits an OCaml functor. Its parameter vector contains one or

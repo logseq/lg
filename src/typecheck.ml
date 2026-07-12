@@ -3829,6 +3829,21 @@ let signature_metadata_bindings env signature_name items =
                        (nested_value_path source_name nested_name),
                      binding )
                else None)
+    | Signature_include { module_signature } ->
+        let included_prefix = "__signature/" ^ module_signature ^ "/" in
+        let included_prefix_len = String.length included_prefix in
+        env
+        |> List.filter_map (fun (key, binding) ->
+               if
+                 String.length key > included_prefix_len
+                 && String.sub key 0 included_prefix_len = included_prefix
+               then
+                 let value_path =
+                   String.sub key included_prefix_len
+                     (String.length key - included_prefix_len)
+                 in
+                 Some (signature_binding_key signature_name value_path, binding)
+               else None)
   in
   List.concat_map item_bindings items
 
@@ -3996,6 +4011,14 @@ let compile_module_signature current_ns env next_type signature_name item_forms 
              }
           :: items)
           rest
+    | FList [ FSymbol "include"; FSymbol module_signature ] :: rest ->
+        parse
+          (Signature_include
+             { module_signature = Names.module_path_to_ocaml module_signature }
+          :: items)
+          rest
+    | FList (FSymbol "include" :: _) :: _ ->
+        Error.error "module-signature include expects one module type"
     | FList
         [ FSymbol "type"; FSymbol type_name; (FVector _ as parameter_form);
           FKeyword keyword ]
@@ -4038,7 +4061,7 @@ let compile_module_signature current_ns env next_type signature_name item_forms 
         )
     | _ ->
         Error.error
-          "module-signature items must be val, type, or module declarations"
+          "module-signature items must be val, type, module, or include declarations"
   in
   match parse [] item_forms with
   | Error _ as err -> err
