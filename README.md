@@ -402,6 +402,7 @@ dune exec bin/cljml_cli.exe -- --lsp
 The server supports full document synchronization; publishes errors plus OCaml
 warnings such as non-exhaustive and redundant matches; and provides
 Typedtree-backed hover types, jump-to-definition, type-detailed completion, and
+identity-aware references, rename, highlights, document/workspace symbols, and
 comment-preserving document formatting.
 See
 [docs/editor-tooling.md](docs/editor-tooling.md) for Neovim and Emacs setup.

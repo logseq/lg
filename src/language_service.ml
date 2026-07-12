@@ -8,9 +8,26 @@ type completion_item = {
   detail : string;
 }
 
+type text_edit = {
+  range : Ast.source_span;
+  new_text : string;
+}
+
+type symbol_kind = [ `Module | `Function | `Variable | `Type | `Interface ]
+
+type document_symbol = {
+  name : string;
+  detail : string option;
+  kind : symbol_kind;
+  range : Ast.source_span;
+  selection_range : Ast.source_span;
+  children : document_symbol list;
+}
+
 type t = {
   source : string;
   tokens : Ast.token list;
+  forms : Ast.located_form list;
   compiler : Toolchain.language_analysis;
 }
 
@@ -18,9 +35,12 @@ let analyze ~filename source =
   match Lexer.tokenize source with
   | Error _ as err -> err
   | Ok tokens -> (
-      match Toolchain.analyze ~filename source with
+      match Parser.parse_located tokens with
       | Error _ as err -> err
-      | Ok compiler -> Ok { source; tokens; compiler })
+      | Ok forms -> (
+          match Toolchain.analyze ~filename source with
+          | Error _ as err -> err
+          | Ok compiler -> Ok { source; tokens; forms; compiler }))
 
 let diagnostics analysis = analysis.compiler.diagnostics
 
@@ -111,6 +131,138 @@ let definition analysis ~offset =
         when not description.val_loc.Location.loc_ghost ->
           Some description.val_loc
       | _ -> None)
+
+type value_identity = {
+  uid : Typedtree.Uid.t;
+  definition_location : Location.t;
+}
+
+let identifier_identity_at analysis offset =
+  smallest_expression analysis.compiler.typed_structure offset (fun expression ->
+      match expression.Typedtree.exp_desc with
+      | Typedtree.Texp_ident _ -> true
+      | _ -> false)
+  |> Option.map (fun (expression : Typedtree.expression) ->
+         match expression.exp_desc with
+         | Typedtree.Texp_ident (_, _, description) ->
+             {
+               uid = description.val_uid;
+               definition_location = description.val_loc;
+             }
+         | _ -> assert false)
+
+let binding_identity_at analysis offset source_name =
+  let best = ref None in
+  let consider location name uid =
+    if
+      location_contains_offset location offset
+      && Names.sanitize_name source_name = Names.sanitize_name name
+    then
+      let size = location_size location in
+      match !best with
+      | None -> best := Some (size, uid, location)
+      | Some (current_size, _, _) when size < current_size ->
+          best := Some (size, uid, location)
+      | Some _ -> ()
+  in
+  let base = Tast_iterator.default_iterator in
+  let iterator =
+    {
+      base with
+      pat =
+        (fun (type kind) self
+             (pattern : kind Typedtree.general_pattern) ->
+          (match pattern.pat_desc with
+          | Typedtree.Tpat_var (_, name, uid) ->
+              consider pattern.pat_loc name.txt uid
+          | Typedtree.Tpat_alias (_, _, name, uid, _) ->
+              consider pattern.pat_loc name.txt uid
+          | _ -> ());
+          base.pat self pattern);
+    }
+  in
+  iterator.structure iterator analysis.compiler.typed_structure;
+  match !best with
+  | Some (_, uid, definition_location) -> Some { uid; definition_location }
+  | None -> None
+
+let value_identity_at analysis offset =
+  match token_at analysis offset with
+  | Some { desc = Symbol source_name; _ } -> (
+      match identifier_identity_at analysis offset with
+      | Some _ as identity -> identity
+      | None -> binding_identity_at analysis offset source_name)
+  | _ -> None
+
+let compare_span (left : Ast.source_span) (right : Ast.source_span) =
+  Int.compare left.start_offset right.start_offset
+
+let references analysis ~offset =
+  match value_identity_at analysis offset with
+  | None -> []
+  | Some target ->
+      analysis.tokens
+      |> List.filter_map (fun (token : Ast.token) ->
+             match token.desc with
+             | Symbol _ -> (
+                 match value_identity_at analysis token.span.start_offset with
+                 | Some identity when Typedtree.Uid.equal identity.uid target.uid ->
+                     Some token.span
+                 | _ -> None)
+             | _ -> None)
+      |> List.sort_uniq compare_span
+
+let valid_rename_name name =
+  match Lexer.tokenize name with
+  | Ok [ { desc = Symbol parsed; span } ] ->
+      parsed = name && span.start_offset = 0 && span.end_offset = String.length name
+  | _ -> false
+
+let rename analysis ~offset ~new_name =
+  if not (valid_rename_name new_name) then Error.error "invalid rename target"
+  else
+    match references analysis ~offset with
+    | [] -> Error.error "symbol cannot be renamed"
+    | ranges -> Ok (List.map (fun range -> { range; new_text = new_name }) ranges)
+
+let prepare_rename analysis ~offset =
+  match (symbol_span_at analysis offset, value_identity_at analysis offset) with
+  | Some range, Some _ -> Some range
+  | _ -> None
+
+let symbol_kind = function
+  | "defn" -> Some `Function
+  | "def" -> Some `Variable
+  | "module" | "module-alias" | "module-apply" | "module-functor" ->
+      Some `Module
+  | "module-signature" -> Some `Interface
+  | "type-alias" | "type-record" | "type-variant" | "defprotocol" ->
+      Some `Type
+  | _ -> None
+
+let rec symbols_of_form (located : Ast.located_form) =
+  match located.children with
+  | { form = FSymbol head; _ } :: ({ form = FSymbol name; span = selection_range; _ } as _name)
+    :: rest -> (
+      match symbol_kind head with
+      | None -> []
+      | Some kind ->
+          let children =
+            if head = "module" then List.concat_map symbols_of_form rest else []
+          in
+          [
+            {
+              name;
+              detail = None;
+              kind;
+              range = located.span;
+              selection_range;
+              children;
+            };
+          ])
+  | _ -> []
+
+let document_symbols analysis = List.concat_map symbols_of_form analysis.forms
 
 let completion_source_names analysis =
   let current_ns = analysis.compiler.typecheck_state.Typecheck.current_ns in

@@ -27,13 +27,18 @@ The same cached OCaml Typedtree analysis powers:
 
 - `textDocument/hover`, with OCaml-inferred types;
 - `textDocument/definition`, including compiler-resolved value definitions;
-- `textDocument/completion`, with cljml source labels and OCaml type details.
+- `textDocument/completion`, with cljml source labels and OCaml type details;
+- `textDocument/references` and `textDocument/documentHighlight`, using OCaml
+  symbol identities so shadowed bindings remain distinct;
+- `textDocument/prepareRename` and `textDocument/rename`, with exact source
+  symbol edits;
+- `textDocument/documentSymbol` and `workspace/symbol`, preserving cljml names;
 - `textDocument/formatting`, with deterministic 80-column formatting that
   preserves comments and string contents.
 
 Positions are converted between UTF-8 source offsets and the UTF-16 code units
 required by LSP. A document is parsed, elaborated, and typechecked once per full
-content update; hover, definition, and completion reuse that analysis.
+content update; all semantic queries reuse that analysis.
 
 ## Neovim
 
@@ -69,6 +74,7 @@ cmd = { "dune", "exec", "bin/cljml_cli.exe", "--", "--lsp" }
 ```
 
 The core Reason editor baseline—types, formatting, diagnostics, completion, and
-jump-to-definition—is now present. References, rename, semantic tokens,
-signature help, code actions, and recoverable parsing remain future
+jump-to-definition—is present, together with document-local references, rename,
+highlights, and symbols. Semantic tokens, signature help, code actions,
+recoverable parsing, and cross-file workspace indexing remain future
 ocaml-lsp-parity capabilities.

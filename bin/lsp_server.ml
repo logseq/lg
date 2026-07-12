@@ -147,6 +147,11 @@ let initialize_result =
             ("hoverProvider", `Bool true);
             ("definitionProvider", `Bool true);
             ("documentFormattingProvider", `Bool true);
+            ("referencesProvider", `Bool true);
+            ("documentHighlightProvider", `Bool true);
+            ("renameProvider", `Assoc [ ("prepareProvider", `Bool true) ]);
+            ("documentSymbolProvider", `Bool true);
+            ("workspaceSymbolProvider", `Bool true);
             ( "completionProvider",
               `Assoc [ ("triggerCharacters", `List []) ] ) ] );
       ( "serverInfo",
@@ -271,6 +276,117 @@ let formatting_result document =
               ("newText", `String formatted) ];
         ]
 
+let location_json uri text (range : Cljml.Ast.source_span) =
+  `Assoc
+    [ ("uri", `String uri);
+      ( "range",
+        range_of_offsets text range.start_offset range.end_offset ) ]
+
+let references_result uri document offset =
+  match document.analysis with
+  | Error _ -> `List []
+  | Ok analysis ->
+      Cljml.Language_service.references analysis ~offset
+      |> List.map (location_json uri document.text)
+      |> fun locations -> `List locations
+
+let highlights_result document offset =
+  match document.analysis with
+  | Error _ -> `List []
+  | Ok analysis ->
+      Cljml.Language_service.references analysis ~offset
+      |> List.map (fun (range : Cljml.Ast.source_span) ->
+             `Assoc
+               [ ( "range",
+                   range_of_offsets document.text range.start_offset
+                     range.end_offset );
+                 ("kind", `Int 1) ])
+      |> fun highlights -> `List highlights
+
+let prepare_rename_result document offset =
+  match document.analysis with
+  | Error _ -> `Null
+  | Ok analysis -> (
+      match Cljml.Language_service.prepare_rename analysis ~offset with
+      | None -> `Null
+      | Some range ->
+          let placeholder =
+            String.sub document.text range.start_offset
+              (range.end_offset - range.start_offset)
+          in
+          `Assoc
+            [ ( "range",
+                range_of_offsets document.text range.start_offset range.end_offset );
+              ("placeholder", `String placeholder) ])
+
+let rename_result uri document offset new_name =
+  match document.analysis with
+  | Error _ -> `Null
+  | Ok analysis -> (
+      match Cljml.Language_service.rename analysis ~offset ~new_name with
+      | Error _ -> `Null
+      | Ok edits ->
+          let edits =
+            edits
+            |> List.map (fun (edit : Cljml.Language_service.text_edit) ->
+                   `Assoc
+                     [ ( "range",
+                         range_of_offsets document.text edit.range.start_offset
+                           edit.range.end_offset );
+                       ("newText", `String edit.new_text) ])
+          in
+          `Assoc [ ("changes", `Assoc [ (uri, `List edits) ]) ])
+
+let symbol_kind = function
+  | `Module -> 2
+  | `Type -> 5
+  | `Interface -> 11
+  | `Function -> 12
+  | `Variable -> 13
+
+let rec document_symbol_json text (symbol : Cljml.Language_service.document_symbol) =
+  `Assoc
+    [ ("name", `String symbol.name);
+      ("kind", `Int (symbol_kind symbol.kind));
+      ( "range",
+        range_of_offsets text symbol.range.start_offset symbol.range.end_offset );
+      ( "selectionRange",
+        range_of_offsets text symbol.selection_range.start_offset
+          symbol.selection_range.end_offset );
+      ("children", `List (List.map (document_symbol_json text) symbol.children)) ]
+
+let document_symbols_result document =
+  match document.analysis with
+  | Error _ -> `List []
+  | Ok analysis ->
+      Cljml.Language_service.document_symbols analysis
+      |> List.map (document_symbol_json document.text)
+      |> fun symbols -> `List symbols
+
+let workspace_symbols_result query =
+  let query = String.lowercase_ascii query in
+  Hashtbl.fold
+    (fun uri document symbols ->
+      match document.analysis with
+      | Error _ -> symbols
+      | Ok analysis ->
+          Cljml.Language_service.document_symbols analysis
+          |> List.fold_left
+               (fun symbols (symbol : Cljml.Language_service.document_symbol) ->
+                 if
+                   find_substring (String.lowercase_ascii symbol.name) query = None
+                 then symbols
+                 else
+                   `Assoc
+                     [ ("name", `String symbol.name);
+                       ("kind", `Int (symbol_kind symbol.kind));
+                       ( "location",
+                         location_json uri document.text symbol.selection_range ) ]
+                   :: symbols)
+               symbols)
+    documents []
+  |> List.rev |> fun symbols -> `List symbols
+
 let handle_notification method_ params =
   match method_ with
   | "textDocument/didOpen" ->
@@ -351,6 +467,43 @@ let rec loop shutdown_requested =
             | Some document -> formatting_result document
           in
           response id result;
+          loop shutdown_requested
+      | Some ("textDocument/references" as method_), (`Int _ | `String _)
+      | Some ("textDocument/documentHighlight" as method_), (`Int _ | `String _)
+      | Some ("textDocument/prepareRename" as method_), (`Int _ | `String _)
+      | Some ("textDocument/rename" as method_), (`Int _ | `String _) ->
+          let uri = document_uri params in
+          let result =
+            match Hashtbl.find_opt documents uri with
+            | None -> `Null
+            | Some document ->
+                let offset = document_position params document in
+                (match method_ with
+                | "textDocument/references" ->
+                    references_result uri document offset
+                | "textDocument/documentHighlight" ->
+                    highlights_result document offset
+                | "textDocument/prepareRename" ->
+                    prepare_rename_result document offset
+                | "textDocument/rename" ->
+                    let new_name = params |> member "newName" |> to_string in
+                    rename_result uri document offset new_name
+                | _ -> assert false)
+          in
+          response id result;
+          loop shutdown_requested
+      | Some "textDocument/documentSymbol", (`Int _ | `String _) ->
+          let uri = document_uri params in
+          let result =
+            match Hashtbl.find_opt documents uri with
+            | None -> `List []
+            | Some document -> document_symbols_result document
+          in
+          response id result;
+          loop shutdown_requested
+      | Some "workspace/symbol", (`Int _ | `String _) ->
+          let query = params |> member "query" |> to_string in
+          response id (workspace_symbols_result query);
           loop shutdown_requested
       | Some "exit", `Null -> if shutdown_requested then () else exit 1
       | Some method_, `Null ->

@@ -122,6 +122,12 @@ send_lsp_message() {
   send_lsp_message '{"jsonrpc":"2.0","id":4,"method":"textDocument/definition","params":{"textDocument":{"uri":"file:///tmp/service.cljml"},"position":{"line":2,"character":22}}}'
   send_lsp_message '{"jsonrpc":"2.0","id":5,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///tmp/service.cljml"},"position":{"line":2,"character":29}}}'
   send_lsp_message '{"jsonrpc":"2.0","id":6,"method":"textDocument/formatting","params":{"textDocument":{"uri":"file:///tmp/format.cljml"},"options":{"tabSize":2,"insertSpaces":true}}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":7,"method":"textDocument/references","params":{"textDocument":{"uri":"file:///tmp/service.cljml"},"position":{"line":2,"character":22},"context":{"includeDeclaration":true}}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":8,"method":"textDocument/documentHighlight","params":{"textDocument":{"uri":"file:///tmp/service.cljml"},"position":{"line":2,"character":22}}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":9,"method":"textDocument/prepareRename","params":{"textDocument":{"uri":"file:///tmp/service.cljml"},"position":{"line":2,"character":22}}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":10,"method":"textDocument/rename","params":{"textDocument":{"uri":"file:///tmp/service.cljml"},"position":{"line":2,"character":22},"newName":"total"}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":11,"method":"textDocument/documentSymbol","params":{"textDocument":{"uri":"file:///tmp/service.cljml"}}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":12,"method":"workspace/symbol","params":{"query":"add"}}'
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didClose","params":{"textDocument":{"uri":"file:///tmp/editor.cljml"}}}'
   send_lsp_message '{"jsonrpc":"2.0","id":2,"method":"shutdown","params":null}'
   send_lsp_message '{"jsonrpc":"2.0","method":"exit","params":null}'
@@ -132,6 +138,11 @@ grep -q '"hoverProvider":true' "$lsp_output"
 grep -q '"definitionProvider":true' "$lsp_output"
 grep -q '"completionProvider"' "$lsp_output"
 grep -q '"documentFormattingProvider":true' "$lsp_output"
+grep -q '"referencesProvider":true' "$lsp_output"
+grep -q '"documentHighlightProvider":true' "$lsp_output"
+grep -q '"renameProvider"' "$lsp_output"
+grep -q '"documentSymbolProvider":true' "$lsp_output"
+grep -q '"workspaceSymbolProvider":true' "$lsp_output"
 grep -q '"method":"textDocument/publishDiagnostics"' "$lsp_output"
 grep -q '"severity":1' "$lsp_output"
 grep -q '"severity":2' "$lsp_output"
@@ -143,6 +154,14 @@ grep -q '"id":3,"result"' "$lsp_output"
 grep -q '"id":4,"result"' "$lsp_output"
 grep -q '"id":5,"result"' "$lsp_output"
 grep -q '"id":6,"result"' "$lsp_output"
+grep -q '"id":7,"result"' "$lsp_output"
+grep -q '"id":8,"result"' "$lsp_output"
+grep -q '"id":9,"result"' "$lsp_output"
+grep -q '"id":10,"result"' "$lsp_output"
+grep -q '"id":11,"result"' "$lsp_output"
+grep -q '"id":12,"result"' "$lsp_output"
 grep -q 'int -> int' "$lsp_output"
 grep -q '"label":"add-one"' "$lsp_output"
 grep -Fq '"newText":"(def answer 41)\n"' "$lsp_output"
+grep -q '"newText":"total"' "$lsp_output"
+grep -q '"name":"add-one"' "$lsp_output"

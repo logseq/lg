@@ -3209,6 +3209,63 @@ let test_language_service_queries_outside_symbols_are_empty () =
   if Cljml.Language_service.definition analysis ~offset:0 <> None then
     failwith "expected no definition outside a symbol"
 
+let span_text source (span : Cljml.Ast.source_span) =
+  String.sub source span.start_offset (span.end_offset - span.start_offset)
+
+let test_language_service_references_use_typed_identity () =
+  let source =
+    {|
+(def value 1)
+(defn use [value] (+ value 1))
+(def result (+ value (use 2)))
+|}
+  in
+  let analysis =
+    Cljml.Language_service.analyze ~filename:"file:///tmp/references.cljml" source
+    |> expect_ok
+  in
+  let top_level_usage = expect_substring_index source "value (use" in
+  let references = Cljml.Language_service.references analysis ~offset:top_level_usage in
+  let referenced_text = List.map (span_text source) references in
+  if referenced_text <> [ "value"; "value" ] then
+    failwith
+      ("expected only top-level value definition/use, got: "
+      ^ String.concat "," referenced_text)
+
+let test_language_service_rename_returns_exact_symbol_edits () =
+  let analysis = analyze_language_service_source () in
+  let usage = expect_substring_index language_service_source "answer))" in
+  match Cljml.Language_service.rename analysis ~offset:usage ~new_name:"total" with
+  | Error err -> failwith ("expected rename edits, got: " ^ err.Cljml.Error.message)
+  | Ok edits ->
+      if List.length edits <> 2 then failwith "expected definition and usage edits";
+      List.iter
+        (fun (edit : Cljml.Language_service.text_edit) ->
+          if edit.new_text <> "total" then failwith "expected rename replacement total";
+          if span_text language_service_source edit.range <> "answer" then
+            failwith "expected rename to edit only source symbol spans")
+        edits;
+      (match
+         Cljml.Language_service.rename analysis ~offset:usage ~new_name:"bad name"
+       with
+      | Error _ -> ()
+      | Ok _ -> failwith "expected invalid rename target to be rejected")
+
+let test_language_service_document_symbols_preserve_source_names () =
+  let analysis = analyze_language_service_source () in
+  let symbols = Cljml.Language_service.document_symbols analysis in
+  let find name =
+    List.find_opt
+      (fun (symbol : Cljml.Language_service.document_symbol) -> symbol.name = name)
+      symbols
+  in
+  if find "answer" = None then failwith "expected answer document symbol";
+  (match find "add-one" with
+  | Some { kind = `Function; _ } -> ()
+  | Some _ -> failwith "expected add-one function symbol"
+  | None -> failwith "expected add-one document symbol");
+  if find "result" = None then failwith "expected result document symbol"
+
 let test_formatter_normalizes_whitespace () =
   Cljml.Formatter.format "(defn  add-one [ x ](+ x  1))"
   |> expect_ok
@@ -5208,6 +5265,12 @@ let tests =
       test_language_service_completion_uses_source_names_and_types );
     ( "language service queries outside symbols are empty",
       test_language_service_queries_outside_symbols_are_empty );
+    ( "language service references use typed identity",
+      test_language_service_references_use_typed_identity );
+    ( "language service rename returns exact symbol edits",
+      test_language_service_rename_returns_exact_symbol_edits );
+    ( "language service document symbols preserve source names",
+      test_language_service_document_symbols_preserve_source_names );
     ( "formatter normalizes whitespace",
       test_formatter_normalizes_whitespace );
     ( "formatter wraps long nested forms",
