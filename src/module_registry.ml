@@ -29,6 +29,16 @@ let declare_signature signature_id items registry =
 let find_signature signature_id registry =
   Signature_map.find_opt signature_id registry.signatures
 
+let find_signature_named ~owner name registry =
+  Signature_map.to_seq registry.signatures
+  |> Seq.find_map (fun (signature_id, items) ->
+         if
+           Signature_id.owner signature_id = owner
+           && (Signature_id.name signature_id = name
+              || Names.module_path_to_ocaml (Signature_id.name signature_id) = name)
+         then Some (signature_id, items)
+         else None)
+
 let store_functor_result functor_id bindings registry =
   {
     registry with
@@ -42,4 +52,3 @@ let add_alias alias target registry =
   { registry with aliases = Module_map.add alias target registry.aliases }
 
 let find_alias alias registry = Module_map.find_opt alias registry.aliases
-

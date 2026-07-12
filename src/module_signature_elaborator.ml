@@ -107,15 +107,20 @@ let compile scope env next_type signature_name item_forms =
   | Error _ as err -> err
   | Ok [] -> Error.error "module-signature expects at least one signature item"
   | Ok items ->
-      let signature_name = Names.module_segment_to_ocaml signature_name in
-      let env =
-        Env.add_bindings
-          (Module_metadata.signature_bindings env signature_name items)
-          env
+      let signature_id =
+        Signature_id.create
+          ~owner:(if scope = "" then [] else [ scope ])
+          ~name:signature_name
       in
-      Ok
-        ( scope,
-          env,
-          next_type,
-          Module_signature { signature_name; items } )
-
+      let signature_name = Names.module_segment_to_ocaml signature_name in
+      (match
+         Module_registry.declare_signature signature_id items (Env.modules env)
+       with
+      | Error _ as err -> err
+      | Ok modules ->
+          let env = Env.with_modules modules env in
+          Ok
+            ( scope,
+              env,
+              next_type,
+              Module_signature { signature_name; items } ))

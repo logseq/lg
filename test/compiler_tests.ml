@@ -547,6 +547,46 @@ let test_module_protocols_preserve_typed_registry_state () =
     = None
   then failwith "module compilation must preserve typed protocol registry state"
 
+let test_module_elaboration_populates_typed_registry () =
+  let state =
+    typecheck_state
+      {|
+(module-signature MathSig (val answer :int))
+(module Math (def answer 42))
+(module-alias M Math)
+(module-functor Make [Input MathSig] (def result Input/answer))
+|}
+  in
+  let modules = Cljml.Compiler_environment.modules state.env in
+  let signature = Cljml.Signature_id.create ~owner:[] ~name:"MathSig" in
+  let alias = Cljml.Module_id.create ~owner:[] ~name:"M" in
+  let target = Cljml.Module_id.create ~owner:[] ~name:"Math" in
+  let functor_id = Cljml.Functor_id.create ~owner:[] ~name:"Make" in
+  if Cljml.Module_registry.find_signature signature modules = None then
+    failwith "module-signature must populate the typed module registry";
+  if Cljml.Module_registry.find_alias alias modules <> Some target then
+    failwith "module-alias must populate the typed module registry";
+  if Cljml.Module_registry.find_functor_result functor_id modules = None then
+    failwith "module-functor must populate the typed module registry"
+
+let test_module_metadata_does_not_use_encoded_symbol_keys () =
+  let state =
+    typecheck_state
+      {|
+(module-signature MathSig (val answer :int))
+(module-functor Make [Input MathSig] (def result Input/answer))
+|}
+  in
+  let encoded =
+    Cljml.Compiler_environment.to_bindings state.env
+    |> List.find_opt (fun (key, _) ->
+           String.starts_with ~prefix:"__signature/" key
+           || String.starts_with ~prefix:"__functor/" key
+           || String.starts_with ~prefix:"__functor_record/" key)
+  in
+  if encoded <> None then
+    failwith "module metadata must not be encoded as symbol-table keys"
+
 let test_emitted_ocaml_names_reject_source_collisions () =
   Cljml.Compiler.compile_string
     {|
@@ -5364,6 +5404,10 @@ let tests =
       test_protocol_implementation_populates_typed_registry );
     ( "module protocols preserve typed registry state",
       test_module_protocols_preserve_typed_registry_state );
+    ( "module elaboration populates typed registry",
+      test_module_elaboration_populates_typed_registry );
+    ( "module metadata avoids encoded symbol keys",
+      test_module_metadata_does_not_use_encoded_symbol_keys );
     ( "emitted OCaml names reject source collisions",
       test_emitted_ocaml_names_reject_source_collisions );
     ( "typed environment respects lexical shadowing",

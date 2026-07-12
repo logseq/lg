@@ -25,9 +25,13 @@ let alias_module_bindings = Module_environment.alias_bindings
 
 let compile_module_alias scope env next_type alias_name target_name =
   let alias_bindings = alias_module_bindings env alias_name target_name in
+  let owner = if scope = "" then [] else [ scope ] in
+  let alias_id = Module_id.create ~owner ~name:alias_name in
+  let target_id = Module_id.of_string target_name in
+  let modules = Module_registry.add_alias alias_id target_id (Env.modules env) in
   Ok
     ( scope,
-      Env.add_bindings alias_bindings env,
+      env |> Env.with_modules modules |> Env.add_bindings alias_bindings,
       next_type,
       Module_alias
         {
@@ -403,9 +407,7 @@ let compile_module_functor scope env next_type functor_name parameter_form
     | [] -> Ok (List.rev acc)
     | FSymbol parameter_name :: FSymbol parameter_signature :: rest ->
         parse_parameters
-          (( parameter_name,
-             Names.module_path_to_ocaml parameter_signature )
-          :: acc)
+          ((parameter_name, parameter_signature) :: acc)
           rest
     | [ _ ] ->
         Error.error "module-functor parameters must be name/signature pairs"
@@ -421,7 +423,7 @@ let compile_module_functor scope env next_type functor_name parameter_form
             parameters
             |> List.concat_map (fun (parameter_name, parameter_signature) ->
                    Module_metadata.signature_parameter_bindings env parameter_name
-                     parameter_signature)
+                     ~scope parameter_signature)
           in
           let functor_env = Env.add_bindings parameter_bindings env in
           (match
@@ -432,13 +434,18 @@ let compile_module_functor scope env next_type functor_name parameter_form
           | Ok (_scope, _module_env, public_bindings, next_type, module_item) -> (
               match module_item with
               | Module_def { items; _ } ->
-                  let functor_bindings =
-                    Module_metadata.store_functor_result_bindings functor_name
-                      public_bindings
+                  let functor_id =
+                    Functor_id.create
+                      ~owner:(if scope = "" then [] else [ scope ])
+                      ~name:functor_name
+                  in
+                  let modules =
+                    Module_registry.store_functor_result functor_id
+                      public_bindings (Env.modules env)
                   in
                   Ok
                     ( scope,
-                      Env.add_bindings functor_bindings env,
+                      Env.with_modules modules env,
                       next_type,
                       Module_functor
                         {
@@ -448,7 +455,7 @@ let compile_module_functor scope env next_type functor_name parameter_form
                             List.map
                               (fun (name, signature) ->
                                 ( Names.module_segment_to_ocaml name,
-                                  signature ))
+                                  Names.module_path_to_ocaml signature ))
                               parameters;
                           items;
                         } )
