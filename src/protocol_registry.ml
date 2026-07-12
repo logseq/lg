@@ -121,6 +121,66 @@ let find_implementation protocol_id method_id receiver_id registry =
   Implementation_map.find_opt (protocol_id, method_id, receiver_id)
     registry.implementations
 
+let export_owner ~from_owner ~to_owner ~from_module ~to_module source target =
+  let replace_prefix value =
+    let prefix = from_module ^ "." in
+    if String.starts_with ~prefix value then
+      to_module ^ String.sub value (String.length from_module)
+        (String.length value - String.length from_module)
+    else value
+  in
+  let remap_protocol protocol_id =
+    if Protocol_id.owner protocol_id = from_owner then
+      Protocol_id.create ~owner:to_owner ~name:(Protocol_id.name protocol_id)
+    else protocol_id
+  in
+  let remap_method protocol_id method_id =
+    Method_id.create
+      ~owner:(Protocol_id.owner protocol_id @ [ Protocol_id.name protocol_id ])
+      ~name:(Method_id.name method_id)
+  in
+  let declarations =
+    Protocol_map.fold
+      (fun protocol_id declaration declarations ->
+        if Protocol_id.owner protocol_id <> from_owner then declarations
+        else
+          let protocol_id = remap_protocol protocol_id in
+          let methods =
+            Method_map.fold
+              (fun _ signature methods ->
+                let method_id = remap_method protocol_id signature.method_id in
+                Method_map.add method_id { signature with method_id } methods)
+              declaration.methods Method_map.empty
+          in
+          Protocol_map.add protocol_id { protocol_id; methods } declarations)
+      source.declarations target.declarations
+  in
+  let implementations =
+    Implementation_map.fold
+      (fun (protocol_id, method_id, receiver_id) binding implementations ->
+        if Protocol_id.owner protocol_id <> from_owner then implementations
+        else
+          let protocol_id = remap_protocol protocol_id in
+          let method_id = remap_method protocol_id method_id in
+          let binding =
+            {
+              binding with
+              Types.ocaml_name = replace_prefix binding.Types.ocaml_name;
+              protocol_id = Option.map remap_protocol binding.protocol_id;
+            }
+          in
+          Implementation_map.add (protocol_id, method_id, receiver_id) binding
+            implementations)
+      source.implementations target.implementations
+  in
+  let implementation_names =
+    Implementation_map.fold
+      (fun key binding names ->
+        Emitted_name_map.add binding.Types.ocaml_name key names)
+      implementations Emitted_name_map.empty
+  in
+  { declarations; implementations; implementation_names }
+
 let qualify_implementations ~owner ~module_name registry =
   let implementations =
     Implementation_map.fold

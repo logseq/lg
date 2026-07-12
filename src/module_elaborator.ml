@@ -78,9 +78,13 @@ let compile_module_apply scope env next_type module_name functor_name
   with
   | Error _ as err -> err
   | Ok modules ->
+      let protocols =
+        Module_metadata.apply_functor_protocols env module_name functor_name
+      in
       Ok
         ( scope,
-          env |> Env.with_modules modules |> Env.add_bindings applied_bindings,
+          env |> Env.with_modules modules |> Env.with_protocols protocols
+          |> Env.add_bindings applied_bindings,
           next_type,
           Module_apply
             {
@@ -517,7 +521,7 @@ let compile_module_functor scope env next_type functor_name parameter_form
                functor_name body_forms
            with
           | Error _ as err -> err
-          | Ok (_scope, _module_env, public_bindings, next_type, module_item) -> (
+          | Ok (_scope, module_env, public_bindings, next_type, module_item) -> (
               match module_item with
               | Module_def { items; _ } ->
                   let functor_id =
@@ -538,6 +542,10 @@ let compile_module_functor scope env next_type functor_name parameter_form
                       let modules =
                         Module_registry.store_functor_result functor_id
                           public_bindings modules
+                      in
+                      let modules =
+                        Module_registry.store_functor_protocols functor_id
+                          (Env.protocols module_env) modules
                       in
                       Ok
                         ( scope,

@@ -4789,6 +4789,24 @@ let test_module_functor_applications_expose_record_types () =
   assert_ocaml_runs "module_functor_applications_expose_record_types"
     "Ada:42\n" ocaml_source
 
+let test_module_functor_applications_expose_protocols () =
+  let source =
+    {|
+(module-signature NameSig
+  (val suffix :string))
+(module Names NameSig
+  (def suffix "!"))
+(module-functor Make [M NameSig]
+  (defprotocol Labelled (label [x] :string))
+  (extend-type :int Labelled (label [x] (str x M/suffix))))
+(module-apply App Make Names)
+(println (App/Labelled/label 9))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "module_functor_applications_expose_protocols" "9!\n"
+    ocaml_source
+
 let test_module_functor_application_is_checked_by_ocaml () =
   Cljml.Compiler.compile_string
     {|
@@ -6355,6 +6373,8 @@ let tests =
       test_module_functors_apply_multiple_modules );
     ( "module functor applications expose record types",
       test_module_functor_applications_expose_record_types );
+    ( "module functor applications expose protocols",
+      test_module_functor_applications_expose_protocols );
     ( "module functor application is checked by OCaml",
       test_module_functor_application_is_checked_by_ocaml );
     ( "multi-parameter functor application is checked by OCaml",

@@ -16,6 +16,7 @@ type t = {
   signatures : Lowered.signature_item list Signature_map.t;
   emitted_signatures : Signature_id.t Emitted_signature_map.t;
   functor_results : (string * Types.binding) list Functor_map.t;
+  functor_protocols : Protocol_registry.t Functor_map.t;
   aliases : Module_id.t Module_map.t;
   module_declarations : module_declaration Emitted_module_map.t;
 }
@@ -25,6 +26,7 @@ let empty =
     signatures = Signature_map.empty;
     emitted_signatures = Emitted_signature_map.empty;
     functor_results = Functor_map.empty;
+    functor_protocols = Functor_map.empty;
     aliases = Module_map.empty;
     module_declarations = Emitted_module_map.empty;
   }
@@ -76,6 +78,15 @@ let store_functor_result functor_id bindings registry =
 
 let find_functor_result functor_id registry =
   Functor_map.find_opt functor_id registry.functor_results
+
+let store_functor_protocols functor_id protocols registry =
+  {
+    registry with
+    functor_protocols = Functor_map.add functor_id protocols registry.functor_protocols;
+  }
+
+let find_functor_protocols functor_id registry =
+  Functor_map.find_opt functor_id registry.functor_protocols
 
 let emitted_module_name module_id =
   String.concat "." (Module_id.owner module_id @ [ Module_id.name module_id ])

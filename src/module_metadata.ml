@@ -93,9 +93,22 @@ let apply_stored_functor_result module_name functor_name public_bindings =
   |> List.filter_map (fun (key, (binding : binding)) ->
          if String.length key > prefix_len && String.sub key 0 prefix_len = prefix then
            let value_name = String.sub key prefix_len (String.length key - prefix_len) in
+           let protocol_id =
+             Option.map
+               (fun protocol_id ->
+                 if Protocol_id.owner protocol_id = [ functor_name ] then
+                   Protocol_id.create ~owner:[ module_name ]
+                     ~name:(Protocol_id.name protocol_id)
+                 else protocol_id)
+               binding.protocol_id
+           in
            Some
              ( Module_environment.binding_key module_name value_name,
-               { binding with ocaml_name = Module_environment.binding_ocaml_name module_name value_name } )
+               {
+                 binding with
+                 ocaml_name = Module_environment.binding_ocaml_name module_name value_name;
+                 protocol_id;
+               } )
          else if String.length key > record_prefix_len
                  && String.sub key 0 record_prefix_len = record_prefix then
            let type_name = String.sub key record_prefix_len (String.length key - record_prefix_len) in
@@ -107,3 +120,14 @@ let apply_functor_result_bindings env module_name functor_name =
   match Module_registry.find_functor_result functor_id (Env.modules env) with
   | Some bindings -> apply_stored_functor_result module_name functor_name bindings
   | None -> []
+
+let apply_functor_protocols env module_name functor_name =
+  let functor_id = Functor_id.of_string functor_name in
+  match Module_registry.find_functor_protocols functor_id (Env.modules env) with
+  | None -> Env.protocols env
+  | Some protocols ->
+      Protocol_registry.export_owner ~from_owner:[ functor_name ]
+        ~to_owner:[ module_name ]
+        ~from_module:(Names.module_path_to_ocaml functor_name)
+        ~to_module:(Names.module_path_to_ocaml module_name)
+        protocols (Env.protocols env)
