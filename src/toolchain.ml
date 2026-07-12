@@ -9,6 +9,7 @@ type typed_result = {
   ast : Ast.form list;
   items : Lowered.compiled_item list;
   locations : Location.t list;
+  typecheck_state : Typecheck.state;
 }
 
 type parsetree_result = {
@@ -26,6 +27,13 @@ type diagnostic = {
 
 type compilation = {
   ocaml_source : string;
+  diagnostics : diagnostic list;
+}
+
+type language_analysis = {
+  typed_structure : Typedtree.structure;
+  compiler_env : Env.t;
+  typecheck_state : Typecheck.state;
   diagnostics : diagnostic list;
 }
 
@@ -96,10 +104,16 @@ module Ocaml_parsetree_backend = struct
 end
 
 module Ocaml_typechecker = struct
+  type analysis = {
+    typed_structure : Typedtree.structure;
+    compiler_env : Env.t;
+    diagnostics : diagnostic list;
+  }
+
   let exception_message exn =
     Format.asprintf "%a" Location.report_exception exn |> String.trim
 
-  let structure structure =
+  let analyze structure =
     let diagnostics = ref [] in
     let previous_warning_reporter = !Location.warning_reporter in
     let capture_warning location warning =
@@ -113,7 +127,7 @@ module Ocaml_typechecker = struct
           None
     in
     try
-      let () =
+      let typed_structure, compiler_env =
         Fun.protect
           ~finally:(fun () ->
             Location.warning_reporter := previous_warning_reporter)
@@ -121,14 +135,24 @@ module Ocaml_typechecker = struct
             Location.warning_reporter := capture_warning;
             Ocaml_signature.init ();
             let env = Compmisc.initial_env () in
-            let _typed_structure, _signature, _signature_names, _shape, _env =
+            let typed_structure, _signature, _signature_names, _shape, env =
               Typemod.type_structure env structure
             in
-            ())
+            (typed_structure, env))
       in
-      Ok (List.rev !diagnostics)
+      Ok
+        {
+          typed_structure;
+          compiler_env;
+          diagnostics = List.rev !diagnostics;
+        }
     with exn ->
       Error.error ("OCaml typecheck failed: " ^ exception_message exn)
+
+  let structure structure =
+    match analyze structure with
+    | Error _ as err -> err
+    | Ok analysis -> Ok analysis.diagnostics
 end
 
 let empty_state =
@@ -169,10 +193,17 @@ let typecheck (parsed : parser_result) =
   | Ok _ -> (
       match
         Source_context.with_locations parsed.form_locations (fun () ->
-            Typecheck.compile_forms parsed.ast)
+            Typecheck.compile_forms_incremental Typecheck.empty_state parsed.ast)
       with
       | Error _ as err -> err
-      | Ok items -> Ok { ast = parsed.ast; items; locations = parsed.locations })
+      | Ok (typecheck_state, items) ->
+          Ok
+            {
+              ast = parsed.ast;
+              items;
+              locations = parsed.locations;
+              typecheck_state;
+            })
 
 let typecheck_incremental state (parsed : parser_result) =
   match prepare_packages parsed.ast with
@@ -188,12 +219,40 @@ let typecheck_incremental state (parsed : parser_result) =
             state.located_items @ List.combine parsed.locations items
           in
           let state = { typecheck_state; located_items } in
-          Ok (state, { ast = parsed.ast; items; locations = parsed.locations }))
+          Ok
+            ( state,
+              {
+                ast = parsed.ast;
+                items;
+                locations = parsed.locations;
+                typecheck_state;
+              } ))
 
 let required_ocaml_packages source =
   match Cljml_frontend.implementation source with
   | Error _ as err -> err
   | Ok parsed -> required_packages_from_ast parsed.ast
+
+let analyze ?(filename = "<string>") source =
+  match Cljml_frontend.implementation ~filename source with
+  | Error _ as err -> err
+  | Ok parsed -> (
+      match typecheck parsed with
+      | Error _ as err -> err
+      | Ok typed -> (
+          match Ocaml_parsetree_backend.implementation typed with
+          | Error _ as err -> err
+          | Ok parsetree -> (
+              match Ocaml_typechecker.analyze parsetree.structure with
+              | Error _ as err -> err
+              | Ok analysis ->
+                  Ok
+                    {
+                      typed_structure = analysis.typed_structure;
+                      compiler_env = analysis.compiler_env;
+                      typecheck_state = typed.typecheck_state;
+                      diagnostics = analysis.diagnostics;
+                    })))
 
 let implementation_with_diagnostics ?(filename = "<string>") source =
   match Cljml_frontend.implementation ~filename source with

@@ -26,6 +26,20 @@ let string_contains_substring text expected =
   in
   expected_len = 0 || loop 0
 
+let substring_index text expected =
+  let expected_len = String.length expected in
+  let rec loop index =
+    if index + expected_len > String.length text then None
+    else if String.sub text index expected_len = expected then Some index
+    else loop (index + 1)
+  in
+  if expected_len = 0 then Some 0 else loop 0
+
+let expect_substring_index text expected =
+  match substring_index text expected with
+  | Some index -> index
+  | None -> failwith (Printf.sprintf "expected %S in source" expected)
+
 let expect_error_contains expected = function
   | Ok _ -> failwith "expected compilation error, got successful result"
   | Error (err : Cljml.Compiler.compile_error) ->
@@ -3141,6 +3155,60 @@ let test_compile_diagnostics_are_empty_for_exhaustive_matches () =
   if compilation.diagnostics <> [] then
     failwith "expected exhaustive match compilation to have no diagnostics"
 
+let language_service_source =
+  {|
+(def answer 41)
+(defn add-one [x] (+ x 1))
+(def result (add-one answer))
+|}
+
+let analyze_language_service_source () =
+  Cljml.Language_service.analyze ~filename:"file:///tmp/service.cljml"
+    language_service_source
+  |> expect_ok
+
+let test_language_service_hover_uses_ocaml_types () =
+  let analysis = analyze_language_service_source () in
+  let offset = expect_substring_index language_service_source "add-one answer" in
+  match Cljml.Language_service.hover analysis ~offset with
+  | Some hover ->
+      if not (string_contains_substring hover.contents "int -> int") then
+        failwith ("expected inferred OCaml function type, got: " ^ hover.contents)
+  | None -> failwith "expected hover information for add-one"
+
+let test_language_service_definition_resolves_source_binding () =
+  let analysis = analyze_language_service_source () in
+  let usage = expect_substring_index language_service_source "answer))" in
+  match Cljml.Language_service.definition analysis ~offset:usage with
+  | Some location ->
+      if location.Location.loc_start.Lexing.pos_lnum <> 2 then
+        failwith "expected answer definition on source line 2"
+  | None -> failwith "expected definition for answer usage"
+
+let test_language_service_completion_uses_source_names_and_types () =
+  let analysis = analyze_language_service_source () in
+  let items =
+    Cljml.Language_service.completions analysis
+      ~offset:(String.length language_service_source)
+  in
+  let find label =
+    List.find_opt
+      (fun (item : Cljml.Language_service.completion_item) -> item.label = label)
+      items
+  in
+  (match find "add-one" with
+  | Some item when string_contains_substring item.detail "int -> int" -> ()
+  | Some item -> failwith ("expected add-one type detail, got: " ^ item.detail)
+  | None -> failwith "expected source completion add-one");
+  if find "answer" = None then failwith "expected source completion answer"
+
+let test_language_service_queries_outside_symbols_are_empty () =
+  let analysis = analyze_language_service_source () in
+  if Cljml.Language_service.hover analysis ~offset:0 <> None then
+    failwith "expected no hover outside a symbol";
+  if Cljml.Language_service.definition analysis ~offset:0 <> None then
+    failwith "expected no definition outside a symbol"
+
 let test_match_delegates_opaque_module_constructor_payload_patterns_to_ocaml () =
   let source =
     {|
@@ -5099,6 +5167,14 @@ let tests =
       test_compile_diagnostics_capture_ocaml_match_warnings );
     ( "compile diagnostics are empty for exhaustive matches",
       test_compile_diagnostics_are_empty_for_exhaustive_matches );
+    ( "language service hover uses OCaml types",
+      test_language_service_hover_uses_ocaml_types );
+    ( "language service definition resolves source binding",
+      test_language_service_definition_resolves_source_binding );
+    ( "language service completion uses source names and types",
+      test_language_service_completion_uses_source_names_and_types );
+    ( "language service queries outside symbols are empty",
+      test_language_service_queries_outside_symbols_are_empty );
     ( "match delegates opaque module constructor payload patterns to OCaml",
       test_match_delegates_opaque_module_constructor_payload_patterns_to_ocaml );
     ( "match delegates unknown opaque constructor errors to OCaml",

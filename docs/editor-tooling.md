@@ -23,6 +23,16 @@ warnings are published; warnings include host-owned checks such as
 non-exhaustive and redundant pattern matches. Lines and columns follow the LSP
 zero-based convention. Closing a document clears its diagnostics.
 
+The same cached OCaml Typedtree analysis powers:
+
+- `textDocument/hover`, with OCaml-inferred types;
+- `textDocument/definition`, including compiler-resolved value definitions;
+- `textDocument/completion`, with cljml source labels and OCaml type details.
+
+Positions are converted between UTF-8 source offsets and the UTF-16 code units
+required by LSP. A document is parsed, elaborated, and typechecked once per full
+content update; hover, definition, and completion reuse that analysis.
+
 ## Neovim
 
 Assign a `cljml` filetype and start the server from the project root:
@@ -56,6 +66,6 @@ cmd = { "dune", "exec", "bin/cljml_cli.exe", "--", "--lsp" }
              '(clojure-mode . ("cljml_cli" "--lsp")))
 ```
 
-The current server focuses on diagnostics with nested-expression ranges. Hover,
-definition, completion, formatting, and semantic tokens can be added without
-changing the transport or document lifecycle.
+The next ReasonML parity item is comment-preserving document formatting.
+References, rename, semantic tokens, signature help, and code actions remain
+future language-service capabilities.

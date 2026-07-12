@@ -116,12 +116,19 @@ send_lsp_message() {
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/editor.cljml","languageId":"cljml","version":1,"text":"(def answer\n  (if true\n    (Stdlib.abs\n      \"bad\")\n    0))"}}}'
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":"file:///tmp/editor.cljml","version":2},"contentChanges":[{"text":"(def ok 1)\n(def good (Stdlib.abs -42))"}]}}'
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/warning.cljml","languageId":"cljml","version":1,"text":"(type-variant status Active Inactive)\n(defn describe [^:ocaml/status status]\n  (match status Active \"active\"))"}}}'
+  send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/service.cljml","languageId":"cljml","version":1,"text":"(def answer 41)\n(defn add-one [x] (+ x 1))\n(def result (add-one answer))"}}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":3,"method":"textDocument/hover","params":{"textDocument":{"uri":"file:///tmp/service.cljml"},"position":{"line":2,"character":14}}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":4,"method":"textDocument/definition","params":{"textDocument":{"uri":"file:///tmp/service.cljml"},"position":{"line":2,"character":22}}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":5,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///tmp/service.cljml"},"position":{"line":2,"character":29}}}'
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didClose","params":{"textDocument":{"uri":"file:///tmp/editor.cljml"}}}'
   send_lsp_message '{"jsonrpc":"2.0","id":2,"method":"shutdown","params":null}'
   send_lsp_message '{"jsonrpc":"2.0","method":"exit","params":null}'
 } | "$cli" --lsp > "$lsp_output"
 
 grep -q '"name":"cljml"' "$lsp_output"
+grep -q '"hoverProvider":true' "$lsp_output"
+grep -q '"definitionProvider":true' "$lsp_output"
+grep -q '"completionProvider"' "$lsp_output"
 grep -q '"method":"textDocument/publishDiagnostics"' "$lsp_output"
 grep -q '"severity":1' "$lsp_output"
 grep -q '"severity":2' "$lsp_output"
@@ -129,3 +136,8 @@ grep -q 'not exhaustive' "$lsp_output"
 grep -q '"line":3' "$lsp_output"
 grep -q '"character":6' "$lsp_output"
 grep -q '"diagnostics":\[\]' "$lsp_output"
+grep -q '"id":3,"result"' "$lsp_output"
+grep -q '"id":4,"result"' "$lsp_output"
+grep -q '"id":5,"result"' "$lsp_output"
+grep -q 'int -> int' "$lsp_output"
+grep -q '"label":"add-one"' "$lsp_output"
