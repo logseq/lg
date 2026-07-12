@@ -31,15 +31,16 @@ let marker_binding protocol_id signature =
   Types.binding ~protocol_id (Protocol_id.to_string protocol_id)
     (TFn (signature.param_tys, signature.return_ty))
 
-let resolve_protocol_id env protocol_id =
+let resolve_protocol_id ~scope env protocol_id =
   let registry = Env.protocols env in
   if Option.is_some (Protocol_registry.find_protocol protocol_id registry) then
     protocol_id
   else
     match Protocol_id.owner protocol_id with
     | [ module_path ] ->
-        let alias_id = Module_id.create ~owner:[] ~name:module_path in
-        (match Module_registry.find_alias alias_id (Env.modules env) with
+        (match
+           Module_registry.resolve_alias ~scope module_path (Env.modules env)
+         with
         | None -> protocol_id
         | Some target ->
             Protocol_id.create ~owner:[ Module_id.to_string target ]
@@ -92,7 +93,7 @@ let lookup_marker scope env method_name =
           String.concat "/" (List.rev (protocol_name :: reversed_owner))
         in
         let protocol_id =
-          protocol_id scope protocol_name |> resolve_protocol_id env
+          protocol_id scope protocol_name |> resolve_protocol_id ~scope env
         in
         let method_id = method_id protocol_id method_name in
         Protocol_registry.find_method protocol_id method_id registry
@@ -125,7 +126,7 @@ let lookup_marker scope env method_name =
 
 let lookup_protocol_marker scope env protocol_name method_name =
   let id = protocol_id scope protocol_name in
-  let id = resolve_protocol_id env id in
+  let id = resolve_protocol_id ~scope env id in
   let method_id = method_id id method_name in
   match Protocol_registry.find_method id method_id (Env.protocols env) with
   | Some (signature : Protocol_registry.method_signature) ->

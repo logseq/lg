@@ -188,23 +188,20 @@ let rec compile_module ?signature_name ?(register_module = true) scope env next_
     | FList (FSymbol "include" :: _) ->
         Error.error "include expects one module"
     | FList [ FSymbol "module-alias"; FSymbol alias_name; FSymbol target_name ] ->
-        let local_alias_bindings =
-          alias_module_bindings env alias_name target_name
-        in
         let public_alias_path = module_path ^ "." ^ alias_name in
         let public_alias_bindings =
           alias_module_bindings env public_alias_path target_name
         in
-        Ok
-          ( Env.add_bindings local_alias_bindings env,
-            public_bindings @ public_alias_bindings,
-            next_type,
-            Module_alias
-              {
-                alias_name = Names.module_segment_to_ocaml alias_name;
-                target_name = Names.module_path_to_ocaml target_name;
-              }
-            :: items )
+        (match
+           compile_module_alias module_path env next_type alias_name target_name
+         with
+        | Error _ as err -> err
+        | Ok (_scope, env, next_type, item) ->
+            Ok
+              ( env,
+                public_bindings @ public_alias_bindings,
+                next_type,
+                item :: items ))
     | FList (FSymbol "module-alias" :: _) ->
         Error.error "module-alias expects alias and target modules"
     | FList (FSymbol "defprotocol" :: FSymbol protocol_name :: method_forms) -> (
@@ -499,12 +496,21 @@ let compile_module_functor scope env next_type functor_name parameter_form
       match parse_parameters [] parameter_forms with
       | Error _ as err -> err
       | Ok parameters ->
-          let parameter_bindings =
-            parameters
-            |> List.concat_map (fun (parameter_name, parameter_signature) ->
-                   Module_metadata.signature_parameter_bindings env parameter_name
-                     ~scope parameter_signature)
+          let rec collect_parameter_bindings bindings = function
+            | [] -> Ok (List.rev bindings |> List.concat)
+            | (parameter_name, parameter_signature) :: rest -> (
+                match
+                  Module_metadata.signature_parameter_bindings env parameter_name
+                    ~scope parameter_signature
+                with
+                | Error _ as err -> err
+                | Ok parameter_bindings ->
+                    collect_parameter_bindings
+                      (parameter_bindings :: bindings) rest)
           in
+          (match collect_parameter_bindings [] parameters with
+          | Error _ as err -> err
+          | Ok parameter_bindings ->
           let functor_env = Env.add_bindings parameter_bindings env in
           (match
              compile_module ~register_module:false scope functor_env next_type functor_name
@@ -551,7 +557,7 @@ let compile_module_functor scope env next_type functor_name parameter_form
                             } ))
               | _ ->
                   Error.error
-                    "internal error: module functor body did not compile")))
+                    "internal error: module functor body did not compile"))))
   | _ ->
       Error.error
         "module-functor expects a name, [parameter signature ...], and body"

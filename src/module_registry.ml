@@ -1,6 +1,7 @@
 module Signature_map = Map.Make (Signature_id)
 module Functor_map = Map.Make (Functor_id)
 module Module_map = Map.Make (Module_id)
+module Module_set = Set.Make (Module_id)
 module Emitted_module_map = Map.Make (String)
 module Emitted_signature_map = Map.Make (String)
 
@@ -106,3 +107,32 @@ let declare_alias alias target registry =
   |> Result.map (add_alias alias target)
 
 let find_alias alias registry = Module_map.find_opt alias registry.aliases
+
+let resolve_alias ~scope module_path registry =
+  let top = Module_id.create ~owner:[] ~name:module_path in
+  let scoped =
+    if scope = "" then top
+    else Module_id.create ~owner:[ scope ] ~name:module_path
+  in
+  let initial =
+    if Module_map.mem scoped registry.aliases then Some scoped
+    else if Module_map.mem top registry.aliases then Some top
+    else None
+  in
+  let rec resolve visited module_id =
+    if Module_set.mem module_id visited then None
+    else
+      match Module_map.find_opt module_id registry.aliases with
+      | None -> Some module_id
+      | Some target ->
+          let target =
+            if scope <> "" && Module_id.owner target = [] then
+              let local =
+                Module_id.create ~owner:[ scope ] ~name:(Module_id.name target)
+              in
+              if Module_map.mem local registry.aliases then local else target
+            else target
+          in
+          resolve (Module_set.add module_id visited) target
+  in
+  Option.bind initial (resolve Module_set.empty)

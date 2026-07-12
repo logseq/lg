@@ -2302,6 +2302,37 @@ let test_static_protocols_work_through_module_aliases () =
   assert_ocaml_runs "static_protocols_work_through_module_aliases" "int:9\n"
     ocaml_source
 
+let test_protocols_work_through_chained_module_aliases () =
+  let source =
+    {|
+(module Labels
+  (defprotocol Labelled (label [x] :string))
+  (extend-type :int Labelled (label [x] (str "int:" x))))
+(module-alias L Labels)
+(module-alias LL L)
+(println (LL/Labelled/label 9))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "protocols_work_through_chained_module_aliases" "int:9\n"
+    ocaml_source
+
+let test_protocols_work_through_module_local_aliases () =
+  let source =
+    {|
+(module Labels
+  (defprotocol Labelled (label [x] :string))
+  (extend-type :int Labelled (label [x] (str "int:" x))))
+(module App
+  (module-alias L Labels)
+  (def result (L/Labelled/label 9)))
+(println App/result)
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "protocols_work_through_module_local_aliases" "int:9\n"
+    ocaml_source
+
 let test_protocol_identity_disambiguates_same_named_methods () =
   let source =
     {|
@@ -4571,6 +4602,15 @@ let test_module_signatures_include_other_signatures () =
   assert_ocaml_runs "module_signatures_include_other_signatures" "42\n"
     ocaml_source
 
+let test_module_signature_cycles_are_rejected () =
+  Cljml.Compiler.compile_string
+    {|
+(module-signature A (include B))
+(module-signature B (include A))
+(module-functor Make [M A] (def result 1))
+|}
+  |> expect_error_contains "cyclic module signature include"
+
 let test_functor_parameters_expose_included_signature_values () =
   let source =
     {|
@@ -5936,6 +5976,10 @@ let tests =
       test_static_protocols_reject_return_type_mismatch );
     ( "static protocols work through module aliases",
       test_static_protocols_work_through_module_aliases );
+    ( "protocols work through chained module aliases",
+      test_protocols_work_through_chained_module_aliases );
+    ( "protocols work through module-local aliases",
+      test_protocols_work_through_module_local_aliases );
     ( "ambiguous protocol methods require explicit identity",
       test_ambiguous_protocol_methods_require_explicit_identity );
     ( "protocols inside modules export methods and record implementations",
@@ -6290,6 +6334,8 @@ let tests =
       test_nested_module_signatures_are_checked_by_ocaml );
     ( "module signatures include other signatures",
       test_module_signatures_include_other_signatures );
+    ( "module signature cycles are rejected",
+      test_module_signature_cycles_are_rejected );
     ( "functor parameters expose included signature values",
       test_functor_parameters_expose_included_signature_values );
     ( "included module signatures are checked by OCaml",
