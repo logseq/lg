@@ -4,7 +4,52 @@
 
 (rule
  (alias runtest)
- (deps cli_smoke.sh ../bin/cljml_cli.exe ../examples/person.cljml)
+ (deps
+  cli_smoke.sh
+  ../bin/cljml_cli.exe
+  ../examples/person.cljml
+  ../examples/checkout.cljml
+  ../examples/protocols.cljml)
  (action
   (run sh %{dep:cli_smoke.sh} %{exe:../bin/cljml_cli.exe}
    %{dep:../examples/person.cljml})))
+
+(rule
+ (alias runtest)
+ (deps
+  no_raw_ir_regression.sh
+  (source_tree ../src)
+  (source_tree ../docs)
+  (source_tree ../test)
+  ../README.md
+  compiler_tests.ml)
+ (action
+  (chdir %{workspace_root}
+   (run sh test/no_raw_ir_regression.sh))))
+
+(rule
+ (alias runtest)
+ (deps no_lowering_items_in_types.sh ../src/types.ml)
+ (action
+  (chdir %{workspace_root}
+   (run sh test/no_lowering_items_in_types.sh))))
+
+(rule
+ (alias runtest)
+ (deps no_legacy_source_backend.sh ../src/codegen.ml)
+ (action
+  (chdir %{workspace_root}
+   (run sh test/no_legacy_source_backend.sh))))
+
+(rule
+ (alias runtest)
+ (deps
+  no_typed_expr_source_code.sh
+  ../src/types.ml
+  ../src/destructure.ml
+  ../src/typecheck.ml
+  ../src/structural_map.ml
+  ../src/core_compare.ml)
+ (action
+  (chdir %{workspace_root}
+   (run sh test/no_typed_expr_source_code.sh))))

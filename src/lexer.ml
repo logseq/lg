@@ -55,35 +55,57 @@ let read_atom source start =
   let finish = loop start in
   (String.sub source start (finish - start), finish)
 
+let char_of_atom = function
+  | "\\newline" -> Some '\n'
+  | "\\space" -> Some ' '
+  | "\\tab" -> Some '\t'
+  | atom when String.length atom = 2 && atom.[0] = '\\' -> Some atom.[1]
+  | _ -> None
+
+let looks_like_float atom =
+  String.contains atom '.' || String.contains atom 'e' || String.contains atom 'E'
+
 let tokenize source =
+  let token desc start_offset end_offset =
+    { desc; span = { start_offset; end_offset } }
+  in
   let rec loop i tokens =
     let i = skip_ignored source i in
     if i >= String.length source then Ok (List.rev tokens)
     else
       match source.[i] with
-      | '(' -> loop (i + 1) (Lparen :: tokens)
-      | ')' -> loop (i + 1) (Rparen :: tokens)
-      | '[' -> loop (i + 1) (Lbracket :: tokens)
-      | ']' -> loop (i + 1) (Rbracket :: tokens)
-      | '{' -> loop (i + 1) (Lbrace :: tokens)
-      | '}' -> loop (i + 1) (Rbrace :: tokens)
+      | '(' -> loop (i + 1) (token Lparen i (i + 1) :: tokens)
+      | ')' -> loop (i + 1) (token Rparen i (i + 1) :: tokens)
+      | '[' -> loop (i + 1) (token Lbracket i (i + 1) :: tokens)
+      | ']' -> loop (i + 1) (token Rbracket i (i + 1) :: tokens)
+      | '{' -> loop (i + 1) (token Lbrace i (i + 1) :: tokens)
+      | '}' -> loop (i + 1) (token Rbrace i (i + 1) :: tokens)
       | '"' -> (
           match read_string source (i + 1) with
-          | Ok (value, next) -> loop next (String value :: tokens)
+          | Ok (value, next) -> loop next (token (String value) i next :: tokens)
           | Error _ as err -> err)
       | ':' ->
           let value, next = read_atom source i in
-          loop next (Keyword value :: tokens)
+          loop next (token (Keyword value) i next :: tokens)
       | _ ->
           let atom, next = read_atom source i in
-          let token =
+          let token_result =
             match (atom, int_of_string_opt atom) with
-            | "true", _ -> Bool true
-            | "false", _ -> Bool false
-            | "nil", _ -> Nil
-            | _, Some value -> Int value
-            | _ -> Symbol atom
+            | "true", _ -> Ok (Bool true)
+            | "false", _ -> Ok (Bool false)
+            | "nil", _ -> Error.error "nil is not supported"
+            | _, Some value -> Ok (Int value)
+            | _ -> (
+                match char_of_atom atom with
+                | Some value -> Ok (Char value)
+                | None when looks_like_float atom -> (
+                    match float_of_string_opt atom with
+                    | Some _ -> Ok (Float atom)
+                    | None -> Ok (Symbol atom))
+                | None -> Ok (Symbol atom))
           in
-          loop next (token :: tokens)
+          (match token_result with
+          | Error _ as err -> err
+          | Ok desc -> loop next (token desc i next :: tokens))
   in
   loop 0 []

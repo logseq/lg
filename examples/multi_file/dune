@@ -1,0 +1,10 @@
+(rule
+ (target app.ml)
+ (deps math.cljml main.cljml)
+ (action
+  (run %{exe:../../bin/cljml_cli.exe} --compile-files %{deps} -o %{target})))
+
+(executable
+ (name app)
+ (modules app)
+ (libraries cljml rrbvec core))

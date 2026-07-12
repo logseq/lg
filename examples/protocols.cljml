@@ -1,0 +1,39 @@
+(ns examples.protocols)
+
+(defprotocol AuditValue
+  (render [value] :string))
+
+(extend-type :int
+  AuditValue
+  (render [value] (str "#" value)))
+
+(extend-type :string
+  AuditValue
+  (render [value] (ocaml-call :string String.uppercase_ascii value)))
+
+(extend-type :keyword
+  AuditValue
+  (render [value] (str "severity=" value)))
+
+(extend-type :bool
+  AuditValue
+  (render [value] (if value "enabled" "disabled")))
+
+(def event {:id 42 :user "ada" :severity :warning :enabled? true})
+(def system-event {:id 7 :source "scheduler" :retry-count 2})
+
+(defn actor-id [{:keys [id]}]
+  (render (+ id 0)))
+
+(println
+  (str
+    "audit "
+    (actor-id event)
+    "/"
+    (actor-id system-event)
+    " "
+    (render (:user event))
+    " "
+    (render (:severity event))
+    " "
+    (render (:enabled? event))))

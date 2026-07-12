@@ -91,7 +91,6 @@ let infer_params ~lookup_function_ty params body_forms =
       | FString _ -> Some TString
       | FKeyword _ -> Some TKeyword
       | FBool _ -> Some TBool
-      | FNil -> Some TNil
       | _ -> None
     in
     let rec infer_clauses params = function
@@ -262,6 +261,7 @@ let infer_params ~lookup_function_ty params body_forms =
                | Ok params -> infer_form params value)
              (Ok params)
     | FList forms -> infer_all params forms
-    | FInt _ | FString _ | FBool _ | FNil | FKeyword _ | FSymbol _ -> Ok params
+    | FInt _ | FFloat _ | FChar _ | FString _ | FBool _ | FKeyword _ | FSymbol _ ->
+        Ok params
   in
   infer_all params body_forms

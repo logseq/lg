@@ -17,16 +17,12 @@ let compile_not args =
       let expression =
         match arg.ty with
         | TBool -> Ocaml_ir.Prefix ("not", arg.ocaml_expr)
-        | TNil -> Ocaml_ir.Sequence [ arg.ocaml_expr; Ocaml_ir.Bool true ]
         | _ -> Ocaml_ir.Sequence [ arg.ocaml_expr; Ocaml_ir.Bool false ]
       in
       Ok (typed_ir TBool expression)
 
 let compile_predicate name args expected_ty =
   type_predicate name (fun actual_ty -> Types.equal actual_ty expected_ty) args
-
-let compile_some_predicate args =
-  type_predicate "some?" (fun actual_ty -> not (Types.equal actual_ty TNil)) args
 
 let compile_bool_literal_predicate name args expected =
   match one_arg name args with
@@ -43,8 +39,6 @@ let compile_type_predicate name predicate args = type_predicate name predicate a
 let compile name args =
   match name with
   | "not" -> compile_not args
-  | "nil?" -> compile_predicate name args TNil
-  | "some?" -> compile_some_predicate args
   | "true?" -> compile_bool_literal_predicate name args true
   | "false?" -> compile_bool_literal_predicate name args false
   | "int?" | "number?" -> compile_type_predicate name (function TInt -> true | _ -> false) args

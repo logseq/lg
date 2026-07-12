@@ -1,0 +1,6 @@
+(ns example.math
+  (:require [ocaml.package/core]
+            [ocaml.Core.Int :as int]))
+
+(defn magnitude-plus-two [x]
+  (+ (int/abs x) 2))

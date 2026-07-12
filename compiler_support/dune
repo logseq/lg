@@ -1,0 +1,3 @@
+(library
+ (name cljml_compiler_support)
+ (libraries compiler-libs.common))

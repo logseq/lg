@@ -28,9 +28,66 @@ Three-argument `get` can return a default for an absent literal key; when the ke
 
 Keyword call syntax such as `(:name user)` is supported for structural maps.
 
-`if` branches must have the same type.
+`if` branches must have the same type for cljml-owned core types. When branch
+results are OCaml-owned types such as aliases, option/result applications, or
+tuples, cljml lowers the branch expressions and lets the OCaml typechecker
+decide compatibility.
 
-Function parameter types are inferred from body constraints where possible; annotations such as `^:int`, `^:string`, and `^:keyword` are optional explicit hints.
+Function parameter types are inferred from body constraints where possible; annotations such as `^:int`, `^:string`, `^:keyword`, and `^:unit` are optional explicit hints for cljml core types. `:unit` is also valid as an explicit `ocaml-call` return type for side-effecting host calls. Opaque host-owned annotations such as `^:ocaml/int` lower to OCaml parameter constraints and are delegated to the OCaml typechecker instead of being interpreted as full cljml types. Host-owned type applications use angle brackets, for example `^:ocaml/option<int>`, `^:ocaml/result<string;string>`, and `^:ocaml/tuple<int;string>`; `;` separates multiple type arguments because commas are reader whitespace.
+
+Type aliases such as `(type-alias user-id :ocaml/int)` emit OCaml aliases in
+both source and Parsetree backends. The alias is OCaml-owned metadata; cljml can
+lower references such as `^:ocaml/user_id` but does not implement alias
+expansion as part of its own type system.
+
+Aliases, records, and variants can declare OCaml type parameters with a vector
+after the type name. Parameter references use `:param/name`, including inside
+host type applications:
+
+```clojure
+(type-alias maybe [a] :ocaml/option<param/a>)
+(type-record pair [a b] (left :param/a) (right :param/b))
+(type-variant box [a] (Box :param/a))
+```
+
+These lower to OCaml type parameters and variables. cljml validates parameter
+scope and declaration shape; OCaml enforces relationships such as multiple
+fields or constructor payloads sharing the same parameter.
+
+OCaml records such as `(type-record user (name :string) (age :int))` emit
+ordinary OCaml record declarations in both source and Parsetree backends.
+Values can be constructed with `(ocaml-record user (name "Ada") (age 41))`, and
+fields can be accessed with `(ocaml-field user-value name)`. cljml checks record
+shape and field names; field value compatibility remains owned by OCaml.
+Records declared inside modules can be constructed from outside with qualified
+type names such as `(ocaml-record User.user ...)`, including through module
+aliases such as `(ocaml-record U.user ...)`. Opened modules expose record type
+names in the current scope, so `(open User)` allows `(ocaml-record user ...)`.
+
+OCaml variants such as `(type-variant status Active Inactive)` emit ordinary
+OCaml variant declarations in both source and Parsetree backends. Payload
+constructors can be declared with forms such as `(Named :string)` or
+`(Pair :int :string)`, and can be constructed directly with `Active` or
+`(Named "Ada")`; `ocaml-construct` remains a compatibility spelling. cljml
+validates the surface shape, duplicate
+constructors, and constructor arity for known constructors, but payload type
+compatibility and exhaustiveness remain owned by OCaml. For opaque host-owned
+targets, module-qualified constructor patterns such as `(Msg.Named name)` lower
+directly to OCaml; constructor existence, arity, and payload typing are checked
+by OCaml.
+
+OCaml option/result constructors use ordinary constructor syntax:
+`(Some value)`, `None`, `(Ok value)`, and `(Error value)`. The corresponding
+`ocaml-*` spellings remain compatible. cljml checks only surface arity and
+lowers to the OCaml constructors. Match forms can destructure them with OCaml
+constructor patterns
+such as `(Some x)`, `None`, `(Ok value)`, and `(Error err)`. Payload and
+polymorphic option/result typing stay owned by OCaml.
+
+OCaml tuples are exposed through `(ocaml-tuple a b ...)` and can be destructured
+with tuple patterns such as `(ocaml-tuple id name)`. cljml checks tuple arity
+and lowers tuple annotations such as `^:ocaml/tuple<int;string>` to OCaml tuple
+constraints; element compatibility remains owned by OCaml.
 
 Keyword lookup in typed contexts can infer structural map field requirements for unannotated function parameters.
 
@@ -41,9 +98,8 @@ Clojure destructuring. Associative destructuring works on structural maps with
 `:keys`, direct `{local :keyword}` bindings, scalar literal `:or` defaults, and
 `:as`. Sequential destructuring works on typed vectors and lists with fixed
 positional bindings, `& rest`, and `:as`. Keyword argument destructuring,
-non-literal default expressions, and nil-padding are not supported yet because
-the current OCaml runtime representation has no nilable collection element
-type.
+non-literal default expressions, and nil-padding are not supported yet. cljml
+does not have a surface `nil` value or nilable collection element type.
 
 Row polymorphism is represented in cljml's static type compatibility: a
 function parameter inferred as a structural map with fields `:name` and `:age`
@@ -56,23 +112,48 @@ accept different structural map shapes that share the required fields.
 Protocols are a static subset of Clojure protocols. `defprotocol` records typed method signatures, and `extend-type` emits ordinary OCaml functions for supported receiver types. Calls dispatch at compile time from the first argument type, so there is no runtime protocol table, dynamic extension, metadata dispatch, or reflection.
 
 `do`, `fn`, `defn`, and `let` bodies evaluate forms in order and return the final form's type.
+Unconstrained identity-style functions such as `(defn id [x] x)` and
+`(let [id (fn [x] x)] ...)` preserve OCaml-owned call-site polymorphism. cljml
+tracks only the fact that the return value is the same parameter so its core API
+can continue elaborating the result; OCaml still owns the actual polymorphic
+typechecking.
 
-`if-not`, `when`, and `cond` are compiler-recognized forms rather than macros. `when` currently supports unit or nil bodies, and `cond` requires an `:else` branch because cljml does not yet have a union type for implicit nil results.
+`loop` lowers to a local OCaml tail-recursive function. `recur` is valid only
+in the tail position of the nearest loop and must preserve the number and
+static types of the loop bindings. For OCaml-owned loop binding types, recur
+argument compatibility is delegated to the OCaml typechecker.
+
+`if-not`, `when`, and `cond` are compiler-recognized forms rather than macros.
+`when` currently supports unit bodies, and `cond` requires an `:else` branch
+because cljml does not add implicit nil results. OCaml-owned branch result
+compatibility is delegated to the OCaml typechecker.
 
 `match` is a compiler-recognized static pattern form rather than a macro. The
 current subset supports scalar literal patterns, `_`, symbol binders, and
-fixed-length list/vector patterns written with vector pattern syntax. Pattern
-literals can constrain unannotated function parameters. There is no
-exhaustiveness checker yet.
+fixed-length list/vector patterns written with vector pattern syntax. Record
+patterns use `(record (field pattern) ...)`, aliases use `(as pattern name)`,
+or-patterns use `(or left right)`, and guarded clauses use
+`(when pattern guard)` in the pattern position. Alternatives of an or-pattern
+must bind the same names. Pattern literals can constrain unannotated function
+parameters. cljml does not implement a parallel exhaustiveness checker; record
+labels, constructor typing, guard compatibility, exhaustiveness, and redundant
+cases are delegated to OCaml. OCaml-owned match branch result compatibility is
+also delegated to OCaml.
+
+`try` is a compiler-recognized OCaml exception form rather than a macro. It
+uses one or more body forms followed by `(catch pattern body...)` handlers, and
+`raise` lowers to OCaml's ordinary `raise` call. Catch patterns use the same
+pattern compiler as `match`, so exception constructor existence, payload types,
+and coverage stay delegated to OCaml.
 
 Top-level expression forms are supported and emit `let _ = ...`; top-level map literals still need a `def` because structural maps require generated record definitions.
 
 `print` and `println` follow Clojure's newline behavior.
 
-`not` follows Clojure truthiness for the values represented by cljml: `false`
-and `nil` are falsey, while integers, strings, collections, keywords, symbols,
-and records are truthy. The argument is still evaluated before the boolean
-result is produced.
+`not` follows the values represented by cljml: `false` is falsey, while
+integers, strings, collections, keywords, symbols, and records are truthy. The
+argument is still evaluated before the boolean result is produced. cljml does
+not support a surface `nil` value, `nil?`, or `some?`.
 
 Type predicates such as `int?`, `integer?`, `number?`, `nat-int?`, `pos-int?`,
 `neg-int?`, `string?`, `keyword?`, `boolean?`, `vector?`, `list?`, `seq?`,
@@ -115,12 +196,38 @@ Qualified symbols can reference previously compiled namespaces.
 
 Incremental compilation preserves namespace, alias, refer, type counter, and binding state across source chunks.
 
+The CLI exposes the same state across files with
+`--compile-files ... -o output.ml` and `--run-files ...`. Input order defines
+compilation order. Each file keeps its own diagnostic filename and line map,
+while namespace/module/type state and the union of findlib package dependencies
+flow forward. A Dune rule can list `.cljml` files as dependencies, generate one
+`.ml` target with `--compile-files`, and compile it through an ordinary library
+or executable stanza; see `examples/multi_file/dune`.
+
 Protocol signatures and implementations are preserved in the same incremental compiler state. Namespace aliases can qualify protocol method calls, for example `labels/label`, after the protocol namespace has been compiled and required.
 
 `module` emits an OCaml module and registers bindings for qualified calls such
-as `Math/add2`. The current static subset allows `def`, `defn`, and nested
-`module` forms inside a module. Module signatures, functors, `open`, and module
-aliases are not supported yet.
+as `Math/add2`. The current static subset allows `module-signature`,
+`type-alias`, `type-variant`, `open`, `include`, `module-alias`, `def`, `defn`,
+and nested `module` forms inside a module. `open` emits an OCaml open item and
+re-exports already-known module value/function bindings as unqualified cljml
+symbols, including OCaml record type metadata. `include` emits an OCaml include
+item, exposes already-known module bindings as unqualified cljml symbols, and
+re-exports direct included bindings and OCaml record type metadata when used
+inside another module. `module-alias` emits an OCaml module alias and
+re-exports already-known target module value/function bindings and OCaml record
+type metadata under the alias.
+`module-signature` emits an OCaml module type from `val` declarations, abstract
+type declarations such as `(type user-id)`, and manifest type declarations such
+as `(type user-id :ocaml/int)`. Signature types accept parameter vectors:
+`(type box [a])` is abstract and `(type box [a] :ocaml/option<param/a>)` is
+manifest. cljml validates parameter scope, while OCaml checks signature
+matching. `(module Name Signature ...)` emits an ascribed module whose
+signature match is checked by OCaml.
+`module-functor` emits a single-parameter OCaml functor, and `module-apply`
+emits a functor application while exposing the applied module's already-known
+result bindings and OCaml record type metadata. Functor parameter and
+application signature matching are checked by OCaml.
 
 Clojure symbols and keywords that would emit OCaml reserved words are munged as
 legal OCaml identifiers while preserving source-level names.
@@ -175,15 +282,17 @@ element type. It eagerly returns an OCaml list and stops at the shortest input.
 
 Empty vector literals still require explicit element typing.
 
-Use `(vector-of :int)`, `(vector-of :string)`, `(vector-of :symbol)`, `(vector-of :keyword)`, `(vector-of :bool)`, or `(vector-of :nil)` for typed empty vectors.
+Use `(vector-of :int)`, `(vector-of :string)`, `(vector-of :symbol)`, `(vector-of :keyword)`, or `(vector-of :bool)` for typed empty vectors.
 
-Use `(list-of :int)`, `(list-of :string)`, `(list-of :symbol)`, `(list-of :keyword)`, `(list-of :bool)`, or `(list-of :nil)` for typed empty lists.
+Use `(list-of :int)`, `(list-of :string)`, `(list-of :symbol)`, `(list-of :keyword)`, or `(list-of :bool)` for typed empty lists.
 
-Use `(set-of :int)`, `(set-of :string)`, `(set-of :symbol)`, `(set-of :keyword)`, `(set-of :bool)`, or `(set-of :nil)` for typed empty sets.
+Use `(set-of :int)`, `(set-of :string)`, `(set-of :symbol)`, `(set-of :keyword)`, or `(set-of :bool)` for typed empty sets.
 
-Sets currently compile to sorted unique OCaml lists and support `hash-set`,
+Sets compile to persistent OCaml `Set.Make` instances and support `hash-set`,
 `sorted-set`, `set-of`, `conj`, `disj`, `contains?`, `every?`, `not-any?`, `not-every?`,
-`map`, `filter`, and `reduce`.
+`map`, `filter`, and `reduce`. Built-in comparators cover scalar values,
+scalar lists and vectors, nested integer vectors, and named structural map
+records. `nil` is not a supported surface value or set element.
 
 `conj` accepts one or more same-typed values after a list, vector, or set.
 
@@ -212,43 +321,117 @@ Sequence APIs are eager.
 
 ## Host interop
 
-Direct OCaml package interop is limited to an explicit typed host table.
+Direct OCaml package interop has two paths.
 
-Currently supported examples include `ocaml.Stdlib` aliases or refers for `string-of-int` and `int-of-string`, and `ocaml.String` aliases or refers for `uppercase-ascii` and `length`.
+External findlib packages are declared independently from their modules. For
+example, `(:require [ocaml.package/core] [ocaml.Core.Int :as int])` adds the
+`core` package's recursive compiler include directories and aliases the
+`Core.Int` module. `(int/abs -42)` can then infer its signature from
+the package CMI. CLI `--run` links every declared package through
+`ocamlfind ocamlopt -linkpkg`. Missing and invalid package names fail before
+cljml elaboration. This mirrors the OCaml/Reason boundary where project
+dependencies establish the compiler environment and source imports name
+modules within that environment.
+
+Constructor signatures are discovered from the same package compiler
+environment. A namespace requiring `[ocaml.package/unix]` and aliasing
+`[ocaml.Unix :as unix]` can construct
+`(unix/ADDR_UNIX "/tmp/app.sock")` directly. cljml uses compiler-libs metadata
+for constructor arity and result-type elaboration, preserves constructor
+capitalization, and delegates payload compatibility to the OCaml typechecker.
+
+Currently supported typed examples include `ocaml.Stdlib` aliases or refers for
+`string-of-int` and `int-of-string`, and `ocaml.String` aliases or refers for
+`uppercase-ascii` and `length`.
+
+Ordinary OCaml module functions are called directly. Calls such as
+`(Stdlib.abs -42)` read the value signature from the OCaml compiler environment.
+`ocaml-call` remains a compatibility escape hatch; explicit-return calls such as
+`(ocaml-call :int Stdlib.abs -42)` remain available for opaque host boundaries.
+Direct calls also resolve
+`ns` OCaml aliases and refers, for example
+`(std/abs -42)` after `[ocaml.Stdlib :as std]`, or
+`(uppercase_ascii "ada")` after
+`[ocaml.String :refer [uppercase_ascii]]`. OCaml value refers remain available
+inside module and functor bodies compiled from the current namespace. cljml uses
+the inferred or declared return type to continue source elaboration. Function
+existence, argument arity, and argument compatibility are checked by the OCaml
+typechecker.
+
+OCaml floats and characters use native literals such as `1.5` and `\a`.
+OCaml arrays use `(ocaml-array 1 2 3)`, `(ocaml-array-of :int)`,
+`ocaml-array-get`, and `ocaml-array-set!`. OCaml references use `ocaml-ref`,
+`ocaml-deref`, and `ocaml-reset!`. These forms preserve their element types and
+mutation semantics in the generated Parsetree. Core cljml arithmetic remains
+integer-only, so float arithmetic uses ordinary direct OCaml calls such as
+`(Float.add 1.5 2.25)`.
+
+Labelled and optional OCaml arguments are written as keyword/value pairs, such
+as `(String.starts_with "ada" :prefix "ad")`. cljml validates label
+names and duplicates from the compiler signature, emits labelled Parsetree
+application arguments, and lets the OCaml typechecker validate argument values.
+Optional labels can be omitted. Supplying a label while leaving positional
+arguments unapplied preserves an ordinary partially applied function when the
+remaining parameters are positional.
+`Cljml.Compiler.typecheck_parsetree` exposes this OCaml compiler-libs check as
+an explicit Parsetree validation gate. The gate adds local Dune build CMI
+directories for cljml and `Rrbvec` when available, and accepts extra include
+directories through `CLJML_OCAML_INCLUDE_PATH`.
 
 The stable backend still emits OCaml source from cljml's typed IR. The
 Parsetree backend no longer reparses the whole generated program: it lowers
 compiled items independently, constructs structural record definitions
 directly as `Pstr_type` and `Pstr_value`, and directly constructs ordinary
 top-level value/effect bindings. Namespace and protocol marker comments do not
-produce AST nodes. Row type definitions, `defn`, and protocol implementation
-bindings are also structured items. Nested modules are represented recursively
-and lower directly to `Pstr_module` and `Pmod_structure`; there is no remaining
-whole-program or structure-item OCaml parser path.
+produce AST nodes. Row type definitions, OCaml-owned type aliases, nullary
+variant declarations, `defn`, and protocol implementation bindings are also
+structured items. `open` lowers directly to `Pstr_open`. Nested modules are
+represented recursively and lower directly to `Pstr_module` and
+`Pmod_structure`; module aliases lower directly to `Pstr_module` and
+`Pmod_ident`; module signatures lower directly to `Pstr_modtype`, and ascribed
+modules lower with `Pmod_constraint`; module functors and applications lower
+directly to `Pmod_functor` and `Pmod_apply`. There is no remaining whole-program
+or structure-item OCaml parser path.
+The generated structure can be passed to `Cljml.Compiler.typecheck_parsetree`
+to run the OCaml compiler-libs typechecker as the final host-language check,
+including generated code that depends on the cljml runtime and `Rrbvec` CMIs.
 `Cljml.Compiler.compile_chunk_parsetree` follows the same incremental state
-model as `compile_chunk`. Typed expression payloads are still OCaml snippets
-when represented by the explicit `Ocaml_ir.Raw` migration node and use
-`Parse.expression`. Scalar literals and identifiers already lower directly
-from `Ocaml_ir` to Parsetree, as do list/vector literals and `if`, `if-not`, and
-`when` roots. Ordinary function roots, typed parameter constraints, and
-multi-form bodies also lower directly as `Pexp_function`, constrained patterns,
-and nested `Pexp_let` sequencing. Simple local `let` bindings and static
-`match` clauses also lower directly; map/vector destructuring bindings remain
-an explicit expression-level `Raw` fallback. Parsetree is a backend
+model as `compile_chunk`, returns the current chunk's structure, and typechecks
+the accumulated Parsetree state before returning. The public
+`Cljml.Compiler.compile_parsetree` API also runs this OCaml typecheck gate by
+default. Public source compilation APIs and CLI compile/run paths print source
+from the checked Parsetree output before returning or executing generated OCaml
+source. Typed expression payloads lower from structured `Ocaml_ir` nodes; there
+is no expression-level source fallback or
+`Parse.expression` path. Scalar literals, identifiers, list/vector literals,
+`if`, `if-not`, `when`, ordinary function roots, typed parameter constraints,
+OCaml option/result/variant constructors, multi-form bodies, simple local `let`
+bindings, destructuring bindings, and static `match` clauses all lower
+directly. The test suite also guards this boundary with a static regression
+check, so the legacy unstructured expression path cannot be reintroduced
+silently. Parsetree is a backend
 representation here, not cljml's full type system.
 
-The integer core lowers arithmetic, division/remainder, `min`/`max`, bitwise
-operators, shifts, `inc`/`dec`, and integer predicates directly through the
-shared expression IR.
+Lexer tokens and the complete parsed form tree retain byte spans. Every
+elaborated expression carries its exact form location into generated Parsetree;
+synthetic nodes without a direct form use their owning top-level span. Locations
+survive incremental compilation. OCaml compiler-libs errors therefore report
+precise nested lines and columns through ordinary library APIs;
+`compile_string_with_filename`, the CLI, and the LSP retain actual input paths.
+
+The scalar and integer cores lower `boolean`, `name`, `namespace`, `keyword`,
+`symbol`, arithmetic, division/remainder, `min`/`max`, bitwise operators,
+shifts, `inc`/`dec`, and integer predicates directly through the shared
+expression IR.
 
 Equality and ordered integer comparisons also lower directly. Recursive record
 equality remains an explicit migration boundary.
 
-The structured expression subset now also covers string slicing, function
-composition/partial application, direct record fields and record values, typed
-empty collections, collection prepend/update operations, indexing, and `rest`.
-Recursive sequence helpers and complex destructuring remain explicit `Raw`
-migration boundaries.
+The structured expression subset now also covers string conversion and
+printing, string slicing, function composition/partial application, direct
+record fields and record values, typed empty collections, collection
+prepend/update operations, indexing, `rest`, recursive sequence helpers, eager
+sequence transforms, and complex destructuring.
 
 `hash-set`, `sorted-set`, `set-of`, `conj`, `disj`, `contains?`, set equality,
 set sequence conversion, and set printing now use persistent OCaml `Set.Make`

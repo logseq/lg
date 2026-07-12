@@ -2,6 +2,10 @@ let is_whitespace = function
   | ' ' | '\n' | '\r' | '\t' | '\012' -> true
   | _ -> false
 
+let blank source = String.trim source = ""
+
+let ends_with source suffix = String.ends_with ~suffix source
+
 let index_of source needle =
   let needle_len = String.length needle in
   let source_len = String.length source in
@@ -13,6 +17,10 @@ let index_of source needle =
       else search (index + 1)
     in
     search 0
+
+let includes source needle = index_of source needle >= 0
+
+let join separator values = String.concat separator (Rrbvec.to_list values)
 
 let last_index_of source needle =
   let needle_len = String.length needle in
@@ -121,3 +129,7 @@ let capitalize source =
 
 let reverse source =
   String.of_seq (List.to_seq (List.rev (List.of_seq (String.to_seq source))))
+
+let starts_with source prefix = String.starts_with ~prefix source
+
+let identity source = source

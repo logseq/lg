@@ -1,3 +1,3 @@
 (library
  (name cljml)
- (libraries rrbvec compiler-libs.common))
+ (libraries rrbvec compiler-libs.common cljml_compiler_support unix))

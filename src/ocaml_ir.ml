@@ -5,29 +5,48 @@ type pattern =
   | PInt of int
   | PString of string
   | PBool of bool
+  | PConstructor of string * pattern option
+  | PTuple of pattern list
   | PList of pattern list
   | PCons of pattern * pattern
+  | PRecord of (string * pattern) list
+  | PAlias of pattern * string
+  | POr of pattern * pattern
   | PConstraint of pattern * string
 
 type t =
-  | Raw of string
+  | Located of Location.t * t
   | Int of int
+  | Float of string
   | String of string
+  | Char of char
   | Bool of bool
   | Unit
+  | Constructor of string * t option
+  | Tuple of t list
   | Ident of string
   | List of t list
+  | Array of t list
   | Apply of t * t list
+  | Labelled_apply of t * (string option * t) list
   | If of t * t * t
   | Fun of pattern list * t
   | Sequence of t list
   | Let of (pattern * t) list * t
+  | LetRec of string * pattern list * t * t list
+  | LetRecIn of string * pattern list * t * t
   | Match of t * (pattern * t) list
+  | Match_guarded of t * (pattern * t option * t) list
+  | Try of t * (pattern * t option * t) list
   | Infix of string * t * t
   | Prefix of string * t
   | Field of t * string
   | Cons of t * t
   | Record of (string * t) list * string option
+
+let rec unlocated = function
+  | Located (_, expression) -> unlocated expression
+  | expression -> expression
 
 let rec pattern_to_source = function
   | PVar name -> name
@@ -36,27 +55,55 @@ let rec pattern_to_source = function
   | PInt value -> string_of_int value
   | PString value -> Printf.sprintf "%S" value
   | PBool value -> string_of_bool value
+  | PConstructor (name, None) -> name
+  | PConstructor (name, Some pattern) -> name ^ " " ^ pattern_to_source pattern
+  | PTuple patterns ->
+      "(" ^ (patterns |> List.map pattern_to_source |> String.concat ", ") ^ ")"
   | PList patterns ->
       "[" ^ (patterns |> List.map pattern_to_source |> String.concat "; ") ^ "]"
   | PCons (head, tail) -> pattern_to_source head ^ " :: " ^ pattern_to_source tail
+  | PRecord fields ->
+      "{"
+      ^ (fields
+        |> List.map (fun (name, pattern) -> name ^ " = " ^ pattern_to_source pattern)
+        |> String.concat "; ")
+      ^ "; _}"
+  | PAlias (pattern, name) -> "(" ^ pattern_to_source pattern ^ " as " ^ name ^ ")"
+  | POr (left, right) -> "(" ^ pattern_to_source left ^ " | " ^ pattern_to_source right ^ ")"
   | PConstraint (pattern, type_name) ->
       "(" ^ pattern_to_source pattern ^ " : " ^ type_name ^ ")"
 
 let rec to_source = function
-  | Raw source -> source
+  | Located (_, expression) -> to_source expression
   | Int value -> string_of_int value
+  | Float value -> value
   | String value -> Printf.sprintf "%S" value
+  | Char value -> Printf.sprintf "%C" value
   | Bool value -> string_of_bool value
   | Unit -> "()"
+  | Constructor (name, None) -> name
+  | Constructor (name, Some value) -> name ^ " (" ^ to_source value ^ ")"
+  | Tuple values ->
+      "(" ^ (values |> List.map to_source |> String.concat ", ") ^ ")"
   | Ident name -> name
   | List values ->
       "[" ^ (values |> List.map to_source |> String.concat "; ") ^ "]"
+  | Array values ->
+      "[|" ^ (values |> List.map to_source |> String.concat "; ") ^ "|]"
   | Apply (fn, args) ->
       let args = match args with [] -> [ Unit ] | _ -> args in
       "("
       ^ to_source fn
       ^ " "
       ^ (args |> List.map (fun arg -> "(" ^ to_source arg ^ ")") |> String.concat " ")
+      ^ ")"
+  | Labelled_apply (fn, args) ->
+      let argument_source = function
+        | None, argument -> "(" ^ to_source argument ^ ")"
+        | Some label, argument -> "~" ^ label ^ ":(" ^ to_source argument ^ ")"
+      in
+      "(" ^ to_source fn ^ " "
+      ^ (args |> List.map argument_source |> String.concat " ")
       ^ ")"
   | If (condition, then_expr, else_expr) ->
       "(if " ^ to_source condition ^ " then " ^ to_source then_expr ^ " else "
@@ -80,11 +127,40 @@ let rec to_source = function
           "(let " ^ pattern_to_source pattern ^ " = " ^ to_source value
           ^ " in " ^ acc ^ ")")
         bindings (to_source body)
+  | LetRec (name, params, body, args) ->
+      let params = match params with [] -> [ PUnit ] | _ -> params in
+      "(let rec " ^ name ^ " "
+      ^ (params |> List.map pattern_to_source |> String.concat " ")
+      ^ " = " ^ to_source body ^ " in "
+      ^ to_source (Apply (Ident name, args)) ^ ")"
+  | LetRecIn (name, params, body, next) ->
+      let params = match params with [] -> [ PUnit ] | _ -> params in
+      "(let rec " ^ name ^ " "
+      ^ (params |> List.map pattern_to_source |> String.concat " ")
+      ^ " = " ^ to_source body ^ " in " ^ to_source next ^ ")"
   | Match (target, cases) ->
       "(match " ^ to_source target ^ " with "
       ^ (cases
         |> List.map (fun (pattern, body) ->
                "| " ^ pattern_to_source pattern ^ " -> " ^ to_source body)
+        |> String.concat " ")
+      ^ ")"
+  | Match_guarded (target, cases) ->
+      "(match " ^ to_source target ^ " with "
+      ^ (cases
+        |> List.map (fun (pattern, guard, body) ->
+               "| " ^ pattern_to_source pattern
+               ^ (match guard with None -> "" | Some guard -> " when " ^ to_source guard)
+               ^ " -> " ^ to_source body)
+        |> String.concat " ")
+      ^ ")"
+  | Try (body, cases) ->
+      "(try " ^ to_source body ^ " with "
+      ^ (cases
+        |> List.map (fun (pattern, guard, handler) ->
+               "| " ^ pattern_to_source pattern
+               ^ (match guard with None -> "" | Some guard -> " when " ^ to_source guard)
+               ^ " -> " ^ to_source handler)
         |> String.concat " ")
       ^ ")"
   | Infix (operator, left, right) ->
@@ -115,14 +191,11 @@ let longident_of_string name =
           Longident.Ldot (lid path, str segment))
         (Longident.Lident first) rest
 
-let parse_expression ~context source =
+let core_type_of_source source =
   let lexbuf = Lexing.from_string source in
-  Location.init lexbuf context;
-  try Ok (Parse.expression lexbuf)
-  with exn ->
-    Error.error
-      ("generated OCaml expression did not parse in " ^ context ^ ": "
-     ^ Printexc.to_string exn)
+  Location.init lexbuf ("generated type " ^ source);
+  try Parse.core_type lexbuf
+  with _ -> Ast_helper.Typ.constr ~loc (lid (longident_of_string source)) []
 
 let rec pattern_to_parsetree = function
   | PVar name -> Ast_helper.Pat.var ~loc (str name)
@@ -135,6 +208,15 @@ let rec pattern_to_parsetree = function
       Ast_helper.Pat.construct ~loc
         (lid (Longident.Lident (string_of_bool value)))
         None
+  | PConstructor (name, None) ->
+      Ast_helper.Pat.construct ~loc (lid (longident_of_string name)) None
+  | PConstructor (name, Some pattern) ->
+      Ast_helper.Pat.construct ~loc (lid (longident_of_string name))
+        (Some ([], pattern_to_parsetree pattern))
+  | PTuple patterns ->
+      Ast_helper.Pat.tuple ~loc
+        (List.map (fun pattern -> (None, pattern_to_parsetree pattern)) patterns)
+        Closed
   | PList patterns -> pattern_list_to_parsetree patterns
   | PCons (head, tail) ->
       let pair =
@@ -143,9 +225,20 @@ let rec pattern_to_parsetree = function
           Closed
       in
       Ast_helper.Pat.construct ~loc (lid (Longident.Lident "::")) (Some ([], pair))
+  | PRecord fields ->
+      Ast_helper.Pat.record ~loc
+        (List.map
+           (fun (name, pattern) ->
+             (lid (longident_of_string name), pattern_to_parsetree pattern))
+           fields)
+        Asttypes.Open
+  | PAlias (pattern, name) ->
+      Ast_helper.Pat.alias ~loc (pattern_to_parsetree pattern) (str name)
+  | POr (left, right) ->
+      Ast_helper.Pat.or_ ~loc (pattern_to_parsetree left) (pattern_to_parsetree right)
   | PConstraint (pattern, type_name) ->
       Ast_helper.Pat.constraint_ ~loc (pattern_to_parsetree pattern)
-        (Ast_helper.Typ.constr ~loc (lid (longident_of_string type_name)) [])
+        (core_type_of_source type_name)
 
 and pattern_list_to_parsetree = function
   | [] -> Ast_helper.Pat.construct ~loc (lid (Longident.Lident "[]")) None
@@ -188,12 +281,39 @@ and expressions_to_parsetree ~context expressions =
   in
   loop [] expressions
 
+and guarded_cases_to_parsetree ~context cases =
+  let rec build_cases acc = function
+    | [] -> Ok (List.rev acc)
+    | (pattern, guard, body) :: rest -> (
+        match
+          ( Option.fold ~none:(Ok None)
+              ~some:(fun guard ->
+                to_parsetree ~context guard |> Result.map Option.some)
+              guard,
+            to_parsetree ~context body )
+        with
+        | (Error _ as err), _ -> err
+        | _, (Error _ as err) -> err
+        | Ok guard, Ok body ->
+            build_cases
+              (Ast_helper.Exp.case (pattern_to_parsetree pattern) ?guard body :: acc)
+              rest)
+  in
+  build_cases [] cases
+
 and to_parsetree ~context = function
-  | Raw source -> parse_expression ~context source
+  | Located (location, expression) ->
+      to_parsetree ~context expression
+      |> Result.map (fun (expression : Parsetree.expression) ->
+             { expression with pexp_loc = location })
   | Int value ->
       Ok (Ast_helper.Exp.constant ~loc (Ast_helper.Const.int ~loc value))
+  | Float value ->
+      Ok (Ast_helper.Exp.constant ~loc (Ast_helper.Const.float ~loc value))
   | String value ->
       Ok (Ast_helper.Exp.constant ~loc (Ast_helper.Const.string ~loc value))
+  | Char value ->
+      Ok (Ast_helper.Exp.constant ~loc (Ast_helper.Const.char ~loc value))
   | Bool value ->
       Ok
         (Ast_helper.Exp.construct ~loc
@@ -202,9 +322,29 @@ and to_parsetree ~context = function
   | Unit ->
       Ok
         (Ast_helper.Exp.construct ~loc (lid (Longident.Lident "()")) None)
+  | Constructor (name, None) ->
+      Ok (Ast_helper.Exp.construct ~loc (lid (longident_of_string name)) None)
+  | Constructor (name, Some value) -> (
+      match to_parsetree ~context value with
+      | Error _ as err -> err
+      | Ok value ->
+          Ok
+            (Ast_helper.Exp.construct ~loc (lid (longident_of_string name))
+               (Some value)))
+  | Tuple values -> (
+      match expressions_to_parsetree ~context values with
+      | Error _ as err -> err
+      | Ok values ->
+          Ok
+            (Ast_helper.Exp.tuple ~loc
+               (List.map (fun value -> (None, value)) values)))
   | Ident name ->
       Ok (Ast_helper.Exp.ident ~loc (lid (longident_of_string name)))
   | List values -> list_to_parsetree ~context values
+  | Array values -> (
+      match expressions_to_parsetree ~context values with
+      | Error _ as err -> err
+      | Ok values -> Ok (Ast_helper.Exp.array ~loc values))
   | Apply (fn, args) -> (
       let args = match args with [] -> [ Unit ] | _ -> args in
       match (to_parsetree ~context fn, expressions_to_parsetree ~context args) with
@@ -214,6 +354,24 @@ and to_parsetree ~context = function
           Ok
             (Ast_helper.Exp.apply ~loc fn
                (List.map (fun arg -> (Asttypes.Nolabel, arg)) args)))
+  | Labelled_apply (fn, args) -> (
+      let rec arguments_to_parsetree acc = function
+        | [] -> Ok (List.rev acc)
+        | (label, argument) :: rest -> (
+            match to_parsetree ~context argument with
+            | Error _ as err -> err
+            | Ok argument ->
+                let label =
+                  match label with
+                  | None -> Asttypes.Nolabel
+                  | Some label -> Asttypes.Labelled label
+                in
+                arguments_to_parsetree ((label, argument) :: acc) rest)
+      in
+      match (to_parsetree ~context fn, arguments_to_parsetree [] args) with
+      | (Error _ as err), _ -> err
+      | _, (Error _ as err) -> err
+      | Ok fn, Ok args -> Ok (Ast_helper.Exp.apply ~loc fn args))
   | If (condition, then_expr, else_expr) -> (
       match
         ( to_parsetree ~context condition,
@@ -264,6 +422,27 @@ and to_parsetree ~context = function
                     Ok (Ast_helper.Exp.let_ ~loc Asttypes.Nonrecursive [ binding ] body))
           in
           build bindings)
+  | LetRec (name, params, body, args) -> (
+      match
+        ( to_parsetree ~context (Fun (params, body)),
+          to_parsetree ~context (Apply (Ident name, args)) )
+      with
+      | (Error _ as err), _ -> err
+      | _, (Error _ as err) -> err
+      | Ok fn, Ok call ->
+          let binding =
+            Ast_helper.Vb.mk ~loc (Ast_helper.Pat.var ~loc (str name)) fn
+          in
+          Ok (Ast_helper.Exp.let_ ~loc Asttypes.Recursive [ binding ] call))
+  | LetRecIn (name, params, body, next) -> (
+      match (to_parsetree ~context (Fun (params, body)), to_parsetree ~context next) with
+      | (Error _ as err), _ -> err
+      | _, (Error _ as err) -> err
+      | Ok fn, Ok next ->
+          let binding =
+            Ast_helper.Vb.mk ~loc (Ast_helper.Pat.var ~loc (str name)) fn
+          in
+          Ok (Ast_helper.Exp.let_ ~loc Asttypes.Recursive [ binding ] next))
   | Match (target, cases) -> (
       match to_parsetree ~context target with
       | Error _ as err -> err
@@ -281,6 +460,20 @@ and to_parsetree ~context = function
           match build_cases [] cases with
           | Error _ as err -> err
           | Ok cases -> Ok (Ast_helper.Exp.match_ ~loc target cases))
+  | Match_guarded (target, cases) -> (
+      match to_parsetree ~context target with
+      | Error _ as err -> err
+      | Ok target ->
+          match guarded_cases_to_parsetree ~context cases with
+          | Error _ as err -> err
+          | Ok cases -> Ok (Ast_helper.Exp.match_ ~loc target cases))
+  | Try (body, cases) -> (
+      match to_parsetree ~context body with
+      | Error _ as err -> err
+      | Ok body ->
+          match guarded_cases_to_parsetree ~context cases with
+          | Error _ as err -> err
+          | Ok cases -> Ok (Ast_helper.Exp.try_ ~loc body cases))
   | Infix (operator, left, right) -> (
       match (to_parsetree ~context left, to_parsetree ~context right) with
       | (Error _ as err), _ -> err
@@ -332,4 +525,4 @@ and to_parsetree ~context = function
              | None -> expression
              | Some name ->
                  Ast_helper.Exp.constraint_ ~loc expression
-                   (Ast_helper.Typ.constr ~loc (lid (longident_of_string name)) []))
+                   (core_type_of_source name))

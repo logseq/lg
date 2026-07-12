@@ -77,12 +77,12 @@ let sanitize_name name =
   legalize_ocaml_identifier candidate
 
 let keyword_to_ocaml_name keyword =
-  let raw =
+  let keyword_body =
     if String.length keyword > 0 && keyword.[0] = ':' then
       String.sub keyword 1 (String.length keyword - 1)
     else keyword
   in
-  sanitize_name raw
+  sanitize_name keyword_body
 
 let has_namespace name = String.contains name '/'
 

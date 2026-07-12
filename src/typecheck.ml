@@ -1,15 +1,11 @@
 open Ast
 open Types
+open Lowered
 
 let ensure_bool expr =
   if Types.equal expr.ty TBool then Ok () else Error.error "if condition must be bool"
 
-let parenthesize code = "(" ^ code ^ ")"
-
-let apply_code fn_code arg_codes =
-  match arg_codes with
-  | [] -> parenthesize (fn_code ^ " ()")
-  | _ -> parenthesize (fn_code ^ " " ^ (arg_codes |> List.map parenthesize |> String.concat " "))
+let apply name args = Ocaml_ir.Apply (Ocaml_ir.Ident name, args)
 
 let rec drop n xs =
   if n <= 0 then xs
@@ -17,24 +13,223 @@ let rec drop n xs =
 
 let option_for_all predicate = function None -> true | Some value -> predicate value
 
+let is_ocaml_owned_type = function
+  | TFloat | TChar | TArray _ | TRef _ | TOcaml _ | TOcaml_app _ | TTuple _ -> true
+  | _ -> false
+
+let branch_types_compatible left right =
+  Types.equal left right || is_ocaml_owned_type left || is_ocaml_owned_type right
+
+let cljml_metadata_type_for_ocaml_payload = function
+  | TOcaml "int" -> TInt
+  | TOcaml "string" -> TString
+  | TOcaml "bool" -> TBool
+  | TOcaml "unit" -> TUnit
+  | ty -> ty
+
+let rec cljml_metadata_type_for_ocaml_type = function
+  | TOcaml "int" -> TInt
+  | TOcaml "string" -> TString
+  | TOcaml "bool" -> TBool
+  | TOcaml "unit" -> TUnit
+  | TTuple args -> TTuple (List.map cljml_metadata_type_for_ocaml_type args)
+  | ty -> ty
+
+let ocaml_builtin_constructor_payloads target_ty constructor_name =
+  match (target_ty, constructor_name) with
+  | TOcaml "option", "Some" -> Some [ TAny ]
+  | TOcaml "option", "None" -> Some []
+  | TOcaml_app ("option", [ payload_ty ]), "Some" ->
+      Some [ cljml_metadata_type_for_ocaml_payload payload_ty ]
+  | TOcaml_app ("option", [ _ ]), "None" -> Some []
+  | TOcaml "result", "Ok" -> Some [ TAny ]
+  | TOcaml "result", "Error" -> Some [ TAny ]
+  | TOcaml_app ("result", [ ok_ty; _ ]), "Ok" ->
+      Some [ cljml_metadata_type_for_ocaml_payload ok_ty ]
+  | TOcaml_app ("result", [ _; error_ty ]), "Error" ->
+      Some [ cljml_metadata_type_for_ocaml_payload error_ty ]
+  | _ -> None
+
+let record_type_key current_ns type_name =
+  "__record/" ^ current_ns ^ "/" ^ type_name
+
+let record_type_application type_name parameters =
+  match parameters with
+  | [] -> type_name
+  | [ _ ] -> "_ " ^ type_name
+  | parameters ->
+      "(" ^ String.concat ", " (List.map (fun _ -> "_") parameters) ^ ") "
+      ^ type_name
+
+let split_qualified_type_name type_name =
+  match String.rindex_opt type_name '.' with
+  | None -> None
+  | Some index ->
+      let module_path = String.sub type_name 0 index in
+      let local_name =
+        String.sub type_name (index + 1) (String.length type_name - index - 1)
+      in
+      Some (module_path, local_name)
+
+let qualify_record_type module_path record =
+  {
+    record with
+    type_name = Names.module_path_to_ocaml module_path ^ "." ^ record.type_name;
+    set_module_name =
+      Names.module_path_to_ocaml module_path ^ "." ^ record.set_module_name;
+  }
+
+let lookup_record_type current_ns env type_name =
+  let lookup namespace local_name =
+    List.assoc_opt (record_type_key namespace local_name) env
+  in
+  let local_lookup namespace local_name =
+    match lookup namespace local_name with
+    | Some ({ ty = TNamed_record record; _ } : binding) -> Ok record
+    | Some _ -> Error.error ("invalid record type metadata for " ^ type_name)
+    | None -> Error.error ("unknown record type " ^ type_name)
+  in
+  match split_qualified_type_name type_name with
+  | Some (module_path, local_name) -> (
+      match local_lookup (Names.module_path_to_ocaml module_path) local_name with
+      | Ok record -> Ok (qualify_record_type module_path record)
+      | Error _ as err -> err)
+  | None -> local_lookup current_ns type_name
+
+let starts_with_uppercase name =
+  String.length name > 0
+  &&
+  let first = name.[0] in
+  first >= 'A' && first <= 'Z'
+
+let is_constructor_name name =
+  let segments =
+    name |> String.split_on_char '/' |> List.concat_map (String.split_on_char '.')
+  in
+  match List.rev segments with
+  | segment :: _ -> starts_with_uppercase segment
+  | [] -> false
+
 let lookup_binding current_ns env name =
   match List.assoc_opt (Names.namespaced_key current_ns name) env with
   | Some (binding : binding) -> Ok binding
   | None -> Error.error ("unknown function " ^ name)
 
+let binding_of_expr ?(row_param_types = []) ocaml_name expr =
+  Types.binding ~row_param_types ?return_param_index:expr.return_param_index
+    ocaml_name expr.ty
+
 let lookup_function current_ns env name =
   match lookup_binding current_ns env name with
-  | Ok binding -> Ok (typed binding.ty binding.ocaml_name)
+  | Ok binding -> Ok (typed_ir binding.ty (Ocaml_ir.Ident binding.ocaml_name))
   | Error _ -> (
       match name with
-      | "+" -> Ok (typed (TFn ([ TInt; TInt ], TInt)) "(fun a b -> a + b)")
-      | "-" -> Ok (typed (TFn ([ TInt; TInt ], TInt)) "(fun a b -> a - b)")
-      | "*" -> Ok (typed (TFn ([ TInt; TInt ], TInt)) "(fun a b -> a * b)")
-      | "/" -> Ok (typed (TFn ([ TInt; TInt ], TInt)) "(fun a b -> a / b)")
-      | "inc" -> Ok (typed (TFn ([ TInt ], TInt)) "(fun x -> x + 1)")
-      | "dec" -> Ok (typed (TFn ([ TInt ], TInt)) "(fun x -> x - 1)")
-      | "not" -> Ok (typed (TFn ([ TBool ], TBool)) "not")
+      | "+" ->
+          Ok
+            (typed_ir (TFn ([ TInt; TInt ], TInt))
+               (Ocaml_ir.Fun
+                  ( [ Ocaml_ir.PVar "a"; Ocaml_ir.PVar "b" ],
+                    Ocaml_ir.Infix ("+", Ocaml_ir.Ident "a", Ocaml_ir.Ident "b") )))
+      | "-" ->
+          Ok
+            (typed_ir (TFn ([ TInt; TInt ], TInt))
+               (Ocaml_ir.Fun
+                  ( [ Ocaml_ir.PVar "a"; Ocaml_ir.PVar "b" ],
+                    Ocaml_ir.Infix ("-", Ocaml_ir.Ident "a", Ocaml_ir.Ident "b") )))
+      | "*" ->
+          Ok
+            (typed_ir (TFn ([ TInt; TInt ], TInt))
+               (Ocaml_ir.Fun
+                  ( [ Ocaml_ir.PVar "a"; Ocaml_ir.PVar "b" ],
+                    Ocaml_ir.Infix ("*", Ocaml_ir.Ident "a", Ocaml_ir.Ident "b") )))
+      | "/" ->
+          Ok
+            (typed_ir (TFn ([ TInt; TInt ], TInt))
+               (Ocaml_ir.Fun
+                  ( [ Ocaml_ir.PVar "a"; Ocaml_ir.PVar "b" ],
+                    Ocaml_ir.Infix ("/", Ocaml_ir.Ident "a", Ocaml_ir.Ident "b") )))
+      | "inc" ->
+          Ok
+            (typed_ir (TFn ([ TInt ], TInt))
+               (Ocaml_ir.Fun
+                  ( [ Ocaml_ir.PVar "x" ],
+                    Ocaml_ir.Infix ("+", Ocaml_ir.Ident "x", Ocaml_ir.Int 1) )))
+      | "dec" ->
+          Ok
+            (typed_ir (TFn ([ TInt ], TInt))
+               (Ocaml_ir.Fun
+                  ( [ Ocaml_ir.PVar "x" ],
+                    Ocaml_ir.Infix ("-", Ocaml_ir.Ident "x", Ocaml_ir.Int 1) )))
+      | "not" ->
+          Ok
+            (typed_ir (TFn ([ TBool ], TBool))
+               (Ocaml_ir.Fun
+                  ( [ Ocaml_ir.PVar "x" ],
+                    Ocaml_ir.Prefix ("not", Ocaml_ir.Ident "x") )))
       | _ -> Error.error ("unknown function " ^ name))
+
+let ocaml_call_target current_ns env function_name =
+  let lookup name =
+    match List.assoc_opt (Names.namespaced_key current_ns name) env with
+    | Some _ as binding -> binding
+    | None -> List.assoc_opt name env
+  in
+  match lookup function_name with
+  | Some { host_reference = Some (Ocaml_value ocaml_name); _ } -> Some ocaml_name
+  | _ -> (
+      match String.split_on_char '/' function_name with
+      | [ alias; member_name ] -> (
+          match lookup alias with
+          | Some { host_reference = Some (Ocaml_module module_path); _ } ->
+              Some (module_path ^ "." ^ Names.sanitize_name member_name)
+          | _ -> None)
+      | _ ->
+          let first_segment =
+            match String.split_on_char '.' function_name with
+            | first :: _ -> first
+            | [] -> ""
+          in
+          if String.contains function_name '.' && first_segment <> ""
+             && Char.uppercase_ascii first_segment.[0] = first_segment.[0]
+          then Some function_name
+          else None)
+
+let resolve_ocaml_call_target current_ns env function_name =
+  match ocaml_call_target current_ns env function_name with
+  | Some target -> target
+  | None -> function_name
+
+let resolve_ocaml_constructor_target current_ns env constructor_name =
+  let lookup name =
+    match List.assoc_opt (Names.namespaced_key current_ns name) env with
+    | Some _ as binding -> binding
+    | None -> List.assoc_opt name env
+  in
+  match String.split_on_char '/' constructor_name with
+  | [ alias; member_name ] -> (
+      match lookup alias with
+      | Some { host_reference = Some (Ocaml_module module_path); _ } ->
+          module_path ^ "." ^ member_name
+      | _ -> constructor_name)
+  | _ -> constructor_name
+
+let inherit_namespace_ocaml_value_refers current_ns module_path env =
+  let prefix = current_ns ^ "/" in
+  let prefix_len = String.length prefix in
+  let inherited =
+    env
+    |> List.filter_map (fun (key, (binding : binding)) ->
+           match binding.host_reference with
+           | Some (Ocaml_value _) when
+               String.length key > prefix_len
+               && String.sub key 0 prefix_len = prefix ->
+               let name =
+                 String.sub key prefix_len (String.length key - prefix_len)
+               in
+               Some (Names.namespaced_key module_path name, binding)
+           | _ -> None)
+  in
+  env @ inherited
 
 type compiled_fn_parts = {
   param_bindings : (string * binding) list;
@@ -52,27 +247,28 @@ let row_type_items row_type_names param_tys =
   List.map2
     (fun row_type_name param_ty ->
       match (row_type_name, param_ty) with
-      | Some type_name, TRecord fields -> Some (Type_def { type_name; fields })
+      | Some type_name, TRecord fields ->
+          Some (Type_def { type_name; type_parameters = []; fields })
       | _ -> None)
     row_type_names param_tys
   |> List.filter_map Fun.id
 
-let row_project_code type_name fields arg =
+let row_project_expr type_name fields arg =
   let source = "__row_source" in
-  let values =
-    fields
-    |> List.map (fun (field : field) ->
-           field.ocaml_name ^ " = " ^ source ^ "." ^ field.ocaml_name)
-    |> String.concat "; "
-  in
-  "(let " ^ source ^ " = " ^ arg.code ^ " in ({" ^ values ^ "} : " ^ type_name ^ "))"
+  Ocaml_ir.Let
+    ( [ (Ocaml_ir.PVar source, arg.ocaml_expr) ],
+      Ocaml_ir.Record
+        ( List.map
+            (fun (field : field) ->
+              (field.ocaml_name, Ocaml_ir.Field (Ocaml_ir.Ident source, field.ocaml_name)))
+            fields,
+          Some type_name ) )
 
-let row_arg_code row_type_name expected_ty arg =
+let row_arg_expr row_type_name expected_ty arg =
   match (row_type_name, expected_ty, arg.ty) with
-  | Some type_name, TRecord fields,
-    (TRecord _ | TNamed_record _) ->
-      row_project_code type_name fields arg
-  | _ -> arg.code
+  | Some type_name, TRecord fields, (TRecord _ | TNamed_record _) ->
+      row_project_expr type_name fields arg
+  | _ -> arg.ocaml_expr
 
 let coerce_set_element element_ty value =
   match element_ty with
@@ -99,25 +295,51 @@ let coerce_set_element element_ty value =
       if Types.equal element_ty value.ty then Ok value.ocaml_expr
       else Error.error "set value type must match element type"
 
-let constrain_record_function_argument fn element_ty =
-  match (fn.ocaml_expr, element_ty) with
+let constrain_record_function_argument_expr fn element_ty =
+  match (Ocaml_ir.unlocated fn.ocaml_expr, element_ty) with
   | Ocaml_ir.Fun ([ Ocaml_ir.PVar name ], body), TNamed_record record ->
       Ocaml_ir.Fun ([ Ocaml_ir.PConstraint (Ocaml_ir.PVar name, record.type_name) ], body)
-      |> Ocaml_ir.to_source
-  | _ -> fn.code
+  | _ -> fn.ocaml_expr
 
-let rec compile_expr current_ns (env : (string * binding) list) = function
+let param_constraint_name = function
+  | (TInt | TFloat | TChar | TString | TSymbol | TKeyword | TBool | TUnit
+    | TArray _ | TRef _ | TOcaml _ | TOcaml_app _ | TTuple _) as ty ->
+      Some (Types.ocaml_name ty)
+  | _ -> None
+
+let rec compile_expr current_ns (env : (string * binding) list) form =
+  match compile_expr_unlocated current_ns env form with
+  | Error _ as err -> err
+  | Ok expression -> (
+      match Source_context.find form with
+      | None -> Ok expression
+      | Some location ->
+          Ok
+            { expression with
+              ocaml_expr = Ocaml_ir.Located (location, expression.ocaml_expr);
+            })
+
+and compile_expr_unlocated current_ns (env : (string * binding) list) = function
   | FInt value -> Ok (typed_ir TInt (Ocaml_ir.Int value))
+  | FFloat value -> Ok (typed_ir TFloat (Ocaml_ir.Float value))
+  | FChar value -> Ok (typed_ir TChar (Ocaml_ir.Char value))
   | FString value -> Ok (typed_ir TString (Ocaml_ir.String value))
   | FBool value -> Ok (typed_ir TBool (Ocaml_ir.Bool value))
-  | FNil -> Ok (typed_ir TNil Ocaml_ir.Unit)
   | FKeyword keyword -> Ok (typed_ir TKeyword (Ocaml_ir.String keyword))
   | FSymbol name -> (
       match List.assoc_opt (Names.namespaced_key current_ns name) env with
+      | Some { ty = TFn ([], return_ty); _ } when is_constructor_name name ->
+          Ok (typed_ir return_ty (Ocaml_ir.Constructor (name, None)))
       | Some binding -> Ok (typed_ir binding.ty (Ocaml_ir.Ident binding.ocaml_name))
+      | None when name = "None" ->
+          Ok (typed_ir (TOcaml_app ("option", [ TAny ])) (Ocaml_ir.Constructor (name, None)))
       | None -> Error.error ("unknown symbol " ^ name))
   | FVector forms -> compile_vector current_ns env forms
   | FMap pairs -> compile_map current_ns env pairs
+  | FList (FSymbol "loop" :: bindings :: body_forms) ->
+      compile_loop current_ns env bindings body_forms
+  | FList (FSymbol "recur" :: _) ->
+      Error.error "recur is only valid in a loop tail position"
   | FList (FSymbol "let" :: bindings :: body_forms) ->
       compile_let current_ns env bindings body_forms
   | FList (FSymbol "fn" :: params :: body_forms) ->
@@ -136,6 +358,7 @@ let rec compile_expr current_ns (env : (string * binding) list) = function
   | FList (FSymbol "cond" :: clauses) -> compile_cond current_ns env clauses
   | FList (FSymbol "match" :: target :: clauses) ->
       compile_match current_ns env target clauses
+  | FList (FSymbol "try" :: forms) -> compile_try current_ns env forms
   | FList (FSymbol name :: args) -> compile_call current_ns env name args
   | FList [] -> Error.error "empty list is not callable"
   | FList _ -> Error.error "call head must be a symbol"
@@ -189,9 +412,13 @@ and compile_map current_ns env pairs =
                in
                {
                  ty = TRecord fields;
-                 code = "<record>";
-                 ocaml_expr = Ocaml_ir.Raw "<record>";
+                 ocaml_expr =
+                   Ocaml_ir.Record
+                     (List.map
+                        (fun ((field : field), value) -> (field.ocaml_name, value))
+                        values, None);
                  record_values = Some values;
+                 return_param_index = None;
                })
     | pair :: rest -> (
         match compile_pair pair with
@@ -213,7 +440,7 @@ and compile_if current_ns env condition then_form else_form =
       match ensure_bool condition with
       | Error _ as err -> err
       | Ok () ->
-          if Types.equal then_expr.ty else_expr.ty then
+          if branch_types_compatible then_expr.ty else_expr.ty then
             Ok
               (typed_ir then_expr.ty
                  (Ocaml_ir.If
@@ -235,7 +462,7 @@ and compile_if_not current_ns env condition then_form else_form =
       match ensure_bool condition with
       | Error _ as err -> err
       | Ok () ->
-          if Types.equal then_expr.ty else_expr.ty then
+          if branch_types_compatible then_expr.ty else_expr.ty then
             Ok
               (typed_ir then_expr.ty
                  (Ocaml_ir.If
@@ -256,12 +483,12 @@ and compile_when current_ns env condition body_forms =
       match ensure_bool condition with
       | Error _ as err -> err
       | Ok () ->
-          if Types.equal body.ty TUnit || Types.equal body.ty TNil then
+          if Types.equal body.ty TUnit then
             Ok
               (typed_ir body.ty
                  (Ocaml_ir.If
                     (condition.ocaml_expr, body.ocaml_expr, Ocaml_ir.Unit)))
-          else Error.error "when body must be unit or nil")
+          else Error.error "when body must be unit")
 
 and compile_cond current_ns env clauses =
   let parse_pairs clauses =
@@ -297,7 +524,7 @@ and compile_cond current_ns env clauses =
       | Ok pairs, Ok else_expr ->
           if
             List.for_all
-              (fun (_test, value) -> Types.equal value.ty else_expr.ty)
+              (fun (_test, value) -> branch_types_compatible value.ty else_expr.ty)
               pairs
           then
             let expression =
@@ -324,13 +551,126 @@ and compile_match current_ns env target_form clauses =
           | FInt value -> Ok (Ocaml_ir.PInt value)
           | FString value | FKeyword value -> Ok (Ocaml_ir.PString value)
           | FBool value -> Ok (Ocaml_ir.PBool value)
-          | FNil -> Ok Ocaml_ir.PUnit
           | _ -> Error.error "unsupported match pattern")
         else Error.error "match pattern type must match target"
   in
   let rec compile_pattern target_ty pattern =
     match (target_ty, pattern) with
     | _, FSymbol "_" -> Ok (Ocaml_ir.PAny, [])
+    | target_ty, FList [ FSymbol "as"; inner_pattern; FSymbol alias ] -> (
+        match compile_pattern target_ty inner_pattern with
+        | Error _ as err -> err
+        | Ok (inner_pattern, bindings) ->
+            let ocaml_name = Names.sanitize_name alias in
+            let binding =
+              ( Names.namespaced_key current_ns alias,
+                Types.binding ocaml_name target_ty )
+            in
+            Ok (Ocaml_ir.PAlias (inner_pattern, ocaml_name), bindings @ [ binding ]))
+    | target_ty, FList [ FSymbol "or"; left_form; right_form ] -> (
+        match
+          (compile_pattern target_ty left_form, compile_pattern target_ty right_form)
+        with
+        | (Error _ as err), _ -> err
+        | _, (Error _ as err) -> err
+        | Ok (left, left_bindings), Ok (right, right_bindings) ->
+            let binding_names bindings =
+              bindings |> List.map fst |> List.sort_uniq String.compare
+            in
+            if binding_names left_bindings <> binding_names right_bindings then
+              Error.error "or-pattern alternatives must bind the same names"
+            else Ok (Ocaml_ir.POr (left, right), left_bindings))
+    | (TRecord fields | TNamed_record { fields; _ }),
+      FList (FSymbol "record" :: field_patterns) ->
+        let rec compile_fields compiled bindings seen = function
+          | [] -> Ok (Ocaml_ir.PRecord (List.rev compiled), bindings)
+          | FList [ FSymbol field_name; field_pattern ] :: rest ->
+              let ocaml_name = Names.sanitize_name field_name in
+              if List.mem ocaml_name seen then
+                Error.error ("duplicate record pattern field " ^ field_name)
+              else (
+                match
+                  List.find_opt
+                    (fun (field : field) -> field.ocaml_name = ocaml_name)
+                    fields
+                with
+                | None -> Error.error ("unknown record pattern field " ^ field_name)
+                | Some field -> (
+                    match compile_pattern field.ty field_pattern with
+                    | Error _ as err -> err
+                    | Ok (pattern, field_bindings) ->
+                        compile_fields
+                          ((field.ocaml_name, pattern) :: compiled)
+                          (bindings @ field_bindings) (ocaml_name :: seen) rest))
+          | _ -> Error.error "record pattern fields must be (name pattern)"
+        in
+        compile_fields [] [] [] field_patterns
+    | _, FList (FSymbol "record" :: _) ->
+        Error.error "record pattern expects a record target"
+    | TTuple payload_tys, FList (FSymbol "ocaml-tuple" :: payload_patterns) ->
+        let rec compile_payloads patterns bindings = function
+          | [], [] -> Ok (List.rev patterns, bindings)
+          | payload_ty :: payload_tys, pattern :: payload_patterns -> (
+              match
+                compile_pattern
+                  (cljml_metadata_type_for_ocaml_type payload_ty)
+                  pattern
+              with
+              | Error _ as err -> err
+              | Ok (pattern, pattern_bindings) ->
+                  compile_payloads (pattern :: patterns)
+                    (bindings @ pattern_bindings)
+                    (payload_tys, payload_patterns))
+          | _ -> Error.error "tuple pattern arity mismatch"
+        in
+        compile_payloads [] [] (payload_tys, payload_patterns)
+        |> Result.map (fun (patterns, bindings) -> (Ocaml_ir.PTuple patterns, bindings))
+    | target_ty, FSymbol name
+      when is_ocaml_owned_type target_ty && starts_with_uppercase name ->
+        Ok (Ocaml_ir.PConstructor (name, None), [])
+    | target_ty, FList (FSymbol name :: payload_patterns)
+      when is_ocaml_owned_type target_ty && starts_with_uppercase name -> (
+        let builtin_constructor_payloads =
+          ocaml_builtin_constructor_payloads target_ty name
+        in
+        let compile_constructor_payloads payload_tys =
+          let rec compile_payloads patterns bindings = function
+            | [], [] -> Ok (List.rev patterns, bindings)
+            | payload_ty :: payload_tys, pattern :: payload_patterns -> (
+                match compile_pattern payload_ty pattern with
+                | Error _ as err -> err
+                | Ok (pattern, pattern_bindings) ->
+                    compile_payloads (pattern :: patterns)
+                      (bindings @ pattern_bindings)
+                      (payload_tys, payload_patterns))
+            | _ -> Error.error "constructor pattern arity mismatch"
+          in
+          compile_payloads [] [] (payload_tys, payload_patterns)
+          |> Result.map (fun (patterns, bindings) ->
+                 let payload_pattern =
+                   match patterns with
+                   | [] -> None
+                   | [ pattern ] -> Some pattern
+                   | _ -> Some (Ocaml_ir.PTuple patterns)
+                 in
+                 (Ocaml_ir.PConstructor (name, payload_pattern), bindings))
+        in
+        match builtin_constructor_payloads with
+        | Some payload_tys -> compile_constructor_payloads payload_tys
+        | None -> (
+            match lookup_binding current_ns env name with
+            | Error _ ->
+                let opaque_payload_tys =
+                  List.map (fun _ -> TAny) payload_patterns
+                in
+                compile_constructor_payloads opaque_payload_tys
+            | Ok constructor -> (
+                match constructor.ty with
+                | TFn (payload_tys, _)
+                  when List.length payload_tys = List.length payload_patterns ->
+                    compile_constructor_payloads payload_tys
+                | TFn _ -> Error.error "constructor pattern arity mismatch"
+                | _ -> Error.error (name ^ " is not a constructor"))))
     | _, FSymbol name ->
         let ocaml_name = Names.sanitize_name name in
         Ok
@@ -340,14 +680,13 @@ and compile_match current_ns env target_form clauses =
     | TString, FString value -> Ok (Ocaml_ir.PString value, [])
     | TKeyword, FKeyword keyword -> Ok (Ocaml_ir.PString keyword, [])
     | TBool, FBool value -> Ok (Ocaml_ir.PBool value, [])
-    | TNil, FNil -> Ok (Ocaml_ir.PUnit, [])
     | TList inner, FVector patterns ->
         compile_list_like_pattern inner patterns
     | TVector inner, FVector patterns ->
         compile_list_like_pattern inner patterns
     | _ -> (
         match pattern with
-        | FInt _ | FString _ | FKeyword _ | FBool _ | FNil ->
+        | FInt _ | FString _ | FKeyword _ | FBool _ ->
             literal_pattern target_ty pattern |> Result.map (fun code -> (code, []))
         | FVector _ -> Error.error "match collection pattern must match target collection"
         | _ -> Error.error "unsupported match pattern")
@@ -365,12 +704,29 @@ and compile_match current_ns env target_form clauses =
     |> Result.map (fun (patterns, bindings) -> (Ocaml_ir.PList patterns, bindings))
   in
   let compile_clause target_ty (pattern_form, result_form) =
+    let pattern_form, guard_form =
+      match pattern_form with
+      | FList [ FSymbol "when"; pattern_form; guard_form ] ->
+          (pattern_form, Some guard_form)
+      | pattern_form -> (pattern_form, None)
+    in
     match compile_pattern target_ty pattern_form with
     | Error _ as err -> err
     | Ok (pattern_code, bindings) -> (
-        match compile_expr current_ns (env @ bindings) result_form with
-        | Error _ as err -> err
-        | Ok result -> Ok (pattern_code, result))
+        let clause_env = env @ bindings in
+        let guard =
+          match guard_form with
+          | None -> Ok None
+          | Some guard_form -> (
+              match compile_expr current_ns clause_env guard_form with
+              | Error _ as err -> err
+              | Ok guard when Types.equal guard.ty TBool -> Ok (Some guard.ocaml_expr)
+              | Ok _ -> Error.error "match guard must be bool")
+        in
+        match (guard, compile_expr current_ns clause_env result_form) with
+        | (Error _ as err), _ -> err
+        | _, (Error _ as err) -> err
+        | Ok guard, Ok result -> Ok (pattern_code, guard, result))
   in
   match (compile_expr current_ns env target_form, parse_pairs [] clauses) with
   | (Error _ as err), _ -> err
@@ -392,15 +748,20 @@ and compile_match current_ns env target_form clauses =
       match compile_clauses [] pairs with
       | Error _ as err -> err
       | Ok [] -> Error.error "match requires pattern/result pairs"
-      | Ok ((_, first_result) :: _ as clauses) ->
-          if List.for_all (fun (_, result) -> Types.equal first_result.ty result.ty) clauses then
+      | Ok ((_, _, first_result) :: _ as clauses) ->
+          if
+            List.for_all
+              (fun (_, _, result) ->
+                branch_types_compatible first_result.ty result.ty)
+              clauses
+          then
             Ok
               (typed_ir first_result.ty
-                 (Ocaml_ir.Match
+                 (Ocaml_ir.Match_guarded
                     ( target_expr,
                       clauses
-                      |> List.map (fun (pattern, result) ->
-                             (pattern, result.ocaml_expr)) )))
+                      |> List.map (fun (pattern, guard, result) ->
+                             (pattern, guard, result.ocaml_expr)) )))
           else Error.error "match branches must have same type")
 
 and compile_body current_ns env empty_error forms =
@@ -416,13 +777,204 @@ and compile_body current_ns env empty_error forms =
             (typed_ir body.ty
                (Ocaml_ir.Sequence [ expr.ocaml_expr; body.ocaml_expr ])))
 
+and compile_try current_ns env forms =
+  let is_catch_clause = function
+    | FList (FSymbol "catch" :: _) -> true
+    | _ -> false
+  in
+  let rec split_body acc = function
+    | [] -> Error.error "try requires at least one catch clause"
+    | form :: rest when is_catch_clause form -> Ok (List.rev acc, form :: rest)
+    | form :: rest -> split_body (form :: acc) rest
+  in
+  let parse_catch = function
+    | FList (FSymbol "catch" :: pattern :: body_forms) -> (
+        match body_forms with
+        | [] -> Error.error "catch requires a pattern and body"
+        | [ body ] -> Ok (pattern, body)
+        | body_forms -> Ok (pattern, FList (FSymbol "do" :: body_forms)))
+    | FList [ FSymbol "catch" ] -> Error.error "catch requires a pattern and body"
+    | _ -> Error.error "try handlers must be catch clauses"
+  in
+  let rec parse_catches acc = function
+    | [] -> Ok (List.rev acc)
+    | form :: rest -> (
+        match parse_catch form with
+        | Error _ as err -> err
+        | Ok clause -> parse_catches (clause :: acc) rest)
+  in
+  let compatible_try_type body_ty handlers_ty =
+    match (body_ty, handlers_ty) with
+    | TAny, ty | ty, TAny -> Ok ty
+    | _ when branch_types_compatible body_ty handlers_ty -> Ok body_ty
+    | _ -> Error.error "try body and handlers must have the same type"
+  in
+  match split_body [] forms with
+  | Error _ as err -> err
+  | Ok ([], _) -> Error.error "try requires a body"
+  | Ok (body_forms, catch_forms) -> (
+      match (compile_body current_ns env "try requires a body" body_forms, parse_catches [] catch_forms) with
+      | (Error _ as err), _ -> err
+      | _, (Error _ as err) -> err
+      | Ok body, Ok catches -> (
+          let exception_name = "__cljml_caught_exception" in
+          let exception_binding =
+            ( Names.namespaced_key current_ns exception_name,
+              Types.binding exception_name (TOcaml "exn") )
+          in
+          match
+            compile_match current_ns (exception_binding :: env)
+              (FSymbol exception_name)
+              (List.concat_map (fun (pattern, handler) -> [ pattern; handler ]) catches)
+          with
+          | Error _ as err -> err
+          | Ok handlers -> (
+              match (handlers.ocaml_expr, compatible_try_type body.ty handlers.ty) with
+              | _, (Error _ as err) -> err
+              | Ocaml_ir.Match_guarded (_, cases), Ok ty ->
+                  Ok (typed_ir ty (Ocaml_ir.Try (body.ocaml_expr, cases)))
+              | _, Ok _ -> Error.error "internal error: malformed try handlers")))
+
+and loop_branch_type left right =
+  match (left, right) with
+  | TAny, ty | ty, TAny -> Ok ty
+  | left, right when branch_types_compatible left right -> Ok left
+  | _ -> Error.error "loop branches must have same type"
+
+and compile_recur current_ns env loop_name param_tys arg_forms =
+  if List.length arg_forms <> List.length param_tys then
+    Error.error
+      ("recur expects " ^ string_of_int (List.length param_tys) ^ " arguments")
+  else
+    match compile_args_for current_ns env arg_forms with
+    | Error _ as err -> err
+    | Ok args ->
+        let rec validate index expected actual =
+          match (expected, actual) with
+          | [], [] -> Ok ()
+          | expected_ty :: expected, arg :: actual ->
+              if branch_types_compatible expected_ty arg.ty then
+                validate (index + 1) expected actual
+              else
+                Error.error
+                  ("recur argument " ^ string_of_int index ^ " must be "
+                 ^ Types.source_name expected_ty)
+          | _ -> Error.error "internal error: recur argument validation"
+        in
+        validate 1 param_tys args
+        |> Result.map (fun () ->
+               typed_ir TAny
+                 (Ocaml_ir.Apply
+                    (Ocaml_ir.Ident loop_name, List.map (fun arg -> arg.ocaml_expr) args)))
+
+and compile_loop_tail current_ns env loop_name param_tys = function
+  | FList (FSymbol "recur" :: arg_forms) ->
+      compile_recur current_ns env loop_name param_tys arg_forms
+  | FList [ FSymbol "if"; condition_form; then_form; else_form ] -> (
+      match
+        ( compile_expr current_ns env condition_form,
+          compile_loop_tail current_ns env loop_name param_tys then_form,
+          compile_loop_tail current_ns env loop_name param_tys else_form )
+      with
+      | (Error _ as err), _, _ -> err
+      | _, (Error _ as err), _ -> err
+      | _, _, (Error _ as err) -> err
+      | Ok condition, Ok then_expr, Ok else_expr -> (
+          match (ensure_bool condition, loop_branch_type then_expr.ty else_expr.ty) with
+          | (Error _ as err), _ -> err
+          | _, (Error _ as err) -> err
+          | Ok (), Ok result_ty ->
+              Ok
+                (typed_ir result_ty
+                   (Ocaml_ir.If
+                      ( condition.ocaml_expr,
+                        then_expr.ocaml_expr,
+                        else_expr.ocaml_expr )))))
+  | FList [ FSymbol "if-not"; condition_form; then_form; else_form ] ->
+      compile_loop_tail current_ns env loop_name param_tys
+        (FList
+           [ FSymbol "if";
+             FList [ FSymbol "not"; condition_form ];
+             then_form;
+             else_form ])
+  | FList (FSymbol "do" :: body_forms) ->
+      compile_loop_tail_body current_ns env loop_name param_tys body_forms
+  | form -> compile_expr current_ns env form
+
+and compile_loop_tail_body current_ns env loop_name param_tys forms =
+  match forms with
+  | [] -> Error.error "loop body requires at least one form"
+  | [ form ] -> compile_loop_tail current_ns env loop_name param_tys form
+  | form :: rest -> (
+      match
+        ( compile_expr current_ns env form,
+          compile_loop_tail_body current_ns env loop_name param_tys rest )
+      with
+      | (Error _ as err), _ -> err
+      | _, (Error _ as err) -> err
+      | Ok expression, Ok body ->
+          Ok
+            (typed_ir body.ty
+               (Ocaml_ir.Sequence [ expression.ocaml_expr; body.ocaml_expr ])))
+
+and compile_loop current_ns env bindings body_forms =
+  match bindings with
+  | FVector forms ->
+      if List.length forms mod 2 <> 0 then
+        Error.error "loop bindings require an even number of forms"
+      else
+        let rec compile_bindings names values tys = function
+          | [] -> Ok (List.rev names, List.rev values, List.rev tys)
+          | FSymbol name :: value_form :: rest ->
+              if name = "_" || List.mem name names then
+                Error.error "loop binding names must be unique symbols"
+              else (
+                match compile_expr current_ns env value_form with
+                | Error _ as err -> err
+                | Ok value ->
+                    compile_bindings (name :: names) (value :: values)
+                      (value.ty :: tys) rest)
+          | _ -> Error.error "loop binding names must be symbols"
+        in
+        (match compile_bindings [] [] [] forms with
+        | Error _ as err -> err
+        | Ok (names, values, param_tys) ->
+            let loop_name = "loop__" in
+            let loop_env =
+              List.fold_left2
+                (fun env name ty ->
+                  env
+                  @ [ ( Names.namespaced_key current_ns name,
+                        Types.binding (Names.sanitize_name name) ty ) ])
+                env names param_tys
+            in
+            (match
+               compile_loop_tail_body current_ns loop_env loop_name param_tys
+                 body_forms
+             with
+            | Error _ as err -> err
+            | Ok body ->
+                let params =
+                  List.map
+                    (fun name -> Ocaml_ir.PVar (Names.sanitize_name name))
+                    names
+                in
+                Ok
+                  (typed_ir body.ty
+                     (Ocaml_ir.LetRec
+                        ( loop_name,
+                          params,
+                          body.ocaml_expr,
+                          List.map (fun value -> value.ocaml_expr) values )))))
+  | _ -> Error.error "loop bindings must be a vector"
+
 and compile_let current_ns env bindings body_forms =
   match bindings with
   | FVector forms ->
       if List.length forms mod 2 <> 0 then
         Error.error "let bindings require an even number of forms"
       else
-        let rec bind env code_parts ir_bindings = function
+        let rec bind env ir_bindings = function
           | [] -> (
               match
                 compile_body current_ns env "let body requires at least one form"
@@ -430,19 +982,13 @@ and compile_let current_ns env bindings body_forms =
               with
               | Error _ as err -> err
               | Ok body ->
-                  (match ir_bindings with
-                  | Some bindings ->
-                      Ok
-                        (typed_ir body.ty
-                           (Ocaml_ir.Let (List.rev bindings, body.ocaml_expr)))
-                  | None ->
-                      let code =
-                        code_parts
-                        |> List.fold_left
-                             (fun acc binding_code -> binding_code ^ " in " ^ acc)
-                             body.code
-                      in
-                      Ok (typed body.ty ("(" ^ code ^ ")"))))
+                  Ok
+                    {
+                      (typed_ir body.ty
+                         (Ocaml_ir.Let (List.rev ir_bindings, body.ocaml_expr)))
+                      with
+                      return_param_index = body.return_param_index;
+                    })
           | pattern :: value_form :: rest -> (
               match compile_expr current_ns env value_form with
               | Error _ as err -> err
@@ -451,28 +997,35 @@ and compile_let current_ns env bindings body_forms =
                   | Error _ as err -> err
                   | Ok bindings ->
                       let env_bindings =
-                        bindings
-                        |> List.map (fun (binding : Destructure.local_binding) ->
-                                ( Names.namespaced_key current_ns binding.source_name,
-                                 Types.binding binding.ocaml_name binding.ty ))
+                        match (pattern, bindings) with
+                        | FSymbol name, [ binding ] ->
+                            [
+                              ( Names.namespaced_key current_ns name,
+                                Types.binding
+                                  ?return_param_index:(value.return_param_index)
+                                  binding.ocaml_name binding.ty );
+                            ]
+                        | _ ->
+                            bindings
+                            |> List.map (fun (binding : Destructure.local_binding) ->
+                                   ( Names.namespaced_key current_ns binding.source_name,
+                                     Types.binding binding.ocaml_name binding.ty ))
                       in
-                      let code_bindings = bindings |> List.map Destructure.let_code in
                       let ir_bindings =
-                        match (ir_bindings, pattern) with
-                        | Some bindings, FSymbol "_" ->
-                            Some ((Ocaml_ir.PAny, value.ocaml_expr) :: bindings)
-                        | Some bindings, FSymbol name ->
-                            Some
-                              ( (Ocaml_ir.PVar (Names.sanitize_name name), value.ocaml_expr)
-                              :: bindings )
-                        | _ -> None
+                        match pattern with
+                        | FSymbol "_" -> (Ocaml_ir.PAny, value.ocaml_expr) :: ir_bindings
+                        | _ ->
+                            bindings
+                            |> List.fold_left
+                                 (fun acc (binding : Destructure.local_binding) ->
+                                   (Ocaml_ir.PVar binding.ocaml_name, binding.ocaml_expr)
+                                   :: acc)
+                                 ir_bindings
                       in
-                      bind (env @ env_bindings)
-                        (List.rev_append code_bindings code_parts)
-                        ir_bindings rest))
+                      bind (env @ env_bindings) ir_bindings rest))
           | [ _ ] -> Error.error "let bindings require an even number of forms"
         in
-        bind env [] (Some []) forms
+        bind env [] forms
   | _ -> Error.error "let bindings must be a vector"
 
 and prepare_fn current_ns env params body_forms =
@@ -527,7 +1080,7 @@ and prepare_fn current_ns env params body_forms =
               let param_targets =
                 typed_specs
                 |> List.map (fun ((spec : Destructure.param_spec), ty) ->
-                       (spec, typed ty spec.ocaml_name))
+                       (spec, typed_ir ty (Ocaml_ir.Ident spec.ocaml_name)))
               in
               let destructured_bindings =
                 let rec loop acc = function
@@ -566,36 +1119,365 @@ and fn_code ?(row_param_type_names = []) parts =
     parts.param_bindings |> List.map (fun (_key, (binding : binding)) -> binding.ty)
   in
   let param_patterns =
-    param_names
-    |> List.mapi (fun index name ->
+    List.map2
+      (fun name ty -> (name, ty))
+      param_names param_tys
+    |> List.mapi (fun index (name, ty) ->
            match List.nth_opt row_param_type_names index with
            | Some (Some type_name) ->
                Ocaml_ir.PConstraint (Ocaml_ir.PVar name, type_name)
-           | _ -> Ocaml_ir.PVar name)
+           | _ -> (
+               match param_constraint_name ty with
+               | Some type_name -> Ocaml_ir.PConstraint (Ocaml_ir.PVar name, type_name)
+               | None -> Ocaml_ir.PVar name))
   in
   let body_expr =
     match parts.destructured_bindings with
     | [] -> parts.body.ocaml_expr
     | bindings ->
-        let body_code =
-          bindings
-          |> List.map Destructure.let_code
-          |> List.fold_left
-               (fun acc binding_code -> binding_code ^ " in " ^ acc)
-               parts.body.code
-        in
-        Ocaml_ir.Raw body_code
+        Ocaml_ir.Let
+          ( List.map
+              (fun (binding : Destructure.local_binding) ->
+                (Ocaml_ir.PVar binding.ocaml_name, binding.ocaml_expr))
+              bindings,
+            parts.body.ocaml_expr )
   in
-  typed_ir (TFn (param_tys, parts.body.ty)) (Ocaml_ir.Fun (param_patterns, body_expr))
+  let return_param_index =
+    match
+      (parts.destructured_bindings, Ocaml_ir.unlocated parts.body.ocaml_expr)
+    with
+    | [], Ocaml_ir.Ident returned_name ->
+        param_names
+        |> List.mapi (fun index name -> (index, name))
+        |> List.find_opt (fun (_index, name) -> name = returned_name)
+        |> Option.map fst
+    | _ -> None
+  in
+  { (typed_ir (TFn (param_tys, parts.body.ty)) (Ocaml_ir.Fun (param_patterns, body_expr))) with
+    return_param_index }
 
 and compile_fn current_ns env params body_forms =
   match prepare_fn current_ns env params body_forms with
   | Error _ as err -> err
   | Ok parts -> Ok (fn_code parts)
 
+and compile_ocaml_arguments current_ns env forms =
+  let rec parse acc = function
+    | [] -> Ok (List.rev acc)
+    | FKeyword label :: [] ->
+        Error.error ("OCaml argument label " ^ label ^ " requires a value")
+    | FKeyword label :: value_form :: rest ->
+        let label = String.sub label 1 (String.length label - 1) in
+        parse ((Some label, value_form) :: acc) rest
+    | value_form :: rest -> parse ((None, value_form) :: acc) rest
+  in
+  let rec compile acc = function
+    | [] -> Ok (List.rev acc)
+    | (label, form) :: rest -> (
+        match compile_expr current_ns env form with
+        | Error _ as err -> err
+        | Ok argument -> compile ((label, argument) :: acc) rest)
+  in
+  match parse [] forms with
+  | Error _ as err -> err
+  | Ok arguments -> compile [] arguments
+
+and ocaml_apply function_name arguments =
+  if List.exists (fun (label, _) -> Option.is_some label) arguments then
+    Ocaml_ir.Labelled_apply
+      ( Ocaml_ir.Ident function_name,
+        List.map
+          (fun (label, argument) -> (label, argument.ocaml_expr))
+          arguments )
+  else
+    Ocaml_ir.Apply
+      ( Ocaml_ir.Ident function_name,
+        List.map (fun (_, argument) -> argument.ocaml_expr) arguments )
+
 and compile_call current_ns env name arg_forms =
   let compile_args () = compile_args_for current_ns env arg_forms in
+  let constructor ?(display_name = name) ?(constructor_name = name) return_ty
+      expected_arity =
+    match compile_args () with
+    | Error _ as err -> err
+    | Ok args when List.length args <> expected_arity ->
+        Error.error
+          (display_name ^ " expects " ^ string_of_int expected_arity ^ " arguments")
+    | Ok args ->
+        let payload =
+          match args with
+          | [] -> None
+          | [ value ] -> Some value.ocaml_expr
+          | values -> Some (Ocaml_ir.Tuple (List.map (fun value -> value.ocaml_expr) values))
+        in
+        Ok
+          (typed_ir (return_ty args)
+             (Ocaml_ir.Constructor (constructor_name, payload)))
+  in
   match name with
+  | "raise" -> (
+      match compile_args () with
+      | Error _ as err -> err
+      | Ok [ arg ] ->
+          Ok
+            (typed_ir TAny
+               (Ocaml_ir.Apply (Ocaml_ir.Ident "raise", [ arg.ocaml_expr ])))
+      | Ok _ -> Error.error "raise expects 1 arguments")
+  | "Some" ->
+      constructor
+        (function [ value ] -> TOcaml_app ("option", [ value.ty ]) | _ -> TAny)
+        1
+  | "None" -> constructor (fun _ -> TOcaml_app ("option", [ TAny ])) 0
+  | "Ok" ->
+      constructor
+        (function
+          | [ value ] -> TOcaml_app ("result", [ value.ty; TAny ])
+          | _ -> TAny)
+        1
+  | "Error" ->
+      constructor
+        (function
+          | [ value ] -> TOcaml_app ("result", [ TAny; value.ty ])
+          | _ -> TAny)
+        1
+  | "ocaml-array" -> (
+      match compile_args () with
+      | Error _ as err -> err
+      | Ok [] -> Error.error "empty OCaml array requires a type"
+      | Ok (first :: rest as values) ->
+          if List.for_all (fun value -> Types.equal first.ty value.ty) rest then
+            Ok
+              (typed_ir (TArray first.ty)
+                 (Ocaml_ir.Array (List.map (fun value -> value.ocaml_expr) values)))
+          else Error.error "OCaml array elements must have the same type")
+  | "ocaml-array-of" -> (
+      match arg_forms with
+      | [ FKeyword keyword ] -> (
+          match Type_annotation.of_keyword keyword with
+          | Error _ as err -> err
+          | Ok element_ty -> Ok (typed_ir (TArray element_ty) (Ocaml_ir.Array [])))
+      | _ -> Error.error "ocaml-array-of expects one type")
+  | "ocaml-array-get" -> (
+      match compile_args () with
+      | Error _ as err -> err
+      | Ok [ array; index ] -> (
+          match array.ty with
+          | TArray element_ty ->
+              if Types.equal index.ty TInt then
+                Ok
+                  (typed_ir element_ty
+                     (apply "Array.get" [ array.ocaml_expr; index.ocaml_expr ]))
+              else Error.error "OCaml array index must be int"
+          | _ -> Error.error "ocaml-array-get expects an OCaml array")
+      | Ok _ -> Error.error "ocaml-array-get expects 2 arguments")
+  | "ocaml-array-set!" -> (
+      match compile_args () with
+      | Error _ as err -> err
+      | Ok [ array; index; value ] -> (
+          match array.ty with
+          | TArray element_ty ->
+              if not (Types.equal index.ty TInt) then
+                Error.error "OCaml array index must be int"
+              else if not (Types.equal element_ty value.ty) then
+                Error.error "OCaml array value must match element type"
+              else
+                Ok
+                  (typed_ir TUnit
+                     (apply "Array.set"
+                        [ array.ocaml_expr; index.ocaml_expr; value.ocaml_expr ]))
+          | _ -> Error.error "ocaml-array-set! expects an OCaml array")
+      | Ok _ -> Error.error "ocaml-array-set! expects 3 arguments")
+  | "ocaml-ref" -> (
+      match compile_args () with
+      | Error _ as err -> err
+      | Ok [ value ] -> Ok (typed_ir (TRef value.ty) (apply "ref" [ value.ocaml_expr ]))
+      | Ok _ -> Error.error "ocaml-ref expects 1 argument")
+  | "ocaml-deref" -> (
+      match compile_args () with
+      | Error _ as err -> err
+      | Ok [ value ] -> (
+          match value.ty with
+          | TRef referenced_ty ->
+              Ok (typed_ir referenced_ty (Ocaml_ir.Prefix ("!", value.ocaml_expr)))
+          | _ -> Error.error "ocaml-deref expects an OCaml ref")
+      | Ok _ -> Error.error "ocaml-deref expects 1 argument")
+  | "ocaml-reset!" -> (
+      match compile_args () with
+      | Error _ as err -> err
+      | Ok [ reference; value ] -> (
+          match reference.ty with
+          | TRef referenced_ty ->
+              if Types.equal referenced_ty value.ty then
+                Ok
+                  (typed_ir TUnit
+                     (Ocaml_ir.Infix (":=", reference.ocaml_expr, value.ocaml_expr)))
+              else Error.error "OCaml ref value must match referenced type"
+          | _ -> Error.error "ocaml-reset! expects an OCaml ref")
+      | Ok _ -> Error.error "ocaml-reset! expects 2 arguments")
+  | "ocaml-call" -> (
+      match arg_forms with
+      | FKeyword return_keyword :: FSymbol function_name :: value_forms -> (
+          match Type_annotation.of_keyword return_keyword with
+          | Error _ -> Error.error ("unknown ocaml-call return type " ^ return_keyword)
+          | Ok return_ty -> (
+              match compile_ocaml_arguments current_ns env value_forms with
+              | Error _ as err -> err
+              | Ok args ->
+                  let function_name =
+                    resolve_ocaml_call_target current_ns env function_name
+                  in
+                  Ok (typed_ir return_ty (ocaml_apply function_name args))))
+      | FSymbol function_name :: value_forms -> (
+          compile_inferred_ocaml_call current_ns env function_name value_forms)
+      | FKeyword _ :: _ ->
+          Error.error "ocaml-call function must be a symbol"
+      | _ -> Error.error "ocaml-call expects return type, function, and arguments")
+  | "ocaml-some" ->
+      constructor ~display_name:"ocaml-some" ~constructor_name:"Some"
+        (fun _ -> TOcaml "option") 1
+  | "ocaml-none" ->
+      constructor ~display_name:"ocaml-none" ~constructor_name:"None"
+        (fun _ -> TOcaml "option") 0
+  | "ocaml-ok" ->
+      constructor ~display_name:"ocaml-ok" ~constructor_name:"Ok"
+        (fun _ -> TOcaml "result") 1
+  | "ocaml-error" ->
+      constructor ~display_name:"ocaml-error" ~constructor_name:"Error"
+        (fun _ -> TOcaml "result") 1
+  | "ocaml-tuple" -> (
+      match compile_args () with
+      | Error _ as err -> err
+      | Ok ([] | [ _ ]) -> Error.error "ocaml-tuple expects at least 2 values"
+      | Ok values ->
+          Ok
+            (typed_ir
+               (TTuple (List.map (fun value -> value.ty) values))
+               (Ocaml_ir.Tuple (List.map (fun value -> value.ocaml_expr) values))))
+  | "ocaml-record" -> (
+      let field_value record field_form =
+        match field_form with
+        | FList [ FSymbol field_name; value_form ] -> (
+            let ocaml_name = Names.sanitize_name field_name in
+            match
+              List.find_opt
+                (fun (field : field) -> field.ocaml_name = ocaml_name)
+                record.fields
+            with
+            | None -> Error.error ("unknown record field " ^ field_name)
+            | Some field -> (
+                match compile_expr current_ns env value_form with
+                | Error _ as err -> err
+                | Ok value -> Ok (field, value)))
+        | _ -> Error.error "ocaml-record fields must be (name value)"
+      in
+      let rec compile_fields record acc seen = function
+        | [] -> Ok (List.rev acc)
+        | field_form :: rest -> (
+            match field_value record field_form with
+            | Error _ as err -> err
+            | Ok ((field, _value) as pair) ->
+                if List.mem field.ocaml_name seen then
+                  Error.error "duplicate record field name"
+                else compile_fields record (pair :: acc) (field.ocaml_name :: seen) rest)
+      in
+      match arg_forms with
+      | FSymbol type_name :: field_forms -> (
+          match lookup_record_type current_ns env type_name with
+          | Error _ as err -> err
+          | Ok (record : named_record) -> (
+              match compile_fields record [] [] field_forms with
+              | Error _ as err -> err
+              | Ok values ->
+                  let missing =
+                    record.fields
+                    |> List.filter (fun (field : field) ->
+                           not
+                             (List.exists
+                                (fun ((actual : field), _) ->
+                                  actual.ocaml_name = field.ocaml_name)
+                                values))
+                  in
+                  if missing <> [] then Error.error "record value is missing fields"
+                  else
+                    Ok
+                      {
+                        (typed_ir
+                           (TNamed_record record)
+                           (Ocaml_ir.Record
+                              ( List.map
+                                  (fun ((field : field), value) ->
+                                    (field.ocaml_name, value.ocaml_expr))
+                                  values,
+                                Some
+                                  (record_type_application record.type_name
+                                     record.type_parameters) )))
+                        with
+                        record_values =
+                          Some
+                            (List.map
+                               (fun ((field : field), value) -> (field, value.ocaml_expr))
+                               values);
+                      }))
+      | _ -> Error.error "ocaml-record expects a record type and fields")
+  | "ocaml-field" -> (
+      match arg_forms with
+      | [ target_form; FSymbol field_name ] -> (
+          match compile_expr current_ns env target_form with
+          | Error _ as err -> err
+          | Ok target -> (
+              let fields =
+                match target.ty with
+                | TRecord fields | TNamed_record { fields; _ } -> Ok fields
+                | _ -> Error.error "ocaml-field expects a record value"
+              in
+              match fields with
+              | Error _ as err -> err
+              | Ok fields -> (
+                  let ocaml_name = Names.sanitize_name field_name in
+                  match
+                    List.find_opt
+                      (fun (field : field) -> field.ocaml_name = ocaml_name)
+                      fields
+                  with
+                  | None -> Error.error ("unknown record field " ^ field_name)
+                  | Some field ->
+                      Ok
+                        (typed_ir field.ty
+                           (Ocaml_ir.Field (target.ocaml_expr, field.ocaml_name))))))
+      | _ -> Error.error "ocaml-field expects record value and field name")
+  | "ocaml-construct" -> (
+      match arg_forms with
+      | FSymbol constructor_name :: payload_forms -> (
+          match compile_args_for current_ns env payload_forms with
+          | Error _ as err -> err
+          | Ok payloads -> (
+              let constructor_ty =
+                match lookup_binding current_ns env constructor_name with
+                | Ok { ty = TFn (payload_tys, ret); _ }
+                  when List.length payload_tys = List.length payloads ->
+                    Ok ret
+                | Ok { ty = TFn _; _ } ->
+                    Error.error "ocaml-construct payload arity mismatch"
+                | Ok _ -> Error.error (constructor_name ^ " is not a constructor")
+                | Error _ -> Ok (TOcaml "variant")
+              in
+              match constructor_ty with
+              | Error _ as err -> err
+              | Ok constructor_ty ->
+                  let payload_expr =
+                    match payloads with
+                    | [] -> None
+                    | [ payload ] -> Some payload.ocaml_expr
+                    | _ ->
+                        Some
+                          (Ocaml_ir.Tuple
+                             (List.map (fun payload -> payload.ocaml_expr) payloads))
+                  in
+                  Ok
+                    (typed_ir constructor_ty
+                       (Ocaml_ir.Constructor (constructor_name, payload_expr)))))
+      | FKeyword _ :: _ -> Error.error "ocaml-construct constructor must be a symbol"
+      | _ -> Error.error "ocaml-construct expects a constructor name")
   | "+" | "-" | "*" | "/" -> (
       match compile_args () with
       | Error _ as err -> err
@@ -615,7 +1497,7 @@ and compile_call current_ns env name arg_forms =
       match compile_args () with
       | Error _ as err -> err
       | Ok args -> Core_compare.compile name args)
-  | "not" | "nil?" | "some?" | "true?" | "false?" | "int?" | "number?"
+  | "not" | "true?" | "false?" | "int?" | "number?"
   | "string?" | "keyword?" | "boolean?" | "vector?" | "list?" | "seq?" | "set?"
   | "map?" | "fn?" | "coll?" | "associative?" | "indexed?" | "seqable?" | "counted?"
     -> compile_boolean_call current_ns env name arg_forms
@@ -674,12 +1556,12 @@ and compile_call current_ns env name arg_forms =
       match compile_args () with
       | Error _ as err -> err
       | Ok args ->
-          let code =
+          let expr =
             match args with
-            | [] -> {|""|}
-            | _ -> args |> List.map (Codegen.stringify_expr ~pr:false) |> String.concat " ^ "
+            | [] -> Ocaml_ir.String ""
+            | _ -> args |> List.map (Codegen.stringify_expr_ir ~pr:false) |> Codegen.concat_expr
           in
-          Ok (typed TString code))
+          Ok (typed_ir TString expr))
   | "subs" -> compile_subs current_ns env arg_forms
   | "max" | "min" -> (
       match compile_args () with
@@ -704,14 +1586,16 @@ and compile_call current_ns env name arg_forms =
   | "pr-str" -> (
       match compile_args () with
       | Error _ as err -> err
-      | Ok [ arg ] -> Ok (typed TString (Codegen.stringify_expr ~pr:true arg))
+      | Ok [ arg ] -> Ok (typed_ir TString (Codegen.stringify_expr_ir ~pr:true arg))
       | Ok _ -> Error.error "pr-str expects 1 arguments")
   | "print" | "println" -> (
       match compile_args () with
       | Error _ as err -> err
       | Ok [ arg ] ->
           let printer = if name = "print" then "print_string" else "print_endline" in
-          Ok (typed TUnit (printer ^ " (" ^ Codegen.print_expr arg ^ ")"))
+          Ok
+            (typed_ir TUnit
+               (Ocaml_ir.Apply (Ocaml_ir.Ident printer, [ Codegen.print_expr_ir arg ])))
       | Ok _ -> Error.error (name ^ " expects 1 arguments"))
   | "list" -> compile_list current_ns env arg_forms
   | "list*" -> compile_list_star current_ns env arg_forms
@@ -790,7 +1674,37 @@ and compile_call current_ns env name arg_forms =
   | "set-of" -> compile_set_of arg_forms
   | "disj" -> compile_disj current_ns env arg_forms
   | "empty" -> compile_collection_call current_ns env name arg_forms
+  | _ when is_constructor_name name -> (
+      match lookup_binding current_ns env name with
+      | Ok { ty = TFn (payload_tys, return_ty); _ } ->
+          constructor (fun _ -> return_ty) (List.length payload_tys)
+      | _ ->
+          let constructor_name =
+            resolve_ocaml_constructor_target current_ns env name
+          in
+          (match Ocaml_signature.constructor_signature constructor_name with
+          | Error _ as err -> err
+          | Ok signature ->
+              constructor ~constructor_name
+                (fun _ -> signature.result_type)
+                (List.length signature.payload_types)))
   | _ -> compile_named_function_call current_ns env name arg_forms
+
+and compile_inferred_ocaml_call current_ns env function_name value_forms =
+  match compile_ocaml_arguments current_ns env value_forms with
+  | Error _ as err -> err
+  | Ok arguments ->
+          let function_name =
+            resolve_ocaml_call_target current_ns env function_name
+          in
+          match Ocaml_signature.value_signature function_name with
+          | Error _ as err -> err
+          | Ok signature -> (
+              let labels = List.map fst arguments in
+              match Ocaml_signature.result_after_application signature labels with
+              | Error _ as err -> err
+              | Ok return_ty ->
+                  Ok (typed_ir return_ty (ocaml_apply function_name arguments)))
 
 and compile_int_unary_call current_ns env name build_code arg_forms =
   match compile_args_for current_ns env arg_forms with
@@ -888,37 +1802,65 @@ and compile_list_star current_ns env arg_forms =
       match compile_expr current_ns env final_form with
       | Error _ as err -> err
       | Ok final -> (
-          match collection_to_list_code final with
+          match Core_sequence_transform.collection_to_list_expr final with
           | Error _ -> Error.error "list* final argument must be a collection"
-          | Ok (inner, final_list_code) -> (
+          | Ok (inner, final_list_expr) -> (
               let prefix_forms = List.rev prefix_forms_rev in
               match compile_args_for current_ns env prefix_forms with
               | Error _ as err -> err
               | Ok prefix_args ->
                   if List.for_all (fun arg -> Types.equal inner arg.ty) prefix_args then
-                    let prefix_code =
-                      prefix_args |> List.map (fun arg -> arg.code) |> String.concat "; "
-                    in
-                    let list_code =
+                    let list_expr =
                       match prefix_args with
-                      | [] -> final_list_code
-                      | _ -> "[" ^ prefix_code ^ "] @ (" ^ final_list_code ^ ")"
+                      | [] -> final_list_expr
+                      | _ ->
+                          Ocaml_ir.Infix
+                            ( "@",
+                              Ocaml_ir.List
+                                (List.map (fun arg -> arg.ocaml_expr) prefix_args),
+                              final_list_expr )
                     in
-                    Ok (typed (TList inner) list_code)
+                    Ok (typed_ir (TList inner) list_expr)
                   else Error.error "list* value type must match final collection element type")))
 
 and compile_range current_ns env arg_forms =
   let literal_zero = function FInt 0 -> true | _ -> false in
+  let range_expr start stop step =
+    let current = Ocaml_ir.Ident "current" in
+    let stop_ident = Ocaml_ir.Ident "stop" in
+    let step_ident = Ocaml_ir.Ident "step" in
+    let done_expr =
+      Ocaml_ir.If
+        ( Ocaml_ir.Infix (">", step_ident, Ocaml_ir.Int 0),
+          Ocaml_ir.Infix (">=", current, stop_ident),
+          Ocaml_ir.Infix ("<=", current, stop_ident) )
+    in
+    let body =
+      Ocaml_ir.If
+        ( Ocaml_ir.Infix ("=", step_ident, Ocaml_ir.Int 0),
+          apply "invalid_arg" [ Ocaml_ir.String "range step cannot be 0" ],
+          Ocaml_ir.If
+            ( done_expr,
+              apply "List.rev" [ Ocaml_ir.Ident "acc" ],
+              apply "range"
+                [ Ocaml_ir.Cons (current, Ocaml_ir.Ident "acc");
+                  Ocaml_ir.Infix ("+", current, step_ident);
+                  stop_ident;
+                  step_ident ] ) )
+    in
+    Ocaml_ir.LetRec
+      ( "range",
+        [ Ocaml_ir.PVar "acc"; Ocaml_ir.PVar "current"; Ocaml_ir.PVar "stop"; Ocaml_ir.PVar "step" ],
+        body,
+        [ Ocaml_ir.List []; start; stop; step ] )
+  in
   match arg_forms with
   | [ end_form ] -> (
       match compile_expr current_ns env end_form with
       | Error _ as err -> err
       | Ok end_expr ->
           if Types.equal end_expr.ty TInt then
-            Ok
-              (typed (TList TInt)
-                 ("(let rec range acc current stop step = if current >= stop then List.rev acc else range (current :: acc) (current + step) stop step in range [] 0 ("
-                ^ end_expr.code ^ ") 1)"))
+            Ok (typed_ir (TList TInt) (range_expr (Ocaml_ir.Int 0) end_expr.ocaml_expr (Ocaml_ir.Int 1)))
           else Error.error "range arguments must be int")
   | [ start_form; end_form ] -> (
       match (compile_expr current_ns env start_form, compile_expr current_ns env end_form) with
@@ -926,10 +1868,7 @@ and compile_range current_ns env arg_forms =
       | _, (Error _ as err) -> err
       | Ok start_expr, Ok end_expr ->
           if Types.equal start_expr.ty TInt && Types.equal end_expr.ty TInt then
-            Ok
-              (typed (TList TInt)
-                 ("(let rec range acc current stop step = if current >= stop then List.rev acc else range (current :: acc) (current + step) stop step in range [] ("
-                ^ start_expr.code ^ ") (" ^ end_expr.code ^ ") 1)"))
+            Ok (typed_ir (TList TInt) (range_expr start_expr.ocaml_expr end_expr.ocaml_expr (Ocaml_ir.Int 1)))
           else Error.error "range arguments must be int")
   | [ start_form; end_form; step_form ] ->
       if literal_zero step_form then Error.error "range step cannot be 0"
@@ -948,9 +1887,8 @@ and compile_range current_ns env arg_forms =
               && Types.equal step_expr.ty TInt
             then
               Ok
-                (typed (TList TInt)
-                   ("(let rec range acc current stop step = if step = 0 then invalid_arg \"range step cannot be 0\" else if (step > 0 && current >= stop) || (step < 0 && current <= stop) then List.rev acc else range (current :: acc) (current + step) stop step in range [] ("
-                  ^ start_expr.code ^ ") (" ^ end_expr.code ^ ") (" ^ step_expr.code ^ "))"))
+                (typed_ir (TList TInt)
+                   (range_expr start_expr.ocaml_expr end_expr.ocaml_expr step_expr.ocaml_expr))
             else Error.error "range arguments must be int")
   | _ -> Error.error "range expects end, start/end, or start/end/step"
 
@@ -1076,17 +2014,25 @@ and compile_nth current_ns env arg_forms =
       match (collection.ty, index.ty) with
       | TList inner, TInt when Types.equal inner default.ty ->
           Ok
-            (typed inner
-               ("(if (" ^ index.code ^ ") < 0 then " ^ default.code
-              ^ " else try List.nth (" ^ collection.code ^ ") (" ^ index.code
-              ^ ") with Failure _ -> " ^ default.code ^ ")"))
+            (typed_ir inner
+               (Ocaml_ir.If
+                  ( Ocaml_ir.Infix ("<", index.ocaml_expr, Ocaml_ir.Int 0),
+                    default.ocaml_expr,
+                    Ocaml_ir.Match
+                      ( apply "List.nth_opt" [ collection.ocaml_expr; index.ocaml_expr ],
+                        [ ( Ocaml_ir.PConstructor ("Some", Some (Ocaml_ir.PVar "value")),
+                            Ocaml_ir.Ident "value" );
+                          (Ocaml_ir.PConstructor ("None", None), default.ocaml_expr) ] ) )))
       | TList _, TInt -> Error.error "nth default must match collection element type"
       | TList _, _ -> Error.error "nth index must be int"
       | TVector inner, TInt when Types.equal inner default.ty ->
           Ok
-            (typed inner
-               ("(match Rrbvec.nth_opt (" ^ collection.code ^ ") (" ^ index.code
-              ^ ") with Some value -> value | None -> " ^ default.code ^ ")"))
+            (typed_ir inner
+               (Ocaml_ir.Match
+                  ( apply "Rrbvec.nth_opt" [ collection.ocaml_expr; index.ocaml_expr ],
+                    [ ( Ocaml_ir.PConstructor ("Some", Some (Ocaml_ir.PVar "value")),
+                        Ocaml_ir.Ident "value" );
+                      (Ocaml_ir.PConstructor ("None", None), default.ocaml_expr) ] )))
       | TVector _, TInt -> Error.error "nth default must match collection element type"
       | TVector _, _ -> Error.error "nth index must be int"
       | _ -> Error.error "nth expects a list or vector")
@@ -1114,7 +2060,9 @@ and compile_get current_ns env arg_forms =
       | Ok target, Ok index -> (
           match (target.ty, index.ty) with
           | TVector inner, TInt ->
-              Ok (typed inner ("Rrbvec.nth (" ^ target.code ^ ") (" ^ index.code ^ ")"))
+              Ok
+                (typed_ir inner
+                   (apply "Rrbvec.nth" [ target.ocaml_expr; index.ocaml_expr ]))
           | TVector _, _ -> Error.error "get vector index must be int"
           | _ -> Error.error "get key must be a keyword"))
   | [ target_form; FKeyword keyword; default_form ] -> (
@@ -1149,9 +2097,12 @@ and compile_get current_ns env arg_forms =
           match (target.ty, index.ty) with
           | TVector inner, TInt when Types.equal inner default.ty ->
               Ok
-                (typed inner
-                   ("(match Rrbvec.nth_opt (" ^ target.code ^ ") (" ^ index.code
-                  ^ ") with Some value -> value | None -> " ^ default.code ^ ")"))
+                (typed_ir inner
+                   (Ocaml_ir.Match
+                      ( apply "Rrbvec.nth_opt" [ target.ocaml_expr; index.ocaml_expr ],
+                        [ ( Ocaml_ir.PConstructor ("Some", Some (Ocaml_ir.PVar "value")),
+                            Ocaml_ir.Ident "value" );
+                          (Ocaml_ir.PConstructor ("None", None), default.ocaml_expr) ] )))
           | TVector _, TInt -> Error.error "get default for vector must match element type"
           | TVector _, _ -> Error.error "get vector index must be int"
           | _ -> Error.error "get key must be a keyword"))
@@ -1199,8 +2150,8 @@ and compile_assoc current_ns env arg_forms =
                 match compile_vector_pairs [] pair_forms with
                 | Error _ as err -> err
                 | Ok pairs ->
-                    let rec apply_pairs code = function
-                      | [] -> Ok code
+                    let rec apply_pairs expr = function
+                      | [] -> Ok expr
                       | (index, value) :: rest ->
                           if not (Types.equal index.ty TInt) then
                             Error.error "assoc vector index must be int"
@@ -1208,13 +2159,13 @@ and compile_assoc current_ns env arg_forms =
                             Error.error "assoc vector value must match element type"
                           else
                             apply_pairs
-                              ("Rrbvec.set (" ^ code ^ ") (" ^ index.code ^ ") ("
-                             ^ value.code ^ ")")
+                              (apply "Rrbvec.set"
+                                 [ expr; index.ocaml_expr; value.ocaml_expr ])
                               rest
                     in
-                    (match apply_pairs target.code pairs with
+                    (match apply_pairs target.ocaml_expr pairs with
                     | Error _ as err -> err
-                    | Ok code -> Ok (typed target.ty code)))
+                    | Ok expr -> Ok (typed_ir target.ty expr)))
             | _ -> Error.error "assoc expects a map or vector"))
   | _ -> Error.error "assoc expects collection followed by key/value pairs"
 
@@ -1317,15 +2268,17 @@ and compile_update current_ns env arg_forms =
                           (fun expected arg -> Types.compatible ~expected ~actual:arg.ty)
                           (drop 1 param_tys) extra_args
                      && Types.equal ret inner ->
-                  let old_code = "Rrbvec.nth (" ^ target.code ^ ") (" ^ index.code ^ ")" in
-                  let value_code =
-                    apply_code fn.code
-                      (old_code :: List.map (fun arg -> arg.code) extra_args)
+                  let old_expr =
+                    apply "Rrbvec.nth" [ target.ocaml_expr; index.ocaml_expr ]
+                  in
+                  let value_expr =
+                    Ocaml_ir.Apply
+                      (fn.ocaml_expr, old_expr :: List.map (fun arg -> arg.ocaml_expr) extra_args)
                   in
                   Ok
-                    (typed target.ty
-                       ("Rrbvec.set (" ^ target.code ^ ") (" ^ index.code ^ ") ("
-                      ^ value_code ^ ")"))
+                    (typed_ir target.ty
+                       (apply "Rrbvec.set"
+                          [ target.ocaml_expr; index.ocaml_expr; value_expr ]))
               | TFn (_param_tys, ret) when not (Types.equal ret inner) ->
                   Error.error
                     ("cannot update vector element as " ^ source_name ret
@@ -1466,7 +2419,10 @@ and compile_function_arg_for_collection current_ns env element_ty = function
   | form -> compile_function_arg current_ns env form
 
 and compile_named_function_call current_ns env name arg_forms =
-  match lookup_binding current_ns env name with
+  match ocaml_call_target current_ns env name with
+  | Some _ -> compile_inferred_ocaml_call current_ns env name arg_forms
+  | None -> (
+      match lookup_binding current_ns env name with
   | Error _ -> compile_protocol_call current_ns env name arg_forms
   | Ok fn -> (
       match compile_args_for current_ns env arg_forms with
@@ -1478,16 +2434,24 @@ and compile_named_function_call current_ns env name arg_forms =
                  && List.for_all2
                       (fun expected arg -> Types.compatible ~expected ~actual:arg.ty)
                       param_tys args ->
-              let arg_codes =
+              let arg_exprs =
                 args
                 |> List.mapi (fun index arg ->
                        let row_type_name = List.nth_opt fn.row_param_types index |> Option.join in
-                       let expected_ty = List.nth param_tys index in
-                       row_arg_code row_type_name expected_ty arg)
+                      let expected_ty = List.nth param_tys index in
+                      row_arg_expr row_type_name expected_ty arg)
               in
-              Ok (typed ret (apply_code fn.ocaml_name arg_codes))
+              let ret =
+                match (fn.return_param_index, ret) with
+                | Some index, TAny -> (
+                    match List.nth_opt args index with
+                    | Some arg -> arg.ty
+                    | None -> ret)
+                | _ -> ret
+              in
+              Ok (typed_ir ret (Ocaml_ir.Apply (Ocaml_ir.Ident fn.ocaml_name, arg_exprs)))
           | TFn _ -> Error.error (name ^ " called with incompatible arguments")
-          | _ -> Error.error (name ^ " is not callable")))
+          | _ -> Error.error (name ^ " is not callable"))))
 
 and compile_protocol_call current_ns env name arg_forms =
   match Protocol.lookup_marker current_ns env name with
@@ -1517,18 +2481,19 @@ and compile_protocol_call current_ns env name arg_forms =
                                     Types.compatible ~expected ~actual:arg.ty)
                                   param_tys args ->
                           Ok
-                            (typed ret
-                               (apply_code impl.ocaml_name
-                                  (List.map (fun arg -> arg.code) args)))
+                            (typed_ir ret
+                               (Ocaml_ir.Apply
+                                  ( Ocaml_ir.Ident impl.ocaml_name,
+                                    List.map (fun arg -> arg.ocaml_expr) args )))
                       | TFn _ -> Error.error (name ^ " called with incompatible arguments")
                       | _ -> Error.error (name ^ " is not callable"))))
           | _ -> Error.error (name ^ " is not callable")))
 
-and collection_to_list_code collection =
-  Core_sequence_transform.collection_to_list_code collection
+and collection_to_list_expr collection =
+  Core_sequence_transform.collection_to_list_expr collection
 
-and collection_from_list_code collection_ty list_code =
-  Core_sequence_transform.collection_from_list_code collection_ty list_code
+and collection_from_list_expr collection_ty list_expr =
+  Core_sequence_transform.collection_from_list_expr collection_ty list_expr
 
 and comparable_type = function
   | TInt | TString | TSymbol | TKeyword | TBool | TAny -> true
@@ -1541,14 +2506,18 @@ and compile_sort_by current_ns env arg_forms =
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok fn, Ok collection -> (
-          match (fn.ty, collection_to_list_code collection) with
-          | TFn ([ param_ty ], key_ty), Ok (inner, list_code)
+          match (fn.ty, collection_to_list_expr collection) with
+          | TFn ([ param_ty ], key_ty), Ok (inner, list_expr)
             when Types.equal param_ty inner && comparable_type key_ty ->
               Ok
-                (typed (TList inner)
-                   ("List.sort (fun left right -> Stdlib.compare "
-                  ^ apply_code fn.code [ "left" ]
-                  ^ " " ^ apply_code fn.code [ "right" ] ^ ") (" ^ list_code ^ ")"))
+                (typed_ir (TList inner)
+                   (apply "List.sort"
+                      [ Ocaml_ir.Fun
+                          ( [ Ocaml_ir.PVar "left"; Ocaml_ir.PVar "right" ],
+                            apply "Stdlib.compare"
+                              [ Ocaml_ir.Apply (fn.ocaml_expr, [ Ocaml_ir.Ident "left" ]);
+                                Ocaml_ir.Apply (fn.ocaml_expr, [ Ocaml_ir.Ident "right" ]) ] );
+                        list_expr ]))
           | TFn ([ param_ty ], _), Ok (inner, _) when not (Types.equal param_ty inner) ->
               Error.error "sort-by key function must match collection elements"
           | TFn _, Ok _ -> Error.error "sort-by key function must return a comparable value"
@@ -1563,21 +2532,40 @@ and compile_mapcat current_ns env arg_forms =
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok fn, Ok collection -> (
-          match (fn.ty, collection_to_list_code collection) with
-          | TFn ([ param_ty ], TList ret_inner), Ok (inner, list_code)
-            when Types.equal param_ty inner ->
-              Ok (typed (TList ret_inner) ("List.concat (List.map " ^ fn.code ^ " (" ^ list_code ^ "))"))
-          | TFn ([ param_ty ], TVector ret_inner), Ok (inner, list_code)
+          match (fn.ty, collection_to_list_expr collection) with
+          | TFn ([ param_ty ], TList ret_inner), Ok (inner, list_expr)
             when Types.equal param_ty inner ->
               Ok
-                (typed (TList ret_inner)
-                   ("List.concat (List.map (fun item -> Rrbvec.to_list "
-                  ^ apply_code fn.code [ "item" ] ^ ") (" ^ list_code ^ "))"))
-          | TFn ([ param_ty ], TSet ret_inner), Ok (inner, list_code)
+                (typed_ir (TList ret_inner)
+                   (apply "List.concat"
+                      [ apply "List.map" [ fn.ocaml_expr; list_expr ] ]))
+          | TFn ([ param_ty ], TVector ret_inner), Ok (inner, list_expr)
             when Types.equal param_ty inner ->
               Ok
-                (typed (TList ret_inner)
-                   ("List.concat (List.map " ^ fn.code ^ " (" ^ list_code ^ "))"))
+                (typed_ir (TList ret_inner)
+                   (apply "List.concat"
+                      [ apply "List.map"
+                          [ Ocaml_ir.Fun
+                              ( [ Ocaml_ir.PVar "item" ],
+                                apply "Rrbvec.to_list"
+                                  [ Ocaml_ir.Apply
+                                      (fn.ocaml_expr, [ Ocaml_ir.Ident "item" ]) ] );
+                            list_expr ] ]))
+          | TFn ([ param_ty ], TSet ret_inner), Ok (inner, list_expr)
+            when Types.equal param_ty inner -> (
+              match Types.set_module_name ret_inner with
+              | Error _ as err -> err
+              | Ok set_module ->
+                  Ok
+                    (typed_ir (TList ret_inner)
+                       (apply "List.concat"
+                          [ apply "List.map"
+                              [ Ocaml_ir.Fun
+                                  ( [ Ocaml_ir.PVar "item" ],
+                                    apply (set_module ^ ".elements")
+                                      [ Ocaml_ir.Apply
+                                          (fn.ocaml_expr, [ Ocaml_ir.Ident "item" ]) ] );
+                                list_expr ] ])))
           | TFn ([ param_ty ], _), Ok (inner, _) when not (Types.equal param_ty inner) ->
               Error.error "mapcat function argument type does not match collection"
           | TFn _, Ok _ -> Error.error "mapcat function must return a collection"
@@ -1596,11 +2584,23 @@ and compile_repeatedly current_ns env arg_forms =
           else
             match fn.ty with
             | TFn ([], ret) ->
+                let body =
+                  Ocaml_ir.If
+                    ( Ocaml_ir.Infix ("<=", Ocaml_ir.Ident "n", Ocaml_ir.Int 0),
+                      Ocaml_ir.Ident "acc",
+                      apply "repeatedly"
+                        [ Ocaml_ir.Cons
+                            ( Ocaml_ir.Apply (fn.ocaml_expr, []),
+                              Ocaml_ir.Ident "acc" );
+                          Ocaml_ir.Infix ("-", Ocaml_ir.Ident "n", Ocaml_ir.Int 1) ] )
+                in
                 Ok
-                  (typed (TList ret)
-                     ("(let rec repeatedly acc n = if n <= 0 then acc else repeatedly ("
-                    ^ apply_code fn.code [] ^ " :: acc) (n - 1) in repeatedly [] ("
-                    ^ count.code ^ "))"))
+                  (typed_ir (TList ret)
+                     (Ocaml_ir.LetRec
+                        ( "repeatedly",
+                          [ Ocaml_ir.PVar "acc"; Ocaml_ir.PVar "n" ],
+                          body,
+                          [ Ocaml_ir.List []; count.ocaml_expr ] )))
             | TFn _ -> Error.error "repeatedly expects a zero-argument function"
             | _ -> Error.error "repeatedly expects a function"))
   | _ -> Error.error "repeatedly expects count and function"
@@ -1612,15 +2612,40 @@ and compile_reductions current_ns env arg_forms =
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok fn, Ok collection -> (
-          match (fn.ty, collection_to_list_code collection) with
-          | TFn ([ acc_ty; item_ty ], ret), Ok (inner, list_code)
+          match (fn.ty, collection_to_list_expr collection) with
+          | TFn ([ acc_ty; item_ty ], ret), Ok (inner, list_expr)
             when Types.equal acc_ty inner && Types.equal item_ty inner && Types.equal ret inner ->
+              let reductions_body =
+                Ocaml_ir.Match
+                  ( Ocaml_ir.Ident "xs",
+                    [ (Ocaml_ir.PList [], apply "List.rev" [ Ocaml_ir.Ident "acc" ]);
+                      ( Ocaml_ir.PCons (Ocaml_ir.PVar "item", Ocaml_ir.PVar "tail"),
+                        Ocaml_ir.Let
+                          ( [ ( Ocaml_ir.PVar "next",
+                                Ocaml_ir.Apply
+                                  ( fn.ocaml_expr,
+                                    [ Ocaml_ir.Ident "current"; Ocaml_ir.Ident "item" ] ) ) ],
+                            apply "reductions"
+                              [ Ocaml_ir.Ident "next";
+                                Ocaml_ir.Cons
+                                  (Ocaml_ir.Ident "next", Ocaml_ir.Ident "acc");
+                                Ocaml_ir.Ident "tail" ] ) ) ] )
+              in
               Ok
-                (typed (TList inner)
-                   ("(match " ^ list_code
-                  ^ " with [] -> [] | first :: rest -> let rec reductions current acc xs = match xs with [] -> List.rev acc | item :: tail -> let next = "
-                  ^ apply_code fn.code [ "current"; "item" ]
-                  ^ " in reductions next (next :: acc) tail in reductions first [first] rest)"))
+                (typed_ir (TList inner)
+                   (Ocaml_ir.Match
+                      ( list_expr,
+                        [ (Ocaml_ir.PList [], Ocaml_ir.List []);
+                          ( Ocaml_ir.PCons (Ocaml_ir.PVar "first", Ocaml_ir.PVar "rest"),
+                            Ocaml_ir.LetRec
+                              ( "reductions",
+                                [ Ocaml_ir.PVar "current";
+                                  Ocaml_ir.PVar "acc";
+                                  Ocaml_ir.PVar "xs" ],
+                                reductions_body,
+                                [ Ocaml_ir.Ident "first";
+                                  Ocaml_ir.List [ Ocaml_ir.Ident "first" ];
+                                  Ocaml_ir.Ident "rest" ] ) ) ] )))
           | TFn _, Ok _ -> Error.error "reductions function type does not match collection"
           | _, Ok _ -> Error.error "reductions expects a function"
           | _, Error _ -> Error.error "reductions expects a collection"))
@@ -1634,15 +2659,36 @@ and compile_reductions current_ns env arg_forms =
       | _, (Error _ as err), _ -> err
       | _, _, (Error _ as err) -> err
       | Ok fn, Ok init, Ok collection -> (
-          match (fn.ty, collection_to_list_code collection) with
-          | TFn ([ acc_ty; item_ty ], ret), Ok (inner, list_code)
+          match (fn.ty, collection_to_list_expr collection) with
+          | TFn ([ acc_ty; item_ty ], ret), Ok (inner, list_expr)
             when Types.equal acc_ty init.ty && Types.equal item_ty inner && Types.equal ret init.ty ->
+              let reductions_body =
+                Ocaml_ir.Match
+                  ( Ocaml_ir.Ident "xs",
+                    [ (Ocaml_ir.PList [], apply "List.rev" [ Ocaml_ir.Ident "acc" ]);
+                      ( Ocaml_ir.PCons (Ocaml_ir.PVar "item", Ocaml_ir.PVar "rest"),
+                        Ocaml_ir.Let
+                          ( [ ( Ocaml_ir.PVar "next",
+                                Ocaml_ir.Apply
+                                  ( fn.ocaml_expr,
+                                    [ Ocaml_ir.Ident "current"; Ocaml_ir.Ident "item" ] ) ) ],
+                            apply "reductions"
+                              [ Ocaml_ir.Ident "next";
+                                Ocaml_ir.Cons
+                                  (Ocaml_ir.Ident "next", Ocaml_ir.Ident "acc");
+                                Ocaml_ir.Ident "rest" ] ) ) ] )
+              in
               Ok
-                (typed (TList init.ty)
-                   ("(let rec reductions current acc xs = match xs with [] -> List.rev acc | item :: rest -> let next = "
-                  ^ apply_code fn.code [ "current"; "item" ]
-                  ^ " in reductions next (next :: acc) rest in reductions (" ^ init.code
-                  ^ ") [" ^ init.code ^ "] (" ^ list_code ^ "))"))
+                (typed_ir (TList init.ty)
+                   (Ocaml_ir.LetRec
+                      ( "reductions",
+                        [ Ocaml_ir.PVar "current";
+                          Ocaml_ir.PVar "acc";
+                          Ocaml_ir.PVar "xs" ],
+                        reductions_body,
+                        [ init.ocaml_expr;
+                          Ocaml_ir.List [ init.ocaml_expr ];
+                          list_expr ] )))
           | TFn _, Ok _ -> Error.error "reductions function type does not match init and collection"
           | _, Ok _ -> Error.error "reductions expects a function"
           | _, Error _ -> Error.error "reductions expects a collection"))
@@ -1655,21 +2701,43 @@ and compile_split_with current_ns env arg_forms =
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok fn, Ok collection -> (
-          match (fn.ty, collection_to_list_code collection) with
-          | TFn ([ param_ty ], TBool), Ok (inner, list_code) when Types.equal param_ty inner ->
-              let pair_code =
-                "(let rec split prefix rest = match rest with item :: tail when "
-                ^ apply_code fn.code [ "item" ]
-                ^ " -> split (item :: prefix) tail | _ -> (List.rev prefix, rest) in split [] ("
-                ^ list_code ^ "))"
+          match (fn.ty, collection_to_list_expr collection) with
+          | TFn ([ param_ty ], TBool), Ok (inner, list_expr) when Types.equal param_ty inner ->
+              let split_body =
+                Ocaml_ir.Match
+                  ( Ocaml_ir.Ident "rest",
+                    [ ( Ocaml_ir.PCons (Ocaml_ir.PVar "item", Ocaml_ir.PVar "tail"),
+                        Ocaml_ir.If
+                          ( Ocaml_ir.Apply (fn.ocaml_expr, [ Ocaml_ir.Ident "item" ]),
+                            apply "split"
+                              [ Ocaml_ir.Cons
+                                  (Ocaml_ir.Ident "item", Ocaml_ir.Ident "prefix");
+                                Ocaml_ir.Ident "tail" ],
+                            Ocaml_ir.Tuple
+                              [ apply "List.rev" [ Ocaml_ir.Ident "prefix" ];
+                                Ocaml_ir.Ident "rest" ] ) );
+                      ( Ocaml_ir.PAny,
+                        Ocaml_ir.Tuple
+                          [ apply "List.rev" [ Ocaml_ir.Ident "prefix" ];
+                            Ocaml_ir.Ident "rest" ] ) ] )
               in
-              let left =
-                collection_from_list_code collection.ty ("(fst " ^ pair_code ^ ")")
+              let pair_expr =
+                Ocaml_ir.LetRec
+                  ( "split",
+                    [ Ocaml_ir.PVar "prefix"; Ocaml_ir.PVar "rest" ],
+                    split_body,
+                    [ Ocaml_ir.List []; list_expr ] )
               in
-              let right =
-                collection_from_list_code collection.ty ("(snd " ^ pair_code ^ ")")
-              in
-              Ok (typed (TVector collection.ty) ("Rrbvec.of_list [" ^ left ^ "; " ^ right ^ "]"))
+              Ok
+                (typed_ir (TVector collection.ty)
+                   (Ocaml_ir.Let
+                      ( [ (Ocaml_ir.PVar "pair", pair_expr) ],
+                        apply "Rrbvec.of_list"
+                          [ Ocaml_ir.List
+                              [ collection_from_list_expr collection.ty
+                                  (apply "fst" [ Ocaml_ir.Ident "pair" ]);
+                                collection_from_list_expr collection.ty
+                                  (apply "snd" [ Ocaml_ir.Ident "pair" ]) ] ] )))
           | TFn _, Ok _ -> Error.error "split-with expects a predicate matching collection elements"
           | _, Ok _ -> Error.error "split-with expects a function"
           | _, Error _ -> Error.error "split-with expects a collection"))
@@ -1682,16 +2750,80 @@ and compile_partition_by current_ns env arg_forms =
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok fn, Ok collection -> (
-          match (fn.ty, collection_to_list_code collection) with
-          | TFn ([ param_ty ], key_ty), Ok (inner, list_code) when Types.equal param_ty inner ->
-              let code =
-                "(let rec finish groups current = match current with [] -> List.rev groups | _ -> List.rev (List.rev current :: groups) in let rec partition groups current current_key xs = match xs with [] -> finish groups current | item :: rest -> let key = "
-                ^ apply_code fn.code [ "item" ]
-                ^ " in match current_key with Some previous when previous = key -> partition groups (item :: current) current_key rest | _ -> let groups = match current with [] -> groups | _ -> List.rev current :: groups in partition groups [item] (Some key) rest in partition [] [] None ("
-                ^ list_code ^ "))"
-              in
+          match (fn.ty, collection_to_list_expr collection) with
+          | TFn ([ param_ty ], key_ty), Ok (inner, list_expr) when Types.equal param_ty inner ->
               ignore key_ty;
-              Ok (typed (TList (TList inner)) code)
+              let finish_call =
+                apply "finish" [ Ocaml_ir.Ident "groups"; Ocaml_ir.Ident "current" ]
+              in
+              let start_new_group =
+                Ocaml_ir.Let
+                  ( [ ( Ocaml_ir.PVar "groups",
+                        Ocaml_ir.Match
+                          ( Ocaml_ir.Ident "current",
+                            [ (Ocaml_ir.PList [], Ocaml_ir.Ident "groups");
+                              ( Ocaml_ir.PAny,
+                                Ocaml_ir.Cons
+                                  ( apply "List.rev" [ Ocaml_ir.Ident "current" ],
+                                    Ocaml_ir.Ident "groups" ) ) ] ) ) ],
+                    apply "partition"
+                      [ Ocaml_ir.Ident "groups";
+                        Ocaml_ir.List [ Ocaml_ir.Ident "item" ];
+                        Ocaml_ir.Constructor ("Some", Some (Ocaml_ir.Ident "key"));
+                        Ocaml_ir.Ident "rest" ] )
+              in
+              let partition_body =
+                Ocaml_ir.Match
+                  ( Ocaml_ir.Ident "xs",
+                    [ (Ocaml_ir.PList [], finish_call);
+                      ( Ocaml_ir.PCons (Ocaml_ir.PVar "item", Ocaml_ir.PVar "rest"),
+                        Ocaml_ir.Let
+                          ( [ ( Ocaml_ir.PVar "key",
+                                Ocaml_ir.Apply (fn.ocaml_expr, [ Ocaml_ir.Ident "item" ]) ) ],
+                            Ocaml_ir.Match
+                              ( Ocaml_ir.Ident "current_key",
+                                [ ( Ocaml_ir.PConstructor ("Some", Some (Ocaml_ir.PVar "previous")),
+                                    Ocaml_ir.If
+                                      ( Ocaml_ir.Infix
+                                          ( "=", Ocaml_ir.Ident "previous",
+                                            Ocaml_ir.Ident "key" ),
+                                        apply "partition"
+                                          [ Ocaml_ir.Ident "groups";
+                                            Ocaml_ir.Cons
+                                              ( Ocaml_ir.Ident "item",
+                                                Ocaml_ir.Ident "current" );
+                                            Ocaml_ir.Ident "current_key";
+                                            Ocaml_ir.Ident "rest" ],
+                                        start_new_group ) );
+                                  (Ocaml_ir.PAny, start_new_group) ] ) ) ) ] )
+              in
+              let finish_body =
+                Ocaml_ir.Match
+                  ( Ocaml_ir.Ident "current",
+                    [ (Ocaml_ir.PList [], apply "List.rev" [ Ocaml_ir.Ident "groups" ]);
+                      ( Ocaml_ir.PAny,
+                        apply "List.rev"
+                          [ Ocaml_ir.Cons
+                              ( apply "List.rev" [ Ocaml_ir.Ident "current" ],
+                                Ocaml_ir.Ident "groups" ) ] ) ] )
+              in
+              Ok
+                (typed_ir (TList (TList inner))
+                   (Ocaml_ir.LetRecIn
+                      ( "finish",
+                        [ Ocaml_ir.PVar "groups"; Ocaml_ir.PVar "current" ],
+                        finish_body,
+                        Ocaml_ir.LetRec
+                          ( "partition",
+                            [ Ocaml_ir.PVar "groups";
+                              Ocaml_ir.PVar "current";
+                              Ocaml_ir.PVar "current_key";
+                              Ocaml_ir.PVar "xs" ],
+                            partition_body,
+                            [ Ocaml_ir.List [];
+                              Ocaml_ir.List [];
+                              Ocaml_ir.Constructor ("None", None);
+                              list_expr ] ) )))
           | TFn _, Ok _ -> Error.error "partition-by function type does not match collection"
           | _, Ok _ -> Error.error "partition-by expects a function"
           | _, Error _ -> Error.error "partition-by expects a collection"))
@@ -1704,13 +2836,20 @@ and compile_run_bang current_ns env arg_forms =
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok fn, Ok collection -> (
-          match (fn.ty, collection_to_list_code collection) with
-          | TFn ([ param_ty ], _ret), Ok (inner, list_code) when Types.equal param_ty inner ->
+          match (fn.ty, collection_to_list_expr collection) with
+          | TFn ([ param_ty ], _ret), Ok (inner, list_expr) when Types.equal param_ty inner ->
               Ok
-                (typed TNil
-                   ("(let () = List.iter (fun item -> ignore ("
-                  ^ apply_code fn.code [ "item" ]
-                  ^ ")) (" ^ list_code ^ ") in ())"))
+                (typed_ir TUnit
+                   (Ocaml_ir.Let
+                      ( [ ( Ocaml_ir.PUnit,
+                            apply "List.iter"
+                              [ Ocaml_ir.Fun
+                                  ( [ Ocaml_ir.PVar "item" ],
+                                    apply "ignore"
+                                      [ Ocaml_ir.Apply
+                                          (fn.ocaml_expr, [ Ocaml_ir.Ident "item" ]) ] );
+                                list_expr ] ) ],
+                        Ocaml_ir.Unit )))
           | TFn _, Ok _ -> Error.error "run! function type does not match collection"
           | _, Ok _ -> Error.error "run! expects a function"
           | _, Error _ -> Error.error "run! expects a collection"))
@@ -1723,13 +2862,17 @@ and compile_map_indexed current_ns env arg_forms =
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok fn, Ok collection -> (
-          match (fn.ty, collection_to_list_code collection) with
-          | TFn ([ TInt; item_ty ], ret), Ok (inner, list_code) when Types.equal item_ty inner ->
+          match (fn.ty, collection_to_list_expr collection) with
+          | TFn ([ TInt; item_ty ], ret), Ok (inner, list_expr) when Types.equal item_ty inner ->
               Ok
-                (typed (TList ret)
-                   ("List.mapi (fun index item -> "
-                  ^ apply_code fn.code [ "index"; "item" ]
-                  ^ ") (" ^ list_code ^ ")"))
+                (typed_ir (TList ret)
+                   (apply "List.mapi"
+                      [ Ocaml_ir.Fun
+                          ( [ Ocaml_ir.PVar "index"; Ocaml_ir.PVar "item" ],
+                            Ocaml_ir.Apply
+                              ( fn.ocaml_expr,
+                                [ Ocaml_ir.Ident "index"; Ocaml_ir.Ident "item" ] ) );
+                        list_expr ]))
           | TFn _, Ok _ -> Error.error "map-indexed function type does not match collection"
           | _, Ok _ -> Error.error "map-indexed expects a function"
           | _, Error _ -> Error.error "map-indexed expects a collection"))
@@ -1742,11 +2885,12 @@ and compile_filterv current_ns env arg_forms =
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok fn, Ok collection -> (
-          match (fn.ty, collection_to_list_code collection) with
-          | TFn ([ param_ty ], TBool), Ok (inner, list_code) when Types.equal param_ty inner ->
+          match (fn.ty, collection_to_list_expr collection) with
+          | TFn ([ param_ty ], TBool), Ok (inner, list_expr) when Types.equal param_ty inner ->
               Ok
-                (typed (TVector inner)
-                   ("Rrbvec.of_list (List.filter " ^ fn.code ^ " (" ^ list_code ^ "))"))
+                (typed_ir (TVector inner)
+                   (apply "Rrbvec.of_list"
+                      [ apply "List.filter" [ fn.ocaml_expr; list_expr ] ]))
           | TFn _, Ok _ ->
               Error.error "filterv expects a predicate matching collection elements"
           | _, Ok _ -> Error.error "filterv expects a function"
@@ -1760,9 +2904,12 @@ and compile_mapv current_ns env arg_forms =
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok fn, Ok collection -> (
-          match (fn.ty, collection_to_list_code collection) with
-          | TFn ([ param_ty ], ret), Ok (inner, list_code) when Types.equal param_ty inner ->
-              Ok (typed (TVector ret) ("Rrbvec.of_list (List.map " ^ fn.code ^ " (" ^ list_code ^ "))"))
+          match (fn.ty, collection_to_list_expr collection) with
+          | TFn ([ param_ty ], ret), Ok (inner, list_expr) when Types.equal param_ty inner ->
+              Ok
+                (typed_ir (TVector ret)
+                   (apply "Rrbvec.of_list"
+                      [ apply "List.map" [ fn.ocaml_expr; list_expr ] ]))
           | TFn _, Ok _ -> Error.error "mapv function type does not match collection"
           | _, Ok _ -> Error.error "mapv expects a function"
           | _, Error _ -> Error.error "mapv expects a collection"))
@@ -1784,12 +2931,24 @@ and compile_reduce_kv current_ns env arg_forms =
           | TFn ([ acc_ty; TInt; item_ty ], ret), TVector inner
             when Types.equal acc_ty init.ty && Types.equal item_ty inner && Types.equal ret init.ty ->
               Ok
-                (typed init.ty
-                   ("List.fold_left (fun acc (index, item) -> "
-                  ^ apply_code fn.code [ "acc"; "index"; "item" ]
-                  ^ ") (" ^ init.code
-                  ^ ") (List.mapi (fun index item -> (index, item)) (Rrbvec.to_list ("
-                  ^ collection.code ^ ")))"))
+                (typed_ir init.ty
+                   (apply "List.fold_left"
+                      [ Ocaml_ir.Fun
+                          ( [ Ocaml_ir.PVar "acc";
+                              Ocaml_ir.PTuple
+                                [ Ocaml_ir.PVar "index"; Ocaml_ir.PVar "item" ] ],
+                            Ocaml_ir.Apply
+                              ( fn.ocaml_expr,
+                                [ Ocaml_ir.Ident "acc";
+                                  Ocaml_ir.Ident "index";
+                                  Ocaml_ir.Ident "item" ] ) );
+                        init.ocaml_expr;
+                        apply "List.mapi"
+                          [ Ocaml_ir.Fun
+                              ( [ Ocaml_ir.PVar "index"; Ocaml_ir.PVar "item" ],
+                                Ocaml_ir.Tuple
+                                  [ Ocaml_ir.Ident "index"; Ocaml_ir.Ident "item" ] );
+                            apply "Rrbvec.to_list" [ collection.ocaml_expr ] ] ]))
           | TFn _, TVector _ -> Error.error "reduce-kv function type does not match vector"
           | _, TVector _ -> Error.error "reduce-kv expects a function"
           | _ -> Error.error "reduce-kv expects a vector"))
@@ -1802,9 +2961,9 @@ and compile_some current_ns env arg_forms =
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok fn, Ok collection -> (
-          match (fn.ty, collection_to_list_code collection) with
-          | TFn ([ param_ty ], TBool), Ok (inner, list_code) when Types.equal param_ty inner ->
-              Ok (typed TBool ("List.exists " ^ fn.code ^ " (" ^ list_code ^ ")"))
+          match (fn.ty, collection_to_list_expr collection) with
+          | TFn ([ param_ty ], TBool), Ok (inner, list_expr) when Types.equal param_ty inner ->
+              Ok (typed_ir TBool (apply "List.exists" [ fn.ocaml_expr; list_expr ]))
           | TFn _, Ok _ -> Error.error "some expects a predicate matching collection elements"
           | _, Ok _ -> Error.error "some expects a function"
           | _, Error _ -> Error.error "some expects a collection"))
@@ -1817,27 +2976,31 @@ and compile_sequence_bool_predicate current_ns env name arg_forms =
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok fn, Ok collection -> (
-          let build all_code =
+          let build all_expr =
             match name with
-            | "every?" -> all_code
-            | "not-any?" -> all_code
-            | "not-every?" -> "not (" ^ all_code ^ ")"
-            | _ -> all_code
+            | "every?" -> all_expr
+            | "not-any?" -> all_expr
+            | "not-every?" -> Ocaml_ir.Prefix ("not", all_expr)
+            | _ -> all_expr
           in
-          let predicate_code =
+          let predicate_expr =
             match name with
-            | "not-any?" -> "(fun item -> not (" ^ apply_code fn.code [ "item" ] ^ "))"
-            | _ -> fn.code
+            | "not-any?" ->
+                Ocaml_ir.Fun
+                  ( [ Ocaml_ir.PVar "item" ],
+                    Ocaml_ir.Prefix
+                      ("not", Ocaml_ir.Apply (fn.ocaml_expr, [ Ocaml_ir.Ident "item" ])) )
+            | _ -> fn.ocaml_expr
           in
           match (fn.ty, collection.ty) with
           | TFn ([ param_ty ], TBool), TList inner when Types.equal param_ty inner ->
-              let all_code = "List.for_all " ^ predicate_code ^ " (" ^ collection.code ^ ")" in
-              Ok (typed TBool (build all_code))
+              let all_expr = apply "List.for_all" [ predicate_expr; collection.ocaml_expr ] in
+              Ok (typed_ir TBool (build all_expr))
           | TFn _, TList _ -> Error.error (name ^ " expects a predicate matching list elements")
           | _, TList _ -> Error.error (name ^ " expects a function")
           | TFn ([ param_ty ], TBool), TVector inner when Types.equal param_ty inner ->
-              let all_code = "Rrbvec.for_all " ^ predicate_code ^ " (" ^ collection.code ^ ")" in
-              Ok (typed TBool (build all_code))
+              let all_expr = apply "Rrbvec.for_all" [ predicate_expr; collection.ocaml_expr ] in
+              Ok (typed_ir TBool (build all_expr))
           | TFn _, TVector _ ->
               Error.error (name ^ " expects a predicate matching vector elements")
           | _, TVector _ -> Error.error (name ^ " expects a function")
@@ -1845,18 +3008,23 @@ and compile_sequence_bool_predicate current_ns env name arg_forms =
             when Types.compatible ~expected:param_ty ~actual:inner ->
               Types.set_module_name inner
               |> Result.map (fun set_module ->
-                     let fn_code = constrain_record_function_argument fn inner in
-                     let predicate_code =
+                     let fn_expr = constrain_record_function_argument_expr fn inner in
+                     let predicate_expr =
                        match name with
                        | "not-any?" ->
-                           "(fun item -> not (" ^ apply_code fn_code [ "item" ] ^ "))"
-                       | _ -> fn_code
+                           Ocaml_ir.Fun
+                             ( [ Ocaml_ir.PVar "item" ],
+                               Ocaml_ir.Prefix
+                                 ( "not",
+                                   Ocaml_ir.Apply (fn_expr, [ Ocaml_ir.Ident "item" ]) ) )
+                       | _ -> fn_expr
                      in
-                     let all_code =
-                       "List.for_all " ^ predicate_code ^ " (" ^ set_module
-                       ^ ".elements (" ^ collection.code ^ "))"
+                     let all_expr =
+                       apply "List.for_all"
+                         [ predicate_expr;
+                           apply (set_module ^ ".elements") [ collection.ocaml_expr ] ]
                      in
-                     typed TBool (build all_code))
+                     typed_ir TBool (build all_expr))
           | TFn _, TSet _ -> Error.error (name ^ " expects a predicate matching set elements")
           | _, TSet _ -> Error.error (name ^ " expects a function")
           | _ -> Error.error (name ^ " expects a list, vector, or set")))
@@ -1880,14 +3048,14 @@ and compile_map_call current_ns env arg_forms =
           match (fn.ty, collection.ty) with
           | TFn ([ param_ty ], ret), TList inner when Types.equal param_ty inner ->
               Ok
-                (typed (TList ret)
-                   ("List.map " ^ fn.code ^ " (" ^ collection.code ^ ")"))
+                (typed_ir (TList ret)
+                   (apply "List.map" [ fn.ocaml_expr; collection.ocaml_expr ]))
           | TFn _, TList _ -> Error.error "map function argument type does not match list"
           | _, TList _ -> Error.error "map expects a function"
           | TFn ([ param_ty ], ret), TVector inner when Types.equal param_ty inner ->
               Ok
-                (typed (TVector ret)
-                   ("Rrbvec.map " ^ fn.code ^ " (" ^ collection.code ^ ")"))
+                (typed_ir (TVector ret)
+                   (apply "Rrbvec.map" [ fn.ocaml_expr; collection.ocaml_expr ]))
           | TFn _, TVector _ -> Error.error "map function argument type does not match vector"
           | _, TVector _ -> Error.error "map expects a function"
           | TFn ([ param_ty ], ret), TSet inner
@@ -1895,10 +3063,13 @@ and compile_map_call current_ns env arg_forms =
               Result.bind (Types.set_module_name ret) (fun result_module ->
                   Types.set_module_name inner
                   |> Result.map (fun source_module ->
-                         let fn_code = constrain_record_function_argument fn inner in
-                         typed (TSet ret)
-                           (result_module ^ ".of_list (List.map " ^ fn_code ^ " ("
-                          ^ source_module ^ ".elements (" ^ collection.code ^ ")))")))
+                         let fn_expr = constrain_record_function_argument_expr fn inner in
+                         typed_ir (TSet ret)
+                           (apply (result_module ^ ".of_list")
+                              [ apply "List.map"
+                                  [ fn_expr;
+                                    apply (source_module ^ ".elements")
+                                      [ collection.ocaml_expr ] ] ])))
           | TFn _, TSet _ -> Error.error "map function argument type does not match set"
           | _, TSet _ -> Error.error "map expects a function"
           | _ -> Error.error "map expects a list, vector, or set")))
@@ -1914,24 +3085,27 @@ and compile_filter current_ns env arg_forms =
           match (fn.ty, collection.ty) with
           | TFn ([ param_ty ], TBool), TList inner when Types.equal param_ty inner ->
               Ok
-                (typed collection.ty
-                   ("List.filter " ^ fn.code ^ " (" ^ collection.code ^ ")"))
+                (typed_ir collection.ty
+                   (apply "List.filter" [ fn.ocaml_expr; collection.ocaml_expr ]))
           | TFn _, TList _ -> Error.error "filter expects a predicate matching list elements"
           | _, TList _ -> Error.error "filter expects a function"
           | TFn ([ param_ty ], TBool), TVector inner when Types.equal param_ty inner ->
               Ok
-                (typed collection.ty
-                   ("Rrbvec.filter " ^ fn.code ^ " (" ^ collection.code ^ ")"))
+                (typed_ir collection.ty
+                   (apply "Rrbvec.filter" [ fn.ocaml_expr; collection.ocaml_expr ]))
           | TFn _, TVector _ -> Error.error "filter expects a predicate matching vector elements"
           | _, TVector _ -> Error.error "filter expects a function"
           | TFn ([ param_ty ], TBool), TSet inner
             when Types.compatible ~expected:param_ty ~actual:inner ->
               Types.set_module_name inner
               |> Result.map (fun set_module ->
-                     let fn_code = constrain_record_function_argument fn inner in
-                     typed collection.ty
-                       (set_module ^ ".of_list (List.filter " ^ fn_code ^ " ("
-                      ^ set_module ^ ".elements (" ^ collection.code ^ ")))"))
+                     let fn_expr = constrain_record_function_argument_expr fn inner in
+                     typed_ir collection.ty
+                       (apply (set_module ^ ".of_list")
+                          [ apply "List.filter"
+                              [ fn_expr;
+                                apply (set_module ^ ".elements")
+                                  [ collection.ocaml_expr ] ] ]))
           | TFn _, TSet _ -> Error.error "filter expects a predicate matching set elements"
           | _, TSet _ -> Error.error "filter expects a function"
           | _ -> Error.error "filter expects a list, vector, or set"))
@@ -1953,26 +3127,29 @@ and compile_reduce current_ns env arg_forms =
           | TFn ([ acc_ty; item_ty ], ret), TList inner
             when Types.equal acc_ty init.ty && Types.equal item_ty inner && Types.equal ret init.ty ->
               Ok
-                (typed init.ty
-                   ("List.fold_left " ^ fn.code ^ " (" ^ init.code ^ ") ("
-                  ^ collection.code ^ ")"))
+                (typed_ir init.ty
+                   (apply "List.fold_left"
+                      [ fn.ocaml_expr; init.ocaml_expr; collection.ocaml_expr ]))
           | TFn _, TList _ -> Error.error "reduce function type does not match init and list"
           | _, TList _ -> Error.error "reduce expects a function"
           | TFn ([ acc_ty; item_ty ], ret), TVector inner
             when Types.equal acc_ty init.ty && Types.equal item_ty inner && Types.equal ret init.ty ->
              Ok
-                (typed init.ty
-                   ("Rrbvec.fold_left " ^ fn.code ^ " (" ^ init.code ^ ") ("
-                  ^ collection.code ^ ")"))
+                (typed_ir init.ty
+                   (apply "Rrbvec.fold_left"
+                      [ fn.ocaml_expr; init.ocaml_expr; collection.ocaml_expr ]))
           | TFn _, TVector _ -> Error.error "reduce function type does not match init and vector"
           | _, TVector _ -> Error.error "reduce expects a function"
           | TFn ([ acc_ty; item_ty ], ret), TSet inner
             when Types.equal acc_ty init.ty && Types.equal item_ty inner && Types.equal ret init.ty ->
               Types.set_module_name inner
               |> Result.map (fun set_module ->
-                     typed init.ty
-                       ("List.fold_left " ^ fn.code ^ " (" ^ init.code ^ ") ("
-                      ^ set_module ^ ".elements (" ^ collection.code ^ "))"))
+                     typed_ir init.ty
+                       (apply "List.fold_left"
+                          [ fn.ocaml_expr;
+                            init.ocaml_expr;
+                            apply (set_module ^ ".elements")
+                              [ collection.ocaml_expr ] ]))
           | TFn _, TSet _ -> Error.error "reduce function type does not match init and set"
           | _, TSet _ -> Error.error "reduce expects a function"
           | _ -> Error.error "reduce expects a list, vector, or set"))
@@ -1998,27 +3175,27 @@ and compile_apply current_ns env arg_forms =
           | _, (Error _ as err), _ -> err
           | _, _, (Error _ as err) -> err
           | Ok fn, Ok fixed_args, Ok collection -> (
-              match collection_to_list_code collection with
+              match collection_to_list_expr collection with
               | Error _ -> Error.error "apply expects a list, vector, or set"
-              | Ok (inner, list_code) -> (
+              | Ok (inner, list_expr) -> (
                   match fn.ty with
                   | TFn ([ TInt; TInt ], TInt)
                     when Types.equal inner TInt
                          && List.for_all (fun arg -> Types.equal arg.ty TInt) fixed_args ->
-                      let fixed_code =
+                      let values_expr =
                         match fixed_args with
-                        | [] -> ""
+                        | [] -> list_expr
                         | _ ->
-                            "["
-                            ^ (fixed_args
-                              |> List.map (fun arg -> arg.code)
-                              |> String.concat "; ")
-                            ^ "] @ "
+                            Ocaml_ir.Infix
+                              ( "@",
+                                Ocaml_ir.List
+                                  (List.map (fun arg -> arg.ocaml_expr) fixed_args),
+                                list_expr )
                       in
                       Ok
-                        (typed TInt
-                           ("List.fold_left " ^ fn.code ^ " 0 (" ^ fixed_code ^ "("
-                          ^ list_code ^ "))"))
+                        (typed_ir TInt
+                           (apply "List.fold_left"
+                              [ fn.ocaml_expr; Ocaml_ir.Int 0; values_expr ]))
                   | TFn ([ TInt; TInt ], TInt) ->
                       Error.error "apply currently supports int binary reducers"
                   | TFn _ -> Error.error "apply currently supports int binary reducers"
@@ -2160,13 +3337,15 @@ and compile_predicate_combinator current_ns env name arg_forms =
   | Error _ as err -> err
   | Ok [] -> Error.error (name ^ " expects at least 1 predicate")
   | Ok fns -> (
-      let rec collect arg_ty codes = function
-        | [] -> Ok (arg_ty, List.rev codes)
+      let rec collect arg_ty exprs = function
+        | [] -> Ok (arg_ty, List.rev exprs)
         | fn :: rest -> (
             match fn.ty with
             | TFn ([ current_arg ], TBool)
               when option_for_all (fun arg_ty -> Types.equal arg_ty current_arg) arg_ty ->
-                collect (Some current_arg) (apply_code fn.code [ "x" ] :: codes) rest
+                collect (Some current_arg)
+                  (Ocaml_ir.Apply (fn.ocaml_expr, [ Ocaml_ir.Ident "x" ]) :: exprs)
+                  rest
             | TFn _ ->
                 Error.error (name ^ " expects predicates with the same argument type")
             | _ -> Error.error (name ^ " expects predicates"))
@@ -2174,11 +3353,19 @@ and compile_predicate_combinator current_ns env name arg_forms =
       match collect None [] fns with
       | Error _ as err -> err
       | Ok (None, _) -> Error.error (name ^ " expects at least 1 predicate")
-      | Ok (Some arg_ty, codes) ->
-          let op = if name = "every-pred" then " && " else " || " in
+      | Ok (Some arg_ty, exprs) ->
+          let op = if name = "every-pred" then "&&" else "||" in
+          let body =
+            match exprs with
+            | [] -> Ocaml_ir.Bool (name = "every-pred")
+            | first :: rest ->
+                List.fold_left
+                  (fun acc expr -> Ocaml_ir.Infix (op, acc, expr))
+                  first rest
+          in
           Ok
-            (typed (TFn ([ arg_ty ], TBool))
-               ("(fun x -> " ^ String.concat op codes ^ ")")))
+            (typed_ir (TFn ([ arg_ty ], TBool))
+               (Ocaml_ir.Fun ([ Ocaml_ir.PVar "x" ], body))))
 
 and compile_juxt current_ns env arg_forms =
   let compile_fns =
@@ -2198,15 +3385,15 @@ and compile_juxt current_ns env arg_forms =
   | Error _ as err -> err
   | Ok [] -> Error.error "juxt expects at least 1 function"
   | Ok fns -> (
-      let rec collect arg_ty ret_ty codes = function
-        | [] -> Ok (arg_ty, ret_ty, List.rev codes)
+      let rec collect arg_ty ret_ty exprs = function
+        | [] -> Ok (arg_ty, ret_ty, List.rev exprs)
         | fn :: rest -> (
             match fn.ty with
             | TFn ([ current_arg ], current_ret)
               when option_for_all (fun arg_ty -> Types.equal arg_ty current_arg) arg_ty
                    && option_for_all (fun ret_ty -> Types.equal ret_ty current_ret) ret_ty ->
                 collect (Some current_arg) (Some current_ret)
-                  (apply_code fn.code [ "x" ] :: codes)
+                  (Ocaml_ir.Apply (fn.ocaml_expr, [ Ocaml_ir.Ident "x" ]) :: exprs)
                   rest
             | TFn ([ current_arg ], _)
               when option_for_all (fun arg_ty -> Types.equal arg_ty current_arg) arg_ty ->
@@ -2216,23 +3403,29 @@ and compile_juxt current_ns env arg_forms =
       in
       match collect None None [] fns with
       | Error _ as err -> err
-      | Ok (Some arg_ty, Some ret_ty, codes) ->
+      | Ok (Some arg_ty, Some ret_ty, exprs) ->
           Ok
-            (typed (TFn ([ arg_ty ], TVector ret_ty))
-               ("(fun x -> Rrbvec.of_list [" ^ String.concat "; " codes ^ "])"))
+            (typed_ir (TFn ([ arg_ty ], TVector ret_ty))
+               (Ocaml_ir.Fun
+                  ( [ Ocaml_ir.PVar "x" ],
+                    apply "Rrbvec.of_list" [ Ocaml_ir.List exprs ] )))
       | Ok _ -> Error.error "juxt expects at least 1 function")
 
 and compile_distinct_question current_ns env arg_forms =
   match compile_args_for current_ns env arg_forms with
   | Error _ as err -> err
-  | Ok ([] | [ _ ]) -> Ok (typed TBool "true")
+  | Ok ([] | [ _ ]) -> Ok (typed_ir TBool (Ocaml_ir.Bool true))
   | Ok (first :: _ as args) ->
       if List.for_all (fun arg -> Types.equal first.ty arg.ty) args then
-        let values = args |> List.map (fun arg -> arg.code) |> String.concat "; " in
-        let len = string_of_int (List.length args) in
         Ok
-          (typed TBool
-             ("(List.length (List.sort_uniq compare [" ^ values ^ "]) = " ^ len ^ ")"))
+          (typed_ir TBool
+             (Ocaml_ir.Infix
+                ( "=",
+                  apply "List.length"
+                    [ apply "List.sort_uniq"
+                        [ Ocaml_ir.Ident "compare";
+                          Ocaml_ir.List (List.map (fun arg -> arg.ocaml_expr) args) ] ],
+                  Ocaml_ir.Int (List.length args) )))
       else Error.error "distinct? arguments must have the same type"
 
 and compile_compare current_ns env arg_forms =
@@ -2243,7 +3436,10 @@ and compile_compare current_ns env arg_forms =
         Error.error "compare arguments must have the same type"
       else if not (comparable_type left.ty) then
         Error.error "compare expects comparable arguments"
-      else Ok (typed TInt ("Stdlib.compare (" ^ left.code ^ ") (" ^ right.code ^ ")"))
+      else
+        Ok
+          (typed_ir TInt
+             (apply "Stdlib.compare" [ left.ocaml_expr; right.ocaml_expr ]))
   | Ok _ -> Error.error "compare expects 2 arguments"
 
 and compile_key_extreme current_ns env name arg_forms =
@@ -2262,19 +3458,35 @@ and compile_key_extreme current_ns env name arg_forms =
               when Types.compatible ~expected:arg_ty ~actual:first.ty
                    && comparable_type key_ty ->
                 let rest = List.tl values in
-                let compare_op = if name = "max-key" then "> 0" else "< 0" in
-                let code =
+                let compare_op = if name = "max-key" then ">" else "<" in
+                let expr =
                   match rest with
-                  | [] -> first.code
+                  | [] -> first.ocaml_expr
                   | _ ->
-                      "(let key_fn = " ^ fn.code
-                      ^ " in let choose best item = if Stdlib.compare (key_fn item) (key_fn best) "
-                      ^ compare_op ^ " then item else best in List.fold_left choose ("
-                      ^ first.code ^ ") ["
-                      ^ (rest |> List.map (fun value -> value.code) |> String.concat "; ")
-                      ^ "])"
+                      Ocaml_ir.Let
+                        ( [ (Ocaml_ir.PVar "key_fn", fn.ocaml_expr);
+                            ( Ocaml_ir.PVar "choose",
+                              Ocaml_ir.Fun
+                                ( [ Ocaml_ir.PVar "best"; Ocaml_ir.PVar "item" ],
+                                  Ocaml_ir.If
+                                    ( Ocaml_ir.Infix
+                                        ( compare_op,
+                                          apply "Stdlib.compare"
+                                            [ Ocaml_ir.Apply
+                                                ( Ocaml_ir.Ident "key_fn",
+                                                  [ Ocaml_ir.Ident "item" ] );
+                                              Ocaml_ir.Apply
+                                                ( Ocaml_ir.Ident "key_fn",
+                                                  [ Ocaml_ir.Ident "best" ] ) ],
+                                          Ocaml_ir.Int 0 ),
+                                      Ocaml_ir.Ident "item",
+                                      Ocaml_ir.Ident "best" ) ) ) ],
+                          apply "List.fold_left"
+                            [ Ocaml_ir.Ident "choose";
+                              first.ocaml_expr;
+                              Ocaml_ir.List (List.map (fun value -> value.ocaml_expr) rest) ] )
                 in
-                Ok (typed first.ty code)
+                Ok (typed_ir first.ty expr)
             | TFn _ -> Error.error (name ^ " expects a key function matching values")
             | _ -> Error.error (name ^ " expects a function")))
   | _ -> Error.error (name ^ " expects function and values")
@@ -2423,7 +3635,7 @@ let compile_extend_type current_ns env next_type receiver_keyword protocol_name 
                                       let env_key =
                                         Names.namespaced_key current_ns impl_key_name
                                       in
-                                      let binding = Types.binding ocaml_name expr.ty in
+                                      let binding = binding_of_expr ocaml_name expr in
                                       Ok
                                         ( env @ [ (env_key, binding) ],
                                           Value_binding
@@ -2453,17 +3665,617 @@ let module_binding_key module_path name = module_path ^ "/" ^ name
 let module_binding_ocaml_name module_path name =
   Names.module_path_to_ocaml module_path ^ "." ^ Names.sanitize_name name
 
-let rec compile_module current_ns env next_type module_path module_segment forms =
+let open_module_bindings current_ns env module_path =
+  let prefix = module_path ^ "/" in
+  let prefix_len = String.length prefix in
+  let record_prefix = "__record/" ^ module_path ^ "/" in
+  let record_prefix_len = String.length record_prefix in
+  let opened =
+    env
+    |> List.filter_map (fun (key, (binding : binding)) ->
+           if String.length key > prefix_len && String.sub key 0 prefix_len = prefix then
+             let local = String.sub key prefix_len (String.length key - prefix_len) in
+             let opened_binding =
+               { binding with ocaml_name = Names.sanitize_name local }
+             in
+             Some (Names.namespaced_key current_ns local, opened_binding)
+           else if
+             String.length key > record_prefix_len
+             && String.sub key 0 record_prefix_len = record_prefix
+           then
+             let local =
+               String.sub key record_prefix_len
+                 (String.length key - record_prefix_len)
+             in
+             Some (record_type_key current_ns local, binding)
+           else None)
+  in
+  env @ opened
+
+let include_module_public_bindings module_path env included_module_path =
+  let prefix = included_module_path ^ "/" in
+  let prefix_len = String.length prefix in
+  let record_prefix = "__record/" ^ included_module_path ^ "/" in
+  let record_prefix_len = String.length record_prefix in
+  env
+  |> List.filter_map (fun (key, (binding : binding)) ->
+         if String.length key > prefix_len && String.sub key 0 prefix_len = prefix then
+           let name = String.sub key prefix_len (String.length key - prefix_len) in
+           Some
+             ( module_binding_key module_path name,
+               { binding with ocaml_name = module_binding_ocaml_name module_path name }
+             )
+         else if
+           String.length key > record_prefix_len
+           && String.sub key 0 record_prefix_len = record_prefix
+         then
+           let name =
+             String.sub key record_prefix_len
+               (String.length key - record_prefix_len)
+           in
+           Some (record_type_key module_path name, binding)
+         else None)
+
+let alias_module_bindings env alias_path target_path =
+  let direct_prefix = target_path ^ "/" in
+  let direct_prefix_len = String.length direct_prefix in
+  let nested_prefix = target_path ^ "." in
+  let nested_prefix_len = String.length nested_prefix in
+  let direct_record_prefix = "__record/" ^ target_path ^ "/" in
+  let direct_record_prefix_len = String.length direct_record_prefix in
+  let nested_record_prefix = "__record/" ^ target_path ^ "." in
+  let nested_record_prefix_len = String.length nested_record_prefix in
+  env
+  |> List.filter_map (fun (key, (binding : binding)) ->
+         if
+           String.length key > direct_prefix_len
+           && String.sub key 0 direct_prefix_len = direct_prefix
+         then
+           let name =
+             String.sub key direct_prefix_len
+               (String.length key - direct_prefix_len)
+           in
+           let alias_key = module_binding_key alias_path name in
+           let alias_binding =
+             { binding with ocaml_name = module_binding_ocaml_name alias_path name }
+           in
+           Some (alias_key, alias_binding)
+        else if
+          String.length key > nested_prefix_len
+          && String.sub key 0 nested_prefix_len = nested_prefix
+         then
+           let suffix =
+             String.sub key nested_prefix_len
+               (String.length key - nested_prefix_len)
+           in
+           match String.split_on_char '/' suffix with
+           | [ nested_path; name ] ->
+               let nested_alias_path = alias_path ^ "." ^ nested_path in
+               let alias_key = module_binding_key nested_alias_path name in
+               let alias_binding =
+                 {
+                   binding with
+                   ocaml_name = module_binding_ocaml_name nested_alias_path name;
+                 }
+               in
+               Some (alias_key, alias_binding)
+           | _ -> None
+        else if
+          String.length key > direct_record_prefix_len
+          && String.sub key 0 direct_record_prefix_len = direct_record_prefix
+         then
+           let name =
+             String.sub key direct_record_prefix_len
+               (String.length key - direct_record_prefix_len)
+           in
+           Some (record_type_key alias_path name, binding)
+        else if
+          String.length key > nested_record_prefix_len
+          && String.sub key 0 nested_record_prefix_len = nested_record_prefix
+         then
+           let suffix =
+             String.sub key nested_record_prefix_len
+               (String.length key - nested_record_prefix_len)
+           in
+           match String.split_on_char '/' suffix with
+           | [ nested_path; name ] ->
+               Some (record_type_key (alias_path ^ "." ^ nested_path) name, binding)
+           | _ -> None
+         else None)
+
+let signature_binding_key signature_name value_name =
+  "__signature/" ^ signature_name ^ "/" ^ value_name
+
+let functor_result_key functor_name value_name =
+  "__functor/" ^ functor_name ^ "/" ^ value_name
+
+let functor_result_record_key functor_name type_name =
+  "__functor_record/" ^ functor_name ^ "/" ^ type_name
+
+let signature_metadata_bindings signature_name items =
+  items
+  |> List.filter_map (function
+       | Signature_value { source_name; value_name; value_type } ->
+           Some
+             ( signature_binding_key signature_name source_name,
+               Types.binding value_name value_type )
+       | Signature_type _ -> None)
+
+let signature_parameter_bindings env parameter_name signature_name =
+  let prefix = "__signature/" ^ signature_name ^ "/" in
+  let prefix_len = String.length prefix in
+  let parameter_path = Names.module_segment_to_ocaml parameter_name in
+  env
+  |> List.filter_map (fun (key, (binding : binding)) ->
+         if String.length key > prefix_len && String.sub key 0 prefix_len = prefix then
+           let value_name =
+             String.sub key prefix_len (String.length key - prefix_len)
+           in
+           Some
+             ( module_binding_key parameter_name value_name,
+               { binding with ocaml_name = parameter_path ^ "." ^ binding.ocaml_name }
+             )
+         else None)
+
+let store_functor_result_bindings functor_name public_bindings =
+  let prefix = functor_name ^ "/" in
+  let prefix_len = String.length prefix in
+  let record_prefix = "__record/" ^ functor_name ^ "/" in
+  let record_prefix_len = String.length record_prefix in
+  public_bindings
+  |> List.filter_map (fun (key, (binding : binding)) ->
+         if String.length key > prefix_len && String.sub key 0 prefix_len = prefix then
+           let value_name =
+             String.sub key prefix_len (String.length key - prefix_len)
+           in
+           Some (functor_result_key functor_name value_name, binding)
+         else if
+           String.length key > record_prefix_len
+           && String.sub key 0 record_prefix_len = record_prefix
+         then
+           let type_name =
+             String.sub key record_prefix_len
+               (String.length key - record_prefix_len)
+           in
+           Some (functor_result_record_key functor_name type_name, binding)
+         else None)
+
+let apply_functor_result_bindings env module_name functor_name =
+  let prefix = "__functor/" ^ functor_name ^ "/" in
+  let prefix_len = String.length prefix in
+  let record_prefix = "__functor_record/" ^ functor_name ^ "/" in
+  let record_prefix_len = String.length record_prefix in
+  env
+  |> List.filter_map (fun (key, (binding : binding)) ->
+         if String.length key > prefix_len && String.sub key 0 prefix_len = prefix then
+           let value_name =
+             String.sub key prefix_len (String.length key - prefix_len)
+           in
+           Some
+             ( module_binding_key module_name value_name,
+               {
+                 binding with
+                 ocaml_name = module_binding_ocaml_name module_name value_name;
+               } )
+         else if
+           String.length key > record_prefix_len
+           && String.sub key 0 record_prefix_len = record_prefix
+         then
+           let type_name =
+             String.sub key record_prefix_len
+               (String.length key - record_prefix_len)
+           in
+           Some (record_type_key module_name type_name, binding)
+         else None)
+
+let compile_module_alias current_ns env next_type alias_name target_name =
+  let alias_bindings = alias_module_bindings env alias_name target_name in
+  Ok
+    ( current_ns,
+      env @ alias_bindings,
+      next_type,
+      Module_alias
+        {
+          alias_name = Names.module_segment_to_ocaml alias_name;
+          target_name = Names.module_path_to_ocaml target_name;
+        } )
+
+let parse_type_parameters = function
+  | FVector [] -> Error.error "type parameter vector must not be empty"
+  | FVector forms ->
+      let rec loop parameters = function
+        | [] -> Ok (List.rev parameters)
+        | FSymbol parameter :: rest ->
+            let parameter = Names.sanitize_name parameter in
+            if List.mem parameter parameters then
+              Error.error ("duplicate type parameter " ^ parameter)
+            else loop (parameter :: parameters) rest
+        | _ -> Error.error "type parameters must be symbols"
+      in
+      loop [] forms
+  | _ -> Error.error "type parameters must be a vector"
+
+let compile_module_signature current_ns env next_type signature_name item_forms =
+  let rec parse items = function
+    | [] -> Ok (List.rev items)
+    | FList [ FSymbol "val"; FSymbol value_name; FKeyword keyword ] :: rest -> (
+        match Type_annotation.of_keyword keyword with
+        | Error _ -> Error.error ("unknown signature type " ^ keyword)
+        | Ok value_type ->
+            parse
+              (Signature_value
+                 {
+                   source_name = value_name;
+                   value_name = Names.sanitize_name value_name;
+                   value_type;
+                 }
+              :: items)
+              rest)
+    | FList [ FSymbol "type"; FSymbol type_name; FKeyword keyword ] :: rest -> (
+        match Type_annotation.of_keyword keyword with
+        | Error _ -> Error.error ("unknown signature type " ^ keyword)
+        | Ok manifest ->
+            parse
+              (Signature_type
+                 {
+                   type_name = Names.sanitize_name type_name;
+                   type_parameters = [];
+                   manifest = Some manifest;
+                 }
+              :: items)
+              rest)
+    | FList [ FSymbol "type"; FSymbol type_name ] :: rest ->
+        parse
+          (Signature_type
+             {
+               type_name = Names.sanitize_name type_name;
+               type_parameters = [];
+               manifest = None;
+             }
+          :: items)
+          rest
+    | FList
+        [ FSymbol "type"; FSymbol type_name; (FVector _ as parameter_form);
+          FKeyword keyword ]
+      :: rest -> (
+        match parse_type_parameters parameter_form with
+        | Error _ as err -> err
+        | Ok type_parameters -> (
+            match
+              Type_annotation.of_keyword_with_parameters type_parameters keyword
+            with
+            | Error (err : Error.t)
+              when String.starts_with ~prefix:"unknown type parameter " err.message ->
+                Error err
+            | Error _ -> Error.error ("unknown signature type " ^ keyword)
+            | Ok manifest ->
+                parse
+                  (Signature_type
+                     {
+                       type_name = Names.sanitize_name type_name;
+                       type_parameters;
+                       manifest = Some manifest;
+                     }
+                  :: items)
+                  rest))
+    | FList
+        [ FSymbol "type"; FSymbol type_name; (FVector _ as parameter_form) ]
+      :: rest -> (
+        match parse_type_parameters parameter_form with
+        | Error _ as err -> err
+        | Ok type_parameters ->
+            parse
+              (Signature_type
+                 {
+                   type_name = Names.sanitize_name type_name;
+                   type_parameters;
+                   manifest = None;
+                 }
+              :: items)
+          rest
+        )
+    | _ -> Error.error "module-signature items must be val or type declarations"
+  in
+  match parse [] item_forms with
+  | Error _ as err -> err
+  | Ok [] -> Error.error "module-signature expects at least one signature item"
+  | Ok items ->
+      let signature_name = Names.module_segment_to_ocaml signature_name in
+      let env = env @ signature_metadata_bindings signature_name items in
+      Ok
+        ( current_ns,
+          env,
+          next_type,
+          Module_signature
+            { signature_name; items } )
+
+let compile_type_alias current_ns env next_type name type_parameters manifest_form =
+  match manifest_form with
+  | FKeyword keyword -> (
+      match Type_annotation.of_keyword_with_parameters type_parameters keyword with
+      | Error _ as err when String.starts_with ~prefix:":param/" keyword -> err
+      | Error _ -> Error.error ("unknown type alias target " ^ keyword)
+      | Ok manifest ->
+          let type_name = Names.sanitize_name name in
+          Ok
+            ( current_ns,
+              env,
+              next_type,
+              Type_alias { type_name; type_parameters; manifest } ))
+  | _ -> Error.error "type-alias expects a type keyword target"
+
+let compile_type_record current_ns env next_type name type_parameters field_forms =
+  let field_spec = function
+    | FList [ FSymbol field_name; FKeyword keyword ] -> (
+        match Type_annotation.of_keyword_with_parameters type_parameters keyword with
+        | Error _ as err when String.starts_with ~prefix:":param/" keyword -> err
+        | Error _ -> Error.error ("unknown record field type " ^ keyword)
+        | Ok ty ->
+            Ok
+              {
+                keyword = ":" ^ field_name;
+                ocaml_name = Names.sanitize_name field_name;
+                ty;
+              })
+    | _ -> Error.error "type-record fields must be (name :type)"
+  in
+  let rec parse (fields : field list) = function
+    | [] -> Ok (List.rev fields)
+    | field_form :: rest -> (
+        match field_spec field_form with
+        | Error _ as err -> err
+        | Ok field ->
+            if
+              List.exists
+                (fun (existing : field) -> existing.ocaml_name = field.ocaml_name)
+                fields
+            then Error.error "duplicate record field name"
+            else parse (field :: fields) rest)
+  in
+  match parse [] field_forms with
+  | Error _ as err -> err
+  | Ok [] -> Error.error "type-record expects at least one field"
+  | Ok fields ->
+      let type_name = Names.sanitize_name name in
+      let record_ty =
+        Types.named_record ~type_name ~type_parameters
+          ~set_module_name:(type_name ^ "_set") fields
+      in
+      let env =
+        env
+        @ [
+            ( record_type_key current_ns name,
+              Types.binding type_name record_ty );
+          ]
+      in
+      Ok
+        ( current_ns,
+          env,
+          next_type,
+          Type_def { type_name; type_parameters; fields } )
+
+let record_type_public_binding module_path name env =
+  let key = record_type_key module_path name in
+  match List.assoc_opt key env with
+  | Some binding -> Ok (key, binding)
+  | None -> Error.error ("internal error: missing record metadata for " ^ name)
+
+let compile_type_variant current_ns env next_type name type_parameters constructor_forms =
+  let constructor_name = function
+    | FSymbol constructor -> Ok constructor
+    | _ -> Error.error "type-variant constructors must be symbols"
+  in
+  let payload_type = function
+    | FKeyword keyword -> (
+        match Type_annotation.of_keyword_with_parameters type_parameters keyword with
+        | Ok ty -> Ok ty
+        | Error _ as err when String.starts_with ~prefix:":param/" keyword -> err
+        | Error _ -> Error.error ("unknown variant payload type " ^ keyword))
+    | _ -> Error.error "type-variant payload types must be keywords"
+  in
+  let constructor_spec = function
+    | FSymbol constructor ->
+        Ok { constructor_name = constructor; payload_types = [] }
+    | FList (constructor_form :: payload_forms) -> (
+        match constructor_name constructor_form with
+        | Error _ as err -> err
+        | Ok constructor_name ->
+            let rec parse_payloads acc = function
+              | [] -> Ok (List.rev acc)
+              | payload_form :: rest -> (
+                  match payload_type payload_form with
+                  | Error _ as err -> err
+                  | Ok payload_ty -> parse_payloads (payload_ty :: acc) rest)
+            in
+            parse_payloads [] payload_forms
+            |> Result.map (fun payload_types -> { constructor_name; payload_types }))
+    | _ -> Error.error "type-variant constructors must be symbols"
+  in
+  let rec parse constructors = function
+    | [] -> Ok (List.rev constructors)
+    | constructor_form :: rest -> (
+        match constructor_spec constructor_form with
+        | Error _ as err -> err
+        | Ok constructor ->
+            if
+              List.exists
+                (fun existing ->
+                  existing.constructor_name = constructor.constructor_name)
+                constructors
+            then Error.error ("duplicate variant constructor " ^ constructor.constructor_name)
+            else parse (constructor :: constructors) rest)
+  in
+  match parse [] constructor_forms with
+  | Error _ as err -> err
+  | Ok [] -> Error.error "type-variant expects at least one constructor"
+  | Ok constructors ->
+      let type_name = Names.sanitize_name name in
+      let constructor_bindings =
+        let result_type =
+          match type_parameters with
+          | [] -> TOcaml type_name
+          | parameters -> TOcaml_app (type_name, List.map (fun name -> TVar name) parameters)
+        in
+        constructors
+        |> List.map (fun constructor ->
+               ( Names.namespaced_key current_ns constructor.constructor_name,
+                 Types.binding constructor.constructor_name
+                   (TFn (constructor.payload_types, result_type)) ))
+      in
+      Ok
+        ( current_ns,
+          env @ constructor_bindings,
+          next_type,
+          Type_variant { type_name; type_parameters; constructors } )
+
+let compile_module_apply current_ns env next_type module_name functor_name
+    argument_name =
+  let applied_bindings =
+    apply_functor_result_bindings env module_name functor_name
+  in
+  Ok
+    ( current_ns,
+      env @ applied_bindings,
+      next_type,
+      Module_apply
+        {
+          module_name = Names.module_segment_to_ocaml module_name;
+          functor_name = Names.module_path_to_ocaml functor_name;
+          argument_name = Names.module_path_to_ocaml argument_name;
+        } )
+
+let rec compile_module ?signature_name current_ns env next_type module_path
+    module_segment forms =
+  let env = inherit_namespace_ocaml_value_refers current_ns module_path env in
   let rec compile_module_form env public_bindings next_type items = function
+    | FList (FSymbol "module-signature" :: FSymbol signature_name :: item_forms) -> (
+        match compile_module_signature module_path env next_type signature_name item_forms with
+        | Error _ as err -> err
+        | Ok (_current_ns, env, next_type, item) ->
+            Ok (env, public_bindings, next_type, item :: items))
+    | FList (FSymbol "module-signature" :: _) ->
+        Error.error "module-signature expects a name and signature items"
+    | FList [ FSymbol "type-alias"; FSymbol name; FVector parameter_forms; manifest_form ] -> (
+        match parse_type_parameters (FVector parameter_forms) with
+        | Error _ as err -> err
+        | Ok type_parameters -> (
+            match
+              compile_type_alias module_path env next_type name type_parameters
+                manifest_form
+            with
+            | Error _ as err -> err
+            | Ok (_current_ns, _env, next_type, item) ->
+                Ok (env, public_bindings, next_type, item :: items)))
+    | FList [ FSymbol "type-alias"; FSymbol name; manifest_form ] -> (
+        match compile_type_alias module_path env next_type name [] manifest_form with
+        | Error _ as err -> err
+        | Ok (_current_ns, _env, next_type, item) ->
+            Ok (env, public_bindings, next_type, item :: items))
+    | FList
+        (FSymbol "type-record" :: FSymbol name :: FVector parameter_forms
+        :: field_forms) -> (
+        match parse_type_parameters (FVector parameter_forms) with
+        | Error _ as err -> err
+        | Ok type_parameters -> (
+            match
+              compile_type_record module_path env next_type name type_parameters
+                field_forms
+            with
+            | Error _ as err -> err
+            | Ok (_current_ns, env, next_type, item) -> (
+                match record_type_public_binding module_path name env with
+                | Error _ as err -> err
+                | Ok public_binding ->
+                    Ok
+                      ( env,
+                        public_bindings @ [ public_binding ],
+                        next_type,
+                        item :: items ))))
+    | FList (FSymbol "type-record" :: FSymbol name :: field_forms) -> (
+        match compile_type_record module_path env next_type name [] field_forms with
+        | Error _ as err -> err
+        | Ok (_current_ns, env, next_type, item) -> (
+            match record_type_public_binding module_path name env with
+            | Error _ as err -> err
+            | Ok public_binding ->
+                Ok
+                  ( env,
+                    public_bindings @ [ public_binding ],
+                    next_type,
+                    item :: items )))
+    | FList (FSymbol "type-record" :: _) ->
+        Error.error "type-record expects a name and fields"
+    | FList
+        (FSymbol "type-variant" :: FSymbol name :: FVector parameter_forms
+        :: constructor_forms) -> (
+        match parse_type_parameters (FVector parameter_forms) with
+        | Error _ as err -> err
+        | Ok type_parameters -> (
+            match
+              compile_type_variant module_path env next_type name type_parameters
+                constructor_forms
+            with
+            | Error _ as err -> err
+            | Ok (_current_ns, _env, next_type, item) ->
+                Ok (env, public_bindings, next_type, item :: items)))
+    | FList (FSymbol "type-variant" :: FSymbol name :: constructor_forms) -> (
+        match compile_type_variant module_path env next_type name [] constructor_forms with
+        | Error _ as err -> err
+        | Ok (_current_ns, _env, next_type, item) ->
+            Ok (env, public_bindings, next_type, item :: items))
+    | FList [ FSymbol "open"; FSymbol opened_module ] ->
+        let env = open_module_bindings module_path env opened_module in
+        Ok
+          ( env,
+            public_bindings,
+            next_type,
+            Open_module (Names.module_path_to_ocaml opened_module) :: items )
+    | FList [ FSymbol "include"; FSymbol included_module ] ->
+        let included_public_bindings =
+          include_module_public_bindings module_path env included_module
+        in
+        let env = open_module_bindings module_path env included_module in
+        Ok
+          ( env,
+            public_bindings @ included_public_bindings,
+            next_type,
+            Include_module (Names.module_path_to_ocaml included_module) :: items )
+    | FList (FSymbol "include" :: _) ->
+        Error.error "include expects one module"
+    | FList [ FSymbol "module-alias"; FSymbol alias_name; FSymbol target_name ] ->
+        let local_alias_bindings =
+          alias_module_bindings env alias_name target_name
+        in
+        let public_alias_path = module_path ^ "." ^ alias_name in
+        let public_alias_bindings =
+          alias_module_bindings env public_alias_path target_name
+        in
+        Ok
+          ( env @ local_alias_bindings,
+            public_bindings @ public_alias_bindings,
+            next_type,
+            Module_alias
+              {
+                alias_name = Names.module_segment_to_ocaml alias_name;
+                target_name = Names.module_path_to_ocaml target_name;
+              }
+            :: items )
+    | FList (FSymbol "module-alias" :: _) ->
+        Error.error "module-alias expects alias and target modules"
     | FList [ FSymbol "def"; FSymbol name; expr_form ] -> (
         match compile_expr module_path env expr_form with
         | Error _ as err -> err
         | Ok expr ->
             let local_name = Names.sanitize_name name in
             let key = module_binding_key module_path name in
-            let local_binding = Types.binding local_name expr.ty in
+            let local_binding = binding_of_expr local_name expr in
             let public_binding =
-              Types.binding (module_binding_ocaml_name module_path name) expr.ty
+              Types.binding
+                ?return_param_index:(expr.return_param_index)
+                (module_binding_ocaml_name module_path name)
+                (Types.qualify_module_type
+                   (Names.module_path_to_ocaml module_path)
+                   expr.ty)
             in
             (match expr.ty with
             | TRecord fields -> (
@@ -2527,10 +4339,14 @@ let rec compile_module current_ns env next_type module_path module_segment forms
             | TFn _ ->
                 let key = module_binding_key module_path name in
                 let local_binding =
-                  Types.binding ~row_param_types:local_row_types local_name expr.ty
+                  binding_of_expr ~row_param_types:local_row_types local_name expr
                 in
                 let public_binding =
-                  Types.binding ~row_param_types:public_row_types public_name expr.ty
+                  Types.binding ~row_param_types:public_row_types
+                    ?return_param_index:(expr.return_param_index) public_name
+                    (Types.qualify_module_type
+                       (Names.module_path_to_ocaml module_path)
+                       expr.ty)
                 in
                 let type_items = row_type_items local_row_types param_tys in
                 let value_item =
@@ -2543,6 +4359,21 @@ let rec compile_module current_ns env next_type module_path module_segment forms
                     next_type,
                     Group (type_items @ [ value_item ]) :: items )
             | _ -> Error.error "defn body did not compile to a function"))
+    | FList
+        (FSymbol "module" :: FSymbol nested_segment :: FSymbol nested_signature_name
+        :: nested_forms) -> (
+        let nested_path = module_path ^ "." ^ nested_segment in
+        match
+          compile_module ~signature_name:nested_signature_name current_ns env next_type
+            nested_path nested_segment nested_forms
+        with
+        | Error _ as err -> err
+        | Ok (_current_ns, nested_public_bindings, next_type, nested_item) ->
+            Ok
+              ( env @ nested_public_bindings,
+                public_bindings @ nested_public_bindings,
+                next_type,
+                nested_item :: items ))
     | FList (FSymbol "module" :: FSymbol nested_segment :: nested_forms) -> (
         let nested_path = module_path ^ "." ^ nested_segment in
         match compile_module current_ns env next_type nested_path nested_segment nested_forms with
@@ -2553,7 +4384,9 @@ let rec compile_module current_ns env next_type module_path module_segment forms
                 public_bindings @ nested_public_bindings,
                 next_type,
                 nested_item :: items ))
-    | _ -> Error.error "module forms must be def, defn, or module"
+    | _ ->
+        Error.error
+          "module forms must be module-signature, type-alias, type-record, type-variant, open, include, module-alias, def, defn, or module"
   and loop env public_bindings next_type items = function
     | [] ->
         let module_name = Names.module_segment_to_ocaml module_segment in
@@ -2561,7 +4394,13 @@ let rec compile_module current_ns env next_type module_path module_segment forms
           ( current_ns,
             public_bindings,
             next_type,
-            Module_def { module_name; items = List.rev items } )
+            Module_def
+              {
+                module_name;
+                signature_name =
+                  Option.map Names.module_path_to_ocaml signature_name;
+                items = List.rev items;
+              } )
     | form :: rest -> (
         match compile_module_form env public_bindings next_type items form with
         | Error _ as err -> err
@@ -2570,7 +4409,113 @@ let rec compile_module current_ns env next_type module_path module_segment forms
   in
   loop env [] next_type [] forms
 
+let compile_module_functor current_ns env next_type functor_name parameter_form
+    body_forms =
+  match parameter_form with
+  | FVector [ FSymbol parameter_name; FSymbol parameter_signature ] ->
+      let parameter_signature_name =
+        Names.module_path_to_ocaml parameter_signature
+      in
+      let parameter_bindings =
+        signature_parameter_bindings env parameter_name parameter_signature_name
+      in
+      let functor_env = env @ parameter_bindings in
+      (match
+         compile_module current_ns functor_env next_type functor_name functor_name
+           body_forms
+       with
+      | Error _ as err -> err
+      | Ok (_current_ns, public_bindings, next_type, module_item) -> (
+          match module_item with
+          | Module_def { items; _ } ->
+              let functor_bindings =
+                store_functor_result_bindings functor_name public_bindings
+              in
+              Ok
+                ( current_ns,
+                  env @ functor_bindings,
+                  next_type,
+                  Module_functor
+                    {
+                      functor_name = Names.module_segment_to_ocaml functor_name;
+                      parameter_name = Names.module_segment_to_ocaml parameter_name;
+                      parameter_signature = parameter_signature_name;
+                      items;
+                    } )
+          | _ -> Error.error "internal error: module functor body did not compile"))
+  | _ ->
+      Error.error
+        "module-functor expects a name, [parameter signature], and body"
+
 let compile_top_level current_ns env next_type = function
+  | FList (FSymbol "module-signature" :: FSymbol signature_name :: item_forms) ->
+      compile_module_signature current_ns env next_type signature_name item_forms
+  | FList (FSymbol "module-signature" :: _) ->
+      Error.error "module-signature expects a name and signature items"
+  | FList [ FSymbol "type-alias"; FSymbol name; manifest_form ] ->
+      compile_type_alias current_ns env next_type name [] manifest_form
+  | FList [ FSymbol "type-alias"; FSymbol name; FVector parameter_forms; manifest_form ] -> (
+      match parse_type_parameters (FVector parameter_forms) with
+      | Error _ as err -> err
+      | Ok type_parameters ->
+          compile_type_alias current_ns env next_type name type_parameters manifest_form)
+  | FList
+      (FSymbol "type-record" :: FSymbol name :: FVector parameter_forms
+      :: field_forms) -> (
+      match parse_type_parameters (FVector parameter_forms) with
+      | Error _ as err -> err
+      | Ok type_parameters ->
+          compile_type_record current_ns env next_type name type_parameters field_forms)
+  | FList (FSymbol "type-record" :: FSymbol name :: field_forms) ->
+      compile_type_record current_ns env next_type name [] field_forms
+  | FList (FSymbol "type-record" :: _) ->
+      Error.error "type-record expects a name and fields"
+  | FList
+      (FSymbol "type-variant" :: FSymbol name :: FVector parameter_forms
+      :: constructor_forms) -> (
+      match parse_type_parameters (FVector parameter_forms) with
+      | Error _ as err -> err
+      | Ok type_parameters ->
+          compile_type_variant current_ns env next_type name type_parameters constructor_forms)
+  | FList (FSymbol "type-variant" :: FSymbol name :: constructor_forms) ->
+      compile_type_variant current_ns env next_type name [] constructor_forms
+  | FList [ FSymbol "open"; FSymbol module_path ] ->
+      let env = open_module_bindings current_ns env module_path in
+      Ok
+        ( current_ns,
+          env,
+          next_type,
+          Open_module (Names.module_path_to_ocaml module_path) )
+  | FList [ FSymbol "include"; FSymbol module_path ] ->
+      let env = open_module_bindings current_ns env module_path in
+      Ok
+        ( current_ns,
+          env,
+          next_type,
+          Include_module (Names.module_path_to_ocaml module_path) )
+  | FList (FSymbol "include" :: _) ->
+      Error.error "include expects one module"
+  | FList [ FSymbol "module-alias"; FSymbol alias_name; FSymbol target_name ] ->
+      compile_module_alias current_ns env next_type alias_name target_name
+  | FList (FSymbol "module-alias" :: _) ->
+      Error.error "module-alias expects alias and target modules"
+  | FList
+      (FSymbol "module-functor" :: FSymbol functor_name :: parameter_form
+      :: body_forms) ->
+      compile_module_functor current_ns env next_type functor_name parameter_form
+        body_forms
+  | FList (FSymbol "module-functor" :: _) ->
+      Error.error
+        "module-functor expects a name, [parameter signature], and body"
+  | FList
+      [ FSymbol "module-apply";
+        FSymbol module_name;
+        FSymbol functor_name;
+        FSymbol argument_name ] ->
+      compile_module_apply current_ns env next_type module_name functor_name
+        argument_name
+  | FList (FSymbol "module-apply" :: _) ->
+      Error.error "module-apply expects result, functor, and argument modules"
   | FList [ FSymbol "def"; FSymbol name; expr_form ] -> (
       match compile_expr current_ns env expr_form with
       | Error _ as err -> err
@@ -2599,7 +4544,7 @@ let compile_top_level current_ns env next_type = function
                           fields;
                           values } ))
           | _ ->
-              let binding = Types.binding ocaml_name expr.ty in
+              let binding = binding_of_expr ocaml_name expr in
               Ok
                 ( current_ns,
                   env @ [ (env_key, binding) ],
@@ -2620,7 +4565,7 @@ let compile_top_level current_ns env next_type = function
           match expr.ty with
           | TFn _ ->
               let env_key = Names.namespaced_key current_ns name in
-              let binding = Types.binding ~row_param_types ocaml_name expr.ty in
+              let binding = binding_of_expr ~row_param_types ocaml_name expr in
               let type_items = row_type_items row_param_types param_tys in
               let value_item =
                 Value_binding
@@ -2639,6 +4584,14 @@ let compile_top_level current_ns env next_type = function
       :: method_forms) ->
       compile_extend_type current_ns env next_type receiver_keyword protocol_name
         method_forms
+  | FList (FSymbol "module" :: FSymbol module_name :: FSymbol signature_name :: forms) -> (
+      match
+        compile_module ~signature_name current_ns env next_type module_name module_name
+          forms
+      with
+      | Error _ as err -> err
+      | Ok (current_ns, module_bindings, next_type, item) ->
+          Ok (current_ns, env @ module_bindings, next_type, item))
   | FList (FSymbol "module" :: FSymbol module_name :: forms) -> (
       match compile_module current_ns env next_type module_name module_name forms with
       | Error _ as err -> err
@@ -2660,6 +4613,7 @@ let compile_top_level current_ns env next_type = function
       | Ok specs ->
           let rec apply_specs env = function
             | [] -> Ok env
+            | Ns_require.Package _ :: rest -> apply_specs env rest
             | Ns_require.Alias { namespace = required_ns; alias } :: rest ->
                 let env =
                   if String.starts_with ~prefix:"ocaml." required_ns then
@@ -2684,11 +4638,21 @@ let compile_top_level current_ns env next_type = function
           (match apply_specs env specs with
           | Error _ as err -> err
           | Ok env -> Ok (namespace, env, next_type, Comment ("ns " ^ namespace))))
+  | (FList (FSymbol "loop" :: _) as form) -> (
+      match compile_expr current_ns env form with
+      | Error _ as err -> err
+      | Ok expr ->
+          Ok
+            ( current_ns,
+              env,
+              next_type,
+              Value_binding
+                { pattern = Ignore_pattern; expression = expr.ocaml_expr } ))
+  | FList (FSymbol "recur" :: _) ->
+      Error.error "recur is only valid in a loop tail position"
   | form -> (
       match compile_expr current_ns env form with
-      | Error _ ->
-          Error.error
-            "expected top-level def, defn, defprotocol, extend-type, print, println, ns, or expression form"
+      | Error _ as err -> err
       | Ok expr -> (
           match expr.record_values with
           | Some _ -> Error.error "top-level map literals must be bound with def"

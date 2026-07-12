@@ -16,7 +16,6 @@ let impl_name method_name receiver_ty =
     | TString -> Some "string"
     | TKeyword -> Some "keyword"
     | TBool -> Some "bool"
-    | TNil -> Some "nil"
     | _ -> None
   in
   Option.map (fun suffix -> method_name ^ "$" ^ suffix) suffix
@@ -28,7 +27,6 @@ let receiver_annotation receiver_ty =
     | TString -> Some ":string"
     | TKeyword -> Some ":keyword"
     | TBool -> Some ":bool"
-    | TNil -> Some ":nil"
     | _ -> None
   in
   Option.map (fun keyword -> "^" ^ keyword) keyword

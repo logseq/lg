@@ -16,17 +16,17 @@ let rec equality_expr left right =
                let left_field =
                  {
                    ty = field.ty;
-                   code = Structural_map.field_code left field;
                    ocaml_expr = Structural_map.field_expr left field;
                    record_values = None;
+                   return_param_index = None;
                  }
                in
                let right_field =
                  {
                    ty = field.ty;
-                   code = Structural_map.field_code right field;
                    ocaml_expr = Structural_map.field_expr right field;
                    record_values = None;
+                   return_param_index = None;
                  }
                in
                equality_expr left_field right_field)

@@ -1,12 +1,19 @@
 type ty =
   | TInt
+  | TFloat
+  | TChar
   | TString
   | TSymbol
   | TKeyword
   | TBool
-  | TNil
   | TUnit
   | TAny
+  | TVar of string
+  | TOcaml of string
+  | TOcaml_app of string * ty list
+  | TTuple of ty list
+  | TArray of ty
+  | TRef of ty
   | TList of ty
   | TVector of ty
   | TSet of ty
@@ -22,6 +29,7 @@ and field = {
 
 and named_record = {
   type_name : string;
+  type_parameters : string list;
   set_module_name : string;
   fields : field list;
 }
@@ -30,63 +38,53 @@ type binding = {
   ocaml_name : string;
   ty : ty;
   row_param_types : string option list;
+  host_reference : host_reference option;
+  return_param_index : int option;
 }
+
+and host_reference =
+  | Ocaml_module of string
+  | Ocaml_value of string
 
 type typed_expr = {
   ty : ty;
-  code : string;
   ocaml_expr : Ocaml_ir.t;
   record_values : (field * Ocaml_ir.t) list option;
+  return_param_index : int option;
 }
 
-type value_pattern =
-  | Named of string
-  | Unit_pattern
-  | Ignore_pattern
-
-type compiled_item =
-  | Value_binding of {
-      pattern : value_pattern;
-      expression : Ocaml_ir.t;
-    }
-  | Comment of string
-  | Type_def of {
-      type_name : string;
-      fields : field list;
-    }
-  | Group of compiled_item list
-  | Module_def of {
-      module_name : string;
-      items : compiled_item list;
-    }
-  | Record_def of {
-      var_name : string;
-      type_name : string;
-      set_module_name : string;
-      fields : field list;
-      values : (field * Ocaml_ir.t) list;
-    }
-
-let typed ty code =
-  { ty; code; ocaml_expr = Ocaml_ir.Raw code; record_values = None }
-
 let typed_ir ty ocaml_expr =
-  { ty; code = Ocaml_ir.to_source ocaml_expr; ocaml_expr; record_values = None }
+  {
+    ty;
+    ocaml_expr;
+    record_values = None;
+    return_param_index = None;
+  }
 
-let binding ?(row_param_types = []) ocaml_name ty =
-  { ocaml_name; ty; row_param_types }
+let binding ?(row_param_types = []) ?host_reference ?return_param_index ocaml_name ty =
+  { ocaml_name; ty; row_param_types; host_reference; return_param_index }
 
 let rec equal left right =
   match (left, right) with
   | TAny, _ | _, TAny -> true
+  | TVar _, _ | _, TVar _ -> true
   | TInt, TInt
+  | TFloat, TFloat
+  | TChar, TChar
   | TString, TString
   | TSymbol, TSymbol
   | TKeyword, TKeyword
   | TBool, TBool
-  | TNil, TNil
   | TUnit, TUnit ->
       true
+  | TOcaml left, TOcaml right -> left = right
+  | TOcaml_app (left_name, left_args), TOcaml_app (right_name, right_args) ->
+      left_name = right_name
+      && List.length left_args = List.length right_args
+      && List.for_all2 equal left_args right_args
+  | TTuple left, TTuple right ->
+      List.length left = List.length right && List.for_all2 equal left right
+  | TArray left, TArray right | TRef left, TRef right -> equal left right
   | TList left, TList right -> equal left right
   | TVector left, TVector right -> equal left right
   | TSet left, TSet right -> equal left right
@@ -111,6 +109,7 @@ let rec equal left right =
 let rec compatible ~expected ~actual =
   match (expected, actual) with
   | TAny, _ | _, TAny -> true
+  | (TOcaml _ | TOcaml_app _ | TTuple _), _ -> true
   | (TRecord expected_fields | TNamed_record { fields = expected_fields; _ }),
     (TRecord actual_fields | TNamed_record { fields = actual_fields; _ }) ->
       expected_fields
@@ -126,13 +125,24 @@ let rec compatible ~expected ~actual =
 
 let rec source_name = function
   | TInt -> "int"
+  | TFloat -> "float"
+  | TChar -> "char"
   | TString -> "string"
   | TSymbol -> "symbol"
   | TKeyword -> "keyword"
   | TBool -> "bool"
-  | TNil -> "nil"
   | TUnit -> "unit"
   | TAny -> "any"
+  | TVar name -> "param/" ^ name
+  | TOcaml name -> "ocaml/" ^ name
+  | TOcaml_app (name, args) ->
+      "ocaml/" ^ name ^ "<"
+      ^ (args |> List.map source_name |> String.concat ",")
+      ^ ">"
+  | TTuple args ->
+      "ocaml/tuple<" ^ (args |> List.map source_name |> String.concat ",") ^ ">"
+  | TArray inner -> "ocaml/array<" ^ source_name inner ^ ">"
+  | TRef inner -> "ocaml/ref<" ^ source_name inner ^ ">"
   | TList ty -> "list<" ^ source_name ty ^ ">"
   | TVector ty -> "vector<" ^ source_name ty ^ ">"
   | TSet ty -> "set<" ^ source_name ty ^ ">"
@@ -144,13 +154,23 @@ let rec source_name = function
 
 let rec ocaml_name = function
   | TInt -> "int"
+  | TFloat -> "float"
+  | TChar -> "char"
   | TString -> "string"
   | TSymbol -> "string"
   | TKeyword -> "string"
   | TBool -> "bool"
-  | TNil -> "unit"
   | TUnit -> "unit"
   | TAny -> "'a"
+  | TVar name -> "'" ^ name
+  | TOcaml name -> name
+  | TOcaml_app (name, []) -> name
+  | TOcaml_app (name, [ arg ]) -> ocaml_name arg ^ " " ^ name
+  | TOcaml_app (name, args) ->
+      "(" ^ (args |> List.map ocaml_name |> String.concat ", ") ^ ") " ^ name
+  | TTuple args -> "(" ^ (args |> List.map ocaml_name |> String.concat " * ") ^ ")"
+  | TArray inner -> ocaml_name inner ^ " array"
+  | TRef inner -> ocaml_name inner ^ " ref"
   | TList inner -> ocaml_name inner ^ " list"
   | TVector inner -> ocaml_name inner ^ " Rrbvec.t"
   | TSet inner -> (
@@ -181,8 +201,45 @@ let record_fields = function
   | TRecord fields | TNamed_record { fields; _ } -> Some fields
   | _ -> None
 
-let named_record ~type_name ~set_module_name fields =
-  TNamed_record { type_name; set_module_name; fields }
+let named_record ?(type_parameters = []) ~type_name ~set_module_name fields =
+  TNamed_record { type_name; type_parameters; set_module_name; fields }
+
+let rec qualify_module_type module_path ty =
+  let qualify_name name =
+    if String.contains name '.' then name else module_path ^ "." ^ name
+  in
+  match ty with
+  | TInt | TFloat | TChar | TString | TSymbol | TKeyword | TBool | TUnit | TAny
+  | TVar _ | TOcaml _ ->
+      ty
+  | TOcaml_app (name, args) ->
+      TOcaml_app (name, List.map (qualify_module_type module_path) args)
+  | TTuple args -> TTuple (List.map (qualify_module_type module_path) args)
+  | TArray inner -> TArray (qualify_module_type module_path inner)
+  | TRef inner -> TRef (qualify_module_type module_path inner)
+  | TList inner -> TList (qualify_module_type module_path inner)
+  | TVector inner -> TVector (qualify_module_type module_path inner)
+  | TSet inner -> TSet (qualify_module_type module_path inner)
+  | TFn (args, ret) ->
+      TFn
+        ( List.map (qualify_module_type module_path) args,
+          qualify_module_type module_path ret )
+  | TRecord fields ->
+      TRecord
+        (List.map
+           (fun (field : field) ->
+             { field with ty = qualify_module_type module_path field.ty })
+           fields)
+  | TNamed_record record ->
+      TNamed_record
+        { type_name = qualify_name record.type_name;
+          type_parameters = record.type_parameters;
+          set_module_name = qualify_name record.set_module_name;
+          fields =
+            List.map
+              (fun (field : field) ->
+                { field with ty = qualify_module_type module_path field.ty })
+              record.fields }
 
 let find_field keyword fields =
   List.find_opt (fun field -> field.keyword = keyword) fields

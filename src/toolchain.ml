@@ -1,95 +1,205 @@
 type parser_result = {
   ast : Ast.form list;
+  locations : Location.t list;
+  form_locations : Source_context.entry list;
   parsed_as : [ `Cljml ];
 }
 
 type typed_result = {
   ast : Ast.form list;
-  items : Types.compiled_item list;
+  items : Lowered.compiled_item list;
+  locations : Location.t list;
 }
 
 type parsetree_result = {
   ast : Ast.form list;
-  items : Types.compiled_item list;
+  items : Lowered.compiled_item list;
   structure : Parsetree.structure;
 }
 
-type state = Typecheck.state
+type state = {
+  typecheck_state : Typecheck.state;
+  located_items : (Location.t * Lowered.compiled_item) list;
+}
 
 module type FRONTEND = sig
-  val implementation : string -> (parser_result, Error.t) result
-end
-
-module type BACKEND = sig
-  val implementation : typed_result -> string
+  val implementation : ?filename:string -> string -> (parser_result, Error.t) result
 end
 
 module Cljml_frontend : FRONTEND = struct
-  let implementation source =
+  let position filename source offset =
+    let rec loop index line line_start =
+      if index >= offset then
+        { Lexing.pos_fname = filename;
+          pos_lnum = line;
+          pos_bol = line_start;
+          pos_cnum = offset;
+        }
+      else if source.[index] = '\n' then loop (index + 1) (line + 1) (index + 1)
+      else loop (index + 1) line line_start
+    in
+    loop 0 1 0
+
+  let location filename source (span : Ast.source_span) =
+    { Location.loc_start = position filename source span.start_offset;
+      loc_end = position filename source span.end_offset;
+      loc_ghost = false;
+    }
+
+  let implementation ?(filename = "<string>") source =
     match Lexer.tokenize source with
     | Error _ as err -> err
     | Ok tokens -> (
-        match Parser.parse tokens with
+        match Parser.parse_located tokens with
         | Error _ as err -> err
-        | Ok ast -> Ok { ast; parsed_as = `Cljml })
-end
-
-module Ocaml_backend : BACKEND = struct
-  let implementation (typed : typed_result) = Codegen.emit_program typed.items
+        | Ok located_ast ->
+            let rec form_locations acc located =
+              let location = location filename source located.Ast.span in
+              List.fold_left form_locations
+                ((located.Ast.form, location) :: acc)
+                located.Ast.children
+            in
+            Ok
+              { ast = List.map (fun located -> located.Ast.form) located_ast;
+                locations =
+                  List.map
+                    (fun located -> location filename source located.Ast.span)
+                    located_ast;
+                form_locations =
+                  List.fold_left form_locations [] located_ast;
+                parsed_as = `Cljml;
+              })
 end
 
 module Ocaml_parsetree_backend = struct
   let implementation (typed : typed_result) =
-    match Ocaml_parsetree.structure_of_items typed.items with
+    match
+      Ocaml_parsetree.structure_of_located_items
+        (List.combine typed.locations typed.items)
+    with
     | Error _ as err -> err
     | Ok structure -> Ok { ast = typed.ast; items = typed.items; structure }
 
   let print = Ocaml_parsetree.print_implementation
 end
 
-let empty_state = Typecheck.empty_state
+module Ocaml_typechecker = struct
+  let exception_message exn =
+    Format.asprintf "%a" Location.report_exception exn |> String.trim
+
+  let structure structure =
+    try
+      Ocaml_signature.init ();
+      let env = Compmisc.initial_env () in
+      let _typed_structure, _signature, _signature_names, _shape, _env =
+        Typemod.type_structure env structure
+      in
+      Ok ()
+    with exn ->
+      Error.error ("OCaml typecheck failed: " ^ exception_message exn)
+end
+
+let empty_state =
+  { typecheck_state = Typecheck.empty_state; located_items = [] }
+
+let required_packages_from_ast ast =
+  let rec loop packages = function
+    | [] -> Ok (List.sort_uniq String.compare packages)
+    | Ast.FList (Ast.FSymbol "ns" :: Ast.FSymbol _ :: clauses) :: rest -> (
+        match Ns_require.parse_requires clauses with
+        | Error _ as err -> err
+        | Ok specs -> loop (Ns_require.package_names specs @ packages) rest)
+    | _ :: rest -> loop packages rest
+  in
+  loop [] ast
+
+let prepare_packages ast =
+  match required_packages_from_ast ast with
+  | Error _ as err -> err
+  | Ok packages -> (
+      match Ocaml_package.include_dirs packages with
+      | Error _ as err -> err
+      | Ok include_dirs ->
+          Ocaml_signature.add_include_dirs include_dirs;
+          Ok packages)
+
+let checked_parsetree (typed : typed_result) =
+  match Ocaml_parsetree_backend.implementation typed with
+  | Error _ as err -> err
+  | Ok result -> (
+      match Ocaml_typechecker.structure result.structure with
+      | Error _ as err -> err
+      | Ok () -> Ok result)
 
 let typecheck (parsed : parser_result) =
-  match Typecheck.compile_forms parsed.ast with
+  match prepare_packages parsed.ast with
   | Error _ as err -> err
-  | Ok items -> Ok { ast = parsed.ast; items }
+  | Ok _ -> (
+      match
+        Source_context.with_locations parsed.form_locations (fun () ->
+            Typecheck.compile_forms parsed.ast)
+      with
+      | Error _ as err -> err
+      | Ok items -> Ok { ast = parsed.ast; items; locations = parsed.locations })
 
 let typecheck_incremental state (parsed : parser_result) =
-  match Typecheck.compile_forms_incremental state parsed.ast with
+  match prepare_packages parsed.ast with
   | Error _ as err -> err
-  | Ok (state, items) -> Ok (state, { ast = parsed.ast; items })
-
-let implementation source =
-  match Cljml_frontend.implementation source with
-  | Error _ as err -> err
-  | Ok parsed -> (
-      match typecheck parsed with
+  | Ok _ -> (
+      match
+        Source_context.with_locations parsed.form_locations (fun () ->
+            Typecheck.compile_forms_incremental state.typecheck_state parsed.ast)
+      with
       | Error _ as err -> err
-      | Ok typed -> Ok (Ocaml_backend.implementation typed))
+      | Ok (typecheck_state, items) ->
+          let located_items =
+            state.located_items @ List.combine parsed.locations items
+          in
+          let state = { typecheck_state; located_items } in
+          Ok (state, { ast = parsed.ast; items; locations = parsed.locations }))
 
-let implementation_parsetree source =
+let required_ocaml_packages source =
   match Cljml_frontend.implementation source with
+  | Error _ as err -> err
+  | Ok parsed -> required_packages_from_ast parsed.ast
+
+let implementation ?(filename = "<string>") source =
+  match Cljml_frontend.implementation ~filename source with
   | Error _ as err -> err
   | Ok parsed -> (
       match typecheck parsed with
       | Error _ as err -> err
       | Ok typed -> (
-          match Ocaml_parsetree_backend.implementation typed with
+          match checked_parsetree typed with
+          | Error _ as err -> err
+          | Ok result -> Ok (Ocaml_parsetree_backend.print result.structure)))
+
+let implementation_parsetree ?(filename = "<string>") source =
+  match Cljml_frontend.implementation ~filename source with
+  | Error _ as err -> err
+  | Ok parsed -> (
+      match typecheck parsed with
+      | Error _ as err -> err
+      | Ok typed -> (
+          match checked_parsetree typed with
           | Error _ as err -> err
           | Ok result -> Ok result.structure))
 
-let print_parsetree = Ocaml_parsetree_backend.print
-
-let compile_chunk state source =
-  match Cljml_frontend.implementation source with
+let typecheck_parsetree ?(filename = "<string>") source =
+  match Cljml_frontend.implementation ~filename source with
   | Error _ as err -> err
   | Ok parsed -> (
-      match typecheck_incremental state parsed with
+      match typecheck parsed with
       | Error _ as err -> err
-      | Ok (state, typed) -> Ok (state, Ocaml_backend.implementation typed))
+      | Ok typed -> (
+          match checked_parsetree typed with
+          | Error _ as err -> err
+          | Ok _ -> Ok ()))
 
-let compile_chunk_parsetree state source =
-  match Cljml_frontend.implementation source with
+let print_parsetree = Ocaml_parsetree_backend.print
+
+let compile_chunk ?(filename = "<string>") state source =
+  match Cljml_frontend.implementation ~filename source with
   | Error _ as err -> err
   | Ok parsed -> (
       match typecheck_incremental state parsed with
@@ -97,4 +207,28 @@ let compile_chunk_parsetree state source =
       | Ok (state, typed) -> (
           match Ocaml_parsetree_backend.implementation typed with
           | Error _ as err -> err
-          | Ok result -> Ok (state, result.structure)))
+          | Ok result -> (
+              match Ocaml_parsetree.structure_of_located_items state.located_items with
+              | Error _ as err -> err
+              | Ok accumulated_structure -> (
+                  match Ocaml_typechecker.structure accumulated_structure with
+                  | Error _ as err -> err
+                  | Ok () ->
+                      Ok (state, Ocaml_parsetree_backend.print result.structure)))))
+
+let compile_chunk_parsetree ?(filename = "<string>") state source =
+  match Cljml_frontend.implementation ~filename source with
+  | Error _ as err -> err
+  | Ok parsed -> (
+      match typecheck_incremental state parsed with
+      | Error _ as err -> err
+      | Ok (state, typed) -> (
+          match Ocaml_parsetree_backend.implementation typed with
+          | Error _ as err -> err
+          | Ok result -> (
+              match Ocaml_parsetree.structure_of_located_items state.located_items with
+              | Error _ as err -> err
+              | Ok accumulated_structure -> (
+                  match Ocaml_typechecker.structure accumulated_structure with
+                  | Error _ as err -> err
+                  | Ok () -> Ok (state, result.structure)))))

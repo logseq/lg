@@ -17,17 +17,17 @@ let field_expr target field =
       | None -> Ocaml_ir.Field (target.ocaml_expr, field.ocaml_name))
   | None -> Ocaml_ir.Field (target.ocaml_expr, field.ocaml_name)
 
-let field_code target field = field_expr target field |> Ocaml_ir.to_source
-
 let values_for target fields =
   List.map (fun (field : field) -> (field, field_expr target field)) fields
 
 let record_expr fields values =
   {
     ty = TRecord fields;
-    code = "<record>";
-    ocaml_expr = Ocaml_ir.Raw "<record>";
+    ocaml_expr =
+      Ocaml_ir.Record
+        (List.map (fun ((field : field), value) -> (field.ocaml_name, value)) values, None);
     record_values = Some values;
+    return_param_index = None;
   }
 
 let assoc target fields keyword value =

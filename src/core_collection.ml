@@ -125,31 +125,59 @@ let empty collection =
   | TString -> Ok (typed_ir TString (Ocaml_ir.String ""))
   | _ -> Error.error "empty expects a collection or string"
 
-let take_list_code count_code list_code =
-  "(let rec take n xs = if n <= 0 then [] else match xs with [] -> [] | x :: rest -> x :: take (n - 1) rest in take ("
-  ^ count_code ^ ") (" ^ list_code ^ "))"
+let take_list_expr count source =
+  let n = Ocaml_ir.Ident "n" in
+  let xs = Ocaml_ir.Ident "xs" in
+  let body =
+    Ocaml_ir.If
+      ( Ocaml_ir.Infix ("<=", n, Ocaml_ir.Int 0),
+        Ocaml_ir.List [],
+        Ocaml_ir.Match
+          ( xs,
+            [ (Ocaml_ir.PList [], Ocaml_ir.List []);
+              ( Ocaml_ir.PCons (Ocaml_ir.PVar "x", Ocaml_ir.PVar "rest"),
+                Ocaml_ir.Cons
+                  ( Ocaml_ir.Ident "x",
+                    apply "take__"
+                      [ Ocaml_ir.Infix ("-", n, Ocaml_ir.Int 1);
+                        Ocaml_ir.Ident "rest" ] ) ) ] ) )
+  in
+  Ocaml_ir.LetRec ("take__", [ Ocaml_ir.PVar "n"; Ocaml_ir.PVar "xs" ], body, [ count; source ])
 
-let drop_list_code count_code list_code =
-  "(let rec drop n xs = if n <= 0 then xs else match xs with [] -> [] | _ :: rest -> drop (n - 1) rest in drop ("
-  ^ count_code ^ ") (" ^ list_code ^ "))"
+let drop_list_expr count source =
+  let n = Ocaml_ir.Ident "n" in
+  let xs = Ocaml_ir.Ident "xs" in
+  let body =
+    Ocaml_ir.If
+      ( Ocaml_ir.Infix ("<=", n, Ocaml_ir.Int 0),
+        xs,
+        Ocaml_ir.Match
+          ( xs,
+            [ (Ocaml_ir.PList [], Ocaml_ir.List []);
+              ( Ocaml_ir.PCons (Ocaml_ir.PAny, Ocaml_ir.PVar "rest"),
+                apply "drop__"
+                  [ Ocaml_ir.Infix ("-", n, Ocaml_ir.Int 1);
+                    Ocaml_ir.Ident "rest" ] ) ] ) )
+  in
+  Ocaml_ir.LetRec ("drop__", [ Ocaml_ir.PVar "n"; Ocaml_ir.PVar "xs" ], body, [ count; source ])
 
 let take_drop name count collection =
   if not (Types.equal count.ty TInt) then Error.error (name ^ " count must be int")
   else
     match collection.ty with
     | TList _ ->
-        let code =
-          if name = "take" then take_list_code count.code collection.code
-          else drop_list_code count.code collection.code
+        let expr =
+          if name = "take" then take_list_expr count.ocaml_expr collection.ocaml_expr
+          else drop_list_expr count.ocaml_expr collection.ocaml_expr
         in
-        Ok (typed collection.ty code)
+        Ok (typed_ir collection.ty expr)
     | TVector _ ->
-        let list_code = "Rrbvec.to_list (" ^ collection.code ^ ")" in
-        let code =
-          if name = "take" then take_list_code count.code list_code
-          else drop_list_code count.code list_code
+        let list_expr = apply "Rrbvec.to_list" [ collection.ocaml_expr ] in
+        let expr =
+          if name = "take" then take_list_expr count.ocaml_expr list_expr
+          else drop_list_expr count.ocaml_expr list_expr
         in
-        Ok (typed collection.ty ("Rrbvec.of_list (" ^ code ^ ")"))
+        Ok (typed_ir collection.ty (apply "Rrbvec.of_list" [ expr ]))
     | _ -> Error.error (name ^ " expects a list or vector")
 
 let reverse collection =

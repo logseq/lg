@@ -1,0 +1,4 @@
+(ns example.main
+  (:require [example.math :refer [magnitude-plus-two]]))
+
+(println (magnitude-plus-two -40))

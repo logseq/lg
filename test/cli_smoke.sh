@@ -3,7 +3,111 @@ set -eu
 
 cli="$1"
 example="$2"
+checkout_example="$(dirname "$example")/checkout.cljml"
+protocols_example="$(dirname "$example")/protocols.cljml"
 
 output="$($cli --run "$example")"
 
 [ "$output" = "ADA:true:1" ]
+
+checkout_output="$($cli --run "$checkout_example")"
+
+[ "$checkout_output" = "ADA:standard:4999
+ADA:express:5399" ]
+
+protocols_output="$($cli --run "$protocols_example")"
+
+[ "$protocols_output" = "audit #42/#7 ADA severity=:warning enabled" ]
+
+invalid_source="$(mktemp)"
+invalid_stdout="$(mktemp)"
+invalid_stderr="$(mktemp)"
+trap 'rm -f "$invalid_source" "$invalid_stdout" "$invalid_stderr"' EXIT
+
+printf '%s\n' \
+  '(def ok 1)' \
+  '' \
+  '(def answer (Stdlib.abs "bad"))' > "$invalid_source"
+
+if "$cli" "$invalid_source" >"$invalid_stdout" 2>"$invalid_stderr"; then
+  echo "expected invalid host call to fail" >&2
+  exit 1
+fi
+
+grep -q "cljml: OCaml typecheck failed" "$invalid_stderr"
+grep -q "File \"$invalid_source\", line 3" "$invalid_stderr"
+
+package_source="$(mktemp)"
+package_stdout="$(mktemp)"
+multi_dir="$(mktemp -d)"
+trap 'rm -f "$invalid_source" "$invalid_stdout" "$invalid_stderr" "$package_source" "$package_stdout"; rm -rf "$multi_dir"' EXIT
+
+printf '%s\n' \
+  '(ns host.demo (:require [ocaml.package/core] [ocaml.Core.Int :as int]))' \
+  '(println (int/abs -42))' > "$package_source"
+
+"$cli" --run "$package_source" > "$package_stdout"
+
+[ "$(cat "$package_stdout")" = "42" ]
+
+math_source="$multi_dir/math.cljml"
+main_source="$multi_dir/main.cljml"
+multi_output="$multi_dir/app.ml"
+multi_stdout="$multi_dir/stdout"
+
+printf '%s\n' \
+  '(ns demo.math' \
+  '  (:require [ocaml.package/core]' \
+  '            [ocaml.Core.Int :as int]))' \
+  '(defn magnitude-plus-two [x] (+ (int/abs x) 2))' > "$math_source"
+
+printf '%s\n' \
+  '(ns demo.main' \
+  '  (:require [demo.math :refer [magnitude-plus-two]]))' \
+  '(println (magnitude-plus-two -40))' > "$main_source"
+
+"$cli" --compile-files "$math_source" "$main_source" -o "$multi_output"
+grep -q 'magnitude_plus_two' "$multi_output"
+
+"$cli" --run-files "$math_source" "$main_source" > "$multi_stdout"
+[ "$(cat "$multi_stdout")" = "42" ]
+
+bad_source="$multi_dir/bad.cljml"
+bad_stderr="$multi_dir/bad.stderr"
+printf '%s\n' \
+  '(ns demo.bad)' \
+  '' \
+  '(def bad (Stdlib.abs "bad"))' > "$bad_source"
+
+if "$cli" --compile-files "$math_source" "$bad_source" -o "$multi_output" \
+    2> "$bad_stderr"; then
+  echo "expected invalid multi-file compilation to fail" >&2
+  exit 1
+fi
+
+grep -q "File \"$bad_source\", line 3" "$bad_stderr"
+
+lsp_output="$multi_dir/lsp.output"
+
+send_lsp_message() {
+  message="$1"
+  length="$(LC_ALL=C printf '%s' "$message" | wc -c | tr -d ' ')"
+  printf 'Content-Length: %s\r\n\r\n%s' "$length" "$message"
+}
+
+{
+  send_lsp_message '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+  send_lsp_message '{"jsonrpc":"2.0","method":"initialized","params":{}}'
+  send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/editor.cljml","languageId":"cljml","version":1,"text":"(def answer\n  (if true\n    (Stdlib.abs\n      \"bad\")\n    0))"}}}'
+  send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":"file:///tmp/editor.cljml","version":2},"contentChanges":[{"text":"(def ok 1)\n(def good (Stdlib.abs -42))"}]}}'
+  send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didClose","params":{"textDocument":{"uri":"file:///tmp/editor.cljml"}}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":2,"method":"shutdown","params":null}'
+  send_lsp_message '{"jsonrpc":"2.0","method":"exit","params":null}'
+} | "$cli" --lsp > "$lsp_output"
+
+grep -q '"name":"cljml"' "$lsp_output"
+grep -q '"method":"textDocument/publishDiagnostics"' "$lsp_output"
+grep -q '"severity":1' "$lsp_output"
+grep -q '"line":3' "$lsp_output"
+grep -q '"character":6' "$lsp_output"
+grep -q '"diagnostics":\[\]' "$lsp_output"
