@@ -6,6 +6,7 @@ module Env = Compiler_environment
 
 let compile_expr = Expression_elaborator.compile_expr
 let prepare_fn = Expression_elaborator.prepare_fn
+let prepare_recursive_fn = Expression_elaborator.prepare_recursive_fn
 let fn_code = Expression_elaborator.fn_code
 let binding_of_expr = Expression_support.binding_of_expr
 let row_param_type_names = Expression_support.row_param_type_names
@@ -315,6 +316,54 @@ let rec compile_module ?signature_name ?(register_module = true) scope env next_
                     public_bindings @ [ (key, public_binding) ],
                     next_type,
                     item :: items ))))
+    | FList
+        (FSymbol "defn" :: FSymbol name :: params :: FKeyword return_keyword
+        :: body_forms) -> (
+        match Type_annotation.of_keyword return_keyword with
+        | Error _ as err -> err
+        | Ok return_ty ->
+            let local_name = Names.sanitize_name name in
+            (match
+               prepare_recursive_fn ~ocaml_name:local_name module_path env name
+                 return_ty params body_forms
+             with
+            | Error _ as err -> err
+            | Ok parts ->
+                let public_name = module_binding_ocaml_name module_path name in
+                let param_tys =
+                  parts.param_bindings
+                  |> List.map (fun (_key, (binding : binding)) -> binding.ty)
+                in
+                let local_row_types = row_param_type_names local_name param_tys in
+                let public_row_types = row_param_type_names public_name param_tys in
+                let expr = fn_code ~row_param_type_names:local_row_types parts in
+                let key = module_binding_key module_path name in
+                (match
+                   check_emitted_name_collision env ~source_key:key
+                     ~ocaml_name:local_name
+                 with
+                | Error _ as err -> err
+                | Ok () ->
+                    let local_binding =
+                      binding_of_expr ~row_param_types:local_row_types local_name
+                        expr
+                    in
+                    let public_binding =
+                      Types.binding ~row_param_types:public_row_types public_name
+                        (Types.qualify_module_type
+                           (Names.module_path_to_ocaml module_path)
+                           expr.ty)
+                    in
+                    let type_items = row_type_items local_row_types param_tys in
+                    let value_item =
+                      Recursive_value_binding
+                        { name = local_name; expression = expr.semantic_expr }
+                    in
+                    Ok
+                      ( Env.add key local_binding env,
+                        public_bindings @ [ (key, public_binding) ],
+                        next_type,
+                        Group (type_items @ [ value_item ]) :: items ))))
     | FList (FSymbol "defn" :: FSymbol name :: params :: body_forms) -> (
         match prepare_fn module_path env params body_forms with
         | Error _ as err -> err

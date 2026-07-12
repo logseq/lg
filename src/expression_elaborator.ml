@@ -114,6 +114,37 @@ and prepare_fn ?(param_type_overrides = []) scope env params body_forms =
   Function_elaborator.prepare ~param_type_overrides ~lookup_function_ty
     ~compile_body scope env params body_forms
 
+and prepare_recursive_fn ~ocaml_name scope env source_name return_ty params
+    body_forms =
+  match Destructure.parse_param_specs params with
+  | Error _ as err -> err
+  | Ok specs ->
+      let explicit_param_tys =
+        List.map (fun (spec : Destructure.param_spec) -> spec.explicit_ty) specs
+      in
+      if List.exists Option.is_none explicit_param_tys then
+        Error.error "recursive defn parameters require type annotations"
+      else
+        let param_tys = List.map Option.get explicit_param_tys in
+        let self_binding =
+          Types.binding ocaml_name (TFn (param_tys, return_ty))
+        in
+        let env = Env.add (Names.scoped_key scope source_name) self_binding env in
+        match
+          prepare_fn ~param_type_overrides:(List.map Option.some param_tys) scope
+            env params body_forms
+        with
+        | Error _ as err -> err
+        | Ok parts ->
+            if
+              Types.assignable ~policy:Host_boundary ~expected:return_ty
+                ~actual:parts.body.ty
+            then Ok parts
+            else
+              Error.error
+                ("recursive defn " ^ source_name ^ " must return "
+               ^ Types.source_name return_ty)
+
 and fn_code ?(row_param_type_names = []) parts =
   Function_elaborator.fn_code ~row_param_type_names parts
 

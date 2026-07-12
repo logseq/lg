@@ -31,6 +31,10 @@ type compiled_item =
       pattern : value_pattern;
       expression : Semantic_ir.t;
     }
+  | Recursive_value_binding of {
+      name : string;
+      expression : Semantic_ir.t;
+    }
   | Comment of string
   | Type_def of {
       type_name : string;

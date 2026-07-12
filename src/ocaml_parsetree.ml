@@ -228,9 +228,23 @@ let value_binding pattern expression =
       in
       Ok [ Ast_helper.Str.value ~loc Nonrecursive [ binding ] ]
 
+let recursive_value_binding name expression =
+  match
+    Ocaml_ir.to_parsetree ~context:("recursive value " ^ name)
+      (Semantic_lowering.expression expression)
+  with
+  | Error _ as err -> err
+  | Ok expression ->
+      let binding =
+        Ast_helper.Vb.mk ~loc (Ast_helper.Pat.var ~loc { txt = name; loc }) expression
+      in
+      Ok [ Ast_helper.Str.value ~loc Recursive [ binding ] ]
+
 let rec structure_of_item = function
   | Value_binding { pattern; expression } ->
       value_binding pattern expression
+  | Recursive_value_binding { name; expression } ->
+      recursive_value_binding name expression
   | Comment _ -> Ok []
   | Type_def { type_name; type_parameters; fields } ->
       Ok [ record_type_definition type_name type_parameters fields ]

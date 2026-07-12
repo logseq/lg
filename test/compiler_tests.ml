@@ -2042,6 +2042,33 @@ let test_typed_function_parameters_reject_bad_bodies () =
   Cljml.Compiler.compile_string {|(defn bad [^:string x] (+ x 1))|}
   |> expect_error "expected int arguments for +"
 
+let test_typed_recursive_functions () =
+  let source =
+    {|
+(defn factorial [^:int n] :int
+  (if (= n 0) 1 (* n (factorial (- n 1)))))
+(module Math
+  (defn sum-to [^:int n] :int
+    (if (= n 0) 0 (+ n (sum-to (- n 1))))))
+(println (str (factorial 5) ":" (Math/sum-to 10)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "typed_recursive_functions" "120:55\n" ocaml_source
+
+let test_typed_recursive_functions_require_valid_signatures () =
+  Cljml.Compiler.compile_string
+    {|
+(defn bad [n] :int (bad n))
+|}
+  |> expect_error "recursive defn parameters require type annotations";
+  Cljml.Compiler.compile_string
+    {|
+(defn bad [^:int n] :string
+  0)
+|}
+  |> expect_error "recursive defn bad must return string"
+
 let test_unannotated_function_parameters_infer_from_body () =
   let source =
     {|
@@ -5734,6 +5761,9 @@ let tests =
       test_unit_annotations_reject_non_unit_arguments );
     ( "typed function parameters reject bad bodies",
       test_typed_function_parameters_reject_bad_bodies );
+    ( "typed recursive functions", test_typed_recursive_functions );
+    ( "typed recursive functions validate signatures",
+      test_typed_recursive_functions_require_valid_signatures );
     ( "unannotated function parameters infer from body",
       test_unannotated_function_parameters_infer_from_body );
     ( "identity function is polymorphic at call sites",

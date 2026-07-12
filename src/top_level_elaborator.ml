@@ -6,6 +6,7 @@ module Env = Compiler_environment
 
 let compile_expr = Expression_elaborator.compile_expr
 let prepare_fn = Expression_elaborator.prepare_fn
+let prepare_recursive_fn = Expression_elaborator.prepare_recursive_fn
 let fn_code = Expression_elaborator.fn_code
 let compile_fn = Expression_elaborator.compile_fn
 let compile_args_for = Expression_elaborator.compile_args_for
@@ -149,6 +150,44 @@ let compile scope env next_type = function
                   next_type,
                   Value_binding
                     { pattern = Named ocaml_name; expression = expr.semantic_expr } ))))
+  | FList
+      (FSymbol "defn" :: FSymbol name :: params :: FKeyword return_keyword
+      :: body_forms) -> (
+      match Type_annotation.of_keyword return_keyword with
+      | Error _ as err -> err
+      | Ok return_ty ->
+          let ocaml_name = Names.ocaml_binding_name scope name in
+          (match
+             prepare_recursive_fn ~ocaml_name scope env name return_ty params
+               body_forms
+           with
+          | Error _ as err -> err
+          | Ok parts ->
+              let param_tys =
+                parts.param_bindings
+                |> List.map (fun (_key, (binding : binding)) -> binding.ty)
+              in
+              let row_param_types = row_param_type_names ocaml_name param_tys in
+              let expr = fn_code ~row_param_type_names:row_param_types parts in
+              let env_key = Names.scoped_key scope name in
+              (match
+                 check_emitted_name_collision env ~source_key:env_key ~ocaml_name
+               with
+              | Error _ as err -> err
+              | Ok () ->
+                  let binding =
+                    binding_of_expr ~row_param_types ocaml_name expr
+                  in
+                  let type_items = row_type_items row_param_types param_tys in
+                  let value_item =
+                    Recursive_value_binding
+                      { name = ocaml_name; expression = expr.semantic_expr }
+                  in
+                  Ok
+                    ( scope,
+                      Env.add env_key binding env,
+                      next_type,
+                      Group (type_items @ [ value_item ]) ))))
   | FList (FSymbol "defn" :: FSymbol name :: params :: body_forms) -> (
       match prepare_fn scope env params body_forms with
       | Error _ as err -> err
