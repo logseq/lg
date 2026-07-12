@@ -495,7 +495,16 @@ let test_compiler_phases_have_explicit_boundaries () =
         in
         let fn = Cljml.Function_elaborator.fn_code parts in
         if fn.ty <> Cljml.Types.TFn ([ Cljml.Types.TInt ], Cljml.Types.TInt) then
-          failwith "function elaboration should have one owner"
+          failwith "function elaboration should have one owner";
+        let conditional =
+          Cljml.Special_form_elaborator.compile_if
+            ~compile_expr:Cljml.Expression_elaborator.compile_expr ""
+            Cljml.Compiler_environment.empty (Cljml.Ast.FBool true)
+            (Cljml.Ast.FInt 1) (Cljml.Ast.FInt 2)
+          |> expect_ok
+        in
+        if conditional.ty <> Cljml.Types.TInt then
+          failwith "special-form elaboration should have one owner"
     | _ -> failwith "top-level elaboration should have one owner"
 
 let test_source_node_identity_reaches_parsetree () =
