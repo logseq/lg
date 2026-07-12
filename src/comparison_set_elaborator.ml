@@ -35,7 +35,7 @@ let create ~compile_expr =
     | form -> compile_expr scope env form
   in
   let comparable_type = function
-    | TInt | TString | TSymbol | TKeyword | TBool | TAny -> true
+    | TInt | TString | TSymbol | TKeyword | TBool | TUnknown -> true
     | _ -> false
   in
     let compile_distinct_question scope env arg_forms =
@@ -82,7 +82,8 @@ let create ~compile_expr =
               else
                 match fn.ty with
                 | TFn ([ arg_ty ], key_ty)
-                  when Types.compatible ~expected:arg_ty ~actual:first.ty
+                  when Types.assignable ~policy:Host_boundary ~expected:arg_ty
+                         ~actual:first.ty
                        && comparable_type key_ty ->
                     let rest = List.tl values in
                     let compare_op = if name = "max-key" then ">" else "<" in

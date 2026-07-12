@@ -34,7 +34,7 @@ let rec core_type = function
   | Types.TString | Types.TSymbol | Types.TKeyword -> type_constructor "string" []
   | Types.TBool -> type_constructor "bool" []
   | Types.TUnit -> type_constructor "unit" []
-  | Types.TAny -> Ast_helper.Typ.var ~loc "a"
+  | Types.TUnknown -> Ast_helper.Typ.var ~loc "a"
   | Types.TVar name -> Ast_helper.Typ.var ~loc name
   | Types.TOcaml name ->
       Ast_helper.Typ.constr ~loc (lid (longident_of_string name)) []

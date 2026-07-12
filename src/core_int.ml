@@ -1,6 +1,7 @@
 open Types
 
-let accepts_int ty = Types.compatible ~expected:TInt ~actual:ty
+let accepts_int ty =
+  Types.assignable ~policy:Nominal ~expected:TInt ~actual:ty
 
 let int value = Semantic_ir.Int value
 

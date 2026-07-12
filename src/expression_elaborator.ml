@@ -30,7 +30,7 @@ and compile_expr_unlocated scope (env : Env.t) = function
           Ok (typed_ir return_ty (Semantic_ir.Constructor (name, None)))
       | Some binding -> Ok (typed_ir binding.ty (Semantic_ir.Ident binding.ocaml_name))
       | None when name = "None" ->
-          Ok (typed_ir (TOcaml_app ("option", [ TAny ])) (Semantic_ir.Constructor (name, None)))
+          Ok (typed_ir (TOcaml_app ("option", [ TUnknown ])) (Semantic_ir.Constructor (name, None)))
       | None -> Error.error ("unknown symbol " ^ name))
   | FVector forms -> compile_vector scope env forms
   | FMap pairs -> compile_map scope env pairs

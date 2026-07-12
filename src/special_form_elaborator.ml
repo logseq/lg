@@ -340,7 +340,7 @@ let create ~compile_expr =
               match lookup_binding scope env name with
               | Error _ ->
                   let opaque_payload_tys =
-                    List.map (fun _ -> TAny) payload_patterns
+                    List.map (fun _ -> TUnknown) payload_patterns
                   in
                   compile_constructor_payloads opaque_payload_tys
               | Ok constructor -> (
@@ -484,7 +484,7 @@ let create ~compile_expr =
     in
     let compatible_try_type body_ty handlers_ty =
       match (body_ty, handlers_ty) with
-      | TAny, ty | ty, TAny -> Ok ty
+      | TUnknown, ty | ty, TUnknown -> Ok ty
       | _ when branch_types_compatible body_ty handlers_ty -> Ok body_ty
       | _ -> Error.error "try body and handlers must have the same type"
     in
@@ -517,7 +517,7 @@ let create ~compile_expr =
   
   and loop_branch_type left right =
     match (left, right) with
-    | TAny, ty | ty, TAny -> Ok ty
+    | TUnknown, ty | ty, TUnknown -> Ok ty
     | left, right when branch_types_compatible left right -> Ok left
     | _ -> Error.error "loop branches must have same type"
   
@@ -543,7 +543,7 @@ let create ~compile_expr =
           in
           validate 1 param_tys args
           |> Result.map (fun () ->
-                 typed_ir TAny
+                 typed_ir TUnknown
                    (Semantic_ir.Apply
                       (Semantic_ir.Ident loop_name, List.map (fun arg -> arg.semantic_expr) args)))
   

@@ -39,7 +39,7 @@ let is_legacy_marker key (binding : binding) =
     | Some protocol_id -> key <> marker_name protocol_id method_name
     | None -> false
 
-let ambiguous_marker_binding () = Types.binding ambiguous_protocol_id TAny
+let ambiguous_marker_binding () = Types.binding ambiguous_protocol_id TUnknown
 
 let method_is_ambiguous scope env method_name =
   if String.contains method_name '/' then false

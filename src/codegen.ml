@@ -27,7 +27,7 @@ let rec stringify_expr_ir ?(pr = false) expr =
             ( [ Semantic_ir.PVar "x" ],
               wrap_expr "\"" (Semantic_ir.Ident "x") "\"" )
     | TBool -> Semantic_ir.Ident "string_of_bool"
-    | TAny | TVar _ -> Semantic_ir.Fun ([ Semantic_ir.PAny ], Semantic_ir.String "<value>")
+    | TUnknown | TVar _ -> Semantic_ir.Fun ([ Semantic_ir.PAny ], Semantic_ir.String "<value>")
     | _ -> Semantic_ir.Fun ([ Semantic_ir.PAny ], Semantic_ir.String "<value>")
   in
   match expr.ty with
@@ -40,7 +40,7 @@ let rec stringify_expr_ir ?(pr = false) expr =
   | TSymbol | TKeyword -> expr.semantic_expr
   | TBool -> apply "string_of_bool" [ expr.semantic_expr ]
   | TUnit -> Semantic_ir.String ""
-  | TAny -> expr.semantic_expr
+  | TUnknown -> expr.semantic_expr
   | TVar _ -> Semantic_ir.String "<value>"
   | TArray _ | TRef _ | TOcaml _ | TOcaml_app _ | TTuple _ ->
       Semantic_ir.String "<value>"

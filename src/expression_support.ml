@@ -4,7 +4,7 @@ open Lowered
 module Env = Compiler_environment
 
 let ensure_bool expr =
-  if Types.compatible ~expected:TBool ~actual:expr.ty then Ok ()
+  if Types.assignable ~policy:Nominal ~expected:TBool ~actual:expr.ty then Ok ()
   else Error.error "if condition must be bool"
 
 let apply name args = Semantic_ir.Apply (Semantic_ir.Ident name, args)
@@ -21,7 +21,7 @@ let is_ocaml_owned_type = function
 
 let branch_types_compatible left right =
   Types.equal left right
-  || left = TAny || right = TAny
+  || left = TUnknown || right = TUnknown
   || Types.defer_to_ocaml ~expected:left ~actual:right
 
 let cljml_metadata_type_for_ocaml_payload = function
@@ -41,13 +41,13 @@ let rec cljml_metadata_type_for_ocaml_type = function
 
 let ocaml_builtin_constructor_payloads target_ty constructor_name =
   match (target_ty, constructor_name) with
-  | TOcaml "option", "Some" -> Some [ TAny ]
+  | TOcaml "option", "Some" -> Some [ TUnknown ]
   | TOcaml "option", "None" -> Some []
   | TOcaml_app ("option", [ payload_ty ]), "Some" ->
       Some [ cljml_metadata_type_for_ocaml_payload payload_ty ]
   | TOcaml_app ("option", [ _ ]), "None" -> Some []
-  | TOcaml "result", "Ok" -> Some [ TAny ]
-  | TOcaml "result", "Error" -> Some [ TAny ]
+  | TOcaml "result", "Ok" -> Some [ TUnknown ]
+  | TOcaml "result", "Error" -> Some [ TUnknown ]
   | TOcaml_app ("result", [ ok_ty; _ ]), "Ok" ->
       Some [ cljml_metadata_type_for_ocaml_payload ok_ty ]
   | TOcaml_app ("result", [ _; error_ty ]), "Error" ->
@@ -204,7 +204,8 @@ let coerce_set_element element_ty value =
       | TNamed_record actual when actual.type_name = expected.type_name ->
           Ok value.semantic_expr
       | (TRecord actual_fields | TNamed_record { fields = actual_fields; _ })
-        when Types.compatible ~expected:element_ty ~actual:value.ty ->
+        when Types.assignable ~policy:Structural ~expected:element_ty
+               ~actual:value.ty ->
           let rec project_fields acc = function
             | [] -> Ok (List.rev acc)
             | (field : field) :: rest -> (

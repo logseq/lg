@@ -180,7 +180,7 @@ let create ~compile_expr =
       | Error _ as err -> err
       | Ok [ value ] ->
           Ok
-            (typed_ir (TFn ([ TAny ], value.ty))
+            (typed_ir (TFn ([ TUnknown ], value.ty))
                (Semantic_ir.Fun ([ Semantic_ir.PAny ], value.semantic_expr)))
       | Ok _ -> Error.error "constantly expects 1 arguments"
     
@@ -275,11 +275,13 @@ let create ~compile_expr =
                 | TFn ([ current_arg ], current_ret)
                   when option_for_all
                          (fun arg_ty ->
-                           Types.compatible ~expected:arg_ty ~actual:current_arg)
+                           Types.assignable ~policy:Host_boundary ~expected:arg_ty
+                             ~actual:current_arg)
                          arg_ty
                        && option_for_all
                             (fun ret_ty ->
-                              Types.compatible ~expected:ret_ty ~actual:current_ret)
+                              Types.assignable ~policy:Host_boundary ~expected:ret_ty
+                                ~actual:current_ret)
                             ret_ty ->
                     collect (Some current_arg) (Some current_ret)
                       (Semantic_ir.Apply (fn.semantic_expr, [ Semantic_ir.Ident "x" ]) :: exprs)
@@ -287,7 +289,8 @@ let create ~compile_expr =
                 | TFn ([ current_arg ], _)
                   when option_for_all
                          (fun arg_ty ->
-                           Types.compatible ~expected:arg_ty ~actual:current_arg)
+                           Types.assignable ~policy:Host_boundary ~expected:arg_ty
+                             ~actual:current_arg)
                          arg_ty ->
                     Error.error "juxt functions must return the same type"
                 | TFn _ -> Error.error "juxt functions must accept the same argument type"

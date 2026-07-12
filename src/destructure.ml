@@ -231,9 +231,9 @@ let infer_sequence_type forms lookup_local_ty =
                match acc with
                | None -> Some ty
                | Some existing when Types.equal existing ty -> Some existing
-               | Some _ -> Some TAny)
+               | Some _ -> Some TUnknown)
              None
-        |> Option.value ~default:TAny
+        |> Option.value ~default:TUnknown
       in
       Ok (TVector element_ty)
 

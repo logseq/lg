@@ -9,7 +9,7 @@ let replace_param name ty params =
 let constrain_symbol expected_ty params name =
   match List.assoc_opt name params with
   | None -> Ok params
-  | Some TAny -> Ok (replace_param name expected_ty params)
+  | Some TUnknown -> Ok (replace_param name expected_ty params)
   | Some _existing_ty -> Ok params
 
 let add_record_field_constraint name keyword field_ty params =
@@ -24,7 +24,7 @@ let add_record_field_constraint name keyword field_ty params =
   in
   match List.assoc_opt name params with
   | None -> Ok params
-  | Some TAny -> Ok (replace_param name (TRecord [ make_field keyword field_ty ]) params)
+  | Some TUnknown -> Ok (replace_param name (TRecord [ make_field keyword field_ty ]) params)
   | Some (TRecord fields) -> (
       match merge_fields fields with
       | Error _ as err -> err
@@ -58,7 +58,7 @@ let infer_params ~lookup_function_ty params body_forms =
     in
     loop params forms
   and infer_collection params = function
-    | FSymbol name -> constrain_symbol (TVector TAny) params name
+    | FSymbol name -> constrain_symbol (TVector TUnknown) params name
     | form -> infer_form params form
   and infer_known_call name params args =
     match lookup_function_ty name with
@@ -178,7 +178,7 @@ let infer_params ~lookup_function_ty params body_forms =
         infer_expected_all TInt params args
     | FList [ FSymbol "not"; arg ] -> infer_expected TBool params arg
     | FList [ FKeyword keyword; FSymbol name ] ->
-        add_record_field_constraint name keyword TAny params
+        add_record_field_constraint name keyword TUnknown params
     | FList (FSymbol "str" :: args) ->
         infer_expected_all TString params args
     | FList [ FSymbol "if"; condition; then_form; else_form ] -> (

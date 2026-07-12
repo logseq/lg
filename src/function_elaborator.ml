@@ -12,11 +12,11 @@ let prepare ?(param_type_overrides = []) ~lookup_function_ty ~compile_body scope
         specs
         |> List.fold_left
              (fun acc (spec : Destructure.param_spec) ->
-               let param_ty = Option.value spec.explicit_ty ~default:TAny in
+               let param_ty = Option.value spec.explicit_ty ~default:TUnknown in
                let acc = (spec.source_name, param_ty) :: acc in
                if spec.destructured then
                  Destructure.pattern_names spec.pattern
-                 |> List.fold_left (fun acc name -> (name, TAny) :: acc) acc
+                 |> List.fold_left (fun acc name -> (name, TUnknown) :: acc) acc
                else acc)
              []
         |> List.rev
@@ -25,7 +25,7 @@ let prepare ?(param_type_overrides = []) ~lookup_function_ty ~compile_body scope
       | Error _ as err -> err
       | Ok inferred ->
           let lookup_inferred name =
-            inferred |> List.assoc_opt name |> Option.value ~default:TAny
+            inferred |> List.assoc_opt name |> Option.value ~default:TUnknown
           in
           let infer_spec_ty (spec : Destructure.param_spec) =
             if spec.destructured then

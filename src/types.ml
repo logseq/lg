@@ -7,7 +7,7 @@ type ty =
   | TKeyword
   | TBool
   | TUnit
-  | TAny
+  | TUnknown
   | TVar of string
   | TOcaml of string
   | TOcaml_app of string * ty list
@@ -77,7 +77,7 @@ let binding ?(row_param_types = []) ?host_reference ?protocol_id
 
 let rec equal left right =
   match (left, right) with
-  | TAny, TAny -> true
+  | TUnknown, TUnknown -> true
   | TVar left, TVar right -> left = right
   | TInt, TInt
   | TFloat, TFloat
@@ -127,7 +127,7 @@ let rec row_compatible ~expected ~actual =
                  actual_fields
              with
              | Some actual_field ->
-                 expected_field.ty = TAny || actual_field.ty = TAny
+                 expected_field.ty = TUnknown || actual_field.ty = TUnknown
                  || equal expected_field.ty actual_field.ty
                  || row_compatible ~expected:expected_field.ty
                       ~actual:actual_field.ty
@@ -152,19 +152,23 @@ type assignability =
   | Deferred_to_ocaml
   | Incompatible
 
+type assignability_policy = Nominal | Structural | Host_boundary
+
 let classify_assignability ~expected ~actual =
   match (expected, actual) with
-  | TAny, _ | _, TAny -> Unknown
+  | TUnknown, _ | _, TUnknown -> Unknown
   | _ ->
       if equal expected actual then Equal
       else if row_compatible ~expected ~actual then Row_compatible
       else if defer_to_ocaml ~expected ~actual then Deferred_to_ocaml
       else Incompatible
 
-let assignable ~expected ~actual =
-  classify_assignability ~expected ~actual <> Incompatible
-
-let compatible = assignable
+let assignable ~policy ~expected ~actual =
+  match classify_assignability ~expected ~actual with
+  | Equal | Unknown -> true
+  | Row_compatible -> policy = Structural || policy = Host_boundary
+  | Deferred_to_ocaml -> policy = Host_boundary
+  | Incompatible -> false
 
 let rec source_name = function
   | TInt -> "int"
@@ -175,7 +179,7 @@ let rec source_name = function
   | TKeyword -> "keyword"
   | TBool -> "bool"
   | TUnit -> "unit"
-  | TAny -> "any"
+  | TUnknown -> "any"
   | TVar name -> "param/" ^ name
   | TOcaml name -> "ocaml/" ^ name
   | TOcaml_app (name, args) ->
@@ -204,7 +208,7 @@ let rec ocaml_name = function
   | TKeyword -> "string"
   | TBool -> "bool"
   | TUnit -> "unit"
-  | TAny -> "'a"
+  | TUnknown -> "'a"
   | TVar name -> "'" ^ name
   | TOcaml name -> name
   | TOcaml_app (name, []) -> name
@@ -260,7 +264,7 @@ let rec qualify_module_type module_path ty =
     if String.contains name '.' then name else module_path ^ "." ^ name
   in
   match ty with
-  | TInt | TFloat | TChar | TString | TSymbol | TKeyword | TBool | TUnit | TAny
+  | TInt | TFloat | TChar | TString | TSymbol | TKeyword | TBool | TUnit | TUnknown
   | TVar _ | TOcaml _ ->
       ty
   | TOcaml_app (name, args) ->

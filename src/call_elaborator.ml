@@ -137,25 +137,25 @@ let create ~compile_expr =
         | Error _ as err -> err
         | Ok [ arg ] ->
             Ok
-              (typed_ir TAny
+              (typed_ir TUnknown
                  (Semantic_ir.Apply (Semantic_ir.Ident "raise", [ arg.semantic_expr ])))
         | Ok _ -> Error.error "raise expects 1 arguments")
     | "Some" ->
         constructor
-          (function [ value ] -> TOcaml_app ("option", [ value.ty ]) | _ -> TAny)
+          (function [ value ] -> TOcaml_app ("option", [ value.ty ]) | _ -> TUnknown)
           1
-    | "None" -> constructor (fun _ -> TOcaml_app ("option", [ TAny ])) 0
+    | "None" -> constructor (fun _ -> TOcaml_app ("option", [ TUnknown ])) 0
     | "Ok" ->
         constructor
           (function
-            | [ value ] -> TOcaml_app ("result", [ value.ty; TAny ])
-            | _ -> TAny)
+            | [ value ] -> TOcaml_app ("result", [ value.ty; TUnknown ])
+            | _ -> TUnknown)
           1
     | "Error" ->
         constructor
           (function
-            | [ value ] -> TOcaml_app ("result", [ TAny; value.ty ])
-            | _ -> TAny)
+            | [ value ] -> TOcaml_app ("result", [ TUnknown; value.ty ])
+            | _ -> TUnknown)
           1
     | "ocaml-array" -> (
         match compile_args () with
@@ -708,7 +708,9 @@ let create ~compile_expr =
             | TFn (param_tys, ret)
               when List.length param_tys = List.length args
                    && List.for_all2
-                        (fun expected arg -> Types.compatible ~expected ~actual:arg.ty)
+                        (fun expected arg ->
+                          Types.assignable ~policy:Host_boundary ~expected
+                            ~actual:arg.ty)
                         param_tys args ->
                 let arg_exprs =
                   args
@@ -719,7 +721,7 @@ let create ~compile_expr =
                 in
                 let ret =
                   match (fn.return_param_index, ret) with
-                  | Some index, TAny -> (
+                  | Some index, TUnknown -> (
                       match List.nth_opt args index with
                       | Some arg -> arg.ty
                       | None -> ret)
@@ -760,7 +762,8 @@ let create ~compile_expr =
                           when List.length param_tys = List.length args
                                && List.for_all2
                                     (fun expected arg ->
-                                      Types.assignable ~expected ~actual:arg.ty)
+                                      Types.assignable ~policy:Host_boundary ~expected
+                                        ~actual:arg.ty)
                                     param_tys args ->
                             Ok
                               (typed_ir ret

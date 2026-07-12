@@ -339,8 +339,8 @@ let test_subs_rejects_non_int_indexes () =
   |> expect_error "subs indexes must be int"
 
 let test_type_relations_are_explicit_and_strict () =
-  if Cljml.Types.equal Cljml.Types.TAny Cljml.Types.TInt then
-    failwith "TAny must not be strictly equal to int";
+  if Cljml.Types.equal Cljml.Types.TUnknown Cljml.Types.TInt then
+    failwith "unknown must not be strictly equal to int";
   let name = Cljml.Types.make_field ":name" Cljml.Types.TString in
   let narrow = Cljml.Types.TRecord [ name ] in
   let wide =
@@ -371,13 +371,25 @@ let test_assignability_reports_the_selected_semantic_rule () =
     if actual <> expected then failwith "unexpected assignability classification"
   in
   expect Equal (classify_assignability ~expected:TInt ~actual:TInt);
-  expect Unknown (classify_assignability ~expected:TAny ~actual:TInt);
+  expect Unknown (classify_assignability ~expected:TUnknown ~actual:TInt);
   expect Row_compatible
     (classify_assignability ~expected:narrow ~actual:wide);
   expect Deferred_to_ocaml
     (classify_assignability ~expected:(TOcaml "user_id") ~actual:TInt);
   expect Incompatible
-    (classify_assignability ~expected:TString ~actual:TInt)
+    (classify_assignability ~expected:TString ~actual:TInt);
+  if assignable ~policy:Nominal ~expected:narrow ~actual:wide then
+    failwith "nominal assignment must not accept structural width";
+  if not (assignable ~policy:Structural ~expected:narrow ~actual:wide) then
+    failwith "structural assignment should accept wider records";
+  if
+    assignable ~policy:Structural ~expected:(TOcaml "user_id") ~actual:TInt
+  then failwith "structural assignment must not defer to OCaml";
+  if
+    not
+      (assignable ~policy:Host_boundary ~expected:(TOcaml "user_id")
+         ~actual:TInt)
+  then failwith "host boundary assignment should defer to OCaml"
 
 let test_named_records_use_nominal_type_identity () =
   let fields = [ Cljml.Types.make_field ":name" Cljml.Types.TString ] in

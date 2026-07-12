@@ -159,7 +159,7 @@ let parse_params = function
             match of_param_annotation annotation with
             | Error _ as err -> err
             | Ok ty -> loop ((name, ty) :: acc) rest)
-        | FSymbol name :: rest -> loop ((name, TAny) :: acc) rest
+        | FSymbol name :: rest -> loop ((name, TUnknown) :: acc) rest
         | _ -> Error.error "function parameters must be symbols"
       in
       loop [] params

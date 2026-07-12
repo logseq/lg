@@ -60,7 +60,7 @@ type constructor_signature = {
 let rec of_compiler_type =
   let open Cljml_compiler_support.Ocaml_value in
   function
-  | Variable -> TAny
+  | Variable -> TUnknown
   | Arrow (Unlabelled, argument, result) ->
       let arguments, result = function_parts result in
       TFn (of_compiler_type argument :: arguments, result)

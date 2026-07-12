@@ -66,7 +66,7 @@ let compile name args =
           List.for_all
             (fun arg ->
               Types.same_shape first.ty arg.ty
-              || first.ty = TAny || arg.ty = TAny
+              || first.ty = TUnknown || arg.ty = TUnknown
               || Types.defer_to_ocaml ~expected:first.ty ~actual:arg.ty)
             args
         then
@@ -78,7 +78,8 @@ let compile name args =
         else Error.error (name ^ " arguments must have the same type")
       else if
         List.for_all
-          (fun arg -> Types.compatible ~expected:TInt ~actual:arg.ty)
+          (fun arg ->
+            Types.assignable ~policy:Nominal ~expected:TInt ~actual:arg.ty)
           args
       then
         Ok (typed_ir TBool (and_expressions (pairwise_expressions name args)))

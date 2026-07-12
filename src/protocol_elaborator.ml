@@ -103,7 +103,7 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                                     |> List.find_opt
                                          (fun (_index, expected, actual) ->
                                            not
-                                             (Types.assignable ~expected
+                                             (Types.assignable ~policy:Host_boundary ~expected
                                                 ~actual))
                                   in
                                   (match mismatch with
@@ -114,7 +114,8 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                                        ^ source_name expected)
                                   | None
                                     when not
-                                           (Types.assignable ~expected:expected_ret
+                                           (Types.assignable ~policy:Host_boundary
+                                              ~expected:expected_ret
                                               ~actual:actual_ret) ->
                                   Error.error
                                     ("protocol method " ^ method_name ^ " must return "

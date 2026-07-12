@@ -71,7 +71,7 @@ let create ~compile_expr =
       Core_sequence_transform.collection_from_list_expr collection_ty list_expr
     
     and comparable_type = function
-      | TInt | TString | TSymbol | TKeyword | TBool | TAny -> true
+      | TInt | TString | TSymbol | TKeyword | TBool | TUnknown -> true
       | _ -> false
     
     and compile_sort_by scope env arg_forms =
@@ -580,7 +580,7 @@ let create ~compile_expr =
                   Error.error (name ^ " expects a predicate matching vector elements")
               | _, TVector _ -> Error.error (name ^ " expects a function")
               | TFn ([ param_ty ], TBool), TSet inner
-                when Types.compatible ~expected:param_ty ~actual:inner ->
+                when Types.assignable ~policy:Host_boundary ~expected:param_ty ~actual:inner ->
                   Types.set_module_name inner
                   |> Result.map (fun set_module ->
                          let fn_expr = constrain_record_function_argument_expr fn inner in
@@ -634,7 +634,7 @@ let create ~compile_expr =
               | TFn _, TVector _ -> Error.error "map function argument type does not match vector"
               | _, TVector _ -> Error.error "map expects a function"
               | TFn ([ param_ty ], ret), TSet inner
-                when Types.compatible ~expected:param_ty ~actual:inner ->
+                when Types.assignable ~policy:Host_boundary ~expected:param_ty ~actual:inner ->
                   Result.bind (Types.set_module_name ret) (fun result_module ->
                       Types.set_module_name inner
                       |> Result.map (fun source_module ->
@@ -671,7 +671,7 @@ let create ~compile_expr =
               | TFn _, TVector _ -> Error.error "filter expects a predicate matching vector elements"
               | _, TVector _ -> Error.error "filter expects a function"
               | TFn ([ param_ty ], TBool), TSet inner
-                when Types.compatible ~expected:param_ty ~actual:inner ->
+                when Types.assignable ~policy:Host_boundary ~expected:param_ty ~actual:inner ->
                   Types.set_module_name inner
                   |> Result.map (fun set_module ->
                          let fn_expr = constrain_record_function_argument_expr fn inner in

@@ -501,10 +501,10 @@ let create ~compile_expr =
                       match fn.ty with
                       | TFn (param_tys, ret)
                         when List.length param_tys = List.length extra_args + 1
-                             && Types.compatible ~expected:(List.hd param_tys)
+                             && Types.assignable ~policy:Host_boundary ~expected:(List.hd param_tys)
                                   ~actual:field.ty
                              && List.for_all2
-                                  (fun expected arg -> Types.compatible ~expected ~actual:arg.ty)
+                                  (fun expected arg -> Types.assignable ~policy:Host_boundary ~expected ~actual:arg.ty)
                                   (drop 1 param_tys) extra_args
                              && Types.equal ret field.ty ->
                           let value_expr =
@@ -540,9 +540,9 @@ let create ~compile_expr =
                   match fn.ty with
                   | TFn (param_tys, ret)
                     when List.length param_tys = List.length extra_args + 1
-                         && Types.compatible ~expected:(List.hd param_tys) ~actual:inner
+                         && Types.assignable ~policy:Host_boundary ~expected:(List.hd param_tys) ~actual:inner
                          && List.for_all2
-                              (fun expected arg -> Types.compatible ~expected ~actual:arg.ty)
+                              (fun expected arg -> Types.assignable ~policy:Host_boundary ~expected ~actual:arg.ty)
                               (drop 1 param_tys) extra_args
                          && Types.equal ret inner ->
                       let old_expr =
