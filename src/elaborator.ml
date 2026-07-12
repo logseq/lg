@@ -2412,7 +2412,7 @@ and compile_protocol_call scope env name arg_forms =
               | receiver :: _ -> (
                   let method_name = Protocol.method_basename name in
                   match
-                    Protocol.lookup_impl env marker.ocaml_name method_name receiver.ty
+                    Protocol.lookup_marker_impl env marker method_name receiver.ty
                   with
                   | None ->
                       Error.error
@@ -2424,7 +2424,7 @@ and compile_protocol_call scope env name arg_forms =
                         when List.length param_tys = List.length args
                              && List.for_all2
                                   (fun expected arg ->
-                                    Types.compatible ~expected ~actual:arg.ty)
+                                    Types.assignable ~expected ~actual:arg.ty)
                                   param_tys args ->
                           Ok
                             (typed_ir ret
@@ -3566,7 +3566,9 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                 Error.error
                   ("protocol " ^ protocol_name ^ " does not define method " ^ method_name)
             | Some marker
-              when marker.ocaml_name <> Protocol.protocol_id scope protocol_name ->
+              when not
+                     (Protocol.marker_has_protocol_id marker
+                        (Protocol.protocol_id scope protocol_name)) ->
                 Error.error
                   ("protocol " ^ protocol_name ^ " does not define method " ^ method_name)
             | Some marker -> (
@@ -3607,7 +3609,7 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                                     |> List.find_opt
                                          (fun (_index, expected, actual) ->
                                            not
-                                             (Types.compatible ~expected
+                                             (Types.assignable ~expected
                                                 ~actual))
                                   in
                                   (match mismatch with
@@ -3618,15 +3620,14 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                                        ^ source_name expected)
                                   | None
                                     when not
-                                           (Types.compatible ~expected:expected_ret
+                                           (Types.assignable ~expected:expected_ret
                                               ~actual:actual_ret) ->
                                   Error.error
                                     ("protocol method " ^ method_name ^ " must return "
                                    ^ source_name expected_ret)
                                   | None -> (
                                   match
-                                    Protocol.impl_name marker.ocaml_name method_name
-                                      receiver_ty
+                                    Protocol.marker_impl_name marker method_name receiver_ty
                                   with
                                   | None ->
                                       Error.error
@@ -3640,8 +3641,14 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                                       let env_key =
                                         Names.scoped_key scope impl_key_name
                                       in
-                                      let binding = binding_of_expr ocaml_name expr in
-                                      Ok
+                                      if Env.mem env_key env then
+                                        Error.error
+                                          ("duplicate implementation of " ^ protocol_name
+                                         ^ "/" ^ method_name ^ " for "
+                                         ^ source_name receiver_ty)
+                                      else
+                                        let binding = binding_of_expr ocaml_name expr in
+                                        Ok
                                         ( Env.add env_key binding env,
                                           Value_binding
                                             {

@@ -10,11 +10,14 @@ type method_signature = {
 }
 
 let protocol_id scope protocol_name =
-  if String.contains protocol_name '/' then protocol_name
-  else Names.scoped_key scope protocol_name
+  if String.contains protocol_name '/' then Protocol_id.of_string protocol_name
+  else
+    Protocol_id.create
+      ~owner:(if scope = "" then [] else [ scope ])
+      ~name:protocol_name
 
-let marker_name protocol_name method_name =
-  protocol_name ^ "/" ^ method_name ^ "$protocol"
+let marker_name protocol_id method_name =
+  Protocol_id.to_string protocol_id ^ "/" ^ method_name ^ "$protocol"
 
 let legacy_marker_name method_name = method_name ^ "$protocol"
 let ambiguous_protocol_id = "__ambiguous_protocol__"
@@ -32,7 +35,9 @@ let is_legacy_marker key (binding : binding) =
     let method_name =
       String.sub basename 0 (String.length basename - String.length suffix)
     in
-    key <> marker_name binding.ocaml_name method_name
+    match binding.protocol_id with
+    | Some protocol_id -> key <> marker_name protocol_id method_name
+    | None -> false
 
 let ambiguous_marker_binding () = Types.binding ambiguous_protocol_id TAny
 
@@ -58,7 +63,8 @@ let receiver_id = function
 let impl_name protocol_id method_name receiver_ty =
   receiver_id receiver_ty
   |> Option.map (fun receiver ->
-         "__protocol_impl/" ^ protocol_id ^ "/" ^ method_name ^ "/" ^ receiver)
+         "__protocol_impl/" ^ Protocol_id.to_string protocol_id ^ "/" ^ method_name
+         ^ "/" ^ receiver)
 
 let receiver_annotation receiver_ty =
   let keyword =
@@ -88,6 +94,21 @@ let lookup_impl env protocol_id method_name receiver_ty =
   | None -> None
   | Some impl_name -> Env.find_opt impl_name env
 
+let lookup_marker_impl env (marker : binding) method_name receiver_ty =
+  match marker.protocol_id with
+  | None -> None
+  | Some protocol_id -> lookup_impl env protocol_id method_name receiver_ty
+
+let marker_has_protocol_id (marker : binding) protocol_id =
+  Option.fold ~none:false
+    ~some:(fun marker_id -> Protocol_id.equal marker_id protocol_id)
+    marker.protocol_id
+
+let marker_impl_name (marker : binding) method_name receiver_ty =
+  match marker.protocol_id with
+  | None -> None
+  | Some protocol_id -> impl_name protocol_id method_name receiver_ty
+
 let parse_method_signature = function
   | FList [ FSymbol method_name; params; FKeyword return_keyword ] -> (
       match (Type_annotation.parse_params params, Type_annotation.of_keyword return_keyword) with
@@ -106,16 +127,22 @@ let parse_method_signature = function
       Error.error
         "defprotocol methods must be (method-name [params] :return-type)"
 
-let marker_binding protocol_name signature =
-  Types.binding protocol_name (TFn (signature.param_tys, signature.return_ty))
+let marker_binding protocol_id signature =
+  Types.binding ~protocol_id (Protocol_id.to_string protocol_id)
+    (TFn (signature.param_tys, signature.return_ty))
 
 let defprotocol_bindings scope protocol_name method_forms =
-  let rec loop acc = function
+  let rec loop seen acc = function
     | [] -> Ok (List.rev acc)
     | method_form :: rest -> (
         match parse_method_signature method_form with
         | Error _ as err -> err
         | Ok signature ->
+            if List.mem signature.method_name seen then
+              Error.error
+                ("protocol " ^ protocol_name ^ " declares duplicate method "
+               ^ signature.method_name)
+            else
             let id = protocol_id scope protocol_name in
             let binding = marker_binding id signature in
             let canonical = marker_name id signature.method_name in
@@ -123,9 +150,11 @@ let defprotocol_bindings scope protocol_name method_forms =
               Names.scoped_key scope
                 (legacy_marker_name signature.method_name)
             in
-            loop ((canonical, binding) :: (legacy, binding) :: acc) rest)
+            loop (signature.method_name :: seen)
+              ((canonical, binding) :: (legacy, binding) :: acc)
+              rest)
   in
-  loop [] method_forms
+  loop [] [] method_forms
 
 let annotate_receiver receiver_ty = function
   | FVector (FSymbol annotation :: FSymbol _name :: _rest as params)

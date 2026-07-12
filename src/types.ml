@@ -39,6 +39,7 @@ and named_record = {
 type binding = {
   ocaml_name : string;
   ty : ty;
+  protocol_id : Protocol_id.t option;
   row_param_types : string option list;
   host_reference : host_reference option;
   return_param_index : int option;
@@ -63,8 +64,16 @@ let typed_ir ty ocaml_expr =
     return_param_index = None;
   }
 
-let binding ?(row_param_types = []) ?host_reference ?return_param_index ocaml_name ty =
-  { ocaml_name; ty; row_param_types; host_reference; return_param_index }
+let binding ?(row_param_types = []) ?host_reference ?protocol_id
+    ?return_param_index ocaml_name ty =
+  {
+    ocaml_name;
+    ty;
+    protocol_id;
+    row_param_types;
+    host_reference;
+    return_param_index;
+  }
 
 let rec equal left right =
   match (left, right) with
@@ -136,13 +145,26 @@ let host_owned = function
 
 let defer_to_ocaml ~expected ~actual = host_owned expected || host_owned actual
 
-let compatible ~expected ~actual =
+type assignability =
+  | Equal
+  | Unknown
+  | Row_compatible
+  | Deferred_to_ocaml
+  | Incompatible
+
+let classify_assignability ~expected ~actual =
   match (expected, actual) with
-  | TAny, _ | _, TAny -> true
+  | TAny, _ | _, TAny -> Unknown
   | _ ->
-      equal expected actual
-      || row_compatible ~expected ~actual
-      || defer_to_ocaml ~expected ~actual
+      if equal expected actual then Equal
+      else if row_compatible ~expected ~actual then Row_compatible
+      else if defer_to_ocaml ~expected ~actual then Deferred_to_ocaml
+      else Incompatible
+
+let assignable ~expected ~actual =
+  classify_assignability ~expected ~actual <> Incompatible
+
+let compatible = assignable
 
 let rec source_name = function
   | TInt -> "int"

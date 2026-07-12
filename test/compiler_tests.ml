@@ -362,6 +362,23 @@ let test_type_relations_are_explicit_and_strict () =
          ~actual:Cljml.Types.TInt)
   then failwith "opaque OCaml relationships must be explicitly deferred"
 
+let test_assignability_reports_the_selected_semantic_rule () =
+  let open Cljml.Types in
+  let name = make_field ":name" TString in
+  let narrow = TRecord [ name ] in
+  let wide = TRecord [ name; make_field ":age" TInt ] in
+  let expect expected actual =
+    if actual <> expected then failwith "unexpected assignability classification"
+  in
+  expect Equal (classify_assignability ~expected:TInt ~actual:TInt);
+  expect Unknown (classify_assignability ~expected:TAny ~actual:TInt);
+  expect Row_compatible
+    (classify_assignability ~expected:narrow ~actual:wide);
+  expect Deferred_to_ocaml
+    (classify_assignability ~expected:(TOcaml "user_id") ~actual:TInt);
+  expect Incompatible
+    (classify_assignability ~expected:TString ~actual:TInt)
+
 let test_named_records_use_nominal_type_identity () =
   let fields = [ Cljml.Types.make_field ":name" Cljml.Types.TString ] in
   let user_id = Cljml.Type_id.create ~owner:[ "Domain" ] ~name:"user" in
@@ -1924,6 +1941,34 @@ let test_protocols_inside_modules_export_methods_and_record_impls () =
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "protocols_inside_modules_export_methods_and_record_impls"
     "Ada\n" ocaml_source
+
+let test_protocols_reject_duplicate_method_declarations () =
+  {|
+(defprotocol Labelled
+  (label [x] :string)
+  (label [x] :string))
+|}
+  |> Cljml.Compiler.compile_string
+  |> expect_error "protocol Labelled declares duplicate method label"
+
+let test_protocols_reject_duplicate_implementations () =
+  {|
+(defprotocol Labelled (label [x] :string))
+(extend-type :int Labelled (label [x] (str x)))
+(extend-type :int Labelled (label [x] (str x)))
+|}
+  |> Cljml.Compiler.compile_string
+  |> expect_error "duplicate implementation of Labelled/label for int"
+
+let test_protocols_reject_duplicate_methods_in_one_extension () =
+  {|
+(defprotocol Labelled (label [x] :string))
+(extend-type :int Labelled
+  (label [x] (str x))
+  (label [x] (str x)))
+|}
+  |> Cljml.Compiler.compile_string
+  |> expect_error "duplicate implementation of Labelled/label for int"
 
 let test_do_and_multi_form_bodies () =
   let source =
@@ -5040,6 +5085,8 @@ let tests =
     ("subs rejects non-int indexes", test_subs_rejects_non_int_indexes);
     ( "type relations are explicit and strict",
       test_type_relations_are_explicit_and_strict );
+    ( "assignability reports the selected semantic rule",
+      test_assignability_reports_the_selected_semantic_rule );
     ( "named records use nominal type identity",
       test_named_records_use_nominal_type_identity );
     ( "compiler identities are stable and distinct",
@@ -5274,6 +5321,12 @@ let tests =
       test_ambiguous_protocol_methods_require_explicit_identity );
     ( "protocols inside modules export methods and record implementations",
       test_protocols_inside_modules_export_methods_and_record_impls );
+    ( "protocols reject duplicate method declarations",
+      test_protocols_reject_duplicate_method_declarations );
+    ( "protocols reject duplicate implementations",
+      test_protocols_reject_duplicate_implementations );
+    ( "protocols reject duplicate methods in one extension",
+      test_protocols_reject_duplicate_methods_in_one_extension );
     ( "protocols support named record receivers",
       test_protocols_support_named_record_receivers );
     ( "protocol signatures check all parameter types",
