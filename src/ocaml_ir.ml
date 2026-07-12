@@ -15,7 +15,7 @@ type pattern =
   | PConstraint of pattern * string
 
 type t =
-  | Located of Location.t * t
+  | Located of Source_node_id.t * Location.t * t
   | Int of int
   | Float of string
   | String of string
@@ -45,7 +45,7 @@ type t =
   | Record of (string * t) list * string option
 
 let rec unlocated = function
-  | Located (_, expression) -> unlocated expression
+  | Located (_, _, expression) -> unlocated expression
   | expression -> expression
 
 let rec pattern_to_source = function
@@ -74,7 +74,7 @@ let rec pattern_to_source = function
       "(" ^ pattern_to_source pattern ^ " : " ^ type_name ^ ")"
 
 let rec to_source = function
-  | Located (_, expression) -> to_source expression
+  | Located (_, _, expression) -> to_source expression
   | Int value -> string_of_int value
   | Float value -> value
   | String value -> Printf.sprintf "%S" value
@@ -302,10 +302,23 @@ and guarded_cases_to_parsetree ~context cases =
   build_cases [] cases
 
 and to_parsetree ~context = function
-  | Located (location, expression) ->
+  | Located (node_id, location, expression) ->
       to_parsetree ~context expression
       |> Result.map (fun (expression : Parsetree.expression) ->
-             { expression with pexp_loc = location })
+             let payload =
+               Parsetree.PStr
+                 [ Ast_helper.Str.eval
+                     (Ast_helper.Exp.constant
+                        (Ast_helper.Const.string (Source_node_id.to_string node_id))) ]
+             in
+             let attribute =
+               Ast_helper.Attr.mk (str "cljml.node_id") payload
+             in
+             {
+               expression with
+               pexp_loc = location;
+               pexp_attributes = attribute :: expression.pexp_attributes;
+             })
   | Int value ->
       Ok (Ast_helper.Exp.constant ~loc (Ast_helper.Const.int ~loc value))
   | Float value ->

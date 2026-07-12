@@ -115,6 +115,33 @@ let smallest_expression typed_structure offset predicate =
   iterator.structure iterator typed_structure;
   !best
 
+let source_node_id_of_attributes attributes =
+  attributes
+  |> List.find_map
+       (fun ({ Parsetree.attr_name = { txt; _ }; attr_payload; _ } : Parsetree.attribute) ->
+         if txt <> "cljml.node_id" then None
+         else
+           match attr_payload with
+           | PStr
+               [ { pstr_desc =
+                     Pstr_eval
+                       ( { pexp_desc =
+                             Pexp_constant
+                               { pconst_desc = Pconst_string (id, _, _); _ };
+                           _ },
+                         _ );
+                   _ } ] ->
+               Some id
+           | _ -> None)
+
+let source_node_id_at analysis ~offset =
+  match
+    smallest_expression analysis.compiler.typed_structure offset (fun expression ->
+        Option.is_some (source_node_id_of_attributes expression.exp_attributes))
+  with
+  | None -> None
+  | Some expression -> source_node_id_of_attributes expression.exp_attributes
+
 let print_type env ty =
   Printtyp.wrap_printing_env ~error:false env (fun () ->
       Format.asprintf "%a" Printtyp.type_scheme ty)

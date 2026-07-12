@@ -429,6 +429,68 @@ let test_typed_environment_replaces_top_level_bindings () =
   assert_ocaml_runs "typed_environment_replaces_top_level_bindings" "Ada\n"
     ocaml_source
 
+let test_compiler_phases_have_explicit_boundaries () =
+  let state = Cljml.Compiler_state.empty in
+  if Cljml.Compiler_environment.to_bindings state.env <> [] then
+    failwith "compiler state should start with an empty environment";
+  let binding = Cljml.Types.binding "value" Cljml.Types.TInt in
+  let env = Cljml.Compiler_environment.add "value" binding state.env in
+  let resolved = Cljml.Resolver.lookup_binding "" env "value" |> expect_ok in
+  if resolved.ty <> Cljml.Types.TInt then
+    failwith "resolver should return the typed binding";
+  ignore (Cljml.Lowering.structure_of_located_items [])
+
+let test_source_node_identity_reaches_parsetree () =
+  let source = "(def answer (+ 1 2))" in
+  let structure =
+    Cljml.Compiler.compile_parsetree_with_filename ~filename:"identity.cljml"
+      source
+    |> expect_ok
+  in
+  let node_ids = ref [] in
+  let iterator =
+    { Ast_iterator.default_iterator with
+      expr =
+        (fun self expression ->
+          List.iter
+            (fun ({ Parsetree.attr_name = { txt; _ }; _ } : Parsetree.attribute) ->
+              if txt = "cljml.node_id" then node_ids := txt :: !node_ids)
+            expression.pexp_attributes;
+          Ast_iterator.default_iterator.expr self expression);
+    }
+  in
+  iterator.structure iterator structure;
+  match !node_ids with
+  | [] -> failwith "expected source node identities on lowered expressions"
+  | _ ->
+      let analysis =
+        Cljml.Toolchain.analyze ~filename:"identity.cljml" source |> expect_ok
+      in
+      let typed_node_ids = ref 0 in
+      let iterator =
+        { Tast_iterator.default_iterator with
+          expr =
+            (fun self expression ->
+              List.iter
+                (fun ({ Parsetree.attr_name = { txt; _ }; _ } : Parsetree.attribute) ->
+                  if txt = "cljml.node_id" then incr typed_node_ids)
+                expression.exp_attributes;
+              Tast_iterator.default_iterator.expr self expression);
+        }
+      in
+      iterator.structure iterator analysis.typed_structure;
+      if !typed_node_ids = 0 then
+        failwith "expected source node identities on typed expressions";
+      let language_analysis =
+        Cljml.Language_service.analyze ~filename:"identity.cljml" source
+        |> expect_ok
+      in
+      let offset = expect_substring_index source "1" in
+      match Cljml.Language_service.source_node_id_at language_analysis ~offset with
+      | Some id when String.starts_with ~prefix:"identity.cljml:" id -> ()
+      | Some id -> failwith ("unexpected source node identity " ^ id)
+      | None -> failwith "expected LSP lookup to return a source node identity"
+
 let test_modules_resolve_qualified_symbols () =
   let source =
     {|
@@ -4988,6 +5050,10 @@ let tests =
       test_typed_environment_respects_lexical_shadowing );
     ( "typed environment replaces top-level bindings",
       test_typed_environment_replaces_top_level_bindings );
+    ( "compiler phases have explicit boundaries",
+      test_compiler_phases_have_explicit_boundaries );
+    ( "source node identity reaches parsetree",
+      test_source_node_identity_reaches_parsetree );
     ("modules resolve qualified symbols", test_modules_resolve_qualified_symbols);
     ( "modules prevent unqualified symbol collisions",
       test_modules_prevent_unqualified_symbol_collisions );

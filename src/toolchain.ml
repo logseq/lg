@@ -94,13 +94,13 @@ end
 module Ocaml_parsetree_backend = struct
   let implementation (typed : typed_result) =
     match
-      Ocaml_parsetree.structure_of_located_items
+      Lowering.structure_of_located_items
         (List.combine typed.locations typed.items)
     with
     | Error _ as err -> err
     | Ok structure -> Ok { ast = typed.ast; items = typed.items; structure }
 
-  let print = Ocaml_parsetree.print_implementation
+  let print = Lowering.print_implementation
 end
 
 module Ocaml_typechecker = struct
@@ -256,7 +256,7 @@ let analyze ?(filename = "<string>") source =
 
 let analyze_workspace sources =
   let ocaml_valid state =
-    match Ocaml_parsetree.structure_of_located_items state.located_items with
+    match Lowering.structure_of_located_items state.located_items with
     | Error _ -> false
     | Ok structure -> (
         match Ocaml_typechecker.analyze structure with
@@ -294,7 +294,7 @@ let analyze_workspace sources =
       | Ok (_state, filenames) when filenames = [] ->
           Error.error "workspace contains no analyzable cljml files"
       | Ok (state, filenames) -> (
-          match Ocaml_parsetree.structure_of_located_items state.located_items with
+          match Lowering.structure_of_located_items state.located_items with
           | Error _ as err -> err
           | Ok structure -> (
               match Ocaml_typechecker.analyze structure with
@@ -364,7 +364,7 @@ let compile_chunk_with_diagnostics ?(filename = "<string>") state source =
           match Ocaml_parsetree_backend.implementation typed with
           | Error _ as err -> err
           | Ok result -> (
-              match Ocaml_parsetree.structure_of_located_items state.located_items with
+              match Lowering.structure_of_located_items state.located_items with
               | Error _ as err -> err
               | Ok accumulated_structure -> (
                   match Ocaml_typechecker.structure accumulated_structure with
@@ -393,7 +393,7 @@ let compile_chunk_parsetree ?(filename = "<string>") state source =
           match Ocaml_parsetree_backend.implementation typed with
           | Error _ as err -> err
           | Ok result -> (
-              match Ocaml_parsetree.structure_of_located_items state.located_items with
+              match Lowering.structure_of_located_items state.located_items with
               | Error _ as err -> err
               | Ok accumulated_structure -> (
                   match Ocaml_typechecker.structure accumulated_structure with
