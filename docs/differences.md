@@ -224,10 +224,12 @@ as `(type user-id :ocaml/int)`. Signature types accept parameter vectors:
 manifest. cljml validates parameter scope, while OCaml checks signature
 matching. `(module Name Signature ...)` emits an ascribed module whose
 signature match is checked by OCaml.
-`module-functor` emits a single-parameter OCaml functor, and `module-apply`
-emits a functor application while exposing the applied module's already-known
-result bindings and OCaml record type metadata. Functor parameter and
-application signature matching are checked by OCaml.
+`module-functor` emits an OCaml functor. Its parameter vector contains one or
+more name/signature pairs; multiple pairs lower to curried OCaml functor
+parameters. `module-apply` accepts the corresponding module arguments in order
+and exposes the applied module's already-known result bindings and OCaml record
+type metadata. Functor parameter and application signature matching are checked
+by OCaml.
 
 Clojure symbols and keywords that would emit OCaml reserved words are munged as
 legal OCaml identifiers while preserving source-level names.

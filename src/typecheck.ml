@@ -4129,7 +4129,7 @@ let compile_type_variant current_ns env next_type name type_parameters construct
           Type_variant { type_name; type_parameters; constructors } )
 
 let compile_module_apply current_ns env next_type module_name functor_name
-    argument_name =
+    argument_names =
   let applied_bindings =
     apply_functor_result_bindings env module_name functor_name
   in
@@ -4141,7 +4141,7 @@ let compile_module_apply current_ns env next_type module_name functor_name
         {
           module_name = Names.module_segment_to_ocaml module_name;
           functor_name = Names.module_path_to_ocaml functor_name;
-          argument_name = Names.module_path_to_ocaml argument_name;
+          argument_names = List.map Names.module_path_to_ocaml argument_names;
         } )
 
 let rec compile_module ?signature_name current_ns env next_type module_path
@@ -4411,41 +4411,64 @@ let rec compile_module ?signature_name current_ns env next_type module_path
 
 let compile_module_functor current_ns env next_type functor_name parameter_form
     body_forms =
+  let rec parse_parameters acc = function
+    | [] -> Ok (List.rev acc)
+    | FSymbol parameter_name :: FSymbol parameter_signature :: rest ->
+        parse_parameters
+          (( parameter_name,
+             Names.module_path_to_ocaml parameter_signature )
+          :: acc)
+          rest
+    | [ _ ] ->
+        Error.error "module-functor parameters must be name/signature pairs"
+    | _ -> Error.error "module-functor parameters must be symbols"
+  in
   match parameter_form with
-  | FVector [ FSymbol parameter_name; FSymbol parameter_signature ] ->
-      let parameter_signature_name =
-        Names.module_path_to_ocaml parameter_signature
-      in
-      let parameter_bindings =
-        signature_parameter_bindings env parameter_name parameter_signature_name
-      in
-      let functor_env = env @ parameter_bindings in
-      (match
-         compile_module current_ns functor_env next_type functor_name functor_name
-           body_forms
-       with
+  | FVector [] -> Error.error "module-functor parameter vector must not be empty"
+  | FVector parameter_forms -> (
+      match parse_parameters [] parameter_forms with
       | Error _ as err -> err
-      | Ok (_current_ns, public_bindings, next_type, module_item) -> (
-          match module_item with
-          | Module_def { items; _ } ->
-              let functor_bindings =
-                store_functor_result_bindings functor_name public_bindings
-              in
-              Ok
-                ( current_ns,
-                  env @ functor_bindings,
-                  next_type,
-                  Module_functor
-                    {
-                      functor_name = Names.module_segment_to_ocaml functor_name;
-                      parameter_name = Names.module_segment_to_ocaml parameter_name;
-                      parameter_signature = parameter_signature_name;
-                      items;
-                    } )
-          | _ -> Error.error "internal error: module functor body did not compile"))
+      | Ok parameters ->
+          let parameter_bindings =
+            parameters
+            |> List.concat_map (fun (parameter_name, parameter_signature) ->
+                   signature_parameter_bindings env parameter_name
+                     parameter_signature)
+          in
+          let functor_env = env @ parameter_bindings in
+          (match
+             compile_module current_ns functor_env next_type functor_name
+               functor_name body_forms
+           with
+          | Error _ as err -> err
+          | Ok (_current_ns, public_bindings, next_type, module_item) -> (
+              match module_item with
+              | Module_def { items; _ } ->
+                  let functor_bindings =
+                    store_functor_result_bindings functor_name public_bindings
+                  in
+                  Ok
+                    ( current_ns,
+                      env @ functor_bindings,
+                      next_type,
+                      Module_functor
+                        {
+                          functor_name =
+                            Names.module_segment_to_ocaml functor_name;
+                          parameters =
+                            List.map
+                              (fun (name, signature) ->
+                                ( Names.module_segment_to_ocaml name,
+                                  signature ))
+                              parameters;
+                          items;
+                        } )
+              | _ ->
+                  Error.error
+                    "internal error: module functor body did not compile")))
   | _ ->
       Error.error
-        "module-functor expects a name, [parameter signature], and body"
+        "module-functor expects a name, [parameter signature ...], and body"
 
 let compile_top_level current_ns env next_type = function
   | FList (FSymbol "module-signature" :: FSymbol signature_name :: item_forms) ->
@@ -4506,16 +4529,25 @@ let compile_top_level current_ns env next_type = function
         body_forms
   | FList (FSymbol "module-functor" :: _) ->
       Error.error
-        "module-functor expects a name, [parameter signature], and body"
+        "module-functor expects a name, [parameter signature ...], and body"
   | FList
-      [ FSymbol "module-apply";
-        FSymbol module_name;
-        FSymbol functor_name;
-        FSymbol argument_name ] ->
-      compile_module_apply current_ns env next_type module_name functor_name
-        argument_name
+      (FSymbol "module-apply" :: FSymbol module_name :: FSymbol functor_name
+      :: (_ :: _ as argument_forms)) ->
+      let rec parse_arguments acc = function
+        | [] -> Ok (List.rev acc)
+        | FSymbol name :: rest -> parse_arguments (name :: acc) rest
+        | _ ->
+            Error.error
+              "module-apply expects result, functor, and one or more argument modules"
+      in
+      (match parse_arguments [] argument_forms with
+      | Error _ as err -> err
+      | Ok argument_names ->
+          compile_module_apply current_ns env next_type module_name functor_name
+            argument_names)
   | FList (FSymbol "module-apply" :: _) ->
-      Error.error "module-apply expects result, functor, and argument modules"
+      Error.error
+        "module-apply expects result, functor, and one or more argument modules"
   | FList [ FSymbol "def"; FSymbol name; expr_form ] -> (
       match compile_expr current_ns env expr_form with
       | Error _ as err -> err

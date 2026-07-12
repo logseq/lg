@@ -3486,6 +3486,39 @@ let test_module_functors_apply_modules () =
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "module_functors_apply_modules" "42\n" ocaml_source
 
+let test_module_functors_apply_multiple_modules () =
+  let source =
+    {|
+(module-signature NumberSig
+  (val value :int))
+(module Left NumberSig
+  (def value 19))
+(module Right NumberSig
+  (def value 23))
+(module-functor Add [L NumberSig R NumberSig]
+  (def result (+ L/value R/value)))
+(module-apply App Add Left Right)
+(println App/result)
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "module_functors_apply_multiple_modules" "42\n" ocaml_source
+
+let test_multi_parameter_functor_application_is_checked_by_ocaml () =
+  Cljml.Compiler.compile_string
+    {|
+(module-signature NumberSig
+  (val value :int))
+(module Good NumberSig
+  (def value 19))
+(module Bad
+  (def value "twenty-three"))
+(module-functor Add [L NumberSig R NumberSig]
+  (def result (+ L/value R/value)))
+(module-apply App Add Good Bad)
+|}
+  |> expect_error_contains "not compatible"
+
 let test_module_functor_applications_expose_record_types () =
   let source =
     {|
@@ -3519,9 +3552,19 @@ let test_module_functor_application_is_checked_by_ocaml () =
 
 let test_module_functors_reject_bad_forms () =
   Cljml.Compiler.compile_string {|(module-functor Make M MathSig)|}
-  |> expect_error "module-functor expects a name, [parameter signature], and body";
+  |> expect_error
+       "module-functor expects a name, [parameter signature ...], and body";
+  Cljml.Compiler.compile_string {|(module-functor Make [] (def answer 42))|}
+  |> expect_error "module-functor parameter vector must not be empty";
+  Cljml.Compiler.compile_string
+    {|(module-functor Make [M MathSig N] (def answer 42))|}
+  |> expect_error "module-functor parameters must be name/signature pairs";
+  Cljml.Compiler.compile_string
+    {|(module-functor Make [M :MathSig] (def answer 42))|}
+  |> expect_error "module-functor parameters must be symbols";
   Cljml.Compiler.compile_string {|(module-apply App Make)|}
-  |> expect_error "module-apply expects result, functor, and argument modules"
+  |> expect_error
+       "module-apply expects result, functor, and one or more argument modules"
 
 let test_module_definitions_support_open () =
   let source =
@@ -4938,10 +4981,14 @@ let tests =
     ( "module signatures reject bad forms",
       test_module_signatures_reject_bad_forms );
     ("module functors apply modules", test_module_functors_apply_modules);
+    ( "module functors apply multiple modules",
+      test_module_functors_apply_multiple_modules );
     ( "module functor applications expose record types",
       test_module_functor_applications_expose_record_types );
     ( "module functor application is checked by OCaml",
       test_module_functor_application_is_checked_by_ocaml );
+    ( "multi-parameter functor application is checked by OCaml",
+      test_multi_parameter_functor_application_is_checked_by_ocaml );
     ("module functors reject bad forms", test_module_functors_reject_bad_forms);
     ( "incremental compilation preserves protocols",
       test_incremental_compilation_preserves_protocols );

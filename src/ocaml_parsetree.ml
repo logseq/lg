@@ -248,31 +248,36 @@ let rec structure_of_item = function
         Ast_helper.Mb.mk ~loc (Location.mkloc (Some alias_name) loc) module_expr
       in
       Ok [ Ast_helper.Str.module_ ~loc module_binding ]
-  | Module_functor
-      { functor_name; parameter_name; parameter_signature; items } -> (
+  | Module_functor { functor_name; parameters; items } -> (
       match structure_of_items items with
       | Error _ as err -> err
       | Ok body ->
-          let parameter =
-            Parsetree.Named
-              ( Location.mkloc (Some parameter_name) loc,
-                Ast_helper.Mty.ident ~loc
-                  (lid (longident_of_string parameter_signature)) )
-          in
           let module_expr =
-            Ast_helper.Mod.functor_ ~loc parameter
-              (Ast_helper.Mod.structure ~loc body)
+            List.fold_right
+              (fun (parameter_name, parameter_signature) body ->
+                let parameter =
+                  Parsetree.Named
+                    ( Location.mkloc (Some parameter_name) loc,
+                      Ast_helper.Mty.ident ~loc
+                        (lid (longident_of_string parameter_signature)) )
+                in
+                Ast_helper.Mod.functor_ ~loc parameter body)
+              parameters (Ast_helper.Mod.structure ~loc body)
           in
           let module_binding =
             Ast_helper.Mb.mk ~loc (Location.mkloc (Some functor_name) loc)
               module_expr
           in
           Ok [ Ast_helper.Str.module_ ~loc module_binding ])
-  | Module_apply { module_name; functor_name; argument_name } ->
+  | Module_apply { module_name; functor_name; argument_names } ->
       let module_expr =
-        Ast_helper.Mod.apply ~loc
+        List.fold_left
+          (fun applied_functor argument_name ->
+            Ast_helper.Mod.apply ~loc applied_functor
+              (Ast_helper.Mod.ident ~loc
+                 (lid (longident_of_string argument_name))))
           (Ast_helper.Mod.ident ~loc (lid (longident_of_string functor_name)))
-          (Ast_helper.Mod.ident ~loc (lid (longident_of_string argument_name)))
+          argument_names
       in
       let module_binding =
         Ast_helper.Mb.mk ~loc (Location.mkloc (Some module_name) loc) module_expr

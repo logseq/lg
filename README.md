@@ -124,10 +124,12 @@ The compiler infers record-like map shapes automatically:
   `'a box = 'a option`. Parameter relationships are checked by OCaml.
   `(module Math MathSig ...)` emits an ascribed module whose signature match is
   checked by OCaml. `(module-functor Make [M MathSig] ...)`
-  emits a single-parameter OCaml functor, and `(module-apply App Make Math)`
-  applies it while exposing the applied module's already-known result bindings
-  and OCaml record type metadata; parameter and application signature checks
-  remain owned by OCaml.
+  emits an OCaml functor. Multiple name/signature pairs declare a curried
+  multi-parameter functor, for example `[L MathSig R MathSig]`, and
+  `(module-apply App Make Left Right)` applies its arguments in order. Applied
+  modules expose the functor's already-known result bindings and OCaml record
+  type metadata; parameter and application signature checks remain owned by
+  OCaml.
 - Clojure symbols and keywords that collide with OCaml reserved words are
   munged when emitted as OCaml identifiers.
 - `(defn inc1 [x] (+ x 1))`, `(fn [x] ...)`, and `(let [...] ...)` are

@@ -167,11 +167,12 @@ Signatures also support abstract type items such as `(type user-id)` and
 manifest type items such as `(type user-id :ocaml/int)`, which lower to OCaml
 `type user_id` and `type user_id = int`.
 `(module Math MathSig ...)` emits an ascribed module whose signature match is
-checked by OCaml. `(module-functor Make [M MathSig] ...)` emits a
-single-parameter OCaml functor, and `(module-apply App Make Math)` emits a
-functor application while exposing the applied module's already-known result
-bindings and OCaml record type metadata. Functor parameter and application
-signature matching remain owned by OCaml.
+checked by OCaml. `(module-functor Make [M MathSig] ...)` emits an OCaml
+functor. Additional name/signature pairs in the parameter vector lower to
+curried functor parameters, and `module-apply` accepts their module arguments in
+order while exposing the applied module's already-known result bindings and
+OCaml record type metadata. Functor parameter and application signature
+matching remain owned by OCaml.
 
 `subs` supports two- and three-argument typed string slicing.
 

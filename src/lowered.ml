@@ -53,14 +53,13 @@ type compiled_item =
     }
   | Module_functor of {
       functor_name : string;
-      parameter_name : string;
-      parameter_signature : string;
+      parameters : (string * string) list;
       items : compiled_item list;
     }
   | Module_apply of {
       module_name : string;
       functor_name : string;
-      argument_name : string;
+      argument_names : string list;
     }
   | Module_signature of {
       signature_name : string;
