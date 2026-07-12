@@ -11,8 +11,10 @@ first, then OCaml lowering:
   The long-term architecture follows ReasonML more than a standalone compiler:
   cljml should elaborate Clojure-like syntax into OCaml Parsetree and leave the
   complete host-language type system to the OCaml compiler.
-- Typed expressions carry an `Ocaml_ir` node shared by the source and
-  Parsetree backends. Scalar literals, identifiers, list/vector construction,
+- Typed expressions form a `Semantic_ir` tree whose elaborated nodes retain
+  `Semantic_type.ty` annotations. `Semantic_lowering` explicitly erases those
+  annotations into `Ocaml_ir`, which is shared by the source and Parsetree
+  backends. Scalar literals, identifiers, list/vector construction,
   applications, conditionals, ordinary functions, parameter constraints,
   multi-form sequencing, simple `let` bindings, and static `match` expressions
   are structured. Integer arithmetic, predicates, bitwise operators,
@@ -401,6 +403,9 @@ warnings such as non-exhaustive and redundant matches; and provides
 Typedtree-backed hover types, jump-to-definition, type-detailed completion, and
 identity-aware references, rename, highlights, document/workspace symbols, and
 comment-preserving document formatting. Workspace indexing includes unopened
-`.cljml` files and supports cross-file definitions, references, and rename.
+`.cljml` files and supports cross-file definitions, references, and rename. It
+tracks module and top-level symbol dependency components, reanalyzes only the
+component affected by an edit, reuses unrelated Typedtree analyses, and keeps
+unaffected files available while another component contains an error.
 See
 [docs/editor-tooling.md](docs/editor-tooling.md) for Neovim and Emacs setup.

@@ -688,6 +688,20 @@ let test_module_namespace_rejects_emitted_name_collisions () =
 |}
   |> expect_error "duplicate module Existing"
 
+let test_signature_namespace_rejects_emitted_name_collisions () =
+  Cljml.Compiler.compile_string
+    {|
+(module-signature value-sig (val value :int))
+(module-signature value_sig (val value :int))
+|}
+  |> expect_error_contains "OCaml module type name collision";
+  Cljml.Compiler.compile_string
+    {|
+(module-signature ValueSig (val value :int))
+(module-signature ValueSig (val other :int))
+|}
+  |> expect_error "duplicate module signature ValueSig"
+
 let test_typed_environment_respects_lexical_shadowing () =
   let source =
     {|
@@ -5641,6 +5655,8 @@ let tests =
       test_emitted_ocaml_names_reject_source_collisions );
     ( "module namespace rejects emitted name collisions",
       test_module_namespace_rejects_emitted_name_collisions );
+    ( "signature namespace rejects emitted name collisions",
+      test_signature_namespace_rejects_emitted_name_collisions );
     ( "type namespace rejects emitted name collisions",
       test_type_namespace_rejects_emitted_name_collisions );
     ( "typed environment respects lexical shadowing",

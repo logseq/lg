@@ -2,6 +2,7 @@ module Signature_map = Map.Make (Signature_id)
 module Functor_map = Map.Make (Functor_id)
 module Module_map = Map.Make (Module_id)
 module Emitted_module_map = Map.Make (String)
+module Emitted_signature_map = Map.Make (String)
 
 type module_kind = Concrete | Alias | Functor | Applied
 
@@ -12,6 +13,7 @@ type module_declaration = {
 
 type t = {
   signatures : Lowered.signature_item list Signature_map.t;
+  emitted_signatures : Signature_id.t Emitted_signature_map.t;
   functor_results : (string * Types.binding) list Functor_map.t;
   aliases : Module_id.t Module_map.t;
   module_declarations : module_declaration Emitted_module_map.t;
@@ -20,6 +22,7 @@ type t = {
 let empty =
   {
     signatures = Signature_map.empty;
+    emitted_signatures = Emitted_signature_map.empty;
     functor_results = Functor_map.empty;
     aliases = Module_map.empty;
     module_declarations = Emitted_module_map.empty;
@@ -30,11 +33,26 @@ let declare_signature signature_id items registry =
     Error.error
       ("duplicate module signature " ^ Signature_id.to_string signature_id)
   else
-    Ok
-      {
-        registry with
-        signatures = Signature_map.add signature_id items registry.signatures;
-      }
+    let emitted_name =
+      String.concat "."
+        (Signature_id.owner signature_id @ [ Signature_id.name signature_id ])
+      |> Names.module_path_to_ocaml
+    in
+    match Emitted_signature_map.find_opt emitted_name registry.emitted_signatures with
+    | Some existing ->
+        Error.error
+          ("OCaml module type name collision: " ^ Signature_id.to_string existing
+         ^ " and " ^ Signature_id.to_string signature_id ^ " both emit "
+         ^ emitted_name)
+    | None ->
+        Ok
+          {
+            registry with
+            signatures = Signature_map.add signature_id items registry.signatures;
+            emitted_signatures =
+              Emitted_signature_map.add emitted_name signature_id
+                registry.emitted_signatures;
+          }
 
 let find_signature signature_id registry =
   Signature_map.find_opt signature_id registry.signatures

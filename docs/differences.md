@@ -9,14 +9,18 @@ The goal is API familiarity, not JVM Clojure runtime identity.
 The elaboration layer keeps three type relationships separate. `equal` is
 strict and nominal, `row_compatible` permits explicit structural-record
 projection, and `defer_to_ocaml` marks host-owned relationships that only the
-OCaml typechecker should decide. `TAny` represents missing source metadata; it
-is not equal to every type. Explicit `type-record` declarations carry stable
+OCaml typechecker should decide. `TUnknown` represents unresolved source
+metadata and is only accepted at explicitly selected boundaries; it is not
+equal to every type. Explicit `type-record` declarations carry stable
 `Type_id` identities, while compiler-generated records for structural maps are
 marked structural and may participate in row projection.
 
-Source identities use dedicated `Symbol_id`, `Type_id`, and `Protocol_id`
-types. Emitted OCaml binding names are checked per scope, so source names that
-munge to the same OCaml identifier are rejected before lowering.
+Source identities use dedicated `Symbol_id`, `Type_id`, `Method_id`,
+`Protocol_id`, `Module_id`, `Signature_id`, and `Functor_id` types. Typed
+registries own type, protocol, implementation, module, signature, functor, and
+alias metadata instead of encoding it in symbol-table strings. Emitted OCaml
+value, type, and module names are checked per scope, so source names that munge
+to the same OCaml identifier are rejected before lowering.
 
 cljml type checks programs before emitting OCaml.
 
@@ -27,6 +31,10 @@ Maps are structural records when created from map literals.
 `hash-map` creates structural records from keyword/value pairs.
 
 `assoc` can add one or more fields to a structural map, but it cannot change the type of an existing field.
+
+Updating an existing field of a declared record preserves its nominal
+`Type_id`, including protocol receiver identity. Adding a field produces a new
+structural map because ordinary OCaml records have a closed field set.
 
 `assoc` can update one or more persistent vector indexes when the replacement values match the element type.
 
@@ -133,6 +141,10 @@ traditional unqualified method spelling remains available when unambiguous.
 use `Module/Protocol/method` and retain qualified record receiver identity.
 
 `do`, `fn`, `defn`, and `let` bodies evaluate forms in order and return the final form's type.
+An explicitly typed recursive definition uses
+`(defn name [^:type argument ...] :return-type body...)` and lowers to native
+OCaml `let rec`. Recursive parameters and the return value are checked against
+the declared source signature.
 Unconstrained identity-style functions such as `(defn id [x] x)` and
 `(let [id (fn [x] x)] ...)` preserve OCaml-owned call-site polymorphism. cljml
 tracks only the fact that the return value is the same parameter so its core API
@@ -211,6 +223,11 @@ and `include` provide module reuse. Top-level `require` is restricted to OCaml
 packages, OCaml modules, and the typed `clojure.string` compatibility module.
 Incremental compilation preserves modules, aliases, types, protocols, the type
 counter, and value bindings across source chunks.
+
+The LSP workspace index builds module and top-level symbol dependency
+components. A changed document reanalyzes its dependency/reverse-dependency
+component only, reuses unrelated Typedtree analyses, and contains parse or type
+errors without discarding unaffected components.
 
 The CLI exposes the same state across files with
 `--compile-files ... -o output.ml` and `--run-files ...`. Input order defines
@@ -412,8 +429,8 @@ The stable backend still emits OCaml source from cljml's typed IR. The
 Parsetree backend no longer reparses the whole generated program: it lowers
 compiled items independently, constructs structural record definitions
 directly as `Pstr_type` and `Pstr_value`, and directly constructs ordinary
-top-level value/effect bindings. Require and protocol marker comments do not
-produce AST nodes. Row type definitions, OCaml-owned type aliases, nullary
+top-level value/effect bindings. Require and protocol declaration comments do
+not produce AST nodes. Row type definitions, OCaml-owned type aliases, nullary
 variant declarations, `defn`, and protocol implementation bindings are also
 structured items. `open` lowers directly to `Pstr_open`. Nested modules are
 represented recursively and lower directly to `Pstr_module` and
@@ -482,13 +499,13 @@ compatibility target. The current compiler boundary is aligned as follows:
 | Requirement | Current evidence |
 | --- | --- |
 | Alternate syntax frontend | The cljml reader produces a located Lisp AST without parsing generated OCaml source. |
-| Semantic elaboration boundary | cljml owns Clojure surface rules, core API compatibility, collection representations, and source-oriented errors. Lowered items are separate from source type metadata. |
+| Semantic elaboration boundary | cljml owns Clojure surface rules, core API compatibility, collection representations, and source-oriented errors. Every elaborated semantic expression retains its `Semantic_type.ty`; `Semantic_lowering` is the explicit boundary that erases those annotations into backend `Ocaml_ir`. |
 | Native OCaml backend | Every supported expression and structure item lowers through structured `Ocaml_ir` and OCaml `Parsetree`; regression guards reject unstructured source-backed fallback nodes and legacy item emitters. |
 | OCaml type system as final truth | Public source, Parsetree, incremental, CLI, and LSP paths run the compiler-libs typechecker. Host calls, polymorphic relationships, module inclusion, constructor payloads, pattern exhaustiveness, and warnings are checked by OCaml. |
 | Function polymorphism | Top-level and let-bound functions can be instantiated at different call-site types. Non-trivial relationships such as both branches of a polymorphic chooser are accepted or rejected by OCaml. |
 | Host type surface | Aliases, parameterized types, records, variants, option/result, tuples, arrays, references, constructors, patterns, labelled arguments, and package values lower to native OCaml nodes. |
-| Module system | Modules, aliases, open/include, parameterized signatures, nested signature modules, signature includes, multi-parameter functors, and applications lower to native module AST and are checked by OCaml. |
-| Diagnostics and tooling boundary | Source locations survive lowering; compiler errors and enabled warnings reach the library API and CLI. The LSP reuses cached OCaml Typedtree analysis for diagnostics, hover types, definitions, type-detailed completion, identity-aware references, rename, highlights, and symbols, and provides deterministic comment-preserving document formatting. |
+| Module system | Modules, aliases, open/include, parameterized signatures, nested signature modules, signature includes, multi-parameter functors, applications, and typed recursive functions lower to native OCaml AST. Typed registries reject source and emitted-name collisions before lowering. |
+| Diagnostics and tooling boundary | Source node identity and locations survive into Typedtree. Compiler errors and warnings reach the library API and CLI. The dependency-aware LSP workspace index reuses unaffected component analyses for diagnostics, hover types, cross-file definitions, type-detailed completion, identity-aware references, rename, highlights, and symbols, and provides deterministic comment-preserving formatting. |
 
 This does not make cljml a Reason syntax clone. `.re`/`.rei` parsing, `refmt`,
 JSX, and full `ocaml-lsp` feature parity are not cljml language requirements.
