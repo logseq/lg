@@ -165,7 +165,9 @@ OCaml module alias and exposes already-known `Math/...` bindings as `M/...`.
 `(module-signature MathSig (val answer :ocaml/int))` emits an OCaml module type.
 Signatures also support abstract type items such as `(type user-id)` and
 manifest type items such as `(type user-id :ocaml/int)`, which lower to OCaml
-`type user_id` and `type user_id = int`.
+`type user_id` and `type user_id = int`. Nested signature modules use
+`(module Inner InnerSig)` and lower to native OCaml signature module items;
+their known values remain addressable through functor parameters.
 `(module Math MathSig ...)` emits an ascribed module whose signature match is
 checked by OCaml. `(module-functor Make [M MathSig] ...)` emits an OCaml
 functor. Additional name/signature pairs in the parameter vector lower to

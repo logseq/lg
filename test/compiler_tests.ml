@@ -3452,6 +3452,55 @@ let test_module_signatures_support_parameterized_abstract_types () =
   assert_ocaml_runs "module_signatures_support_parameterized_abstract_types" ""
     ocaml_source
 
+let test_module_signatures_support_nested_modules () =
+  let source =
+    {|
+(module-signature ValueSig
+  (val value :int))
+(module-signature OuterSig
+  (module Inner ValueSig))
+(module Outer OuterSig
+  (module Inner ValueSig
+    (def value 42)))
+(println Outer.Inner/value)
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "module_signatures_support_nested_modules" "42\n" ocaml_source
+
+let test_functor_parameters_expose_nested_signature_modules () =
+  let source =
+    {|
+(module-signature ValueSig
+  (val value :int))
+(module-signature OuterSig
+  (module Inner ValueSig))
+(module Outer OuterSig
+  (module Inner ValueSig
+    (def value 42)))
+(module-functor Read [O OuterSig]
+  (def result O.Inner/value))
+(module-apply App Read Outer)
+(println App/result)
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "functor_parameters_expose_nested_signature_modules" "42\n"
+    ocaml_source
+
+let test_nested_module_signatures_are_checked_by_ocaml () =
+  Cljml.Compiler.compile_string
+    {|
+(module-signature ValueSig
+  (val value :int))
+(module-signature OuterSig
+  (module Inner ValueSig))
+(module Outer OuterSig
+  (module Inner
+    (def value "forty-two")))
+|}
+  |> expect_error_contains "not included"
+
 let test_module_signature_type_items_are_checked_by_ocaml () =
   Cljml.Compiler.compile_string
     {|
@@ -3497,7 +3546,12 @@ let test_module_signatures_reject_bad_forms () =
   |> expect_error "module-signature expects at least one signature item";
   Cljml.Compiler.compile_string
     {|(module-signature MathSig (value answer :ocaml/int))|}
-  |> expect_error "module-signature items must be val or type declarations";
+  |> expect_error
+       "module-signature items must be val, type, or module declarations";
+  Cljml.Compiler.compile_string
+    {|(module-signature OuterSig (module Inner))|}
+  |> expect_error
+       "module-signature items must be val, type, or module declarations";
   Cljml.Compiler.compile_string
     {|(module-signature MathSig (val answer :unknown))|}
   |> expect_error "unknown signature type :unknown";
@@ -5020,6 +5074,12 @@ let tests =
       test_module_signatures_support_parameterized_manifest_types );
     ( "module signatures support parameterized abstract types",
       test_module_signatures_support_parameterized_abstract_types );
+    ( "module signatures support nested modules",
+      test_module_signatures_support_nested_modules );
+    ( "functor parameters expose nested signature modules",
+      test_functor_parameters_expose_nested_signature_modules );
+    ( "nested module signatures are checked by OCaml",
+      test_nested_module_signatures_are_checked_by_ocaml );
     ( "module signature type items are checked by OCaml",
       test_module_signature_type_items_are_checked_by_ocaml );
     ( "module signatures support abstract type items",

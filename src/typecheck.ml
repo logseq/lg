@@ -3792,29 +3792,79 @@ let functor_result_key functor_name value_name =
 let functor_result_record_key functor_name type_name =
   "__functor_record/" ^ functor_name ^ "/" ^ type_name
 
-let signature_metadata_bindings signature_name items =
-  items
-  |> List.filter_map (function
-       | Signature_value { source_name; value_name; value_type } ->
-           Some
-             ( signature_binding_key signature_name source_name,
-               Types.binding value_name value_type )
-       | Signature_type _ -> None)
+let signature_metadata_bindings env signature_name items =
+  let nested_value_path module_name value_path =
+    match String.rindex_opt value_path '/' with
+    | None -> module_name ^ "/" ^ value_path
+    | Some separator ->
+        let nested_path = String.sub value_path 0 separator in
+        let value_name =
+          String.sub value_path (separator + 1)
+            (String.length value_path - separator - 1)
+        in
+        module_name ^ "." ^ nested_path ^ "/" ^ value_name
+  in
+  let item_bindings = function
+    | Signature_value { source_name; value_name; value_type } ->
+        [
+          ( signature_binding_key signature_name source_name,
+            Types.binding value_name value_type );
+        ]
+    | Signature_type _ -> []
+    | Signature_module { source_name; module_signature; _ } ->
+        let nested_prefix = "__signature/" ^ module_signature ^ "/" in
+        let nested_prefix_len = String.length nested_prefix in
+        env
+        |> List.filter_map (fun (key, binding) ->
+               if
+                 String.length key > nested_prefix_len
+                 && String.sub key 0 nested_prefix_len = nested_prefix
+               then
+                 let nested_name =
+                   String.sub key nested_prefix_len
+                     (String.length key - nested_prefix_len)
+                 in
+                 Some
+                   ( signature_binding_key signature_name
+                       (nested_value_path source_name nested_name),
+                     binding )
+               else None)
+  in
+  List.concat_map item_bindings items
+
+let parameter_value_binding parameter_name value_path (binding : binding) =
+  match String.rindex_opt value_path '/' with
+  | None ->
+      ( module_binding_key parameter_name value_path,
+        {
+          binding with
+          ocaml_name =
+            Names.module_segment_to_ocaml parameter_name ^ "." ^ binding.ocaml_name;
+        } )
+  | Some separator ->
+      let nested_path = String.sub value_path 0 separator in
+      let value_name =
+        String.sub value_path (separator + 1)
+          (String.length value_path - separator - 1)
+      in
+      let parameter_path = parameter_name ^ "." ^ nested_path in
+      ( module_binding_key parameter_path value_name,
+        {
+          binding with
+          ocaml_name =
+            Names.module_path_to_ocaml parameter_path ^ "." ^ binding.ocaml_name;
+        } )
 
 let signature_parameter_bindings env parameter_name signature_name =
   let prefix = "__signature/" ^ signature_name ^ "/" in
   let prefix_len = String.length prefix in
-  let parameter_path = Names.module_segment_to_ocaml parameter_name in
   env
   |> List.filter_map (fun (key, (binding : binding)) ->
          if String.length key > prefix_len && String.sub key 0 prefix_len = prefix then
            let value_name =
              String.sub key prefix_len (String.length key - prefix_len)
            in
-           Some
-             ( module_binding_key parameter_name value_name,
-               { binding with ocaml_name = parameter_path ^ "." ^ binding.ocaml_name }
-             )
+           Some (parameter_value_binding parameter_name value_name binding)
          else None)
 
 let store_functor_result_bindings functor_name public_bindings =
@@ -3935,6 +3985,18 @@ let compile_module_signature current_ns env next_type signature_name item_forms 
           :: items)
           rest
     | FList
+        [ FSymbol "module"; FSymbol module_name; FSymbol module_signature ]
+      :: rest ->
+        parse
+          (Signature_module
+             {
+               source_name = module_name;
+               module_name = Names.module_segment_to_ocaml module_name;
+               module_signature = Names.module_path_to_ocaml module_signature;
+             }
+          :: items)
+          rest
+    | FList
         [ FSymbol "type"; FSymbol type_name; (FVector _ as parameter_form);
           FKeyword keyword ]
       :: rest -> (
@@ -3974,14 +4036,16 @@ let compile_module_signature current_ns env next_type signature_name item_forms 
               :: items)
           rest
         )
-    | _ -> Error.error "module-signature items must be val or type declarations"
+    | _ ->
+        Error.error
+          "module-signature items must be val, type, or module declarations"
   in
   match parse [] item_forms with
   | Error _ as err -> err
   | Ok [] -> Error.error "module-signature expects at least one signature item"
   | Ok items ->
       let signature_name = Names.module_segment_to_ocaml signature_name in
-      let env = env @ signature_metadata_bindings signature_name items in
+      let env = env @ signature_metadata_bindings env signature_name items in
       Ok
         ( current_ns,
           env,

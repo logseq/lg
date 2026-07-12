@@ -222,8 +222,11 @@ type declarations such as `(type user-id)`, and manifest type declarations such
 as `(type user-id :ocaml/int)`. Signature types accept parameter vectors:
 `(type box [a])` is abstract and `(type box [a] :ocaml/option<param/a>)` is
 manifest. cljml validates parameter scope, while OCaml checks signature
-matching. `(module Name Signature ...)` emits an ascribed module whose
-signature match is checked by OCaml.
+matching. Nested module items use `(module Inner InnerSig)`. Their known value
+metadata is exposed through functor parameter paths such as `M.Inner/value`,
+and OCaml checks that implementations include the declared nested module.
+`(module Name Signature ...)` emits an ascribed module whose signature match is
+checked by OCaml.
 `module-functor` emits an OCaml functor. Its parameter vector contains one or
 more name/signature pairs; multiple pairs lower to curried OCaml functor
 parameters. `module-apply` accepts the corresponding module arguments in order

@@ -138,6 +138,12 @@ let signature_item = function
               ~manifest:(core_type manifest) (str type_name)
       in
       Ast_helper.Sig.type_ ~loc Nonrecursive [ type_declaration ]
+  | Signature_module { module_name; module_signature; _ } ->
+      let module_type =
+        Ast_helper.Mty.ident ~loc (lid (longident_of_string module_signature))
+      in
+      Ast_helper.Sig.module_ ~loc
+        (Ast_helper.Md.mk ~loc (Location.mkloc (Some module_name) loc) module_type)
 
 let module_signature_definition signature_name items =
   let module_type =

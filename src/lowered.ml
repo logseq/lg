@@ -14,6 +14,11 @@ type signature_item =
       type_parameters : string list;
       manifest : Types.ty option;
     }
+  | Signature_module of {
+      source_name : string;
+      module_name : string;
+      module_signature : string;
+    }
 
 type variant_constructor = {
   constructor_name : string;
