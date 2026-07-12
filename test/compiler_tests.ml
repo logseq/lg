@@ -464,6 +464,14 @@ let test_compiler_phases_have_explicit_boundaries () =
     Cljml.Module_metadata.functor_result_key "Make" "value"
     <> "__functor/Make/value"
   then failwith "functor result metadata should have one owner"
+  else
+    let expression =
+      Cljml.Expression_elaborator.compile_expr ""
+        Cljml.Compiler_environment.empty (Cljml.Ast.FInt 1)
+      |> expect_ok
+    in
+    if expression.ty <> Cljml.Types.TInt then
+      failwith "expression elaboration should have one owner"
 
 let test_source_node_identity_reaches_parsetree () =
   let source = "(def answer (+ 1 2))" in
