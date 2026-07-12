@@ -17,6 +17,18 @@ type parsetree_result = {
   structure : Parsetree.structure;
 }
 
+type diagnostic_severity = [ `Warning ]
+
+type diagnostic = {
+  message : string;
+  severity : diagnostic_severity;
+}
+
+type compilation = {
+  ocaml_source : string;
+  diagnostics : diagnostic list;
+}
+
 type state = {
   typecheck_state : Typecheck.state;
   located_items : (Location.t * Lowered.compiled_item) list;
@@ -88,13 +100,33 @@ module Ocaml_typechecker = struct
     Format.asprintf "%a" Location.report_exception exn |> String.trim
 
   let structure structure =
+    let diagnostics = ref [] in
+    let previous_warning_reporter = !Location.warning_reporter in
+    let capture_warning location warning =
+      match previous_warning_reporter location warning with
+      | None -> None
+      | Some report ->
+          let message =
+            Format.asprintf "%a" Location.print_report report |> String.trim
+          in
+          diagnostics := { message; severity = `Warning } :: !diagnostics;
+          None
+    in
     try
-      Ocaml_signature.init ();
-      let env = Compmisc.initial_env () in
-      let _typed_structure, _signature, _signature_names, _shape, _env =
-        Typemod.type_structure env structure
+      let () =
+        Fun.protect
+          ~finally:(fun () ->
+            Location.warning_reporter := previous_warning_reporter)
+          (fun () ->
+            Location.warning_reporter := capture_warning;
+            Ocaml_signature.init ();
+            let env = Compmisc.initial_env () in
+            let _typed_structure, _signature, _signature_names, _shape, _env =
+              Typemod.type_structure env structure
+            in
+            ())
       in
-      Ok ()
+      Ok (List.rev !diagnostics)
     with exn ->
       Error.error ("OCaml typecheck failed: " ^ exception_message exn)
 end
@@ -129,7 +161,7 @@ let checked_parsetree (typed : typed_result) =
   | Ok result -> (
       match Ocaml_typechecker.structure result.structure with
       | Error _ as err -> err
-      | Ok () -> Ok result)
+      | Ok diagnostics -> Ok (result, diagnostics))
 
 let typecheck (parsed : parser_result) =
   match prepare_packages parsed.ast with
@@ -163,7 +195,7 @@ let required_ocaml_packages source =
   | Error _ as err -> err
   | Ok parsed -> required_packages_from_ast parsed.ast
 
-let implementation ?(filename = "<string>") source =
+let implementation_with_diagnostics ?(filename = "<string>") source =
   match Cljml_frontend.implementation ~filename source with
   | Error _ as err -> err
   | Ok parsed -> (
@@ -172,7 +204,16 @@ let implementation ?(filename = "<string>") source =
       | Ok typed -> (
           match checked_parsetree typed with
           | Error _ as err -> err
-          | Ok result -> Ok (Ocaml_parsetree_backend.print result.structure)))
+          | Ok (result, diagnostics) ->
+              Ok
+                { ocaml_source = Ocaml_parsetree_backend.print result.structure;
+                  diagnostics;
+                }))
+
+let implementation ?(filename = "<string>") source =
+  match implementation_with_diagnostics ~filename source with
+  | Error _ as err -> err
+  | Ok compilation -> Ok compilation.ocaml_source
 
 let implementation_parsetree ?(filename = "<string>") source =
   match Cljml_frontend.implementation ~filename source with
@@ -183,7 +224,7 @@ let implementation_parsetree ?(filename = "<string>") source =
       | Ok typed -> (
           match checked_parsetree typed with
           | Error _ as err -> err
-          | Ok result -> Ok result.structure))
+          | Ok (result, _diagnostics) -> Ok result.structure))
 
 let typecheck_parsetree ?(filename = "<string>") source =
   match Cljml_frontend.implementation ~filename source with
@@ -198,7 +239,7 @@ let typecheck_parsetree ?(filename = "<string>") source =
 
 let print_parsetree = Ocaml_parsetree_backend.print
 
-let compile_chunk ?(filename = "<string>") state source =
+let compile_chunk_with_diagnostics ?(filename = "<string>") state source =
   match Cljml_frontend.implementation ~filename source with
   | Error _ as err -> err
   | Ok parsed -> (
@@ -213,8 +254,19 @@ let compile_chunk ?(filename = "<string>") state source =
               | Ok accumulated_structure -> (
                   match Ocaml_typechecker.structure accumulated_structure with
                   | Error _ as err -> err
-                  | Ok () ->
-                      Ok (state, Ocaml_parsetree_backend.print result.structure)))))
+                  | Ok diagnostics ->
+                      Ok
+                        ( state,
+                          {
+                            ocaml_source =
+                              Ocaml_parsetree_backend.print result.structure;
+                            diagnostics;
+                          } )))))
+
+let compile_chunk ?(filename = "<string>") state source =
+  match compile_chunk_with_diagnostics ~filename state source with
+  | Error _ as err -> err
+  | Ok (state, compilation) -> Ok (state, compilation.ocaml_source)
 
 let compile_chunk_parsetree ?(filename = "<string>") state source =
   match Cljml_frontend.implementation ~filename source with
@@ -231,4 +283,4 @@ let compile_chunk_parsetree ?(filename = "<string>") state source =
               | Ok accumulated_structure -> (
                   match Ocaml_typechecker.structure accumulated_structure with
                   | Error _ as err -> err
-                  | Ok () -> Ok (state, result.structure)))))
+                  | Ok _diagnostics -> Ok (state, result.structure)))))

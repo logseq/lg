@@ -42,7 +42,10 @@ first, then OCaml lowering:
 - `Cljml.Compiler.compile_string`, `Cljml.Compiler.compile_chunk`, and the CLI
   compile/run paths use the checked Parsetree printer as their source output.
   Generated host-language errors are caught before source is returned or
-  executed.
+  executed. `compile_string_with_diagnostics` and
+  `compile_string_with_filename_and_diagnostics` additionally return enabled
+  OCaml warnings with the generated source. The CLI prints these warnings to
+  stderr without turning successful compilation into failure.
 - Lexer tokens and the complete parsed form tree retain source spans. Each
   elaborated expression carries its own source location into Parsetree, while
   generated nodes without a direct form inherit their owning top-level span.
@@ -392,6 +395,7 @@ Protocol:
 dune exec bin/cljml_cli.exe -- --lsp
 ```
 
-The server supports full document synchronization and publishes diagnostics on
-open, change, save, and close. See
+The server supports full document synchronization and publishes errors plus
+OCaml warnings such as non-exhaustive and redundant matches on open, change,
+save, and close. See
 [docs/editor-tooling.md](docs/editor-tooling.md) for Neovim and Emacs setup.

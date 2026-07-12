@@ -3074,6 +3074,50 @@ let test_match_supports_ocaml_constructor_patterns () =
   assert_ocaml_runs "match_supports_ocaml_constructor_patterns"
     "active:inactive\n" ocaml_source
 
+let test_compile_diagnostics_capture_ocaml_match_warnings () =
+  let source =
+    {|
+(type-variant status Active Inactive)
+(defn describe [^:ocaml/status status]
+  (match status
+    Active "active"))
+|}
+  in
+  let compilation =
+    Cljml.Compiler.compile_string_with_filename_and_diagnostics
+      ~filename:"warning.cljml" source
+    |> expect_ok
+  in
+  match compilation.diagnostics with
+  | [ diagnostic ] ->
+      if diagnostic.severity <> `Warning then
+        failwith "expected an OCaml warning diagnostic";
+      if not (string_contains_substring diagnostic.message "not exhaustive") then
+        failwith
+          ("expected non-exhaustive match warning, got: " ^ diagnostic.message);
+      if not (string_contains_substring diagnostic.message "warning.cljml") then
+        failwith ("expected warning filename, got: " ^ diagnostic.message)
+  | diagnostics ->
+      failwith
+        (Printf.sprintf "expected one warning diagnostic, got %d"
+           (List.length diagnostics))
+
+let test_compile_diagnostics_are_empty_for_exhaustive_matches () =
+  let source =
+    {|
+(type-variant status Active Inactive)
+(defn describe [^:ocaml/status status]
+  (match status
+    Active "active"
+    Inactive "inactive"))
+|}
+  in
+  let compilation =
+    Cljml.Compiler.compile_string_with_diagnostics source |> expect_ok
+  in
+  if compilation.diagnostics <> [] then
+    failwith "expected exhaustive match compilation to have no diagnostics"
+
 let test_match_delegates_opaque_module_constructor_payload_patterns_to_ocaml () =
   let source =
     {|
@@ -4908,6 +4952,10 @@ let tests =
     ("match rejects pattern type mismatch", test_match_rejects_pattern_type_mismatch);
     ("match infers target type from patterns", test_match_infers_target_type_from_patterns);
     ("match supports OCaml constructor patterns", test_match_supports_ocaml_constructor_patterns);
+    ( "compile diagnostics capture OCaml match warnings",
+      test_compile_diagnostics_capture_ocaml_match_warnings );
+    ( "compile diagnostics are empty for exhaustive matches",
+      test_compile_diagnostics_are_empty_for_exhaustive_matches );
     ( "match delegates opaque module constructor payload patterns to OCaml",
       test_match_delegates_opaque_module_constructor_payload_patterns_to_ocaml );
     ( "match delegates unknown opaque constructor errors to OCaml",

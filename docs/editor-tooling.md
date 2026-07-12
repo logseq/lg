@@ -18,7 +18,9 @@ publishes compiler-backed diagnostics for:
 - `textDocument/didClose`
 
 Diagnostics use the same reader, elaboration, package discovery, Parsetree, and
-OCaml compiler-libs typecheck path as the CLI. Lines and columns follow the LSP
+OCaml compiler-libs typecheck path as the CLI. Both errors and enabled OCaml
+warnings are published; warnings include host-owned checks such as
+non-exhaustive and redundant pattern matches. Lines and columns follow the LSP
 zero-based convention. Closing a document clears its diagnostics.
 
 ## Neovim

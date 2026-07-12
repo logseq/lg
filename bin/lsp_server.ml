@@ -57,20 +57,28 @@ let diagnostic_position message =
 let position line character =
   `Assoc [ ("line", `Int line); ("character", `Int character) ]
 
-let diagnostic message =
+let diagnostic ?(severity = 1) message =
   let line, start_character, end_character = diagnostic_position message in
   `Assoc
     [ ( "range",
         `Assoc
           [ ("start", position line start_character);
             ("end", position line end_character) ] );
-      ("severity", `Int 1);
+      ("severity", `Int severity);
       ("source", `String "cljml");
       ("message", `String message) ]
 
 let diagnostics uri text =
-  match Cljml.Compiler.compile_string_with_filename ~filename:uri text with
-  | Ok _ -> []
+  match
+    Cljml.Compiler.compile_string_with_filename_and_diagnostics ~filename:uri
+      text
+  with
+  | Ok compilation ->
+      List.map
+        (fun (item : Cljml.Compiler.diagnostic) ->
+          match item.severity with
+          | `Warning -> diagnostic ~severity:2 item.message)
+        compilation.diagnostics
   | Error err -> [ diagnostic err.message ]
 
 let write_packet json =

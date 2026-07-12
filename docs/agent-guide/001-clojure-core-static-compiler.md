@@ -407,7 +407,10 @@ compatibility is delegated to the OCaml typechecker.
     `CLJML_OCAML_INCLUDE_PATH`. Public `compile_parsetree` and
     `compile_chunk_parsetree` now run this gate before returning. Public source
     APIs and CLI compile/run paths print the checked Parsetree output before
-    returning or executing generated OCaml source.
+    returning or executing generated OCaml source. Diagnostic-aware source APIs
+    capture enabled OCaml warnings; the CLI writes them to stderr and the LSP
+    publishes them with warning severity, so exhaustiveness and redundancy
+    diagnostics cross the cljml tooling boundary without a parallel checker.
 
 ## Phase 1 Task List
 

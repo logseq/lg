@@ -104,34 +104,48 @@ let run_ocaml_source packages ocaml_source =
       exit code
 
 let compile_files input_paths =
-  let rec loop state packages outputs = function
-    | [] -> Ok (List.sort_uniq String.compare packages, String.concat "\n" (List.rev outputs))
+  let rec loop state packages outputs diagnostics = function
+    | [] ->
+        Ok
+          ( List.sort_uniq String.compare packages,
+            String.concat "\n" (List.rev outputs),
+            List.concat (List.rev diagnostics) )
     | input_path :: rest ->
         let source = read_file input_path in
         (match Cljml.Compiler.required_ocaml_packages source with
         | Error _ as err -> err
         | Ok source_packages -> (
             match
-              Cljml.Compiler.compile_chunk_with_filename ~filename:input_path state
-                source
+              Cljml.Compiler.compile_chunk_with_filename_and_diagnostics
+                ~filename:input_path state source
             with
             | Error _ as err -> err
-            | Ok (state, output) ->
+            | Ok (state, compilation) ->
                 loop state (List.rev_append source_packages packages)
-                  (output :: outputs) rest))
+                  (compilation.ocaml_source :: outputs)
+                  (compilation.diagnostics :: diagnostics) rest))
   in
-  loop Cljml.Compiler.empty_state [] [] input_paths
+  loop Cljml.Compiler.empty_state [] [] [] input_paths
 
 let compile_file input_path =
   let source = read_file input_path in
   match Cljml.Compiler.required_ocaml_packages source with
   | Error _ as err -> err
   | Ok packages -> (
-      match Cljml.Compiler.compile_string_with_filename ~filename:input_path source with
+      match
+        Cljml.Compiler.compile_string_with_filename_and_diagnostics
+          ~filename:input_path source
+      with
       | Error _ as err -> err
-      | Ok ocaml_source -> Ok (packages, ocaml_source))
+      | Ok compilation -> Ok (packages, compilation))
 
-let report_error err =
+let report_diagnostics diagnostics =
+  List.iter
+    (fun (diagnostic : Cljml.Compiler.diagnostic) ->
+      prerr_endline diagnostic.message)
+    diagnostics
+
+let report_error (err : Cljml.Compiler.compile_error) =
   prerr_endline ("cljml: " ^ err.Cljml.Compiler.message);
   exit 1
 
@@ -141,17 +155,25 @@ let () =
   | Compile { input_path; output_path } -> (
       match compile_file input_path with
       | Error err -> report_error err
-      | Ok (_packages, ocaml_source) -> write_output output_path ocaml_source)
+      | Ok (_packages, compilation) ->
+          report_diagnostics compilation.diagnostics;
+          write_output output_path compilation.ocaml_source)
   | Run { input_path } -> (
       match compile_file input_path with
       | Error err -> report_error err
-      | Ok (packages, ocaml_source) -> run_ocaml_source packages ocaml_source)
+      | Ok (packages, compilation) ->
+          report_diagnostics compilation.diagnostics;
+          run_ocaml_source packages compilation.ocaml_source)
   | Compile_files { input_paths; output_path } -> (
       match compile_files input_paths with
       | Error err -> report_error err
-      | Ok (_packages, ocaml_source) -> write_output (Some output_path) ocaml_source)
+      | Ok (_packages, ocaml_source, diagnostics) ->
+          report_diagnostics diagnostics;
+          write_output (Some output_path) ocaml_source)
   | Run_files { input_paths } -> (
       match compile_files input_paths with
       | Error err -> report_error err
-      | Ok (packages, ocaml_source) -> run_ocaml_source packages ocaml_source)
+      | Ok (packages, ocaml_source, diagnostics) ->
+          report_diagnostics diagnostics;
+          run_ocaml_source packages ocaml_source)
   | Lsp -> Lsp_server.run ()

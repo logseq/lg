@@ -379,6 +379,11 @@ remaining parameters are positional.
 an explicit Parsetree validation gate. The gate adds local Dune build CMI
 directories for cljml and `Rrbvec` when available, and accepts extra include
 directories through `CLJML_OCAML_INCLUDE_PATH`.
+`compile_string_with_diagnostics` and its filename-aware variant return enabled
+OCaml warnings alongside generated source. CLI compilation prints them to
+stderr, and the LSP publishes them with warning severity. Exhaustiveness and
+redundancy therefore remain OCaml-owned checks without disappearing at the
+cljml tooling boundary.
 
 The stable backend still emits OCaml source from cljml's typed IR. The
 Parsetree backend no longer reparses the whole generated program: it lowers

@@ -22,7 +22,10 @@ protocols_output="$($cli --run "$protocols_example")"
 invalid_source="$(mktemp)"
 invalid_stdout="$(mktemp)"
 invalid_stderr="$(mktemp)"
-trap 'rm -f "$invalid_source" "$invalid_stdout" "$invalid_stderr"' EXIT
+warning_source="$(mktemp)"
+warning_stdout="$(mktemp)"
+warning_stderr="$(mktemp)"
+trap 'rm -f "$invalid_source" "$invalid_stdout" "$invalid_stderr" "$warning_source" "$warning_stdout" "$warning_stderr"' EXIT
 
 printf '%s\n' \
   '(def ok 1)' \
@@ -37,10 +40,22 @@ fi
 grep -q "cljml: OCaml typecheck failed" "$invalid_stderr"
 grep -q "File \"$invalid_source\", line 3" "$invalid_stderr"
 
+printf '%s\n' \
+  '(type-variant status Active Inactive)' \
+  '(defn describe [^:ocaml/status status]' \
+  '  (match status Active "active"))' > "$warning_source"
+
+"$cli" "$warning_source" >"$warning_stdout" 2>"$warning_stderr"
+
+grep -q 'let describe' "$warning_stdout"
+grep -q 'Warning 8' "$warning_stderr"
+grep -q 'not exhaustive' "$warning_stderr"
+grep -q "File \"$warning_source\", line 3" "$warning_stderr"
+
 package_source="$(mktemp)"
 package_stdout="$(mktemp)"
 multi_dir="$(mktemp -d)"
-trap 'rm -f "$invalid_source" "$invalid_stdout" "$invalid_stderr" "$package_source" "$package_stdout"; rm -rf "$multi_dir"' EXIT
+trap 'rm -f "$invalid_source" "$invalid_stdout" "$invalid_stderr" "$warning_source" "$warning_stdout" "$warning_stderr" "$package_source" "$package_stdout"; rm -rf "$multi_dir"' EXIT
 
 printf '%s\n' \
   '(ns host.demo (:require [ocaml.package/core] [ocaml.Core.Int :as int]))' \
@@ -100,6 +115,7 @@ send_lsp_message() {
   send_lsp_message '{"jsonrpc":"2.0","method":"initialized","params":{}}'
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/editor.cljml","languageId":"cljml","version":1,"text":"(def answer\n  (if true\n    (Stdlib.abs\n      \"bad\")\n    0))"}}}'
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":"file:///tmp/editor.cljml","version":2},"contentChanges":[{"text":"(def ok 1)\n(def good (Stdlib.abs -42))"}]}}'
+  send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/warning.cljml","languageId":"cljml","version":1,"text":"(type-variant status Active Inactive)\n(defn describe [^:ocaml/status status]\n  (match status Active \"active\"))"}}}'
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didClose","params":{"textDocument":{"uri":"file:///tmp/editor.cljml"}}}'
   send_lsp_message '{"jsonrpc":"2.0","id":2,"method":"shutdown","params":null}'
   send_lsp_message '{"jsonrpc":"2.0","method":"exit","params":null}'
@@ -108,6 +124,8 @@ send_lsp_message() {
 grep -q '"name":"cljml"' "$lsp_output"
 grep -q '"method":"textDocument/publishDiagnostics"' "$lsp_output"
 grep -q '"severity":1' "$lsp_output"
+grep -q '"severity":2' "$lsp_output"
+grep -q 'not exhaustive' "$lsp_output"
 grep -q '"line":3' "$lsp_output"
 grep -q '"character":6' "$lsp_output"
 grep -q '"diagnostics":\[\]' "$lsp_output"
