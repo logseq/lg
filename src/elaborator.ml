@@ -3529,22 +3529,9 @@ and compile_args_for scope env arg_forms =
   loop [] arg_forms
 
 let compile_defprotocol scope env next_type protocol_name method_forms =
-  match Protocol.defprotocol_bindings scope protocol_name method_forms with
+  match Protocol_elaborator.define scope env protocol_name method_forms with
   | Error _ as err -> err
-  | Ok bindings ->
-      let env =
-        List.fold_left
-          (fun env (key, binding) ->
-            if Protocol.is_legacy_marker key binding && Env.mem key env then
-              Env.add key (Protocol.ambiguous_marker_binding ()) env
-            else Env.add key binding env)
-          env bindings
-      in
-      Ok
-        ( scope,
-          env,
-          next_type,
-          Comment ("protocol " ^ protocol_name) )
+  | Ok (env, item) -> Ok (scope, env, next_type, item)
 
 let protocol_receiver_type scope env = function
   | FKeyword receiver_keyword -> Type_annotation.of_keyword receiver_keyword
@@ -3559,19 +3546,9 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
   | Ok receiver_ty ->
       let compile_method env = function
         | FList (FSymbol method_name :: params :: body_forms) -> (
-            match
-              Protocol.lookup_protocol_marker scope env protocol_name method_name
-            with
-            | None ->
-                Error.error
-                  ("protocol " ^ protocol_name ^ " does not define method " ^ method_name)
-            | Some marker
-              when not
-                     (Protocol.marker_has_protocol_id marker
-                        (Protocol.protocol_id scope protocol_name)) ->
-                Error.error
-                  ("protocol " ^ protocol_name ^ " does not define method " ^ method_name)
-            | Some marker -> (
+            match Protocol_elaborator.marker scope env protocol_name method_name with
+            | Error _ as err -> err
+            | Ok marker -> (
                 match Protocol.annotate_receiver receiver_ty params with
                 | Error _ as err -> err
                 | Ok params -> (
@@ -3626,35 +3603,24 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                                     ("protocol method " ^ method_name ^ " must return "
                                    ^ source_name expected_ret)
                                   | None -> (
-                                  match
-                                    Protocol.marker_impl_name marker method_name receiver_ty
-                                  with
-                                  | None ->
-                                      Error.error
-                                        ("protocol implementations do not support receiver type "
-                                       ^ source_name receiver_ty)
-                                  | Some impl_key_name ->
-                                      let ocaml_name =
-                                        Protocol.impl_ocaml_name scope
-                                          protocol_name method_name receiver_ty
-                                      in
-                                      let env_key =
-                                        Names.scoped_key scope impl_key_name
-                                      in
-                                      if Env.mem env_key env then
-                                        Error.error
-                                          ("duplicate implementation of " ^ protocol_name
-                                         ^ "/" ^ method_name ^ " for "
-                                         ^ source_name receiver_ty)
-                                      else
-                                        let binding = binding_of_expr ocaml_name expr in
-                                        Ok
-                                        ( Env.add env_key binding env,
+                                  let ocaml_name =
+                                    Protocol.impl_ocaml_name scope protocol_name
+                                      method_name receiver_ty
+                                  in
+                                  let binding = binding_of_expr ocaml_name expr in
+                                  (match
+                                     Protocol_elaborator.add_implementation scope env
+                                       protocol_name method_name receiver_ty marker binding
+                                   with
+                                  | Error _ as err -> err
+                                  | Ok env ->
+                                      Ok
+                                        ( env,
                                           Value_binding
                                             {
                                               pattern = Named ocaml_name;
                                               expression = expr.ocaml_expr;
-                                            } ))))
+                                            } )))))
                         | _ -> Error.error "protocol method did not compile to a function"))))
         | _ -> Error.error "extend-type methods must be (method-name [params] body)"
       in
