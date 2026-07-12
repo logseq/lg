@@ -3858,6 +3858,89 @@ let test_language_service_workspace_resolves_cross_file_identity () =
       ()
   | _ -> failwith "expected required workspace symbol definition in math.cljml"
 
+let test_workspace_index_reanalyzes_only_dependency_component () =
+  let math_uri = "file:///tmp/math.cljml" in
+  let main_uri = "file:///tmp/main.cljml" in
+  let other_uri = "file:///tmp/other.cljml" in
+  let index =
+    Cljml.Language_service.create_workspace_index
+      [ (math_uri, "(module Math (def answer 40))\n");
+        (main_uri, "(def result (+ Math/answer 2))\n");
+        (other_uri, "(module Other (def value 7))\n") ]
+    |> expect_ok
+  in
+  let other_before =
+    Cljml.Language_service.workspace_analysis index other_uri
+    |> Option.get
+  in
+  let index, reanalyzed =
+    Cljml.Language_service.update_workspace_index index ~filename:math_uri
+      ~source:"(module Math (def answer 41))\n"
+    |> expect_ok
+  in
+  if List.sort String.compare reanalyzed <> List.sort String.compare [ math_uri; main_uri ]
+  then failwith "workspace invalidation must follow dependency edges only";
+  let other_after =
+    Cljml.Language_service.workspace_analysis index other_uri
+    |> Option.get
+  in
+  if other_before != other_after then
+    failwith "unrelated workspace analyses must be reused";
+  let index, reanalyzed =
+    Cljml.Language_service.update_workspace_index index ~filename:math_uri
+      ~source:"(module Math (def answer 41))\n"
+    |> expect_ok
+  in
+  ignore index;
+  if reanalyzed <> [] then
+    failwith "unchanged workspace documents must not be reanalyzed"
+
+let test_workspace_index_tracks_top_level_symbol_dependencies () =
+  let values_uri = "file:///tmp/values.cljml" in
+  let consumer_uri = "file:///tmp/consumer.cljml" in
+  let index =
+    Cljml.Language_service.create_workspace_index
+      [ (values_uri, "(def shared-answer 40)\n");
+        (consumer_uri, "(def result (+ shared-answer 2))\n") ]
+    |> expect_ok
+  in
+  let _index, reanalyzed =
+    Cljml.Language_service.update_workspace_index index ~filename:values_uri
+      ~source:"(def shared-answer 41)\n"
+    |> expect_ok
+  in
+  if List.sort String.compare reanalyzed <> [ consumer_uri; values_uri ] then
+    failwith "workspace index must track top-level symbol dependencies"
+
+let test_workspace_index_contains_component_errors () =
+  let math_uri = "file:///tmp/error-math.cljml" in
+  let main_uri = "file:///tmp/error-main.cljml" in
+  let other_uri = "file:///tmp/error-other.cljml" in
+  let index =
+    Cljml.Language_service.create_workspace_index
+      [ (math_uri, "(module Math (def answer 40))\n");
+        (main_uri, "(def result Math/answer)\n");
+        (other_uri, "(def stable 7)\n") ]
+    |> expect_ok
+  in
+  let other_before =
+    Cljml.Language_service.workspace_analysis index other_uri |> Option.get
+  in
+  let index, reanalyzed =
+    Cljml.Language_service.update_workspace_index index ~filename:math_uri
+      ~source:"(module Math"
+    |> expect_ok
+  in
+  if List.sort String.compare reanalyzed <> List.sort String.compare [ math_uri; main_uri ]
+  then failwith "invalid edits must remain scoped to their dependency component";
+  if Cljml.Language_service.workspace_error index math_uri = None then
+    failwith "invalid workspace documents must retain their analysis error";
+  let other_after =
+    Cljml.Language_service.workspace_analysis index other_uri |> Option.get
+  in
+  if other_before != other_after then
+    failwith "component errors must not discard unrelated cached analyses"
+
 let test_formatter_normalizes_whitespace () =
   Cljml.Formatter.format "(defn  add-one [ x ](+ x  1))"
   |> expect_ok
@@ -5902,6 +5985,12 @@ let tests =
       test_language_service_document_symbols_preserve_source_names );
     ( "language service workspace resolves cross-file identity",
       test_language_service_workspace_resolves_cross_file_identity );
+    ( "workspace index reanalyzes dependency components",
+      test_workspace_index_reanalyzes_only_dependency_component );
+    ( "workspace index tracks top-level dependencies",
+      test_workspace_index_tracks_top_level_symbol_dependencies );
+    ( "workspace index contains component errors",
+      test_workspace_index_contains_component_errors );
     ( "formatter normalizes whitespace",
       test_formatter_normalizes_whitespace );
     ( "formatter wraps long nested forms",

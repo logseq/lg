@@ -374,3 +374,227 @@ let completions analysis ~offset =
         :: items)
     None env []
   |> List.sort_uniq (fun left right -> String.compare left.label right.label)
+
+module String_map = Map.Make (String)
+module String_set = Set.Make (String)
+
+type workspace_index = {
+  sources : string String_map.t;
+  analyses : t String_map.t;
+  errors : Error.t String_map.t;
+  components : String_set.t list;
+}
+
+let rec form_symbols acc form =
+  let open Ast in
+  match form with
+  | FSymbol name -> String_set.add name acc
+  | FList forms | FVector forms ->
+      List.fold_left form_symbols acc forms
+  | FMap entries ->
+      List.fold_left
+        (fun acc (key, value) -> form_symbols (form_symbols acc key) value)
+        acc entries
+  | FBool _ | FInt _ | FFloat _ | FChar _ | FString _ | FKeyword _ -> acc
+
+let provided_names source =
+  let open Ast in
+  match Lexer.tokenize source with
+  | Error _ -> String_set.empty
+  | Ok tokens -> (
+      match Parser.parse tokens with
+      | Error _ -> String_set.empty
+      | Ok forms ->
+          List.fold_left
+            (fun names -> function
+              | FList
+                  (FSymbol
+                    ( "module" | "module-signature" | "module-functor" )
+                  :: FSymbol name :: _) ->
+                  String_set.add name names
+              | FList
+                  (FSymbol
+                    ( "def" | "defn" | "type-alias" | "type-record"
+                    | "type-variant" )
+                  :: FSymbol name :: _) ->
+                  String_set.add name names
+              | FList (FSymbol "defprotocol" :: FSymbol protocol_name :: methods) ->
+                  List.fold_left
+                    (fun names -> function
+                      | FList (FSymbol method_name :: _) ->
+                          String_set.add method_name names
+                      | _ -> names)
+                    (String_set.add protocol_name names) methods
+              | _ -> names)
+            String_set.empty forms)
+
+let referenced_names source =
+  match Lexer.tokenize source with
+  | Error _ -> String_set.empty
+  | Ok tokens -> (
+      match Parser.parse tokens with
+      | Error _ -> String_set.empty
+      | Ok forms -> List.fold_left form_symbols String_set.empty forms)
+
+let root_name symbol =
+  match String.index_opt symbol '/' with
+  | None -> symbol
+  | Some index -> String.sub symbol 0 index
+
+let workspace_components sources =
+  let providers =
+    String_map.fold
+      (fun filename source providers ->
+        String_set.fold
+          (fun name -> String_map.add name filename)
+          (provided_names source) providers)
+      sources String_map.empty
+  in
+  let dependencies =
+    String_map.mapi
+      (fun filename source ->
+        String_set.fold
+             (fun symbol dependencies ->
+               match String_map.find_opt (root_name symbol) providers with
+               | Some provider when provider <> filename ->
+                   String_set.add provider dependencies
+               | _ -> dependencies)
+             (referenced_names source)
+             String_set.empty)
+      sources
+  in
+  let adjacent filename =
+    let direct =
+      String_map.find_opt filename dependencies
+      |> Option.value ~default:String_set.empty
+    in
+    String_map.fold
+      (fun candidate candidate_dependencies adjacent ->
+        if String_set.mem filename candidate_dependencies then
+          String_set.add candidate adjacent
+        else adjacent)
+      dependencies direct
+  in
+  let rec component pending visited =
+    match String_set.choose_opt pending with
+    | None -> visited
+    | Some filename ->
+        let pending = String_set.remove filename pending in
+        if String_set.mem filename visited then component pending visited
+        else
+          component
+            (String_set.union pending (adjacent filename))
+            (String_set.add filename visited)
+  in
+  let rec collect remaining components =
+    match String_set.choose_opt remaining with
+    | None -> List.rev components
+    | Some filename ->
+        let members = component (String_set.singleton filename) String_set.empty in
+        collect (String_set.diff remaining members) (members :: components)
+  in
+  collect
+    (String_map.to_seq sources |> Seq.map fst |> String_set.of_seq)
+    []
+
+let analyze_component sources filenames =
+  let component_sources =
+    String_set.to_seq filenames
+    |> Seq.map (fun filename -> (filename, String_map.find filename sources))
+    |> List.of_seq
+  in
+  analyze_workspace component_sources
+  |> Result.map (fun analyses ->
+         List.fold_left
+           (fun result (filename, analysis) ->
+             String_map.add filename analysis result)
+           String_map.empty analyses)
+
+let create_workspace_index source_list =
+  let sources =
+    List.fold_left
+      (fun sources (filename, source) -> String_map.add filename source sources)
+      String_map.empty source_list
+  in
+  let components = workspace_components sources in
+  let analyze_individually component analyses errors =
+    String_set.fold
+      (fun filename (analyses, errors) ->
+        match analyze ~filename (String_map.find filename sources) with
+        | Ok analysis -> (String_map.add filename analysis analyses, errors)
+        | Error error -> (analyses, String_map.add filename error errors))
+      component (analyses, errors)
+  in
+  let rec analyze_all analyses errors = function
+    | [] -> Ok { sources; analyses; errors; components }
+    | component :: rest -> (
+        match analyze_component sources component with
+        | Error _ ->
+            let analyses, errors =
+              analyze_individually component analyses errors
+            in
+            analyze_all analyses errors rest
+        | Ok component_analyses ->
+            analyze_all
+              (String_map.union (fun _ _ updated -> Some updated) analyses
+                 component_analyses)
+              errors rest)
+  in
+  analyze_all String_map.empty String_map.empty components
+
+let workspace_analysis index filename =
+  String_map.find_opt filename index.analyses
+
+let workspace_error index filename = String_map.find_opt filename index.errors
+
+let component_containing filename components =
+  List.find_opt (String_set.mem filename) components
+  |> Option.value ~default:(String_set.singleton filename)
+
+let update_workspace_index index ~filename ~source =
+  match String_map.find_opt filename index.sources with
+  | Some previous when previous = source -> Ok (index, [])
+  | _ ->
+      let old_affected = component_containing filename index.components in
+      let sources = String_map.add filename source index.sources in
+      let components = workspace_components sources in
+      let affected_components =
+        List.filter
+          (fun component ->
+            not (String_set.is_empty (String_set.inter component old_affected)))
+          components
+      in
+      let reanalyzed =
+        List.fold_left String_set.union String_set.empty affected_components
+      in
+      let analyses =
+        String_set.fold String_map.remove reanalyzed index.analyses
+      in
+      let errors = String_set.fold String_map.remove reanalyzed index.errors in
+      let analyze_individually component analyses errors =
+        String_set.fold
+          (fun filename (analyses, errors) ->
+            match analyze ~filename (String_map.find filename sources) with
+            | Ok analysis -> (String_map.add filename analysis analyses, errors)
+            | Error error -> (analyses, String_map.add filename error errors))
+          component (analyses, errors)
+      in
+      let rec rebuild analyses errors = function
+        | [] ->
+            Ok
+              ( { sources; analyses; errors; components },
+                String_set.elements reanalyzed )
+        | component :: rest -> (
+            match analyze_component sources component with
+            | Error _ ->
+                let analyses, errors =
+                  analyze_individually component analyses errors
+                in
+                rebuild analyses errors rest
+            | Ok component_analyses ->
+                rebuild
+                  (String_map.union (fun _ _ updated -> Some updated) analyses
+                     component_analyses)
+                  errors rest)
+      in
+      rebuild analyses errors affected_components

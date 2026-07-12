@@ -8,6 +8,7 @@ type document = {
 let documents = Hashtbl.create 16
 let workspace_documents = Hashtbl.create 32
 let workspace_sources = Hashtbl.create 32
+let workspace_index = ref None
 
 let analyze_document uri text =
   {
@@ -37,7 +38,7 @@ let rec cljml_files path =
   else if Filename.check_suffix path ".cljml" then [ path ]
   else []
 
-let rebuild_workspace () =
+let rebuild_workspace ?changed_uri () =
   let sources =
     Hashtbl.fold
       (fun uri disk_source sources ->
@@ -49,26 +50,47 @@ let rebuild_workspace () =
         (uri, source) :: sources)
       workspace_sources []
   in
-  Hashtbl.clear workspace_documents;
-  match Cljml.Language_service.analyze_workspace sources with
+  let indexed =
+    match (!workspace_index, changed_uri) with
+    | Some index, Some uri ->
+        let source = List.assoc uri sources in
+        Cljml.Language_service.update_workspace_index index ~filename:uri ~source
+        |> Result.map fst
+    | _ -> Cljml.Language_service.create_workspace_index sources
+  in
+  match indexed with
   | Error _ ->
+      workspace_index := None;
+      Hashtbl.clear workspace_documents;
       List.iter
         (fun (uri, source) ->
           let document = analyze_document uri source in
           Hashtbl.replace workspace_documents uri document;
           if Hashtbl.mem documents uri then Hashtbl.replace documents uri document)
         sources
-  | Ok analyses ->
+  | Ok index ->
+      workspace_index := Some index;
+      Hashtbl.clear workspace_documents;
       List.iter
-        (fun (uri, analysis) ->
-          let text = List.assoc uri sources in
+        (fun (uri, text) ->
+          match Cljml.Language_service.workspace_analysis index uri with
+          | None -> (
+              match Cljml.Language_service.workspace_error index uri with
+              | None -> ()
+              | Some error ->
+                  let document = { text; analysis = Error error } in
+                  Hashtbl.replace workspace_documents uri document;
+                  if Hashtbl.mem documents uri then
+                    Hashtbl.replace documents uri document)
+          | Some analysis ->
           let document = { text; analysis = Ok analysis } in
           Hashtbl.replace workspace_documents uri document;
           if Hashtbl.mem documents uri then Hashtbl.replace documents uri document)
-        analyses
+        sources
 
 let index_workspace root_uri =
   Hashtbl.clear workspace_sources;
+  workspace_index := None;
   path_of_file_uri root_uri |> cljml_files
   |> List.iter (fun path ->
          let uri = "file://" ^ path in
@@ -503,7 +525,7 @@ let handle_notification method_ params =
       let text = document |> member "text" |> to_string in
       let document = analyze_document uri text in
       Hashtbl.replace documents uri document;
-      if Hashtbl.mem workspace_sources uri then rebuild_workspace ();
+      if Hashtbl.mem workspace_sources uri then rebuild_workspace ~changed_uri:uri ();
       publish_diagnostics uri (diagnostics document)
   | "textDocument/didChange" ->
       let uri = document_uri params in
@@ -513,7 +535,8 @@ let handle_notification method_ params =
           let text = change |> member "text" |> to_string in
           let document = analyze_document uri text in
           Hashtbl.replace documents uri document;
-          if Hashtbl.mem workspace_sources uri then rebuild_workspace ();
+          if Hashtbl.mem workspace_sources uri then
+            rebuild_workspace ~changed_uri:uri ();
           publish_diagnostics uri (diagnostics document)
       | [] -> ())
   | "textDocument/didSave" ->
@@ -527,13 +550,14 @@ let handle_notification method_ params =
         (fun text ->
           let document = analyze_document uri text in
           Hashtbl.replace documents uri document;
-          if Hashtbl.mem workspace_sources uri then rebuild_workspace ();
+          if Hashtbl.mem workspace_sources uri then
+            rebuild_workspace ~changed_uri:uri ();
           publish_diagnostics uri (diagnostics document))
         text
   | "textDocument/didClose" ->
       let uri = document_uri params in
       Hashtbl.remove documents uri;
-      if Hashtbl.mem workspace_sources uri then rebuild_workspace ();
+      if Hashtbl.mem workspace_sources uri then rebuild_workspace ~changed_uri:uri ();
       publish_diagnostics uri []
   | "initialized" | "exit" -> ()
   | _ -> ()
