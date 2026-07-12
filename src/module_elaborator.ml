@@ -16,6 +16,17 @@ let inherit_scope_ocaml_value_refers =
 let compile_defprotocol = Protocol_elaborator.compile_defprotocol
 let compile_extend_type = Protocol_elaborator.compile_extend_type
 
+let module_id_of_path module_path =
+  match String.rindex_opt module_path '.' with
+  | None -> Module_id.create ~owner:[] ~name:module_path
+  | Some separator ->
+      let owner = String.sub module_path 0 separator in
+      let name =
+        String.sub module_path (separator + 1)
+          (String.length module_path - separator - 1)
+      in
+      Module_id.create ~owner:[ owner ] ~name
+
 let module_binding_key = Module_environment.binding_key
 let module_binding_ocaml_name = Module_environment.binding_ocaml_name
 let changed_bindings = Module_environment.changed_bindings
@@ -28,16 +39,18 @@ let compile_module_alias scope env next_type alias_name target_name =
   let owner = if scope = "" then [] else [ scope ] in
   let alias_id = Module_id.create ~owner ~name:alias_name in
   let target_id = Module_id.of_string target_name in
-  let modules = Module_registry.add_alias alias_id target_id (Env.modules env) in
-  Ok
-    ( scope,
-      env |> Env.with_modules modules |> Env.add_bindings alias_bindings,
-      next_type,
-      Module_alias
-        {
-          alias_name = Names.module_segment_to_ocaml alias_name;
-          target_name = Names.module_path_to_ocaml target_name;
-        } )
+  match Module_registry.declare_alias alias_id target_id (Env.modules env) with
+  | Error _ as err -> err
+  | Ok modules ->
+      Ok
+        ( scope,
+          env |> Env.with_modules modules |> Env.add_bindings alias_bindings,
+          next_type,
+          Module_alias
+            {
+              alias_name = Names.module_segment_to_ocaml alias_name;
+              target_name = Names.module_path_to_ocaml target_name;
+            } )
 
 let parse_type_parameters = Type_parameters.parse
 
@@ -55,18 +68,27 @@ let compile_module_apply scope env next_type module_name functor_name
   let applied_bindings =
     Module_metadata.apply_functor_result_bindings env module_name functor_name
   in
-  Ok
-    ( scope,
-      Env.add_bindings applied_bindings env,
-      next_type,
-      Module_apply
-        {
-          module_name = Names.module_segment_to_ocaml module_name;
-          functor_name = Names.module_path_to_ocaml functor_name;
-          argument_names = List.map Names.module_path_to_ocaml argument_names;
-        } )
+  let module_id =
+    Module_id.create ~owner:(if scope = "" then [] else [ scope ])
+      ~name:module_name
+  in
+  match
+    Module_registry.declare_module module_id Applied (Env.modules env)
+  with
+  | Error _ as err -> err
+  | Ok modules ->
+      Ok
+        ( scope,
+          env |> Env.with_modules modules |> Env.add_bindings applied_bindings,
+          next_type,
+          Module_apply
+            {
+              module_name = Names.module_segment_to_ocaml module_name;
+              functor_name = Names.module_path_to_ocaml functor_name;
+              argument_names = List.map Names.module_path_to_ocaml argument_names;
+            } )
 
-let rec compile_module ?signature_name scope env next_type module_path
+let rec compile_module ?signature_name ?(register_module = true) scope env next_type module_path
     module_segment forms =
   let env = inherit_scope_ocaml_value_refers scope module_path env in
   let rec compile_module_form env public_bindings next_type items = function
@@ -381,18 +403,27 @@ let rec compile_module ?signature_name scope env next_type module_path
             (Env.protocols env)
         in
         let env = Env.with_protocols protocols env in
-        Ok
-          ( scope,
-            env,
-            public_bindings,
-            next_type,
-            Module_def
-              {
-                module_name;
-                signature_name =
-                  Option.map Names.module_path_to_ocaml signature_name;
-                items = List.rev items;
-              } )
+        let modules =
+          if register_module then
+            Module_registry.declare_module (module_id_of_path module_path)
+              Concrete (Env.modules env)
+          else Ok (Env.modules env)
+        in
+        (match modules with
+        | Error _ as err -> err
+        | Ok modules ->
+            Ok
+              ( scope,
+                Env.with_modules modules env,
+                public_bindings,
+                next_type,
+                Module_def
+                  {
+                    module_name;
+                    signature_name =
+                      Option.map Names.module_path_to_ocaml signature_name;
+                    items = List.rev items;
+                  } ))
     | form :: rest -> (
         match compile_module_form env public_bindings next_type items form with
         | Error _ as err -> err
@@ -427,7 +458,7 @@ let compile_module_functor scope env next_type functor_name parameter_form
           in
           let functor_env = Env.add_bindings parameter_bindings env in
           (match
-             compile_module scope functor_env next_type functor_name
+             compile_module ~register_module:false scope functor_env next_type functor_name
                functor_name body_forms
            with
           | Error _ as err -> err
@@ -440,25 +471,35 @@ let compile_module_functor scope env next_type functor_name parameter_form
                       ~name:functor_name
                   in
                   let modules =
-                    Module_registry.store_functor_result functor_id
-                      public_bindings (Env.modules env)
+                    Module_registry.declare_module
+                      (Module_id.create
+                         ~owner:(if scope = "" then [] else [ scope ])
+                         ~name:functor_name)
+                      Functor (Env.modules env)
                   in
-                  Ok
-                    ( scope,
-                      Env.with_modules modules env,
-                      next_type,
-                      Module_functor
-                        {
-                          functor_name =
-                            Names.module_segment_to_ocaml functor_name;
-                          parameters =
-                            List.map
-                              (fun (name, signature) ->
-                                ( Names.module_segment_to_ocaml name,
-                                  Names.module_path_to_ocaml signature ))
-                              parameters;
-                          items;
-                        } )
+                  (match modules with
+                  | Error _ as err -> err
+                  | Ok modules ->
+                      let modules =
+                        Module_registry.store_functor_result functor_id
+                          public_bindings modules
+                      in
+                      Ok
+                        ( scope,
+                          Env.with_modules modules env,
+                          next_type,
+                          Module_functor
+                            {
+                              functor_name =
+                                Names.module_segment_to_ocaml functor_name;
+                              parameters =
+                                List.map
+                                  (fun (name, signature) ->
+                                    ( Names.module_segment_to_ocaml name,
+                                      Names.module_path_to_ocaml signature ))
+                                  parameters;
+                              items;
+                            } ))
               | _ ->
                   Error.error
                     "internal error: module functor body did not compile")))

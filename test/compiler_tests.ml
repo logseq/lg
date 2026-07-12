@@ -621,6 +621,37 @@ let test_emitted_ocaml_names_reject_source_collisions () =
   |> expect_error_contains
        "OCaml name collision: active? and active_ both emit active_"
 
+let test_module_namespace_rejects_emitted_name_collisions () =
+  Cljml.Compiler.compile_string
+    {|
+(module foo-bar (def value 1))
+(module foo_bar (def value 2))
+|}
+  |> expect_error_contains "OCaml module name collision";
+  Cljml.Compiler.compile_string
+    {|
+(module Target (def value 1))
+(module Existing (def value 2))
+(module-alias Existing Target)
+|}
+  |> expect_error "duplicate module Existing";
+  Cljml.Compiler.compile_string
+    {|
+(module-signature Input (val value :int))
+(module Make (def value 1))
+(module-functor Make [M Input] (def result M/value))
+|}
+  |> expect_error "duplicate module Make";
+  Cljml.Compiler.compile_string
+    {|
+(module-signature Input (val value :int))
+(module Value Input (def value 1))
+(module-functor Make [M Input] (def result M/value))
+(module Existing (def result 0))
+(module-apply Existing Make Value)
+|}
+  |> expect_error "duplicate module Existing"
+
 let test_typed_environment_respects_lexical_shadowing () =
   let source =
     {|
@@ -5503,6 +5534,8 @@ let tests =
       test_protocol_metadata_does_not_use_encoded_symbol_keys );
     ( "emitted OCaml names reject source collisions",
       test_emitted_ocaml_names_reject_source_collisions );
+    ( "module namespace rejects emitted name collisions",
+      test_module_namespace_rejects_emitted_name_collisions );
     ( "typed environment respects lexical shadowing",
       test_typed_environment_respects_lexical_shadowing );
     ( "typed environment replaces top-level bindings",

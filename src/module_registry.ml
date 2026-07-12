@@ -1,11 +1,20 @@
 module Signature_map = Map.Make (Signature_id)
 module Functor_map = Map.Make (Functor_id)
 module Module_map = Map.Make (Module_id)
+module Emitted_module_map = Map.Make (String)
+
+type module_kind = Concrete | Alias | Functor | Applied
+
+type module_declaration = {
+  module_id : Module_id.t;
+  kind : module_kind;
+}
 
 type t = {
   signatures : Lowered.signature_item list Signature_map.t;
   functor_results : (string * Types.binding) list Functor_map.t;
   aliases : Module_id.t Module_map.t;
+  module_declarations : module_declaration Emitted_module_map.t;
 }
 
 let empty =
@@ -13,6 +22,7 @@ let empty =
     signatures = Signature_map.empty;
     functor_results = Functor_map.empty;
     aliases = Module_map.empty;
+    module_declarations = Emitted_module_map.empty;
   }
 
 let declare_signature signature_id items registry =
@@ -48,7 +58,33 @@ let store_functor_result functor_id bindings registry =
 let find_functor_result functor_id registry =
   Functor_map.find_opt functor_id registry.functor_results
 
+let emitted_module_name module_id =
+  String.concat "." (Module_id.owner module_id @ [ Module_id.name module_id ])
+  |> Names.module_path_to_ocaml
+
+let declare_module module_id kind registry =
+  let emitted_name = emitted_module_name module_id in
+  match Emitted_module_map.find_opt emitted_name registry.module_declarations with
+  | Some existing when Module_id.equal existing.module_id module_id ->
+      Error.error ("duplicate module " ^ Module_id.to_string module_id)
+  | Some existing ->
+      Error.error
+        ("OCaml module name collision: " ^ Module_id.to_string existing.module_id
+       ^ " and " ^ Module_id.to_string module_id ^ " both emit " ^ emitted_name)
+  | None ->
+      Ok
+        {
+          registry with
+          module_declarations =
+            Emitted_module_map.add emitted_name { module_id; kind }
+              registry.module_declarations;
+        }
+
 let add_alias alias target registry =
   { registry with aliases = Module_map.add alias target registry.aliases }
+
+let declare_alias alias target registry =
+  declare_module alias Alias registry
+  |> Result.map (add_alias alias target)
 
 let find_alias alias registry = Module_map.find_opt alias registry.aliases
