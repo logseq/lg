@@ -1,5 +1,3 @@
-(ns examples.protocols)
-
 (defprotocol AuditValue
   (render [value] :string))
 

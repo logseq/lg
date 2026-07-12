@@ -338,33 +338,50 @@ let test_subs_rejects_non_int_indexes () =
   Cljml.Compiler.compile_string {|(def x (subs "abc" "1"))|}
   |> expect_error "subs indexes must be int"
 
-let test_namespaces_resolve_qualified_and_current_symbols () =
+let test_modules_resolve_qualified_symbols () =
   let source =
     {|
-(ns people.core)
-(def user {:name "Ada"})
-(ns app.main)
-(def label (str (get people.core/user :name) "!"))
+(module People
+  (def user {:name "Ada"}))
+(def label (str (get People/user :name) "!"))
 (println label)
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "namespaces_resolve_qualified_and_current_symbols" "Ada!\n"
+  assert_ocaml_runs "modules_resolve_qualified_symbols" "Ada!\n"
     ocaml_source
 
-let test_namespaces_prevent_unqualified_symbol_collisions () =
+let test_modules_prevent_unqualified_symbol_collisions () =
   let source =
     {|
-(ns first.core)
-(def x 1)
-(ns second.core)
-(def x 2)
-(println (str first.core/x ":" x))
+(module First (def x 1))
+(module Second (def x 2))
+(println (str First/x ":" Second/x))
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "namespaces_prevent_unqualified_symbol_collisions" "1:2\n"
+  assert_ocaml_runs "modules_prevent_unqualified_symbol_collisions" "1:2\n"
     ocaml_source
+
+let test_namespace_form_is_removed () =
+  Cljml.Compiler.compile_string {|(ns legacy.core)|}
+  |> expect_error "unknown function ns"
+
+let test_top_level_require_imports_ocaml_modules () =
+  let source =
+    {|
+(require [ocaml.String :as string])
+(println (string/uppercase-ascii "ada"))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "top_level_require_imports_ocaml_modules" "ADA\n"
+    ocaml_source
+
+let test_top_level_require_rejects_cljml_namespace_imports () =
+  Cljml.Compiler.compile_string {|(require [people.core :as people])|}
+  |> expect_error_contains
+       "require only accepts OCaml packages, OCaml modules, and clojure.string"
 
 let test_ocaml_keyword_names_are_munged () =
   let source =
@@ -381,44 +398,29 @@ let test_ocaml_keyword_names_are_munged () =
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "ocaml_keyword_names_are_munged" "2:2:person:core\n" ocaml_source
 
-let test_namespace_require_aliases () =
+let test_module_aliases_replace_legacy_import_aliases () =
   let source =
     {|
-(ns people.core)
-(def user {:name "Ada"})
-(ns app.main
-  (:require [people.core :as p]))
-(println (get p/user :name))
+(module People (def user {:name "Ada"}))
+(module-alias P People)
+(println (get P/user :name))
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "namespace_require_aliases" "Ada\n" ocaml_source
+  assert_ocaml_runs "module_aliases_replace_legacy_import_aliases" "Ada\n" ocaml_source
 
-let test_namespace_require_refer () =
+let test_open_replaces_required_refer () =
   let source =
     {|
-(ns people.core)
-(def user {:name "Ada"})
-(defn shout [^:string name] (str name "!"))
-(ns app.main
-  (:require [people.core :refer [user shout]]))
+(module People
+  (def user {:name "Ada"})
+  (defn shout [^:string name] (str name "!")))
+(open People)
 (println (shout (:name user)))
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "namespace_require_refer" "Ada!\n" ocaml_source
-
-let test_namespace_require_refer_rejects_unknown_symbol () =
-  let source =
-    {|
-(ns people.core)
-(def user {:name "Ada"})
-(ns app.main
-  (:require [people.core :refer [missing]]))
-|}
-  in
-  Cljml.Compiler.compile_string source
-  |> expect_error "cannot refer unknown symbol people.core/missing"
+  assert_ocaml_runs "open_replaces_required_refer" "Ada!\n" ocaml_source
 
 let test_keyword_lookup_syntax () =
   let source =
@@ -448,9 +450,8 @@ let test_vector_of_rejects_unknown_types () =
 let test_ocaml_module_require_aliases () =
   let source =
     {|
-(ns host.demo
-  (:require [ocaml.Stdlib :as std]
-            [ocaml.String :as string]))
+(require [ocaml.Stdlib :as std]
+            [ocaml.String :as string])
 (def label (str (string/uppercase-ascii "ada") ":" (std/string-of-int 42)))
 (println label)
 |}
@@ -461,9 +462,8 @@ let test_ocaml_module_require_aliases () =
 let test_ocaml_module_require_refer () =
   let source =
     {|
-(ns host.demo
-  (:require [ocaml.Stdlib :refer [string-of-int]]
-            [ocaml.String :refer [uppercase-ascii]]))
+(require [ocaml.Stdlib :refer [string-of-int]]
+            [ocaml.String :refer [uppercase-ascii]])
 (def label (str (uppercase-ascii "ada") ":" (string-of-int 42)))
 (println label)
 |}
@@ -534,9 +534,8 @@ let test_generic_ocaml_calls_accept_unit_return_type () =
 let test_generic_ocaml_calls_resolve_required_module_aliases () =
   let source =
     {|
-(ns host.demo
-  (:require [ocaml.Stdlib :as std]
-            [ocaml.String :as string]))
+(require [ocaml.Stdlib :as std]
+            [ocaml.String :as string])
 (def answer (ocaml-call :int std/abs -42))
 (def label (ocaml-call :string string/uppercase_ascii "ada"))
 (println (str label ":" answer))
@@ -549,8 +548,7 @@ let test_generic_ocaml_calls_resolve_required_module_aliases () =
 let test_generic_ocaml_calls_resolve_required_module_refers () =
   let source =
     {|
-(ns host.demo
-  (:require [ocaml.String :refer [uppercase_ascii]]))
+(require [ocaml.String :refer [uppercase_ascii]])
 (def label (ocaml-call :string uppercase_ascii "ada"))
 (println label)
 |}
@@ -562,8 +560,7 @@ let test_generic_ocaml_calls_resolve_required_module_refers () =
 let test_generic_ocaml_calls_resolve_required_module_refers_in_modules () =
   let source =
     {|
-(ns host.demo
-  (:require [ocaml.String :refer [uppercase_ascii]]))
+(require [ocaml.String :refer [uppercase_ascii]])
 (module Greeter
   (def label (ocaml-call :string uppercase_ascii "ada")))
 (println Greeter/label)
@@ -576,8 +573,7 @@ let test_generic_ocaml_calls_resolve_required_module_refers_in_modules () =
 let test_generic_ocaml_calls_resolve_required_module_refers_in_functors () =
   let source =
     {|
-(ns host.demo
-  (:require [ocaml.String :refer [uppercase_ascii]]))
+(require [ocaml.String :refer [uppercase_ascii]])
 (module-signature NameSig
   (val suffix :string))
 (module Names NameSig
@@ -596,8 +592,7 @@ let test_generic_ocaml_calls_resolve_required_module_refers_in_functors () =
 let test_typed_ocaml_refers_are_available_in_modules () =
   let source =
     {|
-(ns host.demo
-  (:require [ocaml.String :refer [uppercase-ascii]]))
+(require [ocaml.String :refer [uppercase-ascii]])
 (module Greeter
   (def label (uppercase-ascii "ada")))
 (println Greeter/label)
@@ -610,8 +605,7 @@ let test_typed_ocaml_refers_are_available_in_modules () =
 let test_typed_ocaml_refers_are_available_in_functors () =
   let source =
     {|
-(ns host.demo
-  (:require [ocaml.String :refer [uppercase-ascii]]))
+(require [ocaml.String :refer [uppercase-ascii]])
 (module-signature NameSig
   (val suffix :string))
 (module Names NameSig
@@ -735,9 +729,8 @@ let test_inferred_ocaml_calls_use_compiler_signatures () =
 let test_inferred_ocaml_calls_resolve_aliases_and_refers () =
   let source =
     {|
-(ns host.demo
-  (:require [ocaml.Stdlib :as std]
-            [ocaml.String :refer [uppercase_ascii]]))
+(require [ocaml.Stdlib :as std]
+            [ocaml.String :refer [uppercase_ascii]])
 (def answer (ocaml-call std/abs -42))
 (def label (ocaml-call uppercase_ascii "ada"))
 (println (str label ":" answer))
@@ -799,7 +792,7 @@ let test_inferred_ocaml_calls_preserve_partial_labelled_functions () =
 let test_inferred_ocaml_calls_support_labels_through_aliases () =
   let source =
     {|
-(ns host.demo (:require [ocaml.String :as string]))
+(require [ocaml.String :as string])
 (println (ocaml-call string/starts_with "ada" :prefix "ad"))
 |}
   in
@@ -829,9 +822,8 @@ let test_inferred_labelled_calls_delegate_value_types_to_ocaml () =
 let test_ocaml_package_requires_enable_inferred_calls () =
   Cljml.Compiler.compile_string
     {|
-(ns host.demo
-  (:require [ocaml.package/core]
-            [ocaml.Core.Int :as int]))
+(require [ocaml.package/core]
+            [ocaml.Core.Int :as int])
 (def answer (ocaml-call int/abs -42))
 (println answer)
 |}
@@ -840,9 +832,8 @@ let test_ocaml_package_requires_enable_inferred_calls () =
 let test_ocaml_package_requires_report_missing_packages () =
   Cljml.Compiler.compile_string
     {|
-(ns host.demo
-  (:require [ocaml.package/cljml-package-that-does-not-exist]
-            [ocaml.Missing :as missing]))
+(require [ocaml.package/cljml-package-that-does-not-exist]
+            [ocaml.Missing :as missing])
 (def answer (ocaml-call missing/value 42))
 |}
   |> expect_error_contains "OCaml package cljml-package-that-does-not-exist was not found"
@@ -850,8 +841,7 @@ let test_ocaml_package_requires_report_missing_packages () =
 let test_ocaml_package_requires_reject_invalid_package_names () =
   Cljml.Compiler.compile_string
     {|
-(ns host.demo
-  (:require [ocaml.package/bad;name]))
+(require [ocaml.package/bad;name])
 |}
   |> expect_error_contains "invalid OCaml package name"
 
@@ -870,9 +860,8 @@ let test_direct_ocaml_calls_use_qualified_values () =
 let test_direct_ocaml_calls_use_aliases_and_refers () =
   let source =
     {|
-(ns host.demo
-  (:require [ocaml.Stdlib :as std]
-            [ocaml.String :refer [uppercase_ascii]]))
+(require [ocaml.Stdlib :as std]
+            [ocaml.String :refer [uppercase_ascii]])
 (println (str (uppercase_ascii "ada") ":" (std/abs -42)))
 |}
   in
@@ -883,7 +872,7 @@ let test_direct_ocaml_calls_use_aliases_and_refers () =
 let test_direct_ocaml_calls_support_labels_and_optional_arguments () =
   let source =
     {|
-(ns host.demo (:require [ocaml.String :as string]))
+(require [ocaml.String :as string])
 (def starts-ad (string/starts_with :prefix "ad"))
 (def distance (string/edit_distance "abc" "adc" :limit 2))
 (println (str (starts-ad "ada") ":" distance))
@@ -896,9 +885,8 @@ let test_direct_ocaml_calls_support_labels_and_optional_arguments () =
 let test_direct_ocaml_calls_use_external_packages () =
   Cljml.Compiler.compile_string
     {|
-(ns host.demo
-  (:require [ocaml.package/core]
-            [ocaml.Core.Int :as int]))
+(require [ocaml.package/core]
+            [ocaml.Core.Int :as int])
 (println (int/abs -42))
 |}
   |> expect_ok |> ignore
@@ -906,9 +894,8 @@ let test_direct_ocaml_calls_use_external_packages () =
 let test_direct_external_package_constructors_are_inferred () =
   Cljml.Compiler.compile_string
     {|
-(ns host.unix
-  (:require [ocaml.package/unix]
-            [ocaml.Unix :as unix]))
+(require [ocaml.package/unix]
+            [ocaml.Unix :as unix])
 (def address (unix/ADDR_UNIX "/tmp/cljml.sock"))
 (println "constructor-ok")
 |}
@@ -917,9 +904,8 @@ let test_direct_external_package_constructors_are_inferred () =
 let test_direct_external_package_constructors_reject_bad_arity () =
   Cljml.Compiler.compile_string
     {|
-(ns host.unix
-  (:require [ocaml.package/unix]
-            [ocaml.Unix :as unix]))
+(require [ocaml.package/unix]
+            [ocaml.Unix :as unix])
 (def address (unix/ADDR_UNIX))
 |}
   |> expect_error "unix/ADDR_UNIX expects 1 arguments"
@@ -927,9 +913,8 @@ let test_direct_external_package_constructors_reject_bad_arity () =
 let test_direct_external_package_constructor_payloads_are_checked_by_ocaml () =
   Cljml.Compiler.compile_string
     {|
-(ns host.unix
-  (:require [ocaml.package/unix]
-            [ocaml.Unix :as unix]))
+(require [ocaml.package/unix]
+            [ocaml.Unix :as unix])
 (def address (unix/ADDR_UNIX 42))
 |}
   |> expect_error_contains "string"
@@ -952,8 +937,7 @@ let test_generic_ocaml_calls_reject_bad_forms () =
 let test_parsetree_typecheck_gate_rejects_invalid_required_module_alias_calls () =
   Cljml.Compiler.compile_parsetree
     {|
-(ns host.demo
-  (:require [ocaml.Stdlib :as std]))
+(require [ocaml.Stdlib :as std])
 (def answer (ocaml-call :int std/abs "bad"))
 |}
   |> expect_error_contains "string"
@@ -1690,22 +1674,21 @@ let test_static_protocols_reject_return_type_mismatch () =
   Cljml.Compiler.compile_string source
   |> expect_error "protocol method label must return string"
 
-let test_static_protocols_work_through_namespace_aliases () =
+let test_static_protocols_work_through_module_aliases () =
   let source =
     {|
-(ns labels.core)
-(defprotocol Labelled
-  (label [x] :string))
-(extend-type :int
-  Labelled
-  (label [x] (str "int:" x)))
-(ns app.main
-  (:require [labels.core :as labels]))
-(println (labels/label 9))
+(module Labels
+  (defprotocol Labelled
+    (label [x] :string))
+  (extend-type :int
+    Labelled
+    (label [x] (str "int:" x))))
+(module-alias L Labels)
+(println (L/Labelled/label 9))
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "static_protocols_work_through_namespace_aliases" "int:9\n"
+  assert_ocaml_runs "static_protocols_work_through_module_aliases" "int:9\n"
     ocaml_source
 
 let test_protocol_identity_disambiguates_same_named_methods () =
@@ -2207,11 +2190,10 @@ let test_batched_numeric_scalar_core_functions_infer_int_params () =
   Cljml.Compiler.compile_string source
   |> expect_error "clear-second called with incompatible arguments"
 
-let test_clojure_string_namespace_batch_works () =
+let test_clojure_string_module_batch_works () =
   let source =
     {|
-(ns app.strings
-  (:require [clojure.string :as str]))
+(require [clojure.string :as str])
 (println
   (str/join "|"
     [(str/upper-case "ada")
@@ -2233,35 +2215,32 @@ let test_clojure_string_namespace_batch_works () =
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "clojure_string_namespace_batch_works"
+  assert_ocaml_runs "clojure_string_module_batch_works"
     "ADA|ada|Ada|cba|hi|left|right|line|baNANA|baNAna|$1\ntrue:true:true:true:2:4:[\"a\" \"b\" \"c\"]:[\"a\" \"b\"]\n"
     ocaml_source
 
-let test_clojure_string_namespace_refer_works () =
+let test_clojure_string_module_refer_works () =
   let source =
     {|
-(ns app.strings
-  (:require [clojure.string :refer [upper-case trim]]))
+(require [clojure.string :refer [upper-case trim]])
 (println (str (upper-case (trim " ada "))))
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "clojure_string_namespace_refer_works" "ADA\n" ocaml_source
+  assert_ocaml_runs "clojure_string_module_refer_works" "ADA\n" ocaml_source
 
-let test_clojure_string_namespace_rejects_bad_args () =
+let test_clojure_string_module_rejects_bad_args () =
   Cljml.Compiler.compile_string
     {|
-(ns app.strings
-  (:require [clojure.string :as str]))
+(require [clojure.string :as str])
 (def x (str/upper-case 1))
 |}
   |> expect_error "str/upper-case called with incompatible arguments"
 
-let test_clojure_string_namespace_rejects_unknown_refer () =
+let test_clojure_string_module_rejects_unknown_refer () =
   Cljml.Compiler.compile_string
     {|
-(ns app.strings
-  (:require [clojure.string :refer [missing]]))
+(require [clojure.string :refer [missing]])
 |}
   |> expect_error "cannot refer unknown symbol clojure.string/missing"
 
@@ -2475,7 +2454,6 @@ let test_additional_sequence_helpers_reject_bad_reductions_arity () =
 let test_let_defn_and_fn_values () =
   let source =
     {|
-(ns app.functions)
 (defn inc1 [x] (+ x 1))
 (def add2 (fn [x] (+ x 2)))
 (def result (let [base 10
@@ -3349,11 +3327,10 @@ let test_language_service_document_symbols_preserve_source_names () =
 
 let test_language_service_workspace_resolves_cross_file_identity () =
   let math =
-    "(ns demo.math)\n(defn magnitude-plus-two [x] (+ x 2))\n"
+    "(module Math (defn magnitude-plus-two [x] (+ x 2)))\n"
   in
   let main =
-    "(ns demo.main (:require [demo.math :refer [magnitude-plus-two]]))\n"
-    ^ "(def result (magnitude-plus-two 40))\n"
+    "(def result (Math/magnitude-plus-two 40))\n"
   in
   let analyses =
     Cljml.Language_service.analyze_workspace
@@ -3361,7 +3338,7 @@ let test_language_service_workspace_resolves_cross_file_identity () =
     |> expect_ok
   in
   let main_analysis = List.assoc "file:///tmp/main.cljml" analyses in
-  let usage = expect_substring_index main "magnitude-plus-two 40" in
+  let usage = expect_substring_index main "Math/magnitude-plus-two 40" in
   if Cljml.Language_service.value_uid_at main_analysis ~offset:usage = None then
     failwith "expected required workspace symbol to have a typed identity";
   match Cljml.Language_service.definition main_analysis ~offset:usage with
@@ -4125,18 +4102,13 @@ let test_incremental_compilation_preserves_state () =
   let state = Cljml.Compiler.empty_state in
   let state, people_ocaml =
     Cljml.Compiler.compile_chunk state
-      {|
-(ns people.core)
-(def user {:name "Ada", :age 36})
-|}
+      {|(module People (def user {:name "Ada", :age 36}))|}
     |> expect_ok
   in
   let _state, app_ocaml =
     Cljml.Compiler.compile_chunk state
       {|
-(ns app.main
-  (:require [people.core :as p]))
-(def updated (assoc p/user :admin? true))
+(def updated (assoc People/user :admin? true))
 (println (str (:name updated) ":" (:admin? updated) ":" (:age updated)))
 |}
     |> expect_ok
@@ -4210,12 +4182,8 @@ let test_module_definitions_support_composite_sets () =
 
 let test_incremental_compilation_requires_prior_state () =
   Cljml.Compiler.compile_chunk Cljml.Compiler.empty_state
-    {|
-(ns app.main
-  (:require [people.core :as p]))
-(println (:name p/user))
-|}
-  |> expect_error_value "unknown symbol p/user"
+    {|(println (:name People/user))|}
+  |> expect_error_value "unknown symbol People/user"
 
 let test_incremental_compilation_preserves_protocols () =
   let state = Cljml.Compiler.empty_state in
@@ -4837,18 +4805,13 @@ let test_incremental_parsetree_backend_preserves_state () =
   let state = Cljml.Compiler.empty_state in
   let state, people_structure =
     Cljml.Compiler.compile_chunk_parsetree state
-      {|
-(ns people.core)
-(def user {:name "Ada", :age 36})
-|}
+      {|(module People (def user {:name "Ada", :age 36}))|}
     |> expect_ok
   in
   let _state, app_structure =
     Cljml.Compiler.compile_chunk_parsetree state
       {|
-(ns app.main
-  (:require [people.core :as p]))
-(println (str (:name p/user) ":" (:age p/user)))
+(println (str (:name People/user) ":" (:age People/user)))
 |}
     |> expect_ok
   in
@@ -4922,15 +4885,18 @@ let tests =
     ("subs core api works", test_subs_core_api);
     ("subs rejects non-string sources", test_subs_rejects_non_string_sources);
     ("subs rejects non-int indexes", test_subs_rejects_non_int_indexes);
-    ( "namespaces resolve qualified and current symbols",
-      test_namespaces_resolve_qualified_and_current_symbols );
-    ( "namespaces prevent unqualified symbol collisions",
-      test_namespaces_prevent_unqualified_symbol_collisions );
+    ("modules resolve qualified symbols", test_modules_resolve_qualified_symbols);
+    ( "modules prevent unqualified symbol collisions",
+      test_modules_prevent_unqualified_symbol_collisions );
+    ( "top-level require rejects cljml namespace imports",
+      test_top_level_require_rejects_cljml_namespace_imports );
+    ( "top-level require imports OCaml modules",
+      test_top_level_require_imports_ocaml_modules );
+    ("namespace form is removed", test_namespace_form_is_removed);
     ("ocaml keyword names are munged", test_ocaml_keyword_names_are_munged);
-    ("namespace require aliases work", test_namespace_require_aliases);
-    ("namespace require refer works", test_namespace_require_refer);
-    ( "namespace require refer rejects unknown symbols",
-      test_namespace_require_refer_rejects_unknown_symbol );
+    ( "module aliases replace legacy import aliases",
+      test_module_aliases_replace_legacy_import_aliases );
+    ("open replaces namespace refer", test_open_replaces_required_refer);
     ("keyword lookup syntax works", test_keyword_lookup_syntax);
     ("typed empty vectors work", test_typed_empty_vectors);
     ("vector-of rejects unknown types", test_vector_of_rejects_unknown_types);
@@ -5133,8 +5099,8 @@ let tests =
       test_static_protocols_reject_missing_implementation );
     ( "static protocols reject return type mismatch",
       test_static_protocols_reject_return_type_mismatch );
-    ( "static protocols work through namespace aliases",
-      test_static_protocols_work_through_namespace_aliases );
+    ( "static protocols work through module aliases",
+      test_static_protocols_work_through_module_aliases );
     ( "ambiguous protocol methods require explicit identity",
       test_ambiguous_protocol_methods_require_explicit_identity );
     ( "protocols inside modules export methods and record implementations",
@@ -5215,14 +5181,14 @@ let tests =
       test_batched_numeric_scalar_core_functions_reject_bad_name_arg );
     ( "batched numeric/scalar core functions infer int params",
       test_batched_numeric_scalar_core_functions_infer_int_params );
-    ( "clojure.string namespace batch works",
-      test_clojure_string_namespace_batch_works );
-    ( "clojure.string namespace refer works",
-      test_clojure_string_namespace_refer_works );
-    ( "clojure.string namespace rejects bad args",
-      test_clojure_string_namespace_rejects_bad_args );
-    ( "clojure.string namespace rejects unknown refer",
-      test_clojure_string_namespace_rejects_unknown_refer );
+    ( "clojure.string module batch works",
+      test_clojure_string_module_batch_works );
+    ( "clojure.string module refer works",
+      test_clojure_string_module_refer_works );
+    ( "clojure.string module rejects bad args",
+      test_clojure_string_module_rejects_bad_args );
+    ( "clojure.string module rejects unknown refer",
+      test_clojure_string_module_rejects_unknown_refer );
     ( "batched predicate/collection core functions work",
       test_batched_predicate_collection_core_functions_work );
     ( "batched predicate/collection core functions reject bad counts",

@@ -5,7 +5,7 @@ Goal: Build cljml into a statically typed Clojure-syntax language that compiles 
 Architecture: cljml should follow the same broad shape as ReasonML: parse a source syntax into an AST, elaborate that AST into OCaml Parsetree, then let the OCaml compiler own the full host-language type system.
 The frontend keeps Clojure surface syntax, while the backend emits OCaml data structures and functions so generated code can use the OCaml compiler, OCaml typechecker, and OCaml packages.
 The implementation should mirror ReasonML's toolchain boundary: a frontend parses source into an AST, an elaboration phase enforces cljml-specific semantics and builds typed OCaml items, and a backend emits OCaml source or Parsetree.
-cljml should also support incremental compilation: callers must be able to parse, typecheck, and emit one source chunk while preserving namespace state, aliases, generated type counters, and previously compiled bindings for later chunks.
+cljml should also support incremental compilation: callers must be able to parse, typecheck, and emit one source chunk while preserving modules, aliases, generated type counters, and previously compiled bindings for later chunks.
 
 Tech Stack: OCaml 5.4.1, Dune, generated OCaml backend, `RCmerci/rrbvec` for persistent vectors, integration tests that compile and run emitted OCaml.
 
@@ -20,7 +20,8 @@ It should accept familiar Clojure syntax, reject type errors before OCaml compil
 
 Macros are explicitly out of scope.
 Reader macros, syntax quote, metadata, vars as runtime objects, multimethods, laziness, dynamic vars, and JVM interop are out of scope for the first complete static language.
-Namespace declarations and qualified symbol resolution are in scope.
+Explicit OCaml modules and qualified module symbol resolution are in scope;
+Clojure namespace declarations are not part of the language.
 
 The reference model is ReasonML in architecture rather than syntax.
 ReasonML preserves an alternate syntax over the OCaml toolchain.
@@ -32,7 +33,7 @@ metadata to keep the return-parameter relationship visible to source-level core
 forms; OCaml should still own the actual call-site polymorphism.
 
 ClojureDart is the reference model for Clojure dialect ergonomics over a non-JVM host.
-Its docs emphasize explicit host differences, namespace import behavior, symbol munging, and host package interop as first-class compiler concerns.
+Its docs emphasize explicit host differences, symbol munging, and host package interop as first-class compiler concerns.
 cljml should follow that posture for OCaml packages and should keep a documented differences surface instead of silently diverging from Clojure.
 
 API compatibility, runtime representation, and performance must be balanced explicitly.
@@ -54,7 +55,7 @@ I will add extensive tests across these layers:
 - Reader/parser behavior for Clojure syntax accepted by cljml.
 - Typechecker success and failure cases for every supported core API.
 - Generated OCaml compilation and execution for user-visible behavior.
-- Namespace and alias resolution across multiple namespaces.
+- Module, alias, open, and include resolution across source chunks.
 - Incremental compilation state across source chunks.
 - Runtime representation checks for persistent vectors and structural maps where behavior depends on representation.
 - CLI smoke tests for file compilation and `--run`.
@@ -84,7 +85,7 @@ The compiler should support this syntax without macros.
 | `loop` / `recur` | `(loop [n 3 acc 0] (if (= n 0) acc (recur (dec n) (+ acc n))))` | 2 |
 | Static destructuring | `(let [{:keys [name]} user] name)` | 3 |
 | Static protocols | `(defprotocol Labelled (label [x] :string))` | 3 |
-| Namespace form | `(ns app.main)` | 1 |
+| Module form | `(module App (def value 1))` | 1 |
 | Module form | `(module Math (defn add2 [x] (+ x 2)))` | 3 |
 
 ## Core API Roadmap
@@ -314,13 +315,13 @@ compatibility is delegated to the OCaml typechecker.
 
 10. Emit OCaml record types for structural map shapes.
 
-11. Maintain namespace state for top-level forms.
+11. Keep top-level bindings unqualified and use explicit modules as ownership
+    boundaries.
 
-12. Resolve unqualified symbols in the current namespace.
+12. Resolve qualified symbols such as `People/user` through module metadata.
 
-13. Resolve qualified symbols like `people.core/user` across namespaces.
-
-14. Generate OCaml names with namespace prefixes to avoid collisions.
+13. Generate OCaml module and binding names deterministically and detect
+    collisions.
 
 15. Keep generated OCaml deterministic so tests can compare output or behavior.
 
@@ -332,18 +333,20 @@ compatibility is delegated to the OCaml typechecker.
     `Names` owns source-to-OCaml identifier munging, including OCaml reserved
     words and digit-leading generated names.
 
-19. Extend `ns` parsing to handle `:require` aliases and refers for cljml namespaces and OCaml package/module interop.
+19. Support top-level `require` only for OCaml packages/modules and the typed
+    `clojure.string` compatibility module.
 
 20. Keep ClojureDart as a reference for non-JVM dialect ergonomics and compatibility documentation.
 
-21. Add an incremental compiler state that persists current namespace, top-level environment, generated record type counter, and emitted items.
+21. Add an incremental compiler state that persists the top-level environment,
+    modules, generated record type counter, and emitted items.
 
 22. Expose a public incremental API that can compile a source chunk into emitted OCaml while returning the next compiler state.
 
 23. Keep incremental output deterministic and compatible with whole-file compilation.
 
 24. Preserve static protocol signatures and implementations in the same
-    incremental compiler state used for ordinary namespace bindings.
+    incremental compiler state used for ordinary module and value bindings.
 
 25. Make Parsetree lowering the primary correctness path.
     Public source APIs and CLI compile/run paths now print checked
@@ -395,7 +398,7 @@ compatibility is delegated to the OCaml typechecker.
     expressions in both source and Parsetree backends. Applied modules expose
     already-known result bindings and OCaml record type metadata. Generic host
     calls such as `(ocaml-call :int Stdlib.abs -42)` lower to ordinary OCaml module
-    references with an explicit return type. They also resolve OCaml `ns`
+    references with an explicit return type. They also resolve required OCaml
     aliases and refers, for example `(ocaml-call :int std/abs -42)` after
     `[ocaml.Stdlib :as std]` and
     `(ocaml-call :string uppercase_ascii "ada")` after
@@ -432,7 +435,8 @@ compatibility is delegated to the OCaml typechecker.
 
 7. Implement core API typing and code generation for Phase 1 APIs.
 
-8. Update `examples/person.cljml` to use `(ns examples.person)`.
+8. Update `examples/person.cljml` to exercise top-level `require` and explicit
+   modules without a namespace declaration.
 
 9. Run `rtk dune test --root .`.
 
@@ -453,9 +457,9 @@ Duplicate map literal keys should be rejected.
 
 Unknown symbols should be rejected.
 
-Unqualified symbols should resolve only in the current namespace.
+Unqualified symbols resolve in lexical or top-level scope.
 
-Qualified symbols should resolve to exactly the requested namespace.
+Qualified symbols resolve to exactly the requested module.
 
 Unknown map fields should be rejected when accessed with a literal keyword.
 
@@ -511,11 +515,11 @@ Keyword lookup syntax like `(:name user)` is supported in addition to `(get user
 
 Should Clojure sequence APIs be eager by default or backed by OCaml `Seq.t`.
 
-cljml mirrors ClojureDart's `ns` `:require` shape for a small typed OCaml host
-interop table, for example `[ocaml.String :as string]` or
+cljml uses top-level `require` for a small typed OCaml host interop table, for
+example `[ocaml.String :as string]` or
 `[ocaml.String :refer [length]]`. For ordinary OCaml module functions outside
 that table, `(ocaml-call :type Module.function args...)` is the explicit
-interop escape hatch, and it can use `ns` aliases/refers for OCaml modules
+interop escape hatch, and it can use required aliases/refers for OCaml modules
 without adding those functions to cljml's typed core table.
 
 ## Testing Details

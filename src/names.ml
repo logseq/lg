@@ -84,14 +84,14 @@ let keyword_to_ocaml_name keyword =
   in
   sanitize_name keyword_body
 
-let has_namespace name = String.contains name '/'
+let is_qualified name = String.contains name '/'
 
-let namespaced_key current_ns name =
-  if has_namespace name || current_ns = "" then name else current_ns ^ "/" ^ name
+let scoped_key scope name =
+  if is_qualified name || scope = "" then name else scope ^ "/" ^ name
 
-let ocaml_binding_name current_ns name =
-  if current_ns = "" then sanitize_name name
-  else sanitize_name (current_ns ^ "_" ^ name)
+let ocaml_binding_name scope name =
+  if scope = "" then sanitize_name name
+  else sanitize_name (scope ^ "_" ^ name)
 
 let module_segment_to_ocaml name =
   let sanitized = sanitize_name name in

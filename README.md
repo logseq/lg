@@ -71,8 +71,7 @@ projected to the set element record type at `hash-set`, `conj`, `contains?`, and
 Supported prototype forms:
 
 ```clojure
-(ns examples.person
-  (:require [ocaml.String :as string]))
+(require [ocaml.String :as string])
 (def x {:name "Ada", :age 36})
 (def y (assoc x :admin? true))
 (def z (dissoc y :age))
@@ -103,8 +102,6 @@ The compiler infers record-like map shapes automatically:
 - `(update x :age + 1)` passes the current field value plus extra arguments to
   the update function.
 - `(update xs 0 inc)` updates a persistent vector index.
-- `(ns examples.person)` scopes unqualified symbols and avoids generated OCaml
-  name collisions.
 - `(module Math (defn add2 [x] (+ x 2)))` emits an OCaml module, and
   `Math/add2` resolves to that module binding. The current subset supports
   `module-signature`, `type-alias`, `type-variant`, `open`, `include`,
@@ -289,16 +286,15 @@ The compiler infers record-like map shapes automatically:
   sets where their result has a statically representable type.
 - `conj` accepts one or more same-typed values after a list, vector, or set.
 - `disj` accepts zero or more same-typed values after the set.
-- `(:require [some.ns :as alias])` can alias previously compiled namespaces.
-- `(:require [some.ns :refer [user]])` can refer previously compiled namespace
-  bindings into the current namespace.
-- `(:require [ocaml.String :as string])` aliases an OCaml module. Ordinary
+- `(module-alias M Math)` aliases a previously compiled cljml/OCaml module;
+  `(open Math)` exposes its known bindings without introducing namespaces.
+- `(require [ocaml.String :as string])` aliases an OCaml module. Ordinary
   functions are called directly, for example `(string/uppercase_ascii "ada")`.
-- `(:require [ocaml.String :refer [uppercase_ascii]])` can refer an ordinary
+- `(require [ocaml.String :refer [uppercase_ascii]])` can refer an ordinary
   OCaml function and call it directly as `(uppercase_ascii "ada")` without
   adding it to cljml's typed core table. These OCaml value refers are also
-  available inside module and functor bodies compiled from the current namespace.
-- `(:require [ocaml.package/core] [ocaml.Core.Int :as int])` separates the
+  available inside module and functor bodies.
+- `(require [ocaml.package/core] [ocaml.Core.Int :as int])` separates the
   findlib package dependency from the OCaml module alias. Package metadata adds
   recursive `.cmi` directories before elaboration, so calls such as
   `(int/abs -42)` infer their signature. CLI `--run` passes the same
@@ -324,7 +320,7 @@ The compiler infers record-like map shapes automatically:
   `(String.edit_distance "abc" "adc" :limit 2)`. Labels are read
   from the compiler signature, optional labels may be omitted, and partially
   applied functions preserve their remaining positional function type.
-- `(:require [clojure.string :as str])` can alias a typed `clojure.string`
+- `(require [clojure.string :as str])` can alias a typed `clojure.string`
   subset: `blank?`, `capitalize`, `ends-with?`, `includes?`, `index-of`,
   `join`, `last-index-of`, `lower-case`, `re-quote-replacement`, `replace`,
   `replace-first`, `reverse`, `split`, `split-lines`, `starts-with?`, `trim`,
@@ -333,7 +329,7 @@ The compiler infers record-like map shapes automatically:
   primitive and named OCaml record receivers. Protocol identity distinguishes
   same-named methods through `Protocol/method`; annotated parameter types are
   checked; module-owned protocols are exported as `Module/Protocol/method`;
-  and namespace aliases such as `labels/label` remain supported.
+  and module aliases preserve protocol identity.
 - `(:name user)` works as keyword lookup syntax for structural maps.
 - `(keys user)` returns a persistent vector of keyword values, and `(vals user)`
   returns a persistent vector when all map values have the same type.
@@ -384,7 +380,7 @@ dune exec bin/cljml_cli.exe -- \
   --run-files src/math.cljml src/main.cljml
 ```
 
-Files are processed in the supplied order. Namespaces, modules, types,
+Files are processed in the supplied order. Modules, types,
 protocols, inferred OCaml signatures, and package dependencies remain available
 to later files. Package dependencies are unioned for native linking, while
 errors retain the path and line of the owning input file.

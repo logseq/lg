@@ -468,6 +468,19 @@ let document_symbols_result document =
       |> List.map (document_symbol_json document.text)
       |> fun symbols -> `List symbols
 
+let rec matching_workspace_symbols uri text query
+    (symbol : Cljml.Language_service.document_symbol) =
+  let children =
+    List.concat_map (matching_workspace_symbols uri text query) symbol.children
+  in
+  if find_substring (String.lowercase_ascii symbol.name) query = None then children
+  else
+    `Assoc
+      [ ("name", `String symbol.name);
+        ("kind", `Int (symbol_kind symbol.kind));
+        ("location", location_json uri text symbol.selection_range) ]
+    :: children
+
 let workspace_symbols_result query =
   let query = String.lowercase_ascii query in
   Hashtbl.fold
@@ -476,19 +489,9 @@ let workspace_symbols_result query =
       | Error _ -> symbols
       | Ok analysis ->
           Cljml.Language_service.document_symbols analysis
-          |> List.fold_left
-               (fun symbols (symbol : Cljml.Language_service.document_symbol) ->
-                 if
-                   find_substring (String.lowercase_ascii symbol.name) query = None
-                 then symbols
-                 else
-                   `Assoc
-                     [ ("name", `String symbol.name);
-                       ("kind", `Int (symbol_kind symbol.kind));
-                       ( "location",
-                         location_json uri document.text symbol.selection_range ) ]
-                   :: symbols)
-               symbols)
+          |> List.concat_map
+               (matching_workspace_symbols uri document.text query)
+          |> List.rev_append symbols)
     (all_documents ()) []
   |> List.rev |> fun symbols -> `List symbols
 

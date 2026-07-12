@@ -1,5 +1,4 @@
-(ns examples.person
-  (:require [ocaml.String :as string]))
+(require [ocaml.String :as string])
 (def x {:name "Ada", :age 36})
 (def y (assoc x :admin? true))
 (def z (dissoc y :age))

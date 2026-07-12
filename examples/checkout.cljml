@@ -1,5 +1,3 @@
-(ns examples.checkout)
-
 (module-signature ShippingPolicy
   (val free-threshold :int)
   (val standard-fee :int)

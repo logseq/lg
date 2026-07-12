@@ -161,10 +161,10 @@ let empty_state =
 let required_packages_from_ast ast =
   let rec loop packages = function
     | [] -> Ok (List.sort_uniq String.compare packages)
-    | Ast.FList (Ast.FSymbol "ns" :: Ast.FSymbol _ :: clauses) :: rest -> (
-        match Ns_require.parse_requires clauses with
+    | Ast.FList (Ast.FSymbol "require" :: entries) :: rest -> (
+        match Require.parse_entries entries with
         | Error _ as err -> err
-        | Ok specs -> loop (Ns_require.package_names specs @ packages) rest)
+        | Ok specs -> loop (Require.package_names specs @ packages) rest)
     | _ :: rest -> loop packages rest
   in
   loop [] ast

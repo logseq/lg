@@ -50,8 +50,8 @@ let ocaml_builtin_constructor_payloads target_ty constructor_name =
       Some [ cljml_metadata_type_for_ocaml_payload error_ty ]
   | _ -> None
 
-let record_type_key current_ns type_name =
-  "__record/" ^ current_ns ^ "/" ^ type_name
+let record_type_key scope type_name =
+  "__record/" ^ scope ^ "/" ^ type_name
 
 let record_type_application type_name parameters =
   match parameters with
@@ -79,12 +79,12 @@ let qualify_record_type module_path record =
       Names.module_path_to_ocaml module_path ^ "." ^ record.set_module_name;
   }
 
-let lookup_record_type current_ns env type_name =
-  let lookup namespace local_name =
-    List.assoc_opt (record_type_key namespace local_name) env
+let lookup_record_type scope env type_name =
+  let lookup owner local_name =
+    List.assoc_opt (record_type_key owner local_name) env
   in
-  let local_lookup namespace local_name =
-    match lookup namespace local_name with
+  let local_lookup owner local_name =
+    match lookup owner local_name with
     | Some ({ ty = TNamed_record record; _ } : binding) -> Ok record
     | Some _ -> Error.error ("invalid record type metadata for " ^ type_name)
     | None -> Error.error ("unknown record type " ^ type_name)
@@ -94,7 +94,7 @@ let lookup_record_type current_ns env type_name =
       match local_lookup (Names.module_path_to_ocaml module_path) local_name with
       | Ok record -> Ok (qualify_record_type module_path record)
       | Error _ as err -> err)
-  | None -> local_lookup current_ns type_name
+  | None -> local_lookup scope type_name
 
 let starts_with_uppercase name =
   String.length name > 0
@@ -110,8 +110,8 @@ let is_constructor_name name =
   | segment :: _ -> starts_with_uppercase segment
   | [] -> false
 
-let lookup_binding current_ns env name =
-  match List.assoc_opt (Names.namespaced_key current_ns name) env with
+let lookup_binding scope env name =
+  match List.assoc_opt (Names.scoped_key scope name) env with
   | Some (binding : binding) -> Ok binding
   | None -> Error.error ("unknown function " ^ name)
 
@@ -119,8 +119,8 @@ let binding_of_expr ?(row_param_types = []) ocaml_name expr =
   Types.binding ~row_param_types ?return_param_index:expr.return_param_index
     ocaml_name expr.ty
 
-let lookup_function current_ns env name =
-  match lookup_binding current_ns env name with
+let lookup_function scope env name =
+  match lookup_binding scope env name with
   | Ok binding -> Ok (typed_ir binding.ty (Ocaml_ir.Ident binding.ocaml_name))
   | Error _ -> (
       match name with
@@ -168,9 +168,9 @@ let lookup_function current_ns env name =
                     Ocaml_ir.Prefix ("not", Ocaml_ir.Ident "x") )))
       | _ -> Error.error ("unknown function " ^ name))
 
-let ocaml_call_target current_ns env function_name =
+let ocaml_call_target scope env function_name =
   let lookup name =
-    match List.assoc_opt (Names.namespaced_key current_ns name) env with
+    match List.assoc_opt (Names.scoped_key scope name) env with
     | Some _ as binding -> binding
     | None -> List.assoc_opt name env
   in
@@ -194,14 +194,14 @@ let ocaml_call_target current_ns env function_name =
           then Some function_name
           else None)
 
-let resolve_ocaml_call_target current_ns env function_name =
-  match ocaml_call_target current_ns env function_name with
+let resolve_ocaml_call_target scope env function_name =
+  match ocaml_call_target scope env function_name with
   | Some target -> target
   | None -> function_name
 
-let resolve_ocaml_constructor_target current_ns env constructor_name =
+let resolve_ocaml_constructor_target scope env constructor_name =
   let lookup name =
-    match List.assoc_opt (Names.namespaced_key current_ns name) env with
+    match List.assoc_opt (Names.scoped_key scope name) env with
     | Some _ as binding -> binding
     | None -> List.assoc_opt name env
   in
@@ -213,8 +213,8 @@ let resolve_ocaml_constructor_target current_ns env constructor_name =
       | _ -> constructor_name)
   | _ -> constructor_name
 
-let inherit_namespace_ocaml_value_refers current_ns module_path env =
-  let prefix = current_ns ^ "/" in
+let inherit_scope_ocaml_value_refers scope module_path env =
+  let prefix = scope ^ "/" in
   let prefix_len = String.length prefix in
   let inherited =
     env
@@ -226,7 +226,7 @@ let inherit_namespace_ocaml_value_refers current_ns module_path env =
                let name =
                  String.sub key prefix_len (String.length key - prefix_len)
                in
-               Some (Names.namespaced_key module_path name, binding)
+               Some (Names.scoped_key module_path name, binding)
            | _ -> None)
   in
   env @ inherited
@@ -307,8 +307,8 @@ let param_constraint_name = function
       Some (Types.ocaml_name ty)
   | _ -> None
 
-let rec compile_expr current_ns (env : (string * binding) list) form =
-  match compile_expr_unlocated current_ns env form with
+let rec compile_expr scope (env : (string * binding) list) form =
+  match compile_expr_unlocated scope env form with
   | Error _ as err -> err
   | Ok expression -> (
       match Source_context.find form with
@@ -319,7 +319,7 @@ let rec compile_expr current_ns (env : (string * binding) list) form =
               ocaml_expr = Ocaml_ir.Located (location, expression.ocaml_expr);
             })
 
-and compile_expr_unlocated current_ns (env : (string * binding) list) = function
+and compile_expr_unlocated scope (env : (string * binding) list) = function
   | FInt value -> Ok (typed_ir TInt (Ocaml_ir.Int value))
   | FFloat value -> Ok (typed_ir TFloat (Ocaml_ir.Float value))
   | FChar value -> Ok (typed_ir TChar (Ocaml_ir.Char value))
@@ -327,47 +327,47 @@ and compile_expr_unlocated current_ns (env : (string * binding) list) = function
   | FBool value -> Ok (typed_ir TBool (Ocaml_ir.Bool value))
   | FKeyword keyword -> Ok (typed_ir TKeyword (Ocaml_ir.String keyword))
   | FSymbol name -> (
-      match List.assoc_opt (Names.namespaced_key current_ns name) env with
+      match List.assoc_opt (Names.scoped_key scope name) env with
       | Some { ty = TFn ([], return_ty); _ } when is_constructor_name name ->
           Ok (typed_ir return_ty (Ocaml_ir.Constructor (name, None)))
       | Some binding -> Ok (typed_ir binding.ty (Ocaml_ir.Ident binding.ocaml_name))
       | None when name = "None" ->
           Ok (typed_ir (TOcaml_app ("option", [ TAny ])) (Ocaml_ir.Constructor (name, None)))
       | None -> Error.error ("unknown symbol " ^ name))
-  | FVector forms -> compile_vector current_ns env forms
-  | FMap pairs -> compile_map current_ns env pairs
+  | FVector forms -> compile_vector scope env forms
+  | FMap pairs -> compile_map scope env pairs
   | FList (FSymbol "loop" :: bindings :: body_forms) ->
-      compile_loop current_ns env bindings body_forms
+      compile_loop scope env bindings body_forms
   | FList (FSymbol "recur" :: _) ->
       Error.error "recur is only valid in a loop tail position"
   | FList (FSymbol "let" :: bindings :: body_forms) ->
-      compile_let current_ns env bindings body_forms
+      compile_let scope env bindings body_forms
   | FList (FSymbol "fn" :: params :: body_forms) ->
-      compile_fn current_ns env params body_forms
+      compile_fn scope env params body_forms
   | FList (FSymbol "do" :: body_forms) ->
-      compile_body current_ns env "do requires at least one form" body_forms
+      compile_body scope env "do requires at least one form" body_forms
   | FList [ FKeyword keyword; target ] ->
-      compile_get current_ns env [ target; FKeyword keyword ]
+      compile_get scope env [ target; FKeyword keyword ]
   | FList (FKeyword _ :: _) -> Error.error "keyword lookup expects one argument"
   | FList (FSymbol "if" :: condition :: then_form :: else_form :: []) ->
-      compile_if current_ns env condition then_form else_form
+      compile_if scope env condition then_form else_form
   | FList (FSymbol "if-not" :: condition :: then_form :: else_form :: []) ->
-      compile_if_not current_ns env condition then_form else_form
+      compile_if_not scope env condition then_form else_form
   | FList (FSymbol "when" :: condition :: body_forms) ->
-      compile_when current_ns env condition body_forms
-  | FList (FSymbol "cond" :: clauses) -> compile_cond current_ns env clauses
+      compile_when scope env condition body_forms
+  | FList (FSymbol "cond" :: clauses) -> compile_cond scope env clauses
   | FList (FSymbol "match" :: target :: clauses) ->
-      compile_match current_ns env target clauses
-  | FList (FSymbol "try" :: forms) -> compile_try current_ns env forms
-  | FList (FSymbol name :: args) -> compile_call current_ns env name args
+      compile_match scope env target clauses
+  | FList (FSymbol "try" :: forms) -> compile_try scope env forms
+  | FList (FSymbol name :: args) -> compile_call scope env name args
   | FList [] -> Error.error "empty list is not callable"
   | FList _ -> Error.error "call head must be a symbol"
 
-and compile_vector current_ns env forms =
+and compile_vector scope env forms =
   match forms with
   | [] -> Error.error "empty vector requires a type annotation"
   | first :: rest -> (
-      match compile_expr current_ns env first with
+      match compile_expr scope env first with
       | Error _ as err -> err
       | Ok first_expr ->
           let rec loop acc = function
@@ -380,7 +380,7 @@ and compile_vector current_ns env forms =
                      (Ocaml_ir.Apply
                         (Ocaml_ir.Ident "Rrbvec.of_list", [ Ocaml_ir.List values ])))
             | form :: rest -> (
-                match compile_expr current_ns env form with
+                match compile_expr scope env form with
                 | Error _ as err -> err
                 | Ok expr ->
                     if Types.equal first_expr.ty expr.ty then loop (expr :: acc) rest
@@ -388,10 +388,10 @@ and compile_vector current_ns env forms =
           in
           loop [ first_expr ] rest)
 
-and compile_map current_ns env pairs =
+and compile_map scope env pairs =
   let compile_pair = function
     | FKeyword keyword, value_form -> (
-        match compile_expr current_ns env value_form with
+        match compile_expr scope env value_form with
         | Ok value -> Ok (keyword, value)
         | Error _ as err -> err)
     | _ -> Error.error "map keys must be keywords"
@@ -427,11 +427,11 @@ and compile_map current_ns env pairs =
   in
   loop [] pairs
 
-and compile_if current_ns env condition then_form else_form =
+and compile_if scope env condition then_form else_form =
   match
-    ( compile_expr current_ns env condition,
-      compile_expr current_ns env then_form,
-      compile_expr current_ns env else_form )
+    ( compile_expr scope env condition,
+      compile_expr scope env then_form,
+      compile_expr scope env else_form )
   with
   | (Error _ as err), _, _ -> err
   | _, (Error _ as err), _ -> err
@@ -449,11 +449,11 @@ and compile_if current_ns env condition then_form else_form =
                       else_expr.ocaml_expr )))
           else Error.error "if branches must have same type")
 
-and compile_if_not current_ns env condition then_form else_form =
+and compile_if_not scope env condition then_form else_form =
   match
-    ( compile_expr current_ns env condition,
-      compile_expr current_ns env then_form,
-      compile_expr current_ns env else_form )
+    ( compile_expr scope env condition,
+      compile_expr scope env then_form,
+      compile_expr scope env else_form )
   with
   | (Error _ as err), _, _ -> err
   | _, (Error _ as err), _ -> err
@@ -472,10 +472,10 @@ and compile_if_not current_ns env condition then_form else_form =
                       else_expr.ocaml_expr )))
           else Error.error "if-not branches must have same type")
 
-and compile_when current_ns env condition body_forms =
+and compile_when scope env condition body_forms =
   match
-    ( compile_expr current_ns env condition,
-      compile_body current_ns env "when body requires at least one form" body_forms )
+    ( compile_expr scope env condition,
+      compile_body scope env "when body requires at least one form" body_forms )
   with
   | (Error _ as err), _ -> err
   | _, (Error _ as err) -> err
@@ -490,7 +490,7 @@ and compile_when current_ns env condition body_forms =
                     (condition.ocaml_expr, body.ocaml_expr, Ocaml_ir.Unit)))
           else Error.error "when body must be unit")
 
-and compile_cond current_ns env clauses =
+and compile_cond scope env clauses =
   let parse_pairs clauses =
     let rec loop acc = function
       | [] -> Error.error "cond requires an :else branch"
@@ -502,7 +502,7 @@ and compile_cond current_ns env clauses =
     loop [] clauses
   in
   let compile_test form =
-    match compile_expr current_ns env form with
+    match compile_expr scope env form with
     | Error _ as err -> err
     | Ok test ->
         if Types.equal test.ty TBool then Ok test else Error.error "cond tests must be bool"
@@ -510,7 +510,7 @@ and compile_cond current_ns env clauses =
   let rec compile_pairs acc = function
     | [] -> Ok (List.rev acc)
     | (test_form, value_form) :: rest -> (
-        match (compile_test test_form, compile_expr current_ns env value_form) with
+        match (compile_test test_form, compile_expr scope env value_form) with
         | (Error _ as err), _ -> err
         | _, (Error _ as err) -> err
         | Ok test, Ok value -> compile_pairs ((test, value) :: acc) rest)
@@ -518,7 +518,7 @@ and compile_cond current_ns env clauses =
   match parse_pairs clauses with
   | Error _ as err -> err
   | Ok (pairs, else_form) -> (
-      match (compile_pairs [] pairs, compile_expr current_ns env else_form) with
+      match (compile_pairs [] pairs, compile_expr scope env else_form) with
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok pairs, Ok else_expr ->
@@ -536,14 +536,14 @@ and compile_cond current_ns env clauses =
             Ok (typed_ir else_expr.ty expression)
           else Error.error "cond branches must have same type")
 
-and compile_match current_ns env target_form clauses =
+and compile_match scope env target_form clauses =
   let rec parse_pairs acc = function
     | [] -> Ok (List.rev acc)
     | [ _ ] -> Error.error "match requires pattern/result pairs"
     | pattern :: result :: rest -> parse_pairs ((pattern, result) :: acc) rest
   in
   let literal_pattern expected_ty form =
-    match compile_expr current_ns env form with
+    match compile_expr scope env form with
     | Error _ as err -> err
     | Ok pattern ->
         if Types.equal expected_ty pattern.ty then
@@ -563,7 +563,7 @@ and compile_match current_ns env target_form clauses =
         | Ok (inner_pattern, bindings) ->
             let ocaml_name = Names.sanitize_name alias in
             let binding =
-              ( Names.namespaced_key current_ns alias,
+              ( Names.scoped_key scope alias,
                 Types.binding ocaml_name target_ty )
             in
             Ok (Ocaml_ir.PAlias (inner_pattern, ocaml_name), bindings @ [ binding ]))
@@ -658,7 +658,7 @@ and compile_match current_ns env target_form clauses =
         match builtin_constructor_payloads with
         | Some payload_tys -> compile_constructor_payloads payload_tys
         | None -> (
-            match lookup_binding current_ns env name with
+            match lookup_binding scope env name with
             | Error _ ->
                 let opaque_payload_tys =
                   List.map (fun _ -> TAny) payload_patterns
@@ -675,7 +675,7 @@ and compile_match current_ns env target_form clauses =
         let ocaml_name = Names.sanitize_name name in
         Ok
           ( Ocaml_ir.PVar ocaml_name,
-            [ (Names.namespaced_key current_ns name, Types.binding ocaml_name target_ty) ] )
+            [ (Names.scoped_key scope name, Types.binding ocaml_name target_ty) ] )
     | TInt, FInt value -> Ok (Ocaml_ir.PInt value, [])
     | TString, FString value -> Ok (Ocaml_ir.PString value, [])
     | TKeyword, FKeyword keyword -> Ok (Ocaml_ir.PString keyword, [])
@@ -718,17 +718,17 @@ and compile_match current_ns env target_form clauses =
           match guard_form with
           | None -> Ok None
           | Some guard_form -> (
-              match compile_expr current_ns clause_env guard_form with
+              match compile_expr scope clause_env guard_form with
               | Error _ as err -> err
               | Ok guard when Types.equal guard.ty TBool -> Ok (Some guard.ocaml_expr)
               | Ok _ -> Error.error "match guard must be bool")
         in
-        match (guard, compile_expr current_ns clause_env result_form) with
+        match (guard, compile_expr scope clause_env result_form) with
         | (Error _ as err), _ -> err
         | _, (Error _ as err) -> err
         | Ok guard, Ok result -> Ok (pattern_code, guard, result))
   in
-  match (compile_expr current_ns env target_form, parse_pairs [] clauses) with
+  match (compile_expr scope env target_form, parse_pairs [] clauses) with
   | (Error _ as err), _ -> err
   | _, (Error _ as err) -> err
   | Ok target, Ok pairs -> (
@@ -764,12 +764,12 @@ and compile_match current_ns env target_form clauses =
                              (pattern, guard, result.ocaml_expr)) )))
           else Error.error "match branches must have same type")
 
-and compile_body current_ns env empty_error forms =
+and compile_body scope env empty_error forms =
   match forms with
   | [] -> Error.error empty_error
-  | [ form ] -> compile_expr current_ns env form
+  | [ form ] -> compile_expr scope env form
   | form :: rest -> (
-      match (compile_expr current_ns env form, compile_body current_ns env empty_error rest) with
+      match (compile_expr scope env form, compile_body scope env empty_error rest) with
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok expr, Ok body ->
@@ -777,7 +777,7 @@ and compile_body current_ns env empty_error forms =
             (typed_ir body.ty
                (Ocaml_ir.Sequence [ expr.ocaml_expr; body.ocaml_expr ])))
 
-and compile_try current_ns env forms =
+and compile_try scope env forms =
   let is_catch_clause = function
     | FList (FSymbol "catch" :: _) -> true
     | _ -> false
@@ -813,17 +813,17 @@ and compile_try current_ns env forms =
   | Error _ as err -> err
   | Ok ([], _) -> Error.error "try requires a body"
   | Ok (body_forms, catch_forms) -> (
-      match (compile_body current_ns env "try requires a body" body_forms, parse_catches [] catch_forms) with
+      match (compile_body scope env "try requires a body" body_forms, parse_catches [] catch_forms) with
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok body, Ok catches -> (
           let exception_name = "__cljml_caught_exception" in
           let exception_binding =
-            ( Names.namespaced_key current_ns exception_name,
+            ( Names.scoped_key scope exception_name,
               Types.binding exception_name (TOcaml "exn") )
           in
           match
-            compile_match current_ns (exception_binding :: env)
+            compile_match scope (exception_binding :: env)
               (FSymbol exception_name)
               (List.concat_map (fun (pattern, handler) -> [ pattern; handler ]) catches)
           with
@@ -841,12 +841,12 @@ and loop_branch_type left right =
   | left, right when branch_types_compatible left right -> Ok left
   | _ -> Error.error "loop branches must have same type"
 
-and compile_recur current_ns env loop_name param_tys arg_forms =
+and compile_recur scope env loop_name param_tys arg_forms =
   if List.length arg_forms <> List.length param_tys then
     Error.error
       ("recur expects " ^ string_of_int (List.length param_tys) ^ " arguments")
   else
-    match compile_args_for current_ns env arg_forms with
+    match compile_args_for scope env arg_forms with
     | Error _ as err -> err
     | Ok args ->
         let rec validate index expected actual =
@@ -867,14 +867,14 @@ and compile_recur current_ns env loop_name param_tys arg_forms =
                  (Ocaml_ir.Apply
                     (Ocaml_ir.Ident loop_name, List.map (fun arg -> arg.ocaml_expr) args)))
 
-and compile_loop_tail current_ns env loop_name param_tys = function
+and compile_loop_tail scope env loop_name param_tys = function
   | FList (FSymbol "recur" :: arg_forms) ->
-      compile_recur current_ns env loop_name param_tys arg_forms
+      compile_recur scope env loop_name param_tys arg_forms
   | FList [ FSymbol "if"; condition_form; then_form; else_form ] -> (
       match
-        ( compile_expr current_ns env condition_form,
-          compile_loop_tail current_ns env loop_name param_tys then_form,
-          compile_loop_tail current_ns env loop_name param_tys else_form )
+        ( compile_expr scope env condition_form,
+          compile_loop_tail scope env loop_name param_tys then_form,
+          compile_loop_tail scope env loop_name param_tys else_form )
       with
       | (Error _ as err), _, _ -> err
       | _, (Error _ as err), _ -> err
@@ -891,24 +891,24 @@ and compile_loop_tail current_ns env loop_name param_tys = function
                         then_expr.ocaml_expr,
                         else_expr.ocaml_expr )))))
   | FList [ FSymbol "if-not"; condition_form; then_form; else_form ] ->
-      compile_loop_tail current_ns env loop_name param_tys
+      compile_loop_tail scope env loop_name param_tys
         (FList
            [ FSymbol "if";
              FList [ FSymbol "not"; condition_form ];
              then_form;
              else_form ])
   | FList (FSymbol "do" :: body_forms) ->
-      compile_loop_tail_body current_ns env loop_name param_tys body_forms
-  | form -> compile_expr current_ns env form
+      compile_loop_tail_body scope env loop_name param_tys body_forms
+  | form -> compile_expr scope env form
 
-and compile_loop_tail_body current_ns env loop_name param_tys forms =
+and compile_loop_tail_body scope env loop_name param_tys forms =
   match forms with
   | [] -> Error.error "loop body requires at least one form"
-  | [ form ] -> compile_loop_tail current_ns env loop_name param_tys form
+  | [ form ] -> compile_loop_tail scope env loop_name param_tys form
   | form :: rest -> (
       match
-        ( compile_expr current_ns env form,
-          compile_loop_tail_body current_ns env loop_name param_tys rest )
+        ( compile_expr scope env form,
+          compile_loop_tail_body scope env loop_name param_tys rest )
       with
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
@@ -917,7 +917,7 @@ and compile_loop_tail_body current_ns env loop_name param_tys forms =
             (typed_ir body.ty
                (Ocaml_ir.Sequence [ expression.ocaml_expr; body.ocaml_expr ])))
 
-and compile_loop current_ns env bindings body_forms =
+and compile_loop scope env bindings body_forms =
   match bindings with
   | FVector forms ->
       if List.length forms mod 2 <> 0 then
@@ -929,7 +929,7 @@ and compile_loop current_ns env bindings body_forms =
               if name = "_" || List.mem name names then
                 Error.error "loop binding names must be unique symbols"
               else (
-                match compile_expr current_ns env value_form with
+                match compile_expr scope env value_form with
                 | Error _ as err -> err
                 | Ok value ->
                     compile_bindings (name :: names) (value :: values)
@@ -944,12 +944,12 @@ and compile_loop current_ns env bindings body_forms =
               List.fold_left2
                 (fun env name ty ->
                   env
-                  @ [ ( Names.namespaced_key current_ns name,
+                  @ [ ( Names.scoped_key scope name,
                         Types.binding (Names.sanitize_name name) ty ) ])
                 env names param_tys
             in
             (match
-               compile_loop_tail_body current_ns loop_env loop_name param_tys
+               compile_loop_tail_body scope loop_env loop_name param_tys
                  body_forms
              with
             | Error _ as err -> err
@@ -968,7 +968,7 @@ and compile_loop current_ns env bindings body_forms =
                           List.map (fun value -> value.ocaml_expr) values )))))
   | _ -> Error.error "loop bindings must be a vector"
 
-and compile_let current_ns env bindings body_forms =
+and compile_let scope env bindings body_forms =
   match bindings with
   | FVector forms ->
       if List.length forms mod 2 <> 0 then
@@ -977,7 +977,7 @@ and compile_let current_ns env bindings body_forms =
         let rec bind env ir_bindings = function
           | [] -> (
               match
-                compile_body current_ns env "let body requires at least one form"
+                compile_body scope env "let body requires at least one form"
                   body_forms
               with
               | Error _ as err -> err
@@ -990,7 +990,7 @@ and compile_let current_ns env bindings body_forms =
                       return_param_index = body.return_param_index;
                     })
           | pattern :: value_form :: rest -> (
-              match compile_expr current_ns env value_form with
+              match compile_expr scope env value_form with
               | Error _ as err -> err
               | Ok value -> (
                   match Destructure.bind_pattern value pattern with
@@ -1000,7 +1000,7 @@ and compile_let current_ns env bindings body_forms =
                         match (pattern, bindings) with
                         | FSymbol name, [ binding ] ->
                             [
-                              ( Names.namespaced_key current_ns name,
+                              ( Names.scoped_key scope name,
                                 Types.binding
                                   ?return_param_index:(value.return_param_index)
                                   binding.ocaml_name binding.ty );
@@ -1008,7 +1008,7 @@ and compile_let current_ns env bindings body_forms =
                         | _ ->
                             bindings
                             |> List.map (fun (binding : Destructure.local_binding) ->
-                                   ( Names.namespaced_key current_ns binding.source_name,
+                                   ( Names.scoped_key scope binding.source_name,
                                      Types.binding binding.ocaml_name binding.ty ))
                       in
                       let ir_bindings =
@@ -1028,12 +1028,12 @@ and compile_let current_ns env bindings body_forms =
         bind env [] forms
   | _ -> Error.error "let bindings must be a vector"
 
-and prepare_fn ?(param_type_overrides = []) current_ns env params body_forms =
+and prepare_fn ?(param_type_overrides = []) scope env params body_forms =
   match Destructure.parse_param_specs params with
   | Error _ as err -> err
   | Ok specs ->
       let lookup_function_ty name =
-        match lookup_function current_ns env name with
+        match lookup_function scope env name with
         | Ok fn -> Ok fn.ty
         | Error _ as err -> err
       in
@@ -1081,7 +1081,7 @@ and prepare_fn ?(param_type_overrides = []) current_ns env params body_forms =
               let param_bindings =
                 typed_specs
                 |> List.map (fun ((spec : Destructure.param_spec), ty) ->
-                       ( Names.namespaced_key current_ns spec.source_name,
+                       ( Names.scoped_key scope spec.source_name,
                          Types.binding spec.ocaml_name ty ))
               in
               let param_targets =
@@ -1107,12 +1107,12 @@ and prepare_fn ?(param_type_overrides = []) current_ns env params body_forms =
                   let local_bindings =
                     destructured_bindings
                     |> List.map (fun (binding : Destructure.local_binding) ->
-                           ( Names.namespaced_key current_ns binding.source_name,
+                           ( Names.scoped_key scope binding.source_name,
                              Types.binding binding.ocaml_name binding.ty ))
                   in
                   let env = env @ param_bindings @ local_bindings in
                   match
-                    compile_body current_ns env "function body requires at least one form"
+                    compile_body scope env "function body requires at least one form"
                       body_forms
                   with
                   | Error _ as err -> err
@@ -1163,12 +1163,12 @@ and fn_code ?(row_param_type_names = []) parts =
   { (typed_ir (TFn (param_tys, parts.body.ty)) (Ocaml_ir.Fun (param_patterns, body_expr))) with
     return_param_index }
 
-and compile_fn ?(param_type_overrides = []) current_ns env params body_forms =
-  match prepare_fn ~param_type_overrides current_ns env params body_forms with
+and compile_fn ?(param_type_overrides = []) scope env params body_forms =
+  match prepare_fn ~param_type_overrides scope env params body_forms with
   | Error _ as err -> err
   | Ok parts -> Ok (fn_code parts)
 
-and compile_ocaml_arguments current_ns env forms =
+and compile_ocaml_arguments scope env forms =
   let rec parse acc = function
     | [] -> Ok (List.rev acc)
     | FKeyword label :: [] ->
@@ -1181,7 +1181,7 @@ and compile_ocaml_arguments current_ns env forms =
   let rec compile acc = function
     | [] -> Ok (List.rev acc)
     | (label, form) :: rest -> (
-        match compile_expr current_ns env form with
+        match compile_expr scope env form with
         | Error _ as err -> err
         | Ok argument -> compile ((label, argument) :: acc) rest)
   in
@@ -1201,8 +1201,8 @@ and ocaml_apply function_name arguments =
       ( Ocaml_ir.Ident function_name,
         List.map (fun (_, argument) -> argument.ocaml_expr) arguments )
 
-and compile_call current_ns env name arg_forms =
-  let compile_args () = compile_args_for current_ns env arg_forms in
+and compile_call scope env name arg_forms =
+  let compile_args () = compile_args_for scope env arg_forms in
   let constructor ?(display_name = name) ?(constructor_name = name) return_ty
       expected_arity =
     match compile_args () with
@@ -1327,15 +1327,15 @@ and compile_call current_ns env name arg_forms =
           match Type_annotation.of_keyword return_keyword with
           | Error _ -> Error.error ("unknown ocaml-call return type " ^ return_keyword)
           | Ok return_ty -> (
-              match compile_ocaml_arguments current_ns env value_forms with
+              match compile_ocaml_arguments scope env value_forms with
               | Error _ as err -> err
               | Ok args ->
                   let function_name =
-                    resolve_ocaml_call_target current_ns env function_name
+                    resolve_ocaml_call_target scope env function_name
                   in
                   Ok (typed_ir return_ty (ocaml_apply function_name args))))
       | FSymbol function_name :: value_forms -> (
-          compile_inferred_ocaml_call current_ns env function_name value_forms)
+          compile_inferred_ocaml_call scope env function_name value_forms)
       | FKeyword _ :: _ ->
           Error.error "ocaml-call function must be a symbol"
       | _ -> Error.error "ocaml-call expects return type, function, and arguments")
@@ -1372,7 +1372,7 @@ and compile_call current_ns env name arg_forms =
             with
             | None -> Error.error ("unknown record field " ^ field_name)
             | Some field -> (
-                match compile_expr current_ns env value_form with
+                match compile_expr scope env value_form with
                 | Error _ as err -> err
                 | Ok value -> Ok (field, value)))
         | _ -> Error.error "ocaml-record fields must be (name value)"
@@ -1389,7 +1389,7 @@ and compile_call current_ns env name arg_forms =
       in
       match arg_forms with
       | FSymbol type_name :: field_forms -> (
-          match lookup_record_type current_ns env type_name with
+          match lookup_record_type scope env type_name with
           | Error _ as err -> err
           | Ok (record : named_record) -> (
               match compile_fields record [] [] field_forms with
@@ -1429,7 +1429,7 @@ and compile_call current_ns env name arg_forms =
   | "ocaml-field" -> (
       match arg_forms with
       | [ target_form; FSymbol field_name ] -> (
-          match compile_expr current_ns env target_form with
+          match compile_expr scope env target_form with
           | Error _ as err -> err
           | Ok target -> (
               let fields =
@@ -1455,11 +1455,11 @@ and compile_call current_ns env name arg_forms =
   | "ocaml-construct" -> (
       match arg_forms with
       | FSymbol constructor_name :: payload_forms -> (
-          match compile_args_for current_ns env payload_forms with
+          match compile_args_for scope env payload_forms with
           | Error _ as err -> err
           | Ok payloads -> (
               let constructor_ty =
-                match lookup_binding current_ns env constructor_name with
+                match lookup_binding scope env constructor_name with
                 | Ok { ty = TFn (payload_tys, ret); _ }
                   when List.length payload_tys = List.length payloads ->
                     Ok ret
@@ -1493,11 +1493,11 @@ and compile_call current_ns env name arg_forms =
           | Error _ as err -> err
           | Ok () -> Core_int.compile_operator name args))
   | "inc" ->
-      compile_int_unary_call current_ns env name
+      compile_int_unary_call scope env name
         (fun expression -> Ocaml_ir.Infix ("+", expression, Ocaml_ir.Int 1))
         arg_forms
   | "dec" ->
-      compile_int_unary_call current_ns env name
+      compile_int_unary_call scope env name
         (fun expression -> Ocaml_ir.Infix ("-", expression, Ocaml_ir.Int 1))
         arg_forms
   | "=" | "not=" | "<" | "<=" | ">" | ">=" -> (
@@ -1507,7 +1507,7 @@ and compile_call current_ns env name arg_forms =
   | "not" | "true?" | "false?" | "int?" | "number?"
   | "string?" | "keyword?" | "boolean?" | "vector?" | "list?" | "seq?" | "set?"
   | "map?" | "fn?" | "coll?" | "associative?" | "indexed?" | "seqable?" | "counted?"
-    -> compile_boolean_call current_ns env name arg_forms
+    -> compile_boolean_call scope env name arg_forms
   | "integer?" | "nat-int?" | "pos-int?" | "neg-int?" | "boolean" | "bit-set"
   | "bit-clear" | "bit-flip" | "bit-test" | "bit-shift-right-zero-fill"
   | "unchecked-add" | "unchecked-add-int" | "unchecked-subtract"
@@ -1527,22 +1527,22 @@ and compile_call current_ns env name arg_forms =
       | Error _ as err -> err
       | Ok args -> Core_predicate.compile name args)
   | "zero?" ->
-      compile_int_unary_call current_ns env name
+      compile_int_unary_call scope env name
         (fun expression -> Ocaml_ir.Infix ("=", expression, Ocaml_ir.Int 0))
         arg_forms
       |> Result.map (fun expr -> { expr with ty = TBool })
   | "pos?" ->
-      compile_int_unary_call current_ns env name
+      compile_int_unary_call scope env name
         (fun expression -> Ocaml_ir.Infix (">", expression, Ocaml_ir.Int 0))
         arg_forms
       |> Result.map (fun expr -> { expr with ty = TBool })
   | "neg?" ->
-      compile_int_unary_call current_ns env name
+      compile_int_unary_call scope env name
         (fun expression -> Ocaml_ir.Infix ("<", expression, Ocaml_ir.Int 0))
         arg_forms
       |> Result.map (fun expr -> { expr with ty = TBool })
   | "even?" ->
-      compile_int_unary_call current_ns env name
+      compile_int_unary_call scope env name
         (fun expression ->
           Ocaml_ir.Infix
             ( "=",
@@ -1551,7 +1551,7 @@ and compile_call current_ns env name arg_forms =
         arg_forms
       |> Result.map (fun expr -> { expr with ty = TBool })
   | "odd?" ->
-      compile_int_unary_call current_ns env name
+      compile_int_unary_call scope env name
         (fun expression ->
           Ocaml_ir.Infix
             ( "<>",
@@ -1569,7 +1569,7 @@ and compile_call current_ns env name arg_forms =
             | _ -> args |> List.map (Codegen.stringify_expr_ir ~pr:false) |> Codegen.concat_expr
           in
           Ok (typed_ir TString expr))
-  | "subs" -> compile_subs current_ns env arg_forms
+  | "subs" -> compile_subs scope env arg_forms
   | "max" | "min" -> (
       match compile_args () with
       | Error _ as err -> err
@@ -1583,7 +1583,7 @@ and compile_call current_ns env name arg_forms =
       | Error _ as err -> err
       | Ok args -> Core_int.compile_variadic_bitwise name args)
   | "bit-not" ->
-      compile_int_unary_call current_ns env name
+      compile_int_unary_call scope env name
         (fun expression -> Ocaml_ir.Prefix ("lnot", expression))
         arg_forms
   | "bit-shift-left" | "bit-shift-right" ->
@@ -1604,90 +1604,90 @@ and compile_call current_ns env name arg_forms =
             (typed_ir TUnit
                (Ocaml_ir.Apply (Ocaml_ir.Ident printer, [ Codegen.print_expr_ir arg ])))
       | Ok _ -> Error.error (name ^ " expects 1 arguments"))
-  | "list" -> compile_list current_ns env arg_forms
-  | "list*" -> compile_list_star current_ns env arg_forms
-  | "range" -> compile_range current_ns env arg_forms
+  | "list" -> compile_list scope env arg_forms
+  | "list*" -> compile_list_star scope env arg_forms
+  | "range" -> compile_range scope env arg_forms
   | "list-of" -> compile_list_of arg_forms
-  | "cons" -> compile_cons current_ns env arg_forms
-  | "vector" -> compile_vector current_ns env arg_forms
+  | "cons" -> compile_cons scope env arg_forms
+  | "vector" -> compile_vector scope env arg_forms
   | "vector-of" -> compile_vector_of arg_forms
-  | "count" -> compile_collection_call current_ns env name arg_forms
-  | "conj" -> compile_conj current_ns env arg_forms
+  | "count" -> compile_collection_call scope env name arg_forms
+  | "conj" -> compile_conj scope env arg_forms
   | "first" | "second" | "last" | "peek" | "pop" ->
-      compile_collection_call current_ns env name arg_forms
-  | "subvec" -> compile_subvec current_ns env arg_forms
-  | "nth" -> compile_nth current_ns env arg_forms
-  | "get" -> compile_get current_ns env arg_forms
-  | "assoc" -> compile_assoc current_ns env arg_forms
-  | "dissoc" -> compile_dissoc current_ns env arg_forms
-  | "merge" -> compile_merge current_ns env arg_forms
-  | "update" -> compile_update current_ns env arg_forms
-  | "select-keys" -> compile_select_keys current_ns env arg_forms
-  | "contains?" -> compile_contains current_ns env arg_forms
-  | "keys" -> compile_keys current_ns env arg_forms
-  | "vals" -> compile_vals current_ns env arg_forms
-  | "hash-map" | "array-map" | "sorted-map" -> compile_hash_map current_ns env arg_forms
-  | "rest" | "seq" | "empty?" -> compile_collection_call current_ns env name arg_forms
-  | "into" -> compile_sequence_transform_call current_ns env name arg_forms
-  | "take" | "drop" -> compile_collection_call current_ns env name arg_forms
+      compile_collection_call scope env name arg_forms
+  | "subvec" -> compile_subvec scope env arg_forms
+  | "nth" -> compile_nth scope env arg_forms
+  | "get" -> compile_get scope env arg_forms
+  | "assoc" -> compile_assoc scope env arg_forms
+  | "dissoc" -> compile_dissoc scope env arg_forms
+  | "merge" -> compile_merge scope env arg_forms
+  | "update" -> compile_update scope env arg_forms
+  | "select-keys" -> compile_select_keys scope env arg_forms
+  | "contains?" -> compile_contains scope env arg_forms
+  | "keys" -> compile_keys scope env arg_forms
+  | "vals" -> compile_vals scope env arg_forms
+  | "hash-map" | "array-map" | "sorted-map" -> compile_hash_map scope env arg_forms
+  | "rest" | "seq" | "empty?" -> compile_collection_call scope env name arg_forms
+  | "into" -> compile_sequence_transform_call scope env name arg_forms
+  | "take" | "drop" -> compile_collection_call scope env name arg_forms
   | "butlast" | "take-last" | "drop-last" | "take-nth" ->
-      compile_sequence_transform_call current_ns env name arg_forms
+      compile_sequence_transform_call scope env name arg_forms
   | "next" | "nthnext" | "nthrest" | "ffirst" | "fnext" | "nfirst" | "nnext"
   | "rseq" -> (
       match compile_args () with
       | Error _ as err -> err
       | Ok args -> Core_sequence.compile name args)
-  | "some" -> compile_some current_ns env arg_forms
-  | "split-at" -> compile_sequence_transform_call current_ns env name arg_forms
-  | "split-with" -> compile_split_with current_ns env arg_forms
-  | "partition-by" -> compile_partition_by current_ns env arg_forms
+  | "some" -> compile_some scope env arg_forms
+  | "split-at" -> compile_sequence_transform_call scope env name arg_forms
+  | "split-with" -> compile_split_with scope env arg_forms
+  | "partition-by" -> compile_partition_by scope env arg_forms
   | "bounded-count" | "dorun" | "doall" ->
-      compile_sequence_transform_call current_ns env name arg_forms
-  | "run!" -> compile_run_bang current_ns env arg_forms
-  | "reverse" -> compile_collection_call current_ns env name arg_forms
+      compile_sequence_transform_call scope env name arg_forms
+  | "run!" -> compile_run_bang scope env arg_forms
+  | "reverse" -> compile_collection_call scope env name arg_forms
   | "every?" | "not-any?" | "not-every?" ->
-      compile_sequence_bool_predicate current_ns env name arg_forms
-  | "map" -> compile_map_call current_ns env arg_forms
-  | "filter" -> compile_filter current_ns env arg_forms
+      compile_sequence_bool_predicate scope env name arg_forms
+  | "map" -> compile_map_call scope env arg_forms
+  | "filter" -> compile_filter scope env arg_forms
   | "remove" | "take-while" | "drop-while" | "distinct" | "dedupe" | "sort" ->
-      compile_sequence_transform_call current_ns env name arg_forms
-  | "sort-by" -> compile_sort_by current_ns env arg_forms
-  | "concat" -> compile_sequence_transform_call current_ns env name arg_forms
-  | "mapcat" -> compile_mapcat current_ns env arg_forms
+      compile_sequence_transform_call scope env name arg_forms
+  | "sort-by" -> compile_sort_by scope env arg_forms
+  | "concat" -> compile_sequence_transform_call scope env name arg_forms
+  | "mapcat" -> compile_mapcat scope env arg_forms
   | "vec" | "set" | "repeat" ->
-      compile_sequence_transform_call current_ns env name arg_forms
-  | "repeatedly" -> compile_repeatedly current_ns env arg_forms
+      compile_sequence_transform_call scope env name arg_forms
+  | "repeatedly" -> compile_repeatedly scope env arg_forms
   | "interpose" | "interleave" | "partition" | "partition-all" ->
-      compile_sequence_transform_call current_ns env name arg_forms
-  | "reductions" -> compile_reductions current_ns env arg_forms
-  | "map-indexed" -> compile_map_indexed current_ns env arg_forms
-  | "filterv" -> compile_filterv current_ns env arg_forms
-  | "mapv" -> compile_mapv current_ns env arg_forms
-  | "reduce-kv" -> compile_reduce_kv current_ns env arg_forms
-  | "reduce" -> compile_reduce current_ns env arg_forms
-  | "apply" -> compile_apply current_ns env arg_forms
-  | "comp" -> compile_comp current_ns env arg_forms
-  | "partial" -> compile_partial current_ns env arg_forms
-  | "identity" -> compile_identity current_ns env arg_forms
-  | "constantly" -> compile_constantly current_ns env arg_forms
-  | "complement" -> compile_complement current_ns env arg_forms
-  | "every-pred" -> compile_predicate_combinator current_ns env "every-pred" arg_forms
-  | "some-fn" -> compile_predicate_combinator current_ns env "some-fn" arg_forms
-  | "juxt" -> compile_juxt current_ns env arg_forms
-  | "distinct?" -> compile_distinct_question current_ns env arg_forms
-  | "compare" -> compile_compare current_ns env arg_forms
-  | "max-key" | "min-key" -> compile_key_extreme current_ns env name arg_forms
-  | "hash-set" | "sorted-set" -> compile_hash_set current_ns env arg_forms
+      compile_sequence_transform_call scope env name arg_forms
+  | "reductions" -> compile_reductions scope env arg_forms
+  | "map-indexed" -> compile_map_indexed scope env arg_forms
+  | "filterv" -> compile_filterv scope env arg_forms
+  | "mapv" -> compile_mapv scope env arg_forms
+  | "reduce-kv" -> compile_reduce_kv scope env arg_forms
+  | "reduce" -> compile_reduce scope env arg_forms
+  | "apply" -> compile_apply scope env arg_forms
+  | "comp" -> compile_comp scope env arg_forms
+  | "partial" -> compile_partial scope env arg_forms
+  | "identity" -> compile_identity scope env arg_forms
+  | "constantly" -> compile_constantly scope env arg_forms
+  | "complement" -> compile_complement scope env arg_forms
+  | "every-pred" -> compile_predicate_combinator scope env "every-pred" arg_forms
+  | "some-fn" -> compile_predicate_combinator scope env "some-fn" arg_forms
+  | "juxt" -> compile_juxt scope env arg_forms
+  | "distinct?" -> compile_distinct_question scope env arg_forms
+  | "compare" -> compile_compare scope env arg_forms
+  | "max-key" | "min-key" -> compile_key_extreme scope env name arg_forms
+  | "hash-set" | "sorted-set" -> compile_hash_set scope env arg_forms
   | "set-of" -> compile_set_of arg_forms
-  | "disj" -> compile_disj current_ns env arg_forms
-  | "empty" -> compile_collection_call current_ns env name arg_forms
+  | "disj" -> compile_disj scope env arg_forms
+  | "empty" -> compile_collection_call scope env name arg_forms
   | _ when is_constructor_name name -> (
-      match lookup_binding current_ns env name with
+      match lookup_binding scope env name with
       | Ok { ty = TFn (payload_tys, return_ty); _ } ->
           constructor (fun _ -> return_ty) (List.length payload_tys)
       | _ ->
           let constructor_name =
-            resolve_ocaml_constructor_target current_ns env name
+            resolve_ocaml_constructor_target scope env name
           in
           (match Ocaml_signature.constructor_signature constructor_name with
           | Error _ as err -> err
@@ -1695,14 +1695,14 @@ and compile_call current_ns env name arg_forms =
               constructor ~constructor_name
                 (fun _ -> signature.result_type)
                 (List.length signature.payload_types)))
-  | _ -> compile_named_function_call current_ns env name arg_forms
+  | _ -> compile_named_function_call scope env name arg_forms
 
-and compile_inferred_ocaml_call current_ns env function_name value_forms =
-  match compile_ocaml_arguments current_ns env value_forms with
+and compile_inferred_ocaml_call scope env function_name value_forms =
+  match compile_ocaml_arguments scope env value_forms with
   | Error _ as err -> err
   | Ok arguments ->
           let function_name =
-            resolve_ocaml_call_target current_ns env function_name
+            resolve_ocaml_call_target scope env function_name
           in
           match Ocaml_signature.value_signature function_name with
           | Error _ as err -> err
@@ -1713,22 +1713,22 @@ and compile_inferred_ocaml_call current_ns env function_name value_forms =
               | Ok return_ty ->
                   Ok (typed_ir return_ty (ocaml_apply function_name arguments)))
 
-and compile_int_unary_call current_ns env name build_code arg_forms =
-  match compile_args_for current_ns env arg_forms with
+and compile_int_unary_call scope env name build_code arg_forms =
+  match compile_args_for scope env arg_forms with
   | Error _ as err -> err
   | Ok args -> Core_int.compile_unary name args build_code
 
-and compile_boolean_call current_ns env name arg_forms =
-  match compile_args_for current_ns env arg_forms with
+and compile_boolean_call scope env name arg_forms =
+  match compile_args_for scope env arg_forms with
   | Error _ as err -> err
   | Ok args -> Core_boolean.compile name args
 
-and compile_collection_call current_ns env name arg_forms =
-  match compile_args_for current_ns env arg_forms with
+and compile_collection_call scope env name arg_forms =
+  match compile_args_for scope env arg_forms with
   | Error _ as err -> err
   | Ok args -> Core_collection.compile name args
 
-and compile_sequence_transform_call current_ns env name arg_forms =
+and compile_sequence_transform_call scope env name arg_forms =
   match (name, arg_forms) with
   | ("partition" | "partition-all"), FInt size :: _ when size <= 0 ->
       Error.error (name ^ " size must be positive")
@@ -1736,19 +1736,19 @@ and compile_sequence_transform_call current_ns env name arg_forms =
       Error.error "take-nth n must be positive"
   | ("remove" | "take-while" | "drop-while"), [ fn_form; collection_form ] -> (
       match
-        ( compile_function_arg current_ns env fn_form,
-          compile_expr current_ns env collection_form )
+        ( compile_function_arg scope env fn_form,
+          compile_expr scope env collection_form )
       with
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok fn, Ok collection -> Core_sequence_transform.compile name [ fn; collection ])
   | _ -> (
-      match compile_args_for current_ns env arg_forms with
+      match compile_args_for scope env arg_forms with
       | Error _ as err -> err
       | Ok args -> Core_sequence_transform.compile name args)
 
-and compile_subs current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
+and compile_subs scope env arg_forms =
+  match compile_args_for scope env arg_forms with
   | Error _ as err -> err
   | Ok [ source; start ] -> (
       match (source.ty, start.ty) with
@@ -1780,11 +1780,11 @@ and compile_subs current_ns env arg_forms =
       | _ -> Error.error "subs expects a string")
   | Ok _ -> Error.error "subs expects string, start, and optional end"
 
-and compile_list current_ns env forms =
+and compile_list scope env forms =
   match forms with
   | [] -> Error.error "empty list requires a type annotation"
   | first :: rest -> (
-      match compile_expr current_ns env first with
+      match compile_expr scope env first with
       | Error _ as err -> err
       | Ok first_expr ->
           let rec loop acc = function
@@ -1794,7 +1794,7 @@ and compile_list current_ns env forms =
                 in
                 Ok (typed_ir (TList first_expr.ty) (Ocaml_ir.List values))
             | form :: rest -> (
-                match compile_expr current_ns env form with
+                match compile_expr scope env form with
                 | Error _ as err -> err
                 | Ok expr ->
                     if Types.equal first_expr.ty expr.ty then loop (expr :: acc) rest
@@ -1802,18 +1802,18 @@ and compile_list current_ns env forms =
           in
           loop [ first_expr ] rest)
 
-and compile_list_star current_ns env arg_forms =
+and compile_list_star scope env arg_forms =
   match List.rev arg_forms with
   | [] -> Error.error "list* expects values and final collection"
   | final_form :: prefix_forms_rev -> (
-      match compile_expr current_ns env final_form with
+      match compile_expr scope env final_form with
       | Error _ as err -> err
       | Ok final -> (
           match Core_sequence_transform.collection_to_list_expr final with
           | Error _ -> Error.error "list* final argument must be a collection"
           | Ok (inner, final_list_expr) -> (
               let prefix_forms = List.rev prefix_forms_rev in
-              match compile_args_for current_ns env prefix_forms with
+              match compile_args_for scope env prefix_forms with
               | Error _ as err -> err
               | Ok prefix_args ->
                   if List.for_all (fun arg -> Types.equal inner arg.ty) prefix_args then
@@ -1830,7 +1830,7 @@ and compile_list_star current_ns env arg_forms =
                     Ok (typed_ir (TList inner) list_expr)
                   else Error.error "list* value type must match final collection element type")))
 
-and compile_range current_ns env arg_forms =
+and compile_range scope env arg_forms =
   let literal_zero = function FInt 0 -> true | _ -> false in
   let range_expr start stop step =
     let current = Ocaml_ir.Ident "current" in
@@ -1863,14 +1863,14 @@ and compile_range current_ns env arg_forms =
   in
   match arg_forms with
   | [ end_form ] -> (
-      match compile_expr current_ns env end_form with
+      match compile_expr scope env end_form with
       | Error _ as err -> err
       | Ok end_expr ->
           if Types.equal end_expr.ty TInt then
             Ok (typed_ir (TList TInt) (range_expr (Ocaml_ir.Int 0) end_expr.ocaml_expr (Ocaml_ir.Int 1)))
           else Error.error "range arguments must be int")
   | [ start_form; end_form ] -> (
-      match (compile_expr current_ns env start_form, compile_expr current_ns env end_form) with
+      match (compile_expr scope env start_form, compile_expr scope env end_form) with
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok start_expr, Ok end_expr ->
@@ -1881,9 +1881,9 @@ and compile_range current_ns env arg_forms =
       if literal_zero step_form then Error.error "range step cannot be 0"
       else (
         match
-          ( compile_expr current_ns env start_form,
-            compile_expr current_ns env end_form,
-            compile_expr current_ns env step_form )
+          ( compile_expr scope env start_form,
+            compile_expr scope env end_form,
+            compile_expr scope env step_form )
         with
         | (Error _ as err), _, _ -> err
         | _, (Error _ as err), _ -> err
@@ -1916,8 +1916,8 @@ and compile_vector_of arg_forms =
           Ok (typed_ir (TVector element_ty) (Ocaml_ir.Ident "Rrbvec.empty")))
   | _ -> Error.error "vector-of expects one type keyword"
 
-and compile_conj current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
+and compile_conj scope env arg_forms =
+  match compile_args_for scope env arg_forms with
   | Error _ as err -> err
   | Ok (collection :: values) when values <> [] ->
       let add_value collection value =
@@ -1954,8 +1954,8 @@ and compile_conj current_ns env arg_forms =
            (Ok collection)
   | Ok _ -> Error.error "conj expects collection and values"
 
-and compile_cons current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
+and compile_cons scope env arg_forms =
+  match compile_args_for scope env arg_forms with
   | Error _ as err -> err
   | Ok [ value; collection ] -> (
       match collection.ty with
@@ -1967,8 +1967,8 @@ and compile_cons current_ns env arg_forms =
       | _ -> Error.error "cons expects a value and list")
   | Ok _ -> Error.error "cons expects value and list"
 
-and compile_subvec current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
+and compile_subvec scope env arg_forms =
+  match compile_args_for scope env arg_forms with
   | Error _ as err -> err
   | Ok [ vector; start ] -> (
       match (vector.ty, start.ty) with
@@ -1999,8 +1999,8 @@ and compile_subvec current_ns env arg_forms =
       | _ -> Error.error "subvec expects a vector")
   | Ok _ -> Error.error "subvec expects vector, start, and optional stop"
 
-and compile_nth current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
+and compile_nth scope env arg_forms =
+  match compile_args_for scope env arg_forms with
   | Error _ as err -> err
   | Ok [ collection; index ] -> (
       match (collection.ty, index.ty) with
@@ -2045,10 +2045,10 @@ and compile_nth current_ns env arg_forms =
       | _ -> Error.error "nth expects a list or vector")
   | Ok _ -> Error.error "nth expects 2 or 3 arguments"
 
-and compile_get current_ns env arg_forms =
+and compile_get scope env arg_forms =
   match arg_forms with
   | [ target_form; FKeyword keyword ] -> (
-      match compile_expr current_ns env target_form with
+      match compile_expr scope env target_form with
       | Error _ as err -> err
       | Ok target -> (
           match target.ty with
@@ -2061,7 +2061,7 @@ and compile_get current_ns env arg_forms =
               | None -> Error.error ("unknown field " ^ keyword))
           | _ -> Error.error "get expects a map"))
   | [ target_form; index_form ] -> (
-      match (compile_expr current_ns env target_form, compile_expr current_ns env index_form) with
+      match (compile_expr scope env target_form, compile_expr scope env index_form) with
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok target, Ok index -> (
@@ -2074,7 +2074,7 @@ and compile_get current_ns env arg_forms =
           | _ -> Error.error "get key must be a keyword"))
   | [ target_form; FKeyword keyword; default_form ] -> (
       match
-        (compile_expr current_ns env target_form, compile_expr current_ns env default_form)
+        (compile_expr scope env target_form, compile_expr scope env default_form)
       with
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
@@ -2093,9 +2093,9 @@ and compile_get current_ns env arg_forms =
           | _ -> Error.error "get expects a map"))
   | [ target_form; index_form; default_form ] -> (
       match
-        ( compile_expr current_ns env target_form,
-          compile_expr current_ns env index_form,
-          compile_expr current_ns env default_form )
+        ( compile_expr scope env target_form,
+          compile_expr scope env index_form,
+          compile_expr scope env default_form )
       with
       | (Error _ as err), _, _ -> err
       | _, (Error _ as err), _ -> err
@@ -2115,13 +2115,13 @@ and compile_get current_ns env arg_forms =
           | _ -> Error.error "get key must be a keyword"))
   | _ -> Error.error "get expects 2 or 3 arguments"
 
-and compile_assoc current_ns env arg_forms =
+and compile_assoc scope env arg_forms =
   match arg_forms with
   | target_form :: pair_forms ->
       let rec compile_record_pairs acc = function
         | [] -> Ok (List.rev acc)
         | FKeyword keyword :: value_form :: rest -> (
-            match compile_expr current_ns env value_form with
+            match compile_expr scope env value_form with
             | Error _ as err -> err
             | Ok value -> compile_record_pairs ((keyword, value) :: acc) rest)
         | _ -> Error.error "assoc expects map followed by keyword/value pairs"
@@ -2130,15 +2130,15 @@ and compile_assoc current_ns env arg_forms =
         | [] -> Ok (List.rev acc)
         | index_form :: value_form :: rest -> (
             match
-              ( compile_expr current_ns env index_form,
-                compile_expr current_ns env value_form )
+              ( compile_expr scope env index_form,
+                compile_expr scope env value_form )
             with
             | (Error _ as err), _ -> err
             | _, (Error _ as err) -> err
             | Ok index, Ok value -> compile_vector_pairs ((index, value) :: acc) rest)
         | _ -> Error.error "assoc expects collection followed by key/value pairs"
       in
-      (match compile_expr current_ns env target_form with
+      (match compile_expr scope env target_form with
       | Error _ as err -> err
       | Ok target -> (
           if pair_forms = [] || List.length pair_forms mod 2 <> 0 then
@@ -2176,7 +2176,7 @@ and compile_assoc current_ns env arg_forms =
             | _ -> Error.error "assoc expects a map or vector"))
   | _ -> Error.error "assoc expects collection followed by key/value pairs"
 
-and compile_dissoc current_ns env arg_forms =
+and compile_dissoc scope env arg_forms =
   match arg_forms with
   | target_form :: key_forms -> (
       let rec parse_keys acc = function
@@ -2184,7 +2184,7 @@ and compile_dissoc current_ns env arg_forms =
         | FKeyword keyword :: rest -> parse_keys (keyword :: acc) rest
         | _ -> Error.error "dissoc expects map followed by keywords"
       in
-      match compile_expr current_ns env target_form with
+      match compile_expr scope env target_form with
       | Error _ as err -> err
       | Ok target -> (
           match parse_keys [] key_forms with
@@ -2192,12 +2192,12 @@ and compile_dissoc current_ns env arg_forms =
           | Ok keywords -> Structural_map.dissoc_many target keywords))
   | _ -> Error.error "dissoc expects map followed by keywords"
 
-and compile_merge current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
+and compile_merge scope env arg_forms =
+  match compile_args_for scope env arg_forms with
   | Error _ as err -> err
   | Ok maps -> Structural_map.merge maps
 
-and compile_hash_map current_ns env arg_forms =
+and compile_hash_map scope env arg_forms =
   let rec parse_pairs acc = function
     | [] -> Ok (List.rev acc)
     | FKeyword keyword :: value_form :: rest ->
@@ -2209,15 +2209,15 @@ and compile_hash_map current_ns env arg_forms =
   else
     match parse_pairs [] arg_forms with
     | Error _ as err -> err
-    | Ok pairs -> compile_map current_ns env pairs
+    | Ok pairs -> compile_map scope env pairs
 
-and compile_update current_ns env arg_forms =
+and compile_update scope env arg_forms =
   match arg_forms with
   | target_form :: FKeyword keyword :: fn_form :: extra_forms -> (
       match
-        ( compile_expr current_ns env target_form,
-          compile_function_arg current_ns env fn_form,
-          compile_args_for current_ns env extra_forms )
+        ( compile_expr scope env target_form,
+          compile_function_arg scope env fn_form,
+          compile_args_for scope env extra_forms )
       with
       | (Error _ as err), _, _ -> err
       | _, (Error _ as err), _ -> err
@@ -2255,10 +2255,10 @@ and compile_update current_ns env arg_forms =
           | _ -> Error.error "update expects a map"))
   | target_form :: index_form :: fn_form :: extra_forms -> (
       match
-        ( compile_expr current_ns env target_form,
-          compile_expr current_ns env index_form,
-          compile_function_arg current_ns env fn_form,
-          compile_args_for current_ns env extra_forms )
+        ( compile_expr scope env target_form,
+          compile_expr scope env index_form,
+          compile_function_arg scope env fn_form,
+          compile_args_for scope env extra_forms )
       with
       | (Error _ as err), _, _, _ -> err
       | _, (Error _ as err), _, _ -> err
@@ -2298,7 +2298,7 @@ and compile_update current_ns env arg_forms =
           | _ -> Error.error "update expects a map or vector"))
   | _ -> Error.error "update expects collection, key/index, function, and optional arguments"
 
-and compile_select_keys current_ns env arg_forms =
+and compile_select_keys scope env arg_forms =
   match arg_forms with
   | [ target_form; FVector key_forms ] -> (
       let rec parse_keywords acc = function
@@ -2306,7 +2306,7 @@ and compile_select_keys current_ns env arg_forms =
         | FKeyword keyword :: rest -> parse_keywords (keyword :: acc) rest
         | _ -> Error.error "select-keys expects a vector of keywords"
       in
-      match (compile_expr current_ns env target_form, parse_keywords [] key_forms) with
+      match (compile_expr scope env target_form, parse_keywords [] key_forms) with
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok target, Ok keywords -> (
@@ -2317,7 +2317,7 @@ and compile_select_keys current_ns env arg_forms =
   | [ _; _ ] -> Error.error "select-keys expects a vector of keywords"
   | _ -> Error.error "select-keys expects map and key vector"
 
-and compile_contains current_ns env arg_forms =
+and compile_contains scope env arg_forms =
   let compile_collection_contains target value =
     match (target.ty, value.ty) with
     | TSet inner, _ when Types.equal inner value.ty ->
@@ -2345,7 +2345,7 @@ and compile_contains current_ns env arg_forms =
   in
   match arg_forms with
   | target_form :: FKeyword keyword :: [] -> (
-      match compile_expr current_ns env target_form with
+      match compile_expr scope env target_form with
       | Error _ as err -> err
       | Ok target -> (
           match target.ty with
@@ -2357,14 +2357,14 @@ and compile_contains current_ns env arg_forms =
               compile_collection_contains target
                 (typed_ir TKeyword (Ocaml_ir.String keyword))))
   | target_form :: value_form :: [] -> (
-      match (compile_expr current_ns env target_form, compile_expr current_ns env value_form) with
+      match (compile_expr scope env target_form, compile_expr scope env value_form) with
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok target, Ok value -> compile_collection_contains target value)
   | _ -> Error.error "contains? expects collection and key"
 
-and compile_keys current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
+and compile_keys scope env arg_forms =
+  match compile_args_for scope env arg_forms with
   | Error _ as err -> err
   | Ok [ target ] -> (
       match target.ty with
@@ -2380,8 +2380,8 @@ and compile_keys current_ns env arg_forms =
       | _ -> Error.error "keys expects a map")
   | Ok _ -> Error.error "keys expects 1 arguments"
 
-and compile_vals current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
+and compile_vals scope env arg_forms =
+  match compile_args_for scope env arg_forms with
   | Error _ as err -> err
   | Ok [ target ] -> (
       match target.ty with
@@ -2401,17 +2401,17 @@ and compile_vals current_ns env arg_forms =
       | _ -> Error.error "vals expects a map")
   | Ok _ -> Error.error "vals expects 1 arguments"
 
-and compile_function_arg current_ns env = function
-  | FSymbol name -> lookup_function current_ns env name
-  | form -> compile_expr current_ns env form
+and compile_function_arg scope env = function
+  | FSymbol name -> lookup_function scope env name
+  | form -> compile_expr scope env form
 
-and compile_function_arg_for_collection current_ns env element_ty = function
+and compile_function_arg_for_collection scope env element_ty = function
   | FList (FSymbol "fn" :: FVector [ FSymbol name ] :: body_forms) ->
       let binding = Types.binding (Names.sanitize_name name) element_ty in
       let function_env =
-        env @ [ (Names.namespaced_key current_ns name, binding) ]
+        env @ [ (Names.scoped_key scope name, binding) ]
       in
-      compile_body current_ns function_env "function body requires at least one form"
+      compile_body scope function_env "function body requires at least one form"
         body_forms
       |> Result.map (fun body ->
              let pattern =
@@ -2423,16 +2423,16 @@ and compile_function_arg_for_collection current_ns env element_ty = function
              in
              typed_ir (TFn ([ element_ty ], body.ty))
                (Ocaml_ir.Fun ([ pattern ], body.ocaml_expr)))
-  | form -> compile_function_arg current_ns env form
+  | form -> compile_function_arg scope env form
 
-and compile_named_function_call current_ns env name arg_forms =
-  match ocaml_call_target current_ns env name with
-  | Some _ -> compile_inferred_ocaml_call current_ns env name arg_forms
+and compile_named_function_call scope env name arg_forms =
+  match ocaml_call_target scope env name with
+  | Some _ -> compile_inferred_ocaml_call scope env name arg_forms
   | None -> (
-      match lookup_binding current_ns env name with
-  | Error _ -> compile_protocol_call current_ns env name arg_forms
+      match lookup_binding scope env name with
+  | Error _ -> compile_protocol_call scope env name arg_forms
   | Ok fn -> (
-      match compile_args_for current_ns env arg_forms with
+      match compile_args_for scope env arg_forms with
       | Error _ as err -> err
       | Ok args -> (
           match fn.ty with
@@ -2460,14 +2460,14 @@ and compile_named_function_call current_ns env name arg_forms =
           | TFn _ -> Error.error (name ^ " called with incompatible arguments")
           | _ -> Error.error (name ^ " is not callable"))))
 
-and compile_protocol_call current_ns env name arg_forms =
-  if Protocol.method_is_ambiguous current_ns env name then
+and compile_protocol_call scope env name arg_forms =
+  if Protocol.method_is_ambiguous scope env name then
     Error.error
       ("ambiguous protocol method " ^ name ^ "; use Protocol/method")
-  else match Protocol.lookup_marker current_ns env name with
+  else match Protocol.lookup_marker scope env name with
   | None -> Error.error ("unknown function " ^ name)
   | Some marker -> (
-      match compile_args_for current_ns env arg_forms with
+      match compile_args_for scope env arg_forms with
       | Error _ as err -> err
       | Ok args -> (
           match marker.ty with
@@ -2512,10 +2512,10 @@ and comparable_type = function
   | TInt | TString | TSymbol | TKeyword | TBool | TAny -> true
   | _ -> false
 
-and compile_sort_by current_ns env arg_forms =
+and compile_sort_by scope env arg_forms =
   match arg_forms with
   | fn_form :: collection_form :: [] -> (
-      match (compile_function_arg current_ns env fn_form, compile_expr current_ns env collection_form) with
+      match (compile_function_arg scope env fn_form, compile_expr scope env collection_form) with
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok fn, Ok collection -> (
@@ -2538,10 +2538,10 @@ and compile_sort_by current_ns env arg_forms =
           | _, Error _ -> Error.error "sort-by expects a collection"))
   | _ -> Error.error "sort-by expects function and collection"
 
-and compile_mapcat current_ns env arg_forms =
+and compile_mapcat scope env arg_forms =
   match arg_forms with
   | fn_form :: collection_form :: [] -> (
-      match (compile_function_arg current_ns env fn_form, compile_expr current_ns env collection_form) with
+      match (compile_function_arg scope env fn_form, compile_expr scope env collection_form) with
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok fn, Ok collection -> (
@@ -2586,10 +2586,10 @@ and compile_mapcat current_ns env arg_forms =
           | _, Error _ -> Error.error "mapcat expects a collection"))
   | _ -> Error.error "mapcat expects function and collection"
 
-and compile_repeatedly current_ns env arg_forms =
+and compile_repeatedly scope env arg_forms =
   match arg_forms with
   | count_form :: fn_form :: [] -> (
-      match (compile_expr current_ns env count_form, compile_function_arg current_ns env fn_form) with
+      match (compile_expr scope env count_form, compile_function_arg scope env fn_form) with
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok count, Ok fn -> (
@@ -2618,10 +2618,10 @@ and compile_repeatedly current_ns env arg_forms =
             | _ -> Error.error "repeatedly expects a function"))
   | _ -> Error.error "repeatedly expects count and function"
 
-and compile_reductions current_ns env arg_forms =
+and compile_reductions scope env arg_forms =
   match arg_forms with
   | fn_form :: collection_form :: [] -> (
-      match (compile_function_arg current_ns env fn_form, compile_expr current_ns env collection_form) with
+      match (compile_function_arg scope env fn_form, compile_expr scope env collection_form) with
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok fn, Ok collection -> (
@@ -2664,9 +2664,9 @@ and compile_reductions current_ns env arg_forms =
           | _, Error _ -> Error.error "reductions expects a collection"))
   | fn_form :: init_form :: collection_form :: [] -> (
       match
-        ( compile_function_arg current_ns env fn_form,
-          compile_expr current_ns env init_form,
-          compile_expr current_ns env collection_form )
+        ( compile_function_arg scope env fn_form,
+          compile_expr scope env init_form,
+          compile_expr scope env collection_form )
       with
       | (Error _ as err), _, _ -> err
       | _, (Error _ as err), _ -> err
@@ -2707,10 +2707,10 @@ and compile_reductions current_ns env arg_forms =
           | _, Error _ -> Error.error "reductions expects a collection"))
   | _ -> Error.error "reductions expects function, optional init, and collection"
 
-and compile_split_with current_ns env arg_forms =
+and compile_split_with scope env arg_forms =
   match arg_forms with
   | fn_form :: collection_form :: [] -> (
-      match (compile_function_arg current_ns env fn_form, compile_expr current_ns env collection_form) with
+      match (compile_function_arg scope env fn_form, compile_expr scope env collection_form) with
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok fn, Ok collection -> (
@@ -2756,10 +2756,10 @@ and compile_split_with current_ns env arg_forms =
           | _, Error _ -> Error.error "split-with expects a collection"))
   | _ -> Error.error "split-with expects function and collection"
 
-and compile_partition_by current_ns env arg_forms =
+and compile_partition_by scope env arg_forms =
   match arg_forms with
   | fn_form :: collection_form :: [] -> (
-      match (compile_function_arg current_ns env fn_form, compile_expr current_ns env collection_form) with
+      match (compile_function_arg scope env fn_form, compile_expr scope env collection_form) with
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok fn, Ok collection -> (
@@ -2842,10 +2842,10 @@ and compile_partition_by current_ns env arg_forms =
           | _, Error _ -> Error.error "partition-by expects a collection"))
   | _ -> Error.error "partition-by expects function and collection"
 
-and compile_run_bang current_ns env arg_forms =
+and compile_run_bang scope env arg_forms =
   match arg_forms with
   | fn_form :: collection_form :: [] -> (
-      match (compile_function_arg current_ns env fn_form, compile_expr current_ns env collection_form) with
+      match (compile_function_arg scope env fn_form, compile_expr scope env collection_form) with
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok fn, Ok collection -> (
@@ -2868,10 +2868,10 @@ and compile_run_bang current_ns env arg_forms =
           | _, Error _ -> Error.error "run! expects a collection"))
   | _ -> Error.error "run! expects function and collection"
 
-and compile_map_indexed current_ns env arg_forms =
+and compile_map_indexed scope env arg_forms =
   match arg_forms with
   | fn_form :: collection_form :: [] -> (
-      match (compile_function_arg current_ns env fn_form, compile_expr current_ns env collection_form) with
+      match (compile_function_arg scope env fn_form, compile_expr scope env collection_form) with
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok fn, Ok collection -> (
@@ -2891,10 +2891,10 @@ and compile_map_indexed current_ns env arg_forms =
           | _, Error _ -> Error.error "map-indexed expects a collection"))
   | _ -> Error.error "map-indexed expects function and collection"
 
-and compile_filterv current_ns env arg_forms =
+and compile_filterv scope env arg_forms =
   match arg_forms with
   | fn_form :: collection_form :: [] -> (
-      match (compile_function_arg current_ns env fn_form, compile_expr current_ns env collection_form) with
+      match (compile_function_arg scope env fn_form, compile_expr scope env collection_form) with
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok fn, Ok collection -> (
@@ -2910,10 +2910,10 @@ and compile_filterv current_ns env arg_forms =
           | _, Error _ -> Error.error "filterv expects a collection"))
   | _ -> Error.error "filterv expects function and collection"
 
-and compile_mapv current_ns env arg_forms =
+and compile_mapv scope env arg_forms =
   match arg_forms with
   | fn_form :: collection_form :: [] -> (
-      match (compile_function_arg current_ns env fn_form, compile_expr current_ns env collection_form) with
+      match (compile_function_arg scope env fn_form, compile_expr scope env collection_form) with
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok fn, Ok collection -> (
@@ -2928,13 +2928,13 @@ and compile_mapv current_ns env arg_forms =
           | _, Error _ -> Error.error "mapv expects a collection"))
   | _ -> Error.error "mapv expects function and collection"
 
-and compile_reduce_kv current_ns env arg_forms =
+and compile_reduce_kv scope env arg_forms =
   match arg_forms with
   | fn_form :: init_form :: collection_form :: [] -> (
       match
-        ( compile_function_arg current_ns env fn_form,
-          compile_expr current_ns env init_form,
-          compile_expr current_ns env collection_form )
+        ( compile_function_arg scope env fn_form,
+          compile_expr scope env init_form,
+          compile_expr scope env collection_form )
       with
       | (Error _ as err), _, _ -> err
       | _, (Error _ as err), _ -> err
@@ -2967,10 +2967,10 @@ and compile_reduce_kv current_ns env arg_forms =
           | _ -> Error.error "reduce-kv expects a vector"))
   | _ -> Error.error "reduce-kv expects function, init, and vector"
 
-and compile_some current_ns env arg_forms =
+and compile_some scope env arg_forms =
   match arg_forms with
   | fn_form :: collection_form :: [] -> (
-      match (compile_function_arg current_ns env fn_form, compile_expr current_ns env collection_form) with
+      match (compile_function_arg scope env fn_form, compile_expr scope env collection_form) with
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok fn, Ok collection -> (
@@ -2982,10 +2982,10 @@ and compile_some current_ns env arg_forms =
           | _, Error _ -> Error.error "some expects a collection"))
   | _ -> Error.error "some expects function and collection"
 
-and compile_sequence_bool_predicate current_ns env name arg_forms =
+and compile_sequence_bool_predicate scope env name arg_forms =
   match arg_forms with
   | fn_form :: collection_form :: [] -> (
-      match (compile_function_arg current_ns env fn_form, compile_expr current_ns env collection_form) with
+      match (compile_function_arg scope env fn_form, compile_expr scope env collection_form) with
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok fn, Ok collection -> (
@@ -3043,17 +3043,17 @@ and compile_sequence_bool_predicate current_ns env name arg_forms =
           | _ -> Error.error (name ^ " expects a list, vector, or set")))
   | _ -> Error.error (name ^ " expects function and collection")
 
-and compile_map_call current_ns env arg_forms =
+and compile_map_call scope env arg_forms =
   match arg_forms with
   | fn_form :: collection_form :: [] -> (
-      match compile_expr current_ns env collection_form with
+      match compile_expr scope env collection_form with
       | Error _ as err -> err
       | Ok collection ->
           let fn =
             match collection.ty with
             | TList inner | TVector inner | TSet inner ->
-                compile_function_arg_for_collection current_ns env inner fn_form
-            | _ -> compile_function_arg current_ns env fn_form
+                compile_function_arg_for_collection scope env inner fn_form
+            | _ -> compile_function_arg scope env fn_form
           in
           (match fn with
           | Error _ as err -> err
@@ -3088,10 +3088,10 @@ and compile_map_call current_ns env arg_forms =
           | _ -> Error.error "map expects a list, vector, or set")))
   | _ -> Error.error "map expects function and collection"
 
-and compile_filter current_ns env arg_forms =
+and compile_filter scope env arg_forms =
   match arg_forms with
   | fn_form :: collection_form :: [] -> (
-      match (compile_function_arg current_ns env fn_form, compile_expr current_ns env collection_form) with
+      match (compile_function_arg scope env fn_form, compile_expr scope env collection_form) with
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok fn, Ok collection -> (
@@ -3124,13 +3124,13 @@ and compile_filter current_ns env arg_forms =
           | _ -> Error.error "filter expects a list, vector, or set"))
   | _ -> Error.error "filter expects function and collection"
 
-and compile_reduce current_ns env arg_forms =
+and compile_reduce scope env arg_forms =
   match arg_forms with
   | fn_form :: init_form :: collection_form :: [] -> (
       match
-        ( compile_function_arg current_ns env fn_form,
-          compile_expr current_ns env init_form,
-          compile_expr current_ns env collection_form )
+        ( compile_function_arg scope env fn_form,
+          compile_expr scope env init_form,
+          compile_expr scope env collection_form )
       with
       | (Error _ as err), _, _ -> err
       | _, (Error _ as err), _ -> err
@@ -3168,7 +3168,7 @@ and compile_reduce current_ns env arg_forms =
           | _ -> Error.error "reduce expects a list, vector, or set"))
   | _ -> Error.error "reduce expects function, init, and collection"
 
-and compile_apply current_ns env arg_forms =
+and compile_apply scope env arg_forms =
   let rec split_last acc = function
     | [] -> None
     | [ last ] -> Some (List.rev acc, last)
@@ -3180,9 +3180,9 @@ and compile_apply current_ns env arg_forms =
       | None -> Error.error "apply expects function and collection"
       | Some (fixed_forms, collection_form) -> (
           match
-            ( compile_function_arg current_ns env fn_form,
-              compile_args_for current_ns env fixed_forms,
-              compile_expr current_ns env collection_form )
+            ( compile_function_arg scope env fn_form,
+              compile_args_for scope env fixed_forms,
+              compile_expr scope env collection_form )
           with
           | (Error _ as err), _, _ -> err
           | _, (Error _ as err), _ -> err
@@ -3215,7 +3215,7 @@ and compile_apply current_ns env arg_forms =
                   | _ -> Error.error "apply expects a function"))))
   | _ -> Error.error "apply expects function and collection"
 
-and compile_comp current_ns env arg_forms =
+and compile_comp scope env arg_forms =
   match arg_forms with
   | [] -> Error.error "comp expects at least 1 function"
   | _ -> (
@@ -3226,7 +3226,7 @@ and compile_comp current_ns env arg_forms =
                match acc with
                | Error _ as err -> err
                | Ok fns -> (
-                   match compile_function_arg current_ns env form with
+                   match compile_function_arg scope env form with
                    | Error _ as err -> err
                    | Ok fn -> Ok (fn :: fns)))
              (Ok [])
@@ -3267,10 +3267,10 @@ and compile_comp current_ns env arg_forms =
                 (typed_ir (TFn ([ arg_ty ], ret_ty))
                    (Ocaml_ir.Fun ([ Ocaml_ir.PVar "x" ], inner)))))
 
-and compile_partial current_ns env arg_forms =
+and compile_partial scope env arg_forms =
   match arg_forms with
   | fn_form :: fixed_forms -> (
-      match (compile_function_arg current_ns env fn_form, compile_args_for current_ns env fixed_forms) with
+      match (compile_function_arg scope env fn_form, compile_args_for scope env fixed_forms) with
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok fn, Ok fixed_args -> (
@@ -3299,14 +3299,14 @@ and compile_partial current_ns env arg_forms =
           | _ -> Error.error "partial expects a function"))
   | _ -> Error.error "partial expects a function"
 
-and compile_identity current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
+and compile_identity scope env arg_forms =
+  match compile_args_for scope env arg_forms with
   | Error _ as err -> err
   | Ok [ arg ] -> Ok arg
   | Ok _ -> Error.error "identity expects 1 arguments"
 
-and compile_constantly current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
+and compile_constantly scope env arg_forms =
+  match compile_args_for scope env arg_forms with
   | Error _ as err -> err
   | Ok [ value ] ->
       Ok
@@ -3314,10 +3314,10 @@ and compile_constantly current_ns env arg_forms =
            (Ocaml_ir.Fun ([ Ocaml_ir.PAny ], value.ocaml_expr)))
   | Ok _ -> Error.error "constantly expects 1 arguments"
 
-and compile_complement current_ns env arg_forms =
+and compile_complement scope env arg_forms =
   match arg_forms with
   | [ fn_form ] -> (
-      match compile_function_arg current_ns env fn_form with
+      match compile_function_arg scope env fn_form with
       | Error _ as err -> err
       | Ok fn -> (
           match fn.ty with
@@ -3332,7 +3332,7 @@ and compile_complement current_ns env arg_forms =
           | _ -> Error.error "complement expects a function"))
   | _ -> Error.error "complement expects 1 function"
 
-and compile_predicate_combinator current_ns env name arg_forms =
+and compile_predicate_combinator scope env name arg_forms =
   let compile_fns =
     arg_forms
     |> List.fold_left
@@ -3340,7 +3340,7 @@ and compile_predicate_combinator current_ns env name arg_forms =
            match acc with
            | Error _ as err -> err
            | Ok fns -> (
-               match compile_function_arg current_ns env form with
+               match compile_function_arg scope env form with
                | Error _ as err -> err
                | Ok fn -> Ok (fn :: fns)))
          (Ok [])
@@ -3380,7 +3380,7 @@ and compile_predicate_combinator current_ns env name arg_forms =
             (typed_ir (TFn ([ arg_ty ], TBool))
                (Ocaml_ir.Fun ([ Ocaml_ir.PVar "x" ], body))))
 
-and compile_juxt current_ns env arg_forms =
+and compile_juxt scope env arg_forms =
   let compile_fns =
     arg_forms
     |> List.fold_left
@@ -3388,7 +3388,7 @@ and compile_juxt current_ns env arg_forms =
            match acc with
            | Error _ as err -> err
            | Ok fns -> (
-               match compile_function_arg current_ns env form with
+               match compile_function_arg scope env form with
                | Error _ as err -> err
                | Ok fn -> Ok (fn :: fns)))
          (Ok [])
@@ -3424,8 +3424,8 @@ and compile_juxt current_ns env arg_forms =
                     apply "Rrbvec.of_list" [ Ocaml_ir.List exprs ] )))
       | Ok _ -> Error.error "juxt expects at least 1 function")
 
-and compile_distinct_question current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
+and compile_distinct_question scope env arg_forms =
+  match compile_args_for scope env arg_forms with
   | Error _ as err -> err
   | Ok ([] | [ _ ]) -> Ok (typed_ir TBool (Ocaml_ir.Bool true))
   | Ok (first :: _ as args) ->
@@ -3441,8 +3441,8 @@ and compile_distinct_question current_ns env arg_forms =
                   Ocaml_ir.Int (List.length args) )))
       else Error.error "distinct? arguments must have the same type"
 
-and compile_compare current_ns env arg_forms =
-  match compile_args_for current_ns env arg_forms with
+and compile_compare scope env arg_forms =
+  match compile_args_for scope env arg_forms with
   | Error _ as err -> err
   | Ok [ left; right ] ->
       if not (Types.equal left.ty right.ty) then
@@ -3455,10 +3455,10 @@ and compile_compare current_ns env arg_forms =
              (apply "Stdlib.compare" [ left.ocaml_expr; right.ocaml_expr ]))
   | Ok _ -> Error.error "compare expects 2 arguments"
 
-and compile_key_extreme current_ns env name arg_forms =
+and compile_key_extreme scope env name arg_forms =
   match arg_forms with
   | fn_form :: value_forms when value_forms <> [] -> (
-      match (compile_function_arg current_ns env fn_form, compile_args_for current_ns env value_forms) with
+      match (compile_function_arg scope env fn_form, compile_args_for scope env value_forms) with
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok fn, Ok values -> (
@@ -3504,11 +3504,11 @@ and compile_key_extreme current_ns env name arg_forms =
             | _ -> Error.error (name ^ " expects a function")))
   | _ -> Error.error (name ^ " expects function and values")
 
-and compile_hash_set current_ns env arg_forms =
+and compile_hash_set scope env arg_forms =
   match arg_forms with
   | [] -> Error.error "empty hash-set requires a type annotation"
   | first :: rest -> (
-      match compile_expr current_ns env first with
+      match compile_expr scope env first with
       | Error _ as err -> err
       | Ok first_expr ->
           let rec loop values = function
@@ -3527,7 +3527,7 @@ and compile_hash_set current_ns env arg_forms =
                                    ( Ocaml_ir.Ident (set_module ^ ".of_list"),
                                      [ Ocaml_ir.List values ] ))))
             | form :: rest -> (
-                match compile_expr current_ns env form with
+                match compile_expr scope env form with
                 | Error _ as err -> err
                 | Ok expr ->
                     if Types.equal first_expr.ty expr.ty then loop (expr :: values) rest
@@ -3546,10 +3546,10 @@ and compile_set_of arg_forms =
                  typed_ir (TSet element_ty) (Ocaml_ir.Ident (set_module ^ ".empty"))))
   | _ -> Error.error "set-of expects one type keyword"
 
-and compile_disj current_ns env arg_forms =
+and compile_disj scope env arg_forms =
   match arg_forms with
   | collection_form :: value_forms -> (
-      match compile_expr current_ns env collection_form with
+      match compile_expr scope env collection_form with
       | Error _ as err -> err
       | Ok collection -> (
           match collection.ty with
@@ -3557,7 +3557,7 @@ and compile_disj current_ns env arg_forms =
               let rec remove_values expression = function
                 | [] -> Ok (typed_ir collection.ty expression)
                 | value_form :: rest -> (
-                    match compile_expr current_ns env value_form with
+                    match compile_expr scope env value_form with
                     | Error _ as err -> err
                     | Ok value ->
                         if Types.equal inner value.ty then
@@ -3575,18 +3575,18 @@ and compile_disj current_ns env arg_forms =
           | _ -> Error.error "disj expects a set"))
   | [] -> Error.error "disj expects a set"
 
-and compile_args_for current_ns env arg_forms =
+and compile_args_for scope env arg_forms =
   let rec loop acc = function
     | [] -> Ok (List.rev acc)
     | form :: rest -> (
-        match compile_expr current_ns env form with
+        match compile_expr scope env form with
         | Ok expr -> loop (expr :: acc) rest
         | Error _ as err -> err)
   in
   loop [] arg_forms
 
-let compile_defprotocol current_ns env next_type protocol_name method_forms =
-  match Protocol.defprotocol_bindings current_ns protocol_name method_forms with
+let compile_defprotocol scope env next_type protocol_name method_forms =
+  match Protocol.defprotocol_bindings scope protocol_name method_forms with
   | Error _ as err -> err
   | Ok bindings ->
       let env =
@@ -3599,32 +3599,32 @@ let compile_defprotocol current_ns env next_type protocol_name method_forms =
           env bindings
       in
       Ok
-        ( current_ns,
+        ( scope,
           env,
           next_type,
           Comment ("protocol " ^ protocol_name) )
 
-let protocol_receiver_type current_ns env = function
+let protocol_receiver_type scope env = function
   | FKeyword receiver_keyword -> Type_annotation.of_keyword receiver_keyword
   | FSymbol type_name ->
-      lookup_record_type current_ns env type_name
+      lookup_record_type scope env type_name
       |> Result.map (fun record -> TNamed_record record)
   | _ -> Error.error "extend-type receiver must be a type keyword or record type"
 
-let compile_extend_type current_ns env next_type receiver_form protocol_name method_forms =
-  match protocol_receiver_type current_ns env receiver_form with
+let compile_extend_type scope env next_type receiver_form protocol_name method_forms =
+  match protocol_receiver_type scope env receiver_form with
   | Error _ as err -> err
   | Ok receiver_ty ->
       let compile_method env = function
         | FList (FSymbol method_name :: params :: body_forms) -> (
             match
-              Protocol.lookup_protocol_marker current_ns env protocol_name method_name
+              Protocol.lookup_protocol_marker scope env protocol_name method_name
             with
             | None ->
                 Error.error
                   ("protocol " ^ protocol_name ^ " does not define method " ^ method_name)
             | Some marker
-              when marker.ocaml_name <> Protocol.protocol_id current_ns protocol_name ->
+              when marker.ocaml_name <> Protocol.protocol_id scope protocol_name ->
                 Error.error
                   ("protocol " ^ protocol_name ^ " does not define method " ^ method_name)
             | Some marker -> (
@@ -3637,7 +3637,7 @@ let compile_extend_type current_ns env next_type receiver_form protocol_name met
                       | _ -> []
                     in
                     match
-                      compile_fn ~param_type_overrides current_ns env params body_forms
+                      compile_fn ~param_type_overrides scope env params body_forms
                     with
                     | Error _ as err -> err
                     | Ok expr -> (
@@ -3687,11 +3687,11 @@ let compile_extend_type current_ns env next_type receiver_form protocol_name met
                                        ^ source_name receiver_ty)
                                   | Some impl_key_name ->
                                       let ocaml_name =
-                                        Protocol.impl_ocaml_name current_ns
+                                        Protocol.impl_ocaml_name scope
                                           protocol_name method_name receiver_ty
                                       in
                                       let env_key =
-                                        Names.namespaced_key current_ns impl_key_name
+                                        Names.scoped_key scope impl_key_name
                                       in
                                       let binding = binding_of_expr ocaml_name expr in
                                       Ok
@@ -3707,7 +3707,7 @@ let compile_extend_type current_ns env next_type receiver_form protocol_name met
       let rec loop env items = function
         | [] ->
             Ok
-              ( current_ns,
+              ( scope,
                 env,
                 next_type,
                 Group (List.rev items) )
@@ -3723,6 +3723,8 @@ let module_binding_key module_path name = module_path ^ "/" ^ name
 let module_binding_ocaml_name module_path name =
   Names.module_path_to_ocaml module_path ^ "." ^ Names.sanitize_name name
 
+let protocol_marker_key key = String.ends_with ~suffix:"$protocol" key
+
 let changed_bindings previous updated =
   List.filter
     (fun (key, binding) ->
@@ -3731,7 +3733,7 @@ let changed_bindings previous updated =
       | Some previous_binding -> previous_binding <> binding)
     updated
 
-let open_module_bindings current_ns env module_path =
+let open_module_bindings scope env module_path =
   let prefix = module_path ^ "/" in
   let prefix_len = String.length prefix in
   let record_prefix = "__record/" ^ module_path ^ "/" in
@@ -3742,9 +3744,10 @@ let open_module_bindings current_ns env module_path =
            if String.length key > prefix_len && String.sub key 0 prefix_len = prefix then
              let local = String.sub key prefix_len (String.length key - prefix_len) in
              let opened_binding =
-               { binding with ocaml_name = Names.sanitize_name local }
+               if protocol_marker_key key then binding
+               else { binding with ocaml_name = Names.sanitize_name local }
              in
-             Some (Names.namespaced_key current_ns local, opened_binding)
+             Some (Names.scoped_key scope local, opened_binding)
            else if
              String.length key > record_prefix_len
              && String.sub key 0 record_prefix_len = record_prefix
@@ -3753,7 +3756,7 @@ let open_module_bindings current_ns env module_path =
                String.sub key record_prefix_len
                  (String.length key - record_prefix_len)
              in
-             Some (record_type_key current_ns local, binding)
+             Some (record_type_key scope local, binding)
            else None)
   in
   env @ opened
@@ -3769,7 +3772,12 @@ let include_module_public_bindings module_path env included_module_path =
            let name = String.sub key prefix_len (String.length key - prefix_len) in
            Some
              ( module_binding_key module_path name,
-               { binding with ocaml_name = module_binding_ocaml_name module_path name }
+               if protocol_marker_key key then binding
+               else
+                 {
+                   binding with
+                   ocaml_name = module_binding_ocaml_name module_path name;
+                 }
              )
          else if
            String.length key > record_prefix_len
@@ -3803,7 +3811,8 @@ let alias_module_bindings env alias_path target_path =
            in
            let alias_key = module_binding_key alias_path name in
            let alias_binding =
-             { binding with ocaml_name = module_binding_ocaml_name alias_path name }
+             if protocol_marker_key key then binding
+             else { binding with ocaml_name = module_binding_ocaml_name alias_path name }
            in
            Some (alias_key, alias_binding)
         else if
@@ -3999,10 +4008,10 @@ let apply_functor_result_bindings env module_name functor_name =
            Some (record_type_key module_name type_name, binding)
          else None)
 
-let compile_module_alias current_ns env next_type alias_name target_name =
+let compile_module_alias scope env next_type alias_name target_name =
   let alias_bindings = alias_module_bindings env alias_name target_name in
   Ok
-    ( current_ns,
+    ( scope,
       env @ alias_bindings,
       next_type,
       Module_alias
@@ -4026,7 +4035,7 @@ let parse_type_parameters = function
       loop [] forms
   | _ -> Error.error "type parameters must be a vector"
 
-let compile_module_signature current_ns env next_type signature_name item_forms =
+let compile_module_signature scope env next_type signature_name item_forms =
   let rec parse items = function
     | [] -> Ok (List.rev items)
     | FList [ FSymbol "val"; FSymbol value_name; FKeyword keyword ] :: rest -> (
@@ -4136,13 +4145,13 @@ let compile_module_signature current_ns env next_type signature_name item_forms 
       let signature_name = Names.module_segment_to_ocaml signature_name in
       let env = env @ signature_metadata_bindings env signature_name items in
       Ok
-        ( current_ns,
+        ( scope,
           env,
           next_type,
           Module_signature
             { signature_name; items } )
 
-let compile_type_alias current_ns env next_type name type_parameters manifest_form =
+let compile_type_alias scope env next_type name type_parameters manifest_form =
   match manifest_form with
   | FKeyword keyword -> (
       match Type_annotation.of_keyword_with_parameters type_parameters keyword with
@@ -4151,13 +4160,13 @@ let compile_type_alias current_ns env next_type name type_parameters manifest_fo
       | Ok manifest ->
           let type_name = Names.sanitize_name name in
           Ok
-            ( current_ns,
+            ( scope,
               env,
               next_type,
               Type_alias { type_name; type_parameters; manifest } ))
   | _ -> Error.error "type-alias expects a type keyword target"
 
-let compile_type_record current_ns env next_type name type_parameters field_forms =
+let compile_type_record scope env next_type name type_parameters field_forms =
   let field_spec = function
     | FList [ FSymbol field_name; FKeyword keyword ] -> (
         match Type_annotation.of_keyword_with_parameters type_parameters keyword with
@@ -4197,12 +4206,12 @@ let compile_type_record current_ns env next_type name type_parameters field_form
       let env =
         env
         @ [
-            ( record_type_key current_ns name,
+            ( record_type_key scope name,
               Types.binding type_name record_ty );
           ]
       in
       Ok
-        ( current_ns,
+        ( scope,
           env,
           next_type,
           Type_def { type_name; type_parameters; fields } )
@@ -4213,7 +4222,7 @@ let record_type_public_binding module_path name env =
   | Some binding -> Ok (key, binding)
   | None -> Error.error ("internal error: missing record metadata for " ^ name)
 
-let compile_type_variant current_ns env next_type name type_parameters constructor_forms =
+let compile_type_variant scope env next_type name type_parameters constructor_forms =
   let constructor_name = function
     | FSymbol constructor -> Ok constructor
     | _ -> Error.error "type-variant constructors must be symbols"
@@ -4271,23 +4280,23 @@ let compile_type_variant current_ns env next_type name type_parameters construct
         in
         constructors
         |> List.map (fun constructor ->
-               ( Names.namespaced_key current_ns constructor.constructor_name,
+               ( Names.scoped_key scope constructor.constructor_name,
                  Types.binding constructor.constructor_name
                    (TFn (constructor.payload_types, result_type)) ))
       in
       Ok
-        ( current_ns,
+        ( scope,
           env @ constructor_bindings,
           next_type,
           Type_variant { type_name; type_parameters; constructors } )
 
-let compile_module_apply current_ns env next_type module_name functor_name
+let compile_module_apply scope env next_type module_name functor_name
     argument_names =
   let applied_bindings =
     apply_functor_result_bindings env module_name functor_name
   in
   Ok
-    ( current_ns,
+    ( scope,
       env @ applied_bindings,
       next_type,
       Module_apply
@@ -4297,14 +4306,14 @@ let compile_module_apply current_ns env next_type module_name functor_name
           argument_names = List.map Names.module_path_to_ocaml argument_names;
         } )
 
-let rec compile_module ?signature_name current_ns env next_type module_path
+let rec compile_module ?signature_name scope env next_type module_path
     module_segment forms =
-  let env = inherit_namespace_ocaml_value_refers current_ns module_path env in
+  let env = inherit_scope_ocaml_value_refers scope module_path env in
   let rec compile_module_form env public_bindings next_type items = function
     | FList (FSymbol "module-signature" :: FSymbol signature_name :: item_forms) -> (
         match compile_module_signature module_path env next_type signature_name item_forms with
         | Error _ as err -> err
-        | Ok (_current_ns, env, next_type, item) ->
+        | Ok (_scope, env, next_type, item) ->
             Ok (env, public_bindings, next_type, item :: items))
     | FList (FSymbol "module-signature" :: _) ->
         Error.error "module-signature expects a name and signature items"
@@ -4317,12 +4326,12 @@ let rec compile_module ?signature_name current_ns env next_type module_path
                 manifest_form
             with
             | Error _ as err -> err
-            | Ok (_current_ns, _env, next_type, item) ->
+            | Ok (_scope, _env, next_type, item) ->
                 Ok (env, public_bindings, next_type, item :: items)))
     | FList [ FSymbol "type-alias"; FSymbol name; manifest_form ] -> (
         match compile_type_alias module_path env next_type name [] manifest_form with
         | Error _ as err -> err
-        | Ok (_current_ns, _env, next_type, item) ->
+        | Ok (_scope, _env, next_type, item) ->
             Ok (env, public_bindings, next_type, item :: items))
     | FList
         (FSymbol "type-record" :: FSymbol name :: FVector parameter_forms
@@ -4335,7 +4344,7 @@ let rec compile_module ?signature_name current_ns env next_type module_path
                 field_forms
             with
             | Error _ as err -> err
-            | Ok (_current_ns, env, next_type, item) -> (
+            | Ok (_scope, env, next_type, item) -> (
                 match record_type_public_binding module_path name env with
                 | Error _ as err -> err
                 | Ok public_binding ->
@@ -4347,7 +4356,7 @@ let rec compile_module ?signature_name current_ns env next_type module_path
     | FList (FSymbol "type-record" :: FSymbol name :: field_forms) -> (
         match compile_type_record module_path env next_type name [] field_forms with
         | Error _ as err -> err
-        | Ok (_current_ns, env, next_type, item) -> (
+        | Ok (_scope, env, next_type, item) -> (
             match record_type_public_binding module_path name env with
             | Error _ as err -> err
             | Ok public_binding ->
@@ -4369,12 +4378,12 @@ let rec compile_module ?signature_name current_ns env next_type module_path
                 constructor_forms
             with
             | Error _ as err -> err
-            | Ok (_current_ns, _env, next_type, item) ->
+            | Ok (_scope, _env, next_type, item) ->
                 Ok (env, public_bindings, next_type, item :: items)))
     | FList (FSymbol "type-variant" :: FSymbol name :: constructor_forms) -> (
         match compile_type_variant module_path env next_type name [] constructor_forms with
         | Error _ as err -> err
-        | Ok (_current_ns, _env, next_type, item) ->
+        | Ok (_scope, _env, next_type, item) ->
             Ok (env, public_bindings, next_type, item :: items))
     | FList [ FSymbol "open"; FSymbol opened_module ] ->
         let env = open_module_bindings module_path env opened_module in
@@ -4418,7 +4427,7 @@ let rec compile_module ?signature_name current_ns env next_type module_path
     | FList (FSymbol "defprotocol" :: FSymbol protocol_name :: method_forms) -> (
         match compile_defprotocol module_path env next_type protocol_name method_forms with
         | Error _ as err -> err
-        | Ok (_current_ns, updated_env, next_type, item) ->
+        | Ok (_scope, updated_env, next_type, item) ->
             let exported = changed_bindings env updated_env in
             Ok
               ( updated_env,
@@ -4433,7 +4442,7 @@ let rec compile_module ?signature_name current_ns env next_type module_path
             method_forms
         with
         | Error _ as err -> err
-        | Ok (_current_ns, updated_env, next_type, item) ->
+        | Ok (_scope, updated_env, next_type, item) ->
             let exported =
               changed_bindings env updated_env
               |> List.map (fun (key, (binding : binding)) ->
@@ -4564,11 +4573,11 @@ let rec compile_module ?signature_name current_ns env next_type module_path
         :: nested_forms) -> (
         let nested_path = module_path ^ "." ^ nested_segment in
         match
-          compile_module ~signature_name:nested_signature_name current_ns env next_type
+          compile_module ~signature_name:nested_signature_name scope env next_type
             nested_path nested_segment nested_forms
         with
         | Error _ as err -> err
-        | Ok (_current_ns, nested_public_bindings, next_type, nested_item) ->
+        | Ok (_scope, nested_public_bindings, next_type, nested_item) ->
             Ok
               ( env @ nested_public_bindings,
                 public_bindings @ nested_public_bindings,
@@ -4576,9 +4585,9 @@ let rec compile_module ?signature_name current_ns env next_type module_path
                 nested_item :: items ))
     | FList (FSymbol "module" :: FSymbol nested_segment :: nested_forms) -> (
         let nested_path = module_path ^ "." ^ nested_segment in
-        match compile_module current_ns env next_type nested_path nested_segment nested_forms with
+        match compile_module scope env next_type nested_path nested_segment nested_forms with
         | Error _ as err -> err
-        | Ok (_current_ns, nested_public_bindings, next_type, nested_item) ->
+        | Ok (_scope, nested_public_bindings, next_type, nested_item) ->
             Ok
               ( env @ nested_public_bindings,
                 public_bindings @ nested_public_bindings,
@@ -4591,7 +4600,7 @@ let rec compile_module ?signature_name current_ns env next_type module_path
     | [] ->
         let module_name = Names.module_segment_to_ocaml module_segment in
         Ok
-          ( current_ns,
+          ( scope,
             public_bindings,
             next_type,
             Module_def
@@ -4609,7 +4618,7 @@ let rec compile_module ?signature_name current_ns env next_type module_path
   in
   loop env [] next_type [] forms
 
-let compile_module_functor current_ns env next_type functor_name parameter_form
+let compile_module_functor scope env next_type functor_name parameter_form
     body_forms =
   let rec parse_parameters acc = function
     | [] -> Ok (List.rev acc)
@@ -4637,18 +4646,18 @@ let compile_module_functor current_ns env next_type functor_name parameter_form
           in
           let functor_env = env @ parameter_bindings in
           (match
-             compile_module current_ns functor_env next_type functor_name
+             compile_module scope functor_env next_type functor_name
                functor_name body_forms
            with
           | Error _ as err -> err
-          | Ok (_current_ns, public_bindings, next_type, module_item) -> (
+          | Ok (_scope, public_bindings, next_type, module_item) -> (
               match module_item with
               | Module_def { items; _ } ->
                   let functor_bindings =
                     store_functor_result_bindings functor_name public_bindings
                   in
                   Ok
-                    ( current_ns,
+                    ( scope,
                       env @ functor_bindings,
                       next_type,
                       Module_functor
@@ -4670,27 +4679,27 @@ let compile_module_functor current_ns env next_type functor_name parameter_form
       Error.error
         "module-functor expects a name, [parameter signature ...], and body"
 
-let compile_top_level current_ns env next_type = function
+let compile_top_level scope env next_type = function
   | FList (FSymbol "module-signature" :: FSymbol signature_name :: item_forms) ->
-      compile_module_signature current_ns env next_type signature_name item_forms
+      compile_module_signature scope env next_type signature_name item_forms
   | FList (FSymbol "module-signature" :: _) ->
       Error.error "module-signature expects a name and signature items"
   | FList [ FSymbol "type-alias"; FSymbol name; manifest_form ] ->
-      compile_type_alias current_ns env next_type name [] manifest_form
+      compile_type_alias scope env next_type name [] manifest_form
   | FList [ FSymbol "type-alias"; FSymbol name; FVector parameter_forms; manifest_form ] -> (
       match parse_type_parameters (FVector parameter_forms) with
       | Error _ as err -> err
       | Ok type_parameters ->
-          compile_type_alias current_ns env next_type name type_parameters manifest_form)
+          compile_type_alias scope env next_type name type_parameters manifest_form)
   | FList
       (FSymbol "type-record" :: FSymbol name :: FVector parameter_forms
       :: field_forms) -> (
       match parse_type_parameters (FVector parameter_forms) with
       | Error _ as err -> err
       | Ok type_parameters ->
-          compile_type_record current_ns env next_type name type_parameters field_forms)
+          compile_type_record scope env next_type name type_parameters field_forms)
   | FList (FSymbol "type-record" :: FSymbol name :: field_forms) ->
-      compile_type_record current_ns env next_type name [] field_forms
+      compile_type_record scope env next_type name [] field_forms
   | FList (FSymbol "type-record" :: _) ->
       Error.error "type-record expects a name and fields"
   | FList
@@ -4699,33 +4708,33 @@ let compile_top_level current_ns env next_type = function
       match parse_type_parameters (FVector parameter_forms) with
       | Error _ as err -> err
       | Ok type_parameters ->
-          compile_type_variant current_ns env next_type name type_parameters constructor_forms)
+          compile_type_variant scope env next_type name type_parameters constructor_forms)
   | FList (FSymbol "type-variant" :: FSymbol name :: constructor_forms) ->
-      compile_type_variant current_ns env next_type name [] constructor_forms
+      compile_type_variant scope env next_type name [] constructor_forms
   | FList [ FSymbol "open"; FSymbol module_path ] ->
-      let env = open_module_bindings current_ns env module_path in
+      let env = open_module_bindings scope env module_path in
       Ok
-        ( current_ns,
+        ( scope,
           env,
           next_type,
           Open_module (Names.module_path_to_ocaml module_path) )
   | FList [ FSymbol "include"; FSymbol module_path ] ->
-      let env = open_module_bindings current_ns env module_path in
+      let env = open_module_bindings scope env module_path in
       Ok
-        ( current_ns,
+        ( scope,
           env,
           next_type,
           Include_module (Names.module_path_to_ocaml module_path) )
   | FList (FSymbol "include" :: _) ->
       Error.error "include expects one module"
   | FList [ FSymbol "module-alias"; FSymbol alias_name; FSymbol target_name ] ->
-      compile_module_alias current_ns env next_type alias_name target_name
+      compile_module_alias scope env next_type alias_name target_name
   | FList (FSymbol "module-alias" :: _) ->
       Error.error "module-alias expects alias and target modules"
   | FList
       (FSymbol "module-functor" :: FSymbol functor_name :: parameter_form
       :: body_forms) ->
-      compile_module_functor current_ns env next_type functor_name parameter_form
+      compile_module_functor scope env next_type functor_name parameter_form
         body_forms
   | FList (FSymbol "module-functor" :: _) ->
       Error.error
@@ -4743,17 +4752,17 @@ let compile_top_level current_ns env next_type = function
       (match parse_arguments [] argument_forms with
       | Error _ as err -> err
       | Ok argument_names ->
-          compile_module_apply current_ns env next_type module_name functor_name
+          compile_module_apply scope env next_type module_name functor_name
             argument_names)
   | FList (FSymbol "module-apply" :: _) ->
       Error.error
         "module-apply expects result, functor, and one or more argument modules"
   | FList [ FSymbol "def"; FSymbol name; expr_form ] -> (
-      match compile_expr current_ns env expr_form with
+      match compile_expr scope env expr_form with
       | Error _ as err -> err
       | Ok expr ->
-          let ocaml_name = Names.ocaml_binding_name current_ns name in
-          let env_key = Names.namespaced_key current_ns name in
+          let ocaml_name = Names.ocaml_binding_name scope name in
+          let env_key = Names.scoped_key scope name in
           (match expr.ty with
           | TRecord fields -> (
               match expr.record_values with
@@ -4766,7 +4775,7 @@ let compile_top_level current_ns env next_type = function
                       (Types.named_record ~type_name ~set_module_name fields)
                   in
                   Ok
-                    ( current_ns,
+                    ( scope,
                       env @ [ (env_key, binding) ],
                       next_type + 1,
                       Record_def
@@ -4778,16 +4787,16 @@ let compile_top_level current_ns env next_type = function
           | _ ->
               let binding = binding_of_expr ocaml_name expr in
               Ok
-                ( current_ns,
+                ( scope,
                   env @ [ (env_key, binding) ],
                   next_type,
                   Value_binding
                     { pattern = Named ocaml_name; expression = expr.ocaml_expr } )))
   | FList (FSymbol "defn" :: FSymbol name :: params :: body_forms) -> (
-      match prepare_fn current_ns env params body_forms with
+      match prepare_fn scope env params body_forms with
       | Error _ as err -> err
       | Ok parts -> (
-          let ocaml_name = Names.ocaml_binding_name current_ns name in
+          let ocaml_name = Names.ocaml_binding_name scope name in
           let param_tys =
             parts.param_bindings
             |> List.map (fun (_key, (binding : binding)) -> binding.ty)
@@ -4796,7 +4805,7 @@ let compile_top_level current_ns env next_type = function
           let expr = fn_code ~row_param_type_names:row_param_types parts in
           match expr.ty with
           | TFn _ ->
-              let env_key = Names.namespaced_key current_ns name in
+              let env_key = Names.scoped_key scope name in
               let binding = binding_of_expr ~row_param_types ocaml_name expr in
               let type_items = row_type_items row_param_types param_tys in
               let value_item =
@@ -4804,64 +4813,69 @@ let compile_top_level current_ns env next_type = function
                   { pattern = Named ocaml_name; expression = expr.ocaml_expr }
               in
               Ok
-                ( current_ns,
+                ( scope,
                   env @ [ (env_key, binding) ],
                   next_type,
                   Group (type_items @ [ value_item ]) )
           | _ -> Error.error "defn body did not compile to a function"))
   | FList (FSymbol "defprotocol" :: FSymbol protocol_name :: method_forms) ->
-      compile_defprotocol current_ns env next_type protocol_name method_forms
+      compile_defprotocol scope env next_type protocol_name method_forms
   | FList
       (FSymbol "extend-type" :: receiver_form :: FSymbol protocol_name
       :: method_forms) ->
-      compile_extend_type current_ns env next_type receiver_form protocol_name
+      compile_extend_type scope env next_type receiver_form protocol_name
         method_forms
   | FList (FSymbol "module" :: FSymbol module_name :: FSymbol signature_name :: forms) -> (
       match
-        compile_module ~signature_name current_ns env next_type module_name module_name
+        compile_module ~signature_name scope env next_type module_name module_name
           forms
       with
       | Error _ as err -> err
-      | Ok (current_ns, module_bindings, next_type, item) ->
-          Ok (current_ns, env @ module_bindings, next_type, item))
+      | Ok (scope, module_bindings, next_type, item) ->
+          Ok (scope, env @ module_bindings, next_type, item))
   | FList (FSymbol "module" :: FSymbol module_name :: forms) -> (
-      match compile_module current_ns env next_type module_name module_name forms with
+      match compile_module scope env next_type module_name module_name forms with
       | Error _ as err -> err
-      | Ok (current_ns, module_bindings, next_type, item) ->
-          Ok (current_ns, env @ module_bindings, next_type, item))
+      | Ok (scope, module_bindings, next_type, item) ->
+          Ok (scope, env @ module_bindings, next_type, item))
   | FList (FSymbol (("print" | "println") as name) :: args) -> (
-      match compile_call current_ns env name args with
+      match compile_call scope env name args with
       | Error _ as err -> err
       | Ok expr ->
           Ok
-            ( current_ns,
+            ( scope,
               env,
               next_type,
               Value_binding
                 { pattern = Unit_pattern; expression = expr.ocaml_expr } ))
-  | FList (FSymbol "ns" :: FSymbol namespace :: clauses) -> (
-      match Ns_require.parse_requires clauses with
+  | FList (FSymbol "require" :: entries) -> (
+      match Require.parse_entries entries with
       | Error _ as err -> err
       | Ok specs ->
           let rec apply_specs env = function
             | [] -> Ok env
-            | Ns_require.Package _ :: rest -> apply_specs env rest
-            | Ns_require.Alias { namespace = required_ns; alias } :: rest ->
-                let env =
-                  if String.starts_with ~prefix:"ocaml." required_ns then
-                    Ns_require.add_ocaml_alias_bindings env required_ns alias
-                  else if required_ns = "clojure.string" then
-                    Ns_require.add_clojure_string_alias_bindings env alias
-                  else Ns_require.add_namespace_alias_bindings env required_ns alias
-                in
-                apply_specs env rest
-            | Ns_require.Refer { namespace = required_ns; names } :: rest ->
+            | Require.Package _ :: rest -> apply_specs env rest
+            | Require.Alias { module_name; alias } :: rest ->
+                if String.starts_with ~prefix:"ocaml." module_name then
+                  apply_specs
+                    (Require.add_ocaml_alias_bindings env module_name alias)
+                    rest
+                else if module_name = "clojure.string" then
+                  apply_specs
+                    (Require.add_clojure_string_alias_bindings env alias)
+                    rest
+                else
+                  Error.error
+                    "require only accepts OCaml packages, OCaml modules, and clojure.string"
+            | Require.Refer { module_name; names } :: rest ->
                 let result =
-                  if String.starts_with ~prefix:"ocaml." required_ns then
-                    Ns_require.add_ocaml_refer_bindings env namespace required_ns names
-                  else if required_ns = "clojure.string" then
-                    Ns_require.add_clojure_string_refer_bindings env namespace names
-                  else Ns_require.add_namespace_refer_bindings env namespace required_ns names
+                  if String.starts_with ~prefix:"ocaml." module_name then
+                    Require.add_ocaml_refer_bindings env scope module_name names
+                  else if module_name = "clojure.string" then
+                    Require.add_clojure_string_refer_bindings env scope names
+                  else
+                    Error.error
+                      "require only accepts OCaml packages, OCaml modules, and clojure.string"
                 in
                 (match result with
                 | Error _ as err -> err
@@ -4869,13 +4883,13 @@ let compile_top_level current_ns env next_type = function
           in
           (match apply_specs env specs with
           | Error _ as err -> err
-          | Ok env -> Ok (namespace, env, next_type, Comment ("ns " ^ namespace))))
+          | Ok env -> Ok (scope, env, next_type, Comment "require")))
   | (FList (FSymbol "loop" :: _) as form) -> (
-      match compile_expr current_ns env form with
+      match compile_expr scope env form with
       | Error _ as err -> err
       | Ok expr ->
           Ok
-            ( current_ns,
+            ( scope,
               env,
               next_type,
               Value_binding
@@ -4883,42 +4897,41 @@ let compile_top_level current_ns env next_type = function
   | FList (FSymbol "recur" :: _) ->
       Error.error "recur is only valid in a loop tail position"
   | form -> (
-      match compile_expr current_ns env form with
+      match compile_expr scope env form with
       | Error _ as err -> err
       | Ok expr -> (
           match expr.record_values with
           | Some _ -> Error.error "top-level map literals must be bound with def"
           | None ->
               Ok
-                ( current_ns,
+                ( scope,
                   env,
                   next_type,
                   Value_binding
                     { pattern = Ignore_pattern; expression = expr.ocaml_expr } )))
 
 type state = {
-  current_ns : string;
   env : (string * binding) list;
   next_type : int;
   items : compiled_item list;
 }
 
-let empty_state = { current_ns = ""; env = []; next_type = 1; items = [] }
+let empty_state = { env = []; next_type = 1; items = [] }
 
 let compile_forms_incremental state forms =
-  let rec loop current_ns env next_type items = function
-    | [] -> Ok (current_ns, env, next_type, List.rev items)
+  let rec loop env next_type items = function
+    | [] -> Ok (env, next_type, List.rev items)
     | form :: rest -> (
-        match compile_top_level current_ns env next_type form with
+        match compile_top_level "" env next_type form with
         | Error _ as err -> err
-        | Ok (current_ns, env, next_type, item) ->
-            loop current_ns env next_type (item :: items) rest)
+        | Ok (_scope, env, next_type, item) ->
+            loop env next_type (item :: items) rest)
   in
-  match loop state.current_ns state.env state.next_type [] forms with
+  match loop state.env state.next_type [] forms with
   | Error _ as err -> err
-  | Ok (current_ns, env, next_type, new_items) ->
+  | Ok (env, next_type, new_items) ->
       let next_state =
-        { current_ns; env; next_type; items = state.items @ new_items }
+        { env; next_type; items = state.items @ new_items }
       in
       Ok (next_state, new_items)
 

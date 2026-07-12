@@ -119,7 +119,7 @@ let keyword_one_arg_expr arg =
           value,
           string_concat (Ocaml_ir.String ":") value ) )
 
-let namespaced_keyword_expr namespace name =
+let scoped_keyword_expr namespace name =
   Ocaml_ir.Let
     ( [ (Ocaml_ir.PVar "namespace", namespace); (Ocaml_ir.PVar "name", name) ],
       Ocaml_ir.If
@@ -165,7 +165,7 @@ let compile_keyword name args =
       | Error _, _ | _, Error _ ->
           Error.error "keyword namespace and name must be string, keyword, or symbol"
       | Ok namespace_expr, Ok name_expr ->
-          Ok (typed_ir TKeyword (namespaced_keyword_expr namespace_expr name_expr)))
+          Ok (typed_ir TKeyword (scoped_keyword_expr namespace_expr name_expr)))
   | _ -> Error.error "keyword expects 1 or 2 arguments"
 
 let compile_namespace name args =

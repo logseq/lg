@@ -114,7 +114,7 @@ types of every annotated parameter and the return value, and `extend-type`
 emits ordinary OCaml functions for primitive and named-record receivers. Calls
 dispatch at compile time from the first argument type, so there is no runtime
 protocol table, dynamic extension, metadata dispatch, or reflection. Protocol
-identity includes its namespace and protocol name; when two protocols expose
+identity includes its owning module and protocol name; when two protocols expose
 the same method name, `Protocol/method` selects one explicitly while the
 traditional unqualified method spelling remains available when unambiguous.
 `defprotocol` and `extend-type` are also valid inside `module`; exported calls
@@ -191,29 +191,26 @@ Macros are not supported.
 
 Reader macro support is intentionally minimal while the typed core is being built.
 
-## Namespaces
+## Modules and imports
 
-`ns` switches the current namespace.
-
-Unqualified symbols resolve in the current namespace.
-
-Qualified symbols can reference previously compiled namespaces.
-
-`(:require [some.ns :as alias])` aliases previously compiled namespace bindings.
-
-`(:require [some.ns :refer [name]])` refers previously compiled namespace bindings into the current namespace.
-
-Incremental compilation preserves namespace, alias, refer, type counter, and binding state across source chunks.
+cljml has no namespace declaration or namespace import mechanism. `module`
+creates the same ownership boundary as an OCaml module; `module-alias`, `open`,
+and `include` provide module reuse. Top-level `require` is restricted to OCaml
+packages, OCaml modules, and the typed `clojure.string` compatibility module.
+Incremental compilation preserves modules, aliases, types, protocols, the type
+counter, and value bindings across source chunks.
 
 The CLI exposes the same state across files with
 `--compile-files ... -o output.ml` and `--run-files ...`. Input order defines
 compilation order. Each file keeps its own diagnostic filename and line map,
-while namespace/module/type state and the union of findlib package dependencies
+while module/type state and the union of findlib package dependencies
 flow forward. A Dune rule can list `.cljml` files as dependencies, generate one
 `.ml` target with `--compile-files`, and compile it through an ordinary library
 or executable stanza; see `examples/multi_file/dune`.
 
-Protocol signatures and implementations are preserved in the same incremental compiler state. Namespace aliases can qualify protocol method calls, for example `labels/label`, after the protocol namespace has been compiled and required.
+Protocol signatures and implementations are preserved in the same incremental
+compiler state. Module-owned methods use `Module/Protocol/method`, and module
+aliases preserve that protocol identity.
 
 `module` emits an OCaml module and registers bindings for qualified calls such
 as `Math/add2`. The current static subset allows `module-signature`,
@@ -340,7 +337,7 @@ Sequence APIs are eager.
 Direct OCaml package interop has two paths.
 
 External findlib packages are declared independently from their modules. For
-example, `(:require [ocaml.package/core] [ocaml.Core.Int :as int])` adds the
+example, `(require [ocaml.package/core] [ocaml.Core.Int :as int])` adds the
 `core` package's recursive compiler include directories and aliases the
 `Core.Int` module. `(int/abs -42)` can then infer its signature from
 the package CMI. CLI `--run` links every declared package through
@@ -350,7 +347,7 @@ dependencies establish the compiler environment and source imports name
 modules within that environment.
 
 Constructor signatures are discovered from the same package compiler
-environment. A namespace requiring `[ocaml.package/unix]` and aliasing
+environment. A file requiring `[ocaml.package/unix]` and aliasing
 `[ocaml.Unix :as unix]` can construct
 `(unix/ADDR_UNIX "/tmp/app.sock")` directly. cljml uses compiler-libs metadata
 for constructor arity and result-type elaboration, preserves constructor
@@ -365,11 +362,11 @@ Ordinary OCaml module functions are called directly. Calls such as
 `ocaml-call` remains a compatibility escape hatch; explicit-return calls such as
 `(ocaml-call :int Stdlib.abs -42)` remain available for opaque host boundaries.
 Direct calls also resolve
-`ns` OCaml aliases and refers, for example
+required OCaml aliases and refers, for example
 `(std/abs -42)` after `[ocaml.Stdlib :as std]`, or
 `(uppercase_ascii "ada")` after
 `[ocaml.String :refer [uppercase_ascii]]`. OCaml value refers remain available
-inside module and functor bodies compiled from the current namespace. cljml uses
+inside module and functor bodies. cljml uses
 the inferred or declared return type to continue source elaboration. Function
 existence, argument arity, and argument compatibility are checked by the OCaml
 typechecker.
@@ -403,7 +400,7 @@ The stable backend still emits OCaml source from cljml's typed IR. The
 Parsetree backend no longer reparses the whole generated program: it lowers
 compiled items independently, constructs structural record definitions
 directly as `Pstr_type` and `Pstr_value`, and directly constructs ordinary
-top-level value/effect bindings. Namespace and protocol marker comments do not
+top-level value/effect bindings. Require and protocol marker comments do not
 produce AST nodes. Row type definitions, OCaml-owned type aliases, nullary
 variant declarations, `defn`, and protocol implementation bindings are also
 structured items. `open` lowers directly to `Pstr_open`. Nested modules are
@@ -495,4 +492,5 @@ be required with `:as` or `:refer`. Its current subset includes `blank?`,
 `trimr`, and `upper-case`. `replace` and `split` currently use literal string
 matches, not regex patterns.
 
-The planned direction follows ClojureDart's approach of making host package aliases explicit in `ns`.
+Host package aliases are explicit in top-level `require`; they do not introduce
+a cljml namespace layer.

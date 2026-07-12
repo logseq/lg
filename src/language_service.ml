@@ -319,22 +319,10 @@ let rec symbols_of_form (located : Ast.located_form) =
 let document_symbols analysis = List.concat_map symbols_of_form analysis.forms
 
 let completion_source_names analysis =
-  let current_ns = analysis.compiler.typecheck_state.Typecheck.current_ns in
-  let namespace_prefix = if current_ns = "" then "" else current_ns ^ "/" in
-  let prefix_length = String.length namespace_prefix in
   analysis.compiler.typecheck_state.env
   |> List.filter_map (fun (key, (binding : Types.binding)) ->
          if String.starts_with ~prefix:"__" key then None
-         else
-           let label =
-             if
-               prefix_length > 0
-               && String.length key > prefix_length
-               && String.sub key 0 prefix_length = namespace_prefix
-             then String.sub key prefix_length (String.length key - prefix_length)
-             else key
-           in
-           Some (binding.ocaml_name, label))
+         else Some (binding.ocaml_name, key))
 
 let completions analysis ~offset =
   let env =
