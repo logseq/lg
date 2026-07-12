@@ -105,11 +105,25 @@ let find_implementation protocol_id method_id receiver_id registry =
 
 let qualify_implementations ~owner ~module_name registry =
   let implementations =
-    Implementation_map.mapi
-      (fun (protocol_id, _method_id, _receiver_id) (binding : Types.binding) ->
+    Implementation_map.fold
+      (fun (protocol_id, method_id, receiver_id) (binding : Types.binding) result ->
         if Protocol_id.owner protocol_id = owner then
-          { binding with ocaml_name = module_name ^ "." ^ binding.ocaml_name }
-        else binding)
-      registry.implementations
+          let receiver_id =
+            match receiver_id with
+            | Record_receiver type_id ->
+                Record_receiver
+                  (Type_id.create ~owner:[ module_name ] ~name:(Type_id.name type_id))
+            | receiver_id -> receiver_id
+          in
+          let binding =
+            {
+              binding with
+              ocaml_name = module_name ^ "." ^ binding.ocaml_name;
+              ty = Types.qualify_module_type module_name binding.ty;
+            }
+          in
+          Implementation_map.add (protocol_id, method_id, receiver_id) binding result
+        else Implementation_map.add (protocol_id, method_id, receiver_id) binding result)
+      registry.implementations Implementation_map.empty
   in
   { registry with implementations }

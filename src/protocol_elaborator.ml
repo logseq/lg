@@ -7,21 +7,13 @@ module Env = Compiler_environment
 let define scope env protocol_name method_forms =
   match Protocol.defprotocol scope protocol_name method_forms with
   | Error _ as err -> err
-  | Ok (protocol_id, signatures, bindings) ->
+  | Ok (protocol_id, signatures) ->
       (match
          Protocol_registry.declare protocol_id signatures (Env.protocols env)
        with
       | Error _ as err -> err
       | Ok protocols ->
           let env = Env.with_protocols protocols env in
-          let env =
-            List.fold_left
-              (fun env (key, binding) ->
-                if Protocol.is_legacy_marker key binding && Env.mem key env then
-                  Env.add key (Protocol.ambiguous_marker_binding ()) env
-                else Env.add key binding env)
-              env bindings
-          in
           Ok (env, Comment ("protocol " ^ protocol_name)))
 
 let marker scope env protocol_name method_name =
@@ -37,18 +29,15 @@ let marker scope env protocol_name method_name =
         ("protocol " ^ protocol_name ^ " does not define method " ^ method_name)
   | Some marker -> Ok marker
 
-let add_implementation scope env method_name receiver_ty marker binding =
+let add_implementation env method_name receiver_ty marker binding =
   match
-    ( marker.protocol_id,
-      Protocol.registry_receiver_id receiver_ty,
-      Protocol.marker_impl_name marker method_name receiver_ty )
+    (marker.protocol_id, Protocol.registry_receiver_id receiver_ty)
   with
-  | None, _, _ | _, None, _ | _, _, None ->
+  | None, _ | _, None ->
       Error.error
         ("protocol implementations do not support receiver type "
        ^ source_name receiver_ty)
-  | Some protocol_id, Some receiver_id, Some impl_key_name ->
-      let env_key = Names.scoped_key scope impl_key_name in
+  | Some protocol_id, Some receiver_id ->
       let method_id = Protocol.method_id protocol_id method_name in
       if
         Option.is_some
@@ -64,8 +53,7 @@ let add_implementation scope env method_name receiver_ty marker binding =
            binding (Env.protocols env)
        with
       | Error _ as err -> err
-      | Ok protocols ->
-          Ok (env |> Env.with_protocols protocols |> Env.add env_key binding))
+      | Ok protocols -> Ok (Env.with_protocols protocols env))
 
 let compile_defprotocol scope env next_type protocol_name method_forms =
   match define scope env protocol_name method_forms with
@@ -149,7 +137,7 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                                   in
                                   let binding = Expression_support.binding_of_expr ocaml_name expr in
                                   (match
-                                     add_implementation scope env method_name
+                                     add_implementation env method_name
                                        receiver_ty marker binding
                                    with
                                   | Error _ as err -> err

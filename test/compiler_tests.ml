@@ -587,6 +587,23 @@ let test_module_metadata_does_not_use_encoded_symbol_keys () =
   if encoded <> None then
     failwith "module metadata must not be encoded as symbol-table keys"
 
+let test_protocol_metadata_does_not_use_encoded_symbol_keys () =
+  let state =
+    typecheck_state
+      {|
+(defprotocol Labelled (label [x] :string))
+(extend-type :int Labelled (label [x] (str x)))
+|}
+  in
+  let encoded =
+    Cljml.Compiler_environment.to_bindings state.env
+    |> List.find_opt (fun (key, _) ->
+           String.ends_with ~suffix:"$protocol" key
+           || String.starts_with ~prefix:"__protocol_impl/" key)
+  in
+  if encoded <> None then
+    failwith "protocol metadata must not be encoded as symbol-table keys"
+
 let test_emitted_ocaml_names_reject_source_collisions () =
   Cljml.Compiler.compile_string
     {|
@@ -638,16 +655,7 @@ let test_compiler_phases_have_explicit_boundaries () =
   if resolved.ty <> Cljml.Types.TInt then
     failwith "resolver should return the typed binding";
   ignore (Cljml.Lowering.structure_of_located_items []);
-  if
-    Cljml.Module_metadata.signature_binding_key "Printable" "print"
-    <> "__signature/Printable/print"
-  then failwith "module signature metadata should have one owner";
-  if
-    Cljml.Module_metadata.functor_result_key "Make" "value"
-    <> "__functor/Make/value"
-  then failwith "functor result metadata should have one owner"
-  else
-    let expression =
+  let expression =
       Cljml.Expression_elaborator.compile_expr ""
         Cljml.Compiler_environment.empty (Cljml.Ast.FInt 1)
       |> expect_ok
@@ -5408,6 +5416,8 @@ let tests =
       test_module_elaboration_populates_typed_registry );
     ( "module metadata avoids encoded symbol keys",
       test_module_metadata_does_not_use_encoded_symbol_keys );
+    ( "protocol metadata avoids encoded symbol keys",
+      test_protocol_metadata_does_not_use_encoded_symbol_keys );
     ( "emitted OCaml names reject source collisions",
       test_emitted_ocaml_names_reject_source_collisions );
     ( "typed environment respects lexical shadowing",

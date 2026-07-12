@@ -7,8 +7,6 @@ let binding_key module_path name = module_path ^ "/" ^ name
 let binding_ocaml_name module_path name =
   Names.module_path_to_ocaml module_path ^ "." ^ Names.sanitize_name name
 
-let protocol_marker_key key = String.ends_with ~suffix:"$protocol" key
-
 let changed_bindings previous updated =
   Env.to_bindings updated
   |> List.filter (fun (key, binding) ->
@@ -27,8 +25,7 @@ let open_bindings scope env module_path =
            if String.length key > prefix_len && String.sub key 0 prefix_len = prefix then
              let local = String.sub key prefix_len (String.length key - prefix_len) in
              let opened_binding =
-               if protocol_marker_key key then binding
-               else { binding with ocaml_name = Names.sanitize_name local }
+               { binding with ocaml_name = Names.sanitize_name local }
              in
              Some (Names.scoped_key scope local, opened_binding)
            else if
@@ -55,8 +52,7 @@ let include_public_bindings module_path env included_module_path =
            let name = String.sub key prefix_len (String.length key - prefix_len) in
            Some
              ( binding_key module_path name,
-               if protocol_marker_key key then binding
-               else { binding with ocaml_name = binding_ocaml_name module_path name } )
+               { binding with ocaml_name = binding_ocaml_name module_path name } )
          else if
            String.length key > record_prefix_len
            && String.sub key 0 record_prefix_len = record_prefix
@@ -89,8 +85,7 @@ let alias_bindings env alias_path target_path =
            in
            let alias_key = binding_key alias_path name in
            let alias_binding =
-             if protocol_marker_key key then binding
-             else { binding with ocaml_name = binding_ocaml_name alias_path name }
+             { binding with ocaml_name = binding_ocaml_name alias_path name }
            in
            Some (alias_key, alias_binding)
          else if
@@ -135,4 +130,3 @@ let alias_bindings env alias_path target_path =
                    binding )
            | _ -> None)
          else None)
-
