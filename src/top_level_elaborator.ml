@@ -10,14 +10,14 @@ let fn_code = Expression_elaborator.fn_code
 let compile_fn = Expression_elaborator.compile_fn
 let compile_args_for = Expression_elaborator.compile_args_for
 let compile_call = Expression_elaborator.compile_call
-let binding_of_expr = Expression_elaborator.binding_of_expr
-let row_param_type_names = Expression_elaborator.row_param_type_names
-let row_type_items = Expression_elaborator.row_type_items
+let binding_of_expr = Expression_support.binding_of_expr
+let row_param_type_names = Expression_support.row_param_type_names
+let row_type_items = Expression_support.row_type_items
 let check_emitted_name_collision = Resolver.check_emitted_name_collision
 let lookup_record_type = Resolver.lookup_record_type
 let record_type_key = Resolver.record_type_key
 let inherit_scope_ocaml_value_refers =
-  Expression_elaborator.inherit_scope_ocaml_value_refers
+  Expression_support.inherit_scope_ocaml_value_refers
 
 let compile_defprotocol = Protocol_elaborator.compile_defprotocol
 let compile_extend_type = Protocol_elaborator.compile_extend_type
@@ -268,4 +268,3 @@ let compile scope env next_type = function
                   next_type,
                   Value_binding
                     { pattern = Ignore_pattern; expression = expr.ocaml_expr } )))
-

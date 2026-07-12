@@ -7,12 +7,12 @@ module Env = Compiler_environment
 let compile_expr = Expression_elaborator.compile_expr
 let prepare_fn = Expression_elaborator.prepare_fn
 let fn_code = Expression_elaborator.fn_code
-let binding_of_expr = Expression_elaborator.binding_of_expr
-let row_param_type_names = Expression_elaborator.row_param_type_names
-let row_type_items = Expression_elaborator.row_type_items
+let binding_of_expr = Expression_support.binding_of_expr
+let row_param_type_names = Expression_support.row_param_type_names
+let row_type_items = Expression_support.row_type_items
 let check_emitted_name_collision = Resolver.check_emitted_name_collision
 let inherit_scope_ocaml_value_refers =
-  Expression_elaborator.inherit_scope_ocaml_value_refers
+  Expression_support.inherit_scope_ocaml_value_refers
 let compile_defprotocol = Protocol_elaborator.compile_defprotocol
 let compile_extend_type = Protocol_elaborator.compile_extend_type
 
@@ -441,4 +441,3 @@ let compile_module_functor scope env next_type functor_name parameter_form
   | _ ->
       Error.error
         "module-functor expects a name, [parameter signature ...], and body"
-

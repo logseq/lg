@@ -477,7 +477,25 @@ let test_compiler_phases_have_explicit_boundaries () =
         Cljml.Compiler_environment.empty 1 (Cljml.Ast.FInt 1)
       |> expect_ok
     with
-    | _, _, _, Cljml.Lowered.Value_binding _ -> ()
+    | _, _, _, Cljml.Lowered.Value_binding _ ->
+        if
+          not
+            (Cljml.Expression_support.branch_types_compatible
+               Cljml.Types.TInt Cljml.Types.TInt)
+        then failwith "expression semantic helpers should have one owner";
+        let parts : Cljml.Expression_support.compiled_fn_parts =
+          {
+            param_bindings =
+              [ ("x", Cljml.Types.binding "x" Cljml.Types.TInt) ];
+            destructured_bindings = [];
+            body =
+              Cljml.Types.typed_ir Cljml.Types.TInt
+                (Cljml.Ocaml_ir.Ident "x");
+          }
+        in
+        let fn = Cljml.Function_elaborator.fn_code parts in
+        if fn.ty <> Cljml.Types.TFn ([ Cljml.Types.TInt ], Cljml.Types.TInt) then
+          failwith "function elaboration should have one owner"
     | _ -> failwith "top-level elaboration should have one owner"
 
 let test_source_node_identity_reaches_parsetree () =

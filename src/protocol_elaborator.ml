@@ -124,7 +124,7 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                                     Protocol.impl_ocaml_name scope protocol_name
                                       method_name receiver_ty
                                   in
-                                  let binding = Expression_elaborator.binding_of_expr ocaml_name expr in
+                                  let binding = Expression_support.binding_of_expr ocaml_name expr in
                                   (match
                                      add_implementation scope env
                                        protocol_name method_name receiver_ty marker binding
