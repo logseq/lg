@@ -338,6 +338,73 @@ let test_subs_rejects_non_int_indexes () =
   Cljml.Compiler.compile_string {|(def x (subs "abc" "1"))|}
   |> expect_error "subs indexes must be int"
 
+let test_type_relations_are_explicit_and_strict () =
+  if Cljml.Types.equal Cljml.Types.TAny Cljml.Types.TInt then
+    failwith "TAny must not be strictly equal to int";
+  let name = Cljml.Types.make_field ":name" Cljml.Types.TString in
+  let narrow = Cljml.Types.TRecord [ name ] in
+  let wide =
+    Cljml.Types.TRecord
+      [ name; Cljml.Types.make_field ":age" Cljml.Types.TInt ]
+  in
+  if not (Cljml.Types.row_compatible ~expected:narrow ~actual:wide) then
+    failwith "wider structural records must remain row-compatible";
+  let generated =
+    Cljml.Types.named_record ~type_name:"t1" ~set_module_name:"Set_t1"
+      [ name; Cljml.Types.make_field ":age" Cljml.Types.TInt ]
+  in
+  if not (Cljml.Types.row_compatible ~expected:narrow ~actual:generated) then
+    failwith "generated records must remain row-compatible with structural rows";
+  if
+    not
+      (Cljml.Types.defer_to_ocaml
+         ~expected:(Cljml.Types.TOcaml "user_id")
+         ~actual:Cljml.Types.TInt)
+  then failwith "opaque OCaml relationships must be explicitly deferred"
+
+let test_named_records_use_nominal_type_identity () =
+  let fields = [ Cljml.Types.make_field ":name" Cljml.Types.TString ] in
+  let user_id = Cljml.Type_id.create ~owner:[ "Domain" ] ~name:"user" in
+  let project_id = Cljml.Type_id.create ~owner:[ "Domain" ] ~name:"project" in
+  let user =
+    Cljml.Types.named_record ~type_id:user_id ~type_name:"Domain.user"
+      ~set_module_name:"Domain.User_set" fields
+  in
+  let project =
+    Cljml.Types.named_record ~type_id:project_id ~type_name:"Domain.project"
+      ~set_module_name:"Domain.Project_set" fields
+  in
+  if Cljml.Types.equal user project then
+    failwith "same-shaped named records must remain nominally distinct"
+
+let test_compiler_identities_are_stable_and_distinct () =
+  let symbol = Cljml.Symbol_id.create ~owner:[ "Domain" ] ~name:"value" in
+  let same_symbol = Cljml.Symbol_id.create ~owner:[ "Domain" ] ~name:"value" in
+  let protocol = Cljml.Protocol_id.create ~owner:[ "Domain" ] ~name:"Labelled" in
+  if not (Cljml.Symbol_id.equal symbol same_symbol) then
+    failwith "symbol identity must be stable for the same owner and name";
+  if Cljml.Symbol_id.to_string symbol <> "Domain/value" then
+    failwith "symbol identity must preserve its qualified source name";
+  if Cljml.Protocol_id.to_string protocol <> "Domain/Labelled" then
+    failwith "protocol identity must preserve its qualified source name"
+
+let test_emitted_ocaml_names_reject_source_collisions () =
+  Cljml.Compiler.compile_string
+    {|
+(def foo-bar 1)
+(def foo_bar 2)
+|}
+  |> expect_error_contains
+       "OCaml name collision: foo-bar and foo_bar both emit foo_bar";
+  Cljml.Compiler.compile_string
+    {|
+(module Values
+  (def active? true)
+  (def active_ false))
+|}
+  |> expect_error_contains
+       "OCaml name collision: active? and active_ both emit active_"
+
 let test_modules_resolve_qualified_symbols () =
   let source =
     {|
@@ -3476,7 +3543,7 @@ let test_match_guards_must_be_boolean () =
     (when (Some x) x) x
     None 0))
 |}
-  |> expect_error_contains "when-guard"
+  |> expect_error "match guard must be bool"
 
 let test_try_catches_ocaml_exceptions () =
   let source =
@@ -4885,6 +4952,14 @@ let tests =
     ("subs core api works", test_subs_core_api);
     ("subs rejects non-string sources", test_subs_rejects_non_string_sources);
     ("subs rejects non-int indexes", test_subs_rejects_non_int_indexes);
+    ( "type relations are explicit and strict",
+      test_type_relations_are_explicit_and_strict );
+    ( "named records use nominal type identity",
+      test_named_records_use_nominal_type_identity );
+    ( "compiler identities are stable and distinct",
+      test_compiler_identities_are_stable_and_distinct );
+    ( "emitted OCaml names reject source collisions",
+      test_emitted_ocaml_names_reject_source_collisions );
     ("modules resolve qualified symbols", test_modules_resolve_qualified_symbols);
     ( "modules prevent unqualified symbol collisions",
       test_modules_prevent_unqualified_symbol_collisions );

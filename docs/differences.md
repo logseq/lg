@@ -6,6 +6,18 @@ The goal is API familiarity, not JVM Clojure runtime identity.
 
 ## Static typing
 
+The elaboration layer keeps three type relationships separate. `equal` is
+strict and nominal, `row_compatible` permits explicit structural-record
+projection, and `defer_to_ocaml` marks host-owned relationships that only the
+OCaml typechecker should decide. `TAny` represents missing source metadata; it
+is not equal to every type. Explicit `type-record` declarations carry stable
+`Type_id` identities, while compiler-generated records for structural maps are
+marked structural and may participate in row projection.
+
+Source identities use dedicated `Symbol_id`, `Type_id`, and `Protocol_id`
+types. Emitted OCaml binding names are checked per scope, so source names that
+munge to the same OCaml identifier are rejected before lowering.
+
 cljml type checks programs before emitting OCaml.
 
 Vectors are homogeneous.

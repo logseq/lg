@@ -62,13 +62,24 @@ let compile name args =
       Ok (typed_ir TBool (Ocaml_ir.Bool (name <> "not=")))
   | first :: _ ->
       if name = "=" || name = "not=" then
-        if List.for_all (fun arg -> Types.equal first.ty arg.ty) args then
+        if
+          List.for_all
+            (fun arg ->
+              Types.same_shape first.ty arg.ty
+              || first.ty = TAny || arg.ty = TAny
+              || Types.defer_to_ocaml ~expected:first.ty ~actual:arg.ty)
+            args
+        then
           let equal_expr = and_expressions (pairwise_equality_expressions args) in
           let expression =
             if name = "not=" then Ocaml_ir.Prefix ("not", equal_expr) else equal_expr
           in
           Ok (typed_ir TBool expression)
         else Error.error (name ^ " arguments must have the same type")
-      else if List.for_all (fun arg -> Types.equal arg.ty TInt) args then
+      else if
+        List.for_all
+          (fun arg -> Types.compatible ~expected:TInt ~actual:arg.ty)
+          args
+      then
         Ok (typed_ir TBool (and_expressions (pairwise_expressions name args)))
       else Error.error ("expected int arguments for " ^ name)

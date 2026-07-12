@@ -3,7 +3,8 @@ open Types
 open Lowered
 
 let ensure_bool expr =
-  if Types.equal expr.ty TBool then Ok () else Error.error "if condition must be bool"
+  if Types.compatible ~expected:TBool ~actual:expr.ty then Ok ()
+  else Error.error "if condition must be bool"
 
 let apply name args = Ocaml_ir.Apply (Ocaml_ir.Ident name, args)
 
@@ -18,7 +19,9 @@ let is_ocaml_owned_type = function
   | _ -> false
 
 let branch_types_compatible left right =
-  Types.equal left right || is_ocaml_owned_type left || is_ocaml_owned_type right
+  Types.equal left right
+  || left = TAny || right = TAny
+  || Types.defer_to_ocaml ~expected:left ~actual:right
 
 let cljml_metadata_type_for_ocaml_payload = function
   | TOcaml "int" -> TInt
@@ -72,9 +75,11 @@ let split_qualified_type_name type_name =
       Some (module_path, local_name)
 
 let qualify_record_type module_path record =
+  let type_name = Names.module_path_to_ocaml module_path ^ "." ^ record.type_name in
   {
     record with
-    type_name = Names.module_path_to_ocaml module_path ^ "." ^ record.type_name;
+    type_id = Types.type_id_of_name type_name;
+    type_name;
     set_module_name =
       Names.module_path_to_ocaml module_path ^ "." ^ record.set_module_name;
   }
@@ -118,6 +123,29 @@ let lookup_binding scope env name =
 let binding_of_expr ?(row_param_types = []) ocaml_name expr =
   Types.binding ~row_param_types ?return_param_index:expr.return_param_index
     ocaml_name expr.ty
+
+let binding_owner key =
+  match String.rindex_opt key '/' with
+  | None -> ""
+  | Some index -> String.sub key 0 index
+
+let check_emitted_name_collision env ~source_key ~ocaml_name =
+  let owner = binding_owner source_key in
+  match
+    List.find_opt
+      (fun (key, (binding : binding)) ->
+        (not (String.starts_with ~prefix:"__" key))
+        && key <> source_key && binding_owner key = owner
+        && binding.ocaml_name = ocaml_name)
+      env
+  with
+  | None -> Ok ()
+  | Some (existing_key, _) ->
+      let source_name = Protocol.method_basename source_key in
+      let existing_name = Protocol.method_basename existing_key in
+      Error.error
+        ("OCaml name collision: " ^ existing_name ^ " and " ^ source_name
+       ^ " both emit " ^ ocaml_name)
 
 let lookup_function scope env name =
   match lookup_binding scope env name with
@@ -1934,7 +1962,7 @@ and compile_conj scope env arg_forms =
                     ( Ocaml_ir.Ident "Rrbvec.push_back",
                       [ collection.ocaml_expr; value.ocaml_expr ] )))
         | TVector _ -> Error.error "conj value type must match vector element type"
-        | TSet inner when Types.equal inner value.ty ->
+        | TSet inner when Types.same_shape inner value.ty ->
             Result.bind (Types.set_module_name inner) (fun set_module ->
                    coerce_set_element inner value
                    |> Result.map (fun value ->
@@ -2320,7 +2348,7 @@ and compile_select_keys scope env arg_forms =
 and compile_contains scope env arg_forms =
   let compile_collection_contains target value =
     match (target.ty, value.ty) with
-    | TSet inner, _ when Types.equal inner value.ty ->
+    | TSet inner, _ when Types.same_shape inner value.ty ->
         Result.bind (Types.set_module_name inner) (fun set_module ->
                coerce_set_element inner value
                |> Result.map (fun value ->
@@ -3403,13 +3431,22 @@ and compile_juxt scope env arg_forms =
         | fn :: rest -> (
             match fn.ty with
             | TFn ([ current_arg ], current_ret)
-              when option_for_all (fun arg_ty -> Types.equal arg_ty current_arg) arg_ty
-                   && option_for_all (fun ret_ty -> Types.equal ret_ty current_ret) ret_ty ->
+              when option_for_all
+                     (fun arg_ty ->
+                       Types.compatible ~expected:arg_ty ~actual:current_arg)
+                     arg_ty
+                   && option_for_all
+                        (fun ret_ty ->
+                          Types.compatible ~expected:ret_ty ~actual:current_ret)
+                        ret_ty ->
                 collect (Some current_arg) (Some current_ret)
                   (Ocaml_ir.Apply (fn.ocaml_expr, [ Ocaml_ir.Ident "x" ]) :: exprs)
                   rest
             | TFn ([ current_arg ], _)
-              when option_for_all (fun arg_ty -> Types.equal arg_ty current_arg) arg_ty ->
+              when option_for_all
+                     (fun arg_ty ->
+                       Types.compatible ~expected:arg_ty ~actual:current_arg)
+                     arg_ty ->
                 Error.error "juxt functions must return the same type"
             | TFn _ -> Error.error "juxt functions must accept the same argument type"
             | _ -> Error.error "juxt expects functions")
@@ -3530,7 +3567,8 @@ and compile_hash_set scope env arg_forms =
                 match compile_expr scope env form with
                 | Error _ as err -> err
                 | Ok expr ->
-                    if Types.equal first_expr.ty expr.ty then loop (expr :: values) rest
+                    if Types.same_shape first_expr.ty expr.ty then
+                      loop (expr :: values) rest
                     else Error.error "hash-set elements must all have the same type")
           in
           loop [ first_expr ] rest)
@@ -3560,7 +3598,7 @@ and compile_disj scope env arg_forms =
                     match compile_expr scope env value_form with
                     | Error _ as err -> err
                     | Ok value ->
-                        if Types.equal inner value.ty then
+                        if Types.same_shape inner value.ty then
                           Result.bind (Types.set_module_name inner)
                             (fun set_module ->
                               Result.bind (coerce_set_element inner value) (fun value ->
@@ -3664,7 +3702,9 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                                            (index, expected, actual))
                                     |> List.find_opt
                                          (fun (_index, expected, actual) ->
-                                           not (Types.equal expected actual))
+                                           not
+                                             (Types.compatible ~expected
+                                                ~actual))
                                   in
                                   (match mismatch with
                                   | Some (index, expected, _actual) ->
@@ -3672,7 +3712,10 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                                         ("protocol method " ^ method_name ^ " parameter "
                                        ^ string_of_int (index + 1) ^ " must be "
                                        ^ source_name expected)
-                                  | None when not (Types.equal expected_ret actual_ret) ->
+                                  | None
+                                    when not
+                                           (Types.compatible ~expected:expected_ret
+                                              ~actual:actual_ret) ->
                                   Error.error
                                     ("protocol method " ^ method_name ^ " must return "
                                    ^ source_name expected_ret)
@@ -4200,7 +4243,7 @@ let compile_type_record scope env next_type name type_parameters field_forms =
   | Ok fields ->
       let type_name = Names.sanitize_name name in
       let record_ty =
-        Types.named_record ~type_name ~type_parameters
+        Types.named_record ~nominal:true ~type_name ~type_parameters
           ~set_module_name:(type_name ^ "_set") fields
       in
       let env =
@@ -4486,7 +4529,9 @@ let rec compile_module ?signature_name scope env next_type module_path
                    (Names.module_path_to_ocaml module_path)
                    expr.ty)
             in
-            (match expr.ty with
+            (match check_emitted_name_collision env ~source_key:key ~ocaml_name:local_name with
+            | Error _ as err -> err
+            | Ok () -> (match expr.ty with
             | TRecord fields -> (
                 match expr.record_values with
                 | None -> Error.error "internal error: record expression missing values"
@@ -4530,7 +4575,7 @@ let rec compile_module ?signature_name scope env next_type module_path
                   ( env @ [ (key, local_binding) ],
                     public_bindings @ [ (key, public_binding) ],
                     next_type,
-                    item :: items )))
+                    item :: items ))))
     | FList (FSymbol "defn" :: FSymbol name :: params :: body_forms) -> (
         match prepare_fn module_path env params body_forms with
         | Error _ as err -> err
@@ -4544,9 +4589,13 @@ let rec compile_module ?signature_name scope env next_type module_path
             let local_row_types = row_param_type_names local_name param_tys in
             let public_row_types = row_param_type_names public_name param_tys in
             let expr = fn_code ~row_param_type_names:local_row_types parts in
-            match expr.ty with
+            let key = module_binding_key module_path name in
+            match
+              check_emitted_name_collision env ~source_key:key ~ocaml_name:local_name
+            with
+            | Error _ as err -> err
+            | Ok () -> (match expr.ty with
             | TFn _ ->
-                let key = module_binding_key module_path name in
                 let local_binding =
                   binding_of_expr ~row_param_types:local_row_types local_name expr
                 in
@@ -4567,7 +4616,7 @@ let rec compile_module ?signature_name scope env next_type module_path
                     public_bindings @ [ (key, public_binding) ],
                     next_type,
                     Group (type_items @ [ value_item ]) :: items )
-            | _ -> Error.error "defn body did not compile to a function"))
+            | _ -> Error.error "defn body did not compile to a function")))
     | FList
         (FSymbol "module" :: FSymbol nested_segment :: FSymbol nested_signature_name
         :: nested_forms) -> (
@@ -4763,7 +4812,9 @@ let compile_top_level scope env next_type = function
       | Ok expr ->
           let ocaml_name = Names.ocaml_binding_name scope name in
           let env_key = Names.scoped_key scope name in
-          (match expr.ty with
+          (match check_emitted_name_collision env ~source_key:env_key ~ocaml_name with
+          | Error _ as err -> err
+          | Ok () -> (match expr.ty with
           | TRecord fields -> (
               match expr.record_values with
               | None -> Error.error "internal error: record expression missing values"
@@ -4791,7 +4842,7 @@ let compile_top_level scope env next_type = function
                   env @ [ (env_key, binding) ],
                   next_type,
                   Value_binding
-                    { pattern = Named ocaml_name; expression = expr.ocaml_expr } )))
+                    { pattern = Named ocaml_name; expression = expr.ocaml_expr } ))))
   | FList (FSymbol "defn" :: FSymbol name :: params :: body_forms) -> (
       match prepare_fn scope env params body_forms with
       | Error _ as err -> err
@@ -4803,9 +4854,11 @@ let compile_top_level scope env next_type = function
           in
           let row_param_types = row_param_type_names ocaml_name param_tys in
           let expr = fn_code ~row_param_type_names:row_param_types parts in
-          match expr.ty with
+          let env_key = Names.scoped_key scope name in
+          match check_emitted_name_collision env ~source_key:env_key ~ocaml_name with
+          | Error _ as err -> err
+          | Ok () -> (match expr.ty with
           | TFn _ ->
-              let env_key = Names.scoped_key scope name in
               let binding = binding_of_expr ~row_param_types ocaml_name expr in
               let type_items = row_type_items row_param_types param_tys in
               let value_item =
@@ -4817,7 +4870,7 @@ let compile_top_level scope env next_type = function
                   env @ [ (env_key, binding) ],
                   next_type,
                   Group (type_items @ [ value_item ]) )
-          | _ -> Error.error "defn body did not compile to a function"))
+          | _ -> Error.error "defn body did not compile to a function")))
   | FList (FSymbol "defprotocol" :: FSymbol protocol_name :: method_forms) ->
       compile_defprotocol scope env next_type protocol_name method_forms
   | FList

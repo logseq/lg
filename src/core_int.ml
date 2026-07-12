@@ -1,5 +1,7 @@
 open Types
 
+let accepts_int ty = Types.compatible ~expected:TInt ~actual:ty
+
 let int value = Ocaml_ir.Int value
 
 let fold_infix operator first rest =
@@ -8,7 +10,7 @@ let fold_infix operator first rest =
     first.ocaml_expr rest
 
 let expect_int_args name args =
-  if List.for_all (fun arg -> Types.equal arg.ty TInt) args then Ok ()
+  if List.for_all (fun arg -> accepts_int arg.ty) args then Ok ()
   else Error.error ("expected int arguments for " ^ name)
 
 let compile_operator name args =
@@ -34,14 +36,14 @@ let compile_operator name args =
 let compile_unary name args build_expr =
   match args with
   | [ arg ] ->
-      if Types.equal arg.ty TInt then Ok (typed_ir TInt (build_expr arg.ocaml_expr))
+      if accepts_int arg.ty then Ok (typed_ir TInt (build_expr arg.ocaml_expr))
       else Error.error ("expected int arguments for " ^ name)
   | _ -> Error.error (name ^ " expects 1 arguments")
 
 let compile_binary name args =
   match args with
   | [ left; right ] ->
-      if Types.equal left.ty TInt && Types.equal right.ty TInt then
+      if accepts_int left.ty && accepts_int right.ty then
         let expression =
           match name with
           | "quot" -> Ocaml_ir.Infix ("/", left.ocaml_expr, right.ocaml_expr)
@@ -66,7 +68,7 @@ let compile_min_max name args =
   match args with
   | [] -> Error.error (name ^ " expects at least 1 arguments")
   | _ ->
-      if List.for_all (fun arg -> Types.equal arg.ty TInt) args then
+      if List.for_all (fun arg -> accepts_int arg.ty) args then
         let fn = if name = "max" then "max" else "min" in
         let expression =
           match args with
@@ -85,7 +87,7 @@ let compile_variadic_bitwise name args =
   match args with
   | [] -> Error.error (name ^ " expects at least 1 arguments")
   | _ ->
-      if List.for_all (fun arg -> Types.equal arg.ty TInt) args then
+      if List.for_all (fun arg -> accepts_int arg.ty) args then
         let op =
           match name with
           | "bit-and" -> "land"

@@ -28,6 +28,8 @@ and field = {
 }
 
 and named_record = {
+  type_id : Type_id.t;
+  nominal : bool;
   type_name : string;
   type_parameters : string list;
   set_module_name : string;
@@ -66,8 +68,8 @@ let binding ?(row_param_types = []) ?host_reference ?return_param_index ocaml_na
 
 let rec equal left right =
   match (left, right) with
-  | TAny, _ | _, TAny -> true
-  | TVar _, _ | _, TVar _ -> true
+  | TAny, TAny -> true
+  | TVar left, TVar right -> left = right
   | TInt, TInt
   | TFloat, TFloat
   | TChar, TChar
@@ -97,19 +99,15 @@ let rec equal left right =
       && List.for_all2
            (fun l r -> l.keyword = r.keyword && equal l.ty r.ty)
            left right
-  | (TRecord left, TNamed_record { fields = right; _ })
-  | (TNamed_record { fields = left; _ }, TRecord right)
-  | (TNamed_record { fields = left; _ }, TNamed_record { fields = right; _ }) ->
-      List.length left = List.length right
-      && List.for_all2
-           (fun l r -> l.keyword = r.keyword && equal l.ty r.ty)
-           left right
+  | TNamed_record left, TNamed_record right ->
+      Type_id.equal left.type_id right.type_id
   | _ -> false
 
-let rec compatible ~expected ~actual =
+let rec row_compatible ~expected ~actual =
   match (expected, actual) with
-  | TAny, _ | _, TAny -> true
-  | (TOcaml _ | TOcaml_app _ | TTuple _), _ -> true
+  | TNamed_record expected, TNamed_record actual
+    when expected.nominal || actual.nominal ->
+      Type_id.equal expected.type_id actual.type_id
   | (TRecord expected_fields | TNamed_record { fields = expected_fields; _ }),
     (TRecord actual_fields | TNamed_record { fields = actual_fields; _ }) ->
       expected_fields
@@ -119,9 +117,32 @@ let rec compatible ~expected ~actual =
                  (fun actual_field -> actual_field.keyword = expected_field.keyword)
                  actual_fields
              with
-             | Some actual_field -> compatible ~expected:expected_field.ty ~actual:actual_field.ty
+             | Some actual_field ->
+                 expected_field.ty = TAny || actual_field.ty = TAny
+                 || equal expected_field.ty actual_field.ty
+                 || row_compatible ~expected:expected_field.ty
+                      ~actual:actual_field.ty
              | None -> false)
-  | _ -> equal expected actual
+  | _ -> false
+
+let same_shape left right =
+  equal left right
+  || (row_compatible ~expected:left ~actual:right
+     && row_compatible ~expected:right ~actual:left)
+
+let host_owned = function
+  | TOcaml _ | TOcaml_app _ | TTuple _ | TArray _ | TRef _ -> true
+  | _ -> false
+
+let defer_to_ocaml ~expected ~actual = host_owned expected || host_owned actual
+
+let compatible ~expected ~actual =
+  match (expected, actual) with
+  | TAny, _ | _, TAny -> true
+  | _ ->
+      equal expected actual
+      || row_compatible ~expected ~actual
+      || defer_to_ocaml ~expected ~actual
 
 let rec source_name = function
   | TInt -> "int"
@@ -201,8 +222,16 @@ let record_fields = function
   | TRecord fields | TNamed_record { fields; _ } -> Some fields
   | _ -> None
 
-let named_record ?(type_parameters = []) ~type_name ~set_module_name fields =
-  TNamed_record { type_name; type_parameters; set_module_name; fields }
+let type_id_of_name type_name =
+  match List.rev (String.split_on_char '.' type_name) with
+  | [] -> Type_id.create ~owner:[] ~name:type_name
+  | name :: owner -> Type_id.create ~owner:(List.rev owner) ~name
+
+let named_record ?(type_parameters = []) ?type_id ?(nominal = false) ~type_name
+    ~set_module_name fields =
+  let type_id = Option.value type_id ~default:(type_id_of_name type_name) in
+  TNamed_record
+    { type_id; nominal; type_name; type_parameters; set_module_name; fields }
 
 let rec qualify_module_type module_path ty =
   let qualify_name name =
@@ -231,8 +260,11 @@ let rec qualify_module_type module_path ty =
              { field with ty = qualify_module_type module_path field.ty })
            fields)
   | TNamed_record record ->
+      let type_name = qualify_name record.type_name in
       TNamed_record
-        { type_name = qualify_name record.type_name;
+        { type_id = type_id_of_name type_name;
+          nominal = record.nominal;
+          type_name;
           type_parameters = record.type_parameters;
           set_module_name = qualify_name record.set_module_name;
           fields =

@@ -1,7 +1,9 @@
 open Types
 
+let accepts_int ty = Types.compatible ~expected:TInt ~actual:ty
+
 let expect_int_args name args =
-  if List.for_all (fun arg -> Types.equal arg.ty TInt) args then Ok ()
+  if List.for_all (fun arg -> accepts_int arg.ty) args then Ok ()
   else Error.error ("expected int arguments for " ^ name)
 
 let one_arg name args =
@@ -18,7 +20,7 @@ let int_predicate name args build_code =
   match one_arg name args with
   | Error _ as err -> err
   | Ok arg ->
-      if Types.equal arg.ty TInt then Ok (typed_ir TBool (build_code arg.ocaml_expr))
+      if accepts_int arg.ty then Ok (typed_ir TBool (build_code arg.ocaml_expr))
       else Ok (typed_ir TBool (Ocaml_ir.Bool false))
 
 let int_unary name args build_code =
