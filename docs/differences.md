@@ -470,7 +470,7 @@ compatibility target. The current compiler boundary is aligned as follows:
 | Function polymorphism | Top-level and let-bound functions can be instantiated at different call-site types. Non-trivial relationships such as both branches of a polymorphic chooser are accepted or rejected by OCaml. |
 | Host type surface | Aliases, parameterized types, records, variants, option/result, tuples, arrays, references, constructors, patterns, labelled arguments, and package values lower to native OCaml nodes. |
 | Module system | Modules, aliases, open/include, parameterized signatures, nested signature modules, signature includes, multi-parameter functors, and applications lower to native module AST and are checked by OCaml. |
-| Diagnostics and tooling boundary | Source locations survive lowering; compiler errors and enabled warnings reach the library API and CLI. The LSP reuses cached OCaml Typedtree analysis for diagnostics, hover types, definitions, and type-detailed completion. |
+| Diagnostics and tooling boundary | Source locations survive lowering; compiler errors and enabled warnings reach the library API and CLI. The LSP reuses cached OCaml Typedtree analysis for diagnostics, hover types, definitions, and type-detailed completion, and provides deterministic comment-preserving document formatting. |
 
 This does not make cljml a Reason syntax clone. `.re`/`.rei` parsing, `refmt`,
 JSX, and full `ocaml-lsp` feature parity are not cljml language requirements.

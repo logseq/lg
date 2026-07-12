@@ -146,6 +146,7 @@ let initialize_result =
           [ ("textDocumentSync", `Int 1);
             ("hoverProvider", `Bool true);
             ("definitionProvider", `Bool true);
+            ("documentFormattingProvider", `Bool true);
             ( "completionProvider",
               `Assoc [ ("triggerCharacters", `List []) ] ) ] );
       ( "serverInfo",
@@ -257,6 +258,19 @@ let completion_result document offset =
       |> fun items ->
       `Assoc [ ("isIncomplete", `Bool false); ("items", `List items) ]
 
+let formatting_result document =
+  match Cljml.Formatter.format document.text with
+  | Error _ -> `List []
+  | Ok formatted when formatted = document.text -> `List []
+  | Ok formatted ->
+      `List
+        [
+          `Assoc
+            [ ( "range",
+                range_of_offsets document.text 0 (String.length document.text) );
+              ("newText", `String formatted) ];
+        ]
+
 let handle_notification method_ params =
   match method_ with
   | "textDocument/didOpen" ->
@@ -326,6 +340,15 @@ let rec loop shutdown_requested =
                 | "textDocument/completion" ->
                     completion_result document offset
                 | _ -> assert false)
+          in
+          response id result;
+          loop shutdown_requested
+      | Some "textDocument/formatting", (`Int _ | `String _) ->
+          let uri = document_uri params in
+          let result =
+            match Hashtbl.find_opt documents uri with
+            | None -> `List []
+            | Some document -> formatting_result document
           in
           response id result;
           loop shutdown_requested

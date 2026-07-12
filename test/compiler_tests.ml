@@ -3209,6 +3209,39 @@ let test_language_service_queries_outside_symbols_are_empty () =
   if Cljml.Language_service.definition analysis ~offset:0 <> None then
     failwith "expected no definition outside a symbol"
 
+let test_formatter_normalizes_whitespace () =
+  Cljml.Formatter.format "(defn  add-one [ x ](+ x  1))"
+  |> expect_ok
+  |> assert_equal_string "(defn add-one [x] (+ x 1))\n"
+
+let test_formatter_wraps_long_nested_forms () =
+  let source =
+    "(defn describe [person] (str (:name person) \":\" (:age person) \":\" (:admin? person) \":\" (:role person)))"
+  in
+  let expected =
+    {|(defn
+  describe
+  [person]
+  (str (:name person) ":" (:age person) ":" (:admin? person) ":" (:role person)))
+|}
+  in
+  Cljml.Formatter.format source |> expect_ok |> assert_equal_string expected
+
+let test_formatter_preserves_comments_strings_and_is_idempotent () =
+  let source =
+    "; before\n(def message \"[not ; syntax]\") ; after\n"
+  in
+  let expected =
+    "; before\n(def message \"[not ; syntax]\")\n; after\n"
+  in
+  let formatted = Cljml.Formatter.format source |> expect_ok in
+  assert_equal_string expected formatted;
+  Cljml.Formatter.format formatted |> expect_ok |> assert_equal_string formatted
+
+let test_formatter_rejects_unbalanced_delimiters () =
+  Cljml.Formatter.format "(def answer 42]"
+  |> expect_error_value "mismatched closing delimiter ]"
+
 let test_match_delegates_opaque_module_constructor_payload_patterns_to_ocaml () =
   let source =
     {|
@@ -5175,6 +5208,14 @@ let tests =
       test_language_service_completion_uses_source_names_and_types );
     ( "language service queries outside symbols are empty",
       test_language_service_queries_outside_symbols_are_empty );
+    ( "formatter normalizes whitespace",
+      test_formatter_normalizes_whitespace );
+    ( "formatter wraps long nested forms",
+      test_formatter_wraps_long_nested_forms );
+    ( "formatter preserves comments strings and is idempotent",
+      test_formatter_preserves_comments_strings_and_is_idempotent );
+    ( "formatter rejects unbalanced delimiters",
+      test_formatter_rejects_unbalanced_delimiters );
     ( "match delegates opaque module constructor payload patterns to OCaml",
       test_match_delegates_opaque_module_constructor_payload_patterns_to_ocaml );
     ( "match delegates unknown opaque constructor errors to OCaml",
