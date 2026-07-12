@@ -504,7 +504,33 @@ let test_compiler_phases_have_explicit_boundaries () =
           |> expect_ok
         in
         if conditional.ty <> Cljml.Types.TInt then
-          failwith "special-form elaboration should have one owner"
+          failwith "special-form elaboration should have one owner";
+        let call =
+          Cljml.Call_elaborator.compile_call
+            ~compile_expr:Cljml.Expression_elaborator.compile_expr ""
+            Cljml.Compiler_environment.empty "inc" [ Cljml.Ast.FInt 1 ]
+          |> expect_ok
+        in
+        if call.ty <> Cljml.Types.TInt then
+          failwith "call elaboration should have one owner";
+        let list =
+          Cljml.Collection_operation_elaborator.compile_list
+            ~compile_expr:Cljml.Expression_elaborator.compile_expr ""
+            Cljml.Compiler_environment.empty
+            [ Cljml.Ast.FInt 1; Cljml.Ast.FInt 2 ]
+          |> expect_ok
+        in
+        if list.ty <> Cljml.Types.TList Cljml.Types.TInt then
+          failwith "collection operation elaboration should have one owner";
+        let identity =
+          Cljml.Core_call_elaborator.compile_identity
+            ~compile_expr:Cljml.Expression_elaborator.compile_expr ""
+            Cljml.Compiler_environment.empty [ Cljml.Ast.FInt 1 ]
+          |> expect_ok
+        in
+        if
+          identity.ty <> Cljml.Types.TInt
+        then failwith "core higher-order call elaboration should have one owner"
     | _ -> failwith "top-level elaboration should have one owner"
 
 let test_source_node_identity_reaches_parsetree () =
