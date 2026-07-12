@@ -400,7 +400,13 @@ let test_assignability_reports_the_selected_semantic_rule () =
     not
       (assignable ~policy:Host_boundary ~expected:(TOcaml "user_id")
          ~actual:TInt)
-  then failwith "host boundary assignment should defer to OCaml"
+  then failwith "host boundary assignment should defer to OCaml";
+  if assignable ~policy:Nominal ~expected:TInt ~actual:TUnknown then
+    failwith "nominal assignment must not accept unresolved types";
+  if assignable ~policy:Structural ~expected:TUnknown ~actual:TInt then
+    failwith "structural assignment must not accept top-level unresolved types";
+  if not (assignable ~policy:Host_boundary ~expected:TUnknown ~actual:TInt) then
+    failwith "host boundaries may defer unresolved types to OCaml"
 
 let test_named_records_use_nominal_type_identity () =
   let fields = [ Cljml.Types.make_field ":name" Cljml.Types.TString ] in

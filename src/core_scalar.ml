@@ -1,7 +1,7 @@
 open Types
 
 let accepts_int ty =
-  Types.assignable ~policy:Nominal ~expected:TInt ~actual:ty
+  Types.assignable ~policy:Host_boundary ~expected:TInt ~actual:ty
 
 let expect_int_args name args =
   if List.for_all (fun arg -> accepts_int arg.ty) args then Ok ()

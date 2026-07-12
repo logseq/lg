@@ -1,7 +1,7 @@
 open Types
 
 let accepts_int ty =
-  Types.assignable ~policy:Nominal ~expected:TInt ~actual:ty
+  Types.assignable ~policy:Host_boundary ~expected:TInt ~actual:ty
 
 let int value = Semantic_ir.Int value
 

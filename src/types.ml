@@ -129,7 +129,8 @@ let classify_assignability ~expected ~actual =
 
 let assignable ~policy ~expected ~actual =
   match classify_assignability ~expected ~actual with
-  | Equal | Unknown -> true
+  | Equal -> true
+  | Unknown -> policy = Host_boundary
   | Row_compatible -> policy = Structural || policy = Host_boundary
   | Deferred_to_ocaml -> policy = Host_boundary
   | Incompatible -> false
