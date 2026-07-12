@@ -14,20 +14,10 @@ let rec equality_expr left right =
         fields
         |> List.map (fun (field : field) ->
                let left_field =
-                 {
-                   ty = field.ty;
-                   semantic_expr = Structural_map.field_expr left field;
-                   record_values = None;
-                   return_param_index = None;
-                 }
+                 typed_ir field.ty (Structural_map.field_expr left field)
                in
                let right_field =
-                 {
-                   ty = field.ty;
-                   semantic_expr = Structural_map.field_expr right field;
-                   record_values = None;
-                   return_param_index = None;
-                 }
+                 typed_ir field.ty (Structural_map.field_expr right field)
                in
                equality_expr left_field right_field)
       in

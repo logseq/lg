@@ -90,14 +90,13 @@ let create ~compile_expr =
                      fields pairs
                  in
                  {
-                   ty = TRecord fields;
-                   semantic_expr =
-                     Semantic_ir.Record
-                       (List.map
-                          (fun ((field : field), value) -> (field.ocaml_name, value))
-                          values, None);
+                   (typed_ir (TRecord fields)
+                      (Semantic_ir.Record
+                         (List.map
+                            (fun ((field : field), value) ->
+                              (field.ocaml_name, value))
+                            values, None))) with
                    record_values = Some values;
-                   return_param_index = None;
                  })
       | pair :: rest -> (
           match compile_pair pair with
@@ -509,7 +508,10 @@ let create ~compile_expr =
             with
             | Error _ as err -> err
             | Ok handlers -> (
-                match (handlers.semantic_expr, compatible_try_type body.ty handlers.ty) with
+                match
+                  ( Semantic_ir.unlocated handlers.semantic_expr,
+                    compatible_try_type body.ty handlers.ty )
+                with
                 | _, (Error _ as err) -> err
                 | Semantic_ir.Match_guarded (_, cases), Ok ty ->
                     Ok (typed_ir ty (Semantic_ir.Try (body.semantic_expr, cases)))

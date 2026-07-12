@@ -17,6 +17,7 @@ let rec pattern = function
   | PConstraint (value, type_name) -> PConstraint (pattern value, type_name)
 
 let rec expression = function
+  | Semantic_ir.Typed (_, value) -> expression value
   | Semantic_ir.Located (node_id, location, value) ->
       Ocaml_ir.Located (node_id, location, expression value)
   | Int value -> Int value
@@ -75,4 +76,3 @@ let rec expression = function
   | Record (fields, type_name) ->
       Record
         (List.map (fun (name, value) -> (name, expression value)) fields, type_name)
-

@@ -23,9 +23,9 @@ let values_for target fields =
 let record_expr fields values =
   {
     ty = TRecord fields;
-    semantic_expr =
-      Semantic_ir.Record
-        (List.map (fun ((field : field), value) -> (field.ocaml_name, value)) values, None);
+    semantic_expr = Semantic_ir.annotate (TRecord fields)
+      (Semantic_ir.Record
+         (List.map (fun ((field : field), value) -> (field.ocaml_name, value)) values, None));
     record_values = Some values;
     return_param_index = None;
   }
@@ -41,12 +41,12 @@ let named_record_expr record values =
   in
   {
     ty = TNamed_record record;
-    semantic_expr =
-      Semantic_ir.Record
+    semantic_expr = Semantic_ir.annotate (TNamed_record record)
+      (Semantic_ir.Record
         ( List.map
             (fun ((field : field), value) -> (field.ocaml_name, value))
             values,
-          Some type_name );
+          Some type_name ));
     record_values = Some values;
     return_param_index = None;
   }

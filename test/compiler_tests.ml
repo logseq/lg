@@ -793,13 +793,27 @@ let test_compiler_phases_have_explicit_boundaries () =
             Cljml.Compiler_environment.empty (Cljml.Ast.FInt 7)
           |> expect_ok
         in
-        (match scalar.semantic_expr with
+        (match Cljml.Semantic_ir.unlocated scalar.semantic_expr with
         | Cljml.Semantic_ir.Int 7 -> ()
         | _ -> failwith "typed expressions should carry semantic AST nodes");
         (match Cljml.Lowering.expression scalar.semantic_expr with
         | Cljml.Ocaml_ir.Int 7 -> ()
         | _ -> failwith "semantic lowering should produce backend IR")
     | _ -> failwith "top-level elaboration should have one owner"
+
+let test_semantic_ast_preserves_nested_types () =
+  let expression =
+    Cljml.Expression_elaborator.compile_expr ""
+      Cljml.Compiler_environment.empty
+      (Cljml.Ast.FList
+         [ Cljml.Ast.FSymbol "+"; Cljml.Ast.FInt 1; Cljml.Ast.FInt 2 ])
+    |> expect_ok
+  in
+  let annotations =
+    Cljml.Semantic_ir.type_annotations expression.semantic_expr
+  in
+  if annotations <> [ Cljml.Types.TInt; Cljml.Types.TInt; Cljml.Types.TInt ] then
+    failwith "semantic AST must preserve parent and child expression types"
 
 let test_source_node_identity_reaches_parsetree () =
   let source = "(def answer (+ 1 2))" in
@@ -5585,6 +5599,8 @@ let tests =
       test_typed_environment_replaces_top_level_bindings );
     ( "compiler phases have explicit boundaries",
       test_compiler_phases_have_explicit_boundaries );
+    ( "semantic AST preserves nested types",
+      test_semantic_ast_preserves_nested_types );
     ( "source node identity reaches parsetree",
       test_source_node_identity_reaches_parsetree );
     ("modules resolve qualified symbols", test_modules_resolve_qualified_symbols);

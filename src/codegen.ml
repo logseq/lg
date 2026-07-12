@@ -62,10 +62,7 @@ let rec stringify_expr_ir ?(pr = false) expr =
         Semantic_ir.Fun
           ( [ Semantic_ir.PVar "value" ],
             stringify_expr_ir ~pr
-              { ty = inner;
-                semantic_expr = Semantic_ir.Ident "value";
-                record_values = None;
-                return_param_index = None } )
+              (typed_ir inner (Semantic_ir.Ident "value")) )
       in
       let values =
         match Types.set_module_name inner with
@@ -82,10 +79,7 @@ let rec stringify_expr_ir ?(pr = false) expr =
         concat_expr
           [ Semantic_ir.String (field.keyword ^ " ");
             stringify_expr_ir ~pr:true
-              { ty = field.ty;
-                semantic_expr = expression;
-                record_values = None;
-                return_param_index = None } ]
+              (typed_ir field.ty expression) ]
       in
       let parts =
         match expr.record_values with

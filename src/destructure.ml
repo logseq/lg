@@ -26,7 +26,7 @@ let local_binding source_name ty semantic_expr =
   { source_name;
     ocaml_name = Names.sanitize_name source_name;
     ty;
-    semantic_expr }
+    semantic_expr = Semantic_ir.annotate ty semantic_expr }
 
 type map_binding = {
   local_name : string;
