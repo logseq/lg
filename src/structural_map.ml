@@ -30,6 +30,27 @@ let record_expr fields values =
     return_param_index = None;
   }
 
+let named_record_expr record values =
+  let type_name =
+    match record.type_parameters with
+    | [] -> record.type_name
+    | [ _ ] -> "_ " ^ record.type_name
+    | parameters ->
+        "(" ^ String.concat ", " (List.map (fun _ -> "_") parameters) ^ ") "
+        ^ record.type_name
+  in
+  {
+    ty = TNamed_record record;
+    semantic_expr =
+      Semantic_ir.Record
+        ( List.map
+            (fun ((field : field), value) -> (field.ocaml_name, value))
+            values,
+          Some type_name );
+    record_values = Some values;
+    return_param_index = None;
+  }
+
 let assoc target fields keyword value =
   match find_field keyword fields with
   | Some field when not (Types.equal field.ty value.ty) ->
@@ -46,7 +67,9 @@ let assoc target fields keyword value =
                in
                (field, expression))
       in
-      Ok (record_expr fields values)
+      (match target.ty with
+      | TNamed_record record -> Ok (named_record_expr record values)
+      | _ -> Ok (record_expr fields values))
   | None ->
       let new_field = make_field keyword value.ty in
       let old_fields = fields in

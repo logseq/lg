@@ -2295,6 +2295,22 @@ let test_protocols_support_named_record_receivers () =
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "protocols_support_named_record_receivers" "Ada\n" ocaml_source
 
+let test_named_record_updates_preserve_protocol_identity () =
+  let source =
+    {|
+(type-record user (name :string) (age :int))
+(defprotocol Labelled (label [value] :string))
+(extend-type user Labelled
+  (label [value] (str (ocaml-field value name) ":" (ocaml-field value age))))
+(def ada (ocaml-record user (name "Ada") (age 41)))
+(def older (assoc ada :age 42))
+(println (label older))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "named_record_updates_preserve_protocol_identity" "Ada:42\n"
+    ocaml_source
+
 let test_protocols_inside_modules_export_methods_and_record_impls () =
   let source =
     {|
@@ -5802,6 +5818,8 @@ let tests =
       test_protocols_reject_duplicate_methods_in_one_extension );
     ( "protocols support named record receivers",
       test_protocols_support_named_record_receivers );
+    ( "named record updates preserve protocol identity",
+      test_named_record_updates_preserve_protocol_identity );
     ( "protocol signatures check all parameter types",
       test_protocol_signatures_check_all_parameter_types );
     ( "protocol identity disambiguates same named methods",
