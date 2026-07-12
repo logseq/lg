@@ -1,6 +1,8 @@
 open Ast
 open Types
 
+module Env = Compiler_environment
+
 type require_spec =
   | Package of string
   | Alias of {
@@ -36,9 +38,9 @@ let ocaml_module_path module_name =
   else module_name
 
 let add_clojure_string_alias_bindings env alias =
-  env
-  @ (Core_string.bindings
-    |> List.map (fun (name, binding) -> (alias ^ "/" ^ name, binding)))
+  Core_string.bindings
+  |> List.map (fun (name, binding) -> (alias ^ "/" ^ name, binding))
+  |> fun bindings -> Env.add_bindings bindings env
 
 let add_clojure_string_refer_bindings env scope names =
   let rec loop acc = function
@@ -47,21 +49,21 @@ let add_clojure_string_refer_bindings env scope names =
         match List.assoc_opt name Core_string.bindings with
         | Some binding ->
             let target_key = Names.scoped_key scope name in
-            loop (acc @ [ (target_key, binding) ]) rest
+            loop (Env.add target_key binding acc) rest
         | None -> Error.error ("cannot refer unknown symbol clojure.string/" ^ name))
   in
   loop env names
 
 let add_ocaml_alias_bindings env module_name alias =
   let module_path = ocaml_module_path module_name in
-  env
-  @ [
-      ( alias,
-        Types.binding ~host_reference:(Ocaml_module module_path) module_path
-          (TOcaml "__module") );
-    ]
-  @ (ocaml_host_functions module_name
-    |> List.map (fun (name, binding) -> (alias ^ "/" ^ name, binding)))
+  let bindings =
+    ( alias,
+      Types.binding ~host_reference:(Ocaml_module module_path) module_path
+        (TOcaml "__module") )
+    :: (ocaml_host_functions module_name
+       |> List.map (fun (name, binding) -> (alias ^ "/" ^ name, binding)))
+  in
+  Env.add_bindings bindings env
 
 let add_ocaml_refer_bindings env scope module_name names =
   let host_functions = ocaml_host_functions module_name in
@@ -72,7 +74,7 @@ let add_ocaml_refer_bindings env scope module_name names =
         match List.assoc_opt name host_functions with
         | Some binding ->
             let target_key = Names.scoped_key scope name in
-            loop (acc @ [ (target_key, binding) ]) rest
+            loop (Env.add target_key binding acc) rest
         | None ->
             let target_key = Names.scoped_key scope name in
             let ocaml_name = module_path ^ "." ^ Names.sanitize_name name in
@@ -80,7 +82,7 @@ let add_ocaml_refer_bindings env scope module_name names =
               Types.binding ~host_reference:(Ocaml_value ocaml_name) ocaml_name
                 (TOcaml "__value")
             in
-            loop (acc @ [ (target_key, binding) ]) rest)
+            loop (Env.add target_key binding acc) rest)
   in
   loop env names
 

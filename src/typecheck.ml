@@ -2,6 +2,8 @@ open Ast
 open Types
 open Lowered
 
+module Env = Compiler_environment
+
 let ensure_bool expr =
   if Types.compatible ~expected:TBool ~actual:expr.ty then Ok ()
   else Error.error "if condition must be bool"
@@ -86,7 +88,7 @@ let qualify_record_type module_path record =
 
 let lookup_record_type scope env type_name =
   let lookup owner local_name =
-    List.assoc_opt (record_type_key owner local_name) env
+    Env.find_opt (record_type_key owner local_name) env
   in
   let local_lookup owner local_name =
     match lookup owner local_name with
@@ -116,7 +118,7 @@ let is_constructor_name name =
   | [] -> false
 
 let lookup_binding scope env name =
-  match List.assoc_opt (Names.scoped_key scope name) env with
+  match Env.find_opt (Names.scoped_key scope name) env with
   | Some (binding : binding) -> Ok binding
   | None -> Error.error ("unknown function " ^ name)
 
@@ -137,7 +139,7 @@ let check_emitted_name_collision env ~source_key ~ocaml_name =
         (not (String.starts_with ~prefix:"__" key))
         && key <> source_key && binding_owner key = owner
         && binding.ocaml_name = ocaml_name)
-      env
+      (Env.to_bindings env)
   with
   | None -> Ok ()
   | Some (existing_key, _) ->
@@ -198,9 +200,9 @@ let lookup_function scope env name =
 
 let ocaml_call_target scope env function_name =
   let lookup name =
-    match List.assoc_opt (Names.scoped_key scope name) env with
+    match Env.find_opt (Names.scoped_key scope name) env with
     | Some _ as binding -> binding
-    | None -> List.assoc_opt name env
+    | None -> Env.find_opt name env
   in
   match lookup function_name with
   | Some { host_reference = Some (Ocaml_value ocaml_name); _ } -> Some ocaml_name
@@ -229,9 +231,9 @@ let resolve_ocaml_call_target scope env function_name =
 
 let resolve_ocaml_constructor_target scope env constructor_name =
   let lookup name =
-    match List.assoc_opt (Names.scoped_key scope name) env with
+    match Env.find_opt (Names.scoped_key scope name) env with
     | Some _ as binding -> binding
-    | None -> List.assoc_opt name env
+    | None -> Env.find_opt name env
   in
   match String.split_on_char '/' constructor_name with
   | [ alias; member_name ] -> (
@@ -245,8 +247,7 @@ let inherit_scope_ocaml_value_refers scope module_path env =
   let prefix = scope ^ "/" in
   let prefix_len = String.length prefix in
   let inherited =
-    env
-    |> List.filter_map (fun (key, (binding : binding)) ->
+    Env.filter_map (fun key (binding : binding) ->
            match binding.host_reference with
            | Some (Ocaml_value _) when
                String.length key > prefix_len
@@ -255,9 +256,9 @@ let inherit_scope_ocaml_value_refers scope module_path env =
                  String.sub key prefix_len (String.length key - prefix_len)
                in
                Some (Names.scoped_key module_path name, binding)
-           | _ -> None)
+           | _ -> None) env
   in
-  env @ inherited
+  Env.add_bindings inherited env
 
 type compiled_fn_parts = {
   param_bindings : (string * binding) list;
@@ -335,7 +336,7 @@ let param_constraint_name = function
       Some (Types.ocaml_name ty)
   | _ -> None
 
-let rec compile_expr scope (env : (string * binding) list) form =
+let rec compile_expr scope (env : Env.t) form =
   match compile_expr_unlocated scope env form with
   | Error _ as err -> err
   | Ok expression -> (
@@ -347,7 +348,7 @@ let rec compile_expr scope (env : (string * binding) list) form =
               ocaml_expr = Ocaml_ir.Located (location, expression.ocaml_expr);
             })
 
-and compile_expr_unlocated scope (env : (string * binding) list) = function
+and compile_expr_unlocated scope (env : Env.t) = function
   | FInt value -> Ok (typed_ir TInt (Ocaml_ir.Int value))
   | FFloat value -> Ok (typed_ir TFloat (Ocaml_ir.Float value))
   | FChar value -> Ok (typed_ir TChar (Ocaml_ir.Char value))
@@ -355,7 +356,7 @@ and compile_expr_unlocated scope (env : (string * binding) list) = function
   | FBool value -> Ok (typed_ir TBool (Ocaml_ir.Bool value))
   | FKeyword keyword -> Ok (typed_ir TKeyword (Ocaml_ir.String keyword))
   | FSymbol name -> (
-      match List.assoc_opt (Names.scoped_key scope name) env with
+      match Env.find_opt (Names.scoped_key scope name) env with
       | Some { ty = TFn ([], return_ty); _ } when is_constructor_name name ->
           Ok (typed_ir return_ty (Ocaml_ir.Constructor (name, None)))
       | Some binding -> Ok (typed_ir binding.ty (Ocaml_ir.Ident binding.ocaml_name))
@@ -741,7 +742,7 @@ and compile_match scope env target_form clauses =
     match compile_pattern target_ty pattern_form with
     | Error _ as err -> err
     | Ok (pattern_code, bindings) -> (
-        let clause_env = env @ bindings in
+        let clause_env = Env.add_bindings bindings env in
         let guard =
           match guard_form with
           | None -> Ok None
@@ -851,7 +852,8 @@ and compile_try scope env forms =
               Types.binding exception_name (TOcaml "exn") )
           in
           match
-            compile_match scope (exception_binding :: env)
+            compile_match scope
+              (Env.add (fst exception_binding) (snd exception_binding) env)
               (FSymbol exception_name)
               (List.concat_map (fun (pattern, handler) -> [ pattern; handler ]) catches)
           with
@@ -971,9 +973,9 @@ and compile_loop scope env bindings body_forms =
             let loop_env =
               List.fold_left2
                 (fun env name ty ->
-                  env
-                  @ [ ( Names.scoped_key scope name,
-                        Types.binding (Names.sanitize_name name) ty ) ])
+                  Env.add (Names.scoped_key scope name)
+                    (Types.binding (Names.sanitize_name name) ty)
+                    env)
                 env names param_tys
             in
             (match
@@ -1050,7 +1052,7 @@ and compile_let scope env bindings body_forms =
                                    :: acc)
                                  ir_bindings
                       in
-                      bind (env @ env_bindings) ir_bindings rest))
+                      bind (Env.add_bindings env_bindings env) ir_bindings rest))
           | [ _ ] -> Error.error "let bindings require an even number of forms"
         in
         bind env [] forms
@@ -1138,7 +1140,10 @@ and prepare_fn ?(param_type_overrides = []) scope env params body_forms =
                            ( Names.scoped_key scope binding.source_name,
                              Types.binding binding.ocaml_name binding.ty ))
                   in
-                  let env = env @ param_bindings @ local_bindings in
+                  let env =
+                    env |> Env.add_bindings param_bindings
+                    |> Env.add_bindings local_bindings
+                  in
                   match
                     compile_body scope env "function body requires at least one form"
                       body_forms
@@ -2437,7 +2442,7 @@ and compile_function_arg_for_collection scope env element_ty = function
   | FList (FSymbol "fn" :: FVector [ FSymbol name ] :: body_forms) ->
       let binding = Types.binding (Names.sanitize_name name) element_ty in
       let function_env =
-        env @ [ (Names.scoped_key scope name, binding) ]
+        Env.add (Names.scoped_key scope name) binding env
       in
       compile_body scope function_env "function body requires at least one form"
         body_forms
@@ -3629,11 +3634,10 @@ let compile_defprotocol scope env next_type protocol_name method_forms =
   | Ok bindings ->
       let env =
         List.fold_left
-          (fun env ((key, binding) as entry) ->
-            if Protocol.is_legacy_marker key binding && List.mem_assoc key env then
-              List.remove_assoc key env
-              @ [ (key, Protocol.ambiguous_marker_binding ()) ]
-            else env @ [ entry ])
+          (fun env (key, binding) ->
+            if Protocol.is_legacy_marker key binding && Env.mem key env then
+              Env.add key (Protocol.ambiguous_marker_binding ()) env
+            else Env.add key binding env)
           env bindings
       in
       Ok
@@ -3738,7 +3742,7 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                                       in
                                       let binding = binding_of_expr ocaml_name expr in
                                       Ok
-                                        ( env @ [ (env_key, binding) ],
+                                        ( Env.add env_key binding env,
                                           Value_binding
                                             {
                                               pattern = Named ocaml_name;
@@ -3769,12 +3773,12 @@ let module_binding_ocaml_name module_path name =
 let protocol_marker_key key = String.ends_with ~suffix:"$protocol" key
 
 let changed_bindings previous updated =
-  List.filter
+  Env.to_bindings updated
+  |> List.filter
     (fun (key, binding) ->
-      match List.assoc_opt key previous with
+      match Env.find_opt key previous with
       | None -> true
       | Some previous_binding -> previous_binding <> binding)
-    updated
 
 let open_module_bindings scope env module_path =
   let prefix = module_path ^ "/" in
@@ -3783,7 +3787,7 @@ let open_module_bindings scope env module_path =
   let record_prefix_len = String.length record_prefix in
   let opened =
     env
-    |> List.filter_map (fun (key, (binding : binding)) ->
+    |> Env.filter_map (fun key (binding : binding) ->
            if String.length key > prefix_len && String.sub key 0 prefix_len = prefix then
              let local = String.sub key prefix_len (String.length key - prefix_len) in
              let opened_binding =
@@ -3802,7 +3806,7 @@ let open_module_bindings scope env module_path =
              Some (record_type_key scope local, binding)
            else None)
   in
-  env @ opened
+  Env.add_bindings opened env
 
 let include_module_public_bindings module_path env included_module_path =
   let prefix = included_module_path ^ "/" in
@@ -3810,7 +3814,7 @@ let include_module_public_bindings module_path env included_module_path =
   let record_prefix = "__record/" ^ included_module_path ^ "/" in
   let record_prefix_len = String.length record_prefix in
   env
-  |> List.filter_map (fun (key, (binding : binding)) ->
+  |> Env.filter_map (fun key (binding : binding) ->
          if String.length key > prefix_len && String.sub key 0 prefix_len = prefix then
            let name = String.sub key prefix_len (String.length key - prefix_len) in
            Some
@@ -3843,7 +3847,7 @@ let alias_module_bindings env alias_path target_path =
   let nested_record_prefix = "__record/" ^ target_path ^ "." in
   let nested_record_prefix_len = String.length nested_record_prefix in
   env
-  |> List.filter_map (fun (key, (binding : binding)) ->
+  |> Env.filter_map (fun key (binding : binding) ->
          if
            String.length key > direct_prefix_len
            && String.sub key 0 direct_prefix_len = direct_prefix
@@ -3933,7 +3937,7 @@ let signature_metadata_bindings env signature_name items =
         let nested_prefix = "__signature/" ^ module_signature ^ "/" in
         let nested_prefix_len = String.length nested_prefix in
         env
-        |> List.filter_map (fun (key, binding) ->
+        |> Env.filter_map (fun key binding ->
                if
                  String.length key > nested_prefix_len
                  && String.sub key 0 nested_prefix_len = nested_prefix
@@ -3951,7 +3955,7 @@ let signature_metadata_bindings env signature_name items =
         let included_prefix = "__signature/" ^ module_signature ^ "/" in
         let included_prefix_len = String.length included_prefix in
         env
-        |> List.filter_map (fun (key, binding) ->
+        |> Env.filter_map (fun key binding ->
                if
                  String.length key > included_prefix_len
                  && String.sub key 0 included_prefix_len = included_prefix
@@ -3992,7 +3996,7 @@ let signature_parameter_bindings env parameter_name signature_name =
   let prefix = "__signature/" ^ signature_name ^ "/" in
   let prefix_len = String.length prefix in
   env
-  |> List.filter_map (fun (key, (binding : binding)) ->
+  |> Env.filter_map (fun key (binding : binding) ->
          if String.length key > prefix_len && String.sub key 0 prefix_len = prefix then
            let value_name =
              String.sub key prefix_len (String.length key - prefix_len)
@@ -4029,7 +4033,7 @@ let apply_functor_result_bindings env module_name functor_name =
   let record_prefix = "__functor_record/" ^ functor_name ^ "/" in
   let record_prefix_len = String.length record_prefix in
   env
-  |> List.filter_map (fun (key, (binding : binding)) ->
+  |> Env.filter_map (fun key (binding : binding) ->
          if String.length key > prefix_len && String.sub key 0 prefix_len = prefix then
            let value_name =
              String.sub key prefix_len (String.length key - prefix_len)
@@ -4055,7 +4059,7 @@ let compile_module_alias scope env next_type alias_name target_name =
   let alias_bindings = alias_module_bindings env alias_name target_name in
   Ok
     ( scope,
-      env @ alias_bindings,
+      Env.add_bindings alias_bindings env,
       next_type,
       Module_alias
         {
@@ -4186,7 +4190,7 @@ let compile_module_signature scope env next_type signature_name item_forms =
   | Ok [] -> Error.error "module-signature expects at least one signature item"
   | Ok items ->
       let signature_name = Names.module_segment_to_ocaml signature_name in
-      let env = env @ signature_metadata_bindings env signature_name items in
+      let env = Env.add_bindings (signature_metadata_bindings env signature_name items) env in
       Ok
         ( scope,
           env,
@@ -4247,11 +4251,7 @@ let compile_type_record scope env next_type name type_parameters field_forms =
           ~set_module_name:(type_name ^ "_set") fields
       in
       let env =
-        env
-        @ [
-            ( record_type_key scope name,
-              Types.binding type_name record_ty );
-          ]
+        Env.add (record_type_key scope name) (Types.binding type_name record_ty) env
       in
       Ok
         ( scope,
@@ -4261,7 +4261,7 @@ let compile_type_record scope env next_type name type_parameters field_forms =
 
 let record_type_public_binding module_path name env =
   let key = record_type_key module_path name in
-  match List.assoc_opt key env with
+  match Env.find_opt key env with
   | Some binding -> Ok (key, binding)
   | None -> Error.error ("internal error: missing record metadata for " ^ name)
 
@@ -4329,7 +4329,7 @@ let compile_type_variant scope env next_type name type_parameters constructor_fo
       in
       Ok
         ( scope,
-          env @ constructor_bindings,
+          Env.add_bindings constructor_bindings env,
           next_type,
           Type_variant { type_name; type_parameters; constructors } )
 
@@ -4340,7 +4340,7 @@ let compile_module_apply scope env next_type module_name functor_name
   in
   Ok
     ( scope,
-      env @ applied_bindings,
+      Env.add_bindings applied_bindings env,
       next_type,
       Module_apply
         {
@@ -4456,7 +4456,7 @@ let rec compile_module ?signature_name scope env next_type module_path
           alias_module_bindings env public_alias_path target_name
         in
         Ok
-          ( env @ local_alias_bindings,
+          ( Env.add_bindings local_alias_bindings env,
             public_bindings @ public_alias_bindings,
             next_type,
             Module_alias
@@ -4562,7 +4562,7 @@ let rec compile_module ?signature_name scope env next_type module_path
                           values }
                     in
                     Ok
-                      ( env @ [ (key, local_binding) ],
+                      ( Env.add key local_binding env,
                         public_bindings @ [ (key, public_binding) ],
                         next_type + 1,
                         item :: items ))
@@ -4572,7 +4572,7 @@ let rec compile_module ?signature_name scope env next_type module_path
                     { pattern = Named local_name; expression = expr.ocaml_expr }
                 in
                 Ok
-                  ( env @ [ (key, local_binding) ],
+                  ( Env.add key local_binding env,
                     public_bindings @ [ (key, public_binding) ],
                     next_type,
                     item :: items ))))
@@ -4612,7 +4612,7 @@ let rec compile_module ?signature_name scope env next_type module_path
                     { pattern = Named local_name; expression = expr.ocaml_expr }
                 in
                 Ok
-                  ( env @ [ (key, local_binding) ],
+                  ( Env.add key local_binding env,
                     public_bindings @ [ (key, public_binding) ],
                     next_type,
                     Group (type_items @ [ value_item ]) :: items )
@@ -4628,7 +4628,7 @@ let rec compile_module ?signature_name scope env next_type module_path
         | Error _ as err -> err
         | Ok (_scope, nested_public_bindings, next_type, nested_item) ->
             Ok
-              ( env @ nested_public_bindings,
+              ( Env.add_bindings nested_public_bindings env,
                 public_bindings @ nested_public_bindings,
                 next_type,
                 nested_item :: items ))
@@ -4638,7 +4638,7 @@ let rec compile_module ?signature_name scope env next_type module_path
         | Error _ as err -> err
         | Ok (_scope, nested_public_bindings, next_type, nested_item) ->
             Ok
-              ( env @ nested_public_bindings,
+              ( Env.add_bindings nested_public_bindings env,
                 public_bindings @ nested_public_bindings,
                 next_type,
                 nested_item :: items ))
@@ -4693,7 +4693,7 @@ let compile_module_functor scope env next_type functor_name parameter_form
                    signature_parameter_bindings env parameter_name
                      parameter_signature)
           in
-          let functor_env = env @ parameter_bindings in
+          let functor_env = Env.add_bindings parameter_bindings env in
           (match
              compile_module scope functor_env next_type functor_name
                functor_name body_forms
@@ -4707,7 +4707,7 @@ let compile_module_functor scope env next_type functor_name parameter_form
                   in
                   Ok
                     ( scope,
-                      env @ functor_bindings,
+                      Env.add_bindings functor_bindings env,
                       next_type,
                       Module_functor
                         {
@@ -4827,7 +4827,7 @@ let compile_top_level scope env next_type = function
                   in
                   Ok
                     ( scope,
-                      env @ [ (env_key, binding) ],
+                      Env.add env_key binding env,
                       next_type + 1,
                       Record_def
                         { var_name = ocaml_name;
@@ -4839,7 +4839,7 @@ let compile_top_level scope env next_type = function
               let binding = binding_of_expr ocaml_name expr in
               Ok
                 ( scope,
-                  env @ [ (env_key, binding) ],
+                  Env.add env_key binding env,
                   next_type,
                   Value_binding
                     { pattern = Named ocaml_name; expression = expr.ocaml_expr } ))))
@@ -4867,7 +4867,7 @@ let compile_top_level scope env next_type = function
               in
               Ok
                 ( scope,
-                  env @ [ (env_key, binding) ],
+                  Env.add env_key binding env,
                   next_type,
                   Group (type_items @ [ value_item ]) )
           | _ -> Error.error "defn body did not compile to a function")))
@@ -4885,12 +4885,12 @@ let compile_top_level scope env next_type = function
       with
       | Error _ as err -> err
       | Ok (scope, module_bindings, next_type, item) ->
-          Ok (scope, env @ module_bindings, next_type, item))
+          Ok (scope, Env.add_bindings module_bindings env, next_type, item))
   | FList (FSymbol "module" :: FSymbol module_name :: forms) -> (
       match compile_module scope env next_type module_name module_name forms with
       | Error _ as err -> err
       | Ok (scope, module_bindings, next_type, item) ->
-          Ok (scope, env @ module_bindings, next_type, item))
+          Ok (scope, Env.add_bindings module_bindings env, next_type, item))
   | FList (FSymbol (("print" | "println") as name) :: args) -> (
       match compile_call scope env name args with
       | Error _ as err -> err
@@ -4964,12 +4964,12 @@ let compile_top_level scope env next_type = function
                     { pattern = Ignore_pattern; expression = expr.ocaml_expr } )))
 
 type state = {
-  env : (string * binding) list;
+  env : Env.t;
   next_type : int;
   items : compiled_item list;
 }
 
-let empty_state = { env = []; next_type = 1; items = [] }
+let empty_state = { env = Env.empty; next_type = 1; items = [] }
 
 let compile_forms_incremental state forms =
   let rec loop env next_type items = function

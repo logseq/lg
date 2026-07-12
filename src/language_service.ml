@@ -320,7 +320,7 @@ let document_symbols analysis = List.concat_map symbols_of_form analysis.forms
 
 let completion_source_names analysis =
   analysis.compiler.typecheck_state.env
-  |> List.filter_map (fun (key, (binding : Types.binding)) ->
+  |> Compiler_environment.filter_map (fun key (binding : Types.binding) ->
          if String.starts_with ~prefix:"__" key then None
          else Some (binding.ocaml_name, key))
 

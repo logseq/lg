@@ -1,6 +1,8 @@
 open Ast
 open Types
 
+module Env = Compiler_environment
+
 type method_signature = {
   method_name : string;
   param_tys : ty list;
@@ -38,7 +40,7 @@ let method_is_ambiguous scope env method_name =
   if String.contains method_name '/' then false
   else
     match
-      List.assoc_opt
+      Env.find_opt
         (Names.scoped_key scope (legacy_marker_name method_name))
         env
     with
@@ -75,16 +77,16 @@ let lookup_marker scope env method_name =
       [ scope ^ "/" ^ method_name ^ "$protocol"; method_name ^ "$protocol" ]
     else [ Names.scoped_key scope (legacy_marker_name method_name) ]
   in
-  List.find_map (fun name -> List.assoc_opt name env) names
+  List.find_map (fun name -> Env.find_opt name env) names
 
 let lookup_protocol_marker scope env protocol_name method_name =
   let id = protocol_id scope protocol_name in
-  List.assoc_opt (marker_name id method_name) env
+  Env.find_opt (marker_name id method_name) env
 
 let lookup_impl env protocol_id method_name receiver_ty =
   match impl_name protocol_id method_name receiver_ty with
   | None -> None
-  | Some impl_name -> List.assoc_opt impl_name env
+  | Some impl_name -> Env.find_opt impl_name env
 
 let parse_method_signature = function
   | FList [ FSymbol method_name; params; FKeyword return_keyword ] -> (

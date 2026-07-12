@@ -405,6 +405,30 @@ let test_emitted_ocaml_names_reject_source_collisions () =
   |> expect_error_contains
        "OCaml name collision: active? and active_ both emit active_"
 
+let test_typed_environment_respects_lexical_shadowing () =
+  let source =
+    {|
+(def value 1)
+(defn shout [^:string value] (str value "!"))
+(println (shout "Ada"))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "typed_environment_respects_lexical_shadowing" "Ada!\n"
+    ocaml_source
+
+let test_typed_environment_replaces_top_level_bindings () =
+  let source =
+    {|
+(def value 1)
+(def value "Ada")
+(println value)
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "typed_environment_replaces_top_level_bindings" "Ada\n"
+    ocaml_source
+
 let test_modules_resolve_qualified_symbols () =
   let source =
     {|
@@ -4960,6 +4984,10 @@ let tests =
       test_compiler_identities_are_stable_and_distinct );
     ( "emitted OCaml names reject source collisions",
       test_emitted_ocaml_names_reject_source_collisions );
+    ( "typed environment respects lexical shadowing",
+      test_typed_environment_respects_lexical_shadowing );
+    ( "typed environment replaces top-level bindings",
+      test_typed_environment_replaces_top_level_bindings );
     ("modules resolve qualified symbols", test_modules_resolve_qualified_symbols);
     ( "modules prevent unqualified symbol collisions",
       test_modules_prevent_unqualified_symbol_collisions );
