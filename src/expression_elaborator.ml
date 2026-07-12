@@ -14,23 +14,23 @@ let rec compile_expr scope (env : Env.t) form =
           let node_id = Source_node_id.of_location location in
           Ok
             { expression with
-              ocaml_expr = Ocaml_ir.Located (node_id, location, expression.ocaml_expr);
+              semantic_expr = Semantic_ir.Located (node_id, location, expression.semantic_expr);
             })
 
 and compile_expr_unlocated scope (env : Env.t) = function
-  | FInt value -> Ok (typed_ir TInt (Ocaml_ir.Int value))
-  | FFloat value -> Ok (typed_ir TFloat (Ocaml_ir.Float value))
-  | FChar value -> Ok (typed_ir TChar (Ocaml_ir.Char value))
-  | FString value -> Ok (typed_ir TString (Ocaml_ir.String value))
-  | FBool value -> Ok (typed_ir TBool (Ocaml_ir.Bool value))
-  | FKeyword keyword -> Ok (typed_ir TKeyword (Ocaml_ir.String keyword))
+  | FInt value -> Ok (typed_ir TInt (Semantic_ir.Int value))
+  | FFloat value -> Ok (typed_ir TFloat (Semantic_ir.Float value))
+  | FChar value -> Ok (typed_ir TChar (Semantic_ir.Char value))
+  | FString value -> Ok (typed_ir TString (Semantic_ir.String value))
+  | FBool value -> Ok (typed_ir TBool (Semantic_ir.Bool value))
+  | FKeyword keyword -> Ok (typed_ir TKeyword (Semantic_ir.String keyword))
   | FSymbol name -> (
       match Env.find_opt (Names.scoped_key scope name) env with
       | Some { ty = TFn ([], return_ty); _ } when is_constructor_name name ->
-          Ok (typed_ir return_ty (Ocaml_ir.Constructor (name, None)))
-      | Some binding -> Ok (typed_ir binding.ty (Ocaml_ir.Ident binding.ocaml_name))
+          Ok (typed_ir return_ty (Semantic_ir.Constructor (name, None)))
+      | Some binding -> Ok (typed_ir binding.ty (Semantic_ir.Ident binding.ocaml_name))
       | None when name = "None" ->
-          Ok (typed_ir (TOcaml_app ("option", [ TAny ])) (Ocaml_ir.Constructor (name, None)))
+          Ok (typed_ir (TOcaml_app ("option", [ TAny ])) (Semantic_ir.Constructor (name, None)))
       | None -> Error.error ("unknown symbol " ^ name))
   | FVector forms -> compile_vector scope env forms
   | FMap pairs -> compile_map scope env pairs

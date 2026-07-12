@@ -5,10 +5,10 @@ let rec equality_expr left right =
   | TSet inner -> (
       match Types.set_module_name inner with
       | Ok set_module ->
-          Ocaml_ir.Apply
-            ( Ocaml_ir.Ident (set_module ^ ".equal"),
-              [ left.ocaml_expr; right.ocaml_expr ] )
-      | Error _ -> Ocaml_ir.Bool false)
+          Semantic_ir.Apply
+            ( Semantic_ir.Ident (set_module ^ ".equal"),
+              [ left.semantic_expr; right.semantic_expr ] )
+      | Error _ -> Semantic_ir.Bool false)
   | TRecord fields | TNamed_record { fields; _ } ->
       let parts =
         fields
@@ -16,7 +16,7 @@ let rec equality_expr left right =
                let left_field =
                  {
                    ty = field.ty;
-                   ocaml_expr = Structural_map.field_expr left field;
+                   semantic_expr = Structural_map.field_expr left field;
                    record_values = None;
                    return_param_index = None;
                  }
@@ -24,7 +24,7 @@ let rec equality_expr left right =
                let right_field =
                  {
                    ty = field.ty;
-                   ocaml_expr = Structural_map.field_expr right field;
+                   semantic_expr = Structural_map.field_expr right field;
                    record_values = None;
                    return_param_index = None;
                  }
@@ -32,19 +32,19 @@ let rec equality_expr left right =
                equality_expr left_field right_field)
       in
       and_expressions parts
-  | _ -> Ocaml_ir.Infix ("=", left.ocaml_expr, right.ocaml_expr)
+  | _ -> Semantic_ir.Infix ("=", left.semantic_expr, right.semantic_expr)
 
 and and_expressions = function
-  | [] -> Ocaml_ir.Bool true
+  | [] -> Semantic_ir.Bool true
   | first :: rest ->
       List.fold_left
-        (fun expression next -> Ocaml_ir.Infix ("&&", expression, next))
+        (fun expression next -> Semantic_ir.Infix ("&&", expression, next))
         first rest
 
 let pairwise_expressions op args =
   let rec loop acc = function
     | left :: ((right :: _) as rest) ->
-        loop (Ocaml_ir.Infix (op, left.ocaml_expr, right.ocaml_expr) :: acc) rest
+        loop (Semantic_ir.Infix (op, left.semantic_expr, right.semantic_expr) :: acc) rest
     | _ -> List.rev acc
   in
   loop [] args
@@ -59,7 +59,7 @@ let pairwise_equality_expressions args =
 let compile name args =
   match args with
   | [] | [ _ ] ->
-      Ok (typed_ir TBool (Ocaml_ir.Bool (name <> "not=")))
+      Ok (typed_ir TBool (Semantic_ir.Bool (name <> "not=")))
   | first :: _ ->
       if name = "=" || name = "not=" then
         if
@@ -72,7 +72,7 @@ let compile name args =
         then
           let equal_expr = and_expressions (pairwise_equality_expressions args) in
           let expression =
-            if name = "not=" then Ocaml_ir.Prefix ("not", equal_expr) else equal_expr
+            if name = "not=" then Semantic_ir.Prefix ("not", equal_expr) else equal_expr
           in
           Ok (typed_ir TBool expression)
         else Error.error (name ^ " arguments must have the same type")

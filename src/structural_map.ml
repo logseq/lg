@@ -14,8 +14,8 @@ let field_expr target field =
   | Some values -> (
       match List.assoc_opt field values with
       | Some expression -> expression
-      | None -> Ocaml_ir.Field (target.ocaml_expr, field.ocaml_name))
-  | None -> Ocaml_ir.Field (target.ocaml_expr, field.ocaml_name)
+      | None -> Semantic_ir.Field (target.semantic_expr, field.ocaml_name))
+  | None -> Semantic_ir.Field (target.semantic_expr, field.ocaml_name)
 
 let values_for target fields =
   List.map (fun (field : field) -> (field, field_expr target field)) fields
@@ -23,8 +23,8 @@ let values_for target fields =
 let record_expr fields values =
   {
     ty = TRecord fields;
-    ocaml_expr =
-      Ocaml_ir.Record
+    semantic_expr =
+      Semantic_ir.Record
         (List.map (fun ((field : field), value) -> (field.ocaml_name, value)) values, None);
     record_values = Some values;
     return_param_index = None;
@@ -41,7 +41,7 @@ let assoc target fields keyword value =
         fields
         |> List.map (fun (field : field) ->
                let expression =
-                 if field.keyword = keyword then value.ocaml_expr
+                 if field.keyword = keyword then value.semantic_expr
                  else field_expr target field
                in
                (field, expression))
@@ -52,7 +52,7 @@ let assoc target fields keyword value =
       let old_fields = fields in
       let fields = old_fields @ [ new_field ] in
       let values = values_for target old_fields in
-      let values = values @ [ (new_field, value.ocaml_expr) ] in
+      let values = values @ [ (new_field, value.semantic_expr) ] in
       Ok (record_expr fields values)
 
 let rec assoc_many target pairs =

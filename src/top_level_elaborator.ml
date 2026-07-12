@@ -148,7 +148,7 @@ let compile scope env next_type = function
                   Env.add env_key binding env,
                   next_type,
                   Value_binding
-                    { pattern = Named ocaml_name; expression = expr.ocaml_expr } ))))
+                    { pattern = Named ocaml_name; expression = expr.semantic_expr } ))))
   | FList (FSymbol "defn" :: FSymbol name :: params :: body_forms) -> (
       match prepare_fn scope env params body_forms with
       | Error _ as err -> err
@@ -169,7 +169,7 @@ let compile scope env next_type = function
               let type_items = row_type_items row_param_types param_tys in
               let value_item =
                 Value_binding
-                  { pattern = Named ocaml_name; expression = expr.ocaml_expr }
+                  { pattern = Named ocaml_name; expression = expr.semantic_expr }
               in
               Ok
                 ( scope,
@@ -206,7 +206,7 @@ let compile scope env next_type = function
               env,
               next_type,
               Value_binding
-                { pattern = Unit_pattern; expression = expr.ocaml_expr } ))
+                { pattern = Unit_pattern; expression = expr.semantic_expr } ))
   | FList (FSymbol "require" :: entries) -> (
       match Require.parse_entries entries with
       | Error _ as err -> err
@@ -252,7 +252,7 @@ let compile scope env next_type = function
               env,
               next_type,
               Value_binding
-                { pattern = Ignore_pattern; expression = expr.ocaml_expr } ))
+                { pattern = Ignore_pattern; expression = expr.semantic_expr } ))
   | FList (FSymbol "recur" :: _) ->
       Error.error "recur is only valid in a loop tail position"
   | form -> (
@@ -267,4 +267,4 @@ let compile scope env next_type = function
                   env,
                   next_type,
                   Value_binding
-                    { pattern = Ignore_pattern; expression = expr.ocaml_expr } )))
+                    { pattern = Ignore_pattern; expression = expr.semantic_expr } )))

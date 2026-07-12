@@ -69,16 +69,16 @@ let create ~compile_expr =
                             match fixed_args with
                             | [] -> list_expr
                             | _ ->
-                                Ocaml_ir.Infix
+                                Semantic_ir.Infix
                                   ( "@",
-                                    Ocaml_ir.List
-                                      (List.map (fun arg -> arg.ocaml_expr) fixed_args),
+                                    Semantic_ir.List
+                                      (List.map (fun arg -> arg.semantic_expr) fixed_args),
                                     list_expr )
                           in
                           Ok
                             (typed_ir TInt
                                (apply "List.fold_left"
-                                  [ fn.ocaml_expr; Ocaml_ir.Int 0; values_expr ]))
+                                  [ fn.semantic_expr; Semantic_ir.Int 0; values_expr ]))
                       | TFn ([ TInt; TInt ], TInt) ->
                           Error.error "apply currently supports int binary reducers"
                       | TFn _ -> Error.error "apply currently supports int binary reducers"
@@ -130,12 +130,12 @@ let create ~compile_expr =
                     List.rev fns
                     |> List.fold_left
                          (fun expression fn ->
-                           Ocaml_ir.Apply (fn.ocaml_expr, [ expression ]))
-                         (Ocaml_ir.Ident "x")
+                           Semantic_ir.Apply (fn.semantic_expr, [ expression ]))
+                         (Semantic_ir.Ident "x")
                   in
                   Ok
                     (typed_ir (TFn ([ arg_ty ], ret_ty))
-                       (Ocaml_ir.Fun ([ Ocaml_ir.PVar "x" ], inner)))))
+                       (Semantic_ir.Fun ([ Semantic_ir.PVar "x" ], inner)))))
     
     and compile_partial scope env arg_forms =
       match arg_forms with
@@ -154,15 +154,15 @@ let create ~compile_expr =
                       remaining_tys |> List.mapi (fun index _ -> "arg" ^ string_of_int index)
                     in
                     let remaining_exprs =
-                      remaining_names |> List.map (fun name -> Ocaml_ir.Ident name)
+                      remaining_names |> List.map (fun name -> Semantic_ir.Ident name)
                     in
                     Ok
                       (typed_ir (TFn (remaining_tys, ret))
-                         (Ocaml_ir.Fun
-                            ( List.map (fun name -> Ocaml_ir.PVar name) remaining_names,
-                              Ocaml_ir.Apply
-                                ( fn.ocaml_expr,
-                                  List.map (fun arg -> arg.ocaml_expr) fixed_args
+                         (Semantic_ir.Fun
+                            ( List.map (fun name -> Semantic_ir.PVar name) remaining_names,
+                              Semantic_ir.Apply
+                                ( fn.semantic_expr,
+                                  List.map (fun arg -> arg.semantic_expr) fixed_args
                                   @ remaining_exprs ))))
                   else Error.error "partial fixed arguments do not match function"
               | TFn _ -> Error.error "partial requires fewer arguments than function arity"
@@ -181,7 +181,7 @@ let create ~compile_expr =
       | Ok [ value ] ->
           Ok
             (typed_ir (TFn ([ TAny ], value.ty))
-               (Ocaml_ir.Fun ([ Ocaml_ir.PAny ], value.ocaml_expr)))
+               (Semantic_ir.Fun ([ Semantic_ir.PAny ], value.semantic_expr)))
       | Ok _ -> Error.error "constantly expects 1 arguments"
     
     and compile_complement scope env arg_forms =
@@ -194,10 +194,10 @@ let create ~compile_expr =
               | TFn ([ arg_ty ], TBool) ->
                   Ok
                     (typed_ir (TFn ([ arg_ty ], TBool))
-                       (Ocaml_ir.Fun
-                          ( [ Ocaml_ir.PVar "x" ],
-                            Ocaml_ir.Prefix
-                              ("not", Ocaml_ir.Apply (fn.ocaml_expr, [ Ocaml_ir.Ident "x" ])) )))
+                       (Semantic_ir.Fun
+                          ( [ Semantic_ir.PVar "x" ],
+                            Semantic_ir.Prefix
+                              ("not", Semantic_ir.Apply (fn.semantic_expr, [ Semantic_ir.Ident "x" ])) )))
               | TFn _ -> Error.error "complement expects a predicate"
               | _ -> Error.error "complement expects a function"))
       | _ -> Error.error "complement expects 1 function"
@@ -227,7 +227,7 @@ let create ~compile_expr =
                 | TFn ([ current_arg ], TBool)
                   when option_for_all (fun arg_ty -> Types.equal arg_ty current_arg) arg_ty ->
                     collect (Some current_arg)
-                      (Ocaml_ir.Apply (fn.ocaml_expr, [ Ocaml_ir.Ident "x" ]) :: exprs)
+                      (Semantic_ir.Apply (fn.semantic_expr, [ Semantic_ir.Ident "x" ]) :: exprs)
                       rest
                 | TFn _ ->
                     Error.error (name ^ " expects predicates with the same argument type")
@@ -240,15 +240,15 @@ let create ~compile_expr =
               let op = if name = "every-pred" then "&&" else "||" in
               let body =
                 match exprs with
-                | [] -> Ocaml_ir.Bool (name = "every-pred")
+                | [] -> Semantic_ir.Bool (name = "every-pred")
                 | first :: rest ->
                     List.fold_left
-                      (fun acc expr -> Ocaml_ir.Infix (op, acc, expr))
+                      (fun acc expr -> Semantic_ir.Infix (op, acc, expr))
                       first rest
               in
               Ok
                 (typed_ir (TFn ([ arg_ty ], TBool))
-                   (Ocaml_ir.Fun ([ Ocaml_ir.PVar "x" ], body))))
+                   (Semantic_ir.Fun ([ Semantic_ir.PVar "x" ], body))))
     
     and compile_juxt scope env arg_forms =
       let compile_fns =
@@ -282,7 +282,7 @@ let create ~compile_expr =
                               Types.compatible ~expected:ret_ty ~actual:current_ret)
                             ret_ty ->
                     collect (Some current_arg) (Some current_ret)
-                      (Ocaml_ir.Apply (fn.ocaml_expr, [ Ocaml_ir.Ident "x" ]) :: exprs)
+                      (Semantic_ir.Apply (fn.semantic_expr, [ Semantic_ir.Ident "x" ]) :: exprs)
                       rest
                 | TFn ([ current_arg ], _)
                   when option_for_all
@@ -298,9 +298,9 @@ let create ~compile_expr =
           | Ok (Some arg_ty, Some ret_ty, exprs) ->
               Ok
                 (typed_ir (TFn ([ arg_ty ], TVector ret_ty))
-                   (Ocaml_ir.Fun
-                      ( [ Ocaml_ir.PVar "x" ],
-                        apply "Rrbvec.of_list" [ Ocaml_ir.List exprs ] )))
+                   (Semantic_ir.Fun
+                      ( [ Semantic_ir.PVar "x" ],
+                        apply "Rrbvec.of_list" [ Semantic_ir.List exprs ] )))
           | Ok _ -> Error.error "juxt expects at least 1 function")
     
   in

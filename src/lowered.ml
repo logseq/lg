@@ -29,7 +29,7 @@ type variant_constructor = {
 type compiled_item =
   | Value_binding of {
       pattern : value_pattern;
-      expression : Ocaml_ir.t;
+      expression : Semantic_ir.t;
     }
   | Comment of string
   | Type_def of {
@@ -78,5 +78,5 @@ type compiled_item =
       type_name : string;
       set_module_name : string;
       fields : Types.field list;
-      values : (Types.field * Ocaml_ir.t) list;
+      values : (Types.field * Semantic_ir.t) list;
     }

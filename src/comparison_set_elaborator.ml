@@ -41,18 +41,18 @@ let create ~compile_expr =
     let compile_distinct_question scope env arg_forms =
       match compile_args_for scope env arg_forms with
       | Error _ as err -> err
-      | Ok ([] | [ _ ]) -> Ok (typed_ir TBool (Ocaml_ir.Bool true))
+      | Ok ([] | [ _ ]) -> Ok (typed_ir TBool (Semantic_ir.Bool true))
       | Ok (first :: _ as args) ->
           if List.for_all (fun arg -> Types.equal first.ty arg.ty) args then
             Ok
               (typed_ir TBool
-                 (Ocaml_ir.Infix
+                 (Semantic_ir.Infix
                     ( "=",
                       apply "List.length"
                         [ apply "List.sort_uniq"
-                            [ Ocaml_ir.Ident "compare";
-                              Ocaml_ir.List (List.map (fun arg -> arg.ocaml_expr) args) ] ],
-                      Ocaml_ir.Int (List.length args) )))
+                            [ Semantic_ir.Ident "compare";
+                              Semantic_ir.List (List.map (fun arg -> arg.semantic_expr) args) ] ],
+                      Semantic_ir.Int (List.length args) )))
           else Error.error "distinct? arguments must have the same type"
     
     and compile_compare scope env arg_forms =
@@ -66,7 +66,7 @@ let create ~compile_expr =
           else
             Ok
               (typed_ir TInt
-                 (apply "Stdlib.compare" [ left.ocaml_expr; right.ocaml_expr ]))
+                 (apply "Stdlib.compare" [ left.semantic_expr; right.semantic_expr ]))
       | Ok _ -> Error.error "compare expects 2 arguments"
     
     and compile_key_extreme scope env name arg_forms =
@@ -88,30 +88,30 @@ let create ~compile_expr =
                     let compare_op = if name = "max-key" then ">" else "<" in
                     let expr =
                       match rest with
-                      | [] -> first.ocaml_expr
+                      | [] -> first.semantic_expr
                       | _ ->
-                          Ocaml_ir.Let
-                            ( [ (Ocaml_ir.PVar "key_fn", fn.ocaml_expr);
-                                ( Ocaml_ir.PVar "choose",
-                                  Ocaml_ir.Fun
-                                    ( [ Ocaml_ir.PVar "best"; Ocaml_ir.PVar "item" ],
-                                      Ocaml_ir.If
-                                        ( Ocaml_ir.Infix
+                          Semantic_ir.Let
+                            ( [ (Semantic_ir.PVar "key_fn", fn.semantic_expr);
+                                ( Semantic_ir.PVar "choose",
+                                  Semantic_ir.Fun
+                                    ( [ Semantic_ir.PVar "best"; Semantic_ir.PVar "item" ],
+                                      Semantic_ir.If
+                                        ( Semantic_ir.Infix
                                             ( compare_op,
                                               apply "Stdlib.compare"
-                                                [ Ocaml_ir.Apply
-                                                    ( Ocaml_ir.Ident "key_fn",
-                                                      [ Ocaml_ir.Ident "item" ] );
-                                                  Ocaml_ir.Apply
-                                                    ( Ocaml_ir.Ident "key_fn",
-                                                      [ Ocaml_ir.Ident "best" ] ) ],
-                                              Ocaml_ir.Int 0 ),
-                                          Ocaml_ir.Ident "item",
-                                          Ocaml_ir.Ident "best" ) ) ) ],
+                                                [ Semantic_ir.Apply
+                                                    ( Semantic_ir.Ident "key_fn",
+                                                      [ Semantic_ir.Ident "item" ] );
+                                                  Semantic_ir.Apply
+                                                    ( Semantic_ir.Ident "key_fn",
+                                                      [ Semantic_ir.Ident "best" ] ) ],
+                                              Semantic_ir.Int 0 ),
+                                          Semantic_ir.Ident "item",
+                                          Semantic_ir.Ident "best" ) ) ) ],
                               apply "List.fold_left"
-                                [ Ocaml_ir.Ident "choose";
-                                  first.ocaml_expr;
-                                  Ocaml_ir.List (List.map (fun value -> value.ocaml_expr) rest) ] )
+                                [ Semantic_ir.Ident "choose";
+                                  first.semantic_expr;
+                                  Semantic_ir.List (List.map (fun value -> value.semantic_expr) rest) ] )
                     in
                     Ok (typed_ir first.ty expr)
                 | TFn _ -> Error.error (name ^ " expects a key function matching values")
@@ -137,9 +137,9 @@ let create ~compile_expr =
                            coerce_values [] (List.rev values)
                            |> Result.map (fun values ->
                                   typed_ir (TSet first_expr.ty)
-                                    (Ocaml_ir.Apply
-                                       ( Ocaml_ir.Ident (set_module ^ ".of_list"),
-                                         [ Ocaml_ir.List values ] ))))
+                                    (Semantic_ir.Apply
+                                       ( Semantic_ir.Ident (set_module ^ ".of_list"),
+                                         [ Semantic_ir.List values ] ))))
                 | form :: rest -> (
                     match compile_expr scope env form with
                     | Error _ as err -> err
@@ -158,7 +158,7 @@ let create ~compile_expr =
           | Ok element_ty ->
               Types.set_module_name element_ty
               |> Result.map (fun set_module ->
-                     typed_ir (TSet element_ty) (Ocaml_ir.Ident (set_module ^ ".empty"))))
+                     typed_ir (TSet element_ty) (Semantic_ir.Ident (set_module ^ ".empty"))))
       | _ -> Error.error "set-of expects one type keyword"
     
     and compile_disj scope env arg_forms =
@@ -180,13 +180,13 @@ let create ~compile_expr =
                                 (fun set_module ->
                                   Result.bind (coerce_set_element inner value) (fun value ->
                                          remove_values
-                                           (Ocaml_ir.Apply
-                                              ( Ocaml_ir.Ident (set_module ^ ".remove"),
+                                           (Semantic_ir.Apply
+                                              ( Semantic_ir.Ident (set_module ^ ".remove"),
                                                 [ value; expression ] ))
                                            rest))
                             else Error.error "disj value type must match set element type")
                   in
-                  remove_values collection.ocaml_expr value_forms
+                  remove_values collection.semantic_expr value_forms
               | _ -> Error.error "disj expects a set"))
       | [] -> Error.error "disj expects a set"
     

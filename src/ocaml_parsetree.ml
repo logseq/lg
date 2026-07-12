@@ -75,7 +75,10 @@ let record_values_to_parsetree var_name values =
     | [] -> Ok (List.rev acc)
     | ((field : Types.field), expression) :: rest -> (
         let context = "record " ^ var_name ^ " field " ^ field.keyword in
-        match Ocaml_ir.to_parsetree ~context expression with
+        match
+          Ocaml_ir.to_parsetree ~context
+            (Semantic_lowering.expression expression)
+        with
         | Error _ as err -> err
         | Ok expr ->
             loop ((lid (Longident.Lident field.ocaml_name), expr) :: acc) rest)
@@ -215,7 +218,9 @@ let value_binding pattern expression =
     | Unit_pattern -> "top-level effect"
     | Ignore_pattern -> "top-level expression"
   in
-  match Ocaml_ir.to_parsetree ~context expression with
+  match
+    Ocaml_ir.to_parsetree ~context (Semantic_lowering.expression expression)
+  with
   | Error _ as err -> err
   | Ok expression ->
       let binding =

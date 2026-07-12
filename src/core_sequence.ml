@@ -1,6 +1,6 @@
 open Types
 
-let apply name args = Ocaml_ir.Apply (Ocaml_ir.Ident name, args)
+let apply name args = Semantic_ir.Apply (Semantic_ir.Ident name, args)
 
 let one_arg name args =
   match args with
@@ -14,51 +14,51 @@ let two_args name args =
 
 let drop_list_expr count source =
   let name = "drop__" in
-  let n = Ocaml_ir.Ident "n" in
-  let xs = Ocaml_ir.Ident "xs" in
+  let n = Semantic_ir.Ident "n" in
+  let xs = Semantic_ir.Ident "xs" in
   let recursive_call =
-    Ocaml_ir.Apply
-      ( Ocaml_ir.Ident name,
-        [ Ocaml_ir.Infix ("-", n, Ocaml_ir.Int 1); Ocaml_ir.Ident "rest" ] )
+    Semantic_ir.Apply
+      ( Semantic_ir.Ident name,
+        [ Semantic_ir.Infix ("-", n, Semantic_ir.Int 1); Semantic_ir.Ident "rest" ] )
   in
   let body =
-    Ocaml_ir.If
-      ( Ocaml_ir.Infix ("<=", n, Ocaml_ir.Int 0),
+    Semantic_ir.If
+      ( Semantic_ir.Infix ("<=", n, Semantic_ir.Int 0),
         xs,
-        Ocaml_ir.Match
+        Semantic_ir.Match
           ( xs,
-            [ (Ocaml_ir.PList [], Ocaml_ir.List []);
-              ( Ocaml_ir.PCons (Ocaml_ir.PAny, Ocaml_ir.PVar "rest"),
+            [ (Semantic_ir.PList [], Semantic_ir.List []);
+              ( Semantic_ir.PCons (Semantic_ir.PAny, Semantic_ir.PVar "rest"),
                 recursive_call ) ] ) )
   in
-  Ocaml_ir.LetRec
+  Semantic_ir.LetRec
     ( name,
-      [ Ocaml_ir.PVar "n"; Ocaml_ir.PVar "xs" ],
+      [ Semantic_ir.PVar "n"; Semantic_ir.PVar "xs" ],
       body,
       [ count; source ] )
 
 let first_expr name collection =
   match collection.ty with
-  | TList inner -> Ok (typed_ir inner (apply "List.hd" [ collection.ocaml_expr ]))
+  | TList inner -> Ok (typed_ir inner (apply "List.hd" [ collection.semantic_expr ]))
   | TVector inner ->
-      Ok (typed_ir inner (apply "Rrbvec.nth" [ collection.ocaml_expr; Ocaml_ir.Int 0 ]))
+      Ok (typed_ir inner (apply "Rrbvec.nth" [ collection.semantic_expr; Semantic_ir.Int 0 ]))
   | _ -> Error.error (name ^ " expects a list or vector")
 
 let next_expr name collection =
   let list_next target =
-    Ocaml_ir.Match
+    Semantic_ir.Match
       ( target,
-        [ (Ocaml_ir.PList [], Ocaml_ir.List []);
-          (Ocaml_ir.PCons (Ocaml_ir.PAny, Ocaml_ir.PVar "rest"), Ocaml_ir.Ident "rest") ] )
+        [ (Semantic_ir.PList [], Semantic_ir.List []);
+          (Semantic_ir.PCons (Semantic_ir.PAny, Semantic_ir.PVar "rest"), Semantic_ir.Ident "rest") ] )
   in
   match collection.ty with
   | TList _ ->
-      Ok (typed_ir collection.ty (list_next collection.ocaml_expr))
+      Ok (typed_ir collection.ty (list_next collection.semantic_expr))
   | TVector _ ->
       Ok
         (typed_ir collection.ty
            (apply "Rrbvec.of_list"
-              [ list_next (apply "Rrbvec.to_list" [ collection.ocaml_expr ]) ]))
+              [ list_next (apply "Rrbvec.to_list" [ collection.semantic_expr ]) ]))
   | _ -> Error.error (name ^ " expects a list or vector")
 
 let nth_next_expr name collection count =
@@ -68,19 +68,19 @@ let nth_next_expr name collection count =
     | TList _ ->
         Ok
           (typed_ir collection.ty
-             (drop_list_expr count.ocaml_expr collection.ocaml_expr))
+             (drop_list_expr count.semantic_expr collection.semantic_expr))
     | TVector _ ->
         Ok
           (typed_ir collection.ty
              (apply "Rrbvec.of_list"
-                [ drop_list_expr count.ocaml_expr
-                    (apply "Rrbvec.to_list" [ collection.ocaml_expr ]) ]))
+                [ drop_list_expr count.semantic_expr
+                    (apply "Rrbvec.to_list" [ collection.semantic_expr ]) ]))
     | _ -> Error.error (name ^ " expects a list or vector")
 
 let reverse_expr name collection =
   match collection.ty with
-  | TList _ -> Ok (typed_ir collection.ty (apply "List.rev" [ collection.ocaml_expr ]))
-  | TVector _ -> Ok (typed_ir collection.ty (apply "Rrbvec.rev" [ collection.ocaml_expr ]))
+  | TList _ -> Ok (typed_ir collection.ty (apply "List.rev" [ collection.semantic_expr ]))
+  | TVector _ -> Ok (typed_ir collection.ty (apply "Rrbvec.rev" [ collection.semantic_expr ]))
   | _ -> Error.error (name ^ " expects a list or vector")
 
 let compile name args =

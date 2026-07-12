@@ -56,12 +56,12 @@ let create ~compile_expr =
                let pattern =
                  match element_ty with
                  | TNamed_record record ->
-                     Ocaml_ir.PConstraint
-                       (Ocaml_ir.PVar binding.ocaml_name, record.type_name)
-                 | _ -> Ocaml_ir.PVar binding.ocaml_name
+                     Semantic_ir.PConstraint
+                       (Semantic_ir.PVar binding.ocaml_name, record.type_name)
+                 | _ -> Semantic_ir.PVar binding.ocaml_name
                in
                typed_ir (TFn ([ element_ty ], body.ty))
-                 (Ocaml_ir.Fun ([ pattern ], body.ocaml_expr)))
+                 (Semantic_ir.Fun ([ pattern ], body.semantic_expr)))
     | form -> compile_function_arg scope env form
   in
     let rec collection_to_list_expr collection =
@@ -87,11 +87,11 @@ let create ~compile_expr =
                   Ok
                     (typed_ir (TList inner)
                        (apply "List.sort"
-                          [ Ocaml_ir.Fun
-                              ( [ Ocaml_ir.PVar "left"; Ocaml_ir.PVar "right" ],
+                          [ Semantic_ir.Fun
+                              ( [ Semantic_ir.PVar "left"; Semantic_ir.PVar "right" ],
                                 apply "Stdlib.compare"
-                                  [ Ocaml_ir.Apply (fn.ocaml_expr, [ Ocaml_ir.Ident "left" ]);
-                                    Ocaml_ir.Apply (fn.ocaml_expr, [ Ocaml_ir.Ident "right" ]) ] );
+                                  [ Semantic_ir.Apply (fn.semantic_expr, [ Semantic_ir.Ident "left" ]);
+                                    Semantic_ir.Apply (fn.semantic_expr, [ Semantic_ir.Ident "right" ]) ] );
                             list_expr ]))
               | TFn ([ param_ty ], _), Ok (inner, _) when not (Types.equal param_ty inner) ->
                   Error.error "sort-by key function must match collection elements"
@@ -113,18 +113,18 @@ let create ~compile_expr =
                   Ok
                     (typed_ir (TList ret_inner)
                        (apply "List.concat"
-                          [ apply "List.map" [ fn.ocaml_expr; list_expr ] ]))
+                          [ apply "List.map" [ fn.semantic_expr; list_expr ] ]))
               | TFn ([ param_ty ], TVector ret_inner), Ok (inner, list_expr)
                 when Types.equal param_ty inner ->
                   Ok
                     (typed_ir (TList ret_inner)
                        (apply "List.concat"
                           [ apply "List.map"
-                              [ Ocaml_ir.Fun
-                                  ( [ Ocaml_ir.PVar "item" ],
+                              [ Semantic_ir.Fun
+                                  ( [ Semantic_ir.PVar "item" ],
                                     apply "Rrbvec.to_list"
-                                      [ Ocaml_ir.Apply
-                                          (fn.ocaml_expr, [ Ocaml_ir.Ident "item" ]) ] );
+                                      [ Semantic_ir.Apply
+                                          (fn.semantic_expr, [ Semantic_ir.Ident "item" ]) ] );
                                 list_expr ] ]))
               | TFn ([ param_ty ], TSet ret_inner), Ok (inner, list_expr)
                 when Types.equal param_ty inner -> (
@@ -135,11 +135,11 @@ let create ~compile_expr =
                         (typed_ir (TList ret_inner)
                            (apply "List.concat"
                               [ apply "List.map"
-                                  [ Ocaml_ir.Fun
-                                      ( [ Ocaml_ir.PVar "item" ],
+                                  [ Semantic_ir.Fun
+                                      ( [ Semantic_ir.PVar "item" ],
                                         apply (set_module ^ ".elements")
-                                          [ Ocaml_ir.Apply
-                                              (fn.ocaml_expr, [ Ocaml_ir.Ident "item" ]) ] );
+                                          [ Semantic_ir.Apply
+                                              (fn.semantic_expr, [ Semantic_ir.Ident "item" ]) ] );
                                     list_expr ] ])))
               | TFn ([ param_ty ], _), Ok (inner, _) when not (Types.equal param_ty inner) ->
                   Error.error "mapcat function argument type does not match collection"
@@ -160,22 +160,22 @@ let create ~compile_expr =
                 match fn.ty with
                 | TFn ([], ret) ->
                     let body =
-                      Ocaml_ir.If
-                        ( Ocaml_ir.Infix ("<=", Ocaml_ir.Ident "n", Ocaml_ir.Int 0),
-                          Ocaml_ir.Ident "acc",
+                      Semantic_ir.If
+                        ( Semantic_ir.Infix ("<=", Semantic_ir.Ident "n", Semantic_ir.Int 0),
+                          Semantic_ir.Ident "acc",
                           apply "repeatedly"
-                            [ Ocaml_ir.Cons
-                                ( Ocaml_ir.Apply (fn.ocaml_expr, []),
-                                  Ocaml_ir.Ident "acc" );
-                              Ocaml_ir.Infix ("-", Ocaml_ir.Ident "n", Ocaml_ir.Int 1) ] )
+                            [ Semantic_ir.Cons
+                                ( Semantic_ir.Apply (fn.semantic_expr, []),
+                                  Semantic_ir.Ident "acc" );
+                              Semantic_ir.Infix ("-", Semantic_ir.Ident "n", Semantic_ir.Int 1) ] )
                     in
                     Ok
                       (typed_ir (TList ret)
-                         (Ocaml_ir.LetRec
+                         (Semantic_ir.LetRec
                             ( "repeatedly",
-                              [ Ocaml_ir.PVar "acc"; Ocaml_ir.PVar "n" ],
+                              [ Semantic_ir.PVar "acc"; Semantic_ir.PVar "n" ],
                               body,
-                              [ Ocaml_ir.List []; count.ocaml_expr ] )))
+                              [ Semantic_ir.List []; count.semantic_expr ] )))
                 | TFn _ -> Error.error "repeatedly expects a zero-argument function"
                 | _ -> Error.error "repeatedly expects a function"))
       | _ -> Error.error "repeatedly expects count and function"
@@ -191,36 +191,36 @@ let create ~compile_expr =
               | TFn ([ acc_ty; item_ty ], ret), Ok (inner, list_expr)
                 when Types.equal acc_ty inner && Types.equal item_ty inner && Types.equal ret inner ->
                   let reductions_body =
-                    Ocaml_ir.Match
-                      ( Ocaml_ir.Ident "xs",
-                        [ (Ocaml_ir.PList [], apply "List.rev" [ Ocaml_ir.Ident "acc" ]);
-                          ( Ocaml_ir.PCons (Ocaml_ir.PVar "item", Ocaml_ir.PVar "tail"),
-                            Ocaml_ir.Let
-                              ( [ ( Ocaml_ir.PVar "next",
-                                    Ocaml_ir.Apply
-                                      ( fn.ocaml_expr,
-                                        [ Ocaml_ir.Ident "current"; Ocaml_ir.Ident "item" ] ) ) ],
+                    Semantic_ir.Match
+                      ( Semantic_ir.Ident "xs",
+                        [ (Semantic_ir.PList [], apply "List.rev" [ Semantic_ir.Ident "acc" ]);
+                          ( Semantic_ir.PCons (Semantic_ir.PVar "item", Semantic_ir.PVar "tail"),
+                            Semantic_ir.Let
+                              ( [ ( Semantic_ir.PVar "next",
+                                    Semantic_ir.Apply
+                                      ( fn.semantic_expr,
+                                        [ Semantic_ir.Ident "current"; Semantic_ir.Ident "item" ] ) ) ],
                                 apply "reductions"
-                                  [ Ocaml_ir.Ident "next";
-                                    Ocaml_ir.Cons
-                                      (Ocaml_ir.Ident "next", Ocaml_ir.Ident "acc");
-                                    Ocaml_ir.Ident "tail" ] ) ) ] )
+                                  [ Semantic_ir.Ident "next";
+                                    Semantic_ir.Cons
+                                      (Semantic_ir.Ident "next", Semantic_ir.Ident "acc");
+                                    Semantic_ir.Ident "tail" ] ) ) ] )
                   in
                   Ok
                     (typed_ir (TList inner)
-                       (Ocaml_ir.Match
+                       (Semantic_ir.Match
                           ( list_expr,
-                            [ (Ocaml_ir.PList [], Ocaml_ir.List []);
-                              ( Ocaml_ir.PCons (Ocaml_ir.PVar "first", Ocaml_ir.PVar "rest"),
-                                Ocaml_ir.LetRec
+                            [ (Semantic_ir.PList [], Semantic_ir.List []);
+                              ( Semantic_ir.PCons (Semantic_ir.PVar "first", Semantic_ir.PVar "rest"),
+                                Semantic_ir.LetRec
                                   ( "reductions",
-                                    [ Ocaml_ir.PVar "current";
-                                      Ocaml_ir.PVar "acc";
-                                      Ocaml_ir.PVar "xs" ],
+                                    [ Semantic_ir.PVar "current";
+                                      Semantic_ir.PVar "acc";
+                                      Semantic_ir.PVar "xs" ],
                                     reductions_body,
-                                    [ Ocaml_ir.Ident "first";
-                                      Ocaml_ir.List [ Ocaml_ir.Ident "first" ];
-                                      Ocaml_ir.Ident "rest" ] ) ) ] )))
+                                    [ Semantic_ir.Ident "first";
+                                      Semantic_ir.List [ Semantic_ir.Ident "first" ];
+                                      Semantic_ir.Ident "rest" ] ) ) ] )))
               | TFn _, Ok _ -> Error.error "reductions function type does not match collection"
               | _, Ok _ -> Error.error "reductions expects a function"
               | _, Error _ -> Error.error "reductions expects a collection"))
@@ -238,31 +238,31 @@ let create ~compile_expr =
               | TFn ([ acc_ty; item_ty ], ret), Ok (inner, list_expr)
                 when Types.equal acc_ty init.ty && Types.equal item_ty inner && Types.equal ret init.ty ->
                   let reductions_body =
-                    Ocaml_ir.Match
-                      ( Ocaml_ir.Ident "xs",
-                        [ (Ocaml_ir.PList [], apply "List.rev" [ Ocaml_ir.Ident "acc" ]);
-                          ( Ocaml_ir.PCons (Ocaml_ir.PVar "item", Ocaml_ir.PVar "rest"),
-                            Ocaml_ir.Let
-                              ( [ ( Ocaml_ir.PVar "next",
-                                    Ocaml_ir.Apply
-                                      ( fn.ocaml_expr,
-                                        [ Ocaml_ir.Ident "current"; Ocaml_ir.Ident "item" ] ) ) ],
+                    Semantic_ir.Match
+                      ( Semantic_ir.Ident "xs",
+                        [ (Semantic_ir.PList [], apply "List.rev" [ Semantic_ir.Ident "acc" ]);
+                          ( Semantic_ir.PCons (Semantic_ir.PVar "item", Semantic_ir.PVar "rest"),
+                            Semantic_ir.Let
+                              ( [ ( Semantic_ir.PVar "next",
+                                    Semantic_ir.Apply
+                                      ( fn.semantic_expr,
+                                        [ Semantic_ir.Ident "current"; Semantic_ir.Ident "item" ] ) ) ],
                                 apply "reductions"
-                                  [ Ocaml_ir.Ident "next";
-                                    Ocaml_ir.Cons
-                                      (Ocaml_ir.Ident "next", Ocaml_ir.Ident "acc");
-                                    Ocaml_ir.Ident "rest" ] ) ) ] )
+                                  [ Semantic_ir.Ident "next";
+                                    Semantic_ir.Cons
+                                      (Semantic_ir.Ident "next", Semantic_ir.Ident "acc");
+                                    Semantic_ir.Ident "rest" ] ) ) ] )
                   in
                   Ok
                     (typed_ir (TList init.ty)
-                       (Ocaml_ir.LetRec
+                       (Semantic_ir.LetRec
                           ( "reductions",
-                            [ Ocaml_ir.PVar "current";
-                              Ocaml_ir.PVar "acc";
-                              Ocaml_ir.PVar "xs" ],
+                            [ Semantic_ir.PVar "current";
+                              Semantic_ir.PVar "acc";
+                              Semantic_ir.PVar "xs" ],
                             reductions_body,
-                            [ init.ocaml_expr;
-                              Ocaml_ir.List [ init.ocaml_expr ];
+                            [ init.semantic_expr;
+                              Semantic_ir.List [ init.semantic_expr ];
                               list_expr ] )))
               | TFn _, Ok _ -> Error.error "reductions function type does not match init and collection"
               | _, Ok _ -> Error.error "reductions expects a function"
@@ -279,40 +279,40 @@ let create ~compile_expr =
               match (fn.ty, collection_to_list_expr collection) with
               | TFn ([ param_ty ], TBool), Ok (inner, list_expr) when Types.equal param_ty inner ->
                   let split_body =
-                    Ocaml_ir.Match
-                      ( Ocaml_ir.Ident "rest",
-                        [ ( Ocaml_ir.PCons (Ocaml_ir.PVar "item", Ocaml_ir.PVar "tail"),
-                            Ocaml_ir.If
-                              ( Ocaml_ir.Apply (fn.ocaml_expr, [ Ocaml_ir.Ident "item" ]),
+                    Semantic_ir.Match
+                      ( Semantic_ir.Ident "rest",
+                        [ ( Semantic_ir.PCons (Semantic_ir.PVar "item", Semantic_ir.PVar "tail"),
+                            Semantic_ir.If
+                              ( Semantic_ir.Apply (fn.semantic_expr, [ Semantic_ir.Ident "item" ]),
                                 apply "split"
-                                  [ Ocaml_ir.Cons
-                                      (Ocaml_ir.Ident "item", Ocaml_ir.Ident "prefix");
-                                    Ocaml_ir.Ident "tail" ],
-                                Ocaml_ir.Tuple
-                                  [ apply "List.rev" [ Ocaml_ir.Ident "prefix" ];
-                                    Ocaml_ir.Ident "rest" ] ) );
-                          ( Ocaml_ir.PAny,
-                            Ocaml_ir.Tuple
-                              [ apply "List.rev" [ Ocaml_ir.Ident "prefix" ];
-                                Ocaml_ir.Ident "rest" ] ) ] )
+                                  [ Semantic_ir.Cons
+                                      (Semantic_ir.Ident "item", Semantic_ir.Ident "prefix");
+                                    Semantic_ir.Ident "tail" ],
+                                Semantic_ir.Tuple
+                                  [ apply "List.rev" [ Semantic_ir.Ident "prefix" ];
+                                    Semantic_ir.Ident "rest" ] ) );
+                          ( Semantic_ir.PAny,
+                            Semantic_ir.Tuple
+                              [ apply "List.rev" [ Semantic_ir.Ident "prefix" ];
+                                Semantic_ir.Ident "rest" ] ) ] )
                   in
                   let pair_expr =
-                    Ocaml_ir.LetRec
+                    Semantic_ir.LetRec
                       ( "split",
-                        [ Ocaml_ir.PVar "prefix"; Ocaml_ir.PVar "rest" ],
+                        [ Semantic_ir.PVar "prefix"; Semantic_ir.PVar "rest" ],
                         split_body,
-                        [ Ocaml_ir.List []; list_expr ] )
+                        [ Semantic_ir.List []; list_expr ] )
                   in
                   Ok
                     (typed_ir (TVector collection.ty)
-                       (Ocaml_ir.Let
-                          ( [ (Ocaml_ir.PVar "pair", pair_expr) ],
+                       (Semantic_ir.Let
+                          ( [ (Semantic_ir.PVar "pair", pair_expr) ],
                             apply "Rrbvec.of_list"
-                              [ Ocaml_ir.List
+                              [ Semantic_ir.List
                                   [ collection_from_list_expr collection.ty
-                                      (apply "fst" [ Ocaml_ir.Ident "pair" ]);
+                                      (apply "fst" [ Semantic_ir.Ident "pair" ]);
                                     collection_from_list_expr collection.ty
-                                      (apply "snd" [ Ocaml_ir.Ident "pair" ]) ] ] )))
+                                      (apply "snd" [ Semantic_ir.Ident "pair" ]) ] ] )))
               | TFn _, Ok _ -> Error.error "split-with expects a predicate matching collection elements"
               | _, Ok _ -> Error.error "split-with expects a function"
               | _, Error _ -> Error.error "split-with expects a collection"))
@@ -329,75 +329,75 @@ let create ~compile_expr =
               | TFn ([ param_ty ], key_ty), Ok (inner, list_expr) when Types.equal param_ty inner ->
                   ignore key_ty;
                   let finish_call =
-                    apply "finish" [ Ocaml_ir.Ident "groups"; Ocaml_ir.Ident "current" ]
+                    apply "finish" [ Semantic_ir.Ident "groups"; Semantic_ir.Ident "current" ]
                   in
                   let start_new_group =
-                    Ocaml_ir.Let
-                      ( [ ( Ocaml_ir.PVar "groups",
-                            Ocaml_ir.Match
-                              ( Ocaml_ir.Ident "current",
-                                [ (Ocaml_ir.PList [], Ocaml_ir.Ident "groups");
-                                  ( Ocaml_ir.PAny,
-                                    Ocaml_ir.Cons
-                                      ( apply "List.rev" [ Ocaml_ir.Ident "current" ],
-                                        Ocaml_ir.Ident "groups" ) ) ] ) ) ],
+                    Semantic_ir.Let
+                      ( [ ( Semantic_ir.PVar "groups",
+                            Semantic_ir.Match
+                              ( Semantic_ir.Ident "current",
+                                [ (Semantic_ir.PList [], Semantic_ir.Ident "groups");
+                                  ( Semantic_ir.PAny,
+                                    Semantic_ir.Cons
+                                      ( apply "List.rev" [ Semantic_ir.Ident "current" ],
+                                        Semantic_ir.Ident "groups" ) ) ] ) ) ],
                         apply "partition"
-                          [ Ocaml_ir.Ident "groups";
-                            Ocaml_ir.List [ Ocaml_ir.Ident "item" ];
-                            Ocaml_ir.Constructor ("Some", Some (Ocaml_ir.Ident "key"));
-                            Ocaml_ir.Ident "rest" ] )
+                          [ Semantic_ir.Ident "groups";
+                            Semantic_ir.List [ Semantic_ir.Ident "item" ];
+                            Semantic_ir.Constructor ("Some", Some (Semantic_ir.Ident "key"));
+                            Semantic_ir.Ident "rest" ] )
                   in
                   let partition_body =
-                    Ocaml_ir.Match
-                      ( Ocaml_ir.Ident "xs",
-                        [ (Ocaml_ir.PList [], finish_call);
-                          ( Ocaml_ir.PCons (Ocaml_ir.PVar "item", Ocaml_ir.PVar "rest"),
-                            Ocaml_ir.Let
-                              ( [ ( Ocaml_ir.PVar "key",
-                                    Ocaml_ir.Apply (fn.ocaml_expr, [ Ocaml_ir.Ident "item" ]) ) ],
-                                Ocaml_ir.Match
-                                  ( Ocaml_ir.Ident "current_key",
-                                    [ ( Ocaml_ir.PConstructor ("Some", Some (Ocaml_ir.PVar "previous")),
-                                        Ocaml_ir.If
-                                          ( Ocaml_ir.Infix
-                                              ( "=", Ocaml_ir.Ident "previous",
-                                                Ocaml_ir.Ident "key" ),
+                    Semantic_ir.Match
+                      ( Semantic_ir.Ident "xs",
+                        [ (Semantic_ir.PList [], finish_call);
+                          ( Semantic_ir.PCons (Semantic_ir.PVar "item", Semantic_ir.PVar "rest"),
+                            Semantic_ir.Let
+                              ( [ ( Semantic_ir.PVar "key",
+                                    Semantic_ir.Apply (fn.semantic_expr, [ Semantic_ir.Ident "item" ]) ) ],
+                                Semantic_ir.Match
+                                  ( Semantic_ir.Ident "current_key",
+                                    [ ( Semantic_ir.PConstructor ("Some", Some (Semantic_ir.PVar "previous")),
+                                        Semantic_ir.If
+                                          ( Semantic_ir.Infix
+                                              ( "=", Semantic_ir.Ident "previous",
+                                                Semantic_ir.Ident "key" ),
                                             apply "partition"
-                                              [ Ocaml_ir.Ident "groups";
-                                                Ocaml_ir.Cons
-                                                  ( Ocaml_ir.Ident "item",
-                                                    Ocaml_ir.Ident "current" );
-                                                Ocaml_ir.Ident "current_key";
-                                                Ocaml_ir.Ident "rest" ],
+                                              [ Semantic_ir.Ident "groups";
+                                                Semantic_ir.Cons
+                                                  ( Semantic_ir.Ident "item",
+                                                    Semantic_ir.Ident "current" );
+                                                Semantic_ir.Ident "current_key";
+                                                Semantic_ir.Ident "rest" ],
                                             start_new_group ) );
-                                      (Ocaml_ir.PAny, start_new_group) ] ) ) ) ] )
+                                      (Semantic_ir.PAny, start_new_group) ] ) ) ) ] )
                   in
                   let finish_body =
-                    Ocaml_ir.Match
-                      ( Ocaml_ir.Ident "current",
-                        [ (Ocaml_ir.PList [], apply "List.rev" [ Ocaml_ir.Ident "groups" ]);
-                          ( Ocaml_ir.PAny,
+                    Semantic_ir.Match
+                      ( Semantic_ir.Ident "current",
+                        [ (Semantic_ir.PList [], apply "List.rev" [ Semantic_ir.Ident "groups" ]);
+                          ( Semantic_ir.PAny,
                             apply "List.rev"
-                              [ Ocaml_ir.Cons
-                                  ( apply "List.rev" [ Ocaml_ir.Ident "current" ],
-                                    Ocaml_ir.Ident "groups" ) ] ) ] )
+                              [ Semantic_ir.Cons
+                                  ( apply "List.rev" [ Semantic_ir.Ident "current" ],
+                                    Semantic_ir.Ident "groups" ) ] ) ] )
                   in
                   Ok
                     (typed_ir (TList (TList inner))
-                       (Ocaml_ir.LetRecIn
+                       (Semantic_ir.LetRecIn
                           ( "finish",
-                            [ Ocaml_ir.PVar "groups"; Ocaml_ir.PVar "current" ],
+                            [ Semantic_ir.PVar "groups"; Semantic_ir.PVar "current" ],
                             finish_body,
-                            Ocaml_ir.LetRec
+                            Semantic_ir.LetRec
                               ( "partition",
-                                [ Ocaml_ir.PVar "groups";
-                                  Ocaml_ir.PVar "current";
-                                  Ocaml_ir.PVar "current_key";
-                                  Ocaml_ir.PVar "xs" ],
+                                [ Semantic_ir.PVar "groups";
+                                  Semantic_ir.PVar "current";
+                                  Semantic_ir.PVar "current_key";
+                                  Semantic_ir.PVar "xs" ],
                                 partition_body,
-                                [ Ocaml_ir.List [];
-                                  Ocaml_ir.List [];
-                                  Ocaml_ir.Constructor ("None", None);
+                                [ Semantic_ir.List [];
+                                  Semantic_ir.List [];
+                                  Semantic_ir.Constructor ("None", None);
                                   list_expr ] ) )))
               | TFn _, Ok _ -> Error.error "partition-by function type does not match collection"
               | _, Ok _ -> Error.error "partition-by expects a function"
@@ -415,16 +415,16 @@ let create ~compile_expr =
               | TFn ([ param_ty ], _ret), Ok (inner, list_expr) when Types.equal param_ty inner ->
                   Ok
                     (typed_ir TUnit
-                       (Ocaml_ir.Let
-                          ( [ ( Ocaml_ir.PUnit,
+                       (Semantic_ir.Let
+                          ( [ ( Semantic_ir.PUnit,
                                 apply "List.iter"
-                                  [ Ocaml_ir.Fun
-                                      ( [ Ocaml_ir.PVar "item" ],
+                                  [ Semantic_ir.Fun
+                                      ( [ Semantic_ir.PVar "item" ],
                                         apply "ignore"
-                                          [ Ocaml_ir.Apply
-                                              (fn.ocaml_expr, [ Ocaml_ir.Ident "item" ]) ] );
+                                          [ Semantic_ir.Apply
+                                              (fn.semantic_expr, [ Semantic_ir.Ident "item" ]) ] );
                                     list_expr ] ) ],
-                            Ocaml_ir.Unit )))
+                            Semantic_ir.Unit )))
               | TFn _, Ok _ -> Error.error "run! function type does not match collection"
               | _, Ok _ -> Error.error "run! expects a function"
               | _, Error _ -> Error.error "run! expects a collection"))
@@ -442,11 +442,11 @@ let create ~compile_expr =
                   Ok
                     (typed_ir (TList ret)
                        (apply "List.mapi"
-                          [ Ocaml_ir.Fun
-                              ( [ Ocaml_ir.PVar "index"; Ocaml_ir.PVar "item" ],
-                                Ocaml_ir.Apply
-                                  ( fn.ocaml_expr,
-                                    [ Ocaml_ir.Ident "index"; Ocaml_ir.Ident "item" ] ) );
+                          [ Semantic_ir.Fun
+                              ( [ Semantic_ir.PVar "index"; Semantic_ir.PVar "item" ],
+                                Semantic_ir.Apply
+                                  ( fn.semantic_expr,
+                                    [ Semantic_ir.Ident "index"; Semantic_ir.Ident "item" ] ) );
                             list_expr ]))
               | TFn _, Ok _ -> Error.error "map-indexed function type does not match collection"
               | _, Ok _ -> Error.error "map-indexed expects a function"
@@ -465,7 +465,7 @@ let create ~compile_expr =
                   Ok
                     (typed_ir (TVector inner)
                        (apply "Rrbvec.of_list"
-                          [ apply "List.filter" [ fn.ocaml_expr; list_expr ] ]))
+                          [ apply "List.filter" [ fn.semantic_expr; list_expr ] ]))
               | TFn _, Ok _ ->
                   Error.error "filterv expects a predicate matching collection elements"
               | _, Ok _ -> Error.error "filterv expects a function"
@@ -484,7 +484,7 @@ let create ~compile_expr =
                   Ok
                     (typed_ir (TVector ret)
                        (apply "Rrbvec.of_list"
-                          [ apply "List.map" [ fn.ocaml_expr; list_expr ] ]))
+                          [ apply "List.map" [ fn.semantic_expr; list_expr ] ]))
               | TFn _, Ok _ -> Error.error "mapv function type does not match collection"
               | _, Ok _ -> Error.error "mapv expects a function"
               | _, Error _ -> Error.error "mapv expects a collection"))
@@ -508,22 +508,22 @@ let create ~compile_expr =
                   Ok
                     (typed_ir init.ty
                        (apply "List.fold_left"
-                          [ Ocaml_ir.Fun
-                              ( [ Ocaml_ir.PVar "acc";
-                                  Ocaml_ir.PTuple
-                                    [ Ocaml_ir.PVar "index"; Ocaml_ir.PVar "item" ] ],
-                                Ocaml_ir.Apply
-                                  ( fn.ocaml_expr,
-                                    [ Ocaml_ir.Ident "acc";
-                                      Ocaml_ir.Ident "index";
-                                      Ocaml_ir.Ident "item" ] ) );
-                            init.ocaml_expr;
+                          [ Semantic_ir.Fun
+                              ( [ Semantic_ir.PVar "acc";
+                                  Semantic_ir.PTuple
+                                    [ Semantic_ir.PVar "index"; Semantic_ir.PVar "item" ] ],
+                                Semantic_ir.Apply
+                                  ( fn.semantic_expr,
+                                    [ Semantic_ir.Ident "acc";
+                                      Semantic_ir.Ident "index";
+                                      Semantic_ir.Ident "item" ] ) );
+                            init.semantic_expr;
                             apply "List.mapi"
-                              [ Ocaml_ir.Fun
-                                  ( [ Ocaml_ir.PVar "index"; Ocaml_ir.PVar "item" ],
-                                    Ocaml_ir.Tuple
-                                      [ Ocaml_ir.Ident "index"; Ocaml_ir.Ident "item" ] );
-                                apply "Rrbvec.to_list" [ collection.ocaml_expr ] ] ]))
+                              [ Semantic_ir.Fun
+                                  ( [ Semantic_ir.PVar "index"; Semantic_ir.PVar "item" ],
+                                    Semantic_ir.Tuple
+                                      [ Semantic_ir.Ident "index"; Semantic_ir.Ident "item" ] );
+                                apply "Rrbvec.to_list" [ collection.semantic_expr ] ] ]))
               | TFn _, TVector _ -> Error.error "reduce-kv function type does not match vector"
               | _, TVector _ -> Error.error "reduce-kv expects a function"
               | _ -> Error.error "reduce-kv expects a vector"))
@@ -538,7 +538,7 @@ let create ~compile_expr =
           | Ok fn, Ok collection -> (
               match (fn.ty, collection_to_list_expr collection) with
               | TFn ([ param_ty ], TBool), Ok (inner, list_expr) when Types.equal param_ty inner ->
-                  Ok (typed_ir TBool (apply "List.exists" [ fn.ocaml_expr; list_expr ]))
+                  Ok (typed_ir TBool (apply "List.exists" [ fn.semantic_expr; list_expr ]))
               | TFn _, Ok _ -> Error.error "some expects a predicate matching collection elements"
               | _, Ok _ -> Error.error "some expects a function"
               | _, Error _ -> Error.error "some expects a collection"))
@@ -555,26 +555,26 @@ let create ~compile_expr =
                 match name with
                 | "every?" -> all_expr
                 | "not-any?" -> all_expr
-                | "not-every?" -> Ocaml_ir.Prefix ("not", all_expr)
+                | "not-every?" -> Semantic_ir.Prefix ("not", all_expr)
                 | _ -> all_expr
               in
               let predicate_expr =
                 match name with
                 | "not-any?" ->
-                    Ocaml_ir.Fun
-                      ( [ Ocaml_ir.PVar "item" ],
-                        Ocaml_ir.Prefix
-                          ("not", Ocaml_ir.Apply (fn.ocaml_expr, [ Ocaml_ir.Ident "item" ])) )
-                | _ -> fn.ocaml_expr
+                    Semantic_ir.Fun
+                      ( [ Semantic_ir.PVar "item" ],
+                        Semantic_ir.Prefix
+                          ("not", Semantic_ir.Apply (fn.semantic_expr, [ Semantic_ir.Ident "item" ])) )
+                | _ -> fn.semantic_expr
               in
               match (fn.ty, collection.ty) with
               | TFn ([ param_ty ], TBool), TList inner when Types.equal param_ty inner ->
-                  let all_expr = apply "List.for_all" [ predicate_expr; collection.ocaml_expr ] in
+                  let all_expr = apply "List.for_all" [ predicate_expr; collection.semantic_expr ] in
                   Ok (typed_ir TBool (build all_expr))
               | TFn _, TList _ -> Error.error (name ^ " expects a predicate matching list elements")
               | _, TList _ -> Error.error (name ^ " expects a function")
               | TFn ([ param_ty ], TBool), TVector inner when Types.equal param_ty inner ->
-                  let all_expr = apply "Rrbvec.for_all" [ predicate_expr; collection.ocaml_expr ] in
+                  let all_expr = apply "Rrbvec.for_all" [ predicate_expr; collection.semantic_expr ] in
                   Ok (typed_ir TBool (build all_expr))
               | TFn _, TVector _ ->
                   Error.error (name ^ " expects a predicate matching vector elements")
@@ -587,17 +587,17 @@ let create ~compile_expr =
                          let predicate_expr =
                            match name with
                            | "not-any?" ->
-                               Ocaml_ir.Fun
-                                 ( [ Ocaml_ir.PVar "item" ],
-                                   Ocaml_ir.Prefix
+                               Semantic_ir.Fun
+                                 ( [ Semantic_ir.PVar "item" ],
+                                   Semantic_ir.Prefix
                                      ( "not",
-                                       Ocaml_ir.Apply (fn_expr, [ Ocaml_ir.Ident "item" ]) ) )
+                                       Semantic_ir.Apply (fn_expr, [ Semantic_ir.Ident "item" ]) ) )
                            | _ -> fn_expr
                          in
                          let all_expr =
                            apply "List.for_all"
                              [ predicate_expr;
-                               apply (set_module ^ ".elements") [ collection.ocaml_expr ] ]
+                               apply (set_module ^ ".elements") [ collection.semantic_expr ] ]
                          in
                          typed_ir TBool (build all_expr))
               | TFn _, TSet _ -> Error.error (name ^ " expects a predicate matching set elements")
@@ -624,13 +624,13 @@ let create ~compile_expr =
               | TFn ([ param_ty ], ret), TList inner when Types.equal param_ty inner ->
                   Ok
                     (typed_ir (TList ret)
-                       (apply "List.map" [ fn.ocaml_expr; collection.ocaml_expr ]))
+                       (apply "List.map" [ fn.semantic_expr; collection.semantic_expr ]))
               | TFn _, TList _ -> Error.error "map function argument type does not match list"
               | _, TList _ -> Error.error "map expects a function"
               | TFn ([ param_ty ], ret), TVector inner when Types.equal param_ty inner ->
                   Ok
                     (typed_ir (TVector ret)
-                       (apply "Rrbvec.map" [ fn.ocaml_expr; collection.ocaml_expr ]))
+                       (apply "Rrbvec.map" [ fn.semantic_expr; collection.semantic_expr ]))
               | TFn _, TVector _ -> Error.error "map function argument type does not match vector"
               | _, TVector _ -> Error.error "map expects a function"
               | TFn ([ param_ty ], ret), TSet inner
@@ -644,7 +644,7 @@ let create ~compile_expr =
                                   [ apply "List.map"
                                       [ fn_expr;
                                         apply (source_module ^ ".elements")
-                                          [ collection.ocaml_expr ] ] ])))
+                                          [ collection.semantic_expr ] ] ])))
               | TFn _, TSet _ -> Error.error "map function argument type does not match set"
               | _, TSet _ -> Error.error "map expects a function"
               | _ -> Error.error "map expects a list, vector, or set")))
@@ -661,13 +661,13 @@ let create ~compile_expr =
               | TFn ([ param_ty ], TBool), TList inner when Types.equal param_ty inner ->
                   Ok
                     (typed_ir collection.ty
-                       (apply "List.filter" [ fn.ocaml_expr; collection.ocaml_expr ]))
+                       (apply "List.filter" [ fn.semantic_expr; collection.semantic_expr ]))
               | TFn _, TList _ -> Error.error "filter expects a predicate matching list elements"
               | _, TList _ -> Error.error "filter expects a function"
               | TFn ([ param_ty ], TBool), TVector inner when Types.equal param_ty inner ->
                   Ok
                     (typed_ir collection.ty
-                       (apply "Rrbvec.filter" [ fn.ocaml_expr; collection.ocaml_expr ]))
+                       (apply "Rrbvec.filter" [ fn.semantic_expr; collection.semantic_expr ]))
               | TFn _, TVector _ -> Error.error "filter expects a predicate matching vector elements"
               | _, TVector _ -> Error.error "filter expects a function"
               | TFn ([ param_ty ], TBool), TSet inner
@@ -680,7 +680,7 @@ let create ~compile_expr =
                               [ apply "List.filter"
                                   [ fn_expr;
                                     apply (set_module ^ ".elements")
-                                      [ collection.ocaml_expr ] ] ]))
+                                      [ collection.semantic_expr ] ] ]))
               | TFn _, TSet _ -> Error.error "filter expects a predicate matching set elements"
               | _, TSet _ -> Error.error "filter expects a function"
               | _ -> Error.error "filter expects a list, vector, or set"))
@@ -704,7 +704,7 @@ let create ~compile_expr =
                   Ok
                     (typed_ir init.ty
                        (apply "List.fold_left"
-                          [ fn.ocaml_expr; init.ocaml_expr; collection.ocaml_expr ]))
+                          [ fn.semantic_expr; init.semantic_expr; collection.semantic_expr ]))
               | TFn _, TList _ -> Error.error "reduce function type does not match init and list"
               | _, TList _ -> Error.error "reduce expects a function"
               | TFn ([ acc_ty; item_ty ], ret), TVector inner
@@ -712,7 +712,7 @@ let create ~compile_expr =
                  Ok
                     (typed_ir init.ty
                        (apply "Rrbvec.fold_left"
-                          [ fn.ocaml_expr; init.ocaml_expr; collection.ocaml_expr ]))
+                          [ fn.semantic_expr; init.semantic_expr; collection.semantic_expr ]))
               | TFn _, TVector _ -> Error.error "reduce function type does not match init and vector"
               | _, TVector _ -> Error.error "reduce expects a function"
               | TFn ([ acc_ty; item_ty ], ret), TSet inner
@@ -721,10 +721,10 @@ let create ~compile_expr =
                   |> Result.map (fun set_module ->
                          typed_ir init.ty
                            (apply "List.fold_left"
-                              [ fn.ocaml_expr;
-                                init.ocaml_expr;
+                              [ fn.semantic_expr;
+                                init.semantic_expr;
                                 apply (set_module ^ ".elements")
-                                  [ collection.ocaml_expr ] ]))
+                                  [ collection.semantic_expr ] ]))
               | TFn _, TSet _ -> Error.error "reduce function type does not match init and set"
               | _, TSet _ -> Error.error "reduce expects a function"
               | _ -> Error.error "reduce expects a list, vector, or set"))

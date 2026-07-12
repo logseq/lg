@@ -51,15 +51,15 @@ and host_reference =
 
 type typed_expr = {
   ty : ty;
-  ocaml_expr : Ocaml_ir.t;
-  record_values : (field * Ocaml_ir.t) list option;
+  semantic_expr : Semantic_ir.t;
+  record_values : (field * Semantic_ir.t) list option;
   return_param_index : int option;
 }
 
-let typed_ir ty ocaml_expr =
+let typed_ir ty semantic_expr =
   {
     ty;
-    ocaml_expr;
+    semantic_expr;
     record_values = None;
     return_param_index = None;
   }

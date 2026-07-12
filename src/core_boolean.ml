@@ -8,7 +8,7 @@ let one_arg name args =
 let type_predicate name predicate args =
   match one_arg name args with
   | Error _ as err -> err
-  | Ok arg -> Ok (typed_ir TBool (Ocaml_ir.Bool (predicate arg.ty)))
+  | Ok arg -> Ok (typed_ir TBool (Semantic_ir.Bool (predicate arg.ty)))
 
 let compile_not args =
   match one_arg "not" args with
@@ -16,8 +16,8 @@ let compile_not args =
   | Ok arg ->
       let expression =
         match arg.ty with
-        | TBool -> Ocaml_ir.Prefix ("not", arg.ocaml_expr)
-        | _ -> Ocaml_ir.Sequence [ arg.ocaml_expr; Ocaml_ir.Bool false ]
+        | TBool -> Semantic_ir.Prefix ("not", arg.semantic_expr)
+        | _ -> Semantic_ir.Sequence [ arg.semantic_expr; Semantic_ir.Bool false ]
       in
       Ok (typed_ir TBool expression)
 
@@ -31,8 +31,8 @@ let compile_bool_literal_predicate name args expected =
       if Types.equal arg.ty TBool then
         Ok
           (typed_ir TBool
-             (Ocaml_ir.Infix ("=", arg.ocaml_expr, Ocaml_ir.Bool expected)))
-      else Ok (typed_ir TBool (Ocaml_ir.Bool false))
+             (Semantic_ir.Infix ("=", arg.semantic_expr, Semantic_ir.Bool expected)))
+      else Ok (typed_ir TBool (Semantic_ir.Bool false))
 
 let compile_type_predicate name predicate args = type_predicate name predicate args
 

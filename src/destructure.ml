@@ -13,7 +13,7 @@ type local_binding = {
   source_name : string;
   ocaml_name : string;
   ty : ty;
-  ocaml_expr : Ocaml_ir.t;
+  semantic_expr : Semantic_ir.t;
 }
 
 let is_type_annotation name = String.starts_with ~prefix:"^:" name
@@ -22,11 +22,11 @@ let keyword_for_local name = ":" ^ name
 
 let ignore_name name = name = "_"
 
-let local_binding source_name ty ocaml_expr =
+let local_binding source_name ty semantic_expr =
   { source_name;
     ocaml_name = Names.sanitize_name source_name;
     ty;
-    ocaml_expr }
+    semantic_expr }
 
 type map_binding = {
   local_name : string;
@@ -203,10 +203,10 @@ let field_type fields keyword =
   | None -> Error.error ("cannot destructure missing field " ^ keyword)
 
 let literal_default = function
-  | FInt value -> Ok (typed_ir TInt (Ocaml_ir.Int value))
-  | FString value -> Ok (typed_ir TString (Ocaml_ir.String value))
-  | FBool value -> Ok (typed_ir TBool (Ocaml_ir.Bool value))
-  | FKeyword keyword -> Ok (typed_ir TKeyword (Ocaml_ir.String keyword))
+  | FInt value -> Ok (typed_ir TInt (Semantic_ir.Int value))
+  | FString value -> Ok (typed_ir TString (Semantic_ir.String value))
+  | FBool value -> Ok (typed_ir TBool (Semantic_ir.Bool value))
+  | FKeyword keyword -> Ok (typed_ir TKeyword (Semantic_ir.String keyword))
   | _ -> Error.error "map destructuring :or defaults must be scalar literals"
 
 let infer_map_type pattern lookup_local_ty =
@@ -258,7 +258,7 @@ let bind_map (target : typed_expr) pairs =
                 | Some form -> (
                     match literal_default form with
                     | Error _ as err -> err
-                    | Ok value -> Ok (local_binding local_name value.ty value.ocaml_expr)))
+                    | Ok value -> Ok (local_binding local_name value.ty value.semantic_expr)))
             | Ok field ->
                 Ok
                   (local_binding local_name field.ty
@@ -269,7 +269,7 @@ let bind_map (target : typed_expr) pairs =
                 let acc =
                   match parsed.as_name with
                   | None -> acc
-                  | Some name -> local_binding name target.ty target.ocaml_expr :: acc
+                  | Some name -> local_binding name target.ty target.semantic_expr :: acc
                 in
                 Ok (List.rev acc)
             | binding :: rest -> (
@@ -282,27 +282,27 @@ let bind_map (target : typed_expr) pairs =
 
 let bind_sequence (target : typed_expr) forms =
   let bind_at inner index name =
-    let ocaml_expr =
+    let semantic_expr =
       match target.ty with
-      | TList _ -> Ocaml_ir.Apply (Ocaml_ir.Ident "List.nth", [ target.ocaml_expr; Ocaml_ir.Int index ])
-      | TVector _ -> Ocaml_ir.Apply (Ocaml_ir.Ident "Rrbvec.nth", [ target.ocaml_expr; Ocaml_ir.Int index ])
-      | _ -> target.ocaml_expr
+      | TList _ -> Semantic_ir.Apply (Semantic_ir.Ident "List.nth", [ target.semantic_expr; Semantic_ir.Int index ])
+      | TVector _ -> Semantic_ir.Apply (Semantic_ir.Ident "Rrbvec.nth", [ target.semantic_expr; Semantic_ir.Int index ])
+      | _ -> target.semantic_expr
     in
-    local_binding name inner ocaml_expr
+    local_binding name inner semantic_expr
   in
   let bind_rest count name =
-    let ocaml_expr =
+    let semantic_expr =
       match target.ty with
       | TList _ ->
-          Core_sequence_transform.drop_list_expr (Ocaml_ir.Int count) target.ocaml_expr
+          Core_sequence_transform.drop_list_expr (Semantic_ir.Int count) target.semantic_expr
       | TVector _ ->
-          Ocaml_ir.Apply
-            ( Ocaml_ir.Ident "Rrbvec.of_list",
-              [ Core_sequence_transform.drop_list_expr (Ocaml_ir.Int count)
-                  (Ocaml_ir.Apply (Ocaml_ir.Ident "Rrbvec.to_list", [ target.ocaml_expr ])) ] )
-      | _ -> target.ocaml_expr
+          Semantic_ir.Apply
+            ( Semantic_ir.Ident "Rrbvec.of_list",
+              [ Core_sequence_transform.drop_list_expr (Semantic_ir.Int count)
+                  (Semantic_ir.Apply (Semantic_ir.Ident "Rrbvec.to_list", [ target.semantic_expr ])) ] )
+      | _ -> target.semantic_expr
     in
-    local_binding name target.ty ocaml_expr
+    local_binding name target.ty semantic_expr
   in
   match target.ty with
   | TList inner | TVector inner -> (
@@ -319,7 +319,7 @@ let bind_sequence (target : typed_expr) forms =
           let bindings =
             match pattern.sequence_as_name with
             | None -> bindings
-            | Some name -> bindings @ [ local_binding name target.ty target.ocaml_expr ]
+            | Some name -> bindings @ [ local_binding name target.ty target.semantic_expr ]
           in
           Ok bindings)
   | _ -> Error.error "sequential destructuring expects a list or vector"
@@ -328,7 +328,7 @@ let bind_pattern (target : typed_expr) pattern =
   match pattern with
   | FSymbol name ->
       if ignore_name name then Ok []
-      else Ok [ local_binding name target.ty target.ocaml_expr ]
+      else Ok [ local_binding name target.ty target.semantic_expr ]
   | FMap pairs -> bind_map target pairs
   | FVector forms -> bind_sequence target forms
   | _ -> Error.error "unsupported destructuring pattern"

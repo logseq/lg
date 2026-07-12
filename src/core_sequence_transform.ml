@@ -1,15 +1,15 @@
 open Types
 
-let apply name args = Ocaml_ir.Apply (Ocaml_ir.Ident name, args)
+let apply name args = Semantic_ir.Apply (Semantic_ir.Ident name, args)
 
 let collection_to_list_expr collection =
   match collection.ty with
-  | TList inner -> Ok (inner, collection.ocaml_expr)
-  | TVector inner -> Ok (inner, apply "Rrbvec.to_list" [ collection.ocaml_expr ])
+  | TList inner -> Ok (inner, collection.semantic_expr)
+  | TVector inner -> Ok (inner, apply "Rrbvec.to_list" [ collection.semantic_expr ])
   | TSet inner ->
       Types.set_module_name inner
       |> Result.map (fun set_module ->
-             (inner, apply (set_module ^ ".elements") [ collection.ocaml_expr ]))
+             (inner, apply (set_module ^ ".elements") [ collection.semantic_expr ]))
   | _ -> Error.error "collection value is not sequenceable"
 
 let collection_from_list_expr collection_ty list_expr =
@@ -24,52 +24,52 @@ let collection_from_list_expr collection_ty list_expr =
 
 let take_list_expr count source =
   let name = "take__" in
-  let n = Ocaml_ir.Ident "n" in
-  let xs = Ocaml_ir.Ident "xs" in
+  let n = Semantic_ir.Ident "n" in
+  let xs = Semantic_ir.Ident "xs" in
   let body =
-    Ocaml_ir.If
-      ( Ocaml_ir.Infix ("<=", n, Ocaml_ir.Int 0),
-        Ocaml_ir.List [],
-        Ocaml_ir.Match
+    Semantic_ir.If
+      ( Semantic_ir.Infix ("<=", n, Semantic_ir.Int 0),
+        Semantic_ir.List [],
+        Semantic_ir.Match
           ( xs,
-            [ (Ocaml_ir.PList [], Ocaml_ir.List []);
-              ( Ocaml_ir.PCons (Ocaml_ir.PVar "x", Ocaml_ir.PVar "rest"),
-                Ocaml_ir.Cons
-                  ( Ocaml_ir.Ident "x",
+            [ (Semantic_ir.PList [], Semantic_ir.List []);
+              ( Semantic_ir.PCons (Semantic_ir.PVar "x", Semantic_ir.PVar "rest"),
+                Semantic_ir.Cons
+                  ( Semantic_ir.Ident "x",
                     apply name
-                      [ Ocaml_ir.Infix ("-", n, Ocaml_ir.Int 1);
-                        Ocaml_ir.Ident "rest" ] ) ) ] ) )
+                      [ Semantic_ir.Infix ("-", n, Semantic_ir.Int 1);
+                        Semantic_ir.Ident "rest" ] ) ) ] ) )
   in
-  Ocaml_ir.LetRec (name, [ Ocaml_ir.PVar "n"; Ocaml_ir.PVar "xs" ], body, [ count; source ])
+  Semantic_ir.LetRec (name, [ Semantic_ir.PVar "n"; Semantic_ir.PVar "xs" ], body, [ count; source ])
 
 let drop_list_expr count source =
   let name = "drop__" in
-  let n = Ocaml_ir.Ident "n" in
-  let xs = Ocaml_ir.Ident "xs" in
+  let n = Semantic_ir.Ident "n" in
+  let xs = Semantic_ir.Ident "xs" in
   let body =
-    Ocaml_ir.If
-      ( Ocaml_ir.Infix ("<=", n, Ocaml_ir.Int 0),
+    Semantic_ir.If
+      ( Semantic_ir.Infix ("<=", n, Semantic_ir.Int 0),
         xs,
-        Ocaml_ir.Match
+        Semantic_ir.Match
           ( xs,
-            [ (Ocaml_ir.PList [], Ocaml_ir.List []);
-              ( Ocaml_ir.PCons (Ocaml_ir.PAny, Ocaml_ir.PVar "rest"),
+            [ (Semantic_ir.PList [], Semantic_ir.List []);
+              ( Semantic_ir.PCons (Semantic_ir.PAny, Semantic_ir.PVar "rest"),
                 apply name
-                  [ Ocaml_ir.Infix ("-", n, Ocaml_ir.Int 1);
-                    Ocaml_ir.Ident "rest" ] ) ] ) )
+                  [ Semantic_ir.Infix ("-", n, Semantic_ir.Int 1);
+                    Semantic_ir.Ident "rest" ] ) ] ) )
   in
-  Ocaml_ir.LetRec (name, [ Ocaml_ir.PVar "n"; Ocaml_ir.PVar "xs" ], body, [ count; source ])
+  Semantic_ir.LetRec (name, [ Semantic_ir.PVar "n"; Semantic_ir.PVar "xs" ], body, [ count; source ])
 
 let remove fn collection =
   match (fn.ty, collection_to_list_expr collection) with
   | TFn ([ param_ty ], TBool), Ok (inner, list_expr) when Types.equal param_ty inner ->
       let filtered =
         apply "List.filter"
-          [ Ocaml_ir.Fun
-              ( [ Ocaml_ir.PVar "item" ],
-                Ocaml_ir.Prefix
+          [ Semantic_ir.Fun
+              ( [ Semantic_ir.PVar "item" ],
+                Semantic_ir.Prefix
                   ( "not",
-                    Ocaml_ir.Apply (fn.ocaml_expr, [ Ocaml_ir.Ident "item" ]) ) );
+                    Semantic_ir.Apply (fn.semantic_expr, [ Semantic_ir.Ident "item" ]) ) );
             list_expr ]
       in
       Ok (typed_ir collection.ty (collection_from_list_expr collection.ty filtered))
@@ -81,30 +81,30 @@ let take_drop_while name fn collection =
   match (fn.ty, collection_to_list_expr collection) with
   | TFn ([ param_ty ], TBool), Ok (inner, list_expr) when Types.equal param_ty inner ->
       let rec_name = if name = "take-while" then "take_while" else "drop_while" in
-      let predicate = Ocaml_ir.Apply (fn.ocaml_expr, [ Ocaml_ir.Ident "item" ]) in
+      let predicate = Semantic_ir.Apply (fn.semantic_expr, [ Semantic_ir.Ident "item" ]) in
       let body =
         if name = "take-while" then
-          Ocaml_ir.Match
-            ( Ocaml_ir.Ident "xs",
-              [ ( Ocaml_ir.PCons (Ocaml_ir.PVar "item", Ocaml_ir.PVar "rest"),
-                  Ocaml_ir.If
+          Semantic_ir.Match
+            ( Semantic_ir.Ident "xs",
+              [ ( Semantic_ir.PCons (Semantic_ir.PVar "item", Semantic_ir.PVar "rest"),
+                  Semantic_ir.If
                     ( predicate,
-                      Ocaml_ir.Cons
-                        (Ocaml_ir.Ident "item", apply rec_name [ Ocaml_ir.Ident "rest" ]),
-                      Ocaml_ir.List [] ) );
-                (Ocaml_ir.PAny, Ocaml_ir.List []) ] )
+                      Semantic_ir.Cons
+                        (Semantic_ir.Ident "item", apply rec_name [ Semantic_ir.Ident "rest" ]),
+                      Semantic_ir.List [] ) );
+                (Semantic_ir.PAny, Semantic_ir.List []) ] )
         else
-          Ocaml_ir.Match
-            ( Ocaml_ir.Ident "xs",
-              [ ( Ocaml_ir.PCons (Ocaml_ir.PVar "item", Ocaml_ir.PVar "rest"),
-                  Ocaml_ir.If
+          Semantic_ir.Match
+            ( Semantic_ir.Ident "xs",
+              [ ( Semantic_ir.PCons (Semantic_ir.PVar "item", Semantic_ir.PVar "rest"),
+                  Semantic_ir.If
                     ( predicate,
-                      apply rec_name [ Ocaml_ir.Ident "rest" ],
-                      Ocaml_ir.Cons (Ocaml_ir.Ident "item", Ocaml_ir.Ident "rest") ) );
-                (Ocaml_ir.PList [], Ocaml_ir.List []) ] )
+                      apply rec_name [ Semantic_ir.Ident "rest" ],
+                      Semantic_ir.Cons (Semantic_ir.Ident "item", Semantic_ir.Ident "rest") ) );
+                (Semantic_ir.PList [], Semantic_ir.List []) ] )
       in
       let list_expr =
-        Ocaml_ir.LetRec (rec_name, [ Ocaml_ir.PVar "xs" ], body, [ list_expr ])
+        Semantic_ir.LetRec (rec_name, [ Semantic_ir.PVar "xs" ], body, [ list_expr ])
       in
       Ok (typed_ir collection.ty (collection_from_list_expr collection.ty list_expr))
   | TFn _, Ok _ ->
@@ -117,27 +117,27 @@ let distinct collection =
   | Error _ -> Error.error "distinct expects a list, vector, or set"
   | Ok (_inner, list_expr) ->
       let body =
-        Ocaml_ir.Match
-          ( Ocaml_ir.Ident "xs",
-            [ (Ocaml_ir.PList [], apply "List.rev" [ Ocaml_ir.Ident "acc" ]);
-              ( Ocaml_ir.PCons (Ocaml_ir.PVar "item", Ocaml_ir.PVar "rest"),
-                Ocaml_ir.If
-                  ( apply "List.mem" [ Ocaml_ir.Ident "item"; Ocaml_ir.Ident "seen" ],
+        Semantic_ir.Match
+          ( Semantic_ir.Ident "xs",
+            [ (Semantic_ir.PList [], apply "List.rev" [ Semantic_ir.Ident "acc" ]);
+              ( Semantic_ir.PCons (Semantic_ir.PVar "item", Semantic_ir.PVar "rest"),
+                Semantic_ir.If
+                  ( apply "List.mem" [ Semantic_ir.Ident "item"; Semantic_ir.Ident "seen" ],
                     apply "distinct"
-                      [ Ocaml_ir.Ident "seen";
-                        Ocaml_ir.Ident "acc";
-                        Ocaml_ir.Ident "rest" ],
+                      [ Semantic_ir.Ident "seen";
+                        Semantic_ir.Ident "acc";
+                        Semantic_ir.Ident "rest" ],
                     apply "distinct"
-                      [ Ocaml_ir.Cons (Ocaml_ir.Ident "item", Ocaml_ir.Ident "seen");
-                        Ocaml_ir.Cons (Ocaml_ir.Ident "item", Ocaml_ir.Ident "acc");
-                        Ocaml_ir.Ident "rest" ] ) ) ] )
+                      [ Semantic_ir.Cons (Semantic_ir.Ident "item", Semantic_ir.Ident "seen");
+                        Semantic_ir.Cons (Semantic_ir.Ident "item", Semantic_ir.Ident "acc");
+                        Semantic_ir.Ident "rest" ] ) ) ] )
       in
       let list_expr =
-        Ocaml_ir.LetRec
+        Semantic_ir.LetRec
           ( "distinct",
-            [ Ocaml_ir.PVar "seen"; Ocaml_ir.PVar "acc"; Ocaml_ir.PVar "xs" ],
+            [ Semantic_ir.PVar "seen"; Semantic_ir.PVar "acc"; Semantic_ir.PVar "xs" ],
             body,
-            [ Ocaml_ir.List []; Ocaml_ir.List []; list_expr ] )
+            [ Semantic_ir.List []; Semantic_ir.List []; list_expr ] )
       in
       Ok (typed_ir collection.ty (collection_from_list_expr collection.ty list_expr))
 
@@ -146,33 +146,33 @@ let dedupe collection =
   | Error _ -> Error.error "dedupe expects a list, vector, or set"
   | Ok (_inner, list_expr) ->
       let body =
-        Ocaml_ir.Match
-          ( Ocaml_ir.Ident "xs",
-            [ (Ocaml_ir.PList [], apply "List.rev" [ Ocaml_ir.Ident "acc" ]);
-              ( Ocaml_ir.PCons (Ocaml_ir.PVar "item", Ocaml_ir.PVar "rest"),
-                Ocaml_ir.Match
-                  ( Ocaml_ir.Ident "acc",
-                    [ ( Ocaml_ir.PCons (Ocaml_ir.PVar "previous", Ocaml_ir.PAny),
-                        Ocaml_ir.If
-                          ( Ocaml_ir.Infix
-                              ("=", Ocaml_ir.Ident "previous", Ocaml_ir.Ident "item"),
+        Semantic_ir.Match
+          ( Semantic_ir.Ident "xs",
+            [ (Semantic_ir.PList [], apply "List.rev" [ Semantic_ir.Ident "acc" ]);
+              ( Semantic_ir.PCons (Semantic_ir.PVar "item", Semantic_ir.PVar "rest"),
+                Semantic_ir.Match
+                  ( Semantic_ir.Ident "acc",
+                    [ ( Semantic_ir.PCons (Semantic_ir.PVar "previous", Semantic_ir.PAny),
+                        Semantic_ir.If
+                          ( Semantic_ir.Infix
+                              ("=", Semantic_ir.Ident "previous", Semantic_ir.Ident "item"),
                             apply "dedupe"
-                              [ Ocaml_ir.Ident "acc"; Ocaml_ir.Ident "rest" ],
+                              [ Semantic_ir.Ident "acc"; Semantic_ir.Ident "rest" ],
                             apply "dedupe"
-                              [ Ocaml_ir.Cons
-                                  (Ocaml_ir.Ident "item", Ocaml_ir.Ident "acc");
-                                Ocaml_ir.Ident "rest" ] ) );
-                      ( Ocaml_ir.PAny,
+                              [ Semantic_ir.Cons
+                                  (Semantic_ir.Ident "item", Semantic_ir.Ident "acc");
+                                Semantic_ir.Ident "rest" ] ) );
+                      ( Semantic_ir.PAny,
                         apply "dedupe"
-                          [ Ocaml_ir.Cons (Ocaml_ir.Ident "item", Ocaml_ir.Ident "acc");
-                            Ocaml_ir.Ident "rest" ] ) ] ) ) ] )
+                          [ Semantic_ir.Cons (Semantic_ir.Ident "item", Semantic_ir.Ident "acc");
+                            Semantic_ir.Ident "rest" ] ) ] ) ) ] )
       in
       let list_expr =
-        Ocaml_ir.LetRec
+        Semantic_ir.LetRec
           ( "dedupe",
-            [ Ocaml_ir.PVar "acc"; Ocaml_ir.PVar "xs" ],
+            [ Semantic_ir.PVar "acc"; Semantic_ir.PVar "xs" ],
             body,
-            [ Ocaml_ir.List []; list_expr ] )
+            [ Semantic_ir.List []; list_expr ] )
       in
       Ok (typed_ir collection.ty (collection_from_list_expr collection.ty list_expr))
 
@@ -182,7 +182,7 @@ let sort collection =
   | Ok (inner, list_expr) ->
       Ok
         (typed_ir (TList inner)
-           (apply "List.sort" [ Ocaml_ir.Ident "compare"; list_expr ]))
+           (apply "List.sort" [ Semantic_ir.Ident "compare"; list_expr ]))
 
 let concat collections =
   let rec loop element_ty exprs = function
@@ -202,7 +202,7 @@ let concat collections =
   | Error _ as err -> err
   | Ok (None, _) -> Error.error "concat expects at least 1 collection"
   | Ok (Some inner, exprs) ->
-      Ok (typed_ir (TList inner) (apply "List.concat" [ Ocaml_ir.List exprs ]))
+      Ok (typed_ir (TList inner) (apply "List.concat" [ Semantic_ir.List exprs ]))
 
 let vec collection =
   match collection_to_list_expr collection with
@@ -222,22 +222,22 @@ let set collection =
 let repeat count value =
   if Types.equal count.ty TInt then
     let repeat_body =
-      Ocaml_ir.If
-        ( Ocaml_ir.Infix ("<=", Ocaml_ir.Ident "n", Ocaml_ir.Int 0),
-          Ocaml_ir.Ident "acc",
+      Semantic_ir.If
+        ( Semantic_ir.Infix ("<=", Semantic_ir.Ident "n", Semantic_ir.Int 0),
+          Semantic_ir.Ident "acc",
           apply "repeat"
-            [ Ocaml_ir.Cons (Ocaml_ir.Ident "value", Ocaml_ir.Ident "acc");
-              Ocaml_ir.Infix ("-", Ocaml_ir.Ident "n", Ocaml_ir.Int 1) ] )
+            [ Semantic_ir.Cons (Semantic_ir.Ident "value", Semantic_ir.Ident "acc");
+              Semantic_ir.Infix ("-", Semantic_ir.Ident "n", Semantic_ir.Int 1) ] )
     in
     Ok
       (typed_ir (TList value.ty)
-         (Ocaml_ir.Let
-            ( [ (Ocaml_ir.PVar "value", value.ocaml_expr) ],
-              Ocaml_ir.LetRec
+         (Semantic_ir.Let
+            ( [ (Semantic_ir.PVar "value", value.semantic_expr) ],
+              Semantic_ir.LetRec
                 ( "repeat",
-                  [ Ocaml_ir.PVar "acc"; Ocaml_ir.PVar "n" ],
+                  [ Semantic_ir.PVar "acc"; Semantic_ir.PVar "n" ],
                   repeat_body,
-                  [ Ocaml_ir.List []; count.ocaml_expr ] ) )))
+                  [ Semantic_ir.List []; count.semantic_expr ] ) )))
   else Error.error "repeat count must be int"
 
 let interpose separator collection =
@@ -246,30 +246,30 @@ let interpose separator collection =
   | Ok (inner, list_expr) ->
       if Types.equal separator.ty inner then
         let interpose_body =
-          Ocaml_ir.Match
-            ( Ocaml_ir.Ident "xs",
-              [ (Ocaml_ir.PList [], apply "List.rev" [ Ocaml_ir.Ident "acc" ]);
-                ( Ocaml_ir.PList [ Ocaml_ir.PVar "item" ],
+          Semantic_ir.Match
+            ( Semantic_ir.Ident "xs",
+              [ (Semantic_ir.PList [], apply "List.rev" [ Semantic_ir.Ident "acc" ]);
+                ( Semantic_ir.PList [ Semantic_ir.PVar "item" ],
                   apply "List.rev"
-                    [ Ocaml_ir.Cons (Ocaml_ir.Ident "item", Ocaml_ir.Ident "acc") ]
+                    [ Semantic_ir.Cons (Semantic_ir.Ident "item", Semantic_ir.Ident "acc") ]
                 );
-                ( Ocaml_ir.PCons (Ocaml_ir.PVar "item", Ocaml_ir.PVar "rest"),
+                ( Semantic_ir.PCons (Semantic_ir.PVar "item", Semantic_ir.PVar "rest"),
                   apply "interpose"
-                    [ Ocaml_ir.Cons
-                        ( Ocaml_ir.Ident "separator",
-                          Ocaml_ir.Cons
-                            (Ocaml_ir.Ident "item", Ocaml_ir.Ident "acc") );
-                      Ocaml_ir.Ident "rest" ] ) ] )
+                    [ Semantic_ir.Cons
+                        ( Semantic_ir.Ident "separator",
+                          Semantic_ir.Cons
+                            (Semantic_ir.Ident "item", Semantic_ir.Ident "acc") );
+                      Semantic_ir.Ident "rest" ] ) ] )
         in
         Ok
           (typed_ir (TList inner)
-             (Ocaml_ir.Let
-                ( [ (Ocaml_ir.PVar "separator", separator.ocaml_expr) ],
-                  Ocaml_ir.LetRec
+             (Semantic_ir.Let
+                ( [ (Semantic_ir.PVar "separator", separator.semantic_expr) ],
+                  Semantic_ir.LetRec
                     ( "interpose",
-                      [ Ocaml_ir.PVar "acc"; Ocaml_ir.PVar "xs" ],
+                      [ Semantic_ir.PVar "acc"; Semantic_ir.PVar "xs" ],
                       interpose_body,
-                      [ Ocaml_ir.List []; list_expr ] ) )))
+                      [ Semantic_ir.List []; list_expr ] ) )))
       else Error.error "interpose separator type must match collection elements"
 
 let interleave collections =
@@ -293,36 +293,36 @@ let interleave collections =
     | Error _ as err -> err
     | Ok (None, _) -> Error.error "interleave expects at least two collections"
     | Ok (Some inner, exprs) ->
-        let collections = Ocaml_ir.Ident "collections" in
+        let collections = Semantic_ir.Ident "collections" in
         let any_empty =
           apply "List.exists"
-            [ Ocaml_ir.Fun
-                ( [ Ocaml_ir.PVar "collection" ],
-                  Ocaml_ir.Match
-                    ( Ocaml_ir.Ident "collection",
-                      [ (Ocaml_ir.PList [], Ocaml_ir.Bool true);
-                        (Ocaml_ir.PAny, Ocaml_ir.Bool false) ] ) );
+            [ Semantic_ir.Fun
+                ( [ Semantic_ir.PVar "collection" ],
+                  Semantic_ir.Match
+                    ( Semantic_ir.Ident "collection",
+                      [ (Semantic_ir.PList [], Semantic_ir.Bool true);
+                        (Semantic_ir.PAny, Semantic_ir.Bool false) ] ) );
               collections ]
         in
         let body =
-          Ocaml_ir.If
+          Semantic_ir.If
             ( any_empty,
-              apply "List.rev" [ Ocaml_ir.Ident "acc" ],
-              Ocaml_ir.Let
-                ( [ (Ocaml_ir.PVar "heads", apply "List.map" [ Ocaml_ir.Ident "List.hd"; collections ]);
-                    (Ocaml_ir.PVar "tails", apply "List.map" [ Ocaml_ir.Ident "List.tl"; collections ]) ],
+              apply "List.rev" [ Semantic_ir.Ident "acc" ],
+              Semantic_ir.Let
+                ( [ (Semantic_ir.PVar "heads", apply "List.map" [ Semantic_ir.Ident "List.hd"; collections ]);
+                    (Semantic_ir.PVar "tails", apply "List.map" [ Semantic_ir.Ident "List.tl"; collections ]) ],
                   apply "interleave"
                     [ apply "List.rev_append"
-                        [ Ocaml_ir.Ident "heads"; Ocaml_ir.Ident "acc" ];
-                      Ocaml_ir.Ident "tails" ] ) )
+                        [ Semantic_ir.Ident "heads"; Semantic_ir.Ident "acc" ];
+                      Semantic_ir.Ident "tails" ] ) )
         in
         Ok
           (typed_ir (TList inner)
-             (Ocaml_ir.LetRec
+             (Semantic_ir.LetRec
                 ( "interleave",
-                  [ Ocaml_ir.PVar "acc"; Ocaml_ir.PVar "collections" ],
+                  [ Semantic_ir.PVar "acc"; Semantic_ir.PVar "collections" ],
                   body,
-                  [ Ocaml_ir.List []; Ocaml_ir.List exprs ] )))
+                  [ Semantic_ir.List []; Semantic_ir.List exprs ] )))
 
 let partition name size collection =
   if not (Types.equal size.ty TInt) then Error.error (name ^ " size must be int")
@@ -331,80 +331,80 @@ let partition name size collection =
     | Error _ -> Error.error (name ^ " expects a collection")
     | Ok (inner, list_expr) ->
         let take_body return_done return_empty =
-          Ocaml_ir.If
-            ( Ocaml_ir.Infix ("=", Ocaml_ir.Ident "n", Ocaml_ir.Int 0),
+          Semantic_ir.If
+            ( Semantic_ir.Infix ("=", Semantic_ir.Ident "n", Semantic_ir.Int 0),
               return_done
-                (Ocaml_ir.Tuple
-                   [ apply "List.rev" [ Ocaml_ir.Ident "acc" ];
-                     Ocaml_ir.Ident "xs" ]),
-              Ocaml_ir.Match
-                ( Ocaml_ir.Ident "xs",
-                  [ (Ocaml_ir.PList [], return_empty);
-                    ( Ocaml_ir.PCons (Ocaml_ir.PVar "item", Ocaml_ir.PVar "rest"),
+                (Semantic_ir.Tuple
+                   [ apply "List.rev" [ Semantic_ir.Ident "acc" ];
+                     Semantic_ir.Ident "xs" ]),
+              Semantic_ir.Match
+                ( Semantic_ir.Ident "xs",
+                  [ (Semantic_ir.PList [], return_empty);
+                    ( Semantic_ir.PCons (Semantic_ir.PVar "item", Semantic_ir.PVar "rest"),
                       apply "take"
-                        [ Ocaml_ir.Infix ("-", Ocaml_ir.Ident "n", Ocaml_ir.Int 1);
-                          Ocaml_ir.Cons (Ocaml_ir.Ident "item", Ocaml_ir.Ident "acc");
-                          Ocaml_ir.Ident "rest" ] ) ] ) )
+                        [ Semantic_ir.Infix ("-", Semantic_ir.Ident "n", Semantic_ir.Int 1);
+                          Semantic_ir.Cons (Semantic_ir.Ident "item", Semantic_ir.Ident "acc");
+                          Semantic_ir.Ident "rest" ] ) ] ) )
         in
         let expr =
           if name = "partition-all" then
             let partition_body =
-              Ocaml_ir.Match
-                ( Ocaml_ir.Ident "xs",
-                  [ (Ocaml_ir.PList [], apply "List.rev" [ Ocaml_ir.Ident "acc" ]);
-                    ( Ocaml_ir.PAny,
-                      Ocaml_ir.Let
-                        ( [ ( Ocaml_ir.PTuple [ Ocaml_ir.PVar "chunk"; Ocaml_ir.PVar "rest" ],
+              Semantic_ir.Match
+                ( Semantic_ir.Ident "xs",
+                  [ (Semantic_ir.PList [], apply "List.rev" [ Semantic_ir.Ident "acc" ]);
+                    ( Semantic_ir.PAny,
+                      Semantic_ir.Let
+                        ( [ ( Semantic_ir.PTuple [ Semantic_ir.PVar "chunk"; Semantic_ir.PVar "rest" ],
                               apply "take"
-                                [ Ocaml_ir.Ident "size";
-                                  Ocaml_ir.List [];
-                                  Ocaml_ir.Ident "xs" ] ) ],
+                                [ Semantic_ir.Ident "size";
+                                  Semantic_ir.List [];
+                                  Semantic_ir.Ident "xs" ] ) ],
                           apply "partition_all"
-                            [ Ocaml_ir.Cons (Ocaml_ir.Ident "chunk", Ocaml_ir.Ident "acc");
-                              Ocaml_ir.Ident "rest" ] ) ) ] )
+                            [ Semantic_ir.Cons (Semantic_ir.Ident "chunk", Semantic_ir.Ident "acc");
+                              Semantic_ir.Ident "rest" ] ) ) ] )
             in
-            Ocaml_ir.Let
-              ( [ (Ocaml_ir.PVar "size", size.ocaml_expr) ],
-                Ocaml_ir.LetRecIn
+            Semantic_ir.Let
+              ( [ (Semantic_ir.PVar "size", size.semantic_expr) ],
+                Semantic_ir.LetRecIn
                   ( "take",
-                    [ Ocaml_ir.PVar "n"; Ocaml_ir.PVar "acc"; Ocaml_ir.PVar "xs" ],
+                    [ Semantic_ir.PVar "n"; Semantic_ir.PVar "acc"; Semantic_ir.PVar "xs" ],
                     take_body Fun.id
-                      (Ocaml_ir.Tuple
-                         [ apply "List.rev" [ Ocaml_ir.Ident "acc" ];
-                           Ocaml_ir.List [] ]),
-                    Ocaml_ir.LetRec
+                      (Semantic_ir.Tuple
+                         [ apply "List.rev" [ Semantic_ir.Ident "acc" ];
+                           Semantic_ir.List [] ]),
+                    Semantic_ir.LetRec
                       ( "partition_all",
-                        [ Ocaml_ir.PVar "acc"; Ocaml_ir.PVar "xs" ],
+                        [ Semantic_ir.PVar "acc"; Semantic_ir.PVar "xs" ],
                         partition_body,
-                        [ Ocaml_ir.List []; list_expr ] ) ) )
+                        [ Semantic_ir.List []; list_expr ] ) ) )
           else
             let partition_body =
-              Ocaml_ir.Match
+              Semantic_ir.Match
                 ( apply "take"
-                    [ Ocaml_ir.Ident "size"; Ocaml_ir.List []; Ocaml_ir.Ident "xs" ],
-                  [ (Ocaml_ir.PConstructor ("None", None), apply "List.rev" [ Ocaml_ir.Ident "acc" ]);
-                    ( Ocaml_ir.PConstructor
+                    [ Semantic_ir.Ident "size"; Semantic_ir.List []; Semantic_ir.Ident "xs" ],
+                  [ (Semantic_ir.PConstructor ("None", None), apply "List.rev" [ Semantic_ir.Ident "acc" ]);
+                    ( Semantic_ir.PConstructor
                         ( "Some",
                           Some
-                            (Ocaml_ir.PTuple
-                               [ Ocaml_ir.PVar "chunk"; Ocaml_ir.PVar "rest" ]) ),
+                            (Semantic_ir.PTuple
+                               [ Semantic_ir.PVar "chunk"; Semantic_ir.PVar "rest" ]) ),
                       apply "partition"
-                        [ Ocaml_ir.Cons (Ocaml_ir.Ident "chunk", Ocaml_ir.Ident "acc");
-                          Ocaml_ir.Ident "rest" ] ) ] )
+                        [ Semantic_ir.Cons (Semantic_ir.Ident "chunk", Semantic_ir.Ident "acc");
+                          Semantic_ir.Ident "rest" ] ) ] )
             in
-            Ocaml_ir.Let
-              ( [ (Ocaml_ir.PVar "size", size.ocaml_expr) ],
-                Ocaml_ir.LetRecIn
+            Semantic_ir.Let
+              ( [ (Semantic_ir.PVar "size", size.semantic_expr) ],
+                Semantic_ir.LetRecIn
                   ( "take",
-                    [ Ocaml_ir.PVar "n"; Ocaml_ir.PVar "acc"; Ocaml_ir.PVar "xs" ],
+                    [ Semantic_ir.PVar "n"; Semantic_ir.PVar "acc"; Semantic_ir.PVar "xs" ],
                     take_body
-                      (fun value -> Ocaml_ir.Constructor ("Some", Some value))
-                      (Ocaml_ir.Constructor ("None", None)),
-                    Ocaml_ir.LetRec
+                      (fun value -> Semantic_ir.Constructor ("Some", Some value))
+                      (Semantic_ir.Constructor ("None", None)),
+                    Semantic_ir.LetRec
                       ( "partition",
-                        [ Ocaml_ir.PVar "acc"; Ocaml_ir.PVar "xs" ],
+                        [ Semantic_ir.PVar "acc"; Semantic_ir.PVar "xs" ],
                         partition_body,
-                        [ Ocaml_ir.List []; list_expr ] ) ) )
+                        [ Semantic_ir.List []; list_expr ] ) ) )
         in
         Ok (typed_ir (TList (TList inner)) expr)
 
@@ -413,21 +413,21 @@ let butlast collection =
   | Error _ -> Error.error "butlast expects a collection"
   | Ok (_inner, list_expr) ->
       let body =
-        Ocaml_ir.Match
-          ( Ocaml_ir.Ident "xs",
-            [ (Ocaml_ir.PList [], apply "List.rev" [ Ocaml_ir.Ident "acc" ]);
-              (Ocaml_ir.PList [ Ocaml_ir.PAny ], apply "List.rev" [ Ocaml_ir.Ident "acc" ]);
-              ( Ocaml_ir.PCons (Ocaml_ir.PVar "item", Ocaml_ir.PVar "rest"),
+        Semantic_ir.Match
+          ( Semantic_ir.Ident "xs",
+            [ (Semantic_ir.PList [], apply "List.rev" [ Semantic_ir.Ident "acc" ]);
+              (Semantic_ir.PList [ Semantic_ir.PAny ], apply "List.rev" [ Semantic_ir.Ident "acc" ]);
+              ( Semantic_ir.PCons (Semantic_ir.PVar "item", Semantic_ir.PVar "rest"),
                 apply "butlast"
-                  [ Ocaml_ir.Cons (Ocaml_ir.Ident "item", Ocaml_ir.Ident "acc");
-                    Ocaml_ir.Ident "rest" ] ) ] )
+                  [ Semantic_ir.Cons (Semantic_ir.Ident "item", Semantic_ir.Ident "acc");
+                    Semantic_ir.Ident "rest" ] ) ] )
       in
       let list_expr =
-        Ocaml_ir.LetRec
+        Semantic_ir.LetRec
           ( "butlast",
-            [ Ocaml_ir.PVar "acc"; Ocaml_ir.PVar "xs" ],
+            [ Semantic_ir.PVar "acc"; Semantic_ir.PVar "xs" ],
             body,
-            [ Ocaml_ir.List []; list_expr ] )
+            [ Semantic_ir.List []; list_expr ] )
       in
       Ok (typed_ir collection.ty (collection_from_list_expr collection.ty list_expr))
 
@@ -440,24 +440,24 @@ let take_drop_last name count collection =
         let count_name = if name = "take-last" then "drop_count" else "keep_count" in
         let count_expr =
           apply "max"
-            [ Ocaml_ir.Int 0;
-              Ocaml_ir.Infix
+            [ Semantic_ir.Int 0;
+              Semantic_ir.Infix
                 ( "-",
-                  apply "List.length" [ Ocaml_ir.Ident "source" ],
-                  count.ocaml_expr ) ]
+                  apply "List.length" [ Semantic_ir.Ident "source" ],
+                  count.semantic_expr ) ]
         in
         let result_expr =
           if name = "take-last" then
-            drop_list_expr (Ocaml_ir.Ident count_name) (Ocaml_ir.Ident "source")
+            drop_list_expr (Semantic_ir.Ident count_name) (Semantic_ir.Ident "source")
           else
-            take_list_expr (Ocaml_ir.Ident count_name) (Ocaml_ir.Ident "source")
+            take_list_expr (Semantic_ir.Ident count_name) (Semantic_ir.Ident "source")
         in
         Ok
           (typed_ir collection.ty
              (collection_from_list_expr collection.ty
-                (Ocaml_ir.Let
-                   ( [ (Ocaml_ir.PVar "source", list_expr);
-                       (Ocaml_ir.PVar count_name, count_expr) ],
+                (Semantic_ir.Let
+                   ( [ (Semantic_ir.PVar "source", list_expr);
+                       (Semantic_ir.PVar count_name, count_expr) ],
                      result_expr ))))
 
 let take_nth count collection =
@@ -466,32 +466,32 @@ let take_nth count collection =
     match collection_to_list_expr collection with
     | Error _ -> Error.error "take-nth expects a collection"
     | Ok (_inner, list_expr) ->
-        let next_index = Ocaml_ir.Infix ("+", Ocaml_ir.Ident "index", Ocaml_ir.Int 1) in
+        let next_index = Semantic_ir.Infix ("+", Semantic_ir.Ident "index", Semantic_ir.Int 1) in
         let body =
-          Ocaml_ir.Match
-            ( Ocaml_ir.Ident "xs",
-              [ (Ocaml_ir.PList [], apply "List.rev" [ Ocaml_ir.Ident "acc" ]);
-                ( Ocaml_ir.PCons (Ocaml_ir.PVar "item", Ocaml_ir.PVar "rest"),
-                  Ocaml_ir.If
-                    ( Ocaml_ir.Infix
+          Semantic_ir.Match
+            ( Semantic_ir.Ident "xs",
+              [ (Semantic_ir.PList [], apply "List.rev" [ Semantic_ir.Ident "acc" ]);
+                ( Semantic_ir.PCons (Semantic_ir.PVar "item", Semantic_ir.PVar "rest"),
+                  Semantic_ir.If
+                    ( Semantic_ir.Infix
                         ( "=",
-                          Ocaml_ir.Infix ("mod", Ocaml_ir.Ident "index", count.ocaml_expr),
-                          Ocaml_ir.Int 0 ),
+                          Semantic_ir.Infix ("mod", Semantic_ir.Ident "index", count.semantic_expr),
+                          Semantic_ir.Int 0 ),
                       apply "take_nth"
                         [ next_index;
-                          Ocaml_ir.Cons (Ocaml_ir.Ident "item", Ocaml_ir.Ident "acc");
-                          Ocaml_ir.Ident "rest" ],
+                          Semantic_ir.Cons (Semantic_ir.Ident "item", Semantic_ir.Ident "acc");
+                          Semantic_ir.Ident "rest" ],
                       apply "take_nth"
                         [ next_index;
-                          Ocaml_ir.Ident "acc";
-                          Ocaml_ir.Ident "rest" ] ) ) ] )
+                          Semantic_ir.Ident "acc";
+                          Semantic_ir.Ident "rest" ] ) ) ] )
         in
         let list_expr =
-          Ocaml_ir.LetRec
+          Semantic_ir.LetRec
             ( "take_nth",
-              [ Ocaml_ir.PVar "index"; Ocaml_ir.PVar "acc"; Ocaml_ir.PVar "xs" ],
+              [ Semantic_ir.PVar "index"; Semantic_ir.PVar "acc"; Semantic_ir.PVar "xs" ],
               body,
-              [ Ocaml_ir.Int 0; Ocaml_ir.List []; list_expr ] )
+              [ Semantic_ir.Int 0; Semantic_ir.List []; list_expr ] )
         in
         Ok (typed_ir collection.ty (collection_from_list_expr collection.ty list_expr))
 
@@ -503,13 +503,13 @@ let split_at count collection =
     | Ok (_inner, list_expr) ->
         let left =
           collection_from_list_expr collection.ty
-            (take_list_expr count.ocaml_expr list_expr)
+            (take_list_expr count.semantic_expr list_expr)
         in
         let right =
           collection_from_list_expr collection.ty
-            (drop_list_expr count.ocaml_expr list_expr)
+            (drop_list_expr count.semantic_expr list_expr)
         in
-        Ok (typed_ir (TVector collection.ty) (apply "Rrbvec.of_list" [ Ocaml_ir.List [ left; right ] ]))
+        Ok (typed_ir (TVector collection.ty) (apply "Rrbvec.of_list" [ Semantic_ir.List [ left; right ] ]))
 
 let bounded_count limit collection =
   if not (Types.equal limit.ty TInt) then Error.error "bounded-count limit must be int"
@@ -520,12 +520,12 @@ let bounded_count limit collection =
         Ok
           (typed_ir TInt
              (apply "min"
-                [ limit.ocaml_expr; apply "List.length" [ list_expr ] ]))
+                [ limit.semantic_expr; apply "List.length" [ list_expr ] ]))
 
 let dorun collection =
   match collection_to_list_expr collection with
   | Error _ -> Error.error "dorun expects a collection"
-  | Ok _ -> Ok (typed_ir TUnit Ocaml_ir.Unit)
+  | Ok _ -> Ok (typed_ir TUnit Semantic_ir.Unit)
 
 let doall collection =
   match collection_to_list_expr collection with
@@ -542,28 +542,28 @@ let into target source =
           | TVector _ ->
               Ok
                 (typed_ir target.ty
-                   (apply "Rrbvec.append" [ target.ocaml_expr; source.ocaml_expr ]))
+                   (apply "Rrbvec.append" [ target.semantic_expr; source.semantic_expr ]))
           | _ ->
               Ok
                 (typed_ir target.ty
-                   (apply "Rrbvec.append_list" [ target.ocaml_expr; source_list_expr ])))
+                   (apply "Rrbvec.append_list" [ target.semantic_expr; source_list_expr ])))
       | TList target_inner when Types.equal target_inner source_inner ->
           Ok
             (typed_ir target.ty
                (apply "List.fold_left"
-                  [ Ocaml_ir.Fun
-                      ( [ Ocaml_ir.PVar "acc"; Ocaml_ir.PVar "item" ],
-                        Ocaml_ir.Cons (Ocaml_ir.Ident "item", Ocaml_ir.Ident "acc") );
-                    target.ocaml_expr;
+                  [ Semantic_ir.Fun
+                      ( [ Semantic_ir.PVar "acc"; Semantic_ir.PVar "item" ],
+                        Semantic_ir.Cons (Semantic_ir.Ident "item", Semantic_ir.Ident "acc") );
+                    target.semantic_expr;
                     source_list_expr ]))
       | TSet target_inner when Types.equal target_inner source_inner ->
           Types.set_module_name target_inner
           |> Result.map (fun set_module ->
                  typed_ir target.ty
                    (apply (set_module ^ ".of_list")
-                      [ Ocaml_ir.Infix
+                      [ Semantic_ir.Infix
                           ( "@",
-                            apply (set_module ^ ".elements") [ target.ocaml_expr ],
+                            apply (set_module ^ ".elements") [ target.semantic_expr ],
                             source_list_expr ) ]))
       | TVector _ | TList _ | TSet _ ->
           Error.error "into source element type must match target element type"

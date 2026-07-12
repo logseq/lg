@@ -101,15 +101,15 @@ let create ~compile_expr =
   
   and ocaml_apply function_name arguments =
     if List.exists (fun (label, _) -> Option.is_some label) arguments then
-      Ocaml_ir.Labelled_apply
-        ( Ocaml_ir.Ident function_name,
+      Semantic_ir.Labelled_apply
+        ( Semantic_ir.Ident function_name,
           List.map
-            (fun (label, argument) -> (label, argument.ocaml_expr))
+            (fun (label, argument) -> (label, argument.semantic_expr))
             arguments )
     else
-      Ocaml_ir.Apply
-        ( Ocaml_ir.Ident function_name,
-          List.map (fun (_, argument) -> argument.ocaml_expr) arguments )
+      Semantic_ir.Apply
+        ( Semantic_ir.Ident function_name,
+          List.map (fun (_, argument) -> argument.semantic_expr) arguments )
   
   and compile_call scope env name arg_forms =
     let compile_args () = compile_args_for scope env arg_forms in
@@ -124,12 +124,12 @@ let create ~compile_expr =
           let payload =
             match args with
             | [] -> None
-            | [ value ] -> Some value.ocaml_expr
-            | values -> Some (Ocaml_ir.Tuple (List.map (fun value -> value.ocaml_expr) values))
+            | [ value ] -> Some value.semantic_expr
+            | values -> Some (Semantic_ir.Tuple (List.map (fun value -> value.semantic_expr) values))
           in
           Ok
             (typed_ir (return_ty args)
-               (Ocaml_ir.Constructor (constructor_name, payload)))
+               (Semantic_ir.Constructor (constructor_name, payload)))
     in
     match name with
     | "raise" -> (
@@ -138,7 +138,7 @@ let create ~compile_expr =
         | Ok [ arg ] ->
             Ok
               (typed_ir TAny
-                 (Ocaml_ir.Apply (Ocaml_ir.Ident "raise", [ arg.ocaml_expr ])))
+                 (Semantic_ir.Apply (Semantic_ir.Ident "raise", [ arg.semantic_expr ])))
         | Ok _ -> Error.error "raise expects 1 arguments")
     | "Some" ->
         constructor
@@ -165,14 +165,14 @@ let create ~compile_expr =
             if List.for_all (fun value -> Types.equal first.ty value.ty) rest then
               Ok
                 (typed_ir (TArray first.ty)
-                   (Ocaml_ir.Array (List.map (fun value -> value.ocaml_expr) values)))
+                   (Semantic_ir.Array (List.map (fun value -> value.semantic_expr) values)))
             else Error.error "OCaml array elements must have the same type")
     | "ocaml-array-of" -> (
         match arg_forms with
         | [ FKeyword keyword ] -> (
             match Type_annotation.of_keyword keyword with
             | Error _ as err -> err
-            | Ok element_ty -> Ok (typed_ir (TArray element_ty) (Ocaml_ir.Array [])))
+            | Ok element_ty -> Ok (typed_ir (TArray element_ty) (Semantic_ir.Array [])))
         | _ -> Error.error "ocaml-array-of expects one type")
     | "ocaml-array-get" -> (
         match compile_args () with
@@ -183,7 +183,7 @@ let create ~compile_expr =
                 if Types.equal index.ty TInt then
                   Ok
                     (typed_ir element_ty
-                       (apply "Array.get" [ array.ocaml_expr; index.ocaml_expr ]))
+                       (apply "Array.get" [ array.semantic_expr; index.semantic_expr ]))
                 else Error.error "OCaml array index must be int"
             | _ -> Error.error "ocaml-array-get expects an OCaml array")
         | Ok _ -> Error.error "ocaml-array-get expects 2 arguments")
@@ -201,13 +201,13 @@ let create ~compile_expr =
                   Ok
                     (typed_ir TUnit
                        (apply "Array.set"
-                          [ array.ocaml_expr; index.ocaml_expr; value.ocaml_expr ]))
+                          [ array.semantic_expr; index.semantic_expr; value.semantic_expr ]))
             | _ -> Error.error "ocaml-array-set! expects an OCaml array")
         | Ok _ -> Error.error "ocaml-array-set! expects 3 arguments")
     | "ocaml-ref" -> (
         match compile_args () with
         | Error _ as err -> err
-        | Ok [ value ] -> Ok (typed_ir (TRef value.ty) (apply "ref" [ value.ocaml_expr ]))
+        | Ok [ value ] -> Ok (typed_ir (TRef value.ty) (apply "ref" [ value.semantic_expr ]))
         | Ok _ -> Error.error "ocaml-ref expects 1 argument")
     | "ocaml-deref" -> (
         match compile_args () with
@@ -215,7 +215,7 @@ let create ~compile_expr =
         | Ok [ value ] -> (
             match value.ty with
             | TRef referenced_ty ->
-                Ok (typed_ir referenced_ty (Ocaml_ir.Prefix ("!", value.ocaml_expr)))
+                Ok (typed_ir referenced_ty (Semantic_ir.Prefix ("!", value.semantic_expr)))
             | _ -> Error.error "ocaml-deref expects an OCaml ref")
         | Ok _ -> Error.error "ocaml-deref expects 1 argument")
     | "ocaml-reset!" -> (
@@ -227,7 +227,7 @@ let create ~compile_expr =
                 if Types.equal referenced_ty value.ty then
                   Ok
                     (typed_ir TUnit
-                       (Ocaml_ir.Infix (":=", reference.ocaml_expr, value.ocaml_expr)))
+                       (Semantic_ir.Infix (":=", reference.semantic_expr, value.semantic_expr)))
                 else Error.error "OCaml ref value must match referenced type"
             | _ -> Error.error "ocaml-reset! expects an OCaml ref")
         | Ok _ -> Error.error "ocaml-reset! expects 2 arguments")
@@ -269,7 +269,7 @@ let create ~compile_expr =
             Ok
               (typed_ir
                  (TTuple (List.map (fun value -> value.ty) values))
-                 (Ocaml_ir.Tuple (List.map (fun value -> value.ocaml_expr) values))))
+                 (Semantic_ir.Tuple (List.map (fun value -> value.semantic_expr) values))))
     | "ocaml-record" -> (
         let field_value record field_form =
           match field_form with
@@ -320,10 +320,10 @@ let create ~compile_expr =
                         {
                           (typed_ir
                              (TNamed_record record)
-                             (Ocaml_ir.Record
+                             (Semantic_ir.Record
                                 ( List.map
                                     (fun ((field : field), value) ->
-                                      (field.ocaml_name, value.ocaml_expr))
+                                      (field.ocaml_name, value.semantic_expr))
                                     values,
                                   Some
                                     (record_type_application record.type_name
@@ -332,7 +332,7 @@ let create ~compile_expr =
                           record_values =
                             Some
                               (List.map
-                                 (fun ((field : field), value) -> (field, value.ocaml_expr))
+                                 (fun ((field : field), value) -> (field, value.semantic_expr))
                                  values);
                         }))
         | _ -> Error.error "ocaml-record expects a record type and fields")
@@ -360,7 +360,7 @@ let create ~compile_expr =
                     | Some field ->
                         Ok
                           (typed_ir field.ty
-                             (Ocaml_ir.Field (target.ocaml_expr, field.ocaml_name))))))
+                             (Semantic_ir.Field (target.semantic_expr, field.ocaml_name))))))
         | _ -> Error.error "ocaml-field expects record value and field name")
     | "ocaml-construct" -> (
         match arg_forms with
@@ -384,15 +384,15 @@ let create ~compile_expr =
                     let payload_expr =
                       match payloads with
                       | [] -> None
-                      | [ payload ] -> Some payload.ocaml_expr
+                      | [ payload ] -> Some payload.semantic_expr
                       | _ ->
                           Some
-                            (Ocaml_ir.Tuple
-                               (List.map (fun payload -> payload.ocaml_expr) payloads))
+                            (Semantic_ir.Tuple
+                               (List.map (fun payload -> payload.semantic_expr) payloads))
                     in
                     Ok
                       (typed_ir constructor_ty
-                         (Ocaml_ir.Constructor (constructor_name, payload_expr)))))
+                         (Semantic_ir.Constructor (constructor_name, payload_expr)))))
         | FKeyword _ :: _ -> Error.error "ocaml-construct constructor must be a symbol"
         | _ -> Error.error "ocaml-construct expects a constructor name")
     | "+" | "-" | "*" | "/" -> (
@@ -404,11 +404,11 @@ let create ~compile_expr =
             | Ok () -> Core_int.compile_operator name args))
     | "inc" ->
         compile_int_unary_call scope env name
-          (fun expression -> Ocaml_ir.Infix ("+", expression, Ocaml_ir.Int 1))
+          (fun expression -> Semantic_ir.Infix ("+", expression, Semantic_ir.Int 1))
           arg_forms
     | "dec" ->
         compile_int_unary_call scope env name
-          (fun expression -> Ocaml_ir.Infix ("-", expression, Ocaml_ir.Int 1))
+          (fun expression -> Semantic_ir.Infix ("-", expression, Semantic_ir.Int 1))
           arg_forms
     | "=" | "not=" | "<" | "<=" | ">" | ">=" -> (
         match compile_args () with
@@ -438,35 +438,35 @@ let create ~compile_expr =
         | Ok args -> Core_predicate.compile name args)
     | "zero?" ->
         compile_int_unary_call scope env name
-          (fun expression -> Ocaml_ir.Infix ("=", expression, Ocaml_ir.Int 0))
+          (fun expression -> Semantic_ir.Infix ("=", expression, Semantic_ir.Int 0))
           arg_forms
         |> Result.map (fun expr -> { expr with ty = TBool })
     | "pos?" ->
         compile_int_unary_call scope env name
-          (fun expression -> Ocaml_ir.Infix (">", expression, Ocaml_ir.Int 0))
+          (fun expression -> Semantic_ir.Infix (">", expression, Semantic_ir.Int 0))
           arg_forms
         |> Result.map (fun expr -> { expr with ty = TBool })
     | "neg?" ->
         compile_int_unary_call scope env name
-          (fun expression -> Ocaml_ir.Infix ("<", expression, Ocaml_ir.Int 0))
+          (fun expression -> Semantic_ir.Infix ("<", expression, Semantic_ir.Int 0))
           arg_forms
         |> Result.map (fun expr -> { expr with ty = TBool })
     | "even?" ->
         compile_int_unary_call scope env name
           (fun expression ->
-            Ocaml_ir.Infix
+            Semantic_ir.Infix
               ( "=",
-                Ocaml_ir.Infix ("mod", expression, Ocaml_ir.Int 2),
-                Ocaml_ir.Int 0 ))
+                Semantic_ir.Infix ("mod", expression, Semantic_ir.Int 2),
+                Semantic_ir.Int 0 ))
           arg_forms
         |> Result.map (fun expr -> { expr with ty = TBool })
     | "odd?" ->
         compile_int_unary_call scope env name
           (fun expression ->
-            Ocaml_ir.Infix
+            Semantic_ir.Infix
               ( "<>",
-                Ocaml_ir.Infix ("mod", expression, Ocaml_ir.Int 2),
-                Ocaml_ir.Int 0 ))
+                Semantic_ir.Infix ("mod", expression, Semantic_ir.Int 2),
+                Semantic_ir.Int 0 ))
           arg_forms
         |> Result.map (fun expr -> { expr with ty = TBool })
     | "str" -> (
@@ -475,7 +475,7 @@ let create ~compile_expr =
         | Ok args ->
             let expr =
               match args with
-              | [] -> Ocaml_ir.String ""
+              | [] -> Semantic_ir.String ""
               | _ -> args |> List.map (Codegen.stringify_expr_ir ~pr:false) |> Codegen.concat_expr
             in
             Ok (typed_ir TString expr))
@@ -494,7 +494,7 @@ let create ~compile_expr =
         | Ok args -> Core_int.compile_variadic_bitwise name args)
     | "bit-not" ->
         compile_int_unary_call scope env name
-          (fun expression -> Ocaml_ir.Prefix ("lnot", expression))
+          (fun expression -> Semantic_ir.Prefix ("lnot", expression))
           arg_forms
     | "bit-shift-left" | "bit-shift-right" ->
         (match compile_args () with
@@ -512,7 +512,7 @@ let create ~compile_expr =
             let printer = if name = "print" then "print_string" else "print_endline" in
             Ok
               (typed_ir TUnit
-                 (Ocaml_ir.Apply (Ocaml_ir.Ident printer, [ Codegen.print_expr_ir arg ])))
+                 (Semantic_ir.Apply (Semantic_ir.Ident printer, [ Codegen.print_expr_ir arg ])))
         | Ok _ -> Error.error (name ^ " expects 1 arguments"))
     | "list" -> compile_list scope env arg_forms
     | "list*" -> compile_list_star scope env arg_forms
@@ -665,15 +665,15 @@ let create ~compile_expr =
         | TString, TInt ->
             Ok
               (typed_ir TString
-                 (Ocaml_ir.Apply
-                    ( Ocaml_ir.Ident "String.sub",
-                      [ source.ocaml_expr;
-                        start.ocaml_expr;
-                        Ocaml_ir.Infix
+                 (Semantic_ir.Apply
+                    ( Semantic_ir.Ident "String.sub",
+                      [ source.semantic_expr;
+                        start.semantic_expr;
+                        Semantic_ir.Infix
                           ( "-",
-                            Ocaml_ir.Apply
-                              (Ocaml_ir.Ident "String.length", [ source.ocaml_expr ]),
-                            start.ocaml_expr ) ] )))
+                            Semantic_ir.Apply
+                              (Semantic_ir.Ident "String.length", [ source.semantic_expr ]),
+                            start.semantic_expr ) ] )))
         | TString, _ -> Error.error "subs indexes must be int"
         | _ -> Error.error "subs expects a string")
     | Ok [ source; start; stop ] -> (
@@ -681,11 +681,11 @@ let create ~compile_expr =
         | TString, TInt, TInt ->
             Ok
               (typed_ir TString
-                 (Ocaml_ir.Apply
-                    ( Ocaml_ir.Ident "String.sub",
-                      [ source.ocaml_expr;
-                        start.ocaml_expr;
-                        Ocaml_ir.Infix ("-", stop.ocaml_expr, start.ocaml_expr) ] )))
+                 (Semantic_ir.Apply
+                    ( Semantic_ir.Ident "String.sub",
+                      [ source.semantic_expr;
+                        start.semantic_expr;
+                        Semantic_ir.Infix ("-", stop.semantic_expr, start.semantic_expr) ] )))
         | TString, _, _ -> Error.error "subs indexes must be int"
         | _ -> Error.error "subs expects a string")
     | Ok _ -> Error.error "subs expects string, start, and optional end"
@@ -725,7 +725,7 @@ let create ~compile_expr =
                       | None -> ret)
                   | _ -> ret
                 in
-                Ok (typed_ir ret (Ocaml_ir.Apply (Ocaml_ir.Ident fn.ocaml_name, arg_exprs)))
+                Ok (typed_ir ret (Semantic_ir.Apply (Semantic_ir.Ident fn.ocaml_name, arg_exprs)))
             | TFn _ -> Error.error (name ^ " called with incompatible arguments")
             | _ -> Error.error (name ^ " is not callable"))))
   
@@ -764,9 +764,9 @@ let create ~compile_expr =
                                     param_tys args ->
                             Ok
                               (typed_ir ret
-                                 (Ocaml_ir.Apply
-                                    ( Ocaml_ir.Ident impl.ocaml_name,
-                                      List.map (fun arg -> arg.ocaml_expr) args )))
+                                 (Semantic_ir.Apply
+                                    ( Semantic_ir.Ident impl.ocaml_name,
+                                      List.map (fun arg -> arg.semantic_expr) args )))
                         | TFn _ -> Error.error (name ^ " called with incompatible arguments")
                         | _ -> Error.error (name ^ " is not callable"))))
             | _ -> Error.error (name ^ " is not callable")))

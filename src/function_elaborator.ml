@@ -58,7 +58,7 @@ let prepare ?(param_type_overrides = []) ~lookup_function_ty ~compile_body scope
               let param_targets =
                 typed_specs
                 |> List.map (fun ((spec : Destructure.param_spec), ty) ->
-                       (spec, typed_ir ty (Ocaml_ir.Ident spec.ocaml_name)))
+                       (spec, typed_ir ty (Semantic_ir.Ident spec.ocaml_name)))
               in
               let destructured_bindings =
                 let rec loop acc = function
@@ -104,28 +104,28 @@ let fn_code ?(row_param_type_names = []) parts =
     |> List.mapi (fun index (name, ty) ->
            match List.nth_opt row_param_type_names index with
            | Some (Some type_name) ->
-               Ocaml_ir.PConstraint (Ocaml_ir.PVar name, type_name)
+               Semantic_ir.PConstraint (Semantic_ir.PVar name, type_name)
            | _ -> (
                match param_constraint_name ty with
-               | Some type_name -> Ocaml_ir.PConstraint (Ocaml_ir.PVar name, type_name)
-               | None -> Ocaml_ir.PVar name))
+               | Some type_name -> Semantic_ir.PConstraint (Semantic_ir.PVar name, type_name)
+               | None -> Semantic_ir.PVar name))
   in
   let body_expr =
     match parts.destructured_bindings with
-    | [] -> parts.body.ocaml_expr
+    | [] -> parts.body.semantic_expr
     | bindings ->
-        Ocaml_ir.Let
+        Semantic_ir.Let
           ( List.map
               (fun (binding : Destructure.local_binding) ->
-                (Ocaml_ir.PVar binding.ocaml_name, binding.ocaml_expr))
+                (Semantic_ir.PVar binding.ocaml_name, binding.semantic_expr))
               bindings,
-            parts.body.ocaml_expr )
+            parts.body.semantic_expr )
   in
   let return_param_index =
     match
-      (parts.destructured_bindings, Ocaml_ir.unlocated parts.body.ocaml_expr)
+      (parts.destructured_bindings, Semantic_ir.unlocated parts.body.semantic_expr)
     with
-    | [], Ocaml_ir.Ident returned_name ->
+    | [], Semantic_ir.Ident returned_name ->
         param_names
         |> List.mapi (fun index name -> (index, name))
         |> List.find_opt (fun (_index, name) -> name = returned_name)
@@ -134,7 +134,6 @@ let fn_code ?(row_param_type_names = []) parts =
   in
   {
     (typed_ir (TFn (param_tys, parts.body.ty))
-       (Ocaml_ir.Fun (param_patterns, body_expr))) with
+       (Semantic_ir.Fun (param_patterns, body_expr))) with
     return_param_index;
   }
-

@@ -490,7 +490,7 @@ let test_compiler_phases_have_explicit_boundaries () =
             destructured_bindings = [];
             body =
               Cljml.Types.typed_ir Cljml.Types.TInt
-                (Cljml.Ocaml_ir.Ident "x");
+                (Cljml.Semantic_ir.Ident "x");
           }
         in
         let fn = Cljml.Function_elaborator.fn_code parts in
@@ -566,7 +566,18 @@ let test_compiler_phases_have_explicit_boundaries () =
           |> expect_ok
         in
         if result.ty <> Cljml.Types.TInt then
-          failwith "typed elaboration context should route calls"
+          failwith "typed elaboration context should route calls";
+        let scalar =
+          Cljml.Expression_elaborator.compile_expr ""
+            Cljml.Compiler_environment.empty (Cljml.Ast.FInt 7)
+          |> expect_ok
+        in
+        (match scalar.semantic_expr with
+        | Cljml.Semantic_ir.Int 7 -> ()
+        | _ -> failwith "typed expressions should carry semantic AST nodes");
+        (match Cljml.Lowering.expression scalar.semantic_expr with
+        | Cljml.Ocaml_ir.Int 7 -> ()
+        | _ -> failwith "semantic lowering should produce backend IR")
     | _ -> failwith "top-level elaboration should have one owner"
 
 let test_source_node_identity_reaches_parsetree () =

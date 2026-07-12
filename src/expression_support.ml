@@ -7,7 +7,7 @@ let ensure_bool expr =
   if Types.compatible ~expected:TBool ~actual:expr.ty then Ok ()
   else Error.error "if condition must be bool"
 
-let apply name args = Ocaml_ir.Apply (Ocaml_ir.Ident name, args)
+let apply name args = Semantic_ir.Apply (Semantic_ir.Ident name, args)
 
 let rec drop n xs =
   if n <= 0 then xs
@@ -90,51 +90,51 @@ let check_emitted_name_collision = Resolver.check_emitted_name_collision
 
 let lookup_function scope env name =
   match lookup_binding scope env name with
-  | Ok binding -> Ok (typed_ir binding.ty (Ocaml_ir.Ident binding.ocaml_name))
+  | Ok binding -> Ok (typed_ir binding.ty (Semantic_ir.Ident binding.ocaml_name))
   | Error _ -> (
       match name with
       | "+" ->
           Ok
             (typed_ir (TFn ([ TInt; TInt ], TInt))
-               (Ocaml_ir.Fun
-                  ( [ Ocaml_ir.PVar "a"; Ocaml_ir.PVar "b" ],
-                    Ocaml_ir.Infix ("+", Ocaml_ir.Ident "a", Ocaml_ir.Ident "b") )))
+               (Semantic_ir.Fun
+                  ( [ Semantic_ir.PVar "a"; Semantic_ir.PVar "b" ],
+                    Semantic_ir.Infix ("+", Semantic_ir.Ident "a", Semantic_ir.Ident "b") )))
       | "-" ->
           Ok
             (typed_ir (TFn ([ TInt; TInt ], TInt))
-               (Ocaml_ir.Fun
-                  ( [ Ocaml_ir.PVar "a"; Ocaml_ir.PVar "b" ],
-                    Ocaml_ir.Infix ("-", Ocaml_ir.Ident "a", Ocaml_ir.Ident "b") )))
+               (Semantic_ir.Fun
+                  ( [ Semantic_ir.PVar "a"; Semantic_ir.PVar "b" ],
+                    Semantic_ir.Infix ("-", Semantic_ir.Ident "a", Semantic_ir.Ident "b") )))
       | "*" ->
           Ok
             (typed_ir (TFn ([ TInt; TInt ], TInt))
-               (Ocaml_ir.Fun
-                  ( [ Ocaml_ir.PVar "a"; Ocaml_ir.PVar "b" ],
-                    Ocaml_ir.Infix ("*", Ocaml_ir.Ident "a", Ocaml_ir.Ident "b") )))
+               (Semantic_ir.Fun
+                  ( [ Semantic_ir.PVar "a"; Semantic_ir.PVar "b" ],
+                    Semantic_ir.Infix ("*", Semantic_ir.Ident "a", Semantic_ir.Ident "b") )))
       | "/" ->
           Ok
             (typed_ir (TFn ([ TInt; TInt ], TInt))
-               (Ocaml_ir.Fun
-                  ( [ Ocaml_ir.PVar "a"; Ocaml_ir.PVar "b" ],
-                    Ocaml_ir.Infix ("/", Ocaml_ir.Ident "a", Ocaml_ir.Ident "b") )))
+               (Semantic_ir.Fun
+                  ( [ Semantic_ir.PVar "a"; Semantic_ir.PVar "b" ],
+                    Semantic_ir.Infix ("/", Semantic_ir.Ident "a", Semantic_ir.Ident "b") )))
       | "inc" ->
           Ok
             (typed_ir (TFn ([ TInt ], TInt))
-               (Ocaml_ir.Fun
-                  ( [ Ocaml_ir.PVar "x" ],
-                    Ocaml_ir.Infix ("+", Ocaml_ir.Ident "x", Ocaml_ir.Int 1) )))
+               (Semantic_ir.Fun
+                  ( [ Semantic_ir.PVar "x" ],
+                    Semantic_ir.Infix ("+", Semantic_ir.Ident "x", Semantic_ir.Int 1) )))
       | "dec" ->
           Ok
             (typed_ir (TFn ([ TInt ], TInt))
-               (Ocaml_ir.Fun
-                  ( [ Ocaml_ir.PVar "x" ],
-                    Ocaml_ir.Infix ("-", Ocaml_ir.Ident "x", Ocaml_ir.Int 1) )))
+               (Semantic_ir.Fun
+                  ( [ Semantic_ir.PVar "x" ],
+                    Semantic_ir.Infix ("-", Semantic_ir.Ident "x", Semantic_ir.Int 1) )))
       | "not" ->
           Ok
             (typed_ir (TFn ([ TBool ], TBool))
-               (Ocaml_ir.Fun
-                  ( [ Ocaml_ir.PVar "x" ],
-                    Ocaml_ir.Prefix ("not", Ocaml_ir.Ident "x") )))
+               (Semantic_ir.Fun
+                  ( [ Semantic_ir.PVar "x" ],
+                    Semantic_ir.Prefix ("not", Semantic_ir.Ident "x") )))
       | _ -> Error.error ("unknown function " ^ name))
 
 let ocaml_call_target = Resolver.ocaml_call_target
@@ -182,12 +182,12 @@ let row_type_items row_type_names param_tys =
 
 let row_project_expr type_name fields arg =
   let source = "__row_source" in
-  Ocaml_ir.Let
-    ( [ (Ocaml_ir.PVar source, arg.ocaml_expr) ],
-      Ocaml_ir.Record
+  Semantic_ir.Let
+    ( [ (Semantic_ir.PVar source, arg.semantic_expr) ],
+      Semantic_ir.Record
         ( List.map
             (fun (field : field) ->
-              (field.ocaml_name, Ocaml_ir.Field (Ocaml_ir.Ident source, field.ocaml_name)))
+              (field.ocaml_name, Semantic_ir.Field (Semantic_ir.Ident source, field.ocaml_name)))
             fields,
           Some type_name ) )
 
@@ -195,14 +195,14 @@ let row_arg_expr row_type_name expected_ty arg =
   match (row_type_name, expected_ty, arg.ty) with
   | Some type_name, TRecord fields, (TRecord _ | TNamed_record _) ->
       row_project_expr type_name fields arg
-  | _ -> arg.ocaml_expr
+  | _ -> arg.semantic_expr
 
 let coerce_set_element element_ty value =
   match element_ty with
   | TNamed_record expected -> (
       match value.ty with
       | TNamed_record actual when actual.type_name = expected.type_name ->
-          Ok value.ocaml_expr
+          Ok value.semantic_expr
       | (TRecord actual_fields | TNamed_record { fields = actual_fields; _ })
         when Types.compatible ~expected:element_ty ~actual:value.ty ->
           let rec project_fields acc = function
@@ -216,17 +216,17 @@ let coerce_set_element element_ty value =
                       rest)
           in
           project_fields [] expected.fields
-          |> Result.map (fun fields -> Ocaml_ir.Record (fields, Some expected.type_name))
+          |> Result.map (fun fields -> Semantic_ir.Record (fields, Some expected.type_name))
       | _ -> Error.error "set value type must match record element type")
   | _ ->
-      if Types.equal element_ty value.ty then Ok value.ocaml_expr
+      if Types.equal element_ty value.ty then Ok value.semantic_expr
       else Error.error "set value type must match element type"
 
 let constrain_record_function_argument_expr fn element_ty =
-  match (Ocaml_ir.unlocated fn.ocaml_expr, element_ty) with
-  | Ocaml_ir.Fun ([ Ocaml_ir.PVar name ], body), TNamed_record record ->
-      Ocaml_ir.Fun ([ Ocaml_ir.PConstraint (Ocaml_ir.PVar name, record.type_name) ], body)
-  | _ -> fn.ocaml_expr
+  match (Semantic_ir.unlocated fn.semantic_expr, element_ty) with
+  | Semantic_ir.Fun ([ Semantic_ir.PVar name ], body), TNamed_record record ->
+      Semantic_ir.Fun ([ Semantic_ir.PConstraint (Semantic_ir.PVar name, record.type_name) ], body)
+  | _ -> fn.semantic_expr
 
 let param_constraint_name = function
   | (TInt | TFloat | TChar | TString | TSymbol | TKeyword | TBool | TUnit

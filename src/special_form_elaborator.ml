@@ -52,12 +52,12 @@ let create ~compile_expr =
             let rec loop acc = function
               | [] ->
                   let values =
-                    List.rev acc |> List.map (fun expr -> expr.ocaml_expr)
+                    List.rev acc |> List.map (fun expr -> expr.semantic_expr)
                   in
                   Ok
                     (typed_ir (TVector first_expr.ty)
-                       (Ocaml_ir.Apply
-                          (Ocaml_ir.Ident "Rrbvec.of_list", [ Ocaml_ir.List values ])))
+                       (Semantic_ir.Apply
+                          (Semantic_ir.Ident "Rrbvec.of_list", [ Semantic_ir.List values ])))
               | form :: rest -> (
                   match compile_expr scope env form with
                   | Error _ as err -> err
@@ -86,13 +86,13 @@ let create ~compile_expr =
                  in
                  let values =
                    List.map2
-                     (fun field (_keyword, value) -> (field, value.ocaml_expr))
+                     (fun field (_keyword, value) -> (field, value.semantic_expr))
                      fields pairs
                  in
                  {
                    ty = TRecord fields;
-                   ocaml_expr =
-                     Ocaml_ir.Record
+                   semantic_expr =
+                     Semantic_ir.Record
                        (List.map
                           (fun ((field : field), value) -> (field.ocaml_name, value))
                           values, None);
@@ -122,10 +122,10 @@ let create ~compile_expr =
             if branch_types_compatible then_expr.ty else_expr.ty then
               Ok
                 (typed_ir then_expr.ty
-                   (Ocaml_ir.If
-                      ( condition.ocaml_expr,
-                        then_expr.ocaml_expr,
-                        else_expr.ocaml_expr )))
+                   (Semantic_ir.If
+                      ( condition.semantic_expr,
+                        then_expr.semantic_expr,
+                        else_expr.semantic_expr )))
             else Error.error "if branches must have same type")
   
   and compile_if_not scope env condition then_form else_form =
@@ -144,11 +144,11 @@ let create ~compile_expr =
             if branch_types_compatible then_expr.ty else_expr.ty then
               Ok
                 (typed_ir then_expr.ty
-                   (Ocaml_ir.If
-                      ( Ocaml_ir.Apply
-                          (Ocaml_ir.Ident "not", [ condition.ocaml_expr ]),
-                        then_expr.ocaml_expr,
-                        else_expr.ocaml_expr )))
+                   (Semantic_ir.If
+                      ( Semantic_ir.Apply
+                          (Semantic_ir.Ident "not", [ condition.semantic_expr ]),
+                        then_expr.semantic_expr,
+                        else_expr.semantic_expr )))
             else Error.error "if-not branches must have same type")
   
   and compile_when scope env condition body_forms =
@@ -165,8 +165,8 @@ let create ~compile_expr =
             if Types.equal body.ty TUnit then
               Ok
                 (typed_ir body.ty
-                   (Ocaml_ir.If
-                      (condition.ocaml_expr, body.ocaml_expr, Ocaml_ir.Unit)))
+                   (Semantic_ir.If
+                      (condition.semantic_expr, body.semantic_expr, Semantic_ir.Unit)))
             else Error.error "when body must be unit")
   
   and compile_cond scope env clauses =
@@ -209,8 +209,8 @@ let create ~compile_expr =
               let expression =
                 List.fold_right
                   (fun (test, value) acc ->
-                    Ocaml_ir.If (test.ocaml_expr, value.ocaml_expr, acc))
-                  pairs else_expr.ocaml_expr
+                    Semantic_ir.If (test.semantic_expr, value.semantic_expr, acc))
+                  pairs else_expr.semantic_expr
               in
               Ok (typed_ir else_expr.ty expression)
             else Error.error "cond branches must have same type")
@@ -227,15 +227,15 @@ let create ~compile_expr =
       | Ok pattern ->
           if Types.equal expected_ty pattern.ty then
             (match form with
-            | FInt value -> Ok (Ocaml_ir.PInt value)
-            | FString value | FKeyword value -> Ok (Ocaml_ir.PString value)
-            | FBool value -> Ok (Ocaml_ir.PBool value)
+            | FInt value -> Ok (Semantic_ir.PInt value)
+            | FString value | FKeyword value -> Ok (Semantic_ir.PString value)
+            | FBool value -> Ok (Semantic_ir.PBool value)
             | _ -> Error.error "unsupported match pattern")
           else Error.error "match pattern type must match target"
     in
     let rec compile_pattern target_ty pattern =
       match (target_ty, pattern) with
-      | _, FSymbol "_" -> Ok (Ocaml_ir.PAny, [])
+      | _, FSymbol "_" -> Ok (Semantic_ir.PAny, [])
       | target_ty, FList [ FSymbol "as"; inner_pattern; FSymbol alias ] -> (
           match compile_pattern target_ty inner_pattern with
           | Error _ as err -> err
@@ -245,7 +245,7 @@ let create ~compile_expr =
                 ( Names.scoped_key scope alias,
                   Types.binding ocaml_name target_ty )
               in
-              Ok (Ocaml_ir.PAlias (inner_pattern, ocaml_name), bindings @ [ binding ]))
+              Ok (Semantic_ir.PAlias (inner_pattern, ocaml_name), bindings @ [ binding ]))
       | target_ty, FList [ FSymbol "or"; left_form; right_form ] -> (
           match
             (compile_pattern target_ty left_form, compile_pattern target_ty right_form)
@@ -258,11 +258,11 @@ let create ~compile_expr =
               in
               if binding_names left_bindings <> binding_names right_bindings then
                 Error.error "or-pattern alternatives must bind the same names"
-              else Ok (Ocaml_ir.POr (left, right), left_bindings))
+              else Ok (Semantic_ir.POr (left, right), left_bindings))
       | (TRecord fields | TNamed_record { fields; _ }),
         FList (FSymbol "record" :: field_patterns) ->
           let rec compile_fields compiled bindings seen = function
-            | [] -> Ok (Ocaml_ir.PRecord (List.rev compiled), bindings)
+            | [] -> Ok (Semantic_ir.PRecord (List.rev compiled), bindings)
             | FList [ FSymbol field_name; field_pattern ] :: rest ->
                 let ocaml_name = Names.sanitize_name field_name in
                 if List.mem ocaml_name seen then
@@ -303,10 +303,10 @@ let create ~compile_expr =
             | _ -> Error.error "tuple pattern arity mismatch"
           in
           compile_payloads [] [] (payload_tys, payload_patterns)
-          |> Result.map (fun (patterns, bindings) -> (Ocaml_ir.PTuple patterns, bindings))
+          |> Result.map (fun (patterns, bindings) -> (Semantic_ir.PTuple patterns, bindings))
       | target_ty, FSymbol name
         when is_ocaml_owned_type target_ty && starts_with_uppercase name ->
-          Ok (Ocaml_ir.PConstructor (name, None), [])
+          Ok (Semantic_ir.PConstructor (name, None), [])
       | target_ty, FList (FSymbol name :: payload_patterns)
         when is_ocaml_owned_type target_ty && starts_with_uppercase name -> (
           let builtin_constructor_payloads =
@@ -330,9 +330,9 @@ let create ~compile_expr =
                      match patterns with
                      | [] -> None
                      | [ pattern ] -> Some pattern
-                     | _ -> Some (Ocaml_ir.PTuple patterns)
+                     | _ -> Some (Semantic_ir.PTuple patterns)
                    in
-                   (Ocaml_ir.PConstructor (name, payload_pattern), bindings))
+                   (Semantic_ir.PConstructor (name, payload_pattern), bindings))
           in
           match builtin_constructor_payloads with
           | Some payload_tys -> compile_constructor_payloads payload_tys
@@ -353,12 +353,12 @@ let create ~compile_expr =
       | _, FSymbol name ->
           let ocaml_name = Names.sanitize_name name in
           Ok
-            ( Ocaml_ir.PVar ocaml_name,
+            ( Semantic_ir.PVar ocaml_name,
               [ (Names.scoped_key scope name, Types.binding ocaml_name target_ty) ] )
-      | TInt, FInt value -> Ok (Ocaml_ir.PInt value, [])
-      | TString, FString value -> Ok (Ocaml_ir.PString value, [])
-      | TKeyword, FKeyword keyword -> Ok (Ocaml_ir.PString keyword, [])
-      | TBool, FBool value -> Ok (Ocaml_ir.PBool value, [])
+      | TInt, FInt value -> Ok (Semantic_ir.PInt value, [])
+      | TString, FString value -> Ok (Semantic_ir.PString value, [])
+      | TKeyword, FKeyword keyword -> Ok (Semantic_ir.PString keyword, [])
+      | TBool, FBool value -> Ok (Semantic_ir.PBool value, [])
       | TList inner, FVector patterns ->
           compile_list_like_pattern inner patterns
       | TVector inner, FVector patterns ->
@@ -380,7 +380,7 @@ let create ~compile_expr =
                   (bindings @ pattern_bindings) rest)
       in
       loop [] [] patterns
-      |> Result.map (fun (patterns, bindings) -> (Ocaml_ir.PList patterns, bindings))
+      |> Result.map (fun (patterns, bindings) -> (Semantic_ir.PList patterns, bindings))
     in
     let compile_clause target_ty (pattern_form, result_form) =
       let pattern_form, guard_form =
@@ -399,7 +399,7 @@ let create ~compile_expr =
             | Some guard_form -> (
                 match compile_expr scope clause_env guard_form with
                 | Error _ as err -> err
-                | Ok guard when Types.equal guard.ty TBool -> Ok (Some guard.ocaml_expr)
+                | Ok guard when Types.equal guard.ty TBool -> Ok (Some guard.semantic_expr)
                 | Ok _ -> Error.error "match guard must be bool")
           in
           match (guard, compile_expr scope clause_env result_form) with
@@ -414,8 +414,8 @@ let create ~compile_expr =
         let target_expr =
           match target.ty with
           | TVector _ ->
-              Ocaml_ir.Apply (Ocaml_ir.Ident "Rrbvec.to_list", [ target.ocaml_expr ])
-          | _ -> target.ocaml_expr
+              Semantic_ir.Apply (Semantic_ir.Ident "Rrbvec.to_list", [ target.semantic_expr ])
+          | _ -> target.semantic_expr
         in
         let rec compile_clauses acc = function
           | [] -> Ok (List.rev acc)
@@ -436,11 +436,11 @@ let create ~compile_expr =
             then
               Ok
                 (typed_ir first_result.ty
-                   (Ocaml_ir.Match_guarded
+                   (Semantic_ir.Match_guarded
                       ( target_expr,
                         clauses
                         |> List.map (fun (pattern, guard, result) ->
-                               (pattern, guard, result.ocaml_expr)) )))
+                               (pattern, guard, result.semantic_expr)) )))
             else Error.error "match branches must have same type")
   
   and compile_body scope env empty_error forms =
@@ -454,7 +454,7 @@ let create ~compile_expr =
         | Ok expr, Ok body ->
             Ok
               (typed_ir body.ty
-                 (Ocaml_ir.Sequence [ expr.ocaml_expr; body.ocaml_expr ])))
+                 (Semantic_ir.Sequence [ expr.semantic_expr; body.semantic_expr ])))
   
   and compile_try scope env forms =
     let is_catch_clause = function
@@ -509,10 +509,10 @@ let create ~compile_expr =
             with
             | Error _ as err -> err
             | Ok handlers -> (
-                match (handlers.ocaml_expr, compatible_try_type body.ty handlers.ty) with
+                match (handlers.semantic_expr, compatible_try_type body.ty handlers.ty) with
                 | _, (Error _ as err) -> err
-                | Ocaml_ir.Match_guarded (_, cases), Ok ty ->
-                    Ok (typed_ir ty (Ocaml_ir.Try (body.ocaml_expr, cases)))
+                | Semantic_ir.Match_guarded (_, cases), Ok ty ->
+                    Ok (typed_ir ty (Semantic_ir.Try (body.semantic_expr, cases)))
                 | _, Ok _ -> Error.error "internal error: malformed try handlers")))
   
   and loop_branch_type left right =
@@ -544,8 +544,8 @@ let create ~compile_expr =
           validate 1 param_tys args
           |> Result.map (fun () ->
                  typed_ir TAny
-                   (Ocaml_ir.Apply
-                      (Ocaml_ir.Ident loop_name, List.map (fun arg -> arg.ocaml_expr) args)))
+                   (Semantic_ir.Apply
+                      (Semantic_ir.Ident loop_name, List.map (fun arg -> arg.semantic_expr) args)))
   
   and compile_loop_tail scope env loop_name param_tys = function
     | FList (FSymbol "recur" :: arg_forms) ->
@@ -566,10 +566,10 @@ let create ~compile_expr =
             | Ok (), Ok result_ty ->
                 Ok
                   (typed_ir result_ty
-                     (Ocaml_ir.If
-                        ( condition.ocaml_expr,
-                          then_expr.ocaml_expr,
-                          else_expr.ocaml_expr )))))
+                     (Semantic_ir.If
+                        ( condition.semantic_expr,
+                          then_expr.semantic_expr,
+                          else_expr.semantic_expr )))))
     | FList [ FSymbol "if-not"; condition_form; then_form; else_form ] ->
         compile_loop_tail scope env loop_name param_tys
           (FList
@@ -595,7 +595,7 @@ let create ~compile_expr =
         | Ok expression, Ok body ->
             Ok
               (typed_ir body.ty
-                 (Ocaml_ir.Sequence [ expression.ocaml_expr; body.ocaml_expr ])))
+                 (Semantic_ir.Sequence [ expression.semantic_expr; body.semantic_expr ])))
   
   and compile_loop scope env bindings body_forms =
     match bindings with
@@ -636,16 +636,16 @@ let create ~compile_expr =
               | Ok body ->
                   let params =
                     List.map
-                      (fun name -> Ocaml_ir.PVar (Names.sanitize_name name))
+                      (fun name -> Semantic_ir.PVar (Names.sanitize_name name))
                       names
                   in
                   Ok
                     (typed_ir body.ty
-                       (Ocaml_ir.LetRec
+                       (Semantic_ir.LetRec
                           ( loop_name,
                             params,
-                            body.ocaml_expr,
-                            List.map (fun value -> value.ocaml_expr) values )))))
+                            body.semantic_expr,
+                            List.map (fun value -> value.semantic_expr) values )))))
     | _ -> Error.error "loop bindings must be a vector"
   
   and compile_let scope env bindings body_forms =
@@ -665,7 +665,7 @@ let create ~compile_expr =
                     Ok
                       {
                         (typed_ir body.ty
-                           (Ocaml_ir.Let (List.rev ir_bindings, body.ocaml_expr)))
+                           (Semantic_ir.Let (List.rev ir_bindings, body.semantic_expr)))
                         with
                         return_param_index = body.return_param_index;
                       })
@@ -693,12 +693,12 @@ let create ~compile_expr =
                         in
                         let ir_bindings =
                           match pattern with
-                          | FSymbol "_" -> (Ocaml_ir.PAny, value.ocaml_expr) :: ir_bindings
+                          | FSymbol "_" -> (Semantic_ir.PAny, value.semantic_expr) :: ir_bindings
                           | _ ->
                               bindings
                               |> List.fold_left
                                    (fun acc (binding : Destructure.local_binding) ->
-                                     (Ocaml_ir.PVar binding.ocaml_name, binding.ocaml_expr)
+                                     (Semantic_ir.PVar binding.ocaml_name, binding.semantic_expr)
                                      :: acc)
                                    ir_bindings
                         in

@@ -282,7 +282,7 @@ let rec compile_module ?signature_name scope env next_type module_path
             | _ ->
                 let item =
                   Value_binding
-                    { pattern = Named local_name; expression = expr.ocaml_expr }
+                    { pattern = Named local_name; expression = expr.semantic_expr }
                 in
                 Ok
                   ( Env.add key local_binding env,
@@ -322,7 +322,7 @@ let rec compile_module ?signature_name scope env next_type module_path
                 let type_items = row_type_items local_row_types param_tys in
                 let value_item =
                   Value_binding
-                    { pattern = Named local_name; expression = expr.ocaml_expr }
+                    { pattern = Named local_name; expression = expr.semantic_expr }
                 in
                 Ok
                   ( Env.add key local_binding env,

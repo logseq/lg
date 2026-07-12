@@ -136,7 +136,7 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                                           Value_binding
                                             {
                                               pattern = Named ocaml_name;
-                                              expression = expr.ocaml_expr;
+                                              expression = expr.semantic_expr;
                                             } )))))
                         | _ -> Error.error "protocol method did not compile to a function"))))
         | _ -> Error.error "extend-type methods must be (method-name [params] body)"

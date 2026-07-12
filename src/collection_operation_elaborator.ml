@@ -60,9 +60,9 @@ let create ~compile_expr =
               let rec loop acc = function
                 | [] ->
                     let values =
-                      List.rev acc |> List.map (fun expr -> expr.ocaml_expr)
+                      List.rev acc |> List.map (fun expr -> expr.semantic_expr)
                     in
-                    Ok (typed_ir (TList first_expr.ty) (Ocaml_ir.List values))
+                    Ok (typed_ir (TList first_expr.ty) (Semantic_ir.List values))
                 | form :: rest -> (
                     match compile_expr scope env form with
                     | Error _ as err -> err
@@ -91,10 +91,10 @@ let create ~compile_expr =
                           match prefix_args with
                           | [] -> final_list_expr
                           | _ ->
-                              Ocaml_ir.Infix
+                              Semantic_ir.Infix
                                 ( "@",
-                                  Ocaml_ir.List
-                                    (List.map (fun arg -> arg.ocaml_expr) prefix_args),
+                                  Semantic_ir.List
+                                    (List.map (fun arg -> arg.semantic_expr) prefix_args),
                                   final_list_expr )
                         in
                         Ok (typed_ir (TList inner) list_expr)
@@ -103,33 +103,33 @@ let create ~compile_expr =
     and compile_range scope env arg_forms =
       let literal_zero = function FInt 0 -> true | _ -> false in
       let range_expr start stop step =
-        let current = Ocaml_ir.Ident "current" in
-        let stop_ident = Ocaml_ir.Ident "stop" in
-        let step_ident = Ocaml_ir.Ident "step" in
+        let current = Semantic_ir.Ident "current" in
+        let stop_ident = Semantic_ir.Ident "stop" in
+        let step_ident = Semantic_ir.Ident "step" in
         let done_expr =
-          Ocaml_ir.If
-            ( Ocaml_ir.Infix (">", step_ident, Ocaml_ir.Int 0),
-              Ocaml_ir.Infix (">=", current, stop_ident),
-              Ocaml_ir.Infix ("<=", current, stop_ident) )
+          Semantic_ir.If
+            ( Semantic_ir.Infix (">", step_ident, Semantic_ir.Int 0),
+              Semantic_ir.Infix (">=", current, stop_ident),
+              Semantic_ir.Infix ("<=", current, stop_ident) )
         in
         let body =
-          Ocaml_ir.If
-            ( Ocaml_ir.Infix ("=", step_ident, Ocaml_ir.Int 0),
-              apply "invalid_arg" [ Ocaml_ir.String "range step cannot be 0" ],
-              Ocaml_ir.If
+          Semantic_ir.If
+            ( Semantic_ir.Infix ("=", step_ident, Semantic_ir.Int 0),
+              apply "invalid_arg" [ Semantic_ir.String "range step cannot be 0" ],
+              Semantic_ir.If
                 ( done_expr,
-                  apply "List.rev" [ Ocaml_ir.Ident "acc" ],
+                  apply "List.rev" [ Semantic_ir.Ident "acc" ],
                   apply "range"
-                    [ Ocaml_ir.Cons (current, Ocaml_ir.Ident "acc");
-                      Ocaml_ir.Infix ("+", current, step_ident);
+                    [ Semantic_ir.Cons (current, Semantic_ir.Ident "acc");
+                      Semantic_ir.Infix ("+", current, step_ident);
                       stop_ident;
                       step_ident ] ) )
         in
-        Ocaml_ir.LetRec
+        Semantic_ir.LetRec
           ( "range",
-            [ Ocaml_ir.PVar "acc"; Ocaml_ir.PVar "current"; Ocaml_ir.PVar "stop"; Ocaml_ir.PVar "step" ],
+            [ Semantic_ir.PVar "acc"; Semantic_ir.PVar "current"; Semantic_ir.PVar "stop"; Semantic_ir.PVar "step" ],
             body,
-            [ Ocaml_ir.List []; start; stop; step ] )
+            [ Semantic_ir.List []; start; stop; step ] )
       in
       match arg_forms with
       | [ end_form ] -> (
@@ -137,7 +137,7 @@ let create ~compile_expr =
           | Error _ as err -> err
           | Ok end_expr ->
               if Types.equal end_expr.ty TInt then
-                Ok (typed_ir (TList TInt) (range_expr (Ocaml_ir.Int 0) end_expr.ocaml_expr (Ocaml_ir.Int 1)))
+                Ok (typed_ir (TList TInt) (range_expr (Semantic_ir.Int 0) end_expr.semantic_expr (Semantic_ir.Int 1)))
               else Error.error "range arguments must be int")
       | [ start_form; end_form ] -> (
           match (compile_expr scope env start_form, compile_expr scope env end_form) with
@@ -145,7 +145,7 @@ let create ~compile_expr =
           | _, (Error _ as err) -> err
           | Ok start_expr, Ok end_expr ->
               if Types.equal start_expr.ty TInt && Types.equal end_expr.ty TInt then
-                Ok (typed_ir (TList TInt) (range_expr start_expr.ocaml_expr end_expr.ocaml_expr (Ocaml_ir.Int 1)))
+                Ok (typed_ir (TList TInt) (range_expr start_expr.semantic_expr end_expr.semantic_expr (Semantic_ir.Int 1)))
               else Error.error "range arguments must be int")
       | [ start_form; end_form; step_form ] ->
           if literal_zero step_form then Error.error "range step cannot be 0"
@@ -165,7 +165,7 @@ let create ~compile_expr =
                 then
                   Ok
                     (typed_ir (TList TInt)
-                       (range_expr start_expr.ocaml_expr end_expr.ocaml_expr step_expr.ocaml_expr))
+                       (range_expr start_expr.semantic_expr end_expr.semantic_expr step_expr.semantic_expr))
                 else Error.error "range arguments must be int")
       | _ -> Error.error "range expects end, start/end, or start/end/step"
     
@@ -174,7 +174,7 @@ let create ~compile_expr =
       | [ FKeyword keyword ] -> (
           match Type_annotation.of_keyword keyword with
           | Error _ as err -> err
-          | Ok element_ty -> Ok (typed_ir (TList element_ty) (Ocaml_ir.List [])))
+          | Ok element_ty -> Ok (typed_ir (TList element_ty) (Semantic_ir.List [])))
       | _ -> Error.error "list-of expects one type keyword"
     
     and compile_vector_of arg_forms =
@@ -183,7 +183,7 @@ let create ~compile_expr =
           match Type_annotation.of_keyword keyword with
           | Error _ as err -> err
           | Ok element_ty ->
-              Ok (typed_ir (TVector element_ty) (Ocaml_ir.Ident "Rrbvec.empty")))
+              Ok (typed_ir (TVector element_ty) (Semantic_ir.Ident "Rrbvec.empty")))
       | _ -> Error.error "vector-of expects one type keyword"
     
     and compile_conj scope env arg_forms =
@@ -195,23 +195,23 @@ let create ~compile_expr =
             | TList inner when Types.equal inner value.ty ->
                 Ok
                   (typed_ir collection.ty
-                     (Ocaml_ir.Cons (value.ocaml_expr, collection.ocaml_expr)))
+                     (Semantic_ir.Cons (value.semantic_expr, collection.semantic_expr)))
             | TList _ -> Error.error "conj value type must match list element type"
             | TVector inner when Types.equal inner value.ty ->
                 Ok
                   (typed_ir collection.ty
-                     (Ocaml_ir.Apply
-                        ( Ocaml_ir.Ident "Rrbvec.push_back",
-                          [ collection.ocaml_expr; value.ocaml_expr ] )))
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident "Rrbvec.push_back",
+                          [ collection.semantic_expr; value.semantic_expr ] )))
             | TVector _ -> Error.error "conj value type must match vector element type"
             | TSet inner when Types.same_shape inner value.ty ->
                 Result.bind (Types.set_module_name inner) (fun set_module ->
                        coerce_set_element inner value
                        |> Result.map (fun value ->
                               typed_ir collection.ty
-                                (Ocaml_ir.Apply
-                                   ( Ocaml_ir.Ident (set_module ^ ".add"),
-                                     [ value; collection.ocaml_expr ] ))))
+                                (Semantic_ir.Apply
+                                   ( Semantic_ir.Ident (set_module ^ ".add"),
+                                     [ value; collection.semantic_expr ] ))))
             | TSet _ -> Error.error "conj value type must match set element type"
             | _ -> Error.error "conj expects a list, vector, or set"
           in
@@ -232,7 +232,7 @@ let create ~compile_expr =
           | TList inner when Types.equal inner value.ty ->
               Ok
                 (typed_ir collection.ty
-                   (Ocaml_ir.Cons (value.ocaml_expr, collection.ocaml_expr)))
+                   (Semantic_ir.Cons (value.semantic_expr, collection.semantic_expr)))
           | TList _ -> Error.error "cons value type must match list element type"
           | _ -> Error.error "cons expects a value and list")
       | Ok _ -> Error.error "cons expects value and list"
@@ -245,14 +245,14 @@ let create ~compile_expr =
           | TVector _, TInt ->
               Ok
                 (typed_ir vector.ty
-                   (Ocaml_ir.Apply
-                      ( Ocaml_ir.Ident "Option.get",
-                        [ Ocaml_ir.Apply
-                            ( Ocaml_ir.Ident "Rrbvec.subvec",
-                              [ vector.ocaml_expr;
-                                start.ocaml_expr;
-                                Ocaml_ir.Apply
-                                  (Ocaml_ir.Ident "Rrbvec.length", [ vector.ocaml_expr ]) ] ) ] )))
+                   (Semantic_ir.Apply
+                      ( Semantic_ir.Ident "Option.get",
+                        [ Semantic_ir.Apply
+                            ( Semantic_ir.Ident "Rrbvec.subvec",
+                              [ vector.semantic_expr;
+                                start.semantic_expr;
+                                Semantic_ir.Apply
+                                  (Semantic_ir.Ident "Rrbvec.length", [ vector.semantic_expr ]) ] ) ] )))
           | TVector _, _ -> Error.error "subvec indexes must be int"
           | _ -> Error.error "subvec expects a vector")
       | Ok [ vector; start; stop ] -> (
@@ -260,11 +260,11 @@ let create ~compile_expr =
           | TVector _, TInt, TInt ->
               Ok
                 (typed_ir vector.ty
-                   (Ocaml_ir.Apply
-                      ( Ocaml_ir.Ident "Option.get",
-                        [ Ocaml_ir.Apply
-                            ( Ocaml_ir.Ident "Rrbvec.subvec",
-                              [ vector.ocaml_expr; start.ocaml_expr; stop.ocaml_expr ] ) ] )))
+                   (Semantic_ir.Apply
+                      ( Semantic_ir.Ident "Option.get",
+                        [ Semantic_ir.Apply
+                            ( Semantic_ir.Ident "Rrbvec.subvec",
+                              [ vector.semantic_expr; start.semantic_expr; stop.semantic_expr ] ) ] )))
           | TVector _, _, _ -> Error.error "subvec indexes must be int"
           | _ -> Error.error "subvec expects a vector")
       | Ok _ -> Error.error "subvec expects vector, start, and optional stop"
@@ -277,14 +277,14 @@ let create ~compile_expr =
           | TList inner, TInt ->
               Ok
                 (typed_ir inner
-                   (Ocaml_ir.Apply
-                      (Ocaml_ir.Ident "List.nth", [ collection.ocaml_expr; index.ocaml_expr ])))
+                   (Semantic_ir.Apply
+                      (Semantic_ir.Ident "List.nth", [ collection.semantic_expr; index.semantic_expr ])))
           | TList _, _ -> Error.error "nth index must be int"
           | TVector inner, TInt ->
               Ok
                 (typed_ir inner
-                   (Ocaml_ir.Apply
-                      (Ocaml_ir.Ident "Rrbvec.nth", [ collection.ocaml_expr; index.ocaml_expr ])))
+                   (Semantic_ir.Apply
+                      (Semantic_ir.Ident "Rrbvec.nth", [ collection.semantic_expr; index.semantic_expr ])))
           | TVector _, _ -> Error.error "nth index must be int"
           | _ -> Error.error "nth expects a list or vector")
       | Ok [ collection; index; default ] -> (
@@ -292,24 +292,24 @@ let create ~compile_expr =
           | TList inner, TInt when Types.equal inner default.ty ->
               Ok
                 (typed_ir inner
-                   (Ocaml_ir.If
-                      ( Ocaml_ir.Infix ("<", index.ocaml_expr, Ocaml_ir.Int 0),
-                        default.ocaml_expr,
-                        Ocaml_ir.Match
-                          ( apply "List.nth_opt" [ collection.ocaml_expr; index.ocaml_expr ],
-                            [ ( Ocaml_ir.PConstructor ("Some", Some (Ocaml_ir.PVar "value")),
-                                Ocaml_ir.Ident "value" );
-                              (Ocaml_ir.PConstructor ("None", None), default.ocaml_expr) ] ) )))
+                   (Semantic_ir.If
+                      ( Semantic_ir.Infix ("<", index.semantic_expr, Semantic_ir.Int 0),
+                        default.semantic_expr,
+                        Semantic_ir.Match
+                          ( apply "List.nth_opt" [ collection.semantic_expr; index.semantic_expr ],
+                            [ ( Semantic_ir.PConstructor ("Some", Some (Semantic_ir.PVar "value")),
+                                Semantic_ir.Ident "value" );
+                              (Semantic_ir.PConstructor ("None", None), default.semantic_expr) ] ) )))
           | TList _, TInt -> Error.error "nth default must match collection element type"
           | TList _, _ -> Error.error "nth index must be int"
           | TVector inner, TInt when Types.equal inner default.ty ->
               Ok
                 (typed_ir inner
-                   (Ocaml_ir.Match
-                      ( apply "Rrbvec.nth_opt" [ collection.ocaml_expr; index.ocaml_expr ],
-                        [ ( Ocaml_ir.PConstructor ("Some", Some (Ocaml_ir.PVar "value")),
-                            Ocaml_ir.Ident "value" );
-                          (Ocaml_ir.PConstructor ("None", None), default.ocaml_expr) ] )))
+                   (Semantic_ir.Match
+                      ( apply "Rrbvec.nth_opt" [ collection.semantic_expr; index.semantic_expr ],
+                        [ ( Semantic_ir.PConstructor ("Some", Some (Semantic_ir.PVar "value")),
+                            Semantic_ir.Ident "value" );
+                          (Semantic_ir.PConstructor ("None", None), default.semantic_expr) ] )))
           | TVector _, TInt -> Error.error "nth default must match collection element type"
           | TVector _, _ -> Error.error "nth index must be int"
           | _ -> Error.error "nth expects a list or vector")
@@ -339,7 +339,7 @@ let create ~compile_expr =
               | TVector inner, TInt ->
                   Ok
                     (typed_ir inner
-                       (apply "Rrbvec.nth" [ target.ocaml_expr; index.ocaml_expr ]))
+                       (apply "Rrbvec.nth" [ target.semantic_expr; index.semantic_expr ]))
               | TVector _, _ -> Error.error "get vector index must be int"
               | _ -> Error.error "get key must be a keyword"))
       | [ target_form; FKeyword keyword; default_form ] -> (
@@ -375,11 +375,11 @@ let create ~compile_expr =
               | TVector inner, TInt when Types.equal inner default.ty ->
                   Ok
                     (typed_ir inner
-                       (Ocaml_ir.Match
-                          ( apply "Rrbvec.nth_opt" [ target.ocaml_expr; index.ocaml_expr ],
-                            [ ( Ocaml_ir.PConstructor ("Some", Some (Ocaml_ir.PVar "value")),
-                                Ocaml_ir.Ident "value" );
-                              (Ocaml_ir.PConstructor ("None", None), default.ocaml_expr) ] )))
+                       (Semantic_ir.Match
+                          ( apply "Rrbvec.nth_opt" [ target.semantic_expr; index.semantic_expr ],
+                            [ ( Semantic_ir.PConstructor ("Some", Some (Semantic_ir.PVar "value")),
+                                Semantic_ir.Ident "value" );
+                              (Semantic_ir.PConstructor ("None", None), default.semantic_expr) ] )))
               | TVector _, TInt -> Error.error "get default for vector must match element type"
               | TVector _, _ -> Error.error "get vector index must be int"
               | _ -> Error.error "get key must be a keyword"))
@@ -437,10 +437,10 @@ let create ~compile_expr =
                               else
                                 apply_pairs
                                   (apply "Rrbvec.set"
-                                     [ expr; index.ocaml_expr; value.ocaml_expr ])
+                                     [ expr; index.semantic_expr; value.semantic_expr ])
                                   rest
                         in
-                        (match apply_pairs target.ocaml_expr pairs with
+                        (match apply_pairs target.semantic_expr pairs with
                         | Error _ as err -> err
                         | Ok expr -> Ok (typed_ir target.ty expr)))
                 | _ -> Error.error "assoc expects a map or vector"))
@@ -508,10 +508,10 @@ let create ~compile_expr =
                                   (drop 1 param_tys) extra_args
                              && Types.equal ret field.ty ->
                           let value_expr =
-                            Ocaml_ir.Apply
-                              ( fn.ocaml_expr,
+                            Semantic_ir.Apply
+                              ( fn.semantic_expr,
                                 Structural_map.field_expr target field
-                                :: List.map (fun arg -> arg.ocaml_expr) extra_args )
+                                :: List.map (fun arg -> arg.semantic_expr) extra_args )
                           in
                           Structural_map.update_value target fields keyword ret value_expr
                       | TFn (_param_tys, ret) when not (Types.equal ret field.ty) ->
@@ -546,16 +546,16 @@ let create ~compile_expr =
                               (drop 1 param_tys) extra_args
                          && Types.equal ret inner ->
                       let old_expr =
-                        apply "Rrbvec.nth" [ target.ocaml_expr; index.ocaml_expr ]
+                        apply "Rrbvec.nth" [ target.semantic_expr; index.semantic_expr ]
                       in
                       let value_expr =
-                        Ocaml_ir.Apply
-                          (fn.ocaml_expr, old_expr :: List.map (fun arg -> arg.ocaml_expr) extra_args)
+                        Semantic_ir.Apply
+                          (fn.semantic_expr, old_expr :: List.map (fun arg -> arg.semantic_expr) extra_args)
                       in
                       Ok
                         (typed_ir target.ty
                            (apply "Rrbvec.set"
-                              [ target.ocaml_expr; index.ocaml_expr; value_expr ]))
+                              [ target.semantic_expr; index.semantic_expr; value_expr ]))
                   | TFn (_param_tys, ret) when not (Types.equal ret inner) ->
                       Error.error
                         ("cannot update vector element as " ^ source_name ret
@@ -595,21 +595,21 @@ let create ~compile_expr =
                    coerce_set_element inner value
                    |> Result.map (fun value ->
                           typed_ir TBool
-                            (Ocaml_ir.Apply
-                               (Ocaml_ir.Ident (set_module ^ ".mem"),
-                                [ value; target.ocaml_expr ]))))
+                            (Semantic_ir.Apply
+                               (Semantic_ir.Ident (set_module ^ ".mem"),
+                                [ value; target.semantic_expr ]))))
         | TSet _, _ -> Error.error "contains? value type must match set element type"
         | TVector _, TInt ->
             Ok
               (typed_ir TBool
-                 (Ocaml_ir.Infix
+                 (Semantic_ir.Infix
                     ( "&&",
-                      Ocaml_ir.Infix (">=", value.ocaml_expr, Ocaml_ir.Int 0),
-                      Ocaml_ir.Infix
+                      Semantic_ir.Infix (">=", value.semantic_expr, Semantic_ir.Int 0),
+                      Semantic_ir.Infix
                         ( "<",
-                          value.ocaml_expr,
-                          Ocaml_ir.Apply
-                            (Ocaml_ir.Ident "Rrbvec.length", [ target.ocaml_expr ]) ) )))
+                          value.semantic_expr,
+                          Semantic_ir.Apply
+                            (Semantic_ir.Ident "Rrbvec.length", [ target.semantic_expr ]) ) )))
         | TVector _, _ -> Error.error "contains? vector index must be int"
         | _ -> Error.error "contains? expects a map, set, or vector"
       in
@@ -622,10 +622,10 @@ let create ~compile_expr =
               | TRecord fields | TNamed_record { fields; _ } ->
                   Ok
                     (typed_ir TBool
-                       (Ocaml_ir.Bool (Option.is_some (find_field keyword fields))))
+                       (Semantic_ir.Bool (Option.is_some (find_field keyword fields))))
               | _ ->
                   compile_collection_contains target
-                    (typed_ir TKeyword (Ocaml_ir.String keyword))))
+                    (typed_ir TKeyword (Semantic_ir.String keyword))))
       | target_form :: value_form :: [] -> (
           match (compile_expr scope env target_form, compile_expr scope env value_form) with
           | (Error _ as err), _ -> err
@@ -641,12 +641,12 @@ let create ~compile_expr =
           | TRecord fields | TNamed_record { fields; _ } ->
               Ok
                 (typed_ir (TVector TKeyword)
-                   (Ocaml_ir.Apply
-                      ( Ocaml_ir.Ident "Rrbvec.of_list",
-                        [ Ocaml_ir.List
+                   (Semantic_ir.Apply
+                      ( Semantic_ir.Ident "Rrbvec.of_list",
+                        [ Semantic_ir.List
                             (fields
                             |> List.map (fun (field : field) ->
-                                   Ocaml_ir.String field.keyword)) ] )))
+                                   Semantic_ir.String field.keyword)) ] )))
           | _ -> Error.error "keys expects a map")
       | Ok _ -> Error.error "keys expects 1 arguments"
     
@@ -661,9 +661,9 @@ let create ~compile_expr =
               if List.for_all (fun (field : field) -> Types.equal first.ty field.ty) rest then
                 Ok
                   (typed_ir (TVector first.ty)
-                     (Ocaml_ir.Apply
-                        ( Ocaml_ir.Ident "Rrbvec.of_list",
-                          [ Ocaml_ir.List
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident "Rrbvec.of_list",
+                          [ Semantic_ir.List
                               ((first :: rest)
                               |> List.map (fun (field : field) ->
                                      Structural_map.field_expr target field)) ] )))
