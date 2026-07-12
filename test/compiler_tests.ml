@@ -2397,6 +2397,16 @@ let test_protocols_reject_duplicate_implementations () =
   |> Cljml.Compiler.compile_string
   |> expect_error "duplicate implementation of Labelled/label for int"
 
+let test_protocol_implementations_reject_emitted_name_collisions () =
+  Cljml.Compiler.compile_string
+    {|
+(defprotocol foo-bar (label [value] :string))
+(defprotocol foo_bar (label [value] :string))
+(extend-type :int foo-bar (label [value] (str value)))
+(extend-type :int foo_bar (label [value] (str value)))
+|}
+  |> expect_error_contains "OCaml protocol implementation name collision"
+
 let test_protocols_reject_duplicate_methods_in_one_extension () =
   {|
 (defprotocol Labelled (label [x] :string))
@@ -5870,6 +5880,8 @@ let tests =
       test_protocols_reject_duplicate_method_declarations );
     ( "protocols reject duplicate implementations",
       test_protocols_reject_duplicate_implementations );
+    ( "protocol implementations reject emitted name collisions",
+      test_protocol_implementations_reject_emitted_name_collisions );
     ( "protocols reject duplicate methods in one extension",
       test_protocols_reject_duplicate_methods_in_one_extension );
     ( "protocols support named record receivers",

@@ -26,16 +26,19 @@ module Implementation_key = struct
 end
 
 module Implementation_map = Map.Make (Implementation_key)
+module Emitted_name_map = Map.Make (String)
 
 type t = {
   declarations : declaration Protocol_map.t;
   implementations : Types.binding Implementation_map.t;
+  implementation_names : Implementation_key.t Emitted_name_map.t;
 }
 
 let empty =
   {
     declarations = Protocol_map.empty;
     implementations = Implementation_map.empty;
+    implementation_names = Emitted_name_map.empty;
   }
 
 let declare protocol_id signatures registry =
@@ -92,12 +95,27 @@ let add_implementation protocol_id method_id receiver_id binding registry =
       ("duplicate protocol implementation " ^ Protocol_id.to_string protocol_id
      ^ "/" ^ Method_id.name method_id)
   else
-    Ok
-      {
-        registry with
-        implementations =
-          Implementation_map.add key binding registry.implementations;
-      }
+    match
+      Emitted_name_map.find_opt binding.Types.ocaml_name
+        registry.implementation_names
+    with
+    | Some (existing_protocol, existing_method, _existing_receiver) ->
+        Error.error
+          ("OCaml protocol implementation name collision: "
+         ^ Protocol_id.to_string existing_protocol ^ "/"
+         ^ Method_id.name existing_method ^ " and "
+         ^ Protocol_id.to_string protocol_id ^ "/" ^ Method_id.name method_id
+         ^ " both emit " ^ binding.ocaml_name)
+    | None ->
+        Ok
+          {
+            registry with
+            implementations =
+              Implementation_map.add key binding registry.implementations;
+            implementation_names =
+              Emitted_name_map.add binding.ocaml_name key
+                registry.implementation_names;
+          }
 
 let find_implementation protocol_id method_id receiver_id registry =
   Implementation_map.find_opt (protocol_id, method_id, receiver_id)
@@ -124,4 +142,10 @@ let qualify_implementations ~owner ~module_name registry =
         else Implementation_map.add (protocol_id, method_id, receiver_id) binding result)
       registry.implementations Implementation_map.empty
   in
-  { registry with implementations }
+  let implementation_names =
+    Implementation_map.fold
+      (fun key (binding : Types.binding) names ->
+        Emitted_name_map.add binding.ocaml_name key names)
+      implementations Emitted_name_map.empty
+  in
+  { registry with implementations; implementation_names }
