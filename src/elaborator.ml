@@ -3645,156 +3645,6 @@ let open_module_bindings = Module_environment.open_bindings
 let include_module_public_bindings = Module_environment.include_public_bindings
 let alias_module_bindings = Module_environment.alias_bindings
 
-let signature_binding_key signature_name value_name =
-  "__signature/" ^ signature_name ^ "/" ^ value_name
-
-let functor_result_key functor_name value_name =
-  "__functor/" ^ functor_name ^ "/" ^ value_name
-
-let functor_result_record_key functor_name type_name =
-  "__functor_record/" ^ functor_name ^ "/" ^ type_name
-
-let signature_metadata_bindings env signature_name items =
-  let nested_value_path module_name value_path =
-    match String.rindex_opt value_path '/' with
-    | None -> module_name ^ "/" ^ value_path
-    | Some separator ->
-        let nested_path = String.sub value_path 0 separator in
-        let value_name =
-          String.sub value_path (separator + 1)
-            (String.length value_path - separator - 1)
-        in
-        module_name ^ "." ^ nested_path ^ "/" ^ value_name
-  in
-  let item_bindings = function
-    | Signature_value { source_name; value_name; value_type } ->
-        [
-          ( signature_binding_key signature_name source_name,
-            Types.binding value_name value_type );
-        ]
-    | Signature_type _ -> []
-    | Signature_module { source_name; module_signature; _ } ->
-        let nested_prefix = "__signature/" ^ module_signature ^ "/" in
-        let nested_prefix_len = String.length nested_prefix in
-        env
-        |> Env.filter_map (fun key binding ->
-               if
-                 String.length key > nested_prefix_len
-                 && String.sub key 0 nested_prefix_len = nested_prefix
-               then
-                 let nested_name =
-                   String.sub key nested_prefix_len
-                     (String.length key - nested_prefix_len)
-                 in
-                 Some
-                   ( signature_binding_key signature_name
-                       (nested_value_path source_name nested_name),
-                     binding )
-               else None)
-    | Signature_include { module_signature } ->
-        let included_prefix = "__signature/" ^ module_signature ^ "/" in
-        let included_prefix_len = String.length included_prefix in
-        env
-        |> Env.filter_map (fun key binding ->
-               if
-                 String.length key > included_prefix_len
-                 && String.sub key 0 included_prefix_len = included_prefix
-               then
-                 let value_path =
-                   String.sub key included_prefix_len
-                     (String.length key - included_prefix_len)
-                 in
-                 Some (signature_binding_key signature_name value_path, binding)
-               else None)
-  in
-  List.concat_map item_bindings items
-
-let parameter_value_binding parameter_name value_path (binding : binding) =
-  match String.rindex_opt value_path '/' with
-  | None ->
-      ( module_binding_key parameter_name value_path,
-        {
-          binding with
-          ocaml_name =
-            Names.module_segment_to_ocaml parameter_name ^ "." ^ binding.ocaml_name;
-        } )
-  | Some separator ->
-      let nested_path = String.sub value_path 0 separator in
-      let value_name =
-        String.sub value_path (separator + 1)
-          (String.length value_path - separator - 1)
-      in
-      let parameter_path = parameter_name ^ "." ^ nested_path in
-      ( module_binding_key parameter_path value_name,
-        {
-          binding with
-          ocaml_name =
-            Names.module_path_to_ocaml parameter_path ^ "." ^ binding.ocaml_name;
-        } )
-
-let signature_parameter_bindings env parameter_name signature_name =
-  let prefix = "__signature/" ^ signature_name ^ "/" in
-  let prefix_len = String.length prefix in
-  env
-  |> Env.filter_map (fun key (binding : binding) ->
-         if String.length key > prefix_len && String.sub key 0 prefix_len = prefix then
-           let value_name =
-             String.sub key prefix_len (String.length key - prefix_len)
-           in
-           Some (parameter_value_binding parameter_name value_name binding)
-         else None)
-
-let store_functor_result_bindings functor_name public_bindings =
-  let prefix = functor_name ^ "/" in
-  let prefix_len = String.length prefix in
-  let record_prefix = "__record/" ^ functor_name ^ "/" in
-  let record_prefix_len = String.length record_prefix in
-  public_bindings
-  |> List.filter_map (fun (key, (binding : binding)) ->
-         if String.length key > prefix_len && String.sub key 0 prefix_len = prefix then
-           let value_name =
-             String.sub key prefix_len (String.length key - prefix_len)
-           in
-           Some (functor_result_key functor_name value_name, binding)
-         else if
-           String.length key > record_prefix_len
-           && String.sub key 0 record_prefix_len = record_prefix
-         then
-           let type_name =
-             String.sub key record_prefix_len
-               (String.length key - record_prefix_len)
-           in
-           Some (functor_result_record_key functor_name type_name, binding)
-         else None)
-
-let apply_functor_result_bindings env module_name functor_name =
-  let prefix = "__functor/" ^ functor_name ^ "/" in
-  let prefix_len = String.length prefix in
-  let record_prefix = "__functor_record/" ^ functor_name ^ "/" in
-  let record_prefix_len = String.length record_prefix in
-  env
-  |> Env.filter_map (fun key (binding : binding) ->
-         if String.length key > prefix_len && String.sub key 0 prefix_len = prefix then
-           let value_name =
-             String.sub key prefix_len (String.length key - prefix_len)
-           in
-           Some
-             ( module_binding_key module_name value_name,
-               {
-                 binding with
-                 ocaml_name = module_binding_ocaml_name module_name value_name;
-               } )
-         else if
-           String.length key > record_prefix_len
-           && String.sub key 0 record_prefix_len = record_prefix
-         then
-           let type_name =
-             String.sub key record_prefix_len
-               (String.length key - record_prefix_len)
-           in
-           Some (record_type_key module_name type_name, binding)
-         else None)
-
 let compile_module_alias scope env next_type alias_name target_name =
   let alias_bindings = alias_module_bindings env alias_name target_name in
   Ok
@@ -3807,136 +3657,10 @@ let compile_module_alias scope env next_type alias_name target_name =
           target_name = Names.module_path_to_ocaml target_name;
         } )
 
-let parse_type_parameters = function
-  | FVector [] -> Error.error "type parameter vector must not be empty"
-  | FVector forms ->
-      let rec loop parameters = function
-        | [] -> Ok (List.rev parameters)
-        | FSymbol parameter :: rest ->
-            let parameter = Names.sanitize_name parameter in
-            if List.mem parameter parameters then
-              Error.error ("duplicate type parameter " ^ parameter)
-            else loop (parameter :: parameters) rest
-        | _ -> Error.error "type parameters must be symbols"
-      in
-      loop [] forms
-  | _ -> Error.error "type parameters must be a vector"
+let parse_type_parameters = Type_parameters.parse
 
 let compile_module_signature scope env next_type signature_name item_forms =
-  let rec parse items = function
-    | [] -> Ok (List.rev items)
-    | FList [ FSymbol "val"; FSymbol value_name; FKeyword keyword ] :: rest -> (
-        match Type_annotation.of_keyword keyword with
-        | Error _ -> Error.error ("unknown signature type " ^ keyword)
-        | Ok value_type ->
-            parse
-              (Signature_value
-                 {
-                   source_name = value_name;
-                   value_name = Names.sanitize_name value_name;
-                   value_type;
-                 }
-              :: items)
-              rest)
-    | FList [ FSymbol "type"; FSymbol type_name; FKeyword keyword ] :: rest -> (
-        match Type_annotation.of_keyword keyword with
-        | Error _ -> Error.error ("unknown signature type " ^ keyword)
-        | Ok manifest ->
-            parse
-              (Signature_type
-                 {
-                   type_name = Names.sanitize_name type_name;
-                   type_parameters = [];
-                   manifest = Some manifest;
-                 }
-              :: items)
-              rest)
-    | FList [ FSymbol "type"; FSymbol type_name ] :: rest ->
-        parse
-          (Signature_type
-             {
-               type_name = Names.sanitize_name type_name;
-               type_parameters = [];
-               manifest = None;
-             }
-          :: items)
-          rest
-    | FList
-        [ FSymbol "module"; FSymbol module_name; FSymbol module_signature ]
-      :: rest ->
-        parse
-          (Signature_module
-             {
-               source_name = module_name;
-               module_name = Names.module_segment_to_ocaml module_name;
-               module_signature = Names.module_path_to_ocaml module_signature;
-             }
-          :: items)
-          rest
-    | FList [ FSymbol "include"; FSymbol module_signature ] :: rest ->
-        parse
-          (Signature_include
-             { module_signature = Names.module_path_to_ocaml module_signature }
-          :: items)
-          rest
-    | FList (FSymbol "include" :: _) :: _ ->
-        Error.error "module-signature include expects one module type"
-    | FList
-        [ FSymbol "type"; FSymbol type_name; (FVector _ as parameter_form);
-          FKeyword keyword ]
-      :: rest -> (
-        match parse_type_parameters parameter_form with
-        | Error _ as err -> err
-        | Ok type_parameters -> (
-            match
-              Type_annotation.of_keyword_with_parameters type_parameters keyword
-            with
-            | Error (err : Error.t)
-              when String.starts_with ~prefix:"unknown type parameter " err.message ->
-                Error err
-            | Error _ -> Error.error ("unknown signature type " ^ keyword)
-            | Ok manifest ->
-                parse
-                  (Signature_type
-                     {
-                       type_name = Names.sanitize_name type_name;
-                       type_parameters;
-                       manifest = Some manifest;
-                     }
-                  :: items)
-                  rest))
-    | FList
-        [ FSymbol "type"; FSymbol type_name; (FVector _ as parameter_form) ]
-      :: rest -> (
-        match parse_type_parameters parameter_form with
-        | Error _ as err -> err
-        | Ok type_parameters ->
-            parse
-              (Signature_type
-                 {
-                   type_name = Names.sanitize_name type_name;
-                   type_parameters;
-                   manifest = None;
-                 }
-              :: items)
-          rest
-        )
-    | _ ->
-        Error.error
-          "module-signature items must be val, type, module, or include declarations"
-  in
-  match parse [] item_forms with
-  | Error _ as err -> err
-  | Ok [] -> Error.error "module-signature expects at least one signature item"
-  | Ok items ->
-      let signature_name = Names.module_segment_to_ocaml signature_name in
-      let env = Env.add_bindings (signature_metadata_bindings env signature_name items) env in
-      Ok
-        ( scope,
-          env,
-          next_type,
-          Module_signature
-            { signature_name; items } )
+  Module_signature_elaborator.compile scope env next_type signature_name item_forms
 
 let compile_type_alias scope env next_type name type_parameters manifest_form =
   match manifest_form with
@@ -4076,7 +3800,7 @@ let compile_type_variant scope env next_type name type_parameters constructor_fo
 let compile_module_apply scope env next_type module_name functor_name
     argument_names =
   let applied_bindings =
-    apply_functor_result_bindings env module_name functor_name
+    Module_metadata.apply_functor_result_bindings env module_name functor_name
   in
   Ok
     ( scope,
@@ -4430,7 +4154,7 @@ let compile_module_functor scope env next_type functor_name parameter_form
           let parameter_bindings =
             parameters
             |> List.concat_map (fun (parameter_name, parameter_signature) ->
-                   signature_parameter_bindings env parameter_name
+                   Module_metadata.signature_parameter_bindings env parameter_name
                      parameter_signature)
           in
           let functor_env = Env.add_bindings parameter_bindings env in
@@ -4443,7 +4167,8 @@ let compile_module_functor scope env next_type functor_name parameter_form
               match module_item with
               | Module_def { items; _ } ->
                   let functor_bindings =
-                    store_functor_result_bindings functor_name public_bindings
+                    Module_metadata.store_functor_result_bindings functor_name
+                      public_bindings
                   in
                   Ok
                     ( scope,

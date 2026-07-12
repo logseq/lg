@@ -455,7 +455,15 @@ let test_compiler_phases_have_explicit_boundaries () =
   let resolved = Cljml.Resolver.lookup_binding "" env "value" |> expect_ok in
   if resolved.ty <> Cljml.Types.TInt then
     failwith "resolver should return the typed binding";
-  ignore (Cljml.Lowering.structure_of_located_items [])
+  ignore (Cljml.Lowering.structure_of_located_items []);
+  if
+    Cljml.Module_metadata.signature_binding_key "Printable" "print"
+    <> "__signature/Printable/print"
+  then failwith "module signature metadata should have one owner";
+  if
+    Cljml.Module_metadata.functor_result_key "Make" "value"
+    <> "__functor/Make/value"
+  then failwith "functor result metadata should have one owner"
 
 let test_source_node_identity_reaches_parsetree () =
   let source = "(def answer (+ 1 2))" in
