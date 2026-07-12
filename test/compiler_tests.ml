@@ -471,7 +471,14 @@ let test_compiler_phases_have_explicit_boundaries () =
       |> expect_ok
     in
     if expression.ty <> Cljml.Types.TInt then
-      failwith "expression elaboration should have one owner"
+      failwith "expression elaboration should have one owner";
+    match
+      Cljml.Top_level_elaborator.compile ""
+        Cljml.Compiler_environment.empty 1 (Cljml.Ast.FInt 1)
+      |> expect_ok
+    with
+    | _, _, _, Cljml.Lowered.Value_binding _ -> ()
+    | _ -> failwith "top-level elaboration should have one owner"
 
 let test_source_node_identity_reaches_parsetree () =
   let source = "(def answer (+ 1 2))" in
