@@ -40,9 +40,12 @@ let compile_args_for compile_expr scope env arg_forms =
   in
   loop [] arg_forms
 
-let make compile_expr =
+let create ~compile_expr =
   let compile_args_for = compile_args_for compile_expr in
-  let compile_map = Special_form_elaborator.compile_map ~compile_expr in
+  let special_forms : Special_form_elaborator.t =
+    Special_form_elaborator.create ~compile_expr
+  in
+  let compile_map = special_forms.compile_map in
   let compile_function_arg scope env = function
     | FSymbol name -> lookup_function scope env name
     | form -> compile_expr scope env form
@@ -669,124 +672,4 @@ let make compile_expr =
       | Ok _ -> Error.error "vals expects 1 arguments"
     
   in
-  (compile_list, compile_list_star, compile_range, compile_list_of, compile_vector_of, compile_conj, compile_cons, compile_subvec, compile_nth, compile_get, compile_assoc, compile_dissoc, compile_merge, compile_hash_map, compile_update, compile_select_keys, compile_contains, compile_keys, compile_vals)
-
-let create ~compile_expr =
-  let ( compile_list,
-        compile_list_star,
-        compile_range,
-        compile_list_of,
-        compile_vector_of,
-        compile_conj,
-        compile_cons,
-        compile_subvec,
-        compile_nth,
-        compile_get,
-        compile_assoc,
-        compile_dissoc,
-        compile_merge,
-        compile_hash_map,
-        compile_update,
-        compile_select_keys,
-        compile_contains,
-        compile_keys,
-        compile_vals ) =
-    make compile_expr
-  in
-  {
-    compile_list;
-    compile_list_star;
-    compile_range;
-    compile_list_of;
-    compile_vector_of;
-    compile_conj;
-    compile_cons;
-    compile_subvec;
-    compile_nth;
-    compile_get;
-    compile_assoc;
-    compile_dissoc;
-    compile_merge;
-    compile_hash_map;
-    compile_update;
-    compile_select_keys;
-    compile_contains;
-    compile_keys;
-    compile_vals;
-  }
-
-let compile_list ~compile_expr =
-  let (compile_list, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) = make compile_expr in
-  compile_list
-
-let compile_list_star ~compile_expr =
-  let (_, compile_list_star, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) = make compile_expr in
-  compile_list_star
-
-let compile_range ~compile_expr =
-  let (_, _, compile_range, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) = make compile_expr in
-  compile_range
-
-let compile_list_of ~compile_expr =
-  let (_, _, _, compile_list_of, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) = make compile_expr in
-  compile_list_of
-
-let compile_vector_of ~compile_expr =
-  let (_, _, _, _, compile_vector_of, _, _, _, _, _, _, _, _, _, _, _, _, _, _) = make compile_expr in
-  compile_vector_of
-
-let compile_conj ~compile_expr =
-  let (_, _, _, _, _, compile_conj, _, _, _, _, _, _, _, _, _, _, _, _, _) = make compile_expr in
-  compile_conj
-
-let compile_cons ~compile_expr =
-  let (_, _, _, _, _, _, compile_cons, _, _, _, _, _, _, _, _, _, _, _, _) = make compile_expr in
-  compile_cons
-
-let compile_subvec ~compile_expr =
-  let (_, _, _, _, _, _, _, compile_subvec, _, _, _, _, _, _, _, _, _, _, _) = make compile_expr in
-  compile_subvec
-
-let compile_nth ~compile_expr =
-  let (_, _, _, _, _, _, _, _, compile_nth, _, _, _, _, _, _, _, _, _, _) = make compile_expr in
-  compile_nth
-
-let compile_get ~compile_expr =
-  let (_, _, _, _, _, _, _, _, _, compile_get, _, _, _, _, _, _, _, _, _) = make compile_expr in
-  compile_get
-
-let compile_assoc ~compile_expr =
-  let (_, _, _, _, _, _, _, _, _, _, compile_assoc, _, _, _, _, _, _, _, _) = make compile_expr in
-  compile_assoc
-
-let compile_dissoc ~compile_expr =
-  let (_, _, _, _, _, _, _, _, _, _, _, compile_dissoc, _, _, _, _, _, _, _) = make compile_expr in
-  compile_dissoc
-
-let compile_merge ~compile_expr =
-  let (_, _, _, _, _, _, _, _, _, _, _, _, compile_merge, _, _, _, _, _, _) = make compile_expr in
-  compile_merge
-
-let compile_hash_map ~compile_expr =
-  let (_, _, _, _, _, _, _, _, _, _, _, _, _, compile_hash_map, _, _, _, _, _) = make compile_expr in
-  compile_hash_map
-
-let compile_update ~compile_expr =
-  let (_, _, _, _, _, _, _, _, _, _, _, _, _, _, compile_update, _, _, _, _) = make compile_expr in
-  compile_update
-
-let compile_select_keys ~compile_expr =
-  let (_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, compile_select_keys, _, _, _) = make compile_expr in
-  compile_select_keys
-
-let compile_contains ~compile_expr =
-  let (_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, compile_contains, _, _) = make compile_expr in
-  compile_contains
-
-let compile_keys ~compile_expr =
-  let (_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, compile_keys, _) = make compile_expr in
-  compile_keys
-
-let compile_vals ~compile_expr =
-  let (_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, compile_vals) = make compile_expr in
-  compile_vals
+  { compile_list; compile_list_star; compile_range; compile_list_of; compile_vector_of; compile_conj; compile_cons; compile_subvec; compile_nth; compile_get; compile_assoc; compile_dissoc; compile_merge; compile_hash_map; compile_update; compile_select_keys; compile_contains; compile_keys; compile_vals }

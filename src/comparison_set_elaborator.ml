@@ -28,7 +28,7 @@ let compile_args_for compile_expr scope env arg_forms =
   in
   loop [] arg_forms
 
-let make compile_expr =
+let create ~compile_expr =
   let compile_args_for = compile_args_for compile_expr in
   let compile_function_arg scope env = function
     | FSymbol name -> lookup_function scope env name
@@ -191,46 +191,4 @@ let make compile_expr =
       | [] -> Error.error "disj expects a set"
     
   in
-  (compile_distinct_question, compile_compare, compile_key_extreme, compile_hash_set, compile_set_of, compile_disj)
-
-let create ~compile_expr =
-  let ( compile_distinct_question,
-        compile_compare,
-        compile_key_extreme,
-        compile_hash_set,
-        compile_set_of,
-        compile_disj ) =
-    make compile_expr
-  in
-  {
-    compile_distinct_question;
-    compile_compare;
-    compile_key_extreme;
-    compile_hash_set;
-    compile_set_of;
-    compile_disj;
-  }
-
-let compile_distinct_question ~compile_expr =
-  let (compile_distinct_question, _, _, _, _, _) = make compile_expr in
-  compile_distinct_question
-
-let compile_compare ~compile_expr =
-  let (_, compile_compare, _, _, _, _) = make compile_expr in
-  compile_compare
-
-let compile_key_extreme ~compile_expr =
-  let (_, _, compile_key_extreme, _, _, _) = make compile_expr in
-  compile_key_extreme
-
-let compile_hash_set ~compile_expr =
-  let (_, _, _, compile_hash_set, _, _) = make compile_expr in
-  compile_hash_set
-
-let compile_set_of ~compile_expr =
-  let (_, _, _, _, compile_set_of, _) = make compile_expr in
-  compile_set_of
-
-let compile_disj ~compile_expr =
-  let (_, _, _, _, _, compile_disj) = make compile_expr in
-  compile_disj
+  { compile_distinct_question; compile_compare; compile_key_extreme; compile_hash_set; compile_set_of; compile_disj }

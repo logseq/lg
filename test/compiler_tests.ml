@@ -497,8 +497,11 @@ let test_compiler_phases_have_explicit_boundaries () =
         if fn.ty <> Cljml.Types.TFn ([ Cljml.Types.TInt ], Cljml.Types.TInt) then
           failwith "function elaboration should have one owner";
         let conditional =
-          Cljml.Special_form_elaborator.compile_if
-            ~compile_expr:Cljml.Expression_elaborator.compile_expr ""
+          let operations =
+            Cljml.Special_form_elaborator.create
+              ~compile_expr:Cljml.Expression_elaborator.compile_expr
+          in
+          operations.compile_if ""
             Cljml.Compiler_environment.empty (Cljml.Ast.FBool true)
             (Cljml.Ast.FInt 1) (Cljml.Ast.FInt 2)
           |> expect_ok
@@ -506,16 +509,22 @@ let test_compiler_phases_have_explicit_boundaries () =
         if conditional.ty <> Cljml.Types.TInt then
           failwith "special-form elaboration should have one owner";
         let call =
-          Cljml.Call_elaborator.compile_call
-            ~compile_expr:Cljml.Expression_elaborator.compile_expr ""
+          let operations =
+            Cljml.Call_elaborator.create
+              ~compile_expr:Cljml.Expression_elaborator.compile_expr
+          in
+          operations.compile_call ""
             Cljml.Compiler_environment.empty "inc" [ Cljml.Ast.FInt 1 ]
           |> expect_ok
         in
         if call.ty <> Cljml.Types.TInt then
           failwith "call elaboration should have one owner";
         let list =
-          Cljml.Collection_operation_elaborator.compile_list
-            ~compile_expr:Cljml.Expression_elaborator.compile_expr ""
+          let operations =
+            Cljml.Collection_operation_elaborator.create
+              ~compile_expr:Cljml.Expression_elaborator.compile_expr
+          in
+          operations.compile_list ""
             Cljml.Compiler_environment.empty
             [ Cljml.Ast.FInt 1; Cljml.Ast.FInt 2 ]
           |> expect_ok
@@ -523,8 +532,11 @@ let test_compiler_phases_have_explicit_boundaries () =
         if list.ty <> Cljml.Types.TList Cljml.Types.TInt then
           failwith "collection operation elaboration should have one owner";
         let identity =
-          Cljml.Core_call_elaborator.compile_identity
-            ~compile_expr:Cljml.Expression_elaborator.compile_expr ""
+          let operations =
+            Cljml.Function_combinator_elaborator.create
+              ~compile_expr:Cljml.Expression_elaborator.compile_expr
+          in
+          operations.compile_identity ""
             Cljml.Compiler_environment.empty [ Cljml.Ast.FInt 1 ]
           |> expect_ok
         in

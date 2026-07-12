@@ -29,7 +29,7 @@ let compile_args_for compile_expr scope env arg_forms =
   in
   loop [] arg_forms
 
-let make compile_expr =
+let create ~compile_expr =
   let compile_args_for = compile_args_for compile_expr in
   let collection_to_list_expr =
     Core_sequence_transform.collection_to_list_expr
@@ -304,58 +304,4 @@ let make compile_expr =
           | Ok _ -> Error.error "juxt expects at least 1 function")
     
   in
-  (compile_apply, compile_comp, compile_partial, compile_identity, compile_constantly, compile_complement, compile_predicate_combinator, compile_juxt)
-
-let create ~compile_expr =
-  let ( compile_apply,
-        compile_comp,
-        compile_partial,
-        compile_identity,
-        compile_constantly,
-        compile_complement,
-        compile_predicate_combinator,
-        compile_juxt ) =
-    make compile_expr
-  in
-  {
-    compile_apply;
-    compile_comp;
-    compile_partial;
-    compile_identity;
-    compile_constantly;
-    compile_complement;
-    compile_predicate_combinator;
-    compile_juxt;
-  }
-
-let compile_apply ~compile_expr =
-  let (compile_apply, _, _, _, _, _, _, _) = make compile_expr in
-  compile_apply
-
-let compile_comp ~compile_expr =
-  let (_, compile_comp, _, _, _, _, _, _) = make compile_expr in
-  compile_comp
-
-let compile_partial ~compile_expr =
-  let (_, _, compile_partial, _, _, _, _, _) = make compile_expr in
-  compile_partial
-
-let compile_identity ~compile_expr =
-  let (_, _, _, compile_identity, _, _, _, _) = make compile_expr in
-  compile_identity
-
-let compile_constantly ~compile_expr =
-  let (_, _, _, _, compile_constantly, _, _, _) = make compile_expr in
-  compile_constantly
-
-let compile_complement ~compile_expr =
-  let (_, _, _, _, _, compile_complement, _, _) = make compile_expr in
-  compile_complement
-
-let compile_predicate_combinator ~compile_expr =
-  let (_, _, _, _, _, _, compile_predicate_combinator, _) = make compile_expr in
-  compile_predicate_combinator
-
-let compile_juxt ~compile_expr =
-  let (_, _, _, _, _, _, _, compile_juxt) = make compile_expr in
-  compile_juxt
+  { compile_apply; compile_comp; compile_partial; compile_identity; compile_constantly; compile_complement; compile_predicate_combinator; compile_juxt }

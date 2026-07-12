@@ -40,7 +40,7 @@ let compile_args_for compile_expr scope env arg_forms =
   in
   loop [] arg_forms
 
-let make compile_expr =
+let create ~compile_expr =
   let compile_args_for = compile_args_for compile_expr in
   let rec compile_vector scope env forms =
     match forms with
@@ -709,100 +709,4 @@ let make compile_expr =
     | _ -> Error.error "let bindings must be a vector"
   
   in
-  (compile_vector, compile_map, compile_if, compile_if_not, compile_when, compile_cond, compile_match, compile_body, compile_try, loop_branch_type, compile_recur, compile_loop_tail, compile_loop_tail_body, compile_loop, compile_let)
-
-let create ~compile_expr =
-  let ( compile_vector,
-        compile_map,
-        compile_if,
-        compile_if_not,
-        compile_when,
-        compile_cond,
-        compile_match,
-        compile_body,
-        compile_try,
-        loop_branch_type,
-        compile_recur,
-        compile_loop_tail,
-        compile_loop_tail_body,
-        compile_loop,
-        compile_let ) =
-    make compile_expr
-  in
-  {
-    compile_vector;
-    compile_map;
-    compile_if;
-    compile_if_not;
-    compile_when;
-    compile_cond;
-    compile_match;
-    compile_body;
-    compile_try;
-    loop_branch_type;
-    compile_recur;
-    compile_loop_tail;
-    compile_loop_tail_body;
-    compile_loop;
-    compile_let;
-  }
-
-let compile_vector ~compile_expr =
-  let (compile_vector, _, _, _, _, _, _, _, _, _, _, _, _, _, _) = make compile_expr in
-  compile_vector
-
-let compile_map ~compile_expr =
-  let (_, compile_map, _, _, _, _, _, _, _, _, _, _, _, _, _) = make compile_expr in
-  compile_map
-
-let compile_if ~compile_expr =
-  let (_, _, compile_if, _, _, _, _, _, _, _, _, _, _, _, _) = make compile_expr in
-  compile_if
-
-let compile_if_not ~compile_expr =
-  let (_, _, _, compile_if_not, _, _, _, _, _, _, _, _, _, _, _) = make compile_expr in
-  compile_if_not
-
-let compile_when ~compile_expr =
-  let (_, _, _, _, compile_when, _, _, _, _, _, _, _, _, _, _) = make compile_expr in
-  compile_when
-
-let compile_cond ~compile_expr =
-  let (_, _, _, _, _, compile_cond, _, _, _, _, _, _, _, _, _) = make compile_expr in
-  compile_cond
-
-let compile_match ~compile_expr =
-  let (_, _, _, _, _, _, compile_match, _, _, _, _, _, _, _, _) = make compile_expr in
-  compile_match
-
-let compile_body ~compile_expr =
-  let (_, _, _, _, _, _, _, compile_body, _, _, _, _, _, _, _) = make compile_expr in
-  compile_body
-
-let compile_try ~compile_expr =
-  let (_, _, _, _, _, _, _, _, compile_try, _, _, _, _, _, _) = make compile_expr in
-  compile_try
-
-let loop_branch_type ~compile_expr =
-  let (_, _, _, _, _, _, _, _, _, loop_branch_type, _, _, _, _, _) = make compile_expr in
-  loop_branch_type
-
-let compile_recur ~compile_expr =
-  let (_, _, _, _, _, _, _, _, _, _, compile_recur, _, _, _, _) = make compile_expr in
-  compile_recur
-
-let compile_loop_tail ~compile_expr =
-  let (_, _, _, _, _, _, _, _, _, _, _, compile_loop_tail, _, _, _) = make compile_expr in
-  compile_loop_tail
-
-let compile_loop_tail_body ~compile_expr =
-  let (_, _, _, _, _, _, _, _, _, _, _, _, compile_loop_tail_body, _, _) = make compile_expr in
-  compile_loop_tail_body
-
-let compile_loop ~compile_expr =
-  let (_, _, _, _, _, _, _, _, _, _, _, _, _, compile_loop, _) = make compile_expr in
-  compile_loop
-
-let compile_let ~compile_expr =
-  let (_, _, _, _, _, _, _, _, _, _, _, _, _, _, compile_let) = make compile_expr in
-  compile_let
+  { compile_vector; compile_map; compile_if; compile_if_not; compile_when; compile_cond; compile_match; compile_body; compile_try; loop_branch_type; compile_recur; compile_loop_tail; compile_loop_tail_body; compile_loop; compile_let }

@@ -37,8 +37,11 @@ let compile_args_for compile_expr scope env arg_forms =
   in
   loop [] arg_forms
 
-let make compile_expr =
-  let compile_body = Special_form_elaborator.compile_body ~compile_expr in
+let create ~compile_expr =
+  let special_forms : Special_form_elaborator.t =
+    Special_form_elaborator.create ~compile_expr
+  in
+  let compile_body = special_forms.compile_body in
   let compile_function_arg scope env = function
     | FSymbol name -> lookup_function scope env name
     | form -> compile_expr scope env form
@@ -728,106 +731,4 @@ let make compile_expr =
       | _ -> Error.error "reduce expects function, init, and collection"
     
   in
-  (compile_sort_by, compile_mapcat, compile_repeatedly, compile_reductions, compile_split_with, compile_partition_by, compile_run_bang, compile_map_indexed, compile_filterv, compile_mapv, compile_reduce_kv, compile_some, compile_sequence_bool_predicate, compile_map_call, compile_filter, compile_reduce)
-
-let create ~compile_expr =
-  let ( compile_sort_by,
-        compile_mapcat,
-        compile_repeatedly,
-        compile_reductions,
-        compile_split_with,
-        compile_partition_by,
-        compile_run_bang,
-        compile_map_indexed,
-        compile_filterv,
-        compile_mapv,
-        compile_reduce_kv,
-        compile_some,
-        compile_sequence_bool_predicate,
-        compile_map_call,
-        compile_filter,
-        compile_reduce ) =
-    make compile_expr
-  in
-  {
-    compile_sort_by;
-    compile_mapcat;
-    compile_repeatedly;
-    compile_reductions;
-    compile_split_with;
-    compile_partition_by;
-    compile_run_bang;
-    compile_map_indexed;
-    compile_filterv;
-    compile_mapv;
-    compile_reduce_kv;
-    compile_some;
-    compile_sequence_bool_predicate;
-    compile_map_call;
-    compile_filter;
-    compile_reduce;
-  }
-
-let compile_sort_by ~compile_expr =
-  let (compile_sort_by, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) = make compile_expr in
-  compile_sort_by
-
-let compile_mapcat ~compile_expr =
-  let (_, compile_mapcat, _, _, _, _, _, _, _, _, _, _, _, _, _, _) = make compile_expr in
-  compile_mapcat
-
-let compile_repeatedly ~compile_expr =
-  let (_, _, compile_repeatedly, _, _, _, _, _, _, _, _, _, _, _, _, _) = make compile_expr in
-  compile_repeatedly
-
-let compile_reductions ~compile_expr =
-  let (_, _, _, compile_reductions, _, _, _, _, _, _, _, _, _, _, _, _) = make compile_expr in
-  compile_reductions
-
-let compile_split_with ~compile_expr =
-  let (_, _, _, _, compile_split_with, _, _, _, _, _, _, _, _, _, _, _) = make compile_expr in
-  compile_split_with
-
-let compile_partition_by ~compile_expr =
-  let (_, _, _, _, _, compile_partition_by, _, _, _, _, _, _, _, _, _, _) = make compile_expr in
-  compile_partition_by
-
-let compile_run_bang ~compile_expr =
-  let (_, _, _, _, _, _, compile_run_bang, _, _, _, _, _, _, _, _, _) = make compile_expr in
-  compile_run_bang
-
-let compile_map_indexed ~compile_expr =
-  let (_, _, _, _, _, _, _, compile_map_indexed, _, _, _, _, _, _, _, _) = make compile_expr in
-  compile_map_indexed
-
-let compile_filterv ~compile_expr =
-  let (_, _, _, _, _, _, _, _, compile_filterv, _, _, _, _, _, _, _) = make compile_expr in
-  compile_filterv
-
-let compile_mapv ~compile_expr =
-  let (_, _, _, _, _, _, _, _, _, compile_mapv, _, _, _, _, _, _) = make compile_expr in
-  compile_mapv
-
-let compile_reduce_kv ~compile_expr =
-  let (_, _, _, _, _, _, _, _, _, _, compile_reduce_kv, _, _, _, _, _) = make compile_expr in
-  compile_reduce_kv
-
-let compile_some ~compile_expr =
-  let (_, _, _, _, _, _, _, _, _, _, _, compile_some, _, _, _, _) = make compile_expr in
-  compile_some
-
-let compile_sequence_bool_predicate ~compile_expr =
-  let (_, _, _, _, _, _, _, _, _, _, _, _, compile_sequence_bool_predicate, _, _, _) = make compile_expr in
-  compile_sequence_bool_predicate
-
-let compile_map_call ~compile_expr =
-  let (_, _, _, _, _, _, _, _, _, _, _, _, _, compile_map_call, _, _) = make compile_expr in
-  compile_map_call
-
-let compile_filter ~compile_expr =
-  let (_, _, _, _, _, _, _, _, _, _, _, _, _, _, compile_filter, _) = make compile_expr in
-  compile_filter
-
-let compile_reduce ~compile_expr =
-  let (_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, compile_reduce) = make compile_expr in
-  compile_reduce
+  { compile_sort_by; compile_mapcat; compile_repeatedly; compile_reductions; compile_split_with; compile_partition_by; compile_run_bang; compile_map_indexed; compile_filterv; compile_mapv; compile_reduce_kv; compile_some; compile_sequence_bool_predicate; compile_map_call; compile_filter; compile_reduce }

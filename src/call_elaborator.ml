@@ -12,7 +12,7 @@ type t = {
     string -> Env.t -> Ast.form list -> (typed_expr list, Error.t) result;
 }
 
-let make compile_expr =
+let create ~compile_expr =
   let special_forms : Special_form_elaborator.t =
     Special_form_elaborator.create ~compile_expr
   in
@@ -781,16 +781,4 @@ let make compile_expr =
     in
     loop [] arg_forms
   in
-  (compile_call, compile_args_for)
-
-let create ~compile_expr =
-  let compile_call, compile_args_for = make compile_expr in
   { compile_call; compile_args_for }
-
-let compile_call ~compile_expr =
-  let compile_call, _ = make compile_expr in
-  compile_call
-
-let compile_args_for ~compile_expr =
-  let _, compile_args_for = make compile_expr in
-  compile_args_for
