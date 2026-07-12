@@ -303,7 +303,7 @@ let constrain_record_function_argument_expr fn element_ty =
 
 let param_constraint_name = function
   | (TInt | TFloat | TChar | TString | TSymbol | TKeyword | TBool | TUnit
-    | TArray _ | TRef _ | TOcaml _ | TOcaml_app _ | TTuple _) as ty ->
+    | TArray _ | TRef _ | TOcaml _ | TOcaml_app _ | TTuple _ | TNamed_record _) as ty ->
       Some (Types.ocaml_name ty)
   | _ -> None
 
@@ -1028,7 +1028,7 @@ and compile_let current_ns env bindings body_forms =
         bind env [] forms
   | _ -> Error.error "let bindings must be a vector"
 
-and prepare_fn current_ns env params body_forms =
+and prepare_fn ?(param_type_overrides = []) current_ns env params body_forms =
   match Destructure.parse_param_specs params with
   | Error _ as err -> err
   | Ok specs ->
@@ -1071,6 +1071,13 @@ and prepare_fn current_ns env params body_forms =
           match build [] specs with
           | Error _ as err -> err
           | Ok typed_specs ->
+              let typed_specs =
+                typed_specs
+                |> List.mapi (fun index (spec, inferred_ty) ->
+                       match List.nth_opt param_type_overrides index with
+                       | Some (Some ty) -> (spec, ty)
+                       | _ -> (spec, inferred_ty))
+              in
               let param_bindings =
                 typed_specs
                 |> List.map (fun ((spec : Destructure.param_spec), ty) ->
@@ -1156,8 +1163,8 @@ and fn_code ?(row_param_type_names = []) parts =
   { (typed_ir (TFn (param_tys, parts.body.ty)) (Ocaml_ir.Fun (param_patterns, body_expr))) with
     return_param_index }
 
-and compile_fn current_ns env params body_forms =
-  match prepare_fn current_ns env params body_forms with
+and compile_fn ?(param_type_overrides = []) current_ns env params body_forms =
+  match prepare_fn ~param_type_overrides current_ns env params body_forms with
   | Error _ as err -> err
   | Ok parts -> Ok (fn_code parts)
 
@@ -2454,7 +2461,10 @@ and compile_named_function_call current_ns env name arg_forms =
           | _ -> Error.error (name ^ " is not callable"))))
 
 and compile_protocol_call current_ns env name arg_forms =
-  match Protocol.lookup_marker current_ns env name with
+  if Protocol.method_is_ambiguous current_ns env name then
+    Error.error
+      ("ambiguous protocol method " ^ name ^ "; use Protocol/method")
+  else match Protocol.lookup_marker current_ns env name with
   | None -> Error.error ("unknown function " ^ name)
   | Some marker -> (
       match compile_args_for current_ns env arg_forms with
@@ -2467,7 +2477,10 @@ and compile_protocol_call current_ns env name arg_forms =
               match args with
               | [] -> Error.error (name ^ " called with incompatible arguments")
               | receiver :: _ -> (
-                  match Protocol.lookup_impl current_ns env name receiver.ty with
+                  let method_name = Protocol.method_basename name in
+                  match
+                    Protocol.lookup_impl env marker.ocaml_name method_name receiver.ty
+                  with
                   | None ->
                       Error.error
                         ("no protocol implementation for " ^ name ^ " and "
@@ -3576,37 +3589,64 @@ let compile_defprotocol current_ns env next_type protocol_name method_forms =
   match Protocol.defprotocol_bindings current_ns protocol_name method_forms with
   | Error _ as err -> err
   | Ok bindings ->
+      let env =
+        List.fold_left
+          (fun env ((key, binding) as entry) ->
+            if Protocol.is_legacy_marker key binding && List.mem_assoc key env then
+              List.remove_assoc key env
+              @ [ (key, Protocol.ambiguous_marker_binding ()) ]
+            else env @ [ entry ])
+          env bindings
+      in
       Ok
         ( current_ns,
-          env @ bindings,
+          env,
           next_type,
           Comment ("protocol " ^ protocol_name) )
 
-let compile_extend_type current_ns env next_type receiver_keyword protocol_name method_forms =
-  match Type_annotation.of_keyword receiver_keyword with
+let protocol_receiver_type current_ns env = function
+  | FKeyword receiver_keyword -> Type_annotation.of_keyword receiver_keyword
+  | FSymbol type_name ->
+      lookup_record_type current_ns env type_name
+      |> Result.map (fun record -> TNamed_record record)
+  | _ -> Error.error "extend-type receiver must be a type keyword or record type"
+
+let compile_extend_type current_ns env next_type receiver_form protocol_name method_forms =
+  match protocol_receiver_type current_ns env receiver_form with
   | Error _ as err -> err
   | Ok receiver_ty ->
       let compile_method env = function
         | FList (FSymbol method_name :: params :: body_forms) -> (
-            match Protocol.lookup_marker current_ns env method_name with
+            match
+              Protocol.lookup_protocol_marker current_ns env protocol_name method_name
+            with
             | None ->
                 Error.error
                   ("protocol " ^ protocol_name ^ " does not define method " ^ method_name)
-            | Some marker when marker.ocaml_name <> protocol_name ->
+            | Some marker
+              when marker.ocaml_name <> Protocol.protocol_id current_ns protocol_name ->
                 Error.error
                   ("protocol " ^ protocol_name ^ " does not define method " ^ method_name)
             | Some marker -> (
                 match Protocol.annotate_receiver receiver_ty params with
                 | Error _ as err -> err
                 | Ok params -> (
-                    match compile_fn current_ns env params body_forms with
+                    let param_type_overrides =
+                      match receiver_ty with
+                      | TNamed_record _ -> [ Some receiver_ty ]
+                      | _ -> []
+                    in
+                    match
+                      compile_fn ~param_type_overrides current_ns env params body_forms
+                    with
                     | Error _ as err -> err
                     | Ok expr -> (
                         match (marker.ty, expr.ty) with
                         | TFn (expected_params, _), TFn (actual_params, _)
                           when List.length expected_params <> List.length actual_params ->
                             Error.error (method_name ^ " called with incompatible arguments")
-                        | TFn (_expected_params, expected_ret), TFn (actual_params, actual_ret)
+                        | TFn (expected_params, expected_ret),
+                          TFn (actual_params, actual_ret)
                           -> (
                             match actual_params with
                             | [] ->
@@ -3617,12 +3657,30 @@ let compile_extend_type current_ns env next_type receiver_keyword protocol_name 
                                   Error.error
                                     ("protocol implementation receiver must be "
                                    ^ source_name receiver_ty)
-                                else if not (Types.equal expected_ret actual_ret) then
+                                else
+                                  let mismatch =
+                                    List.combine expected_params actual_params
+                                    |> List.mapi (fun index (expected, actual) ->
+                                           (index, expected, actual))
+                                    |> List.find_opt
+                                         (fun (_index, expected, actual) ->
+                                           not (Types.equal expected actual))
+                                  in
+                                  (match mismatch with
+                                  | Some (index, expected, _actual) ->
+                                      Error.error
+                                        ("protocol method " ^ method_name ^ " parameter "
+                                       ^ string_of_int (index + 1) ^ " must be "
+                                       ^ source_name expected)
+                                  | None when not (Types.equal expected_ret actual_ret) ->
                                   Error.error
                                     ("protocol method " ^ method_name ^ " must return "
                                    ^ source_name expected_ret)
-                                else (
-                                  match Protocol.impl_name method_name receiver_ty with
+                                  | None -> (
+                                  match
+                                    Protocol.impl_name marker.ocaml_name method_name
+                                      receiver_ty
+                                  with
                                   | None ->
                                       Error.error
                                         ("protocol implementations do not support receiver type "
@@ -3642,7 +3700,7 @@ let compile_extend_type current_ns env next_type receiver_keyword protocol_name 
                                             {
                                               pattern = Named ocaml_name;
                                               expression = expr.ocaml_expr;
-                                            } )))
+                                            } ))))
                         | _ -> Error.error "protocol method did not compile to a function"))))
         | _ -> Error.error "extend-type methods must be (method-name [params] body)"
       in
@@ -3664,6 +3722,14 @@ let module_binding_key module_path name = module_path ^ "/" ^ name
 
 let module_binding_ocaml_name module_path name =
   Names.module_path_to_ocaml module_path ^ "." ^ Names.sanitize_name name
+
+let changed_bindings previous updated =
+  List.filter
+    (fun (key, binding) ->
+      match List.assoc_opt key previous with
+      | None -> true
+      | Some previous_binding -> previous_binding <> binding)
+    updated
 
 let open_module_bindings current_ns env module_path =
   let prefix = module_path ^ "/" in
@@ -4349,6 +4415,53 @@ let rec compile_module ?signature_name current_ns env next_type module_path
             :: items )
     | FList (FSymbol "module-alias" :: _) ->
         Error.error "module-alias expects alias and target modules"
+    | FList (FSymbol "defprotocol" :: FSymbol protocol_name :: method_forms) -> (
+        match compile_defprotocol module_path env next_type protocol_name method_forms with
+        | Error _ as err -> err
+        | Ok (_current_ns, updated_env, next_type, item) ->
+            let exported = changed_bindings env updated_env in
+            Ok
+              ( updated_env,
+                public_bindings @ exported,
+                next_type,
+                item :: items ))
+    | FList
+        (FSymbol "extend-type" :: receiver_form :: FSymbol protocol_name
+        :: method_forms) -> (
+        match
+          compile_extend_type module_path env next_type receiver_form protocol_name
+            method_forms
+        with
+        | Error _ as err -> err
+        | Ok (_current_ns, updated_env, next_type, item) ->
+            let exported =
+              changed_bindings env updated_env
+              |> List.map (fun (key, (binding : binding)) ->
+                     let qualified_ty =
+                       Types.qualify_module_type
+                         (Names.module_path_to_ocaml module_path)
+                         binding.ty
+                     in
+                     let key =
+                       match (String.rindex_opt key '/', qualified_ty) with
+                       | Some separator, TFn (TNamed_record record :: _, _) ->
+                           String.sub key 0 (separator + 1) ^ record.type_name
+                       | _ -> key
+                     in
+                     ( key,
+                       {
+                         binding with
+                         ocaml_name =
+                           Names.module_path_to_ocaml module_path ^ "."
+                           ^ binding.ocaml_name;
+                         ty = qualified_ty;
+                       } ))
+            in
+            Ok
+              ( updated_env,
+                public_bindings @ exported,
+                next_type,
+                item :: items ))
     | FList [ FSymbol "def"; FSymbol name; expr_form ] -> (
         match compile_expr module_path env expr_form with
         | Error _ as err -> err
@@ -4473,7 +4586,7 @@ let rec compile_module ?signature_name current_ns env next_type module_path
                 nested_item :: items ))
     | _ ->
         Error.error
-          "module forms must be module-signature, type-alias, type-record, type-variant, open, include, module-alias, def, defn, or module"
+          "module forms must be module-signature, type-alias, type-record, type-variant, open, include, module-alias, defprotocol, extend-type, def, defn, or module"
   and loop env public_bindings next_type items = function
     | [] ->
         let module_name = Names.module_segment_to_ocaml module_segment in
@@ -4699,9 +4812,9 @@ let compile_top_level current_ns env next_type = function
   | FList (FSymbol "defprotocol" :: FSymbol protocol_name :: method_forms) ->
       compile_defprotocol current_ns env next_type protocol_name method_forms
   | FList
-      (FSymbol "extend-type" :: FKeyword receiver_keyword :: FSymbol protocol_name
+      (FSymbol "extend-type" :: receiver_form :: FSymbol protocol_name
       :: method_forms) ->
-      compile_extend_type current_ns env next_type receiver_keyword protocol_name
+      compile_extend_type current_ns env next_type receiver_form protocol_name
         method_forms
   | FList (FSymbol "module" :: FSymbol module_name :: FSymbol signature_name :: forms) -> (
       match

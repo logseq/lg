@@ -3,22 +3,60 @@ open Types
 
 type method_signature = {
   method_name : string;
-  arity : int;
+  param_tys : ty list;
   return_ty : ty;
 }
 
-let marker_name method_name = method_name ^ "$protocol"
+let protocol_id current_ns protocol_name =
+  if String.contains protocol_name '/' then protocol_name
+  else Names.namespaced_key current_ns protocol_name
 
-let impl_name method_name receiver_ty =
-  let suffix =
-    match receiver_ty with
-    | TInt -> Some "int"
-    | TString -> Some "string"
-    | TKeyword -> Some "keyword"
-    | TBool -> Some "bool"
-    | _ -> None
-  in
-  Option.map (fun suffix -> method_name ^ "$" ^ suffix) suffix
+let marker_name protocol_name method_name =
+  protocol_name ^ "/" ^ method_name ^ "$protocol"
+
+let legacy_marker_name method_name = method_name ^ "$protocol"
+let ambiguous_protocol_id = "__ambiguous_protocol__"
+
+let method_basename name =
+  match String.rindex_opt name '/' with
+  | None -> name
+  | Some index -> String.sub name (index + 1) (String.length name - index - 1)
+
+let is_legacy_marker key (binding : binding) =
+  let suffix = "$protocol" in
+  let basename = method_basename key in
+  if not (String.ends_with ~suffix basename) then false
+  else
+    let method_name =
+      String.sub basename 0 (String.length basename - String.length suffix)
+    in
+    key <> marker_name binding.ocaml_name method_name
+
+let ambiguous_marker_binding () = Types.binding ambiguous_protocol_id TAny
+
+let method_is_ambiguous current_ns env method_name =
+  if String.contains method_name '/' then false
+  else
+    match
+      List.assoc_opt
+        (Names.namespaced_key current_ns (legacy_marker_name method_name))
+        env
+    with
+    | Some binding -> binding.ocaml_name = ambiguous_protocol_id
+    | None -> false
+
+let receiver_id = function
+  | TInt -> Some "int"
+  | TString -> Some "string"
+  | TKeyword -> Some "keyword"
+  | TBool -> Some "bool"
+  | TNamed_record record -> Some record.type_name
+  | _ -> None
+
+let impl_name protocol_id method_name receiver_ty =
+  receiver_id receiver_ty
+  |> Option.map (fun receiver ->
+         "__protocol_impl/" ^ protocol_id ^ "/" ^ method_name ^ "/" ^ receiver)
 
 let receiver_annotation receiver_ty =
   let keyword =
@@ -32,12 +70,21 @@ let receiver_annotation receiver_ty =
   Option.map (fun keyword -> "^" ^ keyword) keyword
 
 let lookup_marker current_ns env method_name =
-  List.assoc_opt (Names.namespaced_key current_ns (marker_name method_name)) env
+  let names =
+    if String.contains method_name '/' then
+      [ current_ns ^ "/" ^ method_name ^ "$protocol"; method_name ^ "$protocol" ]
+    else [ Names.namespaced_key current_ns (legacy_marker_name method_name) ]
+  in
+  List.find_map (fun name -> List.assoc_opt name env) names
 
-let lookup_impl current_ns env method_name receiver_ty =
-  match impl_name method_name receiver_ty with
+let lookup_protocol_marker current_ns env protocol_name method_name =
+  let id = protocol_id current_ns protocol_name in
+  List.assoc_opt (marker_name id method_name) env
+
+let lookup_impl env protocol_id method_name receiver_ty =
+  match impl_name protocol_id method_name receiver_ty with
   | None -> None
-  | Some impl_name -> List.assoc_opt (Names.namespaced_key current_ns impl_name) env
+  | Some impl_name -> List.assoc_opt impl_name env
 
 let parse_method_signature = function
   | FList [ FSymbol method_name; params; FKeyword return_keyword ] -> (
@@ -46,14 +93,19 @@ let parse_method_signature = function
       | _, (Error _ as err) -> err
       | Ok params, Ok return_ty ->
           if params = [] then Error.error "protocol methods must have a receiver parameter"
-          else Ok { method_name; arity = List.length params; return_ty })
+          else
+            Ok
+              {
+                method_name;
+                param_tys = List.map snd params;
+                return_ty;
+              })
   | _ ->
       Error.error
         "defprotocol methods must be (method-name [params] :return-type)"
 
 let marker_binding protocol_name signature =
-  let params = List.init signature.arity (fun _ -> TAny) in
-  Types.binding protocol_name (TFn (params, signature.return_ty))
+  Types.binding protocol_name (TFn (signature.param_tys, signature.return_ty))
 
 let defprotocol_bindings current_ns protocol_name method_forms =
   let rec loop acc = function
@@ -62,11 +114,14 @@ let defprotocol_bindings current_ns protocol_name method_forms =
         match parse_method_signature method_form with
         | Error _ as err -> err
         | Ok signature ->
-            let key =
-              Names.namespaced_key current_ns (marker_name signature.method_name)
+            let id = protocol_id current_ns protocol_name in
+            let binding = marker_binding id signature in
+            let canonical = marker_name id signature.method_name in
+            let legacy =
+              Names.namespaced_key current_ns
+                (legacy_marker_name signature.method_name)
             in
-            let binding = marker_binding protocol_name signature in
-            loop ((key, binding) :: acc) rest)
+            loop ((canonical, binding) :: (legacy, binding) :: acc) rest)
   in
   loop [] method_forms
 
@@ -81,15 +136,18 @@ let annotate_receiver receiver_ty = function
             Error.error
               ("protocol implementation receiver must be " ^ source_name receiver_ty))
   | FVector (FSymbol name :: rest) -> (
-      match receiver_annotation receiver_ty with
+      match receiver_ty with
+      | TNamed_record _ -> Ok (FVector (FSymbol name :: rest))
+      | _ -> (match receiver_annotation receiver_ty with
       | None ->
           Error.error
             ("protocol implementations do not support receiver type "
            ^ source_name receiver_ty)
-      | Some annotation -> Ok (FVector (FSymbol annotation :: FSymbol name :: rest)))
+      | Some annotation -> Ok (FVector (FSymbol annotation :: FSymbol name :: rest))))
   | FVector _ -> Error.error "protocol methods must have a receiver parameter"
   | _ -> Error.error "protocol method parameters must be a vector"
 
 let impl_ocaml_name current_ns protocol_name method_name receiver_ty =
   Names.ocaml_binding_name current_ns
-    ("protocol_" ^ protocol_name ^ "_" ^ method_name ^ "_" ^ source_name receiver_ty)
+    ("protocol_" ^ protocol_name ^ "_" ^ method_name ^ "_"
+   ^ Option.value (receiver_id receiver_ty) ~default:(source_name receiver_ty))

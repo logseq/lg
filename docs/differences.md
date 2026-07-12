@@ -109,7 +109,16 @@ projects wider map records into that narrow row at the call site. This keeps
 the runtime representation as OCaml records while allowing one function to
 accept different structural map shapes that share the required fields.
 
-Protocols are a static subset of Clojure protocols. `defprotocol` records typed method signatures, and `extend-type` emits ordinary OCaml functions for supported receiver types. Calls dispatch at compile time from the first argument type, so there is no runtime protocol table, dynamic extension, metadata dispatch, or reflection.
+Protocols are a static subset of Clojure protocols. `defprotocol` records the
+types of every annotated parameter and the return value, and `extend-type`
+emits ordinary OCaml functions for primitive and named-record receivers. Calls
+dispatch at compile time from the first argument type, so there is no runtime
+protocol table, dynamic extension, metadata dispatch, or reflection. Protocol
+identity includes its namespace and protocol name; when two protocols expose
+the same method name, `Protocol/method` selects one explicitly while the
+traditional unqualified method spelling remains available when unambiguous.
+`defprotocol` and `extend-type` are also valid inside `module`; exported calls
+use `Module/Protocol/method` and retain qualified record receiver identity.
 
 `do`, `fn`, `defn`, and `let` bodies evaluate forms in order and return the final form's type.
 Unconstrained identity-style functions such as `(defn id [x] x)` and

@@ -1708,6 +1708,87 @@ let test_static_protocols_work_through_namespace_aliases () =
   assert_ocaml_runs "static_protocols_work_through_namespace_aliases" "int:9\n"
     ocaml_source
 
+let test_protocol_identity_disambiguates_same_named_methods () =
+  let source =
+    {|
+(defprotocol Display
+  (render [x] :string))
+(defprotocol Debug
+  (render [x] :string))
+(extend-type :int
+  Display
+  (render [x] (str "display:" x)))
+(extend-type :int
+  Debug
+  (render [x] (str "debug:" x)))
+(println (str (Display/render 7) ":" (Debug/render 7)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "protocol_identity_disambiguates_same_named_methods"
+    "display:7:debug:7\n" ocaml_source
+
+let test_ambiguous_protocol_methods_require_explicit_identity () =
+  let source =
+    {|
+(defprotocol Display (render [x] :string))
+(defprotocol Debug (render [x] :string))
+(extend-type :int Display (render [x] (str x)))
+(extend-type :int Debug (render [x] (str x)))
+(def value (render 7))
+|}
+  in
+  Cljml.Compiler.compile_string source
+  |> expect_error_contains
+       "ambiguous protocol method render; use Protocol/method"
+
+let test_protocol_signatures_check_all_parameter_types () =
+  let source =
+    {|
+(defprotocol Join
+  (join [^:int value ^:string suffix] :string))
+(extend-type :int
+  Join
+  (join [value ^:int suffix] (str value suffix)))
+|}
+  in
+  Cljml.Compiler.compile_string source
+  |> expect_error_contains "protocol method join parameter 2 must be string"
+
+let test_protocols_support_named_record_receivers () =
+  let source =
+    {|
+(type-record user (name :string))
+(defprotocol Labelled
+  (label [value] :string))
+(extend-type user
+  Labelled
+  (label [value] (ocaml-field value name)))
+(def ada (ocaml-record user (name "Ada")))
+(println (label ada))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "protocols_support_named_record_receivers" "Ada\n" ocaml_source
+
+let test_protocols_inside_modules_export_methods_and_record_impls () =
+  let source =
+    {|
+(module Domain
+  (type-record user (name :string))
+  (defprotocol Labelled
+    (label [value] :string))
+  (extend-type user
+    Labelled
+    (label [value] (ocaml-field value name)))
+  (def ada (ocaml-record user (name "Ada"))))
+(println (Domain/Labelled/label Domain/ada))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "protocols_inside_modules_export_methods_and_record_impls"
+    "Ada\n" ocaml_source
+
 let test_do_and_multi_form_bodies () =
   let source =
     {|
@@ -3501,7 +3582,7 @@ let test_module_definitions_reject_expressions () =
   (println "side effect"))
 |}
   |> expect_error
-       "module forms must be module-signature, type-alias, type-record, type-variant, open, include, module-alias, def, defn, or module"
+       "module forms must be module-signature, type-alias, type-record, type-variant, open, include, module-alias, defprotocol, extend-type, def, defn, or module"
 
 let test_module_definitions_support_type_aliases () =
   let source =
@@ -5054,6 +5135,16 @@ let tests =
       test_static_protocols_reject_return_type_mismatch );
     ( "static protocols work through namespace aliases",
       test_static_protocols_work_through_namespace_aliases );
+    ( "ambiguous protocol methods require explicit identity",
+      test_ambiguous_protocol_methods_require_explicit_identity );
+    ( "protocols inside modules export methods and record implementations",
+      test_protocols_inside_modules_export_methods_and_record_impls );
+    ( "protocols support named record receivers",
+      test_protocols_support_named_record_receivers );
+    ( "protocol signatures check all parameter types",
+      test_protocol_signatures_check_all_parameter_types );
+    ( "protocol identity disambiguates same named methods",
+      test_protocol_identity_disambiguates_same_named_methods );
     ("do and multi-form bodies work", test_do_and_multi_form_bodies);
     ("fn rejects empty body", test_fn_rejects_empty_body);
     ("vectors reject mixed element types", test_vectors_reject_mixed_element_types);

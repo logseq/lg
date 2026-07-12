@@ -329,10 +329,11 @@ The compiler infers record-like map shapes automatically:
   `join`, `last-index-of`, `lower-case`, `re-quote-replacement`, `replace`,
   `replace-first`, `reverse`, `split`, `split-lines`, `starts-with?`, `trim`,
   `trim-newline`, `triml`, `trimr`, and `upper-case`.
-- `defprotocol` and `extend-type` support a first static protocol subset.
-  Dispatch is resolved at compile time from the first argument type, and
-  namespace aliases such as `labels/label` work when the protocol namespace has
-  been compiled and required.
+- `defprotocol` and `extend-type` support static compile-time dispatch for
+  primitive and named OCaml record receivers. Protocol identity distinguishes
+  same-named methods through `Protocol/method`; annotated parameter types are
+  checked; module-owned protocols are exported as `Module/Protocol/method`;
+  and namespace aliases such as `labels/label` remain supported.
 - `(:name user)` works as keyword lookup syntax for structural maps.
 - `(keys user)` returns a persistent vector of keyword values, and `(vals user)`
   returns a persistent vector when all map values have the same type.
