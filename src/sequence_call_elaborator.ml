@@ -4,6 +4,29 @@ open Expression_support
 
 module Env = Compiler_environment
 
+type expression_result = (typed_expr, Error.t) result
+type call = string -> Env.t -> Ast.form list -> expression_result
+type named_call = string -> Env.t -> string -> Ast.form list -> expression_result
+
+type t = {
+  compile_sort_by : call;
+  compile_mapcat : call;
+  compile_repeatedly : call;
+  compile_reductions : call;
+  compile_split_with : call;
+  compile_partition_by : call;
+  compile_run_bang : call;
+  compile_map_indexed : call;
+  compile_filterv : call;
+  compile_mapv : call;
+  compile_reduce_kv : call;
+  compile_some : call;
+  compile_sequence_bool_predicate : named_call;
+  compile_map_call : call;
+  compile_filter : call;
+  compile_reduce : call;
+}
+
 let compile_args_for compile_expr scope env arg_forms =
   let rec loop acc = function
     | [] -> Ok (List.rev acc)
@@ -706,6 +729,44 @@ let make compile_expr =
     
   in
   (compile_sort_by, compile_mapcat, compile_repeatedly, compile_reductions, compile_split_with, compile_partition_by, compile_run_bang, compile_map_indexed, compile_filterv, compile_mapv, compile_reduce_kv, compile_some, compile_sequence_bool_predicate, compile_map_call, compile_filter, compile_reduce)
+
+let create ~compile_expr =
+  let ( compile_sort_by,
+        compile_mapcat,
+        compile_repeatedly,
+        compile_reductions,
+        compile_split_with,
+        compile_partition_by,
+        compile_run_bang,
+        compile_map_indexed,
+        compile_filterv,
+        compile_mapv,
+        compile_reduce_kv,
+        compile_some,
+        compile_sequence_bool_predicate,
+        compile_map_call,
+        compile_filter,
+        compile_reduce ) =
+    make compile_expr
+  in
+  {
+    compile_sort_by;
+    compile_mapcat;
+    compile_repeatedly;
+    compile_reductions;
+    compile_split_with;
+    compile_partition_by;
+    compile_run_bang;
+    compile_map_indexed;
+    compile_filterv;
+    compile_mapv;
+    compile_reduce_kv;
+    compile_some;
+    compile_sequence_bool_predicate;
+    compile_map_call;
+    compile_filter;
+    compile_reduce;
+  }
 
 let compile_sort_by ~compile_expr =
   let (compile_sort_by, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) = make compile_expr in

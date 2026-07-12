@@ -544,7 +544,17 @@ let test_compiler_phases_have_explicit_boundaries () =
           |> expect_ok
         in
         if conditional.ty <> Cljml.Types.TInt then
-          failwith "typed elaboration context should route special forms"
+          failwith "typed elaboration context should route special forms";
+        let calls = context.calls in
+        if calls != context.calls then
+          failwith "call elaboration should be initialized once";
+        let result =
+          calls.compile_call "" Cljml.Compiler_environment.empty "inc"
+            [ Cljml.Ast.FInt 1 ]
+          |> expect_ok
+        in
+        if result.ty <> Cljml.Types.TInt then
+          failwith "typed elaboration context should route calls"
     | _ -> failwith "top-level elaboration should have one owner"
 
 let test_source_node_identity_reaches_parsetree () =

@@ -4,6 +4,20 @@ open Expression_support
 
 module Env = Compiler_environment
 
+type expression_result = (typed_expr, Error.t) result
+type call = string -> Env.t -> Ast.form list -> expression_result
+type named_call = string -> Env.t -> string -> Ast.form list -> expression_result
+type forms = Ast.form list -> expression_result
+
+type t = {
+  compile_distinct_question : call;
+  compile_compare : call;
+  compile_key_extreme : named_call;
+  compile_hash_set : call;
+  compile_set_of : forms;
+  compile_disj : call;
+}
+
 let compile_args_for compile_expr scope env arg_forms =
   let rec loop acc = function
     | [] -> Ok (List.rev acc)
@@ -178,6 +192,24 @@ let make compile_expr =
     
   in
   (compile_distinct_question, compile_compare, compile_key_extreme, compile_hash_set, compile_set_of, compile_disj)
+
+let create ~compile_expr =
+  let ( compile_distinct_question,
+        compile_compare,
+        compile_key_extreme,
+        compile_hash_set,
+        compile_set_of,
+        compile_disj ) =
+    make compile_expr
+  in
+  {
+    compile_distinct_question;
+    compile_compare;
+    compile_key_extreme;
+    compile_hash_set;
+    compile_set_of;
+    compile_disj;
+  }
 
 let compile_distinct_question ~compile_expr =
   let (compile_distinct_question, _, _, _, _, _) = make compile_expr in

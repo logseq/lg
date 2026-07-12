@@ -4,6 +4,32 @@ open Expression_support
 
 module Env = Compiler_environment
 
+type expression_result = (typed_expr, Error.t) result
+type call = string -> Env.t -> Ast.form list -> expression_result
+type forms = Ast.form list -> expression_result
+
+type t = {
+  compile_list : call;
+  compile_list_star : call;
+  compile_range : call;
+  compile_list_of : forms;
+  compile_vector_of : forms;
+  compile_conj : call;
+  compile_cons : call;
+  compile_subvec : call;
+  compile_nth : call;
+  compile_get : call;
+  compile_assoc : call;
+  compile_dissoc : call;
+  compile_merge : call;
+  compile_hash_map : call;
+  compile_update : call;
+  compile_select_keys : call;
+  compile_contains : call;
+  compile_keys : call;
+  compile_vals : call;
+}
+
 let compile_args_for compile_expr scope env arg_forms =
   let rec loop acc = function
     | [] -> Ok (List.rev acc)
@@ -644,6 +670,50 @@ let make compile_expr =
     
   in
   (compile_list, compile_list_star, compile_range, compile_list_of, compile_vector_of, compile_conj, compile_cons, compile_subvec, compile_nth, compile_get, compile_assoc, compile_dissoc, compile_merge, compile_hash_map, compile_update, compile_select_keys, compile_contains, compile_keys, compile_vals)
+
+let create ~compile_expr =
+  let ( compile_list,
+        compile_list_star,
+        compile_range,
+        compile_list_of,
+        compile_vector_of,
+        compile_conj,
+        compile_cons,
+        compile_subvec,
+        compile_nth,
+        compile_get,
+        compile_assoc,
+        compile_dissoc,
+        compile_merge,
+        compile_hash_map,
+        compile_update,
+        compile_select_keys,
+        compile_contains,
+        compile_keys,
+        compile_vals ) =
+    make compile_expr
+  in
+  {
+    compile_list;
+    compile_list_star;
+    compile_range;
+    compile_list_of;
+    compile_vector_of;
+    compile_conj;
+    compile_cons;
+    compile_subvec;
+    compile_nth;
+    compile_get;
+    compile_assoc;
+    compile_dissoc;
+    compile_merge;
+    compile_hash_map;
+    compile_update;
+    compile_select_keys;
+    compile_contains;
+    compile_keys;
+    compile_vals;
+  }
 
 let compile_list ~compile_expr =
   let (compile_list, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) = make compile_expr in

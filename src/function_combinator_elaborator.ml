@@ -4,6 +4,21 @@ open Expression_support
 
 module Env = Compiler_environment
 
+type expression_result = (typed_expr, Error.t) result
+type call = string -> Env.t -> Ast.form list -> expression_result
+type named_call = string -> Env.t -> string -> Ast.form list -> expression_result
+
+type t = {
+  compile_apply : call;
+  compile_comp : call;
+  compile_partial : call;
+  compile_identity : call;
+  compile_constantly : call;
+  compile_complement : call;
+  compile_predicate_combinator : named_call;
+  compile_juxt : call;
+}
+
 let compile_args_for compile_expr scope env arg_forms =
   let rec loop acc = function
     | [] -> Ok (List.rev acc)
@@ -290,6 +305,28 @@ let make compile_expr =
     
   in
   (compile_apply, compile_comp, compile_partial, compile_identity, compile_constantly, compile_complement, compile_predicate_combinator, compile_juxt)
+
+let create ~compile_expr =
+  let ( compile_apply,
+        compile_comp,
+        compile_partial,
+        compile_identity,
+        compile_constantly,
+        compile_complement,
+        compile_predicate_combinator,
+        compile_juxt ) =
+    make compile_expr
+  in
+  {
+    compile_apply;
+    compile_comp;
+    compile_partial;
+    compile_identity;
+    compile_constantly;
+    compile_complement;
+    compile_predicate_combinator;
+    compile_juxt;
+  }
 
 let compile_apply ~compile_expr =
   let (compile_apply, _, _, _, _, _, _, _) = make compile_expr in

@@ -2,97 +2,82 @@ open Ast
 open Types
 open Expression_support
 
+module Env = Compiler_environment
+
+type expression_result = (typed_expr, Error.t) result
+
+type t = {
+  compile_call : string -> Env.t -> string -> Ast.form list -> expression_result;
+  compile_args_for :
+    string -> Env.t -> Ast.form list -> (typed_expr list, Error.t) result;
+}
+
 let make compile_expr =
-  let compile_vector =
-    Special_form_elaborator.compile_vector ~compile_expr
+  let special_forms : Special_form_elaborator.t =
+    Special_form_elaborator.create ~compile_expr
   in
-  let compile_list =
-    Collection_operation_elaborator.compile_list ~compile_expr
+  let collection : Collection_operation_elaborator.t =
+    Collection_operation_elaborator.create ~compile_expr
   in
-  let compile_list_star =
-    Collection_operation_elaborator.compile_list_star ~compile_expr
+  let sequence : Sequence_call_elaborator.t =
+    Sequence_call_elaborator.create ~compile_expr
   in
-  let compile_range =
-    Collection_operation_elaborator.compile_range ~compile_expr
+  let functions : Function_combinator_elaborator.t =
+    Function_combinator_elaborator.create ~compile_expr
   in
-  let compile_list_of =
-    Collection_operation_elaborator.compile_list_of ~compile_expr
+  let comparisons : Comparison_set_elaborator.t =
+    Comparison_set_elaborator.create ~compile_expr
   in
-  let compile_vector_of =
-    Collection_operation_elaborator.compile_vector_of ~compile_expr
-  in
-  let compile_conj =
-    Collection_operation_elaborator.compile_conj ~compile_expr
-  in
-  let compile_cons =
-    Collection_operation_elaborator.compile_cons ~compile_expr
-  in
-  let compile_subvec =
-    Collection_operation_elaborator.compile_subvec ~compile_expr
-  in
-  let compile_nth =
-    Collection_operation_elaborator.compile_nth ~compile_expr
-  in
-  let compile_get =
-    Collection_operation_elaborator.compile_get ~compile_expr
-  in
-  let compile_assoc =
-    Collection_operation_elaborator.compile_assoc ~compile_expr
-  in
-  let compile_dissoc =
-    Collection_operation_elaborator.compile_dissoc ~compile_expr
-  in
-  let compile_merge =
-    Collection_operation_elaborator.compile_merge ~compile_expr
-  in
-  let compile_hash_map =
-    Collection_operation_elaborator.compile_hash_map ~compile_expr
-  in
-  let compile_update =
-    Collection_operation_elaborator.compile_update ~compile_expr
-  in
-  let compile_select_keys =
-    Collection_operation_elaborator.compile_select_keys ~compile_expr
-  in
-  let compile_contains =
-    Collection_operation_elaborator.compile_contains ~compile_expr
-  in
-  let compile_keys =
-    Collection_operation_elaborator.compile_keys ~compile_expr
-  in
-  let compile_vals =
-    Collection_operation_elaborator.compile_vals ~compile_expr
-  in
-  let compile_sort_by = Core_call_elaborator.compile_sort_by ~compile_expr in
-  let compile_mapcat = Core_call_elaborator.compile_mapcat ~compile_expr in
-  let compile_repeatedly = Core_call_elaborator.compile_repeatedly ~compile_expr in
-  let compile_reductions = Core_call_elaborator.compile_reductions ~compile_expr in
-  let compile_split_with = Core_call_elaborator.compile_split_with ~compile_expr in
-  let compile_partition_by = Core_call_elaborator.compile_partition_by ~compile_expr in
-  let compile_run_bang = Core_call_elaborator.compile_run_bang ~compile_expr in
-  let compile_map_indexed = Core_call_elaborator.compile_map_indexed ~compile_expr in
-  let compile_filterv = Core_call_elaborator.compile_filterv ~compile_expr in
-  let compile_mapv = Core_call_elaborator.compile_mapv ~compile_expr in
-  let compile_reduce_kv = Core_call_elaborator.compile_reduce_kv ~compile_expr in
-  let compile_some = Core_call_elaborator.compile_some ~compile_expr in
-  let compile_sequence_bool_predicate = Core_call_elaborator.compile_sequence_bool_predicate ~compile_expr in
-  let compile_map_call = Core_call_elaborator.compile_map_call ~compile_expr in
-  let compile_filter = Core_call_elaborator.compile_filter ~compile_expr in
-  let compile_reduce = Core_call_elaborator.compile_reduce ~compile_expr in
-  let compile_apply = Core_call_elaborator.compile_apply ~compile_expr in
-  let compile_comp = Core_call_elaborator.compile_comp ~compile_expr in
-  let compile_partial = Core_call_elaborator.compile_partial ~compile_expr in
-  let compile_identity = Core_call_elaborator.compile_identity ~compile_expr in
-  let compile_constantly = Core_call_elaborator.compile_constantly ~compile_expr in
-  let compile_complement = Core_call_elaborator.compile_complement ~compile_expr in
-  let compile_predicate_combinator = Core_call_elaborator.compile_predicate_combinator ~compile_expr in
-  let compile_juxt = Core_call_elaborator.compile_juxt ~compile_expr in
-  let compile_distinct_question = Core_call_elaborator.compile_distinct_question ~compile_expr in
-  let compile_compare = Core_call_elaborator.compile_compare ~compile_expr in
-  let compile_key_extreme = Core_call_elaborator.compile_key_extreme ~compile_expr in
-  let compile_hash_set = Core_call_elaborator.compile_hash_set ~compile_expr in
-  let compile_set_of = Core_call_elaborator.compile_set_of ~compile_expr in
-  let compile_disj = Core_call_elaborator.compile_disj ~compile_expr in
+  let compile_vector = special_forms.compile_vector in
+  let compile_list = collection.compile_list in
+  let compile_list_star = collection.compile_list_star in
+  let compile_range = collection.compile_range in
+  let compile_list_of = collection.compile_list_of in
+  let compile_vector_of = collection.compile_vector_of in
+  let compile_conj = collection.compile_conj in
+  let compile_cons = collection.compile_cons in
+  let compile_subvec = collection.compile_subvec in
+  let compile_nth = collection.compile_nth in
+  let compile_get = collection.compile_get in
+  let compile_assoc = collection.compile_assoc in
+  let compile_dissoc = collection.compile_dissoc in
+  let compile_merge = collection.compile_merge in
+  let compile_hash_map = collection.compile_hash_map in
+  let compile_update = collection.compile_update in
+  let compile_select_keys = collection.compile_select_keys in
+  let compile_contains = collection.compile_contains in
+  let compile_keys = collection.compile_keys in
+  let compile_vals = collection.compile_vals in
+  let compile_sort_by = sequence.compile_sort_by in
+  let compile_mapcat = sequence.compile_mapcat in
+  let compile_repeatedly = sequence.compile_repeatedly in
+  let compile_reductions = sequence.compile_reductions in
+  let compile_split_with = sequence.compile_split_with in
+  let compile_partition_by = sequence.compile_partition_by in
+  let compile_run_bang = sequence.compile_run_bang in
+  let compile_map_indexed = sequence.compile_map_indexed in
+  let compile_filterv = sequence.compile_filterv in
+  let compile_mapv = sequence.compile_mapv in
+  let compile_reduce_kv = sequence.compile_reduce_kv in
+  let compile_some = sequence.compile_some in
+  let compile_sequence_bool_predicate = sequence.compile_sequence_bool_predicate in
+  let compile_map_call = sequence.compile_map_call in
+  let compile_filter = sequence.compile_filter in
+  let compile_reduce = sequence.compile_reduce in
+  let compile_apply = functions.compile_apply in
+  let compile_comp = functions.compile_comp in
+  let compile_partial = functions.compile_partial in
+  let compile_identity = functions.compile_identity in
+  let compile_constantly = functions.compile_constantly in
+  let compile_complement = functions.compile_complement in
+  let compile_predicate_combinator = functions.compile_predicate_combinator in
+  let compile_juxt = functions.compile_juxt in
+  let compile_distinct_question = comparisons.compile_distinct_question in
+  let compile_compare = comparisons.compile_compare in
+  let compile_key_extreme = comparisons.compile_key_extreme in
+  let compile_hash_set = comparisons.compile_hash_set in
+  let compile_set_of = comparisons.compile_set_of in
+  let compile_disj = comparisons.compile_disj in
   let rec compile_ocaml_arguments scope env forms =
     let rec parse acc = function
       | [] -> Ok (List.rev acc)
@@ -797,6 +782,10 @@ let make compile_expr =
     loop [] arg_forms
   in
   (compile_call, compile_args_for)
+
+let create ~compile_expr =
+  let compile_call, compile_args_for = make compile_expr in
+  { compile_call; compile_args_for }
 
 let compile_call ~compile_expr =
   let compile_call, _ = make compile_expr in

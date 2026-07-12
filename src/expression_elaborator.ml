@@ -123,10 +123,10 @@ and compile_fn ?(param_type_overrides = []) scope env params body_forms =
   | Ok parts -> Ok (fn_code parts)
 
 and compile_call scope env name arg_forms =
-  Call_elaborator.compile_call ~compile_expr scope env name arg_forms
+  (Lazy.force context).calls.compile_call scope env name arg_forms
 
 and context : Elaboration_context.t Lazy.t =
   lazy (Elaboration_context.create ~compile_expr)
 
 let compile_args_for scope env arg_forms =
-  Call_elaborator.compile_args_for ~compile_expr scope env arg_forms
+  (Lazy.force context).calls.compile_args_for scope env arg_forms
