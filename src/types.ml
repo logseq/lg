@@ -252,7 +252,7 @@ let rec qualify_module_type module_path ty =
   | TNamed_record record ->
       let type_name = qualify_name record.type_name in
       TNamed_record
-        { type_id = type_id_of_name type_name;
+        { type_id = record.type_id;
           nominal = record.nominal;
           type_name;
           type_parameters = record.type_parameters;

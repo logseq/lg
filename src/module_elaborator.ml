@@ -109,12 +109,12 @@ let rec compile_module ?signature_name ?(register_module = true) scope env next_
                 manifest_form
             with
             | Error _ as err -> err
-            | Ok (_scope, _env, next_type, item) ->
+            | Ok (_scope, env, next_type, item) ->
                 Ok (env, public_bindings, next_type, item :: items)))
     | FList [ FSymbol "type-alias"; FSymbol name; manifest_form ] -> (
         match compile_type_alias module_path env next_type name [] manifest_form with
         | Error _ as err -> err
-        | Ok (_scope, _env, next_type, item) ->
+        | Ok (_scope, env, next_type, item) ->
             Ok (env, public_bindings, next_type, item :: items))
     | FList
         (FSymbol "type-record" :: FSymbol name :: FVector parameter_forms
@@ -161,12 +161,12 @@ let rec compile_module ?signature_name ?(register_module = true) scope env next_
                 constructor_forms
             with
             | Error _ as err -> err
-            | Ok (_scope, _env, next_type, item) ->
+            | Ok (_scope, env, next_type, item) ->
                 Ok (env, public_bindings, next_type, item :: items)))
     | FList (FSymbol "type-variant" :: FSymbol name :: constructor_forms) -> (
         match compile_type_variant module_path env next_type name [] constructor_forms with
         | Error _ as err -> err
-        | Ok (_scope, _env, next_type, item) ->
+        | Ok (_scope, env, next_type, item) ->
             Ok (env, public_bindings, next_type, item :: items))
     | FList [ FSymbol "open"; FSymbol opened_module ] ->
         let env = open_module_bindings module_path env opened_module in

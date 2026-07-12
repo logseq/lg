@@ -4,6 +4,7 @@ type t = {
   symbols : Types.binding Symbol_map.t;
   protocols : Protocol_registry.t;
   modules : Module_registry.t;
+  types : Type_registry.t;
 }
 
 let empty =
@@ -11,6 +12,7 @@ let empty =
     symbols = Symbol_map.empty;
     protocols = Protocol_registry.empty;
     modules = Module_registry.empty;
+    types = Type_registry.empty;
   }
 
 let find_opt name env =
@@ -52,3 +54,5 @@ let protocols env = env.protocols
 let with_protocols protocols env = { env with protocols }
 let modules env = env.modules
 let with_modules modules env = { env with modules }
+let types env = env.types
+let with_types types env = { env with types }

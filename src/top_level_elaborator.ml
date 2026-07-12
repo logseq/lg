@@ -234,6 +234,7 @@ let compile scope env next_type = function
             env
             |> Env.with_protocols (Env.protocols module_env)
             |> Env.with_modules (Env.modules module_env)
+            |> Env.with_types (Env.types module_env)
             |> Env.add_bindings module_bindings
           in
           Ok (scope, env, next_type, item))
@@ -245,6 +246,7 @@ let compile scope env next_type = function
             env
             |> Env.with_protocols (Env.protocols module_env)
             |> Env.with_modules (Env.modules module_env)
+            |> Env.with_types (Env.types module_env)
             |> Env.add_bindings module_bindings
           in
           Ok (scope, env, next_type, item))

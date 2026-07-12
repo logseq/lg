@@ -5,6 +5,11 @@ open Lowered
 module Env = Compiler_environment
 let record_type_key = Resolver.record_type_key
 
+let declare_type scope env name kind =
+  Type_registry.declare ~scope name kind (Env.types env)
+  |> Result.map (fun (type_id, types) ->
+         (type_id, Env.with_types types env))
+
 let compile_type_alias scope env next_type name type_parameters manifest_form =
   match manifest_form with
   | FKeyword keyword -> (
@@ -13,11 +18,14 @@ let compile_type_alias scope env next_type name type_parameters manifest_form =
       | Error _ -> Error.error ("unknown type alias target " ^ keyword)
       | Ok manifest ->
           let type_name = Names.sanitize_name name in
-          Ok
-            ( scope,
-              env,
-              next_type,
-              Type_alias { type_name; type_parameters; manifest } ))
+          (match declare_type scope env name Alias with
+          | Error _ as err -> err
+          | Ok (_type_id, env) ->
+              Ok
+                ( scope,
+                  env,
+                  next_type,
+                  Type_alias { type_name; type_parameters; manifest } )))
   | _ -> Error.error "type-alias expects a type keyword target"
 
 let compile_type_record scope env next_type name type_parameters field_forms =
@@ -53,18 +61,22 @@ let compile_type_record scope env next_type name type_parameters field_forms =
   | Ok [] -> Error.error "type-record expects at least one field"
   | Ok fields ->
       let type_name = Names.sanitize_name name in
-      let record_ty =
-        Types.named_record ~nominal:true ~type_name ~type_parameters
-          ~set_module_name:(type_name ^ "_set") fields
-      in
-      let env =
-        Env.add (record_type_key scope name) (Types.binding type_name record_ty) env
-      in
-      Ok
-        ( scope,
-          env,
-          next_type,
-          Type_def { type_name; type_parameters; fields } )
+      (match declare_type scope env name Record with
+      | Error _ as err -> err
+      | Ok (type_id, env) ->
+          let record_ty =
+            Types.named_record ~type_id ~nominal:true ~type_name ~type_parameters
+              ~set_module_name:(type_name ^ "_set") fields
+          in
+          let env =
+            Env.add (record_type_key scope name)
+              (Types.binding type_name record_ty) env
+          in
+          Ok
+            ( scope,
+              env,
+              next_type,
+              Type_def { type_name; type_parameters; fields } ))
 
 let record_type_public_binding module_path name env =
   let key = record_type_key module_path name in
@@ -134,9 +146,11 @@ let compile_type_variant scope env next_type name type_parameters constructor_fo
                  Types.binding constructor.constructor_name
                    (TFn (constructor.payload_types, result_type)) ))
       in
-      Ok
-        ( scope,
-          Env.add_bindings constructor_bindings env,
-          next_type,
-          Type_variant { type_name; type_parameters; constructors } )
-
+      (match declare_type scope env name Variant with
+      | Error _ as err -> err
+      | Ok (_type_id, env) ->
+          Ok
+            ( scope,
+              Env.add_bindings constructor_bindings env,
+              next_type,
+              Type_variant { type_name; type_parameters; constructors } ))

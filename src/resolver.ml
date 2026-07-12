@@ -18,7 +18,6 @@ let qualify_record_type module_path record =
   let type_name = Names.module_path_to_ocaml module_path ^ "." ^ record.type_name in
   {
     record with
-    type_id = Types.type_id_of_name type_name;
     type_name;
     set_module_name =
       Names.module_path_to_ocaml module_path ^ "." ^ record.set_module_name;
@@ -106,4 +105,3 @@ let resolve_ocaml_constructor_target scope env constructor_name =
           module_path ^ "." ^ member_name
       | _ -> constructor_name)
   | _ -> constructor_name
-

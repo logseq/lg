@@ -417,6 +417,42 @@ let test_named_records_use_nominal_type_identity () =
   if Cljml.Types.equal user project then
     failwith "same-shaped named records must remain nominally distinct"
 
+let test_declared_type_ids_preserve_source_identity () =
+  let state =
+    typecheck_state
+      {|
+(module Domain
+  (type-record user-profile (name :string)))
+|}
+  in
+  let record =
+    Cljml.Resolver.lookup_record_type "" state.env "Domain.user-profile"
+    |> expect_ok
+  in
+  if Cljml.Type_id.to_string record.type_id <> "Domain/user-profile" then
+    failwith "declared Type_id must preserve source ownership and spelling";
+  match
+    Cljml.Type_registry.find_by_emitted_name "Domain.user_profile"
+      (Cljml.Compiler_environment.types state.env)
+  with
+  | Some declaration
+    when Cljml.Type_id.equal declaration.type_id record.type_id -> ()
+  | _ -> failwith "module type declarations must survive in the typed registry"
+
+let test_type_namespace_rejects_emitted_name_collisions () =
+  Cljml.Compiler.compile_string
+    {|
+(type-alias user-profile :int)
+(type-record user_profile (name :string))
+|}
+  |> expect_error_contains "OCaml type name collision";
+  Cljml.Compiler.compile_string
+    {|
+(type-variant status Active)
+(type-alias status :int)
+|}
+  |> expect_error "duplicate type status"
+
 let test_compiler_identities_are_stable_and_distinct () =
   let symbol = Cljml.Symbol_id.create ~owner:[ "Domain" ] ~name:"value" in
   let same_symbol = Cljml.Symbol_id.create ~owner:[ "Domain" ] ~name:"value" in
@@ -5573,6 +5609,8 @@ let tests =
       test_assignability_reports_the_selected_semantic_rule );
     ( "named records use nominal type identity",
       test_named_records_use_nominal_type_identity );
+    ( "declared type ids preserve source identity",
+      test_declared_type_ids_preserve_source_identity );
     ( "compiler identities are stable and distinct",
       test_compiler_identities_are_stable_and_distinct );
     ( "typed protocol and module registries",
@@ -5593,6 +5631,8 @@ let tests =
       test_emitted_ocaml_names_reject_source_collisions );
     ( "module namespace rejects emitted name collisions",
       test_module_namespace_rejects_emitted_name_collisions );
+    ( "type namespace rejects emitted name collisions",
+      test_type_namespace_rejects_emitted_name_collisions );
     ( "typed environment respects lexical shadowing",
       test_typed_environment_respects_lexical_shadowing );
     ( "typed environment replaces top-level bindings",

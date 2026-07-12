@@ -110,9 +110,7 @@ let qualify_implementations ~owner ~module_name registry =
         if Protocol_id.owner protocol_id = owner then
           let receiver_id =
             match receiver_id with
-            | Record_receiver type_id ->
-                Record_receiver
-                  (Type_id.create ~owner:[ module_name ] ~name:(Type_id.name type_id))
+            | Record_receiver type_id -> Record_receiver type_id
             | receiver_id -> receiver_id
           in
           let binding =
