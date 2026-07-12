@@ -254,6 +254,62 @@ let analyze ?(filename = "<string>") source =
                       diagnostics = analysis.diagnostics;
                     })))
 
+let analyze_workspace sources =
+  let ocaml_valid state =
+    match Ocaml_parsetree.structure_of_located_items state.located_items with
+    | Error _ -> false
+    | Ok structure -> (
+        match Ocaml_typechecker.analyze structure with
+        | Ok _ -> true
+        | Error _ -> false)
+  in
+  let rec parse acc = function
+    | [] -> Ok (List.rev acc)
+    | (filename, source) :: rest -> (
+        match Cljml_frontend.implementation ~filename source with
+        | Error _ -> parse acc rest
+        | Ok parsed -> parse ((filename, parsed) :: acc) rest)
+  in
+  let rec compile state compiled pending =
+    match pending with
+    | [] -> Ok (state, List.rev compiled)
+    | _ ->
+        let rec try_pending deferred = function
+          | [] -> Ok (state, List.rev compiled)
+          | (filename, parsed) :: rest -> (
+              match typecheck_incremental state parsed with
+              | Ok (next_state, _typed) when ocaml_valid next_state ->
+                  compile next_state (filename :: compiled)
+                    (List.rev_append deferred rest)
+              | Ok _ | Error _ ->
+                  try_pending ((filename, parsed) :: deferred) rest)
+        in
+        try_pending [] pending
+  in
+  match parse [] sources with
+  | Error _ as err -> err
+  | Ok parsed -> (
+      match compile empty_state [] parsed with
+      | Error _ as err -> err
+      | Ok (_state, filenames) when filenames = [] ->
+          Error.error "workspace contains no analyzable cljml files"
+      | Ok (state, filenames) -> (
+          match Ocaml_parsetree.structure_of_located_items state.located_items with
+          | Error _ as err -> err
+          | Ok structure -> (
+              match Ocaml_typechecker.analyze structure with
+              | Error _ as err -> err
+              | Ok analysis ->
+                  let result =
+                    {
+                      typed_structure = analysis.typed_structure;
+                      compiler_env = analysis.compiler_env;
+                      typecheck_state = state.typecheck_state;
+                      diagnostics = analysis.diagnostics;
+                    }
+                  in
+                  Ok (List.map (fun filename -> (filename, result)) filenames))))
+
 let implementation_with_diagnostics ?(filename = "<string>") source =
   match Cljml_frontend.implementation ~filename source with
   | Error _ as err -> err

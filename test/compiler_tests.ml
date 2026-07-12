@@ -3266,6 +3266,29 @@ let test_language_service_document_symbols_preserve_source_names () =
   | None -> failwith "expected add-one document symbol");
   if find "result" = None then failwith "expected result document symbol"
 
+let test_language_service_workspace_resolves_cross_file_identity () =
+  let math =
+    "(ns demo.math)\n(defn magnitude-plus-two [x] (+ x 2))\n"
+  in
+  let main =
+    "(ns demo.main (:require [demo.math :refer [magnitude-plus-two]]))\n"
+    ^ "(def result (magnitude-plus-two 40))\n"
+  in
+  let analyses =
+    Cljml.Language_service.analyze_workspace
+      [ ("file:///tmp/main.cljml", main); ("file:///tmp/math.cljml", math) ]
+    |> expect_ok
+  in
+  let main_analysis = List.assoc "file:///tmp/main.cljml" analyses in
+  let usage = expect_substring_index main "magnitude-plus-two 40" in
+  if Cljml.Language_service.value_uid_at main_analysis ~offset:usage = None then
+    failwith "expected required workspace symbol to have a typed identity";
+  match Cljml.Language_service.definition main_analysis ~offset:usage with
+  | Some location
+    when location.Location.loc_start.Lexing.pos_fname = "file:///tmp/math.cljml" ->
+      ()
+  | _ -> failwith "expected required workspace symbol definition in math.cljml"
+
 let test_formatter_normalizes_whitespace () =
   Cljml.Formatter.format "(defn  add-one [ x ](+ x  1))"
   |> expect_ok
@@ -5271,6 +5294,8 @@ let tests =
       test_language_service_rename_returns_exact_symbol_edits );
     ( "language service document symbols preserve source names",
       test_language_service_document_symbols_preserve_source_names );
+    ( "language service workspace resolves cross-file identity",
+      test_language_service_workspace_resolves_cross_file_identity );
     ( "formatter normalizes whitespace",
       test_formatter_normalizes_whitespace );
     ( "formatter wraps long nested forms",

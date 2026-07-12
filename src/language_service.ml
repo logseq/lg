@@ -42,6 +42,32 @@ let analyze ~filename source =
           | Error _ as err -> err
           | Ok compiler -> Ok { source; tokens; forms; compiler }))
 
+let analyze_workspace sources =
+  let rec parse acc = function
+    | [] -> Ok (List.rev acc)
+    | (filename, source) :: rest -> (
+        match Lexer.tokenize source with
+        | Error _ -> parse acc rest
+        | Ok tokens -> (
+            match Parser.parse_located tokens with
+            | Error _ -> parse acc rest
+            | Ok forms -> parse ((filename, source, tokens, forms) :: acc) rest))
+  in
+  match parse [] sources with
+  | Error _ as err -> err
+  | Ok parsed -> (
+      match Toolchain.analyze_workspace sources with
+      | Error _ as err -> err
+      | Ok analyses ->
+          let compiler filename = List.assoc_opt filename analyses in
+          Ok
+            (List.filter_map
+               (fun (filename, source, tokens, forms) ->
+                 compiler filename
+                 |> Option.map (fun compiler ->
+                        (filename, { source; tokens; forms; compiler })))
+               parsed))
+
 let diagnostics analysis = analysis.compiler.diagnostics
 
 let token_at analysis offset =
@@ -93,6 +119,16 @@ let print_type env ty =
   Printtyp.wrap_printing_env ~error:false env (fun () ->
       Format.asprintf "%a" Printtyp.type_scheme ty)
 
+let source_symbol_basename name =
+  match String.rindex_opt name '/' with
+  | None -> name
+  | Some index -> String.sub name (index + 1) (String.length name - index - 1)
+
+let identifier_name_matches source_name path =
+  let expected = source_symbol_basename source_name |> Names.sanitize_name in
+  let actual = Path.name path |> Names.sanitize_name in
+  actual = expected || String.ends_with ~suffix:("_" ^ expected) actual
+
 let hover analysis ~offset =
   match symbol_span_at analysis offset with
   | None -> None
@@ -118,29 +154,32 @@ let hover analysis ~offset =
              })
 
 let definition analysis ~offset =
-  match symbol_span_at analysis offset with
+  match token_at analysis offset with
   | None -> None
-  | Some _ -> (
+  | Some { desc = Symbol source_name; _ } -> (
       match
         smallest_expression analysis.compiler.typed_structure offset (fun expression ->
             match expression.exp_desc with
-            | Typedtree.Texp_ident _ -> true
+            | Typedtree.Texp_ident (path, _, _) ->
+                identifier_name_matches source_name path
             | _ -> false)
       with
       | Some { exp_desc = Typedtree.Texp_ident (_, _, description); _ }
         when not description.val_loc.Location.loc_ghost ->
           Some description.val_loc
       | _ -> None)
+  | Some _ -> None
 
 type value_identity = {
   uid : Typedtree.Uid.t;
   definition_location : Location.t;
 }
 
-let identifier_identity_at analysis offset =
+let identifier_identity_at analysis offset source_name =
   smallest_expression analysis.compiler.typed_structure offset (fun expression ->
       match expression.Typedtree.exp_desc with
-      | Typedtree.Texp_ident _ -> true
+      | Typedtree.Texp_ident (path, _, _) ->
+          identifier_name_matches source_name path
       | _ -> false)
   |> Option.map (fun (expression : Typedtree.expression) ->
          match expression.exp_desc with
@@ -189,7 +228,7 @@ let binding_identity_at analysis offset source_name =
 let value_identity_at analysis offset =
   match token_at analysis offset with
   | Some { desc = Symbol source_name; _ } -> (
-      match identifier_identity_at analysis offset with
+      match identifier_identity_at analysis offset source_name with
       | Some _ as identity -> identity
       | None -> binding_identity_at analysis offset source_name)
   | _ -> None
@@ -211,6 +250,21 @@ let references analysis ~offset =
                  | _ -> None)
              | _ -> None)
       |> List.sort_uniq compare_span
+
+let value_uid_at analysis ~offset =
+  value_identity_at analysis offset |> Option.map (fun identity -> identity.uid)
+
+let references_to_uid analysis uid =
+  analysis.tokens
+  |> List.filter_map (fun (token : Ast.token) ->
+         match token.desc with
+         | Symbol _ -> (
+             match value_identity_at analysis token.span.start_offset with
+             | Some identity when Typedtree.Uid.equal identity.uid uid ->
+                 Some token.span
+             | _ -> None)
+         | _ -> None)
+  |> List.sort_uniq compare_span
 
 let valid_rename_name name =
   match Lexer.tokenize name with

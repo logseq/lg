@@ -74,7 +74,8 @@ cmd = { "dune", "exec", "bin/cljml_cli.exe", "--", "--lsp" }
 ```
 
 The core Reason editor baseline—types, formatting, diagnostics, completion, and
-jump-to-definition—is present, together with document-local references, rename,
-highlights, and symbols. Semantic tokens, signature help, code actions,
-recoverable parsing, and cross-file workspace indexing remain future
-ocaml-lsp-parity capabilities.
+jump-to-definition—is present. The server indexes `.cljml` files below the
+workspace root, orders namespace dependencies from compiler state, isolates
+invalid files, and provides cross-file definitions, references, rename, and
+workspace symbols. Semantic tokens, signature help, code actions, and
+recoverable parsing remain future ocaml-lsp-parity capabilities.

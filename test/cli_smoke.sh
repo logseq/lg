@@ -111,7 +111,7 @@ send_lsp_message() {
 }
 
 {
-  send_lsp_message '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+  send_lsp_message "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"rootUri\":\"file://$multi_dir\"}}"
   send_lsp_message '{"jsonrpc":"2.0","method":"initialized","params":{}}'
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/editor.cljml","languageId":"cljml","version":1,"text":"(def answer\n  (if true\n    (Stdlib.abs\n      \"bad\")\n    0))"}}}'
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":"file:///tmp/editor.cljml","version":2},"contentChanges":[{"text":"(def ok 1)\n(def good (Stdlib.abs -42))"}]}}'
@@ -128,6 +128,11 @@ send_lsp_message() {
   send_lsp_message '{"jsonrpc":"2.0","id":10,"method":"textDocument/rename","params":{"textDocument":{"uri":"file:///tmp/service.cljml"},"position":{"line":2,"character":22},"newName":"total"}}'
   send_lsp_message '{"jsonrpc":"2.0","id":11,"method":"textDocument/documentSymbol","params":{"textDocument":{"uri":"file:///tmp/service.cljml"}}}'
   send_lsp_message '{"jsonrpc":"2.0","id":12,"method":"workspace/symbol","params":{"query":"add"}}'
+  send_lsp_message "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didOpen\",\"params\":{\"textDocument\":{\"uri\":\"file://$main_source\",\"languageId\":\"cljml\",\"version\":1,\"text\":\"(ns demo.main\\n  (:require [demo.math :refer [magnitude-plus-two]]))\\n(println (magnitude-plus-two -40))\\n\"}}}"
+  send_lsp_message "{\"jsonrpc\":\"2.0\",\"id\":13,\"method\":\"textDocument/definition\",\"params\":{\"textDocument\":{\"uri\":\"file://$main_source\"},\"position\":{\"line\":2,\"character\":12}}}"
+  send_lsp_message "{\"jsonrpc\":\"2.0\",\"id\":14,\"method\":\"textDocument/references\",\"params\":{\"textDocument\":{\"uri\":\"file://$main_source\"},\"position\":{\"line\":2,\"character\":12},\"context\":{\"includeDeclaration\":true}}}"
+  send_lsp_message "{\"jsonrpc\":\"2.0\",\"id\":15,\"method\":\"textDocument/rename\",\"params\":{\"textDocument\":{\"uri\":\"file://$main_source\"},\"position\":{\"line\":2,\"character\":12},\"newName\":\"distance-plus-two\"}}"
+  send_lsp_message '{"jsonrpc":"2.0","id":16,"method":"workspace/symbol","params":{"query":"magnitude-plus-two"}}'
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didClose","params":{"textDocument":{"uri":"file:///tmp/editor.cljml"}}}'
   send_lsp_message '{"jsonrpc":"2.0","id":2,"method":"shutdown","params":null}'
   send_lsp_message '{"jsonrpc":"2.0","method":"exit","params":null}'
@@ -160,8 +165,17 @@ grep -q '"id":9,"result"' "$lsp_output"
 grep -q '"id":10,"result"' "$lsp_output"
 grep -q '"id":11,"result"' "$lsp_output"
 grep -q '"id":12,"result"' "$lsp_output"
+grep -q "\"id\":13,\"result\":{\"uri\":\"file://$math_source\"" "$lsp_output"
+grep -q "\"id\":14,\"result\":.*\"uri\":\"file://$math_source\"" "$lsp_output"
+grep -q "\"id\":14,\"result\":.*\"uri\":\"file://$main_source\"" "$lsp_output"
+grep -q '"id":15,"result":{"changes"' "$lsp_output"
+grep -q '"id":16,"result":\[{"name":"magnitude-plus-two"' "$lsp_output"
 grep -q 'int -> int' "$lsp_output"
 grep -q '"label":"add-one"' "$lsp_output"
 grep -Fq '"newText":"(def answer 41)\n"' "$lsp_output"
 grep -q '"newText":"total"' "$lsp_output"
 grep -q '"name":"add-one"' "$lsp_output"
+grep -q "\"uri\":\"file://$math_source\"" "$lsp_output"
+grep -q "\"uri\":\"file://$main_source\"" "$lsp_output"
+grep -q '"newText":"distance-plus-two"' "$lsp_output"
+grep -q '"name":"magnitude-plus-two"' "$lsp_output"

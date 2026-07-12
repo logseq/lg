@@ -6,12 +6,84 @@ type document = {
 }
 
 let documents = Hashtbl.create 16
+let workspace_documents = Hashtbl.create 32
+let workspace_sources = Hashtbl.create 32
 
 let analyze_document uri text =
   {
     text;
     analysis = Cljml.Language_service.analyze ~filename:uri text;
   }
+
+let path_of_file_uri uri =
+  if String.starts_with ~prefix:"file://" uri then
+    String.sub uri 7 (String.length uri - 7)
+  else uri
+
+let read_file path =
+  let channel = open_in_bin path in
+  Fun.protect ~finally:(fun () -> close_in channel) (fun () ->
+      really_input_string channel (in_channel_length channel))
+
+let excluded_directory name =
+  name = "_build" || name = "_opam" || name = "node_modules"
+  || name = ".git" || (String.length name > 0 && name.[0] = '.')
+
+let rec cljml_files path =
+  if Sys.is_directory path then
+    Sys.readdir path |> Array.to_list
+    |> List.filter (fun name -> not (excluded_directory name))
+    |> List.concat_map (fun name -> cljml_files (Filename.concat path name))
+  else if Filename.check_suffix path ".cljml" then [ path ]
+  else []
+
+let rebuild_workspace () =
+  let sources =
+    Hashtbl.fold
+      (fun uri disk_source sources ->
+        let source =
+          Hashtbl.find_opt documents uri
+          |> Option.map (fun document -> document.text)
+          |> Option.value ~default:disk_source
+        in
+        (uri, source) :: sources)
+      workspace_sources []
+  in
+  Hashtbl.clear workspace_documents;
+  match Cljml.Language_service.analyze_workspace sources with
+  | Error _ ->
+      List.iter
+        (fun (uri, source) ->
+          let document = analyze_document uri source in
+          Hashtbl.replace workspace_documents uri document;
+          if Hashtbl.mem documents uri then Hashtbl.replace documents uri document)
+        sources
+  | Ok analyses ->
+      List.iter
+        (fun (uri, analysis) ->
+          let text = List.assoc uri sources in
+          let document = { text; analysis = Ok analysis } in
+          Hashtbl.replace workspace_documents uri document;
+          if Hashtbl.mem documents uri then Hashtbl.replace documents uri document)
+        analyses
+
+let index_workspace root_uri =
+  Hashtbl.clear workspace_sources;
+  path_of_file_uri root_uri |> cljml_files
+  |> List.iter (fun path ->
+         let uri = "file://" ^ path in
+         Hashtbl.replace workspace_sources uri (read_file path));
+  rebuild_workspace ()
+
+let find_document uri =
+  match Hashtbl.find_opt documents uri with
+  | Some _ as document -> document
+  | None -> Hashtbl.find_opt workspace_documents uri
+
+let all_documents () =
+  let combined = Hashtbl.copy workspace_documents in
+  Hashtbl.iter (Hashtbl.replace combined) documents;
+  combined
 
 let find_substring text pattern =
   let pattern_length = String.length pattern in
@@ -246,9 +318,14 @@ let definition_result uri document offset =
             else if filename = "" then uri
             else "file://" ^ filename
           in
+          let definition_text =
+            find_document definition_uri
+            |> Option.map (fun document -> document.text)
+            |> Option.value ~default:document.text
+          in
           `Assoc
             [ ("uri", `String definition_uri);
-              ("range", range_of_location document.text location) ])
+              ("range", range_of_location definition_text location) ])
 
 let completion_result document offset =
   match document.analysis with
@@ -282,13 +359,30 @@ let location_json uri text (range : Cljml.Ast.source_span) =
       ( "range",
         range_of_offsets text range.start_offset range.end_offset ) ]
 
+let semantic_documents uri document =
+  if Hashtbl.mem workspace_sources uri then workspace_documents
+  else
+    let local = Hashtbl.create 1 in
+    Hashtbl.add local uri document;
+    local
+
 let references_result uri document offset =
   match document.analysis with
   | Error _ -> `List []
-  | Ok analysis ->
-      Cljml.Language_service.references analysis ~offset
-      |> List.map (location_json uri document.text)
-      |> fun locations -> `List locations
+  | Ok analysis -> (
+      match Cljml.Language_service.value_uid_at analysis ~offset with
+      | None -> `List []
+      | Some uid ->
+          Hashtbl.fold
+            (fun uri document locations ->
+              match document.analysis with
+              | Error _ -> locations
+              | Ok analysis ->
+                  Cljml.Language_service.references_to_uid analysis uid
+                  |> List.map (location_json uri document.text)
+                  |> List.rev_append locations)
+            (semantic_documents uri document) []
+          |> List.rev |> fun locations -> `List locations)
 
 let highlights_result document offset =
   match document.analysis with
@@ -323,19 +417,30 @@ let rename_result uri document offset new_name =
   match document.analysis with
   | Error _ -> `Null
   | Ok analysis -> (
-      match Cljml.Language_service.rename analysis ~offset ~new_name with
-      | Error _ -> `Null
-      | Ok edits ->
-          let edits =
-            edits
-            |> List.map (fun (edit : Cljml.Language_service.text_edit) ->
-                   `Assoc
-                     [ ( "range",
-                         range_of_offsets document.text edit.range.start_offset
-                           edit.range.end_offset );
-                       ("newText", `String edit.new_text) ])
-          in
-          `Assoc [ ("changes", `Assoc [ (uri, `List edits) ]) ])
+      match Cljml.Language_service.value_uid_at analysis ~offset with
+      | None -> `Null
+      | Some uid ->
+          if not (Cljml.Language_service.valid_rename_name new_name) then `Null
+          else
+            let changes =
+              Hashtbl.fold
+                (fun uri document changes ->
+                  match document.analysis with
+                  | Error _ -> changes
+                  | Ok analysis ->
+                      let edits =
+                        Cljml.Language_service.references_to_uid analysis uid
+                        |> List.map (fun (range : Cljml.Ast.source_span) ->
+                               `Assoc
+                                 [ ( "range",
+                                     range_of_offsets document.text
+                                       range.start_offset range.end_offset );
+                                   ("newText", `String new_name) ])
+                      in
+                      if edits = [] then changes else (uri, `List edits) :: changes)
+                (semantic_documents uri document) []
+            in
+            `Assoc [ ("changes", `Assoc (List.rev changes)) ])
 
 let symbol_kind = function
   | `Module -> 2
@@ -384,7 +489,7 @@ let workspace_symbols_result query =
                          location_json uri document.text symbol.selection_range ) ]
                    :: symbols)
                symbols)
-    documents []
+    (all_documents ()) []
   |> List.rev |> fun symbols -> `List symbols
 
 let handle_notification method_ params =
@@ -395,6 +500,7 @@ let handle_notification method_ params =
       let text = document |> member "text" |> to_string in
       let document = analyze_document uri text in
       Hashtbl.replace documents uri document;
+      if Hashtbl.mem workspace_sources uri then rebuild_workspace ();
       publish_diagnostics uri (diagnostics document)
   | "textDocument/didChange" ->
       let uri = document_uri params in
@@ -404,6 +510,7 @@ let handle_notification method_ params =
           let text = change |> member "text" |> to_string in
           let document = analyze_document uri text in
           Hashtbl.replace documents uri document;
+          if Hashtbl.mem workspace_sources uri then rebuild_workspace ();
           publish_diagnostics uri (diagnostics document)
       | [] -> ())
   | "textDocument/didSave" ->
@@ -417,11 +524,13 @@ let handle_notification method_ params =
         (fun text ->
           let document = analyze_document uri text in
           Hashtbl.replace documents uri document;
+          if Hashtbl.mem workspace_sources uri then rebuild_workspace ();
           publish_diagnostics uri (diagnostics document))
         text
   | "textDocument/didClose" ->
       let uri = document_uri params in
       Hashtbl.remove documents uri;
+      if Hashtbl.mem workspace_sources uri then rebuild_workspace ();
       publish_diagnostics uri []
   | "initialized" | "exit" -> ()
   | _ -> ()
@@ -435,6 +544,9 @@ let rec loop shutdown_requested =
       let params = json |> member "params" in
       (match (method_, id) with
       | Some "initialize", (`Int _ | `String _) ->
+          (match params |> member "rootUri" with
+          | `String root_uri -> index_workspace root_uri
+          | _ -> ());
           response id initialize_result;
           loop shutdown_requested
       | Some "shutdown", (`Int _ | `String _) ->
@@ -445,7 +557,7 @@ let rec loop shutdown_requested =
       | Some ("textDocument/completion" as method_), (`Int _ | `String _) ->
           let uri = document_uri params in
           let result =
-            match Hashtbl.find_opt documents uri with
+            match find_document uri with
             | None -> `Null
             | Some document ->
                 let offset = document_position params document in
@@ -462,7 +574,7 @@ let rec loop shutdown_requested =
       | Some "textDocument/formatting", (`Int _ | `String _) ->
           let uri = document_uri params in
           let result =
-            match Hashtbl.find_opt documents uri with
+            match find_document uri with
             | None -> `List []
             | Some document -> formatting_result document
           in
@@ -474,7 +586,7 @@ let rec loop shutdown_requested =
       | Some ("textDocument/rename" as method_), (`Int _ | `String _) ->
           let uri = document_uri params in
           let result =
-            match Hashtbl.find_opt documents uri with
+            match find_document uri with
             | None -> `Null
             | Some document ->
                 let offset = document_position params document in
@@ -495,7 +607,7 @@ let rec loop shutdown_requested =
       | Some "textDocument/documentSymbol", (`Int _ | `String _) ->
           let uri = document_uri params in
           let result =
-            match Hashtbl.find_opt documents uri with
+            match find_document uri with
             | None -> `List []
             | Some document -> document_symbols_result document
           in
