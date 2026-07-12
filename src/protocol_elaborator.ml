@@ -5,18 +5,24 @@ open Lowered
 module Env = Compiler_environment
 
 let define scope env protocol_name method_forms =
-  match Protocol.defprotocol_bindings scope protocol_name method_forms with
+  match Protocol.defprotocol scope protocol_name method_forms with
   | Error _ as err -> err
-  | Ok bindings ->
-      let env =
-        List.fold_left
-          (fun env (key, binding) ->
-            if Protocol.is_legacy_marker key binding && Env.mem key env then
-              Env.add key (Protocol.ambiguous_marker_binding ()) env
-            else Env.add key binding env)
-          env bindings
-      in
-      Ok (env, Comment ("protocol " ^ protocol_name))
+  | Ok (protocol_id, signatures, bindings) ->
+      (match
+         Protocol_registry.declare protocol_id signatures (Env.protocols env)
+       with
+      | Error _ as err -> err
+      | Ok protocols ->
+          let env = Env.with_protocols protocols env in
+          let env =
+            List.fold_left
+              (fun env (key, binding) ->
+                if Protocol.is_legacy_marker key binding && Env.mem key env then
+                  Env.add key (Protocol.ambiguous_marker_binding ()) env
+                else Env.add key binding env)
+              env bindings
+          in
+          Ok (env, Comment ("protocol " ^ protocol_name)))
 
 let marker scope env protocol_name method_name =
   match Protocol.lookup_protocol_marker scope env protocol_name method_name with
@@ -31,19 +37,35 @@ let marker scope env protocol_name method_name =
         ("protocol " ^ protocol_name ^ " does not define method " ^ method_name)
   | Some marker -> Ok marker
 
-let add_implementation scope env protocol_name method_name receiver_ty marker binding =
-  match Protocol.marker_impl_name marker method_name receiver_ty with
-  | None ->
+let add_implementation scope env method_name receiver_ty marker binding =
+  match
+    ( marker.protocol_id,
+      Protocol.registry_receiver_id receiver_ty,
+      Protocol.marker_impl_name marker method_name receiver_ty )
+  with
+  | None, _, _ | _, None, _ | _, _, None ->
       Error.error
         ("protocol implementations do not support receiver type "
        ^ source_name receiver_ty)
-  | Some impl_key_name ->
+  | Some protocol_id, Some receiver_id, Some impl_key_name ->
       let env_key = Names.scoped_key scope impl_key_name in
-      if Env.mem env_key env then
+      let method_id = Protocol.method_id protocol_id method_name in
+      if
+        Option.is_some
+          (Protocol_registry.find_implementation protocol_id method_id
+             receiver_id (Env.protocols env))
+      then
         Error.error
-          ("duplicate implementation of " ^ protocol_name ^ "/" ^ method_name
-         ^ " for " ^ source_name receiver_ty)
-      else Ok (Env.add env_key binding env)
+          ("duplicate implementation of " ^ Protocol_id.name protocol_id ^ "/"
+         ^ method_name ^ " for " ^ source_name receiver_ty)
+      else
+        (match
+         Protocol_registry.add_implementation protocol_id method_id receiver_id
+           binding (Env.protocols env)
+       with
+      | Error _ as err -> err
+      | Ok protocols ->
+          Ok (env |> Env.with_protocols protocols |> Env.add env_key binding))
 
 let compile_defprotocol scope env next_type protocol_name method_forms =
   match define scope env protocol_name method_forms with
@@ -127,8 +149,8 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                                   in
                                   let binding = Expression_support.binding_of_expr ocaml_name expr in
                                   (match
-                                     add_implementation scope env
-                                       protocol_name method_name receiver_ty marker binding
+                                     add_implementation scope env method_name
+                                       receiver_ty marker binding
                                    with
                                   | Error _ as err -> err
                                   | Ok env ->

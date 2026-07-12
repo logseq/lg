@@ -4,10 +4,16 @@ open Types
 module Env = Compiler_environment
 
 type method_signature = {
+  method_id : Method_id.t;
   method_name : string;
   param_tys : ty list;
   return_ty : ty;
 }
+
+let method_id protocol_id method_name =
+  Method_id.create
+    ~owner:(Protocol_id.owner protocol_id @ [ Protocol_id.name protocol_id ])
+    ~name:method_name
 
 let protocol_id scope protocol_name =
   if String.contains protocol_name '/' then Protocol_id.of_string protocol_name
@@ -41,16 +47,27 @@ let is_legacy_marker key (binding : binding) =
 
 let ambiguous_marker_binding () = Types.binding ambiguous_protocol_id TUnknown
 
+let marker_binding protocol_id signature =
+  Types.binding ~protocol_id (Protocol_id.to_string protocol_id)
+    (TFn (signature.param_tys, signature.return_ty))
+
 let method_is_ambiguous scope env method_name =
   if String.contains method_name '/' then false
   else
+    let owner = if scope = "" then [] else [ scope ] in
     match
-      Env.find_opt
-        (Names.scoped_key scope (legacy_marker_name method_name))
-        env
+      Protocol_registry.protocols_for_method ~owner ~method_name
+        (Env.protocols env)
     with
-    | Some binding -> binding.ocaml_name = ambiguous_protocol_id
-    | None -> false
+    | _ :: _ :: _ -> true
+    | [] | [ _ ] -> (
+        match
+          Env.find_opt
+            (Names.scoped_key scope (legacy_marker_name method_name))
+            env
+        with
+        | Some binding -> binding.ocaml_name = ambiguous_protocol_id
+        | None -> false)
 
 let receiver_id = function
   | TInt -> Some "int"
@@ -58,6 +75,14 @@ let receiver_id = function
   | TKeyword -> Some "keyword"
   | TBool -> Some "bool"
   | TNamed_record record -> Some record.type_name
+  | _ -> None
+
+let registry_receiver_id = function
+  | TInt -> Some Protocol_registry.Int_receiver
+  | TString -> Some String_receiver
+  | TKeyword -> Some Keyword_receiver
+  | TBool -> Some Bool_receiver
+  | TNamed_record record -> Some (Record_receiver record.type_id)
   | _ -> None
 
 let impl_name protocol_id method_name receiver_ty =
@@ -78,21 +103,79 @@ let receiver_annotation receiver_ty =
   Option.map (fun keyword -> "^" ^ keyword) keyword
 
 let lookup_marker scope env method_name =
-  let names =
-    if String.contains method_name '/' then
-      [ scope ^ "/" ^ method_name ^ "$protocol"; method_name ^ "$protocol" ]
-    else [ Names.scoped_key scope (legacy_marker_name method_name) ]
+  let registry = Env.protocols env in
+  let typed =
+    match String.split_on_char '/' method_name with
+    | [ protocol_name; method_name ] ->
+        let protocol_id = protocol_id scope protocol_name in
+        let method_id = method_id protocol_id method_name in
+        Protocol_registry.find_method protocol_id method_id registry
+        |> Option.map (fun (signature : Protocol_registry.method_signature) ->
+               marker_binding protocol_id
+                 {
+                   method_id;
+                   method_name;
+                   param_tys = signature.param_tys;
+                   return_ty = signature.return_ty;
+                 })
+    | [ method_name ] ->
+        let owner = if scope = "" then [] else [ scope ] in
+        (match
+           Protocol_registry.protocols_for_method ~owner ~method_name registry
+         with
+        | [ protocol_id ] ->
+            let method_id = method_id protocol_id method_name in
+            Protocol_registry.find_method protocol_id method_id registry
+            |> Option.map (fun (signature : Protocol_registry.method_signature) ->
+                   marker_binding protocol_id
+                     {
+                       method_id;
+                       method_name;
+                       param_tys = signature.param_tys;
+                       return_ty = signature.return_ty;
+                     })
+        | [] | _ :: _ :: _ -> None)
+    | _ -> None
   in
-  List.find_map (fun name -> Env.find_opt name env) names
+  match typed with
+  | Some _ as marker -> marker
+  | None ->
+      let names =
+        if String.contains method_name '/' then
+          [ scope ^ "/" ^ method_name ^ "$protocol"; method_name ^ "$protocol" ]
+        else [ Names.scoped_key scope (legacy_marker_name method_name) ]
+      in
+      List.find_map (fun name -> Env.find_opt name env) names
 
 let lookup_protocol_marker scope env protocol_name method_name =
   let id = protocol_id scope protocol_name in
-  Env.find_opt (marker_name id method_name) env
+  let method_id = method_id id method_name in
+  match Protocol_registry.find_method id method_id (Env.protocols env) with
+  | Some (signature : Protocol_registry.method_signature) ->
+      Some
+        (marker_binding id
+           {
+             method_id;
+             method_name;
+             param_tys = signature.param_tys;
+             return_ty = signature.return_ty;
+           })
+  | None -> Env.find_opt (marker_name id method_name) env
 
 let lookup_impl env protocol_id method_name receiver_ty =
-  match impl_name protocol_id method_name receiver_ty with
+  match registry_receiver_id receiver_ty with
+  | Some receiver_id -> (
+      let method_id = method_id protocol_id method_name in
+      match
+        Protocol_registry.find_implementation protocol_id method_id receiver_id
+          (Env.protocols env)
+      with
+      | Some _ as binding -> binding
+      | None -> (
+          match impl_name protocol_id method_name receiver_ty with
+          | None -> None
+          | Some impl_name -> Env.find_opt impl_name env))
   | None -> None
-  | Some impl_name -> Env.find_opt impl_name env
 
 let lookup_marker_impl env (marker : binding) method_name receiver_ty =
   match marker.protocol_id with
@@ -119,6 +202,7 @@ let parse_method_signature = function
           else
             Ok
               {
+                method_id = Method_id.create ~owner:[] ~name:method_name;
                 method_name;
                 param_tys = List.map snd params;
                 return_ty;
@@ -127,13 +211,10 @@ let parse_method_signature = function
       Error.error
         "defprotocol methods must be (method-name [params] :return-type)"
 
-let marker_binding protocol_id signature =
-  Types.binding ~protocol_id (Protocol_id.to_string protocol_id)
-    (TFn (signature.param_tys, signature.return_ty))
-
-let defprotocol_bindings scope protocol_name method_forms =
-  let rec loop seen acc = function
-    | [] -> Ok (List.rev acc)
+let defprotocol scope protocol_name method_forms =
+  let id = protocol_id scope protocol_name in
+  let rec loop seen signatures bindings = function
+    | [] -> Ok (id, List.rev signatures, List.rev bindings)
     | method_form :: rest -> (
         match parse_method_signature method_form with
         | Error _ as err -> err
@@ -143,18 +224,32 @@ let defprotocol_bindings scope protocol_name method_forms =
                 ("protocol " ^ protocol_name ^ " declares duplicate method "
                ^ signature.method_name)
             else
-            let id = protocol_id scope protocol_name in
+            let signature =
+              { signature with method_id = method_id id signature.method_name }
+            in
             let binding = marker_binding id signature in
             let canonical = marker_name id signature.method_name in
             let legacy =
               Names.scoped_key scope
                 (legacy_marker_name signature.method_name)
             in
+            let registry_signature : Protocol_registry.method_signature =
+              {
+                method_id = signature.method_id;
+                param_tys = signature.param_tys;
+                return_ty = signature.return_ty;
+              }
+            in
             loop (signature.method_name :: seen)
-              ((canonical, binding) :: (legacy, binding) :: acc)
+              (registry_signature :: signatures)
+              ((canonical, binding) :: (legacy, binding) :: bindings)
               rest)
   in
-  loop [] [] method_forms
+  loop [] [] [] method_forms
+
+let defprotocol_bindings scope protocol_name method_forms =
+  defprotocol scope protocol_name method_forms
+  |> Result.map (fun (_id, _signatures, bindings) -> bindings)
 
 let annotate_receiver receiver_ty = function
   | FVector (FSymbol annotation :: FSymbol _name :: _rest as params)

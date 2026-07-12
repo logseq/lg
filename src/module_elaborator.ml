@@ -339,9 +339,14 @@ let rec compile_module ?signature_name scope env next_type module_path
             nested_path nested_segment nested_forms
         with
         | Error _ as err -> err
-        | Ok (_scope, nested_public_bindings, next_type, nested_item) ->
+        | Ok
+            ( _scope,
+              nested_env,
+              nested_public_bindings,
+              next_type,
+              nested_item ) ->
             Ok
-              ( Env.add_bindings nested_public_bindings env,
+              ( Env.add_bindings nested_public_bindings nested_env,
                 public_bindings @ nested_public_bindings,
                 next_type,
                 nested_item :: items ))
@@ -349,9 +354,14 @@ let rec compile_module ?signature_name scope env next_type module_path
         let nested_path = module_path ^ "." ^ nested_segment in
         match compile_module scope env next_type nested_path nested_segment nested_forms with
         | Error _ as err -> err
-        | Ok (_scope, nested_public_bindings, next_type, nested_item) ->
+        | Ok
+            ( _scope,
+              nested_env,
+              nested_public_bindings,
+              next_type,
+              nested_item ) ->
             Ok
-              ( Env.add_bindings nested_public_bindings env,
+              ( Env.add_bindings nested_public_bindings nested_env,
                 public_bindings @ nested_public_bindings,
                 next_type,
                 nested_item :: items ))
@@ -361,8 +371,15 @@ let rec compile_module ?signature_name scope env next_type module_path
   and loop env public_bindings next_type items = function
     | [] ->
         let module_name = Names.module_segment_to_ocaml module_segment in
+        let protocols =
+          Protocol_registry.qualify_implementations ~owner:[ module_path ]
+            ~module_name:(Names.module_path_to_ocaml module_path)
+            (Env.protocols env)
+        in
+        let env = Env.with_protocols protocols env in
         Ok
           ( scope,
+            env,
             public_bindings,
             next_type,
             Module_def
@@ -412,7 +429,7 @@ let compile_module_functor scope env next_type functor_name parameter_form
                functor_name body_forms
            with
           | Error _ as err -> err
-          | Ok (_scope, public_bindings, next_type, module_item) -> (
+          | Ok (_scope, _module_env, public_bindings, next_type, module_item) -> (
               match module_item with
               | Module_def { items; _ } ->
                   let functor_bindings =

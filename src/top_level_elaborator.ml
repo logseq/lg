@@ -190,13 +190,25 @@ let compile scope env next_type = function
           forms
       with
       | Error _ as err -> err
-      | Ok (scope, module_bindings, next_type, item) ->
-          Ok (scope, Env.add_bindings module_bindings env, next_type, item))
+      | Ok (scope, module_env, module_bindings, next_type, item) ->
+          let env =
+            env
+            |> Env.with_protocols (Env.protocols module_env)
+            |> Env.with_modules (Env.modules module_env)
+            |> Env.add_bindings module_bindings
+          in
+          Ok (scope, env, next_type, item))
   | FList (FSymbol "module" :: FSymbol module_name :: forms) -> (
       match compile_module scope env next_type module_name module_name forms with
       | Error _ as err -> err
-      | Ok (scope, module_bindings, next_type, item) ->
-          Ok (scope, Env.add_bindings module_bindings env, next_type, item))
+      | Ok (scope, module_env, module_bindings, next_type, item) ->
+          let env =
+            env
+            |> Env.with_protocols (Env.protocols module_env)
+            |> Env.with_modules (Env.modules module_env)
+            |> Env.add_bindings module_bindings
+          in
+          Ok (scope, env, next_type, item))
   | FList (FSymbol (("print" | "println") as name) :: args) -> (
       match compile_call scope env name args with
       | Error _ as err -> err

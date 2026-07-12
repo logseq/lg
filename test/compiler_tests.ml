@@ -57,6 +57,17 @@ let typecheck_items source =
           failwith ("expected successful parsing, got: " ^ err.message)
       | Ok forms -> Cljml.Typecheck.compile_forms forms |> expect_ok)
 
+let typecheck_state source =
+  match Cljml.Lexer.tokenize source with
+  | Error (err : Cljml.Error.t) -> failwith err.message
+  | Ok tokens -> (
+      match Cljml.Parser.parse tokens with
+      | Error (err : Cljml.Error.t) -> failwith err.message
+      | Ok forms ->
+          Cljml.Typecheck.compile_forms_incremental Cljml.Typecheck.empty_state
+            forms
+          |> expect_ok |> fst)
+
 let expect_structured_value_expression source =
   let rec find_value_expression = function
     | [] -> None
@@ -416,6 +427,125 @@ let test_compiler_identities_are_stable_and_distinct () =
     failwith "symbol identity must preserve its qualified source name";
   if Cljml.Protocol_id.to_string protocol <> "Domain/Labelled" then
     failwith "protocol identity must preserve its qualified source name"
+
+let test_typed_protocol_and_module_registries () =
+  let protocol =
+    Cljml.Protocol_id.create ~owner:[ "Domain" ] ~name:"Labelled"
+  in
+  let method_id =
+    Cljml.Method_id.create ~owner:[ "Domain"; "Labelled" ] ~name:"label"
+  in
+  let signature : Cljml.Protocol_registry.method_signature =
+    {
+      method_id;
+      param_tys = [ Cljml.Types.TUnknown ];
+      return_ty = Cljml.Types.TString;
+    }
+  in
+  let registry =
+    Cljml.Protocol_registry.declare protocol [ signature ]
+      Cljml.Protocol_registry.empty
+    |> expect_ok
+  in
+  (match Cljml.Protocol_registry.find_method protocol method_id registry with
+  | Some found when found.return_ty = Cljml.Types.TString -> ()
+  | _ -> failwith "typed protocol method lookup failed");
+  (match Cljml.Protocol_registry.declare protocol [ signature ] registry with
+  | Error _ -> ()
+  | Ok _ -> failwith "duplicate protocol declarations must be rejected");
+  let binding =
+    Cljml.Types.binding "label_int"
+      (Cljml.Types.TFn ([ Cljml.Types.TInt ], Cljml.Types.TString))
+  in
+  let registry =
+    Cljml.Protocol_registry.add_implementation protocol method_id
+      Cljml.Protocol_registry.Int_receiver binding registry
+    |> expect_ok
+  in
+  (match
+     Cljml.Protocol_registry.find_implementation protocol method_id
+       Cljml.Protocol_registry.Int_receiver registry
+   with
+  | Some found when found.ocaml_name = "label_int" -> ()
+  | _ -> failwith "typed protocol implementation lookup failed");
+  let module_id = Cljml.Module_id.create ~owner:[] ~name:"Users" in
+  let signature_id = Cljml.Signature_id.create ~owner:[] ~name:"Printable" in
+  let functor_id = Cljml.Functor_id.create ~owner:[] ~name:"Make" in
+  let modules =
+    Cljml.Module_registry.empty
+    |> Cljml.Module_registry.declare_signature signature_id []
+    |> expect_ok
+    |> Cljml.Module_registry.store_functor_result functor_id [ ("value", binding) ]
+    |> Cljml.Module_registry.add_alias module_id module_id
+  in
+  if Cljml.Module_registry.find_signature signature_id modules <> Some [] then
+    failwith "typed signature lookup failed";
+  if
+    Cljml.Module_registry.find_functor_result functor_id modules
+    <> Some [ ("value", binding) ]
+  then failwith "typed functor result lookup failed"
+
+let test_protocol_elaboration_populates_typed_registry () =
+  let state =
+    typecheck_state
+      {|
+(defprotocol Labelled (label [x] :string))
+|}
+  in
+  let protocol = Cljml.Protocol_id.create ~owner:[] ~name:"Labelled" in
+  let method_id =
+    Cljml.Method_id.create ~owner:[ "Labelled" ] ~name:"label"
+  in
+  match
+    Cljml.Protocol_registry.find_method protocol method_id
+      (Cljml.Compiler_environment.protocols state.env)
+  with
+  | Some signature when signature.return_ty = Cljml.Types.TString -> ()
+  | _ -> failwith "defprotocol must populate the typed protocol registry"
+
+let test_protocol_implementation_populates_typed_registry () =
+  let state =
+    typecheck_state
+      {|
+(defprotocol Labelled (label [x] :string))
+(extend-type :int Labelled (label [x] (str x)))
+|}
+  in
+  let protocol = Cljml.Protocol_id.create ~owner:[] ~name:"Labelled" in
+  let method_id =
+    Cljml.Method_id.create ~owner:[ "Labelled" ] ~name:"label"
+  in
+  match
+    Cljml.Protocol_registry.find_implementation protocol method_id
+      Cljml.Protocol_registry.Int_receiver
+      (Cljml.Compiler_environment.protocols state.env)
+  with
+  | Some binding when binding.ocaml_name <> "" -> ()
+  | _ -> failwith "extend-type must populate the typed protocol registry"
+
+let test_module_protocols_preserve_typed_registry_state () =
+  let state =
+    typecheck_state
+      {|
+(module Labels
+  (defprotocol Labelled (label [x] :string))
+  (extend-type :int Labelled (label [x] (str x))))
+|}
+  in
+  let protocol =
+    Cljml.Protocol_id.create ~owner:[ "Labels" ] ~name:"Labelled"
+  in
+  let method_id =
+    Cljml.Method_id.create ~owner:[ "Labels"; "Labelled" ] ~name:"label"
+  in
+  let protocols = Cljml.Compiler_environment.protocols state.env in
+  if
+    Cljml.Protocol_registry.find_method protocol method_id protocols = None
+    ||
+    Cljml.Protocol_registry.find_implementation protocol method_id
+      Cljml.Protocol_registry.Int_receiver protocols
+    = None
+  then failwith "module compilation must preserve typed protocol registry state"
 
 let test_emitted_ocaml_names_reject_source_collisions () =
   Cljml.Compiler.compile_string
@@ -5226,6 +5356,14 @@ let tests =
       test_named_records_use_nominal_type_identity );
     ( "compiler identities are stable and distinct",
       test_compiler_identities_are_stable_and_distinct );
+    ( "typed protocol and module registries",
+      test_typed_protocol_and_module_registries );
+    ( "protocol elaboration populates typed registry",
+      test_protocol_elaboration_populates_typed_registry );
+    ( "protocol implementation populates typed registry",
+      test_protocol_implementation_populates_typed_registry );
+    ( "module protocols preserve typed registry state",
+      test_module_protocols_preserve_typed_registry_state );
     ( "emitted OCaml names reject source collisions",
       test_emitted_ocaml_names_reject_source_collisions );
     ( "typed environment respects lexical shadowing",
