@@ -4,6 +4,32 @@ open Expression_support
 
 module Env = Compiler_environment
 
+type expression_result = (typed_expr, Error.t) result
+type type_result = (ty, Error.t) result
+
+type t = {
+  compile_vector : string -> Env.t -> Ast.form list -> expression_result;
+  compile_map : string -> Env.t -> (Ast.form * Ast.form) list -> expression_result;
+  compile_if :
+    string -> Env.t -> Ast.form -> Ast.form -> Ast.form -> expression_result;
+  compile_if_not :
+    string -> Env.t -> Ast.form -> Ast.form -> Ast.form -> expression_result;
+  compile_when : string -> Env.t -> Ast.form -> Ast.form list -> expression_result;
+  compile_cond : string -> Env.t -> Ast.form list -> expression_result;
+  compile_match : string -> Env.t -> Ast.form -> Ast.form list -> expression_result;
+  compile_body : string -> Env.t -> string -> Ast.form list -> expression_result;
+  compile_try : string -> Env.t -> Ast.form list -> expression_result;
+  loop_branch_type : ty -> ty -> type_result;
+  compile_recur :
+    string -> Env.t -> string -> ty list -> Ast.form list -> expression_result;
+  compile_loop_tail :
+    string -> Env.t -> string -> ty list -> Ast.form -> expression_result;
+  compile_loop_tail_body :
+    string -> Env.t -> string -> ty list -> Ast.form list -> expression_result;
+  compile_loop : string -> Env.t -> Ast.form -> Ast.form list -> expression_result;
+  compile_let : string -> Env.t -> Ast.form -> Ast.form list -> expression_result;
+}
+
 let compile_args_for compile_expr scope env arg_forms =
   let rec loop acc = function
     | [] -> Ok (List.rev acc)
@@ -684,6 +710,42 @@ let make compile_expr =
   
   in
   (compile_vector, compile_map, compile_if, compile_if_not, compile_when, compile_cond, compile_match, compile_body, compile_try, loop_branch_type, compile_recur, compile_loop_tail, compile_loop_tail_body, compile_loop, compile_let)
+
+let create ~compile_expr =
+  let ( compile_vector,
+        compile_map,
+        compile_if,
+        compile_if_not,
+        compile_when,
+        compile_cond,
+        compile_match,
+        compile_body,
+        compile_try,
+        loop_branch_type,
+        compile_recur,
+        compile_loop_tail,
+        compile_loop_tail_body,
+        compile_loop,
+        compile_let ) =
+    make compile_expr
+  in
+  {
+    compile_vector;
+    compile_map;
+    compile_if;
+    compile_if_not;
+    compile_when;
+    compile_cond;
+    compile_match;
+    compile_body;
+    compile_try;
+    loop_branch_type;
+    compile_recur;
+    compile_loop_tail;
+    compile_loop_tail_body;
+    compile_loop;
+    compile_let;
+  }
 
 let compile_vector ~compile_expr =
   let (compile_vector, _, _, _, _, _, _, _, _, _, _, _, _, _, _) = make compile_expr in

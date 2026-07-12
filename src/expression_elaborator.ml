@@ -62,49 +62,49 @@ and compile_expr_unlocated scope (env : Env.t) = function
   | FList _ -> Error.error "call head must be a symbol"
 
 and compile_vector scope env forms =
-  Special_form_elaborator.compile_vector ~compile_expr scope env forms
+  (Lazy.force context).special_forms.compile_vector scope env forms
 
 and compile_map scope env pairs =
-  Special_form_elaborator.compile_map ~compile_expr scope env pairs
+  (Lazy.force context).special_forms.compile_map scope env pairs
 
 and compile_if scope env condition then_form else_form =
-  Special_form_elaborator.compile_if ~compile_expr scope env condition then_form else_form
+  (Lazy.force context).special_forms.compile_if scope env condition then_form else_form
 
 and compile_if_not scope env condition then_form else_form =
-  Special_form_elaborator.compile_if_not ~compile_expr scope env condition then_form else_form
+  (Lazy.force context).special_forms.compile_if_not scope env condition then_form else_form
 
 and compile_when scope env condition body_forms =
-  Special_form_elaborator.compile_when ~compile_expr scope env condition body_forms
+  (Lazy.force context).special_forms.compile_when scope env condition body_forms
 
 and compile_cond scope env clauses =
-  Special_form_elaborator.compile_cond ~compile_expr scope env clauses
+  (Lazy.force context).special_forms.compile_cond scope env clauses
 
 and compile_match scope env target_form clauses =
-  Special_form_elaborator.compile_match ~compile_expr scope env target_form clauses
+  (Lazy.force context).special_forms.compile_match scope env target_form clauses
 
 and compile_body scope env empty_error forms =
-  Special_form_elaborator.compile_body ~compile_expr scope env empty_error forms
+  (Lazy.force context).special_forms.compile_body scope env empty_error forms
 
 and compile_try scope env forms =
-  Special_form_elaborator.compile_try ~compile_expr scope env forms
+  (Lazy.force context).special_forms.compile_try scope env forms
 
 and loop_branch_type left right =
-  Special_form_elaborator.loop_branch_type ~compile_expr left right
+  (Lazy.force context).special_forms.loop_branch_type left right
 
 and compile_recur scope env loop_name param_tys arg_forms =
-  Special_form_elaborator.compile_recur ~compile_expr scope env loop_name param_tys arg_forms
+  (Lazy.force context).special_forms.compile_recur scope env loop_name param_tys arg_forms
 
 and compile_loop_tail scope env loop_name param_tys form =
-  Special_form_elaborator.compile_loop_tail ~compile_expr scope env loop_name param_tys form
+  (Lazy.force context).special_forms.compile_loop_tail scope env loop_name param_tys form
 
 and compile_loop_tail_body scope env loop_name param_tys forms =
-  Special_form_elaborator.compile_loop_tail_body ~compile_expr scope env loop_name param_tys forms
+  (Lazy.force context).special_forms.compile_loop_tail_body scope env loop_name param_tys forms
 
 and compile_loop scope env bindings body_forms =
-  Special_form_elaborator.compile_loop ~compile_expr scope env bindings body_forms
+  (Lazy.force context).special_forms.compile_loop scope env bindings body_forms
 
 and compile_let scope env bindings body_forms =
-  Special_form_elaborator.compile_let ~compile_expr scope env bindings body_forms
+  (Lazy.force context).special_forms.compile_let scope env bindings body_forms
 and prepare_fn ?(param_type_overrides = []) scope env params body_forms =
   let lookup_function_ty name =
     match lookup_function scope env name with
@@ -124,6 +124,9 @@ and compile_fn ?(param_type_overrides = []) scope env params body_forms =
 
 and compile_call scope env name arg_forms =
   Call_elaborator.compile_call ~compile_expr scope env name arg_forms
+
+and context : Elaboration_context.t Lazy.t =
+  lazy (Elaboration_context.create ~compile_expr)
 
 let compile_args_for scope env arg_forms =
   Call_elaborator.compile_args_for ~compile_expr scope env arg_forms

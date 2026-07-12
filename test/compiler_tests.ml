@@ -530,7 +530,21 @@ let test_compiler_phases_have_explicit_boundaries () =
         in
         if
           identity.ty <> Cljml.Types.TInt
-        then failwith "core higher-order call elaboration should have one owner"
+        then failwith "core higher-order call elaboration should have one owner";
+        let context =
+          Cljml.Elaboration_context.create
+            ~compile_expr:Cljml.Expression_elaborator.compile_expr
+        in
+        let special_forms = context.special_forms in
+        if special_forms != context.special_forms then
+          failwith "elaboration domains should be initialized once";
+        let conditional =
+          special_forms.compile_if "" Cljml.Compiler_environment.empty
+            (Cljml.Ast.FBool true) (Cljml.Ast.FInt 1) (Cljml.Ast.FInt 2)
+          |> expect_ok
+        in
+        if conditional.ty <> Cljml.Types.TInt then
+          failwith "typed elaboration context should route special forms"
     | _ -> failwith "top-level elaboration should have one owner"
 
 let test_source_node_identity_reaches_parsetree () =
