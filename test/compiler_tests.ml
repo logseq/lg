@@ -4060,6 +4060,48 @@ let test_workspace_index_tracks_top_level_symbol_dependencies () =
   if List.sort String.compare reanalyzed <> [ consumer_uri; values_uri ] then
     failwith "workspace index must track top-level symbol dependencies"
 
+let test_workspace_index_tracks_module_alias_dependencies () =
+  let analyses =
+    Cljml.Language_service.create_workspace_index
+      [ ("file:///tmp/workspace-math.cljml", "(module Math (def value 42))\n");
+        ("file:///tmp/workspace-alias.cljml", "(module-alias M Math)\n");
+        ("file:///tmp/workspace-alias-user.cljml", "(def result M/value)\n") ]
+    |> expect_ok
+  in
+  if
+    Cljml.Language_service.workspace_analysis analyses
+      "file:///tmp/workspace-alias-user.cljml"
+    = None
+  then failwith "workspace index must connect module alias consumers"
+
+let test_workspace_index_tracks_variant_constructor_dependencies () =
+  let analyses =
+    Cljml.Language_service.create_workspace_index
+      [ ( "file:///tmp/workspace-status.cljml",
+          "(type-variant status Active (Named :string))\n" );
+        ( "file:///tmp/workspace-status-user.cljml",
+          "(def current (Named \"Ada\"))\n" ) ]
+    |> expect_ok
+  in
+  if
+    Cljml.Language_service.workspace_analysis analyses
+      "file:///tmp/workspace-status-user.cljml"
+    = None
+  then failwith "workspace index must connect variant constructor consumers"
+
+let test_workspace_index_rejects_duplicate_providers () =
+  match
+    Cljml.Language_service.create_workspace_index
+      [ ("file:///tmp/provider-one.cljml", "(def shared-value 1)\n");
+        ("file:///tmp/provider-two.cljml", "(def shared-value 2)\n");
+        ("file:///tmp/provider-user.cljml", "(def result shared-value)\n") ]
+  with
+  | Error error
+    when string_contains_substring error.message
+           "workspace symbol shared-value has multiple providers" -> ()
+  | Error error -> failwith ("unexpected workspace provider error: " ^ error.message)
+  | Ok _ -> failwith "workspace index must reject duplicate symbol providers"
+
 let test_workspace_index_contains_component_errors () =
   let math_uri = "file:///tmp/error-math.cljml" in
   let main_uri = "file:///tmp/error-main.cljml" in
@@ -6154,6 +6196,12 @@ let tests =
       test_workspace_index_reanalyzes_only_dependency_component );
     ( "workspace index tracks top-level dependencies",
       test_workspace_index_tracks_top_level_symbol_dependencies );
+    ( "workspace index tracks module alias dependencies",
+      test_workspace_index_tracks_module_alias_dependencies );
+    ( "workspace index tracks variant constructor dependencies",
+      test_workspace_index_tracks_variant_constructor_dependencies );
+    ( "workspace index rejects duplicate providers",
+      test_workspace_index_rejects_duplicate_providers );
     ( "workspace index contains component errors",
       test_workspace_index_contains_component_errors );
     ( "formatter normalizes whitespace",

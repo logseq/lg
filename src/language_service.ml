@@ -408,14 +408,26 @@ let provided_names source =
           List.fold_left
             (fun names -> function
               | FList
+                  (FSymbol ("module-alias" | "module-apply")
+                  :: FSymbol name :: _) ->
+                  String_set.add name names
+              | FList
+                  (FSymbol "type-variant" :: FSymbol name :: constructors) ->
+                  List.fold_left
+                    (fun names -> function
+                      | FSymbol constructor
+                      | FList (FSymbol constructor :: _) ->
+                          String_set.add constructor names
+                      | _ -> names)
+                    (String_set.add name names) constructors
+              | FList
                   (FSymbol
                     ( "module" | "module-signature" | "module-functor" )
                   :: FSymbol name :: _) ->
                   String_set.add name names
               | FList
                   (FSymbol
-                    ( "def" | "defn" | "type-alias" | "type-record"
-                    | "type-variant" )
+                    ( "def" | "defn" | "type-alias" | "type-record" )
                   :: FSymbol name :: _) ->
                   String_set.add name names
               | FList (FSymbol "defprotocol" :: FSymbol protocol_name :: methods) ->
@@ -441,15 +453,31 @@ let root_name symbol =
   | None -> symbol
   | Some index -> String.sub symbol 0 index
 
+let workspace_providers sources =
+  String_map.fold
+    (fun filename source providers ->
+      match providers with
+      | Error _ as err -> err
+      | Ok providers ->
+          String_set.fold
+            (fun name providers ->
+              match providers with
+              | Error _ as err -> err
+              | Ok providers -> (
+                  match String_map.find_opt name providers with
+                  | Some existing when existing <> filename ->
+                      Error.error
+                        ("workspace symbol " ^ name
+                       ^ " has multiple providers: " ^ existing ^ " and "
+                       ^ filename)
+                  | _ -> Ok (String_map.add name filename providers)))
+            (provided_names source) (Ok providers))
+    sources (Ok String_map.empty)
+
 let workspace_components sources =
-  let providers =
-    String_map.fold
-      (fun filename source providers ->
-        String_set.fold
-          (fun name -> String_map.add name filename)
-          (provided_names source) providers)
-      sources String_map.empty
-  in
+  match workspace_providers sources with
+  | Error _ as err -> err
+  | Ok providers ->
   let dependencies =
     String_map.mapi
       (fun filename source ->
@@ -493,9 +521,10 @@ let workspace_components sources =
         let members = component (String_set.singleton filename) String_set.empty in
         collect (String_set.diff remaining members) (members :: components)
   in
-  collect
-    (String_map.to_seq sources |> Seq.map fst |> String_set.of_seq)
-    []
+  Ok
+    (collect
+       (String_map.to_seq sources |> Seq.map fst |> String_set.of_seq)
+       [])
 
 let analyze_component sources filenames =
   let component_sources =
@@ -516,7 +545,9 @@ let create_workspace_index source_list =
       (fun sources (filename, source) -> String_map.add filename source sources)
       String_map.empty source_list
   in
-  let components = workspace_components sources in
+  match workspace_components sources with
+  | Error _ as err -> err
+  | Ok components ->
   let analyze_individually component analyses errors =
     String_set.fold
       (fun filename (analyses, errors) ->
@@ -557,7 +588,9 @@ let update_workspace_index index ~filename ~source =
   | _ ->
       let old_affected = component_containing filename index.components in
       let sources = String_map.add filename source index.sources in
-      let components = workspace_components sources in
+      (match workspace_components sources with
+      | Error _ as err -> err
+      | Ok components ->
       let affected_components =
         List.filter
           (fun component ->
@@ -597,4 +630,4 @@ let update_workspace_index index ~filename ~source =
                      component_analyses)
                   errors rest)
       in
-      rebuild analyses errors affected_components
+      rebuild analyses errors affected_components)

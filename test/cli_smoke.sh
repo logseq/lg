@@ -98,6 +98,13 @@ fi
 
 grep -q "File \"$bad_source\", line 1" "$bad_stderr"
 
+# Keep the LSP cross-file scenario independent from external package loading.
+printf '%s\n' \
+  '(module Math' \
+  '  (defn magnitude-plus-two [x] (+ x 2)))' > "$math_source"
+printf '%s\n' \
+  '(println (Math/magnitude-plus-two 40))' > "$main_source"
+
 lsp_output="$multi_dir/lsp.output"
 
 send_lsp_message() {
@@ -124,7 +131,7 @@ send_lsp_message() {
   send_lsp_message '{"jsonrpc":"2.0","id":10,"method":"textDocument/rename","params":{"textDocument":{"uri":"file:///tmp/service.cljml"},"position":{"line":2,"character":22},"newName":"total"}}'
   send_lsp_message '{"jsonrpc":"2.0","id":11,"method":"textDocument/documentSymbol","params":{"textDocument":{"uri":"file:///tmp/service.cljml"}}}'
   send_lsp_message '{"jsonrpc":"2.0","id":12,"method":"workspace/symbol","params":{"query":"add"}}'
-  send_lsp_message "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didOpen\",\"params\":{\"textDocument\":{\"uri\":\"file://$main_source\",\"languageId\":\"cljml\",\"version\":1,\"text\":\"(println (Math/magnitude-plus-two -40))\\n\"}}}"
+  send_lsp_message "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didOpen\",\"params\":{\"textDocument\":{\"uri\":\"file://$main_source\",\"languageId\":\"cljml\",\"version\":1,\"text\":\"(println (Math/magnitude-plus-two 40))\\n\"}}}"
   send_lsp_message "{\"jsonrpc\":\"2.0\",\"id\":13,\"method\":\"textDocument/definition\",\"params\":{\"textDocument\":{\"uri\":\"file://$main_source\"},\"position\":{\"line\":0,\"character\":14}}}"
   send_lsp_message "{\"jsonrpc\":\"2.0\",\"id\":14,\"method\":\"textDocument/references\",\"params\":{\"textDocument\":{\"uri\":\"file://$main_source\"},\"position\":{\"line\":0,\"character\":14},\"context\":{\"includeDeclaration\":true}}}"
   send_lsp_message "{\"jsonrpc\":\"2.0\",\"id\":15,\"method\":\"textDocument/rename\",\"params\":{\"textDocument\":{\"uri\":\"file://$main_source\"},\"position\":{\"line\":0,\"character\":14},\"newName\":\"distance-plus-two\"}}"
@@ -175,3 +182,4 @@ grep -q "\"uri\":\"file://$math_source\"" "$lsp_output"
 grep -q "\"uri\":\"file://$main_source\"" "$lsp_output"
 grep -q '"newText":"distance-plus-two"' "$lsp_output"
 grep -q '"name":"magnitude-plus-two"' "$lsp_output"
+grep -Fq "\"uri\":\"file://$main_source\",\"diagnostics\":[]" "$lsp_output"

@@ -197,6 +197,11 @@ let publish_diagnostics uri diagnostics =
             [ ("uri", `String uri);
               ("diagnostics", `List diagnostics) ] ) ])
 
+let publish_current_diagnostics uri =
+  match find_document uri with
+  | None -> publish_diagnostics uri []
+  | Some document -> publish_diagnostics uri (diagnostics document)
+
 let read_packet () =
   let rec read_headers content_length =
     match input_line stdin with
@@ -526,7 +531,7 @@ let handle_notification method_ params =
       let document = analyze_document uri text in
       Hashtbl.replace documents uri document;
       if Hashtbl.mem workspace_sources uri then rebuild_workspace ~changed_uri:uri ();
-      publish_diagnostics uri (diagnostics document)
+      publish_current_diagnostics uri
   | "textDocument/didChange" ->
       let uri = document_uri params in
       let changes = params |> member "contentChanges" |> to_list in
@@ -537,7 +542,7 @@ let handle_notification method_ params =
           Hashtbl.replace documents uri document;
           if Hashtbl.mem workspace_sources uri then
             rebuild_workspace ~changed_uri:uri ();
-          publish_diagnostics uri (diagnostics document)
+          publish_current_diagnostics uri
       | [] -> ())
   | "textDocument/didSave" ->
       let uri = document_uri params in
@@ -552,7 +557,7 @@ let handle_notification method_ params =
           Hashtbl.replace documents uri document;
           if Hashtbl.mem workspace_sources uri then
             rebuild_workspace ~changed_uri:uri ();
-          publish_diagnostics uri (diagnostics document))
+          publish_current_diagnostics uri)
         text
   | "textDocument/didClose" ->
       let uri = document_uri params in
