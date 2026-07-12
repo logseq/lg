@@ -450,10 +450,33 @@ set sequence conversion, and set printing now use persistent OCaml `Set.Make`
 instances. Primitive static element types use built-in runtime comparators.
 Lists and persistent vectors of the supported scalar element types also use
 dedicated persistent `Set.Make` instances.
+
 Each named structural map record emits a sibling `Set.Make` comparator module,
 and same-shaped records are explicitly projected at set mutation and membership
 boundaries. This preserves static record types while retaining Clojure-style
 structural map compatibility.
+
+## ReasonML architecture alignment
+
+ReasonML is the architectural reference, not a syntax or standard-library
+compatibility target. The current compiler boundary is aligned as follows:
+
+| Requirement | Current evidence |
+| --- | --- |
+| Alternate syntax frontend | The cljml reader produces a located Lisp AST without parsing generated OCaml source. |
+| Semantic elaboration boundary | cljml owns Clojure surface rules, core API compatibility, collection representations, and source-oriented errors. Lowered items are separate from source type metadata. |
+| Native OCaml backend | Every supported expression and structure item lowers through structured `Ocaml_ir` and OCaml `Parsetree`; regression guards reject unstructured source-backed fallback nodes and legacy item emitters. |
+| OCaml type system as final truth | Public source, Parsetree, incremental, CLI, and LSP paths run the compiler-libs typechecker. Host calls, polymorphic relationships, module inclusion, constructor payloads, pattern exhaustiveness, and warnings are checked by OCaml. |
+| Function polymorphism | Top-level and let-bound functions can be instantiated at different call-site types. Non-trivial relationships such as both branches of a polymorphic chooser are accepted or rejected by OCaml. |
+| Host type surface | Aliases, parameterized types, records, variants, option/result, tuples, arrays, references, constructors, patterns, labelled arguments, and package values lower to native OCaml nodes. |
+| Module system | Modules, aliases, open/include, parameterized signatures, nested signature modules, signature includes, multi-parameter functors, and applications lower to native module AST and are checked by OCaml. |
+| Diagnostics and tooling boundary | Source locations survive lowering; compiler errors and enabled warnings reach the library API, CLI, and diagnostic-focused LSP. |
+
+This does not make cljml a Reason syntax clone. `.re`/`.rei` parsing, `refmt`,
+JSX, and full `ocaml-lsp` feature parity are not cljml language requirements.
+Likewise, the documented absence of macros, nil, laziness, the JVM numeric
+tower, and dynamic Clojure runtime features is an intentional static Clojure
+dialect boundary rather than an OCaml backend gap.
 
 The typed standard library also includes a `clojure.string` namespace that can
 be required with `:as` or `:refer`. Its current subset includes `blank?`,

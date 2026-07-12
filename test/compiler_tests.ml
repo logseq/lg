@@ -1565,6 +1565,29 @@ let test_let_bound_identity_function_is_polymorphic_at_call_sites () =
   assert_ocaml_runs "let_bound_identity_function_is_polymorphic_at_call_sites"
     "42:Ada:true\n" ocaml_source
 
+let test_conditional_function_is_polymorphic_at_call_sites () =
+  let source =
+    {|
+(defn choose [flag left right]
+  (if flag left right))
+(println
+  (str (+ (choose true 40 0) 2) ":"
+       (choose false "Grace" "Ada")))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "conditional_function_is_polymorphic_at_call_sites"
+    "42:Ada\n" ocaml_source
+
+let test_conditional_function_type_relationship_is_checked_by_ocaml () =
+  Cljml.Compiler.compile_string
+    {|
+(defn choose [flag left right]
+  (if flag left right))
+(def bad (choose true 42 "Ada"))
+|}
+  |> expect_error_contains "expected of type"
+
 let test_unannotated_function_parameters_reject_bad_int_calls () =
   let source =
     {|
@@ -4830,6 +4853,10 @@ let tests =
       test_identity_function_is_polymorphic_at_call_sites );
     ( "let-bound identity function is polymorphic at call sites",
       test_let_bound_identity_function_is_polymorphic_at_call_sites );
+    ( "conditional function is polymorphic at call sites",
+      test_conditional_function_is_polymorphic_at_call_sites );
+    ( "conditional function type relationship is checked by OCaml",
+      test_conditional_function_type_relationship_is_checked_by_ocaml );
     ( "unannotated function parameters reject bad int calls",
       test_unannotated_function_parameters_reject_bad_int_calls );
     ( "unannotated function parameters reject bad bool calls",
