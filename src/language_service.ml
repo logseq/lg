@@ -42,7 +42,7 @@ let analyze ~filename source =
           | Error _ as err -> err
           | Ok compiler -> Ok { source; tokens; forms; compiler }))
 
-let analyze_workspace sources =
+let analyze_workspace_with_errors sources =
   let rec parse acc = function
     | [] -> Ok (List.rev acc)
     | (filename, source) :: rest -> (
@@ -56,17 +56,26 @@ let analyze_workspace sources =
   match parse [] sources with
   | Error _ as err -> err
   | Ok parsed -> (
-      match Toolchain.analyze_workspace sources with
+      match Toolchain.analyze_workspace_with_errors sources with
       | Error _ as err -> err
-      | Ok analyses ->
+      | Ok (analyses, errors) ->
           let compiler filename = List.assoc_opt filename analyses in
           Ok
-            (List.filter_map
-               (fun (filename, source, tokens, forms) ->
-                 compiler filename
-                 |> Option.map (fun compiler ->
-                        (filename, { source; tokens; forms; compiler })))
-               parsed))
+            ( List.filter_map
+                (fun (filename, source, tokens, forms) ->
+                  compiler filename
+                  |> Option.map (fun compiler ->
+                         (filename, { source; tokens; forms; compiler })))
+                parsed,
+              errors ))
+
+let analyze_workspace sources =
+  match analyze_workspace_with_errors sources with
+  | Error _ as err -> err
+  | Ok ([], (_, error) :: _) -> Error error
+  | Ok ([], []) -> Error.error "workspace contains no analyzable cljml files"
+  | Ok (analyses, []) -> Ok analyses
+  | Ok (analyses, _errors) -> Ok analyses
 
 let diagnostics analysis = analysis.compiler.diagnostics
 
@@ -618,12 +627,16 @@ let analyze_component sources filenames =
     |> Seq.map (fun filename -> (filename, String_map.find filename sources))
     |> List.of_seq
   in
-  analyze_workspace component_sources
-  |> Result.map (fun analyses ->
-         List.fold_left
-           (fun result (filename, analysis) ->
-             String_map.add filename analysis result)
-           String_map.empty analyses)
+  analyze_workspace_with_errors component_sources
+  |> Result.map (fun (analyses, errors) ->
+         ( List.fold_left
+             (fun result (filename, analysis) ->
+               String_map.add filename analysis result)
+             String_map.empty analyses,
+           List.fold_left
+             (fun result (filename, error) ->
+               String_map.add filename error result)
+             String_map.empty errors ))
 
 let create_workspace_index source_list =
   let sources =
@@ -651,11 +664,13 @@ let create_workspace_index source_list =
               analyze_individually component analyses errors
             in
             analyze_all analyses errors rest
-        | Ok component_analyses ->
+        | Ok (component_analyses, component_errors) ->
             analyze_all
               (String_map.union (fun _ _ updated -> Some updated) analyses
                  component_analyses)
-              errors rest)
+              (String_map.union (fun _ _ updated -> Some updated) errors
+                 component_errors)
+              rest)
   in
   analyze_all String_map.empty String_map.empty components
 
@@ -710,10 +725,12 @@ let update_workspace_index index ~filename ~source =
                   analyze_individually component analyses errors
                 in
                 rebuild analyses errors rest
-            | Ok component_analyses ->
+            | Ok (component_analyses, component_errors) ->
                 rebuild
                   (String_map.union (fun _ _ updated -> Some updated) analyses
                      component_analyses)
-                  errors rest)
+                  (String_map.union (fun _ _ updated -> Some updated) errors
+                     component_errors)
+                  rest)
       in
       rebuild analyses errors affected_components)

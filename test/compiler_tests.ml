@@ -4223,6 +4223,44 @@ let test_workspace_index_contains_component_errors () =
   if other_before != other_after then
     failwith "component errors must not discard unrelated cached analyses"
 
+let test_workspace_index_records_partial_component_errors () =
+  let math_uri = "file:///tmp/partial-math.cljml" in
+  let main_uri = "file:///tmp/partial-main.cljml" in
+  let index =
+    Cljml.Language_service.create_workspace_index
+      [ (math_uri, "(module Math (def answer 40))\n");
+        (main_uri, "(def result (Math/missing 2))\n") ]
+    |> expect_ok
+  in
+  if Cljml.Language_service.workspace_analysis index math_uri = None then
+    failwith "valid provider must retain its workspace analysis";
+  if Cljml.Language_service.workspace_analysis index main_uri <> None then
+    failwith "invalid consumer must not receive a partial workspace analysis";
+  if Cljml.Language_service.workspace_error index main_uri = None then
+    failwith "omitted component files must retain their analysis error"
+
+let test_workspace_diagnostics_belong_to_their_source_file () =
+  let status_uri = "file:///tmp/diagnostic-status.cljml" in
+  let main_uri = "file:///tmp/diagnostic-main.cljml" in
+  let analyses =
+    Cljml.Language_service.analyze_workspace
+      [ ( status_uri,
+          {|
+(type-variant status Active Inactive)
+(module Status
+  (defn describe [^:ocaml/status value]
+    (match value Active "active")))
+|} );
+        (main_uri, "(def label (Status/describe Active))\n") ]
+    |> expect_ok
+  in
+  let status = List.assoc status_uri analyses in
+  let main = List.assoc main_uri analyses in
+  if Cljml.Language_service.diagnostics status = [] then
+    failwith "warning source must retain its diagnostic";
+  if Cljml.Language_service.diagnostics main <> [] then
+    failwith "workspace diagnostics must not leak to dependent files"
+
 let test_formatter_normalizes_whitespace () =
   Cljml.Formatter.format "(defn  add-one [ x ](+ x  1))"
   |> expect_ok
@@ -6441,6 +6479,10 @@ let tests =
       test_workspace_index_rejects_duplicate_providers );
     ( "workspace index contains component errors",
       test_workspace_index_contains_component_errors );
+    ( "workspace index records partial component errors",
+      test_workspace_index_records_partial_component_errors );
+    ( "workspace diagnostics belong to their source file",
+      test_workspace_diagnostics_belong_to_their_source_file );
     ( "formatter normalizes whitespace",
       test_formatter_normalizes_whitespace );
     ( "formatter wraps long nested forms",

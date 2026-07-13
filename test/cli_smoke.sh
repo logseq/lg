@@ -98,13 +98,6 @@ fi
 
 grep -q "File \"$bad_source\", line 1" "$bad_stderr"
 
-# Keep the LSP cross-file scenario independent from external package loading.
-printf '%s\n' \
-  '(module Math' \
-  '  (defn magnitude-plus-two [x] (+ x 2)))' > "$math_source"
-printf '%s\n' \
-  '(println (Math/magnitude-plus-two 40))' > "$main_source"
-
 lsp_output="$multi_dir/lsp.output"
 
 send_lsp_message() {

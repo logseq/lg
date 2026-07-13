@@ -23,6 +23,7 @@ type diagnostic_severity = [ `Warning ]
 type diagnostic = {
   message : string;
   severity : diagnostic_severity;
+  location : Location.t option;
 }
 
 type compilation = {
@@ -123,7 +124,9 @@ module Ocaml_typechecker = struct
           let message =
             Format.asprintf "%a" Location.print_report report |> String.trim
           in
-          diagnostics := { message; severity = `Warning } :: !diagnostics;
+          diagnostics :=
+            { message; severity = `Warning; location = Some location }
+            :: !diagnostics;
           None
     in
     try
@@ -254,61 +257,81 @@ let analyze ?(filename = "<string>") source =
                       diagnostics = analysis.diagnostics;
                     })))
 
-let analyze_workspace sources =
-  let ocaml_valid state =
+let analyze_workspace_with_errors sources =
+  let validate_ocaml state =
     match Lowering.structure_of_located_items state.located_items with
-    | Error _ -> false
-    | Ok structure -> (
-        match Ocaml_typechecker.analyze structure with
-        | Ok _ -> true
-        | Error _ -> false)
+    | Error _ as err -> err
+    | Ok structure -> Ocaml_typechecker.analyze structure |> Result.map ignore
   in
-  let rec parse acc = function
-    | [] -> Ok (List.rev acc)
+  let rec parse parsed errors = function
+    | [] -> Ok (List.rev parsed, List.rev errors)
     | (filename, source) :: rest -> (
         match Cljml_frontend.implementation ~filename source with
-        | Error _ -> parse acc rest
-        | Ok parsed -> parse ((filename, parsed) :: acc) rest)
+        | Error error -> parse parsed ((filename, error) :: errors) rest
+        | Ok result -> parse ((filename, result) :: parsed) errors rest)
   in
   let rec compile state compiled pending =
     match pending with
-    | [] -> Ok (state, List.rev compiled)
+    | [] -> Ok (state, List.rev compiled, [])
     | _ ->
-        let rec try_pending deferred = function
-          | [] -> Ok (state, List.rev compiled)
+        let rec try_pending deferred errors = function
+          | [] -> Ok (state, List.rev compiled, List.rev errors)
           | (filename, parsed) :: rest -> (
               match typecheck_incremental state parsed with
-              | Ok (next_state, _typed) when ocaml_valid next_state ->
-                  compile next_state (filename :: compiled)
-                    (List.rev_append deferred rest)
-              | Ok _ | Error _ ->
-                  try_pending ((filename, parsed) :: deferred) rest)
+              | Error error ->
+                  try_pending ((filename, parsed) :: deferred)
+                    ((filename, error) :: errors) rest
+              | Ok (next_state, _typed) -> (
+                  match validate_ocaml next_state with
+                  | Ok () ->
+                      compile next_state (filename :: compiled)
+                        (List.rev_append deferred rest)
+                  | Error error ->
+                      try_pending ((filename, parsed) :: deferred)
+                        ((filename, error) :: errors) rest))
         in
-        try_pending [] pending
+        try_pending [] [] pending
   in
-  match parse [] sources with
+  match parse [] [] sources with
   | Error _ as err -> err
-  | Ok parsed -> (
+  | Ok (parsed, parse_errors) -> (
       match compile empty_state [] parsed with
       | Error _ as err -> err
-      | Ok (_state, filenames) when filenames = [] ->
-          Error.error "workspace contains no analyzable cljml files"
-      | Ok (state, filenames) -> (
+      | Ok (_state, [], compile_errors) ->
+          Ok ([], parse_errors @ compile_errors)
+      | Ok (state, filenames, compile_errors) -> (
           match Lowering.structure_of_located_items state.located_items with
           | Error _ as err -> err
           | Ok structure -> (
               match Ocaml_typechecker.analyze structure with
               | Error _ as err -> err
               | Ok analysis ->
-                  let result =
-                    {
-                      typed_structure = analysis.typed_structure;
+                  let result filename =
+                    { typed_structure = analysis.typed_structure;
                       compiler_env = analysis.compiler_env;
                       typecheck_state = state.typecheck_state;
-                      diagnostics = analysis.diagnostics;
+                      diagnostics =
+                        List.filter
+                          (fun diagnostic ->
+                            match diagnostic.location with
+                            | Some location ->
+                                location.Location.loc_start.Lexing.pos_fname
+                                = filename
+                            | None -> false)
+                          analysis.diagnostics;
                     }
                   in
-                  Ok (List.map (fun filename -> (filename, result)) filenames))))
+                  Ok
+                    ( List.map (fun filename -> (filename, result filename)) filenames,
+                      parse_errors @ compile_errors ))))
+
+let analyze_workspace sources =
+  match analyze_workspace_with_errors sources with
+  | Error _ as err -> err
+  | Ok ([], (_, error) :: _) -> Error error
+  | Ok ([], []) -> Error.error "workspace contains no analyzable cljml files"
+  | Ok (analyses, []) -> Ok analyses
+  | Ok (analyses, _errors) -> Ok analyses
 
 let implementation_with_diagnostics ?(filename = "<string>") source =
   match Cljml_frontend.implementation ~filename source with

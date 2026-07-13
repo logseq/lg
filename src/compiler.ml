@@ -5,6 +5,7 @@ type diagnostic_severity = Toolchain.diagnostic_severity
 type diagnostic = Toolchain.diagnostic = {
   message : string;
   severity : diagnostic_severity;
+  location : Location.t option;
 }
 
 type compilation = Toolchain.compilation = {
