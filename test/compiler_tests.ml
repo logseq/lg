@@ -4176,6 +4176,147 @@ let test_language_service_rename_returns_exact_symbol_edits () =
       | Error _ -> ()
       | Ok _ -> failwith "expected invalid rename target to be rejected")
 
+let constructor_language_service_source =
+  {|
+(type-variant status Active (Named :string))
+(def named (Named "Ada"))
+(def label
+  (match named
+    (Named value) value
+    Active "active"))
+|}
+
+let analyze_constructor_language_service_source () =
+  Cljml.Language_service.analyze
+    ~filename:"file:///tmp/constructor-service.cljml"
+    constructor_language_service_source
+  |> expect_ok
+
+let test_language_service_constructor_definition_uses_declaration_span () =
+  let analysis = analyze_constructor_language_service_source () in
+  let declaration =
+    expect_substring_index constructor_language_service_source "Named :string"
+  in
+  let usage =
+    expect_substring_index constructor_language_service_source "Named \"Ada\""
+  in
+  match Cljml.Language_service.definition analysis ~offset:usage with
+  | Some location ->
+      if location.Location.loc_start.Lexing.pos_cnum <> declaration then
+        failwith "expected constructor definition at its source declaration"
+  | None -> failwith "expected constructor definition"
+
+let test_language_service_constructor_references_and_rename_use_identity () =
+  let analysis = analyze_constructor_language_service_source () in
+  let usage =
+    expect_substring_index constructor_language_service_source "Named \"Ada\""
+  in
+  let references = Cljml.Language_service.references analysis ~offset:usage in
+  let referenced_text =
+    List.map (span_text constructor_language_service_source) references
+  in
+  if referenced_text <> [ "Named"; "Named"; "Named" ] then
+    failwith
+      ("expected constructor declaration/expression/pattern references, got: "
+      ^ String.concat "," referenced_text);
+  match Cljml.Language_service.rename analysis ~offset:usage ~new_name:"Labelled" with
+  | Error err -> failwith ("expected constructor rename, got: " ^ err.message)
+  | Ok edits ->
+      if List.length edits <> 3 then
+        failwith "expected constructor declaration/expression/pattern edits";
+      List.iter
+        (fun (edit : Cljml.Language_service.text_edit) ->
+          if
+            span_text constructor_language_service_source edit.range <> "Named"
+          then failwith "expected constructor rename to edit exact spans")
+        edits
+
+let test_language_service_completion_includes_constructors () =
+  let analysis = analyze_constructor_language_service_source () in
+  let items =
+    Cljml.Language_service.completions analysis
+      ~offset:(String.length constructor_language_service_source)
+  in
+  match
+    List.find_opt
+      (fun (item : Cljml.Language_service.completion_item) ->
+        item.label = "Named")
+      items
+  with
+  | Some item when string_contains_substring item.detail "string" -> ()
+  | Some item ->
+      failwith ("expected constructor payload type detail, got: " ^ item.detail)
+  | None -> failwith "expected constructor completion"
+
+let test_workspace_constructor_definition_resolves_across_files () =
+  let provider = "(type-variant status Active (Named :string))\n" in
+  let consumer = "(def named (Named \"Ada\"))\n" in
+  let provider_uri = "file:///tmp/status.cljml" in
+  let consumer_uri = "file:///tmp/status-main.cljml" in
+  let analyses =
+    Cljml.Language_service.analyze_workspace
+      [ (consumer_uri, consumer); (provider_uri, provider) ]
+    |> expect_ok
+  in
+  let consumer_analysis = List.assoc consumer_uri analyses in
+  let usage = expect_substring_index consumer "Named" in
+  match Cljml.Language_service.definition consumer_analysis ~offset:usage with
+  | Some location
+    when location.Location.loc_start.Lexing.pos_fname = provider_uri
+         && location.loc_start.pos_cnum = expect_substring_index provider "Named" ->
+      ()
+  | _ -> failwith "expected cross-file constructor definition"
+
+let test_constructor_references_keep_module_identities_distinct () =
+  let source =
+    {|
+(module Left
+  (type-variant t (Named :string)))
+(module Right
+  (type-variant t (Named :string)))
+(def left (Left/Named "L"))
+(def right (Right/Named "R"))
+|}
+  in
+  let analysis =
+    Cljml.Language_service.analyze
+      ~filename:"file:///tmp/constructor-modules.cljml" source
+    |> expect_ok
+  in
+  let usage = expect_substring_index source "Left/Named" in
+  let references = Cljml.Language_service.references analysis ~offset:usage in
+  let referenced_text = List.map (span_text source) references in
+  if referenced_text <> [ "Named"; "Left/Named" ] then
+    failwith
+      ("expected only Left.Named constructor references, got: "
+      ^ String.concat "," referenced_text)
+
+let test_language_service_constructor_capabilities () =
+  let cases =
+    [
+      ( "definition",
+        test_language_service_constructor_definition_uses_declaration_span );
+      ( "references and rename",
+        test_language_service_constructor_references_and_rename_use_identity );
+      ( "completion", test_language_service_completion_includes_constructors );
+      ( "cross-file definition",
+        test_workspace_constructor_definition_resolves_across_files );
+      ( "module identity",
+        test_constructor_references_keep_module_identities_distinct );
+    ]
+  in
+  let failures =
+    List.filter_map
+      (fun (name, test) ->
+        try
+          test ();
+          None
+        with Failure message -> Some (name ^ ": " ^ message))
+      cases
+  in
+  if failures <> [] then
+    failwith ("constructor tooling failures: " ^ String.concat " | " failures)
+
 let test_language_service_document_symbols_preserve_source_names () =
   let analysis = analyze_language_service_source () in
   let symbols = Cljml.Language_service.document_symbols analysis in
@@ -4205,7 +4346,7 @@ let test_language_service_workspace_resolves_cross_file_identity () =
   in
   let main_analysis = List.assoc "file:///tmp/main.cljml" analyses in
   let usage = expect_substring_index main "Math/magnitude-plus-two 40" in
-  if Cljml.Language_service.value_uid_at main_analysis ~offset:usage = None then
+  if Cljml.Language_service.semantic_uid_at main_analysis ~offset:usage = None then
     failwith "expected required workspace symbol to have a typed identity";
   match Cljml.Language_service.definition main_analysis ~offset:usage with
   | Some location
@@ -6614,6 +6755,8 @@ let tests =
       test_language_service_references_use_typed_identity );
     ( "language service rename returns exact symbol edits",
       test_language_service_rename_returns_exact_symbol_edits );
+    ( "language service constructor capabilities",
+      test_language_service_constructor_capabilities );
     ( "language service document symbols preserve source names",
       test_language_service_document_symbols_preserve_source_names );
     ( "language service workspace resolves cross-file identity",

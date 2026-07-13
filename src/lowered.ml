@@ -25,6 +25,7 @@ type signature_item =
 type variant_constructor = {
   constructor_name : string;
   payload_types : Types.ty list;
+  location : Location.t option;
 }
 
 type compiled_item =

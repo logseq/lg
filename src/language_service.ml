@@ -291,24 +291,7 @@ let hover analysis ~offset =
                range;
              })
 
-let definition analysis ~offset =
-  match token_at analysis offset with
-  | None -> None
-  | Some { desc = Symbol source_name; _ } -> (
-      match
-        smallest_expression analysis.compiler.typed_structure offset (fun expression ->
-            match expression.exp_desc with
-            | Typedtree.Texp_ident (path, _, _) ->
-                identifier_name_matches source_name path
-            | _ -> false)
-      with
-      | Some { exp_desc = Typedtree.Texp_ident (_, _, description); _ }
-        when not description.val_loc.Location.loc_ghost ->
-          Some description.val_loc
-      | _ -> None)
-  | Some _ -> None
-
-type value_identity = {
+type semantic_identity = {
   uid : Typedtree.Uid.t;
   definition_location : Location.t;
 }
@@ -363,41 +346,109 @@ let binding_identity_at analysis offset source_name =
   | Some (_, uid, definition_location) -> Some { uid; definition_location }
   | None -> None
 
-let value_identity_at analysis offset =
+let constructor_name_matches source_name constructor_name =
+  Names.sanitize_name (source_symbol_basename source_name)
+  = Names.sanitize_name constructor_name
+
+let constructor_identity_at analysis offset source_name =
+  let best = ref None in
+  let consider location name uid definition_location =
+    if
+      location_contains_offset location offset
+      && constructor_name_matches source_name name
+    then
+      let size = location_size location in
+      match !best with
+      | None -> best := Some (size, uid, definition_location)
+      | Some (current_size, _, _) when size < current_size ->
+          best := Some (size, uid, definition_location)
+      | Some _ -> ()
+  in
+  let base = Tast_iterator.default_iterator in
+  let visit_pattern : type kind.
+      Tast_iterator.iterator -> kind Typedtree.general_pattern -> unit =
+   fun self pattern ->
+    (match pattern.pat_desc with
+    | Typedtree.Tpat_construct (_, description, _, _) ->
+        consider pattern.pat_loc description.cstr_name description.cstr_uid
+          description.cstr_loc
+    | _ -> ());
+    base.pat self pattern
+  in
+  let iterator =
+    { base with
+      expr =
+        (fun self expression ->
+          (match expression.Typedtree.exp_desc with
+          | Texp_construct (_, description, _) ->
+              consider expression.exp_loc description.cstr_name
+                description.cstr_uid description.cstr_loc
+          | _ -> ());
+          base.expr self expression);
+      pat = visit_pattern;
+      type_declaration =
+        (fun self declaration ->
+          (match declaration.Typedtree.typ_kind with
+          | Ttype_variant constructors ->
+              List.iter
+                (fun (constructor : Typedtree.constructor_declaration) ->
+                  consider constructor.cd_loc constructor.cd_name.txt
+                    constructor.cd_uid constructor.cd_loc)
+                constructors
+          | _ -> ());
+          base.type_declaration self declaration);
+    }
+  in
+  iterator.structure iterator analysis.compiler.typed_structure;
+  match !best with
+  | Some (_, uid, definition_location) -> Some { uid; definition_location }
+  | None -> None
+
+let semantic_identity_at analysis offset =
   match token_at analysis offset with
   | Some { desc = Symbol source_name; _ } -> (
       match identifier_identity_at analysis offset source_name with
       | Some _ as identity -> identity
-      | None -> binding_identity_at analysis offset source_name)
+      | None -> (
+          match binding_identity_at analysis offset source_name with
+          | Some _ as identity -> identity
+          | None -> constructor_identity_at analysis offset source_name))
   | _ -> None
+
+let definition analysis ~offset =
+  match semantic_identity_at analysis offset with
+  | Some identity
+    when not identity.definition_location.Location.loc_ghost ->
+      Some identity.definition_location
+  | Some _ | None -> None
 
 let compare_span (left : Ast.source_span) (right : Ast.source_span) =
   Int.compare left.start_offset right.start_offset
 
 let references analysis ~offset =
-  match value_identity_at analysis offset with
+  match semantic_identity_at analysis offset with
   | None -> []
   | Some target ->
       analysis.tokens
       |> List.filter_map (fun (token : Ast.token) ->
              match token.desc with
              | Symbol _ -> (
-                 match value_identity_at analysis token.span.start_offset with
+                 match semantic_identity_at analysis token.span.start_offset with
                  | Some identity when Typedtree.Uid.equal identity.uid target.uid ->
                      Some token.span
                  | _ -> None)
              | _ -> None)
       |> List.sort_uniq compare_span
 
-let value_uid_at analysis ~offset =
-  value_identity_at analysis offset |> Option.map (fun identity -> identity.uid)
+let semantic_uid_at analysis ~offset =
+  semantic_identity_at analysis offset |> Option.map (fun identity -> identity.uid)
 
 let references_to_uid analysis uid =
   analysis.tokens
   |> List.filter_map (fun (token : Ast.token) ->
          match token.desc with
          | Symbol _ -> (
-             match value_identity_at analysis token.span.start_offset with
+             match semantic_identity_at analysis token.span.start_offset with
              | Some identity when Typedtree.Uid.equal identity.uid uid ->
                  Some token.span
              | _ -> None)
@@ -418,7 +469,7 @@ let rename analysis ~offset ~new_name =
     | ranges -> Ok (List.map (fun range -> { range; new_text = new_name }) ranges)
 
 let prepare_rename analysis ~offset =
-  match (symbol_span_at analysis offset, value_identity_at analysis offset) with
+  match (symbol_span_at analysis offset, semantic_identity_at analysis offset) with
   | Some range, Some _ -> Some range
   | _ -> None
 
@@ -474,16 +525,32 @@ let completions analysis ~offset =
   let source_label name =
     source_names |> List.assoc_opt name |> Option.value ~default:name
   in
-  Env.fold_values
-    (fun name _path description items ->
-      if String.starts_with ~prefix:"__" name then items
-      else
-        {
-          label = source_label name;
-          detail = print_type env description.val_type;
-        }
-        :: items)
-    None env []
+  let values =
+    Env.fold_values
+      (fun name _path description items ->
+        if String.starts_with ~prefix:"__" name then items
+        else
+          {
+            label = source_label name;
+            detail = print_type env description.val_type;
+          }
+          :: items)
+      None env []
+  in
+  Env.fold_constructors
+    (fun description items ->
+      let constructor_types =
+        description.Data_types.cstr_args @ [ description.cstr_res ]
+      in
+      {
+        label = source_label description.cstr_name;
+        detail =
+          constructor_types
+          |> List.map (print_type env)
+          |> String.concat " -> ";
+      }
+      :: items)
+    None env values
   |> List.sort_uniq (fun left right -> String.compare left.label right.label)
 
 module String_map = Map.Make (String)

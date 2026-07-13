@@ -115,9 +115,12 @@ let type_variant_definition type_name parameters constructors =
   let constructor_declarations =
     constructors
     |> List.map (fun constructor ->
-           Ast_helper.Type.constructor ~loc
+           let constructor_loc =
+             Option.value constructor.location ~default:loc
+           in
+           Ast_helper.Type.constructor ~loc:constructor_loc
              ~args:(Pcstr_tuple (List.map core_type constructor.payload_types))
-             (str constructor.constructor_name))
+             (Location.mkloc constructor.constructor_name constructor_loc))
   in
   let type_declaration =
     Ast_helper.Type.mk ~loc ~params:(type_parameters parameters)

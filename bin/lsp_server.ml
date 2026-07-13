@@ -368,7 +368,7 @@ let references_result uri document offset =
   match document.analysis with
   | Error _ -> `List []
   | Ok analysis -> (
-      match Cljml.Language_service.value_uid_at analysis ~offset with
+      match Cljml.Language_service.semantic_uid_at analysis ~offset with
       | None -> `List []
       | Some uid ->
           Hashtbl.fold
@@ -415,7 +415,7 @@ let rename_result uri document offset new_name =
   match document.analysis with
   | Error _ -> `Null
   | Ok analysis -> (
-      match Cljml.Language_service.value_uid_at analysis ~offset with
+      match Cljml.Language_service.semantic_uid_at analysis ~offset with
       | None -> `Null
       | Some uid ->
           if not (Cljml.Language_service.valid_rename_name new_name) then `Null

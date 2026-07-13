@@ -86,7 +86,8 @@ let record_type_public_binding module_path name env =
 
 let compile_type_variant scope env next_type name type_parameters constructor_forms =
   let constructor_name = function
-    | FSymbol constructor -> Ok constructor
+    | (FSymbol constructor as form) ->
+        Ok (constructor, Source_context.find form)
     | _ -> Error.error "type-variant constructors must be symbols"
   in
   let payload_type = function
@@ -98,12 +99,16 @@ let compile_type_variant scope env next_type name type_parameters constructor_fo
     | _ -> Error.error "type-variant payload types must be keywords"
   in
   let constructor_spec = function
-    | FSymbol constructor ->
-        Ok { constructor_name = constructor; payload_types = [] }
+    | (FSymbol constructor as form) ->
+        Ok
+          { constructor_name = constructor;
+            payload_types = [];
+            location = Source_context.find form;
+          }
     | FList (constructor_form :: payload_forms) -> (
         match constructor_name constructor_form with
         | Error _ as err -> err
-        | Ok constructor_name ->
+        | Ok (constructor_name, location) ->
             let rec parse_payloads acc = function
               | [] -> Ok (List.rev acc)
               | payload_form :: rest -> (
@@ -112,7 +117,8 @@ let compile_type_variant scope env next_type name type_parameters constructor_fo
                   | Ok payload_ty -> parse_payloads (payload_ty :: acc) rest)
             in
             parse_payloads [] payload_forms
-            |> Result.map (fun payload_types -> { constructor_name; payload_types }))
+            |> Result.map (fun payload_types ->
+                   { constructor_name; payload_types; location }))
     | _ -> Error.error "type-variant constructors must be symbols"
   in
   let rec parse constructors = function
