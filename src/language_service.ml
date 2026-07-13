@@ -27,6 +27,12 @@ type semantic_token = {
   kind : semantic_token_kind;
 }
 
+type signature_help = {
+  label : string;
+  parameters : string list;
+  active_parameter : int;
+}
+
 type text_edit = {
   range : Ast.source_span;
   new_text : string;
@@ -1131,6 +1137,64 @@ let hover analysis ~offset =
       | None -> expression_hover analysis ~offset)
   | _ -> expression_hover analysis ~offset
 
+let signature_call_at analysis offset =
+  let contains (span : Ast.source_span) =
+    span.start_offset <= offset && offset <= span.end_offset
+  in
+  let rec collect candidates (located : Ast.located_form) =
+    let candidates = List.fold_left collect candidates located.children in
+    match located.children with
+    | ({ form = FSymbol _; _ } as head) :: arguments
+      when contains located.span && head.span.end_offset <= offset ->
+        (located.span, head, arguments) :: candidates
+    | _ -> candidates
+  in
+  analysis.forms |> List.fold_left collect []
+  |> List.sort (fun ((left : Ast.source_span), _, _)
+                      ((right : Ast.source_span), _, _) ->
+         Int.compare
+           (left.end_offset - left.start_offset)
+           (right.end_offset - right.start_offset))
+  |> List.find_map (fun (_, (head : Ast.located_form), arguments) ->
+         match
+           smallest_expression analysis.compiler.typed_structure
+             head.span.start_offset (fun expression ->
+               match expression.Typedtree.exp_desc with
+               | Texp_ident _ -> true
+               | _ -> false)
+         with
+         | Some expression ->
+             let parameters, return_type =
+               Cljml_compiler_support.Ocaml_type.arrow_parts expression.exp_type
+             in
+             if parameters = [] then None
+             else Some (head, arguments, expression.exp_env, parameters, return_type)
+         | None -> None)
+
+let signature_help analysis ~offset =
+  Option.map
+    (fun ((head : Ast.located_form), arguments, env, parameters, return_type) ->
+      let function_name =
+        String.sub analysis.source head.span.start_offset
+          (head.span.end_offset - head.span.start_offset)
+      in
+      let parameter_types = List.map (print_type env) parameters in
+      let return_type = print_type env return_type in
+      let function_type =
+        String.concat " -> " (parameter_types @ [ return_type ])
+      in
+      let completed_arguments =
+        List.fold_left
+          (fun count (argument : Ast.located_form) ->
+            if argument.span.end_offset < offset then count + 1 else count)
+          0 arguments
+      in
+      { label = function_name ^ " : " ^ function_type;
+        parameters = parameter_types;
+        active_parameter =
+          min completed_arguments (max 0 (List.length parameters - 1)) })
+    (signature_call_at analysis offset)
+
 let references_to_key analysis key =
   analysis.tokens
   |> List.concat_map (semantic_occurrences_for_token analysis)
@@ -1433,7 +1497,7 @@ let type_completion_detail = function
   | Record -> "record type"
   | Variant -> "variant type"
 
-let completions analysis ~offset =
+let completions analysis ~offset : completion_item list =
   let env =
     match
       smallest_expression analysis.compiler.typed_structure offset (fun _ -> true)
@@ -1549,7 +1613,8 @@ let completions analysis ~offset =
              :: items)
            declaration.methods items)
        module_types
-  |> List.sort_uniq (fun left right -> String.compare left.label right.label)
+  |> List.sort_uniq (fun (left : completion_item) (right : completion_item) ->
+         String.compare left.label right.label)
 
 module String_map = Map.Make (String)
 module String_set = Set.Make (String)

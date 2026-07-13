@@ -139,6 +139,7 @@ send_lsp_message() {
   send_lsp_message "{\"jsonrpc\":\"2.0\",\"id\":18,\"method\":\"textDocument/definition\",\"params\":{\"textDocument\":{\"uri\":\"file://$watched_consumer\"},\"position\":{\"line\":0,\"character\":13}}}"
   send_lsp_message "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didChange\",\"params\":{\"textDocument\":{\"uri\":\"file://$math_source\",\"version\":2},\"contentChanges\":[{\"text\":\"(module Math (def value 1))\\n\"}]}}"
   send_lsp_message '{"jsonrpc":"2.0","id":19,"method":"textDocument/semanticTokens/full","params":{"textDocument":{"uri":"file:///tmp/service.cljml"}}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":20,"method":"textDocument/signatureHelp","params":{"textDocument":{"uri":"file:///tmp/service.cljml"},"position":{"line":2,"character":27}}}'
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didClose","params":{"textDocument":{"uri":"file:///tmp/editor.cljml"}}}'
   send_lsp_message '{"jsonrpc":"2.0","id":2,"method":"shutdown","params":null}'
   send_lsp_message '{"jsonrpc":"2.0","method":"exit","params":null}'
@@ -155,6 +156,7 @@ grep -q '"renameProvider"' "$lsp_output"
 grep -q '"documentSymbolProvider":true' "$lsp_output"
 grep -q '"workspaceSymbolProvider":true' "$lsp_output"
 grep -q '"semanticTokensProvider"' "$lsp_output"
+grep -q '"signatureHelpProvider"' "$lsp_output"
 grep -q '"method":"textDocument/publishDiagnostics"' "$lsp_output"
 grep -q '"severity":1' "$lsp_output"
 grep -q '"severity":2' "$lsp_output"
@@ -182,6 +184,7 @@ grep -q '"id":16,"result":\[{"name":"magnitude-plus-two"' "$lsp_output"
 grep -q "\"id\":17,\"result\":{\"uri\":\"file://$watched_provider\"" "$lsp_output"
 grep -q '"id":18,"result":null' "$lsp_output"
 grep -q '"id":19,"result":{"data":\[[0-9]' "$lsp_output"
+grep -q '"id":20,"result":{"signatures":\[{"label":"add-one : int -> int"' "$lsp_output"
 grep -Fq "\"uri\":\"file://$watched_consumer\",\"diagnostics\":[{\"range\"" "$lsp_output"
 grep -q 'int -> int' "$lsp_output"
 grep -q '"label":"add-one"' "$lsp_output"

@@ -319,7 +319,11 @@ let initialize_result =
                         ("tokenModifiers", `List []) ] );
                   ("full", `Bool true) ] );
             ( "completionProvider",
-              `Assoc [ ("triggerCharacters", `List []) ] ) ] );
+              `Assoc [ ("triggerCharacters", `List []) ] );
+            ( "signatureHelpProvider",
+              `Assoc
+                [ ( "triggerCharacters",
+                    `List [ `String " "; `String "(" ] ) ] ) ] );
       ( "serverInfo",
         `Assoc
           [ ("name", `String "cljml"); ("version", `String "0.1") ] ) ]
@@ -375,6 +379,27 @@ let hover_result document offset =
               ( "range",
                 range_of_offsets document.text hover.range.start_offset
                   hover.range.end_offset ) ])
+
+let signature_help_result document offset =
+  match document.analysis with
+  | Error _ -> `Null
+  | Ok analysis -> (
+      match Cljml.Language_service.signature_help analysis ~offset with
+      | None -> `Null
+      | Some signature ->
+          `Assoc
+            [ ( "signatures",
+                `List
+                  [ `Assoc
+                      [ ("label", `String signature.label);
+                        ( "parameters",
+                          `List
+                            (List.map
+                               (fun label ->
+                                 `Assoc [ ("label", `String label) ])
+                               signature.parameters) ) ] ] );
+              ("activeSignature", `Int 0);
+              ("activeParameter", `Int signature.active_parameter) ])
 
 let definition_result uri document offset =
   match document.analysis with
@@ -715,7 +740,8 @@ let rec loop shutdown_requested =
           loop true
       | Some ("textDocument/hover" as method_), (`Int _ | `String _)
       | Some ("textDocument/definition" as method_), (`Int _ | `String _)
-      | Some ("textDocument/completion" as method_), (`Int _ | `String _) ->
+      | Some ("textDocument/completion" as method_), (`Int _ | `String _)
+      | Some ("textDocument/signatureHelp" as method_), (`Int _ | `String _) ->
           let uri = document_uri params in
           let result =
             match find_document uri with
@@ -728,6 +754,8 @@ let rec loop shutdown_requested =
                     definition_result uri document offset
                 | "textDocument/completion" ->
                     completion_result document offset
+                | "textDocument/signatureHelp" ->
+                    signature_help_result document offset
                 | _ -> assert false)
           in
           response id result;

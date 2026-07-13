@@ -4134,6 +4134,41 @@ let test_language_service_queries_outside_symbols_are_empty () =
   if Cljml.Language_service.definition analysis ~offset:0 <> None then
     failwith "expected no definition outside a symbol"
 
+let test_language_service_signature_help_uses_typed_call_site () =
+  let source =
+    {|
+(defn combine [left right] (+ left right))
+(def total (combine 1 2))
+(def nested (combine 1 (combine 2 3)))
+|}
+  in
+  let analysis =
+    Cljml.Language_service.analyze ~filename:"file:///tmp/signature-help.cljml"
+      source
+    |> expect_ok
+  in
+  let assert_signature offset active_parameter =
+    match Cljml.Language_service.signature_help analysis ~offset with
+    | Some signature
+      when signature.label = "combine : int -> int -> int"
+           && signature.parameters = [ "int"; "int" ]
+           && signature.active_parameter = active_parameter ->
+        ()
+    | Some signature ->
+        failwith
+          (Printf.sprintf "unexpected signature help %s at parameter %d"
+             signature.label signature.active_parameter)
+    | None -> failwith "expected signature help"
+  in
+  assert_signature
+    (expect_substring_index source "combine 1 2" + String.length "combine 1 ")
+    1;
+  assert_signature
+    (expect_substring_index source "combine 2 3" + String.length "combine 2 ")
+    1;
+  if Cljml.Language_service.signature_help analysis ~offset:0 <> None then
+    failwith "signature help outside a call must be empty"
+
 let span_text source (span : Cljml.Ast.source_span) =
   String.sub source span.start_offset (span.end_offset - span.start_offset)
 
@@ -7736,6 +7771,8 @@ let tests =
       test_language_service_completion_uses_source_names_and_types );
     ( "language service queries outside symbols are empty",
       test_language_service_queries_outside_symbols_are_empty );
+    ( "language service signature help uses typed call sites",
+      test_language_service_signature_help_uses_typed_call_site );
     ( "language service references use typed identity",
       test_language_service_references_use_typed_identity );
     ( "language service rename returns exact symbol edits",

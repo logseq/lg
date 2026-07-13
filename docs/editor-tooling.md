@@ -28,6 +28,7 @@ The same cached OCaml Typedtree analysis powers:
 - `textDocument/hover`, with OCaml-inferred types;
 - `textDocument/definition`, including compiler-resolved value definitions;
 - `textDocument/completion`, with cljml source labels and OCaml type details;
+- `textDocument/signatureHelp`, with OCaml-inferred parameter and return types;
 - `textDocument/references` and `textDocument/documentHighlight`, using OCaml
   symbol identities so shadowed bindings remain distinct;
 - `textDocument/prepareRename` and `textDocument/rename`, with exact source
@@ -79,5 +80,5 @@ The core Reason editor baseline—types, formatting, diagnostics, completion, an
 jump-to-definition—is present. The server indexes `.cljml` files below the
 workspace root, orders explicit module dependencies from compiler state, isolates
 invalid files, and provides cross-file definitions, references, rename, and
-workspace symbols and semantic tokens. Signature help, code actions, and
+workspace symbols, semantic tokens, and signature help. Code actions and
 recoverable parsing remain future ocaml-lsp-parity capabilities.
