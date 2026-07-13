@@ -656,8 +656,12 @@ let create ~compile_expr =
             match Ocaml_signature.value_signature function_name with
             | Error _ as err -> err
             | Ok signature -> (
-                let labels = List.map fst arguments in
-                match Ocaml_signature.result_after_application signature labels with
+                let argument_types =
+                  List.map (fun (label, argument) -> (label, argument.ty)) arguments
+                in
+                match
+                  Ocaml_signature.result_after_application signature argument_types
+                with
                 | Error _ as err -> err
                 | Ok return_ty ->
                     Ok (typed_ir return_ty (ocaml_apply function_name arguments)))

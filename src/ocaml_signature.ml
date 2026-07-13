@@ -60,7 +60,7 @@ type constructor_signature = {
 let rec of_compiler_type =
   let open Cljml_compiler_support.Ocaml_value in
   function
-  | Variable -> TUnknown
+  | Variable id -> TVar ("ocaml_" ^ string_of_int id)
   | Arrow (Unlabelled, argument, result) ->
       let arguments, result = function_parts result in
       TFn (of_compiler_type argument :: arguments, result)
@@ -123,7 +123,8 @@ let parameter_label_name = function
   | Positional -> None
   | Labelled name | Optional name -> Some name
 
-let result_after_application signature argument_labels =
+let result_after_application signature arguments =
+  let argument_labels = List.map fst arguments in
   let named_labels = List.filter_map Fun.id argument_labels in
   let rec reject_duplicate seen = function
     | [] -> Ok ()
@@ -143,6 +144,16 @@ let result_after_application signature argument_labels =
       match List.find_opt (fun label -> not (known_label label)) named_labels with
       | Some label -> Error.error ("unknown OCaml argument label :" ^ label)
       | None ->
+          let consumed_named =
+            arguments
+            |> List.filter_map (function
+                 | None, _ -> None
+                 | Some label, actual_ty ->
+                     signature.parameters
+                     |> List.find_opt (fun parameter ->
+                            parameter_label_name parameter.label = Some label)
+                     |> Option.map (fun parameter -> (parameter.ty, actual_ty)))
+          in
           let remaining =
             List.filter
               (fun parameter ->
@@ -151,24 +162,35 @@ let result_after_application signature argument_labels =
                 | None -> true)
               signature.parameters
           in
-          let rec consume_positionals remaining = function
-            | [] -> Ok remaining
-            | Some _ :: rest -> consume_positionals remaining rest
-            | None :: rest ->
+          let rec consume_positionals consumed remaining = function
+            | [] -> Ok (consumed, remaining)
+            | (Some _, _) :: rest -> consume_positionals consumed remaining rest
+            | (None, actual_ty) :: rest ->
                 let rec consume prefix = function
                   | [] -> Error.error "too many positional OCaml arguments"
                   | { label = Optional _; _ } :: parameters -> consume prefix parameters
                   | ({ label = Labelled _; _ } as parameter) :: parameters ->
                       consume (parameter :: prefix) parameters
-                  | { label = Positional; _ } :: parameters ->
-                      consume_positionals (List.rev_append prefix parameters) rest
+                  | { label = Positional; ty } :: parameters ->
+                      consume_positionals ((ty, actual_ty) :: consumed)
+                        (List.rev_append prefix parameters) rest
                 in
                 consume [] remaining
           in
-          match consume_positionals remaining argument_labels with
+          match consume_positionals consumed_named remaining arguments with
           | Error _ as err -> err
-          | Ok [] -> Ok signature.return_type
-          | Ok parameters ->
-              if List.for_all (fun parameter -> parameter.label = Positional) parameters then
-                Ok (TFn (List.map (fun parameter -> parameter.ty) parameters, signature.return_type))
-              else Ok (TOcaml "labelled_function"))
+          | Ok (consumed, parameters) ->
+              let result_ty =
+                match parameters with
+                | [] -> signature.return_type
+                | parameters
+                  when List.for_all
+                         (fun parameter -> parameter.label = Positional)
+                         parameters ->
+                    TFn
+                      ( List.map (fun parameter -> parameter.ty) parameters,
+                        signature.return_type )
+                | _ -> TOcaml "labelled_function"
+              in
+              let templates, actuals = List.split consumed in
+              Ok (Types.instantiate_type ~templates ~actuals result_ty))

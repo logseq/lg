@@ -4,7 +4,7 @@ type argument_label =
   | Optional of string
 
 type value_type =
-  | Variable
+  | Variable of int
   | Arrow of argument_label * value_type * value_type
   | Tuple of value_type list
   | Constructor of string * value_type list
@@ -29,8 +29,10 @@ let argument_label = function
   | Optional name -> Optional name
 
 let rec normalize type_expr =
+  let type_expr = Btype.proxy type_expr in
+  let id = Types.get_id type_expr in
   match (Types.Transient_expr.repr type_expr).desc with
-  | Tvar _ | Tunivar _ -> Variable
+  | Tvar _ | Tunivar _ -> Variable id
   | Tarrow (label, argument, result, _) ->
       Arrow (argument_label label, normalize argument, normalize result)
   | Ttuple elements -> Tuple (List.map (fun (_, ty) -> normalize ty) elements)

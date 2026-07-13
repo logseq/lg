@@ -1444,6 +1444,18 @@ let test_inferred_ocaml_calls_use_compiler_signatures () =
   assert_ocaml_runs "inferred_ocaml_calls_use_compiler_signatures"
     "ADA:42\n" ocaml_source
 
+let test_inferred_ocaml_calls_preserve_type_variable_identity () =
+  let source =
+    {|
+(def values
+  (List/init 3 (fn [index] (+ 1.0 (Float/of-int index)))))
+(println (List/length values))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "inferred_ocaml_calls_preserve_type_variable_identity"
+    "3\n" ocaml_source
+
 let test_inferred_ocaml_calls_resolve_aliases_and_refers () =
   let source =
     {|
@@ -7604,6 +7616,8 @@ let tests =
       test_parsetree_expressions_preserve_nested_source_locations );
     ( "inferred OCaml calls use compiler signatures",
       test_inferred_ocaml_calls_use_compiler_signatures );
+    ( "inferred OCaml calls preserve type variable identity",
+      test_inferred_ocaml_calls_preserve_type_variable_identity );
     ( "inferred OCaml calls resolve aliases and refers",
       test_inferred_ocaml_calls_resolve_aliases_and_refers );
     ( "inferred OCaml calls reject incompatible arguments",
