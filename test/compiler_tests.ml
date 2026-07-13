@@ -1983,6 +1983,72 @@ let test_ocaml_type_application_annotations_reject_bad_forms () =
     {|(defn bad [^:ocaml/result<int> value] value)|}
   |> expect_error "invalid OCaml type annotation ^:ocaml/result<int>"
 
+let test_concise_host_type_annotations_compile () =
+  let source =
+    {|
+(defn option-score [^:option<int> value]
+  (match value (Some x) (+ x 1) None 0))
+(defn result-label [^:result<string;string> value]
+  (match value (Ok x) x (Error x) x))
+(defn tuple-label [^:tuple<int;string> value]
+  (match value (tuple id name) (str name ":" id)))
+(println
+  (str (option-score (Some 41)) ":"
+       (result-label (Ok "Ada")) ":"
+       (tuple-label (tuple 7 "Grace"))))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "concise_host_type_annotations_compile"
+    "42:Ada:Grace:7\n" ocaml_source
+
+let test_threading_and_option_binding_forms_compile () =
+  let source =
+    {|
+(defn option-score [^:ocaml/option<int> value]
+  (if-let [x value] (+ x 1) 0))
+(def threaded (-> 41 (+ 1) str))
+(def threaded-last (->> 41 (str "value=")))
+(def combined
+  (let-some [left (Some 2) right (Some 3)]
+    (+ left right)
+    0))
+(def missing
+  (let-some [left None right (Some 3)]
+    (+ left right)
+    9))
+(def observed (ocaml-ref 0))
+(when-let [value (Some 7)]
+  (ocaml-reset! observed value))
+(println
+  (str (option-score (Some 41)) ":" (option-score None) ":"
+       threaded ":" threaded-last ":" combined ":" missing ":"
+       (ocaml-deref observed)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "threading_and_option_binding_forms_compile"
+    "42:0:42:value=41:5:9:7\n" ocaml_source;
+  Cljml.Compiler.compile_string {|(def bad (if-let [x] x 0))|}
+  |> expect_error "if-let requires [name option], then, and else";
+  Cljml.Compiler.compile_string {|(def bad (-> 1 2))|}
+  |> expect_error "threading steps must be symbols or call forms";
+  Cljml.Compiler.compile_string
+    {|(def bad (let-some [x (Some 1) y] x 0))|}
+  |> expect_error "let-some bindings require name/option pairs"
+
+let test_combined_host_package_import_compiles () =
+  let source =
+    {|
+(require [ocaml.core/Core.Int :as int])
+(println (int/abs -42))
+|}
+  in
+  let packages = Cljml.Compiler.required_ocaml_packages source |> expect_ok in
+  if packages <> [ "core" ] then
+    failwith "combined host import should report its findlib package";
+  Cljml.Compiler.compile_string source |> expect_ok |> ignore
+
 let test_ocaml_tuple_values_compile_through_source_backend () =
   let source =
     {|
@@ -7605,6 +7671,12 @@ let tests =
       test_ocaml_type_application_annotations_delegate_argument_mismatch_to_ocaml );
     ( "OCaml type application annotations reject bad forms",
       test_ocaml_type_application_annotations_reject_bad_forms );
+    ( "syntax ergonomics: concise host type annotations compile",
+      test_concise_host_type_annotations_compile );
+    ( "syntax ergonomics: threading and option binding forms compile",
+      test_threading_and_option_binding_forms_compile );
+    ( "syntax ergonomics: combined host package import compiles",
+      test_combined_host_package_import_compiles );
     ( "OCaml tuple values compile through source backend",
       test_ocaml_tuple_values_compile_through_source_backend );
     ( "OCaml tuple values delegate argument mismatch to OCaml",

@@ -55,6 +55,10 @@ decide compatibility.
 
 Function parameter types are inferred from body constraints where possible; annotations such as `^:int`, `^:string`, `^:keyword`, and `^:unit` are optional explicit hints for cljml core types. `:unit` is also valid as an explicit `ocaml-call` return type for side-effecting host calls. Opaque host-owned annotations such as `^:ocaml/int` lower to OCaml parameter constraints and are delegated to the OCaml typechecker instead of being interpreted as full cljml types. Host-owned type applications use angle brackets, for example `^:ocaml/option<int>`, `^:ocaml/result<string;string>`, and `^:ocaml/tuple<int;string>`; `;` separates multiple type arguments because commas are reader whitespace.
 
+The built-in host applications also have concise spellings:
+`^:option<int>`, `^:result<string;string>`, and `^:tuple<int;string>`.
+The `^:ocaml/...` forms remain compatibility escape hatches.
+
 Type aliases such as `(type-alias user-id :ocaml/int)` emit OCaml aliases in
 both source and Parsetree backends. The alias is OCaml-owned metadata; cljml can
 lower references such as `^:ocaml/user_id` but does not implement alias
@@ -171,6 +175,11 @@ argument compatibility is delegated to the OCaml typechecker.
 because cljml does not add implicit nil results. OCaml-owned branch result
 compatibility is delegated to the OCaml typechecker.
 
+`if-let` and `when-let` bind the payload of an OCaml option. `let-some` accepts
+multiple sequential name/option pairs and evaluates one fallback when any
+binding is `None`. `->` and `->>` provide first- and last-argument threading
+without requiring a general macro system.
+
 `match` is a compiler-recognized static pattern form rather than a macro. The
 current subset supports scalar literal patterns, `_`, symbol binders, and
 fixed-length list/vector patterns written with vector pattern syntax. Record
@@ -235,6 +244,10 @@ Qualified source references consistently use `/`, including module values,
 functions, constructors, and constructor patterns. Value and function member
 names use cljml kebab-case and lower to OCaml snake_case; constructors preserve
 their OCaml capitalization.
+Package and module imports can be combined as
+`[ocaml.core/Core.Int :as int]`; this adds findlib package `core` and aliases
+module `Core.Int` in one entry. Separate `ocaml.package/...` entries remain
+compatible.
 Incremental compilation preserves modules, aliases, types, protocols, the type
 counter, and value bindings across source chunks.
 

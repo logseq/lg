@@ -43,6 +43,20 @@ and compile_expr_unlocated scope (env : Env.t) = function
       Error.error "recur is only valid in a loop tail position"
   | FList (FSymbol "let" :: bindings :: body_forms) ->
       compile_let scope env bindings body_forms
+  | FList (FSymbol "->" :: value :: steps) ->
+      compile_thread scope env `First value steps
+  | FList (FSymbol "->>" :: value :: steps) ->
+      compile_thread scope env `Last value steps
+  | FList (FSymbol "if-let" :: binding :: then_form :: else_form :: []) ->
+      compile_if_let scope env binding then_form else_form
+  | FList (FSymbol "if-let" :: _) ->
+      Error.error "if-let requires [name option], then, and else"
+  | FList (FSymbol "when-let" :: binding :: body_forms) ->
+      compile_when_let scope env binding body_forms
+  | FList (FSymbol "let-some" :: bindings :: then_form :: else_form :: []) ->
+      compile_let_some scope env bindings then_form else_form
+  | FList (FSymbol "let-some" :: _) ->
+      Error.error "let-some requires bindings, then, and else"
   | FList (FSymbol "fn" :: params :: body_forms) ->
       compile_fn scope env params body_forms
   | FList (FSymbol "do" :: body_forms) ->
@@ -67,6 +81,21 @@ and compile_expr_unlocated scope (env : Env.t) = function
 and compile_vector scope env forms =
   (Lazy.force context).special_forms.compile_vector scope env forms
 
+and compile_thread scope env position value steps =
+  let rec expand value = function
+    | [] -> compile_expr scope env value
+    | FSymbol name :: rest -> expand (FList [ FSymbol name; value ]) rest
+    | FList (FSymbol name :: args) :: rest ->
+        let args =
+          match position with
+          | `First -> value :: args
+          | `Last -> args @ [ value ]
+        in
+        expand (FList (FSymbol name :: args)) rest
+    | _ -> Error.error "threading steps must be symbols or call forms"
+  in
+  expand value steps
+
 and compile_map scope env pairs =
   (Lazy.force context).special_forms.compile_map scope env pairs
 
@@ -75,6 +104,17 @@ and compile_if scope env condition then_form else_form =
 
 and compile_if_not scope env condition then_form else_form =
   (Lazy.force context).special_forms.compile_if_not scope env condition then_form else_form
+
+and compile_if_let scope env binding then_form else_form =
+  (Lazy.force context).special_forms.compile_if_let scope env binding then_form
+    else_form
+
+and compile_when_let scope env binding body_forms =
+  (Lazy.force context).special_forms.compile_when_let scope env binding body_forms
+
+and compile_let_some scope env bindings then_form else_form =
+  (Lazy.force context).special_forms.compile_let_some scope env bindings then_form
+    else_form
 
 and compile_when scope env condition body_forms =
   (Lazy.force context).special_forms.compile_when scope env condition body_forms

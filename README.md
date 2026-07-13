@@ -299,8 +299,10 @@ The compiler infers record-like map shapes automatically:
   OCaml function and call it directly as `(uppercase_ascii "ada")` without
   adding it to cljml's typed core table. These OCaml value refers are also
   available inside module and functor bodies.
-- `(require [ocaml.package/core] [ocaml.Core.Int :as int])` separates the
-  findlib package dependency from the OCaml module alias. Package metadata adds
+- `(require [ocaml.core/Core.Int :as int])` combines the findlib package
+  dependency and OCaml module alias. The separate
+  `[ocaml.package/core] [ocaml.Core.Int :as int]` form remains compatible.
+  Package metadata adds
   recursive `.cmi` directories before elaboration, so calls such as
   `(int/abs -42)` infer their signature. CLI `--run` passes the same
   package list to `ocamlfind ocamlopt -linkpkg` for native linking.
@@ -317,9 +319,8 @@ The compiler infers record-like map shapes automatically:
 - OCaml-native scalar and mutable values stay explicit: float and character
   literals use `1.5` and `\a`; `(ocaml-array ...)`, `(ocaml-array-of :int)`,
   `ocaml-array-get`, and `ocaml-array-set!` lower to OCaml arrays; `ocaml-ref`,
-  `ocaml-deref`, and `ocaml-reset!` lower to OCaml references. cljml arithmetic
-  such as `+` remains integer-only; use direct calls such as `Float.add` for
-  float operations.
+  `ocaml-deref`, and `ocaml-reset!` lower to OCaml references. Core arithmetic
+  operators select integer or float OCaml operators from static operand types.
 - OCaml labelled and optional arguments use keyword/value pairs, for example
   `(String.starts_with "ada" :prefix "ad")` and
   `(String.edit_distance "abc" "adc" :limit 2)`. Labels are read

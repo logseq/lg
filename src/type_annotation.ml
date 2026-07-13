@@ -100,6 +100,11 @@ let of_keyword = function
       in
       if name = "" then Error.error ("unknown vector element type " ^ keyword)
       else parse_ocaml_type name
+  | keyword
+    when String.starts_with ~prefix:":option<" keyword
+         || String.starts_with ~prefix:":result<" keyword
+         || String.starts_with ~prefix:":tuple<" keyword ->
+      String.sub keyword 1 (String.length keyword - 1) |> parse_ocaml_type
   | keyword -> Error.error ("unknown vector element type " ^ keyword)
 
 let rec resolve_type_parameters parameters = function
@@ -145,7 +150,11 @@ let of_param_annotation annotation =
   if String.starts_with ~prefix:"^:" annotation then
     match of_keyword (String.sub annotation 1 (String.length annotation - 1)) with
     | Ok ty -> Ok ty
-    | Error _ when String.starts_with ~prefix:"^:ocaml/" annotation ->
+    | Error _
+      when String.starts_with ~prefix:"^:ocaml/" annotation
+           || String.starts_with ~prefix:"^:option<" annotation
+           || String.starts_with ~prefix:"^:result<" annotation
+           || String.starts_with ~prefix:"^:tuple<" annotation ->
         Error.error ("invalid OCaml type annotation " ^ annotation)
     | Error _ -> Error.error ("unknown parameter type " ^ annotation)
   else Error.error "function parameters must be symbols"

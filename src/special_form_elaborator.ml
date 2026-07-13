@@ -14,6 +14,12 @@ type t = {
     string -> Env.t -> Ast.form -> Ast.form -> Ast.form -> expression_result;
   compile_if_not :
     string -> Env.t -> Ast.form -> Ast.form -> Ast.form -> expression_result;
+  compile_if_let :
+    string -> Env.t -> Ast.form -> Ast.form -> Ast.form -> expression_result;
+  compile_when_let :
+    string -> Env.t -> Ast.form -> Ast.form list -> expression_result;
+  compile_let_some :
+    string -> Env.t -> Ast.form -> Ast.form -> Ast.form -> expression_result;
   compile_when : string -> Env.t -> Ast.form -> Ast.form list -> expression_result;
   compile_cond : string -> Env.t -> Ast.form list -> expression_result;
   compile_match : string -> Env.t -> Ast.form -> Ast.form list -> expression_result;
@@ -113,6 +119,106 @@ let create ~compile_expr =
           | Error _ as err -> err)
     in
     loop [] pairs
+
+  and option_payload_type = function
+    | TOcaml_app ("option", [ payload_ty ]) ->
+        Ok (cljml_metadata_type_for_ocaml_payload payload_ty)
+    | TOcaml "option" -> Ok TUnknown
+    | _ -> Error.error "option binding requires an option value"
+
+  and parse_option_binding form error_message =
+    match form with
+    | FVector [ FSymbol name; option_form ] -> Ok (name, option_form)
+    | _ -> Error.error error_message
+
+  and compile_option_match scope env name option_form compile_some compile_none
+      branch_error =
+    match compile_expr scope env option_form with
+    | Error _ as err -> err
+    | Ok option_expr -> (
+        match option_payload_type option_expr.ty with
+        | Error _ as err -> err
+        | Ok payload_ty ->
+            let ocaml_name = Names.sanitize_name name in
+            let some_env =
+              Env.add (Names.scoped_key scope name)
+                (Types.binding ocaml_name payload_ty)
+                env
+            in
+            match (compile_some some_env, compile_none ()) with
+            | (Error _ as err), _ -> err
+            | _, (Error _ as err) -> err
+            | Ok some_expr, Ok none_expr -> (
+                match merge_branch_types some_expr.ty none_expr.ty with
+                | None -> Error.error branch_error
+                | Some result_ty ->
+                    Ok
+                      (typed_ir result_ty
+                         (Semantic_ir.Match
+                            ( option_expr.semantic_expr,
+                              [ ( Semantic_ir.PConstructor
+                                    ("Some", Some (Semantic_ir.PVar ocaml_name)),
+                                  some_expr.semantic_expr );
+                                ( Semantic_ir.PConstructor ("None", None),
+                                  none_expr.semantic_expr );
+                              ] )))))
+
+  and compile_if_let scope env binding_form then_form else_form =
+    match
+      parse_option_binding binding_form
+        "if-let requires [name option], then, and else"
+    with
+    | Error _ as err -> err
+    | Ok (name, option_form) ->
+        compile_option_match scope env name option_form
+          (fun some_env -> compile_expr scope some_env then_form)
+          (fun () -> compile_expr scope env else_form)
+          "if-let branches must have same type"
+
+  and compile_when_let scope env binding_form body_forms =
+    match
+      parse_option_binding binding_form
+        "when-let requires [name option] and a body"
+    with
+    | Error _ as err -> err
+    | Ok (name, option_form) ->
+        compile_option_match scope env name option_form
+          (fun some_env ->
+            match
+              compile_body scope some_env "when-let requires a body" body_forms
+            with
+            | Ok body when Types.equal body.ty TUnit -> Ok body
+            | Ok _ -> Error.error "when-let body must return unit"
+            | Error _ as err -> err)
+          (fun () -> Ok (typed_ir TUnit Semantic_ir.Unit))
+          "when-let body must return unit"
+
+  and compile_let_some scope env bindings_form then_form else_form =
+    let rec parse_bindings acc = function
+      | [] -> Ok (List.rev acc)
+      | FSymbol name :: option_form :: rest ->
+          parse_bindings ((name, option_form) :: acc) rest
+      | _ -> Error.error "let-some bindings require name/option pairs"
+    in
+    match bindings_form with
+    | FVector forms -> (
+        match parse_bindings [] forms with
+        | Error _ as err -> err
+        | Ok [] -> Error.error "let-some requires at least one binding"
+        | Ok bindings -> (
+            match compile_expr scope env else_form with
+            | Error _ as err -> err
+            | Ok else_expr ->
+                let rec compile_bindings current_env = function
+                  | [] -> compile_expr scope current_env then_form
+                  | (name, option_form) :: rest ->
+                      compile_option_match scope current_env name option_form
+                        (fun some_env -> compile_bindings some_env rest)
+                        (fun () -> Ok else_expr)
+                        "let-some branches must have same type"
+                in
+                compile_bindings env bindings))
+    | _ -> Error.error "let-some bindings must be a vector"
   
   and compile_if scope env condition then_form else_form =
     match
@@ -764,4 +870,7 @@ let create ~compile_expr =
     | _ -> Error.error "let bindings must be a vector"
   
   in
-  { compile_vector; compile_map; compile_if; compile_if_not; compile_when; compile_cond; compile_match; compile_body; compile_try; loop_branch_type; compile_recur; compile_loop_tail; compile_loop_tail_body; compile_loop; compile_let }
+  { compile_vector; compile_map; compile_if; compile_if_not; compile_if_let;
+    compile_when_let; compile_let_some; compile_when; compile_cond; compile_match;
+    compile_body; compile_try; loop_branch_type; compile_recur; compile_loop_tail;
+    compile_loop_tail_body; compile_loop; compile_let }

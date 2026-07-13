@@ -107,6 +107,38 @@ let parse_entries entries =
         in
         if Ocaml_package.valid_name package then Ok [ Package package ]
         else Error.error ("invalid OCaml package name " ^ package)
+    | FVector (FSymbol combined_name :: options)
+      when String.starts_with ~prefix:"ocaml." combined_name
+           && String.contains combined_name '/' ->
+        let separator = String.index combined_name '/' in
+        let package =
+          String.sub combined_name 6 (separator - 6)
+        in
+        let module_name =
+          "ocaml."
+          ^ String.sub combined_name (separator + 1)
+              (String.length combined_name - separator - 1)
+        in
+        if not (Ocaml_package.valid_name package) then
+          Error.error ("invalid OCaml package name " ^ package)
+        else
+          let rec parse_options acc = function
+            | [] ->
+                if acc = [] then
+                  Error.error "require entry requires :as or :refer"
+                else Ok (Package package :: List.rev acc)
+            | FKeyword ":as" :: FSymbol alias :: rest ->
+                parse_options (Alias { module_name; alias } :: acc) rest
+            | FKeyword ":refer" :: names :: rest -> (
+                match parse_refer_names names with
+                | Error _ as err -> err
+                | Ok names ->
+                    parse_options (Refer { module_name; names } :: acc) rest)
+            | _ ->
+                Error.error
+                  "require entries must use :as alias or :refer [symbols]"
+          in
+          parse_options [] options
     | FVector (FSymbol module_name :: options) ->
         let rec parse_options acc = function
           | [] -> if acc = [] then Error.error "require entry requires :as or :refer" else Ok acc
