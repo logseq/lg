@@ -316,10 +316,24 @@ let create ~compile_expr =
                     in
                     if missing <> [] then Error.error "record value is missing fields"
                     else
+                      let instantiated_record =
+                        match
+                          Types.instantiate_type
+                            ~templates:
+                              (List.map
+                                 (fun ((field : field), _) -> field.ty)
+                                 values)
+                            ~actuals:
+                              (List.map (fun (_, value) -> value.ty) values)
+                            (TNamed_record record)
+                        with
+                        | TNamed_record record -> record
+                        | _ -> record
+                      in
                       Ok
                         {
                           (typed_ir
-                             (TNamed_record record)
+                             (TNamed_record instantiated_record)
                              (Semantic_ir.Record
                                 ( List.map
                                     (fun ((field : field), value) ->
@@ -372,7 +386,10 @@ let create ~compile_expr =
                   match lookup_binding scope env constructor_name with
                   | Ok { ty = TFn (payload_tys, ret); _ }
                     when List.length payload_tys = List.length payloads ->
-                      Ok ret
+                      Ok
+                        (Types.instantiate_type ~templates:payload_tys
+                           ~actuals:(List.map (fun payload -> payload.ty) payloads)
+                           ret)
                   | Ok { ty = TFn _; _ } ->
                       Error.error "ocaml-construct payload arity mismatch"
                   | Ok _ -> Error.error (constructor_name ^ " is not a constructor")
@@ -594,7 +611,11 @@ let create ~compile_expr =
     | _ when is_constructor_name name -> (
         match lookup_binding scope env name with
         | Ok { ty = TFn (payload_tys, return_ty); ocaml_name; _ } ->
-            constructor ~constructor_name:ocaml_name (fun _ -> return_ty)
+            constructor ~constructor_name:ocaml_name
+              (fun args ->
+                Types.instantiate_type ~templates:payload_tys
+                  ~actuals:(List.map (fun arg -> arg.ty) args)
+                  return_ty)
               (List.length payload_tys)
         | _ ->
             let constructor_name =

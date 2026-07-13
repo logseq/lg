@@ -359,9 +359,16 @@ let create ~compile_expr =
                   compile_constructor_payloads opaque_payload_tys
               | Ok constructor -> (
                   match constructor.ty with
-                  | TFn (payload_tys, _)
+                  | TFn (payload_tys, return_ty)
                     when List.length payload_tys = List.length payload_patterns ->
-                      compile_constructor_payloads payload_tys
+                      let instantiated =
+                        Types.instantiate_type ~templates:[ return_ty ]
+                          ~actuals:[ target_ty ] constructor.ty
+                      in
+                      (match instantiated with
+                      | TFn (payload_tys, _) ->
+                          compile_constructor_payloads payload_tys
+                      | _ -> Error.error (name ^ " is not a constructor"))
                   | TFn _ -> Error.error "constructor pattern arity mismatch"
                   | _ -> Error.error (name ^ " is not a constructor"))))
       | _, FSymbol name ->

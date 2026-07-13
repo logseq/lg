@@ -322,3 +322,88 @@ let find_field keyword fields =
 
 let make_field keyword ty =
   { keyword; ocaml_name = Names.keyword_to_ocaml_name keyword; ty }
+
+type type_substitutions = (string * ty) list
+
+let bind_type_variable substitutions name actual =
+  match List.assoc_opt name substitutions with
+  | None -> (name, actual) :: substitutions
+  | Some existing when equal existing actual -> substitutions
+  | Some _ ->
+      (name, TUnknown) :: List.remove_assoc name substitutions
+
+let rec infer_type_substitutions substitutions ~template ~actual =
+  match (template, actual) with
+  | TVar name, actual -> bind_type_variable substitutions name actual
+  | TOcaml_app (template_name, template_args),
+    TOcaml_app (actual_name, actual_args)
+    when template_name = actual_name
+         && List.length template_args = List.length actual_args ->
+      infer_list_substitutions substitutions template_args actual_args
+  | TTuple template_args, TTuple actual_args
+    when List.length template_args = List.length actual_args ->
+      infer_list_substitutions substitutions template_args actual_args
+  | (TArray template, TArray actual)
+  | (TRef template, TRef actual)
+  | (TList template, TList actual)
+  | (TVector template, TVector actual)
+  | (TSet template, TSet actual) ->
+      infer_type_substitutions substitutions ~template ~actual
+  | TFn (template_args, template_ret), TFn (actual_args, actual_ret)
+    when List.length template_args = List.length actual_args ->
+      let substitutions =
+        infer_list_substitutions substitutions template_args actual_args
+      in
+      infer_type_substitutions substitutions ~template:template_ret
+        ~actual:actual_ret
+  | _ -> substitutions
+
+and infer_list_substitutions substitutions templates actuals =
+  List.fold_left2
+    (fun substitutions template actual ->
+      infer_type_substitutions substitutions ~template ~actual)
+    substitutions templates actuals
+
+let rec substitute_type_variables substitutions = function
+  | TVar name ->
+      List.assoc_opt name substitutions |> Option.value ~default:(TVar name)
+  | TOcaml_app (name, args) ->
+      TOcaml_app (name, List.map (substitute_type_variables substitutions) args)
+  | TTuple args -> TTuple (List.map (substitute_type_variables substitutions) args)
+  | TArray inner -> TArray (substitute_type_variables substitutions inner)
+  | TRef inner -> TRef (substitute_type_variables substitutions inner)
+  | TList inner -> TList (substitute_type_variables substitutions inner)
+  | TVector inner -> TVector (substitute_type_variables substitutions inner)
+  | TSet inner -> TSet (substitute_type_variables substitutions inner)
+  | TFn (args, ret) ->
+      TFn
+        ( List.map (substitute_type_variables substitutions) args,
+          substitute_type_variables substitutions ret )
+  | TRecord fields ->
+      TRecord
+        (List.map
+           (fun (field : field) ->
+             { field with ty = substitute_type_variables substitutions field.ty })
+           fields)
+  | TNamed_record record ->
+      TNamed_record
+        { record with
+          fields =
+            List.map
+              (fun (field : field) ->
+                { field with
+                  ty = substitute_type_variables substitutions field.ty;
+                })
+              record.fields;
+        }
+  | (TInt | TFloat | TChar | TString | TSymbol | TKeyword | TBool | TUnit
+    | TUnknown | TOcaml _) as ty ->
+      ty
+
+let instantiate_type ~templates ~actuals ty =
+  if List.length templates <> List.length actuals then ty
+  else
+    let substitutions =
+      infer_list_substitutions [] templates actuals
+    in
+    substitute_type_variables substitutions ty

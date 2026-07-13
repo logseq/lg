@@ -1716,6 +1716,42 @@ let test_parameterized_type_declarations_compile () =
   assert_ocaml_runs "parameterized_type_declarations_compile"
     "parameterized-ok\n" ocaml_source
 
+let test_parameterized_records_instantiate_field_types () =
+  let source =
+    {|
+(type-record box [a]
+  (value :param/a))
+(def int-box (ocaml-record box (value 41)))
+(def string-box (ocaml-record box (value "Ada")))
+(def int-value (+ (ocaml-field int-box value) 1))
+(def string-value (subs (ocaml-field string-box value) 0 1))
+(println (str int-value ":" string-value))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "parameterized_records_instantiate_field_types" "42:A\n"
+    ocaml_source
+
+let test_parameterized_variants_instantiate_constructor_payloads () =
+  let source =
+    {|
+(type-variant box [a]
+  (Box :param/a))
+(def int-box (Box 41))
+(def string-box (ocaml-construct Box "Ada"))
+(def int-value
+  (match int-box
+    (Box value) (+ value 1)))
+(def string-value
+  (match string-box
+    (Box value) (subs value 0 1)))
+(println (str int-value ":" string-value))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "parameterized_variants_instantiate_constructor_payloads"
+    "42:A\n" ocaml_source
+
 let test_parameterized_types_compile_inside_modules () =
   let source =
     {|
@@ -6201,6 +6237,10 @@ let tests =
       test_type_aliases_compile_through_source_backend );
     ( "parameterized type declarations compile",
       test_parameterized_type_declarations_compile );
+    ( "parameterized variants instantiate constructor payloads",
+      test_parameterized_variants_instantiate_constructor_payloads );
+    ( "parameterized records instantiate field types",
+      test_parameterized_records_instantiate_field_types );
     ( "parameterized types compile inside modules",
       test_parameterized_types_compile_inside_modules );
     ( "parameterized record relationships are checked by OCaml",
