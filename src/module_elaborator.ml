@@ -308,7 +308,7 @@ let rec compile_module ?signature_name ?(register_module = true) scope env next_
                 public_bindings @ exported,
                 next_type,
                 item :: items ))
-    | FList [ FSymbol "def"; FSymbol name; expr_form ] -> (
+    | FList [ FSymbol "def"; ((FSymbol name) as name_form); expr_form ] -> (
         match compile_expr module_path env expr_form with
         | Error _ as err -> err
         | Ok expr ->
@@ -350,6 +350,10 @@ let rec compile_module ?signature_name ?(register_module = true) scope env next_
                     let item =
                       Record_def
                         { var_name = local_name;
+                          identity =
+                            Source_context.find name_form
+                            |> Option.map (fun location ->
+                                   (Source_node_id.of_location location, location));
                           type_name;
                           set_module_name;
                           fields;

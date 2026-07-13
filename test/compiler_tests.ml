@@ -935,6 +935,18 @@ let test_source_node_identity_covers_value_bindings () =
   | Some id -> failwith ("unexpected binding source node identity " ^ id)
   | None -> failwith "expected value binding to preserve source node identity"
 
+let test_source_node_identity_covers_record_value_bindings () =
+  let filename = "record-binding-identity.cljml" in
+  let source = "(def user {:name \"Ada\"})" in
+  let analysis = Cljml.Language_service.analyze ~filename source |> expect_ok in
+  let offset = expect_substring_index source "user" in
+  match Cljml.Language_service.source_node_id_at analysis ~offset with
+  | Some id
+    when Cljml.Language_service.source_node_id_range id
+         = Some (offset, offset + 4) ->
+      ()
+  | _ -> failwith "record value binding must preserve exact source identity"
+
 let expect_source_id_at_text filename source analysis text =
   let offset = expect_substring_index source text in
   match Cljml.Language_service.source_node_id_at analysis ~offset with
@@ -6061,6 +6073,8 @@ let tests =
       test_source_node_identity_reaches_parsetree );
     ( "source node identity covers value bindings",
       test_source_node_identity_covers_value_bindings );
+    ( "source node identity covers record value bindings",
+      test_source_node_identity_covers_record_value_bindings );
     ( "source node identity covers recursive bindings",
       test_source_node_identity_covers_recursive_bindings );
     ( "source node identity covers function parameters",

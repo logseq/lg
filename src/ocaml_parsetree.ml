@@ -182,7 +182,16 @@ let set_module_definition module_name element_ty =
   in
   Ast_helper.Str.module_ ~loc module_binding
 
-let record_definition var_name type_name set_module_name fields values =
+let node_id_attribute node_id =
+  let payload =
+    Parsetree.PStr
+      [ Ast_helper.Str.eval
+          (Ast_helper.Exp.constant
+             (Ast_helper.Const.string (Source_node_id.to_string node_id))) ]
+  in
+  Ast_helper.Attr.mk (str "cljml.node_id") payload
+
+let record_definition var_name identity type_name set_module_name fields values =
   let type_item = record_type_definition type_name [] fields in
   let set_item =
     set_module_definition set_module_name
@@ -196,23 +205,25 @@ let record_definition var_name type_name set_module_name fields values =
         Ast_helper.Exp.constraint_ ~loc record_expr (type_constructor type_name [])
       in
       let value_binding =
+        let pattern = Ast_helper.Pat.var ~loc (str var_name) in
+        let pattern =
+          match identity with
+          | None -> pattern
+          | Some (node_id, location) ->
+              { pattern with
+                ppat_loc = location;
+                ppat_attributes =
+                  node_id_attribute node_id :: pattern.ppat_attributes;
+              }
+        in
         Ast_helper.Vb.mk ~loc
-          (Ast_helper.Pat.var ~loc (str var_name))
+          pattern
           annotated_expr
       in
       Ok
         [ type_item;
           set_item;
           Ast_helper.Str.value ~loc Nonrecursive [ value_binding ] ]
-
-let node_id_attribute node_id =
-  let payload =
-    Parsetree.PStr
-      [ Ast_helper.Str.eval
-          (Ast_helper.Exp.constant
-             (Ast_helper.Const.string (Source_node_id.to_string node_id))) ]
-  in
-  Ast_helper.Attr.mk (str "cljml.node_id") payload
 
 let rec value_pattern = function
   | Named name -> Ast_helper.Pat.var ~loc (str name)
@@ -350,8 +361,8 @@ let rec structure_of_item = function
         Ast_helper.Mod.ident ~loc (lid (longident_of_string module_name))
       in
       Ok [ Ast_helper.Str.include_ ~loc (Ast_helper.Incl.mk ~loc module_expr) ]
-  | Record_def { var_name; type_name; set_module_name; fields; values } ->
-      record_definition var_name type_name set_module_name fields values
+  | Record_def { var_name; identity; type_name; set_module_name; fields; values } ->
+      record_definition var_name identity type_name set_module_name fields values
 
 and structure_of_items items =
   let rec loop acc = function

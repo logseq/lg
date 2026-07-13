@@ -143,6 +143,10 @@ let compile scope env next_type = function
                       next_type + 1,
                       Record_def
                         { var_name = ocaml_name;
+                          identity =
+                            Source_context.find name_form
+                            |> Option.map (fun location ->
+                                   (Source_node_id.of_location location, location));
                           type_name;
                           set_module_name;
                           fields;
