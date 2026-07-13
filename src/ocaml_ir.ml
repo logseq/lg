@@ -497,6 +497,7 @@ and to_parsetree ~context = function
           in
           Ok (Ast_helper.Exp.let_ ~loc Asttypes.Recursive [ binding ] next))
   | Match (target, cases) -> (
+      let case_patterns = List.map fst cases in
       match to_parsetree ~context target with
       | Error _ as err -> err
       | Ok target ->
@@ -512,21 +513,32 @@ and to_parsetree ~context = function
           in
           match build_cases [] cases with
           | Error _ as err -> err
-          | Ok cases -> Ok (Ast_helper.Exp.match_ ~loc target cases))
+          | Ok cases ->
+              Ok
+                (add_pattern_node_ids case_patterns
+                   (Ast_helper.Exp.match_ ~loc target cases)))
   | Match_guarded (target, cases) -> (
+      let case_patterns = List.map (fun (pattern, _, _) -> pattern) cases in
       match to_parsetree ~context target with
       | Error _ as err -> err
       | Ok target ->
           match guarded_cases_to_parsetree ~context cases with
           | Error _ as err -> err
-          | Ok cases -> Ok (Ast_helper.Exp.match_ ~loc target cases))
+          | Ok cases ->
+              Ok
+                (add_pattern_node_ids case_patterns
+                   (Ast_helper.Exp.match_ ~loc target cases)))
   | Try (body, cases) -> (
+      let case_patterns = List.map (fun (pattern, _, _) -> pattern) cases in
       match to_parsetree ~context body with
       | Error _ as err -> err
       | Ok body ->
           match guarded_cases_to_parsetree ~context cases with
           | Error _ as err -> err
-          | Ok cases -> Ok (Ast_helper.Exp.try_ ~loc body cases))
+          | Ok cases ->
+              Ok
+                (add_pattern_node_ids case_patterns
+                   (Ast_helper.Exp.try_ ~loc body cases)))
   | Infix (operator, left, right) -> (
       match (to_parsetree ~context left, to_parsetree ~context right) with
       | (Error _ as err), _ -> err

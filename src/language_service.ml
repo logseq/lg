@@ -164,11 +164,14 @@ let source_node_id_range id =
 
 let source_node_id_in_attributes attributes offset =
   source_node_ids_of_attributes attributes
-  |> List.find_opt (fun id ->
+  |> List.filter_map (fun id ->
          match source_node_id_range id with
-         | Some (start_offset, end_offset) ->
-             start_offset <= offset && offset < end_offset
-         | None -> false)
+         | Some (start_offset, end_offset)
+           when start_offset <= offset && offset < end_offset ->
+             Some (end_offset - start_offset, id)
+         | Some _ | None -> None)
+  |> List.sort (fun (left, _) (right, _) -> Int.compare left right)
+  |> function (_, id) :: _ -> Some id | [] -> None
 
 let source_node_id_of_pattern pattern =
   match source_node_id_of_attributes pattern.Typedtree.pat_attributes with
@@ -227,15 +230,28 @@ let source_node_id_at analysis ~offset =
     }
   in
   iterator.structure iterator analysis.compiler.typed_structure;
+  let smaller_id left right =
+    match (source_node_id_range left, source_node_id_range right) with
+    | Some (left_start, left_end), Some (right_start, right_end) ->
+        if left_end - left_start <= right_end - right_start then left else right
+    | Some _, None -> left
+    | None, Some _ -> right
+    | None, None -> left
+  in
   match (expression, !pattern) with
   | None, None -> None
   | Some expression, None ->
       source_node_id_in_attributes expression.exp_attributes offset
   | None, Some (_, id) -> id
-  | Some expression, Some (pattern_location, id) ->
-      if location_size pattern_location < location_size expression.exp_loc then
-        id
-      else source_node_id_in_attributes expression.exp_attributes offset
+  | Some expression, Some (_pattern_location, pattern_id) -> (
+      match
+        ( pattern_id,
+          source_node_id_in_attributes expression.exp_attributes offset )
+      with
+      | Some pattern_id, Some expression_id ->
+          Some (smaller_id pattern_id expression_id)
+      | Some id, None | None, Some id -> Some id
+      | None, None -> None)
 
 let print_type env ty =
   Printtyp.wrap_printing_env ~error:false env (fun () ->

@@ -40,6 +40,15 @@ let compile_args_for compile_expr scope env arg_forms =
   in
   loop [] arg_forms
 
+let located_pattern identity pattern =
+  match identity with
+  | None -> pattern
+  | Some (node_id, location) ->
+      Semantic_ir.PLocated (node_id, location, pattern)
+
+let located_form_pattern form pattern =
+  located_pattern (Destructure.source_identity form) pattern
+
 let create ~compile_expr =
   let compile_args_for = compile_args_for compile_expr in
   let rec compile_vector scope env forms =
@@ -233,9 +242,12 @@ let create ~compile_expr =
           else Error.error "match pattern type must match target"
     in
     let rec compile_pattern target_ty pattern =
-      match (target_ty, pattern) with
+      let result =
+        match (target_ty, pattern) with
       | _, FSymbol "_" -> Ok (Semantic_ir.PAny, [])
-      | target_ty, FList [ FSymbol "as"; inner_pattern; FSymbol alias ] -> (
+      | target_ty,
+        FList
+          [ FSymbol "as"; inner_pattern; ((FSymbol alias) as alias_form) ] -> (
           match compile_pattern target_ty inner_pattern with
           | Error _ as err -> err
           | Ok (inner_pattern, bindings) ->
@@ -244,7 +256,10 @@ let create ~compile_expr =
                 ( Names.scoped_key scope alias,
                   Types.binding ocaml_name target_ty )
               in
-              Ok (Semantic_ir.PAlias (inner_pattern, ocaml_name), bindings @ [ binding ]))
+              Ok
+                ( located_form_pattern alias_form
+                    (Semantic_ir.PAlias (inner_pattern, ocaml_name)),
+                  bindings @ [ binding ] ))
       | target_ty, FList [ FSymbol "or"; left_form; right_form ] -> (
           match
             (compile_pattern target_ty left_form, compile_pattern target_ty right_form)
@@ -368,6 +383,11 @@ let create ~compile_expr =
               literal_pattern target_ty pattern |> Result.map (fun code -> (code, []))
           | FVector _ -> Error.error "match collection pattern must match target collection"
           | _ -> Error.error "unsupported match pattern")
+      in
+      Result.map
+        (fun (compiled, bindings) ->
+          (located_form_pattern pattern compiled, bindings))
+        result
     and compile_list_like_pattern inner patterns =
       let rec loop compiled_patterns bindings = function
         | [] -> Ok (List.rev compiled_patterns, bindings)
@@ -695,12 +715,17 @@ let create ~compile_expr =
                         in
                         let ir_bindings =
                           match pattern with
-                          | FSymbol "_" -> (Semantic_ir.PAny, value.semantic_expr) :: ir_bindings
+                          | FSymbol "_" ->
+                              ( located_form_pattern pattern Semantic_ir.PAny,
+                                value.semantic_expr )
+                              :: ir_bindings
                           | _ ->
                               bindings
                               |> List.fold_left
                                    (fun acc (binding : Destructure.local_binding) ->
-                                     (Semantic_ir.PVar binding.ocaml_name, binding.semantic_expr)
+                                     ( located_pattern binding.identity
+                                         (Semantic_ir.PVar binding.ocaml_name),
+                                       binding.semantic_expr )
                                      :: acc)
                                    ir_bindings
                         in

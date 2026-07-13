@@ -938,7 +938,11 @@ let test_source_node_identity_covers_value_bindings () =
 let expect_source_id_at_text filename source analysis text =
   let offset = expect_substring_index source text in
   match Cljml.Language_service.source_node_id_at analysis ~offset with
-  | Some id when String.starts_with ~prefix:(filename ^ ":") id -> ()
+  | Some id
+    when Cljml.Language_service.source_node_id_range id
+         = Some (offset, offset + String.length text)
+         && String.starts_with ~prefix:(filename ^ ":") id ->
+      ()
   | Some id -> failwith ("unexpected source node identity " ^ id)
   | None -> failwith ("expected source node identity at " ^ text)
 
@@ -976,6 +980,48 @@ let test_source_node_identity_covers_destructuring_bindings () =
   List.iter
     (expect_source_id_at_text filename source analysis)
     [ "first"; "rest"; "all"; "name"; "person" ]
+
+let test_source_node_identity_covers_let_bindings () =
+  let filename = "let-identity.cljml" in
+  let source = "(def result (let [local 41] (+ local 1)))" in
+  let analysis = Cljml.Language_service.analyze ~filename source |> expect_ok in
+  expect_source_id_at_text filename source analysis "local"
+
+let test_source_node_identity_covers_let_destructuring () =
+  let filename = "let-destructuring-identity.cljml" in
+  let source =
+    {|
+(def user {:name "Ada"})
+(def label
+  (let [{:keys [name] :as person} user]
+    (str name ":" (count person))))
+|}
+  in
+  let analysis = Cljml.Language_service.analyze ~filename source |> expect_ok in
+  let name_search = "name] :as" in
+  let name_offset = expect_substring_index source name_search in
+  (match Cljml.Language_service.source_node_id_at analysis ~offset:name_offset with
+  | Some id
+    when Cljml.Language_service.source_node_id_range id
+         = Some (name_offset, name_offset + 4) ->
+      ()
+  | _ -> failwith "expected exact identity for let-destructured name");
+  expect_source_id_at_text filename source analysis "person"
+
+let test_source_node_identity_covers_match_bindings () =
+  let filename = "match-identity.cljml" in
+  let source =
+    {|
+(type-variant message (Named :string))
+(def label
+  (match (ocaml-construct Named "Ada")
+    (as (Named value) whole) (str value ":" whole)))
+|}
+  in
+  let analysis = Cljml.Language_service.analyze ~filename source |> expect_ok in
+  List.iter
+    (expect_source_id_at_text filename source analysis)
+    [ "value"; "whole" ]
 
 let test_modules_resolve_qualified_symbols () =
   let source =
@@ -5982,6 +6028,12 @@ let tests =
       test_source_node_identity_covers_annotated_parameters );
     ( "source node identity covers destructuring bindings",
       test_source_node_identity_covers_destructuring_bindings );
+    ( "source node identity covers let bindings",
+      test_source_node_identity_covers_let_bindings );
+    ( "source node identity covers let destructuring",
+      test_source_node_identity_covers_let_destructuring );
+    ( "source node identity covers match bindings",
+      test_source_node_identity_covers_match_bindings );
     ("modules resolve qualified symbols", test_modules_resolve_qualified_symbols);
     ( "modules prevent unqualified symbol collisions",
       test_modules_prevent_unqualified_symbol_collisions );
