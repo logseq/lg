@@ -129,6 +129,7 @@ send_lsp_message() {
   send_lsp_message "{\"jsonrpc\":\"2.0\",\"id\":14,\"method\":\"textDocument/references\",\"params\":{\"textDocument\":{\"uri\":\"file://$main_source\"},\"position\":{\"line\":0,\"character\":14},\"context\":{\"includeDeclaration\":true}}}"
   send_lsp_message "{\"jsonrpc\":\"2.0\",\"id\":15,\"method\":\"textDocument/rename\",\"params\":{\"textDocument\":{\"uri\":\"file://$main_source\"},\"position\":{\"line\":0,\"character\":14},\"newName\":\"distance-plus-two\"}}"
   send_lsp_message '{"jsonrpc":"2.0","id":16,"method":"workspace/symbol","params":{"query":"magnitude-plus-two"}}'
+  send_lsp_message "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didChange\",\"params\":{\"textDocument\":{\"uri\":\"file://$math_source\",\"version\":2},\"contentChanges\":[{\"text\":\"(module Math (def value 1))\\n\"}]}}"
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didClose","params":{"textDocument":{"uri":"file:///tmp/editor.cljml"}}}'
   send_lsp_message '{"jsonrpc":"2.0","id":2,"method":"shutdown","params":null}'
   send_lsp_message '{"jsonrpc":"2.0","method":"exit","params":null}'
@@ -176,3 +177,4 @@ grep -q "\"uri\":\"file://$main_source\"" "$lsp_output"
 grep -q '"newText":"distance-plus-two"' "$lsp_output"
 grep -q '"name":"magnitude-plus-two"' "$lsp_output"
 grep -Fq "\"uri\":\"file://$main_source\",\"diagnostics\":[]" "$lsp_output"
+grep -Fq "\"uri\":\"file://$main_source\",\"diagnostics\":[{\"range\"" "$lsp_output"

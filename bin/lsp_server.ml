@@ -55,8 +55,9 @@ let rebuild_workspace ?changed_uri () =
     | Some index, Some uri ->
         let source = List.assoc uri sources in
         Cljml.Language_service.update_workspace_index index ~filename:uri ~source
-        |> Result.map fst
-    | _ -> Cljml.Language_service.create_workspace_index sources
+    | _ ->
+        Cljml.Language_service.create_workspace_index sources
+        |> Result.map (fun index -> (index, List.map fst sources))
   in
   match indexed with
   | Error _ ->
@@ -67,8 +68,9 @@ let rebuild_workspace ?changed_uri () =
           let document = analyze_document uri source in
           Hashtbl.replace workspace_documents uri document;
           if Hashtbl.mem documents uri then Hashtbl.replace documents uri document)
-        sources
-  | Ok index ->
+        sources;
+      List.map fst sources
+  | Ok (index, affected) ->
       workspace_index := Some index;
       Hashtbl.clear workspace_documents;
       List.iter
@@ -86,7 +88,8 @@ let rebuild_workspace ?changed_uri () =
           let document = { text; analysis = Ok analysis } in
           Hashtbl.replace workspace_documents uri document;
           if Hashtbl.mem documents uri then Hashtbl.replace documents uri document)
-        sources
+        sources;
+      affected
 
 let index_workspace root_uri =
   Hashtbl.clear workspace_sources;
@@ -95,7 +98,7 @@ let index_workspace root_uri =
   |> List.iter (fun path ->
          let uri = "file://" ^ path in
          Hashtbl.replace workspace_sources uri (read_file path));
-  rebuild_workspace ()
+  ignore (rebuild_workspace ())
 
 let find_document uri =
   match Hashtbl.find_opt documents uri with
@@ -201,6 +204,14 @@ let publish_current_diagnostics uri =
   match find_document uri with
   | None -> publish_diagnostics uri []
   | Some document -> publish_diagnostics uri (diagnostics document)
+
+let rebuild_and_publish uri =
+  let affected =
+    if Hashtbl.mem workspace_sources uri then
+      rebuild_workspace ~changed_uri:uri ()
+    else [ uri ]
+  in
+  List.iter publish_current_diagnostics affected
 
 let read_packet () =
   let rec read_headers content_length =
@@ -530,8 +541,7 @@ let handle_notification method_ params =
       let text = document |> member "text" |> to_string in
       let document = analyze_document uri text in
       Hashtbl.replace documents uri document;
-      if Hashtbl.mem workspace_sources uri then rebuild_workspace ~changed_uri:uri ();
-      publish_current_diagnostics uri
+      rebuild_and_publish uri
   | "textDocument/didChange" ->
       let uri = document_uri params in
       let changes = params |> member "contentChanges" |> to_list in
@@ -540,9 +550,7 @@ let handle_notification method_ params =
           let text = change |> member "text" |> to_string in
           let document = analyze_document uri text in
           Hashtbl.replace documents uri document;
-          if Hashtbl.mem workspace_sources uri then
-            rebuild_workspace ~changed_uri:uri ();
-          publish_current_diagnostics uri
+          rebuild_and_publish uri
       | [] -> ())
   | "textDocument/didSave" ->
       let uri = document_uri params in
@@ -555,14 +563,20 @@ let handle_notification method_ params =
         (fun text ->
           let document = analyze_document uri text in
           Hashtbl.replace documents uri document;
-          if Hashtbl.mem workspace_sources uri then
-            rebuild_workspace ~changed_uri:uri ();
-          publish_current_diagnostics uri)
+          rebuild_and_publish uri)
         text
   | "textDocument/didClose" ->
       let uri = document_uri params in
       Hashtbl.remove documents uri;
-      if Hashtbl.mem workspace_sources uri then rebuild_workspace ~changed_uri:uri ();
+      let affected =
+        if Hashtbl.mem workspace_sources uri then
+          rebuild_workspace ~changed_uri:uri ()
+        else []
+      in
+      List.iter
+        (fun affected_uri ->
+          if affected_uri <> uri then publish_current_diagnostics affected_uri)
+        affected;
       publish_diagnostics uri []
   | "initialized" | "exit" -> ()
   | _ -> ()
