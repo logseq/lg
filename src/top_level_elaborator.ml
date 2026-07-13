@@ -41,8 +41,11 @@ let compile_type_record = Type_definition_elaborator.compile_type_record
 let compile_type_variant = Type_definition_elaborator.compile_type_variant
 
 let compile scope env next_type = function
-  | FList (FSymbol "module-signature" :: FSymbol signature_name :: item_forms) ->
-      compile_module_signature scope env next_type signature_name item_forms
+  | FList
+      (FSymbol "module-signature" :: ((FSymbol signature_name) as name_form)
+      :: item_forms) ->
+      compile_module_signature ?location:(Source_context.find name_form) scope env
+        next_type signature_name item_forms
   | FList (FSymbol "module-signature" :: _) ->
       Error.error "module-signature expects a name and signature items"
   | FList [ FSymbol "type-alias"; ((FSymbol name) as name_form); manifest_form ] ->
@@ -261,10 +264,14 @@ let compile scope env next_type = function
       :: method_forms) ->
       compile_extend_type scope env next_type receiver_form protocol_name
         method_forms
-  | FList (FSymbol "module" :: FSymbol module_name :: FSymbol signature_name :: forms) -> (
+  | FList
+      (FSymbol "module" :: ((FSymbol module_name) as name_form)
+      :: ((FSymbol signature_name) as signature_form)
+      :: forms) -> (
       match
-        compile_module ~signature_name scope env next_type module_name module_name
-          forms
+        compile_module ?location:(Source_context.find name_form) ~signature_name
+          ?signature_location:(Source_context.find signature_form) scope env next_type
+          module_name module_name forms
       with
       | Error _ as err -> err
       | Ok (scope, module_env, module_bindings, next_type, item) ->
@@ -276,8 +283,12 @@ let compile scope env next_type = function
             |> Env.add_bindings module_bindings
           in
           Ok (scope, env, next_type, item))
-  | FList (FSymbol "module" :: FSymbol module_name :: forms) -> (
-      match compile_module scope env next_type module_name module_name forms with
+  | FList
+      (FSymbol "module" :: ((FSymbol module_name) as name_form) :: forms) -> (
+      match
+        compile_module ?location:(Source_context.find name_form) scope env next_type
+          module_name module_name forms
+      with
       | Error _ as err -> err
       | Ok (scope, module_env, module_bindings, next_type, item) ->
           let env =

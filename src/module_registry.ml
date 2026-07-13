@@ -196,6 +196,11 @@ let mem_module module_id registry =
   Emitted_module_map.mem (emitted_module_name module_id)
     registry.module_declarations
 
+let module_bindings registry = Emitted_module_map.bindings registry.module_declarations
+
+let signature_bindings registry =
+  Emitted_signature_map.bindings registry.emitted_signatures
+
 let add_alias alias target registry =
   { registry with aliases = Module_map.add alias target registry.aliases }
 

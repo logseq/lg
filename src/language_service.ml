@@ -472,19 +472,153 @@ let type_identity_at analysis offset source_name =
   iterator.structure iterator analysis.compiler.typed_structure;
   best_semantic_identity best
 
-let semantic_identity_at analysis offset =
-  match token_at analysis offset with
-  | Some { desc = Symbol source_name; _ } -> (
-      match identifier_identity_at analysis offset source_name with
+let module_name_matches source_name path =
+  Path.name path = Names.module_path_to_ocaml source_name
+
+let module_identity_at analysis offset source_name =
+  let best = ref None in
+  let consider location path uid definition_location =
+    consider_semantic_identity best ~offset ~location
+      ~matches:(module_name_matches source_name path) ~uid ~definition_location
+  in
+  let base = Tast_iterator.default_iterator in
+  let iterator =
+    { base with
+      expr =
+        (fun self expression ->
+          if location_contains_offset expression.Typedtree.exp_loc offset then
+            match
+              Env.find_module_by_name
+                (longident_of_dotted_name
+                   (Names.module_path_to_ocaml source_name))
+                expression.exp_env
+            with
+            | path, declaration ->
+                consider expression.exp_loc path
+                  (Cljml_compiler_support.Ocaml_module.uid declaration)
+                  (Cljml_compiler_support.Ocaml_module.location declaration)
+            | exception Not_found -> ();
+          base.expr self expression);
+      module_expr =
+        (fun self module_expression ->
+          (match module_expression.Typedtree.mod_desc with
+          | Tmod_ident (path, _) ->
+              let declaration = Env.find_module path module_expression.mod_env in
+              consider module_expression.mod_loc path
+                (Cljml_compiler_support.Ocaml_module.uid declaration)
+                (Cljml_compiler_support.Ocaml_module.location declaration)
+          | _ -> ());
+          base.module_expr self module_expression);
+      module_binding =
+        (fun self binding ->
+          (match (binding.Typedtree.mb_name.txt, binding.mb_id) with
+          | Some _, Some id ->
+              consider binding.mb_name.loc (Path.Pident id) binding.mb_uid
+                binding.mb_name.loc
+          | _ -> ());
+          base.module_binding self binding);
+    }
+  in
+  iterator.structure iterator analysis.compiler.typed_structure;
+  best_semantic_identity best
+
+let module_type_identity_at analysis offset source_name =
+  let best = ref None in
+  let consider location path uid definition_location =
+    consider_semantic_identity best ~offset ~location
+      ~matches:(module_name_matches source_name path) ~uid
+      ~definition_location
+  in
+  let base = Tast_iterator.default_iterator in
+  let iterator =
+    { base with
+      module_type =
+        (fun self module_type ->
+          (match module_type.Typedtree.mty_desc with
+          | Tmty_ident (path, _) ->
+              let declaration = Env.find_modtype path module_type.mty_env in
+              consider module_type.mty_loc path
+                (Cljml_compiler_support.Ocaml_module.type_uid declaration)
+                (Cljml_compiler_support.Ocaml_module.type_location declaration)
+          | _ -> ());
+          base.module_type self module_type);
+      module_type_declaration =
+        (fun self declaration ->
+          consider declaration.Typedtree.mtd_name.loc
+            (Path.Pident declaration.mtd_id) declaration.mtd_uid
+            declaration.mtd_name.loc;
+          base.module_type_declaration self declaration);
+    }
+  in
+  iterator.structure iterator analysis.compiler.typed_structure;
+  best_semantic_identity best
+
+let qualified_symbol_parts (token : Ast.token) source_name =
+  if
+    String.starts_with ~prefix:"^:ocaml/" source_name
+    || String.starts_with ~prefix:":ocaml/" source_name
+  then None
+  else
+    let separator =
+      match String.rindex_opt source_name '/' with
+      | Some _ as separator -> separator
+      | None -> String.rindex_opt source_name '.'
+    in
+    match separator with
+    | Some index when index > 0 && index + 1 < String.length source_name ->
+        let qualifier = String.sub source_name 0 index in
+        Some
+          ( qualifier,
+            { Ast.start_offset = token.span.start_offset;
+              end_offset = token.span.start_offset + index },
+            { Ast.start_offset = token.span.start_offset + index + 1;
+              end_offset = token.span.end_offset } )
+    | _ -> None
+
+type semantic_occurrence = {
+  identity : semantic_identity;
+  range : Ast.source_span;
+}
+
+let member_identity_at analysis offset source_name =
+  match identifier_identity_at analysis offset source_name with
+  | Some _ as identity -> identity
+  | None -> (
+      match binding_identity_at analysis offset source_name with
       | Some _ as identity -> identity
       | None -> (
-          match binding_identity_at analysis offset source_name with
+          match constructor_identity_at analysis offset source_name with
           | Some _ as identity -> identity
-          | None -> (
-              match constructor_identity_at analysis offset source_name with
-              | Some _ as identity -> identity
-              | None -> type_identity_at analysis offset source_name)))
+          | None -> type_identity_at analysis offset source_name))
+
+let semantic_occurrence_at analysis offset =
+  match token_at analysis offset with
+  | Some ({ desc = Symbol source_name; span; _ } as token) -> (
+      match qualified_symbol_parts token source_name with
+      | Some (qualifier, qualifier_range, _)
+        when offset < qualifier_range.end_offset ->
+          module_identity_at analysis offset qualifier
+          |> Option.map (fun identity -> { identity; range = qualifier_range })
+      | qualification ->
+          let range =
+            match qualification with
+            | Some (_, _, member_range) -> member_range
+            | None -> span
+          in
+          let identity =
+            match member_identity_at analysis offset source_name with
+            | Some _ as identity -> identity
+            | None -> (
+                match module_identity_at analysis offset source_name with
+                | Some _ as identity -> identity
+                | None -> module_type_identity_at analysis offset source_name)
+          in
+          Option.map (fun identity -> { identity; range }) identity)
   | _ -> None
+
+let semantic_identity_at analysis offset =
+  semantic_occurrence_at analysis offset
+  |> Option.map (fun occurrence -> occurrence.identity)
 
 let definition analysis ~offset =
   match semantic_identity_at analysis offset with
@@ -496,19 +630,33 @@ let definition analysis ~offset =
 let compare_span (left : Ast.source_span) (right : Ast.source_span) =
   Int.compare left.start_offset right.start_offset
 
+let semantic_occurrences_for_token analysis (token : Ast.token) =
+  let offsets =
+    match token.desc with
+    | Symbol source_name -> (
+        match qualified_symbol_parts token source_name with
+        | Some (_, qualifier_range, member_range) ->
+            [ qualifier_range.start_offset; member_range.start_offset ]
+        | None -> [ token.span.start_offset ])
+    | _ -> []
+  in
+  offsets
+  |> List.filter_map (semantic_occurrence_at analysis)
+  |> List.sort_uniq (fun left right ->
+         let range_order = compare_span left.range right.range in
+         if range_order <> 0 then range_order
+         else Typedtree.Uid.compare left.identity.uid right.identity.uid)
+
 let references analysis ~offset =
   match semantic_identity_at analysis offset with
   | None -> []
   | Some target ->
       analysis.tokens
-      |> List.filter_map (fun (token : Ast.token) ->
-             match token.desc with
-             | Symbol _ -> (
-                 match semantic_identity_at analysis token.span.start_offset with
-                 | Some identity when Typedtree.Uid.equal identity.uid target.uid ->
-                     Some token.span
-                 | _ -> None)
-             | _ -> None)
+      |> List.concat_map (semantic_occurrences_for_token analysis)
+      |> List.filter_map (fun occurrence ->
+             if Typedtree.Uid.equal occurrence.identity.uid target.uid then
+               Some occurrence.range
+             else None)
       |> List.sort_uniq compare_span
 
 let semantic_uid_at analysis ~offset =
@@ -516,14 +664,10 @@ let semantic_uid_at analysis ~offset =
 
 let references_to_uid analysis uid =
   analysis.tokens
-  |> List.filter_map (fun (token : Ast.token) ->
-         match token.desc with
-         | Symbol _ -> (
-             match semantic_identity_at analysis token.span.start_offset with
-             | Some identity when Typedtree.Uid.equal identity.uid uid ->
-                 Some token.span
-             | _ -> None)
-         | _ -> None)
+  |> List.concat_map (semantic_occurrences_for_token analysis)
+  |> List.filter_map (fun occurrence ->
+         if Typedtree.Uid.equal occurrence.identity.uid uid then Some occurrence.range
+         else None)
   |> List.sort_uniq compare_span
 
 let valid_rename_name name =
@@ -540,9 +684,8 @@ let rename analysis ~offset ~new_name =
     | ranges -> Ok (List.map (fun range -> { range; new_text = new_name }) ranges)
 
 let prepare_rename analysis ~offset =
-  match (symbol_span_at analysis offset, semantic_identity_at analysis offset) with
-  | Some range, Some _ -> Some range
-  | _ -> None
+  semantic_occurrence_at analysis offset
+  |> Option.map (fun occurrence -> occurrence.range)
 
 let symbol_kind = function
   | "defn" -> Some `Function
@@ -584,8 +727,10 @@ let completion_source_names analysis =
          if String.starts_with ~prefix:"__" key then None
          else Some (binding.ocaml_name, key))
 
+let qualified_completion_label owner name = String.concat "." (owner @ [ name ])
+
 let type_completion_label type_id =
-  String.concat "." (Type_id.owner type_id @ [ Type_id.name type_id ])
+  qualified_completion_label (Type_id.owner type_id) (Type_id.name type_id)
 
 let type_completion_detail = function
   | Type_registry.Alias -> "type alias"
@@ -618,33 +763,68 @@ let completions analysis ~offset =
   in
   let constructors =
     Env.fold_constructors
-    (fun description items ->
-      let constructor_types =
-        description.Data_types.cstr_args @ [ description.cstr_res ]
-      in
-      {
-        label = source_label description.cstr_name;
-        detail =
-          constructor_types
-          |> List.map (print_type env)
-          |> String.concat " -> ";
-      }
-      :: items)
-    None env values
+      (fun description items ->
+        let constructor_types =
+          description.Data_types.cstr_args @ [ description.cstr_res ]
+        in
+        {
+          label = source_label description.cstr_name;
+          detail =
+            constructor_types
+            |> List.map (print_type env)
+            |> String.concat " -> ";
+        }
+        :: items)
+      None env values
   in
-  analysis.compiler.typecheck_state.env
-  |> Compiler_environment.types |> Type_registry.bindings
-  |> List.fold_left
-       (fun items (emitted_name, (declaration : Type_registry.declaration)) ->
-         match
-           Env.find_type_by_name (longident_of_dotted_name emitted_name) env
-         with
-         | _ ->
-             { label = type_completion_label declaration.type_id;
-               detail = type_completion_detail declaration.kind }
-             :: items
-         | exception Not_found -> items)
-       constructors
+  let types =
+    analysis.compiler.typecheck_state.env
+    |> Compiler_environment.types |> Type_registry.bindings
+    |> List.fold_left
+         (fun items (emitted_name, (declaration : Type_registry.declaration)) ->
+           match
+             Env.find_type_by_name (longident_of_dotted_name emitted_name) env
+           with
+           | _ ->
+               { label = type_completion_label declaration.type_id;
+                 detail = type_completion_detail declaration.kind }
+               :: items
+           | exception Not_found -> items)
+         constructors
+  in
+  let modules =
+    let source_modules =
+      analysis.compiler.typecheck_state.env |> Compiler_environment.modules
+      |> Module_registry.module_bindings
+      |> List.map (fun (emitted_name, declaration) ->
+             ( emitted_name,
+               qualified_completion_label
+                 (Module_id.owner declaration.Module_registry.module_id)
+                 (Module_id.name declaration.module_id) ))
+    in
+    Env.fold_modules
+      (fun name _path _declaration items ->
+        let label =
+          source_modules |> List.assoc_opt name |> Option.value ~default:name
+        in
+        { label; detail = "module" } :: items)
+      None env types
+  in
+  let source_signatures =
+    analysis.compiler.typecheck_state.env |> Compiler_environment.modules
+    |> Module_registry.signature_bindings
+    |> List.map (fun (emitted_name, signature_id) ->
+           ( emitted_name,
+             qualified_completion_label (Signature_id.owner signature_id)
+               (Signature_id.name signature_id) ))
+  in
+  Env.fold_modtypes
+    (fun name _path _declaration items ->
+      let label =
+        source_signatures |> List.assoc_opt name |> Option.value ~default:name
+      in
+      { label; detail = "module signature" } :: items)
+    None env modules
   |> List.sort_uniq (fun left right -> String.compare left.label right.label)
 
 module String_map = Map.Make (String)

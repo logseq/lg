@@ -4283,10 +4283,12 @@ let test_constructor_references_keep_module_identities_distinct () =
       ~filename:"file:///tmp/constructor-modules.cljml" source
     |> expect_ok
   in
-  let usage = expect_substring_index source "Left/Named" in
+  let usage =
+    expect_substring_index source "Left/Named" + String.length "Left/"
+  in
   let references = Cljml.Language_service.references analysis ~offset:usage in
   let referenced_text = List.map (span_text source) references in
-  if referenced_text <> [ "Named"; "Left/Named" ] then
+  if referenced_text <> [ "Named"; "Named" ] then
     failwith
       ("expected only Left.Named constructor references, got: "
       ^ String.concat "," referenced_text)
@@ -4422,10 +4424,12 @@ let test_type_references_keep_module_identities_distinct () =
       source
     |> expect_ok
   in
-  let usage = expect_substring_index source "Left.item" in
+  let usage =
+    expect_substring_index source "Left.item" + String.length "Left."
+  in
   let references = Cljml.Language_service.references analysis ~offset:usage in
   let referenced_text = List.map (span_text source) references in
-  if referenced_text <> [ "item"; "Left.item" ] then
+  if referenced_text <> [ "item"; "item" ] then
     failwith
       ("expected only Left.item type references, got: "
       ^ String.concat "," referenced_text)
@@ -4455,6 +4459,180 @@ let test_language_service_type_capabilities () =
   in
   if failures <> [] then
     failwith ("type tooling failures: " ^ String.concat " | " failures)
+
+let module_language_service_source =
+  {|
+(module-signature ValueSig (val value :int))
+(module First ValueSig (def value 1))
+(module Second ValueSig (def value 2))
+(def first-value First/value)
+(def second-value Second/value)
+|}
+
+let analyze_module_language_service_source () =
+  Cljml.Language_service.analyze ~filename:"file:///tmp/module-service.cljml"
+    module_language_service_source
+  |> expect_ok
+
+let test_language_service_module_definition_and_references_use_identity () =
+  let analysis = analyze_module_language_service_source () in
+  let declaration =
+    expect_substring_index module_language_service_source "First ValueSig"
+  in
+  let usage =
+    expect_substring_index module_language_service_source "First/value"
+  in
+  (match Cljml.Language_service.definition analysis ~offset:usage with
+  | Some location when location.Location.loc_start.Lexing.pos_cnum = declaration -> ()
+  | _ -> failwith "expected module definition");
+  let references = Cljml.Language_service.references analysis ~offset:usage in
+  let referenced_text =
+    List.map (span_text module_language_service_source) references
+  in
+  if referenced_text <> [ "First"; "First" ] then
+    failwith
+      ("expected module declaration and qualified reference, got: "
+      ^ String.concat "," referenced_text)
+
+let test_language_service_module_rename_edits_only_module_segments () =
+  let analysis = analyze_module_language_service_source () in
+  let usage =
+    expect_substring_index module_language_service_source "First/value"
+  in
+  match Cljml.Language_service.rename analysis ~offset:usage ~new_name:"Primary" with
+  | Error err -> failwith ("expected module rename, got: " ^ err.message)
+  | Ok edits ->
+      if List.length edits <> 2 then
+        failwith "expected module declaration and qualified reference edits";
+      List.iter
+        (fun (edit : Cljml.Language_service.text_edit) ->
+          if span_text module_language_service_source edit.range <> "First" then
+            failwith "module rename must not replace the qualified member")
+        edits
+
+let test_language_service_module_and_member_offsets_are_distinct () =
+  let analysis = analyze_module_language_service_source () in
+  let usage =
+    expect_substring_index module_language_service_source "First/value"
+  in
+  let module_definition = Cljml.Language_service.definition analysis ~offset:usage in
+  let value_definition =
+    Cljml.Language_service.definition analysis
+      ~offset:(usage + String.length "First/")
+  in
+  match (module_definition, value_definition) with
+  | Some module_location, Some value_location
+    when module_location.loc_start.pos_cnum
+         = expect_substring_index module_language_service_source "First ValueSig"
+         && value_location.loc_start.pos_cnum
+            = expect_substring_index module_language_service_source "value :int" ->
+      ()
+  | Some module_location, Some value_location ->
+      failwith
+        (Printf.sprintf
+           "expected module/member definitions at %d/%d, got %d/%d"
+           (expect_substring_index module_language_service_source "First ValueSig")
+           (expect_substring_index module_language_service_source "value :int")
+           module_location.loc_start.pos_cnum value_location.loc_start.pos_cnum)
+  | _ -> failwith "expected module and member definitions"
+
+let test_module_references_keep_module_identities_distinct () =
+  let analysis = analyze_module_language_service_source () in
+  let usage =
+    expect_substring_index module_language_service_source "First/value"
+  in
+  let references = Cljml.Language_service.references analysis ~offset:usage in
+  let referenced_text =
+    List.map (span_text module_language_service_source) references
+  in
+  if referenced_text <> [ "First"; "First" ] then
+    failwith
+      ("expected only First module references, got: "
+      ^ String.concat "," referenced_text)
+
+let test_workspace_module_definition_resolves_across_files () =
+  let provider = "(module Math (def answer 42))\n" in
+  let consumer = "(def answer Math/answer)\n" in
+  let provider_uri = "file:///tmp/math-module.cljml" in
+  let consumer_uri = "file:///tmp/math-main.cljml" in
+  let analyses =
+    Cljml.Language_service.analyze_workspace
+      [ (consumer_uri, consumer); (provider_uri, provider) ]
+    |> expect_ok
+  in
+  let analysis = List.assoc consumer_uri analyses in
+  let usage = expect_substring_index consumer "Math/answer" in
+  match Cljml.Language_service.definition analysis ~offset:usage with
+  | Some location
+    when location.Location.loc_start.Lexing.pos_fname = provider_uri
+         && location.loc_start.pos_cnum = expect_substring_index provider "Math" ->
+      ()
+  | _ -> failwith "expected cross-file module definition"
+
+let test_language_service_module_signature_definition_and_references () =
+  let analysis = analyze_module_language_service_source () in
+  let declaration =
+    expect_substring_index module_language_service_source "ValueSig (val"
+  in
+  let usage =
+    expect_substring_index module_language_service_source "ValueSig (def"
+  in
+  (match Cljml.Language_service.definition analysis ~offset:usage with
+  | Some location when location.Location.loc_start.Lexing.pos_cnum = declaration -> ()
+  | _ -> failwith "expected module signature definition");
+  let references = Cljml.Language_service.references analysis ~offset:usage in
+  let referenced_text =
+    List.map (span_text module_language_service_source) references
+  in
+  if referenced_text <> [ "ValueSig"; "ValueSig"; "ValueSig" ] then
+    failwith
+      ("expected signature declaration and module constraints, got: "
+      ^ String.concat "," referenced_text)
+
+let test_language_service_completion_includes_modules_and_signatures () =
+  let analysis = analyze_module_language_service_source () in
+  let items =
+    Cljml.Language_service.completions analysis
+      ~offset:(String.length module_language_service_source)
+  in
+  let labels =
+    List.map (fun (item : Cljml.Language_service.completion_item) -> item.label) items
+  in
+  List.iter
+    (fun name ->
+      if not (List.mem name labels) then
+        failwith ("expected module completion " ^ name))
+    [ "First"; "Second"; "ValueSig" ]
+
+let test_language_service_module_capabilities () =
+  let cases =
+    [
+      ( "definition and references",
+        test_language_service_module_definition_and_references_use_identity );
+      ( "rename segments",
+        test_language_service_module_rename_edits_only_module_segments );
+      ( "module/member offsets",
+        test_language_service_module_and_member_offsets_are_distinct );
+      ( "module identity", test_module_references_keep_module_identities_distinct );
+      ( "cross-file definition",
+        test_workspace_module_definition_resolves_across_files );
+      ( "signature identity",
+        test_language_service_module_signature_definition_and_references );
+      ( "completion",
+        test_language_service_completion_includes_modules_and_signatures );
+    ]
+  in
+  let failures =
+    List.filter_map
+      (fun (name, test) ->
+        try
+          test ();
+          None
+        with Failure message -> Some (name ^ ": " ^ message))
+      cases
+  in
+  if failures <> [] then
+    failwith ("module tooling failures: " ^ String.concat " | " failures)
 
 let test_language_service_document_symbols_preserve_source_names () =
   let analysis = analyze_language_service_source () in
@@ -6894,6 +7072,8 @@ let tests =
       test_language_service_references_use_typed_identity );
     ( "language service rename returns exact symbol edits",
       test_language_service_rename_returns_exact_symbol_edits );
+    ( "language service module capabilities",
+      test_language_service_module_capabilities );
     ( "language service constructor capabilities",
       test_language_service_constructor_capabilities );
     ( "language service type capabilities",

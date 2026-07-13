@@ -136,31 +136,43 @@ let type_variant_definition type_name parameters constructors location =
   Ast_helper.Str.type_ ~loc Nonrecursive [ type_declaration ]
 
 let signature_item = function
-  | Signature_value { value_name; value_type; _ } ->
-      Ast_helper.Sig.value ~loc
-        (Ast_helper.Val.mk ~loc (str value_name) (core_type value_type))
-  | Signature_type { type_name; type_parameters = parameters; manifest } ->
+  | Signature_value { value_name; value_type; location; _ } ->
+      let item_loc = declaration_location location in
+      Ast_helper.Sig.value ~loc:item_loc
+        (Ast_helper.Val.mk ~loc:item_loc (Location.mkloc value_name item_loc)
+           (core_type value_type))
+  | Signature_type
+      { type_name; type_parameters = parameters; manifest; location } ->
+      let item_loc = declaration_location location in
       let type_declaration =
         match manifest with
         | None ->
-            Ast_helper.Type.mk ~loc ~params:(type_parameters parameters)
-              (str type_name)
+            Ast_helper.Type.mk ~loc:item_loc ~params:(type_parameters parameters)
+              (Location.mkloc type_name item_loc)
         | Some manifest ->
-            Ast_helper.Type.mk ~loc ~params:(type_parameters parameters)
-              ~manifest:(core_type manifest) (str type_name)
+            Ast_helper.Type.mk ~loc:item_loc ~params:(type_parameters parameters)
+              ~manifest:(core_type manifest) (Location.mkloc type_name item_loc)
       in
-      Ast_helper.Sig.type_ ~loc Nonrecursive [ type_declaration ]
-  | Signature_module { module_name; module_signature; _ } ->
+      Ast_helper.Sig.type_ ~loc:item_loc Nonrecursive [ type_declaration ]
+  | Signature_module
+      { module_name; module_signature; location; signature_location; _ } ->
+      let item_loc = declaration_location location in
+      let signature_loc = declaration_location signature_location in
       let module_type =
-        Ast_helper.Mty.ident ~loc (lid (longident_of_string module_signature))
+        Ast_helper.Mty.ident ~loc:signature_loc
+          (Location.mkloc (longident_of_string module_signature) signature_loc)
       in
-      Ast_helper.Sig.module_ ~loc
-        (Ast_helper.Md.mk ~loc (Location.mkloc (Some module_name) loc) module_type)
-  | Signature_include { module_signature } ->
+      Ast_helper.Sig.module_ ~loc:item_loc
+        (Ast_helper.Md.mk ~loc:item_loc
+           (Location.mkloc (Some module_name) item_loc) module_type)
+  | Signature_include { module_signature; signature_location } ->
+      let signature_loc = declaration_location signature_location in
       let module_type =
-        Ast_helper.Mty.ident ~loc (lid (longident_of_string module_signature))
+        Ast_helper.Mty.ident ~loc:signature_loc
+          (Location.mkloc (longident_of_string module_signature) signature_loc)
       in
-      Ast_helper.Sig.include_ ~loc (Ast_helper.Incl.mk ~loc module_type)
+      Ast_helper.Sig.include_ ~loc:signature_loc
+        (Ast_helper.Incl.mk ~loc:signature_loc module_type)
 
 let module_signature_definition signature_name items =
   let module_type =
@@ -299,7 +311,8 @@ let rec structure_of_item = function
       Ok
         [ type_variant_definition type_name type_parameters constructors location ]
   | Group items -> structure_of_items items
-  | Module_def { module_name; signature_name; items } -> (
+  | Module_def
+      { module_name; location; signature_name; signature_location; items } -> (
       match structure_of_items items with
       | Error _ as err -> err
       | Ok body ->
@@ -308,12 +321,16 @@ let rec structure_of_item = function
             match signature_name with
             | None -> structure
             | Some signature_name ->
+                let signature_loc = declaration_location signature_location in
                 Ast_helper.Mod.constraint_ ~loc structure
-                  (Ast_helper.Mty.ident ~loc
-                     (lid (longident_of_string signature_name)))
+                  (Ast_helper.Mty.ident ~loc:signature_loc
+                     (Location.mkloc (longident_of_string signature_name)
+                        signature_loc))
           in
+          let module_loc = declaration_location location in
           let module_binding =
-            Ast_helper.Mb.mk ~loc (Location.mkloc (Some module_name) loc) module_expr
+            Ast_helper.Mb.mk ~loc:module_loc
+              (Location.mkloc (Some module_name) module_loc) module_expr
           in
           Ok [ Ast_helper.Str.module_ ~loc module_binding ])
   | Module_alias { alias_name; target_name } ->
@@ -359,8 +376,15 @@ let rec structure_of_item = function
         Ast_helper.Mb.mk ~loc (Location.mkloc (Some module_name) loc) module_expr
       in
       Ok [ Ast_helper.Str.module_ ~loc module_binding ]
-  | Module_signature { signature_name; items } ->
-      Ok [ module_signature_definition signature_name items ]
+  | Module_signature { signature_name; location; items } ->
+      let signature_loc = declaration_location location in
+      let module_type =
+        Ast_helper.Mty.signature ~loc (List.map signature_item items)
+      in
+      Ok
+        [ Ast_helper.Str.modtype ~loc:signature_loc
+            (Ast_helper.Mtd.mk ~loc:signature_loc ~typ:module_type
+               (Location.mkloc signature_name signature_loc)) ]
   | Open_module module_name ->
       let module_expr =
         Ast_helper.Mod.ident ~loc (lid (longident_of_string module_name))

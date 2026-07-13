@@ -67,8 +67,9 @@ let compile_module_alias ?semantic_target scope env next_type alias_name target_
 
 let parse_type_parameters = Type_parameters.parse
 
-let compile_module_signature scope env next_type signature_name item_forms =
-  Module_signature_elaborator.compile scope env next_type signature_name item_forms
+let compile_module_signature ?location scope env next_type signature_name item_forms =
+  Module_signature_elaborator.compile ?location scope env next_type signature_name
+    item_forms
 
 let compile_type_alias = Type_definition_elaborator.compile_type_alias
 let compile_type_record = Type_definition_elaborator.compile_type_record
@@ -134,12 +135,17 @@ let compile_module_apply scope env next_type module_name functor_name
                       argument_names = List.map Names.module_path_to_ocaml argument_names;
                     } ))))
 
-let rec compile_module ?signature_name ?(register_module = true) scope env next_type module_path
-    module_segment forms =
+let rec compile_module ?location ?signature_name ?signature_location
+    ?(register_module = true) scope env next_type module_path module_segment forms =
   let env = inherit_scope_ocaml_value_refers scope module_path env in
   let rec compile_module_form env public_bindings next_type items = function
-    | FList (FSymbol "module-signature" :: FSymbol signature_name :: item_forms) -> (
-        match compile_module_signature module_path env next_type signature_name item_forms with
+    | FList
+        (FSymbol "module-signature" :: ((FSymbol signature_name) as name_form)
+        :: item_forms) -> (
+        match
+          compile_module_signature ?location:(Source_context.find name_form)
+            module_path env next_type signature_name item_forms
+        with
         | Error _ as err -> err
         | Ok (_scope, env, next_type, item) ->
             Ok (env, public_bindings, next_type, item :: items))
@@ -510,9 +516,14 @@ let rec compile_module ?signature_name ?(register_module = true) scope env next_
                 public_bindings @ nested_public_bindings,
                 next_type,
                 nested_item :: items ))
-    | FList (FSymbol "module" :: FSymbol nested_segment :: nested_forms) -> (
+    | FList
+        (FSymbol "module" :: ((FSymbol nested_segment) as name_form)
+        :: nested_forms) -> (
         let nested_path = module_path ^ "." ^ nested_segment in
-        match compile_module scope env next_type nested_path nested_segment nested_forms with
+        match
+          compile_module ?location:(Source_context.find name_form) scope env next_type
+            nested_path nested_segment nested_forms
+        with
         | Error _ as err -> err
         | Ok
             ( _scope,
@@ -554,8 +565,10 @@ let rec compile_module ?signature_name ?(register_module = true) scope env next_
                 Module_def
                   {
                     module_name;
+                    location;
                     signature_name =
                       Option.map Names.module_path_to_ocaml signature_name;
+                    signature_location;
                     items = List.rev items;
                   } ))
     | form :: rest -> (

@@ -46,7 +46,7 @@ let typed_signature_bindings modules signature_id =
           let owner = Signature_id.owner resolved_id in
           let rec collect bindings = function
             | [] -> Ok (List.rev bindings |> List.concat)
-            | Signature_value { source_name; value_name; value_type } :: rest ->
+            | Signature_value { source_name; value_name; value_type; _ } :: rest ->
                 collect
                   ([ (source_name, Types.binding value_name value_type) ]
                   :: bindings)
@@ -61,7 +61,7 @@ let typed_signature_bindings modules signature_id =
                 | Ok nested ->
                     collect (List.map (qualify source_name) nested :: bindings)
                       rest)
-            | Signature_include { module_signature } :: rest ->
+            | Signature_include { module_signature; _ } :: rest ->
                 let included_id =
                   Signature_id.create ~owner ~name:module_signature
                 in
