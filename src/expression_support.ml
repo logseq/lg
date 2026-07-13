@@ -21,8 +21,9 @@ let is_ocaml_owned_type = function
 
 let is_ocaml_constructor_pattern_target target_ty name =
   is_ocaml_owned_type target_ty
-  || (target_ty = TUnknown
-     && (String.contains name '.' || String.contains name '/'))
+  || (match target_ty with
+     | TUnknown | TVar _ -> String.contains name '.' || String.contains name '/'
+     | _ -> false)
 
 let branch_types_compatible left right =
   Types.equal left right

@@ -5834,6 +5834,16 @@ let test_match_delegates_nested_opaque_constructor_patterns_to_ocaml () =
 |}
   |> expect_error_contains "Unbound module External"
 
+let test_match_delegates_generic_host_payload_patterns_to_ocaml () =
+  Cljml.Compiler.compile_string
+    {|
+(defn extract [^:ocaml/External.record value]
+  (match (List/assoc-opt "id" (ocaml-field value attrs))
+    (Some (External.Named result)) result
+    _ "missing"))
+|}
+  |> expect_error_contains "Unbound module External"
+
 let test_match_supports_record_alias_or_and_guard_patterns () =
   let source =
     {|
@@ -8276,6 +8286,8 @@ let tests =
       test_parsetree_backend_supports_ocaml_constructor_patterns );
     ( "match delegates nested opaque constructor patterns to OCaml",
       test_match_delegates_nested_opaque_constructor_patterns_to_ocaml );
+    ( "match delegates generic host payload patterns to OCaml",
+      test_match_delegates_generic_host_payload_patterns_to_ocaml );
     ("parsetree backend supports open module", test_parsetree_backend_supports_open_module);
     ( "parsetree backend supports include module",
       test_parsetree_backend_supports_include_module );
