@@ -36,3 +36,24 @@ let declare ~scope source_name kind registry =
 
 let find_by_emitted_name emitted_name registry =
   Emitted_map.find_opt emitted_name registry
+
+let export_scope ~from_scope ~to_scope source target =
+  let remap_scope owner =
+    match owner with
+    | [ path ] when path = from_scope -> Some to_scope
+    | [ path ] when String.starts_with ~prefix:(from_scope ^ ".") path ->
+        Some
+          (to_scope
+          ^ String.sub path (String.length from_scope)
+              (String.length path - String.length from_scope))
+    | _ -> None
+  in
+  Emitted_map.fold
+    (fun _ declaration result ->
+      match (result, remap_scope (Type_id.owner declaration.type_id)) with
+      | (Error _ as err), _ -> err
+      | Ok registry, None -> Ok registry
+      | Ok registry, Some scope ->
+          declare ~scope (Type_id.name declaration.type_id) declaration.kind registry
+          |> Result.map snd)
+    source (Ok target)

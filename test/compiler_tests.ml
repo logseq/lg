@@ -4807,6 +4807,110 @@ let test_module_functor_applications_expose_protocols () =
   assert_ocaml_runs "module_functor_applications_expose_protocols" "9!\n"
     ocaml_source
 
+let test_module_variants_export_constructors () =
+  let source =
+    {|
+(module Status
+  (type-variant status Active (Named :string)))
+(def active Status/Active)
+(def named (Status/Named "ready"))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "module_variants_export_constructors" "" ocaml_source
+
+let test_module_functor_applications_expose_variant_constructors () =
+  let source =
+    {|
+(module-signature EmptySig (val dummy :int))
+(module Empty EmptySig (def dummy 0))
+(module-functor Make [M EmptySig]
+  (type-variant status Active (Named :string)))
+(module-apply App Make Empty)
+(def active App/Active)
+(def named (App/Named "ready"))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "module_functor_applications_expose_variant_constructors" ""
+    ocaml_source
+
+let test_module_functor_applications_preserve_record_protocol_identity () =
+  let source =
+    {|
+(module-signature EmptySig (val dummy :int))
+(module Empty EmptySig (def dummy 0))
+(module-functor Make [M EmptySig]
+  (type-record user (name :string))
+  (defprotocol Labelled (label [x] :string))
+  (extend-type user Labelled (label [x] (ocaml-field x name)))
+  (def ada (ocaml-record user (name "Ada"))))
+(module-apply App Make Empty)
+(println (App/Labelled/label App/ada))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "module_functor_applications_preserve_record_protocol_identity" "Ada\n"
+    ocaml_source
+
+let test_module_functor_applications_register_applied_types () =
+  let state =
+    typecheck_state
+      {|
+(module-signature EmptySig (val dummy :int))
+(module Empty EmptySig (def dummy 0))
+(module-functor Make [M EmptySig]
+  (type-record user (name :string)))
+(module-apply App Make Empty)
+|}
+  in
+  match
+    Cljml.Type_registry.find_by_emitted_name "App.user"
+      (Cljml.Compiler_environment.types state.env)
+  with
+  | Some declaration
+    when Cljml.Type_id.equal declaration.type_id
+           (Cljml.Type_id.create ~owner:[ "App" ] ~name:"user") ->
+      ()
+  | _ -> failwith "applied functor types must have remapped stable identities"
+
+let test_module_functor_applications_expose_nested_module_protocols () =
+  let source =
+    {|
+(module-signature EmptySig (val dummy :int))
+(module Empty EmptySig (def dummy 0))
+(module-functor Make [M EmptySig]
+  (module Inner
+    (defprotocol Labelled (label [x] :string))
+    (extend-type :int Labelled (label [x] (str "nested:" x)))))
+(module-apply App Make Empty)
+(println (App.Inner/Labelled/label 9))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "module_functor_applications_expose_nested_module_protocols"
+    "nested:9\n" ocaml_source
+
+let test_module_functor_applications_preserve_nested_module_aliases () =
+  let source =
+    {|
+(module-signature EmptySig (val dummy :int))
+(module Empty EmptySig (def dummy 0))
+(module-functor Make [M EmptySig]
+  (module Source
+    (defprotocol Labelled (label [x] :string))
+    (extend-type :int Labelled (label [x] (str "alias:" x))))
+  (module-alias Alias Source))
+(module-apply App Make Empty)
+(println (App.Alias/Labelled/label 9))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "module_functor_applications_preserve_nested_module_aliases" "alias:9\n"
+    ocaml_source
+
 let test_module_functor_application_is_checked_by_ocaml () =
   Cljml.Compiler.compile_string
     {|
@@ -6375,6 +6479,18 @@ let tests =
       test_module_functor_applications_expose_record_types );
     ( "module functor applications expose protocols",
       test_module_functor_applications_expose_protocols );
+    ( "module variants export constructors",
+      test_module_variants_export_constructors );
+    ( "module functor applications expose variant constructors",
+      test_module_functor_applications_expose_variant_constructors );
+    ( "module functor applications preserve record protocol identity",
+      test_module_functor_applications_preserve_record_protocol_identity );
+    ( "module functor applications register applied types",
+      test_module_functor_applications_register_applied_types );
+    ( "module functor applications expose nested module protocols",
+      test_module_functor_applications_expose_nested_module_protocols );
+    ( "module functor applications preserve nested module aliases",
+      test_module_functor_applications_preserve_nested_module_aliases );
     ( "module functor application is checked by OCaml",
       test_module_functor_application_is_checked_by_ocaml );
     ( "multi-parameter functor application is checked by OCaml",
@@ -6501,6 +6617,12 @@ let tests =
   ]
 
 let () =
+  let tests =
+    match Sys.getenv_opt "CLJML_TEST_FILTER" with
+    | None -> tests
+    | Some filter ->
+        List.filter (fun (name, _) -> string_contains_substring name filter) tests
+  in
   List.iter
     (fun (name, run) ->
       try run ()

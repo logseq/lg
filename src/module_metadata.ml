@@ -87,32 +87,73 @@ let signature_parameter_bindings ~scope env parameter_name signature_name =
 let apply_stored_functor_result module_name functor_name public_bindings =
   let prefix = functor_name ^ "/" in
   let prefix_len = String.length prefix in
+  let nested_prefix = functor_name ^ "." in
+  let nested_prefix_len = String.length nested_prefix in
   let record_prefix = "__record/" ^ functor_name ^ "/" in
   let record_prefix_len = String.length record_prefix in
   public_bindings
   |> List.filter_map (fun (key, (binding : binding)) ->
-         if String.length key > prefix_len && String.sub key 0 prefix_len = prefix then
-           let value_name = String.sub key prefix_len (String.length key - prefix_len) in
+         let remap_binding =
+           let from_module = Names.module_path_to_ocaml functor_name in
+           let to_module = Names.module_path_to_ocaml module_name in
+           let ocaml_name =
+             if binding.ocaml_name = from_module then to_module
+             else if String.starts_with ~prefix:(from_module ^ ".") binding.ocaml_name
+             then
+               to_module
+               ^ String.sub binding.ocaml_name (String.length from_module)
+                   (String.length binding.ocaml_name - String.length from_module)
+             else binding.ocaml_name
+           in
            let protocol_id =
              Option.map
                (fun protocol_id ->
-                 if Protocol_id.owner protocol_id = [ functor_name ] then
-                   Protocol_id.create ~owner:[ module_name ]
-                     ~name:(Protocol_id.name protocol_id)
-                 else protocol_id)
+                 match Protocol_id.owner protocol_id with
+                 | [ owner ] when owner = functor_name ->
+                     Protocol_id.create ~owner:[ module_name ]
+                       ~name:(Protocol_id.name protocol_id)
+                 | [ owner ]
+                   when String.starts_with ~prefix:(functor_name ^ ".") owner ->
+                     Protocol_id.create
+                       ~owner:
+                         [ module_name
+                           ^ String.sub owner (String.length functor_name)
+                               (String.length owner - String.length functor_name) ]
+                       ~name:(Protocol_id.name protocol_id)
+                 | _ -> protocol_id)
                binding.protocol_id
            in
+           { binding with
+             ocaml_name;
+             ty =
+               Types.remap_module_type
+                 ~from_path:(Names.module_path_to_ocaml functor_name)
+                 ~to_path:(Names.module_path_to_ocaml module_name)
+                 binding.ty;
+             protocol_id;
+           }
+         in
+         if String.length key > prefix_len && String.sub key 0 prefix_len = prefix then
+           let value_name = String.sub key prefix_len (String.length key - prefix_len) in
            Some
              ( Module_environment.binding_key module_name value_name,
-               {
-                 binding with
-                 ocaml_name = Module_environment.binding_ocaml_name module_name value_name;
-                 protocol_id;
-               } )
+               remap_binding )
+         else if
+           String.length key > nested_prefix_len
+           && String.sub key 0 nested_prefix_len = nested_prefix
+         then
+           let suffix =
+             String.sub key nested_prefix_len
+               (String.length key - nested_prefix_len)
+           in
+           let remapped_key = module_name ^ "." ^ suffix in
+           Some (remapped_key, remap_binding)
          else if String.length key > record_prefix_len
                  && String.sub key 0 record_prefix_len = record_prefix then
            let type_name = String.sub key record_prefix_len (String.length key - record_prefix_len) in
-           Some (Resolver.record_type_key module_name type_name, binding)
+           Some
+             ( Resolver.record_type_key module_name type_name,
+               remap_binding )
          else None)
 
 let apply_functor_result_bindings env module_name functor_name =
@@ -131,3 +172,11 @@ let apply_functor_protocols env module_name functor_name =
         ~from_module:(Names.module_path_to_ocaml functor_name)
         ~to_module:(Names.module_path_to_ocaml module_name)
         protocols (Env.protocols env)
+
+let apply_functor_types env module_name functor_name =
+  let functor_id = Functor_id.of_string functor_name in
+  match Module_registry.find_functor_types functor_id (Env.modules env) with
+  | None -> Ok (Env.types env)
+  | Some types ->
+      Type_registry.export_scope ~from_scope:functor_name ~to_scope:module_name
+        types (Env.types env)

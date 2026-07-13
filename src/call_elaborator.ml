@@ -593,8 +593,9 @@ let create ~compile_expr =
     | "empty" -> compile_collection_call scope env name arg_forms
     | _ when is_constructor_name name -> (
         match lookup_binding scope env name with
-        | Ok { ty = TFn (payload_tys, return_ty); _ } ->
-            constructor (fun _ -> return_ty) (List.length payload_tys)
+        | Ok { ty = TFn (payload_tys, return_ty); ocaml_name; _ } ->
+            constructor ~constructor_name:ocaml_name (fun _ -> return_ty)
+              (List.length payload_tys)
         | _ ->
             let constructor_name =
               resolve_ocaml_constructor_target scope env name
@@ -695,11 +696,16 @@ let create ~compile_expr =
     | form -> compile_expr scope env form
   
   and compile_named_function_call scope env name arg_forms =
-    match ocaml_call_target scope env name with
-    | Some _ -> compile_inferred_ocaml_call scope env name arg_forms
-    | None -> (
-        match lookup_binding scope env name with
-    | Error _ -> compile_protocol_call scope env name arg_forms
+    match lookup_binding scope env name with
+    | Error _ -> (
+        match Protocol.lookup_marker scope env name with
+        | Some _ -> compile_protocol_call scope env name arg_forms
+        | None -> (
+            match ocaml_call_target scope env name with
+            | Some _ -> compile_inferred_ocaml_call scope env name arg_forms
+            | None -> compile_protocol_call scope env name arg_forms))
+    | Ok { host_reference = Some (Ocaml_value _); _ } ->
+        compile_inferred_ocaml_call scope env name arg_forms
     | Ok fn -> (
         match compile_args_for scope env arg_forms with
         | Error _ as err -> err
@@ -729,7 +735,7 @@ let create ~compile_expr =
                 in
                 Ok (typed_ir ret (Semantic_ir.Apply (Semantic_ir.Ident fn.ocaml_name, arg_exprs)))
             | TFn _ -> Error.error (name ^ " called with incompatible arguments")
-            | _ -> Error.error (name ^ " is not callable"))))
+            | _ -> Error.error (name ^ " is not callable")))
   
   and compile_protocol_call scope env name arg_forms =
     if Protocol.method_is_ambiguous scope env name then

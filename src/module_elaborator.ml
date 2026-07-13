@@ -35,11 +35,23 @@ let open_module_bindings = Module_environment.open_bindings
 let include_module_public_bindings = Module_environment.include_public_bindings
 let alias_module_bindings = Module_environment.alias_bindings
 
-let compile_module_alias scope env next_type alias_name target_name =
-  let alias_bindings = alias_module_bindings env alias_name target_name in
+let resolve_module_target_path scope env target_name =
+  if scope = "" || String.contains target_name '.' then target_name
+  else
+    let local_id = Module_id.create ~owner:[ scope ] ~name:target_name in
+    if Module_registry.mem_module local_id (Env.modules env) then
+      scope ^ "." ^ target_name
+    else target_name
+
+let compile_module_alias ?semantic_target scope env next_type alias_name target_name =
+  let target_path =
+    Option.value semantic_target
+      ~default:(resolve_module_target_path scope env target_name)
+  in
+  let alias_bindings = alias_module_bindings env alias_name target_path in
   let owner = if scope = "" then [] else [ scope ] in
   let alias_id = Module_id.create ~owner ~name:alias_name in
-  let target_id = Module_id.of_string target_name in
+  let target_id = Module_id.of_string target_path in
   match Module_registry.declare_alias alias_id target_id (Env.modules env) with
   | Error _ as err -> err
   | Ok modules ->
@@ -64,6 +76,22 @@ let record_type_public_binding =
   Type_definition_elaborator.record_type_public_binding
 let compile_type_variant = Type_definition_elaborator.compile_type_variant
 
+let variant_public_bindings module_path previous updated =
+  let module_name = Names.module_path_to_ocaml module_path in
+  changed_bindings previous updated
+  |> List.map (fun (key, (binding : binding)) ->
+         let constructor_name =
+           match String.rindex_opt key '/' with
+           | None -> key
+           | Some index ->
+               String.sub key (index + 1) (String.length key - index - 1)
+         in
+         ( key,
+           { binding with
+             ocaml_name = module_name ^ "." ^ constructor_name;
+             ty = Types.qualify_module_type module_name binding.ty;
+           } ))
+
 let compile_module_apply scope env next_type module_name functor_name
     argument_names =
   let applied_bindings =
@@ -78,20 +106,28 @@ let compile_module_apply scope env next_type module_name functor_name
   with
   | Error _ as err -> err
   | Ok modules ->
-      let protocols =
-        Module_metadata.apply_functor_protocols env module_name functor_name
-      in
-      Ok
-        ( scope,
-          env |> Env.with_modules modules |> Env.with_protocols protocols
-          |> Env.add_bindings applied_bindings,
-          next_type,
-          Module_apply
-            {
-              module_name = Names.module_segment_to_ocaml module_name;
-              functor_name = Names.module_path_to_ocaml functor_name;
-              argument_names = List.map Names.module_path_to_ocaml argument_names;
-            } )
+      (match
+         Module_registry.apply_functor_aliases ~module_name ~functor_name modules
+       with
+      | Error _ as err -> err
+      | Ok modules ->
+          (match Module_metadata.apply_functor_types env module_name functor_name with
+          | Error _ as err -> err
+          | Ok types ->
+              let protocols =
+                Module_metadata.apply_functor_protocols env module_name functor_name
+              in
+              Ok
+                ( scope,
+                  env |> Env.with_modules modules |> Env.with_protocols protocols
+                  |> Env.with_types types |> Env.add_bindings applied_bindings,
+                  next_type,
+                  Module_apply
+                    {
+                      module_name = Names.module_segment_to_ocaml module_name;
+                      functor_name = Names.module_path_to_ocaml functor_name;
+                      argument_names = List.map Names.module_path_to_ocaml argument_names;
+                    } )))
 
 let rec compile_module ?signature_name ?(register_module = true) scope env next_type module_path
     module_segment forms =
@@ -165,13 +201,23 @@ let rec compile_module ?signature_name ?(register_module = true) scope env next_
                 constructor_forms
             with
             | Error _ as err -> err
-            | Ok (_scope, env, next_type, item) ->
-                Ok (env, public_bindings, next_type, item :: items)))
+            | Ok (_scope, updated_env, next_type, item) ->
+                let exported = variant_public_bindings module_path env updated_env in
+                Ok
+                  ( updated_env,
+                    public_bindings @ exported,
+                    next_type,
+                    item :: items )))
     | FList (FSymbol "type-variant" :: FSymbol name :: constructor_forms) -> (
         match compile_type_variant module_path env next_type name [] constructor_forms with
         | Error _ as err -> err
-        | Ok (_scope, env, next_type, item) ->
-            Ok (env, public_bindings, next_type, item :: items))
+        | Ok (_scope, updated_env, next_type, item) ->
+            let exported = variant_public_bindings module_path env updated_env in
+            Ok
+              ( updated_env,
+                public_bindings @ exported,
+                next_type,
+                item :: items ))
     | FList [ FSymbol "open"; FSymbol opened_module ] ->
         let env = open_module_bindings module_path env opened_module in
         Ok
@@ -192,12 +238,14 @@ let rec compile_module ?signature_name ?(register_module = true) scope env next_
     | FList (FSymbol "include" :: _) ->
         Error.error "include expects one module"
     | FList [ FSymbol "module-alias"; FSymbol alias_name; FSymbol target_name ] ->
+        let target_path = resolve_module_target_path module_path env target_name in
         let public_alias_path = module_path ^ "." ^ alias_name in
         let public_alias_bindings =
-          alias_module_bindings env public_alias_path target_name
+          alias_module_bindings env public_alias_path target_path
         in
         (match
-           compile_module_alias module_path env next_type alias_name target_name
+           compile_module_alias ~semantic_target:target_path module_path env next_type
+             alias_name target_name
          with
         | Error _ as err -> err
         | Ok (_scope, env, next_type, item) ->
@@ -546,6 +594,14 @@ let compile_module_functor scope env next_type functor_name parameter_form
                       let modules =
                         Module_registry.store_functor_protocols functor_id
                           (Env.protocols module_env) modules
+                      in
+                      let modules =
+                        Module_registry.store_functor_types functor_id
+                          (Env.types module_env) modules
+                      in
+                      let modules =
+                        Module_registry.store_functor_aliases functor_id
+                          (Env.modules module_env) modules
                       in
                       Ok
                         ( scope,

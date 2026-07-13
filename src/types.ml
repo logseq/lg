@@ -264,6 +264,59 @@ let rec qualify_module_type module_path ty =
                 { field with ty = qualify_module_type module_path field.ty })
               record.fields }
 
+let rec remap_module_type ~from_path ~to_path ty =
+  let remap_name name =
+    if name = from_path then to_path
+    else
+      let prefix = from_path ^ "." in
+      if String.starts_with ~prefix name then
+        to_path ^ String.sub name (String.length from_path)
+          (String.length name - String.length from_path)
+      else name
+  in
+  let remap_type_id type_id =
+    match Type_id.owner type_id with
+    | [ owner ] ->
+        Type_id.create ~owner:[ remap_name owner ] ~name:(Type_id.name type_id)
+    | _ -> type_id
+  in
+  match ty with
+  | TInt | TFloat | TChar | TString | TSymbol | TKeyword | TBool | TUnit | TUnknown
+  | TVar _ | TOcaml _ ->
+      ty
+  | TOcaml_app (name, args) ->
+      TOcaml_app (name, List.map (remap_module_type ~from_path ~to_path) args)
+  | TTuple args -> TTuple (List.map (remap_module_type ~from_path ~to_path) args)
+  | TArray inner -> TArray (remap_module_type ~from_path ~to_path inner)
+  | TRef inner -> TRef (remap_module_type ~from_path ~to_path inner)
+  | TList inner -> TList (remap_module_type ~from_path ~to_path inner)
+  | TVector inner -> TVector (remap_module_type ~from_path ~to_path inner)
+  | TSet inner -> TSet (remap_module_type ~from_path ~to_path inner)
+  | TFn (args, ret) ->
+      TFn
+        ( List.map (remap_module_type ~from_path ~to_path) args,
+          remap_module_type ~from_path ~to_path ret )
+  | TRecord fields ->
+      TRecord
+        (List.map
+           (fun (field : field) ->
+             { field with ty = remap_module_type ~from_path ~to_path field.ty })
+           fields)
+  | TNamed_record record ->
+      TNamed_record
+        { record with
+          type_id = remap_type_id record.type_id;
+          type_name = remap_name record.type_name;
+          set_module_name = remap_name record.set_module_name;
+          fields =
+            List.map
+              (fun (field : field) ->
+                { field with
+                  ty = remap_module_type ~from_path ~to_path field.ty;
+                })
+              record.fields;
+        }
+
 let find_field keyword fields =
   List.find_opt (fun field -> field.keyword = keyword) fields
 

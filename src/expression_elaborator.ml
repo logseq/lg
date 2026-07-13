@@ -26,8 +26,9 @@ and compile_expr_unlocated scope (env : Env.t) = function
   | FKeyword keyword -> Ok (typed_ir TKeyword (Semantic_ir.String keyword))
   | FSymbol name -> (
       match Env.find_opt (Names.scoped_key scope name) env with
-      | Some { ty = TFn ([], return_ty); _ } when is_constructor_name name ->
-          Ok (typed_ir return_ty (Semantic_ir.Constructor (name, None)))
+      | Some { ty = TFn ([], return_ty); ocaml_name; _ }
+        when is_constructor_name name ->
+          Ok (typed_ir return_ty (Semantic_ir.Constructor (ocaml_name, None)))
       | Some binding -> Ok (typed_ir binding.ty (Semantic_ir.Ident binding.ocaml_name))
       | None when name = "None" ->
           Ok (typed_ir (TOcaml_app ("option", [ TUnknown ])) (Semantic_ir.Constructor (name, None)))

@@ -17,6 +17,8 @@ type t = {
   emitted_signatures : Signature_id.t Emitted_signature_map.t;
   functor_results : (string * Types.binding) list Functor_map.t;
   functor_protocols : Protocol_registry.t Functor_map.t;
+  functor_types : Type_registry.t Functor_map.t;
+  functor_aliases : (Module_id.t * Module_id.t) list Functor_map.t;
   aliases : Module_id.t Module_map.t;
   module_declarations : module_declaration Emitted_module_map.t;
 }
@@ -27,6 +29,8 @@ let empty =
     emitted_signatures = Emitted_signature_map.empty;
     functor_results = Functor_map.empty;
     functor_protocols = Functor_map.empty;
+    functor_types = Functor_map.empty;
+    functor_aliases = Functor_map.empty;
     aliases = Module_map.empty;
     module_declarations = Emitted_module_map.empty;
   }
@@ -88,6 +92,31 @@ let store_functor_protocols functor_id protocols registry =
 let find_functor_protocols functor_id registry =
   Functor_map.find_opt functor_id registry.functor_protocols
 
+let store_functor_types functor_id types registry =
+  { registry with
+    functor_types = Functor_map.add functor_id types registry.functor_types;
+  }
+
+let find_functor_types functor_id registry =
+  Functor_map.find_opt functor_id registry.functor_types
+
+let store_functor_aliases functor_id source registry =
+  let functor_path = Functor_id.to_string functor_id in
+  let aliases =
+    Module_map.fold
+      (fun alias target aliases ->
+        match Module_id.owner alias with
+        | [ owner ]
+          when owner = functor_path
+               || String.starts_with ~prefix:(functor_path ^ ".") owner ->
+            (alias, target) :: aliases
+        | _ -> aliases)
+      source.aliases []
+  in
+  { registry with
+    functor_aliases = Functor_map.add functor_id aliases registry.functor_aliases;
+  }
+
 let emitted_module_name module_id =
   String.concat "." (Module_id.owner module_id @ [ Module_id.name module_id ])
   |> Names.module_path_to_ocaml
@@ -110,12 +139,46 @@ let declare_module module_id kind registry =
               registry.module_declarations;
         }
 
+let mem_module module_id registry =
+  Emitted_module_map.mem (emitted_module_name module_id)
+    registry.module_declarations
+
 let add_alias alias target registry =
   { registry with aliases = Module_map.add alias target registry.aliases }
 
 let declare_alias alias target registry =
   declare_module alias Alias registry
   |> Result.map (add_alias alias target)
+
+let apply_functor_aliases ~module_name ~functor_name registry =
+  let functor_id = Functor_id.of_string functor_name in
+  let remap_path path =
+    if path = functor_name then module_name
+    else if String.starts_with ~prefix:(functor_name ^ ".") path then
+      module_name
+      ^ String.sub path (String.length functor_name)
+          (String.length path - String.length functor_name)
+    else path
+  in
+  let remap_target target =
+    Module_id.create ~owner:[] ~name:(remap_path (Module_id.to_string target))
+  in
+  let rec apply registry = function
+    | [] -> Ok registry
+    | (alias, target) :: rest ->
+        let alias_path =
+          match Module_id.owner alias with
+          | [ owner ] -> remap_path (owner ^ "." ^ Module_id.name alias)
+          | _ -> remap_path (Module_id.to_string alias)
+        in
+        let alias = Module_id.create ~owner:[] ~name:alias_path in
+        (match declare_alias alias (remap_target target) registry with
+        | Error _ as err -> err
+        | Ok registry -> apply registry rest)
+  in
+  match Functor_map.find_opt functor_id registry.functor_aliases with
+  | None -> Ok registry
+  | Some aliases -> apply registry aliases
 
 let find_alias alias registry = Module_map.find_opt alias registry.aliases
 

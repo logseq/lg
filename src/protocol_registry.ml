@@ -129,10 +129,35 @@ let export_owner ~from_owner ~to_owner ~from_module ~to_module source target =
         (String.length value - String.length from_module)
     else value
   in
+  let remap_owner owner =
+    match (from_owner, to_owner, owner) with
+    | [ from_path ], [ to_path ], [ owner_path ] ->
+        if owner_path = from_path then Some [ to_path ]
+        else
+          let prefix = from_path ^ "." in
+          if String.starts_with ~prefix owner_path then
+            Some
+              [ to_path
+                ^ String.sub owner_path (String.length from_path)
+                    (String.length owner_path - String.length from_path) ]
+          else None
+    | _ when owner = from_owner -> Some to_owner
+    | _ -> None
+  in
   let remap_protocol protocol_id =
-    if Protocol_id.owner protocol_id = from_owner then
-      Protocol_id.create ~owner:to_owner ~name:(Protocol_id.name protocol_id)
-    else protocol_id
+    match remap_owner (Protocol_id.owner protocol_id) with
+    | Some owner ->
+        Protocol_id.create ~owner ~name:(Protocol_id.name protocol_id)
+    | None -> protocol_id
+  in
+  let remap_type_id type_id =
+    match remap_owner (Type_id.owner type_id) with
+    | Some owner -> Type_id.create ~owner ~name:(Type_id.name type_id)
+    | None -> type_id
+  in
+  let remap_receiver = function
+    | Record_receiver type_id -> Record_receiver (remap_type_id type_id)
+    | receiver -> receiver
   in
   let remap_method protocol_id method_id =
     Method_id.create
@@ -142,14 +167,26 @@ let export_owner ~from_owner ~to_owner ~from_module ~to_module source target =
   let declarations =
     Protocol_map.fold
       (fun protocol_id declaration declarations ->
-        if Protocol_id.owner protocol_id <> from_owner then declarations
-        else
+        match remap_owner (Protocol_id.owner protocol_id) with
+        | None -> declarations
+        | Some _ ->
           let protocol_id = remap_protocol protocol_id in
           let methods =
             Method_map.fold
               (fun _ signature methods ->
                 let method_id = remap_method protocol_id signature.method_id in
-                Method_map.add method_id { signature with method_id } methods)
+                Method_map.add method_id
+                  { method_id;
+                    param_tys =
+                      List.map
+                        (Types.remap_module_type ~from_path:from_module
+                           ~to_path:to_module)
+                        signature.param_tys;
+                    return_ty =
+                      Types.remap_module_type ~from_path:from_module
+                        ~to_path:to_module signature.return_ty;
+                  }
+                  methods)
               declaration.methods Method_map.empty
           in
           Protocol_map.add protocol_id { protocol_id; methods } declarations)
@@ -158,14 +195,19 @@ let export_owner ~from_owner ~to_owner ~from_module ~to_module source target =
   let implementations =
     Implementation_map.fold
       (fun (protocol_id, method_id, receiver_id) binding implementations ->
-        if Protocol_id.owner protocol_id <> from_owner then implementations
-        else
+        match remap_owner (Protocol_id.owner protocol_id) with
+        | None -> implementations
+        | Some _ ->
           let protocol_id = remap_protocol protocol_id in
           let method_id = remap_method protocol_id method_id in
+          let receiver_id = remap_receiver receiver_id in
           let binding =
             {
               binding with
               Types.ocaml_name = replace_prefix binding.Types.ocaml_name;
+              ty =
+                Types.remap_module_type ~from_path:from_module
+                  ~to_path:to_module binding.ty;
               protocol_id = Option.map remap_protocol binding.protocol_id;
             }
           in
