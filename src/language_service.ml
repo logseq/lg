@@ -1716,21 +1716,71 @@ let pattern_names form =
   in
   collect String_set.empty form
 
+let add_type_name_reference add name references =
+  match String.index_opt name '.' with
+  | Some separator ->
+      add Module_symbol (String.sub name 0 separator) references
+  | None -> add Type_symbol name references
+
+let rec add_type_references add ty references =
+  match ty with
+  | Types.TOcaml name -> add_type_name_reference add name references
+  | TOcaml_app (name, arguments) ->
+      let references =
+        if String.contains name '.' then
+          add_type_name_reference add name references
+        else references
+      in
+      List.fold_left
+        (fun references argument -> add_type_references add argument references)
+        references arguments
+  | TTuple arguments ->
+      List.fold_left
+        (fun references argument -> add_type_references add argument references)
+        references arguments
+  | TArray inner | TRef inner | TList inner | TVector inner | TSet inner ->
+      add_type_references add inner references
+  | TFn (arguments, return_type) ->
+      List.fold_left
+        (fun references argument -> add_type_references add argument references)
+        (add_type_references add return_type references)
+        arguments
+  | TRecord fields | TNamed_record { fields; _ } ->
+      List.fold_left
+        (fun references (field : Types.field) ->
+          add_type_references add field.ty references)
+        references fields
+  | TInt | TFloat | TChar | TString | TSymbol | TKeyword | TBool | TUnit
+  | TUnknown | TVar _ ->
+      references
+
+let add_type_annotation_references add source references =
+  let keyword =
+    if String.starts_with ~prefix:"^:" source then
+      ":" ^ String.sub source 2 (String.length source - 2)
+    else source
+  in
+  match Type_annotation.of_keyword keyword with
+  | Error _ -> references
+  | Ok ty -> add_type_references add ty references
+
+let rec declaration_type_references add references = function
+  | Ast.FSymbol annotation when String.starts_with ~prefix:"^:" annotation ->
+      add_type_annotation_references add annotation references
+  | FKeyword annotation ->
+      add_type_annotation_references add annotation references
+  | FVector forms | FList forms ->
+      List.fold_left (declaration_type_references add) references forms
+  | FSymbol _ | FBool _ | FInt _ | FFloat _ | FChar _ | FString _ | FMap _ ->
+      references
+
 let add_symbol_references bound name references =
   let add kind name references =
     Workspace_symbol_set.add (workspace_symbol kind name) references
   in
   if String_set.mem name bound then references
-  else if String.starts_with ~prefix:"^:ocaml/" name then
-    let type_name =
-      String.sub name (String.length "^:ocaml/")
-        (String.length name - String.length "^:ocaml/")
-    in
-    (match String.index_opt type_name '.' with
-    | Some separator ->
-        add Module_symbol (String.sub type_name 0 separator) references
-    | None -> add Type_symbol type_name references)
-  else if String.starts_with ~prefix:"^:" name then references
+  else if String.starts_with ~prefix:"^:" name then
+    add_type_annotation_references add name references
   else
     match String.rindex_opt name '/' with
     | Some separator ->
@@ -1758,6 +1808,9 @@ let rec pattern_references bound references = function
 
 let referenced_symbols source =
   let open Ast in
+  let add kind name references =
+    Workspace_symbol_set.add (workspace_symbol kind name) references
+  in
   let rec forms bound references = function
     | [] -> references
     | form :: rest -> forms bound (form_references bound references form) rest
@@ -1814,8 +1867,8 @@ let referenced_symbols source =
         forms bound references body
     | FList
         (FSymbol ("type-alias" | "type-record" | "type-variant" | "defprotocol")
-        :: _) ->
-        references
+        :: declaration) ->
+        List.fold_left (declaration_type_references add) references declaration
     | FList (FSymbol "extend-type" :: receiver :: FSymbol protocol :: methods) ->
         let references =
           Workspace_symbol_set.add (workspace_symbol Protocol_symbol protocol)

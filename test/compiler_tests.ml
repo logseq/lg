@@ -5653,6 +5653,49 @@ let test_workspace_index_tracks_qualified_type_dependencies () =
   if Cljml.Language_service.workspace_analysis index consumer_uri = None then
     failwith "qualified OCaml type annotations must depend on their module provider"
 
+let test_workspace_index_tracks_concise_type_dependencies () =
+  let provider_uri = "file:///tmp/a-workspace-domain-concise.cljml" in
+  let consumer_uri = "file:///tmp/z-workspace-domain-concise-user.cljml" in
+  let index =
+    Cljml.Language_service.create_workspace_index
+      [ (provider_uri, "(module Domain (type-record user (name :string)))\n");
+        (consumer_uri, "(defn keep [^:Domain/user value] value)\n") ]
+    |> expect_ok
+  in
+  let _index, reanalyzed =
+    Cljml.Language_service.update_workspace_index index ~filename:provider_uri
+      ~source:
+        "(module Domain (type-record user (name :string) (age :int)))\n"
+    |> expect_ok
+  in
+  if List.sort String.compare reanalyzed <> [ provider_uri; consumer_uri ] then
+    failwith "concise type annotations must invalidate their module consumers"
+
+let test_workspace_index_tracks_declaration_type_dependencies () =
+  let provider_uri = "file:///tmp/a-workspace-domain-declaration.cljml" in
+  let consumer_uri = "file:///tmp/z-workspace-domain-declaration-user.cljml" in
+  let consumer =
+    {|
+(type-alias user-option :ocaml/option<Domain.user>)
+(type-record envelope (user :ocaml/Domain.user))
+(type-variant event (Created :ocaml/Domain.user))
+|}
+  in
+  let index =
+    Cljml.Language_service.create_workspace_index
+      [ (provider_uri, "(module Domain (type-record user (name :string)))\n");
+        (consumer_uri, consumer) ]
+    |> expect_ok
+  in
+  let _index, reanalyzed =
+    Cljml.Language_service.update_workspace_index index ~filename:provider_uri
+      ~source:
+        "(module Domain (type-record user (name :string) (age :int)))\n"
+    |> expect_ok
+  in
+  if List.sort String.compare reanalyzed <> [ provider_uri; consumer_uri ] then
+    failwith "type declarations must invalidate qualified type consumers"
+
 let test_workspace_index_separates_module_and_protocol_providers () =
   let module_uri = "file:///tmp/workspace-shared-module.cljml" in
   let protocol_uri = "file:///tmp/workspace-shared-protocol.cljml" in
@@ -8183,6 +8226,10 @@ let tests =
       test_workspace_index_ignores_lexically_bound_names );
     ( "workspace index tracks qualified type dependencies",
       test_workspace_index_tracks_qualified_type_dependencies );
+    ( "workspace index tracks concise type dependencies",
+      test_workspace_index_tracks_concise_type_dependencies );
+    ( "workspace index tracks declaration type dependencies",
+      test_workspace_index_tracks_declaration_type_dependencies );
     ( "workspace index separates module and protocol providers",
       test_workspace_index_separates_module_and_protocol_providers );
     ( "workspace index handles file lifecycle",
