@@ -4958,6 +4958,63 @@ let test_workspace_index_tracks_variant_constructor_dependencies () =
     = None
   then failwith "workspace index must connect variant constructor consumers"
 
+let test_workspace_index_ignores_lexically_bound_names () =
+  let provider_uri = "file:///tmp/workspace-global-value.cljml" in
+  let local_uri = "file:///tmp/workspace-local-value.cljml" in
+  let index =
+    Cljml.Language_service.create_workspace_index
+      [ (provider_uri, "(def value 1)\n(def nested 2)\n");
+        ( local_uri,
+          "(defn identity [value] (let [nested value] nested))\n" ) ]
+    |> expect_ok
+  in
+  let local_before =
+    Cljml.Language_service.workspace_analysis index local_uri |> Option.get
+  in
+  let index, reanalyzed =
+    Cljml.Language_service.update_workspace_index index ~filename:provider_uri
+      ~source:"(def value 2)\n(def nested 3)\n"
+    |> expect_ok
+  in
+  if reanalyzed <> [ provider_uri ] then
+    failwith "lexically bound names must not create workspace dependency edges";
+  let local_after =
+    Cljml.Language_service.workspace_analysis index local_uri |> Option.get
+  in
+  if local_before != local_after then
+    failwith "local-only files must reuse their previous analysis"
+
+let test_workspace_index_tracks_qualified_type_dependencies () =
+  let provider_uri = "file:///tmp/workspace-domain-type.cljml" in
+  let consumer_uri = "file:///tmp/workspace-domain-type-user.cljml" in
+  let index =
+    Cljml.Language_service.create_workspace_index
+      [ (provider_uri, "(module Domain (type-record user (name :string)))\n");
+        ( consumer_uri,
+          "(defn keep [^:ocaml/Domain.user value] value)\n" ) ]
+    |> expect_ok
+  in
+  if Cljml.Language_service.workspace_analysis index consumer_uri = None then
+    failwith "qualified OCaml type annotations must depend on their module provider"
+
+let test_workspace_index_separates_module_and_protocol_providers () =
+  let module_uri = "file:///tmp/workspace-shared-module.cljml" in
+  let protocol_uri = "file:///tmp/workspace-shared-protocol.cljml" in
+  let consumer_uri = "file:///tmp/workspace-shared-user.cljml" in
+  let index =
+    Cljml.Language_service.create_workspace_index
+      [ (module_uri, "(module Shared (def value 1))\n");
+        ( protocol_uri,
+          "(defprotocol Shared (label [value] :string))\n\
+           (extend-type :int Shared (label [value] (str value)))\n" );
+        ( consumer_uri,
+          "(def module-value Shared/value)\n\
+           (def protocol-value (Shared/label 1))\n" ) ]
+    |> expect_ok
+  in
+  if Cljml.Language_service.workspace_analysis index consumer_uri = None then
+    failwith "module and protocol providers with the same name must coexist"
+
 let test_workspace_index_rejects_duplicate_providers () =
   match
     Cljml.Language_service.create_workspace_index
@@ -7296,6 +7353,12 @@ let tests =
       test_workspace_index_tracks_module_alias_dependencies );
     ( "workspace index tracks variant constructor dependencies",
       test_workspace_index_tracks_variant_constructor_dependencies );
+    ( "workspace index ignores lexically bound names",
+      test_workspace_index_ignores_lexically_bound_names );
+    ( "workspace index tracks qualified type dependencies",
+      test_workspace_index_tracks_qualified_type_dependencies );
+    ( "workspace index separates module and protocol providers",
+      test_workspace_index_separates_module_and_protocol_providers );
     ( "workspace index rejects duplicate providers",
       test_workspace_index_rejects_duplicate_providers );
     ( "workspace index contains component errors",

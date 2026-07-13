@@ -1036,73 +1036,223 @@ type workspace_index = {
   components : String_set.t list;
 }
 
-let rec form_symbols acc form =
-  let open Ast in
-  match form with
-  | FSymbol name -> String_set.add name acc
-  | FList forms | FVector forms ->
-      List.fold_left form_symbols acc forms
-  | FMap entries ->
-      List.fold_left
-        (fun acc (key, value) -> form_symbols (form_symbols acc key) value)
-        acc entries
-  | FBool _ | FInt _ | FFloat _ | FChar _ | FString _ | FKeyword _ -> acc
+type workspace_symbol_kind =
+  | Value_symbol
+  | Module_symbol
+  | Module_type_symbol
+  | Type_symbol
+  | Constructor_symbol
+  | Protocol_symbol
+  | Method_symbol
 
-let provided_names source =
+module Workspace_symbol = struct
+  type t = workspace_symbol_kind * string
+
+  let compare = Stdlib.compare
+end
+
+module Workspace_symbol_set = Set.Make (Workspace_symbol)
+module Workspace_symbol_map = Map.Make (Workspace_symbol)
+
+let workspace_symbol_name (kind, name) =
+  match kind with Type_symbol -> Names.sanitize_name name | _ -> name
+
+let workspace_symbol kind name = (kind, workspace_symbol_name (kind, name))
+
+let provided_symbols source =
   let open Ast in
   match Lexer.tokenize source with
-  | Error _ -> String_set.empty
+  | Error _ -> Workspace_symbol_set.empty
   | Ok tokens -> (
       match Parser.parse tokens with
-      | Error _ -> String_set.empty
+      | Error _ -> Workspace_symbol_set.empty
       | Ok forms ->
           List.fold_left
-            (fun names -> function
+            (fun symbols -> function
               | FList
                   (FSymbol ("module-alias" | "module-apply")
                   :: FSymbol name :: _) ->
-                  String_set.add name names
+                  Workspace_symbol_set.add (workspace_symbol Module_symbol name)
+                    symbols
               | FList
                   (FSymbol "type-variant" :: FSymbol name :: constructors) ->
                   List.fold_left
-                    (fun names -> function
+                    (fun symbols -> function
                       | FSymbol constructor
                       | FList (FSymbol constructor :: _) ->
-                          String_set.add constructor names
-                      | _ -> names)
-                    (String_set.add name names) constructors
+                          Workspace_symbol_set.add
+                            (workspace_symbol Constructor_symbol constructor)
+                            symbols
+                      | _ -> symbols)
+                    (Workspace_symbol_set.add (workspace_symbol Type_symbol name)
+                       symbols)
+                    constructors
               | FList
-                  (FSymbol
-                    ( "module" | "module-signature" | "module-functor" )
-                  :: FSymbol name :: _) ->
-                  String_set.add name names
+                  (FSymbol ("module" | "module-functor") :: FSymbol name :: _) ->
+                  Workspace_symbol_set.add (workspace_symbol Module_symbol name)
+                    symbols
+              | FList (FSymbol "module-signature" :: FSymbol name :: _) ->
+                  Workspace_symbol_set.add
+                    (workspace_symbol Module_type_symbol name) symbols
               | FList
-                  (FSymbol
-                    ( "def" | "defn" | "type-alias" | "type-record" )
-                  :: FSymbol name :: _) ->
-                  String_set.add name names
+                  (FSymbol ("def" | "defn") :: FSymbol name :: _) ->
+                  Workspace_symbol_set.add (workspace_symbol Value_symbol name)
+                    symbols
+              | FList
+                  (FSymbol ("type-alias" | "type-record") :: FSymbol name :: _) ->
+                  Workspace_symbol_set.add (workspace_symbol Type_symbol name)
+                    symbols
               | FList (FSymbol "defprotocol" :: FSymbol protocol_name :: methods) ->
                   List.fold_left
-                    (fun names -> function
+                    (fun symbols -> function
                       | FList (FSymbol method_name :: _) ->
-                          String_set.add method_name names
-                      | _ -> names)
-                    (String_set.add protocol_name names) methods
-              | _ -> names)
-            String_set.empty forms)
+                          Workspace_symbol_set.add
+                            (workspace_symbol Method_symbol method_name)
+                            symbols
+                      | _ -> symbols)
+                    (Workspace_symbol_set.add
+                       (workspace_symbol Protocol_symbol protocol_name)
+                       symbols)
+                    methods
+              | _ -> symbols)
+            Workspace_symbol_set.empty forms)
 
-let referenced_names source =
+let pattern_names form =
+  let rec collect names = function
+    | Ast.FSymbol name when not (String.starts_with ~prefix:"^:" name) ->
+        String_set.add name names
+    | FVector forms | FList forms -> List.fold_left collect names forms
+    | _ -> names
+  in
+  collect String_set.empty form
+
+let add_symbol_references bound name references =
+  let add kind name references =
+    Workspace_symbol_set.add (workspace_symbol kind name) references
+  in
+  if String_set.mem name bound then references
+  else if String.starts_with ~prefix:"^:ocaml/" name then
+    let type_name =
+      String.sub name (String.length "^:ocaml/")
+        (String.length name - String.length "^:ocaml/")
+    in
+    (match String.index_opt type_name '.' with
+    | Some separator ->
+        add Module_symbol (String.sub type_name 0 separator) references
+    | None -> add Type_symbol type_name references)
+  else if String.starts_with ~prefix:"^:" name then references
+  else
+    match String.rindex_opt name '/' with
+    | Some separator ->
+        let qualifier = String.sub name 0 separator in
+        let root =
+          match String.index_opt qualifier '/' with
+          | None -> qualifier
+          | Some index -> String.sub qualifier 0 index
+        in
+        references |> add Module_symbol root |> add Protocol_symbol qualifier
+    | None -> (
+        match String.index_opt name '.' with
+        | Some separator ->
+            add Module_symbol (String.sub name 0 separator) references
+        | None ->
+            references |> add Value_symbol name |> add Type_symbol name
+            |> add Constructor_symbol name |> add Method_symbol name)
+
+let rec pattern_references bound references = function
+  | Ast.FSymbol name when String.starts_with ~prefix:"^:" name ->
+      add_symbol_references bound name references
+  | FVector forms | FList forms ->
+      List.fold_left (pattern_references bound) references forms
+  | _ -> references
+
+let referenced_symbols source =
+  let open Ast in
+  let rec forms bound references = function
+    | [] -> references
+    | form :: rest -> forms bound (form_references bound references form) rest
+  and method_references bound references = function
+    | FList (FSymbol _ :: params :: body) ->
+        let references = pattern_references bound references params in
+        let bound = String_set.union bound (pattern_names params) in
+        forms bound references body
+    | _ -> references
+  and form_references bound references = function
+    | FSymbol name -> add_symbol_references bound name references
+    | FList (FSymbol "defn" :: FSymbol _ :: params :: body) ->
+        let references = pattern_references bound references params in
+        let bound = String_set.union bound (pattern_names params) in
+        forms bound references body
+    | FList [ FSymbol "def"; FSymbol _; value ] ->
+        form_references bound references value
+    | FList (FSymbol "fn" :: params :: body) ->
+        let references = pattern_references bound references params in
+        let bound = String_set.union bound (pattern_names params) in
+        forms bound references body
+    | FList (FSymbol "let" :: FVector bindings :: body) ->
+        let rec bindings_references bound references = function
+          | pattern :: value :: rest ->
+              let references = form_references bound references value in
+              let references = pattern_references bound references pattern in
+              let bound = String_set.union bound (pattern_names pattern) in
+              bindings_references bound references rest
+          | [] -> (bound, references)
+          | [ form ] -> (bound, form_references bound references form)
+        in
+        let bound, references = bindings_references bound references bindings in
+        forms bound references body
+    | FList [ FSymbol "module-alias"; FSymbol _; FSymbol target ] ->
+        Workspace_symbol_set.add (workspace_symbol Module_symbol target) references
+    | FList (FSymbol "module-apply" :: FSymbol _ :: FSymbol functor_name :: args) ->
+        List.fold_left
+          (fun references -> function
+            | FSymbol name ->
+                Workspace_symbol_set.add (workspace_symbol Module_symbol name)
+                  references
+            | _ -> references)
+          (Workspace_symbol_set.add
+             (workspace_symbol Module_symbol functor_name)
+             references)
+          args
+    | FList (FSymbol "module" :: FSymbol _ :: FSymbol signature :: body) ->
+        forms bound
+          (Workspace_symbol_set.add
+             (workspace_symbol Module_type_symbol signature)
+             references)
+          body
+    | FList (FSymbol "module" :: FSymbol _ :: body) ->
+        forms bound references body
+    | FList
+        (FSymbol ("type-alias" | "type-record" | "type-variant" | "defprotocol")
+        :: _) ->
+        references
+    | FList (FSymbol "extend-type" :: receiver :: FSymbol protocol :: methods) ->
+        let references =
+          Workspace_symbol_set.add (workspace_symbol Protocol_symbol protocol)
+            references
+        in
+        let references =
+          match receiver with
+          | FSymbol name ->
+              Workspace_symbol_set.add (workspace_symbol Type_symbol name) references
+          | _ -> references
+        in
+        List.fold_left (method_references bound) references methods
+    | FList list | FVector list -> forms bound references list
+    | FMap entries ->
+        List.fold_left
+          (fun references (key, value) ->
+            form_references bound (form_references bound references key) value)
+          references entries
+    | FBool _ | FInt _ | FFloat _ | FChar _ | FString _ | FKeyword _ ->
+        references
+  in
   match Lexer.tokenize source with
-  | Error _ -> String_set.empty
+  | Error _ -> Workspace_symbol_set.empty
   | Ok tokens -> (
       match Parser.parse tokens with
-      | Error _ -> String_set.empty
-      | Ok forms -> List.fold_left form_symbols String_set.empty forms)
-
-let root_name symbol =
-  match String.index_opt symbol '/' with
-  | None -> symbol
-  | Some index -> String.sub symbol 0 index
+      | Error _ -> Workspace_symbol_set.empty
+      | Ok parsed -> forms String_set.empty Workspace_symbol_set.empty parsed)
 
 let workspace_providers sources =
   String_map.fold
@@ -1110,20 +1260,35 @@ let workspace_providers sources =
       match providers with
       | Error _ as err -> err
       | Ok providers ->
-          String_set.fold
-            (fun name providers ->
+          Workspace_symbol_set.fold
+            (fun symbol providers ->
               match providers with
               | Error _ as err -> err
               | Ok providers -> (
-                  match String_map.find_opt name providers with
-                  | Some existing when existing <> filename ->
+                  let existing =
+                    Workspace_symbol_map.find_opt symbol providers
+                    |> Option.value ~default:String_set.empty
+                  in
+                  let unique =
+                    match fst symbol with
+                    | Value_symbol | Module_symbol | Module_type_symbol
+                    | Type_symbol | Protocol_symbol -> true
+                    | Constructor_symbol | Method_symbol -> false
+                  in
+                  match String_set.choose_opt existing with
+                  | Some existing_filename
+                    when unique && existing_filename <> filename ->
                       Error.error
-                        ("workspace symbol " ^ name
-                       ^ " has multiple providers: " ^ existing ^ " and "
+                        ("workspace symbol " ^ snd symbol
+                       ^ " has multiple providers: " ^ existing_filename ^ " and "
                        ^ filename)
-                  | _ -> Ok (String_map.add name filename providers)))
-            (provided_names source) (Ok providers))
-    sources (Ok String_map.empty)
+                  | _ ->
+                      Ok
+                        (Workspace_symbol_map.add symbol
+                           (String_set.add filename existing)
+                           providers)))
+            (provided_symbols source) (Ok providers))
+    sources (Ok Workspace_symbol_map.empty)
 
 let workspace_components sources =
   match workspace_providers sources with
@@ -1132,13 +1297,13 @@ let workspace_components sources =
   let dependencies =
     String_map.mapi
       (fun filename source ->
-        String_set.fold
+        Workspace_symbol_set.fold
              (fun symbol dependencies ->
-               match String_map.find_opt (root_name symbol) providers with
-               | Some provider when provider <> filename ->
-                   String_set.add provider dependencies
-               | _ -> dependencies)
-             (referenced_names source)
+               Workspace_symbol_map.find_opt symbol providers
+               |> Option.value ~default:String_set.empty
+               |> String_set.remove filename
+               |> String_set.union dependencies)
+             (referenced_symbols source)
              String_set.empty)
       sources
   in
