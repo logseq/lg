@@ -135,12 +135,45 @@ let source_node_id_of_attributes attributes =
            | _ -> None)
 
 let source_node_id_at analysis ~offset =
-  match
+  let expression =
     smallest_expression analysis.compiler.typed_structure offset (fun expression ->
         Option.is_some (source_node_id_of_attributes expression.exp_attributes))
-  with
-  | None -> None
-  | Some expression -> source_node_id_of_attributes expression.exp_attributes
+  in
+  let pattern = ref None in
+  let base = Tast_iterator.default_iterator in
+  let visit_pattern : type k.
+      Tast_iterator.iterator -> k Typedtree.general_pattern -> unit =
+   fun self pattern_value ->
+    if
+      location_contains_offset pattern_value.Typedtree.pat_loc offset
+      && Option.is_some
+           (source_node_id_of_attributes pattern_value.pat_attributes)
+    then
+      match !pattern with
+      | None ->
+          pattern := Some (pattern_value.pat_loc, pattern_value.pat_attributes)
+      | Some (current_location, _)
+        when location_size pattern_value.pat_loc
+             < location_size current_location ->
+          pattern := Some (pattern_value.pat_loc, pattern_value.pat_attributes)
+      | Some _ -> ();
+    base.pat self pattern_value
+  in
+  let iterator =
+    { base with
+      pat = visit_pattern;
+    }
+  in
+  iterator.structure iterator analysis.compiler.typed_structure;
+  match (expression, !pattern) with
+  | None, None -> None
+  | Some expression, None ->
+      source_node_id_of_attributes expression.exp_attributes
+  | None, Some (_, attributes) -> source_node_id_of_attributes attributes
+  | Some expression, Some (pattern_location, attributes) ->
+      if location_size pattern_location < location_size expression.exp_loc then
+        source_node_id_of_attributes attributes
+      else source_node_id_of_attributes expression.exp_attributes
 
 let print_type env ty =
   Printtyp.wrap_printing_env ~error:false env (fun () ->

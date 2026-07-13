@@ -23,6 +23,11 @@ let inherit_scope_ocaml_value_refers =
 let compile_defprotocol = Protocol_elaborator.compile_defprotocol
 let compile_extend_type = Protocol_elaborator.compile_extend_type
 
+let located_value_pattern form pattern =
+  match Source_context.find form with
+  | None -> pattern
+  | Some location ->
+      Located_value (Source_node_id.of_location location, location, pattern)
 
 let compile_module_alias = Module_elaborator.compile_module_alias
 let compile_module_signature = Module_signature_elaborator.compile
@@ -113,7 +118,7 @@ let compile scope env next_type = function
   | FList (FSymbol "module-apply" :: _) ->
       Error.error
         "module-apply expects result, functor, and one or more argument modules"
-  | FList [ FSymbol "def"; FSymbol name; expr_form ] -> (
+  | FList [ FSymbol "def"; ((FSymbol name) as name_form); expr_form ] -> (
       match compile_expr scope env expr_form with
       | Error _ as err -> err
       | Ok expr ->
@@ -149,7 +154,10 @@ let compile scope env next_type = function
                   Env.add env_key binding env,
                   next_type,
                   Value_binding
-                    { pattern = Named ocaml_name; expression = expr.semantic_expr } ))))
+                    {
+                      pattern = located_value_pattern name_form (Named ocaml_name);
+                      expression = expr.semantic_expr;
+                    } ))))
   | FList
       (FSymbol "defn" :: FSymbol name :: params :: FKeyword return_keyword
       :: body_forms) -> (
@@ -188,7 +196,8 @@ let compile scope env next_type = function
                       Env.add env_key binding env,
                       next_type,
                       Group (type_items @ [ value_item ]) ))))
-  | FList (FSymbol "defn" :: FSymbol name :: params :: body_forms) -> (
+  | FList
+      (FSymbol "defn" :: ((FSymbol name) as name_form) :: params :: body_forms) -> (
       match prepare_fn scope env params body_forms with
       | Error _ as err -> err
       | Ok parts -> (
@@ -208,7 +217,10 @@ let compile scope env next_type = function
               let type_items = row_type_items row_param_types param_tys in
               let value_item =
                 Value_binding
-                  { pattern = Named ocaml_name; expression = expr.semantic_expr }
+                  {
+                    pattern = located_value_pattern name_form (Named ocaml_name);
+                    expression = expr.semantic_expr;
+                  }
               in
               Ok
                 ( scope,

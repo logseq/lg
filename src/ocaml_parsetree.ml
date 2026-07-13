@@ -205,18 +205,37 @@ let record_definition var_name type_name set_module_name fields values =
           set_item;
           Ast_helper.Str.value ~loc Nonrecursive [ value_binding ] ]
 
-let value_pattern = function
+let node_id_attribute node_id =
+  let payload =
+    Parsetree.PStr
+      [ Ast_helper.Str.eval
+          (Ast_helper.Exp.constant
+             (Ast_helper.Const.string (Source_node_id.to_string node_id))) ]
+  in
+  Ast_helper.Attr.mk (str "cljml.node_id") payload
+
+let rec value_pattern = function
   | Named name -> Ast_helper.Pat.var ~loc (str name)
   | Unit_pattern ->
       Ast_helper.Pat.construct ~loc (lid (Longident.Lident "()")) None
   | Ignore_pattern -> Ast_helper.Pat.any ~loc ()
+  | Located_value (node_id, location, pattern) ->
+      let pattern = value_pattern pattern in
+      {
+        pattern with
+        ppat_loc = location;
+        ppat_attributes = node_id_attribute node_id :: pattern.ppat_attributes;
+      }
+
+let rec value_pattern_context = function
+  | Named name -> "value " ^ name
+  | Unit_pattern -> "top-level effect"
+  | Ignore_pattern -> "top-level expression"
+  | Located_value (_, _, pattern) -> value_pattern_context pattern
 
 let value_binding pattern expression =
   let context =
-    match pattern with
-    | Named name -> "value " ^ name
-    | Unit_pattern -> "top-level effect"
-    | Ignore_pattern -> "top-level expression"
+    value_pattern_context pattern
   in
   match
     Ocaml_ir.to_parsetree ~context (Semantic_lowering.expression expression)

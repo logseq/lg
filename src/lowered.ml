@@ -2,6 +2,7 @@ type value_pattern =
   | Named of string
   | Unit_pattern
   | Ignore_pattern
+  | Located_value of Source_node_id.t * Location.t * value_pattern
 
 type signature_item =
   | Signature_value of {

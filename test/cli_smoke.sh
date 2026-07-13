@@ -47,7 +47,7 @@ printf '%s\n' \
 
 "$cli" "$warning_source" >"$warning_stdout" 2>"$warning_stderr"
 
-grep -q 'let describe' "$warning_stdout"
+grep -q 'describe' "$warning_stdout"
 grep -q 'Warning 8' "$warning_stderr"
 grep -q 'not exhaustive' "$warning_stderr"
 grep -q "File \"$warning_source\", line 3" "$warning_stderr"

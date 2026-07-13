@@ -922,6 +922,18 @@ let test_source_node_identity_reaches_parsetree () =
       | Some id -> failwith ("unexpected source node identity " ^ id)
       | None -> failwith "expected LSP lookup to return a source node identity"
 
+let test_source_node_identity_covers_value_bindings () =
+  let source = "(def answer 42)" in
+  let analysis =
+    Cljml.Language_service.analyze ~filename:"binding-identity.cljml" source
+    |> expect_ok
+  in
+  let offset = expect_substring_index source "answer" in
+  match Cljml.Language_service.source_node_id_at analysis ~offset with
+  | Some id when String.starts_with ~prefix:"binding-identity.cljml:" id -> ()
+  | Some id -> failwith ("unexpected binding source node identity " ^ id)
+  | None -> failwith "expected value binding to preserve source node identity"
+
 let test_modules_resolve_qualified_symbols () =
   let source =
     {|
@@ -5879,6 +5891,8 @@ let tests =
       test_semantic_ast_preserves_nested_types );
     ( "source node identity reaches parsetree",
       test_source_node_identity_reaches_parsetree );
+    ( "source node identity covers value bindings",
+      test_source_node_identity_covers_value_bindings );
     ("modules resolve qualified symbols", test_modules_resolve_qualified_symbols);
     ( "modules prevent unqualified symbol collisions",
       test_modules_prevent_unqualified_symbol_collisions );
