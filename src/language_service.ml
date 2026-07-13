@@ -584,6 +584,13 @@ let module_identity_at analysis offset source_name =
               consider module_expression.mod_loc path
                 (Cljml_compiler_support.Ocaml_module.uid declaration)
                 (Cljml_compiler_support.Ocaml_module.location declaration)
+          | Tmod_functor
+              (Typedtree.Named (Some id, parameter_name, _), body) ->
+              let path = Path.Pident id in
+              let declaration = Env.find_module path body.mod_env in
+              consider parameter_name.loc path
+                (Cljml_compiler_support.Ocaml_module.uid declaration)
+                (Cljml_compiler_support.Ocaml_module.location declaration)
           | _ -> ());
           base.module_expr self module_expression);
       module_binding =

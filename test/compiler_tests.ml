@@ -4604,6 +4604,90 @@ let test_language_service_completion_includes_modules_and_signatures () =
         failwith ("expected module completion " ^ name))
     [ "First"; "Second"; "ValueSig" ]
 
+let module_construct_language_service_source =
+  {|
+(module-signature ArgSig (val value :int))
+(module Input ArgSig (def value 42))
+(module-alias Alias Input)
+(open Alias)
+(include Alias)
+(module-functor Make [Arg ArgSig]
+  (def copied Arg/value))
+(module-apply Output Make Input)
+|}
+
+let analyze_module_construct_language_service_source () =
+  Cljml.Language_service.analyze
+    ~filename:"file:///tmp/module-construct-service.cljml"
+    module_construct_language_service_source
+  |> expect_ok
+
+let assert_module_definition_offset analysis ~usage ~expected message =
+  match Cljml.Language_service.definition analysis ~offset:usage with
+  | Some location when location.Location.loc_start.Lexing.pos_cnum = expected -> ()
+  | Some location ->
+      failwith
+        (Printf.sprintf "%s: expected %d, got %d" message expected
+           location.loc_start.pos_cnum)
+  | None -> failwith (message ^ ": expected a definition")
+
+let test_language_service_module_constructs_preserve_exact_locations () =
+  let source = module_construct_language_service_source in
+  let analysis = analyze_module_construct_language_service_source () in
+  let arg_sig_declaration = expect_substring_index source "ArgSig (val" in
+  let input_declaration = expect_substring_index source "Input ArgSig" in
+  let alias_declaration = expect_substring_index source "Alias Input" in
+  let functor_declaration = expect_substring_index source "Make [Arg" in
+  let parameter_declaration = expect_substring_index source "Arg ArgSig" in
+  let output_declaration = expect_substring_index source "Output Make" in
+  assert_module_definition_offset analysis
+    ~usage:(expect_substring_index source "Alias Input" + String.length "Alias ")
+    ~expected:input_declaration "module alias target";
+  assert_module_definition_offset analysis
+    ~usage:(expect_substring_index source "open Alias" + String.length "open ")
+    ~expected:alias_declaration "open module";
+  assert_module_definition_offset analysis
+    ~usage:(expect_substring_index source "include Alias" + String.length "include ")
+    ~expected:alias_declaration "include module";
+  assert_module_definition_offset analysis
+    ~usage:(expect_substring_index source "Arg ArgSig" + String.length "Arg ")
+    ~expected:arg_sig_declaration "functor parameter signature";
+  assert_module_definition_offset analysis
+    ~usage:(expect_substring_index source "Arg/value")
+    ~expected:parameter_declaration "functor parameter";
+  assert_module_definition_offset analysis
+    ~usage:(expect_substring_index source "Output Make" + String.length "Output ")
+    ~expected:functor_declaration "applied functor";
+  assert_module_definition_offset analysis
+    ~usage:(expect_substring_index source "Make Input" + String.length "Make ")
+    ~expected:input_declaration "functor argument";
+  assert_module_definition_offset analysis ~usage:output_declaration
+    ~expected:output_declaration "module application result";
+  let parameter_usage = expect_substring_index source "Arg/value" in
+  let parameter_references =
+    Cljml.Language_service.references analysis ~offset:parameter_usage
+  in
+  let parameter_reference_offsets =
+    List.map
+      (fun (span : Cljml.Ast.source_span) -> span.start_offset)
+      parameter_references
+  in
+  if parameter_reference_offsets <> [ parameter_declaration; parameter_usage ] then
+    failwith "functor parameter references must include its exact declaration";
+  match
+    Cljml.Language_service.rename analysis ~offset:parameter_usage
+      ~new_name:"Source"
+  with
+  | Error err -> failwith ("expected functor parameter rename: " ^ err.message)
+  | Ok edits ->
+      if List.length edits <> 2 then
+        failwith "functor parameter rename must edit declaration and usage";
+      List.iter
+        (fun (edit : Cljml.Language_service.text_edit) ->
+          if span_text source edit.range <> "Arg" then
+            failwith "functor parameter rename must use exact symbol spans")
+        edits
+
 let test_language_service_module_capabilities () =
   let cases =
     [
@@ -4618,6 +4702,8 @@ let test_language_service_module_capabilities () =
         test_workspace_module_definition_resolves_across_files );
       ( "signature identity",
         test_language_service_module_signature_definition_and_references );
+      ( "module construct locations",
+        test_language_service_module_constructs_preserve_exact_locations );
       ( "completion",
         test_language_service_completion_includes_modules_and_signatures );
     ]

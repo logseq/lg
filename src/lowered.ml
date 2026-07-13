@@ -35,6 +35,18 @@ type variant_constructor = {
   location : Location.t option;
 }
 
+type functor_parameter = {
+  parameter_name : string;
+  parameter_location : Location.t option;
+  signature_name : string;
+  signature_location : Location.t option;
+}
+
+type module_reference = {
+  module_name : string;
+  location : Location.t option;
+}
+
 type compiled_item =
   | Value_binding of {
       pattern : value_pattern;
@@ -74,25 +86,30 @@ type compiled_item =
     }
   | Module_alias of {
       alias_name : string;
+      location : Location.t option;
       target_name : string;
+      target_location : Location.t option;
     }
   | Module_functor of {
       functor_name : string;
-      parameters : (string * string) list;
+      location : Location.t option;
+      parameters : functor_parameter list;
       items : compiled_item list;
     }
   | Module_apply of {
       module_name : string;
+      location : Location.t option;
       functor_name : string;
-      argument_names : string list;
+      functor_location : Location.t option;
+      arguments : module_reference list;
     }
   | Module_signature of {
       signature_name : string;
       location : Location.t option;
       items : signature_item list;
     }
-  | Open_module of string
-  | Include_module of string
+  | Open_module of module_reference
+  | Include_module of module_reference
   | Record_def of {
       var_name : string;
       identity : (Source_node_id.t * Location.t) option;

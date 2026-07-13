@@ -90,40 +90,54 @@ let compile scope env next_type = function
       :: constructor_forms) ->
       compile_type_variant ?location:(Source_context.find name_form) scope env
         next_type name [] constructor_forms
-  | FList [ FSymbol "open"; FSymbol module_path ] ->
+  | FList [ FSymbol "open"; ((FSymbol module_path) as module_form) ] ->
       let env = open_module_bindings scope env module_path in
       Ok
         ( scope,
           env,
           next_type,
-          Open_module (Names.module_path_to_ocaml module_path) )
-  | FList [ FSymbol "include"; FSymbol module_path ] ->
+          Open_module
+            { module_name = Names.module_path_to_ocaml module_path;
+              location = Source_context.find module_form } )
+  | FList [ FSymbol "include"; ((FSymbol module_path) as module_form) ] ->
       let env = open_module_bindings scope env module_path in
       Ok
         ( scope,
           env,
           next_type,
-          Include_module (Names.module_path_to_ocaml module_path) )
+          Include_module
+            { module_name = Names.module_path_to_ocaml module_path;
+              location = Source_context.find module_form } )
   | FList (FSymbol "include" :: _) ->
       Error.error "include expects one module"
-  | FList [ FSymbol "module-alias"; FSymbol alias_name; FSymbol target_name ] ->
-      compile_module_alias scope env next_type alias_name target_name
+  | FList
+      [ FSymbol "module-alias";
+        ((FSymbol alias_name) as alias_form);
+        ((FSymbol target_name) as target_form) ] ->
+      compile_module_alias ?location:(Source_context.find alias_form)
+        ?target_location:(Source_context.find target_form) scope env next_type
+        alias_name target_name
   | FList (FSymbol "module-alias" :: _) ->
       Error.error "module-alias expects alias and target modules"
   | FList
-      (FSymbol "module-functor" :: FSymbol functor_name :: parameter_form
+      (FSymbol "module-functor" :: ((FSymbol functor_name) as name_form)
+      :: parameter_form
       :: body_forms) ->
-      compile_module_functor scope env next_type functor_name parameter_form
-        body_forms
+      compile_module_functor ?location:(Source_context.find name_form) scope env
+        next_type functor_name parameter_form body_forms
   | FList (FSymbol "module-functor" :: _) ->
       Error.error
         "module-functor expects a name, [parameter signature ...], and body"
   | FList
-      (FSymbol "module-apply" :: FSymbol module_name :: FSymbol functor_name
+      (FSymbol "module-apply" :: ((FSymbol module_name) as name_form)
+      :: ((FSymbol functor_name) as functor_form)
       :: (_ :: _ as argument_forms)) ->
       let rec parse_arguments acc = function
         | [] -> Ok (List.rev acc)
-        | FSymbol name :: rest -> parse_arguments (name :: acc) rest
+        | ((FSymbol name) as form) :: rest ->
+            parse_arguments
+              ({ module_name = name; location = Source_context.find form } :: acc)
+              rest
         | _ ->
             Error.error
               "module-apply expects result, functor, and one or more argument modules"
@@ -131,8 +145,9 @@ let compile scope env next_type = function
       (match parse_arguments [] argument_forms with
       | Error _ as err -> err
       | Ok argument_names ->
-          compile_module_apply scope env next_type module_name functor_name
-            argument_names)
+          compile_module_apply ?location:(Source_context.find name_form)
+            ?functor_location:(Source_context.find functor_form) scope env next_type
+            module_name functor_name argument_names)
   | FList (FSymbol "module-apply" :: _) ->
       Error.error
         "module-apply expects result, functor, and one or more argument modules"

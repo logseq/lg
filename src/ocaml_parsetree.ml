@@ -123,7 +123,7 @@ let type_variant_definition type_name parameters constructors location =
   let declaration_loc = declaration_location location in
   let constructor_declarations =
     constructors
-    |> List.map (fun constructor ->
+    |> List.map (fun (constructor : variant_constructor) ->
            let constructor_loc =
              Option.value constructor.location ~default:loc
            in
@@ -336,49 +336,69 @@ let rec structure_of_item = function
               (Location.mkloc (Some module_name) module_loc) module_expr
           in
           Ok [ Ast_helper.Str.module_ ~loc module_binding ])
-  | Module_alias { alias_name; target_name } ->
+  | Module_alias { alias_name; location; target_name; target_location } ->
+      let alias_loc = declaration_location location in
+      let target_loc = declaration_location target_location in
       let module_expr =
-        Ast_helper.Mod.ident ~loc (lid (longident_of_string target_name))
+        Ast_helper.Mod.ident ~loc:target_loc
+          (Location.mkloc (longident_of_string target_name) target_loc)
       in
       let module_binding =
-        Ast_helper.Mb.mk ~loc (Location.mkloc (Some alias_name) loc) module_expr
+        Ast_helper.Mb.mk ~loc:alias_loc
+          (Location.mkloc (Some alias_name) alias_loc) module_expr
       in
-      Ok [ Ast_helper.Str.module_ ~loc module_binding ]
-  | Module_functor { functor_name; parameters; items } -> (
+      Ok [ Ast_helper.Str.module_ ~loc:alias_loc module_binding ]
+  | Module_functor { functor_name; location; parameters; items } -> (
       match structure_of_items items with
       | Error _ as err -> err
       | Ok body ->
           let module_expr =
             List.fold_right
-              (fun (parameter_name, parameter_signature) body ->
+              (fun parameter body ->
+                let parameter_loc =
+                  declaration_location parameter.parameter_location
+                in
+                let signature_loc =
+                  declaration_location parameter.signature_location
+                in
                 let parameter =
                   Parsetree.Named
-                    ( Location.mkloc (Some parameter_name) loc,
-                      Ast_helper.Mty.ident ~loc
-                        (lid (longident_of_string parameter_signature)) )
+                    ( Location.mkloc (Some parameter.parameter_name) parameter_loc,
+                      Ast_helper.Mty.ident ~loc:signature_loc
+                        (Location.mkloc
+                           (longident_of_string parameter.signature_name)
+                           signature_loc) )
                 in
-                Ast_helper.Mod.functor_ ~loc parameter body)
+                Ast_helper.Mod.functor_ ~loc:parameter_loc parameter body)
               parameters (Ast_helper.Mod.structure ~loc body)
           in
+          let functor_loc = declaration_location location in
           let module_binding =
-            Ast_helper.Mb.mk ~loc (Location.mkloc (Some functor_name) loc)
-              module_expr
+            Ast_helper.Mb.mk ~loc:functor_loc
+              (Location.mkloc (Some functor_name) functor_loc) module_expr
           in
-          Ok [ Ast_helper.Str.module_ ~loc module_binding ])
-  | Module_apply { module_name; functor_name; argument_names } ->
+          Ok [ Ast_helper.Str.module_ ~loc:functor_loc module_binding ])
+  | Module_apply
+      { module_name; location; functor_name; functor_location; arguments } ->
+      let functor_loc = declaration_location functor_location in
       let module_expr =
         List.fold_left
-          (fun applied_functor argument_name ->
-            Ast_helper.Mod.apply ~loc applied_functor
-              (Ast_helper.Mod.ident ~loc
-                 (lid (longident_of_string argument_name))))
-          (Ast_helper.Mod.ident ~loc (lid (longident_of_string functor_name)))
-          argument_names
+          (fun applied_functor argument ->
+            let argument_loc = declaration_location argument.location in
+            Ast_helper.Mod.apply ~loc:argument_loc applied_functor
+              (Ast_helper.Mod.ident ~loc:argument_loc
+                 (Location.mkloc (longident_of_string argument.module_name)
+                    argument_loc)))
+          (Ast_helper.Mod.ident ~loc:functor_loc
+             (Location.mkloc (longident_of_string functor_name) functor_loc))
+          arguments
       in
+      let module_loc = declaration_location location in
       let module_binding =
-        Ast_helper.Mb.mk ~loc (Location.mkloc (Some module_name) loc) module_expr
+        Ast_helper.Mb.mk ~loc:module_loc
+          (Location.mkloc (Some module_name) module_loc) module_expr
       in
-      Ok [ Ast_helper.Str.module_ ~loc module_binding ]
+      Ok [ Ast_helper.Str.module_ ~loc:module_loc module_binding ]
   | Module_signature { signature_name; location; items } ->
       let signature_loc = declaration_location location in
       let module_type =
@@ -388,16 +408,24 @@ let rec structure_of_item = function
         [ Ast_helper.Str.modtype ~loc:signature_loc
             (Ast_helper.Mtd.mk ~loc:signature_loc ~typ:module_type
                (Location.mkloc signature_name signature_loc)) ]
-  | Open_module module_name ->
+  | Open_module { module_name; location } ->
+      let module_loc = declaration_location location in
       let module_expr =
-        Ast_helper.Mod.ident ~loc (lid (longident_of_string module_name))
+        Ast_helper.Mod.ident ~loc:module_loc
+          (Location.mkloc (longident_of_string module_name) module_loc)
       in
-      Ok [ Ast_helper.Str.open_ ~loc (Ast_helper.Opn.mk ~loc module_expr) ]
-  | Include_module module_name ->
+      Ok
+        [ Ast_helper.Str.open_ ~loc:module_loc
+            (Ast_helper.Opn.mk ~loc:module_loc module_expr) ]
+  | Include_module { module_name; location } ->
+      let module_loc = declaration_location location in
       let module_expr =
-        Ast_helper.Mod.ident ~loc (lid (longident_of_string module_name))
+        Ast_helper.Mod.ident ~loc:module_loc
+          (Location.mkloc (longident_of_string module_name) module_loc)
       in
-      Ok [ Ast_helper.Str.include_ ~loc (Ast_helper.Incl.mk ~loc module_expr) ]
+      Ok
+        [ Ast_helper.Str.include_ ~loc:module_loc
+            (Ast_helper.Incl.mk ~loc:module_loc module_expr) ]
   | Record_def { var_name; identity; type_name; set_module_name; fields; values } ->
       record_definition var_name identity type_name set_module_name fields values
 

@@ -43,7 +43,8 @@ let resolve_module_target_path scope env target_name =
       scope ^ "." ^ target_name
     else target_name
 
-let compile_module_alias ?semantic_target scope env next_type alias_name target_name =
+let compile_module_alias ?semantic_target ?location ?target_location scope env
+    next_type alias_name target_name =
   let target_path =
     Option.value semantic_target
       ~default:(resolve_module_target_path scope env target_name)
@@ -62,7 +63,9 @@ let compile_module_alias ?semantic_target scope env next_type alias_name target_
           Module_alias
             {
               alias_name = Names.module_segment_to_ocaml alias_name;
+              location;
               target_name = Names.module_path_to_ocaml target_name;
+              target_location;
             } )
 
 let parse_type_parameters = Type_parameters.parse
@@ -93,8 +96,8 @@ let variant_public_bindings module_path previous updated =
              ty = Types.qualify_module_type module_name binding.ty;
            } ))
 
-let compile_module_apply scope env next_type module_name functor_name
-    argument_names =
+let compile_module_apply ?location ?functor_location scope env next_type module_name
+    functor_name arguments =
   let applied_bindings =
     Module_metadata.apply_functor_result_bindings env module_name functor_name
   in
@@ -131,8 +134,16 @@ let compile_module_apply scope env next_type module_name functor_name
                   Module_apply
                     {
                       module_name = Names.module_segment_to_ocaml module_name;
+                      location;
                       functor_name = Names.module_path_to_ocaml functor_name;
-                      argument_names = List.map Names.module_path_to_ocaml argument_names;
+                      functor_location;
+                      arguments =
+                        List.map
+                          (fun argument ->
+                            { argument with
+                              module_name =
+                                Names.module_path_to_ocaml argument.module_name })
+                          arguments;
                     } ))))
 
 let rec compile_module ?location ?signature_name ?signature_location
@@ -249,14 +260,17 @@ let rec compile_module ?location ?signature_name ?signature_location
                 public_bindings @ exported,
                 next_type,
                 item :: items ))
-    | FList [ FSymbol "open"; FSymbol opened_module ] ->
+    | FList [ FSymbol "open"; ((FSymbol opened_module) as module_form) ] ->
         let env = open_module_bindings module_path env opened_module in
         Ok
           ( env,
             public_bindings,
             next_type,
-            Open_module (Names.module_path_to_ocaml opened_module) :: items )
-    | FList [ FSymbol "include"; FSymbol included_module ] ->
+            Open_module
+              { module_name = Names.module_path_to_ocaml opened_module;
+                location = Source_context.find module_form }
+            :: items )
+    | FList [ FSymbol "include"; ((FSymbol included_module) as module_form) ] ->
         let included_public_bindings =
           include_module_public_bindings module_path env included_module
         in
@@ -265,17 +279,25 @@ let rec compile_module ?location ?signature_name ?signature_location
           ( env,
             public_bindings @ included_public_bindings,
             next_type,
-            Include_module (Names.module_path_to_ocaml included_module) :: items )
+            Include_module
+              { module_name = Names.module_path_to_ocaml included_module;
+                location = Source_context.find module_form }
+            :: items )
     | FList (FSymbol "include" :: _) ->
         Error.error "include expects one module"
-    | FList [ FSymbol "module-alias"; FSymbol alias_name; FSymbol target_name ] ->
+    | FList
+        [ FSymbol "module-alias";
+          ((FSymbol alias_name) as alias_form);
+          ((FSymbol target_name) as target_form) ] ->
         let target_path = resolve_module_target_path module_path env target_name in
         let public_alias_path = module_path ^ "." ^ alias_name in
         let public_alias_bindings =
           alias_module_bindings env public_alias_path target_path
         in
         (match
-           compile_module_alias ~semantic_target:target_path module_path env next_type
+           compile_module_alias ~semantic_target:target_path
+             ?location:(Source_context.find alias_form)
+             ?target_location:(Source_context.find target_form) module_path env next_type
              alias_name target_name
          with
         | Error _ as err -> err
@@ -584,13 +606,19 @@ let rec compile_module ?location ?signature_name ?signature_location
   in
   loop env [] next_type [] forms
 
-let compile_module_functor scope env next_type functor_name parameter_form
+let compile_module_functor ?location scope env next_type functor_name parameter_form
     body_forms =
   let rec parse_parameters acc = function
     | [] -> Ok (List.rev acc)
-    | FSymbol parameter_name :: FSymbol parameter_signature :: rest ->
+    | ((FSymbol parameter_name) as parameter_form)
+      :: ((FSymbol parameter_signature) as signature_form)
+      :: rest ->
         parse_parameters
-          ((parameter_name, parameter_signature) :: acc)
+          ({ parameter_name;
+             parameter_location = Source_context.find parameter_form;
+             signature_name = parameter_signature;
+             signature_location = Source_context.find signature_form }
+          :: acc)
           rest
     | [ _ ] ->
         Error.error "module-functor parameters must be name/signature pairs"
@@ -604,10 +632,10 @@ let compile_module_functor scope env next_type functor_name parameter_form
       | Ok parameters ->
           let rec collect_parameter_bindings bindings = function
             | [] -> Ok (List.rev bindings |> List.concat)
-            | (parameter_name, parameter_signature) :: rest -> (
+            | parameter :: rest -> (
                 match
-                  Module_metadata.signature_parameter_bindings env parameter_name
-                    ~scope parameter_signature
+                  Module_metadata.signature_parameter_bindings env
+                    parameter.parameter_name ~scope parameter.signature_name
                 with
                 | Error _ as err -> err
                 | Ok parameter_bindings ->
@@ -669,11 +697,17 @@ let compile_module_functor scope env next_type functor_name parameter_form
                             {
                               functor_name =
                                 Names.module_segment_to_ocaml functor_name;
+                              location;
                               parameters =
                                 List.map
-                                  (fun (name, signature) ->
-                                    ( Names.module_segment_to_ocaml name,
-                                      Names.module_path_to_ocaml signature ))
+                                  (fun parameter ->
+                                    { parameter with
+                                      parameter_name =
+                                        Names.module_segment_to_ocaml
+                                          parameter.parameter_name;
+                                      signature_name =
+                                        Names.module_path_to_ocaml
+                                          parameter.signature_name })
                                   parameters;
                               items;
                             } ))
