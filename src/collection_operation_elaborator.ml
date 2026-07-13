@@ -52,7 +52,7 @@ let create ~compile_expr =
   in
     let compile_list scope env forms =
       match forms with
-      | [] -> Error.error "empty list requires a type annotation"
+      | [] -> Ok (typed_ir (TList TUnknown) (Semantic_ir.List []))
       | first :: rest -> (
           match compile_expr scope env first with
           | Error _ as err -> err
@@ -328,7 +328,9 @@ let create ~compile_expr =
                       Ok
                         (typed_ir field.ty
                            (Structural_map.field_expr target field))
-                  | None -> Error.error ("unknown field " ^ keyword))
+                  | None ->
+                      Error.error
+                        ("unknown record field " ^ Names.keyword_source_name keyword))
               | _ -> Error.error "get expects a map"))
       | [ target_form; index_form ] -> (
           match (compile_expr scope env target_form, compile_expr scope env index_form) with

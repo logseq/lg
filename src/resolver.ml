@@ -71,6 +71,10 @@ let lookup_host_reference scope env name =
   | Some _ as binding -> binding
   | None -> Env.find_opt name env
 
+let starts_with_uppercase name =
+  String.length name > 0
+  && Char.uppercase_ascii name.[0] = name.[0]
+
 let ocaml_call_target scope env function_name =
   match lookup_host_reference scope env function_name with
   | Some { host_reference = Some (Ocaml_value ocaml_name); _ } -> Some ocaml_name
@@ -80,6 +84,8 @@ let ocaml_call_target scope env function_name =
           match lookup_host_reference scope env alias with
           | Some { host_reference = Some (Ocaml_module module_path); _ } ->
               Some (module_path ^ "." ^ Names.sanitize_name member_name)
+          | _ when String.length alias > 0 && starts_with_uppercase alias ->
+              Some (alias ^ "." ^ Names.sanitize_name member_name)
           | _ -> None)
       | _ ->
           let first_segment =
@@ -103,5 +109,6 @@ let resolve_ocaml_constructor_target scope env constructor_name =
       match lookup_host_reference scope env alias with
       | Some { host_reference = Some (Ocaml_module module_path); _ } ->
           module_path ^ "." ^ member_name
+      | _ when starts_with_uppercase alias -> alias ^ "." ^ member_name
       | _ -> constructor_name)
   | _ -> constructor_name

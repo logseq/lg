@@ -76,13 +76,13 @@ let sanitize_name name =
   let candidate = Buffer.contents buffer in
   legalize_ocaml_identifier candidate
 
+let keyword_source_name keyword =
+  if String.length keyword > 0 && keyword.[0] = ':' then
+    String.sub keyword 1 (String.length keyword - 1)
+  else keyword
+
 let keyword_to_ocaml_name keyword =
-  let keyword_body =
-    if String.length keyword > 0 && keyword.[0] = ':' then
-      String.sub keyword 1 (String.length keyword - 1)
-    else keyword
-  in
-  sanitize_name keyword_body
+  sanitize_name (keyword_source_name keyword)
 
 let is_qualified name = String.contains name '/'
 

@@ -546,7 +546,7 @@ and to_parsetree ~context = function
       | Ok left, Ok right ->
           Ok
             (Ast_helper.Exp.apply ~loc
-               (Ast_helper.Exp.ident ~loc (lid (longident_of_string operator)))
+               (Ast_helper.Exp.ident ~loc (lid (Longident.Lident operator)))
                [ (Asttypes.Nolabel, left); (Asttypes.Nolabel, right) ]))
   | Prefix (operator, expression) -> (
       match to_parsetree ~context expression with
@@ -554,7 +554,7 @@ and to_parsetree ~context = function
       | Ok expression ->
           Ok
             (Ast_helper.Exp.apply ~loc
-               (Ast_helper.Exp.ident ~loc (lid (longident_of_string operator)))
+               (Ast_helper.Exp.ident ~loc (lid (Longident.Lident operator)))
                [ (Asttypes.Nolabel, expression) ]))
   | Field (target, field_name) -> (
       match to_parsetree ~context target with

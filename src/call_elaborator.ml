@@ -261,10 +261,11 @@ let create ~compile_expr =
     | "ocaml-error" ->
         constructor ~display_name:"ocaml-error" ~constructor_name:"Error"
           (fun _ -> TOcaml "result") 1
-    | "ocaml-tuple" -> (
+    | ("tuple" | "ocaml-tuple") as tuple_name -> (
         match compile_args () with
         | Error _ as err -> err
-        | Ok ([] | [ _ ]) -> Error.error "ocaml-tuple expects at least 2 values"
+        | Ok ([] | [ _ ]) ->
+            Error.error (tuple_name ^ " expects at least 2 values")
         | Ok values ->
             Ok
               (typed_ir
@@ -415,10 +416,21 @@ let create ~compile_expr =
     | "+" | "-" | "*" | "/" -> (
         match compile_args () with
         | Error _ as err -> err
-        | Ok args -> (
-            match Core_int.expect_int_args name args with
-            | Error _ as err -> err
-            | Ok () -> Core_int.compile_operator name args))
+        | Ok args ->
+            if Result.is_ok (Core_int.expect_int_args name args) then
+              Core_int.compile_operator name args
+            else if Core_float.expect_float_args args then
+              Core_float.compile_operator name args
+            else if
+              List.for_all
+                (fun arg ->
+                  Core_int.accepts_int arg.ty || Core_float.accepts_float arg.ty)
+                args
+            then Error.error "numeric arguments must all have the same type"
+            else
+              match Core_int.expect_int_args name args with
+              | Error _ as err -> err
+              | Ok () -> assert false)
     | "inc" ->
         compile_int_unary_call scope env name
           (fun expression -> Semantic_ir.Infix ("+", expression, Semantic_ir.Int 1))
@@ -611,7 +623,12 @@ let create ~compile_expr =
     | _ when is_constructor_name name -> (
         match lookup_binding scope env name with
         | Ok { ty = TFn (payload_tys, return_ty); ocaml_name; _ } ->
-            constructor ~constructor_name:ocaml_name
+            let constructor_name =
+              if String.contains name '/' then
+                resolve_ocaml_constructor_target scope env name
+              else ocaml_name
+            in
+            constructor ~constructor_name
               (fun args ->
                 Types.instantiate_type ~templates:payload_tys
                   ~actuals:(List.map (fun arg -> arg.ty) args)

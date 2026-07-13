@@ -127,14 +127,15 @@ let create ~compile_expr =
         match ensure_bool condition with
         | Error _ as err -> err
         | Ok () ->
-            if branch_types_compatible then_expr.ty else_expr.ty then
+            match merge_branch_types then_expr.ty else_expr.ty with
+            | Some result_ty ->
               Ok
-                (typed_ir then_expr.ty
+                (typed_ir result_ty
                    (Semantic_ir.If
                       ( condition.semantic_expr,
                         then_expr.semantic_expr,
                         else_expr.semantic_expr )))
-            else Error.error "if branches must have same type")
+            | None -> Error.error "if branches must have same type")
   
   and compile_if_not scope env condition then_form else_form =
     match
@@ -149,15 +150,16 @@ let create ~compile_expr =
         match ensure_bool condition with
         | Error _ as err -> err
         | Ok () ->
-            if branch_types_compatible then_expr.ty else_expr.ty then
+            match merge_branch_types then_expr.ty else_expr.ty with
+            | Some result_ty ->
               Ok
-                (typed_ir then_expr.ty
+                (typed_ir result_ty
                    (Semantic_ir.If
                       ( Semantic_ir.Apply
                           (Semantic_ir.Ident "not", [ condition.semantic_expr ]),
                         then_expr.semantic_expr,
                         else_expr.semantic_expr )))
-            else Error.error "if-not branches must have same type")
+            | None -> Error.error "if-not branches must have same type")
   
   and compile_when scope env condition body_forms =
     match
@@ -300,7 +302,8 @@ let create ~compile_expr =
           compile_fields [] [] [] field_patterns
       | _, FList (FSymbol "record" :: _) ->
           Error.error "record pattern expects a record target"
-      | TTuple payload_tys, FList (FSymbol "ocaml-tuple" :: payload_patterns) ->
+      | TTuple payload_tys,
+        FList (FSymbol ("tuple" | "ocaml-tuple") :: payload_patterns) ->
           let rec compile_payloads patterns bindings = function
             | [], [] -> Ok (List.rev patterns, bindings)
             | payload_ty :: payload_tys, pattern :: payload_patterns -> (
@@ -321,7 +324,10 @@ let create ~compile_expr =
       | target_ty, FSymbol name
         when is_ocaml_constructor_pattern_target target_ty name
              && starts_with_uppercase name ->
-          Ok (Semantic_ir.PConstructor (name, None), [])
+          Ok
+            ( Semantic_ir.PConstructor
+                (resolve_ocaml_constructor_target scope env name, None),
+              [] )
       | target_ty, FList (FSymbol name :: payload_patterns)
         when is_ocaml_constructor_pattern_target target_ty name
              && starts_with_uppercase name -> (
@@ -348,7 +354,10 @@ let create ~compile_expr =
                      | [ pattern ] -> Some pattern
                      | _ -> Some (Semantic_ir.PTuple patterns)
                    in
-                   (Semantic_ir.PConstructor (name, payload_pattern), bindings))
+                   ( Semantic_ir.PConstructor
+                       ( resolve_ocaml_constructor_target scope env name,
+                         payload_pattern ),
+                     bindings ))
           in
           match builtin_constructor_payloads with
           | Some payload_tys -> compile_constructor_payloads payload_tys
@@ -455,21 +464,23 @@ let create ~compile_expr =
         match compile_clauses [] pairs with
         | Error _ as err -> err
         | Ok [] -> Error.error "match requires pattern/result pairs"
-        | Ok ((_, _, first_result) :: _ as clauses) ->
-            if
-              List.for_all
-                (fun (_, _, result) ->
-                  branch_types_compatible first_result.ty result.ty)
-                clauses
-            then
+        | Ok ((_, _, first_result) :: rest as clauses) ->
+            let result_ty =
+              List.fold_left
+                (fun merged (_, _, result) ->
+                  Option.bind merged (fun ty -> merge_branch_types ty result.ty))
+                (Some first_result.ty) rest
+            in
+            (match result_ty with
+            | Some result_ty ->
               Ok
-                (typed_ir first_result.ty
+                (typed_ir result_ty
                    (Semantic_ir.Match_guarded
                       ( target_expr,
                         clauses
                         |> List.map (fun (pattern, guard, result) ->
                                (pattern, guard, result.semantic_expr)) )))
-            else Error.error "match branches must have same type")
+            | None -> Error.error "match branches must have same type"))
   
   and compile_body scope env empty_error forms =
     match forms with

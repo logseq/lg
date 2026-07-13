@@ -2022,6 +2022,22 @@ let test_ocaml_tuple_values_reject_bad_forms () =
 |}
   |> expect_error "tuple pattern arity mismatch"
 
+let test_concise_tuple_values_and_patterns_compile () =
+  let source =
+    {|
+(def pair (tuple 41 "Ada"))
+(defn describe [^:ocaml/tuple<int;string> value]
+  (match value
+    (tuple id name) (str name ":" (+ id 1))))
+(println (describe pair))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "concise_tuple_values_and_patterns_compile" "Ada:42\n"
+    ocaml_source;
+  Cljml.Compiler.compile_string {|(def bad (tuple 1))|}
+  |> expect_error "tuple expects at least 2 values"
+
 let test_ocaml_float_and_char_literals_compile () =
   let source =
     {|
@@ -2080,9 +2096,23 @@ let test_ocaml_refs_reject_invalid_operations () =
   Cljml.Compiler.compile_string {|(ocaml-reset! (ocaml-ref 1) "bad")|}
   |> expect_error_contains "OCaml ref value must match referenced type"
 
-let test_ocaml_float_literals_remain_outside_integer_arithmetic () =
-  Cljml.Compiler.compile_string {|(def bad (+ 1.5 2.0))|}
-  |> expect_error_contains "expected int arguments for +"
+let test_float_arithmetic_rejects_mixed_numeric_types () =
+  Cljml.Compiler.compile_string {|(def bad (+ 1 2.5))|}
+  |> expect_error "numeric arguments must all have the same type"
+
+let test_float_arithmetic_uses_core_numeric_operators () =
+  let source =
+    {|
+(println
+  (str (+ 1.5 2.5) ":"
+       (- 5.0 1.5) ":"
+       (* 2.0 3.0) ":"
+       (/ 7.5 2.5)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "float_arithmetic_uses_core_numeric_operators"
+    "4.:3.5:6.:3.\n" ocaml_source
 
 let test_ocaml_record_values_compile_through_source_backend () =
   let source =
@@ -2589,6 +2619,27 @@ let test_named_record_updates_preserve_protocol_identity () =
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "named_record_updates_preserve_protocol_identity" "Ada:42\n"
     ocaml_source
+
+let test_keyword_access_reads_nominal_record_fields () =
+  let source =
+    {|
+(type-record user (name :string))
+(type-record project (name :string))
+(def ada (ocaml-record user (name "Ada")))
+(def cljml (ocaml-record project (name "cljml")))
+(println (str (:name ada) ":" (:name cljml)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "keyword_access_reads_nominal_record_fields"
+    "Ada:cljml\n" ocaml_source;
+  Cljml.Compiler.compile_string
+    {|
+(type-record user (name :string))
+(def ada (ocaml-record user (name "Ada")))
+(def missing (:missing ada))
+|}
+  |> expect_error "unknown record field missing"
 
 let test_named_record_parameters_are_inferred_for_record_updates () =
   let source =
@@ -3950,6 +4001,28 @@ let test_typed_empty_lists () =
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "typed_empty_lists" "true:1:42\n" ocaml_source
+
+let test_empty_lists_infer_type_from_branch_context () =
+  let source =
+    {|
+(defn values [^:bool enabled]
+  (if enabled (list 42) (list)))
+(defn matched-values [^:bool enabled]
+  (match enabled
+    true (list 42)
+    false (list)))
+(println
+  (str (count (values true)) ":" (count (values false)) ":"
+       (count (matched-values true)) ":" (count (matched-values false))))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "empty_lists_infer_type_from_branch_context" "1:0:1:0\n"
+    ocaml_source;
+  Cljml.Compiler.compile_string {|(def values (list))|}
+  |> expect_error "empty list requires a contextual element type";
+  Cljml.Compiler.compile_string {|(defn values [] (list))|}
+  |> expect_error "empty list requires a contextual element type"
 
 let test_rest_is_empty_safe () =
   let source =
@@ -5870,6 +5943,33 @@ let test_module_alias_exposes_values () =
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "module_alias_exposes_values" "42\n" ocaml_source
 
+let test_slash_qualification_covers_members_and_constructor_patterns () =
+  let source =
+    {|
+(module Msg
+  (type-variant message Empty (Named :string)))
+(module-alias M Msg)
+(def named (M/Named "Ada"))
+(defn describe [^:ocaml/Msg.message message]
+  (match message
+    (M/Named name) (String/uppercase-ascii name)
+    M/Empty "empty"))
+(println (describe named))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "slash_qualification_covers_members_and_constructor_patterns" "ADA\n"
+    ocaml_source;
+  Cljml.Compiler.compile_string
+    {|
+(defn extract [^:ocaml/External.outer value]
+  (match value
+    (External/Outer (External/Inner result)) result
+    _ "missing"))
+|}
+  |> expect_error_contains "Unbound module External"
+
 let test_module_alias_targets_nested_modules () =
   let source =
     {|
@@ -7510,6 +7610,8 @@ let tests =
     ( "OCaml tuple values delegate argument mismatch to OCaml",
       test_ocaml_tuple_values_delegate_argument_mismatch_to_ocaml );
     ( "OCaml tuple values reject bad forms", test_ocaml_tuple_values_reject_bad_forms );
+    ( "syntax convergence: concise tuple values and patterns compile",
+      test_concise_tuple_values_and_patterns_compile );
     ( "OCaml float and char literals compile",
       test_ocaml_float_and_char_literals_compile );
     ( "OCaml arrays support construction read and mutation",
@@ -7520,8 +7622,10 @@ let tests =
       test_ocaml_arrays_reject_invalid_operations );
     ( "OCaml refs reject invalid operations",
       test_ocaml_refs_reject_invalid_operations );
-    ( "OCaml float literals remain outside integer arithmetic",
-      test_ocaml_float_literals_remain_outside_integer_arithmetic );
+    ( "syntax convergence: float arithmetic rejects mixed numeric types",
+      test_float_arithmetic_rejects_mixed_numeric_types );
+    ( "syntax convergence: float arithmetic uses core numeric operators",
+      test_float_arithmetic_uses_core_numeric_operators );
     ( "OCaml record values compile through source backend",
       test_ocaml_record_values_compile_through_source_backend );
     ( "OCaml record values support qualified module types",
@@ -7606,6 +7710,8 @@ let tests =
       test_protocols_support_named_record_receivers );
     ( "named record updates preserve protocol identity",
       test_named_record_updates_preserve_protocol_identity );
+    ( "syntax convergence: keyword access reads nominal record fields",
+      test_keyword_access_reads_nominal_record_fields );
     ( "named record parameters are inferred for record updates",
       test_named_record_parameters_are_inferred_for_record_updates );
     ( "module-local named record parameters are inferred",
@@ -7820,6 +7926,8 @@ let tests =
     ("nth supports default values", test_nth_supports_default_values);
     ("nth rejects default type mismatch", test_nth_rejects_default_type_mismatch);
     ("typed empty lists work", test_typed_empty_lists);
+    ( "syntax convergence: empty lists infer type from branch context",
+      test_empty_lists_infer_type_from_branch_context );
     ("rest is empty-safe", test_rest_is_empty_safe);
     ("lists reject mixed element types", test_lists_reject_mixed_element_types);
     ("conj rejects list type mismatch", test_conj_rejects_list_type_mismatch);
@@ -7956,6 +8064,8 @@ let tests =
     ( "module definitions support module alias",
       test_module_definitions_support_module_alias );
     ("module alias exposes values", test_module_alias_exposes_values);
+    ( "syntax convergence: slash qualification covers members and constructor patterns",
+      test_slash_qualification_covers_members_and_constructor_patterns );
     ( "module alias targets nested modules",
       test_module_alias_targets_nested_modules );
     ("module alias rejects bad forms", test_module_alias_rejects_bad_forms);

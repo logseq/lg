@@ -154,6 +154,8 @@ and fn_code ?(row_param_type_names = []) parts =
 and compile_fn ?(param_type_overrides = []) scope env params body_forms =
   match prepare_fn ~param_type_overrides scope env params body_forms with
   | Error _ as err -> err
+  | Ok parts when unresolved_contextual_type parts.body.ty ->
+      Error.error "empty list requires a contextual element type"
   | Ok parts -> Ok (fn_code parts)
 
 and compile_call scope env name arg_forms =

@@ -15,6 +15,7 @@ let binding_of_expr = Expression_support.binding_of_expr
 let row_param_type_names = Expression_support.row_param_type_names
 let row_type_items = Expression_support.row_type_items
 let check_emitted_name_collision = Resolver.check_emitted_name_collision
+let unresolved_contextual_type = Expression_support.unresolved_contextual_type
 let lookup_record_type = Resolver.lookup_record_type
 let record_type_key = Resolver.record_type_key
 let inherit_scope_ocaml_value_refers =
@@ -154,6 +155,8 @@ let compile scope env next_type = function
   | FList [ FSymbol "def"; ((FSymbol name) as name_form); expr_form ] -> (
       match compile_expr scope env expr_form with
       | Error _ as err -> err
+      | Ok expr when unresolved_contextual_type expr.ty ->
+          Error.error "empty list requires a contextual element type"
       | Ok expr ->
           let ocaml_name = Names.ocaml_binding_name scope name in
           let env_key = Names.scoped_key scope name in
@@ -244,6 +247,8 @@ let compile scope env next_type = function
       (FSymbol "defn" :: ((FSymbol name) as name_form) :: params :: body_forms) -> (
       match prepare_fn scope env params body_forms with
       | Error _ as err -> err
+      | Ok parts when unresolved_contextual_type parts.body.ty ->
+          Error.error "empty list requires a contextual element type"
       | Ok parts -> (
           let ocaml_name = Names.ocaml_binding_name scope name in
           let param_tys =

@@ -107,10 +107,17 @@ constructor patterns
 such as `(Some x)`, `None`, `(Ok value)`, and `(Error err)`. Payload and
 polymorphic option/result typing stay owned by OCaml.
 
-OCaml tuples are exposed through `(ocaml-tuple a b ...)` and can be destructured
-with tuple patterns such as `(ocaml-tuple id name)`. cljml checks tuple arity
-and lowers tuple annotations such as `^:ocaml/tuple<int;string>` to OCaml tuple
-constraints; element compatibility remains owned by OCaml.
+OCaml tuples use `(tuple a b ...)` and can be destructured with patterns such
+as `(tuple id name)`. cljml checks tuple arity and lowers tuple annotations such
+as `^:ocaml/tuple<int;string>` to OCaml tuple constraints; element compatibility
+remains owned by OCaml. `ocaml-tuple` remains available for compatibility.
+
+The core arithmetic
+operators `+`, `-`, `*`, and `/` select OCaml integer or floating-point
+operators from their statically known operand types; one call cannot mix
+integer and float operands. An empty `(list)` receives its element type from
+`if`, `if-not`, or `match` branch context. Without such a context, use
+`list-of` with an explicit type.
 
 Keyword lookup in typed contexts can infer structural map field requirements for unannotated function parameters.
 
@@ -224,6 +231,10 @@ cljml has no namespace declaration or namespace import mechanism. `module`
 creates the same ownership boundary as an OCaml module; `module-alias`, `open`,
 and `include` provide module reuse. Top-level `require` is restricted to OCaml
 packages, OCaml modules, and the typed `clojure.string` compatibility module.
+Qualified source references consistently use `/`, including module values,
+functions, constructors, and constructor patterns. Value and function member
+names use cljml kebab-case and lower to OCaml snake_case; constructors preserve
+their OCaml capitalization.
 Incremental compilation preserves modules, aliases, types, protocols, the type
 counter, and value bindings across source chunks.
 

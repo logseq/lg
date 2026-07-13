@@ -21,12 +21,30 @@ let is_ocaml_owned_type = function
 
 let is_ocaml_constructor_pattern_target target_ty name =
   is_ocaml_owned_type target_ty
-  || (target_ty = TUnknown && String.contains name '.')
+  || (target_ty = TUnknown
+     && (String.contains name '.' || String.contains name '/'))
 
 let branch_types_compatible left right =
   Types.equal left right
   || left = TUnknown || right = TUnknown
+  || (match (left, right) with
+     | TList TUnknown, TList _ | TList _, TList TUnknown -> true
+     | _ -> false)
   || Types.defer_to_ocaml ~expected:left ~actual:right
+
+let merge_branch_types left right =
+  if Types.equal left right then Some left
+  else
+    match (left, right) with
+    | TList TUnknown, TList inner | TList inner, TList TUnknown ->
+        Some (TList inner)
+    | TUnknown, ty | ty, TUnknown -> Some ty
+    | _ when Types.defer_to_ocaml ~expected:left ~actual:right -> Some left
+    | _ -> None
+
+let unresolved_contextual_type = function
+  | TList TUnknown -> true
+  | _ -> false
 
 let cljml_metadata_type_for_ocaml_payload = function
   | TOcaml "int" -> TInt
