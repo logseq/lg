@@ -267,7 +267,7 @@ let identifier_name_matches source_name path =
   let actual = Path.name path |> Names.sanitize_name in
   actual = expected || String.ends_with ~suffix:("_" ^ expected) actual
 
-let hover analysis ~offset =
+let expression_hover analysis ~offset =
   match symbol_span_at analysis offset with
   | None -> None
   | Some range ->
@@ -450,7 +450,7 @@ let label_identity_at analysis offset source_name =
           (match expression.Typedtree.exp_desc with
           | Texp_record { fields; _ } ->
               Array.iter
-                (fun (description, _) ->
+                (fun ((description : Data_types.label_description), _) ->
                   consider_description expression.exp_loc description)
                 fields
           | Texp_field (_, _, description)
@@ -912,6 +912,197 @@ let semantic_uid_at analysis ~offset =
 
 let semantic_key_at analysis ~offset =
   semantic_identity_at analysis offset |> Option.map (fun identity -> identity.key)
+
+let print_module_type env module_type =
+  Printtyp.wrap_printing_env ~error:false env (fun () ->
+      Format.asprintf "%a" Printtyp.modtype module_type)
+
+let print_type_declaration env id declaration =
+  Printtyp.wrap_printing_env ~error:false env (fun () ->
+      Format.asprintf "%a" (Printtyp.type_declaration id) declaration)
+
+let uid_equal left right = Typedtree.Uid.compare left right = 0
+
+let ocaml_semantic_hover analysis uid source_name =
+  let contents = ref None in
+  let set value = if Option.is_none !contents then contents := Some value in
+  let set_type env name ty = set (name ^ " : " ^ print_type env ty) in
+  let source_name = source_symbol_basename source_name in
+  let final_env = analysis.compiler.typed_structure.str_final_env in
+  let base = Tast_iterator.default_iterator in
+  let visit_pattern : type kind.
+      Tast_iterator.iterator -> kind Typedtree.general_pattern -> unit =
+   fun self pattern ->
+    (match pattern.pat_desc with
+    | Tpat_var (_, name, pattern_uid)
+    | Tpat_alias (_, _, name, pattern_uid, _)
+      when uid_equal uid pattern_uid ->
+        set_type pattern.pat_env name.txt pattern.pat_type
+    | Tpat_construct (_, description, _, _)
+      when uid_equal uid description.cstr_uid ->
+        set ("constructor " ^ source_name)
+    | Tpat_record (fields, _) ->
+        fields
+        |> List.iter (fun (_, (description : Data_types.label_description), _) ->
+               if uid_equal uid description.lbl_uid then
+                 set_type pattern.pat_env description.lbl_name description.lbl_arg)
+    | _ -> ());
+    base.pat self pattern
+  in
+  let iterator =
+    { base with
+      expr =
+        (fun self expression ->
+          (match expression.Typedtree.exp_desc with
+          | Texp_ident (_, _, description) when uid_equal uid description.val_uid ->
+              set_type expression.exp_env source_name expression.exp_type
+          | Texp_construct (_, description, _)
+            when uid_equal uid description.cstr_uid ->
+              set ("constructor " ^ source_name)
+          | Texp_record { fields; _ } ->
+              Array.iter
+                (fun ((description : Data_types.label_description), _) ->
+                  if uid_equal uid description.lbl_uid then
+                    set_type expression.exp_env description.lbl_name
+                      description.lbl_arg)
+                fields
+          | Texp_field (_, _, description)
+          | Texp_atomic_loc (_, _, description)
+            when uid_equal uid description.lbl_uid ->
+              set_type expression.exp_env description.lbl_name description.lbl_arg
+          | Texp_setfield (_, _, description, _)
+            when uid_equal uid description.lbl_uid ->
+              set_type expression.exp_env description.lbl_name description.lbl_arg
+          | _ -> ());
+          base.expr self expression);
+      pat = visit_pattern;
+      type_declaration =
+        (fun self declaration ->
+          if uid_equal uid declaration.Typedtree.typ_type.type_uid then
+            set
+              (print_type_declaration final_env declaration.typ_id
+                 declaration.typ_type);
+          (match declaration.typ_kind with
+          | Ttype_variant constructors ->
+              List.iter
+                (fun (constructor : Typedtree.constructor_declaration) ->
+                  if uid_equal uid constructor.cd_uid then
+                    set ("constructor " ^ constructor.cd_name.txt))
+                constructors
+          | Ttype_record fields ->
+              List.iter
+                (fun (field : Typedtree.label_declaration) ->
+                  if uid_equal uid field.ld_uid then
+                    set_type field.ld_type.ctyp_env field.ld_name.txt
+                      field.ld_type.ctyp_type)
+                fields
+          | _ -> ());
+          base.type_declaration self declaration);
+      module_expr =
+        (fun self module_expression ->
+          (match module_expression.Typedtree.mod_desc with
+          | Tmod_ident (path, _) ->
+              let declaration = Env.find_module path module_expression.mod_env in
+              if
+                uid_equal uid
+                  (Cljml_compiler_support.Ocaml_module.uid declaration)
+              then
+                set
+                  ("module " ^ source_name ^ " : "
+                 ^ print_module_type module_expression.mod_env declaration.md_type)
+          | Tmod_functor
+              ( Typedtree.Named (Some id, parameter_name, parameter_type),
+                body ) ->
+              let declaration = Env.find_module (Path.Pident id) body.mod_env in
+              if
+                uid_equal uid
+                  (Cljml_compiler_support.Ocaml_module.uid declaration)
+              then
+                set
+                 ("module " ^ Option.value parameter_name.txt ~default:source_name
+                 ^ " : "
+                 ^ print_module_type parameter_type.mty_env parameter_type.mty_type)
+          | _ -> ());
+          base.module_expr self module_expression);
+      module_binding =
+        (fun self binding ->
+          if uid_equal uid binding.Typedtree.mb_uid then
+            set
+              ("module " ^ source_name ^ " : "
+             ^ print_module_type binding.mb_expr.mod_env binding.mb_expr.mod_type);
+          base.module_binding self binding);
+      module_type =
+        (fun self module_type ->
+          (match module_type.Typedtree.mty_desc with
+          | Tmty_ident (path, _) ->
+              let declaration = Env.find_modtype path module_type.mty_env in
+              if
+                uid_equal uid
+                  (Cljml_compiler_support.Ocaml_module.type_uid declaration)
+              then
+                set
+                  ("module type " ^ source_name ^ " = "
+                 ^ Option.fold ~none:"_"
+                     ~some:(print_module_type module_type.mty_env)
+                     declaration.mtd_type)
+          | _ -> ());
+          base.module_type self module_type);
+      module_type_declaration =
+        (fun self declaration ->
+          if uid_equal uid declaration.Typedtree.mtd_uid then
+            set
+              ("module type " ^ source_name ^ " = "
+             ^ Option.fold ~none:"_"
+                 ~some:(fun module_type ->
+                   print_module_type module_type.Typedtree.mty_env
+                     module_type.mty_type)
+                 declaration.mtd_type);
+          base.module_type_declaration self declaration);
+    }
+  in
+  iterator.structure iterator analysis.compiler.typed_structure;
+  !contents
+
+let protocol_semantic_hover analysis protocol_id =
+  let registry = protocol_registry analysis in
+  match Protocol_registry.find_protocol protocol_id registry with
+  | Some _ -> Some ("protocol " ^ Protocol_id.to_string protocol_id)
+  | None -> None
+
+let method_semantic_hover analysis method_id =
+  Protocol_registry.declarations (protocol_registry analysis)
+  |> List.find_map (fun (_, (declaration : Protocol_registry.declaration)) ->
+         Protocol_registry.Method_map.find_opt method_id declaration.methods
+         |> Option.map (fun (signature : Protocol_registry.method_signature) ->
+                Method_id.name method_id ^ " : "
+                ^ Types.ocaml_name
+                    (Types.TFn (signature.param_tys, signature.return_ty))))
+
+let semantic_hover analysis occurrence source_name =
+  let contents =
+    match occurrence.identity.key with
+    | Ocaml_uid uid -> ocaml_semantic_hover analysis uid source_name
+    | Protocol_key protocol_id -> protocol_semantic_hover analysis protocol_id
+    | Method_key method_id -> method_semantic_hover analysis method_id
+  in
+  Option.map
+    (fun contents -> { contents; range = occurrence.range })
+    contents
+
+let hover analysis ~offset =
+  match token_at analysis offset with
+  | Some { desc = Symbol _; _ } -> (
+      match semantic_occurrence_at analysis offset with
+      | Some occurrence -> (
+          let occurrence_name =
+            String.sub analysis.source occurrence.range.start_offset
+              (occurrence.range.end_offset - occurrence.range.start_offset)
+          in
+          match semantic_hover analysis occurrence occurrence_name with
+          | Some _ as hover -> hover
+          | None -> expression_hover analysis ~offset)
+      | None -> expression_hover analysis ~offset)
+  | _ -> expression_hover analysis ~offset
 
 let references_to_key analysis key =
   analysis.tokens

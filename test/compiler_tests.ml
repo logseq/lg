@@ -5049,6 +5049,48 @@ let test_language_service_field_capabilities () =
   if failures <> [] then
     failwith ("field tooling failures: " ^ String.concat " | " failures)
 
+let assert_semantic_hover analysis source ~offset ~symbol ~expected =
+  match Cljml.Language_service.hover analysis ~offset with
+  | Some hover
+    when string_contains_substring hover.contents expected
+         && span_text source hover.range = symbol ->
+      ()
+  | Some hover ->
+      failwith
+        (Printf.sprintf "expected semantic hover containing %S, got %S" expected
+           hover.contents)
+  | None -> failwith ("expected semantic hover containing " ^ expected)
+
+let test_language_service_semantic_hover_capabilities () =
+  let constructor_analysis = analyze_constructor_language_service_source () in
+  assert_semantic_hover constructor_analysis constructor_language_service_source
+    ~offset:(expect_substring_index constructor_language_service_source "Named :string")
+    ~symbol:"Named" ~expected:"constructor Named";
+  let type_analysis = analyze_type_language_service_source () in
+  assert_semantic_hover type_analysis type_language_service_source
+    ~offset:(expect_substring_index type_language_service_source "user (name")
+    ~symbol:"user" ~expected:"type user";
+  let module_analysis = analyze_module_language_service_source () in
+  assert_semantic_hover module_analysis module_language_service_source
+    ~offset:(expect_substring_index module_language_service_source "First/value")
+    ~symbol:"First" ~expected:"module First";
+  assert_semantic_hover module_analysis module_language_service_source
+    ~offset:(expect_substring_index module_language_service_source "ValueSig (val")
+    ~symbol:"ValueSig" ~expected:"module type ValueSig";
+  let protocol_analysis = analyze_protocol_language_service_source () in
+  let protocol_usage =
+    expect_substring_index protocol_language_service_source "Labelled/label"
+  in
+  assert_semantic_hover protocol_analysis protocol_language_service_source
+    ~offset:protocol_usage ~symbol:"Labelled" ~expected:"protocol Labelled";
+  assert_semantic_hover protocol_analysis protocol_language_service_source
+    ~offset:(protocol_usage + String.length "Labelled/")
+    ~symbol:"label" ~expected:"label :";
+  let field_analysis = analyze_field_language_service_source () in
+  assert_semantic_hover field_analysis field_language_service_source
+    ~offset:(expect_substring_index field_language_service_source "name :string")
+    ~symbol:"name" ~expected:"name : string"
+
 let test_language_service_document_symbols_preserve_source_names () =
   let analysis = analyze_language_service_source () in
   let symbols = Cljml.Language_service.document_symbols analysis in
@@ -7601,6 +7643,8 @@ let tests =
       test_language_service_protocol_capabilities );
     ( "language service field capabilities",
       test_language_service_field_capabilities );
+    ( "language service semantic hover capabilities",
+      test_language_service_semantic_hover_capabilities );
     ( "language service constructor capabilities",
       test_language_service_constructor_capabilities );
     ( "language service type capabilities",
