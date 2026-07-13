@@ -1,3 +1,4 @@
 (library
  (name rrbvec)
+ (public_name cljml.rrbvec)
  (wrapped false))

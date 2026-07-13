@@ -1,3 +1,4 @@
 (library
  (name cljml_compiler_support)
+ (public_name cljml.compiler_support)
  (libraries compiler-libs.common))

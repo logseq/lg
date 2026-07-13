@@ -19,6 +19,10 @@ let is_ocaml_owned_type = function
   | TFloat | TChar | TArray _ | TRef _ | TOcaml _ | TOcaml_app _ | TTuple _ -> true
   | _ -> false
 
+let is_ocaml_constructor_pattern_target target_ty name =
+  is_ocaml_owned_type target_ty
+  || (target_ty = TUnknown && String.contains name '.')
+
 let branch_types_compatible left right =
   Types.equal left right
   || left = TUnknown || right = TUnknown

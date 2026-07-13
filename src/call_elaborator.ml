@@ -356,14 +356,13 @@ let create ~compile_expr =
             match compile_expr scope env target_form with
             | Error _ as err -> err
             | Ok target -> (
-                let fields =
-                  match target.ty with
-                  | TRecord fields | TNamed_record { fields; _ } -> Ok fields
-                  | _ -> Error.error "ocaml-field expects a record value"
-                in
-                match fields with
-                | Error _ as err -> err
-                | Ok fields -> (
+                match target.ty with
+                | ty when is_ocaml_owned_type ty ->
+                    Ok
+                      (typed_ir TUnknown
+                         (Semantic_ir.Field
+                            (target.semantic_expr, Names.sanitize_name field_name)))
+                | TRecord fields | TNamed_record { fields; _ } -> (
                     let ocaml_name = Names.sanitize_name field_name in
                     match
                       List.find_opt
@@ -374,7 +373,8 @@ let create ~compile_expr =
                     | Some field ->
                         Ok
                           (typed_ir field.ty
-                             (Semantic_ir.Field (target.semantic_expr, field.ocaml_name))))))
+                             (Semantic_ir.Field (target.semantic_expr, field.ocaml_name))))
+                | _ -> Error.error "ocaml-field expects a record value"))
         | _ -> Error.error "ocaml-field expects record value and field name")
     | "ocaml-construct" -> (
         match arg_forms with

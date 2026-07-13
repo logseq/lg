@@ -2206,6 +2206,14 @@ let test_ocaml_record_values_reject_bad_forms () =
 |}
   |> expect_error "unknown record field age"
 
+let test_ocaml_field_delegates_opaque_record_access_to_ocaml () =
+  Cljml.Compiler.compile_string
+    {|
+(defn attrs [^:ocaml/External.record value]
+  (ocaml-field value attrs))
+|}
+  |> expect_error_contains "Unbound module External"
+
 let test_ocaml_variants_compile_through_source_backend () =
   let source =
     {|
@@ -5642,6 +5650,16 @@ let test_match_delegates_unknown_opaque_constructor_errors_to_ocaml () =
 |}
   |> expect_error_contains "Unbound constructor"
 
+let test_match_delegates_nested_opaque_constructor_patterns_to_ocaml () =
+  Cljml.Compiler.compile_string
+    {|
+(defn extract [^:ocaml/External.outer value]
+  (match value
+    (External.Outer (External.Inner result)) result
+    _ "missing"))
+|}
+  |> expect_error_contains "Unbound module External"
+
 let test_match_supports_record_alias_or_and_guard_patterns () =
   let source =
     {|
@@ -7507,6 +7525,8 @@ let tests =
     ( "OCaml record values delegate field typecheck to OCaml",
       test_ocaml_record_values_delegate_field_typecheck_to_ocaml );
     ( "OCaml record values reject bad forms", test_ocaml_record_values_reject_bad_forms );
+    ( "OCaml field delegates opaque record access to OCaml",
+      test_ocaml_field_delegates_opaque_record_access_to_ocaml );
     ( "OCaml variants compile through source backend",
       test_ocaml_variants_compile_through_source_backend );
     ( "OCaml payload variants compile through source backend",
@@ -8017,6 +8037,8 @@ let tests =
       test_parsetree_backend_supports_payload_variants );
     ( "parsetree backend supports OCaml constructor patterns",
       test_parsetree_backend_supports_ocaml_constructor_patterns );
+    ( "match delegates nested opaque constructor patterns to OCaml",
+      test_match_delegates_nested_opaque_constructor_patterns_to_ocaml );
     ("parsetree backend supports open module", test_parsetree_backend_supports_open_module);
     ( "parsetree backend supports include module",
       test_parsetree_backend_supports_include_module );
