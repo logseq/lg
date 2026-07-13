@@ -8,6 +8,25 @@ type completion_item = {
   detail : string;
 }
 
+type semantic_token_kind =
+  [ `Namespace
+  | `Type
+  | `Function
+  | `Variable
+  | `Parameter
+  | `Property
+  | `Enum_member
+  | `Interface
+  | `Method
+  | `Keyword
+  | `String
+  | `Number ]
+
+type semantic_token = {
+  range : Ast.source_span;
+  kind : semantic_token_kind;
+}
+
 type text_edit = {
   range : Ast.source_span;
   new_text : string;
@@ -1222,6 +1241,167 @@ and symbols_of_form (located : Ast.located_form) =
   | _ -> []
 
 let document_symbols analysis = List.concat_map symbols_of_form analysis.forms
+
+let semantic_kind_of_symbol_kind : symbol_kind -> semantic_token_kind = function
+  | `Module -> `Namespace
+  | `Function -> `Function
+  | `Variable -> `Variable
+  | `Type -> `Type
+  | `Interface -> `Interface
+  | `Method -> `Method
+  | `Field -> `Property
+  | `Constructor -> `Enum_member
+
+let rec document_symbol_selections symbols =
+  List.concat_map
+    (fun (symbol : document_symbol) ->
+      (symbol.selection_range, semantic_kind_of_symbol_kind symbol.kind)
+      :: document_symbol_selections symbol.children)
+    symbols
+
+let special_form_names =
+  [ "def";
+    "defn";
+    "fn";
+    "let";
+    "if";
+    "do";
+    "match";
+    "try";
+    "catch";
+    "raise";
+    "require";
+    "module";
+    "module-alias";
+    "module-functor";
+    "module-apply";
+    "module-signature";
+    "type-alias";
+    "type-record";
+    "type-variant";
+    "defprotocol";
+    "extend-type";
+    "open";
+    "include";
+    "val";
+    "type" ]
+
+let rec special_form_spans (located : Ast.located_form) =
+  let nested = List.concat_map special_form_spans located.children in
+  match located.children with
+  | { form = FSymbol name; span; _ } :: _
+    when List.mem name special_form_names ->
+      span :: nested
+  | _ -> nested
+
+let same_semantic_key key = function
+  | Some identity -> equal_semantic_key key identity.key
+  | None -> false
+
+let function_parameter_uids analysis =
+  let uids = ref [] in
+  let pattern_base = Tast_iterator.default_iterator in
+  let pattern_iterator =
+    { pattern_base with
+      pat =
+        (fun (type kind) self (pattern : kind Typedtree.general_pattern) ->
+          (match pattern.pat_desc with
+          | Tpat_var (_, _, uid) -> uids := uid :: !uids
+          | Tpat_alias (_, _, _, uid, _) -> uids := uid :: !uids
+          | _ -> ());
+          pattern_base.pat self pattern) }
+  in
+  let collect_pattern pattern = pattern_iterator.pat pattern_iterator pattern in
+  let base = Tast_iterator.default_iterator in
+  let iterator =
+    { base with
+      expr =
+        (fun self expression ->
+          (match expression.Typedtree.exp_desc with
+          | Texp_function (parameters, _) ->
+              List.iter
+                (fun parameter ->
+                  match parameter.Typedtree.fp_kind with
+                  | Tparam_pat pattern -> collect_pattern pattern
+                  | Tparam_optional_default (pattern, _) ->
+                      collect_pattern pattern)
+                parameters
+          | _ -> ());
+          base.expr self expression) }
+  in
+  iterator.structure iterator analysis.compiler.typed_structure;
+  !uids
+
+let semantic_kind_for_occurrence analysis declarations parameter_uids occurrence
+    source_name =
+  match
+    List.find_opt
+      (fun (range, _) -> range = occurrence.range)
+      declarations
+  with
+  | Some (_, kind) -> kind
+  | None -> (
+      match occurrence.identity.key with
+      | Protocol_key _ -> `Interface
+      | Method_key _ -> `Method
+      | Ocaml_uid uid as key ->
+          let offset = occurrence.range.start_offset in
+          if List.exists (uid_equal uid) parameter_uids then `Parameter
+          else if same_semantic_key key (module_identity_at analysis offset source_name)
+          then `Namespace
+          else if
+            same_semantic_key key
+              (module_type_identity_at analysis offset source_name)
+          then `Interface
+          else if same_semantic_key key (type_identity_at analysis offset source_name)
+          then `Type
+          else if
+            same_semantic_key key
+              (constructor_identity_at analysis offset source_name)
+          then `Enum_member
+          else if same_semantic_key key (label_identity_at analysis offset source_name)
+          then `Property
+          else
+            match ocaml_semantic_hover analysis uid source_name with
+            | Some detail when String.contains detail '>' -> `Function
+            | Some _ | None -> `Variable)
+
+let semantic_tokens analysis =
+  let declarations =
+    document_symbols analysis |> document_symbol_selections
+  in
+  let special_forms =
+    analysis.forms |> List.concat_map special_form_spans
+  in
+  let parameter_uids = function_parameter_uids analysis in
+  let token_semantics (token : Ast.token) =
+    match token.desc with
+    | String _ | Char _ -> [ { range = token.span; kind = `String } ]
+    | Int _ | Float _ -> [ { range = token.span; kind = `Number } ]
+    | Keyword _ | Bool _ -> [ { range = token.span; kind = `Keyword } ]
+    | Symbol _ ->
+        let occurrences = semantic_occurrences_for_token analysis token in
+        if occurrences = [] then
+          [ { range = token.span;
+              kind =
+                if List.mem token.span special_forms then `Keyword else `Variable } ]
+        else
+          List.map
+            (fun occurrence ->
+              let occurrence_name =
+                String.sub analysis.source occurrence.range.start_offset
+                  (occurrence.range.end_offset - occurrence.range.start_offset)
+              in
+              { range = occurrence.range;
+                kind =
+                  semantic_kind_for_occurrence analysis declarations parameter_uids
+                    occurrence occurrence_name })
+            occurrences
+    | Lparen | Rparen | Lbracket | Rbracket | Lbrace | Rbrace -> []
+  in
+  analysis.tokens |> List.concat_map token_semantics
+  |> List.sort (fun (left : semantic_token) (right : semantic_token) ->
+         compare_span left.range right.range)
 
 let completion_source_names analysis =
   analysis.compiler.typecheck_state.env

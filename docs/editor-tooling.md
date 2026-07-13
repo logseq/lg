@@ -33,6 +33,8 @@ The same cached OCaml Typedtree analysis powers:
 - `textDocument/prepareRename` and `textDocument/rename`, with exact source
   symbol edits;
 - `textDocument/documentSymbol` and `workspace/symbol`, preserving cljml names;
+- `textDocument/semanticTokens/full`, with compiler-resolved namespaces, types,
+  functions, parameters, fields, constructors, protocols, and methods;
 - `textDocument/formatting`, with deterministic 80-column formatting that
   preserves comments and string contents.
 
@@ -77,5 +79,5 @@ The core Reason editor baseline—types, formatting, diagnostics, completion, an
 jump-to-definition—is present. The server indexes `.cljml` files below the
 workspace root, orders explicit module dependencies from compiler state, isolates
 invalid files, and provides cross-file definitions, references, rename, and
-workspace symbols. Semantic tokens, signature help, code actions, and
+workspace symbols and semantic tokens. Signature help, code actions, and
 recoverable parsing remain future ocaml-lsp-parity capabilities.

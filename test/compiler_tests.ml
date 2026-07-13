@@ -5113,10 +5113,12 @@ let document_symbol_hierarchy_source =
   (type-record user (name :string) (age :int))
   (type-variant status Active (Named :string))
   (defprotocol Display (render [value] :string))
+  (defn identity [value] value)
   (module-signature Service
     (val get :int)
     (type item)
     (module Nested ValueSig)))
+(def copied Domain/identity)
 |}
 
 let test_language_service_document_symbols_include_semantic_children () =
@@ -5159,6 +5161,53 @@ let test_language_service_document_symbols_include_semantic_children () =
     span_text document_symbol_hierarchy_source field.range
     <> "(name :string)"
   then failwith "field document symbol range must cover its declaration"
+
+let test_language_service_semantic_tokens_classify_symbols () =
+  let analysis =
+    Cljml.Language_service.analyze
+      ~filename:"file:///tmp/semantic-tokens.cljml"
+      document_symbol_hierarchy_source
+    |> expect_ok
+  in
+  let tokens = Cljml.Language_service.semantic_tokens analysis in
+  let has text kind =
+    List.exists
+      (fun (token : Cljml.Language_service.semantic_token) ->
+        span_text document_symbol_hierarchy_source token.range = text
+        && token.kind = kind)
+      tokens
+  in
+  List.iter
+    (fun (text, kind) ->
+      if not (has text kind) then
+        failwith ("expected semantic token classification for " ^ text))
+    [ ("module", `Keyword);
+      ("Domain", `Namespace);
+      ("user", `Type);
+      ("name", `Property);
+      ("Active", `Enum_member);
+      ("Display", `Interface);
+      ("render", `Method);
+      ("identity", `Function);
+      ("value", `Parameter);
+      (":string", `Keyword) ];
+  let qualified =
+    expect_substring_index document_symbol_hierarchy_source "Domain/identity"
+  in
+  let has_at offset text kind =
+    List.exists
+      (fun (token : Cljml.Language_service.semantic_token) ->
+        token.range.start_offset = offset
+        && span_text document_symbol_hierarchy_source token.range = text
+        && token.kind = kind)
+      tokens
+  in
+  if not (has_at qualified "Domain" `Namespace) then
+    failwith "qualified semantic token must split the module segment";
+  if
+    not
+      (has_at (qualified + String.length "Domain/") "identity" `Function)
+  then failwith "qualified semantic token must split the member segment"
 
 let test_language_service_workspace_resolves_cross_file_identity () =
   let math =
@@ -7707,6 +7756,8 @@ let tests =
       test_language_service_document_symbols_preserve_source_names );
     ( "language service document symbols include semantic children",
       test_language_service_document_symbols_include_semantic_children );
+    ( "language service semantic tokens classify symbols",
+      test_language_service_semantic_tokens_classify_symbols );
     ( "language service workspace resolves cross-file identity",
       test_language_service_workspace_resolves_cross_file_identity );
     ( "workspace index reanalyzes dependency components",

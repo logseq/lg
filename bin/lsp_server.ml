@@ -169,10 +169,10 @@ let find_substring text pattern =
 let position line character =
   `Assoc [ ("line", `Int line); ("character", `Int character) ]
 
-let position_of_offset text target =
+let position_coordinates_of_offset text target =
   let rec loop offset line character =
     if offset >= target || offset >= String.length text then
-      position line character
+      (line, character)
     else if text.[offset] = '\n' then loop (offset + 1) (line + 1) 0
     else
       let decoded = String.get_utf_8_uchar text offset in
@@ -182,6 +182,10 @@ let position_of_offset text target =
       loop (offset + byte_length) line (character + units)
   in
   loop 0 0 0
+
+let position_of_offset text target =
+  let line, character = position_coordinates_of_offset text target in
+  position line character
 
 let range_of_offsets text start_offset end_offset =
   `Assoc
@@ -292,6 +296,28 @@ let initialize_result =
             ("renameProvider", `Assoc [ ("prepareProvider", `Bool true) ]);
             ("documentSymbolProvider", `Bool true);
             ("workspaceSymbolProvider", `Bool true);
+            ( "semanticTokensProvider",
+              `Assoc
+                [ ( "legend",
+                    `Assoc
+                      [ ( "tokenTypes",
+                          `List
+                            (List.map
+                               (fun token_type -> `String token_type)
+                               [ "namespace";
+                                 "type";
+                                 "function";
+                                 "variable";
+                                 "parameter";
+                                 "property";
+                                 "enumMember";
+                                 "interface";
+                                 "method";
+                                 "keyword";
+                                 "string";
+                                 "number" ] ) );
+                        ("tokenModifiers", `List []) ] );
+                  ("full", `Bool true) ] );
             ( "completionProvider",
               `Assoc [ ("triggerCharacters", `List []) ] ) ] );
       ( "serverInfo",
@@ -543,6 +569,77 @@ let workspace_symbols_result query =
     (all_documents ()) []
   |> List.rev |> fun symbols -> `List symbols
 
+let semantic_token_type = function
+  | `Namespace -> 0
+  | `Type -> 1
+  | `Function -> 2
+  | `Variable -> 3
+  | `Parameter -> 4
+  | `Property -> 5
+  | `Enum_member -> 6
+  | `Interface -> 7
+  | `Method -> 8
+  | `Keyword -> 9
+  | `String -> 10
+  | `Number -> 11
+
+let semantic_token_segments text
+    (token : Cljml.Language_service.semantic_token) =
+  let rec loop segment_start offset segments =
+    if offset >= token.range.end_offset then
+      if segment_start < offset then (segment_start, offset, token.kind) :: segments
+      else segments
+    else if text.[offset] = '\n' then
+      let segments =
+        if segment_start < offset then
+          (segment_start, offset, token.kind) :: segments
+        else segments
+      in
+      loop (offset + 1) (offset + 1) segments
+    else
+      let decoded = String.get_utf_8_uchar text offset in
+      loop segment_start
+        (offset + max 1 (Uchar.utf_decode_length decoded))
+        segments
+  in
+  loop token.range.start_offset token.range.start_offset [] |> List.rev
+
+let semantic_tokens_result document =
+  match document.analysis with
+  | Error _ -> `Assoc [ ("data", `List []) ]
+  | Ok analysis ->
+      let segments =
+        Cljml.Language_service.semantic_tokens analysis
+        |> List.concat_map (semantic_token_segments document.text)
+      in
+      let _, _, reversed_data =
+        List.fold_left
+          (fun (previous_line, previous_character, data)
+               (start_offset, end_offset, kind) ->
+            let line, character =
+              position_coordinates_of_offset document.text start_offset
+            in
+            let end_line, end_character =
+              position_coordinates_of_offset document.text end_offset
+            in
+            let length =
+              if end_line = line then end_character - character else 0
+            in
+            let delta_line = line - previous_line in
+            let delta_start =
+              if delta_line = 0 then character - previous_character else character
+            in
+            ( line,
+              character,
+              0 :: semantic_token_type kind :: length :: delta_start :: delta_line
+              :: data ))
+          (0, 0, []) segments
+      in
+      `Assoc
+        [ ( "data",
+            `List
+              (List.rev_map (fun value -> `Int value) reversed_data) ) ]
+
 let handle_notification method_ params =
   match method_ with
   | "textDocument/didOpen" ->
@@ -680,6 +777,15 @@ let rec loop shutdown_requested =
       | Some "workspace/symbol", (`Int _ | `String _) ->
           let query = params |> member "query" |> to_string in
           response id (workspace_symbols_result query);
+          loop shutdown_requested
+      | Some "textDocument/semanticTokens/full", (`Int _ | `String _) ->
+          let uri = document_uri params in
+          let result =
+            match find_document uri with
+            | None -> `Assoc [ ("data", `List []) ]
+            | Some document -> semantic_tokens_result document
+          in
+          response id result;
           loop shutdown_requested
       | Some "exit", `Null -> if shutdown_requested then () else exit 1
       | Some method_, `Null ->
