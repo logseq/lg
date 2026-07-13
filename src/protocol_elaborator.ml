@@ -4,12 +4,23 @@ open Lowered
 
 module Env = Compiler_environment
 
-let define scope env protocol_name method_forms =
+let define ?location scope env protocol_name method_forms =
   match Protocol.defprotocol scope protocol_name method_forms with
   | Error _ as err -> err
   | Ok (protocol_id, signatures) ->
+      let method_locations =
+        List.filter_map
+          (function
+            | FList (((FSymbol method_name) as name_form) :: _) ->
+                Source_context.find name_form
+                |> Option.map (fun location ->
+                       (Protocol.method_id protocol_id method_name, location))
+            | _ -> None)
+          method_forms
+      in
       (match
-         Protocol_registry.declare protocol_id signatures (Env.protocols env)
+         Protocol_registry.declare ?location ~method_locations protocol_id signatures
+           (Env.protocols env)
        with
       | Error _ as err -> err
       | Ok protocols ->
@@ -29,7 +40,7 @@ let marker scope env protocol_name method_name =
         ("protocol " ^ protocol_name ^ " does not define method " ^ method_name)
   | Some marker -> Ok marker
 
-let add_implementation env method_name receiver_ty marker binding =
+let add_implementation ?location env method_name receiver_ty marker binding =
   match
     (marker.protocol_id, Protocol.registry_receiver_id receiver_ty)
   with
@@ -49,14 +60,14 @@ let add_implementation env method_name receiver_ty marker binding =
          ^ method_name ^ " for " ^ source_name receiver_ty)
       else
         (match
-         Protocol_registry.add_implementation protocol_id method_id receiver_id
-           binding (Env.protocols env)
+         Protocol_registry.add_implementation ?location protocol_id method_id
+           receiver_id binding (Env.protocols env)
        with
       | Error _ as err -> err
       | Ok protocols -> Ok (Env.with_protocols protocols env))
 
-let compile_defprotocol scope env next_type protocol_name method_forms =
-  match define scope env protocol_name method_forms with
+let compile_defprotocol ?location scope env next_type protocol_name method_forms =
+  match define ?location scope env protocol_name method_forms with
   | Error _ as err -> err
   | Ok (env, item) -> Ok (scope, env, next_type, item)
 
@@ -72,7 +83,7 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
   | Error _ as err -> err
   | Ok receiver_ty ->
       let compile_method env = function
-        | FList (FSymbol method_name :: params :: body_forms) -> (
+        | FList (((FSymbol method_name) as name_form) :: params :: body_forms) -> (
             match marker scope env protocol_name method_name with
             | Error _ as err -> err
             | Ok marker -> (
@@ -137,8 +148,9 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                                   in
                                   let binding = Expression_support.binding_of_expr ocaml_name expr in
                                   (match
-                                     add_implementation env method_name
-                                       receiver_ty marker binding
+                                     add_implementation
+                                       ?location:(Source_context.find name_form) env
+                                       method_name receiver_ty marker binding
                                    with
                                   | Error _ as err -> err
                                   | Ok env ->

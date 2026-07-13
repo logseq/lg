@@ -291,19 +291,36 @@ let hover analysis ~offset =
                range;
              })
 
+type semantic_key =
+  | Ocaml_uid of Typedtree.Uid.t
+  | Protocol_key of Protocol_id.t
+  | Method_key of Method_id.t
+
 type semantic_identity = {
-  uid : Typedtree.Uid.t;
+  key : semantic_key;
   definition_location : Location.t;
 }
+
+let compare_semantic_key left right =
+  match (left, right) with
+  | Ocaml_uid left, Ocaml_uid right -> Typedtree.Uid.compare left right
+  | Protocol_key left, Protocol_key right -> Protocol_id.compare left right
+  | Method_key left, Method_key right -> Method_id.compare left right
+  | Ocaml_uid _, _ -> -1
+  | _, Ocaml_uid _ -> 1
+  | Protocol_key _, _ -> -1
+  | _, Protocol_key _ -> 1
+
+let equal_semantic_key left right = compare_semantic_key left right = 0
 
 let consider_semantic_identity best ~offset ~location ~matches ~uid
     ~definition_location =
   if location_contains_offset location offset && matches then
     let size = location_size location in
     match !best with
-    | None -> best := Some (size, { uid; definition_location })
+    | None -> best := Some (size, { key = Ocaml_uid uid; definition_location })
     | Some (current_size, _) when size < current_size ->
-        best := Some (size, { uid; definition_location })
+        best := Some (size, { key = Ocaml_uid uid; definition_location })
     | Some _ -> ()
 
 let best_semantic_identity best = Option.map snd !best
@@ -318,7 +335,7 @@ let identifier_identity_at analysis offset source_name =
          match expression.exp_desc with
          | Typedtree.Texp_ident (_, _, description) ->
              {
-               uid = description.val_uid;
+               key = Ocaml_uid description.val_uid;
                definition_location = description.val_loc;
              }
          | _ -> assert false)
@@ -553,6 +570,90 @@ let module_type_identity_at analysis offset source_name =
   iterator.structure iterator analysis.compiler.typed_structure;
   best_semantic_identity best
 
+let protocol_registry analysis =
+  analysis.compiler.typecheck_state.env |> Compiler_environment.protocols
+
+let protocol_id_named analysis source_name =
+  let registry = protocol_registry analysis in
+  let direct = Protocol_id.of_string source_name in
+  match Protocol_registry.find_protocol direct registry with
+  | Some _ -> Some direct
+  | None ->
+      Protocol_registry.declarations registry
+      |> List.find_map (fun (protocol_id, _) ->
+             if Protocol_id.name protocol_id = source_name then Some protocol_id
+             else None)
+
+let protocol_identity_at analysis source_name =
+  let registry = protocol_registry analysis in
+  Option.bind (protocol_id_named analysis source_name) (fun protocol_id ->
+         Protocol_registry.protocol_location protocol_id registry
+         |> Option.map (fun definition_location ->
+                { key = Protocol_key protocol_id; definition_location }))
+
+let method_identity analysis protocol_id method_name =
+  let method_id = Protocol.method_id protocol_id method_name in
+  Protocol_registry.method_location protocol_id method_id
+    (protocol_registry analysis)
+  |> Option.map (fun definition_location ->
+         { key = Method_key method_id; definition_location })
+
+let protocol_defines_method analysis protocol_name method_name =
+  match protocol_id_named analysis protocol_name with
+  | None -> false
+  | Some protocol_id ->
+      let method_id = Protocol.method_id protocol_id method_name in
+      Option.is_some
+        (Protocol_registry.find_method protocol_id method_id
+           (protocol_registry analysis))
+
+let method_identity_at analysis offset ?protocol_name method_name =
+  let registry = protocol_registry analysis in
+  let declaration_identity =
+    Protocol_registry.declarations registry
+    |> List.find_map (fun (_, (declaration : Protocol_registry.declaration)) ->
+           Protocol_registry.Method_map.bindings declaration.method_locations
+           |> List.find_map (fun (method_id, location) ->
+                  if
+                    Method_id.name method_id = method_name
+                    && location_contains_offset location offset
+                  then
+                    Some
+                      { key = Method_key method_id;
+                        definition_location = location }
+                  else None))
+  in
+  let implementation_identity () =
+    Protocol_registry.implementation_locations registry
+    |> List.find_map (fun ((protocol_id, method_id, _), location) ->
+           if
+             Method_id.name method_id = method_name
+             && location_contains_offset location offset
+           then
+             Protocol_registry.method_location protocol_id method_id registry
+             |> Option.map (fun definition_location ->
+                    { key = Method_key method_id; definition_location })
+           else None)
+  in
+  let located =
+    match declaration_identity with
+    | Some _ as identity -> identity
+    | None -> implementation_identity ()
+  in
+  match located with
+  | Some _ as identity -> identity
+  | None -> (
+      match protocol_name with
+      | Some protocol_name ->
+          Option.bind (protocol_id_named analysis protocol_name) (fun protocol_id ->
+                 method_identity analysis protocol_id method_name)
+      | None -> (
+          match
+            Protocol_registry.protocols_for_method ~owner:[] ~method_name registry
+          with
+          | [ protocol_id ] -> method_identity analysis protocol_id method_name
+          | [] | _ :: _ :: _ -> None))
+
 let qualified_symbol_parts (token : Ast.token) source_name =
   if
     String.starts_with ~prefix:"^:ocaml/" source_name
@@ -567,13 +668,66 @@ let qualified_symbol_parts (token : Ast.token) source_name =
     match separator with
     | Some index when index > 0 && index + 1 < String.length source_name ->
         let qualifier = String.sub source_name 0 index in
+        let member =
+          String.sub source_name (index + 1)
+            (String.length source_name - index - 1)
+        in
         Some
           ( qualifier,
             { Ast.start_offset = token.span.start_offset;
               end_offset = token.span.start_offset + index },
+            member,
             { Ast.start_offset = token.span.start_offset + index + 1;
               end_offset = token.span.end_offset } )
     | _ -> None
+
+type source_symbol_role =
+  | Module_name
+  | Protocol_name of string
+  | Protocol_method of string
+
+let source_symbol_role_at analysis offset =
+  let contains (span : Ast.source_span) =
+    span.start_offset <= offset && offset < span.end_offset
+  in
+  let qualify scope name = if scope = "" then name else scope ^ "/" ^ name in
+  let rec find scope (form : Ast.located_form) =
+    match form.children with
+    | { form = FSymbol "module"; _ }
+      :: ({ form = FSymbol module_name; span; _ } as _name)
+      :: body ->
+        if contains span then Some Module_name
+        else
+          let nested_scope = if scope = "" then module_name else scope ^ "." ^ module_name in
+          List.find_map (find nested_scope) body
+    | { form = FSymbol "defprotocol"; _ }
+      :: { form = FSymbol protocol_name; span; _ }
+      :: methods ->
+        let protocol_name = qualify scope protocol_name in
+        if contains span then Some (Protocol_name protocol_name)
+        else
+          methods
+          |> List.find_map (fun (method_form : Ast.located_form) ->
+                 match method_form.children with
+                 | { form = FSymbol _; span; _ } :: _ when contains span ->
+                     Some (Protocol_method protocol_name)
+                 | _ -> None)
+    | { form = FSymbol "extend-type"; _ }
+      :: _receiver
+      :: { form = FSymbol protocol_name; span; _ }
+      :: methods ->
+        let protocol_name = qualify scope protocol_name in
+        if contains span then Some (Protocol_name protocol_name)
+        else
+          methods
+          |> List.find_map (fun (method_form : Ast.located_form) ->
+                 match method_form.children with
+                 | { form = FSymbol _; span; _ } :: _ when contains span ->
+                     Some (Protocol_method protocol_name)
+                 | _ -> None)
+    | children -> List.find_map (find scope) children
+  in
+  List.find_map (find "") analysis.forms
 
 type semantic_occurrence = {
   identity : semantic_identity;
@@ -595,23 +749,46 @@ let semantic_occurrence_at analysis offset =
   match token_at analysis offset with
   | Some ({ desc = Symbol source_name; span; _ } as token) -> (
       match qualified_symbol_parts token source_name with
-      | Some (qualifier, qualifier_range, _)
+      | Some (qualifier, qualifier_range, member, _)
         when offset < qualifier_range.end_offset ->
-          module_identity_at analysis offset qualifier
+          (if protocol_defines_method analysis qualifier member then
+             protocol_identity_at analysis qualifier
+           else module_identity_at analysis offset qualifier)
           |> Option.map (fun identity -> { identity; range = qualifier_range })
       | qualification ->
           let range =
             match qualification with
-            | Some (_, _, member_range) -> member_range
+            | Some (_, _, _, member_range) -> member_range
             | None -> span
           in
+          let method_name = source_symbol_basename source_name in
           let identity =
-            match member_identity_at analysis offset source_name with
+            match
+              match qualification with
+              | Some (qualifier, _, _, _) ->
+                  method_identity_at analysis offset ~protocol_name:qualifier
+                    method_name
+              | None -> (
+                  match source_symbol_role_at analysis offset with
+                  | Some Module_name ->
+                      module_identity_at analysis offset source_name
+                  | Some (Protocol_name protocol_name) ->
+                      protocol_identity_at analysis protocol_name
+                  | Some (Protocol_method protocol_name) ->
+                      method_identity_at analysis offset ~protocol_name method_name
+                  | None -> (
+                      match protocol_identity_at analysis source_name with
+                      | Some _ as identity -> identity
+                      | None -> method_identity_at analysis offset method_name))
+            with
             | Some _ as identity -> identity
             | None -> (
-                match module_identity_at analysis offset source_name with
+                match member_identity_at analysis offset source_name with
                 | Some _ as identity -> identity
-                | None -> module_type_identity_at analysis offset source_name)
+                | None -> (
+                    match module_identity_at analysis offset source_name with
+                    | Some _ as identity -> identity
+                    | None -> module_type_identity_at analysis offset source_name))
           in
           Option.map (fun identity -> { identity; range }) identity)
   | _ -> None
@@ -635,7 +812,7 @@ let semantic_occurrences_for_token analysis (token : Ast.token) =
     match token.desc with
     | Symbol source_name -> (
         match qualified_symbol_parts token source_name with
-        | Some (_, qualifier_range, member_range) ->
+        | Some (_, qualifier_range, _, member_range) ->
             [ qualifier_range.start_offset; member_range.start_offset ]
         | None -> [ token.span.start_offset ])
     | _ -> []
@@ -645,7 +822,7 @@ let semantic_occurrences_for_token analysis (token : Ast.token) =
   |> List.sort_uniq (fun left right ->
          let range_order = compare_span left.range right.range in
          if range_order <> 0 then range_order
-         else Typedtree.Uid.compare left.identity.uid right.identity.uid)
+         else compare_semantic_key left.identity.key right.identity.key)
 
 let references analysis ~offset =
   match semantic_identity_at analysis offset with
@@ -654,21 +831,27 @@ let references analysis ~offset =
       analysis.tokens
       |> List.concat_map (semantic_occurrences_for_token analysis)
       |> List.filter_map (fun occurrence ->
-             if Typedtree.Uid.equal occurrence.identity.uid target.uid then
+             if equal_semantic_key occurrence.identity.key target.key then
                Some occurrence.range
              else None)
       |> List.sort_uniq compare_span
 
 let semantic_uid_at analysis ~offset =
-  semantic_identity_at analysis offset |> Option.map (fun identity -> identity.uid)
+  Option.bind (semantic_identity_at analysis offset) (fun identity ->
+         match identity.key with Ocaml_uid uid -> Some uid | _ -> None)
 
-let references_to_uid analysis uid =
+let semantic_key_at analysis ~offset =
+  semantic_identity_at analysis offset |> Option.map (fun identity -> identity.key)
+
+let references_to_key analysis key =
   analysis.tokens
   |> List.concat_map (semantic_occurrences_for_token analysis)
   |> List.filter_map (fun occurrence ->
-         if Typedtree.Uid.equal occurrence.identity.uid uid then Some occurrence.range
+         if equal_semantic_key occurrence.identity.key key then Some occurrence.range
          else None)
   |> List.sort_uniq compare_span
+
+let references_to_uid analysis uid = references_to_key analysis (Ocaml_uid uid)
 
 let valid_rename_name name =
   match Lexer.tokenize name with
@@ -818,13 +1001,29 @@ let completions analysis ~offset =
              qualified_completion_label (Signature_id.owner signature_id)
                (Signature_id.name signature_id) ))
   in
-  Env.fold_modtypes
-    (fun name _path _declaration items ->
-      let label =
-        source_signatures |> List.assoc_opt name |> Option.value ~default:name
-      in
-      { label; detail = "module signature" } :: items)
-    None env modules
+  let module_types =
+    Env.fold_modtypes
+      (fun name _path _declaration items ->
+        let label =
+          source_signatures |> List.assoc_opt name |> Option.value ~default:name
+        in
+        { label; detail = "module signature" } :: items)
+      None env modules
+  in
+  Protocol_registry.declarations (protocol_registry analysis)
+  |> List.fold_left
+       (fun items (protocol_id, (declaration : Protocol_registry.declaration)) ->
+         let protocol_name = Protocol_id.to_string protocol_id in
+         let items = { label = protocol_name; detail = "protocol" } :: items in
+         Protocol_registry.Method_map.fold
+           (fun method_id _signature items ->
+             let method_name = Method_id.name method_id in
+             { label = protocol_name ^ "/" ^ method_name;
+               detail = "protocol method" }
+             :: { label = method_name; detail = "protocol method" }
+             :: items)
+           declaration.methods items)
+       module_types
   |> List.sort_uniq (fun left right -> String.compare left.label right.label)
 
 module String_map = Map.Make (String)

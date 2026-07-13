@@ -368,15 +368,15 @@ let references_result uri document offset =
   match document.analysis with
   | Error _ -> `List []
   | Ok analysis -> (
-      match Cljml.Language_service.semantic_uid_at analysis ~offset with
+      match Cljml.Language_service.semantic_key_at analysis ~offset with
       | None -> `List []
-      | Some uid ->
+      | Some key ->
           Hashtbl.fold
             (fun uri document locations ->
               match document.analysis with
               | Error _ -> locations
               | Ok analysis ->
-                  Cljml.Language_service.references_to_uid analysis uid
+                  Cljml.Language_service.references_to_key analysis key
                   |> List.map (location_json uri document.text)
                   |> List.rev_append locations)
             (semantic_documents uri document) []
@@ -415,9 +415,9 @@ let rename_result uri document offset new_name =
   match document.analysis with
   | Error _ -> `Null
   | Ok analysis -> (
-      match Cljml.Language_service.semantic_uid_at analysis ~offset with
+      match Cljml.Language_service.semantic_key_at analysis ~offset with
       | None -> `Null
-      | Some uid ->
+      | Some key ->
           if not (Cljml.Language_service.valid_rename_name new_name) then `Null
           else
             let changes =
@@ -427,7 +427,7 @@ let rename_result uri document offset new_name =
                   | Error _ -> changes
                   | Ok analysis ->
                       let edits =
-                        Cljml.Language_service.references_to_uid analysis uid
+                        Cljml.Language_service.references_to_key analysis key
                         |> List.map (fun (range : Cljml.Ast.source_span) ->
                                `Assoc
                                  [ ( "range",

@@ -257,8 +257,11 @@ let compile scope env next_type = function
                   next_type,
                   Group (type_items @ [ value_item ]) )
           | _ -> Error.error "defn body did not compile to a function")))
-  | FList (FSymbol "defprotocol" :: FSymbol protocol_name :: method_forms) ->
-      compile_defprotocol scope env next_type protocol_name method_forms
+  | FList
+      (FSymbol "defprotocol" :: ((FSymbol protocol_name) as name_form)
+      :: method_forms) ->
+      compile_defprotocol ?location:(Source_context.find name_form) scope env next_type
+        protocol_name method_forms
   | FList
       (FSymbol "extend-type" :: receiver_form :: FSymbol protocol_name
       :: method_forms) ->

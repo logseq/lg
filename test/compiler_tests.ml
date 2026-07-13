@@ -4634,6 +4634,210 @@ let test_language_service_module_capabilities () =
   if failures <> [] then
     failwith ("module tooling failures: " ^ String.concat " | " failures)
 
+let protocol_language_service_source =
+  {|
+(defprotocol Labelled
+  (label [value] :string))
+(extend-type :int Labelled
+  (label [value] (str value)))
+(def result (Labelled/label 42))
+|}
+
+let analyze_protocol_language_service_source () =
+  Cljml.Language_service.analyze ~filename:"file:///tmp/protocol-service.cljml"
+    protocol_language_service_source
+  |> expect_ok
+
+let test_language_service_protocol_definition_references_and_rename () =
+  let analysis = analyze_protocol_language_service_source () in
+  let declaration =
+    expect_substring_index protocol_language_service_source "Labelled\n"
+  in
+  let usage =
+    expect_substring_index protocol_language_service_source "Labelled/label"
+  in
+  (match Cljml.Language_service.definition analysis ~offset:usage with
+  | Some location when location.Location.loc_start.Lexing.pos_cnum = declaration -> ()
+  | _ -> failwith "expected protocol definition");
+  let references = Cljml.Language_service.references analysis ~offset:usage in
+  let referenced_text =
+    List.map (span_text protocol_language_service_source) references
+  in
+  if referenced_text <> [ "Labelled"; "Labelled"; "Labelled" ] then
+    failwith
+      ("expected protocol declaration, extension, and call references, got: "
+      ^ String.concat "," referenced_text);
+  match Cljml.Language_service.rename analysis ~offset:usage ~new_name:"Named" with
+  | Error err -> failwith ("expected protocol rename, got: " ^ err.message)
+  | Ok edits ->
+      if List.length edits <> 3 then failwith "expected three protocol rename edits";
+      List.iter
+        (fun (edit : Cljml.Language_service.text_edit) ->
+          if span_text protocol_language_service_source edit.range <> "Labelled" then
+            failwith "protocol rename must edit exact protocol segments")
+        edits
+
+let test_language_service_protocol_method_definition_references_and_rename () =
+  let analysis = analyze_protocol_language_service_source () in
+  let declaration =
+    expect_substring_index protocol_language_service_source "label [value]"
+  in
+  let qualified =
+    expect_substring_index protocol_language_service_source "Labelled/label"
+  in
+  let usage = qualified + String.length "Labelled/" in
+  (match Cljml.Language_service.definition analysis ~offset:usage with
+  | Some location when location.Location.loc_start.Lexing.pos_cnum = declaration -> ()
+  | _ -> failwith "expected protocol method definition");
+  let references = Cljml.Language_service.references analysis ~offset:usage in
+  let referenced_text =
+    List.map (span_text protocol_language_service_source) references
+  in
+  if referenced_text <> [ "label"; "label"; "label" ] then
+    failwith
+      ("expected method declaration, implementation, and call references, got: "
+      ^ String.concat "," referenced_text);
+  match Cljml.Language_service.rename analysis ~offset:usage ~new_name:"name-of" with
+  | Error err -> failwith ("expected method rename, got: " ^ err.message)
+  | Ok edits ->
+      if List.length edits <> 3 then failwith "expected three method rename edits";
+      List.iter
+        (fun (edit : Cljml.Language_service.text_edit) ->
+          if span_text protocol_language_service_source edit.range <> "label" then
+            failwith "method rename must edit exact method segments")
+        edits
+
+let test_protocol_method_references_keep_protocol_identities_distinct () =
+  let source =
+    {|
+(defprotocol Display (render [value] :string))
+(defprotocol Debug (render [value] :string))
+(extend-type :int Display (render [value] (str value)))
+(extend-type :int Debug (render [value] (str value)))
+(def display (Display/render 1))
+(def debug (Debug/render 1))
+|}
+  in
+  let analysis =
+    Cljml.Language_service.analyze ~filename:"file:///tmp/protocol-identities.cljml"
+      source
+    |> expect_ok
+  in
+  let qualified = expect_substring_index source "Display/render 1" in
+  let usage = qualified + String.length "Display/" in
+  let references = Cljml.Language_service.references analysis ~offset:usage in
+  let referenced_text = List.map (span_text source) references in
+  if referenced_text <> [ "render"; "render"; "render" ] then
+    failwith
+      ("expected only Display/render references, got: "
+      ^ String.concat "," referenced_text)
+
+let test_workspace_protocol_definition_resolves_across_files () =
+  let provider =
+    "(defprotocol Labelled (label [value] :string))\n\
+     (extend-type :int Labelled (label [value] (str value)))\n"
+  in
+  let consumer = "(def result (Labelled/label 42))\n" in
+  let provider_uri = "file:///tmp/protocol-provider.cljml" in
+  let consumer_uri = "file:///tmp/protocol-consumer.cljml" in
+  let analyses =
+    Cljml.Language_service.analyze_workspace
+      [ (consumer_uri, consumer); (provider_uri, provider) ]
+    |> expect_ok
+  in
+  let analysis = List.assoc consumer_uri analyses in
+  let usage = expect_substring_index consumer "Labelled/label" in
+  match Cljml.Language_service.definition analysis ~offset:usage with
+  | Some location
+    when location.Location.loc_start.Lexing.pos_fname = provider_uri
+         && location.loc_start.pos_cnum = expect_substring_index provider "Labelled" ->
+      ()
+  | _ -> failwith "expected cross-file protocol definition"
+
+let test_module_and_protocol_namespaces_remain_distinct () =
+  let source =
+    {|
+(module Shared (def value 1))
+(defprotocol Shared (label [value] :string))
+(extend-type :int Shared (label [value] (str value)))
+(def module-value Shared/value)
+(def protocol-value (Shared/label 1))
+|}
+  in
+  let analysis =
+    Cljml.Language_service.analyze ~filename:"file:///tmp/protocol-module-clash.cljml"
+      source
+    |> expect_ok
+  in
+  let module_usage = expect_substring_index source "Shared/value" in
+  let protocol_usage = expect_substring_index source "Shared/label" in
+  let module_declaration = expect_substring_index source "Shared (def value" in
+  let protocol_declaration = expect_substring_index source "Shared (label" in
+  match
+    ( Cljml.Language_service.definition analysis ~offset:module_usage,
+      Cljml.Language_service.definition analysis ~offset:protocol_usage )
+  with
+  | Some module_location, Some protocol_location
+    when module_location.loc_start.pos_cnum = module_declaration
+         && protocol_location.loc_start.pos_cnum = protocol_declaration ->
+      let module_refs =
+        Cljml.Language_service.references analysis ~offset:module_usage
+        |> List.map (span_text source)
+      in
+      let protocol_refs =
+        Cljml.Language_service.references analysis ~offset:protocol_usage
+        |> List.map (span_text source)
+      in
+      if module_refs <> [ "Shared"; "Shared" ] then
+        failwith "same-named module references must remain isolated";
+      if protocol_refs <> [ "Shared"; "Shared"; "Shared" ] then
+        failwith "same-named protocol references must remain isolated"
+  | _ -> failwith "module and protocol qualifiers with the same name must stay distinct"
+
+let test_language_service_completion_includes_protocols_and_methods () =
+  let analysis = analyze_protocol_language_service_source () in
+  let items =
+    Cljml.Language_service.completions analysis
+      ~offset:(String.length protocol_language_service_source)
+  in
+  let labels =
+    List.map (fun (item : Cljml.Language_service.completion_item) -> item.label) items
+  in
+  List.iter
+    (fun name ->
+      if not (List.mem name labels) then
+        failwith ("expected protocol completion " ^ name))
+    [ "Labelled"; "label" ]
+
+let test_language_service_protocol_capabilities () =
+  let cases =
+    [
+      ( "protocol identity",
+        test_language_service_protocol_definition_references_and_rename );
+      ( "method identity",
+        test_language_service_protocol_method_definition_references_and_rename );
+      ( "same method names",
+        test_protocol_method_references_keep_protocol_identities_distinct );
+      ( "cross-file protocol",
+        test_workspace_protocol_definition_resolves_across_files );
+      ( "module/protocol collision",
+        test_module_and_protocol_namespaces_remain_distinct );
+      ( "completion",
+        test_language_service_completion_includes_protocols_and_methods );
+    ]
+  in
+  let failures =
+    List.filter_map
+      (fun (name, test) ->
+        try
+          test ();
+          None
+        with Failure message -> Some (name ^ ": " ^ message))
+      cases
+  in
+  if failures <> [] then
+    failwith ("protocol tooling failures: " ^ String.concat " | " failures)
+
 let test_language_service_document_symbols_preserve_source_names () =
   let analysis = analyze_language_service_source () in
   let symbols = Cljml.Language_service.document_symbols analysis in
@@ -7074,6 +7278,8 @@ let tests =
       test_language_service_rename_returns_exact_symbol_edits );
     ( "language service module capabilities",
       test_language_service_module_capabilities );
+    ( "language service protocol capabilities",
+      test_language_service_protocol_capabilities );
     ( "language service constructor capabilities",
       test_language_service_constructor_capabilities );
     ( "language service type capabilities",

@@ -287,8 +287,13 @@ let rec compile_module ?location ?signature_name ?signature_location
                 item :: items ))
     | FList (FSymbol "module-alias" :: _) ->
         Error.error "module-alias expects alias and target modules"
-    | FList (FSymbol "defprotocol" :: FSymbol protocol_name :: method_forms) -> (
-        match compile_defprotocol module_path env next_type protocol_name method_forms with
+    | FList
+        (FSymbol "defprotocol" :: ((FSymbol protocol_name) as name_form)
+        :: method_forms) -> (
+        match
+          compile_defprotocol ?location:(Source_context.find name_form) module_path env
+            next_type protocol_name method_forms
+        with
         | Error _ as err -> err
         | Ok (_scope, updated_env, next_type, item) ->
             let exported = changed_bindings env updated_env in
