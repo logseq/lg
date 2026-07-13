@@ -322,7 +322,14 @@ let create ~compile_expr =
           | Error _ as err -> err
           | Ok target -> (
               match target.ty with
-              | TRecord fields | TNamed_record { fields; _ } -> (
+              | TRecord fields | TNamed_record { fields; nominal = false; _ } -> (
+                  match find_field keyword fields with
+                  | Some field ->
+                      Ok
+                        (typed_ir field.ty
+                           (Structural_map.field_expr target field))
+                  | None -> Error.error ("unknown field " ^ keyword))
+              | TNamed_record { fields; nominal = true; _ } -> (
                   match find_field keyword fields with
                   | Some field ->
                       Ok

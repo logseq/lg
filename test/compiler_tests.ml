@@ -2180,6 +2180,22 @@ let test_float_arithmetic_uses_core_numeric_operators () =
   assert_ocaml_runs "float_arithmetic_uses_core_numeric_operators"
     "4.:3.5:6.:3.\n" ocaml_source
 
+let test_float_arithmetic_uses_types_from_option_patterns () =
+  let source =
+    {|
+(defn order-between [^:option<float> previous ^:option<float> next]
+  (match (tuple previous next)
+    (tuple None None) 1.0
+    (tuple (Some previous) None) (+ previous 1.0)
+    (tuple None (Some next)) (- next 1.0)
+    (tuple (Some previous) (Some next)) (/ (+ previous next) 2.0)))
+(println (order-between (Some 2.0) (Some 6.0)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "float_arithmetic_uses_types_from_option_patterns" "4.\n"
+    ocaml_source
+
 let test_ocaml_record_values_compile_through_source_backend () =
   let source =
     {|
@@ -7705,6 +7721,8 @@ let tests =
       test_float_arithmetic_rejects_mixed_numeric_types );
     ( "syntax convergence: float arithmetic uses core numeric operators",
       test_float_arithmetic_uses_core_numeric_operators );
+    ( "syntax convergence: float arithmetic uses types from option patterns",
+      test_float_arithmetic_uses_types_from_option_patterns );
     ( "OCaml record values compile through source backend",
       test_ocaml_record_values_compile_through_source_backend );
     ( "OCaml record values support qualified module types",

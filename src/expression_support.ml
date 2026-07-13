@@ -48,6 +48,8 @@ let unresolved_contextual_type = function
 
 let cljml_metadata_type_for_ocaml_payload = function
   | TOcaml "int" -> TInt
+  | TOcaml "float" -> TFloat
+  | TOcaml "char" -> TChar
   | TOcaml "string" -> TString
   | TOcaml "bool" -> TBool
   | TOcaml "unit" -> TUnit
@@ -55,6 +57,8 @@ let cljml_metadata_type_for_ocaml_payload = function
 
 let rec cljml_metadata_type_for_ocaml_type = function
   | TOcaml "int" -> TInt
+  | TOcaml "float" -> TFloat
+  | TOcaml "char" -> TChar
   | TOcaml "string" -> TString
   | TOcaml "bool" -> TBool
   | TOcaml "unit" -> TUnit
