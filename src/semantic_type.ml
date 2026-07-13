@@ -25,6 +25,7 @@ and field = {
   keyword : string;
   ocaml_name : string;
   ty : ty;
+  location : Location.t option;
 }
 
 and named_record = {

@@ -30,7 +30,7 @@ let compile_type_alias ?location scope env next_type name type_parameters manife
 
 let compile_type_record ?location scope env next_type name type_parameters field_forms =
   let field_spec = function
-    | FList [ FSymbol field_name; FKeyword keyword ] -> (
+    | FList [ ((FSymbol field_name) as name_form); FKeyword keyword ] -> (
         match Type_annotation.of_keyword_with_parameters type_parameters keyword with
         | Error _ as err when String.starts_with ~prefix:":param/" keyword -> err
         | Error _ -> Error.error ("unknown record field type " ^ keyword)
@@ -40,6 +40,7 @@ let compile_type_record ?location scope env next_type name type_parameters field
                 keyword = ":" ^ field_name;
                 ocaml_name = Names.sanitize_name field_name;
                 ty;
+                location = Source_context.find name_form;
               })
     | _ -> Error.error "type-record fields must be (name :type)"
   in

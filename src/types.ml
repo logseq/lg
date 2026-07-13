@@ -320,8 +320,8 @@ let rec remap_module_type ~from_path ~to_path ty =
 let find_field keyword fields =
   List.find_opt (fun field -> field.keyword = keyword) fields
 
-let make_field keyword ty =
-  { keyword; ocaml_name = Names.keyword_to_ocaml_name keyword; ty }
+let make_field ?location keyword ty =
+  { keyword; ocaml_name = Names.keyword_to_ocaml_name keyword; ty; location }
 
 type type_substitutions = (string * ty) list
 

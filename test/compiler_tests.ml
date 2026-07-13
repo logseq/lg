@@ -4838,6 +4838,131 @@ let test_language_service_protocol_capabilities () =
   if failures <> [] then
     failwith ("protocol tooling failures: " ^ String.concat " | " failures)
 
+let field_language_service_source =
+  {|
+(type-record user (name :string) (age :int))
+(def ada (ocaml-record user (name "Ada") (age 36)))
+(def label (ocaml-field ada name))
+(def extracted (match ada (record (name value)) value))
+|}
+
+let analyze_field_language_service_source () =
+  Cljml.Language_service.analyze ~filename:"file:///tmp/field-service.cljml"
+    field_language_service_source
+  |> expect_ok
+
+let test_language_service_field_definition_references_and_rename () =
+  let analysis = analyze_field_language_service_source () in
+  let declaration = expect_substring_index field_language_service_source "name :string" in
+  let usage =
+    expect_substring_index field_language_service_source "ada name" + String.length "ada "
+  in
+  (match Cljml.Language_service.definition analysis ~offset:usage with
+  | Some location when location.Location.loc_start.Lexing.pos_cnum = declaration -> ()
+  | _ -> failwith "expected record field definition");
+  let references = Cljml.Language_service.references analysis ~offset:usage in
+  let referenced_text =
+    List.map (span_text field_language_service_source) references
+  in
+  if referenced_text <> [ "name"; "name"; "name"; "name" ] then
+    failwith
+      ("expected field declaration, construction, access, and pattern references, got: "
+      ^ String.concat "," referenced_text);
+  match Cljml.Language_service.rename analysis ~offset:usage ~new_name:"display-name" with
+  | Error err -> failwith ("expected field rename, got: " ^ err.message)
+  | Ok edits ->
+      if List.length edits <> 4 then failwith "expected four exact field edits";
+      List.iter
+        (fun (edit : Cljml.Language_service.text_edit) ->
+          if span_text field_language_service_source edit.range <> "name" then
+            failwith "field rename must edit exact field symbols")
+        edits
+
+let test_field_references_keep_record_identities_distinct () =
+  let source =
+    {|
+(type-record user (name :string))
+(type-record project (name :string))
+(def ada (ocaml-record user (name "Ada")))
+(def cljml (ocaml-record project (name "cljml")))
+(def user-name (ocaml-field ada name))
+(def project-name (ocaml-field cljml name))
+|}
+  in
+  let analysis =
+    Cljml.Language_service.analyze ~filename:"file:///tmp/field-identities.cljml"
+      source
+    |> expect_ok
+  in
+  let usage =
+    expect_substring_index source "ada name" + String.length "ada "
+  in
+  let references = Cljml.Language_service.references analysis ~offset:usage in
+  let referenced_text = List.map (span_text source) references in
+  if referenced_text <> [ "name"; "name"; "name" ] then
+    failwith
+      ("expected only user.name references, got: "
+      ^ String.concat "," referenced_text)
+
+let test_workspace_field_definition_resolves_across_files () =
+  let provider = "(type-record user (name :string))\n" in
+  let consumer =
+    "(def ada (ocaml-record user (name \"Ada\")))\n\
+     (def label (ocaml-field ada name))\n"
+  in
+  let provider_uri = "file:///tmp/field-provider.cljml" in
+  let consumer_uri = "file:///tmp/field-consumer.cljml" in
+  let analyses =
+    Cljml.Language_service.analyze_workspace
+      [ (consumer_uri, consumer); (provider_uri, provider) ]
+    |> expect_ok
+  in
+  let analysis = List.assoc consumer_uri analyses in
+  let usage = expect_substring_index consumer "ada name" + String.length "ada " in
+  match Cljml.Language_service.definition analysis ~offset:usage with
+  | Some location
+    when location.Location.loc_start.Lexing.pos_fname = provider_uri
+         && location.loc_start.pos_cnum = expect_substring_index provider "name" ->
+      ()
+  | _ -> failwith "expected cross-file field definition"
+
+let test_language_service_completion_includes_record_fields () =
+  let analysis = analyze_field_language_service_source () in
+  let items =
+    Cljml.Language_service.completions analysis
+      ~offset:(String.length field_language_service_source)
+  in
+  let labels =
+    List.map (fun (item : Cljml.Language_service.completion_item) -> item.label) items
+  in
+  List.iter
+    (fun name ->
+      if not (List.mem name labels) then
+        failwith ("expected field completion " ^ name))
+    [ "name"; "age" ]
+
+let test_language_service_field_capabilities () =
+  let cases =
+    [
+      ( "definition/references/rename",
+        test_language_service_field_definition_references_and_rename );
+      ( "record identity", test_field_references_keep_record_identities_distinct );
+      ( "cross-file definition", test_workspace_field_definition_resolves_across_files );
+      ( "completion", test_language_service_completion_includes_record_fields );
+    ]
+  in
+  let failures =
+    List.filter_map
+      (fun (name, test) ->
+        try
+          test ();
+          None
+        with Failure message -> Some (name ^ ": " ^ message))
+      cases
+  in
+  if failures <> [] then
+    failwith ("field tooling failures: " ^ String.concat " | " failures)
+
 let test_language_service_document_symbols_preserve_source_names () =
   let analysis = analyze_language_service_source () in
   let symbols = Cljml.Language_service.document_symbols analysis in
@@ -7388,6 +7513,8 @@ let tests =
       test_language_service_module_capabilities );
     ( "language service protocol capabilities",
       test_language_service_protocol_capabilities );
+    ( "language service field capabilities",
+      test_language_service_field_capabilities );
     ( "language service constructor capabilities",
       test_language_service_constructor_capabilities );
     ( "language service type capabilities",

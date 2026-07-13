@@ -416,6 +416,66 @@ let constructor_identity_at analysis offset source_name =
   iterator.structure iterator analysis.compiler.typed_structure;
   best_semantic_identity best
 
+let label_name_matches source_name label_name =
+  Names.sanitize_name (source_symbol_basename source_name)
+  = Names.sanitize_name label_name
+
+let label_identity_at analysis offset source_name =
+  let best = ref None in
+  let consider location name uid definition_location =
+    consider_semantic_identity best ~offset ~location
+      ~matches:(label_name_matches source_name name) ~uid ~definition_location
+  in
+  let consider_description location description =
+    consider location description.Data_types.lbl_name description.lbl_uid
+      description.lbl_loc
+  in
+  let base = Tast_iterator.default_iterator in
+  let visit_pattern : type kind.
+      Tast_iterator.iterator -> kind Typedtree.general_pattern -> unit =
+   fun self pattern ->
+    (match pattern.pat_desc with
+    | Typedtree.Tpat_record (fields, _) ->
+        List.iter
+          (fun (_, description, _) ->
+            consider_description pattern.pat_loc description)
+          fields
+    | _ -> ());
+    base.pat self pattern
+  in
+  let iterator =
+    { base with
+      expr =
+        (fun self expression ->
+          (match expression.Typedtree.exp_desc with
+          | Texp_record { fields; _ } ->
+              Array.iter
+                (fun (description, _) ->
+                  consider_description expression.exp_loc description)
+                fields
+          | Texp_field (_, _, description)
+          | Texp_atomic_loc (_, _, description) ->
+              consider_description expression.exp_loc description
+          | Texp_setfield (_, _, description, _) ->
+              consider_description expression.exp_loc description
+          | _ -> ());
+          base.expr self expression);
+      pat = visit_pattern;
+      type_declaration =
+        (fun self declaration ->
+          (match declaration.Typedtree.typ_kind with
+          | Ttype_record fields ->
+              List.iter
+                (fun (field : Typedtree.label_declaration) ->
+                  consider field.ld_loc field.ld_name.txt field.ld_uid field.ld_loc)
+                fields
+          | _ -> ());
+          base.type_declaration self declaration);
+    }
+  in
+  iterator.structure iterator analysis.compiler.typed_structure;
+  best_semantic_identity best
+
 let source_type_name source_name =
   let strip prefix value =
     if String.starts_with ~prefix value then
@@ -743,7 +803,10 @@ let member_identity_at analysis offset source_name =
       | None -> (
           match constructor_identity_at analysis offset source_name with
           | Some _ as identity -> identity
-          | None -> type_identity_at analysis offset source_name))
+          | None -> (
+              match label_identity_at analysis offset source_name with
+              | Some _ as identity -> identity
+              | None -> type_identity_at analysis offset source_name)))
 
 let semantic_occurrence_at analysis offset =
   match token_at analysis offset with
@@ -910,6 +973,20 @@ let completion_source_names analysis =
          if String.starts_with ~prefix:"__" key then None
          else Some (binding.ocaml_name, key))
 
+let completion_field_source_names analysis =
+  analysis.compiler.typecheck_state.env
+  |> Compiler_environment.filter_map (fun _ (binding : Types.binding) ->
+         match binding.ty with
+         | TNamed_record record ->
+             Some
+               (List.map
+                  (fun (field : Types.field) ->
+                    ( field.ocaml_name,
+                      String.sub field.keyword 1 (String.length field.keyword - 1) ))
+                  record.fields)
+         | _ -> None)
+  |> List.concat
+
 let qualified_completion_label owner name = String.concat "." (owner @ [ name ])
 
 let type_completion_label type_id =
@@ -960,6 +1037,18 @@ let completions analysis ~offset =
         :: items)
       None env values
   in
+  let field_source_names = completion_field_source_names analysis in
+  let labels =
+    Env.fold_labels
+      (fun description items ->
+        let label =
+          field_source_names
+          |> List.assoc_opt description.Data_types.lbl_name
+          |> Option.value ~default:description.lbl_name
+        in
+        { label; detail = print_type env description.lbl_arg } :: items)
+      None env constructors
+  in
   let types =
     analysis.compiler.typecheck_state.env
     |> Compiler_environment.types |> Type_registry.bindings
@@ -973,7 +1062,7 @@ let completions analysis ~offset =
                  detail = type_completion_detail declaration.kind }
                :: items
            | exception Not_found -> items)
-         constructors
+         labels
   in
   let modules =
     let source_modules =

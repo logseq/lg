@@ -99,7 +99,10 @@ let record_type_definition type_name parameters fields location =
   let label_declarations =
     fields
     |> List.map (fun (field : Types.field) ->
-           Ast_helper.Type.field ~loc (str field.ocaml_name) (core_type field.ty))
+           let field_loc = declaration_location field.location in
+           Ast_helper.Type.field ~loc:field_loc
+             (Location.mkloc field.ocaml_name field_loc)
+             (core_type field.ty))
   in
   let type_declaration =
     Ast_helper.Type.mk ~loc:declaration_loc ~params:(type_parameters parameters)
