@@ -9,6 +9,7 @@ let documents = Hashtbl.create 16
 let workspace_documents = Hashtbl.create 32
 let workspace_sources = Hashtbl.create 32
 let workspace_index = ref None
+let supports_dynamic_watched_files = ref false
 
 let analyze_document uri text =
   {
@@ -282,6 +283,29 @@ let error_response id code message =
         ("id", id);
         ( "error",
           `Assoc [ ("code", `Int code); ("message", `String message) ] ) ])
+
+let register_watched_files () =
+  write_packet
+    (`Assoc
+      [ ("jsonrpc", `String "2.0");
+        ("id", `String "cljml-watch-cljml-files");
+        ("method", `String "client/registerCapability");
+        ( "params",
+          `Assoc
+            [ ( "registrations",
+                `List
+                  [ `Assoc
+                      [ ("id", `String "cljml-watch-cljml-files");
+                        ( "method",
+                          `String "workspace/didChangeWatchedFiles" );
+                        ( "registerOptions",
+                          `Assoc
+                            [ ( "watchers",
+                                `List
+                                  [ `Assoc
+                                      [ ( "globPattern",
+                                          `String "**/*.cljml" );
+                                        ("kind", `Int 7) ] ] ) ] ) ] ] ) ] ) ])
 
 let initialize_result =
   `Assoc
@@ -718,7 +742,9 @@ let handle_notification method_ params =
              update_watched_workspace_file uri change_type)
       |> List.sort_uniq String.compare
       |> List.iter publish_current_diagnostics
-  | "initialized" | "exit" -> ()
+  | "initialized" ->
+      if !supports_dynamic_watched_files then register_watched_files ()
+  | "exit" -> ()
   | _ -> ()
 
 let rec loop shutdown_requested =
@@ -730,6 +756,11 @@ let rec loop shutdown_requested =
       let params = json |> member "params" in
       (match (method_, id) with
       | Some "initialize", (`Int _ | `String _) ->
+          supports_dynamic_watched_files :=
+            (params |> member "capabilities" |> member "workspace"
+           |> member "didChangeWatchedFiles" |> member "dynamicRegistration"
+           |> to_bool_option)
+            = Some true;
           (match params |> member "rootUri" with
           | `String root_uri -> index_workspace root_uri
           | _ -> ());

@@ -43,6 +43,10 @@ Positions are converted between UTF-8 source offsets and the UTF-16 code units
 required by LSP. A document is parsed, elaborated, and typechecked once per full
 content update; all semantic queries reuse that analysis.
 
+When the client supports dynamic watched-file registration, the server
+registers `**/*.cljml` after initialization. File creation, changes, deletion,
+and renames then update the dependency index and republish affected diagnostics.
+
 ## Neovim
 
 Assign a `cljml` filetype and start the server from the project root:

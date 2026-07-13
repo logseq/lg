@@ -111,7 +111,7 @@ send_lsp_message() {
 }
 
 {
-  send_lsp_message "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"rootUri\":\"file://$multi_dir\"}}"
+  send_lsp_message "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"rootUri\":\"file://$multi_dir\",\"capabilities\":{\"workspace\":{\"didChangeWatchedFiles\":{\"dynamicRegistration\":true}}}}}"
   send_lsp_message '{"jsonrpc":"2.0","method":"initialized","params":{}}'
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/editor.cljml","languageId":"cljml","version":1,"text":"(def answer\n  (if true\n    (Stdlib.abs\n      \"bad\")\n    0))"}}}'
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":"file:///tmp/editor.cljml","version":2},"contentChanges":[{"text":"(def ok 1)\n(def good (Stdlib.abs -42))"}]}}'
@@ -157,6 +157,8 @@ grep -q '"documentSymbolProvider":true' "$lsp_output"
 grep -q '"workspaceSymbolProvider":true' "$lsp_output"
 grep -q '"semanticTokensProvider"' "$lsp_output"
 grep -q '"signatureHelpProvider"' "$lsp_output"
+grep -q '"method":"client/registerCapability"' "$lsp_output"
+grep -Fq '"globPattern":"**/*.cljml"' "$lsp_output"
 grep -q '"method":"textDocument/publishDiagnostics"' "$lsp_output"
 grep -q '"severity":1' "$lsp_output"
 grep -q '"severity":2' "$lsp_output"
