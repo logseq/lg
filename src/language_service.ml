@@ -296,6 +296,18 @@ type semantic_identity = {
   definition_location : Location.t;
 }
 
+let consider_semantic_identity best ~offset ~location ~matches ~uid
+    ~definition_location =
+  if location_contains_offset location offset && matches then
+    let size = location_size location in
+    match !best with
+    | None -> best := Some (size, { uid; definition_location })
+    | Some (current_size, _) when size < current_size ->
+        best := Some (size, { uid; definition_location })
+    | Some _ -> ()
+
+let best_semantic_identity best = Option.map snd !best
+
 let identifier_identity_at analysis offset source_name =
   smallest_expression analysis.compiler.typed_structure offset (fun expression ->
       match expression.Typedtree.exp_desc with
@@ -314,16 +326,10 @@ let identifier_identity_at analysis offset source_name =
 let binding_identity_at analysis offset source_name =
   let best = ref None in
   let consider location name uid =
-    if
-      location_contains_offset location offset
-      && Names.sanitize_name source_name = Names.sanitize_name name
-    then
-      let size = location_size location in
-      match !best with
-      | None -> best := Some (size, uid, location)
-      | Some (current_size, _, _) when size < current_size ->
-          best := Some (size, uid, location)
-      | Some _ -> ()
+    consider_semantic_identity best ~offset ~location
+      ~matches:
+        (Names.sanitize_name source_name = Names.sanitize_name name)
+      ~uid ~definition_location:location
   in
   let base = Tast_iterator.default_iterator in
   let iterator =
@@ -342,9 +348,7 @@ let binding_identity_at analysis offset source_name =
     }
   in
   iterator.structure iterator analysis.compiler.typed_structure;
-  match !best with
-  | Some (_, uid, definition_location) -> Some { uid; definition_location }
-  | None -> None
+  best_semantic_identity best
 
 let constructor_name_matches source_name constructor_name =
   Names.sanitize_name (source_symbol_basename source_name)
@@ -353,16 +357,9 @@ let constructor_name_matches source_name constructor_name =
 let constructor_identity_at analysis offset source_name =
   let best = ref None in
   let consider location name uid definition_location =
-    if
-      location_contains_offset location offset
-      && constructor_name_matches source_name name
-    then
-      let size = location_size location in
-      match !best with
-      | None -> best := Some (size, uid, definition_location)
-      | Some (current_size, _, _) when size < current_size ->
-          best := Some (size, uid, definition_location)
-      | Some _ -> ()
+    consider_semantic_identity best ~offset ~location
+      ~matches:(constructor_name_matches source_name name) ~uid
+      ~definition_location
   in
   let base = Tast_iterator.default_iterator in
   let visit_pattern : type kind.
@@ -400,9 +397,80 @@ let constructor_identity_at analysis offset source_name =
     }
   in
   iterator.structure iterator analysis.compiler.typed_structure;
-  match !best with
-  | Some (_, uid, definition_location) -> Some { uid; definition_location }
-  | None -> None
+  best_semantic_identity best
+
+let source_type_name source_name =
+  let strip prefix value =
+    if String.starts_with ~prefix value then
+      String.sub value (String.length prefix)
+        (String.length value - String.length prefix)
+    else value
+  in
+  source_name |> strip "^:ocaml/" |> strip ":ocaml/"
+
+let ocaml_type_name source_name =
+  match List.rev (String.split_on_char '.' (source_type_name source_name)) with
+  | [] -> source_name
+  | type_name :: reversed_modules ->
+      let type_name = Names.sanitize_name type_name in
+      (match List.rev reversed_modules with
+      | [] -> type_name
+      | modules ->
+          Names.module_path_to_ocaml (String.concat "." modules)
+          ^ "." ^ type_name)
+
+let longident_of_dotted_name name =
+  match String.split_on_char '.' name with
+  | [] -> Longident.Lident name
+  | first :: rest ->
+      List.fold_left
+        (fun path segment ->
+          Longident.Ldot (Location.mknoloc path, Location.mknoloc segment))
+        (Longident.Lident first) rest
+
+let type_name_matches source_name path =
+  Path.name path = ocaml_type_name source_name
+
+let type_identity_at analysis offset source_name =
+  let best = ref None in
+  let consider location path declaration =
+    consider_semantic_identity best ~offset ~location
+      ~matches:(type_name_matches source_name path)
+      ~uid:(Cljml_compiler_support.Ocaml_type.uid declaration)
+      ~definition_location:
+        (Cljml_compiler_support.Ocaml_type.location declaration)
+  in
+  let base = Tast_iterator.default_iterator in
+  let iterator =
+    { base with
+      expr =
+        (fun self expression ->
+          if location_contains_offset expression.Typedtree.exp_loc offset then
+            let longident =
+              longident_of_dotted_name (ocaml_type_name source_name)
+            in
+            (match Env.find_type_by_name longident expression.exp_env with
+            | path, declaration ->
+                consider expression.exp_loc path declaration
+            | exception Not_found -> ());
+          base.expr self expression);
+      typ =
+        (fun self core_type ->
+          (match core_type.Typedtree.ctyp_desc with
+          | Ttyp_constr (path, _, _) ->
+              let declaration = Env.find_type path core_type.ctyp_env in
+              consider core_type.ctyp_loc path declaration
+          | _ -> ());
+          base.typ self core_type);
+      type_declaration =
+        (fun self declaration ->
+          let path = Path.Pident declaration.Typedtree.typ_id in
+          consider declaration.typ_loc path declaration.typ_type;
+          base.type_declaration self declaration);
+    }
+  in
+  iterator.structure iterator analysis.compiler.typed_structure;
+  best_semantic_identity best
 
 let semantic_identity_at analysis offset =
   match token_at analysis offset with
@@ -412,7 +480,10 @@ let semantic_identity_at analysis offset =
       | None -> (
           match binding_identity_at analysis offset source_name with
           | Some _ as identity -> identity
-          | None -> constructor_identity_at analysis offset source_name))
+          | None -> (
+              match constructor_identity_at analysis offset source_name with
+              | Some _ as identity -> identity
+              | None -> type_identity_at analysis offset source_name)))
   | _ -> None
 
 let definition analysis ~offset =
@@ -513,6 +584,14 @@ let completion_source_names analysis =
          if String.starts_with ~prefix:"__" key then None
          else Some (binding.ocaml_name, key))
 
+let type_completion_label type_id =
+  String.concat "." (Type_id.owner type_id @ [ Type_id.name type_id ])
+
+let type_completion_detail = function
+  | Type_registry.Alias -> "type alias"
+  | Record -> "record type"
+  | Variant -> "variant type"
+
 let completions analysis ~offset =
   let env =
     match
@@ -537,7 +616,8 @@ let completions analysis ~offset =
           :: items)
       None env []
   in
-  Env.fold_constructors
+  let constructors =
+    Env.fold_constructors
     (fun description items ->
       let constructor_types =
         description.Data_types.cstr_args @ [ description.cstr_res ]
@@ -551,6 +631,20 @@ let completions analysis ~offset =
       }
       :: items)
     None env values
+  in
+  analysis.compiler.typecheck_state.env
+  |> Compiler_environment.types |> Type_registry.bindings
+  |> List.fold_left
+       (fun items (emitted_name, (declaration : Type_registry.declaration)) ->
+         match
+           Env.find_type_by_name (longident_of_dotted_name emitted_name) env
+         with
+         | _ ->
+             { label = type_completion_label declaration.type_id;
+               detail = type_completion_detail declaration.kind }
+             :: items
+         | exception Not_found -> items)
+       constructors
   |> List.sort_uniq (fun left right -> String.compare left.label right.label)
 
 module String_map = Map.Make (String)

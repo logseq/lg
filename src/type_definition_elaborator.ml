@@ -10,7 +10,7 @@ let declare_type scope env name kind =
   |> Result.map (fun (type_id, types) ->
          (type_id, Env.with_types types env))
 
-let compile_type_alias scope env next_type name type_parameters manifest_form =
+let compile_type_alias ?location scope env next_type name type_parameters manifest_form =
   match manifest_form with
   | FKeyword keyword -> (
       match Type_annotation.of_keyword_with_parameters type_parameters keyword with
@@ -25,10 +25,10 @@ let compile_type_alias scope env next_type name type_parameters manifest_form =
                 ( scope,
                   env,
                   next_type,
-                  Type_alias { type_name; type_parameters; manifest } )))
+                  Type_alias { type_name; type_parameters; manifest; location } )))
   | _ -> Error.error "type-alias expects a type keyword target"
 
-let compile_type_record scope env next_type name type_parameters field_forms =
+let compile_type_record ?location scope env next_type name type_parameters field_forms =
   let field_spec = function
     | FList [ FSymbol field_name; FKeyword keyword ] -> (
         match Type_annotation.of_keyword_with_parameters type_parameters keyword with
@@ -76,7 +76,7 @@ let compile_type_record scope env next_type name type_parameters field_forms =
             ( scope,
               env,
               next_type,
-              Type_def { type_name; type_parameters; fields } ))
+              Type_def { type_name; type_parameters; fields; location } ))
 
 let record_type_public_binding module_path name env =
   let key = record_type_key module_path name in
@@ -84,7 +84,8 @@ let record_type_public_binding module_path name env =
   | Some binding -> Ok (key, binding)
   | None -> Error.error ("internal error: missing record metadata for " ^ name)
 
-let compile_type_variant scope env next_type name type_parameters constructor_forms =
+let compile_type_variant ?location scope env next_type name type_parameters
+    constructor_forms =
   let constructor_name = function
     | (FSymbol constructor as form) ->
         Ok (constructor, Source_context.find form)
@@ -159,4 +160,5 @@ let compile_type_variant scope env next_type name type_parameters constructor_fo
             ( scope,
               Env.add_bindings constructor_bindings env,
               next_type,
-              Type_variant { type_name; type_parameters; constructors } ))
+              Type_variant
+                { type_name; type_parameters; constructors; location } ))

@@ -37,6 +37,8 @@ let declare ~scope source_name kind registry =
 let find_by_emitted_name emitted_name registry =
   Emitted_map.find_opt emitted_name registry
 
+let bindings registry = Emitted_map.bindings registry
+
 let export_scope ~from_scope ~to_scope source target =
   let remap_scope owner =
     match owner with

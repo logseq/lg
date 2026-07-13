@@ -92,26 +92,32 @@ let type_parameters parameters =
         (Asttypes.NoVariance, Asttypes.NoInjectivity) ))
     parameters
 
-let record_type_definition type_name parameters fields =
+let declaration_location = Option.value ~default:loc
+
+let record_type_definition type_name parameters fields location =
+  let declaration_loc = declaration_location location in
   let label_declarations =
     fields
     |> List.map (fun (field : Types.field) ->
            Ast_helper.Type.field ~loc (str field.ocaml_name) (core_type field.ty))
   in
   let type_declaration =
-    Ast_helper.Type.mk ~loc ~params:(type_parameters parameters)
-      ~kind:(Ptype_record label_declarations) (str type_name)
+    Ast_helper.Type.mk ~loc:declaration_loc ~params:(type_parameters parameters)
+      ~kind:(Ptype_record label_declarations)
+      (Location.mkloc type_name declaration_loc)
   in
   Ast_helper.Str.type_ ~loc Nonrecursive [ type_declaration ]
 
-let type_alias_definition type_name parameters manifest =
+let type_alias_definition type_name parameters manifest location =
+  let declaration_loc = declaration_location location in
   let type_declaration =
-    Ast_helper.Type.mk ~loc ~params:(type_parameters parameters)
-      ~manifest:(core_type manifest) (str type_name)
+    Ast_helper.Type.mk ~loc:declaration_loc ~params:(type_parameters parameters)
+      ~manifest:(core_type manifest) (Location.mkloc type_name declaration_loc)
   in
   Ast_helper.Str.type_ ~loc Nonrecursive [ type_declaration ]
 
-let type_variant_definition type_name parameters constructors =
+let type_variant_definition type_name parameters constructors location =
+  let declaration_loc = declaration_location location in
   let constructor_declarations =
     constructors
     |> List.map (fun constructor ->
@@ -123,9 +129,9 @@ let type_variant_definition type_name parameters constructors =
              (Location.mkloc constructor.constructor_name constructor_loc))
   in
   let type_declaration =
-    Ast_helper.Type.mk ~loc ~params:(type_parameters parameters)
+    Ast_helper.Type.mk ~loc:declaration_loc ~params:(type_parameters parameters)
       ~kind:(Ptype_variant constructor_declarations)
-      (str type_name)
+      (Location.mkloc type_name declaration_loc)
   in
   Ast_helper.Str.type_ ~loc Nonrecursive [ type_declaration ]
 
@@ -195,7 +201,7 @@ let node_id_attribute node_id =
   Ast_helper.Attr.mk (str "cljml.node_id") payload
 
 let record_definition var_name identity type_name set_module_name fields values =
-  let type_item = record_type_definition type_name [] fields in
+  let type_item = record_type_definition type_name [] fields None in
   let set_item =
     set_module_definition set_module_name
       (Types.named_record ~type_name ~set_module_name fields)
@@ -285,12 +291,13 @@ let rec structure_of_item = function
   | Recursive_value_binding { name; identity; expression } ->
       recursive_value_binding name identity expression
   | Comment _ -> Ok []
-  | Type_def { type_name; type_parameters; fields } ->
-      Ok [ record_type_definition type_name type_parameters fields ]
-  | Type_alias { type_name; type_parameters; manifest } ->
-      Ok [ type_alias_definition type_name type_parameters manifest ]
-  | Type_variant { type_name; type_parameters; constructors } ->
-      Ok [ type_variant_definition type_name type_parameters constructors ]
+  | Type_def { type_name; type_parameters; fields; location } ->
+      Ok [ record_type_definition type_name type_parameters fields location ]
+  | Type_alias { type_name; type_parameters; manifest; location } ->
+      Ok [ type_alias_definition type_name type_parameters manifest location ]
+  | Type_variant { type_name; type_parameters; constructors; location } ->
+      Ok
+        [ type_variant_definition type_name type_parameters constructors location ]
   | Group items -> structure_of_items items
   | Module_def { module_name; signature_name; items } -> (
       match structure_of_items items with

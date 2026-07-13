@@ -4317,6 +4317,145 @@ let test_language_service_constructor_capabilities () =
   if failures <> [] then
     failwith ("constructor tooling failures: " ^ String.concat " | " failures)
 
+let type_language_service_source =
+  {|
+(type-alias user-id :ocaml/int)
+(type-record user (name :string))
+(type-variant status Active Inactive)
+(def ada (ocaml-record user (name "Ada")))
+(defn keep-id [^:ocaml/user_id value] value)
+(defn keep-status [^:ocaml/status value] value)
+|}
+
+let analyze_type_language_service_source () =
+  Cljml.Language_service.analyze ~filename:"file:///tmp/type-service.cljml"
+    type_language_service_source
+  |> expect_ok
+
+let test_language_service_type_definition_and_references_use_identity () =
+  let analysis = analyze_type_language_service_source () in
+  let declaration = expect_substring_index type_language_service_source "user (name" in
+  let usage = expect_substring_index type_language_service_source "user (name \"Ada\"" in
+  (match Cljml.Language_service.definition analysis ~offset:usage with
+  | Some location when location.Location.loc_start.Lexing.pos_cnum = declaration -> ()
+  | _ -> failwith "expected record type definition");
+  let references = Cljml.Language_service.references analysis ~offset:usage in
+  let referenced_text = List.map (span_text type_language_service_source) references in
+  if referenced_text <> [ "user"; "user" ] then
+    failwith
+      ("expected record type declaration/usage references, got: "
+      ^ String.concat "," referenced_text)
+
+let test_language_service_type_rename_edits_plain_type_spans () =
+  let analysis = analyze_type_language_service_source () in
+  let usage = expect_substring_index type_language_service_source "user (name \"Ada\"" in
+  match Cljml.Language_service.rename analysis ~offset:usage ~new_name:"person" with
+  | Error err -> failwith ("expected type rename, got: " ^ err.message)
+  | Ok edits ->
+      if List.length edits <> 2 then
+        failwith "expected type declaration and construction edits";
+      List.iter
+        (fun (edit : Cljml.Language_service.text_edit) ->
+          if span_text type_language_service_source edit.range <> "user" then
+            failwith "expected exact type source spans")
+        edits
+
+let test_language_service_alias_and_variant_annotations_resolve_types () =
+  let analysis = analyze_type_language_service_source () in
+  let check declaration_text usage_text =
+    let declaration = expect_substring_index type_language_service_source declaration_text in
+    let usage = expect_substring_index type_language_service_source usage_text in
+    match Cljml.Language_service.definition analysis ~offset:usage with
+    | Some location when location.Location.loc_start.Lexing.pos_cnum = declaration -> ()
+    | _ -> failwith ("expected type definition for " ^ usage_text)
+  in
+  check "user-id :ocaml/int" "user_id value";
+  check "status Active" "status value"
+
+let test_language_service_completion_includes_source_type_names () =
+  let analysis = analyze_type_language_service_source () in
+  let items =
+    Cljml.Language_service.completions analysis
+      ~offset:(String.length type_language_service_source)
+  in
+  let labels =
+    List.map (fun (item : Cljml.Language_service.completion_item) -> item.label) items
+  in
+  List.iter
+    (fun name ->
+      if not (List.mem name labels) then
+        failwith ("expected type completion " ^ name))
+    [ "user-id"; "user"; "status" ]
+
+let test_workspace_type_definition_resolves_across_files () =
+  let provider = "(type-record user (name :string))\n" in
+  let consumer = "(def ada (ocaml-record user (name \"Ada\")))\n" in
+  let provider_uri = "file:///tmp/user-type.cljml" in
+  let consumer_uri = "file:///tmp/user-main.cljml" in
+  let analyses =
+    Cljml.Language_service.analyze_workspace
+      [ (consumer_uri, consumer); (provider_uri, provider) ]
+    |> expect_ok
+  in
+  let analysis = List.assoc consumer_uri analyses in
+  let usage = expect_substring_index consumer "user" in
+  match Cljml.Language_service.definition analysis ~offset:usage with
+  | Some location
+    when location.Location.loc_start.Lexing.pos_fname = provider_uri
+         && location.loc_start.pos_cnum = expect_substring_index provider "user" ->
+      ()
+  | _ -> failwith "expected cross-file type definition"
+
+let test_type_references_keep_module_identities_distinct () =
+  let source =
+    {|
+(module Left
+  (type-record item (value :int)))
+(module Right
+  (type-record item (value :int)))
+(def left (ocaml-record Left.item (value 1)))
+(def right (ocaml-record Right.item (value 2)))
+|}
+  in
+  let analysis =
+    Cljml.Language_service.analyze ~filename:"file:///tmp/type-modules.cljml"
+      source
+    |> expect_ok
+  in
+  let usage = expect_substring_index source "Left.item" in
+  let references = Cljml.Language_service.references analysis ~offset:usage in
+  let referenced_text = List.map (span_text source) references in
+  if referenced_text <> [ "item"; "Left.item" ] then
+    failwith
+      ("expected only Left.item type references, got: "
+      ^ String.concat "," referenced_text)
+
+let test_language_service_type_capabilities () =
+  let cases =
+    [
+      ( "definition and references",
+        test_language_service_type_definition_and_references_use_identity );
+      ( "rename", test_language_service_type_rename_edits_plain_type_spans );
+      ( "alias and variant annotations",
+        test_language_service_alias_and_variant_annotations_resolve_types );
+      ( "completion", test_language_service_completion_includes_source_type_names );
+      ( "cross-file definition",
+        test_workspace_type_definition_resolves_across_files );
+      ( "module identity", test_type_references_keep_module_identities_distinct );
+    ]
+  in
+  let failures =
+    List.filter_map
+      (fun (name, test) ->
+        try
+          test ();
+          None
+        with Failure message -> Some (name ^ ": " ^ message))
+      cases
+  in
+  if failures <> [] then
+    failwith ("type tooling failures: " ^ String.concat " | " failures)
+
 let test_language_service_document_symbols_preserve_source_names () =
   let analysis = analyze_language_service_source () in
   let symbols = Cljml.Language_service.document_symbols analysis in
@@ -6757,6 +6896,8 @@ let tests =
       test_language_service_rename_returns_exact_symbol_edits );
     ( "language service constructor capabilities",
       test_language_service_constructor_capabilities );
+    ( "language service type capabilities",
+      test_language_service_type_capabilities );
     ( "language service document symbols preserve source names",
       test_language_service_document_symbols_preserve_source_names );
     ( "language service workspace resolves cross-file identity",

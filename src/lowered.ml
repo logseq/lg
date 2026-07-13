@@ -43,16 +43,19 @@ type compiled_item =
       type_name : string;
       type_parameters : string list;
       fields : Types.field list;
+      location : Location.t option;
     }
   | Type_alias of {
       type_name : string;
       type_parameters : string list;
       manifest : Types.ty;
+      location : Location.t option;
     }
   | Type_variant of {
       type_name : string;
       type_parameters : string list;
       constructors : variant_constructor list;
+      location : Location.t option;
     }
   | Group of compiled_item list
   | Module_def of {

@@ -176,7 +176,9 @@ let row_type_items row_type_names param_tys =
     (fun row_type_name param_ty ->
       match (row_type_name, param_ty) with
       | Some type_name, TRecord fields ->
-          Some (Type_def { type_name; type_parameters = []; fields })
+          Some
+            (Type_def
+               { type_name; type_parameters = []; fields; location = None })
       | _ -> None)
     row_type_names param_tys
   |> List.filter_map Fun.id

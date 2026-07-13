@@ -45,33 +45,48 @@ let compile scope env next_type = function
       compile_module_signature scope env next_type signature_name item_forms
   | FList (FSymbol "module-signature" :: _) ->
       Error.error "module-signature expects a name and signature items"
-  | FList [ FSymbol "type-alias"; FSymbol name; manifest_form ] ->
-      compile_type_alias scope env next_type name [] manifest_form
-  | FList [ FSymbol "type-alias"; FSymbol name; FVector parameter_forms; manifest_form ] -> (
+  | FList [ FSymbol "type-alias"; ((FSymbol name) as name_form); manifest_form ] ->
+      compile_type_alias ?location:(Source_context.find name_form) scope env next_type
+        name [] manifest_form
+  | FList
+      [ FSymbol "type-alias";
+        ((FSymbol name) as name_form);
+        FVector parameter_forms;
+        manifest_form ] -> (
       match parse_type_parameters (FVector parameter_forms) with
       | Error _ as err -> err
       | Ok type_parameters ->
-          compile_type_alias scope env next_type name type_parameters manifest_form)
+          compile_type_alias ?location:(Source_context.find name_form) scope env
+            next_type name type_parameters manifest_form)
   | FList
-      (FSymbol "type-record" :: FSymbol name :: FVector parameter_forms
+      (FSymbol "type-record" :: ((FSymbol name) as name_form)
+      :: FVector parameter_forms
       :: field_forms) -> (
       match parse_type_parameters (FVector parameter_forms) with
       | Error _ as err -> err
       | Ok type_parameters ->
-          compile_type_record scope env next_type name type_parameters field_forms)
-  | FList (FSymbol "type-record" :: FSymbol name :: field_forms) ->
-      compile_type_record scope env next_type name [] field_forms
+          compile_type_record ?location:(Source_context.find name_form) scope env
+            next_type name type_parameters field_forms)
+  | FList
+      (FSymbol "type-record" :: ((FSymbol name) as name_form) :: field_forms) ->
+      compile_type_record ?location:(Source_context.find name_form) scope env next_type
+        name [] field_forms
   | FList (FSymbol "type-record" :: _) ->
       Error.error "type-record expects a name and fields"
   | FList
-      (FSymbol "type-variant" :: FSymbol name :: FVector parameter_forms
+      (FSymbol "type-variant" :: ((FSymbol name) as name_form)
+      :: FVector parameter_forms
       :: constructor_forms) -> (
       match parse_type_parameters (FVector parameter_forms) with
       | Error _ as err -> err
       | Ok type_parameters ->
-          compile_type_variant scope env next_type name type_parameters constructor_forms)
-  | FList (FSymbol "type-variant" :: FSymbol name :: constructor_forms) ->
-      compile_type_variant scope env next_type name [] constructor_forms
+          compile_type_variant ?location:(Source_context.find name_form) scope env
+            next_type name type_parameters constructor_forms)
+  | FList
+      (FSymbol "type-variant" :: ((FSymbol name) as name_form)
+      :: constructor_forms) ->
+      compile_type_variant ?location:(Source_context.find name_form) scope env
+        next_type name [] constructor_forms
   | FList [ FSymbol "open"; FSymbol module_path ] ->
       let env = open_module_bindings scope env module_path in
       Ok

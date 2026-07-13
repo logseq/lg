@@ -145,31 +145,40 @@ let rec compile_module ?signature_name ?(register_module = true) scope env next_
             Ok (env, public_bindings, next_type, item :: items))
     | FList (FSymbol "module-signature" :: _) ->
         Error.error "module-signature expects a name and signature items"
-    | FList [ FSymbol "type-alias"; FSymbol name; FVector parameter_forms; manifest_form ] -> (
+    | FList
+        [ FSymbol "type-alias";
+          ((FSymbol name) as name_form);
+          FVector parameter_forms;
+          manifest_form ] -> (
         match parse_type_parameters (FVector parameter_forms) with
         | Error _ as err -> err
         | Ok type_parameters -> (
             match
-              compile_type_alias module_path env next_type name type_parameters
-                manifest_form
+              compile_type_alias ?location:(Source_context.find name_form)
+                module_path env next_type name type_parameters manifest_form
             with
             | Error _ as err -> err
             | Ok (_scope, env, next_type, item) ->
                 Ok (env, public_bindings, next_type, item :: items)))
-    | FList [ FSymbol "type-alias"; FSymbol name; manifest_form ] -> (
-        match compile_type_alias module_path env next_type name [] manifest_form with
+    | FList
+        [ FSymbol "type-alias"; ((FSymbol name) as name_form); manifest_form ] -> (
+        match
+          compile_type_alias ?location:(Source_context.find name_form) module_path
+            env next_type name [] manifest_form
+        with
         | Error _ as err -> err
         | Ok (_scope, env, next_type, item) ->
             Ok (env, public_bindings, next_type, item :: items))
     | FList
-        (FSymbol "type-record" :: FSymbol name :: FVector parameter_forms
+        (FSymbol "type-record" :: ((FSymbol name) as name_form)
+        :: FVector parameter_forms
         :: field_forms) -> (
         match parse_type_parameters (FVector parameter_forms) with
         | Error _ as err -> err
         | Ok type_parameters -> (
             match
-              compile_type_record module_path env next_type name type_parameters
-                field_forms
+              compile_type_record ?location:(Source_context.find name_form)
+                module_path env next_type name type_parameters field_forms
             with
             | Error _ as err -> err
             | Ok (_scope, env, next_type, item) -> (
@@ -181,8 +190,13 @@ let rec compile_module ?signature_name ?(register_module = true) scope env next_
                         public_bindings @ [ public_binding ],
                         next_type,
                         item :: items ))))
-    | FList (FSymbol "type-record" :: FSymbol name :: field_forms) -> (
-        match compile_type_record module_path env next_type name [] field_forms with
+    | FList
+        (FSymbol "type-record" :: ((FSymbol name) as name_form)
+        :: field_forms) -> (
+        match
+          compile_type_record ?location:(Source_context.find name_form) module_path
+            env next_type name [] field_forms
+        with
         | Error _ as err -> err
         | Ok (_scope, env, next_type, item) -> (
             match record_type_public_binding module_path name env with
@@ -196,14 +210,15 @@ let rec compile_module ?signature_name ?(register_module = true) scope env next_
     | FList (FSymbol "type-record" :: _) ->
         Error.error "type-record expects a name and fields"
     | FList
-        (FSymbol "type-variant" :: FSymbol name :: FVector parameter_forms
+        (FSymbol "type-variant" :: ((FSymbol name) as name_form)
+        :: FVector parameter_forms
         :: constructor_forms) -> (
         match parse_type_parameters (FVector parameter_forms) with
         | Error _ as err -> err
         | Ok type_parameters -> (
             match
-              compile_type_variant module_path env next_type name type_parameters
-                constructor_forms
+              compile_type_variant ?location:(Source_context.find name_form)
+                module_path env next_type name type_parameters constructor_forms
             with
             | Error _ as err -> err
             | Ok (_scope, updated_env, next_type, item) ->
@@ -213,8 +228,13 @@ let rec compile_module ?signature_name ?(register_module = true) scope env next_
                     public_bindings @ exported,
                     next_type,
                     item :: items )))
-    | FList (FSymbol "type-variant" :: FSymbol name :: constructor_forms) -> (
-        match compile_type_variant module_path env next_type name [] constructor_forms with
+    | FList
+        (FSymbol "type-variant" :: ((FSymbol name) as name_form)
+        :: constructor_forms) -> (
+        match
+          compile_type_variant ?location:(Source_context.find name_form) module_path
+            env next_type name [] constructor_forms
+        with
         | Error _ as err -> err
         | Ok (_scope, updated_env, next_type, item) ->
             let exported = variant_public_bindings module_path env updated_env in
