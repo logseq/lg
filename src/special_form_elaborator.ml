@@ -429,14 +429,14 @@ let create ~compile_expr =
           |> Result.map (fun (patterns, bindings) -> (Semantic_ir.PTuple patterns, bindings))
       | target_ty, FSymbol name
         when is_ocaml_constructor_pattern_target target_ty name
-             && starts_with_uppercase name ->
+             && is_constructor_name name ->
           Ok
             ( Semantic_ir.PConstructor
                 (resolve_ocaml_constructor_target scope env name, None),
               [] )
       | target_ty, FList (FSymbol name :: payload_patterns)
         when is_ocaml_constructor_pattern_target target_ty name
-             && starts_with_uppercase name -> (
+             && is_constructor_name name -> (
           let builtin_constructor_payloads =
             ocaml_builtin_constructor_payloads target_ty name
           in

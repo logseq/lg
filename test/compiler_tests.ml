@@ -6081,6 +6081,22 @@ let test_slash_qualification_covers_members_and_constructor_patterns () =
 |}
   |> expect_error_contains "Unbound module External"
 
+let test_lowercase_host_aliases_qualify_constructor_patterns () =
+  let source =
+    {|
+(require [ocaml.Result :as result])
+(def value (result/Ok "Ada"))
+(def label
+  (match value
+    (result/Ok name) name
+    (result/Error message) message))
+(println label)
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "lowercase_host_aliases_qualify_constructor_patterns"
+    "Ada\n" ocaml_source
+
 let test_module_alias_targets_nested_modules () =
   let source =
     {|
@@ -8189,6 +8205,8 @@ let tests =
     ("module alias exposes values", test_module_alias_exposes_values);
     ( "syntax convergence: slash qualification covers members and constructor patterns",
       test_slash_qualification_covers_members_and_constructor_patterns );
+    ( "syntax convergence: lowercase host aliases qualify constructor patterns",
+      test_lowercase_host_aliases_qualify_constructor_patterns );
     ( "module alias targets nested modules",
       test_module_alias_targets_nested_modules );
     ("module alias rejects bad forms", test_module_alias_rejects_bad_forms);
