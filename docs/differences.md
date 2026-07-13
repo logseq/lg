@@ -57,7 +57,9 @@ Function parameter types are inferred from body constraints where possible; anno
 
 The built-in host applications also have concise spellings:
 `^:option<int>`, `^:result<string;string>`, and `^:tuple<int;string>`.
-The `^:ocaml/...` forms remain compatibility escape hatches.
+External type paths use forms such as `^:Datascript/entity`, which lowers to
+`Datascript.entity`. The `^:ocaml/...` forms remain compatibility escape
+hatches.
 
 Type aliases such as `(type-alias user-id :ocaml/int)` emit OCaml aliases in
 both source and Parsetree backends. The alias is OCaml-owned metadata; cljml can
@@ -80,16 +82,17 @@ fields or constructor payloads sharing the same parameter.
 
 OCaml records such as `(type-record user (name :string) (age :int))` emit
 ordinary OCaml record declarations in both source and Parsetree backends.
-Values can be constructed with `(ocaml-record user (name "Ada") (age 41))`, and
-fields can be accessed with `(ocaml-field user-value name)`. cljml checks record
+Values can be constructed with `(record user (name "Ada") (age 41))`, and
+fields can be accessed with `(:name user-value)`. `ocaml-record` and
+`ocaml-field` remain available for compatibility. cljml checks record
 shape and field names; field value compatibility remains owned by OCaml.
 Unannotated function parameters infer record rows from field reads and `assoc`
 updates. When exactly one declared named record matches the inferred row,
 cljml preserves that nominal record identity through the function result.
 Records declared inside modules can be constructed from outside with qualified
-type names such as `(ocaml-record User.user ...)`, including through module
-aliases such as `(ocaml-record U.user ...)`. Opened modules expose record type
-names in the current scope, so `(open User)` allows `(ocaml-record user ...)`.
+type names such as `(record User.user ...)`, including through module aliases
+such as `(record U.user ...)`. Opened modules expose record type names in the
+current scope, so `(open User)` allows `(record user ...)`.
 
 OCaml variants such as `(type-variant status Active Inactive)` emit ordinary
 OCaml variant declarations in both source and Parsetree backends. Payload

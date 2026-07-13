@@ -271,7 +271,7 @@ let create ~compile_expr =
               (typed_ir
                  (TTuple (List.map (fun value -> value.ty) values))
                  (Semantic_ir.Tuple (List.map (fun value -> value.semantic_expr) values))))
-    | "ocaml-record" -> (
+    | "record" | "ocaml-record" -> (
         let field_value record field_form =
           match field_form with
           | FList [ FSymbol field_name; value_form ] -> (

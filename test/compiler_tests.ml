@@ -2691,8 +2691,8 @@ let test_keyword_access_reads_nominal_record_fields () =
     {|
 (type-record user (name :string))
 (type-record project (name :string))
-(def ada (ocaml-record user (name "Ada")))
-(def cljml (ocaml-record project (name "cljml")))
+(def ada (record user (name "Ada")))
+(def cljml (record project (name "cljml")))
 (println (str (:name ada) ":" (:name cljml)))
 |}
   in
@@ -2706,6 +2706,13 @@ let test_keyword_access_reads_nominal_record_fields () =
 (def missing (:missing ada))
 |}
   |> expect_error "unknown record field missing"
+
+let test_concise_external_type_paths_defer_to_ocaml () =
+  Cljml.Compiler.compile_string
+    {|
+(defn identity [^:External/value value] value)
+|}
+  |> expect_error_contains "Unbound module External"
 
 let test_named_record_parameters_are_inferred_for_record_updates () =
   let source =
@@ -7784,6 +7791,8 @@ let tests =
       test_named_record_updates_preserve_protocol_identity );
     ( "syntax convergence: keyword access reads nominal record fields",
       test_keyword_access_reads_nominal_record_fields );
+    ( "syntax convergence: concise external type paths defer to OCaml",
+      test_concise_external_type_paths_defer_to_ocaml );
     ( "named record parameters are inferred for record updates",
       test_named_record_parameters_are_inferred_for_record_updates );
     ( "module-local named record parameters are inferred",

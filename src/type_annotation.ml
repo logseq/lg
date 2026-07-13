@@ -85,6 +85,21 @@ let rec parse_ocaml_type source =
                     if name = "tuple" then Ok (TTuple args)
                     else Ok (TOcaml_app (name, args)))
 
+let concise_external_type keyword =
+  let source = String.sub keyword 1 (String.length keyword - 1) in
+  match String.rindex_opt source '/' with
+  | Some separator when separator > 0 ->
+      let module_path = String.sub source 0 separator in
+      if Char.uppercase_ascii module_path.[0] <> module_path.[0] then None
+      else
+        let type_name =
+          String.sub source (separator + 1)
+            (String.length source - separator - 1)
+          |> Names.sanitize_name
+        in
+        Some (module_path ^ "." ^ type_name)
+  | _ -> None
+
 let of_keyword = function
   | ":int" -> Ok TInt
   | ":float" -> Ok TFloat
@@ -105,7 +120,10 @@ let of_keyword = function
          || String.starts_with ~prefix:":result<" keyword
          || String.starts_with ~prefix:":tuple<" keyword ->
       String.sub keyword 1 (String.length keyword - 1) |> parse_ocaml_type
-  | keyword -> Error.error ("unknown vector element type " ^ keyword)
+  | keyword -> (
+      match concise_external_type keyword with
+      | Some type_name -> parse_ocaml_type type_name
+      | None -> Error.error ("unknown vector element type " ^ keyword))
 
 let rec resolve_type_parameters parameters = function
   | TOcaml name when String.starts_with ~prefix:"param/" name ->
