@@ -5035,6 +5035,26 @@ let test_module_functor_applications_register_applied_types () =
       ()
   | _ -> failwith "applied functor types must have remapped stable identities"
 
+let test_module_functor_applications_register_nested_modules () =
+  let state =
+    typecheck_state
+      {|
+(module-signature EmptySig (val dummy :int))
+(module Empty EmptySig (def dummy 0))
+(module-functor Make [M EmptySig]
+  (module Inner (def value 42)))
+(module-apply App Make Empty)
+|}
+  in
+  let nested_id =
+    Cljml.Module_id.create ~owner:[ "App" ] ~name:"Inner"
+  in
+  if
+    not
+      (Cljml.Module_registry.mem_module nested_id
+         (Cljml.Compiler_environment.modules state.env))
+  then failwith "applied functors must register nested module identities"
+
 let test_module_functor_applications_expose_nested_module_protocols () =
   let source =
     {|
@@ -6671,6 +6691,8 @@ let tests =
       test_module_functor_applications_preserve_record_protocol_identity );
     ( "module functor applications register applied types",
       test_module_functor_applications_register_applied_types );
+    ( "module functor applications register nested modules",
+      test_module_functor_applications_register_nested_modules );
     ( "module functor applications expose nested module protocols",
       test_module_functor_applications_expose_nested_module_protocols );
     ( "module functor applications preserve nested module aliases",

@@ -18,6 +18,7 @@ type t = {
   functor_results : (string * Types.binding) list Functor_map.t;
   functor_protocols : Protocol_registry.t Functor_map.t;
   functor_types : Type_registry.t Functor_map.t;
+  functor_modules : module_declaration list Functor_map.t;
   functor_aliases : (Module_id.t * Module_id.t) list Functor_map.t;
   aliases : Module_id.t Module_map.t;
   module_declarations : module_declaration Emitted_module_map.t;
@@ -30,6 +31,7 @@ let empty =
     functor_results = Functor_map.empty;
     functor_protocols = Functor_map.empty;
     functor_types = Functor_map.empty;
+    functor_modules = Functor_map.empty;
     functor_aliases = Functor_map.empty;
     aliases = Module_map.empty;
     module_declarations = Emitted_module_map.empty;
@@ -100,6 +102,25 @@ let store_functor_types functor_id types registry =
 let find_functor_types functor_id registry =
   Functor_map.find_opt functor_id registry.functor_types
 
+let module_path module_id =
+  String.concat "." (Module_id.owner module_id @ [ Module_id.name module_id ])
+
+let store_functor_modules functor_id source registry =
+  let prefix = Functor_id.to_string functor_id ^ "." in
+  let modules =
+    Emitted_module_map.fold
+      (fun _ declaration modules ->
+        if
+          declaration.kind <> Alias
+          && String.starts_with ~prefix (module_path declaration.module_id)
+        then declaration :: modules
+        else modules)
+      source.module_declarations []
+  in
+  { registry with
+    functor_modules = Functor_map.add functor_id modules registry.functor_modules;
+  }
+
 let store_functor_aliases functor_id source registry =
   let functor_path = Functor_id.to_string functor_id in
   let aliases =
@@ -138,6 +159,38 @@ let declare_module module_id kind registry =
             Emitted_module_map.add emitted_name { module_id; kind }
               registry.module_declarations;
         }
+
+let apply_functor_modules ~module_name ~functor_name registry =
+  let functor_id = Functor_id.of_string functor_name in
+  let remap_path path =
+    module_name
+    ^ String.sub path (String.length functor_name)
+        (String.length path - String.length functor_name)
+  in
+  let module_id_of_path path =
+    match String.rindex_opt path '.' with
+    | None -> Module_id.create ~owner:[] ~name:path
+    | Some separator ->
+        let owner = String.sub path 0 separator in
+        let name =
+          String.sub path (separator + 1)
+            (String.length path - separator - 1)
+        in
+        Module_id.create ~owner:[ owner ] ~name
+  in
+  let rec apply registry = function
+    | [] -> Ok registry
+    | declaration :: rest ->
+        let module_id =
+          declaration.module_id |> module_path |> remap_path |> module_id_of_path
+        in
+        (match declare_module module_id declaration.kind registry with
+        | Error _ as err -> err
+        | Ok registry -> apply registry rest)
+  in
+  match Functor_map.find_opt functor_id registry.functor_modules with
+  | None -> Ok registry
+  | Some modules -> apply registry modules
 
 let mem_module module_id registry =
   Emitted_module_map.mem (emitted_module_name module_id)

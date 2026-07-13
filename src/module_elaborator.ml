@@ -107,13 +107,18 @@ let compile_module_apply scope env next_type module_name functor_name
   | Error _ as err -> err
   | Ok modules ->
       (match
-         Module_registry.apply_functor_aliases ~module_name ~functor_name modules
+         Module_registry.apply_functor_modules ~module_name ~functor_name modules
        with
       | Error _ as err -> err
       | Ok modules ->
-          (match Module_metadata.apply_functor_types env module_name functor_name with
+          (match
+             Module_registry.apply_functor_aliases ~module_name ~functor_name modules
+           with
           | Error _ as err -> err
-          | Ok types ->
+          | Ok modules -> (
+              match Module_metadata.apply_functor_types env module_name functor_name with
+              | Error _ as err -> err
+              | Ok types ->
               let protocols =
                 Module_metadata.apply_functor_protocols env module_name functor_name
               in
@@ -127,7 +132,7 @@ let compile_module_apply scope env next_type module_name functor_name
                       module_name = Names.module_segment_to_ocaml module_name;
                       functor_name = Names.module_path_to_ocaml functor_name;
                       argument_names = List.map Names.module_path_to_ocaml argument_names;
-                    } )))
+                    } ))))
 
 let rec compile_module ?signature_name ?(register_module = true) scope env next_type module_path
     module_segment forms =
@@ -605,6 +610,10 @@ let compile_module_functor scope env next_type functor_name parameter_form
                       let modules =
                         Module_registry.store_functor_types functor_id
                           (Env.types module_env) modules
+                      in
+                      let modules =
+                        Module_registry.store_functor_modules functor_id
+                          (Env.modules module_env) modules
                       in
                       let modules =
                         Module_registry.store_functor_aliases functor_id
