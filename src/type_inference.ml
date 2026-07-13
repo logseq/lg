@@ -31,6 +31,19 @@ let add_record_field_constraint name keyword field_ty params =
       | Ok fields -> Ok (replace_param name (TRecord fields) params))
   | Some _existing_ty -> Ok params
 
+let inferred_form_type params = function
+  | FInt _ -> TInt
+  | FFloat _ -> TFloat
+  | FChar _ -> TChar
+  | FString _ -> TString
+  | FBool _ -> TBool
+  | FKeyword _ -> TKeyword
+  | FSymbol name ->
+      List.assoc_opt name params |> Option.value ~default:TUnknown
+  | FList (FSymbol ("+" | "-" | "*" | "/" | "max" | "min") :: _) -> TInt
+  | FList [ FSymbol "not"; _ ] -> TBool
+  | _ -> TUnknown
+
 let infer_params ~lookup_function_ty params body_forms =
   let rec infer_expected expected_ty params = function
     | FSymbol name -> constrain_symbol expected_ty params name
@@ -38,6 +51,8 @@ let infer_params ~lookup_function_ty params body_forms =
         add_record_field_constraint name keyword expected_ty params
     | FList [ FSymbol "get"; FSymbol name; FKeyword keyword ] ->
         add_record_field_constraint name keyword expected_ty params
+    | FList [ FSymbol "ocaml-field"; FSymbol name; FSymbol field_name ] ->
+        add_record_field_constraint name (":" ^ field_name) expected_ty params
     | form -> infer_form params form
   and infer_all params forms =
     let rec loop params = function
@@ -85,6 +100,25 @@ let infer_params ~lookup_function_ty params body_forms =
         | Error _ as err -> err
         | Ok params -> infer_all params body_forms)
     | _ -> infer_all params body_forms
+  and infer_assoc params target pairs =
+    let rec infer_pairs params = function
+      | [] -> Ok params
+      | FKeyword keyword :: value_form :: rest -> (
+          match infer_form params value_form with
+          | Error _ as err -> err
+          | Ok params -> (
+              match target with
+              | FSymbol name ->
+                  let field_ty = inferred_form_type params value_form in
+                  (match add_record_field_constraint name keyword field_ty params with
+                  | Error _ as err -> err
+                  | Ok params -> infer_pairs params rest)
+              | _ -> infer_pairs params rest))
+      | forms -> infer_all params forms
+    in
+    match infer_form params target with
+    | Error _ as err -> err
+    | Ok params -> infer_pairs params pairs
   and infer_match params target clauses =
     let pattern_type = function
       | FInt _ -> Some TInt
@@ -179,6 +213,10 @@ let infer_params ~lookup_function_ty params body_forms =
     | FList [ FSymbol "not"; arg ] -> infer_expected TBool params arg
     | FList [ FKeyword keyword; FSymbol name ] ->
         add_record_field_constraint name keyword TUnknown params
+    | FList [ FSymbol "ocaml-field"; FSymbol name; FSymbol field_name ] ->
+        add_record_field_constraint name (":" ^ field_name) TUnknown params
+    | FList (FSymbol "assoc" :: target :: pairs) ->
+        infer_assoc params target pairs
     | FList (FSymbol "str" :: args) ->
         infer_expected_all TString params args
     | FList [ FSymbol "if"; condition; then_form; else_form ] -> (

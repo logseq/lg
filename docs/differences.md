@@ -79,6 +79,9 @@ ordinary OCaml record declarations in both source and Parsetree backends.
 Values can be constructed with `(ocaml-record user (name "Ada") (age 41))`, and
 fields can be accessed with `(ocaml-field user-value name)`. cljml checks record
 shape and field names; field value compatibility remains owned by OCaml.
+Unannotated function parameters infer record rows from field reads and `assoc`
+updates. When exactly one declared named record matches the inferred row,
+cljml preserves that nominal record identity through the function result.
 Records declared inside modules can be constructed from outside with qualified
 type names such as `(ocaml-record User.user ...)`, including through module
 aliases such as `(ocaml-record U.user ...)`. Opened modules expose record type

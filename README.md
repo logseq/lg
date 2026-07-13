@@ -183,6 +183,9 @@ The compiler infers record-like map shapes automatically:
   current scope, so `(open User)` allows `(ocaml-record user ...)`. cljml checks
   record shape and field names; field value compatibility remains owned by
   OCaml.
+  Function parameters do not need named-record annotations. Field reads and
+  `assoc` updates infer row constraints, and cljml preserves nominal identity
+  when exactly one declared record matches those constraints.
 - `(type-variant status Active Inactive)` emits a nullary OCaml variant type
   such as `type status = Active | Inactive`. Payload constructors can be
   declared with forms such as `(Named :string)` or `(Pair :int :string)`.

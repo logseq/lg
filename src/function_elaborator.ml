@@ -3,6 +3,36 @@ open Expression_support
 
 module Env = Compiler_environment
 
+let unique_named_records records =
+  List.fold_left
+    (fun unique record ->
+      if
+        List.exists
+          (fun existing -> Type_id.equal existing.type_id record.type_id)
+          unique
+      then unique
+      else record :: unique)
+    [] records
+
+let infer_named_record env = function
+  | TRecord fields as inferred ->
+      let candidates =
+        Env.filter_map
+          (fun key (binding : binding) ->
+            if String.starts_with ~prefix:"__record/" key then
+              match binding.ty with
+              | TNamed_record record
+                when Types.row_compatible ~expected:(TRecord fields)
+                       ~actual:binding.ty ->
+                  Some record
+              | _ -> None
+            else None)
+          env
+        |> unique_named_records
+      in
+      (match candidates with [ record ] -> TNamed_record record | _ -> inferred)
+  | inferred -> inferred
+
 let prepare ?(param_type_overrides = []) ~lookup_function_ty ~compile_body scope env
     params body_forms =
   match Destructure.parse_param_specs params with
@@ -24,6 +54,11 @@ let prepare ?(param_type_overrides = []) ~lookup_function_ty ~compile_body scope
       match Type_inference.infer_params ~lookup_function_ty inference_params body_forms with
       | Error _ as err -> err
       | Ok inferred ->
+          let inferred =
+            List.map
+              (fun (name, ty) -> (name, infer_named_record env ty))
+              inferred
+          in
           let lookup_inferred name =
             inferred |> List.assoc_opt name |> Option.value ~default:TUnknown
           in

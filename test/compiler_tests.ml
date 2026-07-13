@@ -2582,6 +2582,45 @@ let test_named_record_updates_preserve_protocol_identity () =
   assert_ocaml_runs "named_record_updates_preserve_protocol_identity" "Ada:42\n"
     ocaml_source
 
+let test_named_record_parameters_are_inferred_for_record_updates () =
+  let source =
+    {|
+(type-record block
+  (id :string)
+  (indent :int)
+  (parent-id :ocaml/option<string>))
+(defn move [block ^:int indent ^:ocaml/option<string> parent-id]
+  (assoc block :indent (max 0 indent) :parent-id parent-id))
+(def original
+  (ocaml-record block (id "block-1") (indent 1) (parent-id None)))
+(def moved (move original -2 (Some "parent")))
+(println
+  (str (ocaml-field moved id) ":" (ocaml-field moved indent) ":"
+    (match (ocaml-field moved parent-id)
+      None "none"
+      (Some parent-id) parent-id)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "named_record_parameters_are_inferred_for_record_updates"
+    "block-1:0:parent\n" ocaml_source
+
+let test_module_local_named_record_parameters_are_inferred () =
+  let source =
+    {|
+(module Domain
+  (type-record user (name :string))
+  (defn rename [user ^:string name]
+    (assoc user :name name))
+  (def ada (ocaml-record user (name "Ada"))))
+(def renamed (Domain/rename Domain/ada "Grace"))
+(println (ocaml-field renamed name))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "module_local_named_record_parameters_are_inferred" "Grace\n"
+    ocaml_source
+
 let test_protocols_inside_modules_export_methods_and_record_impls () =
   let source =
     {|
@@ -7533,6 +7572,10 @@ let tests =
       test_protocols_support_named_record_receivers );
     ( "named record updates preserve protocol identity",
       test_named_record_updates_preserve_protocol_identity );
+    ( "named record parameters are inferred for record updates",
+      test_named_record_parameters_are_inferred_for_record_updates );
+    ( "module-local named record parameters are inferred",
+      test_module_local_named_record_parameters_are_inferred );
     ( "protocol signatures check all parameter types",
       test_protocol_signatures_check_all_parameter_types );
     ( "protocol identity disambiguates same named methods",
