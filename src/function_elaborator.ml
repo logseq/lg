@@ -55,6 +55,11 @@ let prepare ?(param_type_overrides = []) ~lookup_function_ty ~compile_body scope
                        ( Names.scoped_key scope spec.source_name,
                          Types.binding spec.ocaml_name ty ))
               in
+              let param_identities =
+                typed_specs
+                |> List.map (fun ((spec : Destructure.param_spec), _) ->
+                       spec.identity)
+              in
               let param_targets =
                 typed_specs
                 |> List.map (fun ((spec : Destructure.param_spec), ty) ->
@@ -90,7 +95,13 @@ let prepare ?(param_type_overrides = []) ~lookup_function_ty ~compile_body scope
                       body_forms
                   with
                   | Error _ as err -> err
-                  | Ok body -> Ok { param_bindings; destructured_bindings; body })
+                  | Ok body ->
+                      Ok
+                        { param_bindings;
+                          param_identities;
+                          destructured_bindings;
+                          body;
+                        })
 
 let fn_code ?(row_param_type_names = []) parts =
   let param_names =
@@ -102,13 +113,20 @@ let fn_code ?(row_param_type_names = []) parts =
   let param_patterns =
     List.map2 (fun name ty -> (name, ty)) param_names param_tys
     |> List.mapi (fun index (name, ty) ->
-           match List.nth_opt row_param_type_names index with
-           | Some (Some type_name) ->
-               Semantic_ir.PConstraint (Semantic_ir.PVar name, type_name)
-           | _ -> (
-               match param_constraint_name ty with
-               | Some type_name -> Semantic_ir.PConstraint (Semantic_ir.PVar name, type_name)
-               | None -> Semantic_ir.PVar name))
+           let pattern =
+             match List.nth_opt row_param_type_names index with
+             | Some (Some type_name) ->
+                 Semantic_ir.PConstraint (Semantic_ir.PVar name, type_name)
+             | _ -> (
+                 match param_constraint_name ty with
+                 | Some type_name ->
+                     Semantic_ir.PConstraint (Semantic_ir.PVar name, type_name)
+                 | None -> Semantic_ir.PVar name)
+           in
+           match List.nth_opt parts.param_identities index |> Option.join with
+           | None -> pattern
+           | Some (node_id, location) ->
+               Semantic_ir.PLocated (node_id, location, pattern))
   in
   let body_expr =
     match parts.destructured_bindings with
@@ -117,7 +135,14 @@ let fn_code ?(row_param_type_names = []) parts =
         Semantic_ir.Let
           ( List.map
               (fun (binding : Destructure.local_binding) ->
-                (Semantic_ir.PVar binding.ocaml_name, binding.semantic_expr))
+                let pattern = Semantic_ir.PVar binding.ocaml_name in
+                let pattern =
+                  match binding.identity with
+                  | None -> pattern
+                  | Some (node_id, location) ->
+                      Semantic_ir.PLocated (node_id, location, pattern)
+                in
+                (pattern, binding.semantic_expr))
               bindings,
             parts.body.semantic_expr )
   in

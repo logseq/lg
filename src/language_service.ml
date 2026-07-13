@@ -115,9 +115,9 @@ let smallest_expression typed_structure offset predicate =
   iterator.structure iterator typed_structure;
   !best
 
-let source_node_id_of_attributes attributes =
+let source_node_ids_of_attributes attributes =
   attributes
-  |> List.find_map
+  |> List.filter_map
        (fun ({ Parsetree.attr_name = { txt; _ }; attr_payload; _ } : Parsetree.attribute) ->
          if txt <> "cljml.node_id" then None
          else
@@ -134,46 +134,99 @@ let source_node_id_of_attributes attributes =
                Some id
            | _ -> None)
 
+let source_node_id_of_attributes attributes =
+  match source_node_ids_of_attributes attributes with
+  | id :: _ -> Some id
+  | [] -> None
+
+let source_node_id_range id =
+  match String.rindex_opt id ':' with
+  | None -> None
+  | Some separator -> (
+      let range =
+        String.sub id (separator + 1) (String.length id - separator - 1)
+      in
+      match String.split_on_char '-' range with
+      | [ start_offset; end_offset ] -> (
+          match (int_of_string_opt start_offset, int_of_string_opt end_offset) with
+          | Some start_offset, Some end_offset -> Some (start_offset, end_offset)
+          | _ -> None)
+      | _ -> None)
+
+let source_node_id_in_attributes attributes offset =
+  source_node_ids_of_attributes attributes
+  |> List.find_opt (fun id ->
+         match source_node_id_range id with
+         | Some (start_offset, end_offset) ->
+             start_offset <= offset && offset < end_offset
+         | None -> false)
+
+let source_node_id_of_pattern pattern =
+  match source_node_id_of_attributes pattern.Typedtree.pat_attributes with
+  | Some _ as id -> id
+  | None ->
+      pattern.pat_extra
+      |> List.find_map (fun (_, _, attributes) ->
+             source_node_id_of_attributes attributes)
+
 let source_node_id_at analysis ~offset =
   let expression =
     smallest_expression analysis.compiler.typed_structure offset (fun expression ->
-        Option.is_some (source_node_id_of_attributes expression.exp_attributes))
+        Option.is_some
+          (source_node_id_in_attributes expression.exp_attributes offset))
   in
   let pattern = ref None in
   let base = Tast_iterator.default_iterator in
-  let visit_pattern : type k.
-      Tast_iterator.iterator -> k Typedtree.general_pattern -> unit =
-   fun self pattern_value ->
+  let consider_pattern pattern_value =
     if
       location_contains_offset pattern_value.Typedtree.pat_loc offset
-      && Option.is_some
-           (source_node_id_of_attributes pattern_value.pat_attributes)
+      && Option.is_some (source_node_id_of_pattern pattern_value)
     then
       match !pattern with
       | None ->
-          pattern := Some (pattern_value.pat_loc, pattern_value.pat_attributes)
+          pattern :=
+            Some (pattern_value.pat_loc, source_node_id_of_pattern pattern_value)
       | Some (current_location, _)
         when location_size pattern_value.pat_loc
              < location_size current_location ->
-          pattern := Some (pattern_value.pat_loc, pattern_value.pat_attributes)
+          pattern :=
+            Some (pattern_value.pat_loc, source_node_id_of_pattern pattern_value)
       | Some _ -> ();
+  in
+  let visit_pattern : type k.
+      Tast_iterator.iterator -> k Typedtree.general_pattern -> unit =
+   fun self pattern_value ->
+    consider_pattern pattern_value;
     base.pat self pattern_value
   in
   let iterator =
     { base with
       pat = visit_pattern;
+      expr =
+        (fun self expression ->
+          (match expression.Typedtree.exp_desc with
+          | Texp_function (params, _) ->
+              List.iter
+                (fun param ->
+                  match param.Typedtree.fp_kind with
+                  | Tparam_pat pattern -> consider_pattern pattern
+                  | Tparam_optional_default (pattern, _) ->
+                      consider_pattern pattern)
+                params
+          | _ -> ());
+          base.expr self expression);
     }
   in
   iterator.structure iterator analysis.compiler.typed_structure;
   match (expression, !pattern) with
   | None, None -> None
   | Some expression, None ->
-      source_node_id_of_attributes expression.exp_attributes
-  | None, Some (_, attributes) -> source_node_id_of_attributes attributes
-  | Some expression, Some (pattern_location, attributes) ->
+      source_node_id_in_attributes expression.exp_attributes offset
+  | None, Some (_, id) -> id
+  | Some expression, Some (pattern_location, id) ->
       if location_size pattern_location < location_size expression.exp_loc then
-        source_node_id_of_attributes attributes
-      else source_node_id_of_attributes expression.exp_attributes
+        id
+      else source_node_id_in_attributes expression.exp_attributes offset
 
 let print_type env ty =
   Printtyp.wrap_printing_env ~error:false env (fun () ->

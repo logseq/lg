@@ -160,6 +160,7 @@ let inherit_scope_ocaml_value_refers scope module_path env =
 
 type compiled_fn_parts = {
   param_bindings : (string * binding) list;
+  param_identities : (Source_node_id.t * Location.t) option list;
   destructured_bindings : Destructure.local_binding list;
   body : typed_expr;
 }
@@ -224,9 +225,20 @@ let coerce_set_element element_ty value =
       else Error.error "set value type must match element type"
 
 let constrain_record_function_argument_expr fn element_ty =
+  let rec constrain_pattern type_name = function
+    | Semantic_ir.PVar name ->
+        Some (Semantic_ir.PConstraint (Semantic_ir.PVar name, type_name))
+    | Semantic_ir.PLocated (node_id, location, pattern) ->
+        constrain_pattern type_name pattern
+        |> Option.map (fun pattern ->
+               Semantic_ir.PLocated (node_id, location, pattern))
+    | _ -> None
+  in
   match (Semantic_ir.unlocated fn.semantic_expr, element_ty) with
-  | Semantic_ir.Fun ([ Semantic_ir.PVar name ], body), TNamed_record record ->
-      Semantic_ir.Fun ([ Semantic_ir.PConstraint (Semantic_ir.PVar name, record.type_name) ], body)
+  | Semantic_ir.Fun ([ pattern ], body), TNamed_record record -> (
+      match constrain_pattern record.type_name pattern with
+      | Some pattern -> Semantic_ir.Fun ([ pattern ], body)
+      | None -> fn.semantic_expr)
   | _ -> fn.semantic_expr
 
 let param_constraint_name = function

@@ -1,4 +1,5 @@
 type pattern =
+  | PLocated of Source_node_id.t * Location.t * pattern
   | PVar of string
   | PAny
   | PUnit

@@ -159,7 +159,8 @@ let compile scope env next_type = function
                       expression = expr.semantic_expr;
                     } ))))
   | FList
-      (FSymbol "defn" :: FSymbol name :: params :: FKeyword return_keyword
+      (FSymbol "defn" :: ((FSymbol name) as name_form) :: params
+      :: FKeyword return_keyword
       :: body_forms) -> (
       match Type_annotation.of_keyword return_keyword with
       | Error _ as err -> err
@@ -189,7 +190,13 @@ let compile scope env next_type = function
                   let type_items = row_type_items row_param_types param_tys in
                   let value_item =
                     Recursive_value_binding
-                      { name = ocaml_name; expression = expr.semantic_expr }
+                      { name = ocaml_name;
+                        identity =
+                          Source_context.find name_form
+                          |> Option.map (fun location ->
+                                 (Source_node_id.of_location location, location));
+                        expression = expr.semantic_expr;
+                      }
                   in
                   Ok
                     ( scope,

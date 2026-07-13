@@ -34,6 +34,7 @@ type compiled_item =
     }
   | Recursive_value_binding of {
       name : string;
+      identity : (Source_node_id.t * Location.t) option;
       expression : Semantic_ir.t;
     }
   | Comment of string

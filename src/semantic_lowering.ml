@@ -1,4 +1,6 @@
 let rec pattern = function
+  | Semantic_ir.PLocated (node_id, location, value) ->
+      Ocaml_ir.PLocated (node_id, location, pattern value)
   | Semantic_ir.PVar name -> Ocaml_ir.PVar name
   | PAny -> PAny
   | PUnit -> PUnit

@@ -1,4 +1,5 @@
 type pattern =
+  | PLocated of Source_node_id.t * Location.t * pattern
   | PVar of string
   | PAny
   | PUnit
@@ -49,6 +50,7 @@ let rec unlocated = function
   | expression -> expression
 
 let rec pattern_to_source = function
+  | PLocated (_, _, pattern) -> pattern_to_source pattern
   | PVar name -> name
   | PAny -> "_"
   | PUnit -> "()"
@@ -197,7 +199,41 @@ let core_type_of_source source =
   try Parse.core_type lexbuf
   with _ -> Ast_helper.Typ.constr ~loc (lid (longident_of_string source)) []
 
+let node_id_attribute node_id =
+  let payload =
+    Parsetree.PStr
+      [ Ast_helper.Str.eval
+          (Ast_helper.Exp.constant
+             (Ast_helper.Const.string (Source_node_id.to_string node_id))) ]
+  in
+  Ast_helper.Attr.mk (str "cljml.node_id") payload
+
+let rec pattern_node_ids = function
+  | PLocated (node_id, _, pattern) -> node_id :: pattern_node_ids pattern
+  | PConstructor (_, payload) ->
+      Option.fold ~none:[] ~some:pattern_node_ids payload
+  | PTuple patterns | PList patterns -> List.concat_map pattern_node_ids patterns
+  | PCons (head, tail) | POr (head, tail) ->
+      pattern_node_ids head @ pattern_node_ids tail
+  | PRecord fields ->
+      fields |> List.concat_map (fun (_, pattern) -> pattern_node_ids pattern)
+  | PAlias (pattern, _) | PConstraint (pattern, _) -> pattern_node_ids pattern
+  | PVar _ | PAny | PUnit | PInt _ | PString _ | PBool _ -> []
+
+let add_pattern_node_ids patterns (expression : Parsetree.expression) =
+  let attributes =
+    patterns |> List.concat_map pattern_node_ids |> List.map node_id_attribute
+  in
+  { expression with pexp_attributes = attributes @ expression.pexp_attributes }
+
 let rec pattern_to_parsetree = function
+  | PLocated (node_id, location, pattern) ->
+      let pattern : Parsetree.pattern = pattern_to_parsetree pattern in
+      {
+        pattern with
+        ppat_loc = location;
+        ppat_attributes = node_id_attribute node_id :: pattern.ppat_attributes;
+      }
   | PVar name -> Ast_helper.Pat.var ~loc (str name)
   | PAny -> Ast_helper.Pat.any ~loc ()
   | PUnit -> Ast_helper.Pat.construct ~loc (lid (Longident.Lident "()")) None
@@ -402,9 +438,10 @@ and to_parsetree ~context = function
       | Error _ as err -> err
       | Ok body ->
           Ok
-            (Ast_helper.Exp.function_ ~loc
-               (List.map function_parameter patterns)
-               None (Pfunction_body body)))
+            (add_pattern_node_ids patterns
+               (Ast_helper.Exp.function_ ~loc
+                  (List.map function_parameter patterns)
+                  None (Pfunction_body body))))
   | Sequence expressions -> (
       let rec build = function
         | [] -> Ok (Ast_helper.Exp.construct ~loc (lid (Longident.Lident "()")) None)
@@ -432,7 +469,10 @@ and to_parsetree ~context = function
                     let binding =
                       Ast_helper.Vb.mk ~loc (pattern_to_parsetree pattern) value
                     in
-                    Ok (Ast_helper.Exp.let_ ~loc Asttypes.Nonrecursive [ binding ] body))
+                    Ok
+                      (add_pattern_node_ids [ pattern ]
+                         (Ast_helper.Exp.let_ ~loc Asttypes.Nonrecursive [ binding ]
+                            body)))
           in
           build bindings)
   | LetRec (name, params, body, args) -> (

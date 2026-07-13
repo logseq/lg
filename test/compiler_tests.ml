@@ -764,6 +764,7 @@ let test_compiler_phases_have_explicit_boundaries () =
           {
             param_bindings =
               [ ("x", Cljml.Types.binding "x" Cljml.Types.TInt) ];
+            param_identities = [ None ];
             destructured_bindings = [];
             body =
               Cljml.Types.typed_ir Cljml.Types.TInt
@@ -933,6 +934,48 @@ let test_source_node_identity_covers_value_bindings () =
   | Some id when String.starts_with ~prefix:"binding-identity.cljml:" id -> ()
   | Some id -> failwith ("unexpected binding source node identity " ^ id)
   | None -> failwith "expected value binding to preserve source node identity"
+
+let expect_source_id_at_text filename source analysis text =
+  let offset = expect_substring_index source text in
+  match Cljml.Language_service.source_node_id_at analysis ~offset with
+  | Some id when String.starts_with ~prefix:(filename ^ ":") id -> ()
+  | Some id -> failwith ("unexpected source node identity " ^ id)
+  | None -> failwith ("expected source node identity at " ^ text)
+
+let test_source_node_identity_covers_recursive_bindings () =
+  let filename = "recursive-identity.cljml" in
+  let source =
+    "(defn countdown [^:int n] :int\n  (if (= n 0) 0 (countdown (dec n))))"
+  in
+  let analysis = Cljml.Language_service.analyze ~filename source |> expect_ok in
+  expect_source_id_at_text filename source analysis "countdown"
+
+let test_source_node_identity_covers_function_parameters () =
+  let filename = "parameter-identity.cljml" in
+  let source = "(defn add-one [value] (+ value 1))" in
+  let analysis = Cljml.Language_service.analyze ~filename source |> expect_ok in
+  expect_source_id_at_text filename source analysis "value"
+
+let test_source_node_identity_covers_annotated_parameters () =
+  let filename = "annotated-parameter-identity.cljml" in
+  let source = "(defn increment [^:int value] (+ value 1))" in
+  let analysis = Cljml.Language_service.analyze ~filename source |> expect_ok in
+  expect_source_id_at_text filename source analysis "value"
+
+let test_source_node_identity_covers_destructuring_bindings () =
+  let filename = "destructuring-identity.cljml" in
+  let source =
+    {|
+(defn summarize [[first & rest :as all]]
+  (str first ":" (count rest) ":" (count all)))
+(defn label [{:keys [name] :as person}]
+  (str name ":" (count person)))
+|}
+  in
+  let analysis = Cljml.Language_service.analyze ~filename source |> expect_ok in
+  List.iter
+    (expect_source_id_at_text filename source analysis)
+    [ "first"; "rest"; "all"; "name"; "person" ]
 
 let test_modules_resolve_qualified_symbols () =
   let source =
@@ -5893,6 +5936,14 @@ let tests =
       test_source_node_identity_reaches_parsetree );
     ( "source node identity covers value bindings",
       test_source_node_identity_covers_value_bindings );
+    ( "source node identity covers recursive bindings",
+      test_source_node_identity_covers_recursive_bindings );
+    ( "source node identity covers function parameters",
+      test_source_node_identity_covers_function_parameters );
+    ( "source node identity covers annotated parameters",
+      test_source_node_identity_covers_annotated_parameters );
+    ( "source node identity covers destructuring bindings",
+      test_source_node_identity_covers_destructuring_bindings );
     ("modules resolve qualified symbols", test_modules_resolve_qualified_symbols);
     ( "modules prevent unqualified symbol collisions",
       test_modules_prevent_unqualified_symbol_collisions );

@@ -7,6 +7,7 @@ type param_spec = {
   ocaml_name : string;
   explicit_ty : ty option;
   destructured : bool;
+  identity : (Source_node_id.t * Location.t) option;
 }
 
 type local_binding = {
@@ -14,7 +15,12 @@ type local_binding = {
   ocaml_name : string;
   ty : ty;
   semantic_expr : Semantic_ir.t;
+  identity : (Source_node_id.t * Location.t) option;
 }
+
+let source_identity form =
+  Source_context.find form
+  |> Option.map (fun location -> (Source_node_id.of_location location, location))
 
 let is_type_annotation name = String.starts_with ~prefix:"^:" name
 
@@ -22,11 +28,13 @@ let keyword_for_local name = ":" ^ name
 
 let ignore_name name = name = "_"
 
-let local_binding source_name ty semantic_expr =
+let local_binding ?identity source_name ty semantic_expr =
   { source_name;
     ocaml_name = Names.sanitize_name source_name;
     ty;
-    semantic_expr = Semantic_ir.annotate ty semantic_expr }
+    semantic_expr = Semantic_ir.annotate ty semantic_expr;
+    identity;
+  }
 
 type map_binding = {
   local_name : string;
@@ -101,11 +109,32 @@ and map_pattern_names pairs =
        []
   |> List.rev
 
+let rec identity_for_name name = function
+  | (FSymbol candidate as form) when candidate = name -> source_identity form
+  | FVector forms -> List.find_map (identity_for_name name) forms
+  | FMap pairs ->
+      List.find_map
+        (fun (key, value) ->
+          match identity_for_name name key with
+          | Some _ as identity -> identity
+          | None -> identity_for_name name value)
+        pairs
+  | _ -> None
+
+let attach_pattern_identities pattern bindings =
+  List.map
+    (fun binding ->
+      { binding with
+        identity = identity_for_name binding.source_name pattern;
+      })
+    bindings
+
 let parse_param_specs = function
   | FVector params ->
       let rec loop index acc = function
         | [] -> Ok (List.rev acc)
-        | FSymbol annotation :: FSymbol name :: rest when is_type_annotation annotation -> (
+        | FSymbol annotation :: ((FSymbol name) as name_form) :: rest
+          when is_type_annotation annotation -> (
             match Type_annotation.of_param_annotation annotation with
             | Error _ as err -> err
             | Ok ty ->
@@ -114,16 +143,18 @@ let parse_param_specs = function
                      source_name = name;
                      ocaml_name = Names.sanitize_name name;
                      explicit_ty = Some ty;
-                     destructured = false }
+                     destructured = false;
+                     identity = source_identity name_form }
                   :: acc)
                   rest)
-        | FSymbol name :: rest ->
+        | ((FSymbol name) as name_form) :: rest ->
             loop (index + 1)
               ({ pattern = FSymbol name;
                  source_name = name;
                  ocaml_name = Names.sanitize_name name;
                  explicit_ty = None;
-                 destructured = false }
+                 destructured = false;
+                 identity = source_identity name_form }
               :: acc)
               rest
         | (FVector _ | FMap _) as pattern :: rest ->
@@ -133,7 +164,8 @@ let parse_param_specs = function
                  source_name;
                  ocaml_name = Names.sanitize_name source_name;
                  explicit_ty = None;
-                 destructured = true }
+                 destructured = true;
+                 identity = source_identity pattern }
               :: acc)
               rest
         | _ -> Error.error "function parameters must be symbols or destructuring patterns"
@@ -325,10 +357,13 @@ let bind_sequence (target : typed_expr) forms =
   | _ -> Error.error "sequential destructuring expects a list or vector"
 
 let bind_pattern (target : typed_expr) pattern =
-  match pattern with
+  let bindings =
+    match pattern with
   | FSymbol name ->
       if ignore_name name then Ok []
       else Ok [ local_binding name target.ty target.semantic_expr ]
   | FMap pairs -> bind_map target pairs
   | FVector forms -> bind_sequence target forms
   | _ -> Error.error "unsupported destructuring pattern"
+  in
+  Result.map (attach_pattern_identities pattern) bindings
