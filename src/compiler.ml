@@ -1,4 +1,7 @@
-type compile_error = Error.t = { message : string }
+type compile_error = Error.t = {
+  message : string;
+  location : Location.t option;
+}
 
 type diagnostic_severity = Toolchain.diagnostic_severity
 

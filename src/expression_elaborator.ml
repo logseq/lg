@@ -6,7 +6,9 @@ module Env = Compiler_environment
 
 let rec compile_expr scope (env : Env.t) form =
   match compile_expr_unlocated scope env form with
-  | Error _ as err -> err
+  | Error error ->
+      Error
+        (Error.with_location_if_missing (Source_context.find form) error)
   | Ok expression -> (
       match Source_context.find form with
       | None -> Ok expression

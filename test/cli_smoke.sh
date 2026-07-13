@@ -111,6 +111,7 @@ send_lsp_message() {
   send_lsp_message '{"jsonrpc":"2.0","method":"initialized","params":{}}'
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/editor.cljml","languageId":"cljml","version":1,"text":"(def answer\n  (if true\n    (Stdlib.abs\n      \"bad\")\n    0))"}}}'
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":"file:///tmp/editor.cljml","version":2},"contentChanges":[{"text":"(def ok 1)\n(def good (Stdlib.abs -42))"}]}}'
+  send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/semantic-error.cljml","languageId":"cljml","version":1,"text":"(def ok 1)\n(def bad\n  (+ 1 \"x\"))"}}}'
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/warning.cljml","languageId":"cljml","version":1,"text":"(type-variant status Active Inactive)\n(defn describe [^:ocaml/status status]\n  (match status Active \"active\"))"}}}'
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/service.cljml","languageId":"cljml","version":1,"text":"(def answer 41)\n(defn add-one [x] (+ x 1))\n(def result (add-one answer))"}}}'
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/format.cljml","languageId":"cljml","version":1,"text":"(def   answer  41)"}}}'
@@ -149,6 +150,8 @@ grep -q '"method":"textDocument/publishDiagnostics"' "$lsp_output"
 grep -q '"severity":1' "$lsp_output"
 grep -q '"severity":2' "$lsp_output"
 grep -q 'not exhaustive' "$lsp_output"
+grep -Fq '"uri":"file:///tmp/semantic-error.cljml","diagnostics":[{"range":{"start":{"line":2,"character":2}' "$lsp_output"
+grep -Fq '"uri":"file:///tmp/warning.cljml","diagnostics":[{"range":{"start":{"line":2,"character":2}' "$lsp_output"
 grep -q '"line":3' "$lsp_output"
 grep -q '"character":6' "$lsp_output"
 grep -q '"diagnostics":\[\]' "$lsp_output"

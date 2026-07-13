@@ -10,7 +10,9 @@ let compile_forms_incremental (state : Compiler_state.t) forms =
     | [] -> Ok (env, next_type, List.rev items)
     | form :: rest -> (
         match compile_top_level "" env next_type form with
-        | Error _ as err -> err
+        | Error error ->
+            Error
+              (Error.with_location_if_missing (Source_context.find form) error)
         | Ok (_scope, env, next_type, item) ->
             loop env next_type (item :: items) rest)
   in

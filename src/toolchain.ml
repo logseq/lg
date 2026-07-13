@@ -114,6 +114,12 @@ module Ocaml_typechecker = struct
   let exception_message exn =
     Format.asprintf "%a" Location.report_exception exn |> String.trim
 
+  let exception_location exn =
+    match Location.error_of_exn exn with
+    | Some (`Ok report) when not report.Location.main.loc.loc_ghost ->
+        Some report.main.loc
+    | Some (`Ok _) | Some `Already_displayed | None -> None
+
   let analyze structure =
     let diagnostics = ref [] in
     let previous_warning_reporter = !Location.warning_reporter in
@@ -150,7 +156,8 @@ module Ocaml_typechecker = struct
           diagnostics = List.rev !diagnostics;
         }
     with exn ->
-      Error.error ("OCaml typecheck failed: " ^ exception_message exn)
+      Error.error ?location:(exception_location exn)
+        ("OCaml typecheck failed: " ^ exception_message exn)
 
   let structure structure =
     match analyze structure with

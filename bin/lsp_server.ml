@@ -119,59 +119,39 @@ let find_substring text pattern =
   in
   if pattern_length = 0 then Some 0 else loop 0
 
-let parse_integer text start =
-  let rec finish index =
-    if index < String.length text then
-      match text.[index] with '0' .. '9' -> finish (index + 1) | _ -> index
-    else index
-  in
-  let stop = finish start in
-  if stop = start then None
-  else int_of_string_opt (String.sub text start (stop - start))
-
-let diagnostic_position message =
-  let line =
-    match find_substring message "line " with
-    | None -> 0
-    | Some index ->
-        parse_integer message (index + 5)
-        |> Option.map (fun line -> max 0 (line - 1))
-        |> Option.value ~default:0
-  in
-  let start_character, end_character =
-    match find_substring message "characters " with
-    | None -> (0, 1)
-    | Some index -> (
-        let start_index = index + 11 in
-        match parse_integer message start_index with
-        | None -> (0, 1)
-        | Some start_character ->
-            let rec find_dash index =
-              if index >= String.length message then None
-              else if message.[index] = '-' then Some index
-              else find_dash (index + 1)
-            in
-            let end_character =
-              match find_dash start_index with
-              | None -> start_character + 1
-              | Some dash ->
-                  parse_integer message (dash + 1)
-                  |> Option.value ~default:(start_character + 1)
-            in
-            (start_character, max (start_character + 1) end_character))
-  in
-  (line, start_character, end_character)
-
 let position line character =
   `Assoc [ ("line", `Int line); ("character", `Int character) ]
 
-let diagnostic ?(severity = 1) message =
-  let line, start_character, end_character = diagnostic_position message in
+let position_of_offset text target =
+  let rec loop offset line character =
+    if offset >= target || offset >= String.length text then
+      position line character
+    else if text.[offset] = '\n' then loop (offset + 1) (line + 1) 0
+    else
+      let decoded = String.get_utf_8_uchar text offset in
+      let byte_length = max 1 (Uchar.utf_decode_length decoded) in
+      let codepoint = Uchar.utf_decode_uchar decoded |> Uchar.to_int in
+      let units = if codepoint > 0xFFFF then 2 else 1 in
+      loop (offset + byte_length) line (character + units)
+  in
+  loop 0 0 0
+
+let range_of_offsets text start_offset end_offset =
   `Assoc
-    [ ( "range",
-        `Assoc
-          [ ("start", position line start_character);
-            ("end", position line end_character) ] );
+    [ ("start", position_of_offset text start_offset);
+      ("end", position_of_offset text end_offset) ]
+
+let range_of_location text location =
+  range_of_offsets text location.Location.loc_start.Lexing.pos_cnum
+    location.loc_end.Lexing.pos_cnum
+
+let diagnostic_range text = function
+  | Some location -> range_of_location text location
+  | None -> range_of_offsets text 0 (min 1 (String.length text))
+
+let diagnostic text ?(severity = 1) ?location message =
+  `Assoc
+    [ ("range", diagnostic_range text location);
       ("severity", `Int severity);
       ("source", `String "cljml");
       ("message", `String message) ]
@@ -182,9 +162,12 @@ let diagnostics document =
       List.map
         (fun (item : Cljml.Compiler.diagnostic) ->
           match item.severity with
-          | `Warning -> diagnostic ~severity:2 item.message)
+          | `Warning ->
+              diagnostic document.text ~severity:2 ?location:item.location
+                item.message)
         (Cljml.Language_service.diagnostics analysis)
-  | Error err -> [ diagnostic err.message ]
+  | Error err ->
+      [ diagnostic document.text ?location:err.location err.message ]
 
 let write_packet json =
   let body = Yojson.Safe.to_string json in
@@ -297,29 +280,6 @@ let offset_of_position text line character =
           loop (offset + byte_length) (utf16_units + units)
       in
       loop start 0
-
-let position_of_offset text target =
-  let rec loop offset line character =
-    if offset >= target || offset >= String.length text then
-      position line character
-    else if text.[offset] = '\n' then loop (offset + 1) (line + 1) 0
-    else
-      let decoded = String.get_utf_8_uchar text offset in
-      let byte_length = max 1 (Uchar.utf_decode_length decoded) in
-      let codepoint = Uchar.utf_decode_uchar decoded |> Uchar.to_int in
-      let units = if codepoint > 0xFFFF then 2 else 1 in
-      loop (offset + byte_length) line (character + units)
-  in
-  loop 0 0 0
-
-let range_of_offsets text start_offset end_offset =
-  `Assoc
-    [ ("start", position_of_offset text start_offset);
-      ("end", position_of_offset text end_offset) ]
-
-let range_of_location text location =
-  range_of_offsets text location.Location.loc_start.Lexing.pos_cnum
-    location.loc_end.Lexing.pos_cnum
 
 let document_position params document =
   let position = params |> member "position" in
