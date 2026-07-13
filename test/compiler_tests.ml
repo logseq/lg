@@ -1023,6 +1023,27 @@ let test_source_node_identity_covers_match_bindings () =
     (expect_source_id_at_text filename source analysis)
     [ "value"; "whole" ]
 
+let test_source_node_identity_covers_loop_bindings () =
+  let filename = "loop-identity.cljml" in
+  let source =
+    "(def result (loop [counter 0] (if (= counter 2) counter (recur (inc counter)))))"
+  in
+  let analysis = Cljml.Language_service.analyze ~filename source |> expect_ok in
+  expect_source_id_at_text filename source analysis "counter"
+
+let test_source_node_identity_covers_catch_bindings () =
+  let filename = "catch-identity.cljml" in
+  let source =
+    {|
+(def result
+  (try
+    (raise (Failure "boom"))
+    (catch (Failure message) (str "caught:" message))))
+|}
+  in
+  let analysis = Cljml.Language_service.analyze ~filename source |> expect_ok in
+  expect_source_id_at_text filename source analysis "message"
+
 let test_modules_resolve_qualified_symbols () =
   let source =
     {|
@@ -6034,6 +6055,10 @@ let tests =
       test_source_node_identity_covers_let_destructuring );
     ( "source node identity covers match bindings",
       test_source_node_identity_covers_match_bindings );
+    ( "source node identity covers loop bindings",
+      test_source_node_identity_covers_loop_bindings );
+    ( "source node identity covers catch bindings",
+      test_source_node_identity_covers_catch_bindings );
     ("modules resolve qualified symbols", test_modules_resolve_qualified_symbols);
     ( "modules prevent unqualified symbol collisions",
       test_modules_prevent_unqualified_symbol_collisions );

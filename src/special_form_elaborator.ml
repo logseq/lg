@@ -625,22 +625,28 @@ let create ~compile_expr =
         if List.length forms mod 2 <> 0 then
           Error.error "loop bindings require an even number of forms"
         else
-          let rec compile_bindings names values tys = function
-            | [] -> Ok (List.rev names, List.rev values, List.rev tys)
-            | FSymbol name :: value_form :: rest ->
+          let rec compile_bindings names identities values tys = function
+            | [] ->
+                Ok
+                  ( List.rev names,
+                    List.rev identities,
+                    List.rev values,
+                    List.rev tys )
+            | ((FSymbol name) as name_form) :: value_form :: rest ->
                 if name = "_" || List.mem name names then
                   Error.error "loop binding names must be unique symbols"
                 else (
                   match compile_expr scope env value_form with
                   | Error _ as err -> err
                   | Ok value ->
-                      compile_bindings (name :: names) (value :: values)
-                        (value.ty :: tys) rest)
+                      compile_bindings (name :: names)
+                        (Destructure.source_identity name_form :: identities)
+                        (value :: values) (value.ty :: tys) rest)
             | _ -> Error.error "loop binding names must be symbols"
           in
-          (match compile_bindings [] [] [] forms with
+          (match compile_bindings [] [] [] [] forms with
           | Error _ as err -> err
-          | Ok (names, values, param_tys) ->
+          | Ok (names, identities, values, param_tys) ->
               let loop_name = "loop__" in
               let loop_env =
                 List.fold_left2
@@ -657,9 +663,11 @@ let create ~compile_expr =
               | Error _ as err -> err
               | Ok body ->
                   let params =
-                    List.map
-                      (fun name -> Semantic_ir.PVar (Names.sanitize_name name))
-                      names
+                    List.map2
+                      (fun name identity ->
+                        located_pattern identity
+                          (Semantic_ir.PVar (Names.sanitize_name name)))
+                      names identities
                   in
                   Ok
                     (typed_ir body.ty
