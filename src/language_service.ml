@@ -1404,6 +1404,40 @@ let component_containing filename components =
   List.find_opt (String_set.mem filename) components
   |> Option.value ~default:(String_set.singleton filename)
 
+let rebuild_workspace_components index ~sources ~components ~affected_components
+    ~invalidated ~reported =
+  let analyses = String_set.fold String_map.remove invalidated index.analyses in
+  let errors = String_set.fold String_map.remove invalidated index.errors in
+  let analyze_individually component analyses errors =
+    String_set.fold
+      (fun filename (analyses, errors) ->
+        match analyze ~filename (String_map.find filename sources) with
+        | Ok analysis -> (String_map.add filename analysis analyses, errors)
+        | Error error -> (analyses, String_map.add filename error errors))
+      component (analyses, errors)
+  in
+  let rec rebuild analyses errors = function
+    | [] ->
+        Ok
+          ( { sources; analyses; errors; components },
+            String_set.elements reported )
+    | component :: rest -> (
+        match analyze_component sources component with
+        | Error _ ->
+            let analyses, errors =
+              analyze_individually component analyses errors
+            in
+            rebuild analyses errors rest
+        | Ok (component_analyses, component_errors) ->
+            rebuild
+              (String_map.union (fun _ _ updated -> Some updated) analyses
+                 component_analyses)
+              (String_map.union (fun _ _ updated -> Some updated) errors
+                 component_errors)
+              rest)
+  in
+  rebuild analyses errors affected_components
+
 let update_workspace_index index ~filename ~source =
   match String_map.find_opt filename index.sources with
   | Some previous when previous = source -> Ok (index, [])
@@ -1422,36 +1456,29 @@ let update_workspace_index index ~filename ~source =
       let reanalyzed =
         List.fold_left String_set.union String_set.empty affected_components
       in
-      let analyses =
-        String_set.fold String_map.remove reanalyzed index.analyses
-      in
-      let errors = String_set.fold String_map.remove reanalyzed index.errors in
-      let analyze_individually component analyses errors =
-        String_set.fold
-          (fun filename (analyses, errors) ->
-            match analyze ~filename (String_map.find filename sources) with
-            | Ok analysis -> (String_map.add filename analysis analyses, errors)
-            | Error error -> (analyses, String_map.add filename error errors))
-          component (analyses, errors)
-      in
-      let rec rebuild analyses errors = function
-        | [] ->
-            Ok
-              ( { sources; analyses; errors; components },
-                String_set.elements reanalyzed )
-        | component :: rest -> (
-            match analyze_component sources component with
-            | Error _ ->
-                let analyses, errors =
-                  analyze_individually component analyses errors
-                in
-                rebuild analyses errors rest
-            | Ok (component_analyses, component_errors) ->
-                rebuild
-                  (String_map.union (fun _ _ updated -> Some updated) analyses
-                     component_analyses)
-                  (String_map.union (fun _ _ updated -> Some updated) errors
-                     component_errors)
-                  rest)
-      in
-      rebuild analyses errors affected_components)
+      rebuild_workspace_components index ~sources ~components ~affected_components
+        ~invalidated:reanalyzed ~reported:reanalyzed)
+
+let remove_workspace_file index ~filename =
+  if not (String_map.mem filename index.sources) then Ok (index, [])
+  else
+    let old_affected = component_containing filename index.components in
+    let sources = String_map.remove filename index.sources in
+    match workspace_components sources with
+    | Error _ as err -> err
+    | Ok components ->
+        let remaining_affected = String_set.remove filename old_affected in
+        let affected_components =
+          List.filter
+            (fun component ->
+              not
+                (String_set.is_empty
+                   (String_set.inter component remaining_affected)))
+            components
+        in
+        let reanalyzed =
+          List.fold_left String_set.union String_set.empty affected_components
+        in
+        let invalidated = String_set.add filename reanalyzed in
+        rebuild_workspace_components index ~sources ~components
+          ~affected_components ~invalidated ~reported:invalidated

@@ -5015,6 +5015,57 @@ let test_workspace_index_separates_module_and_protocol_providers () =
   if Cljml.Language_service.workspace_analysis index consumer_uri = None then
     failwith "module and protocol providers with the same name must coexist"
 
+let test_workspace_index_handles_file_removal_readd_and_rename () =
+  let provider_uri = "file:///tmp/lifecycle-math.cljml" in
+  let renamed_uri = "file:///tmp/lifecycle-renamed-math.cljml" in
+  let consumer_uri = "file:///tmp/lifecycle-main.cljml" in
+  let other_uri = "file:///tmp/lifecycle-other.cljml" in
+  let provider_source = "(module Math (def answer 42))\n" in
+  let consumer_source = "(def result Math/answer)\n" in
+  let index =
+    Cljml.Language_service.create_workspace_index
+      [ (provider_uri, provider_source); (consumer_uri, consumer_source);
+        (other_uri, "(def stable 7)\n") ]
+    |> expect_ok
+  in
+  let other_before =
+    Cljml.Language_service.workspace_analysis index other_uri |> Option.get
+  in
+  let index, affected =
+    Cljml.Language_service.remove_workspace_file index ~filename:provider_uri
+    |> expect_ok
+  in
+  if List.sort String.compare affected <> [ consumer_uri; provider_uri ] then
+    failwith "removing a provider must invalidate the deleted file and dependents";
+  if Cljml.Language_service.workspace_analysis index provider_uri <> None then
+    failwith "removed files must not retain an analysis";
+  if Cljml.Language_service.workspace_error index consumer_uri = None then
+    failwith "dependents of removed providers must retain an analysis error";
+  let other_after =
+    Cljml.Language_service.workspace_analysis index other_uri |> Option.get
+  in
+  if other_before != other_after then
+    failwith "removing a file must reuse unrelated analyses";
+  let index, affected =
+    Cljml.Language_service.remove_workspace_file index ~filename:provider_uri
+    |> expect_ok
+  in
+  if affected <> [] then failwith "removing an absent file must be a no-op";
+  let index, affected =
+    Cljml.Language_service.update_workspace_index index ~filename:renamed_uri
+      ~source:provider_source
+    |> expect_ok
+  in
+  if List.sort String.compare affected <> [ consumer_uri; renamed_uri ] then
+    failwith "adding a renamed provider must reanalyze its dependents";
+  let consumer =
+    Cljml.Language_service.workspace_analysis index consumer_uri |> Option.get
+  in
+  let usage = expect_substring_index consumer_source "Math/answer" in
+  match Cljml.Language_service.definition consumer ~offset:usage with
+  | Some location when location.Location.loc_start.Lexing.pos_fname = renamed_uri -> ()
+  | _ -> failwith "definitions must move to the re-added provider URI"
+
 let test_workspace_index_rejects_duplicate_providers () =
   match
     Cljml.Language_service.create_workspace_index
@@ -7359,6 +7410,8 @@ let tests =
       test_workspace_index_tracks_qualified_type_dependencies );
     ( "workspace index separates module and protocol providers",
       test_workspace_index_separates_module_and_protocol_providers );
+    ( "workspace index handles file lifecycle",
+      test_workspace_index_handles_file_removal_readd_and_rename );
     ( "workspace index rejects duplicate providers",
       test_workspace_index_rejects_duplicate_providers );
     ( "workspace index contains component errors",

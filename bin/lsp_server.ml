@@ -91,6 +91,53 @@ let rebuild_workspace ?changed_uri () =
         sources;
       affected
 
+let refresh_workspace_document index uri =
+  match Hashtbl.find_opt workspace_sources uri with
+  | None -> Hashtbl.remove workspace_documents uri
+  | Some disk_text ->
+      let text =
+        Hashtbl.find_opt documents uri
+        |> Option.map (fun document -> document.text)
+        |> Option.value ~default:disk_text
+      in
+      let analysis =
+        match Cljml.Language_service.workspace_analysis index uri with
+        | Some analysis -> Ok analysis
+        | None -> (
+            match Cljml.Language_service.workspace_error index uri with
+            | Some error -> Error error
+            | None -> Cljml.Language_service.analyze ~filename:uri text)
+      in
+      let document = { text; analysis } in
+      Hashtbl.replace workspace_documents uri document;
+      if Hashtbl.mem documents uri then Hashtbl.replace documents uri document
+
+let remove_workspace_source uri =
+  Hashtbl.remove workspace_sources uri;
+  match !workspace_index with
+  | None -> rebuild_workspace ()
+  | Some index -> (
+      match Cljml.Language_service.remove_workspace_file index ~filename:uri with
+      | Error _ -> rebuild_workspace ()
+      | Ok (index, affected) ->
+          workspace_index := Some index;
+          List.iter
+            (fun affected_uri ->
+              if affected_uri = uri then
+                Hashtbl.remove workspace_documents affected_uri
+              else refresh_workspace_document index affected_uri)
+            affected;
+          affected)
+
+let update_watched_workspace_file uri change_type =
+  if change_type = 3 then remove_workspace_source uri
+  else
+    let path = path_of_file_uri uri in
+    if Filename.check_suffix path ".cljml" && Sys.file_exists path then (
+      Hashtbl.replace workspace_sources uri (read_file path);
+      rebuild_workspace ~changed_uri:uri ())
+    else []
+
 let index_workspace root_uri =
   Hashtbl.clear workspace_sources;
   workspace_index := None;
@@ -538,6 +585,14 @@ let handle_notification method_ params =
           if affected_uri <> uri then publish_current_diagnostics affected_uri)
         affected;
       publish_diagnostics uri []
+  | "workspace/didChangeWatchedFiles" ->
+      params |> member "changes" |> to_list
+      |> List.concat_map (fun change ->
+             let uri = change |> member "uri" |> to_string in
+             let change_type = change |> member "type" |> to_int in
+             update_watched_workspace_file uri change_type)
+      |> List.sort_uniq String.compare
+      |> List.iter publish_current_diagnostics
   | "initialized" | "exit" -> ()
   | _ -> ()
 

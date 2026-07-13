@@ -87,8 +87,12 @@ grep -q 'magnitude_plus_two' "$multi_output"
 
 bad_source="$multi_dir/bad.cljml"
 bad_stderr="$multi_dir/bad.stderr"
+watched_provider="$multi_dir/watched-provider.cljml"
+watched_consumer="$multi_dir/watched-consumer.cljml"
 printf '%s\n' \
   '(def bad (Stdlib.abs "bad"))' > "$bad_source"
+printf '%s\n' '(module Watched (def value 42))' > "$watched_provider"
+printf '%s\n' '(def watched Watched/value)' > "$watched_consumer"
 
 if "$cli" --compile-files "$math_source" "$bad_source" -o "$multi_output" \
     2> "$bad_stderr"; then
@@ -130,6 +134,9 @@ send_lsp_message() {
   send_lsp_message "{\"jsonrpc\":\"2.0\",\"id\":14,\"method\":\"textDocument/references\",\"params\":{\"textDocument\":{\"uri\":\"file://$main_source\"},\"position\":{\"line\":0,\"character\":14},\"context\":{\"includeDeclaration\":true}}}"
   send_lsp_message "{\"jsonrpc\":\"2.0\",\"id\":15,\"method\":\"textDocument/rename\",\"params\":{\"textDocument\":{\"uri\":\"file://$main_source\"},\"position\":{\"line\":0,\"character\":14},\"newName\":\"distance-plus-two\"}}"
   send_lsp_message '{"jsonrpc":"2.0","id":16,"method":"workspace/symbol","params":{"query":"magnitude-plus-two"}}'
+  send_lsp_message "{\"jsonrpc\":\"2.0\",\"id\":17,\"method\":\"textDocument/definition\",\"params\":{\"textDocument\":{\"uri\":\"file://$watched_consumer\"},\"position\":{\"line\":0,\"character\":13}}}"
+  send_lsp_message "{\"jsonrpc\":\"2.0\",\"method\":\"workspace/didChangeWatchedFiles\",\"params\":{\"changes\":[{\"uri\":\"file://$watched_provider\",\"type\":3}]}}"
+  send_lsp_message "{\"jsonrpc\":\"2.0\",\"id\":18,\"method\":\"textDocument/definition\",\"params\":{\"textDocument\":{\"uri\":\"file://$watched_consumer\"},\"position\":{\"line\":0,\"character\":13}}}"
   send_lsp_message "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didChange\",\"params\":{\"textDocument\":{\"uri\":\"file://$math_source\",\"version\":2},\"contentChanges\":[{\"text\":\"(module Math (def value 1))\\n\"}]}}"
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didClose","params":{"textDocument":{"uri":"file:///tmp/editor.cljml"}}}'
   send_lsp_message '{"jsonrpc":"2.0","id":2,"method":"shutdown","params":null}'
@@ -170,6 +177,9 @@ grep -q "\"id\":14,\"result\":.*\"uri\":\"file://$math_source\"" "$lsp_output"
 grep -q "\"id\":14,\"result\":.*\"uri\":\"file://$main_source\"" "$lsp_output"
 grep -q '"id":15,"result":{"changes"' "$lsp_output"
 grep -q '"id":16,"result":\[{"name":"magnitude-plus-two"' "$lsp_output"
+grep -q "\"id\":17,\"result\":{\"uri\":\"file://$watched_provider\"" "$lsp_output"
+grep -q '"id":18,"result":null' "$lsp_output"
+grep -Fq "\"uri\":\"file://$watched_consumer\",\"diagnostics\":[{\"range\"" "$lsp_output"
 grep -q 'int -> int' "$lsp_output"
 grep -q '"label":"add-one"' "$lsp_output"
 grep -Fq '"newText":"(def answer 41)\n"' "$lsp_output"
