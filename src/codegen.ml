@@ -16,6 +16,7 @@ let rec stringify_expr_ir ?(pr = false) expr =
   let scalar_mapper ty =
     match ty with
     | TInt -> Semantic_ir.Ident "string_of_int"
+    | TFloat -> Semantic_ir.Ident "string_of_float"
     | TSymbol | TKeyword -> Semantic_ir.Fun ([ Semantic_ir.PVar "x" ], Semantic_ir.Ident "x")
     | TString ->
         if pr then

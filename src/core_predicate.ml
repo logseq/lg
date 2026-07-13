@@ -37,7 +37,8 @@ let compile name args =
       match name with
       | "any?" -> static_bool true
       | "rational?" -> static_bool (Types.equal arg.ty TInt)
-      | "ratio?" | "float?" | "double?" | "decimal?" -> static_bool false
+      | "float?" | "double?" -> static_bool (Types.equal arg.ty TFloat)
+      | "ratio?" | "decimal?" -> static_bool false
       | "symbol?" -> static_bool (Types.equal arg.ty TSymbol)
       | "simple-symbol?" -> (
           match arg.ty with

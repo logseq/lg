@@ -218,12 +218,24 @@ Type predicates such as `int?`, `integer?`, `number?`, `nat-int?`, `pos-int?`,
 `simple-keyword?`, `qualified-keyword?`, `symbol?`, `simple-symbol?`,
 `qualified-symbol?`, `ident?`, `simple-ident?`, `qualified-ident?`,
 `sequential?`, `reversible?`, and `sorted?` are also static predicates in the
-current subset. Numeric tower predicates reflect the integer-only runtime, so
-ratio and floating predicates currently return false.
+current subset. `number?` recognizes both cljml integers and OCaml floats;
+`float?` and `double?` recognize the OCaml float representation. Ratios and
+decimals are not represented, so their predicates return false.
 
 `subs` supports two- and three-argument typed string slicing.
 
-Arithmetic is currently integer-only. `+` and `*` support Clojure identity arities, ordered comparisons can be chained, same-typed `=` and `not=` are supported, same-shaped structural maps compare field by field, and `/` requires at least two integer arguments because cljml does not yet have ratios. Integer helpers include `zero?`, `pos?`, `neg?`, `even?`, `odd?`, `max`, `min`, `quot`, `rem`, `mod`, `bit-and`, `bit-or`, `bit-xor`, `bit-not`, `bit-set`, `bit-clear`, `bit-flip`, `bit-test`, `bit-shift-left`, `bit-shift-right`, and `bit-shift-right-zero-fill`. Unchecked integer functions map directly to OCaml integer operators, so their exact overflow behavior follows the OCaml target.
+The arithmetic operators `+`, `-`, `*`, and `/`, ordered comparisons,
+`zero?`, `pos?`, `neg?`, `max`, and `min` support statically uniform integer
+or float operands. One call cannot mix the two representations. Integer `+`
+and `*` retain their Clojure identity arities; `/` requires at least two
+operands and does not introduce ratios. Same-typed `=` and `not=` are
+supported, and same-shaped structural maps compare field by field. Integer-only
+helpers include `even?`, `odd?`, `quot`, `rem`, `mod`, `bit-and`, `bit-or`,
+`bit-xor`, `bit-not`, `bit-set`, `bit-clear`, `bit-flip`, `bit-test`,
+`bit-shift-left`, `bit-shift-right`, and `bit-shift-right-zero-fill`.
+Unchecked integer functions map directly to OCaml integer operators, so their
+exact overflow behavior follows the OCaml target. Sets support floats and
+float lists or vectors through generated OCaml comparators.
 
 `boolean`, `name`, `namespace`, `keyword`, and `symbol` are supported for the
 current scalar subset. `name` works on strings, keywords, and symbols.
@@ -435,8 +447,9 @@ OCaml arrays use `(ocaml-array 1 2 3)`, `(ocaml-array-of :int)`,
 `ocaml-array-get`, and `ocaml-array-set!`. OCaml references use `ocaml-ref`,
 `ocaml-deref`, and `ocaml-reset!`. These forms preserve their element types and
 mutation semantics in the generated Parsetree. Core cljml arithmetic remains
-integer-only, so float arithmetic uses ordinary direct OCaml calls such as
-`(Float.add 1.5 2.25)`.
+statically typed: uniform integer operands select integer operators, while
+uniform float operands select OCaml float operators. Direct OCaml calls such as
+`(Float.add 1.5 2.25)` remain available for host interop.
 
 Labelled and optional OCaml arguments are written as keyword/value pairs, such
 as `(String.starts_with "ada" :prefix "ad")`. cljml validates label

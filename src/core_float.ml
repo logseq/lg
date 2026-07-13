@@ -28,3 +28,19 @@ let compile_operator name args =
         | _ -> assert false
       in
       Ok (typed_ir TFloat (fold_infix operator first rest))
+
+let compile_min_max name args =
+  match args with
+  | [] -> Error.error (name ^ " expects at least 1 arguments")
+  | _ :: _ when not (List.for_all (fun arg -> Types.equal arg.ty TFloat) args) ->
+      Error.error (name ^ " numeric arguments must all have the same type")
+  | first :: rest ->
+      let fn = if name = "max" then "max" else "min" in
+      let expression =
+        List.fold_left
+          (fun expression arg ->
+            Semantic_ir.Apply
+              (Semantic_ir.Ident fn, [ expression; arg.semantic_expr ]))
+          first.semantic_expr rest
+      in
+      Ok (typed_ir TFloat expression)

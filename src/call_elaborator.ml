@@ -465,21 +465,29 @@ let create ~compile_expr =
         match compile_args () with
         | Error _ as err -> err
         | Ok args -> Core_predicate.compile name args)
-    | "zero?" ->
-        compile_int_unary_call scope env name
-          (fun expression -> Semantic_ir.Infix ("=", expression, Semantic_ir.Int 0))
-          arg_forms
-        |> Result.map (fun expr -> { expr with ty = TBool })
-    | "pos?" ->
-        compile_int_unary_call scope env name
-          (fun expression -> Semantic_ir.Infix (">", expression, Semantic_ir.Int 0))
-          arg_forms
-        |> Result.map (fun expr -> { expr with ty = TBool })
-    | "neg?" ->
-        compile_int_unary_call scope env name
-          (fun expression -> Semantic_ir.Infix ("<", expression, Semantic_ir.Int 0))
-          arg_forms
-        |> Result.map (fun expr -> { expr with ty = TBool })
+    | ("zero?" | "pos?" | "neg?") as predicate -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [ arg ] ->
+            let operator =
+              match predicate with
+              | "zero?" -> "="
+              | "pos?" -> ">"
+              | "neg?" -> "<"
+              | _ -> assert false
+            in
+            let zero =
+              match arg.ty with
+              | TInt -> Ok (Semantic_ir.Int 0)
+              | TFloat -> Ok (Semantic_ir.Float "0.0")
+              | _ -> Error.error ("expected int arguments for " ^ predicate)
+            in
+            Result.map
+              (fun zero ->
+                typed_ir TBool
+                  (Semantic_ir.Infix (operator, arg.semantic_expr, zero)))
+              zero
+        | Ok _ -> Error.error (predicate ^ " expects 1 arguments"))
     | "even?" ->
         compile_int_unary_call scope env name
           (fun expression ->
@@ -512,6 +520,16 @@ let create ~compile_expr =
     | "max" | "min" -> (
         match compile_args () with
         | Error _ as err -> err
+        | Ok (first :: _ as args)
+          when Types.equal first.ty TFloat
+               && List.for_all (fun arg -> Types.equal arg.ty TFloat) args ->
+            Core_float.compile_min_max name args
+        | Ok args
+          when List.exists (fun arg -> Types.equal arg.ty TFloat) args
+               && List.for_all
+                    (fun arg -> Types.is_numeric arg.ty)
+                    args ->
+            Error.error (name ^ " numeric arguments must all have the same type")
         | Ok args -> Core_int.compile_min_max name args)
     | "quot" | "rem" | "mod" -> (
         match compile_args () with

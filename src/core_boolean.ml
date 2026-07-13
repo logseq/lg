@@ -41,7 +41,9 @@ let compile name args =
   | "not" -> compile_not args
   | "true?" -> compile_bool_literal_predicate name args true
   | "false?" -> compile_bool_literal_predicate name args false
-  | "int?" | "number?" -> compile_type_predicate name (function TInt -> true | _ -> false) args
+  | "int?" -> compile_type_predicate name (function TInt -> true | _ -> false) args
+  | "number?" ->
+      compile_type_predicate name Types.is_numeric args
   | "string?" -> compile_type_predicate name (function TString -> true | _ -> false) args
   | "keyword?" -> compile_type_predicate name (function TKeyword -> true | _ -> false) args
   | "boolean?" -> compile_type_predicate name (function TBool -> true | _ -> false) args

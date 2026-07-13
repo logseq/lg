@@ -76,6 +76,8 @@ let rec equal left right =
       Type_id.equal left.type_id right.type_id
   | _ -> false
 
+let is_numeric = function TInt | TFloat -> true | _ -> false
+
 let rec row_compatible ~expected ~actual =
   match (expected, actual) with
   | TNamed_record expected, TNamed_record actual
@@ -196,12 +198,15 @@ let rec ocaml_name = function
 
 and set_module_name = function
   | TInt -> Ok "Cljml.Core_set.Int_set"
+  | TFloat -> Ok "Cljml.Core_set.Float_set"
   | TString | TSymbol | TKeyword -> Ok "Cljml.Core_set.String_set"
   | TBool -> Ok "Cljml.Core_set.Bool_set"
   | TList TInt -> Ok "Cljml.Core_set.Int_list_set"
+  | TList TFloat -> Ok "Cljml.Core_set.Float_list_set"
   | TList (TString | TSymbol | TKeyword) -> Ok "Cljml.Core_set.String_list_set"
   | TList TBool -> Ok "Cljml.Core_set.Bool_list_set"
   | TVector TInt -> Ok "Cljml.Core_set.Int_vector_set"
+  | TVector TFloat -> Ok "Cljml.Core_set.Float_vector_set"
   | TVector (TString | TSymbol | TKeyword) ->
       Ok "Cljml.Core_set.String_vector_set"
   | TVector TBool -> Ok "Cljml.Core_set.Bool_vector_set"

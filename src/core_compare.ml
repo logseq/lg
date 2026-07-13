@@ -66,11 +66,7 @@ let compile name args =
           in
           Ok (typed_ir TBool expression)
         else Error.error (name ^ " arguments must have the same type")
-      else if
-        List.for_all
-          (fun arg ->
-            Types.assignable ~policy:Nominal ~expected:TInt ~actual:arg.ty)
-          args
-      then
+      else if List.for_all (fun arg -> Types.equal first.ty arg.ty) args
+              && Types.is_numeric first.ty then
         Ok (typed_ir TBool (and_expressions (pairwise_expressions name args)))
-      else Error.error ("expected int arguments for " ^ name)
+      else Error.error (name ^ " numeric arguments must all have the same type")

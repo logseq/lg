@@ -2208,6 +2208,50 @@ let test_float_arithmetic_uses_types_from_option_patterns () =
   assert_ocaml_runs "float_arithmetic_uses_types_from_option_patterns" "4.\n"
     ocaml_source
 
+let test_float_numeric_core_is_coherent () =
+  let source =
+    {|
+(defn midpoint [left right]
+  (/ (+ left right) 2.0))
+(println
+  (str (midpoint 1.0 3.0) ":"
+       (< 1.0 2.0 3.0) ":" (> 3.0 2.0 1.0) ":"
+       (number? 1.5) ":" (float? 1.5) ":" (double? 1.5) ":"
+       (rational? 1.5) ":"
+       (zero? 0.0) ":" (pos? 1.5) ":" (neg? -1.5) ":"
+       (max 1.5 3.0 2.0) ":" (min 1.5 3.0 2.0) ":"
+       (compare 1.0 2.0) ":" (distinct? 1.0 2.0 1.0)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "float_numeric_core_is_coherent"
+    "2.:true:true:true:true:true:false:true:true:true:3.:1.5:-1:false\n"
+    ocaml_source
+
+let test_float_sets_support_scalar_and_collection_elements () =
+  let source =
+    {|
+(def values (hash-set 1.5 2.5 2.5))
+(def lists (hash-set (list 1.5 2.5) (list 1.5 2.5)))
+(def vectors (hash-set [1.5 2.5] [2.5 3.5]))
+(println
+  (str (count values) ":" (contains? values 2.5) ":"
+       (count lists) ":" (contains? lists (list 1.5 2.5)) ":"
+       (count vectors) ":" (contains? vectors [2.5 3.5])))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "float_sets_support_scalar_and_collection_elements"
+    "2:true:1:true:2:true\n" ocaml_source
+
+let test_float_numeric_core_rejects_invalid_mixes () =
+  Cljml.Compiler.compile_string {|(def bad (< 1 2.0))|}
+  |> expect_error_contains "same type";
+  Cljml.Compiler.compile_string {|(def bad (max 1 2.0))|}
+  |> expect_error_contains "same type";
+  Cljml.Compiler.compile_string {|(def bad (even? 2.0))|}
+  |> expect_error "expected int arguments for even?"
+
 let test_ocaml_record_values_compile_through_source_backend () =
   let source =
     {|
@@ -7763,6 +7807,12 @@ let tests =
       test_float_arithmetic_uses_core_numeric_operators );
     ( "syntax convergence: float arithmetic uses types from option patterns",
       test_float_arithmetic_uses_types_from_option_patterns );
+    ( "numeric coherence: float core operations agree",
+      test_float_numeric_core_is_coherent );
+    ( "numeric coherence: float sets support scalar and collection elements",
+      test_float_sets_support_scalar_and_collection_elements );
+    ( "numeric coherence: invalid float mixes are rejected",
+      test_float_numeric_core_rejects_invalid_mixes );
     ( "OCaml record values compile through source backend",
       test_ocaml_record_values_compile_through_source_backend );
     ( "OCaml record values support qualified module types",

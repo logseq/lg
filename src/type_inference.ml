@@ -44,9 +44,24 @@ let inferred_form_type params = function
   | FList [ FSymbol "not"; _ ] -> TBool
   | _ -> TUnknown
 
+let rec numeric_form_type params = function
+  | FInt _ -> TInt
+  | FFloat _ -> TFloat
+  | FSymbol name ->
+      List.assoc_opt name params |> Option.value ~default:TUnknown
+  | FList (FSymbol ("+" | "-" | "*" | "/" | "max" | "min") :: args) ->
+      let types = List.map (numeric_form_type params) args in
+      if List.exists (Types.equal TFloat) types then TFloat
+      else if List.exists (Types.equal TInt) types then TInt
+      else TUnknown
+  | _ -> TUnknown
+
 let infer_params ~lookup_function_ty params body_forms =
   let rec infer_expected expected_ty params = function
     | FSymbol name -> constrain_symbol expected_ty params name
+    | FList (FSymbol ("+" | "-" | "*" | "/" | "max" | "min") :: args)
+      when Types.equal expected_ty TInt || Types.equal expected_ty TFloat ->
+        infer_expected_all expected_ty params args
     | FList [ FKeyword keyword; FSymbol name ] ->
         add_record_field_constraint name keyword expected_ty params
     | FList [ FSymbol "get"; FSymbol name; FKeyword keyword ] ->
@@ -145,15 +160,16 @@ let infer_params ~lookup_function_ty params body_forms =
     in
     infer_clauses params clauses
   and infer_form params = function
+    | FList (FSymbol ("+" | "-" | "*" | "/" | "max" | "min") :: args) ->
+        let expected_ty =
+          if List.exists (fun arg -> Types.equal (numeric_form_type params arg) TFloat) args
+          then TFloat
+          else TInt
+        in
+        infer_expected_all expected_ty params args
     | FList
         (FSymbol
-          ( "+"
-          | "-"
-          | "*"
-          | "/"
-          | "max"
-          | "min"
-          | "bit-and"
+          ( "bit-and"
           | "bit-or"
           | "bit-xor"
           | "unchecked-add"
@@ -209,7 +225,12 @@ let infer_params ~lookup_function_ty params body_forms =
         | Error _ as err -> err
         | Ok params -> infer_expected TInt params right)
     | FList (FSymbol ("<" | "<=" | ">" | ">=") :: args) ->
-        infer_expected_all TInt params args
+        let expected_ty =
+          if List.exists (fun arg -> Types.equal (numeric_form_type params arg) TFloat) args
+          then TFloat
+          else TInt
+        in
+        infer_expected_all expected_ty params args
     | FList [ FSymbol "not"; arg ] -> infer_expected TBool params arg
     | FList [ FKeyword keyword; FSymbol name ] ->
         add_record_field_constraint name keyword TUnknown params

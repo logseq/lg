@@ -35,7 +35,7 @@ let create ~compile_expr =
     | form -> compile_expr scope env form
   in
   let comparable_type = function
-    | TInt | TString | TSymbol | TKeyword | TBool | TUnknown -> true
+    | TInt | TFloat | TString | TSymbol | TKeyword | TBool | TUnknown -> true
     | _ -> false
   in
     let compile_distinct_question scope env arg_forms =
