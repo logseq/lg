@@ -13,7 +13,15 @@ type text_edit = {
   new_text : string;
 }
 
-type symbol_kind = [ `Module | `Function | `Variable | `Type | `Interface ]
+type symbol_kind =
+  [ `Module
+  | `Function
+  | `Variable
+  | `Type
+  | `Interface
+  | `Method
+  | `Field
+  | `Constructor ]
 
 type document_symbol = {
   name : string;
@@ -1137,20 +1145,70 @@ let symbol_kind = function
   | "module" | "module-alias" | "module-apply" | "module-functor" ->
       Some `Module
   | "module-signature" -> Some `Interface
-  | "type-alias" | "type-record" | "type-variant" | "defprotocol" ->
-      Some `Type
+  | "type-alias" | "type-record" | "type-variant" -> Some `Type
+  | "defprotocol" -> Some `Interface
   | _ -> None
 
-let rec symbols_of_form (located : Ast.located_form) =
+let leaf_symbol kind (located : Ast.located_form) =
+  match (located.form, located.children) with
+  | FSymbol name, _ ->
+      Some
+        { name;
+          detail = None;
+          kind;
+          range = located.span;
+          selection_range = located.span;
+          children = [] }
+  | _, { form = FSymbol name; span = selection_range; _ } :: _ ->
+      Some
+        { name;
+          detail = None;
+          kind;
+          range = located.span;
+          selection_range;
+          children = [] }
+  | _ -> None
+
+let signature_item_symbol (located : Ast.located_form) =
+  match located.children with
+  | { form = FSymbol head; _ }
+    :: { form = FSymbol name; span = selection_range; _ }
+    :: _ ->
+      let kind =
+        match head with
+        | "val" -> Some `Variable
+        | "type" -> Some `Type
+        | "module" -> Some `Module
+        | _ -> None
+      in
+      Option.map
+        (fun kind ->
+          { name;
+            detail = None;
+            kind;
+            range = located.span;
+            selection_range;
+            children = [] })
+        kind
+  | _ -> None
+
+let rec child_symbols head rest =
+  match head with
+  | "module" | "module-functor" -> List.concat_map symbols_of_form rest
+  | "type-record" -> List.filter_map (leaf_symbol `Field) rest
+  | "type-variant" -> List.filter_map (leaf_symbol `Constructor) rest
+  | "defprotocol" -> List.filter_map (leaf_symbol `Method) rest
+  | "module-signature" -> List.filter_map signature_item_symbol rest
+  | _ -> []
+
+and symbols_of_form (located : Ast.located_form) =
   match located.children with
   | { form = FSymbol head; _ } :: ({ form = FSymbol name; span = selection_range; _ } as _name)
     :: rest -> (
       match symbol_kind head with
       | None -> []
       | Some kind ->
-          let children =
-            if head = "module" then List.concat_map symbols_of_form rest else []
-          in
+          let children = child_symbols head rest in
           [
             {
               name;

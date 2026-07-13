@@ -5106,6 +5106,60 @@ let test_language_service_document_symbols_preserve_source_names () =
   | None -> failwith "expected add-one document symbol");
   if find "result" = None then failwith "expected result document symbol"
 
+let document_symbol_hierarchy_source =
+  {|
+(module-signature ValueSig (val value :int))
+(module Domain
+  (type-record user (name :string) (age :int))
+  (type-variant status Active (Named :string))
+  (defprotocol Display (render [value] :string))
+  (module-signature Service
+    (val get :int)
+    (type item)
+    (module Nested ValueSig)))
+|}
+
+let test_language_service_document_symbols_include_semantic_children () =
+  let analysis =
+    Cljml.Language_service.analyze
+      ~filename:"file:///tmp/document-symbol-hierarchy.cljml"
+      document_symbol_hierarchy_source
+    |> expect_ok
+  in
+  let symbols = Cljml.Language_service.document_symbols analysis in
+  let find name symbols =
+    List.find_opt
+      (fun (symbol : Cljml.Language_service.document_symbol) ->
+        symbol.name = name)
+      symbols
+    |> Option.get
+  in
+  let domain = find "Domain" symbols in
+  let user = find "user" domain.children in
+  let status = find "status" domain.children in
+  let protocol = find "Display" domain.children in
+  let service = find "Service" domain.children in
+  let child_names (symbol : Cljml.Language_service.document_symbol) =
+    List.map
+      (fun (child : Cljml.Language_service.document_symbol) -> child.name)
+      symbol.children
+  in
+  if child_names user <> [ "name"; "age" ] then
+    failwith "record document symbol must include fields";
+  if child_names status <> [ "Active"; "Named" ] then
+    failwith "variant document symbol must include constructors";
+  if child_names protocol <> [ "render" ] then
+    failwith "protocol document symbol must include methods";
+  if child_names service <> [ "get"; "item"; "Nested" ] then
+    failwith "module signature symbol must include its declarations";
+  let field = find "name" user.children in
+  if span_text document_symbol_hierarchy_source field.selection_range <> "name" then
+    failwith "document symbol selection range must be the declaration name";
+  if
+    span_text document_symbol_hierarchy_source field.range
+    <> "(name :string)"
+  then failwith "field document symbol range must cover its declaration"
+
 let test_language_service_workspace_resolves_cross_file_identity () =
   let math =
     "(module Math (defn magnitude-plus-two [x] (+ x 2)))\n"
@@ -7651,6 +7705,8 @@ let tests =
       test_language_service_type_capabilities );
     ( "language service document symbols preserve source names",
       test_language_service_document_symbols_preserve_source_names );
+    ( "language service document symbols include semantic children",
+      test_language_service_document_symbols_include_semantic_children );
     ( "language service workspace resolves cross-file identity",
       test_language_service_workspace_resolves_cross_file_identity );
     ( "workspace index reanalyzes dependency components",

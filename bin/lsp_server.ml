@@ -490,6 +490,9 @@ let rename_result uri document offset new_name =
 let symbol_kind = function
   | `Module -> 2
   | `Type -> 5
+  | `Method -> 6
+  | `Field -> 8
+  | `Constructor -> 9
   | `Interface -> 11
   | `Function -> 12
   | `Variable -> 13
