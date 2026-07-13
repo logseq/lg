@@ -264,6 +264,15 @@ let analyze ?(filename = "<string>") source =
                       diagnostics = analysis.diagnostics;
                     })))
 
+let interface ?(filename = "<string>") source =
+  match analyze ~filename source with
+  | Error _ as err -> err
+  | Ok analysis ->
+      Ok
+        (Printtyp.wrap_printing_env ~error:false analysis.compiler_env (fun () ->
+             Format.asprintf "%a@." Printtyp.signature
+               analysis.typed_structure.str_type))
+
 let analyze_workspace_with_errors sources =
   let validate_ocaml state =
     match Lowering.structure_of_located_items state.located_items with

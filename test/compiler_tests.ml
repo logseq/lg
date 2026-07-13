@@ -7241,6 +7241,20 @@ let test_compile_string_prints_parsetree_backend_output () =
   if source_output <> parsetree_output then
     failwith "compile_string should print the checked Parsetree backend output"
 
+let test_infer_interface_prints_checked_signature () =
+  let inferred =
+    Cljml.Compiler.infer_interface
+      {|
+(type-record user (name :string))
+(defn user-name [^:ocaml/user user] (ocaml-field user name))
+|}
+    |> expect_ok
+  in
+  if not (string_contains_substring inferred "type nonrec user") then
+    failwith "inferred interface should include the record type";
+  if not (string_contains_substring inferred "val user_name : user -> string") then
+    failwith "inferred interface should include the function signature"
+
 let test_compile_chunk_prints_parsetree_backend_output () =
   let source =
     {|
@@ -8124,6 +8138,8 @@ let tests =
       test_incremental_parsetree_backend_runs_ocaml_typecheck_gate );
     ( "compile_string prints Parsetree backend output",
       test_compile_string_prints_parsetree_backend_output );
+    ( "infer_interface prints checked signature",
+      test_infer_interface_prints_checked_signature );
     ( "compile_chunk prints Parsetree backend output",
       test_compile_chunk_prints_parsetree_backend_output );
   ]

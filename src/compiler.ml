@@ -33,6 +33,11 @@ let compile_string_with_filename_and_diagnostics ~filename source =
 
 let required_ocaml_packages source = Toolchain.required_ocaml_packages source
 
+let infer_interface source = Toolchain.interface source
+
+let infer_interface_with_filename ~filename source =
+  Toolchain.interface ~filename source
+
 let compile_parsetree source = Toolchain.implementation_parsetree source
 
 let compile_parsetree_with_filename ~filename source =

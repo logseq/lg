@@ -1,6 +1,7 @@
 let usage () =
   prerr_endline
-    "Usage: cljml_cli <input.cljml> [-o output.ml] | --run <input.cljml> | \
+    "Usage: cljml_cli <input.cljml> [-o output.ml] | \
+     --interface <input.cljml> [-o output.mli] | --run <input.cljml> | \
      --compile-files <input.cljml>... -o output.ml | --run-files <input.cljml>... | \
      --lsp";
   exit 2
@@ -24,6 +25,7 @@ let write_output output_path contents =
 
 type mode =
   | Compile of { input_path : string; output_path : string option }
+  | Interface of { input_path : string; output_path : string option }
   | Run of { input_path : string }
   | Compile_files of { input_paths : string list; output_path : string }
   | Run_files of { input_paths : string list }
@@ -32,6 +34,10 @@ type mode =
 let parse_args argv =
   match Array.to_list argv with
   | [ _program; "--lsp" ] -> Lsp
+  | [ _program; "--interface"; input ] ->
+      Interface { input_path = input; output_path = None }
+  | [ _program; "--interface"; input; "-o"; output ] ->
+      Interface { input_path = input; output_path = Some output }
   | [ _program; input ] -> Compile { input_path = input; output_path = None }
   | [ _program; input; "-o"; output ] ->
       Compile { input_path = input; output_path = Some output }
@@ -139,6 +145,10 @@ let compile_file input_path =
       | Error _ as err -> err
       | Ok compilation -> Ok (packages, compilation))
 
+let infer_interface input_path =
+  let source = read_file input_path in
+  Cljml.Compiler.infer_interface_with_filename ~filename:input_path source
+
 let report_diagnostics diagnostics =
   List.iter
     (fun (diagnostic : Cljml.Compiler.diagnostic) ->
@@ -158,6 +168,10 @@ let () =
       | Ok (_packages, compilation) ->
           report_diagnostics compilation.diagnostics;
           write_output output_path compilation.ocaml_source)
+  | Interface { input_path; output_path } -> (
+      match infer_interface input_path with
+      | Error err -> report_error err
+      | Ok interface -> write_output output_path interface)
   | Run { input_path } -> (
       match compile_file input_path with
       | Error err -> report_error err

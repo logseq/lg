@@ -12,7 +12,10 @@ test -x "$compiler"
 test -f "$package"
 
 output=$(mktemp "${TMPDIR:-/tmp}/cljml-install-smoke.XXXXXX.ml")
-trap 'rm -f "$output"' EXIT
+interface=$(mktemp "${TMPDIR:-/tmp}/cljml-install-smoke.XXXXXX.mli")
+trap 'rm -f "$output" "$interface"' EXIT
 
 "$compiler" "$root/examples/person.cljml" -o "$output"
 grep -Fq 'let' "$output"
+"$compiler" --interface "$root/examples/person.cljml" -o "$interface"
+grep -Fq 'val label : string' "$interface"
