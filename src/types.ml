@@ -49,6 +49,13 @@ let seqable_constraint_element = function
       Some element_ty
   | _ -> None
 
+let reduced_type_name = "Cljml.Runtime_reduced.t"
+let reduced inner = TOcaml_app (reduced_type_name, [ inner ])
+
+let reduced_element = function
+  | TOcaml_app (name, [ inner ]) when name = reduced_type_name -> Some inner
+  | _ -> None
+
 let rec equal left right =
   match (left, right) with
   | TUnknown, TUnknown -> true
@@ -162,6 +169,8 @@ let rec source_name = function
   | TOcaml name -> "ocaml/" ^ name
   | TOcaml_app (name, [ inner; _ ]) when name = seqable_constraint_name ->
       "seqable<" ^ source_name inner ^ ">"
+  | TOcaml_app (name, [ inner ]) when name = reduced_type_name ->
+      "reduced<" ^ source_name inner ^ ">"
   | TOcaml_app (name, args) ->
       "ocaml/" ^ name ^ "<"
       ^ (args |> List.map source_name |> String.concat ",")

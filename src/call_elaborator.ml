@@ -132,6 +132,46 @@ let create ~compile_expr =
                (Semantic_ir.Constructor (constructor_name, payload)))
     in
     match name with
+    | "reduced" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [ value ] ->
+            Ok
+              (typed_ir (Types.reduced value.ty)
+                 (Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Cljml.Runtime_reduced.reduced",
+                      [ value.semantic_expr ] )))
+        | Ok _ -> Error.error "reduced expects 1 arguments")
+    | "reduced?" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [ value ] -> (
+            match Types.reduced_element value.ty with
+            | Some _ ->
+                Ok
+                  (typed_ir TBool
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident "Cljml.Runtime_reduced.is_reduced",
+                          [ value.semantic_expr ] )))
+            | None ->
+                Ok
+                  (typed_ir TBool
+                     (Semantic_ir.Sequence
+                        [ value.semantic_expr; Semantic_ir.Bool false ])))
+        | Ok _ -> Error.error "reduced? expects 1 arguments")
+    | "unreduced" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [ value ] -> (
+            match Types.reduced_element value.ty with
+            | Some inner ->
+                Ok
+                  (typed_ir inner
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident "Cljml.Runtime_reduced.unreduced",
+                          [ value.semantic_expr ] )))
+            | None -> Ok value)
+        | Ok _ -> Error.error "unreduced expects 1 arguments")
     | "raise" -> (
         match compile_args () with
         | Error _ as err -> err

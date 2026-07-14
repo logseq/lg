@@ -278,7 +278,9 @@ The compiler infers record-like map shapes automatically:
   the shortest input is exhausted.
 - `reduce` accepts typed lists, vectors, sets, OCaml arrays, strings, lazy seqs,
   and host OCaml `Seq.t`, list, and array values. It eagerly consumes its input;
-  memoized lazy seq nodes are not recomputed on later reductions.
+  memoized lazy seq nodes are not recomputed on later reductions. Reducers may
+  return `(reduced value)` to stop immediately; `reduced?` and `unreduced`
+  inspect the explicit typed wrapper.
 - `Seqable` is a compiler-owned protocol. Named records and host wrapper types
   can implement `-seq`, returning a typed lazy seq, and then work directly with
   sequence navigation, `map`, and `reduce`; implementations declared in modules

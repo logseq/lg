@@ -712,6 +712,17 @@ let create ~compile_expr =
                             (typed_ir init.ty
                                (Collection_capability.reduce_expr env fn init
                                   collection sequence))
+                      | TFn ([ acc_ty; item_ty ], ret)
+                        when Types.equal acc_ty init.ty
+                             && Types.equal item_ty inner
+                             && (match Types.reduced_element ret with
+                                | Some reduced_ty ->
+                                    Types.equal reduced_ty init.ty
+                                | None -> false) ->
+                          Ok
+                            (typed_ir init.ty
+                               (Collection_capability.reduce_expr env
+                                  ~short_circuit:true fn init collection sequence))
                       | TFn _ ->
                           Error.error
                             "reduce function type does not match init and sequence"

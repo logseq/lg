@@ -233,14 +233,14 @@ let create ~compile_expr =
         match ensure_bool condition with
         | Error _ as err -> err
         | Ok () ->
-            match merge_branch_types then_expr.ty else_expr.ty with
-            | Some result_ty ->
+            match merge_branch_expressions then_expr else_expr with
+            | Some (result_ty, then_code, else_code) ->
               Ok
                 (typed_ir result_ty
                    (Semantic_ir.If
                       ( condition.semantic_expr,
-                        then_expr.semantic_expr,
-                        else_expr.semantic_expr )))
+                        then_code,
+                        else_code )))
             | None -> Error.error "if branches must have same type")
   
   and compile_if_not scope env condition then_form else_form =
@@ -256,15 +256,15 @@ let create ~compile_expr =
         match ensure_bool condition with
         | Error _ as err -> err
         | Ok () ->
-            match merge_branch_types then_expr.ty else_expr.ty with
-            | Some result_ty ->
+            match merge_branch_expressions then_expr else_expr with
+            | Some (result_ty, then_code, else_code) ->
               Ok
                 (typed_ir result_ty
                    (Semantic_ir.If
                       ( Semantic_ir.Apply
                           (Semantic_ir.Ident "not", [ condition.semantic_expr ]),
-                        then_expr.semantic_expr,
-                        else_expr.semantic_expr )))
+                        then_code,
+                        else_code )))
             | None -> Error.error "if-not branches must have same type")
   
   and compile_when scope env condition body_forms =

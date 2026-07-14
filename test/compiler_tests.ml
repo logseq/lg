@@ -3779,6 +3779,78 @@ let test_reduce_realizes_lazy_seq_once () =
   assert_ocaml_runs "reduce_realizes_lazy_seq_once" "0\n6\n3\n6\n3\n"
     ocaml_source
 
+let test_reduced_values_support_predicates_and_unwrapping () =
+  let source =
+    {|
+(def stopped (reduced 7))
+(println
+  (str (reduced? stopped) ":" (reduced? 7) ":"
+       (unreduced stopped) ":" (unreduced 8)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "reduced_values_support_predicates_and_unwrapping"
+    "true:false:7:8\n" ocaml_source
+
+let test_reduce_stops_without_realizing_remaining_values () =
+  let source =
+    {|
+(def calls (ocaml-ref 0))
+(def values
+  (map
+    (fn [x]
+      (do
+        (ocaml-reset! calls (+ (ocaml-deref calls) 1))
+        x))
+    [1 2 3 4 5]))
+(def total
+  (reduce
+    (fn [acc x]
+      (if (> x 3)
+        (reduced acc)
+        (+ acc x)))
+    0
+    values))
+(println total)
+(println (ocaml-deref calls))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "reduce_stops_without_realizing_remaining_values"
+    "6\n4\n" ocaml_source
+
+let test_reduce_short_circuits_builtin_and_custom_seqable_types () =
+  let source =
+    {|
+(type-record cursor (values :ocaml/list<int>))
+(extend-type cursor Seqable
+  (-seq [cursor]
+    (map (fn [x] (+ x 0)) (ocaml-field cursor values))))
+(def custom (ocaml-record cursor (values (list 1 2 3 4))))
+(defn sum-before-three [values]
+  (reduce
+    (fn [acc x]
+      (if (= x 3) (reduced acc) (+ acc x)))
+    0
+    values))
+(def text
+  (reduce
+    (fn [acc ch]
+      (if (= ch \c) (reduced acc) (str acc ch)))
+    ""
+    "abcd"))
+(println
+  (str (sum-before-three (list 1 2 3 100)) ":"
+       (sum-before-three [1 2 3 100]) ":"
+       (sum-before-three (ocaml-array 1 2 3 100)) ":"
+       (sum-before-three custom) ":" text ":"
+       (reduce (fn [acc x] (reduced (+ acc x))) 10 (list-of :int))))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "reduce_short_circuits_builtin_and_custom_seqable_types"
+    "3:3:3:3:ab:10\n" ocaml_source
+
 let test_custom_records_can_implement_core_seqable () =
   let source =
     {|
@@ -8757,6 +8829,12 @@ let tests =
     ( "reduce accepts all builtin seqable types",
       test_reduce_accepts_all_builtin_seqable_types );
     ("reduce realizes lazy seq once", test_reduce_realizes_lazy_seq_once);
+    ( "reduced values support predicates and unwrapping",
+      test_reduced_values_support_predicates_and_unwrapping );
+    ( "reduce stops without realizing remaining values",
+      test_reduce_stops_without_realizing_remaining_values );
+    ( "reduce short-circuits builtin and custom Seqable types",
+      test_reduce_short_circuits_builtin_and_custom_seqable_types );
     ( "custom records can implement core Seqable",
       test_custom_records_can_implement_core_seqable );
     ( "modules export core Seqable implementations",

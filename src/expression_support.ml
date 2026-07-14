@@ -43,6 +43,22 @@ let merge_branch_types left right =
     | _ when Types.defer_to_ocaml ~expected:left ~actual:right -> Some left
     | _ -> None
 
+let merge_branch_expressions left right =
+  let continue expression =
+    Semantic_ir.Apply
+      (Semantic_ir.Ident "Cljml.Runtime_reduced.continue", [ expression ])
+  in
+  match (Types.reduced_element left.ty, Types.reduced_element right.ty) with
+  | Some left_inner, Some right_inner when Types.equal left_inner right_inner ->
+      Some (left.ty, left.semantic_expr, right.semantic_expr)
+  | Some inner, None when Types.equal inner right.ty ->
+      Some (left.ty, left.semantic_expr, continue right.semantic_expr)
+  | None, Some inner when Types.equal left.ty inner ->
+      Some (right.ty, continue left.semantic_expr, right.semantic_expr)
+  | _ ->
+      merge_branch_types left.ty right.ty
+      |> Option.map (fun ty -> (ty, left.semantic_expr, right.semantic_expr))
+
 let unresolved_contextual_type = function
   | TList TUnknown -> true
   | _ -> false

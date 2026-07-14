@@ -351,6 +351,10 @@ the element types match.
 `reduce` is eager and accepts every built-in seqable type: lists, vectors,
 sets, arrays, strings, typed lazy seqs, and host OCaml `Seq.t`, list, and array
 values. Reducing a memoized lazy seq realizes each source node at most once.
+`reduced` creates a typed early-termination wrapper, `reduced?` tests it, and
+`unreduced` extracts its value. `reduce` stops without realizing remaining lazy
+inputs. Lists, vectors, arrays, strings, and lazy sequences use direct
+short-circuit folds; custom `Seqable` values use their lazy sequence adapter.
 
 `Seqable` is reserved as a compiler-owned protocol. Custom named records and
 host wrapper types may use `(extend-type T Seqable (-seq [value] ...))`; `-seq`

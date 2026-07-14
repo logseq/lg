@@ -111,7 +111,28 @@ let pack_seqable_argument env argument =
         (Semantic_ir.Tuple
            [ adapter; argument.semantic_expr ])
 
-let reduce_expr env fn init collection sequence =
+let reduce_expr env ?(short_circuit = false) fn init collection sequence =
+  if short_circuit then
+    match collection.ty with
+    | TList _ | TOcaml_app ("list", [ _ ]) ->
+        apply "Cljml.Runtime_reduced.fold_list"
+          [ fn.semantic_expr; init.semantic_expr; collection.semantic_expr ]
+    | TVector _ ->
+        apply "Cljml.Runtime_reduced.fold_vector"
+          [ fn.semantic_expr; init.semantic_expr; collection.semantic_expr ]
+    | TArray _ | TOcaml_app ("array", [ _ ]) ->
+        apply "Cljml.Runtime_reduced.fold_array"
+          [ fn.semantic_expr; init.semantic_expr; collection.semantic_expr ]
+    | TString ->
+        apply "Cljml.Runtime_reduced.fold_string"
+          [ fn.semantic_expr; init.semantic_expr; collection.semantic_expr ]
+    | TSeq _ | TOcaml_app (("Seq.t" | "Seq"), [ _ ]) ->
+        apply "Cljml.Runtime_reduced.fold_seq"
+          [ fn.semantic_expr; init.semantic_expr; collection.semantic_expr ]
+    | _ ->
+        apply "Cljml.Runtime_reduced.fold_seq"
+          [ fn.semantic_expr; init.semantic_expr; sequence ]
+  else
   let fallback () =
     apply "Cljml.Runtime_seq.fold_left"
       [ fn.semantic_expr; init.semantic_expr; sequence ]
