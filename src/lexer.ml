@@ -78,6 +78,8 @@ let tokenize source =
       | ')' -> loop (i + 1) (token Rparen i (i + 1) :: tokens)
       | '[' -> loop (i + 1) (token Lbracket i (i + 1) :: tokens)
       | ']' -> loop (i + 1) (token Rbracket i (i + 1) :: tokens)
+      | '#' when i + 1 < String.length source && source.[i + 1] = '{' ->
+          loop (i + 2) (token Set_lbrace i (i + 2) :: tokens)
       | '{' -> loop (i + 1) (token Lbrace i (i + 1) :: tokens)
       | '}' -> loop (i + 1) (token Rbrace i (i + 1) :: tokens)
       | '"' -> (

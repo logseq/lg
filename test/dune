@@ -44,6 +44,76 @@
  (libraries lg.runtime rrbvec))
 
 (rule
+ (target datascript_value_native.ml)
+ (deps
+  (source_tree datascript)
+  datascript/value.lgc
+  datascript/schema.lgc
+  datascript_value_test.lgc
+  ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   native
+   --compile-files
+   %{dep:datascript/value.lgc}
+   %{dep:datascript/schema.lgc}
+   %{dep:datascript_value_test.lgc}
+   -o
+   %{target})))
+
+(executable
+ (name datascript_value_native)
+ (modules datascript_value_native)
+ (flags (:standard -w -32-37))
+ (libraries lg.runtime rrbvec))
+
+(rule
+ (target datascript_value_melange.ml)
+ (deps
+  (source_tree datascript)
+  datascript/value.lgc
+  datascript/schema.lgc
+  datascript_value_test.lgc
+  ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   melange
+   --compile-files
+   %{dep:datascript/value.lgc}
+   %{dep:datascript/schema.lgc}
+   %{dep:datascript_value_test.lgc}
+   -o
+   %{target})))
+
+(melange.emit
+ (target datascript-value-melange)
+ (alias datascript-value-melange)
+ (module_systems es6)
+ (modules datascript_value_melange)
+ (compile_flags -w -32-37)
+ (libraries lg.runtime rrbvec))
+
+(rule
+ (alias runtest)
+ (deps
+  datascript_value_smoke.sh
+  datascript_value.expected
+  datascript_value_native.exe
+  (alias datascript-value-melange)
+  datascript-value-melange/test/datascript_value_melange.js)
+ (action
+  (run
+   sh
+   %{dep:datascript_value_smoke.sh}
+   %{exe:datascript_value_native.exe}
+   %{dep:datascript-value-melange/test/datascript_value_melange.js}
+   %{dep:datascript_value.expected})))
+
+(rule
  (target lgc_jsoo.ml)
  (deps cross_runtime.lgc ../bin/lg_cli.exe)
  (action

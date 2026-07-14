@@ -14,13 +14,16 @@
 (def selected-sum sum)
 
 (def lazy-total (reduce + 0 (take 4 (range 1 10))))
+
 (def stopped
   (reduce
     (fn [acc value]
       (if (= value 3) (reduced acc) (+ acc value)))
     0
     [1 2 3 100]))
+
 (def values (conj (hash-set 1 2) 3))
+
 (def joined (string/join "-" ["a" "b"]))
 
 (println

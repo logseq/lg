@@ -100,6 +100,8 @@ and compile_expr_unlocated scope (env : Env.t) = function
   | FList (FSymbol "when" :: condition :: body_forms) ->
       compile_when scope env condition body_forms
   | FList (FSymbol "cond" :: clauses) -> compile_cond scope env clauses
+  | FList (FSymbol "and" :: forms) -> compile_logical scope env `And forms
+  | FList (FSymbol "or" :: forms) -> compile_logical scope env `Or forms
   | FList (FSymbol "match" :: target :: clauses) ->
       compile_match scope env target clauses
   | FList (FSymbol "try" :: forms) -> compile_try scope env forms
@@ -150,6 +152,9 @@ and compile_when scope env condition body_forms =
 
 and compile_cond scope env clauses =
   (Lazy.force context).special_forms.compile_cond scope env clauses
+
+and compile_logical scope env operator forms =
+  (Lazy.force context).special_forms.compile_logical scope env operator forms
 
 and compile_match scope env target_form clauses =
   (Lazy.force context).special_forms.compile_match scope env target_form clauses

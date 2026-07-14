@@ -960,6 +960,26 @@ let create ~compile_expr =
                   (typed_ir ret
                      (Semantic_ir.Apply
                         (Semantic_ir.Ident fn.ocaml_name, arg_exprs))))
+            | TSet element_ty -> (
+                match args with
+                | [ arg ] when Types.same_shape element_ty arg.ty ->
+                    Result.map
+                      (fun set_module ->
+                        let present =
+                          Semantic_ir.Apply
+                            ( Semantic_ir.Ident (set_module ^ ".mem"),
+                              [ arg.semantic_expr; Semantic_ir.Ident fn.ocaml_name ] )
+                        in
+                        typed_ir (TOcaml_app ("option", [ element_ty ]))
+                          (Semantic_ir.If
+                             ( present,
+                               Semantic_ir.Constructor
+                                 ("Some", Some arg.semantic_expr),
+                               Semantic_ir.Constructor ("None", None) )))
+                      (Types.set_module_name element_ty)
+                | [ _ ] ->
+                    Error.error (name ^ " called with incompatible arguments")
+                | _ -> Error.error (name ^ " expects 1 arguments"))
             | TFn _ -> Error.error (name ^ " called with incompatible arguments")
             | _ -> Error.error (name ^ " is not callable")))
 

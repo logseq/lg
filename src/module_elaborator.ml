@@ -365,7 +365,8 @@ let rec compile_module ?location ?signature_name ?signature_location
                 public_bindings @ exported,
                 next_type,
                 item :: items ))
-    | FList [ FSymbol "def"; ((FSymbol name) as name_form); expr_form ] -> (
+    | FList
+        [ FSymbol ("def" | "defonce"); ((FSymbol name) as name_form); expr_form ] -> (
         match compile_expr module_path env expr_form with
         | Error _ as err -> err
         | Ok expr ->
@@ -640,9 +641,11 @@ let rec compile_module ?location ?signature_name ?signature_location
                 nested_item :: items ))
     | FList (FSymbol ("defn" | "defn-") :: _) ->
         Error.error "defn expects a name, parameter vector, and body"
+    | FList (FSymbol "defonce" :: _) ->
+        Error.error "defonce expects a name and value"
     | _ ->
         Error.error
-          "module forms must be module-signature, type-alias, type-record, type-variant, open, include, module-alias, defprotocol, extend-type, def, defn, defn-, or module"
+          "module forms must be module-signature, type-alias, type-record, type-variant, open, include, module-alias, defprotocol, extend-type, def, defonce, defn, defn-, or module"
   and loop env public_bindings next_type items = function
     | [] ->
         let module_name = Names.module_segment_to_ocaml module_segment in

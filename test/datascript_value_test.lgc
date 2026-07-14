@@ -1,0 +1,48 @@
+(def environment #?(:native "native" :melange "melange"))
+
+(def nil-value (Datascript_value/nil-value))
+(def false-value (Datascript_value/bool-value false))
+(def true-value (Datascript_value/bool-value true))
+(def zero-value (Datascript_value/int-value 0))
+(def empty-string-value (Datascript_value/string-value ""))
+(def ident-value (Datascript_value/keyword-value ":person/name"))
+(def cardinality-value
+  (Datascript_value/keyword-value ":db.cardinality/one"))
+(def entity
+  (Datascript_value/map-value
+    (list
+      (tuple (Datascript_value/keyword-value ":db/ident") ident-value)
+      (tuple (Datascript_value/keyword-value ":db/cardinality")
+             cardinality-value))))
+(def doc-entity
+  (Datascript_value/map-value
+    (list
+      (tuple (Datascript_value/keyword-value ":db/doc")
+             (Datascript_value/string-value "Name")))))
+(def empty-entity
+  (Datascript_value/map-value
+    (list-of :ocaml/tuple<Datascript_value.value;Datascript_value.value>)))
+
+(println
+  (str environment ":"
+       (Datascript_value/truthy? nil-value) ":"
+       (Datascript_value/truthy? false-value) ":"
+       (Datascript_value/truthy? true-value) ":"
+       (Datascript_value/truthy? zero-value) ":"
+       (Datascript_value/truthy? empty-string-value) ":"
+       (some? (Datascript_value/map-get
+                (Datascript_value/keyword-value ":db/ident") entity)) ":"
+       (nil? (Datascript_value/map-get
+               (Datascript_value/keyword-value ":missing") entity)) ":"
+       (some? (Datascript_schema/schema? entity)) ":"
+       (nil? (Datascript_schema/schema? empty-entity)) ":"
+       (some? (Datascript_schema/schema-entity? doc-entity)) ":"
+       (nil? (Datascript_schema/schema-entity? empty-entity)) ":"
+       (Datascript_schema/is-system-keyword?
+         (Datascript_value/keyword-value ":db.type/ref")) ":"
+       (Datascript_schema/is-system-keyword?
+         (Datascript_value/keyword-value ":user/name")) ":"
+       (some? (Datascript_schema/type?
+                (Datascript_value/keyword-value ":db.type/ref"))) ":"
+       (nil? (Datascript_schema/type?
+               (Datascript_value/keyword-value ":db.type/unknown")))))

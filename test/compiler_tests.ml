@@ -2647,6 +2647,107 @@ let test_ocaml_variants_reject_bad_declarations () =
   Lg.Compiler.compile_string {|(type-variant status :Active)|}
   |> expect_error "type-variant constructors must be symbols"
 
+let test_recursive_variants_support_nested_data_values () =
+  let source =
+    {|
+(type-variant value
+  Nil
+  (IntValue :int)
+  (ListValue :ocaml/list<value>)
+  (MapValue :ocaml/list<tuple<value;value>>))
+(def nil-value (ocaml-construct Nil))
+(def nested (ocaml-construct ListValue (list nil-value)))
+(def entries (list (ocaml-tuple nil-value nested)))
+(def mapped (ocaml-construct MapValue entries))
+(println
+  (str
+    (match nested
+      Nil 0
+      (IntValue value) value
+      (ListValue values) (count values)
+      (MapValue values) (count values))
+    ":"
+    (match mapped
+      Nil 0
+      (IntValue value) value
+      (ListValue values) (count values)
+      (MapValue values) (count values))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "recursive_variants_support_nested_data_values" "1:1\n"
+    ocaml_source
+
+let test_module_recursive_variants_export_constructors () =
+  let source =
+    {|
+(module Data
+  (type-variant value End (Next :ocaml/value)))
+(def end-value (ocaml-construct Data.End))
+(def next-value (ocaml-construct Data.Next end-value))
+(println
+  (match next-value
+    Data.End "end"
+    (Data.Next value)
+      (match value
+        Data.End "next-end"
+        (Data.Next _) "next-next")))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "module_recursive_variants_export_constructors" "next-end\n"
+    ocaml_source
+
+let test_defonce_supports_top_level_and_module_values () =
+  let source =
+    {|
+(defonce answer 42)
+(module Config
+  (defonce label "ready"))
+(println (str answer ":" Config/label))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "defonce_supports_top_level_and_module_values" "42:ready\n"
+    ocaml_source
+
+let test_defonce_rejects_invalid_declarations () =
+  Lg.Compiler.compile_string {|(defonce)|}
+  |> expect_error "defonce expects a name and value";
+  Lg.Compiler.compile_string {|(defonce value)|}
+  |> expect_error "defonce expects a name and value";
+  Lg.Compiler.compile_string {|(defonce value 1 2)|}
+  |> expect_error "defonce expects a name and value"
+
+let test_datascript_schema_constants_behavior () =
+  let source =
+    {|
+(require [clojure.string :as string])
+
+(module Datascript_schema
+  (def schema-keys
+    #{:db/ident :db/isComponent :db/noHistory :db/valueType :db/cardinality
+      :db/unique :db/index :db.install/_attribute :db/doc :db/tupleType
+      :db/tupleTypes :db/tupleAttrs})
+
+  (defonce schema-attr?
+    #{:db/id :db/ident :db/isComponent :db/valueType :db/cardinality
+      :db/unique :db/index :db/doc :db/tupleAttrs :db/tupleType :db/tupleTypes})
+
+  (def type?
+    #{:db.type/number :db.type/instant :db.type/keyword :db.type/ref
+      :db.type/string :db.type/uuid :db.type/tuple}))
+
+(println
+  (str (count Datascript_schema/schema-keys)
+       ":" (contains? Datascript_schema/schema-attr? :db/id)
+       ":" (some? (Datascript_schema/type? :db.type/ref))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "datascript_schema_constants_behavior" "12:true:true\n"
+    ocaml_source
+
 let test_typed_function_parameters_reject_bad_calls () =
   let source =
     {|
@@ -4551,23 +4652,98 @@ let test_additional_sequence_helpers_work () =
        (count (nnext nested)) ":"
        (ffirst (nnext nested)) ":"
        (pr-str (rseq xs)) ":"
-       (some (fn [x] (> x 3)) xs) ":"
-       (some (fn [x] (> x 9)) xs) ":"
+       (some? (some (fn [x] (> x 3)) xs)) ":"
+       (nil? (some (fn [x] (> x 9)) xs)) ":"
        (pr-str (reductions + [1 2 3 4]))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "additional_sequence_helpers_work"
-    "(2 3 4):(3 4):(4):1:[3 4]:(2):1:5:[4 3 2 1]:true:false:(1 3 6 10)\n"
+    "(2 3 4):(3 4):(4):1:[3 4]:(2):1:5:[4 3 2 1]:true:true:(1 3 6 10)\n"
     ocaml_source
 
 let test_additional_sequence_helpers_reject_bad_counts () =
   Lg.Compiler.compile_string {|(def x (nthnext [1 2] "1"))|}
   |> expect_error "nthnext count must be int"
 
-let test_additional_sequence_helpers_reject_bad_some_predicate () =
-  Lg.Compiler.compile_string {|(def x (some (fn [x] (inc x)) [1 2]))|}
-  |> expect_error "some expects a predicate matching collection elements"
+let test_some_returns_first_truthy_predicate_value () =
+  let source =
+    {|
+(def found
+  (some
+    (fn [x]
+      (if (> x 2)
+        (Some (str "value-" x))
+        None))
+    [1 2 3 4]))
+(def missing
+  (some
+    (fn [x]
+      (if (> x 9)
+        (Some (str "value-" x))
+        None))
+    [1 2 3 4]))
+(println
+  (str
+    (match found (Some value) value None "missing") ":"
+    (nil? missing)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "some_returns_first_truthy_predicate_value"
+    "value-3:true\n" ocaml_source
+
+let test_clojure_truthiness_in_conditions () =
+  let source =
+    {|
+(println
+  (str (if nil "bad" "nil-false") ":"
+       (if false "bad" "false-false") ":"
+       (if 0 "zero-true" "bad") ":"
+       (if "" "empty-string-true" "bad") ":"
+       (if (vector-of :int) "empty-vector-true" "bad")))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "clojure_truthiness_in_conditions"
+    "nil-false:false-false:zero-true:empty-string-true:empty-vector-true\n"
+    ocaml_source
+
+let test_and_or_return_values_and_short_circuit () =
+  let source =
+    {|
+(def calls (ocaml-ref 0))
+(defn mark [value]
+  (do
+    (ocaml-reset! calls (+ (ocaml-deref calls) 1))
+    value))
+(def all-empty (and))
+(def any-empty (or))
+(def all-keyword (and :first :second))
+(def any-option (or None (Some "ready")))
+(def stopped-and (and false (mark true)))
+(def stopped-or (or true (mark false)))
+(println
+  (str all-empty ":" (nil? any-empty) ":" (name all-keyword) ":"
+       (match any-option (Some value) value None "missing") ":"
+       stopped-and ":" stopped-or ":" (ocaml-deref calls)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "and_or_return_values_and_short_circuit"
+    "true:true:second:ready:false:true:0\n" ocaml_source
+
+let test_and_or_single_values_are_unchanged () =
+  let source =
+    {|
+(def all-value (and "value"))
+(def any-value (or :ready))
+(println (str all-value ":" (name any-value)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "and_or_single_values_are_unchanged" "value:ready\n"
+    ocaml_source
 
 let test_additional_sequence_helpers_reject_bad_reductions_arity () =
   Lg.Compiler.compile_string {|(def x (reductions +))|}
@@ -7134,7 +7310,7 @@ let test_module_definitions_reject_expressions () =
   (println "side effect"))
 |}
   |> expect_error
-       "module forms must be module-signature, type-alias, type-record, type-variant, open, include, module-alias, defprotocol, extend-type, def, defn, defn-, or module"
+       "module forms must be module-signature, type-alias, type-record, type-variant, open, include, module-alias, defprotocol, extend-type, def, defonce, defn, defn-, or module"
 
 let test_module_definitions_support_type_aliases () =
   let source =
@@ -8955,6 +9131,16 @@ let tests =
       test_ocaml_variant_constructors_reject_bad_arity );
     ( "OCaml variants reject bad declarations",
       test_ocaml_variants_reject_bad_declarations );
+    ( "recursive variants support nested data values",
+      test_recursive_variants_support_nested_data_values );
+    ( "module recursive variants export constructors",
+      test_module_recursive_variants_export_constructors );
+    ( "defonce supports top-level and module values",
+      test_defonce_supports_top_level_and_module_values );
+    ( "defonce rejects invalid declarations",
+      test_defonce_rejects_invalid_declarations );
+    ( "DataScript schema constants behavior",
+      test_datascript_schema_constants_behavior );
     ( "typed function parameters reject bad calls",
       test_typed_function_parameters_reject_bad_calls );
     ( "unit annotations reject non-unit arguments",
@@ -9227,8 +9413,14 @@ let tests =
     ("additional sequence helpers work", test_additional_sequence_helpers_work);
     ( "additional sequence helpers reject bad counts",
       test_additional_sequence_helpers_reject_bad_counts );
-    ( "additional sequence helpers reject bad some predicate",
-      test_additional_sequence_helpers_reject_bad_some_predicate );
+    ( "some returns first truthy predicate value",
+      test_some_returns_first_truthy_predicate_value );
+    ( "Clojure truthiness works in conditions",
+      test_clojure_truthiness_in_conditions );
+    ( "and/or return values and short-circuit",
+      test_and_or_return_values_and_short_circuit );
+    ( "and/or single values are unchanged",
+      test_and_or_single_values_are_unchanged );
     ( "additional sequence helpers reject bad reductions arity",
       test_additional_sequence_helpers_reject_bad_reductions_arity );
     ("let, defn, and fn values work", test_let_defn_and_fn_values);

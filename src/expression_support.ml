@@ -3,19 +3,35 @@ open Lowered
 
 module Env = Compiler_environment
 
+let rec truthiness_expression ty expression =
+  match ty with
+  | TBool -> expression
+  | TOcaml_app ("option", [ payload_ty ]) ->
+      Semantic_ir.Match
+        ( expression,
+          [ (Semantic_ir.PConstructor ("None", None), Semantic_ir.Bool false);
+            ( Semantic_ir.PConstructor
+                ("Some", Some (Semantic_ir.PVar "truthy_value")),
+              truthiness_expression payload_ty
+                (Semantic_ir.Ident "truthy_value") );
+          ] )
+  | TOcaml "option" ->
+      Semantic_ir.Match
+        ( expression,
+          [ (Semantic_ir.PConstructor ("None", None), Semantic_ir.Bool false);
+            ( Semantic_ir.PConstructor ("Some", Some Semantic_ir.PAny),
+              Semantic_ir.Bool true );
+          ] )
+  | TSeq _ ->
+      Semantic_ir.Apply
+        ( Semantic_ir.Ident "not",
+          [ Semantic_ir.Apply
+              ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.is_empty",
+                [ expression ] ) ] )
+  | _ -> Semantic_ir.Sequence [ expression; Semantic_ir.Bool true ]
+
 let condition_expression expr =
-  if Types.assignable ~policy:Nominal ~expected:TBool ~actual:expr.ty then
-    Ok expr.semantic_expr
-  else
-    match expr.ty with
-    | TSeq _ ->
-        Ok
-          (Semantic_ir.Apply
-             ( Semantic_ir.Ident "not",
-               [ Semantic_ir.Apply
-                   ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.is_empty",
-                     [ expr.semantic_expr ] ) ] ))
-    | _ -> Error.error "if condition must be bool"
+  Ok (truthiness_expression expr.ty expr.semantic_expr)
 
 let apply name args = Semantic_ir.Apply (Semantic_ir.Ident name, args)
 

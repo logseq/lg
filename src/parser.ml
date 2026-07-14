@@ -57,6 +57,18 @@ let rec parse_one ~target = function
             rest ))
   | { desc = Lbrace; span = open_span } :: rest ->
       parse_map ~target open_span [] rest
+  | { desc = Set_lbrace; span = open_span } :: rest ->
+      parse_until ~target Rbrace open_span "set; expected '}'" [] rest
+      |> Result.map (fun (forms, close_span, rest) ->
+          let head = located (FSymbol "hash-set") open_span in
+          let children = head :: forms in
+          ( located ~children
+              (FList (List.map (fun form -> form.form) children))
+              {
+                start_offset = open_span.start_offset;
+                end_offset = close_span.end_offset;
+              },
+            rest ))
   | [] -> Error.error "expected form"
   | { desc = Rparen; span } :: _ -> error_at span "unexpected ')'"
   | { desc = Rbracket; span } :: _ -> error_at span "unexpected ']'"

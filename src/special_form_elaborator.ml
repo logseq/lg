@@ -22,6 +22,8 @@ type t = {
     string -> Env.t -> Ast.form -> Ast.form -> Ast.form -> expression_result;
   compile_when : string -> Env.t -> Ast.form -> Ast.form list -> expression_result;
   compile_cond : string -> Env.t -> Ast.form list -> expression_result;
+  compile_logical :
+    string -> Env.t -> [ `And | `Or ] -> Ast.form list -> expression_result;
   compile_match : string -> Env.t -> Ast.form -> Ast.form list -> expression_result;
   compile_body : string -> Env.t -> string -> Ast.form list -> expression_result;
   compile_try : string -> Env.t -> Ast.form list -> expression_result;
@@ -330,6 +332,56 @@ let create ~compile_expr =
               in
               Ok (typed_ir else_expr.ty expression)
             else Error.error "cond branches must have same type")
+
+  and compile_logical scope env operator forms =
+    match forms with
+    | [] -> (
+        match operator with
+        | `And -> Ok (typed_ir TBool (Semantic_ir.Bool true))
+        | `Or ->
+            Ok
+              (typed_ir (TOcaml_app ("option", [ TUnknown ]))
+                 (Semantic_ir.Constructor ("None", None))))
+    | _ -> (
+        match compile_args_for scope env forms with
+        | Error _ as err -> err
+        | Ok expressions ->
+            let result_ty =
+              match expressions with
+              | [] -> None
+              | first :: rest ->
+                  List.fold_left
+                    (fun merged expression ->
+                      Option.bind merged (fun ty ->
+                          merge_branch_types ty expression.ty))
+                    (Some first.ty) rest
+            in
+            (match result_ty with
+            | None ->
+                Error.error
+                  (match operator with
+                  | `And -> "and forms must return compatible types"
+                  | `Or -> "or forms must return compatible types")
+            | Some result_ty ->
+                let rec lower = function
+                  | [] -> assert false
+                  | [ expression ] -> expression.semantic_expr
+                  | expression :: rest ->
+                      let value_name = "logical_value" in
+                      let value = Semantic_ir.Ident value_name in
+                      let condition =
+                        truthiness_expression expression.ty value
+                      in
+                      let next = lower rest in
+                      let result =
+                        match operator with
+                        | `And -> Semantic_ir.If (condition, next, value)
+                        | `Or -> Semantic_ir.If (condition, value, next)
+                      in
+                      Semantic_ir.Let
+                        ([ (Semantic_ir.PVar value_name, expression.semantic_expr) ], result)
+                in
+                Ok (typed_ir result_ty (lower expressions))))
   
   and compile_match scope env target_form clauses =
     let rec parse_pairs acc = function
@@ -875,5 +927,6 @@ let create ~compile_expr =
   in
   { compile_vector; compile_map; compile_if; compile_if_not; compile_if_let;
     compile_when_let; compile_let_some; compile_when; compile_cond; compile_match;
+    compile_logical;
     compile_body; compile_try; loop_branch_type; compile_recur; compile_loop_tail;
     compile_loop_tail_body; compile_loop; compile_let }

@@ -152,7 +152,8 @@ let rec compile scope env next_type = function
   | FList (FSymbol "module-apply" :: _) ->
       Error.error
         "module-apply expects result, functor, and one or more argument modules"
-  | FList [ FSymbol "def"; ((FSymbol name) as name_form); expr_form ] -> (
+  | FList
+      [ FSymbol ("def" | "defonce"); ((FSymbol name) as name_form); expr_form ] -> (
       match compile_expr scope env expr_form with
       | Error _ as err -> err
       | Ok expr when unresolved_contextual_type expr.ty ->
@@ -438,6 +439,8 @@ let rec compile scope env next_type = function
       Error.error "recur is only valid in a loop tail position"
   | FList (FSymbol ("defn" | "defn-") :: _) ->
       Error.error "defn expects a name, parameter vector, and body"
+  | FList (FSymbol "defonce" :: _) ->
+      Error.error "defonce expects a name and value"
   | form -> (
       match compile_expr scope env form with
       | Error _ as err -> err

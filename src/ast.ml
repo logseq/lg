@@ -9,6 +9,7 @@ type token_desc =
   | Lbracket
   | Rbracket
   | Lbrace
+  | Set_lbrace
   | Rbrace
   | Symbol of string
   | Keyword of string

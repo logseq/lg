@@ -569,9 +569,48 @@ let create ~compile_expr =
           | _, (Error _ as err) -> err
           | Ok fn, Ok collection -> (
               match (fn.ty, collection_to_list_expr collection) with
-              | TFn ([ param_ty ], TBool), Ok (inner, list_expr) when Types.equal param_ty inner ->
-                  Ok (typed_ir TBool (apply "List.exists" [ fn.semantic_expr; list_expr ]))
-              | TFn _, Ok _ -> Error.error "some expects a predicate matching collection elements"
+              | TFn ([ param_ty ], return_ty), Ok (inner, list_expr)
+                when Types.equal param_ty inner ->
+                  let result_ty, present_result =
+                    match return_ty with
+                    | TOcaml_app ("option", [ _ ]) | TOcaml "option" ->
+                        (return_ty, Semantic_ir.Ident "result")
+                    | _ ->
+                        ( TOcaml_app ("option", [ return_ty ]),
+                          Semantic_ir.Constructor
+                            ("Some", Some (Semantic_ir.Ident "result")) )
+                  in
+                  let recurse =
+                    apply "find_truthy" [ Semantic_ir.Ident "rest" ]
+                  in
+                  let body =
+                    Semantic_ir.Match
+                      ( Semantic_ir.Ident "values",
+                        [ ( Semantic_ir.PList [],
+                            Semantic_ir.Constructor ("None", None) );
+                          ( Semantic_ir.PCons
+                              (Semantic_ir.PVar "item", Semantic_ir.PVar "rest"),
+                            Semantic_ir.Let
+                              ( [ ( Semantic_ir.PVar "result",
+                                    Semantic_ir.Apply
+                                      ( fn.semantic_expr,
+                                        [ Semantic_ir.Ident "item" ] ) ) ],
+                                Semantic_ir.If
+                                  ( truthiness_expression return_ty
+                                      (Semantic_ir.Ident "result"),
+                                    present_result,
+                                    recurse ) ) );
+                        ] )
+                  in
+                  Ok
+                    (typed_ir result_ty
+                       (Semantic_ir.LetRecIn
+                          ( "find_truthy",
+                            [ Semantic_ir.PVar "values" ],
+                            body,
+                            Semantic_ir.Apply
+                              (Semantic_ir.Ident "find_truthy", [ list_expr ]) )))
+              | TFn _, Ok _ -> Error.error "some function type must match collection elements"
               | _, Ok _ -> Error.error "some expects a function"
               | _, Error _ -> Error.error "some expects a collection"))
       | _ -> Error.error "some expects function and collection"

@@ -1,0 +1,56 @@
+(module Datascript_value
+  (type-variant value
+    Nil
+    (IntValue :int)
+    (FloatValue :float)
+    (StringValue :string)
+    (SymbolValue :string)
+    (BoolValue :bool)
+    (KeywordValue :string)
+    (UuidValue :string)
+    (InstantValue :int)
+    (RegexValue :string)
+    (RefValue :int)
+    (ListValue :ocaml/list<value>)
+    (VectorValue :ocaml/list<value>)
+    (MapValue :ocaml/list<tuple<value;value>>)
+    (SetValue :ocaml/list<value>)
+    (TupleValue :ocaml/list<option<value>>)
+    TxRef)
+
+  (defn nil-value []
+    (ocaml-construct Nil))
+
+  (defn int-value [^:int value]
+    (ocaml-construct IntValue value))
+
+  (defn float-value [^:float value]
+    (ocaml-construct FloatValue value))
+
+  (defn string-value [^:string value]
+    (ocaml-construct StringValue value))
+
+  (defn symbol-value [^:string value]
+    (ocaml-construct SymbolValue value))
+
+  (defn bool-value [^:bool value]
+    (ocaml-construct BoolValue value))
+
+  (defn keyword-value [^:string value]
+    (ocaml-construct KeywordValue value))
+
+  (defn map-value [^:ocaml/list<tuple<value;value>> entries]
+    (ocaml-construct MapValue entries))
+
+  (defn truthy? [^:ocaml/value value]
+    (match value
+      Nil false
+      (BoolValue flag) flag
+      _ true))
+
+  (defn map-get
+    [^:ocaml/value key ^:ocaml/value value]
+    (match value
+      (MapValue entries)
+        (ocaml-call :ocaml/option<value> List.assoc_opt key entries)
+      _ None)))

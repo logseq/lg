@@ -148,7 +148,7 @@ let type_variant_definition type_name parameters constructors location =
       ~kind:(Ptype_variant constructor_declarations)
       (Location.mkloc type_name declaration_loc)
   in
-  Ast_helper.Str.type_ ~loc Nonrecursive [ type_declaration ]
+  Ast_helper.Str.type_ ~loc Recursive [ type_declaration ]
 
 let signature_item = function
   | Signature_value { value_name; value_type; location; _ } ->

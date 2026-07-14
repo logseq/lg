@@ -1235,7 +1235,7 @@ let prepare_rename analysis ~offset =
 
 let symbol_kind = function
   | "defn" | "defn-" -> Some `Function
-  | "def" -> Some `Variable
+  | "def" | "defonce" -> Some `Variable
   | "module" | "module-alias" | "module-apply" | "module-functor" ->
       Some `Module
   | "module-signature" -> Some `Interface
@@ -1336,11 +1336,14 @@ let rec document_symbol_selections symbols =
 
 let special_form_names =
   [ "def";
+    "defonce";
     "defn";
     "defn-";
     "fn";
     "let";
     "if";
+    "and";
+    "or";
     "do";
     "match";
     "try";
@@ -1473,7 +1476,7 @@ let semantic_tokens analysis =
                   semantic_kind_for_occurrence analysis declarations parameter_uids
                     occurrence occurrence_name })
             occurrences
-    | Lparen | Rparen | Lbracket | Rbracket | Lbrace | Rbrace -> []
+    | Lparen | Rparen | Lbracket | Rbracket | Lbrace | Set_lbrace | Rbrace -> []
   in
   analysis.tokens |> List.concat_map token_semantics
   |> List.sort (fun (left : semantic_token) (right : semantic_token) ->
@@ -1697,7 +1700,8 @@ let provided_symbols source =
                   Workspace_symbol_set.add
                     (workspace_symbol Module_type_symbol name) symbols
               | FList
-                  (FSymbol ("def" | "defn" | "defn-") :: FSymbol name :: _) ->
+                  (FSymbol ("def" | "defonce" | "defn" | "defn-")
+                  :: FSymbol name :: _) ->
                   Workspace_symbol_set.add (workspace_symbol Value_symbol name)
                     symbols
               | FList
@@ -1867,7 +1871,7 @@ let referenced_symbols source =
         let references = pattern_references bound references params in
         let bound = String_set.union bound (pattern_names params) in
         forms bound references body
-    | FList [ FSymbol "def"; FSymbol _; value ] ->
+    | FList [ FSymbol ("def" | "defonce"); FSymbol _; value ] ->
         form_references bound references value
     | FList (FSymbol "fn" :: params :: body) ->
         let references = pattern_references bound references params in
