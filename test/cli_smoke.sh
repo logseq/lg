@@ -119,6 +119,7 @@ send_lsp_message() {
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/warning.cljml","languageId":"cljml","version":1,"text":"(type-variant status Active Inactive)\n(defn describe [^:ocaml/status status]\n  (match status Active \"active\"))"}}}'
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/service.cljml","languageId":"cljml","version":1,"text":"(def answer 41)\n(defn add-one [x] (+ x 1))\n(def result (add-one answer))"}}}'
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/format.cljml","languageId":"cljml","version":1,"text":"(def   answer  41)"}}}'
+  send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/incomplete.cljml","languageId":"cljml","version":1,"text":"(def answer 41)\n(def broken (+ answer"}}}'
   send_lsp_message '{"jsonrpc":"2.0","id":3,"method":"textDocument/hover","params":{"textDocument":{"uri":"file:///tmp/service.cljml"},"position":{"line":2,"character":14}}}'
   send_lsp_message '{"jsonrpc":"2.0","id":4,"method":"textDocument/definition","params":{"textDocument":{"uri":"file:///tmp/service.cljml"},"position":{"line":2,"character":22}}}'
   send_lsp_message '{"jsonrpc":"2.0","id":5,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///tmp/service.cljml"},"position":{"line":2,"character":29}}}'
@@ -140,6 +141,8 @@ send_lsp_message() {
   send_lsp_message "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didChange\",\"params\":{\"textDocument\":{\"uri\":\"file://$math_source\",\"version\":2},\"contentChanges\":[{\"text\":\"(module Math (def value 1))\\n\"}]}}"
   send_lsp_message '{"jsonrpc":"2.0","id":19,"method":"textDocument/semanticTokens/full","params":{"textDocument":{"uri":"file:///tmp/service.cljml"}}}'
   send_lsp_message '{"jsonrpc":"2.0","id":20,"method":"textDocument/signatureHelp","params":{"textDocument":{"uri":"file:///tmp/service.cljml"},"position":{"line":2,"character":27}}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":21,"method":"textDocument/hover","params":{"textDocument":{"uri":"file:///tmp/incomplete.cljml"},"position":{"line":0,"character":6}}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":22,"method":"textDocument/codeAction","params":{"textDocument":{"uri":"file:///tmp/incomplete.cljml"},"range":{"start":{"line":1,"character":21},"end":{"line":1,"character":21}},"context":{"diagnostics":[]}}}'
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didClose","params":{"textDocument":{"uri":"file:///tmp/editor.cljml"}}}'
   send_lsp_message '{"jsonrpc":"2.0","id":2,"method":"shutdown","params":null}'
   send_lsp_message '{"jsonrpc":"2.0","method":"exit","params":null}'
@@ -150,6 +153,7 @@ grep -q '"hoverProvider":true' "$lsp_output"
 grep -q '"definitionProvider":true' "$lsp_output"
 grep -q '"completionProvider"' "$lsp_output"
 grep -q '"documentFormattingProvider":true' "$lsp_output"
+grep -q '"codeActionProvider":true' "$lsp_output"
 grep -q '"referencesProvider":true' "$lsp_output"
 grep -q '"documentHighlightProvider":true' "$lsp_output"
 grep -q '"renameProvider"' "$lsp_output"
@@ -187,6 +191,9 @@ grep -q "\"id\":17,\"result\":{\"uri\":\"file://$watched_provider\"" "$lsp_outpu
 grep -q '"id":18,"result":null' "$lsp_output"
 grep -q '"id":19,"result":{"data":\[[0-9]' "$lsp_output"
 grep -q '"id":20,"result":{"signatures":\[{"label":"add-one : int -> int"' "$lsp_output"
+grep -q '"id":21,"result":{"contents"' "$lsp_output"
+grep -Fq '"id":22,"result":[{"title":"Insert missing )","kind":"quickfix","isPreferred":true' "$lsp_output"
+grep -Fq '"newText":")"' "$lsp_output"
 grep -Fq "\"uri\":\"file://$watched_consumer\",\"diagnostics\":[{\"range\"" "$lsp_output"
 grep -q 'int -> int' "$lsp_output"
 grep -q '"label":"add-one"' "$lsp_output"

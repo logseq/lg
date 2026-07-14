@@ -3,6 +3,7 @@ open Yojson.Safe.Util
 type document = {
   text : string;
   analysis : (Cljml.Language_service.t, Cljml.Error.t) result;
+  recovered_analysis : Cljml.Language_service.t option;
 }
 
 let documents = Hashtbl.create 16
@@ -12,10 +13,20 @@ let workspace_index = ref None
 let supports_dynamic_watched_files = ref false
 
 let analyze_document uri text =
+  let analysis = Cljml.Language_service.analyze ~filename:uri text in
   {
     text;
-    analysis = Cljml.Language_service.analyze ~filename:uri text;
+    analysis;
+    recovered_analysis =
+      (match analysis with
+      | Ok analysis -> Some analysis
+      | Error _ -> Cljml.Language_service.recover_completed_prefix ~filename:uri text);
   }
+
+let semantic_analysis document =
+  match document.analysis with
+  | Ok analysis -> Some analysis
+  | Error _ -> document.recovered_analysis
 
 let path_of_file_uri uri =
   if String.starts_with ~prefix:"file://" uri then
@@ -81,12 +92,13 @@ let rebuild_workspace ?changed_uri () =
               match Cljml.Language_service.workspace_error index uri with
               | None -> ()
               | Some error ->
-                  let document = { text; analysis = Error error } in
+                  let recovered = analyze_document uri text in
+                  let document = { recovered with analysis = Error error } in
                   Hashtbl.replace workspace_documents uri document;
                   if Hashtbl.mem documents uri then
                     Hashtbl.replace documents uri document)
           | Some analysis ->
-          let document = { text; analysis = Ok analysis } in
+          let document = { text; analysis = Ok analysis; recovered_analysis = Some analysis } in
           Hashtbl.replace workspace_documents uri document;
           if Hashtbl.mem documents uri then Hashtbl.replace documents uri document)
         sources;
@@ -109,7 +121,12 @@ let refresh_workspace_document index uri =
             | Some error -> Error error
             | None -> Cljml.Language_service.analyze ~filename:uri text)
       in
-      let document = { text; analysis } in
+      let recovered_analysis =
+        match analysis with
+        | Ok analysis -> Some analysis
+        | Error _ -> Cljml.Language_service.recover_completed_prefix ~filename:uri text
+      in
+      let document = { text; analysis; recovered_analysis } in
       Hashtbl.replace workspace_documents uri document;
       if Hashtbl.mem documents uri then Hashtbl.replace documents uri document
 
@@ -315,6 +332,7 @@ let initialize_result =
             ("hoverProvider", `Bool true);
             ("definitionProvider", `Bool true);
             ("documentFormattingProvider", `Bool true);
+            ("codeActionProvider", `Bool true);
             ("referencesProvider", `Bool true);
             ("documentHighlightProvider", `Bool true);
             ("renameProvider", `Assoc [ ("prepareProvider", `Bool true) ]);
@@ -389,9 +407,9 @@ let document_position params document =
   offset_of_position document.text line character
 
 let hover_result document offset =
-  match document.analysis with
-  | Error _ -> `Null
-  | Ok analysis -> (
+  match semantic_analysis document with
+  | None -> `Null
+  | Some analysis -> (
       match Cljml.Language_service.hover analysis ~offset with
       | None -> `Null
       | Some hover ->
@@ -405,9 +423,9 @@ let hover_result document offset =
                   hover.range.end_offset ) ])
 
 let signature_help_result document offset =
-  match document.analysis with
-  | Error _ -> `Null
-  | Ok analysis -> (
+  match semantic_analysis document with
+  | None -> `Null
+  | Some analysis -> (
       match Cljml.Language_service.signature_help analysis ~offset with
       | None -> `Null
       | Some signature ->
@@ -426,9 +444,9 @@ let signature_help_result document offset =
               ("activeParameter", `Int signature.active_parameter) ])
 
 let definition_result uri document offset =
-  match document.analysis with
-  | Error _ -> `Null
-  | Ok analysis -> (
+  match semantic_analysis document with
+  | None -> `Null
+  | Some analysis -> (
       match Cljml.Language_service.definition analysis ~offset with
       | None -> `Null
       | Some location ->
@@ -448,9 +466,9 @@ let definition_result uri document offset =
               ("range", range_of_location definition_text location) ])
 
 let completion_result document offset =
-  match document.analysis with
-  | Error _ -> `List []
-  | Ok analysis ->
+  match semantic_analysis document with
+  | None -> `List []
+  | Some analysis ->
       Cljml.Language_service.completions analysis ~offset
       |> List.map (fun (item : Cljml.Language_service.completion_item) ->
              `Assoc
@@ -473,6 +491,37 @@ let formatting_result document =
               ("newText", `String formatted) ];
         ]
 
+let missing_closing_delimiter = function
+  | "unterminated list; expected ')'" -> Some ")"
+  | "unterminated vector; expected ']'" -> Some "]"
+  | "unterminated map; expected '}'" -> Some "}"
+  | _ -> None
+
+let code_actions_result uri document =
+  match document.analysis with
+  | Ok _ -> `List []
+  | Error error -> (
+      match missing_closing_delimiter error.message with
+      | None -> `List []
+      | Some delimiter ->
+          let insertion = String.length document.text in
+          `List
+            [ `Assoc
+                [ ("title", `String ("Insert missing " ^ delimiter));
+                  ("kind", `String "quickfix");
+                  ("isPreferred", `Bool true);
+                  ( "edit",
+                    `Assoc
+                      [ ( "changes",
+                          `Assoc
+                            [ ( uri,
+                                `List
+                                  [ `Assoc
+                                      [ ( "range",
+                                          range_of_offsets document.text insertion
+                                            insertion );
+                                        ("newText", `String delimiter) ] ] ) ] ) ] ) ] ] )
+
 let location_json uri text (range : Cljml.Ast.source_span) =
   `Assoc
     [ ("uri", `String uri);
@@ -487,17 +536,17 @@ let semantic_documents uri document =
     local
 
 let references_result uri document offset =
-  match document.analysis with
-  | Error _ -> `List []
-  | Ok analysis -> (
+  match semantic_analysis document with
+  | None -> `List []
+  | Some analysis -> (
       match Cljml.Language_service.semantic_key_at analysis ~offset with
       | None -> `List []
       | Some key ->
           Hashtbl.fold
             (fun uri document locations ->
-              match document.analysis with
-              | Error _ -> locations
-              | Ok analysis ->
+              match semantic_analysis document with
+              | None -> locations
+              | Some analysis ->
                   Cljml.Language_service.references_to_key analysis key
                   |> List.map (location_json uri document.text)
                   |> List.rev_append locations)
@@ -505,9 +554,9 @@ let references_result uri document offset =
           |> List.rev |> fun locations -> `List locations)
 
 let highlights_result document offset =
-  match document.analysis with
-  | Error _ -> `List []
-  | Ok analysis ->
+  match semantic_analysis document with
+  | None -> `List []
+  | Some analysis ->
       Cljml.Language_service.references analysis ~offset
       |> List.map (fun (range : Cljml.Ast.source_span) ->
              `Assoc
@@ -518,9 +567,9 @@ let highlights_result document offset =
       |> fun highlights -> `List highlights
 
 let prepare_rename_result document offset =
-  match document.analysis with
-  | Error _ -> `Null
-  | Ok analysis -> (
+  match semantic_analysis document with
+  | None -> `Null
+  | Some analysis -> (
       match Cljml.Language_service.prepare_rename analysis ~offset with
       | None -> `Null
       | Some range ->
@@ -534,9 +583,9 @@ let prepare_rename_result document offset =
               ("placeholder", `String placeholder) ])
 
 let rename_result uri document offset new_name =
-  match document.analysis with
-  | Error _ -> `Null
-  | Ok analysis -> (
+  match semantic_analysis document with
+  | None -> `Null
+  | Some analysis -> (
       match Cljml.Language_service.semantic_key_at analysis ~offset with
       | None -> `Null
       | Some key ->
@@ -545,9 +594,9 @@ let rename_result uri document offset new_name =
             let changes =
               Hashtbl.fold
                 (fun uri document changes ->
-                  match document.analysis with
-                  | Error _ -> changes
-                  | Ok analysis ->
+                  match semantic_analysis document with
+                  | None -> changes
+                  | Some analysis ->
                       let edits =
                         Cljml.Language_service.references_to_key analysis key
                         |> List.map (fun (range : Cljml.Ast.source_span) ->
@@ -584,9 +633,9 @@ let rec document_symbol_json text (symbol : Cljml.Language_service.document_symb
       ("children", `List (List.map (document_symbol_json text) symbol.children)) ]
 
 let document_symbols_result document =
-  match document.analysis with
-  | Error _ -> `List []
-  | Ok analysis ->
+  match semantic_analysis document with
+  | None -> `List []
+  | Some analysis ->
       Cljml.Language_service.document_symbols analysis
       |> List.map (document_symbol_json document.text)
       |> fun symbols -> `List symbols
@@ -608,9 +657,9 @@ let workspace_symbols_result query =
   let query = String.lowercase_ascii query in
   Hashtbl.fold
     (fun uri document symbols ->
-      match document.analysis with
-      | Error _ -> symbols
-      | Ok analysis ->
+      match semantic_analysis document with
+      | None -> symbols
+      | Some analysis ->
           Cljml.Language_service.document_symbols analysis
           |> List.concat_map
                (matching_workspace_symbols uri document.text query)
@@ -654,9 +703,9 @@ let semantic_token_segments text
   loop token.range.start_offset token.range.start_offset [] |> List.rev
 
 let semantic_tokens_result document =
-  match document.analysis with
-  | Error _ -> `Assoc [ ("data", `List []) ]
-  | Ok analysis ->
+  match semantic_analysis document with
+  | None -> `Assoc [ ("data", `List []) ]
+  | Some analysis ->
       let segments =
         Cljml.Language_service.semantic_tokens analysis
         |> List.concat_map (semantic_token_segments document.text)
@@ -797,6 +846,15 @@ let rec loop shutdown_requested =
             match find_document uri with
             | None -> `List []
             | Some document -> formatting_result document
+          in
+          response id result;
+          loop shutdown_requested
+      | Some "textDocument/codeAction", (`Int _ | `String _) ->
+          let uri = document_uri params in
+          let result =
+            match find_document uri with
+            | None -> `List []
+            | Some document -> code_actions_result uri document
           in
           response id result;
           loop shutdown_requested

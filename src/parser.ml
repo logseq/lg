@@ -2,6 +2,17 @@ open Ast
 
 let located ?(children = []) form span = { form; span; children }
 
+let error_at span message =
+  let position offset =
+    { Lexing.pos_fname = ""; pos_lnum = 1; pos_bol = 0; pos_cnum = offset }
+  in
+  Error.error
+    ~location:
+      { Location.loc_start = position span.start_offset;
+        loc_end = position span.end_offset;
+        loc_ghost = false }
+    message
+
 let rec parse_one = function
   | { desc = Symbol value; span } :: rest -> Ok (located (FSymbol value) span, rest)
   | { desc = Keyword value; span } :: rest -> Ok (located (FKeyword value) span, rest)
@@ -11,7 +22,7 @@ let rec parse_one = function
   | { desc = Char value; span } :: rest -> Ok (located (FChar value) span, rest)
   | { desc = Bool value; span } :: rest -> Ok (located (FBool value) span, rest)
   | { desc = Lparen; span = open_span } :: rest ->
-      parse_until Rparen [] rest
+      parse_until Rparen open_span "list; expected ')'" [] rest
       |> Result.map (fun (forms, close_span, rest) ->
              ( located ~children:forms
                  (FList (List.map (fun form -> form.form) forms))
@@ -19,7 +30,7 @@ let rec parse_one = function
                    end_offset = close_span.end_offset },
                rest ))
   | { desc = Lbracket; span = open_span } :: rest ->
-      parse_until Rbracket [] rest
+      parse_until Rbracket open_span "vector; expected ']'" [] rest
       |> Result.map (fun (forms, close_span, rest) ->
              ( located ~children:forms
                  (FVector (List.map (fun form -> form.form) forms))
@@ -28,16 +39,16 @@ let rec parse_one = function
                rest ))
   | { desc = Lbrace; span = open_span } :: rest -> parse_map open_span [] rest
   | [] -> Error.error "expected form"
-  | { desc = Rparen; _ } :: _ -> Error.error "unexpected ')'"
-  | { desc = Rbracket; _ } :: _ -> Error.error "unexpected ']'"
-  | { desc = Rbrace; _ } :: _ -> Error.error "unexpected '}'"
+  | { desc = Rparen; span } :: _ -> error_at span "unexpected ')'"
+  | { desc = Rbracket; span } :: _ -> error_at span "unexpected ']'"
+  | { desc = Rbrace; span } :: _ -> error_at span "unexpected '}'"
 
-and parse_until closing acc = function
-  | [] -> Error.error "unterminated collection"
+and parse_until closing open_span description acc = function
+  | [] -> error_at open_span ("unterminated " ^ description)
   | { desc; span } :: rest when desc = closing -> Ok (List.rev acc, span, rest)
   | tokens -> (
       match parse_one tokens with
-      | Ok (form, rest) -> parse_until closing (form :: acc) rest
+      | Ok (form, rest) -> parse_until closing open_span description (form :: acc) rest
       | Error _ as err -> err)
 
 and parse_map open_span acc = function
@@ -54,7 +65,7 @@ and parse_map open_span acc = function
             { start_offset = open_span.start_offset;
               end_offset = close_span.end_offset },
           rest )
-  | [] -> Error.error "unterminated map"
+  | [] -> error_at open_span "unterminated map; expected '}'"
   | tokens -> (
       match parse_one tokens with
       | Error _ as err -> err
@@ -70,6 +81,16 @@ let parse_located tokens =
         match parse_one tokens with
         | Ok (form, rest) -> loop (form :: forms) rest
         | Error _ as err -> err)
+  in
+  loop [] tokens
+
+let parse_located_recovering tokens =
+  let rec loop forms = function
+    | [] -> (List.rev forms, None)
+    | tokens -> (
+        match parse_one tokens with
+        | Ok (form, rest) -> loop (form :: forms) rest
+        | Error error -> (List.rev forms, Some error))
   in
   loop [] tokens
 

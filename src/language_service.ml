@@ -65,15 +65,26 @@ type t = {
 }
 
 let analyze ~filename source =
-  match Lexer.tokenize source with
+  match Toolchain.analyze ~filename source with
   | Error _ as err -> err
-  | Ok tokens -> (
-      match Parser.parse_located tokens with
+  | Ok compiler -> (
+      match Lexer.tokenize source with
       | Error _ as err -> err
-      | Ok forms -> (
-          match Toolchain.analyze ~filename source with
+      | Ok tokens -> (
+          match Parser.parse_located tokens with
           | Error _ as err -> err
-          | Ok compiler -> Ok { source; tokens; forms; compiler }))
+          | Ok forms -> Ok { source; tokens; forms; compiler }))
+
+let recover_completed_prefix ~filename source =
+  match Lexer.tokenize source with
+  | Error _ -> None
+  | Ok tokens -> (
+      let forms, error = Parser.parse_located_recovering tokens in
+      match (List.rev forms, error) with
+      | last :: _, Some _ ->
+          let prefix = String.sub source 0 last.Ast.span.end_offset in
+          analyze ~filename prefix |> Result.to_option
+      | _ -> None)
 
 let analyze_workspace_with_errors sources =
   let rec parse acc = function

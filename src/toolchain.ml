@@ -67,12 +67,25 @@ module Cljml_frontend : FRONTEND = struct
       loc_ghost = false;
     }
 
+  let normalize_error_location filename source (error : Error.t) =
+    match error.location with
+    | None -> error
+    | Some location ->
+        { error with
+          location =
+            Some
+              { location with
+                loc_start =
+                  position filename source location.loc_start.Lexing.pos_cnum;
+                loc_end = position filename source location.loc_end.Lexing.pos_cnum;
+              } }
+
   let implementation ?(filename = "<string>") source =
     match Lexer.tokenize source with
     | Error _ as err -> err
     | Ok tokens -> (
         match Parser.parse_located tokens with
-        | Error _ as err -> err
+        | Error error -> Error (normalize_error_location filename source error)
         | Ok located_ast ->
             let rec form_locations acc located =
               let location = location filename source located.Ast.span in

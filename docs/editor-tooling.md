@@ -38,10 +38,17 @@ The same cached OCaml Typedtree analysis powers:
   functions, parameters, fields, constructors, protocols, and methods;
 - `textDocument/formatting`, with deterministic 80-column formatting that
   preserves comments and string contents.
+- `textDocument/codeAction`, with preferred quick fixes for missing closing
+  list, vector, and map delimiters.
 
 Positions are converted between UTF-8 source offsets and the UTF-16 code units
 required by LSP. A document is parsed, elaborated, and typechecked once per full
 content update; all semantic queries reuse that analysis.
+
+While the final top-level form is incomplete, diagnostics report the precise
+opening delimiter and expected closer. Semantic requests continue to use the
+successfully parsed and typechecked top-level prefix, so hover, completion, and
+navigation remain available for definitions above the edit.
 
 When the client supports dynamic watched-file registration, the server
 registers `**/*.cljml` after initialization. File creation, changes, deletion,
@@ -84,5 +91,5 @@ The core Reason editor baseline—types, formatting, diagnostics, completion, an
 jump-to-definition—is present. The server indexes `.cljml` files below the
 workspace root, orders explicit module dependencies from compiler state, isolates
 invalid files, and provides cross-file definitions, references, rename, and
-workspace symbols, semantic tokens, and signature help. Code actions and
-recoverable parsing remain future ocaml-lsp-parity capabilities.
+workspace symbols, semantic tokens, signature help, delimiter quick fixes, and
+recoverable semantic analysis for completed top-level forms.

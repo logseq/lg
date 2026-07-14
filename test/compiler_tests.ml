@@ -4387,6 +4387,38 @@ let test_compile_diagnostics_are_empty_for_exhaustive_matches () =
   if compilation.diagnostics <> [] then
     failwith "expected exhaustive match compilation to have no diagnostics"
 
+let test_parser_diagnostics_locate_unterminated_delimiters () =
+  let source = "(def ok 1)\n(def broken [1 2" in
+  match Cljml.Compiler.compile_string_with_filename ~filename:"broken.cljml" source with
+  | Ok _ -> failwith "expected an unterminated vector error"
+  | Error error ->
+      if error.message <> "unterminated vector; expected ']'" then
+        failwith ("unexpected parser error: " ^ error.message);
+      (match error.location with
+      | Some location ->
+          if location.loc_start.Lexing.pos_fname <> "broken.cljml" then
+            failwith "parser error should preserve the source filename";
+          if location.loc_start.Lexing.pos_lnum <> 2 then
+            failwith "parser error should point to the opening delimiter line";
+          if location.loc_start.Lexing.pos_cnum <> 23 then
+            failwith "parser error should point to the opening delimiter"
+      | None -> failwith "parser error should include a location")
+
+let test_language_service_recovers_completed_prefix () =
+  let source = "(def answer 41)\n(def broken (+ answer" in
+  match
+    Cljml.Language_service.recover_completed_prefix ~filename:"editing.cljml" source
+  with
+  | None -> failwith "expected semantic analysis for the completed prefix"
+  | Some analysis ->
+      if
+        not
+          (List.exists
+             (fun (symbol : Cljml.Language_service.document_symbol) ->
+               symbol.name = "answer")
+             (Cljml.Language_service.document_symbols analysis))
+      then failwith "recovered analysis should preserve completed definitions"
+
 let language_service_source =
   {|
 (def answer 41)
@@ -8230,6 +8262,10 @@ let tests =
       test_compile_diagnostics_capture_ocaml_match_warnings );
     ( "compile diagnostics are empty for exhaustive matches",
       test_compile_diagnostics_are_empty_for_exhaustive_matches );
+    ( "parser diagnostics locate unterminated delimiters",
+      test_parser_diagnostics_locate_unterminated_delimiters );
+    ( "language service recovers completed prefix",
+      test_language_service_recovers_completed_prefix );
     ( "language service hover uses OCaml types",
       test_language_service_hover_uses_ocaml_types );
     ( "language service definition resolves source binding",
