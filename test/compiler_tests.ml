@@ -2963,6 +2963,18 @@ let test_volatile_nil_uses_contextual_option_reference_type () =
   assert_ocaml_runs "volatile_nil_uses_contextual_option_reference_type" "7\n"
     ocaml_source
 
+let test_local_volatile_nil_infers_value_from_reset () =
+  let source =
+    {|
+(let [slot (volatile! nil)]
+  (vreset! slot 4)
+  (println (+ (deref slot) 1)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "local_volatile_nil_infers_value_from_reset" "5\n"
+    ocaml_source
+
 let test_ocaml_arrays_reject_invalid_operations () =
   Lg.Compiler.compile_string {|(def values (array 1 "two"))|}
   |> expect_error_contains "OCaml array elements must have the same type";
@@ -3971,6 +3983,25 @@ let test_loop_nil_initial_value_can_become_optional () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "loop_nil_initial_value_can_become_optional" "ok\n"
     ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_forward_declared_deftype_fields_keep_nominal_receiver () =
+  let source =
+    {|
+(declare touch cleanup)
+(deftype Cache [^clojure.lang.Associative key-value limit])
+(defn touch [^Cache cache]
+  (do
+    (.valAt (.-key-value cache) :missing)
+    (cleanup cache)))
+(defn cleanup [^Cache cache]
+  (if (> (count (.-key-value cache)) (.-limit cache))
+    cache
+    cache))
+|}
+  in
+  ignore (Lg.Compiler.compile_string source |> expect_ok);
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -5226,6 +5257,24 @@ let test_reduce_stops_without_realizing_remaining_values () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "reduce_stops_without_realizing_remaining_values"
     "6\n4\n" ocaml_source
+
+let test_nil_initialized_reduce_returns_nullable_reduced_value () =
+  let source =
+    {|
+(defn find [pred xs]
+  (reduce
+    (fn [_ x]
+      (when (pred x)
+        (reduced x)))
+    nil
+    xs))
+(def found (find #(> % 2) [1 2 3 4]))
+(println (str (= 3 found) ":" (nil? (find #(> % 9) [1 2 3]))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "nil_initialized_reduce_returns_nullable_reduced_value"
+    "true:true\n" ocaml_source
 
 let test_reduce_short_circuits_builtin_and_custom_seqable_types () =
   let source =
@@ -10240,6 +10289,8 @@ let tests =
       test_concise_standard_type_annotations );
     ( "volatile nil uses contextual option reference type",
       test_volatile_nil_uses_contextual_option_reference_type );
+    ( "local volatile nil infers value from reset",
+      test_local_volatile_nil_infers_value_from_reset );
     ( "OCaml arrays reject invalid operations",
       test_ocaml_arrays_reject_invalid_operations );
     ( "OCaml refs reject invalid operations",
@@ -10378,6 +10429,8 @@ let tests =
       test_dynamic_arrays_recover_generic_elements );
     ( "loop nil initial value can become optional",
       test_loop_nil_initial_value_can_become_optional );
+    ( "forward declared deftype fields keep nominal receiver",
+      test_forward_declared_deftype_fields_keep_nominal_receiver );
     ( "generic protocol witness compiles for JavaScript targets",
       test_generic_protocol_witness_compiles_for_javascript_targets );
     ( "protocols support float and symbol receivers",
@@ -10552,6 +10605,8 @@ let tests =
       test_reduced_values_support_predicates_and_unwrapping );
     ( "reduce stops without realizing remaining values",
       test_reduce_stops_without_realizing_remaining_values );
+    ( "nil initialized reduce returns nullable reduced value",
+      test_nil_initialized_reduce_returns_nullable_reduced_value );
     ( "reduce short-circuits builtin and custom Seqable types",
       test_reduce_short_circuits_builtin_and_custom_seqable_types );
     ( "custom records can implement core Seqable",

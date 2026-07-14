@@ -1356,7 +1356,21 @@ let create ~compile_expr =
                         return_param_index = body.return_param_index;
                       })
             | pattern :: value_form :: rest -> (
-                match compile_expr scope env value_form with
+                let value =
+                  match (pattern, value_form) with
+                  | ( FSymbol _,
+                      FList [ FSymbol "volatile!"; FSymbol "nil" ] ) ->
+                      Ok
+                        (typed_ir
+                           (TOcaml_app
+                              ("Lg_runtime.Runtime_slot.t", [ TUnknown ]))
+                           (Semantic_ir.Apply
+                              ( Semantic_ir.Ident
+                                  "Lg_runtime.Runtime_slot.empty",
+                                [ Semantic_ir.Unit ] )))
+                  | _ -> compile_expr scope env value_form
+                in
+                match value with
                 | Error _ as err -> err
                 | Ok value -> (
                     match Destructure.bind_pattern ~env value pattern with

@@ -849,6 +849,64 @@ let create ~compile_expr =
                   | Error _ as err -> err
                   | Ok fn -> (
                       match fn.ty with
+                      | TFn ([ acc_ty; item_ty ], TNullable reduced_type)
+                        when Types.equal init.ty TNil
+                             && Types.equal acc_ty TNil
+                             && (Types.equal item_ty inner
+                                || Types.equal inner TUnknown
+                                || Types.assignable ~policy:Host_boundary
+                                     ~expected:item_ty ~actual:inner) -> (
+                          match Types.reduced_element reduced_type with
+                          | None ->
+                              Error.error
+                                "nullable reduce result must contain a reduced value"
+                          | Some result_type ->
+                              let accumulator = Semantic_ir.Ident "accumulator" in
+                              let item = Semantic_ir.Ident "item" in
+                              let reduced_value = "reduced_value" in
+                              let nullable_result = TNullable result_type in
+                              let adapted_fn =
+                                typed_ir
+                                  (TFn
+                                     ( [ nullable_result; item_ty ],
+                                       Types.reduced nullable_result ))
+                                  (Semantic_ir.Fun
+                                     ( [ Semantic_ir.PVar "accumulator";
+                                         Semantic_ir.PVar "item" ],
+                                       Semantic_ir.Match
+                                         ( Semantic_ir.Apply
+                                             ( fn.semantic_expr,
+                                               [ accumulator; item ] ),
+                                           [ ( Semantic_ir.PConstructor
+                                                 ("None", None),
+                                               Semantic_ir.Apply
+                                                 ( Semantic_ir.Ident
+                                                     "Lg_runtime.Runtime_reduced.continue",
+                                                   [ Semantic_ir.Constructor
+                                                       ("None", None) ] ) );
+                                             ( Semantic_ir.PConstructor
+                                                 ( "Some",
+                                                   Some
+                                                     (Semantic_ir.PVar
+                                                        reduced_value) ),
+                                               Semantic_ir.Apply
+                                                 ( Semantic_ir.Ident
+                                                     "Lg_runtime.Runtime_reduced.reduced",
+                                                   [ Semantic_ir.Constructor
+                                                       ( "Some",
+                                                         Some
+                                                           (Semantic_ir.Apply
+                                                              ( Semantic_ir.Ident
+                                                                  "Lg_runtime.Runtime_reduced.unreduced",
+                                                                [ Semantic_ir.Ident
+                                                                    reduced_value ] )) ) ] ) ) ] ) ))
+                              in
+                              Ok
+                                (typed_ir nullable_result
+                                   (Collection_capability.reduce_expr env
+                                      ~short_circuit:true adapted_fn
+                                      { init with ty = nullable_result }
+                                      collection sequence)))
                       | TFn ([ acc_ty; item_ty ], ret)
                         when Expression_support.branch_types_compatible acc_ty
                                init.ty
@@ -936,64 +994,6 @@ let create ~compile_expr =
                                       ~short_circuit:true adapted_fn
                                       nullable_init_expr collection sequence))
                           | _ -> Error.error "reduced value must match init")
-                      | TFn ([ acc_ty; item_ty ], TNullable reduced_type)
-                        when Types.equal init.ty TNil
-                             && Types.equal acc_ty TNil
-                             && (Types.equal item_ty inner
-                                || Types.equal inner TUnknown
-                                || Types.assignable ~policy:Host_boundary
-                                     ~expected:item_ty ~actual:inner) -> (
-                          match Types.reduced_element reduced_type with
-                          | None ->
-                              Error.error
-                                "nullable reduce result must contain a reduced value"
-                          | Some result_type ->
-                              let accumulator = Semantic_ir.Ident "accumulator" in
-                              let item = Semantic_ir.Ident "item" in
-                              let reduced_value = "reduced_value" in
-                              let nullable_result = TNullable result_type in
-                              let adapted_fn =
-                                typed_ir
-                                  (TFn
-                                     ( [ nullable_result; item_ty ],
-                                       Types.reduced nullable_result ))
-                                  (Semantic_ir.Fun
-                                     ( [ Semantic_ir.PVar "accumulator";
-                                         Semantic_ir.PVar "item" ],
-                                       Semantic_ir.Match
-                                         ( Semantic_ir.Apply
-                                             ( fn.semantic_expr,
-                                               [ accumulator; item ] ),
-                                           [ ( Semantic_ir.PConstructor
-                                                 ("None", None),
-                                               Semantic_ir.Apply
-                                                 ( Semantic_ir.Ident
-                                                     "Lg_runtime.Runtime_reduced.continue",
-                                                   [ Semantic_ir.Constructor
-                                                       ("None", None) ] ) );
-                                             ( Semantic_ir.PConstructor
-                                                 ( "Some",
-                                                   Some
-                                                     (Semantic_ir.PVar
-                                                        reduced_value) ),
-                                               Semantic_ir.Apply
-                                                 ( Semantic_ir.Ident
-                                                     "Lg_runtime.Runtime_reduced.reduced",
-                                                   [ Semantic_ir.Constructor
-                                                       ( "Some",
-                                                         Some
-                                                           (Semantic_ir.Apply
-                                                              ( Semantic_ir.Ident
-                                                                  "Lg_runtime.Runtime_reduced.unreduced",
-                                                                [ Semantic_ir.Ident
-                                                                    reduced_value ] )) ) ] ) ) ] ) ))
-                              in
-                              Ok
-                                (typed_ir nullable_result
-                                   (Collection_capability.reduce_expr env
-                                      ~short_circuit:true adapted_fn
-                                      { init with ty = nullable_result }
-                                      collection sequence)))
                       | TFn _ ->
                           Error.error
                             ("reduce function type does not match init and sequence: fn="

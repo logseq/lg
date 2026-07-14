@@ -143,7 +143,8 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                        match List.nth_opt param_type_overrides index with
                        | Some (Some TUnknown) | None | Some None ->
                            (match spec.Destructure.explicit_ty with
-                           | Some ty -> (spec, ty)
+                           | Some ty ->
+                               (spec, infer_named_record scope env ty)
                            | None -> (spec, inferred_ty))
                        | Some (Some ty) -> (spec, ty)
                        )

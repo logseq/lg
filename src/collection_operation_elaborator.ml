@@ -431,21 +431,19 @@ let create ~compile_expr =
                     (typed_ir field_ty
                        (Semantic_ir.Field
                           (target.semantic_expr, Names.keyword_to_ocaml_name keyword)))
+              | TOcaml_app ("Lg_runtime.Runtime_map.t", [ _key_ty; value_ty ]) ->
+                  Ok
+                    (typed_ir (TNullable value_ty)
+                       (apply "Lg_runtime.Runtime_map.get_option"
+                          [ target.semantic_expr;
+                            Semantic_ir.String keyword;
+                          ]))
               | ty when is_ocaml_owned_type ty ->
                   Ok
                     (typed_ir TUnknown
                        (Semantic_ir.Field
                           (target.semantic_expr, Names.keyword_to_ocaml_name keyword)))
-              | ty -> (
-                  match Types.dynamic_map_types ty with
-                  | Some (_key_ty, value_ty) ->
-                      Ok
-                        (typed_ir (TNullable value_ty)
-                           (apply "Lg_runtime.Runtime_map.get_option"
-                              [ target.semantic_expr;
-                                Semantic_ir.String keyword;
-                              ]))
-                  | None -> Error.error "get expects a map")))
+              | _ -> Error.error "get expects a map"))
       | [ target_form; index_form ] -> (
           match (compile_expr scope env target_form, compile_expr scope env index_form) with
           | (Error _ as err), _ -> err

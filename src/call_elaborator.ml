@@ -2248,12 +2248,24 @@ let create ~compile_expr =
                  ^ string_of_int (List.length record.fields)
                  ^ " arguments")
             | Ok args ->
+                let is_empty_dynamic_map arg =
+                  match Semantic_ir.unlocated arg.semantic_expr with
+                  | Semantic_ir.Apply
+                      ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.map",
+                        [ Semantic_ir.List [] ] ) ->
+                      true
+                  | _ -> false
+                in
                 let instantiated =
                   Types.instantiate_type
                     ~templates:
-                      (List.map (fun parameter -> TVar parameter)
-                         record.type_parameters)
-                    ~actuals:(List.map (fun arg -> arg.ty) args)
+                      (List.map (fun (field : field) -> field.ty)
+                         record.fields)
+                    ~actuals:
+                      (List.map
+                         (fun arg ->
+                           if is_empty_dynamic_map arg then TUnknown else arg.ty)
+                         args)
                     (TNamed_record record)
                 in
                 let record =
@@ -2268,7 +2280,16 @@ let create ~compile_expr =
                       let packed =
                         if has_capability_constraint field.ty then
                           pack_constrained_value env field.ty arg
-                        else Ok arg.semantic_expr
+                        else
+                          match field.ty with
+                          | ( TOcaml_app
+                                ("Lg_runtime.Runtime_map.t", [ _; _ ])
+                            | TVar _ | TUnknown )
+                            when is_empty_dynamic_map arg ->
+                              Ok
+                                (Semantic_ir.Ident
+                                   "Lg_runtime.Runtime_map.empty")
+                          | _ -> Ok arg.semantic_expr
                       in
                       (match packed with
                       | Error _ as error -> error
@@ -2321,7 +2342,11 @@ let create ~compile_expr =
                          (Structural_map.field_expr target field)))
             | _ -> Error.error (field_access ^ " expects a deftype value"))
         | Ok _ -> Error.error (field_access ^ " expects 1 argument"))
-    | method_name when String.starts_with ~prefix:"." method_name -> (
+    | method_name
+      when String.starts_with ~prefix:"." method_name
+           && not
+                (List.mem method_name
+                   [ ".valAt"; ".containsKey"; ".entryAt" ]) -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok ({ ty = TOcaml receiver_type; _ } :: _) -> (

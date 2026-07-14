@@ -103,11 +103,14 @@ module Lg_frontend : FRONTEND = struct
   let host_type_hint name =
     metadata_symbol name && not (String.starts_with ~prefix:"^:" name)
 
-  let supported_host_type_hint name =
-    host_type_hint name
-    &&
-    let type_name = String.sub name 1 (String.length name - 1) in
-    Option.is_some (Host_interop.type_annotation type_name)
+  let supported_type_hint name =
+    if not (host_type_hint name) then false
+    else
+      let type_name = String.sub name 1 (String.length name - 1) in
+      Option.is_some (Host_interop.type_annotation type_name)
+      || type_name = "clojure.lang.Associative"
+      || (not (String.contains type_name '.'))
+         && not (String.contains type_name '/')
 
   let rec drop_definition_metadata = function
     | Ast.FSymbol metadata :: rest when metadata_symbol metadata ->
@@ -134,7 +137,7 @@ module Lg_frontend : FRONTEND = struct
 
   and normalize_metadata_sequence = function
     | Ast.FSymbol metadata :: form :: rest
-      when supported_host_type_hint metadata ->
+      when supported_type_hint metadata ->
         Ast.FList
           [ Ast.FSymbol "__type-hint";
             Ast.FSymbol metadata;
@@ -147,7 +150,7 @@ module Lg_frontend : FRONTEND = struct
     | [] -> []
 
   and normalize_vector_metadata_sequence = function
-    | Ast.FSymbol metadata :: rest when supported_host_type_hint metadata ->
+    | Ast.FSymbol metadata :: rest when supported_type_hint metadata ->
         Ast.FSymbol metadata :: normalize_vector_metadata_sequence rest
     | Ast.FSymbol metadata :: rest when host_type_hint metadata ->
         normalize_vector_metadata_sequence rest

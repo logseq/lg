@@ -172,29 +172,42 @@ let rec compile scope env next_type = function
   | FList
       (FSymbol "deftype" :: ((FSymbol name) as name_form) :: FVector raw_fields
       :: _interface_forms) ->
-      let rec field_names acc = function
+      let rec field_specs acc metadata = function
         | [] -> Ok (List.rev acc)
         | FSymbol metadata :: rest
           when String.starts_with ~prefix:"^" metadata ->
-            field_names acc rest
-        | FSymbol field_name :: rest -> field_names (field_name :: acc) rest
+            field_specs acc (Some metadata) rest
+        | FSymbol field_name :: rest ->
+            field_specs ((field_name, metadata) :: acc) None rest
         | _ -> Error.error "deftype fields must be symbols"
       in
-      Result.bind (field_names [] raw_fields) (fun fields ->
+      Result.bind (field_specs [] None raw_fields) (fun fields ->
           if fields = [] then Error.error "deftype expects at least one field"
           else
-            let type_parameters =
-              List.mapi (fun index _ -> "field" ^ string_of_int index) fields
+            let definitions =
+              fields
+              |> List.mapi (fun index (field_name, metadata) ->
+                     let parameter = "field" ^ string_of_int index in
+                     match metadata with
+                     | Some "^clojure.lang.Associative" ->
+                         let key_parameter = parameter ^ "_key" in
+                         let value_parameter = parameter ^ "_value" in
+                         ( [ key_parameter; value_parameter ],
+                           FList
+                             [ FSymbol field_name;
+                               FKeyword
+                                 (":Lg_runtime.Runtime_map.t<"
+                                ^ key_parameter ^ ";" ^ value_parameter ^ ">");
+                             ] )
+                     | _ ->
+                         ( [ parameter ],
+                           FList
+                             [ FSymbol field_name;
+                               FKeyword (":" ^ parameter);
+                             ] ))
             in
-            let field_forms =
-              List.map2
-                (fun field_name parameter ->
-                  FList
-                    [ FSymbol field_name;
-                      FKeyword (":" ^ parameter);
-                    ])
-                fields type_parameters
-            in
+            let type_parameters = List.concat_map fst definitions in
+            let field_forms = List.map snd definitions in
             compile_type_record ?location:(Source_context.find name_form) scope env
               next_type name type_parameters field_forms)
   | FList
