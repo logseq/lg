@@ -5,6 +5,7 @@ module Env = Compiler_environment
 type value =
   | Form of form
   | Closure of closure
+  | Builtin of string
   | Volatile of value ref
 
 and closure = {
@@ -30,7 +31,14 @@ let form_of_value = function Form form -> Ok form | _ -> Error.error "expected m
 let sequence_forms = function
   | Form (FList forms | FVector forms) -> Ok forms
   | Form (FSymbol "nil") -> Ok []
-  | _ -> Error.error "expected sequential macro value"
+  | Form (FSymbol symbol) ->
+      Error.error ("expected sequential macro value, got symbol " ^ symbol)
+  | Form (FKeyword keyword) ->
+      Error.error ("expected sequential macro value, got keyword " ^ keyword)
+  | Form _ -> Error.error "expected sequential macro value, got scalar form"
+  | Closure _ -> Error.error "expected sequential macro value, got function"
+  | Builtin _ -> Error.error "expected sequential macro value, got function"
+  | Volatile _ -> Error.error "expected sequential macro value, got volatile"
 
 let truthy = function Form (FSymbol "nil" | FBool false) -> false | _ -> true
 
@@ -46,7 +54,11 @@ let rec bind_pattern locals pattern value =
   | FSymbol name -> Ok ((name, value) :: locals)
   | FVector patterns -> (
       match sequence_forms value with
-      | Error _ as err -> err
+      | Error error ->
+          Error
+            { error with
+              message = error.message ^ " while binding a vector pattern";
+            }
       | Ok values -> bind_vector_pattern locals patterns values)
   | _ -> Error.error "unsupported macro binding pattern"
 
@@ -105,6 +117,44 @@ let bind_params locals params args =
                 in
                 bind_pattern locals pattern value))
 
+let bind_value_params locals params args =
+  match split_params [] params with
+  | Error _ as error -> error
+  | Ok (fixed, rest_pattern) ->
+      let fixed_count = List.length fixed in
+      if
+        List.length args < fixed_count
+        || (Option.is_none rest_pattern && List.length args <> fixed_count)
+      then Error.error "macro helper called with unsupported arity"
+      else
+        let rec bind_fixed locals patterns values =
+          match (patterns, values) with
+          | [], remaining -> Ok (locals, remaining)
+          | pattern :: patterns, value :: values -> (
+              match bind_pattern locals pattern value with
+              | Error _ as error -> error
+              | Ok locals -> bind_fixed locals patterns values)
+          | _ -> assert false
+        in
+        (match bind_fixed locals fixed args with
+        | Error _ as error -> error
+        | Ok (locals, remaining) -> (
+            match rest_pattern with
+            | None -> Ok locals
+            | Some pattern ->
+                let rec collect_forms collected = function
+                  | [] -> Ok (List.rev collected)
+                  | value :: rest -> (
+                      match form_of_value value with
+                      | Error _ as error -> error
+                      | Ok form -> collect_forms (form :: collected) rest)
+                in
+                Result.bind (collect_forms [] remaining) (fun forms ->
+                    bind_pattern locals pattern
+                      (match forms with
+                      | [] -> nil
+                      | forms -> Form (FList forms)))))
+
 let lookup_local name locals = List.assoc_opt name locals
 
 let rec eval context = function
@@ -115,6 +165,8 @@ let rec eval context = function
       | None -> (
           match Env.find_macro_value ~scope:context.namespace name context.compiler_env with
           | Some initial_value -> eval context initial_value
+          | None when List.mem name [ "conj"; "identity" ] ->
+              Ok (Builtin name)
           | None -> Error.error ("unknown macro symbol " ^ name)))
   | (FInt _ | FFloat _ | FChar _ | FString _ | FRegex _ | FBool _ | FKeyword _)
     as form ->
@@ -298,7 +350,7 @@ and eval_call context name arg_forms =
       | Ok args -> apply_value context callable args)
   | None -> (
       match Env.find_macro_function ~scope:context.namespace name context.compiler_env with
-      | Some definition -> invoke_definition context definition arg_forms
+      | Some definition -> invoke_function_definition context definition arg_forms
       | None -> eval_builtin context name arg_forms)
 
 and apply_value context callable args =
@@ -323,6 +375,22 @@ and apply_value context callable args =
               eval_body
                 { context with namespace = closure.namespace; locals }
                 closure.body))
+  | Builtin "identity" -> (
+      match args with
+      | [ value ] -> Ok value
+      | _ -> Error.error "identity expects one macro argument")
+  | Builtin "conj" -> (
+      match args with
+      | [ collection; value ] -> (
+          match (collection, form_of_value value) with
+          | Form (FVector forms), Ok value ->
+              Ok (Form (FVector (forms @ [ value ])))
+          | Form (FList forms), Ok value ->
+              Ok (Form (FList (value :: forms)))
+          | _, (Error _ as error) -> error
+          | _ -> Error.error "conj expects a macro vector or list")
+      | _ -> Error.error "conj expects two macro arguments")
+  | Builtin name -> Error.error ("unsupported macro function value " ^ name)
   | _ -> Error.error "macro value is not callable"
 
 and invoke_definition context (definition : Macro_definition.t) arg_forms =
@@ -335,6 +403,21 @@ and invoke_definition context (definition : Macro_definition.t) arg_forms =
           eval_body
             { context with namespace = definition.namespace; locals }
             arity.body)
+
+and invoke_function_definition context (definition : Macro_definition.t)
+    arg_forms =
+  match select_arity definition arg_forms with
+  | Error _ as error -> error
+  | Ok arity -> (
+      match eval_forms context arg_forms with
+      | Error _ as error -> error
+      | Ok values -> (
+          match bind_value_params context.locals arity.params values with
+          | Error _ as error -> error
+          | Ok locals ->
+              eval_body
+                { context with namespace = definition.namespace; locals }
+                arity.body))
 
 and eval_builtin context name arg_forms =
   let eval_args () = eval_forms context arg_forms in

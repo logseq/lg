@@ -95,6 +95,14 @@ let compile_nil_predicate name args expected_nil =
                       ("Some", Some Semantic_ir.PAny),
                     Semantic_ir.Bool (not expected_nil) );
                 ] )
+        | TOcaml_app (name, [ _ ]) when name = Types.next_seq_type_name ->
+            let is_empty =
+              Semantic_ir.Apply
+                ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.is_empty",
+                  [ arg.semantic_expr ] )
+            in
+            if expected_nil then is_empty
+            else Semantic_ir.Prefix ("not", is_empty)
         | _ ->
             Semantic_ir.Sequence
               [ arg.semantic_expr; Semantic_ir.Bool (not expected_nil) ]

@@ -356,8 +356,8 @@
  (name datascript_util_native)
  (modules datascript_util_native)
  (flags
-  (:standard -w -32-37))
- (libraries lg.runtime rrbvec))
+  (:standard -w -5-32-37-39))
+ (libraries lg.runtime rrbvec unix))
 
 (rule
  (target datascript_util_melange.ml)
@@ -381,7 +381,7 @@
  (alias datascript-util-melange)
  (module_systems es6)
  (modules datascript_util_melange)
- (compile_flags -w -32-37)
+ (compile_flags -w -5-32-37-39)
  (libraries lg.runtime rrbvec))
 
 (rule

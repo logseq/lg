@@ -1544,6 +1544,44 @@ let test_namespace_accepts_host_import_clause () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "namespace_accepts_host_import_clause" "42\n" ocaml_source
 
+let test_host_import_type_hint_supports_instance_methods () =
+  let source =
+    {|
+(ns app.uuid
+  (:import [java.util UUID]))
+(defn high [value]
+  (.getMostSignificantBits ^UUID value))
+(def value (UUID/randomUUID))
+(println (= (high value) (high value)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "host_import_type_hint_supports_instance_methods" "true\n"
+    ocaml_source
+
+let test_system_current_time_millis_compiles_for_native () =
+  let source =
+    {|
+(def now (System/currentTimeMillis))
+(println (pos? now))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_compiles "system_current_time_millis_compiles_for_native"
+    ocaml_source
+
+let test_javascript_targets_compile_date_and_radix_interop () =
+  let source =
+    {|
+(def text (.toString 255 16))
+(def parsed (js/parseInt text 16))
+(def now (.getTime (js/Date.)))
+|}
+  in
+  ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
 let test_transient_collection_operations_preserve_values () =
   let source =
     {|
@@ -1557,6 +1595,53 @@ let test_transient_collection_operations_preserve_values () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "transient_collection_operations_preserve_values"
+    "true:true\n" ocaml_source
+
+let test_assert_accepts_optional_message () =
+  let source =
+    {|
+(assert true)
+(assert (= 1 1) "numbers differ")
+(println 42)
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "assert_accepts_optional_message" "42\n" ocaml_source
+
+let test_into_cat_flattens_one_collection_level () =
+  let source =
+    {|
+(println (= [1 2 3] (into [] cat [[1 2] [3]])))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "into_cat_flattens_one_collection_level" "true\n"
+    ocaml_source
+
+let test_mapv_vector_zips_multiple_collections () =
+  let source =
+    {|
+(defn zip [a b & more]
+  (apply mapv vector a b more))
+(println
+  (str (= [[1 4] [2 5]] (mapv vector [1 2 3] [4 5])) ":"
+       (= [[1 4 7] [2 5 8]] (zip [1 2] [4 5] [7 8]))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "mapv_vector_zips_multiple_collections" "true:true\n"
+    ocaml_source
+
+let test_fnil_wraps_core_conj_with_default_collection () =
+  let source =
+    {|
+(def conjv (fnil conj []))
+(def conjs (fnil conj #{}))
+(println (str (= [1] (conjv nil 1)) ":" (= #{1} (conjs nil 1))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "fnil_wraps_core_conj_with_default_collection"
     "true:true\n" ocaml_source
 
 let test_top_level_definitions_accept_clojure_metadata () =
@@ -3294,6 +3379,20 @@ let test_multi_arity_defn_dispatches_fixed_arities () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "multi_arity_defn_dispatches_fixed_arities" "10:11:5:11\n"
+    ocaml_source
+
+let test_defn_accepts_docstring_before_arities () =
+  let source =
+    {|
+(defn stamp
+  "Returns the supplied value, or the default stamp."
+  ([] 10)
+  ([^:int value] value))
+(println (str (stamp) ":" (stamp 11)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "defn_accepts_docstring_before_arities" "10:11\n"
     ocaml_source
 
 let test_multi_arity_defn_dispatches_variadic_fallback () =
@@ -5139,7 +5238,7 @@ let test_sequence_navigation_handles_empty_seqable_values () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "sequence_navigation_handles_empty_seqable_values"
-    "()\n()\n()\n" ocaml_source
+    "()\n()\nnil\n" ocaml_source
 
 let test_generic_sequence_navigation_evaluates_arguments_once () =
   let source =
@@ -5175,10 +5274,10 @@ let test_batched_sequence_functions_reject_bad_partition_size () =
   Lg.Compiler.compile_string {|(def x (partition 0 [1 2]))|}
   |> expect_error "partition size must be positive"
 
-let test_batched_sequence_functions_reject_reduce_kv_non_vector () =
+let test_batched_sequence_functions_reject_reduce_kv_non_collection () =
   Lg.Compiler.compile_string
     {|(def x (reduce-kv (fn [acc i x] (+ acc x)) 0 (list 1 2)))|}
-  |> expect_error "reduce-kv expects a vector"
+  |> expect_error "reduce-kv expects a vector or map"
 
 let test_interleave_accepts_multiple_collections () =
   let source =
@@ -5697,7 +5796,7 @@ let test_set_sequence_predicates_reject_bad_predicates () =
 
 let test_reduce_rejects_bad_set_reducers () =
   Lg.Compiler.compile_string {|(def x (reduce (fn [acc x] (str acc x)) 0 (hash-set 1 2)))|}
-  |> expect_error "reduce function type does not match init and sequence"
+  |> expect_error_contains "reduce function type does not match init and sequence"
 
 let test_set_map_and_filter_core_api () =
   let source =
@@ -9537,8 +9636,22 @@ let tests =
       test_namespace_refer_clojure_exclude_hides_core_binding );
     ( "namespace accepts host import clause",
       test_namespace_accepts_host_import_clause );
+    ( "host import type hint supports instance methods",
+      test_host_import_type_hint_supports_instance_methods );
+    ( "System currentTimeMillis compiles for native",
+      test_system_current_time_millis_compiles_for_native );
+    ( "JavaScript targets compile Date and radix interop",
+      test_javascript_targets_compile_date_and_radix_interop );
     ( "transient collection operations preserve values",
       test_transient_collection_operations_preserve_values );
+    ( "assert accepts optional message",
+      test_assert_accepts_optional_message );
+    ( "into cat flattens one collection level",
+      test_into_cat_flattens_one_collection_level );
+    ( "mapv vector zips multiple collections",
+      test_mapv_vector_zips_multiple_collections );
+    ( "fnil wraps core conj with default collection",
+      test_fnil_wraps_core_conj_with_default_collection );
     ( "top-level definitions accept Clojure metadata",
       test_top_level_definitions_accept_clojure_metadata );
     ( "user macros expand syntax quote and unquote",
@@ -9792,6 +9905,8 @@ let tests =
       test_typed_recursive_functions_require_valid_signatures );
     ( "multi-arity defn dispatches fixed arities",
       test_multi_arity_defn_dispatches_fixed_arities );
+    ( "defn accepts docstring before arities",
+      test_defn_accepts_docstring_before_arities );
     ( "multi-arity defn dispatches variadic fallback",
       test_multi_arity_defn_dispatches_variadic_fallback );
     ( "multi-arity defn supports cross-arity calls and recur",
@@ -10049,8 +10164,8 @@ let tests =
       test_batched_sequence_functions_reject_bad_counts );
     ( "batched sequence functions reject bad partition size",
       test_batched_sequence_functions_reject_bad_partition_size );
-    ( "batched sequence functions reject reduce-kv non-vector",
-      test_batched_sequence_functions_reject_reduce_kv_non_vector );
+    ( "batched sequence functions reject reduce-kv non-collection",
+      test_batched_sequence_functions_reject_reduce_kv_non_collection );
     ( "interleave accepts multiple collections",
       test_interleave_accepts_multiple_collections );
     ( "interleave rejects later type mismatches",

@@ -30,15 +30,59 @@ let rec equality_expr left right =
   | TNil, _ | _, TNil ->
       Semantic_ir.Sequence
         [ left.semantic_expr; right.semantic_expr; Semantic_ir.Bool false ]
-  | _ -> (match left.ty with
-  | TSet inner -> (
+  | _ -> (match (left.ty, right.ty) with
+  | (TRecord _ | TNamed_record _), right_type
+    when Option.is_some (Types.dynamic_map_types right_type) -> (
+      match left.record_values with
+      | None -> Semantic_ir.Bool false
+      | Some values ->
+          let dynamic_left =
+            List.fold_left
+              (fun map ((field : field), value) ->
+                Semantic_ir.Apply
+                  ( Semantic_ir.Ident "Lg_runtime.Runtime_map.assoc",
+                    [ map; Semantic_ir.String field.keyword; value ] ))
+              (Semantic_ir.Ident "Lg_runtime.Runtime_map.empty") values
+          in
+          Semantic_ir.Infix ("=", dynamic_left, right.semantic_expr))
+  | left_type, (TRecord _ | TNamed_record _)
+    when Option.is_some (Types.dynamic_map_types left_type) ->
+      equality_expr right left
+  | TSet left_inner, TSet right_inner -> (
+      match Types.set_module_name left_inner with
+      | Ok left_module -> (
+          match Types.set_module_name right_inner with
+          | Ok right_module when left_module = right_module ->
+              Semantic_ir.Apply
+                ( Semantic_ir.Ident (left_module ^ ".equal"),
+                  [ left.semantic_expr; right.semantic_expr ] )
+          | Ok _ when Types.equal right_inner TUnknown ->
+              Semantic_ir.Apply
+                ( Semantic_ir.Ident (left_module ^ ".equal"),
+                  [ left.semantic_expr;
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident (left_module ^ ".of_list"),
+                        [ right.semantic_expr ] ) ] )
+          | Ok right_module when Types.equal left_inner TUnknown ->
+              Semantic_ir.Apply
+                ( Semantic_ir.Ident (right_module ^ ".equal"),
+                  [ Semantic_ir.Apply
+                      ( Semantic_ir.Ident (right_module ^ ".of_list"),
+                        [ left.semantic_expr ] );
+                    right.semantic_expr ] )
+          | _ ->
+              Semantic_ir.Infix
+                ("=", left.semantic_expr, right.semantic_expr))
+      | Error _ ->
+          Semantic_ir.Infix ("=", left.semantic_expr, right.semantic_expr))
+  | TSet inner, _ -> (
       match Types.set_module_name inner with
       | Ok set_module ->
           Semantic_ir.Apply
             ( Semantic_ir.Ident (set_module ^ ".equal"),
               [ left.semantic_expr; right.semantic_expr ] )
       | Error _ -> Semantic_ir.Bool false)
-  | TRecord fields | TNamed_record { fields; _ } ->
+  | (TRecord fields | TNamed_record { fields; _ }), _ ->
       let parts =
         fields
         |> List.map (fun (field : field) ->

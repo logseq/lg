@@ -163,3 +163,41 @@ let reverse source =
 let starts_with source prefix = String.starts_with ~prefix source
 
 let identity source = source
+
+let digit_value = function
+  | '0' .. '9' as digit -> Char.code digit - Char.code '0'
+  | 'a' .. 'z' as digit -> Char.code digit - Char.code 'a' + 10
+  | 'A' .. 'Z' as digit -> Char.code digit - Char.code 'A' + 10
+  | _ -> -1
+
+let parse_int_radix source radix =
+  if radix < 2 || radix > 36 then invalid_arg "radix must be between 2 and 36";
+  let source = String.trim source in
+  if source = "" then invalid_arg "cannot parse an empty integer";
+  let negative, start =
+    match source.[0] with '-' -> (true, 1) | '+' -> (false, 1) | _ -> (false, 0)
+  in
+  if start = String.length source then invalid_arg "integer requires digits";
+  let rec loop result index =
+    if index = String.length source then result
+    else
+      let digit = digit_value source.[index] in
+      if digit < 0 || digit >= radix then invalid_arg "invalid digit for radix"
+      else loop ((result * radix) + digit) (index + 1)
+  in
+  let result = loop 0 start in
+  if negative then -result else result
+
+let int_to_string_radix value radix =
+  if radix < 2 || radix > 36 then invalid_arg "radix must be between 2 and 36";
+  if value = 0 then "0"
+  else
+    let digits = "0123456789abcdefghijklmnopqrstuvwxyz" in
+    let rec loop value acc =
+      if value = 0 then acc
+      else
+        let digit = abs (value mod radix) in
+        loop (value / radix) (digits.[digit] :: acc)
+    in
+    let encoded = loop value [] |> List.to_seq |> String.of_seq in
+    if value < 0 then "-" ^ encoded else encoded

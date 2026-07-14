@@ -68,6 +68,22 @@ let rec stringify_expr_ir ?(pr = false) expr =
   | TUnknown -> expr.semantic_expr
   | TMap_keys -> Semantic_ir.String "<map>"
   | TVar _ -> Semantic_ir.String "<value>"
+  | TOcaml "Lg_runtime.Runtime_uuid.t" ->
+      apply "Lg_runtime.Runtime_uuid.to_string" [ expr.semantic_expr ]
+  | TOcaml_app (name, [ inner ]) when name = Types.next_seq_type_name ->
+      Semantic_ir.If
+        ( apply "Lg_runtime.Runtime_seq.is_empty" [ expr.semantic_expr ],
+          Semantic_ir.String "nil",
+          wrap_expr "("
+            (apply "String.concat"
+               [ Semantic_ir.String " ";
+                 apply "List.map"
+                   [ scalar_mapper inner;
+                     apply "Lg_runtime.Runtime_seq.to_list"
+                       [ expr.semantic_expr ];
+                   ];
+               ])
+            ")" )
   | TArray _ | TRef _ | TOcaml _ | TOcaml_app _ | TTuple _ ->
       Semantic_ir.String "<value>"
   | TList inner ->

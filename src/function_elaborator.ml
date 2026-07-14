@@ -101,7 +101,10 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                        in
                        match List.nth_opt param_type_overrides index with
                        | Some (Some ty) -> (spec, ty)
-                       | _ -> (spec, inferred_ty))
+                       | _ ->
+                           (match spec.Destructure.explicit_ty with
+                           | Some ty -> (spec, ty)
+                           | None -> (spec, inferred_ty)))
               in
               let param_bindings =
                 typed_specs

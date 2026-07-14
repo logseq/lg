@@ -1,6 +1,7 @@
 module Symbol_map = Map.Make (Symbol_id)
 
 type t = {
+  target : Target.t;
   symbols : Types.binding Symbol_map.t;
   protocols : Protocol_registry.t;
   modules : Module_registry.t;
@@ -15,6 +16,7 @@ type t = {
 
 let empty =
   {
+    target = Target.default;
     symbols = Symbol_map.empty;
     protocols = Core_protocols.initial_registry;
     modules = Module_registry.empty;
@@ -26,6 +28,9 @@ let empty =
     macro_functions = [];
     macro_values = [];
   }
+
+let target env = env.target
+let with_target target env = { env with target }
 
 let find_opt name env =
   Symbol_map.find_opt (Symbol_id.of_string name) env.symbols

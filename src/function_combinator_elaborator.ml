@@ -50,21 +50,43 @@ let create ~compile_expr =
           | None -> Error.error "apply expects function and collection"
           | Some (fixed_forms, collection_form) -> (
               match
-                ( compile_function_arg scope env fn_form,
-                  compile_args_for scope env fixed_forms,
+                ( compile_args_for scope env fixed_forms,
                   compile_expr scope env collection_form )
               with
-              | (Error _ as err), _, _ -> err
-              | _, (Error _ as err), _ -> err
-              | _, _, (Error _ as err) -> err
-              | Ok fn, Ok fixed_args, Ok collection -> (
+              | (Error _ as err), _ -> err
+              | _, (Error _ as err) -> err
+              | Ok fixed_args, Ok collection -> (
                   match collection_to_list_expr collection with
                   | Error _ -> Error.error "apply expects a list, vector, or set"
                   | Ok (inner, list_expr) -> (
-                      match fn.ty with
-                      | TFn ([ TInt; TInt ], TInt)
-                        when Types.equal inner TInt
-                             && List.for_all (fun arg -> Types.equal arg.ty TInt) fixed_args ->
+                      match fn_form with
+                      | FSymbol "str" ->
+                          let value_name = "__lg_apply_str_value" in
+                          let stringify_value =
+                            Semantic_ir.Fun
+                              ( [ Semantic_ir.PVar value_name ],
+                                Codegen.stringify_expr_ir ~pr:false
+                                  (typed_ir inner (Semantic_ir.Ident value_name)) )
+                          in
+                          let collection_text =
+                            apply "String.concat"
+                              [ Semantic_ir.String "";
+                                apply "List.map" [ stringify_value; list_expr ];
+                              ]
+                          in
+                          let parts =
+                            List.map (Codegen.stringify_expr_ir ~pr:false) fixed_args
+                            @ [ collection_text ]
+                          in
+                          Ok (typed_ir TString (Codegen.concat_expr parts))
+                      | _ -> (
+                        match compile_function_arg scope env fn_form with
+                        | Error _ as err -> err
+                        | Ok fn -> (
+                          match fn.ty with
+                          | TFn ([ TInt; TInt ], TInt)
+                            when Types.equal inner TInt
+                                 && List.for_all (fun arg -> Types.equal arg.ty TInt) fixed_args ->
                           let values_expr =
                             match fixed_args with
                             | [] -> list_expr
@@ -79,10 +101,10 @@ let create ~compile_expr =
                             (typed_ir TInt
                                (apply "List.fold_left"
                                   [ fn.semantic_expr; Semantic_ir.Int 0; values_expr ]))
-                      | TFn ([ TInt; TInt ], TInt) ->
-                          Error.error "apply currently supports int binary reducers"
-                      | TFn _ -> Error.error "apply currently supports int binary reducers"
-                      | _ -> Error.error "apply expects a function"))))
+                          | TFn ([ TInt; TInt ], TInt) ->
+                              Error.error "apply currently supports int binary reducers"
+                          | TFn _ -> Error.error "apply currently supports int binary reducers"
+                          | _ -> Error.error "apply expects a function"))))))
       | _ -> Error.error "apply expects function and collection"
     
     and compile_comp scope env arg_forms =

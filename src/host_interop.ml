@@ -3,8 +3,11 @@ let imported_module ~package ~class_name =
   | "java.util", "UUID" -> Some "Lg_runtime.Runtime_uuid"
   | _ -> None
 
+let type_annotation = function
+  | "UUID" -> Some "Lg_runtime.Runtime_uuid.t"
+  | _ -> None
+
 let implicit_module = function
-  | "System" -> Some "Lg_runtime.Runtime_system"
   | _ -> None
 
 let instance_method ~receiver_type ~method_name =

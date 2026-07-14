@@ -44,9 +44,34 @@ let first env collection =
       Ok
         (typed_ir (TTuple [ TUnknown; TUnknown ])
            (apply "Lg_runtime.Runtime_map.first_exn" [ collection.semantic_expr ]))
-  | None -> Collection_capability.first_expr env collection
+  | None -> (
+      match collection.ty with
+      | TTuple (first_type :: remaining_types) ->
+          let patterns =
+            Semantic_ir.PVar "first" :: List.map (fun _ -> Semantic_ir.PAny) remaining_types
+          in
+          Ok
+            (typed_ir first_type
+               (Semantic_ir.Match
+                  ( collection.semantic_expr,
+                    [ ( Semantic_ir.PTuple patterns,
+                        Semantic_ir.Ident "first" ) ] )))
+      | _ -> Collection_capability.first_expr env collection)
 
-let second env collection = Collection_capability.second_expr env collection
+let second env collection =
+  match collection.ty with
+  | TTuple (_ :: second_type :: remaining_types) ->
+      let patterns =
+        Semantic_ir.PAny :: Semantic_ir.PVar "second"
+        :: List.map (fun _ -> Semantic_ir.PAny) remaining_types
+      in
+      Ok
+        (typed_ir second_type
+           (Semantic_ir.Match
+              ( collection.semantic_expr,
+                [ ( Semantic_ir.PTuple patterns,
+                    Semantic_ir.Ident "second" ) ] )))
+  | _ -> Collection_capability.second_expr env collection
 
 let last env collection = Collection_capability.last_expr env collection
 

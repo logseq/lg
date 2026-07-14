@@ -121,7 +121,10 @@ let create ~compile_expr =
     
     and compile_hash_set scope env arg_forms =
       match arg_forms with
-      | [] -> Error.error "empty hash-set requires a type annotation"
+      | [] ->
+          Ok
+            (typed_ir (TSet TUnknown)
+               (Semantic_ir.Ident "Lg_runtime.Runtime_poly_set.empty"))
       | first :: rest -> (
           match compile_expr scope env first with
           | Error _ as err -> err

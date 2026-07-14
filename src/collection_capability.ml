@@ -3,6 +3,9 @@ open Types
 let apply name args = Semantic_ir.Apply (Semantic_ir.Ident name, args)
 
 let to_seq_expr env collection =
+  match Types.next_seq_element collection.ty with
+  | Some inner -> Ok (inner, collection.semantic_expr)
+  | None ->
   match Types.seqable_constraint_element collection.ty with
   | Some inner -> (
       match Semantic_ir.unlocated collection.semantic_expr with
@@ -62,6 +65,14 @@ let rest_expr env collection =
   | Ok (inner, sequence) ->
       Ok
         (typed_ir (TSeq inner)
+           (apply "Lg_runtime.Runtime_seq.drop" [ Semantic_ir.Int 1; sequence ]))
+
+let next_expr env collection =
+  match to_seq_expr env collection with
+  | Error _ -> Error.error "next expects a seqable value"
+  | Ok (inner, sequence) ->
+      Ok
+        (typed_ir (Types.next_seq inner)
            (apply "Lg_runtime.Runtime_seq.drop" [ Semantic_ir.Int 1; sequence ]))
 
 let second_expr env collection =

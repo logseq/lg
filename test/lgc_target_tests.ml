@@ -126,6 +126,20 @@ let test_js_names_js_of_ocaml_target () =
   assert_contains generated "js-value";
   assert_not_contains generated "legacy-value"
 
+let test_javascript_targets_load_clj_macro_definitions () =
+  let source =
+    {|
+(ns compat.macros)
+#?(:clj (defn- emit-value [value] value))
+#?(:clj (defmacro from-clj [value] (emit-value value)))
+(def answer (from-clj 42))
+|}
+  in
+  [ Lg.Target.Melange; Lg.Target.Js_of_ocaml ]
+  |> List.iter (fun target ->
+         let generated = compile target source in
+         assert_contains generated "42")
+
 let test_rejects_invalid_reader_conditionals () =
   Lg.Compiler.compile_string ~target:Lg.Target.Native
     {|(def value #?(:native 1 :melange))|}
@@ -160,6 +174,8 @@ let tests =
     ( "maps :cljs to JavaScript targets and :clj to Native",
       test_clj_and_cljs_compatibility_features );
     ("names js-of-ocaml target js", test_js_names_js_of_ocaml_target);
+    ( "loads :clj macro definitions for JavaScript targets",
+      test_javascript_targets_load_clj_macro_definitions );
     ( "omits unmatched reader conditionals",
       test_omits_unmatched_reader_conditionals );
     ( "rejects invalid reader conditionals",

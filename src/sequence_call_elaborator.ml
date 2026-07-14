@@ -94,6 +94,34 @@ let create ~compile_expr =
                     ( [ pattern accumulator_binding accumulator_ty;
                         pattern element_binding element_ty ],
                       body.semantic_expr )))
+    | FList
+        (FSymbol "fn" :: (FVector [ _accumulator; _element ] as params)
+        :: body_forms) ->
+        let lookup_function_ty name =
+          match lookup_function scope env name with
+          | Ok fn -> Ok fn.ty
+          | Error _ as error -> error
+        in
+        Function_elaborator.prepare
+          ~param_type_overrides:[ Some accumulator_ty; Some element_ty ]
+          ~lookup_function_ty ~compile_body scope env params body_forms
+        |> Result.map Function_elaborator.fn_code
+    | form -> compile_function_arg scope env form
+  in
+  let compile_kv_reducer scope env accumulator_ty key_ty value_ty = function
+    | FList
+        (FSymbol "fn" :: (FVector [ _accumulator; _key; _value ] as params)
+        :: body_forms) ->
+        let lookup_function_ty name =
+          match lookup_function scope env name with
+          | Ok fn -> Ok fn.ty
+          | Error _ as error -> error
+        in
+        Function_elaborator.prepare
+          ~param_type_overrides:
+            [ Some accumulator_ty; Some key_ty; Some value_ty ]
+          ~lookup_function_ty ~compile_body scope env params body_forms
+        |> Result.map Function_elaborator.fn_code
     | form -> compile_function_arg scope env form
   in
     let rec collection_to_list_expr collection =
@@ -526,39 +554,67 @@ let create ~compile_expr =
       match arg_forms with
       | fn_form :: init_form :: collection_form :: [] -> (
           match
-            ( compile_function_arg scope env fn_form,
-              compile_expr scope env init_form,
+            ( compile_expr scope env init_form,
               compile_expr scope env collection_form )
           with
-          | (Error _ as err), _, _ -> err
-          | _, (Error _ as err), _ -> err
-          | _, _, (Error _ as err) -> err
-          | Ok fn, Ok init, Ok collection -> (
-              match (fn.ty, collection.ty) with
-              | TFn ([ acc_ty; TInt; item_ty ], ret), TVector inner
-                when Types.equal acc_ty init.ty && Types.equal item_ty inner && Types.equal ret init.ty ->
-                  Ok
-                    (typed_ir init.ty
-                       (apply "List.fold_left"
-                          [ Semantic_ir.Fun
-                              ( [ Semantic_ir.PVar "acc";
-                                  Semantic_ir.PTuple
-                                    [ Semantic_ir.PVar "index"; Semantic_ir.PVar "item" ] ],
-                                Semantic_ir.Apply
-                                  ( fn.semantic_expr,
-                                    [ Semantic_ir.Ident "acc";
-                                      Semantic_ir.Ident "index";
-                                      Semantic_ir.Ident "item" ] ) );
-                            init.semantic_expr;
-                            apply "List.mapi"
-                              [ Semantic_ir.Fun
-                                  ( [ Semantic_ir.PVar "index"; Semantic_ir.PVar "item" ],
-                                    Semantic_ir.Tuple
-                                      [ Semantic_ir.Ident "index"; Semantic_ir.Ident "item" ] );
-                                apply "Rrbvec.to_list" [ collection.semantic_expr ] ] ]))
-              | TFn _, TVector _ -> Error.error "reduce-kv function type does not match vector"
-              | _, TVector _ -> Error.error "reduce-kv expects a function"
-              | _ -> Error.error "reduce-kv expects a vector"))
+          | (Error _ as error), _ -> error
+          | _, (Error _ as error) -> error
+          | Ok init, Ok collection ->
+              let compile_for key_ty value_ty entries =
+                match
+                  compile_kv_reducer scope env init.ty key_ty value_ty fn_form
+                with
+                | Error _ as error -> error
+                | Ok fn -> (
+                    match fn.ty with
+                    | TFn ([ accumulator_ty; actual_key; actual_value ], result)
+                      when Types.assignable ~policy:Host_boundary
+                             ~expected:accumulator_ty ~actual:init.ty
+                           && Types.assignable ~policy:Host_boundary
+                                ~expected:actual_key ~actual:key_ty
+                           && Types.assignable ~policy:Host_boundary
+                                ~expected:actual_value ~actual:value_ty
+                           && Types.assignable ~policy:Host_boundary
+                                ~expected:init.ty ~actual:result ->
+                        Ok
+                          (typed_ir init.ty
+                             (apply "List.fold_left"
+                                [ Semantic_ir.Fun
+                                    ( [ Semantic_ir.PVar "accumulator";
+                                        Semantic_ir.PTuple
+                                          [ Semantic_ir.PVar "key";
+                                            Semantic_ir.PVar "value" ] ],
+                                      Semantic_ir.Apply
+                                        ( fn.semantic_expr,
+                                          [ Semantic_ir.Ident "accumulator";
+                                            Semantic_ir.Ident "key";
+                                            Semantic_ir.Ident "value" ] ) );
+                                  init.semantic_expr;
+                                  entries ]))
+                    | TFn _ ->
+                        Error.error
+                          "reduce-kv function type does not match collection"
+                    | _ -> Error.error "reduce-kv expects a function")
+              in
+              (match collection.ty with
+              | TVector value_ty ->
+                  let entries =
+                    apply "List.mapi"
+                      [ Semantic_ir.Fun
+                          ( [ Semantic_ir.PVar "index";
+                              Semantic_ir.PVar "value" ],
+                            Semantic_ir.Tuple
+                              [ Semantic_ir.Ident "index";
+                                Semantic_ir.Ident "value" ] );
+                        apply "Rrbvec.to_list" [ collection.semantic_expr ] ]
+                  in
+                  compile_for TInt value_ty entries
+              | map_type -> (
+                  match Types.dynamic_map_types map_type with
+                  | Some (key_ty, value_ty) ->
+                      compile_for key_ty value_ty collection.semantic_expr
+                  | None ->
+                      Error.error "reduce-kv expects a vector or map")))
       | _ -> Error.error "reduce-kv expects function, init, and vector"
     
     and compile_some scope env arg_forms =
@@ -771,9 +827,70 @@ let create ~compile_expr =
                             (typed_ir init.ty
                                (Collection_capability.reduce_expr env
                                   ~short_circuit:true fn init collection sequence))
+                      | TFn ([ acc_ty; item_ty ], TNullable reduced_type)
+                        when Types.equal init.ty TNil
+                             && Types.equal acc_ty TNil
+                             && (Types.equal item_ty inner
+                                || Types.equal inner TUnknown
+                                || Types.assignable ~policy:Host_boundary
+                                     ~expected:item_ty ~actual:inner) -> (
+                          match Types.reduced_element reduced_type with
+                          | None ->
+                              Error.error
+                                "nullable reduce result must contain a reduced value"
+                          | Some result_type ->
+                              let accumulator = Semantic_ir.Ident "accumulator" in
+                              let item = Semantic_ir.Ident "item" in
+                              let reduced_value = "reduced_value" in
+                              let nullable_result = TNullable result_type in
+                              let adapted_fn =
+                                typed_ir
+                                  (TFn
+                                     ( [ nullable_result; item_ty ],
+                                       Types.reduced nullable_result ))
+                                  (Semantic_ir.Fun
+                                     ( [ Semantic_ir.PVar "accumulator";
+                                         Semantic_ir.PVar "item" ],
+                                       Semantic_ir.Match
+                                         ( Semantic_ir.Apply
+                                             ( fn.semantic_expr,
+                                               [ accumulator; item ] ),
+                                           [ ( Semantic_ir.PConstructor
+                                                 ("None", None),
+                                               Semantic_ir.Apply
+                                                 ( Semantic_ir.Ident
+                                                     "Lg_runtime.Runtime_reduced.continue",
+                                                   [ Semantic_ir.Constructor
+                                                       ("None", None) ] ) );
+                                             ( Semantic_ir.PConstructor
+                                                 ( "Some",
+                                                   Some
+                                                     (Semantic_ir.PVar
+                                                        reduced_value) ),
+                                               Semantic_ir.Apply
+                                                 ( Semantic_ir.Ident
+                                                     "Lg_runtime.Runtime_reduced.reduced",
+                                                   [ Semantic_ir.Constructor
+                                                       ( "Some",
+                                                         Some
+                                                           (Semantic_ir.Apply
+                                                              ( Semantic_ir.Ident
+                                                                  "Lg_runtime.Runtime_reduced.unreduced",
+                                                                [ Semantic_ir.Ident
+                                                                    reduced_value ] )) ) ] ) ) ] ) ))
+                              in
+                              Ok
+                                (typed_ir nullable_result
+                                   (Collection_capability.reduce_expr env
+                                      ~short_circuit:true adapted_fn
+                                      { init with ty = nullable_result }
+                                      collection sequence)))
                       | TFn _ ->
                           Error.error
-                            "reduce function type does not match init and sequence"
+                            ("reduce function type does not match init and sequence: fn="
+                           ^ Types.source_name fn.ty ^ ", init="
+                           ^ Types.source_name init.ty ^ ", sequence="
+                           ^ Types.source_name inner)
                       | _ -> Error.error "reduce expects a function"))))
       | _ -> Error.error "reduce expects function, init, and collection"
     

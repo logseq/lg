@@ -7,6 +7,9 @@ let collection_to_list_expr collection =
   | TList inner -> Ok (inner, collection.semantic_expr)
   | TVector inner -> Ok (inner, apply "Rrbvec.to_list" [ collection.semantic_expr ])
   | TArray inner -> Ok (inner, apply "Array.to_list" [ collection.semantic_expr ])
+  | TSeq inner -> Ok (inner, apply "List.of_seq" [ collection.semantic_expr ])
+  | TOcaml_app (name, [ inner ]) when name = Types.next_seq_type_name ->
+      Ok (inner, apply "List.of_seq" [ collection.semantic_expr ])
   | TSet inner ->
       Types.set_module_name inner
       |> Result.map (fun set_module ->
@@ -18,6 +21,8 @@ let collection_to_list_expr collection =
 let collection_to_seq_expr collection =
   match collection.ty with
   | TSeq inner -> Ok (inner, collection.semantic_expr)
+  | TOcaml_app (name, [ inner ]) when name = Types.next_seq_type_name ->
+      Ok (inner, collection.semantic_expr)
   | TList inner ->
       Ok
         (inner, apply "Lg_runtime.Runtime_seq.of_list" [ collection.semantic_expr ])
@@ -565,6 +570,11 @@ let into target source =
   | Error _ -> Error.error "into source must be a collection"
   | Ok (source_inner, source_list_expr) -> (
       match target.ty with
+      | TVector (TVar _) ->
+          Ok
+            (typed_ir (TVector source_inner)
+               (apply "Rrbvec.append_list"
+                  [ target.semantic_expr; source_list_expr ]))
       | TVector target_inner when Types.equal target_inner source_inner -> (
           match source.ty with
           | TVector _ ->
@@ -597,6 +607,32 @@ let into target source =
           Error.error "into source element type must match target element type"
       | _ -> Error.error "into target must be a collection")
 
+let into_cat target source =
+  match collection_to_list_expr source with
+  | Error _ ->
+      Error.error
+        ("into cat source must be a collection, got "
+       ^ Types.source_name source.ty)
+  | Ok (TVector element_type, outer) ->
+      let flattened =
+        apply "List.concat"
+          [ apply "List.map"
+              [ Semantic_ir.Ident "Rrbvec.to_list"; outer ] ]
+      in
+      into target (typed_ir (TList element_type) flattened)
+  | Ok (TList element_type, outer) ->
+      into target
+        (typed_ir (TList element_type) (apply "List.concat" [ outer ]))
+  | Ok (TUnknown, outer) ->
+      let flattened =
+        apply "List.concat"
+          [ apply "List.map"
+              [ Semantic_ir.Ident "Rrbvec.to_list"; outer ] ]
+      in
+      into target (typed_ir (TList TUnknown) flattened)
+  | Ok _ ->
+      Error.error "into cat source elements must be collections"
+
 let compile name args =
   match (name, args) with
   | "remove", [ fn; collection ] -> remove fn collection
@@ -624,6 +660,7 @@ let compile name args =
   | "dorun", [ collection ] -> dorun collection
   | "doall", [ collection ] -> doall collection
   | "into", [ target; source ] -> into target source
+  | "into-cat", [ target; source ] -> into_cat target source
   | "remove", _ -> Error.error "remove expects function and collection"
   | ("take-while" | "drop-while"), _ ->
       Error.error (name ^ " expects function and collection")

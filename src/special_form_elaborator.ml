@@ -85,6 +85,30 @@ let create ~compile_expr =
                   in
                   (match element_ty with
                   | None -> Error.error "vector elements must all have the same type"
+                  | Some element_ty
+                    when not
+                           (List.for_all
+                              (fun expression ->
+                                Types.equal element_ty expression.ty
+                                ||
+                                match (element_ty, expression.ty) with
+                                | TNullable _, TNil -> true
+                                | TNullable inner, TNullable actual
+                                | TNullable inner, actual ->
+                                    Types.assignable ~policy:Host_boundary
+                                      ~expected:inner ~actual
+                                | _ -> false)
+                              expressions) ->
+                      Ok
+                        (typed_ir
+                           (TTuple
+                              (List.map
+                                 (fun expression -> expression.ty)
+                                 expressions))
+                           (Semantic_ir.Tuple
+                              (List.map
+                                 (fun expression -> expression.semantic_expr)
+                                 expressions)))
                   | Some element_ty ->
                   let values =
                     expressions

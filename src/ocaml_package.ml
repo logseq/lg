@@ -14,6 +14,21 @@ let read_lines channel =
   in
   loop []
 
+let contains_compiled_interface directory =
+  Sys.file_exists directory && Sys.is_directory directory
+  && Sys.readdir directory
+     |> Array.exists (String.ends_with ~suffix:".cmi")
+
+let expand_include_directory directory =
+  let nested =
+    if Sys.file_exists directory && Sys.is_directory directory then
+      Sys.readdir directory |> Array.to_list
+      |> List.map (Filename.concat directory)
+      |> List.filter contains_compiled_interface
+    else []
+  in
+  directory :: nested
+
 let query_cache = Hashtbl.create 8
 
 let query package =
@@ -27,7 +42,10 @@ let query package =
         let stdout, stdin, stderr =
           Unix.open_process_args_full "ocamlfind" argv (Unix.environment ())
         in
-        let directories = read_lines stdout in
+        let directories =
+          read_lines stdout |> List.concat_map expand_include_directory
+          |> List.sort_uniq String.compare
+        in
         let _diagnostic = read_lines stderr in
         let result =
           match Unix.close_process_full (stdout, stdin, stderr) with

@@ -33,6 +33,94 @@ let int_parameter_type = function
   | TInt | TUnknown | TVar _ -> true
   | _ -> false
 
+let callback_parameters_compatible expected actual =
+  List.length expected = List.length actual
+  && List.for_all2
+       (fun expected actual ->
+         Types.assignable ~policy:Host_boundary ~expected ~actual)
+       expected actual
+
+let maybe_reduced_callback_payload expected actual =
+  match (expected, actual) with
+  | TFn (expected_params, expected_return), TFn (actual_params, actual_return)
+    when callback_parameters_compatible expected_params actual_params -> (
+      match
+        ( Types.maybe_reduced_callback_element expected_return,
+          Types.reduced_element actual_return )
+      with
+      | Some expected_inner, Some actual_inner
+        when Types.assignable ~policy:Host_boundary ~expected:expected_inner
+               ~actual:actual_inner ->
+          Some actual_inner
+      | _ -> None)
+  | _ -> None
+
+let argument_compatible expected actual =
+  if Types.assignable ~policy:Host_boundary ~expected ~actual then true
+  else
+    match (expected, actual) with
+    | TFn (expected_params, expected_return), TFn (actual_params, actual_return)
+      when callback_parameters_compatible expected_params actual_params -> (
+        match Types.maybe_reduced_callback_element expected_return with
+        | Some expected_inner -> (
+            match Types.reduced_element actual_return with
+            | Some actual_inner ->
+                Types.assignable ~policy:Host_boundary ~expected:expected_inner
+                  ~actual:actual_inner
+            | None ->
+                Types.assignable ~policy:Host_boundary ~expected:expected_inner
+                  ~actual:actual_return)
+        | None -> false)
+    | _ -> false
+
+let reduced_callback_state = "__lg_reduced_callback_value"
+
+let adapt_reduced_callback arg =
+  match arg.ty with
+  | TFn (params, return_type) -> (
+      match Types.reduced_element return_type with
+      | Some _ ->
+          let parameter_names =
+            List.mapi
+              (fun index _ -> "__lg_callback_arg_" ^ string_of_int index)
+              params
+          in
+          let result_name = "__lg_callback_result" in
+          let result = Semantic_ir.Ident result_name in
+          let value =
+            Semantic_ir.Apply
+              ( Semantic_ir.Ident "Lg_runtime.Runtime_reduced.unreduced",
+                [ result ] )
+          in
+          Semantic_ir.Fun
+            ( List.map (fun name -> Semantic_ir.PVar name) parameter_names,
+              Semantic_ir.Let
+                ( [ ( Semantic_ir.PVar result_name,
+                      Semantic_ir.Apply
+                        ( arg.semantic_expr,
+                          List.map
+                            (fun name -> Semantic_ir.Ident name)
+                            parameter_names ) ) ],
+                  Semantic_ir.If
+                    ( Semantic_ir.Apply
+                        ( Semantic_ir.Ident
+                            "Lg_runtime.Runtime_reduced.is_reduced",
+                          [ result ] ),
+                      Semantic_ir.Sequence
+                        [ Semantic_ir.Infix
+                            ( ":=",
+                              Semantic_ir.Ident reduced_callback_state,
+                              Semantic_ir.Constructor ("Some", Some value) );
+                          Semantic_ir.Apply
+                            ( Semantic_ir.Ident "raise",
+                              [ Semantic_ir.Constructor
+                                  ( "Lg_runtime.Runtime_reduced.Callback_reduced",
+                                    None ) ] );
+                        ],
+                      value ) ) )
+      | None -> arg.semantic_expr)
+  | _ -> arg.semantic_expr
+
 let create ~compile_expr =
   let special_forms : Special_form_elaborator.t =
     Special_form_elaborator.create ~compile_expr
@@ -100,6 +188,14 @@ let create ~compile_expr =
   let compile_hash_set = comparisons.compile_hash_set in
   let compile_set_of = comparisons.compile_set_of in
   let compile_disj = comparisons.compile_disj in
+  let clojure_set_function scope env name =
+    match String.split_on_char '/' name with
+    | [ alias; function_name ] -> (
+        match Env.resolve_namespace_alias ~scope alias env with
+        | Some "clojure.set" -> Some function_name
+        | _ -> None)
+    | _ -> None
+  in
   let rec compile_ocaml_arguments scope env forms =
     let rec parse acc = function
       | [] -> Ok (List.rev acc)
@@ -406,11 +502,99 @@ let create ~compile_expr =
             | _ -> Error.error "persistent! expects a transient collection"))
     | _ -> Error.error "persistent! expects 1 argument"
 
+  and compile_zip_vectors scope env collection_forms =
+    let rec compile element_type expressions = function
+      | [] ->
+          let element_type = Option.value element_type ~default:TUnknown in
+          Ok
+            (typed_ir (TVector (TVector element_type))
+               (Semantic_ir.Apply
+                  ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.zip_vectors",
+                    [ Semantic_ir.List (List.rev expressions) ] )))
+      | form :: rest -> (
+          match compile_expr scope env form with
+          | Error _ as error -> error
+          | Ok ({ ty = TVector current_type; _ } as collection) ->
+              let element_type =
+                match element_type with
+                | None -> Some current_type
+                | Some previous
+                  when Types.equal previous TUnknown -> Some current_type
+                | Some previous
+                  when Types.equal current_type TUnknown
+                       || Types.same_shape previous current_type ->
+                    Some previous
+                | Some _ -> None
+              in
+              (match element_type with
+              | None ->
+                  Error.error
+                    "mapv vector collections must have matching element types"
+              | Some _ ->
+                  compile element_type
+                    (collection.semantic_expr :: expressions) rest)
+          | Ok ({ ty = (TUnknown | TVar _); _ } as collection) ->
+              compile (Some TUnknown)
+                (collection.semantic_expr :: expressions) rest
+          | Ok _ -> Error.error "mapv vector expects vector collections")
+    in
+    if collection_forms = [] then
+      Error.error "mapv vector expects at least one collection"
+    else compile None [] collection_forms
+
+  and compile_apply_zip_vectors scope env fixed_forms rest_form =
+    match
+      ( compile_args_for scope env fixed_forms,
+        compile_expr scope env rest_form )
+    with
+    | (Error _ as error), _ -> error
+    | _, (Error _ as error) -> error
+    | Ok fixed, Ok rest ->
+        if
+          not
+            (List.for_all
+               (fun collection ->
+                 match collection.ty with
+                 | TVector _ | TUnknown | TVar _ -> true
+                 | _ -> false)
+               fixed)
+        then Error.error "apply mapv vector expects vector collections"
+        else
+          let collections =
+            List.fold_right
+              (fun collection tail ->
+                Semantic_ir.Cons (collection.semantic_expr, tail))
+              fixed
+              (Semantic_ir.Apply
+                 (Semantic_ir.Ident "List.of_seq", [ rest.semantic_expr ]))
+          in
+          Ok
+            (typed_ir (TVector (TVector TUnknown))
+               (Semantic_ir.Apply
+                  ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.zip_vectors",
+                    [ collections ] )))
+
   and compile_call scope env name arg_forms =
-    match lookup_binding scope env name with
+    let qualified_core = String.starts_with ~prefix:"clojure.core/" name in
+    let name =
+      if qualified_core then
+        String.sub name (String.length "clojure.core/")
+          (String.length name - String.length "clojure.core/")
+      else name
+    in
+    match clojure_set_function scope env name with
+    | Some function_name -> (
+        match compile_args_for scope env arg_forms with
+        | Error _ as error -> error
+        | Ok args -> Core_set.compile function_name args)
+    | None ->
+    match
+      (if qualified_core then Error.error "core"
+       else lookup_binding scope env name)
+    with
     | Ok _ when not (Resolver.starts_with_uppercase name) ->
         compile_named_function_call scope env name arg_forms
-    | Error _ when Env.core_excluded ~scope name env ->
+    | Error _ when (not qualified_core) && Env.core_excluded ~scope name env ->
         Error.error ("unknown function " ^ name)
     | Ok _ | Error _ ->
     let compile_args () = compile_args_for scope env arg_forms in
@@ -433,6 +617,112 @@ let create ~compile_expr =
                (Semantic_ir.Constructor (constructor_name, payload)))
     in
     match name with
+    | "js/parseInt" -> (
+        match compile_args () with
+        | Ok [ source; radix ]
+          when Types.equal source.ty TString && Types.equal radix.ty TInt ->
+            Ok
+              (typed_ir TInt
+                 (Semantic_ir.Apply
+                    ( Semantic_ir.Ident
+                        "Lg_runtime.Runtime_string.parse_int_radix",
+                      [ source.semantic_expr; radix.semantic_expr ] )))
+        | Ok _ -> Error.error "js/parseInt expects a string and radix"
+        | Error _ as error -> error)
+    | "js/Date." -> (
+        match (Env.target env, arg_forms) with
+        | Target.Melange, [] ->
+            Ok
+              (typed_ir (TOcaml "__lg_date_millis")
+                 (Semantic_ir.Apply
+                    ( Semantic_ir.Ident "int_of_float",
+                      [ Semantic_ir.Apply
+                          (Semantic_ir.Ident "Js.Date.now", []) ] )))
+        | Target.Js_of_ocaml, [] ->
+            let date =
+              Semantic_ir.Apply
+                ( Semantic_ir.Ident "Js_of_ocaml.Js.Unsafe.new_obj",
+                  [ Semantic_ir.Ident "Js_of_ocaml.Js.date_now";
+                    Semantic_ir.Array [];
+                  ] )
+            in
+            let milliseconds =
+              Semantic_ir.Apply
+                ( Semantic_ir.Ident "Js_of_ocaml.Js.Unsafe.meth_call",
+                  [ date; Semantic_ir.String "getTime"; Semantic_ir.Array [] ] )
+            in
+            Ok
+              (typed_ir (TOcaml "__lg_date_millis")
+                 (Semantic_ir.Apply
+                    ( Semantic_ir.Ident "int_of_float",
+                      [ Semantic_ir.Apply
+                          ( Semantic_ir.Ident "Js_of_ocaml.Js.to_float",
+                            [ milliseconds ] ) ] )))
+        | Target.Native, [] ->
+            Error.error "js/Date is only available on JavaScript targets"
+        | _, _ -> Error.error "js/Date expects 0 arguments")
+    | "System/currentTimeMillis" -> (
+        match arg_forms with
+        | [] ->
+            Ok
+              (typed_ir TInt
+                 (Semantic_ir.Apply
+                    ( Semantic_ir.Ident "int_of_float",
+                      [ Semantic_ir.Infix
+                          ( "*.",
+                            Semantic_ir.Apply
+                              (Semantic_ir.Ident "Unix.gettimeofday", []),
+                            Semantic_ir.Float "1000." ) ] )))
+        | _ -> Error.error "System/currentTimeMillis expects 0 arguments")
+    | "uuid" -> (
+        match compile_args () with
+        | Ok [ value ] when Types.equal value.ty TString ->
+            (match Env.target env with
+            | Target.Native ->
+                Ok
+                  (typed_ir (TOcaml "Lg_runtime.Runtime_uuid.t")
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident "Lg_runtime.Runtime_uuid.of_string",
+                          [ value.semantic_expr ] )))
+            | Target.Melange | Target.Js_of_ocaml ->
+                Ok (typed_ir TString value.semantic_expr))
+        | Ok _ -> Error.error "uuid expects a string"
+        | Error _ as error -> error)
+    | "__type-hint" -> (
+        match arg_forms with
+        | [ FSymbol annotation; value_form ] -> (
+            match
+              ( Type_annotation.of_param_annotation annotation,
+                compile_expr scope env value_form )
+            with
+            | (Error _ as error), _ -> error
+            | _, (Error _ as error) -> error
+            | Ok hinted_type, Ok value ->
+                Ok
+                  { value with
+                    ty = hinted_type;
+                    semantic_expr =
+                      Semantic_ir.annotate hinted_type value.semantic_expr;
+                  })
+        | _ -> Error.error "type hint expects metadata and a value")
+    | ".toString" -> (
+        match compile_args () with
+        | Ok [ value; radix ]
+          when Types.equal value.ty TInt && Types.equal radix.ty TInt ->
+            Ok
+              (typed_ir TString
+                 (Semantic_ir.Apply
+                    ( Semantic_ir.Ident
+                        "Lg_runtime.Runtime_string.int_to_string_radix",
+                      [ value.semantic_expr; radix.semantic_expr ] )))
+        | Ok _ -> Error.error ".toString expects an int and radix"
+        | Error _ as error -> error)
+    | ".getTime" -> (
+        match compile_args () with
+        | Ok [ ({ ty = TOcaml "__lg_date_millis"; _ } as date) ] ->
+            Ok (typed_ir TInt date.semantic_expr)
+        | Ok _ -> Error.error ".getTime expects a JavaScript Date"
+        | Error _ as error -> error)
     | constructor_name
       when String.ends_with ~suffix:"." constructor_name -> (
         let type_name =
@@ -497,7 +787,11 @@ let create ~compile_expr =
             | None -> Error.error ("unsupported host method " ^ method_name)
             | Some function_name ->
                 compile_inferred_ocaml_call scope env function_name arg_forms)
-        | Ok _ -> Error.error (method_name ^ " expects a host receiver"))
+        | Ok (receiver :: _) ->
+            Error.error
+              (method_name ^ " expects a host receiver, got "
+             ^ source_name receiver.ty)
+        | Ok [] -> Error.error (method_name ^ " expects a host receiver"))
     | field_access when String.starts_with ~prefix:".-" field_access -> (
         match compile_args () with
         | Error _ as err -> err
@@ -1129,7 +1423,99 @@ let create ~compile_expr =
                        (TOcaml_app ("Lg_runtime.Runtime_reify.t", [ payload_ty ]))
                        payload_expr))
         | _ -> Error.error "reify expects a protocol and method implementations")
+    | "assert" -> (
+        match compile_args () with
+        | Error _ as error -> error
+        | Ok [ condition ] when Types.equal condition.ty TBool ->
+            Ok
+              (typed_ir TUnit
+                 (Semantic_ir.If
+                    ( condition.semantic_expr,
+                      Semantic_ir.Unit,
+                      Semantic_ir.Apply
+                        ( Semantic_ir.Ident "invalid_arg",
+                          [ Semantic_ir.String "Assert failed" ] ) )))
+        | Ok [ condition; message ]
+          when Types.equal condition.ty TBool
+               && Types.equal message.ty TString ->
+            Ok
+              (typed_ir TUnit
+                 (Semantic_ir.If
+                    ( condition.semantic_expr,
+                      Semantic_ir.Unit,
+                      Semantic_ir.Apply
+                        ( Semantic_ir.Ident "invalid_arg",
+                          [ message.semantic_expr ] ) )))
+        | Ok [ _; message ] when not (Types.equal message.ty TString) ->
+            Error.error "assert message must be a string"
+        | Ok [ _ ] | Ok [ _; _ ] ->
+            Error.error "assert condition must be bool"
+        | Ok _ -> Error.error "assert expects condition and optional message")
+    | "fnil" -> (
+        match arg_forms with
+        | [ FSymbol "conj"; default_form ] -> (
+            match compile_expr scope env default_form with
+            | Error _ as error -> error
+            | Ok default ->
+                let collection = Semantic_ir.Ident "collection" in
+                let value = Semantic_ir.Ident "value" in
+                let selected_collection =
+                  Semantic_ir.Match
+                    ( collection,
+                      [ ( Semantic_ir.PConstructor ("None", None),
+                          default.semantic_expr );
+                        ( Semantic_ir.PConstructor
+                            ( "Some",
+                              Some
+                                (Semantic_ir.PVar "present_collection") ),
+                          Semantic_ir.Ident "present_collection" ) ] )
+                in
+                (match default.ty with
+                | TVector element_type ->
+                    let result_type = TVector element_type in
+                    Ok
+                      (typed_ir
+                         (TFn
+                            ( [ TNullable result_type; TUnknown ],
+                              result_type ))
+                         (Semantic_ir.Fun
+                            ( [ Semantic_ir.PVar "collection";
+                                Semantic_ir.PVar "value" ],
+                              Semantic_ir.Apply
+                                ( Semantic_ir.Ident "Rrbvec.push_back",
+                                  [ selected_collection; value ] ) )))
+                | TSet element_type ->
+                    Result.map
+                      (fun set_module ->
+                        let result_type = TSet element_type in
+                        typed_ir
+                          (TFn
+                             ( [ TNullable result_type; TUnknown ],
+                               result_type ))
+                          (Semantic_ir.Fun
+                             ( [ Semantic_ir.PVar "collection";
+                                 Semantic_ir.PVar "value" ],
+                               Semantic_ir.Apply
+                                 ( Semantic_ir.Ident (set_module ^ ".add"),
+                                   [ value; selected_collection ] ) )))
+                      (Types.set_module_name element_type)
+                | _ ->
+                    Error.error
+                      "fnil conj default must be a vector or set"))
+        | [ FSymbol "conj"; _; _ ] | [ FSymbol "conj"; _; _; _ ] ->
+            Error.error "fnil conj currently supports one default argument"
+        | _ -> Error.error "fnil expects a function and default arguments")
     | "volatile!" -> (
+        match arg_forms with
+        | [ FSymbol "nil" ] ->
+            Ok
+              (typed_ir
+                 (TOcaml_app
+                    ("Lg_runtime.Runtime_slot.t", [ TUnknown ]))
+                 (Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Lg_runtime.Runtime_slot.empty",
+                      [] )))
+        | _ ->
         match compile_args () with
         | Error _ as err -> err
         | Ok [ initial ] ->
@@ -1143,6 +1529,12 @@ let create ~compile_expr =
         | Error _ as err -> err
         | Ok [ reference ] -> (
             match reference.ty with
+            | TOcaml_app ("Lg_runtime.Runtime_slot.t", [ value_ty ]) ->
+                Ok
+                  (typed_ir value_ty
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident "Lg_runtime.Runtime_slot.get",
+                          [ reference.semantic_expr ] )))
             | TRef value_ty ->
                 Ok
                   (typed_ir value_ty
@@ -1160,6 +1552,13 @@ let create ~compile_expr =
         | Error _ as err -> err
         | Ok [ reference; value ] -> (
             match reference.ty with
+            | TOcaml_app ("Lg_runtime.Runtime_slot.t", [ _ ]) ->
+                Ok
+                  (typed_ir value.ty
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident "Lg_runtime.Runtime_slot.set",
+                          [ reference.semantic_expr;
+                            value.semantic_expr ] )))
             | TRef referenced_ty
               when Types.assignable ~policy:Host_boundary
                      ~expected:referenced_ty ~actual:value.ty ->
@@ -1387,7 +1786,18 @@ let create ~compile_expr =
     | "persistent!" -> compile_persistent_bang scope env arg_forms
     | "hash-map" | "array-map" | "sorted-map" -> compile_hash_map scope env arg_forms
     | "rest" | "seq" | "empty?" -> compile_collection_call scope env name arg_forms
-    | "into" -> compile_sequence_transform_call scope env name arg_forms
+    | "into" -> (
+        match arg_forms with
+        | [ target_form; FSymbol "cat"; source_form ] -> (
+            match
+              ( compile_expr scope env target_form,
+                compile_expr scope env source_form )
+            with
+            | (Error _ as error), _ -> error
+            | _, (Error _ as error) -> error
+            | Ok target, Ok source ->
+                Core_sequence_transform.compile "into-cat" [ target; source ])
+        | _ -> compile_sequence_transform_call scope env name arg_forms)
     | "take" | "drop" -> compile_collection_call scope env name arg_forms
     | "butlast" | "take-last" | "drop-last" | "take-nth" ->
         compile_sequence_transform_call scope env name arg_forms
@@ -1421,10 +1831,22 @@ let create ~compile_expr =
     | "reductions" -> compile_reductions scope env arg_forms
     | "map-indexed" -> compile_map_indexed scope env arg_forms
     | "filterv" -> compile_filterv scope env arg_forms
-    | "mapv" -> compile_mapv scope env arg_forms
+    | "mapv" -> (
+        match arg_forms with
+        | FSymbol "vector" :: collection_forms ->
+            compile_zip_vectors scope env collection_forms
+        | _ -> compile_mapv scope env arg_forms)
     | "reduce-kv" -> compile_reduce_kv scope env arg_forms
     | "reduce" -> compile_reduce scope env arg_forms
-    | "apply" -> compile_apply scope env arg_forms
+    | "apply" -> (
+        match arg_forms with
+        | FSymbol "mapv" :: FSymbol "vector" :: fixed_and_rest
+          when List.length fixed_and_rest >= 2 ->
+            let reversed = List.rev fixed_and_rest in
+            let rest_form = List.hd reversed in
+            let fixed_forms = List.rev (List.tl reversed) in
+            compile_apply_zip_vectors scope env fixed_forms rest_form
+        | _ -> compile_apply scope env arg_forms)
     | "comp" -> compile_comp scope env arg_forms
     | "partial" -> compile_partial scope env arg_forms
     | "identity" -> compile_identity scope env arg_forms
@@ -1702,9 +2124,7 @@ let create ~compile_expr =
                         (fun expected arg ->
                           match Types.seqable_constraint_element expected with
                           | Some _ -> Collection_capability.accepts_seqable env arg.ty
-                          | None ->
-                              Types.assignable ~policy:Host_boundary ~expected
-                                ~actual:arg.ty)
+                          | None -> argument_compatible expected arg.ty)
                         param_tys args ->
                 let rec compile_arg_exprs index acc = function
                   | [] -> Ok (List.rev acc)
@@ -1721,17 +2141,36 @@ let create ~compile_expr =
                             List.nth_opt fn.row_param_types index |> Option.join
                           in
                           let expression =
+                            match
+                              maybe_reduced_callback_payload expected_ty arg.ty
+                            with
+                            | Some _ -> adapt_reduced_callback arg
+                            | None -> (
                             match (expected_ty, arg.record_values) with
                             | TMap_keys, Some values ->
                                 Semantic_ir.Apply
                                   ( Semantic_ir.Ident
                                       "Lg_runtime.Core_set.String_set.of_list",
-                                    [ Semantic_ir.List
+                                     [ Semantic_ir.List
                                         (List.map
                                            (fun ((field : field), _) ->
                                              Semantic_ir.String field.keyword)
                                            values) ] )
-                            | _ -> row_arg_expr row_type_name expected_ty arg
+                            | expected_ty, Some values
+                              when Option.is_some
+                                     (Types.dynamic_map_types expected_ty) ->
+                                List.fold_left
+                                  (fun map ((field : field), value) ->
+                                    Semantic_ir.Apply
+                                      ( Semantic_ir.Ident
+                                          "Lg_runtime.Runtime_map.assoc",
+                                        [ map;
+                                          Semantic_ir.String field.keyword;
+                                          value ] ))
+                                  (Semantic_ir.Ident
+                                     "Lg_runtime.Runtime_map.empty")
+                                  values
+                            | _ -> row_arg_expr row_type_name expected_ty arg)
                           in
                           compile_arg_exprs (index + 1) (expression :: acc) rest
                 in
@@ -1761,12 +2200,81 @@ let create ~compile_expr =
                                      Collection_capability.element_type env arg))
                       |> Option.map (fun element_ty -> TSeq element_ty)
                       |> Option.value ~default:ret
+                  | TOcaml_app (name, [ TUnknown ]) as ret
+                    when name = Types.next_seq_type_name ->
+                      param_tys
+                      |> List.mapi (fun index param_ty -> (index, param_ty))
+                      |> List.find_map (fun (index, param_ty) ->
+                             match Types.seqable_constraint_element param_ty with
+                             | None -> None
+                             | Some _ -> (
+                                 match List.nth_opt args index with
+                                 | None -> None
+                                 | Some arg ->
+                                     Collection_capability.element_type env arg))
+                      |> Option.map Types.next_seq
+                      |> Option.value ~default:ret
                   | _ -> ret
                 in
-                Ok
-                  (typed_ir ret
-                     (Semantic_ir.Apply
-                        (Semantic_ir.Ident fn.ocaml_name, arg_exprs))))
+                let ret =
+                  Types.maybe_reduced_callback_element ret
+                  |> Option.value ~default:ret
+                in
+                let call =
+                  Semantic_ir.Apply (Semantic_ir.Ident fn.ocaml_name, arg_exprs)
+                in
+                let reduced_payload =
+                  List.combine param_tys args
+                  |> List.find_map (fun (expected, actual) ->
+                         maybe_reduced_callback_payload expected actual.ty)
+                in
+                (match reduced_payload with
+                | None -> Ok (typed_ir ret call)
+                | Some payload_ty
+                  when Types.assignable ~policy:Host_boundary ~expected:ret
+                         ~actual:payload_ty
+                       || Types.equal ret TUnknown ->
+                    let caught_value = "__lg_reduced_value" in
+                    let callback_exception =
+                      Semantic_ir.Constructor
+                        ( "Lg_runtime.Runtime_reduced.Callback_reduced",
+                          None )
+                    in
+                    let handler =
+                      Semantic_ir.Match
+                        ( Semantic_ir.Prefix
+                            ("!", Semantic_ir.Ident reduced_callback_state),
+                          [ ( Semantic_ir.PConstructor ("Some", Some (Semantic_ir.PVar caught_value)),
+                              Semantic_ir.Apply
+                                ( Semantic_ir.Ident
+                                    "Lg_runtime.Runtime_reduced.reduced",
+                                  [ Semantic_ir.Ident caught_value ] ) );
+                            ( Semantic_ir.PConstructor ("None", None),
+                              Semantic_ir.Apply
+                                (Semantic_ir.Ident "raise", [ callback_exception ]) );
+                          ] )
+                    in
+                    Ok
+                      (typed_ir (Types.reduced ret)
+                         (Semantic_ir.Let
+                            ( [ ( Semantic_ir.PVar reduced_callback_state,
+                                  Semantic_ir.Apply
+                                    ( Semantic_ir.Ident "ref",
+                                      [ Semantic_ir.Constructor ("None", None) ] ) ) ],
+                              Semantic_ir.Try
+                                ( Semantic_ir.Apply
+                                    ( Semantic_ir.Ident
+                                        "Lg_runtime.Runtime_reduced.continue",
+                                      [ call ] ),
+                                  [ ( Semantic_ir.PConstructor
+                                        ( "Lg_runtime.Runtime_reduced.Callback_reduced",
+                                          None ),
+                                      None,
+                                      handler );
+                                  ] ) )))
+                | Some _ ->
+                    Error.error
+                      "reduced callback value must match the function result"))
             | TSet element_ty -> (
                 match args with
                 | [ arg ] when Types.same_shape element_ty arg.ty ->

@@ -195,10 +195,12 @@ let of_param_annotation annotation =
     | Error _ -> Error.error ("unknown parameter type " ^ annotation)
   else if String.starts_with ~prefix:"^" annotation && String.length annotation > 1
   then
-    Ok
-      (TOcaml
-         ("__lg_record:"
-         ^ String.sub annotation 1 (String.length annotation - 1)))
+    let type_name =
+      String.sub annotation 1 (String.length annotation - 1)
+    in
+    (match Host_interop.type_annotation type_name with
+    | Some host_type -> Ok (TOcaml host_type)
+    | None -> Ok (TOcaml ("__lg_record:" ^ type_name)))
   else Error.error "function parameters must be symbols"
 
 let parse_params = function

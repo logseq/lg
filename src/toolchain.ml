@@ -1,4 +1,5 @@
 type parser_result = {
+  target : Target.t;
   ast : Ast.form list;
   locations : Location.t list;
   form_locations : Source_context.entry list;
@@ -102,6 +103,12 @@ module Lg_frontend : FRONTEND = struct
   let host_type_hint name =
     metadata_symbol name && not (String.starts_with ~prefix:"^:" name)
 
+  let supported_host_type_hint name =
+    host_type_hint name
+    &&
+    let type_name = String.sub name 1 (String.length name - 1) in
+    Option.is_some (Host_interop.type_annotation type_name)
+
   let rec drop_definition_metadata = function
     | Ast.FSymbol metadata :: rest when metadata_symbol metadata ->
         drop_definition_metadata rest
@@ -115,7 +122,8 @@ module Lg_frontend : FRONTEND = struct
           (Ast.FSymbol head
           :: normalize_metadata_sequence (drop_definition_metadata forms))
     | Ast.FList forms -> Ast.FList (normalize_metadata_sequence forms)
-    | Ast.FVector forms -> Ast.FVector (normalize_metadata_sequence forms)
+    | Ast.FVector forms ->
+        Ast.FVector (normalize_vector_metadata_sequence forms)
     | Ast.FMap entries ->
         Ast.FMap
           (List.map
@@ -125,10 +133,26 @@ module Lg_frontend : FRONTEND = struct
     | form -> form
 
   and normalize_metadata_sequence = function
+    | Ast.FSymbol metadata :: form :: rest
+      when supported_host_type_hint metadata ->
+        Ast.FList
+          [ Ast.FSymbol "__type-hint";
+            Ast.FSymbol metadata;
+            normalize_metadata form ]
+        :: normalize_metadata_sequence rest
     | Ast.FSymbol metadata :: rest when host_type_hint metadata ->
         normalize_metadata_sequence rest
     | form :: rest ->
         normalize_metadata form :: normalize_metadata_sequence rest
+    | [] -> []
+
+  and normalize_vector_metadata_sequence = function
+    | Ast.FSymbol metadata :: rest when supported_host_type_hint metadata ->
+        Ast.FSymbol metadata :: normalize_vector_metadata_sequence rest
+    | Ast.FSymbol metadata :: rest when host_type_hint metadata ->
+        normalize_vector_metadata_sequence rest
+    | form :: rest ->
+        normalize_metadata form :: normalize_vector_metadata_sequence rest
     | [] -> []
 
   let normalize_located_metadata located =
@@ -397,6 +421,47 @@ module Lg_frontend : FRONTEND = struct
 
   let implementation ?(target = Target.default) ?(filename = "<string>") source
       =
+    let is_compile_time_form located =
+      match located.Ast.form with
+      | Ast.FList
+          (Ast.FSymbol ("defmacro" | "macro-helper-defn" | "macro-helper-def")
+          :: _) ->
+          true
+      | _ -> false
+    in
+    let same_span left right =
+      left.Ast.span.start_offset = right.Ast.span.start_offset
+      && left.Ast.span.end_offset = right.Ast.span.end_offset
+    in
+    let add_clj_compile_time_forms tokens original_located_ast located_ast =
+      match target with
+      | Target.Native -> Ok located_ast
+      | Target.Melange | Target.Js_of_ocaml -> (
+          match Parser.parse_located ~target:Target.Native tokens with
+          | Error _ as error -> error
+          | Ok native_original -> (
+              match lower_namespace native_original with
+              | Error _ as error -> error
+              | Ok native_located ->
+                  let compile_time_forms =
+                    native_located
+                    |> List.map normalize_located_metadata
+                    |> extract_compile_time_helpers
+                    |> List.filter is_compile_time_form
+                    |> List.filter (fun candidate ->
+                           not
+                             (List.exists
+                                (same_span candidate)
+                                original_located_ast))
+                  in
+                  (match located_ast with
+                  | ({ Ast.form =
+                         Ast.FList [ Ast.FSymbol "namespace-scope"; _ ];
+                       _ } as namespace_scope)
+                    :: rest ->
+                      Ok (namespace_scope :: compile_time_forms @ rest)
+                  | _ -> Ok (compile_time_forms @ located_ast))))
+    in
     match Lexer.tokenize source with
     | Error _ as err -> err
     | Ok tokens -> (
@@ -405,7 +470,14 @@ module Lg_frontend : FRONTEND = struct
         | Ok original_located_ast -> (
             match lower_namespace original_located_ast with
             | Error error -> Error (normalize_error_location filename source error)
-            | Ok located_ast ->
+            | Ok target_located_ast -> (
+                match
+                  add_clj_compile_time_forms tokens original_located_ast
+                    target_located_ast
+                with
+                | Error error ->
+                    Error (normalize_error_location filename source error)
+                | Ok located_ast ->
                 let located_ast =
                   located_ast
                   |> List.map normalize_located_metadata
@@ -420,6 +492,7 @@ module Lg_frontend : FRONTEND = struct
                 in
                 Ok
                   {
+                    target;
                     ast = List.map (fun located -> located.Ast.form) located_ast;
                     locations =
                       List.map
@@ -430,7 +503,7 @@ module Lg_frontend : FRONTEND = struct
                         (List.fold_left form_locations [] original_located_ast)
                         located_ast;
                     parsed_as = `Lg;
-                  }))
+                  })))
 end
 
 module Ocaml_parsetree_backend = struct
@@ -530,10 +603,17 @@ let required_packages_from_ast ast =
   in
   loop [] ast
 
-let prepare_packages ast =
+let prepare_packages target ast =
   match required_packages_from_ast ast with
   | Error _ as err -> err
-  | Ok packages -> (
+  | Ok packages ->
+      let packages =
+        match target with
+        | Target.Melange -> "melange" :: packages
+        | Target.Js_of_ocaml -> "js_of_ocaml" :: packages
+        | Target.Native -> packages
+      in
+      (
       match Ocaml_package.include_dirs packages with
       | Error _ as err -> err
       | Ok include_dirs ->
@@ -549,12 +629,14 @@ let checked_parsetree (typed : typed_result) =
       | Ok diagnostics -> Ok (result, diagnostics))
 
 let typecheck (parsed : parser_result) =
-  match prepare_packages parsed.ast with
+  match prepare_packages parsed.target parsed.ast with
   | Error _ as err -> err
   | Ok _ -> (
       match
         Source_context.with_locations parsed.form_locations (fun () ->
-            Typecheck.compile_forms_incremental Typecheck.empty_state parsed.ast)
+            Typecheck.compile_forms_incremental
+              (Compiler_state.with_target parsed.target Typecheck.empty_state)
+              parsed.ast)
       with
       | Error _ as err -> err
       | Ok (typecheck_state, items) ->
@@ -567,12 +649,17 @@ let typecheck (parsed : parser_result) =
             })
 
 let typecheck_incremental state (parsed : parser_result) =
-  match prepare_packages parsed.ast with
+  match prepare_packages parsed.target parsed.ast with
   | Error _ as err -> err
   | Ok _ -> (
       match
         Source_context.with_locations parsed.form_locations (fun () ->
-            Typecheck.compile_forms_incremental state.typecheck_state parsed.ast)
+            let typecheck_state =
+              if state.located_items = [] then
+                Compiler_state.with_target parsed.target state.typecheck_state
+              else state.typecheck_state
+            in
+            Typecheck.compile_forms_incremental typecheck_state parsed.ast)
       with
       | Error _ as err -> err
       | Ok (typecheck_state, items) ->

@@ -51,8 +51,20 @@ let seqable_constraint_element = function
       Some element_ty
   | _ -> None
 
+let next_seq_type_name = "__lg_next_seq"
+let next_seq inner = TOcaml_app (next_seq_type_name, [ inner ])
+
+let next_seq_element = function
+  | TOcaml_app (name, [ inner ]) when name = next_seq_type_name -> Some inner
+  | _ -> None
+
 let reduced_type_name = "Lg_runtime.Runtime_reduced.t"
 let reduced inner = TOcaml_app (reduced_type_name, [ inner ])
+
+let maybe_reduced_callback_type_name = "__lg_maybe_reduced_callback_result"
+
+let maybe_reduced_callback_result inner =
+  TOcaml_app (maybe_reduced_callback_type_name, [ inner ])
 
 let dynamic_map key value =
   TOcaml_app ("Lg_runtime.Runtime_map.t", [ key; value ])
@@ -64,6 +76,12 @@ let dynamic_map_types = function
 
 let reduced_element = function
   | TOcaml_app (name, [ inner ]) when name = reduced_type_name -> Some inner
+  | _ -> None
+
+let maybe_reduced_callback_element = function
+  | TOcaml_app (name, [ inner ])
+    when name = maybe_reduced_callback_type_name ->
+      Some inner
   | _ -> None
 
 let rec equal left right =
@@ -178,6 +196,20 @@ let classify_assignability ~expected ~actual =
 
 let rec assignable ~policy ~expected ~actual =
   match (expected, actual) with
+  | TNullable _, TNil -> true
+  | TNullable expected, TNullable actual ->
+      assignable ~policy ~expected ~actual
+  | TNullable expected, actual ->
+      assignable ~policy ~expected ~actual
+  | TVector expected, TVector actual
+  | TList expected, TList actual
+  | TSet expected, TSet actual
+  | TSeq expected, TSeq actual ->
+      assignable ~policy ~expected ~actual
+  | TSeq expected, TOcaml_app (name, [ actual ])
+  | TOcaml_app (name, [ expected ]), TSeq actual
+    when name = next_seq_type_name ->
+      assignable ~policy ~expected ~actual
   | TNamed_record expected, TNamed_record actual
     when expected.type_name = actual.type_name ->
       equal (TNamed_record expected) (TNamed_record actual)
@@ -228,6 +260,8 @@ let rec source_name = function
   | TOcaml name -> name
   | TOcaml_app (name, [ inner; _ ]) when name = seqable_constraint_name ->
       "seqable<" ^ source_name inner ^ ">"
+  | TOcaml_app (name, [ inner ]) when name = next_seq_type_name ->
+      "seq<" ^ source_name inner ^ ">"
   | TOcaml_app (name, [ inner ]) when name = reduced_type_name ->
       "reduced<" ^ source_name inner ^ ">"
   | TOcaml_app (name, args) ->
@@ -282,6 +316,8 @@ let rec ocaml_name = function
   | TOcaml_app (name, [ inner; container ]) when name = seqable_constraint_name ->
       "((" ^ ocaml_name container ^ " -> " ^ ocaml_name inner
       ^ " Seq.t) * " ^ ocaml_name container ^ ")"
+  | TOcaml_app (name, [ inner ]) when name = next_seq_type_name ->
+      ocaml_name inner ^ " Seq.t"
   | TOcaml_app (name, [ arg ]) -> ocaml_name arg ^ " " ^ name
   | TOcaml_app (name, args) ->
       "(" ^ (args |> List.map ocaml_name |> String.concat ", ") ^ ") " ^ name
@@ -319,6 +355,7 @@ and overloaded_storage_type = function
       TTuple [ TFn (params, arity.return_ty); overloaded_storage_type rest ]
 
 and set_module_name = function
+  | TUnknown | TVar _ -> Ok "Lg_runtime.Runtime_poly_set"
   | TInt -> Ok "Lg_runtime.Core_set.Int_set"
   | TFloat -> Ok "Lg_runtime.Core_set.Float_set"
   | TString | TSymbol | TKeyword -> Ok "Lg_runtime.Core_set.String_set"

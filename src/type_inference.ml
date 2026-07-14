@@ -6,11 +6,21 @@ let replace_param name ty params =
   |> List.map (fun (param_name, param_ty) ->
          if param_name = name then (param_name, ty) else (param_name, param_ty))
 
+let rec refine_type existing inferred =
+  match (existing, inferred) with
+  | TUnknown, inferred -> inferred
+  | TFn (existing_params, existing_return), TFn (inferred_params, inferred_return)
+    when List.length existing_params = List.length inferred_params ->
+      TFn
+        ( List.map2 refine_type existing_params inferred_params,
+          refine_type existing_return inferred_return )
+  | existing, _ -> existing
+
 let constrain_symbol expected_ty params name =
   match List.assoc_opt name params with
   | None -> Ok params
-  | Some TUnknown -> Ok (replace_param name expected_ty params)
-  | Some _existing_ty -> Ok params
+  | Some existing_ty ->
+      Ok (replace_param name (refine_type existing_ty expected_ty) params)
 
 let constrain_seqable element_ty params name =
   match List.assoc_opt name params with
@@ -91,9 +101,60 @@ let select_fn_arity arities argument_count =
           && argument_count >= List.length arity.fixed_params)
         arities
 
+let rec form_checks_reduced name = function
+  | FList [ FSymbol predicate; FSymbol candidate ] ->
+      candidate = name
+      && (predicate = "reduced?"
+         || String.ends_with ~suffix:"/reduced?" predicate)
+  | FList forms | FVector forms -> List.exists (form_checks_reduced name) forms
+  | FMap pairs ->
+      List.exists
+        (fun (key, value) ->
+          form_checks_reduced name key || form_checks_reduced name value)
+        pairs
+  | _ -> false
+
+let constrain_maybe_reduced_callbacks params forms =
+  let rec visit params = function
+    | FList (FSymbol binding_form :: FVector bindings :: body_forms)
+      when binding_form = "let" || binding_form = "let*"
+           || String.ends_with ~suffix:"/let" binding_form
+           || String.ends_with ~suffix:"/let*" binding_form ->
+        let rec visit_bindings params = function
+          | FSymbol local_name :: FList (FSymbol fn_name :: args) :: rest ->
+              let params =
+                if List.exists (form_checks_reduced local_name) body_forms then
+                  constrain_symbol
+                    (TFn
+                       ( List.map (fun _ -> TUnknown) args,
+                         Types.maybe_reduced_callback_result TUnknown ))
+                    params fn_name
+                  |> Result.value ~default:params
+                else params
+              in
+              visit_bindings params rest
+          | _ :: _ :: rest -> visit_bindings params rest
+          | _ -> params
+        in
+        let params = visit_bindings params bindings in
+        List.fold_left visit params body_forms
+    | FList nested | FVector nested -> List.fold_left visit params nested
+    | FMap pairs ->
+        List.fold_left
+          (fun params (key, value) -> visit (visit params key) value)
+          params pairs
+    | _ -> params
+  in
+  List.fold_left visit params forms
+
 let infer_params ~lookup_function_ty params body_forms =
   let rec infer_expected expected_ty params = function
     | FSymbol name -> constrain_symbol expected_ty params name
+    | FList (FSymbol name :: args) when List.mem_assoc name params -> (
+        let parameter_types = List.map (inferred_form_type params) args in
+        match constrain_symbol (TFn (parameter_types, expected_ty)) params name with
+        | Error _ as error -> error
+        | Ok params -> infer_all params args)
     | FList (FSymbol ("+" | "-" | "*" | "/" | "max" | "min") :: args)
       when Types.equal expected_ty TInt || Types.equal expected_ty TFloat ->
         infer_expected_all expected_ty params args
@@ -282,12 +343,18 @@ let infer_params ~lookup_function_ty params body_forms =
         match infer_expected TInt params count with
         | Error _ as err -> err
         | Ok params -> constrain_seqable TUnknown params collection)
+    | FList [ FSymbol ".toString"; value; radix ] -> (
+        match infer_expected TInt params value with
+        | Error _ as err -> err
+        | Ok params -> infer_expected TInt params radix)
     | FList [ FSymbol "map"; fn; FSymbol collection ] ->
         let element_ty = inferred_unary_function_param params fn in
         constrain_seqable element_ty params collection
     | FList [ FSymbol "reduce"; reducer; init; FSymbol collection ] ->
         let element_ty = inferred_reducer_item params init reducer in
-        constrain_seqable element_ty params collection
+        (match constrain_seqable element_ty params collection with
+        | Error _ as error -> error
+        | Ok params -> infer_form params reducer)
     | FList (FSymbol ("+" | "-" | "*" | "/" | "max" | "min") :: args) ->
         let expected_ty =
           if List.exists (fun arg -> Types.equal (numeric_form_type params arg) TFloat) args
@@ -368,8 +435,16 @@ let infer_params ~lookup_function_ty params body_forms =
         | Ok params -> infer_expected TKeyword params key)
     | FList (FSymbol "assoc" :: target :: pairs) ->
         infer_assoc params target pairs
+    | FList [ FSymbol "reduce-kv"; reducer; init; FSymbol name ] -> (
+        match
+          infer_expected
+            (Types.dynamic_map (TVar "map_key") (TVar "map_value")) params
+            (FSymbol name)
+        with
+        | Error _ as error -> error
+        | Ok params -> infer_all params [ reducer; init ])
     | FList (FSymbol "str" :: args) ->
-        infer_expected_all TString params args
+        infer_all params args
     | FList [ FSymbol "if"; condition; then_form; else_form ] -> (
         match infer_expected TBool params condition with
         | Error _ as err -> err
@@ -458,4 +533,4 @@ let infer_params ~lookup_function_ty params body_forms =
     | FSymbol _ ->
         Ok params
   in
-  infer_all params body_forms
+  infer_all (constrain_maybe_reduced_callbacks params body_forms) body_forms

@@ -3,6 +3,8 @@ type 'a t = {
   reduced : bool;
 }
 
+exception Callback_reduced
+
 let continue value = { value; reduced = false }
 let reduced value = { value; reduced = true }
 let is_reduced result = result.reduced

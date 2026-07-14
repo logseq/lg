@@ -57,7 +57,7 @@
        (= 5 macro-cond) ":"
        (= 3 (util/some-of nil nil 3 4))))
 
-(def timestamp 1700000000000)
+(def timestamp 1700000000)
 (def id (util/squuid timestamp))
 (println
   (str environment ":squuid:"

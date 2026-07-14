@@ -43,6 +43,10 @@ let add_clojure_string_alias_bindings env alias =
   |> List.map (fun (name, binding) -> (alias ^ "/" ^ name, binding))
   |> fun bindings -> Env.add_bindings bindings env
 
+let core_namespace = function
+  | "clojure.set" | "clojure.string" -> true
+  | _ -> false
+
 let add_clojure_string_refer_bindings env scope names =
   let rec loop acc = function
     | [] -> Ok acc

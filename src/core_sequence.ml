@@ -14,7 +14,7 @@ let two_args name args =
 
 let first_expr env collection = Collection_capability.first_expr env collection
 
-let next_expr env collection = Collection_capability.rest_expr env collection
+let next_expr env collection = Collection_capability.next_expr env collection
 
 let nth_next_expr env name collection count =
   Collection_capability.drop_expr env name collection count

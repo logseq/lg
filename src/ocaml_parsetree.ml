@@ -53,6 +53,8 @@ let rec core_type = function
           (type_constructor "Seq.t" [ element ])
       in
       Ast_helper.Typ.tuple ~loc [ (None, adapter); (None, container) ]
+  | Types.TOcaml_app (name, [ inner ]) when name = Types.next_seq_type_name ->
+      type_constructor "Seq.t" [ core_type inner ]
   | Types.TOcaml_app (name, args) ->
       Ast_helper.Typ.constr ~loc (lid (longident_of_string name))
         (List.map core_type args)

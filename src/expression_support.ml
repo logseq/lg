@@ -29,6 +29,12 @@ let rec truthiness_expression ty expression =
           [ Semantic_ir.Apply
               ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.is_empty",
                 [ expression ] ) ] )
+  | TOcaml_app (name, [ _ ]) when name = Types.next_seq_type_name ->
+      Semantic_ir.Apply
+        ( Semantic_ir.Ident "not",
+          [ Semantic_ir.Apply
+              ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.is_empty",
+                [ expression ] ) ] )
   | _ -> Semantic_ir.Sequence [ expression; Semantic_ir.Bool true ]
 
 let condition_expression expr =

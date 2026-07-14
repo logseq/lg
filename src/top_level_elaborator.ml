@@ -403,6 +403,11 @@ let rec compile scope env next_type = function
                       expression = expr.semantic_expr;
                     } ))))
   | FList
+      (FSymbol (("defn" | "defn-") as definition)
+      :: ((FSymbol _) as name_form) :: FString _docstring :: forms) ->
+      compile scope env next_type
+        (FList (FSymbol definition :: name_form :: forms))
+  | FList
       (FSymbol ("defn" | "defn-") :: ((FSymbol name) as name_form)
       :: ((FList _) as first_clause) :: remaining_clauses) ->
       let ocaml_name = Names.ocaml_binding_name scope name in
@@ -691,7 +696,9 @@ let rec compile scope env next_type = function
             | Require.Package _ :: rest -> apply_specs env rest
             | Require.Load { module_name } :: rest ->
                 let result =
-                  if module_name = "clojure.string" then
+                  if module_name = "clojure.set" then
+                    Ok env
+                  else if module_name = "clojure.string" then
                     Ok
                       (Require.add_clojure_string_alias_bindings env module_name)
                   else if String.starts_with ~prefix:"ocaml." module_name then
@@ -706,9 +713,14 @@ let rec compile scope env next_type = function
                   apply_specs
                     (Require.add_ocaml_alias_bindings env module_name alias)
                     rest
-                else if module_name = "clojure.string" then
+                else if Require.core_namespace module_name then
+                  let env =
+                    if module_name = "clojure.string" then
+                      Require.add_clojure_string_alias_bindings env alias
+                    else env
+                  in
                   apply_specs
-                    (Require.add_clojure_string_alias_bindings env alias)
+                    (Env.add_namespace_alias ~scope ~alias ~target:module_name env)
                     rest
                 else (
                   match Require.add_lg_alias_bindings env module_name alias with

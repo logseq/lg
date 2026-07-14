@@ -69,3 +69,23 @@ let is_empty sequence =
   match sequence () with
   | Seq.Nil -> true
   | Seq.Cons _ -> false
+
+let zip_vectors collections =
+  let length =
+    match collections with
+    | [] -> 0
+    | first :: rest ->
+        List.fold_left
+          (fun length collection -> min length (Rrbvec.length collection))
+          (Rrbvec.length first) rest
+  in
+  let rows = ref Rrbvec.empty in
+  for index = 0 to length - 1 do
+    let row =
+      collections
+      |> List.map (fun collection -> Rrbvec.nth collection index)
+      |> Rrbvec.of_list
+    in
+    rows := Rrbvec.push_back !rows row
+  done;
+  !rows
