@@ -2303,15 +2303,21 @@ let test_parameterized_records_instantiate_field_types () =
     {|
 (type-record box [a]
   (value :param/a))
+(type-record ordering [a]
+  (compare-values :ocaml/fn<param/a;param/a;int>))
 (def int-box (ocaml-record box (value 41)))
 (def string-box (ocaml-record box (value "Ada")))
+(def int-ordering
+  (ocaml-record ordering
+    (compare-values (fn [left right] (- left right)))))
 (def int-value (+ (ocaml-field int-box value) 1))
 (def string-value (subs (ocaml-field string-box value) 0 1))
-(println (str int-value ":" string-value))
+(def compare-ints (ocaml-field int-ordering compare-values))
+(println (str int-value ":" string-value ":" (+ (compare-ints 4 2) 0)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "parameterized_records_instantiate_field_types" "42:A\n"
+  assert_ocaml_runs "parameterized_records_instantiate_field_types" "42:A:2\n"
     ocaml_source
 
 let test_recursive_record_array_fields_work_with_array_primitives () =
@@ -2416,7 +2422,10 @@ let test_parameterized_type_declarations_reject_bad_parameters () =
   |> expect_error_contains "unknown type parameter missing";
   Lg.Compiler.compile_string
     {|(type-alias maybe [] :ocaml/option<int>)|}
-  |> expect_error_contains "type parameter vector must not be empty"
+  |> expect_error_contains "type parameter vector must not be empty";
+  Lg.Compiler.compile_string
+    {|(type-record bad [a] (callback :ocaml/fn<int>))|}
+  |> expect_error_contains "unknown record field type :ocaml/fn<int>"
 
 let test_ocaml_owned_branch_types_are_checked_by_ocaml () =
   let source =
@@ -2766,13 +2775,21 @@ let test_ocaml_array_primitives_support_polymorphic_helpers () =
     target))
 (defn first-array [values]
   (ocaml-array-get values 0))
+(defn seq-to-sorted-array [cmp values]
+  (let [result (ocaml-array-from values)]
+    (ocaml-array-sort! cmp result)
+    result))
 (def copied (copy-array (ocaml-array 7 8 9)))
-(println (str (ocaml-array-length copied) ":" (+ (first-array copied) 0)))
+(def converted
+  (seq-to-sorted-array (fn [left right] (- left right)) [5 4]))
+(println
+  (str (ocaml-array-length copied) ":" (+ (first-array copied) 0) ":"
+       (ocaml-array-length converted) ":" (+ (ocaml-array-get converted 1) 0)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "ocaml_array_primitives_support_polymorphic_helpers"
-    "3:7\n" ocaml_source
+    "3:7:2:5\n" ocaml_source
 
 let test_ocaml_refs_support_read_and_assignment () =
   let source =

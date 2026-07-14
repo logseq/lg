@@ -3,6 +3,7 @@
     [me.tonsky.persistent-sorted-set.arrays :as arrays]
     [me.tonsky.persistent-sorted-set.nodes :as nodes]
     [me.tonsky.persistent-sorted-set.path :as path]
+    [me.tonsky.persistent-sorted-set.set :as pset]
     [me.tonsky.persistent-sorted-set.traversal :as traversal]))
 
 (defn int-compare [left right]
@@ -319,3 +320,84 @@
            (= 18 (first reverse-values)) ":"
            (= 5 (last reverse-values)))))
   (println "sequence-range:false:false:false:false:false"))
+
+(def small-set (pset/from-sequential int-compare [5 1 3 3 9 7]))
+(println
+  (str "set-build:"
+       (= 5 (pset/set-count small-set)) ":"
+       (= 25 (reduce + 0 (pset/set-seq small-set))) ":"
+       (pset/set-contains? small-set 3) ":"
+       (not (pset/set-contains? small-set 4))))
+(def added-set (pset/set-conj small-set 4))
+(def duplicate-set (pset/set-conj added-set 4))
+(def removed-set (pset/set-disj added-set 3))
+(def missing-removed-set (pset/set-disj removed-set 100))
+(println
+  (str "set-persistent:"
+       (= 6 (pset/set-count added-set)) ":"
+       (not (pset/set-contains? small-set 4)) ":"
+       (= 6 (pset/set-count duplicate-set)) ":"
+       (= 5 (pset/set-count removed-set)) ":"
+       (pset/set-contains? added-set 3) ":"
+       (not (pset/set-contains? missing-removed-set 3))))
+
+(def large-set (pset/from-sequential int-compare (range 0 2000)))
+(def large-added (pset/set-conj large-set 3000))
+(def large-removed (pset/set-disj large-set 1000))
+(println
+  (str "set-large:"
+       (= 2000 (pset/set-count large-set)) ":"
+       (= 2 (pset/set-shift large-set)) ":"
+       (= 0 (first (pset/set-seq large-set))) ":"
+       (= 1999 (last (pset/set-seq large-set))) ":"
+       (= 3000 (last (pset/set-seq large-added))) ":"
+       (not (pset/set-contains? large-removed 1000)) ":"
+       (= 1999 (pset/set-count large-removed))))
+(if-some [large-slice (pset/set-slice large-set 995 1005)]
+  (if-some [large-rslice (pset/set-rslice large-set 995 1005)]
+    (println
+      (str "set-slice:"
+           (= 11 (count large-slice)) ":"
+           (= 995 (first large-slice)) ":"
+           (= 1005 (last large-slice)) ":"
+           (= 1999 (first (pset/set-rseq large-set))) ":"
+           (= 0 (last (pset/set-rseq large-set))) ":"
+           (= 1005 (first large-rslice)) ":"
+           (= 995 (last large-rslice))))
+    (println "set-slice:false:false:false:false:false:false:false"))
+  (println "set-slice:false:false:false:false:false:false:false"))
+
+(def inserted-set
+  (loop [set (pset/empty-set int-compare)
+         value 0]
+    (if (= value 1000)
+      set
+      (recur (pset/set-conj set value) (inc value)))))
+(println
+  (str "set-insert-stress:"
+       (= 1000 (pset/set-count inserted-set)) ":"
+       (= 2 (pset/set-shift inserted-set)) ":"
+       (= 0 (first (pset/set-seq inserted-set))) ":"
+       (= 999 (last (pset/set-seq inserted-set)))))
+
+(def trimmed-set
+  (loop [set large-set
+         value 0]
+    (if (= value 1900)
+      set
+      (recur (pset/set-disj set value) (inc value)))))
+(def emptied-set
+  (loop [set trimmed-set
+         value 1900]
+    (if (= value 2000)
+      set
+      (recur (pset/set-disj set value) (inc value)))))
+(println
+  (str "set-delete-stress:"
+       (= 100 (pset/set-count trimmed-set)) ":"
+       (= 1 (pset/set-shift trimmed-set)) ":"
+       (= 1900 (first (pset/set-seq trimmed-set))) ":"
+       (= 1999 (last (pset/set-seq trimmed-set))) ":"
+       (= 0 (pset/set-count emptied-set)) ":"
+       (= 0 (pset/set-shift emptied-set)) ":"
+       (empty? (pset/set-seq emptied-set))))

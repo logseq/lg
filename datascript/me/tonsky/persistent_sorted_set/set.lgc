@@ -1,0 +1,223 @@
+(ns me.tonsky.persistent-sorted-set.set
+  (:refer-clojure :exclude [contains?])
+  (:require
+    [me.tonsky.persistent-sorted-set.arrays :as arrays]
+    [me.tonsky.persistent-sorted-set.nodes :as nodes]
+    [me.tonsky.persistent-sorted-set.path :as path]
+    [me.tonsky.persistent-sorted-set.traversal :as traversal]))
+
+(def average-len 24)
+
+(type-record btset [value]
+  (root :ocaml/tree<param/value>)
+  (shift :int)
+  (cnt :int)
+  (comparator :ocaml/fn<param/value;param/value;int>))
+
+(defn- make-set [root shift cnt comparator]
+  (ocaml-record btset
+    (root root)
+    (shift shift)
+    (cnt cnt)
+    (comparator comparator)))
+
+(defn set-root [set]
+  (ocaml-field set root))
+
+(defn set-shift [set]
+  (ocaml-field set shift))
+
+(defn set-count [set]
+  (ocaml-field set cnt))
+
+(defn set-comparator [set]
+  (ocaml-field set comparator))
+
+(defn- partition-array [values]
+  (let [length (arrays/alength values)]
+    (if (= 0 length)
+      (arrays/make-array 0)
+      (let [group-count (quot (+ length (dec average-len)) average-len)
+            base-size (quot length group-count)
+            larger-groups (mod length group-count)
+            result (arrays/make-array group-count)]
+        (loop [group 0
+               offset 0]
+          (if (< group group-count)
+            (let [size (+ base-size (if (< group larger-groups) 1 0))
+                  next-offset (+ offset size)]
+              (arrays/aset
+                result group (arrays/aslice values offset next-offset))
+              (recur (inc group) next-offset))
+            nil))
+        result))))
+
+(defn- unique-count [values cmp]
+  (let [length (arrays/alength values)]
+    (if (= 0 length)
+      0
+      (loop [idx 1
+             previous (arrays/aget values 0)
+             count 1]
+        (if (= idx length)
+          count
+          (let [value (arrays/aget values idx)]
+            (recur
+              (inc idx)
+              value
+              (if (= 0 (cmp value previous)) count (inc count)))))))))
+
+(defn sorted-array-distinct [values cmp]
+  (let [length (arrays/alength values)
+        distinct-count (unique-count values cmp)]
+    (if (= length distinct-count)
+      values
+      (let [result (arrays/make-array distinct-count)]
+        (when (> distinct-count 0)
+          (arrays/aset result 0 (arrays/aget values 0))
+          (loop [source-idx 1
+                 result-idx 1
+                 previous (arrays/aget values 0)]
+            (if (< source-idx length)
+              (let [value (arrays/aget values source-idx)]
+                (if (= 0 (cmp value previous))
+                  (recur (inc source-idx) result-idx value)
+                  (do
+                    (arrays/aset result result-idx value)
+                    (recur (inc source-idx) (inc result-idx) value))))
+              nil)))
+        result))))
+
+(defn from-sorted-array [cmp values]
+  (let [leaves
+        (arrays/amap
+          (fn [keys] (nodes/new-leaf keys))
+          (partition-array values))]
+    (loop [current-level leaves
+           shift 0]
+      (let [length (arrays/alength current-level)]
+        (cond
+          (= 0 length)
+          (make-set (nodes/new-leaf (arrays/make-array 0)) 0 0 cmp)
+
+          (= 1 length)
+          (make-set
+            (arrays/aget current-level 0)
+            shift
+            (arrays/alength values)
+            cmp)
+
+          :else
+          (recur
+            (arrays/amap
+              (fn [children]
+                (nodes/new-node
+                  (arrays/amap
+                    (fn [child] (nodes/node-lim-key child))
+                    children)
+                  children))
+              (partition-array current-level))
+            (inc shift)))))))
+
+(defn from-sequential [cmp values]
+  (let [sorted (ocaml-array-from values)]
+    (ocaml-array-sort! cmp sorted)
+    (from-sorted-array cmp (sorted-array-distinct sorted cmp))))
+
+(defn empty-set [cmp]
+  (make-set (nodes/new-leaf (arrays/make-array 0)) 0 0 cmp))
+
+(defn set-lookup [set key]
+  (nodes/node-lookup
+    (set-root set) (set-comparator set) key nil))
+
+(defn set-contains? [set key]
+  (not (nil? (set-lookup set key))))
+
+(defn set-conj [set key]
+  (if-some [roots
+            (nodes/node-conj
+              (set-root set) (set-comparator set) key nil)]
+    (if (= 1 (arrays/alength roots))
+      (make-set
+        (arrays/aget roots 0)
+        (set-shift set)
+        (inc (set-count set))
+        (set-comparator set))
+      (make-set
+        (nodes/new-node
+          (arrays/amap
+            (fn [root] (nodes/node-lim-key root))
+            roots)
+          roots)
+        (inc (set-shift set))
+        (inc (set-count set))
+        (set-comparator set)))
+    set))
+
+(defn set-disj [set key]
+  (if-some [roots
+            (nodes/node-disj
+              (set-root set)
+              (set-comparator set)
+              key
+              true
+              nil
+              nil
+              nil)]
+    (let [root (arrays/aget roots 0)]
+      (if (and (> (set-shift set) 0)
+               (= 1 (nodes/node-len root)))
+        (make-set
+          (arrays/aget (nodes/node-children root) 0)
+          (dec (set-shift set))
+          (dec (set-count set))
+          (set-comparator set))
+        (make-set
+          root
+          (set-shift set)
+          (dec (set-count set))
+          (set-comparator set))))
+    set))
+
+(defn set-seq [set]
+  (traversal/node-seq (set-root set) (set-shift set)))
+
+(defn set-rseq [set]
+  (traversal/node-rseq (set-root set) (set-shift set)))
+
+(defn- set-slice-bounds [set key-from key-to]
+  (if-some [left
+            (traversal/seek-path
+              (set-root set)
+              key-from
+              (set-comparator set)
+              (set-shift set))]
+    (let [right
+          (traversal/rseek-path
+            (set-root set)
+            key-to
+            (set-comparator set)
+            (set-shift set))]
+      (if (path/path-lt left right)
+        (Some (tuple left right))
+        nil))
+    nil))
+
+(defn set-slice [set key-from key-to]
+  (if-some [bounds (set-slice-bounds set key-from key-to)]
+    (match bounds
+      (tuple left right)
+      (Some
+        (traversal/node-seq-between
+          (set-root set) left right (set-shift set))))
+    nil))
+
+(defn set-rslice [set key-from key-to]
+  (if-some [bounds (set-slice-bounds set key-from key-to)]
+    (match bounds
+      (tuple left right)
+      (Some
+        (traversal/node-rseq-between
+          (set-root set) left right (set-shift set))))
+    nil))

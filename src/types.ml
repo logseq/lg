@@ -171,13 +171,21 @@ let classify_assignability ~expected ~actual =
       else if defer_to_ocaml ~expected ~actual then Deferred_to_ocaml
       else Incompatible
 
-let assignable ~policy ~expected ~actual =
-  match classify_assignability ~expected ~actual with
-  | Equal -> true
-  | Unknown -> policy = Host_boundary
-  | Row_compatible -> policy = Structural || policy = Host_boundary
-  | Deferred_to_ocaml -> policy = Host_boundary
-  | Incompatible -> false
+let rec assignable ~policy ~expected ~actual =
+  match (expected, actual) with
+  | TFn (expected_params, expected_return), TFn (actual_params, actual_return)
+    when List.length expected_params = List.length actual_params ->
+      List.for_all2
+        (fun expected actual -> assignable ~policy ~expected ~actual)
+        expected_params actual_params
+      && assignable ~policy ~expected:expected_return ~actual:actual_return
+  | _ -> (
+      match classify_assignability ~expected ~actual with
+      | Equal -> true
+      | Unknown -> policy = Host_boundary
+      | Row_compatible -> policy = Structural || policy = Host_boundary
+      | Deferred_to_ocaml -> policy = Host_boundary
+      | Incompatible -> false)
 
 let rec source_name = function
   | TInt -> "int"

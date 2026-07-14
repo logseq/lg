@@ -390,7 +390,7 @@ let create ~compile_expr =
         | Ok [ ({ ty = TArray _; semantic_expr; _ } as array) ] ->
             Ok { array with semantic_expr = apply "Array.copy" [ semantic_expr ] }
         | Ok [ collection ] -> (
-            match Core_sequence_transform.collection_to_seq_expr collection with
+            match Collection_capability.to_seq_expr env collection with
             | Error _ -> Error.error "ocaml-array-from expects a seqable value"
             | Ok (element_ty, sequence) ->
                 Ok
@@ -531,12 +531,19 @@ let create ~compile_expr =
         | Error _ as err -> err
         | Ok
             [ { ty = TFn ([ left_ty; right_ty ], TInt); semantic_expr = cmp; _ };
-              { ty = TArray element_ty; semantic_expr = array; _ } ]
-          when Types.assignable ~policy:Host_boundary ~expected:left_ty
-                 ~actual:element_ty
-               && Types.assignable ~policy:Host_boundary ~expected:right_ty
-                    ~actual:element_ty ->
-            Ok (typed_ir TUnit (apply "Array.sort" [ cmp; array ]))
+              { ty = array_type; semantic_expr = array; _ } ] -> (
+            match array_element_type array_type with
+            | Some element_ty
+              when (Types.equal element_ty TUnknown
+                    || Types.assignable ~policy:Host_boundary ~expected:left_ty
+                         ~actual:element_ty)
+                   && (Types.equal element_ty TUnknown
+                      || Types.assignable ~policy:Host_boundary ~expected:right_ty
+                           ~actual:element_ty) ->
+                Ok (typed_ir TUnit (apply "Array.sort" [ cmp; array ]))
+            | Some _ | None ->
+                Error.error
+                  "ocaml-array-sort! expects a comparator and compatible array")
         | Ok [ _; _ ] ->
             Error.error "ocaml-array-sort! expects a comparator and compatible array"
         | Ok _ -> Error.error "ocaml-array-sort! expects 2 arguments")

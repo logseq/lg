@@ -45,6 +45,8 @@ let validate_ocaml_type_application name args =
   | "option", _ -> Error.error "option expects one type argument"
   | "result", [ _; _ ] -> Ok ()
   | "result", _ -> Error.error "result expects two type arguments"
+  | "fn", _ :: _ :: _ -> Ok ()
+  | "fn", _ -> Error.error "fn expects at least one parameter and a return type"
   | _, [] -> Error.error "OCaml type application expects at least one argument"
   | _ -> Ok ()
 
@@ -83,6 +85,11 @@ let rec parse_ocaml_type source =
                 | Error _ as err -> err
                 | Ok () ->
                     if name = "tuple" then Ok (TTuple args)
+                    else if name = "fn" then
+                      match List.rev args with
+                      | return_ty :: reversed_params ->
+                          Ok (TFn (List.rev reversed_params, return_ty))
+                      | [] -> assert false
                     else Ok (TOcaml_app (name, args)))
 
 let concise_external_type keyword =
@@ -150,6 +157,18 @@ let rec resolve_type_parameters parameters = function
             | Ok arg -> resolve_args (arg :: acc) rest)
       in
       resolve_args [] args
+  | TFn (params, return_ty) ->
+      let rec resolve_params acc = function
+        | [] -> (
+            match resolve_type_parameters parameters return_ty with
+            | Error _ as err -> err
+            | Ok return_ty -> Ok (TFn (List.rev acc, return_ty)))
+        | param :: rest -> (
+            match resolve_type_parameters parameters param with
+            | Error _ as err -> err
+            | Ok param -> resolve_params (param :: acc) rest)
+      in
+      resolve_params [] params
   | ty -> Ok ty
 
 let of_keyword_with_parameters parameters keyword =
