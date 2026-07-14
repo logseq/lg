@@ -1,6 +1,9 @@
 (ns me.tonsky.persistent-sorted-set.benchmark
   (:require
     [me.tonsky.persistent-sorted-set.arrays :as arrays]
+    [me.tonsky.persistent-sorted-set.array-ops :as ops]
+    [me.tonsky.persistent-sorted-set.nodes :as nodes]
+    [me.tonsky.persistent-sorted-set.search :as search]
     [me.tonsky.persistent-sorted-set.set :as pset]))
 
 (defn int-compare [left right]
@@ -52,6 +55,101 @@
 
 (def set-10k (insert-all ints-10k))
 (def set-300k (insert-all ints-300k))
+
+(def ints-32 (arrays/into-array (range 0 32)))
+(def leaf-32 (nodes/new-leaf ints-32))
+(def leaves-32
+  (arrays/amap (fn [idx] (nodes/new-leaf (arrays/array idx))) ints-32))
+(def leaves-2 (arrays/aslice leaves-32 0 2))
+(def loaded-leaves-32
+  (arrays/amap (fn [child] (Some child)) leaves-32))
+(def loaded-leaves-2 (arrays/aslice loaded-leaves-32 0 2))
+(def empty-addresses-32
+  (arrays/amap (fn [child] (nodes/node-address child)) leaves-32))
+(def empty-addresses-2 (arrays/aslice empty-addresses-32 0 2))
+
+(defn profile-search-10k []
+  (loop [idx 0
+         result 0]
+    (if (= idx 10000)
+      result
+      (recur
+        (inc idx)
+        (+ result
+           (search/binary-search-l int-compare ints-32 31 (mod idx 33)))))))
+
+(defn profile-splice-10k []
+  (loop [idx 0
+         result ints-32]
+    (if (= idx 10000)
+      result
+      (let [position (mod idx 33)]
+        (recur
+          (inc idx)
+          (ops/splice ints-32 position position (arrays/array idx)))))))
+
+(defn profile-make-array-10k []
+  (loop [idx 0
+         result (Array.make 33 0)]
+    (if (= idx 10000)
+      result
+      (recur (inc idx) (Array.make 33 idx)))))
+
+(defn profile-wrap-children-10k []
+  (loop [idx 0
+         result (arrays/amap (fn [child] (Some child)) leaves-32)]
+    (if (= idx 10000)
+      result
+      (recur
+        (inc idx)
+        (arrays/amap (fn [child] (Some child)) leaves-32)))))
+
+(defn profile-wrap-two-children-10k []
+  (loop [idx 0
+         result loaded-leaves-2]
+    (if (= idx 10000)
+      result
+      (recur
+        (inc idx)
+        (arrays/amap (fn [child] (Some child)) leaves-2)))))
+
+(defn profile-splice-children-10k []
+  (loop [idx 0
+         result loaded-leaves-32]
+    (if (= idx 10000)
+      result
+      (let [position (mod idx 32)]
+        (recur
+          (inc idx)
+          (ops/splice
+            loaded-leaves-32 position (inc position) loaded-leaves-2))))))
+
+(defn profile-new-leaf-10k []
+  (loop [idx 0
+         result leaf-32]
+    (if (= idx 10000)
+      result
+      (recur (inc idx) (nodes/new-leaf ints-32)))))
+
+(defn profile-splice-addresses-10k []
+  (loop [idx 0
+         result empty-addresses-32]
+    (if (= idx 10000)
+      result
+      (let [position (mod idx 32)]
+        (recur
+          (inc idx)
+          (ops/splice
+            empty-addresses-32 position (inc position) empty-addresses-2))))))
+
+(defn profile-full-leaf-conj-10k []
+  (loop [idx 0
+         result nil]
+    (if (= idx 10000)
+      result
+      (recur
+        (inc idx)
+        (nodes/node-conj leaf-32 int-compare (+ idx 32) nil)))))
 
 (defn conj-10k []
   (insert-all ints-10k))
@@ -112,3 +210,12 @@
 (benchmark "doseq-300K" 100 (doseq-300k))
 (benchmark "next-300K" 100 (next-300k))
 (benchmark "reduce-300K" 100 (reduce-300k))
+(benchmark "profile/search-32x10K" 100 (profile-search-10k))
+(benchmark "profile/splice-32x10K" 50 (profile-splice-10k))
+(benchmark "profile/make-33x10K" 100 (profile-make-array-10k))
+(benchmark "profile/wrap-children-32x10K" 50 (profile-wrap-children-10k))
+(benchmark "profile/wrap-children-2x10K" 100 (profile-wrap-two-children-10k))
+(benchmark "profile/splice-children-10K" 50 (profile-splice-children-10k))
+(benchmark "profile/splice-addresses-10K" 50 (profile-splice-addresses-10k))
+(benchmark "profile/new-leaf-10K" 100 (profile-new-leaf-10k))
+(benchmark "profile/full-leaf-conj-10K" 50 (profile-full-leaf-conj-10k))
