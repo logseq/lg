@@ -693,6 +693,97 @@
    %{dep:datascript/persistent_sorted_set/leaf.expected})))
 
 (rule
+ (target persistent_sorted_set_storage_native.ml)
+ (deps
+  ../datascript/me/tonsky/persistent_sorted_set/arrays.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/array_ops.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/search.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/nodes.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/path.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/traversal.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/set.lgc
+  datascript/persistent_sorted_set/storage_test.lgc
+  ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   native
+   --compile-files
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/array_ops.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/search.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/nodes.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/path.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/traversal.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/set.lgc}
+   %{dep:datascript/persistent_sorted_set/storage_test.lgc}
+   -o
+   %{target})))
+
+(executable
+ (name persistent_sorted_set_storage_native)
+ (modules persistent_sorted_set_storage_native)
+ (flags
+  (:standard -w -32-37))
+ (libraries lg.runtime rrbvec))
+
+(rule
+ (target persistent_sorted_set_storage_melange.ml)
+ (deps
+  ../datascript/me/tonsky/persistent_sorted_set/arrays.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/array_ops.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/search.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/nodes.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/path.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/traversal.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/set.lgc
+  datascript/persistent_sorted_set/storage_test.lgc
+  ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   melange
+   --compile-files
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/array_ops.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/search.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/nodes.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/path.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/traversal.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/set.lgc}
+   %{dep:datascript/persistent_sorted_set/storage_test.lgc}
+   -o
+   %{target})))
+
+(melange.emit
+ (target persistent-sorted-set-storage-melange)
+ (alias persistent-sorted-set-storage-melange)
+ (module_systems es6)
+ (modules persistent_sorted_set_storage_melange)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -w -32-37)
+ (libraries lg.runtime rrbvec))
+
+(rule
+ (alias runtest)
+ (deps
+  datascript/value_smoke.sh
+  datascript/persistent_sorted_set/storage.expected
+  persistent_sorted_set_storage_native.exe
+  (alias persistent-sorted-set-storage-melange)
+  persistent-sorted-set-storage-melange/test/persistent_sorted_set_storage_melange.js)
+ (action
+  (run
+   sh
+   %{dep:datascript/value_smoke.sh}
+   %{exe:persistent_sorted_set_storage_native.exe}
+   %{dep:persistent-sorted-set-storage-melange/test/persistent_sorted_set_storage_melange.js}
+   %{dep:datascript/persistent_sorted_set/storage.expected})))
+
+(rule
  (target persistent_sorted_set_benchmark_native.ml)
  (deps
   ../datascript/me/tonsky/persistent_sorted_set/arrays.lgc

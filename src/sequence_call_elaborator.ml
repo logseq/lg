@@ -683,7 +683,10 @@ let create ~compile_expr =
           | Error _ as err -> err
           | Ok collection -> (
               match Collection_capability.to_seq_expr env collection with
-              | Error _ -> Error.error "map expects a seqable value"
+              | Error _ ->
+                  Error.error
+                    ("map expects a seqable value, got "
+                    ^ Types.source_name collection.ty)
               | Ok (inner, sequence) -> (
                   match
                     compile_function_arg_for_collection scope env inner fn_form

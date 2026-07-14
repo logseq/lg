@@ -209,41 +209,41 @@
   (path/path-set (path/path-set path/empty-path 1 1) 0 2))
 (println
   (str "traversal:"
-       (= 6 (traversal/node-value-at-path traversal-root middle-key 1)) ":"
+       (= 6 (traversal/node-value-at-path traversal-root middle-key 1 nil)) ":"
        (= 11
           (traversal/node-value-at-path
             traversal-root
-            (traversal/rightmost-path traversal-root path/empty-path 1)
-            1)) ":"
+            (traversal/rightmost-path traversal-root path/empty-path 1 nil)
+            1 nil)) ":"
        (= 4
           (traversal/node-value-at-path
             traversal-root
-            (traversal/next-path traversal-root left-last 1)
-            1)) ":"
+            (traversal/next-path traversal-root left-last 1 nil)
+            1 nil)) ":"
        (= 3
           (traversal/node-value-at-path
             traversal-root
-            (traversal/prev-path traversal-root middle-first 1)
-            1)) ":"
+            (traversal/prev-path traversal-root middle-first 1 nil)
+            1 nil)) ":"
        (path/path-eq
          (path/path-dec path/empty-path)
-         (traversal/prev-path traversal-root path/empty-path 1))))
-(if-some [seek-five (traversal/seek-path traversal-root 5 int-compare 1)]
+         (traversal/prev-path traversal-root path/empty-path 1 nil))))
+(if-some [seek-five (traversal/seek-path traversal-root 5 int-compare 1 nil)]
   (println
     (str "seek:"
-         (= 5 (traversal/node-value-at-path traversal-root seek-five 1)) ":"
-         (nil? (traversal/seek-path traversal-root 100 int-compare 1)) ":"
+         (= 5 (traversal/node-value-at-path traversal-root seek-five 1 nil)) ":"
+         (nil? (traversal/seek-path traversal-root 100 int-compare 1 nil)) ":"
          (= 6
             (traversal/node-value-at-path
               traversal-root
-              (traversal/rseek-path traversal-root 5 int-compare 1)
-              1)) ":"
+              (traversal/rseek-path traversal-root 5 int-compare 1 nil)
+              1 nil)) ":"
          (path/path-eq
            (traversal/next-path
              traversal-root
-             (traversal/rightmost-path traversal-root path/empty-path 1)
-             1)
-           (traversal/rseek-path traversal-root 100 int-compare 1))))
+             (traversal/rightmost-path traversal-root path/empty-path 1 nil)
+             1 nil)
+           (traversal/rseek-path traversal-root 100 int-compare 1 nil))))
   (println "seek:false:false:false:false"))
 
 (def traversal-deep-left (nodes/new-leaf (arrays/into-array (range 12 16))))
@@ -273,28 +273,28 @@
        (= 12
           (traversal/node-value-at-path
             traversal-deep-root
-            (traversal/next-path traversal-deep-root traversal-eleven 2)
-            2)) ":"
+            (traversal/next-path traversal-deep-root traversal-eleven 2 nil)
+            2 nil)) ":"
        (= 11
           (traversal/node-value-at-path
             traversal-deep-root
-            (traversal/prev-path traversal-deep-root traversal-twelve 2)
-            2)) ":"
+            (traversal/prev-path traversal-deep-root traversal-twelve 2 nil)
+            2 nil)) ":"
        (= 23
           (traversal/node-value-at-path
             traversal-deep-root
-            (traversal/rightmost-path traversal-deep-root path/empty-path 2)
-            2)) ":"
+            (traversal/rightmost-path traversal-deep-root path/empty-path 2 nil)
+            2 nil)) ":"
        (if-some [seek-eighteen
                  (traversal/seek-path
-                   traversal-deep-root 18 int-compare 2)]
+                   traversal-deep-root 18 int-compare 2 nil)]
          (= 18
             (traversal/node-value-at-path
-              traversal-deep-root seek-eighteen 2))
+              traversal-deep-root seek-eighteen 2 nil))
          false)))
 
-(def traversal-forward (traversal/node-seq traversal-deep-root 2))
-(def traversal-reverse (traversal/node-rseq traversal-deep-root 2))
+(def traversal-forward (traversal/node-seq traversal-deep-root 2 nil))
+(def traversal-reverse (traversal/node-rseq traversal-deep-root 2 nil))
 (println
   (str "sequence:"
        (= 24 (count traversal-forward)) ":"
@@ -303,15 +303,15 @@
        (= 23 (first traversal-reverse)) ":"
        (= 0 (last traversal-reverse))))
 (if-some [range-left
-          (traversal/seek-path traversal-deep-root 5 int-compare 2)]
+          (traversal/seek-path traversal-deep-root 5 int-compare 2 nil)]
   (let [range-right
-        (traversal/rseek-path traversal-deep-root 18 int-compare 2)
+        (traversal/rseek-path traversal-deep-root 18 int-compare 2 nil)
         values
         (traversal/node-seq-between
-          traversal-deep-root range-left range-right 2)
+          traversal-deep-root range-left range-right 2 nil)
         reverse-values
         (traversal/node-rseq-between
-          traversal-deep-root range-left range-right 2)]
+          traversal-deep-root range-left range-right 2 nil)]
     (println
       (str "sequence-range:"
            (= 14 (count values)) ":"

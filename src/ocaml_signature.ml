@@ -65,6 +65,11 @@ let rec of_compiler_type =
   | Arrow ((Labelled _ | Optional _), _, _) -> TOcaml "labelled_function"
   | Tuple elements -> TTuple (List.map of_compiler_type elements)
   | Constructor (name, arguments) -> (
+      let name =
+        match String.split_on_char '.' name with
+        | "Stdlib" :: rest -> String.concat "." rest
+        | _ -> name
+      in
       let arguments = List.map of_compiler_type arguments in
       match (name, arguments) with
       | "int", [] -> TInt

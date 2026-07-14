@@ -14,7 +14,7 @@
     #{:db.type/number :db.type/instant :db.type/keyword :db.type/ref
       :db.type/string :db.type/uuid :db.type/tuple})
 
-  (defn schema? [^:ocaml/Datascript_value.value entity]
+  (defn schema? [^:Datascript_value.value entity]
     (match
       (Datascript_value/map-get
         (Datascript_value/keyword-value ":db/ident") entity)
@@ -23,7 +23,7 @@
         (Datascript_value/map-get
           (Datascript_value/keyword-value ":db/cardinality") entity)))
 
-  (defn schema-entity? [^:ocaml/Datascript_value.value entity]
+  (defn schema-entity? [^:Datascript_value.value entity]
     (some
       (fn [key]
         (some?
@@ -34,7 +34,7 @@
             ":db.install/_attribute" ":db/doc" ":db/tupleType"
             ":db/tupleTypes" ":db/tupleAttrs")))
 
-  (defn is-system-keyword? [^:ocaml/Datascript_value.value value]
+  (defn is-system-keyword? [^:Datascript_value.value value]
     (match value
       (Datascript_value.KeywordValue label)
         (if (string/starts-with? label ":db/")
@@ -46,7 +46,7 @@
           (string/starts-with? label "db."))
       _ false))
 
-  (defn type? [^:ocaml/Datascript_value.value value]
+  (defn type? [^:Datascript_value.value value]
     (match value
       (Datascript_value.KeywordValue label)
         (if (= label ":db.type/number")

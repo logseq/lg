@@ -75,6 +75,20 @@ let starts_with_uppercase name =
   String.length name > 0
   && Char.uppercase_ascii name.[0] = name.[0]
 
+let opened_ocaml_call_target scope env function_name =
+  let prefix = "__opened/" ^ scope ^ "/" in
+  Env.to_bindings env
+  |> List.find_map (fun (key, (binding : binding)) ->
+         if String.starts_with ~prefix key then
+           match binding.host_reference with
+           | Some (Ocaml_module module_path) ->
+               let target = module_path ^ "." ^ Names.sanitize_name function_name in
+               (match Ocaml_signature.value_signature target with
+               | Ok _ -> Some target
+               | Error _ -> None)
+           | _ -> None
+         else None)
+
 let ocaml_call_target scope env function_name =
   match lookup_host_reference scope env function_name with
   | Some { host_reference = Some (Ocaml_value ocaml_name); _ } -> Some ocaml_name
@@ -103,7 +117,7 @@ let ocaml_call_target scope env function_name =
           if String.contains function_name '.' && first_segment <> ""
              && Char.uppercase_ascii first_segment.[0] = first_segment.[0]
           then Some function_name
-          else None)
+          else opened_ocaml_call_target scope env function_name)
 
 let resolve_ocaml_call_target scope env function_name =
   match ocaml_call_target scope env function_name with

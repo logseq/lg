@@ -11,7 +11,7 @@
        (= 2 (arrays/alast values)) ":"
        (= 4 (arrays/half 9))))
 
-(def copied (arrays/make-array 4))
+(def copied (arrays/make-array 4 0))
 (arrays/acopy values 0 2 copied 1)
 (println
   (str "copy:"

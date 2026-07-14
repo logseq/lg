@@ -343,6 +343,11 @@ let create ~compile_expr =
                                 ("unknown record field "
                                ^ Names.keyword_source_name keyword))
                       | _ -> assert false))
+              | TUnknown | TVar _ ->
+                  Ok
+                    (typed_ir TUnknown
+                       (Semantic_ir.Field
+                          (target.semantic_expr, Names.keyword_to_ocaml_name keyword)))
               | ty when is_ocaml_owned_type ty ->
                   Ok
                     (typed_ir TUnknown

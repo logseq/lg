@@ -534,7 +534,7 @@ let create ~compile_expr =
       | _, FList (FSymbol "record" :: _) ->
           Error.error "record pattern expects a record target"
       | TTuple payload_tys,
-        FList (FSymbol ("tuple" | "ocaml-tuple") :: payload_patterns) ->
+        FList (FSymbol "tuple" :: payload_patterns) ->
           let rec compile_payloads patterns bindings = function
             | [], [] -> Ok (List.rev patterns, bindings)
             | payload_ty :: payload_tys, pattern :: payload_patterns -> (

@@ -49,7 +49,9 @@ let is_ocaml_owned_type = function
 let is_ocaml_constructor_pattern_target target_ty name =
   is_ocaml_owned_type target_ty
   || (match target_ty with
-     | TUnknown | TVar _ -> String.contains name '.' || String.contains name '/'
+     | TUnknown | TVar _ ->
+         List.mem name [ "Some"; "None"; "Ok"; "Error" ]
+         || String.contains name '.' || String.contains name '/'
      | _ -> false)
 
 let rec merge_branch_types left right =

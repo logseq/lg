@@ -58,7 +58,19 @@ let rec parse_ocaml_type source =
     | None ->
         if String.contains source '<' || String.contains source '>' then
           Error.error "malformed OCaml type application"
-        else Ok (TOcaml source)
+        else
+          (match String.rindex_opt source '/' with
+          | Some separator when separator > 0 ->
+              let module_path = String.sub source 0 separator in
+              if Char.uppercase_ascii module_path.[0] = module_path.[0] then
+                let type_name =
+                  String.sub source (separator + 1)
+                    (String.length source - separator - 1)
+                  |> Names.sanitize_name
+                in
+                Ok (TOcaml (module_path ^ "." ^ type_name))
+              else Ok (TOcaml source)
+          | _ -> Ok (TOcaml source))
     | Some open_index ->
         let name = String.sub source 0 open_index |> String.trim in
         let inner =
@@ -85,27 +97,20 @@ let rec parse_ocaml_type source =
                 | Error _ as err -> err
                 | Ok () ->
                     if name = "tuple" then Ok (TTuple args)
+                    else if name = "array" then
+                      match args with
+                      | [ inner ] -> Ok (TArray inner)
+                      | _ -> Error.error "array expects one type argument"
+                    else if name = "ref" then
+                      match args with
+                      | [ inner ] -> Ok (TRef inner)
+                      | _ -> Error.error "ref expects one type argument"
                     else if name = "fn" then
                       match List.rev args with
                       | return_ty :: reversed_params ->
                           Ok (TFn (List.rev reversed_params, return_ty))
                       | [] -> assert false
                     else Ok (TOcaml_app (name, args)))
-
-let concise_external_type keyword =
-  let source = String.sub keyword 1 (String.length keyword - 1) in
-  match String.rindex_opt source '/' with
-  | Some separator when separator > 0 ->
-      let module_path = String.sub source 0 separator in
-      if Char.uppercase_ascii module_path.[0] <> module_path.[0] then None
-      else
-        let type_name =
-          String.sub source (separator + 1)
-            (String.length source - separator - 1)
-          |> Names.sanitize_name
-        in
-        Some (module_path ^ "." ^ type_name)
-  | _ -> None
 
 let of_keyword = function
   | ":int" -> Ok TInt
@@ -116,29 +121,22 @@ let of_keyword = function
   | ":keyword" -> Ok TKeyword
   | ":bool" -> Ok TBool
   | ":unit" -> Ok TUnit
+  | ":nil" -> Error.error "nil is not a valid type annotation"
   | keyword when String.starts_with ~prefix:":ocaml/" keyword ->
-      let name =
-        String.sub keyword 7 (String.length keyword - 7)
-      in
-      if name = "" then Error.error ("unknown vector element type " ^ keyword)
-      else parse_ocaml_type name
-  | keyword
-    when String.starts_with ~prefix:":option<" keyword
-         || String.starts_with ~prefix:":result<" keyword
-         || String.starts_with ~prefix:":tuple<" keyword ->
+      Error.error "the :ocaml/ type prefix is not supported"
+  | keyword when String.starts_with ~prefix:":param/" keyword ->
+      Error.error "the :param/ type prefix is not supported"
+  | keyword when String.starts_with ~prefix:":" keyword ->
       String.sub keyword 1 (String.length keyword - 1) |> parse_ocaml_type
-  | keyword -> (
-      match concise_external_type keyword with
-      | Some type_name -> parse_ocaml_type type_name
-      | None -> Error.error ("unknown vector element type " ^ keyword))
+  | keyword -> Error.error ("unknown vector element type " ^ keyword)
 
 let rec resolve_type_parameters parameters = function
-  | TOcaml name when String.starts_with ~prefix:"param/" name ->
-      let parameter =
-        String.sub name 6 (String.length name - 6) |> Names.sanitize_name
-      in
-      if List.mem parameter parameters then Ok (TVar parameter)
-      else Error.error ("unknown type parameter " ^ parameter)
+  | TOcaml name when List.mem name parameters ->
+      Ok (TVar (Names.sanitize_name name))
+  | TOcaml name
+    when parameters <> [] && String.length name = 1
+         && Char.lowercase_ascii name.[0] = name.[0] ->
+      Error.error ("unknown type parameter " ^ name)
   | TOcaml_app (name, args) ->
       let rec resolve_args acc = function
         | [] -> Ok (TOcaml_app (name, List.rev acc))
@@ -148,6 +146,10 @@ let rec resolve_type_parameters parameters = function
             | Ok arg -> resolve_args (arg :: acc) rest)
       in
       resolve_args [] args
+  | TArray inner ->
+      resolve_type_parameters parameters inner |> Result.map (fun inner -> TArray inner)
+  | TRef inner ->
+      resolve_type_parameters parameters inner |> Result.map (fun inner -> TRef inner)
   | TTuple args ->
       let rec resolve_args acc = function
         | [] -> Ok (TTuple (List.rev acc))
@@ -172,27 +174,24 @@ let rec resolve_type_parameters parameters = function
   | ty -> Ok ty
 
 let of_keyword_with_parameters parameters keyword =
-  if String.starts_with ~prefix:":param/" keyword then
-    let parameter =
-      String.sub keyword 7 (String.length keyword - 7) |> Names.sanitize_name
-    in
-    if List.mem parameter parameters then Ok (TVar parameter)
-    else Error.error ("unknown type parameter " ^ parameter)
-  else
-    match of_keyword keyword with
-    | Error _ as err -> err
-    | Ok ty -> resolve_type_parameters parameters ty
+  match of_keyword keyword with
+  | Error _ as err -> err
+  | Ok ty -> resolve_type_parameters parameters ty
 
 let of_param_annotation annotation =
   if String.starts_with ~prefix:"^:" annotation then
     match of_keyword (String.sub annotation 1 (String.length annotation - 1)) with
     | Ok ty -> Ok ty
-    | Error _
+    | (Error _ as err)
       when String.starts_with ~prefix:"^:ocaml/" annotation
-           || String.starts_with ~prefix:"^:option<" annotation
+           || String.starts_with ~prefix:"^:param/" annotation ->
+        err
+    | Error _
+      when String.starts_with ~prefix:"^:option<" annotation
            || String.starts_with ~prefix:"^:result<" annotation
-           || String.starts_with ~prefix:"^:tuple<" annotation ->
-        Error.error ("invalid OCaml type annotation " ^ annotation)
+           || String.starts_with ~prefix:"^:tuple<" annotation
+           || String.contains annotation '<' ->
+        Error.error ("invalid type annotation " ^ annotation)
     | Error _ -> Error.error ("unknown parameter type " ^ annotation)
   else if String.starts_with ~prefix:"^" annotation && String.length annotation > 1
   then

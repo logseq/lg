@@ -456,18 +456,6 @@ let create ~compile_expr =
             | Error _ as err -> err
             | Ok element_ty -> Ok (typed_ir (TArray element_ty) (Semantic_ir.Array [])))
         | _ -> Error.error "ocaml-array-of expects one type")
-    | "ocaml-array-make" -> (
-        match compile_args () with
-        | Error _ as err -> err
-        | Ok [ { ty = TInt; semantic_expr; _ } ] ->
-            let empty_value =
-              apply "Obj.magic" [ Semantic_ir.Constructor ("None", None) ]
-            in
-            Ok
-              (typed_ir (TArray TUnknown)
-                 (apply "Array.make" [ semantic_expr; empty_value ]))
-        | Ok [ _ ] -> Error.error "ocaml-array-make size must be int"
-        | Ok _ -> Error.error "ocaml-array-make expects 1 argument")
     | "ocaml-array-from" -> (
         match compile_args () with
         | Error _ as err -> err
@@ -648,74 +636,22 @@ let create ~compile_expr =
                         (match value.ty with TArray _ -> true | _ -> false);
                     ]))
         | Ok _ -> Error.error "ocaml-array? expects 1 argument")
-    | "ocaml-ref" -> (
+    | "atom" -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok [ value ] -> Ok (typed_ir (TRef value.ty) (apply "ref" [ value.semantic_expr ]))
-        | Ok _ -> Error.error "ocaml-ref expects 1 argument")
-    | "ocaml-deref" -> (
-        match compile_args () with
-        | Error _ as err -> err
-        | Ok [ value ] -> (
-            match value.ty with
-            | TRef referenced_ty ->
-                Ok (typed_ir referenced_ty (Semantic_ir.Prefix ("!", value.semantic_expr)))
-            | _ -> Error.error "ocaml-deref expects an OCaml ref")
-        | Ok _ -> Error.error "ocaml-deref expects 1 argument")
-    | "ocaml-reset!" -> (
-        match compile_args () with
-        | Error _ as err -> err
-        | Ok [ reference; value ] -> (
-            match reference.ty with
-            | TRef referenced_ty ->
-                if Types.equal referenced_ty value.ty then
-                  Ok
-                    (typed_ir TUnit
-                       (Semantic_ir.Infix (":=", reference.semantic_expr, value.semantic_expr)))
-                else Error.error "OCaml ref value must match referenced type"
-            | _ -> Error.error "ocaml-reset! expects an OCaml ref")
-        | Ok _ -> Error.error "ocaml-reset! expects 2 arguments")
-    | "ocaml-call" -> (
-        match arg_forms with
-        | FKeyword return_keyword :: FSymbol function_name :: value_forms -> (
-            match Type_annotation.of_keyword return_keyword with
-            | Error _ -> Error.error ("unknown ocaml-call return type " ^ return_keyword)
-            | Ok return_ty -> (
-                match compile_ocaml_arguments scope env value_forms with
-                | Error _ as err -> err
-                | Ok args ->
-                    let function_name =
-                      resolve_ocaml_call_target scope env function_name
-                    in
-                    Ok (typed_ir return_ty (ocaml_apply function_name args))))
-        | FSymbol function_name :: value_forms -> (
-            compile_inferred_ocaml_call scope env function_name value_forms)
-        | FKeyword _ :: _ ->
-            Error.error "ocaml-call function must be a symbol"
-        | _ -> Error.error "ocaml-call expects return type, function, and arguments")
-    | "ocaml-some" ->
-        constructor ~display_name:"ocaml-some" ~constructor_name:"Some"
-          (fun _ -> TOcaml "option") 1
-    | "ocaml-none" ->
-        constructor ~display_name:"ocaml-none" ~constructor_name:"None"
-          (fun _ -> TOcaml "option") 0
-    | "ocaml-ok" ->
-        constructor ~display_name:"ocaml-ok" ~constructor_name:"Ok"
-          (fun _ -> TOcaml "result") 1
-    | "ocaml-error" ->
-        constructor ~display_name:"ocaml-error" ~constructor_name:"Error"
-          (fun _ -> TOcaml "result") 1
-    | ("tuple" | "ocaml-tuple") as tuple_name -> (
+        | Ok _ -> Error.error "atom expects 1 argument")
+    | "tuple" -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok ([] | [ _ ]) ->
-            Error.error (tuple_name ^ " expects at least 2 values")
+            Error.error "tuple expects at least 2 values"
         | Ok values ->
             Ok
               (typed_ir
                  (TTuple (List.map (fun value -> value.ty) values))
                  (Semantic_ir.Tuple (List.map (fun value -> value.semantic_expr) values))))
-    | "record" | "ocaml-record" -> (
+    | "record" -> (
         let field_value record field_form =
           match field_form with
           | FList [ FSymbol field_name; value_form ] -> (
@@ -730,7 +666,7 @@ let create ~compile_expr =
                   match compile_expr scope env value_form with
                   | Error _ as err -> err
                   | Ok value -> Ok (field, value)))
-          | _ -> Error.error "ocaml-record fields must be (name value)"
+          | _ -> Error.error "record fields must be (name value)"
         in
         let rec compile_fields record acc seen = function
           | [] -> Ok (List.rev acc)
@@ -794,69 +730,7 @@ let create ~compile_expr =
                                  (fun ((field : field), value) -> (field, value.semantic_expr))
                                  values);
                         }))
-        | _ -> Error.error "ocaml-record expects a record type and fields")
-    | "ocaml-field" -> (
-        match arg_forms with
-        | [ target_form; FSymbol field_name ] -> (
-            match compile_expr scope env target_form with
-            | Error _ as err -> err
-            | Ok target -> (
-                match target.ty with
-                | ty when is_ocaml_owned_type ty ->
-                    Ok
-                      (typed_ir TUnknown
-                         (Semantic_ir.Field
-                            (target.semantic_expr, Names.sanitize_name field_name)))
-                | TRecord fields | TNamed_record { fields; _ } -> (
-                    let ocaml_name = Names.sanitize_name field_name in
-                    match
-                      List.find_opt
-                        (fun (field : field) -> field.ocaml_name = ocaml_name)
-                        fields
-                    with
-                    | None -> Error.error ("unknown record field " ^ field_name)
-                    | Some field ->
-                        Ok
-                          (typed_ir field.ty
-                             (Semantic_ir.Field (target.semantic_expr, field.ocaml_name))))
-                | _ -> Error.error "ocaml-field expects a record value"))
-        | _ -> Error.error "ocaml-field expects record value and field name")
-    | "ocaml-construct" -> (
-        match arg_forms with
-        | FSymbol constructor_name :: payload_forms -> (
-            match compile_args_for scope env payload_forms with
-            | Error _ as err -> err
-            | Ok payloads -> (
-                let constructor_ty =
-                  match lookup_binding scope env constructor_name with
-                  | Ok { ty = TFn (payload_tys, ret); _ }
-                    when List.length payload_tys = List.length payloads ->
-                      Ok
-                        (Types.instantiate_type ~templates:payload_tys
-                           ~actuals:(List.map (fun payload -> payload.ty) payloads)
-                           ret)
-                  | Ok { ty = TFn _; _ } ->
-                      Error.error "ocaml-construct payload arity mismatch"
-                  | Ok _ -> Error.error (constructor_name ^ " is not a constructor")
-                  | Error _ -> Ok (TOcaml "variant")
-                in
-                match constructor_ty with
-                | Error _ as err -> err
-                | Ok constructor_ty ->
-                    let payload_expr =
-                      match payloads with
-                      | [] -> None
-                      | [ payload ] -> Some payload.semantic_expr
-                      | _ ->
-                          Some
-                            (Semantic_ir.Tuple
-                               (List.map (fun payload -> payload.semantic_expr) payloads))
-                    in
-                    Ok
-                      (typed_ir constructor_ty
-                         (Semantic_ir.Constructor (constructor_name, payload_expr)))))
-        | FKeyword _ :: _ -> Error.error "ocaml-construct constructor must be a symbol"
-        | _ -> Error.error "ocaml-construct expects a constructor name")
+        | _ -> Error.error "record expects a record type and fields")
     | "+" | "-" | "*" | "/" -> (
         match compile_args () with
         | Error _ as err -> err
@@ -1000,9 +874,44 @@ let create ~compile_expr =
                 Ok
                   (typed_ir value_ty
                      (Semantic_ir.Prefix ("!", reference.semantic_expr)))
-            | _ -> Error.error "deref expects a reference")
+            | TUnknown | TVar _ ->
+                Ok
+                  (typed_ir TUnknown
+                     (Semantic_ir.Prefix ("!", reference.semantic_expr)))
+            | ty ->
+                Error.error
+                  ("deref expects a reference, got " ^ Types.source_name ty))
         | Ok _ -> Error.error "deref expects 1 argument")
-    | "vswap!" -> (
+    | ("reset!" | "vreset!") as reset_name -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [ reference; value ] -> (
+            match reference.ty with
+            | TRef referenced_ty
+              when Types.assignable ~policy:Host_boundary
+                     ~expected:referenced_ty ~actual:value.ty ->
+                Ok
+                  (typed_ir value.ty
+                     (Semantic_ir.Sequence
+                        [ Semantic_ir.Infix
+                            (":=", reference.semantic_expr, value.semantic_expr);
+                          value.semantic_expr
+                        ]))
+            | TRef _ ->
+                Error.error (reset_name ^ " value must match referenced type")
+            | TUnknown | TVar _ ->
+                Ok
+                  (typed_ir value.ty
+                     (Semantic_ir.Sequence
+                        [ Semantic_ir.Infix
+                            (":=", reference.semantic_expr, value.semantic_expr);
+                          value.semantic_expr
+                        ]))
+            | _ ->
+                Error.error
+                  (reset_name ^ " expects a reference as its first argument"))
+        | Ok _ -> Error.error (reset_name ^ " expects 2 arguments"))
+    | ("swap!" | "vswap!") as swap_name -> (
         match arg_forms with
         | reference_form :: function_form :: extra_forms -> (
             match compile_expr scope env reference_form with
@@ -1048,8 +957,12 @@ let create ~compile_expr =
                                           Semantic_ir.Ident updated_name );
                                       Semantic_ir.Ident updated_name
                                     ] ))))
-                | _ -> Error.error "vswap! expects a reference as its first argument"))
-        | _ -> Error.error "vswap! expects a reference, function, and optional arguments")
+                | _ ->
+                    Error.error
+                      (swap_name ^ " expects a reference as its first argument")))
+        | _ ->
+            Error.error
+              (swap_name ^ " expects a reference, function, and optional arguments"))
     | "=" | "not=" | "<" | "<=" | ">" | ">=" -> (
         match compile_args () with
         | Error _ as err -> err

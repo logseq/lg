@@ -119,12 +119,12 @@ The compiler infers record-like map shapes automatically:
   `(module-alias M Math)` emits an
   OCaml module alias and exposes already-known `Math/...` bindings plus OCaml
   record type metadata as `M/...`.
-  `(module-signature MathSig (val answer :ocaml/int))` emits an OCaml
+  `(module-signature MathSig (val answer :int))` emits an OCaml
   module type. Signatures also support abstract type items such as
-  `(type user-id)` and manifest type items such as `(type user-id :ocaml/int)`,
+  `(type user-id)` and manifest type items such as `(type user-id :int)`,
   which lower to OCaml `type user_id` and `type user_id = int`. Signature type
   items accept parameter vectors too: `(type box [a])` declares an abstract
-  `'a box`, while `(type box [a] :ocaml/option<param/a>)` declares a manifest
+  `'a box`, while `(type box [a] :option<a>)` declares a manifest
   `'a box = 'a option`. `(module Inner InnerSig)` adds a nested module item to
   a signature. Known nested values remain available through functor parameters,
   for example `M.Inner/value`. `(include BaseSig)` includes another module type
@@ -168,30 +168,30 @@ The compiler infers record-like map shapes automatically:
   polymorphic OCaml `None`; control-flow joins infer nullable types, while
   explicit host option annotations use `^:option<T>`.
   Opaque host-owned
-  annotations such as `^:ocaml/int` lower to OCaml parameter constraints and
+  annotations such as `^:int` lower to OCaml parameter constraints and
   are left for the OCaml typechecker; lg core APIs do not treat them as
   known `:int` or `:string` values. Host-owned type applications use angle
-  brackets, for example `^:ocaml/option<int>` and
-  `^:ocaml/result<string;string>`. OCaml tuple annotations use the same syntax,
-  for example `^:ocaml/tuple<int;string>`; `;` separates multiple type
+  brackets, for example `^:option<int>` and
+  `^:result<string;string>`. OCaml tuple annotations use the same syntax,
+  for example `^:tuple<int;string>`; `;` separates multiple type
   arguments because commas are reader whitespace.
-- `(type-alias user-id :ocaml/int)` emits an OCaml type alias such as
+- `(type-alias user-id :int)` emits an OCaml type alias such as
   `type user_id = int`. The alias can be referenced from host-owned
-  annotations like `^:ocaml/user_id`; lg does not expand or infer through
+  annotations like `^:user_id`; lg does not expand or infer through
   the alias itself.
 - Aliases, records, and variants accept explicit type parameter vectors.
-  `(type-alias maybe [a] :ocaml/option<param/a>)`,
-  `(type-record pair [a b] (left :param/a) (right :param/b))`, and
-  `(type-variant box [a] (Box :param/a))` lower to ordinary parameterized OCaml
+  `(type-alias maybe [a] :option<a>)`,
+  `(type-record pair [a b] (left :a) (right :b))`, and
+  `(type-variant box [a] (Box :a))` lower to ordinary parameterized OCaml
   declarations. Parameter references are scoped to the declaration, and OCaml
   checks relationships between instantiated values.
 - `(type-record user (name :string) (age :int))` emits an OCaml record type.
-  `(ocaml-record user (name "Ada") (age 41))` constructs a value of that type,
-  and `(ocaml-field user-value name)` lowers to an OCaml record field access.
+  `(record user (name "Ada") (age 41))` constructs a value of that type,
+  and `(:name user-value)` lowers to an OCaml record field access.
   Module records can be constructed with qualified type names such as
-  `(ocaml-record User.user ...)` or through module aliases such as
-  `(ocaml-record U.user ...)`. Opened modules expose record type names in the
-  current scope, so `(open User)` allows `(ocaml-record user ...)`. lg checks
+  `(record User.user ...)` or through module aliases such as
+  `(record U.user ...)`. Opened modules expose record type names in the
+  current scope, so `(open User)` allows `(record user ...)`. lg checks
   record shape and field names; field value compatibility remains owned by
   OCaml.
   Function parameters do not need named-record annotations. Field reads and
@@ -200,21 +200,19 @@ The compiler infers record-like map shapes automatically:
 - `(type-variant status Active Inactive)` emits a nullary OCaml variant type
   such as `type status = Active | Inactive`. Payload constructors can be
   declared with forms such as `(Named :string)` or `(Pair :int :string)`.
-  `Active` and `(Named "Ada")` lower directly to OCaml constructor values;
-  `ocaml-construct` remains as a compatibility spelling. Constructor payload
+  `Active` and `(Named "Ada")` lower directly to OCaml constructor values.
+  Constructor payload
   typing and exhaustiveness remain owned by OCaml. For opaque host-owned
   targets, module-qualified constructor
-  patterns such as `(Msg.Named name)` lower directly to OCaml; constructor
+  patterns such as `(Msg/Named name)` lower directly to OCaml; constructor
   existence, arity, and payload typing are checked by OCaml.
 - `(Some value)`, `None`, `(Ok value)`, and `(Error value)` lower directly to
-  their OCaml constructors. The older `ocaml-some`, `ocaml-none`, `ocaml-ok`,
-  and `ocaml-error` forms remain compatible. Match forms can destructure them
-  with OCaml constructor
+  their OCaml constructors. Match forms can destructure them with OCaml constructor
   patterns such as `(Some x)`, `None`, `(Ok value)`, and `(Error err)`. lg
   validates constructor arity and type-application annotation shape, but leaves
   option/result payload compatibility to OCaml.
-- `(ocaml-tuple a b ...)` lowers to an OCaml tuple value. Match forms can
-  destructure tuple values with `(ocaml-tuple x y ...)`, and tuple annotations
+- `(tuple a b ...)` lowers to an OCaml tuple value. Match forms can
+  destructure tuple values with `(tuple x y ...)`, and tuple annotations
   lower to OCaml tuple constraints. Tuple arity is checked by lg; element
   compatibility remains owned by OCaml.
 - `do`, `fn`, `defn`, and `let` bodies can contain multiple forms; earlier
@@ -353,13 +351,12 @@ The compiler infers record-like map shapes automatically:
   remains checked by the OCaml typechecker.
 - `(Stdlib.abs -42)` reads the ordinary OCaml value signature from the compiler
   environment so lg can continue elaborating the inferred result. Module
-  aliases and referred OCaml values use the same direct form. `ocaml-call`
-  remains as a compatibility escape hatch for an explicit host return type.
+  aliases and referred OCaml values use the same direct form.
   OCaml checks function existence and argument compatibility.
 - OCaml-native scalar and mutable values stay explicit: float and character
   literals use `1.5` and `\a`; `(ocaml-array ...)`, `(ocaml-array-of :int)`,
-  `ocaml-array-get`, and `ocaml-array-set!` lower to OCaml arrays; `ocaml-ref`,
-  `ocaml-deref`, and `ocaml-reset!` lower to OCaml references. Core arithmetic
+  `ocaml-array-get`, and `ocaml-array-set!` lower to OCaml arrays; `atom`,
+  `deref`, `reset!`, and `swap!` lower to OCaml references. Core arithmetic
   operators select integer or float OCaml operators from static operand types.
 - OCaml labelled and optional arguments use keyword/value pairs, for example
   `(String.starts_with "ada" :prefix "ad")` and

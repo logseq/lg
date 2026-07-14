@@ -7,46 +7,45 @@
 
 #?(:native
    (type-record iterator [value]
-     (iter-root :ocaml/tree<param/value>)
+     (iter-root :tree<value>)
      (iter-shift :int)
      (iter-left :int)
      (iter-right :int)
-     (iter-keys :ocaml/array<param/value>)
-     (iter-idx :int))
+     (iter-keys :array<value>)
+     (iter-idx :int)
+     (iter-storage :option<storage<value>>))
    :melange
    (type-record iterator [value]
-     (iter-root :ocaml/tree<param/value>)
+     (iter-root :tree<value>)
      (iter-shift :int)
      (iter-left :float)
      (iter-right :float)
-     (iter-keys :ocaml/array<param/value>)
-     (iter-idx :int)))
+     (iter-keys :array<value>)
+     (iter-idx :int)
+     (iter-storage :option<storage<value>>)))
 
-(defn node-keys-at-path [root current-path shift]
+(defn node-keys-at-path [root current-path shift storage]
   (loop [node root
          level shift]
     (if (pos? level)
       (recur
-        (arrays/aget
-          (nodes/node-children node)
-          (path/path-get current-path level))
+        (nodes/node-child node (path/path-get current-path level) storage)
         (dec level))
       (nodes/node-keys node))))
 
-(defn node-value-at-path [root current-path shift]
+(defn node-value-at-path [root current-path shift storage]
   (arrays/aget
-    (node-keys-at-path root current-path shift)
+    (node-keys-at-path root current-path shift storage)
     (path/path-get current-path 0)))
 
-(defn rightmost-path [root current-path level]
+(defn rightmost-path [root current-path level storage]
   (loop [node root
          current-path current-path
          level level]
     (if (pos? level)
-      (let [children (nodes/node-children node)
-            last-idx (dec (arrays/alength children))]
+      (let [last-idx (dec (nodes/node-child-count node))]
         (recur
-          (arrays/aget children last-idx)
+          (nodes/node-child node last-idx storage)
           (path/path-set current-path level last-idx)
           (dec level)))
       (path/path-set
@@ -54,30 +53,29 @@
         0
         (dec (arrays/alength (nodes/node-keys node)))))))
 
-(defn- next-path-inner [node current-path level]
+(defn- next-path-inner [node current-path level storage]
   (let [idx (path/path-get current-path level)]
     (if (pos? level)
-      (let [children (nodes/node-children node)
-            child (arrays/aget children idx)]
+      (let [child (nodes/node-child node idx storage)]
         (if-some [sub-path
-                  (next-path-inner child current-path (dec level))]
+                  (next-path-inner child current-path (dec level) storage)]
           (Some (path/path-set sub-path level idx))
-          (if (< (inc idx) (arrays/alength children))
+          (if (< (inc idx) (nodes/node-child-count node))
             (Some (path/path-set path/empty-path level (inc idx)))
             nil)))
       (if (< (inc idx) (nodes/node-len node))
         (Some (path/path-set path/empty-path 0 (inc idx)))
         nil))))
 
-(defn next-path [root current-path shift]
+(defn next-path [root current-path shift storage]
   (if (path/path-lt current-path path/empty-path)
     path/empty-path
-    (if-some [result (next-path-inner root current-path shift)]
+    (if-some [result (next-path-inner root current-path shift storage)]
       result
       (path/path-inc
-        (rightmost-path root path/empty-path shift)))))
+        (rightmost-path root path/empty-path shift storage)))))
 
-(defn- prev-path-inner [node current-path level]
+(defn- prev-path-inner [node current-path level storage]
   (let [idx (path/path-get current-path level)]
     (cond
       (and (= 0 level) (= 0 idx))
@@ -87,32 +85,32 @@
       (Some (path/path-set path/empty-path 0 (dec idx)))
 
       (>= idx (nodes/node-len node))
-      (Some (rightmost-path node current-path level))
+      (Some (rightmost-path node current-path level storage))
 
       :else
-      (let [children (nodes/node-children node)
-            child (arrays/aget children idx)]
+      (let [child (nodes/node-child node idx storage)]
         (if-some [sub-path
-                  (prev-path-inner child current-path (dec level))]
+                  (prev-path-inner child current-path (dec level) storage)]
           (Some (path/path-set sub-path level idx))
           (if (= 0 idx)
             nil
             (let [previous-idx (dec idx)
                   previous-path
                   (rightmost-path
-                    (arrays/aget children previous-idx)
+                    (nodes/node-child node previous-idx storage)
                     current-path
-                    (dec level))]
+                    (dec level)
+                    storage)]
               (Some (path/path-set previous-path level previous-idx)))))))))
 
-(defn prev-path [root current-path shift]
+(defn prev-path [root current-path shift storage]
   (if (> (path/path-get current-path (inc shift)) 0)
-    (rightmost-path root current-path shift)
-    (if-some [result (prev-path-inner root current-path shift)]
+    (rightmost-path root current-path shift storage)
+    (if-some [result (prev-path-inner root current-path shift storage)]
       result
       (path/path-dec path/empty-path))))
 
-(defn seek-path [root key cmp shift]
+(defn seek-path [root key cmp shift storage]
   (loop [node root
          current-path path/empty-path
          level shift]
@@ -125,11 +123,11 @@
             (Some (path/path-set current-path 0 idx))))
         (let [idx (search/binary-search-l cmp keys (- keys-length 2) key)]
           (recur
-            (arrays/aget (nodes/node-children node) idx)
+            (nodes/node-child node idx storage)
             (path/path-set current-path level idx)
             (dec level)))))))
 
-(defn rseek-path [root key cmp shift]
+(defn rseek-path [root key cmp shift storage]
   (loop [node root
          current-path path/empty-path
          level shift]
@@ -142,76 +140,73 @@
           (search/binary-search-r cmp keys (dec keys-length) key))
         (let [idx (search/binary-search-r cmp keys (- keys-length 2) key)]
           (recur
-            (arrays/aget (nodes/node-children node) idx)
+            (nodes/node-child node idx storage)
             (path/path-set current-path level idx)
             (dec level)))))))
 
-(defn node-seq-between [root left right shift]
+(defn node-seq-between [root left right shift storage]
   (ocaml-seq-unfold
     (fn [current]
       (if (path/path-lt current right)
         (Some
           (tuple
-            (node-value-at-path root current shift)
-            (next-path root current shift)))
+            (node-value-at-path root current shift storage)
+            (next-path root current shift storage)))
         nil))
     left))
 
-(defn node-rseq-between [root left right shift]
-  (let [before-left (prev-path root left shift)]
+(defn node-rseq-between [root left right shift storage]
+  (let [before-left (prev-path root left shift storage)]
     (ocaml-seq-unfold
       (fn [current]
         (if (path/path-lt before-left current)
           (Some
             (tuple
-              (node-value-at-path root current shift)
-              (prev-path root current shift)))
+              (node-value-at-path root current shift storage)
+              (prev-path root current shift storage)))
           nil))
-      (prev-path root right shift))))
+      (prev-path root right shift storage))))
 
-(defn node-seq [root shift]
+(defn node-seq [root shift storage]
   (if (= 0 shift)
     (ocaml-array-to-seq (nodes/node-keys root))
     (ocaml-seq-flat-map
-      (fn [child] (node-seq child (dec shift)))
-      (nodes/node-children root))))
+      (fn [idx]
+        (node-seq (nodes/node-child root idx storage) (dec shift) storage))
+      (arrays/into-array (range 0 (nodes/node-child-count root))))))
 
-(defn node-rseq [root shift]
+(defn node-rseq [root shift storage]
   (if (= 0 shift)
     (ocaml-array-to-rseq (nodes/node-keys root))
     (ocaml-seq-flat-map-rev
-      (fn [child] (node-rseq child (dec shift)))
-      (nodes/node-children root))))
+      (fn [idx]
+        (node-rseq (nodes/node-child root idx storage) (dec shift) storage))
+      (arrays/into-array (range 0 (nodes/node-child-count root))))))
 
-(defn- make-iterator [root shift left right keys idx]
-  (ocaml-record iterator
-    (iter-root root)
-    (iter-shift shift)
-    (iter-left left)
-    (iter-right right)
-    (iter-keys keys)
-    (iter-idx idx)))
+(defn- make-iterator [root shift left right keys idx storage]
+  (record iterator (iter-root root) (iter-shift shift) (iter-left left) (iter-right right) (iter-keys keys) (iter-idx idx) (iter-storage storage)))
 
 (defn iter-first [iterator]
   (arrays/aget
-    (ocaml-field iterator iter-keys)
-    (ocaml-field iterator iter-idx)))
+    (:iter-keys iterator)
+    (:iter-idx iterator)))
 
 (defn iter-next [iterator]
-  (let [root (ocaml-field iterator iter-root)
-        shift (ocaml-field iterator iter-shift)
-        left (ocaml-field iterator iter-left)
-        right (ocaml-field iterator iter-right)
-        keys (ocaml-field iterator iter-keys)
-        idx (ocaml-field iterator iter-idx)]
+  (let [root (:iter-root iterator)
+        shift (:iter-shift iterator)
+        left (:iter-left iterator)
+        right (:iter-right iterator)
+        keys (:iter-keys iterator)
+        idx (:iter-idx iterator)
+        storage (:iter-storage iterator)]
     (if (< (inc idx) (arrays/alength keys))
       (let [next-left (path/path-inc left)]
         (if (path/path-lt next-left right)
           (Some
             (make-iterator
-              root shift next-left right keys (inc idx)))
+              root shift next-left right keys (inc idx) storage))
           nil))
-      (let [next-left (next-path root left shift)]
+      (let [next-left (next-path root left shift storage)]
         (if (path/path-lt next-left right)
           (Some
             (make-iterator
@@ -219,24 +214,27 @@
               shift
               next-left
               right
-              (node-keys-at-path root next-left shift)
-              (path/path-get next-left 0)))
+              (node-keys-at-path root next-left shift storage)
+              (path/path-get next-left 0)
+              storage))
           nil)))))
 
-(defn node-iter [root shift]
+(defn node-iter [root shift storage]
   (if (= 0 (nodes/node-len root))
     nil
     (let [left path/empty-path
           right
           (next-path
             root
-            (rightmost-path root path/empty-path shift)
-            shift)]
+            (rightmost-path root path/empty-path shift storage)
+            shift
+            storage)]
       (Some
         (make-iterator
           root
           shift
           left
           right
-          (node-keys-at-path root left shift)
-          0)))))
+          (node-keys-at-path root left shift storage)
+          0
+          storage)))))

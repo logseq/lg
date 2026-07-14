@@ -80,7 +80,7 @@ let rec compile scope env next_type = function
                 (fun field_name parameter ->
                   FList
                     [ FSymbol field_name;
-                      FKeyword (":param/" ^ parameter);
+                      FKeyword (":" ^ parameter);
                     ])
                 fields type_parameters
             in

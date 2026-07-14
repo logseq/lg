@@ -7,7 +7,7 @@
   (- left right))
 
 (defn now []
-  (ocaml-call :float Sys.time))
+  (Sys.time))
 
 (defmacro benchmark [name iterations expression]
   `(do
@@ -92,16 +92,16 @@
     0))
 
 (defn doseq-300k []
-  (let [result (ocaml-ref 0)
+  (let [result (atom 0)
         _
         (pset/set-reduce
           set-300k
           (fn [state value]
             (let [_
-                  (ocaml-reset! result (+ (ocaml-deref result) value))]
+                  (reset! result (+ (deref result) value))]
               state))
           0)]
-    (ocaml-deref result)))
+    (deref result)))
 
 (defn reduce-300k []
   (pset/set-reduce set-300k (fn [left right] (+ left right)) 0))

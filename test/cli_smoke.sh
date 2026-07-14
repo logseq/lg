@@ -49,7 +49,7 @@ grep -q "File \"$invalid_source\", line 3" "$invalid_stderr"
 
 printf '%s\n' \
   '(type-variant status Active Inactive)' \
-  '(defn describe [^:ocaml/status status]' \
+  '(defn describe [^:status status]' \
   '  (match status Active "active"))' > "$warning_source"
 
 "$cli" "$warning_source" >"$warning_stdout" 2>"$warning_stderr"
@@ -123,7 +123,7 @@ send_lsp_message() {
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/editor.lgc","languageId":"lg","version":1,"text":"(def answer\n  (if true\n    (Stdlib.abs\n      \"bad\")\n    0))"}}}'
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":"file:///tmp/editor.lgc","version":2},"contentChanges":[{"text":"(def ok 1)\n(def good (Stdlib.abs -42))"}]}}'
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/semantic-error.lgc","languageId":"lg","version":1,"text":"(def ok 1)\n(def bad\n  (+ 1 \"x\"))"}}}'
-  send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/warning.lgc","languageId":"lg","version":1,"text":"(type-variant status Active Inactive)\n(defn describe [^:ocaml/status status]\n  (match status Active \"active\"))"}}}'
+  send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/warning.lgc","languageId":"lg","version":1,"text":"(type-variant status Active Inactive)\n(defn describe [^:status status]\n  (match status Active \"active\"))"}}}'
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/service.lgc","languageId":"lg","version":1,"text":"(def answer 41)\n(defn add-one [x] (+ x 1))\n(def result (add-one answer))"}}}'
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/format.lgc","languageId":"lg","version":1,"text":"(def   answer  41)"}}}'
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/incomplete.lgc","languageId":"lg","version":1,"text":"(def answer 41)\n(def broken (+ answer"}}}'

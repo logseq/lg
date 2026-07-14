@@ -115,7 +115,7 @@ Scalar types are `int`, `string`, `symbol`, `keyword`, `bool`, and `unit`.
 lg represents surface `nil` separately from explicit OCaml option values.
 Control-flow joins lower a Clojure nilable type to an OCaml option. `:unit`
 remains available for host side-effecting values, including `^:unit`
-parameters and `ocaml-call` return types.
+parameters and direct host calls.
 Arithmetic starts as integer-only; ratio-producing Clojure arities such as unary `/` are documented differences until numeric tower support exists.
 
 Type predicates are resolved from static lg types. This includes scalar
@@ -164,9 +164,9 @@ already-known module bindings as unqualified symbols, and re-exports direct
 included bindings when used inside another module, including OCaml record type
 metadata. `(module-alias M Math)` emits an
 OCaml module alias and exposes already-known `Math/...` bindings as `M/...`.
-`(module-signature MathSig (val answer :ocaml/int))` emits an OCaml module type.
+`(module-signature MathSig (val answer :int))` emits an OCaml module type.
 Signatures also support abstract type items such as `(type user-id)` and
-manifest type items such as `(type user-id :ocaml/int)`, which lower to OCaml
+manifest type items such as `(type user-id :int)`, which lower to OCaml
 `type user_id` and `type user_id = int`. Nested signature modules use
 `(module Inner InnerSig)` and lower to native OCaml signature module items;
 their known values remain addressable through functor parameters. Signature
@@ -357,28 +357,28 @@ compatibility is delegated to the OCaml typechecker.
 
 26. Add OCaml-native type surface incrementally after the Parsetree boundary is solid: variants, tuples, option/result, type aliases, module aliases, module signatures, functors, `open`, `include`, and ordinary OCaml package references.
     The first supported host-owned type boundary is opaque parameter
-    annotations such as `^:ocaml/int`, which lower to OCaml constraints and are
+    annotations such as `^:int`, which lower to OCaml constraints and are
     delegated to the OCaml typechecker instead of being fully interpreted by
     lg. Host-owned type application annotations such as
-    `^:ocaml/option<int>`, `^:ocaml/result<string;string>`, and
-    `^:ocaml/tuple<int;string>` lower to OCaml type constructors or tuple
+    `^:option<int>`, `^:result<string;string>`, and
+    `^:tuple<int;string>` lower to OCaml type constructors or tuple
     constraints; `;` separates multiple type arguments because commas are reader
-    whitespace. Type aliases such as `(type-alias user-id :ocaml/int)`
+    whitespace. Type aliases such as `(type-alias user-id :int)`
     now lower to OCaml type declarations in both source and Parsetree backends.
     OCaml record declarations such as
     `(type-record user (name :string) (age :int))` lower to OCaml record types,
-    values can be constructed with `(ocaml-record user (name "Ada") (age 41))`,
+    values can be constructed with `(record user (name "Ada") (age 41))`,
     module records can be constructed with qualified type names such as
-    `(ocaml-record User.user ...)` including through opened or included modules,
+    `(record User.user ...)` including through opened or included modules,
     and fields can be accessed with
-    `(ocaml-field value name)`.
-    OCaml option/result values can be constructed with `(ocaml-some value)`,
-    `(ocaml-none)`, `(ocaml-ok value)`, and `(ocaml-error value)`. Variant
+    `(:name value)`.
+    OCaml option/result values can be constructed with `(Some value)`,
+    `None`, `(Ok value)`, and `(Error value)`. Variant
     declarations such as `(type-variant status Active Inactive)` and payload
     constructor declarations such as `(type-variant message (Named :string))`
     lower directly to OCaml variants. Constructor values such as
-    `(ocaml-construct Active)` and `(ocaml-construct Named "Ada")` lower
-    directly to OCaml. Tuple values such as `(ocaml-tuple 1 "Ada")` lower to
+    `Active` and `(Named "Ada")` lower
+    directly to OCaml. Tuple values such as `(tuple 1 "Ada")` lower to
     OCaml tuples. `match` can lower uppercase symbols as OCaml constructor
     patterns for opaque host-owned targets. `(open Math)` lowers to a structured
     OCaml open item and updates the lg environment for already-known module
@@ -388,9 +388,9 @@ compatibility is delegated to the OCaml typechecker.
     included bindings from module bodies.
     `(module-alias M Math)` lowers to an OCaml module alias in both source and
     Parsetree backends and updates the lg environment for already-known
-    aliased module bindings. `(module-signature MathSig (val answer :ocaml/int))`
+    aliased module bindings. `(module-signature MathSig (val answer :int))`
     lowers to an OCaml module type; abstract signature type items such as
-    `(type user-id)` and manifest items such as `(type user-id :ocaml/int)`
+    `(type user-id)` and manifest items such as `(type user-id :int)`
     lower to OCaml `type user_id` and `type user_id = int`.
     `(module Math MathSig ...)` lowers to an ascribed module whose signature
     match remains owned by OCaml.
@@ -398,11 +398,11 @@ compatibility is delegated to the OCaml typechecker.
     `(module-apply App Make Math)` lower to OCaml functor and application module
     expressions in both source and Parsetree backends. Applied modules expose
     already-known result bindings and OCaml record type metadata. Generic host
-    calls such as `(ocaml-call :int Stdlib.abs -42)` lower to ordinary OCaml module
+    calls such as `(Stdlib.abs -42)` lower to ordinary OCaml module
     references with an explicit return type. They also resolve required OCaml
-    aliases and refers, for example `(ocaml-call :int std/abs -42)` after
+    aliases and refers, for example `(std/abs -42)` after
     `[ocaml.Stdlib :as std]` and
-    `(ocaml-call :string uppercase_ascii "ada")` after
+    `(uppercase_ascii "ada")` after
     `[ocaml.String :refer [uppercase_ascii]]`, without adding those unknown
     host functions to lg's typed core table. OCaml value refers remain
     available inside module and functor bodies compiled from the current
@@ -477,40 +477,39 @@ Empty collections can use explicit helper annotations such as `(vector-of :int)`
 
 Function parameters can use lg annotations such as `^:unit` for
 side-effecting values, and can also use opaque host-owned annotations such as
-`^:ocaml/int` when the body only needs to pass the value through or call host
-code that OCaml will typecheck. `ocaml-call` can use `:unit` as the explicit
-return type for side-effecting host calls. Host-owned type applications use
-angle brackets, for example `^:ocaml/option<int>` and
-`^:ocaml/result<string;string>`. OCaml tuple annotations use
-`^:ocaml/tuple<int;string>`.
+`^:int` when the body only needs to pass the value through or call host
+code that OCaml will typecheck. Host-owned type applications use
+angle brackets, for example `^:option<int>` and
+`^:result<string;string>`. OCaml tuple annotations use
+`^:tuple<int;string>`.
 
-OCaml-owned type aliases can be emitted with `(type-alias user-id :ocaml/int)`
-and referenced from annotations such as `^:ocaml/user_id`.
+OCaml-owned type aliases can be emitted with `(type-alias user-id :int)`
+and referenced from annotations such as `^:user_id`.
 
 OCaml-owned records can be emitted with
 `(type-record user (name :string) (age :int))`, constructed with
-`(ocaml-record user (name "Ada") (age 41))`, constructed across module
-boundaries with qualified type names such as `(ocaml-record User.user ...)`,
-constructed through module aliases such as `(ocaml-record U.user ...)`, exposed
-through opened modules such as `(open User)` plus `(ocaml-record user ...)`,
-and accessed with `(ocaml-field value name)`.
+`(record user (name "Ada") (age 41))`, constructed across module
+boundaries with qualified type names such as `(record User.user ...)`,
+constructed through module aliases such as `(record U.user ...)`, exposed
+through opened modules such as `(open User)` plus `(record user ...)`,
+and accessed with `(:name value)`.
 
 OCaml-owned variants can be emitted with `(type-variant status Active Inactive)`
 or payload constructors such as `(type-variant message (Named :string))`, and
-constructor values can be emitted with `(ocaml-construct Active)` or
-`(ocaml-construct Named "Ada")`. For opaque host-owned targets, constructor
+constructor values can be emitted with `Active` or
+`(Named "Ada")`. For opaque host-owned targets, constructor
 patterns such as `(Msg.Named name)` lower directly to OCaml without requiring a
 lg constructor binding.
 
 OCaml option/result constructors are available as explicit host forms:
-`(ocaml-some value)`, `(ocaml-none)`, `(ocaml-ok value)`, and
-`(ocaml-error value)`. Match forms can destructure them with OCaml constructor
+`(Some value)`, `None`, `(Ok value)`, and
+`(Error value)`. Match forms can destructure them with OCaml constructor
 patterns such as `(Some x)`, `None`, `(Ok value)`, and `(Error err)`, while
 payload and polymorphic option/result typing remain owned by OCaml.
 
-OCaml tuples are available as explicit host forms with `(ocaml-tuple a b ...)`.
+OCaml tuples are available as explicit host forms with `(tuple a b ...)`.
 Match forms can destructure them with tuple patterns such as
-`(ocaml-tuple id name)`, while element compatibility remains owned by OCaml.
+`(tuple id name)`, while element compatibility remains owned by OCaml.
 
 Keyword lookup syntax like `(:name user)` is supported in addition to `(get user :name)`.
 
@@ -519,7 +518,7 @@ Should Clojure sequence APIs be eager by default or backed by OCaml `Seq.t`.
 lg uses top-level `require` for a small typed OCaml host interop table, for
 example `[ocaml.String :as string]` or
 `[ocaml.String :refer [length]]`. For ordinary OCaml module functions outside
-that table, `(ocaml-call :type Module.function args...)` is the explicit
+that table, `(Module.function args...)` is the explicit
 interop escape hatch, and it can use required aliases/refers for OCaml modules
 without adding those functions to lg's typed core table.
 

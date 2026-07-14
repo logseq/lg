@@ -7,7 +7,7 @@
 
 (extend-type :string
   AuditValue
-  (render [value] (ocaml-call :string String.uppercase_ascii value)))
+  (render [value] (String.uppercase_ascii value)))
 
 (extend-type :keyword
   AuditValue

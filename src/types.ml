@@ -136,6 +136,9 @@ let rec row_compatible ~expected ~actual =
              | Some actual_field ->
                  expected_field.ty = TUnknown || actual_field.ty = TUnknown
                  || equal expected_field.ty actual_field.ty
+                 || (match (expected_field.ty, actual_field.ty) with
+                    | TRef _, TRef _ -> true
+                    | _ -> false)
                  || row_compatible ~expected:expected_field.ty
                       ~actual:actual_field.ty
              | None -> false)
@@ -167,7 +170,9 @@ let classify_assignability ~expected ~actual =
   | TUnknown, _ | _, TUnknown | TVar _, _ | _, TVar _ -> Unknown
   | _ ->
       if equal expected actual then Equal
-      else if row_compatible ~expected ~actual then Row_compatible
+      else if
+        row_compatible ~expected ~actual || row_compatible ~expected:actual ~actual:expected
+      then Row_compatible
       else if defer_to_ocaml ~expected ~actual then Deferred_to_ocaml
       else Incompatible
 
@@ -177,6 +182,20 @@ let rec assignable ~policy ~expected ~actual =
     when expected.type_name = actual.type_name ->
       equal (TNamed_record expected) (TNamed_record actual)
       || policy = Host_boundary
+  | TNamed_record expected, TRecord actual when policy = Host_boundary ->
+      List.for_all
+        (fun actual_field ->
+          List.exists
+            (fun expected_field -> expected_field.keyword = actual_field.keyword)
+            expected.fields)
+        actual
+  | TRecord expected, TNamed_record actual when policy = Host_boundary ->
+      List.for_all
+        (fun expected_field ->
+          List.exists
+            (fun actual_field -> actual_field.keyword = expected_field.keyword)
+            actual.fields)
+        expected
   | TFn (expected_params, expected_return), TFn (actual_params, actual_return)
     when List.length expected_params = List.length actual_params ->
       List.for_all2
@@ -206,19 +225,19 @@ let rec source_name = function
   | TNullable inner -> "nullable<" ^ source_name inner ^ ">"
   | TUnknown -> "any"
   | TVar name -> "param/" ^ name
-  | TOcaml name -> "ocaml/" ^ name
+  | TOcaml name -> name
   | TOcaml_app (name, [ inner; _ ]) when name = seqable_constraint_name ->
       "seqable<" ^ source_name inner ^ ">"
   | TOcaml_app (name, [ inner ]) when name = reduced_type_name ->
       "reduced<" ^ source_name inner ^ ">"
   | TOcaml_app (name, args) ->
-      "ocaml/" ^ name ^ "<"
+      name ^ "<"
       ^ (args |> List.map source_name |> String.concat ",")
       ^ ">"
   | TTuple args ->
-      "ocaml/tuple<" ^ (args |> List.map source_name |> String.concat ",") ^ ">"
-  | TArray inner -> "ocaml/array<" ^ source_name inner ^ ">"
-  | TRef inner -> "ocaml/ref<" ^ source_name inner ^ ">"
+      "tuple<" ^ (args |> List.map source_name |> String.concat ",") ^ ">"
+  | TArray inner -> "array<" ^ source_name inner ^ ">"
+  | TRef inner -> "ref<" ^ source_name inner ^ ">"
   | TList ty -> "list<" ^ source_name ty ^ ">"
   | TVector ty -> "vector<" ^ source_name ty ^ ">"
   | TSet ty -> "set<" ^ source_name ty ^ ">"

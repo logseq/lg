@@ -22,7 +22,7 @@
     (+ subtotal (shipping subtotal)))
   (defn receipt [customer subtotal]
     (str
-      (ocaml-call :string String.uppercase_ascii customer)
+      (String.uppercase_ascii customer)
       ":"
       Policy/label
       ":"

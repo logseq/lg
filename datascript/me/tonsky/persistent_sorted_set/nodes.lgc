@@ -8,46 +8,120 @@
 (def min-len 16)
 
 (type-record tree [value]
-  (keys :ocaml/array<param/value>)
-  (children :ocaml/array<tree<param/value>>)
-  (_address :ocaml/option<string>)
-  (_dirty :bool))
+  (keys :array<value>)
+  (children :array<option<tree<value>>>)
+  (_addresses :array<option<int64>>)
+  (_address :ref<option<int64>>)
+  (_dirty :ref<bool>))
 
-(defn- make-tree [keys children address dirty]
-  (ocaml-record tree
-    (keys keys)
-    (children children)
-    (_address address)
-    (_dirty dirty)))
+(type-record storage [value]
+  (restore :fn<int64;option<tree<value>>>)
+  (accessed :fn<int64;unit>)
+  (store :fn<tree<value>;option<int64>;int64>)
+  (delete :fn<array<int64>;unit>))
 
-(defn new-leaf [keys]
-  (make-tree keys (arrays/make-array 0) nil true))
+(defn make-storage [restore accessed store delete]
+  (record storage (restore restore) (accessed accessed) (store store) (delete delete)))
 
-(defn- new-leaf-address [keys address]
-  (make-tree keys (arrays/make-array 0) address true))
+(defn- make-tree [keys children addresses address dirty]
+  (record tree (keys keys) (children children) (_addresses addresses) (_address (volatile! address)) (_dirty (volatile! dirty))))
 
-(defn new-node [keys children]
-  (make-tree keys children nil true))
+(defn node-address [node]
+  (deref (:_address node)))
 
-(defn- new-node-address [keys children address]
-  (make-tree keys children address true))
+(defn node-addresses [node]
+  (:_addresses node))
 
-(defn node-lim-key [node]
-  (arrays/alast (ocaml-field node keys)))
-
-(defn node-len [node]
-  (arrays/alength (ocaml-field node keys)))
-
-(defn node-keys [node]
-  (ocaml-field node keys))
+(defmacro node-child-count [node]
+  `(arrays/alength (:children ~node)))
 
 (defn node-children [node]
-  (ocaml-field node children))
+  (arrays/amap
+    (fn [child]
+      (match child
+        (Some loaded) loaded
+        None (Stdlib.failwith "persistent sorted set child is not loaded")))
+    (:children node)))
 
-(defn node-fold [node f initial]
-  (let [keys (node-keys node)
-        children (node-children node)]
-    (if (= 0 (arrays/alength children))
+(defn- children-addresses [children]
+  (arrays/amap (fn [_child] nil) children))
+
+(defn- loaded-children [children]
+  (arrays/amap (fn [child] (Some child)) children))
+
+(defn new-leaf [keys]
+  (make-tree
+    keys (arrays/empty-array) (arrays/empty-array) nil true))
+
+(defn- new-leaf-address [keys address]
+  (make-tree
+    keys (arrays/empty-array) (arrays/empty-array) address true))
+
+(defn new-restored-leaf [keys address]
+  (make-tree
+    keys (arrays/empty-array) (arrays/empty-array) (Some address) false))
+
+(defn new-node [keys children]
+  (make-tree
+    keys
+    (loaded-children children)
+    (children-addresses children)
+    nil
+    true))
+
+(defn- new-node-state [keys children addresses address]
+  (make-tree keys children addresses address true))
+
+(defn new-restored-node [keys addresses address]
+  (make-tree
+    keys
+    (arrays/amap (fn [_address] nil) addresses)
+    addresses
+    (Some address)
+    false))
+
+(defmacro node-lim-key [node]
+  `(arrays/alast (:keys ~node)))
+
+(defmacro node-len [node]
+  `(arrays/alength (:keys ~node)))
+
+(defmacro node-keys [node]
+  `(:keys ~node))
+
+(defn node-child [node idx storage]
+  (let [children (:children node)
+        addresses (:_addresses node)]
+    (if-some [child (arrays/aget children idx)]
+      (do
+        (if-some [storage-value storage]
+          (if-some [address (arrays/aget addresses idx)]
+            (let [accessed (:accessed storage-value)]
+              (accessed address))
+            nil)
+          nil)
+        child)
+      (match storage
+        (Some storage-value)
+        (match (arrays/aget addresses idx)
+          (Some address)
+          (let [restore (:restore storage-value)]
+            (match
+              (restore address)
+              (Some child)
+              (do
+                (arrays/aset children idx (Some child))
+                child)
+              None
+              (Stdlib.failwith "persistent sorted set storage returned no child")))
+          None
+          (Stdlib.failwith "persistent sorted set child has no address"))
+        None
+        (Stdlib.failwith "persistent sorted set child requires storage")))))
+
+(defn node-fold [node f initial storage]
+  (if (= 0 (node-child-count node))
+    (let [keys (:keys node)]
       (loop [idx 0
              result initial]
         (if (= idx (arrays/alength keys))
@@ -56,61 +130,58 @@
             (inc idx)
             #?(:melange
                (ocaml-uncurried-call f result (arrays/aget keys idx))
-               :native (f result (arrays/aget keys idx))))))
-      (loop [idx 0
-             result initial]
-        (if (= idx (arrays/alength children))
-          result
-          (let [child (arrays/aget children idx)
-                child-keys (node-keys child)
-                child-children (node-children child)]
-            (if (= 0 (arrays/alength child-children))
-              (let [next-result
-                    (loop [key-idx 0
-                           key-result result]
-                      (if (= key-idx (arrays/alength child-keys))
-                        key-result
-                        (recur
-                          (inc key-idx)
-                          #?(:melange
-                             (ocaml-uncurried-call
-                               f key-result (arrays/aget child-keys key-idx))
-                             :native
-                             (f key-result (arrays/aget child-keys key-idx))))))]
-                (recur (inc idx) next-result))
-              (recur (inc idx) (node-fold child f result)))))))))
+               :native (f result (arrays/aget keys idx)))))))
+    (loop [idx 0
+           result initial]
+      (if (= idx (node-child-count node))
+        result
+        (recur
+          (inc idx)
+          (node-fold (node-child node idx storage) f result storage))))))
 
-(defn- node-merge [node next _storage]
-  (make-tree
-    (arrays/aconcat (ocaml-field node keys) (ocaml-field next keys))
-    (arrays/aconcat (ocaml-field node children) (ocaml-field next children))
-    (ocaml-field node _address)
-    true))
+(defn- delete-address [storage address]
+  (if-some [storage-value storage]
+    (if-some [address-value address]
+      (let [delete (:delete storage-value)]
+        (delete (arrays/array address-value)))
+      nil)
+    nil))
+
+(defn- node-merge [node next storage]
+  (delete-address storage (deref (:_address next)))
+  (new-node-state
+    (arrays/aconcat (:keys node) (:keys next))
+    (arrays/aconcat
+      (:children node) (:children next))
+    (arrays/aconcat
+      (:_addresses node) (:_addresses next))
+    (deref (:_address node))))
 
 (defn- node-merge-n-split [node next]
   (let [split-keys
-        (ops/merge-n-split (ocaml-field node keys) (ocaml-field next keys))
+        (ops/merge-n-split
+          (:keys node) (:keys next))
         split-children
         (ops/merge-n-split
-          (ocaml-field node children)
-          (ocaml-field next children))]
+          (:children node) (:children next))
+        split-addresses
+        (ops/merge-n-split
+          (:_addresses node) (:_addresses next))]
     (arrays/array
-      (make-tree
+      (new-node-state
         (arrays/aget split-keys 0)
         (arrays/aget split-children 0)
-        (ocaml-field node _address)
-        true)
-      (make-tree
+        (arrays/aget split-addresses 0)
+        (deref (:_address node)))
+      (new-node-state
         (arrays/aget split-keys 1)
         (arrays/aget split-children 1)
-        (ocaml-field next _address)
-        true))))
+        (arrays/aget split-addresses 1)
+        (deref (:_address next))))))
 
 (defn- rotate [node root? left right storage]
   (cond
-    root?
-    (arrays/array node)
-
+    root? (arrays/array node)
     (> (node-len node) min-len)
     (if-some [left-node left]
       (if-some [right-node right]
@@ -119,7 +190,6 @@
       (if-some [right-node right]
         (arrays/array node right-node)
         (arrays/array node)))
-
     :else
     (if-some [left-node left]
       (if (<= (node-len left-node) min-len)
@@ -132,14 +202,10 @@
             (if (< (node-len left-node) (node-len right-node))
               (let [nodes (node-merge-n-split left-node node)]
                 (arrays/array
-                  (arrays/aget nodes 0)
-                  (arrays/aget nodes 1)
-                  right-node))
+                  (arrays/aget nodes 0) (arrays/aget nodes 1) right-node))
               (let [nodes (node-merge-n-split node right-node)]
                 (arrays/array
-                  left-node
-                  (arrays/aget nodes 0)
-                  (arrays/aget nodes 1)))))
+                  left-node (arrays/aget nodes 0) (arrays/aget nodes 1)))))
           (node-merge-n-split left-node node)))
       (if-some [right-node right]
         (if (<= (node-len right-node) min-len)
@@ -147,35 +213,31 @@
           (node-merge-n-split node right-node))
         (arrays/array node)))))
 
-(defn node-lookup [node cmp key _storage]
+(defn node-lookup [node cmp key storage]
   (loop [node node]
-    (let [keys (ocaml-field node keys)
-          children (ocaml-field node children)]
-      (if (= 0 (arrays/alength children))
+    (let [keys (:keys node)]
+      (if (= 0 (node-child-count node))
         (let [idx (search/lookup-exact cmp keys key)]
-          (when-not (= -1 idx)
-            (arrays/aget keys idx)))
+          (when-not (= -1 idx) (arrays/aget keys idx)))
         (let [idx (search/lookup-range cmp keys key)]
           (if (= -1 idx)
             nil
-            (recur (arrays/aget children idx))))))))
+            (recur (node-child node idx storage))))))))
 
 (defn node-conj [node cmp key storage]
-  (let [keys (ocaml-field node keys)
-        children (ocaml-field node children)
-        address (ocaml-field node _address)]
+  (let [keys (:keys node)
+        children (:children node)
+        addresses (:_addresses node)
+        address (deref (:_address node))]
     (if (= 0 (arrays/alength children))
       (let [idx (search/binary-search-l cmp keys (dec (arrays/alength keys)) key)
             keys-length (arrays/alength keys)]
         (cond
           (and (< idx keys-length)
-               (= 0
-                  #?(:melange
-                     (ocaml-uncurried-compare
-                       cmp key (arrays/aget keys idx))
-                     :native (cmp key (arrays/aget keys idx)))))
+               (= 0 #?(:melange
+                        (ocaml-uncurried-compare cmp key (arrays/aget keys idx))
+                        :native (cmp key (arrays/aget keys idx)))))
           nil
-
           (= keys-length max-len)
           (let [middle (arrays/half (inc keys-length))]
             (if (> idx middle)
@@ -186,69 +248,67 @@
                     keys middle keys-length idx idx (arrays/array key))))
               (arrays/array
                 (new-leaf-address
-                  (ops/cut-n-splice
-                    keys 0 middle idx idx (arrays/array key))
+                  (ops/cut-n-splice keys 0 middle idx idx (arrays/array key))
                   address)
                 (new-leaf (arrays/aslice keys middle keys-length)))))
-
           :else
           (arrays/array
             (new-leaf-address
-              (ops/splice keys idx idx (arrays/array key))
-              address))))
+              (ops/splice keys idx idx (arrays/array key)) address))))
       (let [idx (search/binary-search-l cmp keys (- (arrays/alength keys) 2) key)
-            child (arrays/aget children idx)]
+            child (node-child node idx storage)]
         (if-some [child-nodes (node-conj child cmp key storage)]
           (let [new-keys
                 (ops/check-n-splice
-                  cmp
-                  keys
-                  idx
-                  (inc idx)
+                  cmp keys idx (inc idx)
                   (arrays/amap (fn [child] (node-lim-key child)) child-nodes))
                 new-children
-                (ops/splice children idx (inc idx) child-nodes)]
+                (ops/splice
+                  children idx (inc idx) (loaded-children child-nodes))
+                new-addresses
+                (ops/splice
+                  addresses idx (inc idx) (children-addresses child-nodes))]
             (if (<= (arrays/alength new-children) max-len)
               (arrays/array
-                (new-node-address new-keys new-children address))
+                (new-node-state new-keys new-children new-addresses address))
               (let [middle (arrays/half (arrays/alength new-children))]
                 (arrays/array
-                  (new-node-address
+                  (new-node-state
                     (arrays/aslice new-keys 0 middle)
                     (arrays/aslice new-children 0 middle)
+                    (arrays/aslice new-addresses 0 middle)
                     address)
-                  (new-node
+                  (new-node-state
                     (arrays/aslice new-keys middle (arrays/alength new-keys))
                     (arrays/aslice
-                      new-children middle (arrays/alength new-children)))))))
+                      new-children middle (arrays/alength new-children))
+                    (arrays/aslice
+                      new-addresses middle (arrays/alength new-addresses))
+                    nil)))))
           nil)))))
 
 (defn node-disj [node cmp key root? left right storage]
-  (let [keys (ocaml-field node keys)
-        children (ocaml-field node children)]
+  (let [keys (:keys node)
+        children (:children node)]
     (if (= 0 (arrays/alength children))
       (let [idx (search/lookup-exact cmp keys key)]
         (if (= -1 idx)
           nil
           (rotate
             (new-leaf-address
-              (ops/splice keys idx (inc idx) (arrays/make-array 0))
-              (ocaml-field node _address))
-            root?
-            left
-            right
-            storage)))
+              (ops/splice keys idx (inc idx) (arrays/empty-array))
+              (deref (:_address node)))
+            root? left right storage)))
       (let [idx (search/lookup-range cmp keys key)]
         (if (= -1 idx)
           nil
           (let [children-length (arrays/alength children)
-                child (arrays/aget children idx)
+                child (node-child node idx storage)
                 left-child
-                (when (> idx 0)
-                  (arrays/aget children (dec idx)))
+                (when (> idx 0) (node-child node (dec idx) storage))
                 right-child
                 (when (< (inc idx) children-length)
-                  (arrays/aget children (inc idx)))]
+                  (node-child node (inc idx) storage))]
             (if-some [disjoined
                       (node-disj
                         child cmp key false left-child right-child storage)]
@@ -257,22 +317,53 @@
                     (if (< (inc idx) children-length) (+ idx 2) (inc idx))
                     new-keys
                     (ops/check-n-splice
-                      cmp
-                      keys
+                      cmp keys left-idx right-idx
+                      (arrays/amap
+                        (fn [child] (node-lim-key child)) disjoined))
+                    new-children
+                    (ops/splice
+                      children left-idx right-idx (loaded-children disjoined))
+                    new-addresses
+                    (ops/splice
+                      (:_addresses node)
                       left-idx
                       right-idx
-                      (arrays/amap
-                        (fn [child] (node-lim-key child))
-                        disjoined))
-                    new-children
-                    (ops/splice children left-idx right-idx disjoined)]
+                      (children-addresses disjoined))]
                 (rotate
-                  (new-node-address
+                  (new-node-state
                     new-keys
                     new-children
-                    (ocaml-field node _address))
-                  root?
-                  left
-                  right
-                  storage))
+                    new-addresses
+                    (deref (:_address node)))
+                  root? left right storage))
               nil)))))))
+
+(defn node-store [node storage]
+  (let [children (:children node)
+        addresses (:_addresses node)]
+    (loop [idx 0]
+      (if (< idx (arrays/alength children))
+        (do
+          (if-some [child (arrays/aget children idx)]
+            (when (or
+                    (nil? (arrays/aget addresses idx))
+                    (deref (:_dirty child)))
+              (let [child-address (node-store child storage)]
+                (arrays/aset addresses idx (Some child-address))))
+            nil)
+          (recur (inc idx)))
+        nil))
+    (if (or
+          (= true (deref (:_dirty node)))
+          (nil? (deref (:_address node))))
+      (let [store (:store storage)
+            address (store node (deref (:_address node)))]
+        (vreset! (:_address node) (Some address))
+        (vreset! (:_dirty node) false)
+        address)
+      (match
+        (deref (:_address node))
+        (Some address)
+        address
+        None
+        (Stdlib.failwith "stored persistent sorted set node has no address")))))

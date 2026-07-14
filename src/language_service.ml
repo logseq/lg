@@ -527,7 +527,7 @@ let source_type_name source_name =
         (String.length value - String.length prefix)
     else value
   in
-  source_name |> strip "^:ocaml/" |> strip ":ocaml/"
+  source_name |> strip "^:" |> strip ":"
 
 let ocaml_type_name source_name =
   match List.rev (String.split_on_char '.' (source_type_name source_name)) with
@@ -767,8 +767,8 @@ let method_identity_at analysis offset ?protocol_name method_name =
 
 let qualified_symbol_parts (token : Ast.token) source_name =
   if
-    String.starts_with ~prefix:"^:ocaml/" source_name
-    || String.starts_with ~prefix:":ocaml/" source_name
+    String.starts_with ~prefix:"^:" source_name
+    || String.starts_with ~prefix:":" source_name
   then None
   else
     let separator =
@@ -905,6 +905,13 @@ let semantic_occurrence_at analysis offset =
                     | None -> module_type_identity_at analysis offset source_name))
           in
           Option.map (fun identity -> { identity; range }) identity)
+  | Some { desc = Keyword source_name; span; _ }
+    when String.length source_name > 1 ->
+      let field_name = String.sub source_name 1 (String.length source_name - 1) in
+      label_identity_at analysis offset field_name
+      |> Option.map (fun identity ->
+             { identity;
+               range = { span with start_offset = span.start_offset + 1 } })
   | _ -> None
 
 let semantic_identity_at analysis offset =
@@ -929,6 +936,7 @@ let semantic_occurrences_for_token analysis (token : Ast.token) =
         | Some (_, qualifier_range, _, member_range) ->
             [ qualifier_range.start_offset; member_range.start_offset ]
         | None -> [ token.span.start_offset ])
+    | Keyword _ -> [ token.span.start_offset ]
     | _ -> []
   in
   offsets

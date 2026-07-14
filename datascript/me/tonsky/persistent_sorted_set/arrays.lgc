@@ -1,8 +1,11 @@
 (ns me.tonsky.persistent-sorted-set.arrays
   (:refer-clojure :exclude [make-array into-array array aget aset alength array? aclone]))
 
-(defmacro make-array [size]
-  `(ocaml-array-make ~size))
+(defmacro empty-array []
+  `(Array.of_list (list)))
+
+(defmacro make-array [size initial]
+  `(Array.make ~size ~initial))
 
 (defmacro into-array [values]
   `(ocaml-array-from ~values))

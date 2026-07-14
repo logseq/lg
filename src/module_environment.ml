@@ -39,7 +39,13 @@ let open_bindings scope env module_path =
              Some (Resolver.record_type_key scope local, binding)
            else None)
   in
-  Env.add_bindings opened env
+  let env = Env.add_bindings opened env in
+  let opened_module = Names.module_path_to_ocaml module_path in
+  Env.add
+    ("__opened/" ^ scope ^ "/" ^ opened_module)
+    (Types.binding ~host_reference:(Ocaml_module opened_module) opened_module
+       (TOcaml "__module"))
+    env
 
 let include_public_bindings module_path env included_module_path =
   let prefix = included_module_path ^ "/" in

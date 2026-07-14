@@ -21,7 +21,7 @@
              (Datascript_value/string-value "Name")))))
 (def empty-entity
   (Datascript_value/map-value
-    (list-of :ocaml/tuple<Datascript_value.value;Datascript_value.value>)))
+    (list-of :tuple<Datascript_value.value;Datascript_value.value>)))
 
 (println
   (str environment ":"

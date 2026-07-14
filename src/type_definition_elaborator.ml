@@ -14,7 +14,10 @@ let compile_type_alias ?location scope env next_type name type_parameters manife
   match manifest_form with
   | FKeyword keyword -> (
       match Type_annotation.of_keyword_with_parameters type_parameters keyword with
-      | Error _ as err when String.starts_with ~prefix:":param/" keyword -> err
+      | (Error _ as err)
+        when String.starts_with ~prefix:":ocaml/" keyword
+             || String.starts_with ~prefix:":param/" keyword ->
+          err
       | Error _ -> Error.error ("unknown type alias target " ^ keyword)
       | Ok manifest ->
           let type_name = Names.sanitize_name name in
@@ -32,7 +35,10 @@ let compile_type_record ?location scope env next_type name type_parameters field
   let field_spec = function
     | FList [ ((FSymbol field_name) as name_form); FKeyword keyword ] -> (
         match Type_annotation.of_keyword_with_parameters type_parameters keyword with
-        | Error _ as err when String.starts_with ~prefix:":param/" keyword -> err
+        | (Error _ as err)
+          when String.starts_with ~prefix:":ocaml/" keyword
+               || String.starts_with ~prefix:":param/" keyword ->
+            err
         | Error _ -> Error.error ("unknown record field type " ^ keyword)
         | Ok ty ->
             Ok
@@ -96,7 +102,10 @@ let compile_type_variant ?location scope env next_type name type_parameters
     | FKeyword keyword -> (
         match Type_annotation.of_keyword_with_parameters type_parameters keyword with
         | Ok ty -> Ok ty
-        | Error _ as err when String.starts_with ~prefix:":param/" keyword -> err
+        | (Error _ as err)
+          when String.starts_with ~prefix:":ocaml/" keyword
+               || String.starts_with ~prefix:":param/" keyword ->
+            err
         | Error _ -> Error.error ("unknown variant payload type " ^ keyword))
     | _ -> Error.error "type-variant payload types must be keywords"
   in

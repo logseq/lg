@@ -478,7 +478,7 @@ let test_anonymous_maps_remain_distinct_from_declared_records () =
   Lg.Compiler.compile_string
     {|
 (type-record user (name :string))
-(def declared (ocaml-record user (name "Ada")))
+(def declared (record user (name "Ada")))
 (def anonymous {:name "Ada"})
 (def values [declared anonymous])
 |}
@@ -593,13 +593,13 @@ let test_if_some_and_when_some_bind_option_payloads () =
 let test_nil_predicates_evaluate_arguments_once () =
   let source =
     {|
-(def calls (ocaml-ref 0))
+(def calls (atom 0))
 (println
   (nil?
     (do
-      (ocaml-reset! calls (+ (ocaml-deref calls) 1))
+      (reset! calls (+ (deref calls) 1))
       nil)))
-(println (ocaml-deref calls))
+(println (deref calls))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -1406,7 +1406,7 @@ let test_source_node_identity_covers_match_bindings () =
     {|
 (type-variant message (Named :string))
 (def label
-  (match (ocaml-construct Named "Ada")
+  (match (Named "Ada")
     (as (Named value) whole) (str value ":" whole)))
 |}
   in
@@ -1696,7 +1696,7 @@ let test_keyword_lookup_supports_typed_external_ocaml_records () =
   let ocaml_source =
     Lg.Compiler.compile_string
       {|
-(defn incremented-file-size [^:ocaml/Unix.stats value]
+(defn incremented-file-size [^:Unix.stats value]
   (+ (:st-size value) 1))
 |}
     |> expect_ok
@@ -1707,18 +1707,18 @@ let test_keyword_lookup_supports_typed_external_ocaml_records () =
 let test_keyword_lookup_delegates_unknown_external_fields_to_ocaml () =
   Lg.Compiler.compile_string
     {|
-(defn bad-field [^:ocaml/Unix.stats value]
+(defn bad-field [^:Unix.stats value]
   (:missing value))
 |}
   |> expect_error_contains "no field missing"
 
-let test_keyword_lookup_delegates_non_record_host_types_to_ocaml () =
+let test_keyword_lookup_rejects_non_record_types () =
   Lg.Compiler.compile_string
     {|
-(defn bad-field [^:ocaml/int value]
+(defn bad-field [^:int value]
   (:missing value))
 |}
-  |> expect_error_contains "record field"
+  |> expect_error_contains "get expects a map"
 
 let test_typed_empty_vectors () =
   let source =
@@ -1731,9 +1731,9 @@ let test_typed_empty_vectors () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "typed_empty_vectors" "true:1:42\n" ocaml_source
 
-let test_vector_of_rejects_unknown_types () =
-  Lg.Compiler.compile_string {|(def xs (vector-of :record))|}
-  |> expect_error "unknown vector element type :record"
+let test_vector_of_rejects_malformed_types () =
+  Lg.Compiler.compile_string {|(def xs (vector-of :option<>))|}
+  |> expect_error_contains "empty OCaml type"
 
 let test_ocaml_module_require_aliases () =
   let source =
@@ -1787,7 +1787,7 @@ let test_unit_annotations_compile_through_source_backend () =
 let test_host_owned_ocaml_type_annotations_compile () =
   let source =
     {|
-(defn host-id [^:ocaml/int x] x)
+(defn host-id [^:int x] x)
 (def answer (host-id 42))
 |}
   in
@@ -1799,8 +1799,8 @@ let test_host_owned_ocaml_type_annotations_compile () =
 let test_generic_ocaml_calls_compile_through_source_backend () =
   let source =
     {|
-(def answer (ocaml-call :int Stdlib.abs -42))
-(def label (ocaml-call :string String.uppercase_ascii "ada"))
+(def answer (Stdlib.abs -42))
+(def label (String.uppercase_ascii "ada"))
 (println (str label ":" answer))
 |}
   in
@@ -1811,7 +1811,7 @@ let test_generic_ocaml_calls_compile_through_source_backend () =
 let test_generic_ocaml_calls_accept_unit_return_type () =
   let source =
     {|
-(def ignored (ocaml-call :unit Stdlib.ignore 42))
+(def ignored (Stdlib.ignore 42))
 (println "ignored")
 |}
   in
@@ -1824,8 +1824,8 @@ let test_generic_ocaml_calls_resolve_required_module_aliases () =
     {|
 (require [ocaml.Stdlib :as std]
             [ocaml.String :as string])
-(def answer (ocaml-call :int std/abs -42))
-(def label (ocaml-call :string string/uppercase_ascii "ada"))
+(def answer (std/abs -42))
+(def label (string/uppercase_ascii "ada"))
 (println (str label ":" answer))
 |}
   in
@@ -1837,7 +1837,7 @@ let test_generic_ocaml_calls_resolve_required_module_refers () =
   let source =
     {|
 (require [ocaml.String :refer [uppercase_ascii]])
-(def label (ocaml-call :string uppercase_ascii "ada"))
+(def label (uppercase_ascii "ada"))
 (println label)
 |}
   in
@@ -1850,7 +1850,7 @@ let test_generic_ocaml_calls_resolve_required_module_refers_in_modules () =
     {|
 (require [ocaml.String :refer [uppercase_ascii]])
 (module Greeter
-  (def label (ocaml-call :string uppercase_ascii "ada")))
+  (def label (uppercase_ascii "ada")))
 (println Greeter/label)
 |}
   in
@@ -1868,7 +1868,7 @@ let test_generic_ocaml_calls_resolve_required_module_refers_in_functors () =
   (def suffix "!"))
 (module-functor Make [M NameSig]
   (defn shout [name]
-    (str (ocaml-call :string uppercase_ascii name) M/suffix)))
+    (str (uppercase_ascii name) M/suffix)))
 (module-apply App Make Names)
 (println (App/shout "ada"))
 |}
@@ -1913,7 +1913,7 @@ let test_generic_ocaml_calls_resolve_opened_ocaml_modules () =
   let source =
     {|
 (open String)
-(def label (ocaml-call :string uppercase_ascii "ada"))
+(def label (uppercase_ascii "ada"))
 (println label)
 |}
   in
@@ -1924,7 +1924,7 @@ let test_generic_ocaml_calls_resolve_opened_ocaml_modules () =
 let test_compile_string_runs_ocaml_typecheck_gate_for_host_calls () =
   Lg.Compiler.compile_string
     {|
-(def answer (ocaml-call :int Stdlib.abs "bad"))
+(def answer (Stdlib.abs "bad"))
 |}
   |> expect_error_contains "string"
 
@@ -2005,8 +2005,8 @@ let test_parsetree_expressions_preserve_nested_source_locations () =
 let test_inferred_ocaml_calls_use_compiler_signatures () =
   let source =
     {|
-(def answer (ocaml-call Stdlib.abs -42))
-(def label (ocaml-call String.uppercase_ascii "ada"))
+(def answer (Stdlib.abs -42))
+(def label (String.uppercase_ascii "ada"))
 (println (str label ":" answer))
 |}
   in
@@ -2031,8 +2031,8 @@ let test_inferred_ocaml_calls_resolve_aliases_and_refers () =
     {|
 (require [ocaml.Stdlib :as std]
             [ocaml.String :refer [uppercase_ascii]])
-(def answer (ocaml-call std/abs -42))
-(def label (ocaml-call uppercase_ascii "ada"))
+(def answer (std/abs -42))
+(def label (uppercase_ascii "ada"))
 (println (str label ":" answer))
 |}
   in
@@ -2043,21 +2043,21 @@ let test_inferred_ocaml_calls_resolve_aliases_and_refers () =
 let test_inferred_ocaml_calls_reject_incompatible_arguments () =
   Lg.Compiler.compile_string
     {|
-(def answer (ocaml-call Stdlib.abs "bad"))
+(def answer (Stdlib.abs "bad"))
 |}
   |> expect_error_contains "string"
 
 let test_inferred_ocaml_calls_reject_unknown_values () =
   Lg.Compiler.compile_string
     {|
-(def answer (ocaml-call Stdlib.not_a_real_value 42))
+(def answer (Stdlib.not_a_real_value 42))
 |}
   |> expect_error_contains "Unbound value"
 
 let test_inferred_ocaml_calls_support_required_labels () =
   let source =
     {|
-(def starts (ocaml-call String.starts_with "ada" :prefix "ad"))
+(def starts (String.starts_with "ada" :prefix "ad"))
 (println starts)
 |}
   in
@@ -2068,9 +2068,9 @@ let test_inferred_ocaml_calls_support_required_labels () =
 let test_inferred_ocaml_calls_support_optional_labels () =
   let source =
     {|
-(def default-distance (ocaml-call String.edit_distance "abc" "adc"))
+(def default-distance (String.edit_distance "abc" "adc"))
 (def limited-distance
-  (ocaml-call String.edit_distance "abc" "adc" :limit 2))
+  (String.edit_distance "abc" "adc" :limit 2))
 (println (+ default-distance limited-distance))
 |}
   in
@@ -2081,7 +2081,7 @@ let test_inferred_ocaml_calls_support_optional_labels () =
 let test_inferred_ocaml_calls_preserve_partial_labelled_functions () =
   let source =
     {|
-(def starts-ad (ocaml-call String.starts_with :prefix "ad"))
+(def starts-ad (String.starts_with :prefix "ad"))
 (println (starts-ad "ada"))
 |}
   in
@@ -2093,7 +2093,7 @@ let test_inferred_ocaml_calls_support_labels_through_aliases () =
   let source =
     {|
 (require [ocaml.String :as string])
-(println (ocaml-call string/starts_with "ada" :prefix "ad"))
+(println (string/starts_with "ada" :prefix "ad"))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -2102,21 +2102,21 @@ let test_inferred_ocaml_calls_support_labels_through_aliases () =
 
 let test_inferred_ocaml_calls_reject_bad_labels () =
   Lg.Compiler.compile_string
-    {|(def value (ocaml-call String.starts_with "ada" :unknown "ad"))|}
+    {|(def value (String.starts_with "ada" :unknown "ad"))|}
   |> expect_error_contains "unknown OCaml argument label :unknown";
   Lg.Compiler.compile_string
     {|
 (def value
-  (ocaml-call String.starts_with "ada" :prefix "ad" :prefix "a"))
+  (String.starts_with "ada" :prefix "ad" :prefix "a"))
 |}
   |> expect_error_contains "duplicate OCaml argument label :prefix";
   Lg.Compiler.compile_string
-    {|(def value (ocaml-call String.starts_with "ada" :prefix))|}
+    {|(def value (String.starts_with "ada" :prefix))|}
   |> expect_error_contains "OCaml argument label :prefix requires a value"
 
 let test_inferred_labelled_calls_delegate_value_types_to_ocaml () =
   Lg.Compiler.compile_string
-    {|(def value (ocaml-call String.starts_with "ada" :prefix 42))|}
+    {|(def value (String.starts_with "ada" :prefix 42))|}
   |> expect_error_contains "int"
 
 let test_ocaml_package_requires_enable_inferred_calls () =
@@ -2124,7 +2124,7 @@ let test_ocaml_package_requires_enable_inferred_calls () =
     {|
 (require [ocaml.package/core]
             [ocaml.Core.Int :as int])
-(def answer (ocaml-call int/abs -42))
+(def answer (int/abs -42))
 (println answer)
 |}
   |> expect_ok |> ignore
@@ -2134,7 +2134,7 @@ let test_ocaml_package_requires_report_missing_packages () =
     {|
 (require [ocaml.package/lg-package-that-does-not-exist]
             [ocaml.Missing :as missing])
-(def answer (ocaml-call missing/value 42))
+(def answer (missing/value 42))
 |}
   |> expect_error_contains "OCaml package lg-package-that-does-not-exist was not found"
 
@@ -2229,31 +2229,40 @@ let test_direct_ocaml_calls_delegate_errors_to_ocaml () =
   |> expect_error_contains "Unbound value"
 
 let test_generic_ocaml_calls_reject_bad_forms () =
-  Lg.Compiler.compile_string {|(def answer (ocaml-call :unknown Stdlib.abs -42))|}
-  |> expect_error "unknown ocaml-call return type :unknown";
-  Lg.Compiler.compile_string {|(def answer (ocaml-call :int :bad -42))|}
-  |> expect_error "ocaml-call function must be a symbol"
+  Lg.Compiler.compile_string {|(def answer (ocaml-call :int Stdlib.abs -42))|}
+  |> expect_error_contains "unknown function ocaml-call";
+  Lg.Compiler.compile_string {|(def answer (ocaml-field value name))|}
+  |> expect_error_contains "unknown function ocaml-field";
+  Lg.Compiler.compile_string {|(def value (ocaml-ref 1))|}
+  |> expect_error_contains "unknown function ocaml-ref";
+  Lg.Compiler.compile_string {|(def value (ocaml-construct Some 1))|}
+  |> expect_error_contains "unknown function ocaml-construct";
+  Lg.Compiler.compile_string {|(defn bad [^:ocaml/int value] value)|}
+  |> expect_error_contains "the :ocaml/ type prefix is not supported";
+  Lg.Compiler.compile_string
+    {|(type-record box [value] (item :param/value))|}
+  |> expect_error_contains "the :param/ type prefix is not supported"
 
 let test_parsetree_typecheck_gate_rejects_invalid_required_module_alias_calls () =
   Lg.Compiler.compile_parsetree
     {|
 (require [ocaml.Stdlib :as std])
-(def answer (ocaml-call :int std/abs "bad"))
+(def answer (std/abs "bad"))
 |}
   |> expect_error_contains "string"
 
 let test_parsetree_typecheck_gate_accepts_valid_host_calls () =
   Lg.Compiler.typecheck_parsetree
     {|
-(def answer (ocaml-call :int Stdlib.abs -42))
-(def label (ocaml-call :string String.uppercase_ascii "ada"))
+(def answer (Stdlib.abs -42))
+(def label (String.uppercase_ascii "ada"))
 |}
   |> expect_ok
 
 let test_parsetree_typecheck_gate_rejects_invalid_host_calls () =
   Lg.Compiler.typecheck_parsetree
     {|
-(def answer (ocaml-call :int Stdlib.abs "bad"))
+(def answer (Stdlib.abs "bad"))
 |}
   |> expect_error_contains "string"
 
@@ -2270,8 +2279,8 @@ let test_parsetree_typecheck_gate_accepts_runtime_dependencies () =
 let test_type_aliases_compile_through_source_backend () =
   let source =
     {|
-(type-alias user-id :ocaml/int)
-(defn keep-user-id [^:ocaml/user_id x] x)
+(type-alias user-id :int)
+(defn keep-user-id [^:user_id x] x)
 (def answer (keep-user-id 42))
 |}
   in
@@ -2283,14 +2292,14 @@ let test_type_aliases_compile_through_source_backend () =
 let test_parameterized_type_declarations_compile () =
   let source =
     {|
-(type-alias maybe [a] :ocaml/option<param/a>)
+(type-alias maybe [a] :option<a>)
 (type-record pair [a b]
-  (left :param/a)
-  (right :param/b))
+  (left :a)
+  (right :b))
 (type-variant box [a]
-  (Box :param/a))
-(def pair-value (ocaml-record pair (left 42) (right "Ada")))
-(def box-value (ocaml-construct Box 42))
+  (Box :a))
+(def pair-value (record pair (left 42) (right "Ada")))
+(def box-value (Box 42))
 (println "parameterized-ok")
 |}
   in
@@ -2302,17 +2311,16 @@ let test_parameterized_records_instantiate_field_types () =
   let source =
     {|
 (type-record box [a]
-  (value :param/a))
+  (value :a))
 (type-record ordering [a]
-  (compare-values :ocaml/fn<param/a;param/a;int>))
-(def int-box (ocaml-record box (value 41)))
-(def string-box (ocaml-record box (value "Ada")))
+  (compare-values :fn<a;a;int>))
+(def int-box (record box (value 41)))
+(def string-box (record box (value "Ada")))
 (def int-ordering
-  (ocaml-record ordering
-    (compare-values (fn [left right] (- left right)))))
-(def int-value (+ (ocaml-field int-box value) 1))
-(def string-value (subs (ocaml-field string-box value) 0 1))
-(def compare-ints (ocaml-field int-ordering compare-values))
+  (record ordering (compare-values (fn [left right] (- left right)))))
+(def int-value (+ (:value int-box) 1))
+(def string-value (subs (:value string-box) 0 1))
+(def compare-ints (:compare-values int-ordering))
 (println (str int-value ":" string-value ":" (+ (compare-ints 4 2) 0)))
 |}
   in
@@ -2324,27 +2332,23 @@ let test_recursive_record_array_fields_work_with_array_primitives () =
   let source =
     {|
 (type-record tree [a]
-  (keys :ocaml/array<param/a>)
-  (children :ocaml/array<tree<param/a>>))
+  (keys :array<a>)
+  (children :array<tree<a>>))
 (def leaf
-  (ocaml-record tree
-    (keys (ocaml-array 1 2 3))
-    (children (ocaml-array-make 0))))
+  (record tree (keys (ocaml-array 1 2 3)) (children (Array.of_list (list)))))
 (def root
-  (ocaml-record tree
-    (keys (ocaml-array 3))
-    (children (ocaml-array leaf))))
+  (record tree (keys (ocaml-array 3)) (children (ocaml-array leaf))))
 (defn last-key [node]
-  (let [children (ocaml-field node children)]
+  (let [children (:children node)]
     (if (= 0 (ocaml-array-length children))
-      (let [keys (ocaml-field node keys)]
+      (let [keys (:keys node)]
         (ocaml-array-get keys (dec (ocaml-array-length keys))))
       (last-key
         (ocaml-array-get children (dec (ocaml-array-length children)))))))
 (defn append-children [left right]
   (ocaml-array-append
-    (ocaml-field left children)
-    (ocaml-field right children)))
+    (:children left)
+    (:children right)))
 (println
   (str (+ (last-key root) 0) ":"
        (ocaml-array-length (append-children root root))))
@@ -2358,9 +2362,9 @@ let test_parameterized_variants_instantiate_constructor_payloads () =
   let source =
     {|
 (type-variant box [a]
-  (Box :param/a))
+  (Box :a))
 (def int-box (Box 41))
-(def string-box (ocaml-construct Box "Ada"))
+(def string-box (Box "Ada"))
 (def int-value
   (match int-box
     (Box value) (+ value 1)))
@@ -2378,12 +2382,12 @@ let test_parameterized_types_compile_inside_modules () =
   let source =
     {|
 (module Types
-  (type-alias maybe [a] :ocaml/option<param/a>)
+  (type-alias maybe [a] :option<a>)
   (type-record pair [a b]
-    (left :param/a)
-    (right :param/b))
+    (left :a)
+    (right :b))
   (type-variant box [a]
-    (Box :param/a)))
+    (Box :a)))
 (println "module-parameterized-ok")
 |}
   in
@@ -2395,9 +2399,9 @@ let test_parameterized_record_relationships_are_checked_by_ocaml () =
   Lg.Compiler.compile_string
     {|
 (type-record same-pair [a]
-  (left :param/a)
-  (right :param/a))
-(def bad (ocaml-record same-pair (left 42) (right "Ada")))
+  (left :a)
+  (right :a))
+(def bad (record same-pair (left 42) (right "Ada")))
 |}
   |> expect_error_contains "string"
 
@@ -2405,35 +2409,35 @@ let test_parameterized_variant_relationships_are_checked_by_ocaml () =
   Lg.Compiler.compile_string
     {|
 (type-variant same-pair [a]
-  (Pair :param/a :param/a))
-(def bad (ocaml-construct Pair 42 "Ada"))
+  (Pair :a :a))
+(def bad (Pair 42 "Ada"))
 |}
   |> expect_error_contains "string"
 
 let test_parameterized_type_declarations_reject_bad_parameters () =
   Lg.Compiler.compile_string
-    {|(type-alias maybe [a a] :ocaml/option<param/a>)|}
+    {|(type-alias maybe [a a] :option<a>)|}
   |> expect_error_contains "duplicate type parameter a";
   Lg.Compiler.compile_string
-    {|(type-record pair [a :bad] (value :param/a))|}
+    {|(type-record pair [a :bad] (value :a))|}
   |> expect_error_contains "type parameters must be symbols";
   Lg.Compiler.compile_string
-    {|(type-variant box [a] (Box :param/missing))|}
-  |> expect_error_contains "unknown type parameter missing";
+    {|(type-variant box [a] (Box :missing))|}
+  |> expect_error_contains "Unbound type constructor missing";
   Lg.Compiler.compile_string
-    {|(type-alias maybe [] :ocaml/option<int>)|}
+    {|(type-alias maybe [] :option<int>)|}
   |> expect_error_contains "type parameter vector must not be empty";
   Lg.Compiler.compile_string
-    {|(type-record bad [a] (callback :ocaml/fn<int>))|}
-  |> expect_error_contains "unknown record field type :ocaml/fn<int>"
+    {|(type-record bad [a] (callback :fn<int>))|}
+  |> expect_error_contains "unknown record field type :fn<int>"
 
 let test_ocaml_owned_branch_types_are_checked_by_ocaml () =
   let source =
     {|
-(type-alias user-id :ocaml/int)
-(type-alias account-id :ocaml/int)
-(defn as-user [^:ocaml/user_id x] x)
-(defn as-account [^:ocaml/account_id x] x)
+(type-alias user-id :int)
+(type-alias account-id :int)
+(defn as-user [^:user_id x] x)
+(defn as-account [^:account_id x] x)
 (def if-id (if true (as-user 41) (as-account 42)))
 (def cond-id (cond false (as-user 1) :else (as-account 2)))
 (def match-id (match true true (as-user 3) false (as-account 4)))
@@ -2447,8 +2451,8 @@ let test_ocaml_owned_branch_types_are_checked_by_ocaml () =
 let test_ocaml_owned_branch_type_mismatch_is_delegated_to_ocaml () =
   Lg.Compiler.compile_string
     {|
-(type-alias user-id :ocaml/int)
-(defn as-user [^:ocaml/user_id x] x)
+(type-alias user-id :int)
+(defn as-user [^:user_id x] x)
 (def bad (if true (as-user 41) "bad"))
 |}
   |> expect_error_contains "string"
@@ -2456,10 +2460,10 @@ let test_ocaml_owned_branch_type_mismatch_is_delegated_to_ocaml () =
 let test_ocaml_option_and_result_constructors_compile_through_source_backend () =
   let source =
     {|
-(def present (ocaml-some 42))
-(def absent (ocaml-none))
-(def success (ocaml-ok "Ada"))
-(def failure (ocaml-error "bad"))
+(def present (Some 42))
+(def absent None)
+(def success (Ok "Ada"))
+(def failure (Error "bad"))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -2468,14 +2472,14 @@ let test_ocaml_option_and_result_constructors_compile_through_source_backend () 
     "" ocaml_source
 
 let test_ocaml_option_and_result_constructors_reject_bad_arity () =
-  Lg.Compiler.compile_string {|(def value (ocaml-some))|}
-  |> expect_error "ocaml-some expects 1 arguments";
-  Lg.Compiler.compile_string {|(def value (ocaml-none 1))|}
-  |> expect_error "ocaml-none expects 0 arguments";
-  Lg.Compiler.compile_string {|(def value (ocaml-ok))|}
-  |> expect_error "ocaml-ok expects 1 arguments";
-  Lg.Compiler.compile_string {|(def value (ocaml-error))|}
-  |> expect_error "ocaml-error expects 1 arguments"
+  Lg.Compiler.compile_string {|(def value (Some ))|}
+  |> expect_error "Some expects 1 arguments";
+  Lg.Compiler.compile_string {|(def value (None 1))|}
+  |> expect_error "None expects 0 arguments";
+  Lg.Compiler.compile_string {|(def value (Ok ))|}
+  |> expect_error "Ok expects 1 arguments";
+  Lg.Compiler.compile_string {|(def value (Error ))|}
+  |> expect_error "Error expects 1 arguments"
 
 let test_direct_ocaml_option_and_result_constructors_compile () =
   let source =
@@ -2525,10 +2529,10 @@ let test_direct_ocaml_constructors_reject_bad_arity () =
 let test_ocaml_option_and_result_patterns_compile_through_source_backend () =
   let source =
     {|
-(def present (ocaml-some 41))
-(def absent (ocaml-none))
-(def success (ocaml-ok "Ada"))
-(def failure (ocaml-error "bad"))
+(def present (Some 41))
+(def absent None)
+(def success (Ok "Ada"))
+(def failure (Error "bad"))
 (def present-score
   (match present
     (Some x) (+ x 1)
@@ -2556,26 +2560,26 @@ let test_ocaml_option_and_result_patterns_compile_through_source_backend () =
 let test_ocaml_option_patterns_delegate_payload_typecheck_to_ocaml () =
   Lg.Compiler.compile_string
     {|
-(def present (ocaml-some "bad"))
+(def present (Some "bad"))
 (def bad
   (match present
     (Some x) (+ x 1)
     None 0))
 |}
-  |> expect_error_contains "string"
+  |> expect_error_contains "expected int arguments for +"
 
 let test_ocaml_type_application_annotations_compile_through_source_backend () =
   let source =
     {|
-(def present (ocaml-some 41))
-(def absent (ocaml-none))
-(def success (ocaml-ok "Ada"))
-(def failure (ocaml-error "bad"))
-(defn option-score [^:ocaml/option<int> value]
+(def present (Some 41))
+(def absent None)
+(def success (Ok "Ada"))
+(def failure (Error "bad"))
+(defn option-score [^:option<int> value]
   (match value
     (Some x) (+ x 1)
     None 0))
-(defn result-label [^:ocaml/result<string;string> value]
+(defn result-label [^:result<string;string> value]
   (match value
     (Ok name) name
     (Error message) message))
@@ -2591,8 +2595,8 @@ let test_ocaml_type_application_annotations_compile_through_source_backend () =
 let test_ocaml_type_application_annotations_delegate_argument_mismatch_to_ocaml () =
   Lg.Compiler.compile_string
     {|
-(def present (ocaml-some "bad"))
-(defn option-score [^:ocaml/option<int> value]
+(def present (Some "bad"))
+(defn option-score [^:option<int> value]
   (match value
     (Some x) (+ x 1)
     None 0))
@@ -2602,11 +2606,11 @@ let test_ocaml_type_application_annotations_delegate_argument_mismatch_to_ocaml 
 
 let test_ocaml_type_application_annotations_reject_bad_forms () =
   Lg.Compiler.compile_string
-    {|(defn bad [^:ocaml/option<> value] value)|}
-  |> expect_error "invalid OCaml type annotation ^:ocaml/option<>";
+    {|(defn bad [^:option<> value] value)|}
+  |> expect_error "invalid type annotation ^:option<>";
   Lg.Compiler.compile_string
-    {|(defn bad [^:ocaml/result<int> value] value)|}
-  |> expect_error "invalid OCaml type annotation ^:ocaml/result<int>"
+    {|(defn bad [^:result<int> value] value)|}
+  |> expect_error "invalid type annotation ^:result<int>"
 
 let test_concise_host_type_annotations_compile () =
   let source =
@@ -2630,7 +2634,7 @@ let test_concise_host_type_annotations_compile () =
 let test_threading_and_option_binding_forms_compile () =
   let source =
     {|
-(defn option-score [^:ocaml/option<int> value]
+(defn option-score [^:option<int> value]
   (if-let [x value] (+ x 1) 0))
 (def threaded (-> 41 (+ 1) str))
 (def threaded-last (->> 41 (str "value=")))
@@ -2642,13 +2646,13 @@ let test_threading_and_option_binding_forms_compile () =
   (let-some [left None right (Some 3)]
     (+ left right)
     9))
-(def observed (ocaml-ref 0))
+(def observed (atom 0))
 (when-let [value (Some 7)]
-  (ocaml-reset! observed value))
+  (reset! observed value))
 (println
   (str (option-score (Some 41)) ":" (option-score None) ":"
        threaded ":" threaded-last ":" combined ":" missing ":"
-       (ocaml-deref observed)))
+       (deref observed)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -2677,10 +2681,10 @@ let test_combined_host_package_import_compiles () =
 let test_ocaml_tuple_values_compile_through_source_backend () =
   let source =
     {|
-(def pair (ocaml-tuple 41 "Ada"))
-(defn describe [^:ocaml/tuple<int;string> value]
+(def pair (tuple 41 "Ada"))
+(defn describe [^:tuple<int;string> value]
   (match value
-    (ocaml-tuple id name) (str name ":" (+ id 1))))
+    (tuple id name) (str name ":" (+ id 1))))
 (println (describe pair))
 |}
   in
@@ -2691,25 +2695,25 @@ let test_ocaml_tuple_values_compile_through_source_backend () =
 let test_ocaml_tuple_values_delegate_argument_mismatch_to_ocaml () =
   Lg.Compiler.compile_string
     {|
-(def pair (ocaml-tuple "bad" "Ada"))
-(defn describe [^:ocaml/tuple<int;string> value]
+(def pair (tuple "bad" "Ada"))
+(defn describe [^:tuple<int;string> value]
   (match value
-    (ocaml-tuple id name) (str name ":" (+ id 1))))
+    (tuple id name) (str name ":" (+ id 1))))
 (def bad (describe pair))
 |}
   |> expect_error_contains "string"
 
 let test_ocaml_tuple_values_reject_bad_forms () =
-  Lg.Compiler.compile_string {|(def value (ocaml-tuple 1))|}
-  |> expect_error "ocaml-tuple expects at least 2 values";
+  Lg.Compiler.compile_string {|(def value (tuple 1))|}
+  |> expect_error "tuple expects at least 2 values";
   Lg.Compiler.compile_string
-    {|(defn bad [^:ocaml/tuple<int> value] value)|}
-  |> expect_error "invalid OCaml type annotation ^:ocaml/tuple<int>";
+    {|(defn bad [^:tuple<int> value] value)|}
+  |> expect_error "invalid type annotation ^:tuple<int>";
   Lg.Compiler.compile_string
     {|
-(def pair (ocaml-tuple 1 "Ada"))
+(def pair (tuple 1 "Ada"))
 (def bad (match pair
-  (ocaml-tuple id) id))
+  (tuple id) id))
 |}
   |> expect_error "tuple pattern arity mismatch"
 
@@ -2717,7 +2721,7 @@ let test_concise_tuple_values_and_patterns_compile () =
   let source =
     {|
 (def pair (tuple 41 "Ada"))
-(defn describe [^:ocaml/tuple<int;string> value]
+(defn describe [^:tuple<int;string> value]
   (match value
     (tuple id name) (str name ":" (+ id 1))))
 (println (describe pair))
@@ -2773,10 +2777,7 @@ let test_ocaml_array_primitives_support_polymorphic_helpers () =
   let source =
     {|
 (defn copy-array [source]
-  (let [length (ocaml-array-length source)
-        target (ocaml-array-make length)]
-    (ocaml-array-copy! source 0 length target 0)
-    target))
+  (Array.copy source))
 (defn first-array [values]
   (ocaml-array-get values 0))
 (defn seq-to-sorted-array [cmp values]
@@ -2798,13 +2799,29 @@ let test_ocaml_array_primitives_support_polymorphic_helpers () =
 let test_ocaml_refs_support_read_and_assignment () =
   let source =
     {|
-(def cell (ocaml-ref 40))
-(ocaml-reset! cell (+ (ocaml-deref cell) 2))
-(println (ocaml-deref cell))
+(def cell (atom 40))
+(reset! cell (+ (deref cell) 2))
+(println (deref cell))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "ocaml_refs_support_read_and_assignment" "42\n" ocaml_source
+
+let test_concise_standard_type_annotations () =
+  let source =
+    {|
+(type-record holder [value]
+  (values :array<value>)
+  (current :ref<option<value>>)
+  (visit :fn<value;unit>))
+(def holder-value
+  (record holder (values (ocaml-array 1 2)) (current (volatile! (Some 1))) (visit (fn [value] (Stdlib.ignore value)))))
+(println (ocaml-array-length (:values holder-value)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "concise_standard_type_annotations" "2\n"
+    ocaml_source
 
 let test_ocaml_arrays_reject_invalid_operations () =
   Lg.Compiler.compile_string {|(def values (ocaml-array 1 "two"))|}
@@ -2821,12 +2838,12 @@ let test_ocaml_arrays_reject_invalid_operations () =
   |> expect_error_contains "empty OCaml array requires a type"
 
 let test_ocaml_refs_reject_invalid_operations () =
-  Lg.Compiler.compile_string {|(def value (ocaml-deref 42))|}
-  |> expect_error_contains "ocaml-deref expects an OCaml ref";
-  Lg.Compiler.compile_string {|(ocaml-reset! 42 1)|}
-  |> expect_error_contains "ocaml-reset! expects an OCaml ref";
-  Lg.Compiler.compile_string {|(ocaml-reset! (ocaml-ref 1) "bad")|}
-  |> expect_error_contains "OCaml ref value must match referenced type"
+  Lg.Compiler.compile_string {|(def value (deref 42))|}
+  |> expect_error_contains "deref expects a reference";
+  Lg.Compiler.compile_string {|(reset! 42 1)|}
+  |> expect_error_contains "reset! expects a reference";
+  Lg.Compiler.compile_string {|(reset! (atom 1) "bad")|}
+  |> expect_error_contains "reset! value must match referenced type"
 
 let test_float_arithmetic_rejects_mixed_numeric_types () =
   Lg.Compiler.compile_string {|(def bad (+ 1 2.5))|}
@@ -2910,8 +2927,8 @@ let test_ocaml_record_values_compile_through_source_backend () =
   let source =
     {|
 (type-record user (name :string) (age :int))
-(def ada (ocaml-record user (name "Ada") (age 41)))
-(println (str (ocaml-field ada name) ":" (+ (ocaml-field ada age) 1)))
+(def ada (record user (name "Ada") (age 41)))
+(println (str (:name ada) ":" (+ (:age ada) 1)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -2923,8 +2940,8 @@ let test_ocaml_record_values_support_qualified_module_types () =
     {|
 (module User
   (type-record user (name :string) (age :int)))
-(def ada (ocaml-record User.user (name "Ada") (age 41)))
-(println (str (ocaml-field ada name) ":" (+ (ocaml-field ada age) 1)))
+(def ada (record User.user (name "Ada") (age 41)))
+(println (str (:name ada) ":" (+ (:age ada) 1)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -2937,8 +2954,8 @@ let test_ocaml_record_values_support_module_alias_types () =
 (module User
   (type-record user (name :string) (age :int)))
 (module-alias U User)
-(def ada (ocaml-record U.user (name "Ada") (age 41)))
-(println (str (ocaml-field ada name) ":" (+ (ocaml-field ada age) 1)))
+(def ada (record U.user (name "Ada") (age 41)))
+(println (str (:name ada) ":" (+ (:age ada) 1)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -2951,8 +2968,8 @@ let test_ocaml_record_values_support_opened_module_types () =
 (module User
   (type-record user (name :string) (age :int)))
 (open User)
-(def ada (ocaml-record user (name "Ada") (age 41)))
-(println (str (ocaml-field ada name) ":" (+ (ocaml-field ada age) 1)))
+(def ada (record user (name "Ada") (age 41)))
+(println (str (:name ada) ":" (+ (:age ada) 1)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -2966,8 +2983,8 @@ let test_ocaml_record_values_support_opened_module_types_in_module_body () =
   (type-record user (name :string) (age :int)))
 (module App
   (open User)
-  (def ada (ocaml-record user (name "Ada") (age 41)))
-  (def label (str (ocaml-field ada name) ":" (+ (ocaml-field ada age) 1))))
+  (def ada (record user (name "Ada") (age 41)))
+  (def label (str (:name ada) ":" (+ (:age ada) 1))))
 (println App/label)
 |}
   in
@@ -2982,8 +2999,8 @@ let test_ocaml_record_values_support_included_module_types () =
   (type-record user (name :string) (age :int)))
 (module App
   (include User))
-(def ada (ocaml-record App.user (name "Ada") (age 41)))
-(println (str (ocaml-field ada name) ":" (+ (ocaml-field ada age) 1)))
+(def ada (record App.user (name "Ada") (age 41)))
+(println (str (:name ada) ":" (+ (:age ada) 1)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -2995,7 +3012,7 @@ let test_ocaml_record_values_delegate_qualified_field_typecheck_to_ocaml () =
     {|
 (module User
   (type-record user (name :string) (age :int)))
-(def bad (ocaml-record User.user (name "Ada") (age "old")))
+(def bad (record User.user (name "Ada") (age "old")))
 |}
   |> expect_error_contains "string"
 
@@ -3003,7 +3020,7 @@ let test_ocaml_record_values_delegate_field_typecheck_to_ocaml () =
   Lg.Compiler.compile_string
     {|
 (type-record user (name :string) (age :int))
-(def bad (ocaml-record user (name "Ada") (age "old")))
+(def bad (record user (name "Ada") (age "old")))
 |}
   |> expect_error_contains "string"
 
@@ -3011,28 +3028,28 @@ let test_ocaml_record_values_reject_bad_forms () =
   Lg.Compiler.compile_string {|(type-record user)|}
   |> expect_error "type-record expects at least one field";
   Lg.Compiler.compile_string {|(type-record user (name :unknown))|}
-  |> expect_error "unknown record field type :unknown";
-  Lg.Compiler.compile_string {|(def bad (ocaml-record user))|}
+  |> expect_error_contains "Unbound type constructor unknown";
+  Lg.Compiler.compile_string {|(def bad (record user))|}
   |> expect_error "unknown record type user";
   Lg.Compiler.compile_string
     {|
 (type-record user (name :string))
-(def bad (ocaml-record user (name "Ada") (name "Grace")))
+(def bad (record user (name "Ada") (name "Grace")))
 |}
   |> expect_error "duplicate record field name";
   Lg.Compiler.compile_string
     {|
 (type-record user (name :string))
-(def ada (ocaml-record user (name "Ada")))
-(def bad (ocaml-field ada age))
+(def ada (record user (name "Ada")))
+(def bad (:age ada))
 |}
   |> expect_error "unknown record field age"
 
 let test_ocaml_field_delegates_opaque_record_access_to_ocaml () =
   Lg.Compiler.compile_string
     {|
-(defn attrs [^:ocaml/External.record value]
-  (ocaml-field value attrs))
+(defn attrs [^:External.record value]
+  (:attrs value))
 |}
   |> expect_error_contains "Unbound module External"
 
@@ -3040,8 +3057,8 @@ let test_ocaml_variants_compile_through_source_backend () =
   let source =
     {|
 (type-variant status Active Inactive)
-(def active (ocaml-construct Active))
-(defn keep-status [^:ocaml/status x] x)
+(def active Active)
+(defn keep-status [^:status x] x)
 (def saved (keep-status active))
 |}
   in
@@ -3052,9 +3069,9 @@ let test_ocaml_payload_variants_compile_through_source_backend () =
   let source =
     {|
 (type-variant message Ping (Named :string) (Pair :int :string))
-(def named (ocaml-construct Named "Ada"))
-(def pair (ocaml-construct Pair 42 "Ada"))
-(defn describe [^:ocaml/message message]
+(def named (Named "Ada"))
+(def pair (Pair 42 "Ada"))
+(defn describe [^:message message]
   (match message
     (Named name) name
     (Pair id name) (str name ":" id)
@@ -3070,15 +3087,23 @@ let test_ocaml_payload_variants_delegate_payload_typecheck_to_ocaml () =
   Lg.Compiler.compile_string
     {|
 (type-variant message (Named :string))
-(def bad (ocaml-construct Named 42))
+(def bad (Named 42))
 |}
   |> expect_error_contains "int"
 
 let test_ocaml_variant_constructors_reject_bad_arity () =
-  Lg.Compiler.compile_string {|(def value (ocaml-construct))|}
-  |> expect_error "ocaml-construct expects a constructor name";
-  Lg.Compiler.compile_string {|(def value (ocaml-construct :Active 1))|}
-  |> expect_error "ocaml-construct constructor must be a symbol"
+  Lg.Compiler.compile_string
+    {|
+(type-variant status Active (Named :string))
+(def value (Active 1))
+|}
+  |> expect_error "Active expects 0 arguments";
+  Lg.Compiler.compile_string
+    {|
+(type-variant status Active (Named :string))
+(def value (Named))
+|}
+  |> expect_error "Named expects 1 arguments"
 
 let test_ocaml_variants_reject_bad_declarations () =
   Lg.Compiler.compile_string {|(type-variant status)|}
@@ -3094,12 +3119,12 @@ let test_recursive_variants_support_nested_data_values () =
 (type-variant value
   Nil
   (IntValue :int)
-  (ListValue :ocaml/list<value>)
-  (MapValue :ocaml/list<tuple<value;value>>))
-(def nil-value (ocaml-construct Nil))
-(def nested (ocaml-construct ListValue (list nil-value)))
-(def entries (list (ocaml-tuple nil-value nested)))
-(def mapped (ocaml-construct MapValue entries))
+  (ListValue :list<value>)
+  (MapValue :list<tuple<value;value>>))
+(def nil-value Nil)
+(def nested (ListValue (list nil-value)))
+(def entries (list (tuple nil-value nested)))
+(def mapped (MapValue entries))
 (println
   (str
     (match nested
@@ -3123,16 +3148,16 @@ let test_module_recursive_variants_export_constructors () =
   let source =
     {|
 (module Data
-  (type-variant value End (Next :ocaml/value)))
-(def end-value (ocaml-construct Data.End))
-(def next-value (ocaml-construct Data.Next end-value))
+  (type-variant value End (Next :value)))
+(def end-value Data/End)
+(def next-value (Data/Next end-value))
 (println
   (match next-value
-    Data.End "end"
-    (Data.Next value)
+    Data/End "end"
+    (Data/Next value)
       (match value
-        Data.End "next-end"
-        (Data.Next _) "next-next")))
+        Data/End "next-end"
+        (Data/Next _) "next-next")))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -3518,13 +3543,13 @@ let test_top_level_defs_project_function_returned_structural_records_once () =
   let source =
     {|
 (def score {:value 1.0})
-(def calls (ocaml-ref 0))
+(def calls (atom 0))
 (defn raise-score [score amount]
   (do
-    (ocaml-reset! calls (+ (ocaml-deref calls) 1))
+    (reset! calls (+ (deref calls) 1))
     (assoc score :value (+ amount 0.5))))
 (def updated (raise-score score 1.0))
-(println (str (:value updated) ":" (ocaml-deref calls)))
+(println (str (:value updated) ":" (deref calls)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -3631,7 +3656,7 @@ let test_protocols_reject_duplicate_host_constructor_implementations () =
   (describe [value] "second"))
 |}
   |> expect_error
-       "duplicate implementation of Described/describe for ocaml/option<ocaml/string>"
+       "duplicate implementation of Described/describe for option<string>"
 
 let test_static_protocols_reject_missing_implementation () =
   let source =
@@ -3763,8 +3788,8 @@ let test_protocols_support_named_record_receivers () =
   (label [value] :string))
 (extend-type user
   Labelled
-  (label [value] (ocaml-field value name)))
-(def ada (ocaml-record user (name "Ada")))
+  (label [value] (:name value)))
+(def ada (record user (name "Ada")))
 (println (label ada))
 |}
   in
@@ -3777,8 +3802,8 @@ let test_named_record_updates_preserve_protocol_identity () =
 (type-record user (name :string) (age :int))
 (defprotocol Labelled (label [value] :string))
 (extend-type user Labelled
-  (label [value] (str (ocaml-field value name) ":" (ocaml-field value age))))
-(def ada (ocaml-record user (name "Ada") (age 41)))
+  (label [value] (str (:name value) ":" (:age value))))
+(def ada (record user (name "Ada") (age 41)))
 (def older (assoc ada :age 42))
 (println (label older))
 |}
@@ -3803,7 +3828,7 @@ let test_keyword_access_reads_nominal_record_fields () =
   Lg.Compiler.compile_string
     {|
 (type-record user (name :string))
-(def ada (ocaml-record user (name "Ada")))
+(def ada (record user (name "Ada")))
 (def missing (:missing ada))
 |}
   |> expect_error "unknown record field missing"
@@ -3821,15 +3846,15 @@ let test_named_record_parameters_are_inferred_for_record_updates () =
 (type-record block
   (id :string)
   (indent :int)
-  (parent-id :ocaml/option<string>))
-(defn move [block ^:int indent ^:ocaml/option<string> parent-id]
+  (parent-id :option<string>))
+(defn move [block ^:int indent ^:option<string> parent-id]
   (assoc block :indent (max 0 indent) :parent-id parent-id))
 (def original
-  (ocaml-record block (id "block-1") (indent 1) (parent-id None)))
+  (record block (id "block-1") (indent 1) (parent-id None)))
 (def moved (move original -2 (Some "parent")))
 (println
-  (str (ocaml-field moved id) ":" (ocaml-field moved indent) ":"
-    (match (ocaml-field moved parent-id)
+  (str (:id moved) ":" (:indent moved) ":"
+    (match (:parent-id moved)
       None "none"
       (Some parent-id) parent-id)))
 |}
@@ -3845,9 +3870,9 @@ let test_module_local_named_record_parameters_are_inferred () =
   (type-record user (name :string))
   (defn rename [user ^:string name]
     (assoc user :name name))
-  (def ada (ocaml-record user (name "Ada"))))
+  (def ada (record user (name "Ada"))))
 (def renamed (Domain/rename Domain/ada "Grace"))
-(println (ocaml-field renamed name))
+(println (:name renamed))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -3863,8 +3888,8 @@ let test_protocols_inside_modules_export_methods_and_record_impls () =
     (label [value] :string))
   (extend-type user
     Labelled
-    (label [value] (ocaml-field value name)))
-  (def ada (ocaml-record user (name "Ada"))))
+    (label [value] (:name value)))
+  (def ada (record user (name "Ada"))))
 (println (Domain/Labelled/label Domain/ada))
 |}
   in
@@ -4538,20 +4563,20 @@ let test_batched_sequence_functions_work () =
 let test_lazy_map_defers_incrementally_and_memoizes_realized_values () =
   let source =
     {|
-(def calls (ocaml-ref 0))
+(def calls (atom 0))
 (def mapped
   (map
     (fn [x]
       (do
-        (ocaml-reset! calls (+ (ocaml-deref calls) 1))
+        (reset! calls (+ (deref calls) 1))
         (+ x 1)))
     [1 2 3]))
-(println (ocaml-deref calls))
+(println (deref calls))
 (println (first mapped))
 (println (first mapped))
-(println (ocaml-deref calls))
+(println (deref calls))
 (println (second mapped))
-(println (ocaml-deref calls))
+(println (deref calls))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -4561,21 +4586,21 @@ let test_lazy_map_defers_incrementally_and_memoizes_realized_values () =
 let test_lazy_filter_realizes_only_enough_source_values () =
   let source =
     {|
-(def calls (ocaml-ref 0))
+(def calls (atom 0))
 (def evens
   (filter
     (fn [x]
       (do
-        (ocaml-reset! calls (+ (ocaml-deref calls) 1))
+        (reset! calls (+ (deref calls) 1))
         (even? x)))
     [1 2 3 4]))
-(println (ocaml-deref calls))
+(println (deref calls))
 (println (first evens))
-(println (ocaml-deref calls))
+(println (deref calls))
 (println (first evens))
-(println (ocaml-deref calls))
+(println (deref calls))
 (println (second evens))
-(println (ocaml-deref calls))
+(println (deref calls))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -4597,7 +4622,7 @@ let test_lazy_map_accepts_all_builtin_seqable_types () =
   let source =
     {|
 (def host-seq
-  (ocaml-call :ocaml/Seq.t<int> List.to_seq (list 4 5)))
+  (List.to_seq (list 4 5)))
 (println (pr-str (map inc (list 1 2))))
 (println (pr-str (map inc [1 2])))
 (println (pr-str (map inc (hash-set 2 1))))
@@ -4674,7 +4699,7 @@ let test_reduce_accepts_all_builtin_seqable_types () =
   let source =
     {|
 (def host-seq
-  (ocaml-call :ocaml/Seq.t<int> List.to_seq (list 4 5)))
+  (List.to_seq (list 4 5)))
 (println (reduce (fn [acc x] (+ acc x)) 0 (list 1 2)))
 (println (reduce (fn [acc x] (+ acc x)) 0 [1 2]))
 (println (reduce (fn [acc x] (+ acc x)) 0 (hash-set 2 1)))
@@ -4690,19 +4715,19 @@ let test_reduce_accepts_all_builtin_seqable_types () =
 let test_reduce_realizes_lazy_seq_once () =
   let source =
     {|
-(def calls (ocaml-ref 0))
+(def calls (atom 0))
 (def values
   (map
     (fn [x]
       (do
-        (ocaml-reset! calls (+ (ocaml-deref calls) 1))
+        (reset! calls (+ (deref calls) 1))
         x))
     [1 2 3]))
-(println (ocaml-deref calls))
+(println (deref calls))
 (println (reduce + 0 values))
-(println (ocaml-deref calls))
+(println (deref calls))
 (println (reduce + 0 values))
-(println (ocaml-deref calls))
+(println (deref calls))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -4725,12 +4750,12 @@ let test_reduced_values_support_predicates_and_unwrapping () =
 let test_reduce_stops_without_realizing_remaining_values () =
   let source =
     {|
-(def calls (ocaml-ref 0))
+(def calls (atom 0))
 (def values
   (map
     (fn [x]
       (do
-        (ocaml-reset! calls (+ (ocaml-deref calls) 1))
+        (reset! calls (+ (deref calls) 1))
         x))
     [1 2 3 4 5]))
 (def total
@@ -4742,7 +4767,7 @@ let test_reduce_stops_without_realizing_remaining_values () =
     0
     values))
 (println total)
-(println (ocaml-deref calls))
+(println (deref calls))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -4752,11 +4777,11 @@ let test_reduce_stops_without_realizing_remaining_values () =
 let test_reduce_short_circuits_builtin_and_custom_seqable_types () =
   let source =
     {|
-(type-record cursor (values :ocaml/list<int>))
+(type-record cursor (values :list<int>))
 (extend-type cursor Seqable
   (-seq [cursor]
-    (map (fn [x] (+ x 0)) (ocaml-field cursor values))))
-(def custom (ocaml-record cursor (values (list 1 2 3 4))))
+    (map (fn [x] (+ x 0)) (:values cursor))))
+(def custom (record cursor (values (list 1 2 3 4))))
 (defn sum-before-three [values]
   (reduce
     (fn [acc x]
@@ -4784,11 +4809,11 @@ let test_reduce_short_circuits_builtin_and_custom_seqable_types () =
 let test_custom_records_can_implement_core_seqable () =
   let source =
     {|
-(type-record cursor (values :ocaml/list<int>))
+(type-record cursor (values :list<int>))
 (extend-type cursor Seqable
   (-seq [cursor]
-    (map (fn [x] x) (ocaml-field cursor values))))
-(def values (ocaml-record cursor (values (list 1 2 3))))
+    (map (fn [x] x) (:values cursor))))
+(def values (record cursor (values (list 1 2 3))))
 (println (pr-str (map inc values)))
 (println (reduce (fn [acc x] (+ acc x)) 0 values))
 |}
@@ -4801,11 +4826,11 @@ let test_modules_export_core_seqable_implementations () =
   let source =
     {|
 (module Cursors
-  (type-record cursor (values :ocaml/list<int>))
+  (type-record cursor (values :list<int>))
   (extend-type cursor Seqable
     (-seq [cursor]
-      (map (fn [x] x) (ocaml-field cursor values))))
-  (def values (ocaml-record cursor (values (list 4 5)))))
+      (map (fn [x] x) (:values cursor))))
+  (def values (record cursor (values (list 4 5)))))
 (println (pr-str (map inc Cursors/values)))
 (println (reduce (fn [acc x] (+ acc x)) 0 Cursors/values))
 |}
@@ -4817,21 +4842,21 @@ let test_modules_export_core_seqable_implementations () =
 let test_reduce_prefers_custom_reducible_over_seqable () =
   let source =
     {|
-(def seq-calls (ocaml-ref 0))
-(type-record cursor (values :ocaml/list<int>))
+(def seq-calls (atom 0))
+(type-record cursor (values :list<int>))
 (extend-type cursor Seqable
   (-seq [cursor]
     (do
-      (ocaml-reset! seq-calls (+ (ocaml-deref seq-calls) 1))
-      (map (fn [x] x) (ocaml-field cursor values)))))
+      (reset! seq-calls (+ (deref seq-calls) 1))
+      (map (fn [x] x) (:values cursor)))))
 (extend-type cursor Reducible
   (-reduce [cursor reducer init]
     (+ init 100)))
-(def values (ocaml-record cursor (values (list 1 2 3))))
+(def values (record cursor (values (list 1 2 3))))
 (println (reduce (fn [acc x] (+ acc x)) 0 values))
-(println (ocaml-deref seq-calls))
+(println (deref seq-calls))
 (println (first (map inc values)))
-(println (ocaml-deref seq-calls))
+(println (deref seq-calls))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -4861,18 +4886,18 @@ let test_reduce_specializes_builtin_reducible_types () =
 let test_count_prefers_custom_counted_over_seqable () =
   let source =
     {|
-(def seq-calls (ocaml-ref 0))
-(type-record cursor (values :ocaml/list<int>))
+(def seq-calls (atom 0))
+(type-record cursor (values :list<int>))
 (extend-type cursor Seqable
   (-seq [cursor]
     (do
-      (ocaml-reset! seq-calls (+ (ocaml-deref seq-calls) 1))
-      (map (fn [x] x) (ocaml-field cursor values)))))
+      (reset! seq-calls (+ (deref seq-calls) 1))
+      (map (fn [x] x) (:values cursor)))))
 (extend-type cursor Counted
   (-count [cursor] 3))
-(def values (ocaml-record cursor (values (list 1 2 3))))
+(def values (record cursor (values (list 1 2 3))))
 (println (count values))
-(println (ocaml-deref seq-calls))
+(println (deref seq-calls))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -4882,13 +4907,13 @@ let test_count_prefers_custom_counted_over_seqable () =
 let test_first_and_last_accept_all_seqable_types () =
   let source =
     {|
-(type-record cursor (values :ocaml/list<int>))
+(type-record cursor (values :list<int>))
 (extend-type cursor Seqable
   (-seq [cursor]
-    (map (fn [x] x) (ocaml-field cursor values))))
-(def values (ocaml-record cursor (values (list 4 5 6))))
+    (map (fn [x] x) (:values cursor))))
+(def values (record cursor (values (list 4 5 6))))
 (def host-seq
-  (ocaml-call :ocaml/Seq.t<int> List.to_seq (list 7 8)))
+  (List.to_seq (list 7 8)))
 (println (str (+ (first values) 0) ":" (+ (last values) 0)))
 (println (str (first (ocaml-array 1 2)) ":" (last (ocaml-array 1 2))))
 (println (str (first "ab") ":" (last "ab")))
@@ -4902,11 +4927,11 @@ let test_first_and_last_accept_all_seqable_types () =
 let test_custom_records_can_implement_core_indexed () =
   let source =
     {|
-(type-record cursor (values :ocaml/list<int>))
+(type-record cursor (values :list<int>))
 (extend-type cursor Indexed
   (-nth [cursor index]
-    (+ (ocaml-call :ocaml/int List.nth (ocaml-field cursor values) index) 0)))
-(def values (ocaml-record cursor (values (list 4 5 6))))
+    (+ (List.nth (:values cursor) index) 0)))
+(def values (record cursor (values (list 4 5 6))))
 (println (nth values 1))
 |}
   in
@@ -4918,7 +4943,7 @@ let test_nth_accepts_indexed_and_seqable_host_types () =
   let source =
     {|
 (def host-seq
-  (ocaml-call :ocaml/Seq.t<int> List.to_seq (list 7 8 9)))
+  (List.to_seq (list 7 8 9)))
 (println (nth (ocaml-array 1 2 3) 1))
 (println (str (nth "abc" 1)))
 (println (+ (nth host-seq 2) 0))
@@ -4931,10 +4956,10 @@ let test_nth_accepts_indexed_and_seqable_host_types () =
 let test_generic_sequence_functions_infer_seqable_dictionaries () =
   let source =
     {|
-(type-record cursor (values :ocaml/list<int>))
+(type-record cursor (values :list<int>))
 (extend-type cursor Seqable
   (-seq [cursor]
-    (map (fn [x] x) (ocaml-field cursor values))))
+    (map (fn [x] x) (:values cursor))))
 (defn total [values]
   (reduce + 0 values))
 (defn increment-all [values]
@@ -4943,9 +4968,9 @@ let test_generic_sequence_functions_infer_seqable_dictionaries () =
   (count values))
 (defn forwarded-total [values]
   (total values))
-(def custom (ocaml-record cursor (values (list 4 5))))
+(def custom (record cursor (values (list 4 5))))
 (def host-seq
-  (ocaml-call :ocaml/Seq.t<int> List.to_seq (list 6 7)))
+  (List.to_seq (list 6 7)))
 (println (str (total (list 1 2)) ":" (total [1 2]) ":"
               (total (ocaml-array 1 2)) ":" (total custom) ":"
               (total host-seq)))
@@ -4974,14 +4999,14 @@ let test_generic_seqable_returns_instantiate_element_types () =
 let test_seqable_dictionary_arguments_evaluate_once () =
   let source =
     {|
-(def calls (ocaml-ref 0))
+(def calls (atom 0))
 (defn total [values] (reduce + 0 values))
 (println
   (total
     (do
-      (ocaml-reset! calls (+ (ocaml-deref calls) 1))
+      (reset! calls (+ (deref calls) 1))
       [1 2 3])))
-(println (ocaml-deref calls))
+(println (deref calls))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -4992,12 +5017,11 @@ let test_modules_export_host_ocaml_seqable_implementations () =
   let source =
     {|
 (module QueueSeq
-  (extend-type :ocaml/Queue.t<int> Seqable
+  (extend-type :Queue.t<int> Seqable
     (-seq [queue]
-      (ocaml-call :ocaml/Seq.t<int> Queue.to_seq queue))))
+      (Queue.to_seq queue))))
 (def values
-  (ocaml-call :ocaml/Queue.t<int> Queue.of_seq
-    (ocaml-call :ocaml/Seq.t<int> List.to_seq (list 1 2 3))))
+  (Queue.of_seq (List.to_seq (list 1 2 3))))
 (println (pr-str (map inc values)))
 (println (reduce (fn [acc x] (+ acc x)) 0 values))
 |}
@@ -5010,27 +5034,27 @@ let test_logseq_datascript_style_wrappers_use_collection_capabilities () =
   let source =
     {|
 (module Datascript
-  (type-record query-result (rows :ocaml/list<int>))
+  (type-record query-result (rows :list<int>))
   (extend-type query-result Seqable
     (-seq [result]
-      (map (fn [row] row) (ocaml-field result rows))))
+      (map (fn [row] row) (:rows result))))
   (extend-type query-result Counted
     (-count [result]
-      (+ (ocaml-call :ocaml/int List.length (ocaml-field result rows)) 0))))
+      (+ (List.length (:rows result)) 0))))
 (module Logseq
-  (type-record block-children (blocks :ocaml/array<int>))
+  (type-record block-children (blocks :array<int>))
   (extend-type block-children Seqable
     (-seq [children]
-      (map (fn [block] block) (ocaml-field children blocks))))
+      (map (fn [block] block) (:blocks children))))
   (extend-type block-children Counted
     (-count [children]
-      (+ (ocaml-call :ocaml/int Array.length (ocaml-field children blocks)) 0))))
+      (+ (Array.length (:blocks children)) 0))))
 (defn summarize [values]
   (str (count values) ":" (reduce + 0 values) ":" (first values) ":" (last values)))
 (def query
-  (ocaml-record Datascript.query-result (rows (list 1 2 3))))
+  (record Datascript.query-result (rows (list 1 2 3))))
 (def children
-  (ocaml-record Logseq.block-children (blocks (ocaml-array 4 5))))
+  (record Logseq.block-children (blocks (ocaml-array 4 5))))
 (println (summarize query))
 (println (summarize children))
 |}
@@ -5043,13 +5067,13 @@ let test_logseq_datascript_style_wrappers_use_collection_capabilities () =
 let test_sequence_navigation_accepts_all_seqable_types () =
   let source =
     {|
-(type-record datom (fields :ocaml/list<int>))
+(type-record datom (fields :list<int>))
 (extend-type datom Seqable
   (-seq [datom]
-    (map (fn [field] (+ field 0)) (ocaml-field datom fields))))
-(def value (ocaml-record datom (fields (list 1 2 3))))
+    (map (fn [field] (+ field 0)) (:fields datom))))
+(def value (record datom (fields (list 1 2 3))))
 (def host-seq
-  (ocaml-call :ocaml/Seq.t<int> List.to_seq (list 7 8 9)))
+  (List.to_seq (list 7 8 9)))
 (println (pr-str (seq value)))
 (println (pr-str (rest value)))
 (println (pr-str (next value)))
@@ -5069,16 +5093,16 @@ let test_sequence_navigation_accepts_all_seqable_types () =
 let test_generic_sequence_navigation_infers_seqable_dictionaries () =
   let source =
     {|
-(type-record datom (fields :ocaml/list<int>))
+(type-record datom (fields :list<int>))
 (extend-type datom Seqable
   (-seq [datom]
-    (map (fn [field] (+ field 0)) (ocaml-field datom fields))))
+    (map (fn [field] (+ field 0)) (:fields datom))))
 (defn tail [values] (rest values))
 (defn next-tail [values] (next values))
 (defn item-two [values] (second values))
 (defn forwarded-tail [values] (tail values))
 (defn no-values? [values] (empty? values))
-(def value (ocaml-record datom (fields (list 1 2 3))))
+(def value (record datom (fields (list 1 2 3))))
 (println (pr-str (tail value)))
 (println (pr-str (next-tail (ocaml-array 4 5 6))))
 (println (+ (item-two value) 0))
@@ -5105,15 +5129,15 @@ let test_sequence_navigation_handles_empty_seqable_values () =
 let test_generic_sequence_navigation_evaluates_arguments_once () =
   let source =
     {|
-(def calls (ocaml-ref 0))
+(def calls (atom 0))
 (defn tail [values] (rest values))
 (println
   (pr-str
     (tail
       (do
-        (ocaml-reset! calls (+ (ocaml-deref calls) 1))
+        (reset! calls (+ (deref calls) 1))
         [1 2 3]))))
-(println (ocaml-deref calls))
+(println (deref calls))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -5235,10 +5259,10 @@ let test_clojure_truthiness_in_conditions () =
 let test_and_or_return_values_and_short_circuit () =
   let source =
     {|
-(def calls (ocaml-ref 0))
+(def calls (atom 0))
 (defn mark [value]
   (do
-    (ocaml-reset! calls (+ (ocaml-deref calls) 1))
+    (reset! calls (+ (deref calls) 1))
     value))
 (def all-empty (and))
 (def any-empty (or))
@@ -5249,7 +5273,7 @@ let test_and_or_return_values_and_short_circuit () =
 (println
   (str all-empty ":" (nil? any-empty) ":" (name all-keyword) ":"
        (match any-option (Some value) value None "missing") ":"
-       stopped-and ":" stopped-or ":" (ocaml-deref calls)))
+       stopped-and ":" stopped-or ":" (deref calls)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -5319,10 +5343,10 @@ let test_loop_recur_remains_tail_through_let_and_cond () =
 let test_loop_and_recur_delegate_ocaml_owned_alias_compatibility () =
   let source =
     {|
-(type-alias user-id :ocaml/int)
-(type-alias account-id :ocaml/int)
-(defn as-user [^:ocaml/user_id x] x)
-(defn as-account [^:ocaml/account_id x] x)
+(type-alias user-id :int)
+(type-alias account-id :int)
+(defn as-user [^:user_id x] x)
+(defn as-account [^:account_id x] x)
 (def final-id
   (loop [id (as-user 0)
          n 1]
@@ -5339,8 +5363,8 @@ let test_loop_and_recur_delegate_ocaml_owned_alias_compatibility () =
 let test_loop_and_recur_delegate_ocaml_owned_mismatch_to_ocaml () =
   Lg.Compiler.compile_string
     {|
-(type-alias user-id :ocaml/int)
-(defn as-user [^:ocaml/user_id x] x)
+(type-alias user-id :int)
+(defn as-user [^:user_id x] x)
 (def bad
   (loop [id (as-user 0)
          n 1]
@@ -5833,9 +5857,9 @@ let test_sets_reject_nil_elements () =
   Lg.Compiler.compile_string {|(def values (set [nil]))|}
   |> expect_error "sets require a generated comparator for nil"
 
-let test_set_of_rejects_unknown_types () =
+let test_set_of_rejects_types_without_comparators () =
   Lg.Compiler.compile_string {|(def xs (set-of :record))|}
-  |> expect_error "unknown set element type :record"
+  |> expect_error "sets require a generated comparator for record"
 
 let test_keyword_type_annotations_for_empty_collections () =
   let source =
@@ -6017,9 +6041,9 @@ let test_match_supports_ocaml_constructor_patterns () =
   let source =
     {|
 (type-variant status Active Inactive)
-(def active (ocaml-construct Active))
-(def inactive (ocaml-construct Inactive))
-(defn describe [^:ocaml/status status]
+(def active Active)
+(def inactive Inactive)
+(defn describe [^:status status]
   (match status
     Active "active"
     Inactive "inactive"))
@@ -6034,7 +6058,7 @@ let test_compile_diagnostics_capture_ocaml_match_warnings () =
   let source =
     {|
 (type-variant status Active Inactive)
-(defn describe [^:ocaml/status status]
+(defn describe [^:status status]
   (match status
     Active "active"))
 |}
@@ -6062,7 +6086,7 @@ let test_compile_diagnostics_are_empty_for_exhaustive_matches () =
   let source =
     {|
 (type-variant status Active Inactive)
-(defn describe [^:ocaml/status status]
+(defn describe [^:status status]
   (match status
     Active "active"
     Inactive "inactive"))
@@ -6382,12 +6406,12 @@ let test_language_service_constructor_capabilities () =
 
 let type_language_service_source =
   {|
-(type-alias user-id :ocaml/int)
+(type-alias user-id :int)
 (type-record user (name :string))
 (type-variant status Active Inactive)
-(def ada (ocaml-record user (name "Ada")))
-(defn keep-id [^:ocaml/user_id value] value)
-(defn keep-status [^:ocaml/status value] value)
+(def ada (record user (name "Ada")))
+(defn keep-id [^:user_id value] value)
+(defn keep-status [^:status value] value)
 |}
 
 let analyze_type_language_service_source () =
@@ -6432,7 +6456,7 @@ let test_language_service_alias_and_variant_annotations_resolve_types () =
     | Some location when location.Location.loc_start.Lexing.pos_cnum = declaration -> ()
     | _ -> failwith ("expected type definition for " ^ usage_text)
   in
-  check "user-id :ocaml/int" "user_id value";
+  check "user-id :int" "user_id value";
   check "status Active" "status value"
 
 let test_language_service_completion_includes_source_type_names () =
@@ -6452,7 +6476,7 @@ let test_language_service_completion_includes_source_type_names () =
 
 let test_workspace_type_definition_resolves_across_files () =
   let provider = "(type-record user (name :string))\n" in
-  let consumer = "(def ada (ocaml-record user (name \"Ada\")))\n" in
+  let consumer = "(def ada (record user (name \"Ada\")))\n" in
   let provider_uri = "file:///tmp/user-type.lgc" in
   let consumer_uri = "file:///tmp/user-main.lgc" in
   let analyses =
@@ -6476,8 +6500,8 @@ let test_type_references_keep_module_identities_distinct () =
   (type-record item (value :int)))
 (module Right
   (type-record item (value :int)))
-(def left (ocaml-record Left.item (value 1)))
-(def right (ocaml-record Right.item (value 2)))
+(def left (record Left.item (value 1)))
+(def right (record Right.item (value 2)))
 |}
   in
   let analysis =
@@ -6988,8 +7012,8 @@ let test_language_service_protocol_capabilities () =
 let field_language_service_source =
   {|
 (type-record user (name :string) (age :int))
-(def ada (ocaml-record user (name "Ada") (age 36)))
-(def label (ocaml-field ada name))
+(def ada (record user (name "Ada") (age 36)))
+(def label (:name ada))
 (def extracted (match ada (record (name value)) value))
 |}
 
@@ -7002,7 +7026,7 @@ let test_language_service_field_definition_references_and_rename () =
   let analysis = analyze_field_language_service_source () in
   let declaration = expect_substring_index field_language_service_source "name :string" in
   let usage =
-    expect_substring_index field_language_service_source "ada name" + String.length "ada "
+    expect_substring_index field_language_service_source ":name ada"
   in
   (match Lg.Language_service.definition analysis ~offset:usage with
   | Some location when location.Location.loc_start.Lexing.pos_cnum = declaration -> ()
@@ -7030,10 +7054,10 @@ let test_field_references_keep_record_identities_distinct () =
     {|
 (type-record user (name :string))
 (type-record project (name :string))
-(def ada (ocaml-record user (name "Ada")))
-(def lg (ocaml-record project (name "lg")))
-(def user-name (ocaml-field ada name))
-(def project-name (ocaml-field lg name))
+(def ada (record user (name "Ada")))
+(def lg (record project (name "lg")))
+(def user-name (:name ada))
+(def project-name (:name lg))
 |}
   in
   let analysis =
@@ -7042,7 +7066,7 @@ let test_field_references_keep_record_identities_distinct () =
     |> expect_ok
   in
   let usage =
-    expect_substring_index source "ada name" + String.length "ada "
+    expect_substring_index source ":name ada"
   in
   let references = Lg.Language_service.references analysis ~offset:usage in
   let referenced_text = List.map (span_text source) references in
@@ -7054,8 +7078,8 @@ let test_field_references_keep_record_identities_distinct () =
 let test_workspace_field_definition_resolves_across_files () =
   let provider = "(type-record user (name :string))\n" in
   let consumer =
-    "(def ada (ocaml-record user (name \"Ada\")))\n\
-     (def label (ocaml-field ada name))\n"
+    "(def ada (record user (name \"Ada\")))\n\
+     (def label (:name ada))\n"
   in
   let provider_uri = "file:///tmp/field-provider.lgc" in
   let consumer_uri = "file:///tmp/field-consumer.lgc" in
@@ -7065,7 +7089,7 @@ let test_workspace_field_definition_resolves_across_files () =
     |> expect_ok
   in
   let analysis = List.assoc consumer_uri analyses in
-  let usage = expect_substring_index consumer "ada name" + String.length "ada " in
+  let usage = expect_substring_index consumer ":name ada" in
   match Lg.Language_service.definition analysis ~offset:usage with
   | Some location
     when location.Location.loc_start.Lexing.pos_fname = provider_uri
@@ -7419,7 +7443,7 @@ let test_workspace_index_tracks_qualified_type_dependencies () =
     Lg.Language_service.create_workspace_index
       [ (provider_uri, "(module Domain (type-record user (name :string)))\n");
         ( consumer_uri,
-          "(defn keep [^:ocaml/Domain.user value] value)\n" ) ]
+          "(defn keep [^:Domain.user value] value)\n" ) ]
     |> expect_ok
   in
   if Lg.Language_service.workspace_analysis index consumer_uri = None then
@@ -7448,9 +7472,9 @@ let test_workspace_index_tracks_declaration_type_dependencies () =
   let consumer_uri = "file:///tmp/z-workspace-domain-declaration-user.lgc" in
   let consumer =
     {|
-(type-alias user-option :ocaml/option<Domain.user>)
-(type-record envelope (user :ocaml/Domain.user))
-(type-variant event (Created :ocaml/Domain.user))
+(type-alias user-option :option<Domain.user>)
+(type-record envelope (user :Domain.user))
+(type-variant event (Created :Domain.user))
 |}
   in
   let index =
@@ -7604,7 +7628,7 @@ let test_workspace_diagnostics_belong_to_their_source_file () =
           {|
 (type-variant status Active Inactive)
 (module Status
-  (defn describe [^:ocaml/status value]
+  (defn describe [^:status value]
     (match value Active "active")))
 |} );
         (main_uri, "(def label (Status/describe Active))\n") ]
@@ -7655,12 +7679,12 @@ let test_match_delegates_opaque_module_constructor_payload_patterns_to_ocaml () 
     {|
 (module Msg
   (type-variant message Empty (Named :string)))
-(def named (ocaml-construct Msg.Named "Ada"))
-(def empty (ocaml-construct Msg.Empty))
-(defn describe [^:ocaml/Msg.message message]
+(def named (Msg/Named "Ada"))
+(def empty Msg/Empty)
+(defn describe [^:Msg.message message]
   (match message
-    (Msg.Named name) name
-    Msg.Empty "empty"))
+    (Msg/Named name) name
+    Msg/Empty "empty"))
 (println (str (describe named) ":" (describe empty)))
 |}
   in
@@ -7674,11 +7698,11 @@ let test_match_delegates_unknown_opaque_constructor_errors_to_ocaml () =
     {|
 (module Msg
   (type-variant message Empty (Named :string)))
-(def named (ocaml-construct Msg.Named "Ada"))
-(defn describe [^:ocaml/Msg.message message]
+(def named (Msg/Named "Ada"))
+(defn describe [^:Msg.message message]
   (match message
-    (Msg.Missing name) name
-    Msg.Empty "empty"))
+    (Msg/Missing name) name
+    Msg/Empty "empty"))
 (def result (describe named))
 |}
   |> expect_error_contains "Unbound constructor"
@@ -7686,9 +7710,9 @@ let test_match_delegates_unknown_opaque_constructor_errors_to_ocaml () =
 let test_match_delegates_nested_opaque_constructor_patterns_to_ocaml () =
   Lg.Compiler.compile_string
     {|
-(defn extract [^:ocaml/External.outer value]
+(defn extract [^:External.outer value]
   (match value
-    (External.Outer (External.Inner result)) result
+    (External/Outer (External/Inner result)) result
     _ "missing"))
 |}
   |> expect_error_contains "Unbound module External"
@@ -7696,9 +7720,9 @@ let test_match_delegates_nested_opaque_constructor_patterns_to_ocaml () =
 let test_match_delegates_generic_host_payload_patterns_to_ocaml () =
   Lg.Compiler.compile_string
     {|
-(defn extract [^:ocaml/External.record value]
-  (match (List/assoc-opt "id" (ocaml-field value attrs))
-    (Some (External.Named result)) result
+(defn extract [^:External.record value]
+  (match (List/assoc-opt "id" (:attrs value))
+    (Some (External/Named result)) result
     _ "missing"))
 |}
   |> expect_error_contains "Unbound module External"
@@ -7707,21 +7731,21 @@ let test_match_supports_record_alias_or_and_guard_patterns () =
   let source =
     {|
 (type-record user (name :string) (age :int))
-(def user-value (ocaml-record user (name "Ada") (age 42)))
+(def user-value (record user (name "Ada") (age 42)))
 (def record-label
   (match user-value
     (record (name name) (age age)) (str name ":" age)))
-(defn describe-option [^:ocaml/option<int> value]
+(defn describe-option [^:option<int> value]
   (match value
     (when (Some x) (> x 0)) (str "positive:" x)
     (or None (Some 0)) "empty"
     (as (Some x) _whole) (str "other:" x)))
 (println
   (str record-label ":"
-       (describe-option (ocaml-some 3)) ":"
-       (describe-option (ocaml-some 0)) ":"
-       (describe-option (ocaml-none)) ":"
-       (describe-option (ocaml-some -2))))
+       (describe-option (Some 3)) ":"
+       (describe-option (Some 0)) ":"
+       (describe-option None) ":"
+       (describe-option (Some -2))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -7732,14 +7756,14 @@ let test_record_patterns_reject_unknown_and_duplicate_fields () =
   Lg.Compiler.compile_string
     {|
 (type-record user (name :string))
-(def user-value (ocaml-record user (name "Ada")))
+(def user-value (record user (name "Ada")))
 (def value (match user-value (record (missing x)) x))
 |}
   |> expect_error_contains "unknown record pattern field missing";
   Lg.Compiler.compile_string
     {|
 (type-record user (name :string))
-(def user-value (ocaml-record user (name "Ada")))
+(def user-value (record user (name "Ada")))
 (def value (match user-value (record (name x) (name y)) x))
 |}
   |> expect_error_contains "duplicate record pattern field name"
@@ -7753,7 +7777,7 @@ let test_or_patterns_require_the_same_binders () =
   Lg.Compiler.compile_string
     {|
 (def value
-  (match (ocaml-some 42)
+  (match (Some 42)
     (or (Some x) None) x))
 |}
   |> expect_error_contains "or-pattern alternatives must bind the same names"
@@ -7762,7 +7786,7 @@ let test_match_guards_must_be_boolean () =
   Lg.Compiler.compile_string
     {|
 (def value
-  (match (ocaml-some 42)
+  (match (Some 42)
     (when (Some x) x) x
     None 0))
 |}
@@ -7855,8 +7879,8 @@ let test_module_definitions_support_type_aliases () =
   let source =
     {|
 (module UserIds
-  (type-alias user-id :ocaml/int)
-  (defn keep [^:ocaml/user_id x] x)
+  (type-alias user-id :int)
+  (defn keep [^:user_id x] x)
   (def answer (keep 42)))
 |}
   in
@@ -7868,7 +7892,7 @@ let test_module_definitions_support_variants () =
     {|
 (module Status
   (type-variant status Active Inactive)
-  (def active (ocaml-construct Active)))
+  (def active Active))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -7920,7 +7944,7 @@ let test_slash_qualification_covers_members_and_constructor_patterns () =
   (type-variant message Empty (Named :string)))
 (module-alias M Msg)
 (def named (M/Named "Ada"))
-(defn describe [^:ocaml/Msg.message message]
+(defn describe [^:Msg.message message]
   (match message
     (M/Named name) (String/uppercase-ascii name)
     M/Empty "empty"))
@@ -7933,7 +7957,7 @@ let test_slash_qualification_covers_members_and_constructor_patterns () =
     ocaml_source;
   Lg.Compiler.compile_string
     {|
-(defn extract [^:ocaml/External.outer value]
+(defn extract [^:External.outer value]
   (match value
     (External/Outer (External/Inner result)) result
     _ "missing"))
@@ -7997,7 +8021,7 @@ let test_module_signature_ascription_is_checked_by_ocaml () =
   Lg.Compiler.compile_string
     {|
 (module-signature MathSig
-  (val answer :ocaml/string))
+  (val answer :string))
 (module Math MathSig
   (def answer 42))
 |}
@@ -8007,12 +8031,12 @@ let test_module_signatures_support_type_items () =
   let source =
     {|
 (module-signature UserSig
-  (type user-id :ocaml/int)
-  (val answer :ocaml/user_id))
+  (type user-id :int)
+  (val answer :user_id))
 (module User UserSig
-  (type-alias user-id :ocaml/int)
+  (type-alias user-id :int)
   (def answer 42))
-(defn keep [^:ocaml/User.user_id value] value)
+(defn keep [^:User.user_id value] value)
 (def saved (keep User/answer))
 |}
   in
@@ -8023,10 +8047,10 @@ let test_module_signatures_support_parameterized_manifest_types () =
   let source =
     {|
 (module-signature BoxSig
-  (type box [a] :ocaml/option<param/a>)
-  (val value :ocaml/box<int>))
+  (type box [a] :option<a>)
+  (val value :box<int>))
 (module Box BoxSig
-  (type-alias box [a] :ocaml/option<param/a>)
+  (type-alias box [a] :option<a>)
   (def value (Some 42)))
 |}
   in
@@ -8040,7 +8064,7 @@ let test_module_signatures_support_parameterized_abstract_types () =
 (module-signature BoxSig
   (type box [a]))
 (module Box BoxSig
-  (type-alias box [a] :ocaml/option<param/a>))
+  (type-alias box [a] :option<a>))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -8168,9 +8192,9 @@ let test_module_signature_type_items_are_checked_by_ocaml () =
   Lg.Compiler.compile_string
     {|
 (module-signature UserSig
-  (type user-id :ocaml/string))
+  (type user-id :string))
 (module User UserSig
-  (type-alias user-id :ocaml/int))
+  (type-alias user-id :int))
 |}
   |> expect_error_contains "user_id"
 
@@ -8179,11 +8203,11 @@ let test_module_signatures_support_abstract_type_items () =
     {|
 (module-signature UserSig
   (type user-id)
-  (val answer :ocaml/user_id))
+  (val answer :user_id))
 (module User UserSig
-  (type-alias user-id :ocaml/int)
+  (type-alias user-id :int)
   (def answer 42))
-(defn keep [^:ocaml/User.user_id value] value)
+(defn keep [^:User.user_id value] value)
 (def saved (keep User/answer))
 |}
   in
@@ -8196,9 +8220,9 @@ let test_module_signature_abstract_types_are_checked_by_ocaml () =
     {|
 (module-signature UserSig
   (type user-id)
-  (val answer :ocaml/user_id))
+  (val answer :user_id))
 (module User UserSig
-  (type-alias user-id :ocaml/int)
+  (type-alias user-id :int)
   (def answer 42))
 (def bad (+ User/answer 1))
 |}
@@ -8208,7 +8232,7 @@ let test_module_signatures_reject_bad_forms () =
   Lg.Compiler.compile_string {|(module-signature MathSig)|}
   |> expect_error "module-signature expects at least one signature item";
   Lg.Compiler.compile_string
-    {|(module-signature MathSig (value answer :ocaml/int))|}
+    {|(module-signature MathSig (value answer :int))|}
   |> expect_error
        "module-signature items must be val, type, module, or include declarations";
   Lg.Compiler.compile_string
@@ -8220,12 +8244,12 @@ let test_module_signatures_reject_bad_forms () =
   |> expect_error "module-signature include expects one module type";
   Lg.Compiler.compile_string
     {|(module-signature MathSig (val answer :unknown))|}
-  |> expect_error "unknown signature type :unknown";
+  |> expect_error_contains "Unbound type constructor unknown";
   Lg.Compiler.compile_string
     {|(module-signature MathSig (type user-id :unknown))|}
-  |> expect_error "unknown signature type :unknown";
+  |> expect_error_contains "Unbound type constructor unknown";
   Lg.Compiler.compile_string
-    {|(module-signature BoxSig (type box [a] :ocaml/option<param/b>))|}
+    {|(module-signature BoxSig (type box [a] :option<b>))|}
   |> expect_error "unknown type parameter b";
   Lg.Compiler.compile_string
     {|(module-signature BoxSig (type box [a a]))|}
@@ -8293,8 +8317,8 @@ let test_module_functor_applications_expose_record_types () =
 (module-functor Make [M NameSig]
   (type-record user (name :string) (age :int)))
 (module-apply App Make Names)
-(def ada (ocaml-record App.user (name "Ada") (age 41)))
-(println (str (ocaml-field ada name) ":" (+ (ocaml-field ada age) 1)))
+(def ada (record App.user (name "Ada") (age 41)))
+(println (str (:name ada) ":" (+ (:age ada) 1)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -8355,8 +8379,8 @@ let test_module_functor_applications_preserve_record_protocol_identity () =
 (module-functor Make [M EmptySig]
   (type-record user (name :string))
   (defprotocol Labelled (label [x] :string))
-  (extend-type user Labelled (label [x] (ocaml-field x name)))
-  (def ada (ocaml-record user (name "Ada"))))
+  (extend-type user Labelled (label [x] (:name x)))
+  (def ada (record user (name "Ada"))))
 (module-apply App Make Empty)
 (println (App/Labelled/label App/ada))
 |}
@@ -8695,7 +8719,7 @@ let test_incremental_compilation_preserves_protocols () =
 let test_incremental_compile_chunk_runs_ocaml_typecheck_gate () =
   Lg.Compiler.compile_chunk Lg.Compiler.empty_state
     {|
-(def answer (ocaml-call :int Stdlib.abs "bad"))
+(def answer (Stdlib.abs "bad"))
 |}
   |> expect_error_contains "string"
 
@@ -8738,8 +8762,8 @@ let test_parsetree_backend_supports_composite_sets () =
 let test_parsetree_backend_supports_type_aliases () =
   let source =
     {|
-(type-alias user-id :ocaml/int)
-(defn keep-user-id [^:ocaml/user_id x] x)
+(type-alias user-id :int)
+(defn keep-user-id [^:user_id x] x)
 (def answer (keep-user-id 42))
 |}
   in
@@ -8750,8 +8774,8 @@ let test_parsetree_backend_supports_type_aliases () =
 let test_parsetree_backend_supports_generic_ocaml_calls () =
   let source =
     {|
-(def answer (ocaml-call :int Stdlib.abs -42))
-(def label (ocaml-call :string String.uppercase_ascii "ada"))
+(def answer (Stdlib.abs -42))
+(def label (String.uppercase_ascii "ada"))
 (println (str label ":" answer))
 |}
   in
@@ -8763,10 +8787,10 @@ let test_parsetree_backend_supports_generic_ocaml_calls () =
 let test_parsetree_backend_supports_ocaml_option_and_result_constructors () =
   let source =
     {|
-(def present (ocaml-some 42))
-(def absent (ocaml-none))
-(def success (ocaml-ok "Ada"))
-(def failure (ocaml-error "bad"))
+(def present (Some 42))
+(def absent None)
+(def success (Ok "Ada"))
+(def failure (Error "bad"))
 |}
   in
   let structure = Lg.Compiler.compile_parsetree source |> expect_ok in
@@ -8777,8 +8801,8 @@ let test_parsetree_backend_supports_ocaml_option_and_result_constructors () =
 let test_parsetree_backend_supports_ocaml_option_and_result_patterns () =
   let source =
     {|
-(def present (ocaml-some 41))
-(def success (ocaml-ok "Ada"))
+(def present (Some 41))
+(def success (Ok "Ada"))
 (def present-score
   (match present
     (Some x) (+ x 1)
@@ -8799,13 +8823,13 @@ let test_parsetree_backend_supports_ocaml_option_and_result_patterns () =
 let test_parsetree_backend_supports_ocaml_type_application_annotations () =
   let source =
     {|
-(def present (ocaml-some 41))
-(def success (ocaml-ok "Ada"))
-(defn option-score [^:ocaml/option<int> value]
+(def present (Some 41))
+(def success (Ok "Ada"))
+(defn option-score [^:option<int> value]
   (match value
     (Some x) (+ x 1)
     None 0))
-(defn result-label [^:ocaml/result<string;string> value]
+(defn result-label [^:result<string;string> value]
   (match value
     (Ok name) name
     (Error message) message))
@@ -8821,10 +8845,10 @@ let test_parsetree_backend_supports_ocaml_type_application_annotations () =
 let test_parsetree_backend_supports_ocaml_tuple_values () =
   let source =
     {|
-(def pair (ocaml-tuple 41 "Ada"))
-(defn describe [^:ocaml/tuple<int;string> value]
+(def pair (tuple 41 "Ada"))
+(defn describe [^:tuple<int;string> value]
   (match value
-    (ocaml-tuple id name) (str name ":" (+ id 1))))
+    (tuple id name) (str name ":" (+ id 1))))
 (println (describe pair))
 |}
   in
@@ -8837,8 +8861,8 @@ let test_parsetree_backend_supports_ocaml_record_values () =
   let source =
     {|
 (type-record user (name :string) (age :int))
-(def ada (ocaml-record user (name "Ada") (age 41)))
-(println (str (ocaml-field ada name) ":" (+ (ocaml-field ada age) 1)))
+(def ada (record user (name "Ada") (age 41)))
+(println (str (:name ada) ":" (+ (:age ada) 1)))
 |}
   in
   let structure = Lg.Compiler.compile_parsetree source |> expect_ok in
@@ -8850,8 +8874,8 @@ let test_parsetree_backend_supports_variants () =
   let source =
     {|
 (type-variant status Active Inactive)
-(def active (ocaml-construct Active))
-(defn keep-status [^:ocaml/status x] x)
+(def active Active)
+(defn keep-status [^:status x] x)
 (def saved (keep-status active))
 |}
   in
@@ -8863,9 +8887,9 @@ let test_parsetree_backend_supports_payload_variants () =
   let source =
     {|
 (type-variant message Ping (Named :string) (Pair :int :string))
-(def named (ocaml-construct Named "Ada"))
-(def pair (ocaml-construct Pair 42 "Ada"))
-(defn describe [^:ocaml/message message]
+(def named (Named "Ada"))
+(def pair (Pair 42 "Ada"))
+(defn describe [^:message message]
   (match message
     (Named name) name
     (Pair id name) (str name ":" id)
@@ -8882,9 +8906,9 @@ let test_parsetree_backend_supports_ocaml_constructor_patterns () =
   let source =
     {|
 (type-variant status Active Inactive)
-(def active (ocaml-construct Active))
-(def inactive (ocaml-construct Inactive))
-(defn describe [^:ocaml/status status]
+(def active Active)
+(def inactive Inactive)
+(defn describe [^:status status]
   (match status
     Active "active"
     Inactive "inactive"))
@@ -8979,7 +9003,7 @@ let test_parsetree_backend_preserves_static_errors () =
 let test_parsetree_backend_runs_ocaml_typecheck_gate () =
   Lg.Compiler.compile_parsetree
     {|
-(def answer (ocaml-call :int Stdlib.abs "bad"))
+(def answer (Stdlib.abs "bad"))
 |}
   |> expect_error_contains "string"
 
@@ -9307,7 +9331,7 @@ let test_incremental_parsetree_backend_preserves_state () =
 let test_incremental_parsetree_backend_runs_ocaml_typecheck_gate () =
   Lg.Compiler.compile_chunk_parsetree Lg.Compiler.empty_state
     {|
-(def answer (ocaml-call :int Stdlib.abs "bad"))
+(def answer (Stdlib.abs "bad"))
 |}
   |> expect_error_contains "string"
 
@@ -9315,8 +9339,8 @@ let test_compile_string_prints_parsetree_backend_output () =
   let source =
     {|
 (type-record user (name :string) (age :int))
-(def user (ocaml-record user (name "Ada") (age 36)))
-(println (str (ocaml-field user name) ":" (ocaml-field user age)))
+(def user (record user (name "Ada") (age 36)))
+(println (str (:name user) ":" (:age user)))
 |}
   in
   let source_output = Lg.Compiler.compile_string source |> expect_ok in
@@ -9332,7 +9356,7 @@ let test_infer_interface_prints_checked_signature () =
     Lg.Compiler.infer_interface
       {|
 (type-record user (name :string))
-(defn user-name [^:ocaml/user user] (ocaml-field user name))
+(defn user-name [^:user user] (:name user))
 |}
     |> expect_ok
   in
@@ -9345,7 +9369,7 @@ let test_compile_chunk_prints_parsetree_backend_output () =
   let source =
     {|
 (module Greeter
-  (defn shout [name] (ocaml-call :string String.uppercase_ascii name)))
+  (defn shout [name] (String.uppercase_ascii name)))
 |}
   in
   let _, source_output =
@@ -9523,10 +9547,10 @@ let tests =
       test_keyword_lookup_supports_typed_external_ocaml_records );
     ( "keyword lookup delegates unknown external fields to OCaml",
       test_keyword_lookup_delegates_unknown_external_fields_to_ocaml );
-    ( "keyword lookup delegates non-record host types to OCaml",
-      test_keyword_lookup_delegates_non_record_host_types_to_ocaml );
+    ( "keyword lookup rejects non-record types",
+      test_keyword_lookup_rejects_non_record_types );
     ("typed empty vectors work", test_typed_empty_vectors);
-    ("vector-of rejects unknown types", test_vector_of_rejects_unknown_types);
+    ("vector-of rejects malformed types", test_vector_of_rejects_malformed_types);
     ("ocaml module require aliases work", test_ocaml_module_require_aliases);
     ("ocaml module require refer works", test_ocaml_module_require_refer);
     ("typed function parameters work", test_typed_function_parameters);
@@ -9683,6 +9707,8 @@ let tests =
       test_ocaml_array_primitives_support_polymorphic_helpers );
     ( "OCaml refs support read and assignment",
       test_ocaml_refs_support_read_and_assignment );
+    ( "concise standard type annotations",
+      test_concise_standard_type_annotations );
     ( "OCaml arrays reject invalid operations",
       test_ocaml_arrays_reject_invalid_operations );
     ( "OCaml refs reject invalid operations",
@@ -10107,7 +10133,8 @@ let tests =
     ("into rejects element type mismatch", test_into_rejects_element_type_mismatch);
     ("typed empty sets work", test_typed_empty_sets);
     ("sets reject nil elements", test_sets_reject_nil_elements);
-    ("set-of rejects unknown types", test_set_of_rejects_unknown_types);
+    ( "set-of rejects types without comparators",
+      test_set_of_rejects_types_without_comparators );
     ( "keyword type annotations for empty collections work",
       test_keyword_type_annotations_for_empty_collections );
     ("nth supports default values", test_nth_supports_default_values);

@@ -29,10 +29,16 @@ let add_record_field_constraint name keyword field_ty params =
     match find_field keyword fields with
     | None -> Ok (make_field keyword field_ty :: fields)
     | Some field when Types.equal field.ty field_ty -> Ok fields
-    | Some field ->
-        Error.error
-          ("cannot infer " ^ keyword ^ " as " ^ Types.source_name field_ty
-         ^ " because it is already " ^ Types.source_name field.ty)
+    | Some field -> (
+        match (field.ty, field_ty) with
+        | TRef TUnknown, TRef value_ty ->
+            Ok
+              (make_field keyword (TRef value_ty)
+              :: List.filter (fun candidate -> candidate.keyword <> keyword) fields)
+        | _ ->
+            Error.error
+              ("cannot infer " ^ keyword ^ " as " ^ Types.source_name field_ty
+             ^ " because it is already " ^ Types.source_name field.ty))
   in
   match List.assoc_opt name params with
   | None -> Ok params
@@ -95,8 +101,6 @@ let infer_params ~lookup_function_ty params body_forms =
         add_record_field_constraint name keyword expected_ty params
     | FList [ FSymbol "get"; FSymbol name; FKeyword keyword ] ->
         add_record_field_constraint name keyword expected_ty params
-    | FList [ FSymbol "ocaml-field"; FSymbol name; FSymbol field_name ] ->
-        add_record_field_constraint name (":" ^ field_name) expected_ty params
     | form -> infer_form params form
   and infer_all params forms =
     let rec loop params = function
@@ -235,6 +239,16 @@ let infer_params ~lookup_function_ty params body_forms =
     in
     infer_clauses params clauses
   and infer_form params = function
+    | FList
+        [ FSymbol "deref";
+          FList [ FKeyword keyword; FSymbol name ] ] ->
+        add_record_field_constraint name keyword (TRef TUnknown) params
+    | FList
+        [ FSymbol "vreset!";
+          FList [ FKeyword keyword; FSymbol name ];
+          value ] ->
+        add_record_field_constraint name keyword
+          (TRef (inferred_form_type params value)) params
     | FList [ FSymbol ("nil?" | "some?"); FSymbol value ] ->
         constrain_symbol (TOcaml_app ("option", [ TUnknown ])) params value
     | FList [ FSymbol "count"; FSymbol collection ] ->
@@ -352,8 +366,6 @@ let infer_params ~lookup_function_ty params body_forms =
         match infer_expected TMap_keys params (FSymbol name) with
         | Error _ as err -> err
         | Ok params -> infer_expected TKeyword params key)
-    | FList [ FSymbol "ocaml-field"; FSymbol name; FSymbol field_name ] ->
-        add_record_field_constraint name (":" ^ field_name) TUnknown params
     | FList (FSymbol "assoc" :: target :: pairs) ->
         infer_assoc params target pairs
     | FList (FSymbol "str" :: args) ->
