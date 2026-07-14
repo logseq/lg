@@ -12,6 +12,7 @@ let compile_fn = Expression_elaborator.compile_fn
 let compile_args_for = Expression_elaborator.compile_args_for
 let compile_call = Expression_elaborator.compile_call
 let binding_of_expr = Expression_support.binding_of_expr
+let allocate_anonymous_record = Expression_support.allocate_anonymous_record
 let row_param_type_names = Expression_support.row_param_type_names
 let row_type_items = Expression_support.row_type_items
 let check_emitted_name_collision = Resolver.check_emitted_name_collision
@@ -164,42 +165,48 @@ let rec compile scope env next_type = function
           (match check_emitted_name_collision env ~source_key:env_key ~ocaml_name with
           | Error _ as err -> err
           | Ok () -> (match expr.ty with
-          | TRecord fields -> (
-              let type_name = "t" ^ string_of_int next_type in
-              let set_module_name = "Set_" ^ type_name in
-              let binding =
-                Types.binding ocaml_name
-                  (Types.named_record ~type_name ~set_module_name fields)
-              in
+          | TRecord fields ->
               let identity =
                 Source_context.find name_form
                 |> Option.map (fun location ->
                        (Source_node_id.of_location location, location))
               in
-              let item =
-                match expr.record_values with
-                | Some values ->
-                    Record_def
-                      { var_name = ocaml_name;
-                        identity;
-                        type_name;
-                        set_module_name;
-                        fields;
-                        values }
-                | None ->
-                    Projected_record_def
-                      { var_name = ocaml_name;
-                        identity;
-                        type_name;
-                        set_module_name;
-                        fields;
-                        source = expr.semantic_expr }
+              let allocation =
+                allocate_anonymous_record ~owner:"" env next_type fields
               in
-              Ok
-                ( scope,
-                  Env.add env_key binding env,
-                  next_type + 1,
-                  item ))
+              let record_ty = TNamed_record allocation.record in
+              let binding = Types.binding ocaml_name record_ty in
+              let env = Env.add env_key binding allocation.env in
+              if allocation.fresh then
+                let item =
+                  match expr.record_values with
+                  | Some values ->
+                      Record_def
+                        { var_name = ocaml_name;
+                          identity;
+                          type_name = allocation.record.type_name;
+                          set_module_name = allocation.record.set_module_name;
+                          fields;
+                          values }
+                  | None ->
+                      Projected_record_def
+                        { var_name = ocaml_name;
+                          identity;
+                          type_name = allocation.record.type_name;
+                          set_module_name = allocation.record.set_module_name;
+                          fields;
+                          source = expr.semantic_expr }
+                in
+                Ok (scope, env, allocation.next_type, item)
+              else
+                let expr = Structural_map.as_named_record allocation.record expr in
+                Ok
+                  ( scope,
+                    env,
+                    allocation.next_type,
+                    Value_binding
+                      { pattern = located_value_pattern name_form (Named ocaml_name);
+                        expression = expr.semantic_expr } )
           | _ ->
               let binding = binding_of_expr ocaml_name expr in
               Ok

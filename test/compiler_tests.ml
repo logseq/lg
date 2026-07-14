@@ -26,6 +26,21 @@ let string_contains_substring text expected =
   in
   expected_len = 0 || loop 0
 
+let count_generated_anonymous_record_types source =
+  let prefix = "type nonrec t" in
+  source |> String.split_on_char '\n'
+  |> List.fold_left
+       (fun count line ->
+         if
+           String.starts_with ~prefix line
+           && String.length line > String.length prefix
+           &&
+           let suffix = line.[String.length prefix] in
+           suffix >= '0' && suffix <= '9'
+         then count + 1
+         else count)
+       0
+
 let substring_index text expected =
   let expected_len = String.length expected in
   let rec loop index =
@@ -373,6 +388,101 @@ let test_hash_map_rejects_duplicate_fields () =
 let test_hash_map_rejects_odd_key_value_forms () =
   Lg.Compiler.compile_string {|(def x (hash-map :name "Ada" :age))|}
   |> expect_error "hash-map expects keyword/value pairs"
+
+let test_anonymous_maps_reuse_equal_shapes () =
+  let source =
+    {|
+(def x {:a 1 :b "b"})
+(def y {:a 2 :b "bbb"})
+(def z (merge x y))
+(println (count [x y z]))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if count_generated_anonymous_record_types ocaml_source <> 1 then
+    failwith "equal anonymous map shapes must emit one OCaml record type";
+  assert_ocaml_runs "anonymous_maps_reuse_equal_shapes" "3\n" ocaml_source
+
+let test_anonymous_map_shape_ignores_field_order () =
+  let source =
+    {|
+(def left {:a 1 :b "left"})
+(def right {:b "right" :a 2})
+(println (count [left right]))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if count_generated_anonymous_record_types ocaml_source <> 1 then
+    failwith "anonymous map field order must not create a new type";
+  assert_ocaml_runs "anonymous_map_shape_ignores_field_order" "2\n" ocaml_source
+
+let test_anonymous_map_operations_reuse_result_shapes () =
+  let source =
+    {|
+(def base {:a 1})
+(def expanded (assoc base :b "expanded"))
+(def literal {:b "literal" :a 2})
+(def merged (merge base literal))
+(def shrunk (dissoc literal :b))
+(println (str (count [expanded literal merged]) ":" (count [base shrunk])))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if count_generated_anonymous_record_types ocaml_source <> 2 then
+    failwith "map operations must reuse existing result shapes";
+  assert_ocaml_runs "anonymous_map_operations_reuse_result_shapes" "3:2\n"
+    ocaml_source
+
+let test_module_local_anonymous_maps_reuse_equal_shapes () =
+  let source =
+    {|
+(module Maps
+  (def x {:a 1 :b "x"})
+  (def y {:b "y" :a 2})
+  (def values [x y])
+  (defn size [] (count values)))
+(println (Maps/size))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "module_local_anonymous_maps_reuse_equal_shapes" "2\n"
+    ocaml_source
+
+let test_incremental_anonymous_maps_reuse_equal_shapes () =
+  let state, first =
+    Lg.Compiler.compile_chunk Lg.Compiler.empty_state
+      {|(def x {:a 1 :b "x"})|}
+    |> expect_ok
+  in
+  let _state, second =
+    Lg.Compiler.compile_chunk state
+      {|
+(def y {:b "y" :a 2})
+(println (count [x y]))
+|}
+    |> expect_ok
+  in
+  assert_ocaml_runs "incremental_anonymous_maps_reuse_equal_shapes" "2\n"
+    (first ^ "\n" ^ second)
+
+let test_anonymous_map_shapes_keep_field_types_distinct () =
+  Lg.Compiler.compile_string
+    {|
+(def integer-value {:value 1})
+(def string-value {:value "one"})
+(def values [integer-value string-value])
+|}
+  |> expect_error "vector elements must all have the same type"
+
+let test_anonymous_maps_remain_distinct_from_declared_records () =
+  Lg.Compiler.compile_string
+    {|
+(type-record user (name :string))
+(def declared (ocaml-record user (name "Ada")))
+(def anonymous {:name "Ada"})
+(def values [declared anonymous])
+|}
+  |> expect_error "vector elements must all have the same type"
 
 let test_println_outputs_record_values () =
   let source =
@@ -8829,6 +8939,19 @@ let tests =
     ("hash-map constructs structural maps", test_hash_map_constructs_structural_maps);
     ("hash-map rejects duplicate fields", test_hash_map_rejects_duplicate_fields);
     ("hash-map rejects odd key value forms", test_hash_map_rejects_odd_key_value_forms);
+    ("anonymous maps reuse equal shapes", test_anonymous_maps_reuse_equal_shapes);
+    ( "anonymous map shape ignores field order",
+      test_anonymous_map_shape_ignores_field_order );
+    ( "anonymous map operations reuse result shapes",
+      test_anonymous_map_operations_reuse_result_shapes );
+    ( "module local anonymous maps reuse equal shapes",
+      test_module_local_anonymous_maps_reuse_equal_shapes );
+    ( "incremental anonymous maps reuse equal shapes",
+      test_incremental_anonymous_maps_reuse_equal_shapes );
+    ( "anonymous map shapes keep field types distinct",
+      test_anonymous_map_shapes_keep_field_types_distinct );
+    ( "anonymous maps remain distinct from declared records",
+      test_anonymous_maps_remain_distinct_from_declared_records );
     ("println outputs record values", test_println_outputs_record_values);
     ("println rejects unknown symbols", test_println_rejects_unknown_symbols);
     ("print and println match Clojure output", test_print_and_println_match_clojure_output);

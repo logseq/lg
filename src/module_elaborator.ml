@@ -9,6 +9,7 @@ let prepare_fn = Expression_elaborator.prepare_fn
 let prepare_recursive_fn = Expression_elaborator.prepare_recursive_fn
 let fn_code = Expression_elaborator.fn_code
 let binding_of_expr = Expression_support.binding_of_expr
+let allocate_anonymous_record = Expression_support.allocate_anonymous_record
 let row_param_type_names = Expression_support.row_param_type_names
 let row_type_items = Expression_support.row_type_items
 let check_emitted_name_collision = Resolver.check_emitted_name_collision
@@ -384,53 +385,58 @@ let rec compile_module ?location ?signature_name ?signature_location
             (match check_emitted_name_collision env ~source_key:key ~ocaml_name:local_name with
             | Error _ as err -> err
             | Ok () -> (match expr.ty with
-            | TRecord fields -> (
-                let type_name = "t" ^ string_of_int next_type in
-                let set_module_name = "Set_" ^ type_name in
-                let local_record_ty =
-                  Types.named_record ~type_name ~set_module_name fields
+            | TRecord fields ->
+                let identity =
+                  Source_context.find name_form
+                  |> Option.map (fun location ->
+                         (Source_node_id.of_location location, location))
                 in
+                let module_name = Names.module_path_to_ocaml module_path in
+                let allocation =
+                  allocate_anonymous_record ~owner:module_path env next_type fields
+                in
+                let local_record_ty = TNamed_record allocation.record in
                 let public_record_ty =
-                  Types.named_record
-                    ~type_name:(Names.module_path_to_ocaml module_path ^ "." ^ type_name)
-                    ~set_module_name:
-                      (Names.module_path_to_ocaml module_path ^ "." ^ set_module_name)
-                    fields
+                  Types.qualify_module_type module_name local_record_ty
                 in
                 let local_binding = Types.binding local_name local_record_ty in
                 let public_binding =
                   Types.binding (module_binding_ocaml_name module_path name)
                     public_record_ty
                 in
-                let identity =
-                  Source_context.find name_form
-                  |> Option.map (fun location ->
-                         (Source_node_id.of_location location, location))
-                in
+                let env = Env.add key local_binding allocation.env in
                 let item =
-                  match expr.record_values with
-                  | Some values ->
-                      Record_def
-                        { var_name = local_name;
-                          identity;
-                          type_name;
-                          set_module_name;
-                          fields;
-                          values }
-                  | None ->
-                      Projected_record_def
-                        { var_name = local_name;
-                          identity;
-                          type_name;
-                          set_module_name;
-                          fields;
-                          source = expr.semantic_expr }
+                  if allocation.fresh then
+                    match expr.record_values with
+                    | Some values ->
+                        Record_def
+                          { var_name = local_name;
+                            identity;
+                            type_name = allocation.record.type_name;
+                            set_module_name = allocation.record.set_module_name;
+                            fields;
+                            values }
+                    | None ->
+                        Projected_record_def
+                          { var_name = local_name;
+                            identity;
+                            type_name = allocation.record.type_name;
+                            set_module_name = allocation.record.set_module_name;
+                            fields;
+                            source = expr.semantic_expr }
+                  else
+                    let local_expr =
+                      Structural_map.as_named_record allocation.record expr
+                    in
+                    Value_binding
+                      { pattern = Named local_name;
+                        expression = local_expr.semantic_expr }
                 in
                 Ok
-                  ( Env.add key local_binding env,
+                  ( env,
                     public_bindings @ [ (key, public_binding) ],
-                    next_type + 1,
-                    item :: items ))
+                    allocation.next_type,
+                    item :: items )
             | _ ->
                 let item =
                   Value_binding

@@ -12,8 +12,12 @@ let validate_unique_keywords pairs =
 let field_expr target field =
   match target.record_values with
   | Some values -> (
-      match List.assoc_opt field values with
-      | Some expression -> expression
+      match
+        List.find_opt
+          (fun ((candidate : field), _) -> candidate.keyword = field.keyword)
+          values
+      with
+      | Some (_, expression) -> expression
       | None -> Semantic_ir.Field (target.semantic_expr, field.ocaml_name))
   | None -> Semantic_ir.Field (target.semantic_expr, field.ocaml_name)
 
@@ -50,6 +54,9 @@ let named_record_expr record values =
     record_values = Some values;
     return_param_index = None;
   }
+
+let as_named_record record target =
+  named_record_expr record (values_for target record.fields)
 
 let assoc target fields keyword value =
   match find_field keyword fields with

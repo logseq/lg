@@ -155,6 +155,29 @@ let binding_of_expr ?(row_param_types = []) ocaml_name expr =
   Types.binding ~row_param_types ?return_param_index:expr.return_param_index
     ocaml_name expr.ty
 
+type anonymous_record_allocation = {
+  record : named_record;
+  env : Env.t;
+  next_type : int;
+  fresh : bool;
+}
+
+let allocate_anonymous_record ~owner env next_type fields =
+  match Env.find_anonymous_record ~owner fields env with
+  | Some record -> { record; env; next_type; fresh = false }
+  | None ->
+      let type_name = "t" ^ string_of_int next_type in
+      let set_module_name = "Set_" ^ type_name in
+      let record =
+        match Types.named_record ~type_name ~set_module_name fields with
+        | TNamed_record record -> record
+        | _ -> assert false
+      in
+      { record;
+        env = Env.add_anonymous_record ~owner record env;
+        next_type = next_type + 1;
+        fresh = true }
+
 let check_emitted_name_collision = Resolver.check_emitted_name_collision
 
 let lookup_function scope env name =
