@@ -2335,12 +2335,18 @@ let test_recursive_record_array_fields_work_with_array_primitives () =
         (ocaml-array-get keys (dec (ocaml-array-length keys))))
       (last-key
         (ocaml-array-get children (dec (ocaml-array-length children)))))))
-(println (+ (last-key root) 0))
+(defn append-children [left right]
+  (ocaml-array-append
+    (ocaml-field left children)
+    (ocaml-field right children)))
+(println
+  (str (+ (last-key root) 0) ":"
+       (ocaml-array-length (append-children root root))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "recursive_record_array_fields_work_with_array_primitives"
-    "3\n" ocaml_source
+    "3:2\n" ocaml_source
 
 let test_parameterized_variants_instantiate_constructor_payloads () =
   let source =

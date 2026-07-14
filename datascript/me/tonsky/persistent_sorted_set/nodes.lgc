@@ -5,6 +5,7 @@
     [me.tonsky.persistent-sorted-set.search :as search]))
 
 (def max-len 32)
+(def min-len 16)
 
 (type-record tree [value]
   (keys :ocaml/array<param/value>)
@@ -36,6 +37,73 @@
 
 (defn node-len [node]
   (arrays/alength (ocaml-field node keys)))
+
+(defn- node-merge [node next _storage]
+  (make-tree
+    (arrays/aconcat (ocaml-field node keys) (ocaml-field next keys))
+    (arrays/aconcat (ocaml-field node children) (ocaml-field next children))
+    (ocaml-field node _address)
+    true))
+
+(defn- node-merge-n-split [node next]
+  (let [split-keys
+        (ops/merge-n-split (ocaml-field node keys) (ocaml-field next keys))
+        split-children
+        (ops/merge-n-split
+          (ocaml-field node children)
+          (ocaml-field next children))]
+    (arrays/array
+      (make-tree
+        (arrays/aget split-keys 0)
+        (arrays/aget split-children 0)
+        (ocaml-field node _address)
+        true)
+      (make-tree
+        (arrays/aget split-keys 1)
+        (arrays/aget split-children 1)
+        (ocaml-field next _address)
+        true))))
+
+(defn- rotate [node root? left right storage]
+  (cond
+    root?
+    (arrays/array node)
+
+    (> (node-len node) min-len)
+    (if-some [left-node left]
+      (if-some [right-node right]
+        (arrays/array left-node node right-node)
+        (arrays/array left-node node))
+      (if-some [right-node right]
+        (arrays/array node right-node)
+        (arrays/array node)))
+
+    :else
+    (if-some [left-node left]
+      (if (<= (node-len left-node) min-len)
+        (if-some [right-node right]
+          (arrays/array (node-merge left-node node storage) right-node)
+          (arrays/array (node-merge left-node node storage)))
+        (if-some [right-node right]
+          (if (<= (node-len right-node) min-len)
+            (arrays/array left-node (node-merge node right-node storage))
+            (if (< (node-len left-node) (node-len right-node))
+              (let [nodes (node-merge-n-split left-node node)]
+                (arrays/array
+                  (arrays/aget nodes 0)
+                  (arrays/aget nodes 1)
+                  right-node))
+              (let [nodes (node-merge-n-split node right-node)]
+                (arrays/array
+                  left-node
+                  (arrays/aget nodes 0)
+                  (arrays/aget nodes 1)))))
+          (node-merge-n-split left-node node)))
+      (if-some [right-node right]
+        (if (<= (node-len right-node) min-len)
+          (arrays/array (node-merge node right-node storage))
+          (node-merge-n-split node right-node))
+        (arrays/array node)))))
 
 (defn node-lookup [node cmp key _storage]
   (loop [node node]
@@ -108,3 +176,57 @@
                     (arrays/aslice
                       new-children middle (arrays/alength new-children)))))))
           nil)))))
+
+(defn node-disj [node cmp key root? left right storage]
+  (let [keys (ocaml-field node keys)
+        children (ocaml-field node children)]
+    (if (= 0 (arrays/alength children))
+      (let [idx (search/lookup-exact cmp keys key)]
+        (if (= -1 idx)
+          nil
+          (rotate
+            (new-leaf-address
+              (ops/splice keys idx (inc idx) (arrays/make-array 0))
+              (ocaml-field node _address))
+            root?
+            left
+            right
+            storage)))
+      (let [idx (search/lookup-range cmp keys key)]
+        (if (= -1 idx)
+          nil
+          (let [children-length (arrays/alength children)
+                child (arrays/aget children idx)
+                left-child
+                (when (> idx 0)
+                  (arrays/aget children (dec idx)))
+                right-child
+                (when (< (inc idx) children-length)
+                  (arrays/aget children (inc idx)))]
+            (if-some [disjoined
+                      (node-disj
+                        child cmp key false left-child right-child storage)]
+              (let [left-idx (if (> idx 0) (dec idx) idx)
+                    right-idx
+                    (if (< (inc idx) children-length) (+ idx 2) (inc idx))
+                    new-keys
+                    (ops/check-n-splice
+                      cmp
+                      keys
+                      left-idx
+                      right-idx
+                      (arrays/amap
+                        (fn [child] (node-lim-key child))
+                        disjoined))
+                    new-children
+                    (ops/splice children left-idx right-idx disjoined)]
+                (rotate
+                  (new-node-address
+                    new-keys
+                    new-children
+                    (ocaml-field node _address))
+                  root?
+                  left
+                  right
+                  storage))
+              nil)))))))

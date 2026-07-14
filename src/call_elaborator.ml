@@ -469,16 +469,18 @@ let create ~compile_expr =
         match compile_args () with
         | Error _ as err -> err
         | Ok
-            [ { ty = TArray left_ty; semantic_expr = left; _ };
-              { ty = TArray right_ty; semantic_expr = right; _ } ]
-          when Types.assignable ~policy:Host_boundary ~expected:left_ty
-                 ~actual:right_ty
-               || Types.assignable ~policy:Host_boundary ~expected:right_ty
-                    ~actual:left_ty ->
-            let element_ty = if Types.equal left_ty TUnknown then right_ty else left_ty in
-            Ok
-              (typed_ir (TArray element_ty)
-                 (apply "Array.append" [ left; right ]))
+            [ { ty = left_type; semantic_expr = left; _ };
+              { ty = right_type; semantic_expr = right; _ } ]
+          when compatible_array_types left_type right_type -> (
+            match (array_element_type left_type, array_element_type right_type) with
+            | Some left_ty, Some right_ty ->
+                let element_ty =
+                  if Types.equal left_ty TUnknown then right_ty else left_ty
+                in
+                Ok
+                  (typed_ir (TArray element_ty)
+                     (apply "Array.append" [ left; right ]))
+            | _ -> Error.error "ocaml-array-append expects compatible arrays")
         | Ok [ _; _ ] -> Error.error "ocaml-array-append expects compatible arrays"
         | Ok _ -> Error.error "ocaml-array-append expects 2 arguments")
     | "ocaml-array-map" -> (

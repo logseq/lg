@@ -72,3 +72,121 @@
            (= 0 (nodes/node-lookup wide-left int-compare 0 nil)) ":"
            (= 2000 (nodes/node-lookup wide-right int-compare 2000 nil)))))
   (println "wide:false:false:false:false:false"))
+
+(def delete-root (nodes/new-leaf (arrays/into-array (range 0 20))))
+(if-some [deleted-root (nodes/node-disj delete-root int-compare 10 true nil nil nil)]
+  (let [result (arrays/aget deleted-root 0)]
+    (println
+      (str "delete-root:"
+           (= 1 (arrays/alength deleted-root)) ":"
+           (= 19 (nodes/node-len result)) ":"
+           (nil? (nodes/node-lookup result int-compare 10 nil)) ":"
+           (= 10 (nodes/node-lookup delete-root int-compare 10 nil)) ":"
+           (nil? (nodes/node-disj result int-compare 100 true nil nil nil)))))
+  (println "delete-root:false:false:false:false:false"))
+
+(def merge-left (nodes/new-leaf (arrays/into-array (range 0 16))))
+(def merge-node (nodes/new-leaf (arrays/into-array (range 16 33))))
+(if-some [merged
+          (nodes/node-disj
+            merge-node int-compare 16 false (Some merge-left) nil nil)]
+  (let [result (arrays/aget merged 0)]
+    (println
+      (str "delete-merge:"
+           (= 1 (arrays/alength merged)) ":"
+           (= 32 (nodes/node-len result)) ":"
+           (= 0 (nodes/node-lookup result int-compare 0 nil)) ":"
+           (= 32 (nodes/node-lookup result int-compare 32 nil)))))
+  (println "delete-merge:false:false:false:false"))
+
+(def redistribute-left (nodes/new-leaf (arrays/into-array (range 0 17))))
+(def redistribute-node (nodes/new-leaf (arrays/into-array (range 17 34))))
+(if-some [redistributed
+          (nodes/node-disj
+            redistribute-node
+            int-compare
+            17
+            false
+            (Some redistribute-left)
+            nil
+            nil)]
+  (println
+    (str "delete-redistribute:"
+         (= 2 (arrays/alength redistributed)) ":"
+         (= 16 (nodes/node-len (arrays/aget redistributed 0))) ":"
+         (= 17 (nodes/node-len (arrays/aget redistributed 1))) ":"
+         (= 33 (nodes/node-lookup (arrays/aget redistributed 1) int-compare 33 nil))))
+  (println "delete-redistribute:false:false:false:false"))
+
+(def merge-right-node (nodes/new-leaf (arrays/into-array (range 0 17))))
+(def merge-right (nodes/new-leaf (arrays/into-array (range 17 33))))
+(if-some [merged
+          (nodes/node-disj
+            merge-right-node int-compare 16 false nil (Some merge-right) nil)]
+  (let [result (arrays/aget merged 0)]
+    (println
+      (str "delete-merge-right:"
+           (= 1 (arrays/alength merged)) ":"
+           (= 32 (nodes/node-len result)) ":"
+           (= 0 (nodes/node-lookup result int-compare 0 nil)) ":"
+           (= 32 (nodes/node-lookup result int-compare 32 nil)))))
+  (println "delete-merge-right:false:false:false:false"))
+
+(def redistribute-right-node (nodes/new-leaf (arrays/into-array (range 0 17))))
+(def redistribute-right (nodes/new-leaf (arrays/into-array (range 17 34))))
+(if-some [redistributed
+          (nodes/node-disj
+            redistribute-right-node
+            int-compare
+            16
+            false
+            nil
+            (Some redistribute-right)
+            nil)]
+  (println
+    (str "delete-redistribute-right:"
+         (= 2 (arrays/alength redistributed)) ":"
+         (= 16 (nodes/node-len (arrays/aget redistributed 0))) ":"
+         (= 17 (nodes/node-len (arrays/aget redistributed 1))) ":"
+         (= 33 (nodes/node-lookup (arrays/aget redistributed 1) int-compare 33 nil))))
+  (println "delete-redistribute-right:false:false:false:false"))
+
+(def stable-left (nodes/new-leaf (arrays/into-array (range 0 17))))
+(def stable-node (nodes/new-leaf (arrays/into-array (range 17 35))))
+(def stable-right (nodes/new-leaf (arrays/into-array (range 35 52))))
+(if-some [stable
+          (nodes/node-disj
+            stable-node
+            int-compare
+            17
+            false
+            (Some stable-left)
+            (Some stable-right)
+            nil)]
+  (println
+    (str "delete-stable:"
+         (= 3 (arrays/alength stable)) ":"
+         (= 17 (nodes/node-len (arrays/aget stable 0))) ":"
+         (= 17 (nodes/node-len (arrays/aget stable 1))) ":"
+         (= 17 (nodes/node-len (arrays/aget stable 2)))))
+  (println "delete-stable:false:false:false:false"))
+
+(def delete-branch-left (nodes/new-leaf (arrays/into-array (range 0 16))))
+(def delete-branch-right (nodes/new-leaf (arrays/into-array (range 16 32))))
+(def delete-branch
+  (nodes/new-node
+    (arrays/array
+      (nodes/node-lim-key delete-branch-left)
+      (nodes/node-lim-key delete-branch-right))
+    (arrays/array delete-branch-left delete-branch-right)))
+(if-some [deleted-branch
+          (nodes/node-disj delete-branch int-compare 20 true nil nil nil)]
+  (let [result (arrays/aget deleted-branch 0)]
+    (println
+      (str "delete-branch:"
+           (= 1 (arrays/alength deleted-branch)) ":"
+           (= 1 (nodes/node-len result)) ":"
+           (= 0 (nodes/node-lookup result int-compare 0 nil)) ":"
+           (= 31 (nodes/node-lookup result int-compare 31 nil)) ":"
+           (nil? (nodes/node-lookup result int-compare 20 nil)))))
+  (println "delete-branch:false:false:false:false:false"))
