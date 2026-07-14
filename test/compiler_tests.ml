@@ -1544,6 +1544,21 @@ let test_namespace_accepts_host_import_clause () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "namespace_accepts_host_import_clause" "42\n" ocaml_source
 
+let test_transient_collection_operations_preserve_values () =
+  let source =
+    {|
+(def vector-values
+  (persistent! (assoc! (conj! (transient [1]) 2) 0 3)))
+(def set-values (persistent! (conj! (transient (hash-set 1)) 2)))
+(println
+  (str (= vector-values [3 2]) ":"
+       (= set-values #{1 2})))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "transient_collection_operations_preserve_values"
+    "true:true\n" ocaml_source
+
 let test_top_level_definitions_accept_clojure_metadata () =
   let source =
     {|
@@ -9522,6 +9537,8 @@ let tests =
       test_namespace_refer_clojure_exclude_hides_core_binding );
     ( "namespace accepts host import clause",
       test_namespace_accepts_host_import_clause );
+    ( "transient collection operations preserve values",
+      test_transient_collection_operations_preserve_values );
     ( "top-level definitions accept Clojure metadata",
       test_top_level_definitions_accept_clojure_metadata );
     ( "user macros expand syntax quote and unquote",

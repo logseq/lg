@@ -848,6 +848,19 @@ let create ~compile_expr =
     and compile_contains scope env arg_forms =
       let compile_collection_contains target value =
         match (target.ty, value.ty) with
+        | TOcaml_app
+            ("Lg_runtime.Runtime_transient.set", [ element_type ]), _
+          when Types.equal element_type TUnknown
+               || Types.same_shape element_type value.ty ->
+            Ok
+              (typed_ir TBool
+                 (Semantic_ir.Apply
+                    ( Semantic_ir.Ident
+                        "Lg_runtime.Runtime_transient.set_mem",
+                      [ target.semantic_expr; value.semantic_expr ] )))
+        | TOcaml_app ("Lg_runtime.Runtime_transient.set", _), _ ->
+            Error.error
+              "contains? value type must match transient set element type"
         | TSet inner, _ when Types.same_shape inner value.ty ->
             Result.bind (Types.set_module_name inner) (fun set_module ->
                    coerce_set_element inner value
