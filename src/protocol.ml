@@ -70,6 +70,7 @@ let receiver_id = function
   | TList _ -> Some "list"
   | TVector _ -> Some "vector"
   | TSet _ -> Some "set"
+  | TSeq _ -> Some "seq"
   | TArray _ -> Some "array"
   | TRef _ -> Some "ref"
   | TTuple _ -> Some "tuple"

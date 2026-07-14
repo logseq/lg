@@ -58,8 +58,9 @@ first, then OCaml lowering:
 - Core cljml type shapes remain in `Types`; lowered top-level/module items live
   in `Lowered`, so backend item construction is kept separate from source type
   metadata.
-- Parsetree is not used as cljml's full type system, and this direction does
-  not introduce nilable sequences or lazy seqs.
+- Parsetree is not used as cljml's full type system. cljml has a typed,
+  memoized lazy-seq representation, while `nil` remains outside the supported
+  surface.
 
 Sets use persistent OCaml `Set.Make` modules rather than list-backed values.
 The runtime provides comparators for `int`, `string` (including keywords and
@@ -259,7 +260,8 @@ The compiler infers record-like map shapes automatically:
   `unchecked-inc`, and `unchecked-negate-int` compile to OCaml integer
   operations.
 - `=` and `not=` compare same-shaped structural maps field by field.
-- `range` produces an eager typed integer list.
+- `range` produces a typed memoized lazy seq; the zero-argument form is
+  unbounded.
 - `list`, `list*`, `list-of`, `cons`, `second`, `last`, `peek`, `pop`, `map`,
   `filter`, `remove`, `take-while`, `drop-while`, `distinct`, `dedupe`,
   `sort`, `concat`, `vec`, `set`, `repeat`, `repeatedly`, `interpose`,

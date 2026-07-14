@@ -26,6 +26,7 @@ type receiver_id = Receiver_id.t =
   | List_receiver
   | Vector_receiver
   | Set_receiver
+  | Seq_receiver
   | Array_receiver
   | Ref_receiver
   | Tuple_receiver

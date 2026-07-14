@@ -610,80 +610,52 @@ let create ~compile_expr =
       | fn_form :: collection_form :: [] -> (
           match compile_expr scope env collection_form with
           | Error _ as err -> err
-          | Ok collection ->
-              let fn =
-                match collection.ty with
-                | TList inner | TVector inner | TSet inner ->
+          | Ok collection -> (
+              match Core_sequence_transform.collection_to_seq_expr collection with
+              | Error _ -> Error.error "map expects a seqable value"
+              | Ok (inner, sequence) -> (
+                  match
                     compile_function_arg_for_collection scope env inner fn_form
-                | _ -> compile_function_arg scope env fn_form
-              in
-              (match fn with
-              | Error _ as err -> err
-              | Ok fn -> (
-              match (fn.ty, collection.ty) with
-              | TFn ([ param_ty ], ret), TList inner when Types.equal param_ty inner ->
-                  Ok
-                    (typed_ir (TList ret)
-                       (apply "List.map" [ fn.semantic_expr; collection.semantic_expr ]))
-              | TFn _, TList _ -> Error.error "map function argument type does not match list"
-              | _, TList _ -> Error.error "map expects a function"
-              | TFn ([ param_ty ], ret), TVector inner when Types.equal param_ty inner ->
-                  Ok
-                    (typed_ir (TVector ret)
-                       (apply "Rrbvec.map" [ fn.semantic_expr; collection.semantic_expr ]))
-              | TFn _, TVector _ -> Error.error "map function argument type does not match vector"
-              | _, TVector _ -> Error.error "map expects a function"
-              | TFn ([ param_ty ], ret), TSet inner
-                when Types.assignable ~policy:Host_boundary ~expected:param_ty ~actual:inner ->
-                  Result.bind (Types.set_module_name ret) (fun result_module ->
-                      Types.set_module_name inner
-                      |> Result.map (fun source_module ->
-                             let fn_expr = constrain_record_function_argument_expr fn inner in
-                             typed_ir (TSet ret)
-                               (apply (result_module ^ ".of_list")
-                                  [ apply "List.map"
-                                      [ fn_expr;
-                                        apply (source_module ^ ".elements")
-                                          [ collection.semantic_expr ] ] ])))
-              | TFn _, TSet _ -> Error.error "map function argument type does not match set"
-              | _, TSet _ -> Error.error "map expects a function"
-              | _ -> Error.error "map expects a list, vector, or set")))
+                  with
+                  | Error _ as err -> err
+                  | Ok ({ ty = TFn ([ param_ty ], ret); _ } as fn)
+                    when Types.assignable ~policy:Host_boundary ~expected:param_ty
+                           ~actual:inner ->
+                      Ok
+                        (typed_ir (TSeq ret)
+                           (apply "Cljml.Runtime_seq.map"
+                              [ fn.semantic_expr; sequence ]))
+                  | Ok { ty = TFn _; _ } ->
+                      Error.error "map function argument type does not match sequence"
+                  | Ok _ -> Error.error "map expects a function")))
       | _ -> Error.error "map expects function and collection"
     
     and compile_filter scope env arg_forms =
       match arg_forms with
       | fn_form :: collection_form :: [] -> (
-          match (compile_function_arg scope env fn_form, compile_expr scope env collection_form) with
-          | (Error _ as err), _ -> err
-          | _, (Error _ as err) -> err
-          | Ok fn, Ok collection -> (
-              match (fn.ty, collection.ty) with
-              | TFn ([ param_ty ], TBool), TList inner when Types.equal param_ty inner ->
-                  Ok
-                    (typed_ir collection.ty
-                       (apply "List.filter" [ fn.semantic_expr; collection.semantic_expr ]))
-              | TFn _, TList _ -> Error.error "filter expects a predicate matching list elements"
-              | _, TList _ -> Error.error "filter expects a function"
-              | TFn ([ param_ty ], TBool), TVector inner when Types.equal param_ty inner ->
-                  Ok
-                    (typed_ir collection.ty
-                       (apply "Rrbvec.filter" [ fn.semantic_expr; collection.semantic_expr ]))
-              | TFn _, TVector _ -> Error.error "filter expects a predicate matching vector elements"
-              | _, TVector _ -> Error.error "filter expects a function"
-              | TFn ([ param_ty ], TBool), TSet inner
-                when Types.assignable ~policy:Host_boundary ~expected:param_ty ~actual:inner ->
-                  Types.set_module_name inner
-                  |> Result.map (fun set_module ->
-                         let fn_expr = constrain_record_function_argument_expr fn inner in
-                         typed_ir collection.ty
-                           (apply (set_module ^ ".of_list")
-                              [ apply "List.filter"
-                                  [ fn_expr;
-                                    apply (set_module ^ ".elements")
-                                      [ collection.semantic_expr ] ] ]))
-              | TFn _, TSet _ -> Error.error "filter expects a predicate matching set elements"
-              | _, TSet _ -> Error.error "filter expects a function"
-              | _ -> Error.error "filter expects a list, vector, or set"))
+          match compile_expr scope env collection_form with
+          | Error _ as err -> err
+          | Ok collection -> (
+              match Core_sequence_transform.collection_to_seq_expr collection with
+              | Error _ -> Error.error "filter expects a seqable value"
+              | Ok (inner, sequence) -> (
+                  match
+                    compile_function_arg_for_collection scope env inner fn_form
+                  with
+                  | Error _ as err -> err
+                  | Ok fn -> (
+                      match fn.ty with
+                      | TFn ([ param_ty ], TBool)
+                        when Types.assignable ~policy:Host_boundary
+                               ~expected:param_ty ~actual:inner ->
+                          Ok
+                            (typed_ir (TSeq inner)
+                               (apply "Cljml.Runtime_seq.filter"
+                                  [ fn.semantic_expr; sequence ]))
+                      | TFn _ ->
+                          Error.error
+                            "filter expects a predicate matching sequence elements"
+                      | _ -> Error.error "filter expects a function"))))
       | _ -> Error.error "filter expects function and collection"
     
     and compile_reduce scope env arg_forms =

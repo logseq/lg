@@ -1749,7 +1749,8 @@ let rec add_type_references add ty references =
       List.fold_left
         (fun references argument -> add_type_references add argument references)
         references arguments
-  | TArray inner | TRef inner | TList inner | TVector inner | TSet inner ->
+  | TArray inner | TRef inner | TList inner | TVector inner | TSet inner
+  | TSeq inner ->
       add_type_references add inner references
   | TFn (arguments, return_type) ->
       List.fold_left

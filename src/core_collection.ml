@@ -23,6 +23,10 @@ let count collection =
   | TRecord fields | TNamed_record { fields; _ } ->
       Ok (typed_ir TInt (Semantic_ir.Int (List.length fields)))
   | TString -> Ok (typed_ir TInt (apply "String.length" [ collection.semantic_expr ]))
+  | TSeq _ ->
+      Ok
+        (typed_ir TInt
+           (apply "Seq.length" [ collection.semantic_expr ]))
   | _ -> Error.error "count expects a collection or string"
 
 let first collection =
@@ -33,6 +37,10 @@ let first collection =
       |> Result.map (fun set_module ->
              typed_ir inner (apply (set_module ^ ".min_elt") [ collection.semantic_expr ]))
   | TVector inner -> Ok (typed_ir inner (apply "Rrbvec.nth" [ collection.semantic_expr; Semantic_ir.Int 0 ]))
+  | TSeq inner ->
+      Ok
+        (typed_ir inner
+           (apply "Cljml.Runtime_seq.first" [ collection.semantic_expr ]))
   | _ -> Error.error "first expects a list, vector, or set"
 
 let second collection =
@@ -45,6 +53,10 @@ let second collection =
                (apply "List.nth"
                   [ apply (set_module ^ ".elements") [ collection.semantic_expr ]; Semantic_ir.Int 1 ]))
   | TVector inner -> Ok (typed_ir inner (apply "Rrbvec.nth" [ collection.semantic_expr; Semantic_ir.Int 1 ]))
+  | TSeq inner ->
+      Ok
+        (typed_ir inner
+           (apply "Cljml.Runtime_seq.second" [ collection.semantic_expr ]))
   | _ -> Error.error "second expects a list, vector, or set"
 
 let last collection =
@@ -57,6 +69,10 @@ let last collection =
              typed_ir inner (apply (set_module ^ ".max_elt") [ collection.semantic_expr ]))
   | TVector inner ->
       Ok (typed_ir inner (apply "Option.get" [ apply "Rrbvec.peek_back" [ collection.semantic_expr ] ]))
+  | TSeq inner ->
+      Ok
+        (typed_ir inner
+           (apply "Cljml.Runtime_seq.last" [ collection.semantic_expr ]))
   | _ -> Error.error "last expects a list, vector, or set"
 
 let peek collection =
@@ -164,21 +180,16 @@ let drop_list_expr count source =
 let take_drop name count collection =
   if not (Types.equal count.ty TInt) then Error.error (name ^ " count must be int")
   else
-    match collection.ty with
-    | TList _ ->
-        let expr =
-          if name = "take" then take_list_expr count.semantic_expr collection.semantic_expr
-          else drop_list_expr count.semantic_expr collection.semantic_expr
+    match Core_sequence_transform.collection_to_seq_expr collection with
+    | Error _ -> Error.error (name ^ " expects a seqable value")
+    | Ok (inner, sequence) ->
+        let runtime_name =
+          if name = "take" then "Cljml.Runtime_seq.take"
+          else "Cljml.Runtime_seq.drop"
         in
-        Ok (typed_ir collection.ty expr)
-    | TVector _ ->
-        let list_expr = apply "Rrbvec.to_list" [ collection.semantic_expr ] in
-        let expr =
-          if name = "take" then take_list_expr count.semantic_expr list_expr
-          else drop_list_expr count.semantic_expr list_expr
-        in
-        Ok (typed_ir collection.ty (apply "Rrbvec.of_list" [ expr ]))
-    | _ -> Error.error (name ^ " expects a list or vector")
+        Ok
+          (typed_ir (TSeq inner)
+             (apply runtime_name [ count.semantic_expr; sequence ]))
 
 let reverse collection =
   match collection.ty with

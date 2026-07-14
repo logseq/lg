@@ -10,6 +10,7 @@ type t =
   | List_receiver
   | Vector_receiver
   | Set_receiver
+  | Seq_receiver
   | Array_receiver
   | Ref_receiver
   | Tuple_receiver
@@ -28,6 +29,7 @@ let of_type = function
   | TList _ -> Some List_receiver
   | TVector _ -> Some Vector_receiver
   | TSet _ -> Some Set_receiver
+  | TSeq _ -> Some Seq_receiver
   | TArray _ -> Some Array_receiver
   | TRef _ -> Some Ref_receiver
   | TTuple _ -> Some Tuple_receiver

@@ -17,6 +17,7 @@ type ty =
   | TList of ty
   | TVector of ty
   | TSet of ty
+  | TSeq of ty
   | TFn of ty list * ty
   | TRecord of field list
   | TNamed_record of named_record

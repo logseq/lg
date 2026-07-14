@@ -47,6 +47,7 @@ let rec core_type = function
   | Types.TArray inner -> type_constructor "array" [ core_type inner ]
   | Types.TRef inner -> type_constructor "ref" [ core_type inner ]
   | Types.TList inner -> type_constructor "list" [ core_type inner ]
+  | Types.TSeq inner -> type_constructor "Seq.t" [ core_type inner ]
   | Types.TSet inner -> (
       match Types.set_module_name inner with
       | Ok set_module ->

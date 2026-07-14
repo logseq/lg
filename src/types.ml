@@ -63,6 +63,7 @@ let rec equal left right =
   | TList left, TList right -> equal left right
   | TVector left, TVector right -> equal left right
   | TSet left, TSet right -> equal left right
+  | TSeq left, TSeq right -> equal left right
   | TFn (left_args, left_ret), TFn (right_args, right_ret) ->
       List.length left_args = List.length right_args
       && List.for_all2 equal left_args right_args
@@ -160,6 +161,7 @@ let rec source_name = function
   | TList ty -> "list<" ^ source_name ty ^ ">"
   | TVector ty -> "vector<" ^ source_name ty ^ ">"
   | TSet ty -> "set<" ^ source_name ty ^ ">"
+  | TSeq ty -> "seq<" ^ source_name ty ^ ">"
   | TFn (args, ret) ->
       "fn<(" ^ (args |> List.map source_name |> String.concat ", ") ^ ") -> "
       ^ source_name ret ^ ">"
@@ -191,6 +193,7 @@ let rec ocaml_name = function
       match set_module_name inner with
       | Ok set_module -> set_module ^ ".t"
       | Error _ -> "unsupported_set<" ^ ocaml_name inner ^ ">")
+  | TSeq inner -> ocaml_name inner ^ " Seq.t"
   | TFn (args, ret) ->
       (args |> List.map ocaml_name |> String.concat " -> ") ^ " -> " ^ ocaml_name ret
   | TRecord _ -> "record"
@@ -245,6 +248,7 @@ let rec qualify_module_type module_path ty =
   | TList inner -> TList (qualify_module_type module_path inner)
   | TVector inner -> TVector (qualify_module_type module_path inner)
   | TSet inner -> TSet (qualify_module_type module_path inner)
+  | TSeq inner -> TSeq (qualify_module_type module_path inner)
   | TFn (args, ret) ->
       TFn
         ( List.map (qualify_module_type module_path) args,
@@ -297,6 +301,7 @@ let rec remap_module_type ~from_path ~to_path ty =
   | TList inner -> TList (remap_module_type ~from_path ~to_path inner)
   | TVector inner -> TVector (remap_module_type ~from_path ~to_path inner)
   | TSet inner -> TSet (remap_module_type ~from_path ~to_path inner)
+  | TSeq inner -> TSeq (remap_module_type ~from_path ~to_path inner)
   | TFn (args, ret) ->
       TFn
         ( List.map (remap_module_type ~from_path ~to_path) args,
@@ -352,7 +357,8 @@ let rec infer_type_substitutions substitutions ~template ~actual =
   | (TRef template, TRef actual)
   | (TList template, TList actual)
   | (TVector template, TVector actual)
-  | (TSet template, TSet actual) ->
+  | (TSet template, TSet actual)
+  | (TSeq template, TSeq actual) ->
       infer_type_substitutions substitutions ~template ~actual
   | TFn (template_args, template_ret), TFn (actual_args, actual_ret)
     when List.length template_args = List.length actual_args ->
@@ -380,6 +386,7 @@ let rec substitute_type_variables substitutions = function
   | TList inner -> TList (substitute_type_variables substitutions inner)
   | TVector inner -> TVector (substitute_type_variables substitutions inner)
   | TSet inner -> TSet (substitute_type_variables substitutions inner)
+  | TSeq inner -> TSeq (substitute_type_variables substitutions inner)
   | TFn (args, ret) ->
       TFn
         ( List.map (substitute_type_variables substitutions) args,

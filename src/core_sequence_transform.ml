@@ -12,6 +12,38 @@ let collection_to_list_expr collection =
              (inner, apply (set_module ^ ".elements") [ collection.semantic_expr ]))
   | _ -> Error.error "collection value is not sequenceable"
 
+let collection_to_seq_expr collection =
+  match collection.ty with
+  | TSeq inner -> Ok (inner, collection.semantic_expr)
+  | TList inner ->
+      Ok
+        (inner, apply "Cljml.Runtime_seq.of_list" [ collection.semantic_expr ])
+  | TVector inner ->
+      Ok
+        (inner, apply "Cljml.Runtime_seq.of_vector" [ collection.semantic_expr ])
+  | TSet inner ->
+      Types.set_module_name inner
+      |> Result.map (fun set_module ->
+             ( inner,
+               apply "Cljml.Runtime_seq.of_list"
+                 [ apply (set_module ^ ".elements") [ collection.semantic_expr ] ] ))
+  | TArray inner ->
+      Ok
+        (inner, apply "Cljml.Runtime_seq.of_array" [ collection.semantic_expr ])
+  | TOcaml_app ("list", [ inner ]) ->
+      Ok
+        (inner, apply "Cljml.Runtime_seq.of_list" [ collection.semantic_expr ])
+  | TOcaml_app ("array", [ inner ]) ->
+      Ok
+        (inner, apply "Cljml.Runtime_seq.of_array" [ collection.semantic_expr ])
+  | TOcaml_app (("Seq.t" | "Seq"), [ inner ]) ->
+      Ok
+        (inner, apply "Cljml.Runtime_seq.memoize" [ collection.semantic_expr ])
+  | TString ->
+      Ok
+        (TChar, apply "Cljml.Runtime_seq.of_string" [ collection.semantic_expr ])
+  | _ -> Error.error "collection value is not sequenceable"
+
 let collection_from_list_expr collection_ty list_expr =
   match collection_ty with
   | TList _ -> list_expr
@@ -221,24 +253,17 @@ let set collection =
 
 let repeat count value =
   if Types.equal count.ty TInt then
-    let repeat_body =
-      Semantic_ir.If
-        ( Semantic_ir.Infix ("<=", Semantic_ir.Ident "n", Semantic_ir.Int 0),
-          Semantic_ir.Ident "acc",
-          apply "repeat"
-            [ Semantic_ir.Cons (Semantic_ir.Ident "value", Semantic_ir.Ident "acc");
-              Semantic_ir.Infix ("-", Semantic_ir.Ident "n", Semantic_ir.Int 1) ] )
-    in
     Ok
-      (typed_ir (TList value.ty)
-         (Semantic_ir.Let
-            ( [ (Semantic_ir.PVar "value", value.semantic_expr) ],
-              Semantic_ir.LetRec
-                ( "repeat",
-                  [ Semantic_ir.PVar "acc"; Semantic_ir.PVar "n" ],
-                  repeat_body,
-                  [ Semantic_ir.List []; count.semantic_expr ] ) )))
+      (typed_ir (TSeq value.ty)
+         (apply "Cljml.Runtime_seq.take"
+            [ count.semantic_expr;
+              apply "Cljml.Runtime_seq.repeat" [ value.semantic_expr ] ]))
   else Error.error "repeat count must be int"
+
+let repeat_forever value =
+  Ok
+    (typed_ir (TSeq value.ty)
+       (apply "Cljml.Runtime_seq.repeat" [ value.semantic_expr ]))
 
 let interpose separator collection =
   match collection_to_list_expr collection with
@@ -582,6 +607,7 @@ let compile name args =
   | "vec", [ collection ] -> vec collection
   | "set", [ collection ] -> set collection
   | "repeat", [ count; value ] -> repeat count value
+  | "repeat", [ value ] -> repeat_forever value
   | "interpose", [ separator; collection ] -> interpose separator collection
   | "interleave", collections -> interleave collections
   | ("partition" | "partition-all"), [ size; collection ] ->
@@ -601,7 +627,7 @@ let compile name args =
   | ("distinct" | "dedupe" | "sort" | "vec" | "set" | "butlast" | "dorun"
     | "doall"),
     _ -> Error.error (name ^ " expects 1 arguments")
-  | "repeat", _ -> Error.error "repeat expects count and value"
+  | "repeat", _ -> Error.error "repeat expects value, or count and value"
   | "interpose", _ -> Error.error "interpose expects separator and collection"
   | ("partition" | "partition-all"), _ ->
       Error.error (name ^ " expects size and collection")

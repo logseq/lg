@@ -324,10 +324,12 @@ Lists compile to OCaml lists and support `list`, `list*`, `list-of`, `cons`, `co
 
 Vectors support `first`, `second`, `last`, `peek`, `pop`, `rest`, `next`, `nthnext`, `nthrest`, `ffirst`, `fnext`, `nfirst`, `nnext`, `rseq`, `nth`, `get`, `assoc`, `update`, `contains?`, `subvec`, and the current eager sequence operations.
 
-`rest` preserves the concrete list, vector, or set type and returns a same-typed
-empty collection at the end. `next` has the same empty-safe behavior for lists
-and vectors. This differs from Clojure's seq return types because cljml does not
-have a nilable or lazy sequence result type.
+`map`, `filter`, `take`, and `drop` return typed memoized lazy seqs. Already
+realized nodes are cached, so repeated traversal does not rerun producer side
+effects. Lists, vectors, sets, arrays, strings, and host `Seq.t`, list, and array
+values are built-in seqable inputs. `rest` and `next` still preserve their
+legacy concrete collection representation pending migration to the same seq
+abstraction. `nil` remains unsupported.
 
 `first`, `second`, and `last` accept typed lists, vectors, and sets. Set
 iteration follows the canonical order from the underlying OCaml `Set.Make`
@@ -342,24 +344,26 @@ Three-argument `nth` returns a typed default for out-of-range list and vector in
 `into` transfers elements between typed list, vector, and set collections when
 the element types match.
 
-`take` and `drop` return same-typed list or vector slices.
+`take` and `drop` return lazy seqs and accept every built-in seqable type.
 
 `reverse` returns a same-typed reversed list or vector.
 
 `every?`, `not-any?`, `not-every?`, and the current static subset of `some`
 return typed booleans for list, vector, and set predicates.
 
-Sequence operations are eager and return concrete typed collections. For example
-`mapv` and `filterv` return persistent vectors, `concat`, `sort`,
+The sequence migration is incremental. `map`, `filter`, `take`, `drop`,
+`range`, and `repeat` are lazy. `mapv` and `filterv` remain explicit eager
+persistent-vector materializers. `concat`, `sort`,
 `interpose`, `interleave`, `partition`, `partition-all`, `reductions`, and
 `map-indexed` return OCaml lists, `split-at` and `split-with` return persistent
 vectors of the input collection representation, and same-shape operations such
 as `remove`, `take-while`, `drop-while`, `distinct`, `dedupe`, `butlast`,
-`take-last`, `drop-last`, `take-nth`, `nthnext`, `nthrest`, and `rseq` preserve
-the input collection representation where practical. `dorun` and `doall` are
-eager because cljml does not yet have lazy seqs.
+`take-last`, `drop-last`, `take-nth`, `nthnext`, `nthrest`, and `rseq` currently
+preserve the input collection representation where practical. `dorun` and
+`doall` are explicit realization boundaries.
 
-`range` returns an eager typed integer list.
+`range` returns a typed memoized lazy integer seq. `(range)` is unbounded;
+bounded one-, two-, and three-argument forms remain lazy.
 
 `interleave` accepts two or more typed list, vector, or set inputs with the same
 element type. It eagerly returns an OCaml list and stops at the shortest input.
@@ -401,7 +405,8 @@ representation as `hash-map`.
 
 Structural map helpers include `merge`, `update`, `select-keys`, `keys`, and `vals`. Overlapping fields in `merge` and updated fields in `update` must keep their existing static type, and `vals` requires all selected map values to have the same type.
 
-Sequence APIs are eager.
+Lazy sequence APIs cache realized nodes; explicit collection constructors and
+`mapv`/`filterv` materialize results.
 
 ## Host interop
 

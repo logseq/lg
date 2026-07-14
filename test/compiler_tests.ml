@@ -3615,6 +3615,82 @@ let test_batched_sequence_functions_work () =
     "[1 3]:[1 2 3]:[3 4]:[1 2 3]:(1 2 3):(1 2 3 4):[1 2]:#{1 2}:(\"x\" \"x\" \"x\"):(7 7 7):(1 0 2 0 3):(1 3 2 4):2:1:3:3:1:(0 1 3 6):[1 2 1]:(10 21):[1 3]:[2 3]:31\n"
     ocaml_source
 
+let test_lazy_map_defers_incrementally_and_memoizes_realized_values () =
+  let source =
+    {|
+(def calls (ocaml-ref 0))
+(def mapped
+  (map
+    (fn [x]
+      (do
+        (ocaml-reset! calls (+ (ocaml-deref calls) 1))
+        (+ x 1)))
+    [1 2 3]))
+(println (ocaml-deref calls))
+(println (first mapped))
+(println (first mapped))
+(println (ocaml-deref calls))
+(println (second mapped))
+(println (ocaml-deref calls))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "lazy_map_defers_incrementally_and_memoizes_realized_values"
+    "0\n2\n2\n1\n3\n2\n" ocaml_source
+
+let test_lazy_filter_realizes_only_enough_source_values () =
+  let source =
+    {|
+(def calls (ocaml-ref 0))
+(def evens
+  (filter
+    (fn [x]
+      (do
+        (ocaml-reset! calls (+ (ocaml-deref calls) 1))
+        (even? x)))
+    [1 2 3 4]))
+(println (ocaml-deref calls))
+(println (first evens))
+(println (ocaml-deref calls))
+(println (first evens))
+(println (ocaml-deref calls))
+(println (second evens))
+(println (ocaml-deref calls))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "lazy_filter_realizes_only_enough_source_values"
+    "0\n2\n2\n2\n2\n4\n4\n" ocaml_source
+
+let test_lazy_take_bounds_infinite_range_and_repeat () =
+  let source =
+    {|
+(println (pr-str (take 5 (range))))
+(println (pr-str (take 3 (repeat "x"))))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "lazy_take_bounds_infinite_range_and_repeat"
+    "(0 1 2 3 4)\n(\"x\" \"x\" \"x\")\n" ocaml_source
+
+let test_lazy_map_accepts_all_builtin_seqable_types () =
+  let source =
+    {|
+(def host-seq
+  (ocaml-call :ocaml/Seq.t<int> List.to_seq (list 4 5)))
+(println (pr-str (map inc (list 1 2))))
+(println (pr-str (map inc [1 2])))
+(println (pr-str (map inc (hash-set 2 1))))
+(println (pr-str (map inc (ocaml-array 1 2))))
+(println (pr-str (map (fn [ch] (str ch)) "ab")))
+(println (pr-str (map inc host-seq)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "lazy_map_accepts_all_builtin_seqable_types"
+    "(2 3)\n(2 3)\n(2 3)\n(2 3)\n(\"a\" \"b\")\n(5 6)\n"
+    ocaml_source
+
 let test_batched_sequence_functions_reject_type_mismatch () =
   Cljml.Compiler.compile_string {|(def x (concat [1] ["two"]))|}
   |> expect_error "concat element types must match"
@@ -3978,8 +4054,8 @@ let test_sets_support_named_records () =
 (def ages (map (fn [user] (:age user)) updated))
 (def trimmed (disj updated ada-copy))
 (def rebuilt (set [ada-copy]))
-(println (str (count matching) ":" (contains? matching ada) ":" all-ada? ":"
-              (count ages) ":" (contains? ages 36) ":" (count trimmed) ":"
+(println (str (count matching) ":" (= (first matching) ada) ":" all-ada? ":"
+              (count ages) ":" (= (first ages) 36) ":" (count trimmed) ":"
               (contains? rebuilt ada)))
 |}
   in
@@ -4074,15 +4150,15 @@ let test_set_map_and_filter_core_api () =
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "set_map_and_filter_core_api" "#{2 3 4}:#{3 4}\n" ocaml_source
+  assert_ocaml_runs "set_map_and_filter_core_api" "(2 3 4):(3 4)\n" ocaml_source
 
 let test_set_map_rejects_function_type_mismatch () =
   Cljml.Compiler.compile_string {|(def xs (map (fn [^:string x] x) (hash-set 1 2)))|}
-  |> expect_error "map function argument type does not match set"
+  |> expect_error "map function argument type does not match sequence"
 
 let test_set_filter_rejects_non_bool_predicates () =
   Cljml.Compiler.compile_string {|(def xs (filter (fn [x] (+ x 1)) (hash-set 1 2)))|}
-  |> expect_error "filter expects a predicate matching set elements"
+  |> expect_error "filter expects a predicate matching sequence elements"
 
 let test_list_core_api () =
   let source =
@@ -4139,16 +4215,17 @@ let test_take_and_drop_core_api () =
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "take_and_drop_core_api" "[1 2]:[3 4]:(1 2 3 4):()\n"
+  assert_ocaml_runs "take_and_drop_core_api" "(1 2):(3 4):(1 2 3 4):()\n"
     ocaml_source
 
 let test_take_and_drop_reject_non_int_counts () =
   Cljml.Compiler.compile_string {|(def x (take "2" [1 2]))|}
   |> expect_error "take count must be int"
 
-let test_take_and_drop_reject_unsupported_collections () =
-  Cljml.Compiler.compile_string {|(def x (drop 1 (hash-set 1)))|}
-  |> expect_error "drop expects a list or vector"
+let test_take_and_drop_support_sets () =
+  let source = {|(println (pr-str (drop 1 (hash-set 1 2))))|} in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "take_and_drop_support_sets" "(2)\n" ocaml_source
 
 let test_reverse_core_api () =
   let source =
@@ -8235,6 +8312,14 @@ let tests =
     ( "batched identifier/constructor core functions reject bad list* tail",
       test_batched_identifier_and_constructor_core_functions_reject_bad_list_star_tail );
     ("batched sequence functions work", test_batched_sequence_functions_work);
+    ( "lazy map defers incrementally and memoizes realized values",
+      test_lazy_map_defers_incrementally_and_memoizes_realized_values );
+    ( "lazy filter realizes only enough source values",
+      test_lazy_filter_realizes_only_enough_source_values );
+    ( "lazy take bounds infinite range and repeat",
+      test_lazy_take_bounds_infinite_range_and_repeat );
+    ( "lazy map accepts all builtin seqable types",
+      test_lazy_map_accepts_all_builtin_seqable_types );
     ( "batched sequence functions reject type mismatch",
       test_batched_sequence_functions_reject_type_mismatch );
     ( "batched sequence functions reject bad functions",
@@ -8323,8 +8408,8 @@ let tests =
     ("range rejects non-int arguments", test_range_rejects_non_int_arguments);
     ("take and drop core api works", test_take_and_drop_core_api);
     ("take and drop reject non-int counts", test_take_and_drop_reject_non_int_counts);
-    ( "take and drop reject unsupported collections",
-      test_take_and_drop_reject_unsupported_collections );
+    ( "take and drop support sets",
+      test_take_and_drop_support_sets );
     ("reverse core api works", test_reverse_core_api);
     ("reverse rejects unsupported collections", test_reverse_rejects_unsupported_collections);
     ("sequence boolean predicates work", test_sequence_boolean_predicates);

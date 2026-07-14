@@ -102,42 +102,24 @@ let create ~compile_expr =
     
     and compile_range scope env arg_forms =
       let literal_zero = function FInt 0 -> true | _ -> false in
-      let range_expr start stop step =
-        let current = Semantic_ir.Ident "current" in
-        let stop_ident = Semantic_ir.Ident "stop" in
-        let step_ident = Semantic_ir.Ident "step" in
-        let done_expr =
-          Semantic_ir.If
-            ( Semantic_ir.Infix (">", step_ident, Semantic_ir.Int 0),
-              Semantic_ir.Infix (">=", current, stop_ident),
-              Semantic_ir.Infix ("<=", current, stop_ident) )
-        in
-        let body =
-          Semantic_ir.If
-            ( Semantic_ir.Infix ("=", step_ident, Semantic_ir.Int 0),
-              apply "invalid_arg" [ Semantic_ir.String "range step cannot be 0" ],
-              Semantic_ir.If
-                ( done_expr,
-                  apply "List.rev" [ Semantic_ir.Ident "acc" ],
-                  apply "range"
-                    [ Semantic_ir.Cons (current, Semantic_ir.Ident "acc");
-                      Semantic_ir.Infix ("+", current, step_ident);
-                      stop_ident;
-                      step_ident ] ) )
-        in
-        Semantic_ir.LetRec
-          ( "range",
-            [ Semantic_ir.PVar "acc"; Semantic_ir.PVar "current"; Semantic_ir.PVar "stop"; Semantic_ir.PVar "step" ],
-            body,
-            [ Semantic_ir.List []; start; stop; step ] )
+      let finite_range start stop step =
+        typed_ir (TSeq TInt)
+          (apply "Cljml.Runtime_seq.range_until" [ start; stop; step ])
       in
       match arg_forms with
+      | [] ->
+          Ok
+            (typed_ir (TSeq TInt)
+               (apply "Cljml.Runtime_seq.range"
+                  [ Semantic_ir.Int 0; Semantic_ir.Int 1 ]))
       | [ end_form ] -> (
           match compile_expr scope env end_form with
           | Error _ as err -> err
           | Ok end_expr ->
               if Types.equal end_expr.ty TInt then
-                Ok (typed_ir (TList TInt) (range_expr (Semantic_ir.Int 0) end_expr.semantic_expr (Semantic_ir.Int 1)))
+                Ok
+                  (finite_range (Semantic_ir.Int 0) end_expr.semantic_expr
+                     (Semantic_ir.Int 1))
               else Error.error "range arguments must be int")
       | [ start_form; end_form ] -> (
           match (compile_expr scope env start_form, compile_expr scope env end_form) with
@@ -145,7 +127,9 @@ let create ~compile_expr =
           | _, (Error _ as err) -> err
           | Ok start_expr, Ok end_expr ->
               if Types.equal start_expr.ty TInt && Types.equal end_expr.ty TInt then
-                Ok (typed_ir (TList TInt) (range_expr start_expr.semantic_expr end_expr.semantic_expr (Semantic_ir.Int 1)))
+                Ok
+                  (finite_range start_expr.semantic_expr end_expr.semantic_expr
+                     (Semantic_ir.Int 1))
               else Error.error "range arguments must be int")
       | [ start_form; end_form; step_form ] ->
           if literal_zero step_form then Error.error "range step cannot be 0"
@@ -164,10 +148,10 @@ let create ~compile_expr =
                   && Types.equal step_expr.ty TInt
                 then
                   Ok
-                    (typed_ir (TList TInt)
-                       (range_expr start_expr.semantic_expr end_expr.semantic_expr step_expr.semantic_expr))
+                    (finite_range start_expr.semantic_expr end_expr.semantic_expr
+                       step_expr.semantic_expr)
                 else Error.error "range arguments must be int")
-      | _ -> Error.error "range expects end, start/end, or start/end/step"
+      | _ -> Error.error "range expects zero to three arguments"
     
     and compile_list_of arg_forms =
       match arg_forms with
@@ -286,7 +270,13 @@ let create ~compile_expr =
                    (Semantic_ir.Apply
                       (Semantic_ir.Ident "Rrbvec.nth", [ collection.semantic_expr; index.semantic_expr ])))
           | TVector _, _ -> Error.error "nth index must be int"
-          | _ -> Error.error "nth expects a list or vector")
+          | TSeq inner, TInt ->
+              Ok
+                (typed_ir inner
+                   (apply "Cljml.Runtime_seq.nth"
+                      [ index.semantic_expr; collection.semantic_expr ]))
+          | TSeq _, _ -> Error.error "nth index must be int"
+          | _ -> Error.error "nth expects a list, vector, or seq")
       | Ok [ collection; index; default ] -> (
           match (collection.ty, index.ty) with
           | TList inner, TInt when Types.equal inner default.ty ->
@@ -312,7 +302,19 @@ let create ~compile_expr =
                           (Semantic_ir.PConstructor ("None", None), default.semantic_expr) ] )))
           | TVector _, TInt -> Error.error "nth default must match collection element type"
           | TVector _, _ -> Error.error "nth index must be int"
-          | _ -> Error.error "nth expects a list or vector")
+          | TSeq inner, TInt when Types.equal inner default.ty ->
+              Ok
+                (typed_ir inner
+                   (Semantic_ir.Match
+                      ( apply "Cljml.Runtime_seq.nth_opt"
+                          [ index.semantic_expr; collection.semantic_expr ],
+                        [ ( Semantic_ir.PConstructor
+                              ("Some", Some (Semantic_ir.PVar "value")),
+                            Semantic_ir.Ident "value" );
+                          (Semantic_ir.PConstructor ("None", None), default.semantic_expr) ] )))
+          | TSeq _, TInt -> Error.error "nth default must match collection element type"
+          | TSeq _, _ -> Error.error "nth index must be int"
+          | _ -> Error.error "nth expects a list, vector, or seq")
       | Ok _ -> Error.error "nth expects 2 or 3 arguments"
     
     and compile_get scope env arg_forms =

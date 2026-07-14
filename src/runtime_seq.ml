@@ -1,0 +1,53 @@
+type 'a t = 'a Seq.t
+
+let memoize sequence = Seq.memoize sequence
+let of_list values = values |> List.to_seq |> memoize
+let of_vector values = values |> Rrbvec.to_list |> of_list
+let of_array values = values |> Array.to_seq |> memoize
+let of_string value = value |> String.to_seq |> memoize
+let to_list sequence = List.of_seq sequence
+
+let map fn sequence = sequence |> Seq.map fn |> memoize
+let filter predicate sequence = sequence |> Seq.filter predicate |> memoize
+let take count sequence = sequence |> Seq.take count |> memoize
+let drop count sequence = sequence |> Seq.drop count |> memoize
+let repeat value = Seq.repeat value |> memoize
+
+let range start step =
+  let rec next value () = Seq.Cons (value, next (value + step)) in
+  next start |> memoize
+
+let range_until start stop step =
+  if step = 0 then invalid_arg "range step cannot be 0"
+  else
+    let rec next value () =
+      if (step > 0 && value >= stop) || (step < 0 && value <= stop) then Seq.Nil
+      else Seq.Cons (value, next (value + step))
+    in
+    next start |> memoize
+
+let first sequence =
+  match sequence () with
+  | Seq.Nil -> invalid_arg "first of empty sequence"
+  | Seq.Cons (value, _) -> value
+
+let second sequence =
+  match sequence () with
+  | Seq.Nil -> invalid_arg "second of empty sequence"
+  | Seq.Cons (_, rest) -> first rest
+
+let nth index sequence =
+  if index < 0 then invalid_arg "negative sequence index"
+  else first (Seq.drop index sequence)
+
+let nth_opt index sequence =
+  if index < 0 then None
+  else
+    match Seq.drop index sequence () with
+    | Seq.Nil -> None
+    | Seq.Cons (value, _) -> Some value
+
+let last sequence =
+  match sequence () with
+  | Seq.Nil -> invalid_arg "last of empty sequence"
+  | Seq.Cons (value, rest) -> Seq.fold_left (fun _ value -> value) value rest
