@@ -855,6 +855,22 @@ let create ~compile_expr =
                else_form ])
     | FList (FSymbol "do" :: body_forms) ->
         compile_loop_tail_body scope env loop_name param_tys body_forms
+    | FList (FSymbol "let" :: bindings :: body_forms) ->
+        compile_let_tail scope env loop_name param_tys bindings body_forms
+    | FList (FSymbol "cond" :: clauses) ->
+        let rec expand = function
+          | [] -> Ok (FSymbol "nil")
+          | [ _ ] -> Error.error "cond requires test/expression pairs"
+          | FKeyword ":else" :: else_form :: [] -> Ok else_form
+          | FKeyword ":else" :: _ -> Error.error "cond :else must be last"
+          | test_form :: value_form :: rest ->
+              Result.map
+                (fun else_form ->
+                  FList [ FSymbol "if"; test_form; value_form; else_form ])
+                (expand rest)
+        in
+        Result.bind (expand clauses) (fun form ->
+            compile_loop_tail scope env loop_name param_tys form)
     | form -> compile_expr scope env form
   
   and compile_loop_tail_body scope env loop_name param_tys forms =
@@ -932,7 +948,19 @@ let create ~compile_expr =
                             List.map (fun value -> value.semantic_expr) values )))))
     | _ -> Error.error "loop bindings must be a vector"
   
+  and compile_let_tail scope env loop_name param_tys bindings body_forms =
+    compile_let_with_body
+      (fun scope env forms ->
+        compile_loop_tail_body scope env loop_name param_tys forms)
+      scope env bindings body_forms
+
   and compile_let scope env bindings body_forms =
+    compile_let_with_body
+      (fun scope env forms ->
+        compile_body scope env "let body requires at least one form" forms)
+      scope env bindings body_forms
+
+  and compile_let_with_body compile_let_body scope env bindings body_forms =
     match bindings with
     | FVector forms ->
         if List.length forms mod 2 <> 0 then
@@ -940,10 +968,7 @@ let create ~compile_expr =
         else
           let rec bind env ir_bindings = function
             | [] -> (
-                match
-                  compile_body scope env "let body requires at least one form"
-                    body_forms
-                with
+                match compile_let_body scope env body_forms with
                 | Error _ as err -> err
                 | Ok body ->
                     Ok

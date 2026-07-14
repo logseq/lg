@@ -12,6 +12,20 @@ type t = {
     string -> Env.t -> Ast.form list -> (typed_expr list, Error.t) result;
 }
 
+let array_element_type = function
+  | TArray element_ty -> Some element_ty
+  | TUnknown -> Some TUnknown
+  | _ -> None
+
+let compatible_array_types left right =
+  match (array_element_type left, array_element_type right) with
+  | Some left, Some right ->
+      Types.equal left TUnknown
+      || Types.equal right TUnknown
+      || Types.assignable ~policy:Host_boundary ~expected:left ~actual:right
+      || Types.assignable ~policy:Host_boundary ~expected:right ~actual:left
+  | _ -> false
+
 let create ~compile_expr =
   let special_forms : Special_form_elaborator.t =
     Special_form_elaborator.create ~compile_expr
@@ -356,21 +370,21 @@ let create ~compile_expr =
         match compile_args () with
         | Error _ as err -> err
         | Ok [ array; index ] -> (
-            match array.ty with
-            | TArray element_ty ->
+            match array_element_type array.ty with
+            | Some element_ty ->
                 if Types.equal index.ty TInt then
                   Ok
                     (typed_ir element_ty
                        (apply "Array.get" [ array.semantic_expr; index.semantic_expr ]))
                 else Error.error "OCaml array index must be int"
-            | _ -> Error.error "ocaml-array-get expects an OCaml array")
+            | None -> Error.error "ocaml-array-get expects an OCaml array")
         | Ok _ -> Error.error "ocaml-array-get expects 2 arguments")
     | "ocaml-array-set!" -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok [ array; index; value ] -> (
-            match array.ty with
-            | TArray element_ty ->
+            match array_element_type array.ty with
+            | Some element_ty ->
                 if not (Types.equal index.ty TInt) then
                   Error.error "OCaml array index must be int"
                 else if
@@ -384,12 +398,12 @@ let create ~compile_expr =
                     (typed_ir TUnit
                        (apply "Array.set"
                           [ array.semantic_expr; index.semantic_expr; value.semantic_expr ]))
-            | _ -> Error.error "ocaml-array-set! expects an OCaml array")
+            | None -> Error.error "ocaml-array-set! expects an OCaml array")
         | Ok _ -> Error.error "ocaml-array-set! expects 3 arguments")
     | "ocaml-array-length" -> (
         match compile_args () with
         | Error _ as err -> err
-        | Ok [ { ty = TArray _; semantic_expr; _ } ] ->
+        | Ok [ { ty = (TArray _ | TUnknown); semantic_expr; _ } ] ->
             Ok (typed_ir TInt (apply "Array.length" [ semantic_expr ]))
         | Ok [ _ ] -> Error.error "ocaml-array-length expects an OCaml array"
         | Ok _ -> Error.error "ocaml-array-length expects 1 argument")
@@ -397,15 +411,12 @@ let create ~compile_expr =
         match compile_args () with
         | Error _ as err -> err
         | Ok
-            [ { ty = TArray source_ty; semantic_expr = source; _ };
+            [ { ty = source_type; semantic_expr = source; _ };
               { ty = TInt; semantic_expr = source_start; _ };
               { ty = TInt; semantic_expr = source_end; _ };
-              { ty = TArray target_ty; semantic_expr = target; _ };
+              { ty = target_type; semantic_expr = target; _ };
               { ty = TInt; semantic_expr = target_start; _ } ]
-          when Types.assignable ~policy:Host_boundary ~expected:target_ty
-                 ~actual:source_ty
-               || Types.assignable ~policy:Host_boundary ~expected:source_ty
-                    ~actual:target_ty ->
+          when compatible_array_types source_type target_type ->
             let length = Semantic_ir.Infix ("-", source_end, source_start) in
             Ok
               (typed_ir TUnit
@@ -419,6 +430,10 @@ let create ~compile_expr =
         | Error _ as err -> err
         | Ok [ ({ ty = TArray _; semantic_expr; _ } as array) ] ->
             Ok { array with semantic_expr = apply "Array.copy" [ semantic_expr ] }
+        | Ok [ { ty = TUnknown; semantic_expr; _ } ] ->
+            Ok
+              (typed_ir (TArray TUnknown)
+                 (apply "Array.copy" [ semantic_expr ]))
         | Ok [ _ ] -> Error.error "ocaml-array-copy expects an OCaml array"
         | Ok _ -> Error.error "ocaml-array-copy expects 1 argument")
     | "ocaml-array-append" -> (
@@ -739,6 +754,17 @@ let create ~compile_expr =
                     (Semantic_ir.Ident "Int64.to_int", [ semantic_expr ])))
         | Ok [ _ ] -> Error.error "int expects a numeric value"
         | Ok _ -> Error.error "int expects 1 argument")
+    | "double" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [ { ty = TInt; semantic_expr; _ } ] ->
+            Ok
+              (typed_ir TFloat
+                 (Semantic_ir.Apply
+                    (Semantic_ir.Ident "float_of_int", [ semantic_expr ])))
+        | Ok [ ({ ty = TFloat; _ } as value) ] -> Ok value
+        | Ok [ _ ] -> Error.error "double expects a numeric value"
+        | Ok _ -> Error.error "double expects 1 argument")
     | "reify" -> (
         match arg_forms with
         | FSymbol protocol_name :: method_forms ->
@@ -907,7 +933,7 @@ let create ~compile_expr =
             in
             let zero =
               match arg.ty with
-              | TInt -> Ok (Semantic_ir.Int 0)
+              | TInt | TUnknown -> Ok (Semantic_ir.Int 0)
               | TFloat -> Ok (Semantic_ir.Float "0.0")
               | _ -> Error.error ("expected int arguments for " ^ predicate)
             in

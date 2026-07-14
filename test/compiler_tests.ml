@@ -2698,6 +2698,17 @@ let test_ocaml_float_and_char_literals_compile () =
   assert_ocaml_runs "ocaml_float_and_char_literals_compile" "3.75:A\n"
     ocaml_source
 
+let test_double_converts_ints_and_preserves_floats () =
+  let source =
+    {|
+(println (str (Float.to_string (double 2)) ":"
+              (Float.to_string (+ (double 2.5) 0.5))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "double_converts_ints_and_preserves_floats" "2.:3.\n"
+    ocaml_source
+
 let test_ocaml_arrays_support_construction_read_and_mutation () =
   let source =
     {|
@@ -2710,6 +2721,24 @@ let test_ocaml_arrays_support_construction_read_and_mutation () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "ocaml_arrays_support_construction_read_and_mutation"
     "42:0\n" ocaml_source
+
+let test_ocaml_array_primitives_support_polymorphic_helpers () =
+  let source =
+    {|
+(defn copy-array [source]
+  (let [length (ocaml-array-length source)
+        target (ocaml-array-make length)]
+    (ocaml-array-copy! source 0 length target 0)
+    target))
+(defn first-array [values]
+  (ocaml-array-get values 0))
+(def copied (copy-array (ocaml-array 7 8 9)))
+(println (str (ocaml-array-length copied) ":" (+ (first-array copied) 0)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "ocaml_array_primitives_support_polymorphic_helpers"
+    "3:7\n" ocaml_source
 
 let test_ocaml_refs_support_read_and_assignment () =
   let source =
@@ -5145,6 +5174,22 @@ let test_loop_and_recur_are_tail_recursive () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "loop_and_recur_are_tail_recursive" "15\n" ocaml_source
+
+let test_loop_recur_remains_tail_through_let_and_cond () =
+  let source =
+    {|
+(def result
+  (loop [value 0]
+    (let [next (inc value)]
+      (cond
+        (= next 5) next
+        :else (recur next)))))
+(println result)
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "loop_recur_remains_tail_through_let_and_cond" "5\n"
+    ocaml_source
 
 let test_loop_and_recur_delegate_ocaml_owned_alias_compatibility () =
   let source =
@@ -9503,8 +9548,12 @@ let tests =
       test_concise_tuple_values_and_patterns_compile );
     ( "OCaml float and char literals compile",
       test_ocaml_float_and_char_literals_compile );
+    ( "double converts ints and preserves floats",
+      test_double_converts_ints_and_preserves_floats );
     ( "OCaml arrays support construction read and mutation",
       test_ocaml_arrays_support_construction_read_and_mutation );
+    ( "OCaml array primitives support polymorphic helpers",
+      test_ocaml_array_primitives_support_polymorphic_helpers );
     ( "OCaml refs support read and assignment",
       test_ocaml_refs_support_read_and_assignment );
     ( "OCaml arrays reject invalid operations",
@@ -9846,6 +9895,8 @@ let tests =
       test_additional_sequence_helpers_reject_bad_reductions_arity );
     ("let, defn, and fn values work", test_let_defn_and_fn_values);
     ("loop and recur are tail-recursive", test_loop_and_recur_are_tail_recursive);
+    ( "loop/recur remains tail through let and cond",
+      test_loop_recur_remains_tail_through_let_and_cond );
     ( "loop and recur delegate OCaml-owned alias compatibility",
       test_loop_and_recur_delegate_ocaml_owned_alias_compatibility );
     ( "loop and recur delegate OCaml-owned mismatch to OCaml",

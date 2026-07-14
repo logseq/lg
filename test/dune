@@ -460,3 +460,68 @@
    %{exe:persistent_sorted_set_arrays_native.exe}
    %{dep:persistent-sorted-set-arrays-melange/test/persistent_sorted_set_arrays_melange.js}
    %{dep:datascript/persistent_sorted_set/arrays.expected})))
+
+(rule
+ (target persistent_sorted_set_path_native.ml)
+ (deps
+  ../datascript/me/tonsky/persistent_sorted_set/path.lgc
+  datascript/persistent_sorted_set/path_test.lgc
+  ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   native
+   --compile-files
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/path.lgc}
+   %{dep:datascript/persistent_sorted_set/path_test.lgc}
+   -o
+   %{target})))
+
+(executable
+ (name persistent_sorted_set_path_native)
+ (modules persistent_sorted_set_path_native)
+ (flags
+  (:standard -w -32-37))
+ (libraries lg.runtime rrbvec))
+
+(rule
+ (target persistent_sorted_set_path_melange.ml)
+ (deps
+  ../datascript/me/tonsky/persistent_sorted_set/path.lgc
+  datascript/persistent_sorted_set/path_test.lgc
+  ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   melange
+   --compile-files
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/path.lgc}
+   %{dep:datascript/persistent_sorted_set/path_test.lgc}
+   -o
+   %{target})))
+
+(melange.emit
+ (target persistent-sorted-set-path-melange)
+ (alias persistent-sorted-set-path-melange)
+ (module_systems es6)
+ (modules persistent_sorted_set_path_melange)
+ (compile_flags -w -32-37)
+ (libraries lg.runtime rrbvec))
+
+(rule
+ (alias runtest)
+ (deps
+  datascript/value_smoke.sh
+  datascript/persistent_sorted_set/path.expected
+  persistent_sorted_set_path_native.exe
+  (alias persistent-sorted-set-path-melange)
+  persistent-sorted-set-path-melange/test/persistent_sorted_set_path_melange.js)
+ (action
+  (run
+   sh
+   %{dep:datascript/value_smoke.sh}
+   %{exe:persistent_sorted_set_path_native.exe}
+   %{dep:persistent-sorted-set-path-melange/test/persistent_sorted_set_path_melange.js}
+   %{dep:datascript/persistent_sorted_set/path.expected})))
