@@ -27,7 +27,10 @@
 (def full-leaf (nodes/new-leaf (arrays/into-array (range 0 32))))
 (if-some [split-nodes (nodes/node-conj full-leaf int-compare 40 nil)]
   (let [split-left (arrays/aget split-nodes 0)
-        split-right (arrays/aget split-nodes 1)]
+        split-right (arrays/aget split-nodes 1)
+        root (nodes/new-node
+               (arrays/amap (fn [node] (nodes/node-lim-key node)) split-nodes)
+               split-nodes)]
     (println
       (str "split:"
            (= 2 (arrays/alength split-nodes)) ":"
@@ -35,5 +38,37 @@
            (= 17 (nodes/node-len split-right)) ":"
            (= 15 (nodes/node-lim-key split-left)) ":"
            (= 40 (nodes/node-lim-key split-right)) ":"
-           (= 40 (nodes/node-lookup split-right int-compare 40 nil)))))
+           (= 40 (nodes/node-lookup split-right int-compare 40 nil))))
+    (if-some [updated-roots (nodes/node-conj root int-compare 41 nil)]
+      (let [updated-root (arrays/aget updated-roots 0)]
+        (println
+          (str "branch:"
+               (= 2 (nodes/node-len root)) ":"
+               (= 1 (nodes/node-lookup root int-compare 1 nil)) ":"
+               (= 40 (nodes/node-lookup root int-compare 40 nil)) ":"
+               (= 41 (nodes/node-lookup updated-root int-compare 41 nil)))))
+      (println "branch:false:false:false:false")))
   (println "split:false:false:false:false:false:false"))
+
+(def full-children
+  (arrays/amap
+    (fn [group]
+      (nodes/new-leaf
+        (arrays/into-array
+          (range (* group 32) (* (inc group) 32)))))
+    (arrays/into-array (range 0 32))))
+(def wide-root
+  (nodes/new-node
+    (arrays/amap (fn [node] (nodes/node-lim-key node)) full-children)
+    full-children))
+(if-some [wide-roots (nodes/node-conj wide-root int-compare 2000 nil)]
+  (let [wide-left (arrays/aget wide-roots 0)
+        wide-right (arrays/aget wide-roots 1)]
+    (println
+      (str "wide:"
+           (= 2 (arrays/alength wide-roots)) ":"
+           (= 16 (nodes/node-len wide-left)) ":"
+           (= 17 (nodes/node-len wide-right)) ":"
+           (= 0 (nodes/node-lookup wide-left int-compare 0 nil)) ":"
+           (= 2000 (nodes/node-lookup wide-right int-compare 2000 nil)))))
+  (println "wide:false:false:false:false:false"))

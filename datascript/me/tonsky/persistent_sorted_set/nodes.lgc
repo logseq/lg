@@ -6,64 +6,105 @@
 
 (def max-len 32)
 
-(defprotocol INode
-  (node-lim-key [_])
-  (node-len [_])
-  (node-lookup [_ cmp key storage])
-  (node-child [_ idx storage])
-  (node-conj [_ cmp key storage]))
+(type-record tree [value]
+  (keys :ocaml/array<param/value>)
+  (children :ocaml/array<tree<param/value>>)
+  (_address :ocaml/option<string>)
+  (_dirty :bool))
 
-(deftype Leaf [keys _address _dirty])
+(defn- make-tree [keys children address dirty]
+  (ocaml-record tree
+    (keys keys)
+    (children children)
+    (_address address)
+    (_dirty dirty)))
 
 (defn new-leaf [keys]
-  (Leaf. keys nil true))
+  (make-tree keys (arrays/make-array 0) nil true))
 
 (defn- new-leaf-address [keys address]
-  (Leaf. keys address true))
+  (make-tree keys (arrays/make-array 0) address true))
 
-(extend-type Leaf
-  INode
-  (node-lim-key [this]
-    (arrays/alast (ocaml-field this keys)))
+(defn new-node [keys children]
+  (make-tree keys children nil true))
 
-  (node-len [this]
-    (arrays/alength (ocaml-field this keys)))
+(defn- new-node-address [keys children address]
+  (make-tree keys children address true))
 
-  (node-child [this idx _storage]
-    (arrays/aget (ocaml-field this keys) idx))
+(defn node-lim-key [node]
+  (arrays/alast (ocaml-field node keys)))
 
-  (node-lookup [this cmp key storage]
-    (let [idx (search/lookup-exact cmp (ocaml-field this keys) key)]
-      (when-not (= -1 idx)
-        (node-child this idx storage))))
+(defn node-len [node]
+  (arrays/alength (ocaml-field node keys)))
 
-  (node-conj [this cmp key _storage]
-    (let [keys (ocaml-field this keys)
-          address (ocaml-field this _address)
-          idx (search/binary-search-l cmp keys (dec (arrays/alength keys)) key)
-          keys-length (arrays/alength keys)]
-      (cond
-        (and (< idx keys-length)
-             (= 0 (cmp key (arrays/aget keys idx))))
-        nil
+(defn node-lookup [node cmp key _storage]
+  (loop [node node]
+    (let [keys (ocaml-field node keys)
+          children (ocaml-field node children)]
+      (if (= 0 (arrays/alength children))
+        (let [idx (search/lookup-exact cmp keys key)]
+          (when-not (= -1 idx)
+            (arrays/aget keys idx)))
+        (let [idx (search/lookup-range cmp keys key)]
+          (if (= -1 idx)
+            nil
+            (recur (arrays/aget children idx))))))))
 
-        (= keys-length max-len)
-        (let [middle (arrays/half (inc keys-length))]
-          (if (> idx middle)
-            (arrays/array
-              (new-leaf-address (arrays/aslice keys 0 middle) address)
-              (new-leaf
-                (ops/cut-n-splice
-                  keys middle keys-length idx idx (arrays/array key))))
-            (arrays/array
-              (new-leaf-address
-                (ops/cut-n-splice
-                  keys 0 middle idx idx (arrays/array key))
-                address)
-              (new-leaf (arrays/aslice keys middle keys-length)))))
+(defn node-conj [node cmp key storage]
+  (let [keys (ocaml-field node keys)
+        children (ocaml-field node children)
+        address (ocaml-field node _address)]
+    (if (= 0 (arrays/alength children))
+      (let [idx (search/binary-search-l cmp keys (dec (arrays/alength keys)) key)
+            keys-length (arrays/alength keys)]
+        (cond
+          (and (< idx keys-length)
+               (= 0 (cmp key (arrays/aget keys idx))))
+          nil
 
-        :else
-        (arrays/array
-          (new-leaf-address
-            (ops/splice keys idx idx (arrays/array key))
-            address))))))
+          (= keys-length max-len)
+          (let [middle (arrays/half (inc keys-length))]
+            (if (> idx middle)
+              (arrays/array
+                (new-leaf-address (arrays/aslice keys 0 middle) address)
+                (new-leaf
+                  (ops/cut-n-splice
+                    keys middle keys-length idx idx (arrays/array key))))
+              (arrays/array
+                (new-leaf-address
+                  (ops/cut-n-splice
+                    keys 0 middle idx idx (arrays/array key))
+                  address)
+                (new-leaf (arrays/aslice keys middle keys-length)))))
+
+          :else
+          (arrays/array
+            (new-leaf-address
+              (ops/splice keys idx idx (arrays/array key))
+              address))))
+      (let [idx (search/binary-search-l cmp keys (- (arrays/alength keys) 2) key)
+            child (arrays/aget children idx)]
+        (if-some [child-nodes (node-conj child cmp key storage)]
+          (let [new-keys
+                (ops/check-n-splice
+                  cmp
+                  keys
+                  idx
+                  (inc idx)
+                  (arrays/amap (fn [child] (node-lim-key child)) child-nodes))
+                new-children
+                (ops/splice children idx (inc idx) child-nodes)]
+            (if (<= (arrays/alength new-children) max-len)
+              (arrays/array
+                (new-node-address new-keys new-children address))
+              (let [middle (arrays/half (arrays/alength new-children))]
+                (arrays/array
+                  (new-node-address
+                    (arrays/aslice new-keys 0 middle)
+                    (arrays/aslice new-children 0 middle)
+                    address)
+                  (new-node
+                    (arrays/aslice new-keys middle (arrays/alength new-keys))
+                    (arrays/aslice
+                      new-children middle (arrays/alength new-children)))))))
+          nil)))))

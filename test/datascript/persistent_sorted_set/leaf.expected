@@ -1,6 +1,10 @@
 lookup:true:true:true:true
 insert:true:true:true:true
 split:true:true:true:true:true:true
+branch:true:true:true:true
+wide:true:true:true:true:true
 lookup:true:true:true:true
 insert:true:true:true:true
 split:true:true:true:true:true:true
+branch:true:true:true:true
+wide:true:true:true:true:true

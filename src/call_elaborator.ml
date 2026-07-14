@@ -486,12 +486,17 @@ let create ~compile_expr =
         | Error _ as err -> err
         | Ok
             [ { ty = TFn ([ parameter_ty ], return_ty); semantic_expr = fn; _ };
-              { ty = TArray element_ty; semantic_expr = array; _ } ]
-          when Types.assignable ~policy:Host_boundary ~expected:parameter_ty
-                 ~actual:element_ty ->
-            Ok
-              (typed_ir (TArray return_ty)
-                 (apply "Array.map" [ fn; array ]))
+              { ty = array_type; semantic_expr = array; _ } ] -> (
+            match array_element_type array_type with
+            | Some element_ty
+              when Types.assignable ~policy:Host_boundary ~expected:parameter_ty
+                     ~actual:element_ty ->
+                Ok
+                  (typed_ir (TArray return_ty)
+                     (apply "Array.map" [ fn; array ]))
+            | Some _ | None ->
+                Error.error
+                  "ocaml-array-map expects a unary function and compatible array")
         | Ok [ _; _ ] ->
             Error.error "ocaml-array-map expects a unary function and compatible array"
         | Ok _ -> Error.error "ocaml-array-map expects 2 arguments")
