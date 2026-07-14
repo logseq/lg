@@ -331,9 +331,9 @@ values are built-in seqable inputs. `rest` and `next` still preserve their
 legacy concrete collection representation pending migration to the same seq
 abstraction. `nil` remains unsupported.
 
-`first`, `second`, and `last` accept typed lists, vectors, and sets. Set
-iteration follows the canonical order from the underlying OCaml `Set.Make`
-instance.
+`first` and `last` accept all typed seqable values. `second` accepts lists,
+vectors, sets, and lazy seqs. Set iteration follows the canonical order from
+the underlying OCaml `Set.Make` instance.
 
 Three-argument `nth` returns a typed default for out-of-range list and vector indexes.
 
@@ -359,6 +359,11 @@ statically, including implementations exported from modules.
 `-reduce` for a direct reduction path; `reduce` selects it before the `Seqable`
 fallback. Built-in lists, vectors, sets, arrays, strings, and lazy seqs lower to
 their native OCaml fold operations.
+
+`Counted` and `Indexed` are compiler-owned capabilities. A matching `-count`
+avoids seq traversal, and a matching `-nth` provides direct indexed access;
+otherwise the core operations fall back to `Seqable` where meaningful.
+`first` and `last` accept all built-in and custom seqable values.
 
 `reverse` returns a same-typed reversed list or vector.
 

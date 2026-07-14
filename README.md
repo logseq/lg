@@ -284,11 +284,15 @@ The compiler infers record-like map shapes automatically:
 - `Reducible` is a compiler-owned optimization protocol. `reduce` uses a
   matching `-reduce` implementation before falling back to `Seqable`; built-in
   collections specialize directly to their native OCaml folds.
+- `Counted` and `Indexed` are compiler-owned protocols. `count` prefers
+  `-count` before traversing a `Seqable`, while `nth` prefers `-nth` before its
+  seq fallback. `first` and `last` accept every built-in or custom `Seqable`.
 - `apply` supports integer binary reducers over typed lists, vectors, and sets,
   including fixed leading integer arguments before the final collection.
 - `get` supports vector indexes, and `nth` supports typed default values for
   lists and vectors.
-- `first`, `second`, and `last` work on typed lists, vectors, and sets.
+- `first` and `last` work on every typed `Seqable`; `second` currently supports
+  lists, vectors, sets, and lazy seqs.
 - `rest` preserves the concrete list, vector, or set type and is empty-safe.
 - `empty` returns a same-typed empty list, vector, set, or string.
 - `into` transfers elements between typed list, vector, and set collections.

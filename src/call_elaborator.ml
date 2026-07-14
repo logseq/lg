@@ -697,7 +697,7 @@ let create ~compile_expr =
   and compile_collection_call scope env name arg_forms =
     match compile_args_for scope env arg_forms with
     | Error _ as err -> err
-    | Ok args -> Core_collection.compile name args
+    | Ok args -> Core_collection.compile env name args
   
   and compile_sequence_transform_call scope env name arg_forms =
     match (name, arg_forms) with

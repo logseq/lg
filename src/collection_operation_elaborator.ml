@@ -256,65 +256,29 @@ let create ~compile_expr =
     and compile_nth scope env arg_forms =
       match compile_args_for scope env arg_forms with
       | Error _ as err -> err
-      | Ok [ collection; index ] -> (
-          match (collection.ty, index.ty) with
-          | TList inner, TInt ->
-              Ok
-                (typed_ir inner
-                   (Semantic_ir.Apply
-                      (Semantic_ir.Ident "List.nth", [ collection.semantic_expr; index.semantic_expr ])))
-          | TList _, _ -> Error.error "nth index must be int"
-          | TVector inner, TInt ->
-              Ok
-                (typed_ir inner
-                   (Semantic_ir.Apply
-                      (Semantic_ir.Ident "Rrbvec.nth", [ collection.semantic_expr; index.semantic_expr ])))
-          | TVector _, _ -> Error.error "nth index must be int"
-          | TSeq inner, TInt ->
-              Ok
-                (typed_ir inner
-                   (apply "Cljml.Runtime_seq.nth"
-                      [ index.semantic_expr; collection.semantic_expr ]))
-          | TSeq _, _ -> Error.error "nth index must be int"
-          | _ -> Error.error "nth expects a list, vector, or seq")
-      | Ok [ collection; index; default ] -> (
-          match (collection.ty, index.ty) with
-          | TList inner, TInt when Types.equal inner default.ty ->
-              Ok
-                (typed_ir inner
-                   (Semantic_ir.If
-                      ( Semantic_ir.Infix ("<", index.semantic_expr, Semantic_ir.Int 0),
-                        default.semantic_expr,
-                        Semantic_ir.Match
-                          ( apply "List.nth_opt" [ collection.semantic_expr; index.semantic_expr ],
-                            [ ( Semantic_ir.PConstructor ("Some", Some (Semantic_ir.PVar "value")),
+      | Ok [ collection; index ] ->
+          if not (Types.equal index.ty TInt) then
+            Error.error "nth index must be int"
+          else Collection_capability.nth_expr env collection index
+      | Ok [ collection; index; default ] ->
+          if not (Types.equal index.ty TInt) then
+            Error.error "nth index must be int"
+          else (
+            match Collection_capability.to_seq_expr env collection with
+            | Error _ -> Error.error "nth with default expects a seqable value"
+            | Ok (inner, sequence) ->
+                if not (Types.equal inner default.ty) then
+                  Error.error "nth default must match collection element type"
+                else
+                  Ok
+                    (typed_ir inner
+                       (Semantic_ir.Match
+                          ( apply "Cljml.Runtime_seq.nth_opt"
+                              [ index.semantic_expr; sequence ],
+                            [ ( Semantic_ir.PConstructor
+                                  ("Some", Some (Semantic_ir.PVar "value")),
                                 Semantic_ir.Ident "value" );
-                              (Semantic_ir.PConstructor ("None", None), default.semantic_expr) ] ) )))
-          | TList _, TInt -> Error.error "nth default must match collection element type"
-          | TList _, _ -> Error.error "nth index must be int"
-          | TVector inner, TInt when Types.equal inner default.ty ->
-              Ok
-                (typed_ir inner
-                   (Semantic_ir.Match
-                      ( apply "Rrbvec.nth_opt" [ collection.semantic_expr; index.semantic_expr ],
-                        [ ( Semantic_ir.PConstructor ("Some", Some (Semantic_ir.PVar "value")),
-                            Semantic_ir.Ident "value" );
-                          (Semantic_ir.PConstructor ("None", None), default.semantic_expr) ] )))
-          | TVector _, TInt -> Error.error "nth default must match collection element type"
-          | TVector _, _ -> Error.error "nth index must be int"
-          | TSeq inner, TInt when Types.equal inner default.ty ->
-              Ok
-                (typed_ir inner
-                   (Semantic_ir.Match
-                      ( apply "Cljml.Runtime_seq.nth_opt"
-                          [ index.semantic_expr; collection.semantic_expr ],
-                        [ ( Semantic_ir.PConstructor
-                              ("Some", Some (Semantic_ir.PVar "value")),
-                            Semantic_ir.Ident "value" );
-                          (Semantic_ir.PConstructor ("None", None), default.semantic_expr) ] )))
-          | TSeq _, TInt -> Error.error "nth default must match collection element type"
-          | TSeq _, _ -> Error.error "nth index must be int"
-          | _ -> Error.error "nth expects a list, vector, or seq")
+                              (Semantic_ir.PConstructor ("None", None), default.semantic_expr) ] ))))
       | Ok _ -> Error.error "nth expects 2 or 3 arguments"
     
     and compile_get scope env arg_forms =

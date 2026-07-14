@@ -3807,6 +3807,76 @@ let test_reduce_specializes_builtin_reducible_types () =
          if not (string_contains_substring ocaml_source expected) then
            failwith ("missing specialized reducible call " ^ expected))
 
+let test_count_prefers_custom_counted_over_seqable () =
+  let source =
+    {|
+(def seq-calls (ocaml-ref 0))
+(type-record cursor (values :ocaml/list<int>))
+(extend-type cursor Seqable
+  (-seq [cursor]
+    (do
+      (ocaml-reset! seq-calls (+ (ocaml-deref seq-calls) 1))
+      (map (fn [x] x) (ocaml-field cursor values)))))
+(extend-type cursor Counted
+  (-count [cursor] 3))
+(def values (ocaml-record cursor (values (list 1 2 3))))
+(println (count values))
+(println (ocaml-deref seq-calls))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "count_prefers_custom_counted_over_seqable" "3\n0\n"
+    ocaml_source
+
+let test_first_and_last_accept_all_seqable_types () =
+  let source =
+    {|
+(type-record cursor (values :ocaml/list<int>))
+(extend-type cursor Seqable
+  (-seq [cursor]
+    (map (fn [x] x) (ocaml-field cursor values))))
+(def values (ocaml-record cursor (values (list 4 5 6))))
+(def host-seq
+  (ocaml-call :ocaml/Seq.t<int> List.to_seq (list 7 8)))
+(println (str (+ (first values) 0) ":" (+ (last values) 0)))
+(println (str (first (ocaml-array 1 2)) ":" (last (ocaml-array 1 2))))
+(println (str (first "ab") ":" (last "ab")))
+(println (str (+ (first host-seq) 0) ":" (+ (last host-seq) 0)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "first_and_last_accept_all_seqable_types"
+    "4:6\n1:2\na:b\n7:8\n" ocaml_source
+
+let test_custom_records_can_implement_core_indexed () =
+  let source =
+    {|
+(type-record cursor (values :ocaml/list<int>))
+(extend-type cursor Indexed
+  (-nth [cursor index]
+    (+ (ocaml-call :ocaml/int List.nth (ocaml-field cursor values) index) 0)))
+(def values (ocaml-record cursor (values (list 4 5 6))))
+(println (nth values 1))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "custom_records_can_implement_core_indexed" "5\n"
+    ocaml_source
+
+let test_nth_accepts_indexed_and_seqable_host_types () =
+  let source =
+    {|
+(def host-seq
+  (ocaml-call :ocaml/Seq.t<int> List.to_seq (list 7 8 9)))
+(println (nth (ocaml-array 1 2 3) 1))
+(println (str (nth "abc" 1)))
+(println (+ (nth host-seq 2) 0))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "nth_accepts_indexed_and_seqable_host_types"
+    "2\nb\n9\n" ocaml_source
+
 let test_batched_sequence_functions_reject_type_mismatch () =
   Cljml.Compiler.compile_string {|(def x (concat [1] ["two"]))|}
   |> expect_error "concat element types must match"
@@ -4224,7 +4294,7 @@ let test_set_positional_sequence_helpers () =
 
 let test_set_positional_sequence_helpers_reject_non_collections () =
   Cljml.Compiler.compile_string {|(def x (first 1))|}
-  |> expect_error "first expects a list, vector, or set"
+  |> expect_error "first expects a seqable value"
 
 let test_conj_rejects_set_type_mismatch () =
   Cljml.Compiler.compile_string {|(def xs (conj (hash-set 1) "two"))|}
@@ -8447,6 +8517,14 @@ let tests =
       test_reduce_prefers_custom_reducible_over_seqable );
     ( "reduce specializes builtin Reducible types",
       test_reduce_specializes_builtin_reducible_types );
+    ( "count prefers custom Counted over Seqable",
+      test_count_prefers_custom_counted_over_seqable );
+    ( "first and last accept all Seqable types",
+      test_first_and_last_accept_all_seqable_types );
+    ( "custom records can implement core Indexed",
+      test_custom_records_can_implement_core_indexed );
+    ( "nth accepts Indexed and Seqable host types",
+      test_nth_accepts_indexed_and_seqable_host_types );
     ( "batched sequence functions reject type mismatch",
       test_batched_sequence_functions_reject_type_mismatch );
     ( "batched sequence functions reject bad functions",

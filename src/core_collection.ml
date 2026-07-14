@@ -12,36 +12,19 @@ let two_args name args =
 
 let apply name args = Semantic_ir.Apply (Semantic_ir.Ident name, args)
 
-let count collection =
-  match collection.ty with
-  | TList _ -> Ok (typed_ir TInt (apply "List.length" [ collection.semantic_expr ]))
-  | TSet inner ->
-      Types.set_module_name inner
-      |> Result.map (fun set_module ->
-             typed_ir TInt (apply (set_module ^ ".cardinal") [ collection.semantic_expr ]))
-  | TVector _ -> Ok (typed_ir TInt (apply "Rrbvec.length" [ collection.semantic_expr ]))
+let count env collection =
+  if Collection_capability.is_counted env collection then
+    Collection_capability.count_expr env collection
+    |> Result.map (typed_ir TInt)
+  else
+    match collection.ty with
   | TRecord fields | TNamed_record { fields; _ } ->
       Ok (typed_ir TInt (Semantic_ir.Int (List.length fields)))
-  | TString -> Ok (typed_ir TInt (apply "String.length" [ collection.semantic_expr ]))
-  | TSeq _ ->
-      Ok
-        (typed_ir TInt
-           (apply "Seq.length" [ collection.semantic_expr ]))
-  | _ -> Error.error "count expects a collection or string"
+  | _ ->
+      Collection_capability.count_expr env collection
+      |> Result.map (typed_ir TInt)
 
-let first collection =
-  match collection.ty with
-  | TList inner -> Ok (typed_ir inner (apply "List.hd" [ collection.semantic_expr ]))
-  | TSet inner ->
-      Types.set_module_name inner
-      |> Result.map (fun set_module ->
-             typed_ir inner (apply (set_module ^ ".min_elt") [ collection.semantic_expr ]))
-  | TVector inner -> Ok (typed_ir inner (apply "Rrbvec.nth" [ collection.semantic_expr; Semantic_ir.Int 0 ]))
-  | TSeq inner ->
-      Ok
-        (typed_ir inner
-           (apply "Cljml.Runtime_seq.first" [ collection.semantic_expr ]))
-  | _ -> Error.error "first expects a list, vector, or set"
+let first env collection = Collection_capability.first_expr env collection
 
 let second collection =
   match collection.ty with
@@ -59,21 +42,7 @@ let second collection =
            (apply "Cljml.Runtime_seq.second" [ collection.semantic_expr ]))
   | _ -> Error.error "second expects a list, vector, or set"
 
-let last collection =
-  match collection.ty with
-  | TList inner ->
-      Ok (typed_ir inner (apply "List.hd" [ apply "List.rev" [ collection.semantic_expr ] ]))
-  | TSet inner ->
-      Types.set_module_name inner
-      |> Result.map (fun set_module ->
-             typed_ir inner (apply (set_module ^ ".max_elt") [ collection.semantic_expr ]))
-  | TVector inner ->
-      Ok (typed_ir inner (apply "Option.get" [ apply "Rrbvec.peek_back" [ collection.semantic_expr ] ]))
-  | TSeq inner ->
-      Ok
-        (typed_ir inner
-           (apply "Cljml.Runtime_seq.last" [ collection.semantic_expr ]))
-  | _ -> Error.error "last expects a list, vector, or set"
+let last env collection = Collection_capability.last_expr env collection
 
 let peek collection =
   match collection.ty with
@@ -197,7 +166,7 @@ let reverse collection =
   | TVector _ -> Ok (typed_ir collection.ty (apply "Rrbvec.rev" [ collection.semantic_expr ]))
   | _ -> Error.error "reverse expects a list or vector"
 
-let compile name args =
+let compile env name args =
   match name with
   | "count" | "first" | "second" | "last" | "peek" | "pop" | "rest" | "seq"
   | "empty?" | "empty" | "reverse" -> (
@@ -205,10 +174,10 @@ let compile name args =
       | Error _ as err -> err
       | Ok collection -> (
           match name with
-          | "count" -> count collection
-          | "first" -> first collection
+          | "count" -> count env collection
+          | "first" -> first env collection
           | "second" -> second collection
-          | "last" -> last collection
+          | "last" -> last env collection
           | "peek" -> peek collection
           | "pop" -> pop collection
           | "rest" -> rest collection
