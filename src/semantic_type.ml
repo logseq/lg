@@ -19,6 +19,7 @@ type ty =
   | TSet of ty
   | TSeq of ty
   | TFn of ty list * ty
+  | TOverloaded_fn of fn_arity list
   | TRecord of field list
   | TNamed_record of named_record
 
@@ -36,4 +37,10 @@ and named_record = {
   type_parameters : string list;
   set_module_name : string;
   fields : field list;
+}
+
+and fn_arity = {
+  fixed_params : ty list;
+  rest_param : ty option;
+  return_ty : ty;
 }

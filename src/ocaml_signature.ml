@@ -27,15 +27,22 @@ let project_include_dirs () =
 let include_dirs () = env_include_dirs () @ project_include_dirs ()
 
 let package_include_dirs = ref []
+let initialized_include_dirs = ref None
+
+let active_include_dirs () = include_dirs () @ !package_include_dirs
+
+let ensure_initialized () =
+  let dirs = active_include_dirs () in
+  if !initialized_include_dirs <> Some dirs then (
+    Cljml_compiler_support.Ocaml_value.init dirs;
+    initialized_include_dirs := Some dirs)
 
 let add_include_dirs dirs =
-  package_include_dirs :=
-    List.sort_uniq String.compare (dirs @ !package_include_dirs);
-  Cljml_compiler_support.Ocaml_value.init dirs
+  let updated = List.sort_uniq String.compare (dirs @ !package_include_dirs) in
+  if updated <> !package_include_dirs then package_include_dirs := updated;
+  ensure_initialized ()
 
-let init () =
-  Cljml_compiler_support.Ocaml_value.init
-    (include_dirs () @ !package_include_dirs)
+let init () = ensure_initialized ()
 
 type parameter_label =
   | Positional

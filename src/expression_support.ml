@@ -3,9 +3,19 @@ open Lowered
 
 module Env = Compiler_environment
 
-let ensure_bool expr =
-  if Types.assignable ~policy:Nominal ~expected:TBool ~actual:expr.ty then Ok ()
-  else Error.error "if condition must be bool"
+let condition_expression expr =
+  if Types.assignable ~policy:Nominal ~expected:TBool ~actual:expr.ty then
+    Ok expr.semantic_expr
+  else
+    match expr.ty with
+    | TSeq _ ->
+        Ok
+          (Semantic_ir.Apply
+             ( Semantic_ir.Ident "not",
+               [ Semantic_ir.Apply
+                   ( Semantic_ir.Ident "Cljml.Runtime_seq.is_empty",
+                     [ expr.semantic_expr ] ) ] ))
+    | _ -> Error.error "if condition must be bool"
 
 let apply name args = Semantic_ir.Apply (Semantic_ir.Ident name, args)
 

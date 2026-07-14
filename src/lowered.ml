@@ -35,6 +35,12 @@ type variant_constructor = {
   location : Location.t option;
 }
 
+type recursive_value = {
+  name : string;
+  identity : (Source_node_id.t * Location.t) option;
+  expression : Semantic_ir.t;
+}
+
 type functor_parameter = {
   parameter_name : string;
   parameter_location : Location.t option;
@@ -57,6 +63,7 @@ type compiled_item =
       identity : (Source_node_id.t * Location.t) option;
       expression : Semantic_ir.t;
     }
+  | Recursive_value_bindings of recursive_value list
   | Comment of string
   | Type_def of {
       type_name : string;

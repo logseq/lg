@@ -108,33 +108,79 @@ let cljml_build_dir () = Filename.concat (repo_root ()) "_build/default/src"
 
 let cljml_byte_cmi_dir () = Filename.concat (cljml_build_dir ()) ".cljml.objs/byte"
 
-let cljml_native_cmi_dir () = Filename.concat (cljml_build_dir ()) ".cljml.objs/native"
+let cljml_cma () = Filename.concat (cljml_build_dir ()) "cljml.cma"
 
-let cljml_cmxa () = Filename.concat (cljml_build_dir ()) "cljml.cmxa"
+let rrbvec_cma () = Filename.concat (rrbvec_build_dir ()) "rrbvec.cma"
 
-let rrbvec_cmxa () = Filename.concat (rrbvec_build_dir ()) "rrbvec.cmxa"
+type compile_job = {
+  name : string;
+  ocaml_source : string;
+}
 
-let assert_ocaml_compiles name ocaml_source =
-  let dir = Filename.concat (Filename.get_temp_dir_name ()) "cljml-tests" in
-  let () =
-    if not (Sys.file_exists dir) then Unix.mkdir dir 0o755
-  in
-  let ml_path = Filename.concat dir (name ^ ".ml") in
-  write_file ml_path ocaml_source;
-  let cmd =
-    Printf.sprintf "ocamlc -I %s -I %s -I %s -I %s -c %s"
+type run_job = {
+  name : string;
+  expected_output : string;
+  ocaml_source : string;
+}
+
+let pending_compile_jobs = ref []
+let pending_run_jobs = ref []
+
+let time_phase label fn =
+  let started = Unix.gettimeofday () in
+  let result = fn () in
+  if Sys.getenv_opt "CLJML_TEST_TIMING" = Some "1" then
+    Printf.eprintf "%s: %.3fs\n%!" label (Unix.gettimeofday () -. started);
+  result
+
+let test_directory =
+  lazy
+    (let name = "cljml-tests-" ^ string_of_int (Unix.getpid ()) in
+     let dir = Filename.concat (Filename.get_temp_dir_name ()) name in
+     if not (Sys.file_exists dir) then Unix.mkdir dir 0o755;
+     dir)
+
+let test_dir () = Lazy.force test_directory
+
+let compile_only_command dir ml_path =
+  Printf.sprintf "cd %s && ocamlc -I %s -I %s -I %s -I %s -c %s"
+    (Filename.quote dir)
+    (Filename.quote (rrbvec_build_dir ()))
+    (Filename.quote (rrbvec_cmi_dir ()))
+    (Filename.quote (cljml_build_dir ()))
+    (Filename.quote (cljml_byte_cmi_dir ()))
+    (Filename.quote (Filename.basename ml_path))
+
+let compile_and_run_command dir ml_path exe_path output_path =
+  let compile_cmd =
+    Printf.sprintf
+      "cd %s && ocamlc -I %s -I %s -I %s -I %s -o %s %s %s %s"
+      (Filename.quote dir)
       (Filename.quote (rrbvec_build_dir ()))
       (Filename.quote (rrbvec_cmi_dir ()))
       (Filename.quote (cljml_build_dir ()))
       (Filename.quote (cljml_byte_cmi_dir ()))
+      (Filename.quote (Filename.basename exe_path))
+      (Filename.quote (rrbvec_cma ()))
+      (Filename.quote (cljml_cma ()))
       (Filename.quote (Filename.basename ml_path))
   in
-  match Sys.command ("cd " ^ Filename.quote dir ^ " && " ^ cmd) with
+  let run_cmd =
+    Printf.sprintf "%s > %s" (Filename.quote exe_path)
+      (Filename.quote output_path)
+  in
+  (compile_cmd, run_cmd)
+
+let compile_job_immediately (job : compile_job) =
+  let dir = test_dir () in
+  let ml_path = Filename.concat dir (job.name ^ ".ml") in
+  write_file ml_path job.ocaml_source;
+  match Sys.command (compile_only_command dir ml_path) with
   | 0 -> ()
   | code ->
       failwith
         (Printf.sprintf "generated OCaml did not compile, exit code %d:\n%s" code
-           ocaml_source)
+           job.ocaml_source)
 
 let read_file path =
   let ic = open_in path in
@@ -144,45 +190,121 @@ let read_file path =
       let length = in_channel_length ic in
       really_input_string ic length)
 
-let assert_ocaml_runs name expected_output ocaml_source =
-  let dir = Filename.concat (Filename.get_temp_dir_name ()) "cljml-tests" in
-  let () =
-    if not (Sys.file_exists dir) then Unix.mkdir dir 0o755
-  in
-  let ml_path = Filename.concat dir (name ^ ".ml") in
-  let exe_path = Filename.concat dir name in
-  let output_path = Filename.concat dir (name ^ ".out") in
-  write_file ml_path ocaml_source;
-  let compile_cmd =
-    Printf.sprintf "cd %s && ocamlopt -I %s -I %s -I %s -I %s -I %s -o %s %s %s %s"
-      (Filename.quote dir)
-      (Filename.quote (rrbvec_build_dir ()))
-      (Filename.quote (rrbvec_cmi_dir ()))
-      (Filename.quote (cljml_build_dir ()))
-      (Filename.quote (cljml_byte_cmi_dir ()))
-      (Filename.quote (cljml_native_cmi_dir ()))
-      (Filename.quote (Filename.basename exe_path))
-      (Filename.quote (rrbvec_cmxa ()))
-      (Filename.quote (cljml_cmxa ()))
-      (Filename.quote (Filename.basename ml_path))
-  in
-  let run_cmd =
-    Printf.sprintf "%s > %s" (Filename.quote exe_path) (Filename.quote output_path)
+let run_job_immediately (job : run_job) =
+  let dir = test_dir () in
+  let ml_path = Filename.concat dir (job.name ^ ".ml") in
+  let exe_path = Filename.concat dir job.name in
+  let output_path = Filename.concat dir (job.name ^ ".out") in
+  write_file ml_path job.ocaml_source;
+  let compile_cmd, run_cmd =
+    compile_and_run_command dir ml_path exe_path output_path
   in
   match Sys.command compile_cmd with
   | code when code <> 0 ->
       failwith
         (Printf.sprintf "generated OCaml did not compile, exit code %d:\n%s" code
-           ocaml_source)
+           job.ocaml_source)
   | _ -> (
       match Sys.command run_cmd with
       | code when code <> 0 ->
           failwith
             (Printf.sprintf "generated executable failed, exit code %d:\n%s" code
-               ocaml_source)
+               job.ocaml_source)
       | _ ->
           let actual = read_file output_path in
-          assert_equal_string expected_output actual)
+          assert_equal_string job.expected_output actual)
+
+let wrapped_module index source =
+  Printf.sprintf "module Case_%04d = struct\n%s\nend\n" index source
+
+let flush_compile_jobs (jobs : compile_job list) =
+  match jobs with
+  | [] -> ()
+  | _ ->
+      let dir = test_dir () in
+      let ml_path = Filename.concat dir "compile_batch.ml" in
+      let source =
+        jobs
+        |> List.mapi (fun index (job : compile_job) ->
+               wrapped_module index job.ocaml_source)
+        |> String.concat "\n"
+      in
+      write_file ml_path source;
+      (match Sys.command (compile_only_command dir ml_path) with
+      | 0 -> ()
+      | code ->
+          List.iter compile_job_immediately jobs;
+          failwith
+            (Printf.sprintf
+               "batched generated OCaml failed with exit code %d, but isolated cases passed"
+               code))
+
+let run_marker phase index =
+  Printf.sprintf "__CLJML_TEST_%s_%04d__\n" phase index
+
+let wrapped_run_module index (job : run_job) =
+  Printf.sprintf "let () = print_string %S\n%slet () = print_string %S\n"
+    (run_marker "BEGIN" index)
+    (wrapped_module index job.ocaml_source)
+    (run_marker "END" index)
+
+let flush_run_jobs (jobs : run_job list) =
+  match jobs with
+  | [] -> ()
+  | _ ->
+      let dir = test_dir () in
+      let ml_path = Filename.concat dir "run_batch.ml" in
+      let exe_path = Filename.concat dir "run_batch" in
+      let output_path = Filename.concat dir "run_batch.out" in
+      let source =
+        jobs |> List.mapi wrapped_run_module |> String.concat "\n"
+      in
+      let expected =
+        jobs
+        |> List.mapi (fun index job ->
+               run_marker "BEGIN" index ^ job.expected_output
+               ^ run_marker "END" index)
+        |> String.concat ""
+      in
+      write_file ml_path source;
+      let compile_cmd, run_cmd =
+        compile_and_run_command dir ml_path exe_path output_path
+      in
+      let fallback message =
+        List.iter run_job_immediately jobs;
+        failwith message
+      in
+      (match Sys.command compile_cmd with
+      | code when code <> 0 ->
+          fallback
+            (Printf.sprintf
+               "batched generated OCaml failed with exit code %d, but isolated cases passed"
+               code)
+      | _ -> (
+          match Sys.command run_cmd with
+          | code when code <> 0 ->
+              fallback
+                (Printf.sprintf
+                   "batched generated executable failed with exit code %d, but isolated cases passed"
+                   code)
+          | _ ->
+              let actual = read_file output_path in
+              if actual <> expected then
+                fallback "batched generated output differed, but isolated cases passed"))
+
+let assert_ocaml_compiles name ocaml_source =
+  pending_compile_jobs := { name; ocaml_source } :: !pending_compile_jobs
+
+let assert_ocaml_runs name expected_output ocaml_source =
+  pending_run_jobs := { name; expected_output; ocaml_source } :: !pending_run_jobs
+
+let flush_ocaml_jobs () =
+  let compile_jobs = List.rev !pending_compile_jobs in
+  let run_jobs = List.rev !pending_run_jobs in
+  pending_compile_jobs := [];
+  pending_run_jobs := [];
+  time_phase "generated compile batch" (fun () -> flush_compile_jobs compile_jobs);
+  time_phase "generated run batch" (fun () -> flush_run_jobs run_jobs)
 
 let test_records_assoc_and_dissoc () =
   let source =
@@ -2561,6 +2683,111 @@ let test_typed_recursive_functions_require_valid_signatures () =
   0)
 |}
   |> expect_error "recursive defn bad must return string"
+
+let test_multi_arity_defn_dispatches_fixed_arities () =
+  let source =
+    {|
+(defn stamp
+  ([] 10)
+  ([^:int value] value))
+(defn score
+  ([^:int value] (+ value 1))
+  ([^:int left ^:int right] (+ left right)))
+(println (str (stamp) ":" (stamp 11) ":" (score 4) ":" (score 5 6)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "multi_arity_defn_dispatches_fixed_arities" "10:11:5:11\n"
+    ocaml_source
+
+let test_multi_arity_defn_dispatches_variadic_fallback () =
+  let source =
+    {|
+(defn sum
+  ([^:int value] value)
+  ([^:int left ^:int right] (+ left right))
+  ([^:int left ^:int right & more]
+   (reduce + (+ left right) more)))
+(defn all [& values] (reduce + 0 values))
+(println (str (sum 1) ":" (sum 1 2) ":" (sum 1 2 3 4) ":" (all) ":" (all 5 6 7)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "multi_arity_defn_dispatches_variadic_fallback"
+    "1:3:10:0:18\n" ocaml_source
+
+let test_multi_arity_defn_supports_cross_arity_calls_and_recur () =
+  let source =
+    {|
+(defn ascending?
+  ([^:int x] true)
+  ([^:int x ^:int y] (< x y))
+  ([^:int x ^:int y & more]
+   (if (ascending? x y)
+     (if (next more)
+       (recur y (first more) (next more))
+       (ascending? y (first more)))
+     false)))
+(println (str (ascending? 1) ":" (ascending? 1 2) ":"
+              (ascending? 1 2 3 4) ":" (ascending? 1 3 2 4)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "multi_arity_defn_supports_cross_arity_calls_and_recur"
+    "true:true:true:false\n" ocaml_source
+
+let test_multi_arity_defn_remains_callable_as_a_value () =
+  let source =
+    {|
+(defn score
+  ([^:int value] (+ value 1))
+  ([^:int left ^:int right] (+ left right)))
+(def selected score)
+(println (str (selected 4) ":" (selected 5 6)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "multi_arity_defn_remains_callable_as_a_value" "5:11\n"
+    ocaml_source
+
+let test_modules_export_multi_arity_defn () =
+  let source =
+    {|
+(module Math
+  (defn score
+    ([^:int value] (+ value 1))
+    ([^:int left ^:int right] (+ left right))))
+(println (str (Math/score 4) ":" (Math/score 5 6)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "modules_export_multi_arity_defn" "5:11\n" ocaml_source
+
+let test_multi_arity_defn_rejects_invalid_declarations () =
+  Cljml.Compiler.compile_string
+    {|
+(defn bad
+  ([value] value)
+  ([other] other))
+|}
+  |> expect_error "defn bad has duplicate arity 1";
+  Cljml.Compiler.compile_string
+    {|
+(defn bad
+  ([value & more] value)
+  ([value] value))
+|}
+  |> expect_error "defn bad variadic arity must be last"
+
+let test_multi_arity_defn_rejects_unsupported_calls () =
+  Cljml.Compiler.compile_string
+    {|
+(defn score
+  ([^:int value] value)
+  ([^:int left ^:int right] (+ left right)))
+(def bad (score))
+|}
+  |> expect_error "score called with unsupported arity 0"
 
 let test_unannotated_function_parameters_infer_from_body () =
   let source =
@@ -8647,6 +8874,20 @@ let tests =
     ( "typed recursive functions", test_typed_recursive_functions );
     ( "typed recursive functions validate signatures",
       test_typed_recursive_functions_require_valid_signatures );
+    ( "multi-arity defn dispatches fixed arities",
+      test_multi_arity_defn_dispatches_fixed_arities );
+    ( "multi-arity defn dispatches variadic fallback",
+      test_multi_arity_defn_dispatches_variadic_fallback );
+    ( "multi-arity defn supports cross-arity calls and recur",
+      test_multi_arity_defn_supports_cross_arity_calls_and_recur );
+    ( "multi-arity defn remains callable as a value",
+      test_multi_arity_defn_remains_callable_as_a_value );
+    ( "modules export multi-arity defn",
+      test_modules_export_multi_arity_defn );
+    ( "multi-arity defn rejects invalid declarations",
+      test_multi_arity_defn_rejects_invalid_declarations );
+    ( "multi-arity defn rejects unsupported calls",
+      test_multi_arity_defn_rejects_unsupported_calls );
     ( "unannotated function parameters infer from body",
       test_unannotated_function_parameters_infer_from_body );
     ( "identity function is polymorphic at call sites",
@@ -9323,10 +9564,12 @@ let () =
     | Some filter ->
         List.filter (fun (name, _) -> string_contains_substring name filter) tests
   in
-  List.iter
-    (fun (name, run) ->
-      try run ()
-      with exn ->
-        Printf.eprintf "FAILED: %s\n%s\n" name (Printexc.to_string exn);
-        exit 1)
-    tests
+  time_phase "compiler tests" (fun () ->
+      List.iter
+        (fun (name, run) ->
+          try run ()
+          with exn ->
+            Printf.eprintf "FAILED: %s\n%s\n" name (Printexc.to_string exn);
+            exit 1)
+        tests);
+  flush_ocaml_jobs ()

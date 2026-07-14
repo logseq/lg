@@ -133,6 +133,22 @@ module Ocaml_typechecker = struct
         Some report.main.loc
     | Some (`Ok _) | Some `Already_displayed | None -> None
 
+  let initial_env_cache = ref None
+
+  let initial_env () =
+    let include_dirs = Ocaml_signature.active_include_dirs () in
+    match !initial_env_cache with
+    | Some (cached_dirs, env) when cached_dirs = include_dirs -> env
+    | _ ->
+        Ocaml_signature.init ();
+        [ "unix"; "str" ]
+        |> List.map (Filename.concat Config.standard_library)
+        |> List.filter Sys.file_exists
+        |> List.iter (Load_path.add_dir ~hidden:false);
+        let env = Compmisc.initial_env () in
+        initial_env_cache := Some (include_dirs, env);
+        env
+
   let analyze structure =
     let diagnostics = ref [] in
     let previous_warning_reporter = !Location.warning_reporter in
@@ -155,8 +171,7 @@ module Ocaml_typechecker = struct
             Location.warning_reporter := previous_warning_reporter)
           (fun () ->
             Location.warning_reporter := capture_warning;
-            Ocaml_signature.init ();
-            let env = Compmisc.initial_env () in
+            let env = initial_env () in
             let typed_structure, _signature, _signature_names, _shape, env =
               Typemod.type_structure env structure
             in

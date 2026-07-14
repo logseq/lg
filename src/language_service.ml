@@ -1757,6 +1757,22 @@ let rec add_type_references add ty references =
         (fun references argument -> add_type_references add argument references)
         (add_type_references add return_type references)
         arguments
+  | TOverloaded_fn arities ->
+      List.fold_left
+        (fun references (arity : Types.fn_arity) ->
+          let references =
+            List.fold_left
+              (fun references argument ->
+                add_type_references add argument references)
+              references arity.fixed_params
+          in
+          let references =
+            match arity.rest_param with
+            | None -> references
+            | Some rest -> add_type_references add rest references
+          in
+          add_type_references add arity.return_ty references)
+        references arities
   | TRecord fields | TNamed_record { fields; _ } ->
       List.fold_left
         (fun references (field : Types.field) ->

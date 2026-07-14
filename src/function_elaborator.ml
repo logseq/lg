@@ -33,8 +33,9 @@ let infer_named_record env = function
       (match candidates with [ record ] -> TNamed_record record | _ -> inferred)
   | inferred -> inferred
 
-let prepare ?(param_type_overrides = []) ~lookup_function_ty ~compile_body scope env
-    params body_forms =
+let prepare ?(param_type_overrides = []) ?variadic_rest_index
+    ?compile_function_body ~lookup_function_ty ~compile_body scope env params
+    body_forms =
   match Destructure.parse_param_specs params with
   | Error _ as err -> err
   | Ok specs ->
@@ -80,6 +81,16 @@ let prepare ?(param_type_overrides = []) ~lookup_function_ty ~compile_body scope
               let typed_specs =
                 typed_specs
                 |> List.mapi (fun index (spec, inferred_ty) ->
+                       let inferred_ty =
+                         if Some index = variadic_rest_index then
+                           match Types.seqable_constraint_element inferred_ty with
+                           | Some element_ty -> TSeq element_ty
+                           | None -> (
+                               match inferred_ty with
+                               | TUnknown -> TSeq TUnknown
+                               | ty -> ty)
+                         else inferred_ty
+                       in
                        match List.nth_opt param_type_overrides index with
                        | Some (Some ty) -> (spec, ty)
                        | _ -> (spec, inferred_ty))
@@ -125,10 +136,17 @@ let prepare ?(param_type_overrides = []) ~lookup_function_ty ~compile_body scope
                     env |> Env.add_bindings param_bindings
                     |> Env.add_bindings local_bindings
                   in
-                  match
-                    compile_body scope env "function body requires at least one form"
-                      body_forms
-                  with
+                  let compiled_body =
+                    match compile_function_body with
+                    | Some compile ->
+                        compile env
+                          (List.map (fun (_spec, ty) -> ty) typed_specs)
+                          body_forms
+                    | None ->
+                        compile_body scope env
+                          "function body requires at least one form" body_forms
+                  in
+                  match compiled_body with
                   | Error _ as err -> err
                   | Ok body ->
                       Ok

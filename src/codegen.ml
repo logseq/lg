@@ -82,7 +82,7 @@ let rec stringify_expr_ir ?(pr = false) expr =
         (apply "String.concat"
            [ Semantic_ir.String " "; apply "List.map" [ mapper; values ] ])
         "}"
-  | TFn _ -> Semantic_ir.String "<function>"
+  | TFn _ | TOverloaded_fn _ -> Semantic_ir.String "<function>"
   | (TRecord fields | TNamed_record { fields; _ }) ->
       let field_part field expression =
         concat_expr

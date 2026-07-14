@@ -230,15 +230,15 @@ let create ~compile_expr =
     | _, (Error _ as err), _ -> err
     | _, _, (Error _ as err) -> err
     | Ok condition, Ok then_expr, Ok else_expr -> (
-        match ensure_bool condition with
+        match condition_expression condition with
         | Error _ as err -> err
-        | Ok () ->
+        | Ok condition_code ->
             match merge_branch_expressions then_expr else_expr with
             | Some (result_ty, then_code, else_code) ->
               Ok
                 (typed_ir result_ty
                    (Semantic_ir.If
-                      ( condition.semantic_expr,
+                      ( condition_code,
                         then_code,
                         else_code )))
             | None -> Error.error "if branches must have same type")
@@ -253,16 +253,16 @@ let create ~compile_expr =
     | _, (Error _ as err), _ -> err
     | _, _, (Error _ as err) -> err
     | Ok condition, Ok then_expr, Ok else_expr -> (
-        match ensure_bool condition with
+        match condition_expression condition with
         | Error _ as err -> err
-        | Ok () ->
+        | Ok condition_code ->
             match merge_branch_expressions then_expr else_expr with
             | Some (result_ty, then_code, else_code) ->
               Ok
                 (typed_ir result_ty
                    (Semantic_ir.If
                       ( Semantic_ir.Apply
-                          (Semantic_ir.Ident "not", [ condition.semantic_expr ]),
+                          (Semantic_ir.Ident "not", [ condition_code ]),
                         then_code,
                         else_code )))
             | None -> Error.error "if-not branches must have same type")
@@ -275,14 +275,14 @@ let create ~compile_expr =
     | (Error _ as err), _ -> err
     | _, (Error _ as err) -> err
     | Ok condition, Ok body -> (
-        match ensure_bool condition with
+        match condition_expression condition with
         | Error _ as err -> err
-        | Ok () ->
+        | Ok condition_code ->
             if Types.equal body.ty TUnit then
               Ok
                 (typed_ir body.ty
                    (Semantic_ir.If
-                      (condition.semantic_expr, body.semantic_expr, Semantic_ir.Unit)))
+                      (condition_code, body.semantic_expr, Semantic_ir.Unit)))
             else Error.error "when body must be unit")
   
   and compile_cond scope env clauses =
@@ -708,14 +708,17 @@ let create ~compile_expr =
         | _, (Error _ as err), _ -> err
         | _, _, (Error _ as err) -> err
         | Ok condition, Ok then_expr, Ok else_expr -> (
-            match (ensure_bool condition, loop_branch_type then_expr.ty else_expr.ty) with
+            match
+              ( condition_expression condition,
+                loop_branch_type then_expr.ty else_expr.ty )
+            with
             | (Error _ as err), _ -> err
             | _, (Error _ as err) -> err
-            | Ok (), Ok result_ty ->
+            | Ok condition_code, Ok result_ty ->
                 Ok
                   (typed_ir result_ty
                      (Semantic_ir.If
-                        ( condition.semantic_expr,
+                        ( condition_code,
                           then_expr.semantic_expr,
                           else_expr.semantic_expr )))))
     | FList [ FSymbol "if-not"; condition_form; then_form; else_form ] ->

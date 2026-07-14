@@ -141,6 +141,10 @@ The compiler infers record-like map shapes automatically:
   munged when emitted as OCaml identifiers.
 - `(defn inc1 [x] (+ x 1))`, `(fn [x] ...)`, and `(let [...] ...)` are
   supported for typed function workflows.
+- `defn` supports fixed multi-arity clauses and a final variadic clause. Exact
+  fixed arities take precedence over the variadic fallback, variadic arguments
+  arrive as a lazy sequence, and multi-arity functions remain callable through
+  aliases and module exports. Tail-position `recur` targets its current clause.
 - `let`, `fn`, and `defn` support a static destructuring subset. Map
   destructuring supports `{:keys [...]}`, `{local :keyword}`, scalar literal
   `:or` defaults, and `:as` for structural maps; vector/list destructuring

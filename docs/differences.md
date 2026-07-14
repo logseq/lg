@@ -163,6 +163,11 @@ An explicitly typed recursive definition uses
 `(defn name [^:type argument ...] :return-type body...)` and lowers to native
 OCaml `let rec`. Recursive parameters and the return value are checked against
 the declared source signature.
+Multi-arity `defn` forms lower each clause to a mutually recursive OCaml
+function and expose a single callable value. Exact fixed arities are selected
+before a final variadic fallback; extra arguments are packed into a lazy
+sequence. Cross-arity calls, clause-local tail `recur`, aliases, and module
+exports preserve the same dispatch metadata.
 Unconstrained identity-style functions such as `(defn id [x] x)` and
 `(let [id (fn [x] x)] ...)` preserve OCaml-owned call-site polymorphism. cljml
 tracks only the fact that the return value is the same parameter so its core API

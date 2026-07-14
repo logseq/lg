@@ -35,4 +35,4 @@ let of_type = function
   | TTuple _ -> Some Tuple_receiver
   | TOcaml name | TOcaml_app (name, _) -> Some (Host_receiver name)
   | TNamed_record record -> Some (Record_receiver record.type_id)
-  | TUnknown | TVar _ | TFn _ | TRecord _ -> None
+  | TUnknown | TVar _ | TFn _ | TOverloaded_fn _ | TRecord _ -> None

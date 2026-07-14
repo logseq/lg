@@ -7,6 +7,7 @@ type binding = {
   row_param_types : string option list;
   host_reference : host_reference option;
   return_param_index : int option;
+  overload_targets : string list;
 }
 
 and host_reference =
@@ -29,7 +30,7 @@ let typed_ir ty semantic_expr =
   }
 
 let binding ?(row_param_types = []) ?host_reference ?protocol_id
-    ?return_param_index ocaml_name ty =
+    ?return_param_index ?(overload_targets = []) ocaml_name ty =
   {
     ocaml_name;
     ty;
@@ -37,6 +38,7 @@ let binding ?(row_param_types = []) ?host_reference ?protocol_id
     row_param_types;
     host_reference;
     return_param_index;
+    overload_targets;
   }
 
 let seqable_constraint_name = "__cljml_seqable_constraint"
@@ -85,6 +87,9 @@ let rec equal left right =
       List.length left_args = List.length right_args
       && List.for_all2 equal left_args right_args
       && equal left_ret right_ret
+  | TOverloaded_fn left, TOverloaded_fn right ->
+      List.length left = List.length right
+      && List.for_all2 equal_fn_arity left right
   | TRecord left, TRecord right ->
       List.length left = List.length right
       && List.for_all2
@@ -93,6 +98,12 @@ let rec equal left right =
   | TNamed_record left, TNamed_record right ->
       Type_id.equal left.type_id right.type_id
   | _ -> false
+
+and equal_fn_arity left right =
+  List.length left.fixed_params = List.length right.fixed_params
+  && List.for_all2 equal left.fixed_params right.fixed_params
+  && Option.equal equal left.rest_param right.rest_param
+  && equal left.return_ty right.return_ty
 
 let is_numeric = function TInt | TFloat -> true | _ -> false
 
@@ -186,6 +197,20 @@ let rec source_name = function
   | TFn (args, ret) ->
       "fn<(" ^ (args |> List.map source_name |> String.concat ", ") ^ ") -> "
       ^ source_name ret ^ ">"
+  | TOverloaded_fn arities ->
+      "fn<"
+      ^ (arities
+        |> List.map (fun arity ->
+               let fixed = List.map source_name arity.fixed_params in
+               let params =
+                 match arity.rest_param with
+                 | None -> fixed
+                 | Some rest -> fixed @ [ "& " ^ source_name rest ]
+               in
+               "(" ^ String.concat ", " params ^ ") -> "
+               ^ source_name arity.return_ty)
+        |> String.concat "; ")
+      ^ ">"
   | TRecord _ -> "map"
   | TNamed_record _ -> "map"
 
@@ -220,8 +245,19 @@ let rec ocaml_name = function
   | TSeq inner -> ocaml_name inner ^ " Seq.t"
   | TFn (args, ret) ->
       (args |> List.map ocaml_name |> String.concat " -> ") ^ " -> " ^ ocaml_name ret
+  | TOverloaded_fn arities -> ocaml_name (overloaded_storage_type arities)
   | TRecord _ -> "record"
   | TNamed_record record -> record.type_name
+
+and overloaded_storage_type = function
+  | [] -> TUnit
+  | arity :: rest ->
+      let params =
+        match arity.rest_param with
+        | None -> arity.fixed_params
+        | Some rest_ty -> arity.fixed_params @ [ TSeq rest_ty ]
+      in
+      TTuple [ TFn (params, arity.return_ty); overloaded_storage_type rest ]
 
 and set_module_name = function
   | TInt -> Ok "Cljml.Core_set.Int_set"
@@ -277,6 +313,15 @@ let rec qualify_module_type module_path ty =
       TFn
         ( List.map (qualify_module_type module_path) args,
           qualify_module_type module_path ret )
+  | TOverloaded_fn arities ->
+      TOverloaded_fn
+        (List.map
+           (fun arity ->
+             { fixed_params =
+                 List.map (qualify_module_type module_path) arity.fixed_params;
+               rest_param = Option.map (qualify_module_type module_path) arity.rest_param;
+               return_ty = qualify_module_type module_path arity.return_ty })
+           arities)
   | TRecord fields ->
       TRecord
         (List.map
@@ -330,6 +375,17 @@ let rec remap_module_type ~from_path ~to_path ty =
       TFn
         ( List.map (remap_module_type ~from_path ~to_path) args,
           remap_module_type ~from_path ~to_path ret )
+  | TOverloaded_fn arities ->
+      TOverloaded_fn
+        (List.map
+           (fun arity ->
+             { fixed_params =
+                 List.map (remap_module_type ~from_path ~to_path) arity.fixed_params;
+               rest_param =
+                 Option.map (remap_module_type ~from_path ~to_path) arity.rest_param;
+               return_ty =
+                 remap_module_type ~from_path ~to_path arity.return_ty })
+           arities)
   | TRecord fields ->
       TRecord
         (List.map
@@ -391,7 +447,25 @@ let rec infer_type_substitutions substitutions ~template ~actual =
       in
       infer_type_substitutions substitutions ~template:template_ret
         ~actual:actual_ret
+  | TOverloaded_fn templates, TOverloaded_fn actuals
+    when List.length templates = List.length actuals ->
+      List.fold_left2 infer_arity_substitutions substitutions templates actuals
   | _ -> substitutions
+
+and infer_arity_substitutions substitutions template actual =
+  let substitutions =
+    if List.length template.fixed_params = List.length actual.fixed_params then
+      infer_list_substitutions substitutions template.fixed_params actual.fixed_params
+    else substitutions
+  in
+  let substitutions =
+    match (template.rest_param, actual.rest_param) with
+    | Some template, Some actual ->
+        infer_type_substitutions substitutions ~template ~actual
+    | _ -> substitutions
+  in
+  infer_type_substitutions substitutions ~template:template.return_ty
+    ~actual:actual.return_ty
 
 and infer_list_substitutions substitutions templates actuals =
   List.fold_left2
@@ -415,6 +489,19 @@ let rec substitute_type_variables substitutions = function
       TFn
         ( List.map (substitute_type_variables substitutions) args,
           substitute_type_variables substitutions ret )
+  | TOverloaded_fn arities ->
+      TOverloaded_fn
+        (List.map
+           (fun arity ->
+             { fixed_params =
+                 List.map (substitute_type_variables substitutions)
+                   arity.fixed_params;
+               rest_param =
+                 Option.map (substitute_type_variables substitutions)
+                   arity.rest_param;
+               return_ty =
+                 substitute_type_variables substitutions arity.return_ty })
+           arities)
   | TRecord fields ->
       TRecord
         (List.map

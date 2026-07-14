@@ -74,6 +74,8 @@ let rec core_type = function
       List.fold_right
         (fun arg result -> Ast_helper.Typ.arrow ~loc Nolabel (core_type arg) result)
         args (core_type ret)
+  | Types.TOverloaded_fn arities ->
+      core_type (Types.overloaded_storage_type arities)
   | Types.TRecord _ -> type_constructor "record" []
   | Types.TNamed_record record ->
       Ast_helper.Typ.constr ~loc
@@ -358,11 +360,36 @@ let recursive_value_binding name identity expression =
       in
       Ok [ Ast_helper.Str.value ~loc Recursive [ binding ] ]
 
+let recursive_value_bindings bindings =
+  let rec compile acc = function
+    | [] -> Ok (List.rev acc)
+    | (binding : recursive_value) :: rest -> (
+        match
+          Ocaml_ir.to_parsetree ~context:("recursive value " ^ binding.name)
+            (Semantic_lowering.expression binding.expression)
+        with
+        | Error _ as err -> err
+        | Ok expression ->
+            let pattern =
+              match binding.identity with
+              | None -> Named binding.name
+              | Some (node_id, location) ->
+                  Located_value (node_id, location, Named binding.name)
+            in
+            compile
+              (Ast_helper.Vb.mk ~loc (value_pattern pattern) expression :: acc)
+              rest)
+  in
+  match compile [] bindings with
+  | Error _ as err -> err
+  | Ok bindings -> Ok [ Ast_helper.Str.value ~loc Recursive bindings ]
+
 let rec structure_of_item = function
   | Value_binding { pattern; expression } ->
       value_binding pattern expression
   | Recursive_value_binding { name; identity; expression } ->
       recursive_value_binding name identity expression
+  | Recursive_value_bindings bindings -> recursive_value_bindings bindings
   | Comment _ -> Ok []
   | Type_def { type_name; type_parameters; fields; location } ->
       Ok [ record_type_definition type_name type_parameters fields location ]

@@ -437,6 +437,60 @@ let rec compile_module ?location ?signature_name ?signature_location
                     next_type,
                     item :: items ))))
     | FList
+        (FSymbol "defn" :: ((FSymbol name) as _name_form)
+        :: ((FList _) as first_clause) :: remaining_clauses) ->
+        let local_name = Names.sanitize_name name in
+        let public_name = module_binding_ocaml_name module_path name in
+        let key = module_binding_key module_path name in
+        (match
+           check_emitted_name_collision env ~source_key:key ~ocaml_name:local_name
+         with
+        | Error _ as err -> err
+        | Ok () -> (
+            match
+              Expression_elaborator.prepare_multi_arity_fn ~ocaml_name:local_name
+                module_path env name (first_clause :: remaining_clauses)
+            with
+            | Error _ as err -> err
+            | Ok prepared ->
+                let local_targets, row_items, recursive_bindings =
+                  Expression_elaborator.lower_prepared_multi_arity prepared
+                in
+                let module_name = Names.module_path_to_ocaml module_path in
+                let public_targets =
+                  List.map (fun target -> module_name ^ "." ^ target) local_targets
+                in
+                let local_binding =
+                  Types.binding ~overload_targets:local_targets local_name
+                    prepared.expr.ty
+                in
+                let public_binding =
+                  Types.binding ~overload_targets:public_targets public_name
+                    (Types.qualify_module_type module_name prepared.expr.ty)
+                in
+                let value_item =
+                  Value_binding
+                    { pattern = Named local_name;
+                      expression = prepared.expr.semantic_expr }
+                in
+                Ok
+                  ( Env.add key local_binding env,
+                    public_bindings @ [ (key, public_binding) ],
+                    next_type,
+                    Group
+                      (row_items
+                      @ [ Recursive_value_bindings recursive_bindings; value_item ])
+                    :: items )))
+    | FList
+        (FSymbol "defn" :: ((FSymbol _name) as name_form)
+        :: ((FVector params) as params_form) :: body_forms)
+      when List.exists (function FSymbol "&" -> true | _ -> false) params ->
+        compile_module_form env public_bindings next_type items
+          (FList
+             [ FSymbol "defn";
+               name_form;
+               FList (params_form :: body_forms) ])
+    | FList
         (FSymbol "defn" :: ((FSymbol name) as name_form) :: params
         :: FKeyword return_keyword
         :: body_forms) -> (

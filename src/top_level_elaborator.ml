@@ -41,7 +41,7 @@ let compile_type_alias = Type_definition_elaborator.compile_type_alias
 let compile_type_record = Type_definition_elaborator.compile_type_record
 let compile_type_variant = Type_definition_elaborator.compile_type_variant
 
-let compile scope env next_type = function
+let rec compile scope env next_type = function
   | FList
       (FSymbol "module-signature" :: ((FSymbol signature_name) as name_form)
       :: item_forms) ->
@@ -210,6 +210,48 @@ let compile scope env next_type = function
                       pattern = located_value_pattern name_form (Named ocaml_name);
                       expression = expr.semantic_expr;
                     } ))))
+  | FList
+      (FSymbol "defn" :: ((FSymbol name) as name_form)
+      :: ((FList _) as first_clause) :: remaining_clauses) ->
+      let ocaml_name = Names.ocaml_binding_name scope name in
+      let env_key = Names.scoped_key scope name in
+      (match check_emitted_name_collision env ~source_key:env_key ~ocaml_name with
+      | Error _ as err -> err
+      | Ok () -> (
+          match
+            Expression_elaborator.prepare_multi_arity_fn ~ocaml_name scope env name
+              (first_clause :: remaining_clauses)
+          with
+          | Error _ as err -> err
+          | Ok prepared ->
+              let targets, row_items, recursive_bindings =
+                Expression_elaborator.lower_prepared_multi_arity prepared
+              in
+              let binding =
+                Types.binding ~overload_targets:targets ocaml_name prepared.expr.ty
+              in
+              let value_item =
+                Value_binding
+                  { pattern = located_value_pattern name_form (Named ocaml_name);
+                    expression = prepared.expr.semantic_expr }
+              in
+              Ok
+                ( scope,
+                  Env.add env_key binding env,
+                  next_type,
+                  Group
+                    (row_items
+                    @ [ Recursive_value_bindings recursive_bindings; value_item ])
+                )))
+  | FList
+      (FSymbol "defn" :: ((FSymbol _name) as name_form)
+      :: ((FVector params) as params_form) :: body_forms)
+    when List.exists (function FSymbol "&" -> true | _ -> false) params ->
+      compile scope env next_type
+        (FList
+           [ FSymbol "defn";
+             name_form;
+             FList (params_form :: body_forms) ])
   | FList
       (FSymbol "defn" :: ((FSymbol name) as name_form) :: params
       :: FKeyword return_keyword

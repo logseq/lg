@@ -794,6 +794,34 @@ let create ~compile_expr =
   and compile_function_arg scope env = function
     | FSymbol name -> lookup_function scope env name
     | form -> compile_expr scope env form
+
+  and overloaded_projection expression index =
+    let rec descend expression remaining =
+      if remaining = 0 then
+        Semantic_ir.Apply (Semantic_ir.Ident "fst", [ expression ])
+      else
+        descend
+          (Semantic_ir.Apply (Semantic_ir.Ident "snd", [ expression ]))
+          (remaining - 1)
+    in
+    descend expression index
+
+  and select_overloaded_arity arities argument_count =
+    let indexed = List.mapi (fun index arity -> (index, arity)) arities in
+    match
+      List.find_opt
+        (fun (_, (arity : fn_arity)) ->
+          Option.is_none arity.rest_param
+          && List.length arity.fixed_params = argument_count)
+        indexed
+    with
+    | Some selected -> Some selected
+    | None ->
+        List.find_opt
+          (fun (_, (arity : fn_arity)) ->
+            Option.is_some arity.rest_param
+            && argument_count >= List.length arity.fixed_params)
+          indexed
   
   and compile_named_function_call scope env name arg_forms =
     match lookup_binding scope env name with
@@ -811,6 +839,68 @@ let create ~compile_expr =
         | Error _ as err -> err
         | Ok args -> (
             match fn.ty with
+            | TOverloaded_fn arities -> (
+                match select_overloaded_arity arities (List.length args) with
+                | None ->
+                    Error.error
+                      (name ^ " called with unsupported arity "
+                     ^ string_of_int (List.length args))
+                | Some (arity_index, arity) ->
+                    let fixed_count = List.length arity.fixed_params in
+                    let rec split_at count acc values =
+                      if count = 0 then (List.rev acc, values)
+                      else
+                        match values with
+                        | [] -> (List.rev acc, [])
+                        | value :: rest ->
+                            split_at (count - 1) (value :: acc) rest
+                    in
+                    let fixed_args, extra_args = split_at fixed_count [] args
+                    in
+                    let fixed_compatible =
+                      List.for_all2
+                        (fun expected arg ->
+                          Types.assignable ~policy:Host_boundary ~expected
+                            ~actual:arg.ty)
+                        arity.fixed_params fixed_args
+                    in
+                    let rest_compatible =
+                      match arity.rest_param with
+                      | None -> extra_args = []
+                      | Some expected ->
+                          List.for_all
+                            (fun arg ->
+                              Types.assignable ~policy:Host_boundary ~expected
+                                ~actual:arg.ty)
+                            extra_args
+                    in
+                    if not (fixed_compatible && rest_compatible) then
+                      Error.error (name ^ " called with incompatible arguments")
+                    else
+                      let arguments =
+                        List.map (fun arg -> arg.semantic_expr) fixed_args
+                        @
+                        match arity.rest_param with
+                        | None -> []
+                        | Some _ ->
+                            [ Semantic_ir.Apply
+                                ( Semantic_ir.Ident "Cljml.Runtime_seq.of_list",
+                                  [ Semantic_ir.List
+                                      (List.map
+                                         (fun arg -> arg.semantic_expr)
+                                         extra_args) ] ) ]
+                      in
+                      let target =
+                        match List.nth_opt fn.overload_targets arity_index with
+                        | Some target -> Semantic_ir.Ident target
+                        | None ->
+                            overloaded_projection
+                              (Semantic_ir.Ident fn.ocaml_name)
+                              arity_index
+                      in
+                      Ok
+                        (typed_ir arity.return_ty
+                           (Semantic_ir.Apply (target, arguments))))
             | TFn (param_tys, ret)
               when List.length param_tys = List.length args
                    && List.for_all2

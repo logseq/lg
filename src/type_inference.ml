@@ -69,6 +69,22 @@ let inferred_form_type params = function
   | FList [ FSymbol "not"; _ ] -> TBool
   | _ -> TUnknown
 
+let select_fn_arity arities argument_count =
+  match
+    List.find_opt
+      (fun (arity : fn_arity) ->
+        Option.is_none arity.rest_param
+        && List.length arity.fixed_params = argument_count)
+      arities
+  with
+  | Some arity -> Some arity
+  | None ->
+      List.find_opt
+        (fun (arity : fn_arity) ->
+          Option.is_some arity.rest_param
+          && argument_count >= List.length arity.fixed_params)
+        arities
+
 let infer_params ~lookup_function_ty params body_forms =
   let rec infer_expected expected_ty params = function
     | FSymbol name -> constrain_symbol expected_ty params name
@@ -112,6 +128,25 @@ let infer_params ~lookup_function_ty params body_forms =
             | Error _ as err -> err
             | Ok params -> infer_expected expected_ty params arg)
           (Ok params) param_tys args
+    | Ok (TOverloaded_fn arities) -> (
+        match select_fn_arity arities (List.length args) with
+        | None -> infer_all params args
+        | Some arity ->
+            let fixed_count = List.length arity.fixed_params in
+            let expected_tys =
+              arity.fixed_params
+              @
+              match arity.rest_param with
+              | None -> []
+              | Some rest_ty ->
+                  List.init (List.length args - fixed_count) (fun _ -> rest_ty)
+            in
+            List.fold_left2
+              (fun acc expected_ty arg ->
+                match acc with
+                | Error _ as err -> err
+                | Ok params -> infer_expected expected_ty params arg)
+              (Ok params) expected_tys args)
     | _ -> infer_all params args
   and inferred_unary_function_param _params = function
     | FSymbol name -> (
