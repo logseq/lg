@@ -344,6 +344,13 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params body_for
               match constrain_seqable TUnknown params source with
               | Error _ as err -> err
               | Ok params -> infer_values params rest)
+          | FMap _ :: FSymbol source :: rest -> (
+              match
+                constrain_symbol (Types.dynamic_constraint TUnknown) params
+                  source
+              with
+              | Error _ as error -> error
+              | Ok params -> infer_values params rest)
           | FSymbol _name :: value_form :: rest -> (
               match infer_form params value_form with
               | Error _ as err -> err
@@ -456,6 +463,8 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params body_for
     | FList [ FSymbol "sequential?"; FSymbol collection ] ->
         constrain_optional_seqable ~sequential:true
           (Types.dynamic_constraint TUnknown) params collection
+    | FList [ FSymbol "not-empty"; FSymbol collection ] ->
+        constrain_optional_seqable TUnknown params collection
     | FList
         [ FSymbol "satisfies?"; FSymbol protocol_name; FSymbol receiver ] -> (
         match lookup_protocol_constraint protocol_name with
@@ -483,6 +492,12 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params body_for
             ("first" | "second" | "last" | "seq" | "rest" | "next" | "empty?");
           FSymbol collection ] ->
         constrain_seqable TUnknown params collection
+    | FList
+        [ FSymbol
+            ("first" | "second" | "last" | "seq" | "rest" | "next" | "empty?");
+          FList [ FKeyword keyword; FSymbol record ] ] ->
+        add_record_field_constraint record keyword
+          (Types.dynamic_constraint TUnknown) params
     | FList
         [ FSymbol ("nthnext" | "nthrest"); FSymbol collection; count ] -> (
         match infer_expected TInt params count with

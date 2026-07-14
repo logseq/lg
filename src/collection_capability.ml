@@ -10,6 +10,7 @@ let rec to_seq_expr env collection =
           [ collection.semantic_expr ] )
   else
   match collection.ty with
+  | TNil -> Ok (TUnknown, Semantic_ir.Ident "Seq.empty")
   | TNullable value_ty ->
       let value_name = "__lg_optional_seqable_value" in
       let value = typed_ir value_ty (Semantic_ir.Ident value_name) in
@@ -54,10 +55,42 @@ let rec to_seq_expr env collection =
             ( inner,
               Semantic_ir.Apply
                 (adapter, [ collection.semantic_expr ]) )
-      | _ -> Error.error "constrained Seqable value must be a function parameter")
+      | _ ->
+          let packed_name = "__lg_seqable_value" in
+          let packed = Semantic_ir.Ident packed_name in
+          let value = Semantic_ir.Apply (Semantic_ir.Ident "snd", [ packed ]) in
+          let sequence =
+            match constraint_kind with
+            | `Required ->
+                Semantic_ir.Apply
+                  ( Semantic_ir.Apply
+                      (Semantic_ir.Ident "fst", [ packed ]),
+                    [ value ] )
+            | `Optional | `Optional_sequential ->
+                let adapter_name = "__lg_seqable_adapter" in
+                Semantic_ir.Match
+                  ( Semantic_ir.Apply (Semantic_ir.Ident "fst", [ packed ]),
+                    [ ( Semantic_ir.PConstructor ("None", None),
+                        Semantic_ir.Apply
+                          ( Semantic_ir.Ident "invalid_arg",
+                            [ Semantic_ir.String
+                                "value is not sequential" ] ) );
+                      ( Semantic_ir.PConstructor
+                          ("Some", Some (Semantic_ir.PVar adapter_name)),
+                        Semantic_ir.Apply
+                          (Semantic_ir.Ident adapter_name, [ value ]) );
+                    ] )
+          in
+          Ok
+            ( inner,
+              Semantic_ir.Let
+                ( [ (Semantic_ir.PVar packed_name, collection.semantic_expr) ],
+                  sequence ) ))
   | None ->
   match Core_protocols.find_seqable collection.ty (Compiler_environment.protocols env) with
-  | None -> Error.error "collection value is not seqable"
+  | None ->
+      Error.error
+        ("collection value is not seqable: " ^ Types.source_name collection.ty)
   | Some implementation -> (
       match Core_sequence_transform.collection_to_seq_expr collection with
       | Ok sequence -> Ok sequence
@@ -165,7 +198,33 @@ let seqable_adapter ?element_mapper env argument =
                    Semantic_ir.Apply
                      (adapter, [ value ]) ))
         | _ ->
-            Error.error "constrained Seqable value must be a function parameter")
+            let packed_name = "__lg_seqable_argument" in
+            let packed = Semantic_ir.Ident packed_name in
+            let adapter =
+              match constraint_kind with
+              | `Required ->
+                  Semantic_ir.Apply (Semantic_ir.Ident "fst", [ packed ])
+              | `Optional | `Optional_sequential ->
+                  let adapter_name = "__lg_seqable_adapter" in
+                  Semantic_ir.Match
+                    ( Semantic_ir.Apply
+                        (Semantic_ir.Ident "fst", [ packed ]),
+                      [ ( Semantic_ir.PConstructor ("None", None),
+                          Semantic_ir.Apply
+                            ( Semantic_ir.Ident "invalid_arg",
+                              [ Semantic_ir.String
+                                  "value is not sequential" ] ) );
+                        ( Semantic_ir.PConstructor
+                            ("Some", Some (Semantic_ir.PVar adapter_name)),
+                          Semantic_ir.Ident adapter_name );
+                      ] )
+            in
+            Ok
+              (Semantic_ir.Let
+                 ( [ (Semantic_ir.PVar packed_name, argument.semantic_expr) ],
+                   Semantic_ir.Fun
+                     ( [ Semantic_ir.PVar value_name ],
+                       Semantic_ir.Apply (adapter, [ value ]) ) )))
     | None ->
         let parameter = typed_ir argument.ty value in
         to_seq_expr env parameter

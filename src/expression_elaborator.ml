@@ -712,9 +712,9 @@ and prepare_inferred_recursive_fn ~ocaml_name scope env source_name params
           then
             let self_param_tys =
               List.map2
-                (fun initial dynamic ->
-                  if Types.is_dynamic dynamic then dynamic else initial)
-                param_tys dynamic_param_tys
+                (fun inferred dynamic ->
+                  if Types.is_dynamic dynamic then dynamic else inferred)
+                inferred_param_tys dynamic_param_tys
             in
             let self_binding =
               Types.binding ocaml_name (TFn (self_param_tys, TUnknown))
@@ -724,8 +724,11 @@ and prepare_inferred_recursive_fn ~ocaml_name scope env source_name params
             in
             let overrides =
               List.map2
-                (fun explicit dynamic ->
-                  if Types.is_dynamic dynamic then Some dynamic else explicit)
+                (fun explicit inferred ->
+                  match explicit with
+                  | Some _ -> explicit
+                  | None when Types.equal inferred TUnknown -> None
+                  | None -> Some inferred)
                 param_type_overrides dynamic_param_tys
             in
             prepare_fn ~param_type_overrides:overrides scope env params body_forms

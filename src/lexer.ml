@@ -98,6 +98,8 @@ let tokenize source =
           loop (i + 2) (token Unquote_splicing i (i + 2) :: tokens)
       | '~' -> loop (i + 1) (token Unquote i (i + 1) :: tokens)
       | '@' -> loop (i + 1) (token Deref i (i + 1) :: tokens)
+      | '#' when i + 1 < String.length source && source.[i + 1] = '_' ->
+          loop (i + 2) (token (Symbol "#_") i (i + 2) :: tokens)
       | '#' when i + 1 < String.length source && source.[i + 1] = '(' ->
           loop (i + 2) (token Anon_lparen i (i + 2) :: tokens)
       | ')' -> loop (i + 1) (token Rparen i (i + 1) :: tokens)

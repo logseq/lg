@@ -263,7 +263,7 @@ and pack_dynamic_payload env expected_dynamic argument =
                          ("Some", Some (Semantic_ir.PVar value_name)),
                        packed_value );
                    ] ))
-    | TOcaml_app (constraint_name, [ element_ty; _value_ty ])
+    | TOcaml_app (constraint_name, [ element_ty; value_ty ])
       when constraint_name = Types.seqable_constraint_name
            || constraint_name = Types.optional_seqable_constraint_name
            || constraint_name = Types.optional_sequential_constraint_name -> (
@@ -298,8 +298,55 @@ and pack_dynamic_payload env expected_dynamic argument =
                              pack_sequence (Semantic_ir.Ident adapter_name) );
                          ] ))
         | _ ->
-            Error.error
-              "constrained Seqable value must be a function parameter")
+            let packed_name = "__lg_dynamic_seqable_value" in
+            let packed = Semantic_ir.Ident packed_name in
+            let value_expr =
+              Semantic_ir.Apply (Semantic_ir.Ident "snd", [ packed ])
+            in
+            let item_name = "__lg_dynamic_seqable_item" in
+            let item = typed_ir element_ty (Semantic_ir.Ident item_name) in
+            let value = typed_ir value_ty value_expr in
+            (match
+               ( pack_dynamic_value env expected_dynamic item,
+                 pack_dynamic_value env expected_dynamic value )
+             with
+            | (Error _ as error), _ -> error
+            | _, (Error _ as error) -> error
+            | Ok packed_item, Ok fallback ->
+                let pack_sequence adapter =
+                  Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.seq",
+                      [ Semantic_ir.Apply
+                          ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.map",
+                            [ Semantic_ir.Fun
+                                ([ Semantic_ir.PVar item_name ], packed_item);
+                              Semantic_ir.Apply (adapter, [ value_expr ]);
+                            ] );
+                      ] )
+                in
+                let expression =
+                  if constraint_name = Types.seqable_constraint_name then
+                    pack_sequence
+                      (Semantic_ir.Apply
+                         (Semantic_ir.Ident "fst", [ packed ]))
+                  else
+                    let adapter_name = "__lg_dynamic_seqable_adapter" in
+                    Semantic_ir.Match
+                      ( Semantic_ir.Apply
+                          (Semantic_ir.Ident "fst", [ packed ]),
+                        [ (Semantic_ir.PConstructor ("None", None), fallback);
+                          ( Semantic_ir.PConstructor
+                              ("Some", Some (Semantic_ir.PVar adapter_name)),
+                            pack_sequence
+                              (Semantic_ir.Ident adapter_name) );
+                        ] )
+                in
+                Ok
+                  (Semantic_ir.Let
+                     ( [ (Semantic_ir.PVar packed_name,
+                          argument.semantic_expr) ],
+                       expression )))
+            )
     | TUnknown | TVar _ -> Ok argument.semantic_expr
     | TFn (parameter_tys, return_ty) ->
         let argument_names =
@@ -526,6 +573,15 @@ and pack_dynamic_value env expected_dynamic argument =
                    [ payload; Semantic_ir.List protocols ] ))
 
 let rec pack_constrained_value env expected argument =
+  match
+    ( Types.seqable_constraint_info expected,
+      Types.seqable_constraint_info argument.ty )
+  with
+  | Some (_, expected_element, _), Some (_, actual_element, _)
+    when Types.assignable ~policy:Host_boundary ~expected:expected_element
+           ~actual:actual_element ->
+      Ok argument.semantic_expr
+  | _ ->
   match Types.dynamic_constraint_info expected with
   | Some _ -> pack_dynamic_value env expected argument
   | None ->
@@ -2553,6 +2609,7 @@ let create ~compile_expr =
     | "persistent!" -> compile_persistent_bang scope env arg_forms
     | "hash-map" | "array-map" | "sorted-map" -> compile_hash_map scope env arg_forms
     | "rest" | "seq" | "empty?" -> compile_collection_call scope env name arg_forms
+    | "not-empty" -> compile_not_empty scope env arg_forms
     | "into" -> (
         match arg_forms with
         | [ target_form; FSymbol "cat"; source_form ] -> (
@@ -2624,7 +2681,7 @@ let create ~compile_expr =
     | "constantly" -> compile_constantly scope env arg_forms
     | "complement" -> compile_complement scope env arg_forms
     | "every-pred" -> compile_predicate_combinator scope env "every-pred" arg_forms
-    | "some-fn" -> compile_predicate_combinator scope env "some-fn" arg_forms
+    | "some-fn" -> compile_some_fn scope env arg_forms
     | "juxt" -> compile_juxt scope env arg_forms
     | "distinct?" -> compile_distinct_question scope env arg_forms
     | "compare" -> compile_compare scope env arg_forms
@@ -2807,6 +2864,17 @@ let create ~compile_expr =
                      (Semantic_ir.Apply
                         ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.into",
                           [ target.semantic_expr; packed_sequence ] )))))
+    | Ok target, Ok source when Types.is_dynamic source.ty -> (
+        match Collection_capability.to_seq_expr env source with
+        | Error _ -> Error.error "into source must be a collection"
+        | Ok (element_ty, sequence) ->
+            let source =
+              typed_ir (TList element_ty)
+                (Semantic_ir.Apply
+                   ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.to_list",
+                     [ sequence ] ))
+            in
+            Core_sequence_transform.compile "into" [ target; source ])
     | Ok target, Ok source -> Core_sequence_transform.compile "into" [ target; source ]
 
   and compile_sequence_transform_call scope env name arg_forms =
@@ -2873,6 +2941,69 @@ let create ~compile_expr =
                             "Lg_runtime.Runtime_seq.distinct",
                           [ equal; sequence ] )))))
     | Ok _ -> Error.error "distinct expects 1 arguments"
+
+  and compile_not_empty scope env arg_forms =
+    match compile_args_for scope env arg_forms with
+    | Error _ as error -> error
+    | Ok [ collection ] ->
+        let value_name = "__lg_not_empty_value" in
+        let value =
+          typed_ir collection.ty (Semantic_ir.Ident value_name)
+        in
+        (match Collection_capability.to_seq_expr env value with
+        | Error _ -> Error.error "not-empty expects a seqable value"
+        | Ok (_, sequence) ->
+            let result_ty, empty, present =
+              match collection.ty with
+              | TNil ->
+                  (TNil, Semantic_ir.Constructor ("None", None),
+                   Semantic_ir.Constructor ("None", None))
+              | TNullable _ | TOcaml_app ("option", [ _ ]) | TOcaml "option" ->
+                  ( collection.ty,
+                    Semantic_ir.Constructor ("None", None),
+                    Semantic_ir.Ident value_name )
+              | ty ->
+                  ( TNullable ty,
+                    Semantic_ir.Constructor ("None", None),
+                    Semantic_ir.Constructor
+                      ("Some", Some (Semantic_ir.Ident value_name)) )
+            in
+            Ok
+              (typed_ir result_ty
+                 (Semantic_ir.Let
+                    ( [ (Semantic_ir.PVar value_name, collection.semantic_expr) ],
+                      Semantic_ir.If
+                        ( Semantic_ir.Apply
+                            ( Semantic_ir.Ident
+                                "Lg_runtime.Runtime_seq.is_empty",
+                              [ sequence ] ),
+                          empty,
+                          present ) ))))
+    | Ok _ -> Error.error "not-empty expects 1 arguments"
+
+  and compile_some_fn scope env function_forms =
+    match function_forms with
+    | [] -> Error.error "some-fn expects at least 1 function"
+    | _ ->
+        let argument_name = "__lg_some_fn_value" in
+        let bindings, calls =
+          function_forms
+          |> List.mapi (fun index function_form ->
+                 let name = "__lg_some_fn_" ^ string_of_int index in
+                 ( [ FSymbol name; function_form ],
+                   FList [ FSymbol name; FSymbol argument_name ] ))
+          |> List.split
+        in
+        compile_expr scope env
+          (FList
+             [ FSymbol "let";
+               FVector (List.concat bindings);
+               FList
+                 [ FSymbol "fn";
+                   FVector [ FSymbol argument_name ];
+                   FList (FSymbol "or" :: calls);
+                 ];
+             ])
 
   and compile_subs scope env arg_forms =
     match compile_args_for scope env arg_forms with

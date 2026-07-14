@@ -37,7 +37,7 @@ let local_binding ?identity source_name ty semantic_expr =
   }
 
 type map_binding = {
-  local_name : string;
+  binding_pattern : form;
   keyword : string;
   default_form : form option;
 }
@@ -105,6 +105,8 @@ and map_pattern_names pairs =
          | FKeyword ":keys", value -> add_keys acc value
          | FKeyword ":as", FSymbol name -> add_name acc name
          | FSymbol name, FKeyword _ -> add_name acc name
+         | ((FVector _ | FMap _) as pattern), FKeyword _ ->
+             List.rev_append (pattern_names pattern) acc
          | _ -> acc)
        []
   |> List.rev
@@ -183,7 +185,7 @@ let parse_map_pattern pairs =
                | FSymbol name when not (ignore_name name) ->
                    Result.map
                      (fun bindings ->
-                       { local_name = name;
+                       { binding_pattern = FSymbol name;
                          keyword = keyword_for_local name;
                          default_form = None }
                        :: bindings)
@@ -208,7 +210,10 @@ let parse_map_pattern pairs =
   let apply_defaults defaults fields =
     fields
     |> List.map (fun field ->
-           { field with default_form = default_for defaults field.local_name })
+           match field.binding_pattern with
+           | FSymbol name ->
+               { field with default_form = default_for defaults name }
+           | _ -> field)
   in
   let rec loop fields as_name defaults = function
     | [] -> Ok { field_bindings = apply_defaults defaults (List.rev fields); as_name }
@@ -222,9 +227,14 @@ let parse_map_pattern pairs =
         match parse_defaults defaults_form with
         | Error _ as err -> err
         | Ok parsed_defaults -> loop fields as_name (parsed_defaults @ defaults) rest)
-    | (FSymbol local_name, FKeyword keyword) :: rest ->
-        if ignore_name local_name then loop fields as_name defaults rest
-        else loop ({ local_name; keyword; default_form = None } :: fields) as_name defaults rest
+    | (((FSymbol _ | FVector _ | FMap _) as binding_pattern), FKeyword keyword)
+      :: rest ->
+        if binding_pattern = FSymbol "_" then
+          loop fields as_name defaults rest
+        else
+          loop
+            ({ binding_pattern; keyword; default_form = None } :: fields)
+            as_name defaults rest
     | _ :: _ -> Error.error "unsupported map destructuring form"
   in
   loop [] None [] pairs
@@ -241,17 +251,21 @@ let literal_default = function
   | FKeyword keyword -> Ok (typed_ir TKeyword (Semantic_ir.String keyword))
   | _ -> Error.error "map destructuring :or defaults must be scalar literals"
 
-let infer_map_type pattern lookup_local_ty =
+let rec infer_map_type pattern lookup_local_ty =
   parse_map_pattern pattern
   |> Result.map (fun parsed ->
          let fields =
            parsed.field_bindings
-           |> List.map (fun { local_name; keyword; _ } ->
-                  make_field keyword (lookup_local_ty local_name))
+           |> List.map (fun { binding_pattern; keyword; _ } ->
+                  let ty =
+                    infer_pattern_type binding_pattern lookup_local_ty
+                    |> Result.value ~default:TUnknown
+                  in
+                  make_field keyword ty)
          in
          TRecord fields)
 
-let infer_sequence_type forms lookup_local_ty =
+and infer_sequence_type forms lookup_local_ty =
   match parse_sequence_pattern forms with
   | Error _ as err -> err
   | Ok pattern ->
@@ -269,20 +283,20 @@ let infer_sequence_type forms lookup_local_ty =
       in
       Ok (TVector element_ty)
 
-let infer_pattern_type pattern lookup_local_ty =
+and infer_pattern_type pattern lookup_local_ty =
   match pattern with
   | FSymbol name -> Ok (lookup_local_ty name)
   | FMap pairs -> infer_map_type pairs lookup_local_ty
   | FVector forms -> infer_sequence_type forms lookup_local_ty
   | _ -> Error.error "unsupported destructuring pattern"
 
-let bind_map (target : typed_expr) pairs =
+let rec bind_map ~env (target : typed_expr) pairs =
   match target.ty with
   | TRecord fields | TNamed_record { fields; _ } -> (
       match parse_map_pattern pairs with
       | Error _ as err -> err
       | Ok parsed ->
-          let bind_field { local_name; keyword; default_form } =
+          let bind_field { binding_pattern; keyword; default_form } =
             match field_type fields keyword with
             | Error _ -> (
                 match default_form with
@@ -290,11 +304,11 @@ let bind_map (target : typed_expr) pairs =
                 | Some form -> (
                     match literal_default form with
                     | Error _ as err -> err
-                    | Ok value -> Ok (local_binding local_name value.ty value.semantic_expr)))
+                    | Ok value -> bind_pattern ~env value binding_pattern))
             | Ok field ->
-                Ok
-                  (local_binding local_name field.ty
-                     (Structural_map.field_expr target field))
+                bind_pattern ~env
+                  (typed_ir field.ty (Structural_map.field_expr target field))
+                  binding_pattern
           in
           let rec bind_fields acc = function
             | [] ->
@@ -307,12 +321,44 @@ let bind_map (target : typed_expr) pairs =
             | binding :: rest -> (
                 match bind_field binding with
                 | Error _ as err -> err
-                | Ok binding -> bind_fields (binding :: acc) rest)
+                | Ok bindings ->
+                    bind_fields (List.rev_append bindings acc) rest)
+          in
+          bind_fields [] parsed.field_bindings)
+  | ty when Types.is_dynamic ty -> (
+      match parse_map_pattern pairs with
+      | Error _ as error -> error
+      | Ok parsed ->
+          let rec bind_fields acc = function
+            | [] ->
+                let acc =
+                  match parsed.as_name with
+                  | None -> acc
+                  | Some name ->
+                      local_binding name target.ty target.semantic_expr :: acc
+                in
+                Ok (List.rev acc)
+            | { binding_pattern; keyword; _ } :: rest ->
+                let value =
+                  typed_ir (Types.dynamic_constraint TUnknown)
+                    (Semantic_ir.Apply
+                       ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.get",
+                         [ target.semantic_expr;
+                           Semantic_ir.Apply
+                             ( Semantic_ir.Ident
+                                 "Lg_runtime.Runtime_dynamic.keyword",
+                               [ Semantic_ir.String keyword ] );
+                         ] ))
+                in
+                (match bind_pattern ~env value binding_pattern with
+                | Error _ as error -> error
+                | Ok bindings ->
+                    bind_fields (List.rev_append bindings acc) rest)
           in
           bind_fields [] parsed.field_bindings)
   | _ -> Error.error "map destructuring expects a map"
 
-let bind_sequence env (target : typed_expr) forms =
+and bind_sequence env (target : typed_expr) forms =
   let bind_at inner index name =
     let semantic_expr =
       match target.ty with
@@ -423,13 +469,13 @@ let bind_sequence env (target : typed_expr) forms =
           in
           Ok bindings)
 
-let bind_pattern ~env (target : typed_expr) pattern =
+and bind_pattern ~env (target : typed_expr) pattern =
   let bindings =
     match pattern with
   | FSymbol name ->
       if ignore_name name then Ok []
       else Ok [ local_binding name target.ty target.semantic_expr ]
-  | FMap pairs -> bind_map target pairs
+  | FMap pairs -> bind_map ~env target pairs
   | FVector forms -> bind_sequence env target forms
   | _ -> Error.error "unsupported destructuring pattern"
   in

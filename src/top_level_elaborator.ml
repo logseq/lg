@@ -274,6 +274,22 @@ let rec compile scope env next_type = function
           in
           compile_methods env [] None interface_forms)
   | FList (FSymbol "defn-group" :: definitions) ->
+      let env =
+        definitions
+        |> List.fold_left
+             (fun env -> function
+               | FList
+                   (FSymbol ("defn" | "defn-") :: FSymbol name :: _) ->
+                   let key = Names.scoped_key scope name in
+                   if Option.is_some (Env.find_opt key env) then env
+                   else
+                     Env.add key
+                       (Types.binding (Names.ocaml_binding_name scope name)
+                          (TOcaml "__declared_fn"))
+                       env
+               | _ -> env)
+             env
+      in
       let rec compile_definitions env row_items bindings = function
         | [] ->
             Ok
@@ -287,10 +303,23 @@ let rec compile scope env next_type = function
             (FSymbol ("defn" | "defn-") :: ((FSymbol name) as name_form)
             :: params :: body_forms)
           :: rest -> (
-            match prepare_fn scope env params body_forms with
+            let ocaml_name = Names.ocaml_binding_name scope name in
+            let recursive =
+              List.exists (form_mentions_symbol name) body_forms
+              || List.exists
+                   (form_mentions_symbol (Names.scoped_key scope name))
+                   body_forms
+            in
+            let prepared =
+              match (recursive, params) with
+              | true, FVector _ ->
+                  prepare_inferred_recursive_fn ~ocaml_name scope env name
+                    params body_forms
+              | _ -> prepare_fn scope env params body_forms
+            in
+            match prepared with
             | Error _ as err -> err
             | Ok parts ->
-                let ocaml_name = Names.ocaml_binding_name scope name in
                 let param_tys =
                   parts.param_bindings
                   |> List.map (fun (_key, (binding : binding)) -> binding.ty)
@@ -324,6 +353,49 @@ let rec compile scope env next_type = function
             Error.error "defn-group only supports function definitions"
       in
       compile_definitions env [] [] definitions
+  | FList
+      [ FSymbol "defn-signature";
+        FList
+          (FSymbol ("defn" | "defn-") :: FSymbol name :: params
+          :: body_forms) ] ->
+      let ocaml_name = Names.ocaml_binding_name scope name in
+      let recursive =
+        List.exists (form_mentions_symbol name) body_forms
+        || List.exists
+             (form_mentions_symbol (Names.scoped_key scope name))
+             body_forms
+      in
+      let prepared =
+        match (recursive, params) with
+        | true, FVector _ ->
+            prepare_inferred_recursive_fn ~ocaml_name scope env name params
+              body_forms
+        | _ -> prepare_fn scope env params body_forms
+      in
+      (match prepared with
+      | Error _ ->
+          Ok
+            ( scope,
+              env,
+              next_type,
+              Comment ("deferred function signature " ^ name) )
+      | Ok parts ->
+          let param_tys =
+            parts.param_bindings
+            |> List.map (fun (_key, (binding : binding)) -> binding.ty)
+          in
+          let row_param_types = row_param_type_names ocaml_name param_tys in
+          let expression =
+            fn_code ~row_param_type_names:row_param_types parts
+          in
+          let binding =
+            binding_of_expr ~row_param_types ocaml_name expression
+          in
+          Ok
+            ( scope,
+              Env.add (Names.scoped_key scope name) binding env,
+              next_type,
+              Comment ("function signature " ^ name) ))
   | FList
       (FSymbol "module-signature" :: ((FSymbol signature_name) as name_form)
       :: item_forms) ->
@@ -595,7 +667,11 @@ let rec compile scope env next_type = function
   | FList
       (FSymbol ("defn" | "defn-") :: ((FSymbol name) as name_form) :: params
       :: body_forms)
-    when List.exists (form_mentions_symbol name) body_forms -> (
+    when
+      List.exists (form_mentions_symbol name) body_forms
+      || List.exists
+           (form_mentions_symbol (Names.scoped_key scope name))
+           body_forms -> (
       let ocaml_name = Names.ocaml_binding_name scope name in
       match
         prepare_inferred_recursive_fn ~ocaml_name scope env name params body_forms

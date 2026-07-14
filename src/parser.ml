@@ -21,6 +21,16 @@ let error_at span message =
     message
 
 let rec parse_one ~target = function
+  | { desc = Symbol "#_"; span = reader_span } :: rest -> (
+      match parse_present ~target rest with
+      | Error _ -> error_at reader_span "reader discard expects a form"
+      | Ok (discarded, rest) ->
+          Ok
+            ( located (FSymbol omitted_reader_form)
+                { start_offset = reader_span.start_offset;
+                  end_offset = discarded.span.end_offset;
+                },
+              rest ))
   | { desc = Symbol "#?"; span = reader_span }
     :: { desc = Lparen; span = open_span }
     :: rest ->

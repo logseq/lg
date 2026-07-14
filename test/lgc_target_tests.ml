@@ -36,6 +36,18 @@ let assert_not_contains source unexpected =
 let compile target source =
   Lg.Compiler.compile_string ~target source |> expect_ok
 
+let test_reader_discard_omits_forms () =
+  let generated =
+    compile Lg.Target.Native
+      {|
+#_(def discarded-value missing-symbol)
+(def retained-values [1 #_2 3])
+|}
+  in
+  assert_not_contains generated "discarded_value";
+  assert_contains generated "retained_values";
+  assert_not_contains generated "missing_symbol"
+
 let test_selects_each_target () =
   let source =
     {|
@@ -164,6 +176,7 @@ let test_omits_unmatched_reader_conditionals () =
 
 let tests =
   [
+    ("reader discard omits forms", test_reader_discard_omits_forms);
     ("selects each target", test_selects_each_target);
     ( "supports top-level, nested, and default conditionals",
       test_supports_top_level_nested_and_default_conditionals );

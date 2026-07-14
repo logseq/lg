@@ -4881,12 +4881,14 @@ let test_batched_sequence_functions_work () =
        (pr-str (map-indexed (fn [i x] (+ i x)) [10 20])) ":"
        (pr-str (filterv (fn [x] (odd? x)) [1 2 3])) ":"
        (pr-str (mapv (fn [x] (inc x)) [1 2])) ":"
-       (reduce-kv (fn [acc i x] (+ acc (+ i x))) 0 [10 20])))
+       (reduce-kv (fn [acc i x] (+ acc (+ i x))) 0 [10 20]) ":"
+       (if-some [values (not-empty [1 2])] (count values) 0) ":"
+       (nil? (not-empty []))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "batched_sequence_functions_work"
-    "[1 3]:[1 2 3]:[3 4]:(1 2 3):(1 2 3):(1 2 3 4):[1 2]:#{1 2}:(\"x\" \"x\" \"x\"):(7 7 7):(1 0 2 0 3):(1 3 2 4):2:1:3:3:1:(0 1 3 6):[1 2 1]:(10 21):[1 3]:[2 3]:31\n"
+    "[1 3]:[1 2 3]:[3 4]:(1 2 3):(1 2 3):(1 2 3 4):[1 2]:#{1 2}:(\"x\" \"x\" \"x\"):(7 7 7):(1 0 2 0 3):(1 3 2 4):2:1:3:3:1:(0 1 3 6):[1 2 1]:(10 21):[1 3]:[2 3]:31:2:true\n"
     ocaml_source
 
 let test_lazy_map_defers_incrementally_and_memoizes_realized_values () =

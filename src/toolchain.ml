@@ -400,9 +400,20 @@ module Lg_frontend : FRONTEND = struct
                (Ast.FSymbol ("defn" | "defn-") :: Ast.FSymbol name :: _);
            _ } as definition)
         :: rest
-        when List.mem name declared_names ->
+        when definitions_rev <> [] || List.mem name declared_names ->
+          let signature =
+            { definition with
+              Ast.form =
+                Ast.FList
+                  [ Ast.FSymbol "defn-signature"; definition.Ast.form ];
+            }
+          in
           let definitions_rev = definition :: definitions_rev in
-          let unresolved = List.filter (fun candidate -> candidate <> name) unresolved in
+          let unresolved =
+            if List.mem name declared_names then
+              List.filter (fun candidate -> candidate <> name) unresolved
+            else unresolved
+          in
           if unresolved = [] then
             let definitions = List.rev definitions_rev in
             let group =
@@ -413,8 +424,8 @@ module Lg_frontend : FRONTEND = struct
                     :: List.map (fun item -> item.Ast.form) definitions);
               }
             in
-            loop (group :: output_rev) [] unresolved rest
-          else loop output_rev definitions_rev unresolved rest
+            loop (group :: signature :: output_rev) [] unresolved rest
+          else loop (signature :: output_rev) definitions_rev unresolved rest
       | form :: rest -> loop (form :: output_rev) definitions_rev unresolved rest
     in
     loop [] [] declared_names located_ast
