@@ -95,8 +95,27 @@ let rest env collection = Collection_capability.rest_expr env collection
 
 let seq env collection = Collection_capability.seq_expr env collection
 
-let empty_question env collection =
+let rec empty_question env collection =
   match collection.ty with
+  | TNil ->
+      Ok
+        (typed_ir TBool
+           (Semantic_ir.Sequence
+              [ collection.semantic_expr; Semantic_ir.Bool true ]))
+  | TNullable value_ty ->
+      let value_name = "__lg_optional_collection" in
+      let value = typed_ir value_ty (Semantic_ir.Ident value_name) in
+      empty_question env value
+      |> Result.map (fun present ->
+             typed_ir TBool
+               (Semantic_ir.Match
+                  ( collection.semantic_expr,
+                    [ ( Semantic_ir.PConstructor ("None", None),
+                        Semantic_ir.Bool true );
+                      ( Semantic_ir.PConstructor
+                          ("Some", Some (Semantic_ir.PVar value_name)),
+                        present.semantic_expr );
+                    ] )))
   | TList _ -> Ok (typed_ir TBool (Semantic_ir.Infix ("=", collection.semantic_expr, Semantic_ir.List [])) )
   | TSet inner ->
       Types.set_module_name inner
@@ -114,6 +133,11 @@ let empty_question env collection =
 
 let empty collection =
   match collection.ty with
+  | ty when Types.is_dynamic ty ->
+      Ok
+        (typed_ir collection.ty
+           (apply "Lg_runtime.Runtime_dynamic.empty"
+              [ collection.semantic_expr ]))
   | TList _ -> Ok (typed_ir collection.ty (Semantic_ir.List []))
   | TSet inner ->
       Types.set_module_name inner

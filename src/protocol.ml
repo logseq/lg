@@ -52,6 +52,18 @@ let resolve_protocol_id ~scope env protocol_id =
                   ~name:(Protocol_id.name protocol_id)))
     | _ -> protocol_id
 
+let find_protocol_id scope env protocol_name =
+  let registry = Env.protocols env in
+  let scoped_id =
+    protocol_id scope protocol_name |> resolve_protocol_id ~scope env
+  in
+  let root_id = Protocol_id.create ~owner:[] ~name:protocol_name in
+  if Option.is_some (Protocol_registry.find_protocol scoped_id registry) then
+    Some scoped_id
+  else if Option.is_some (Protocol_registry.find_protocol root_id registry) then
+    Some root_id
+  else None
+
 let method_is_ambiguous scope env method_name =
   if String.contains method_name '/' then false
   else
@@ -84,6 +96,86 @@ let receiver_id = function
   | _ -> None
 
 let registry_receiver_id = Receiver_id.of_type
+
+let type_satisfies env protocol_id receiver_ty =
+  match
+    ( Protocol_registry.find_protocol protocol_id (Env.protocols env),
+      registry_receiver_id receiver_ty )
+  with
+  | Some declaration, Some receiver_id ->
+      Protocol_registry.Method_map.for_all
+        (fun method_id _ ->
+          Option.is_some
+            (Protocol_registry.find_implementation protocol_id method_id
+               receiver_id (Env.protocols env)))
+        declaration.methods
+  | None, _ | _, None -> false
+
+let satisfied_protocols env receiver_ty =
+  Protocol_registry.declarations (Env.protocols env)
+  |> List.filter_map (fun (protocol_id, _) ->
+         let compiler_protocol =
+           List.mem (Protocol_id.name protocol_id)
+             [ "Seqable"; "Reducible"; "Counted"; "Indexed" ]
+         in
+         if (not compiler_protocol) && type_satisfies env protocol_id receiver_ty
+         then Some protocol_id
+         else None)
+
+let constraint_type scope env protocol_name =
+  match find_protocol_id scope env protocol_name with
+  | None -> None
+  | Some protocol_id ->
+      Protocol_registry.find_protocol protocol_id (Env.protocols env)
+      |> Option.map (fun (declaration : Protocol_registry.declaration) ->
+             let method_types =
+               declaration.methods
+               |> Protocol_registry.Method_map.bindings
+               |> List.map (fun (_, (signature : Protocol_registry.method_signature)) ->
+                      TFn (signature.param_tys, signature.return_ty))
+             in
+             Types.protocol_constraint protocol_id method_types TUnknown)
+
+let witness_implementations env protocol_id receiver_ty =
+  match
+    ( Protocol_registry.find_protocol protocol_id (Env.protocols env),
+      registry_receiver_id receiver_ty )
+  with
+  | Some (declaration : Protocol_registry.declaration), Some receiver_id ->
+      let implementations =
+        declaration.methods
+        |> Protocol_registry.Method_map.bindings
+        |> List.map (fun (method_id, _) ->
+               Protocol_registry.find_implementation protocol_id method_id
+                 receiver_id (Env.protocols env))
+      in
+      if List.for_all Option.is_some implementations then
+        Some (List.map Option.get implementations)
+      else None
+  | None, _ | _, None -> None
+
+let witness_methods env protocol_id receiver_ty =
+  match
+    ( Protocol_registry.find_protocol protocol_id (Env.protocols env),
+      registry_receiver_id receiver_ty )
+  with
+  | Some (declaration : Protocol_registry.declaration), Some receiver_id ->
+      let rec collect methods = function
+        | [] -> Some (List.rev methods)
+        | (method_id, _) :: rest -> (
+            match
+              Protocol_registry.find_implementation protocol_id method_id
+                receiver_id (Env.protocols env)
+            with
+            | None -> None
+            | Some implementation ->
+                collect
+                  ((Method_id.name method_id, implementation) :: methods)
+                  rest)
+      in
+      collect []
+        (Protocol_registry.Method_map.bindings declaration.methods)
+  | None, _ | _, None -> None
 
 let lookup_marker scope env method_name =
   let registry = Env.protocols env in
@@ -170,6 +262,21 @@ let lookup_marker_impl env (marker : binding) method_name receiver_ty =
   match marker.protocol_id with
   | None -> None
   | Some protocol_id -> lookup_impl env protocol_id method_name receiver_ty
+
+let common_method_return env protocol_id method_name =
+  let method_id = method_id protocol_id method_name in
+  let return_types =
+    Protocol_registry.implementations_for_method protocol_id method_id
+      (Env.protocols env)
+    |> List.filter_map (fun (implementation : binding) ->
+           match implementation.ty with
+           | TFn (_, return_ty) when not (Types.equal return_ty TUnknown) ->
+               Some return_ty
+           | _ -> None)
+  in
+  match return_types with
+  | first :: rest when List.for_all (Types.equal first) rest -> Some first
+  | [] | _ -> None
 
 let method_position env (marker : binding) method_name =
   match marker.protocol_id with

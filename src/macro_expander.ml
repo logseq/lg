@@ -484,6 +484,7 @@ and eval_builtin context name arg_forms =
       unary (fun value ->
           sequence_forms value |> Result.map (fun forms -> Form (FVector forms)))
   | "map" | "mapcat" -> eval_map context name arg_forms
+  | "reduce" -> eval_reduce context arg_forms
   | "volatile!" -> unary (fun value -> Ok (Volatile (ref value)))
   | "deref" ->
       unary (function
@@ -537,6 +538,30 @@ and eval_map context name = function
               loop [] forms)
       | (Error _ as err), _ | _, (Error _ as err) -> err)
   | _ -> Error.error (name ^ " expects a function and collection")
+
+and eval_reduce context = function
+  | [ fn_form; initial_form; collection_form ] -> (
+      match
+        ( eval context fn_form,
+          eval context initial_form,
+          eval context collection_form )
+      with
+      | (Error _ as error), _, _ -> error
+      | _, (Error _ as error), _ -> error
+      | _, _, (Error _ as error) -> error
+      | Ok fn, Ok initial, Ok collection -> (
+          match sequence_forms collection with
+          | Error _ as error -> error
+          | Ok forms ->
+              let rec loop result = function
+                | [] -> Ok result
+                | form :: rest -> (
+                    match apply_value context fn [ result; Form form ] with
+                    | Error _ as error -> error
+                    | Ok result -> loop result rest)
+              in
+              loop initial forms))
+  | _ -> Error.error "reduce expects a function, initial value, and collection"
 
 and eval_vswap context = function
   | reference_form :: fn_form :: extra_forms -> (

@@ -2,19 +2,58 @@ open Types
 
 let apply name args = Semantic_ir.Apply (Semantic_ir.Ident name, args)
 
-let to_seq_expr env collection =
+let rec to_seq_expr env collection =
+  if Types.is_dynamic collection.ty then
+    Ok
+      ( collection.ty,
+        apply "Lg_runtime.Runtime_dynamic.to_seq"
+          [ collection.semantic_expr ] )
+  else
+  match collection.ty with
+  | TNullable value_ty ->
+      let value_name = "__lg_optional_seqable_value" in
+      let value = typed_ir value_ty (Semantic_ir.Ident value_name) in
+      (match to_seq_expr env value with
+      | Error _ -> Error.error "optional value is not seqable"
+      | Ok (element_ty, sequence) ->
+          Ok
+            ( element_ty,
+              Semantic_ir.Match
+                ( collection.semantic_expr,
+                  [ ( Semantic_ir.PConstructor ("None", None),
+                      Semantic_ir.Ident "Seq.empty" );
+                    ( Semantic_ir.PConstructor
+                        ("Some", Some (Semantic_ir.PVar value_name)),
+                      sequence );
+                  ] ) ))
+  | _ ->
   match Types.next_seq_element collection.ty with
   | Some inner -> Ok (inner, collection.semantic_expr)
   | None ->
-  match Types.seqable_constraint_element collection.ty with
-  | Some inner -> (
+  match Types.seqable_constraint_info collection.ty with
+  | Some (constraint_kind, inner, _) -> (
       match Semantic_ir.unlocated collection.semantic_expr with
       | Semantic_ir.Ident name ->
+          let adapter =
+            match constraint_kind with
+            | `Required -> Semantic_ir.Ident (name ^ "__seq")
+            | `Optional | `Optional_sequential ->
+                let adapter_name = "__lg_seqable_adapter" in
+                Semantic_ir.Match
+                  ( Semantic_ir.Ident (name ^ "__seq_optional"),
+                    [ ( Semantic_ir.PConstructor ("None", None),
+                        Semantic_ir.Apply
+                          ( Semantic_ir.Ident "invalid_arg",
+                            [ Semantic_ir.String "value is not sequential" ] ) );
+                      ( Semantic_ir.PConstructor
+                          ("Some", Some (Semantic_ir.PVar adapter_name)),
+                        Semantic_ir.Ident adapter_name );
+                    ] )
+          in
           Ok
             ( inner,
               Semantic_ir.Apply
-                ( Semantic_ir.Ident (name ^ "__seq"),
-                  [ collection.semantic_expr ] ) )
+                (adapter, [ collection.semantic_expr ]) )
       | _ -> Error.error "constrained Seqable value must be a function parameter")
   | None ->
   match Core_protocols.find_seqable collection.ty (Compiler_environment.protocols env) with
@@ -43,6 +82,8 @@ let to_seq_expr env collection =
                 "Seqable/-seq implementation must return a typed lazy seq"))
 
 let accepts_seqable env ty =
+  if Types.is_dynamic ty then true
+  else
   match Types.seqable_constraint_element ty with
   | Some _ -> true
   | None ->
@@ -94,19 +135,35 @@ let drop_expr env name collection count =
              (apply "Lg_runtime.Runtime_seq.drop"
                 [ count.semantic_expr; sequence ]))
 
-let pack_seqable_argument env argument =
+let seqable_adapter ?element_mapper env argument =
   let value_name = "seqable_value__" in
   let value = Semantic_ir.Ident value_name in
   let adapter =
-    match Types.seqable_constraint_element argument.ty with
-    | Some _ -> (
+    match Types.seqable_constraint_info argument.ty with
+    | Some (constraint_kind, _, _) -> (
         match Semantic_ir.unlocated argument.semantic_expr with
         | Semantic_ir.Ident name ->
+            let adapter =
+              match constraint_kind with
+              | `Required -> Semantic_ir.Ident (name ^ "__seq")
+              | `Optional | `Optional_sequential ->
+                  let adapter_name = "__lg_seqable_adapter" in
+                  Semantic_ir.Match
+                    ( Semantic_ir.Ident (name ^ "__seq_optional"),
+                      [ ( Semantic_ir.PConstructor ("None", None),
+                          Semantic_ir.Apply
+                            ( Semantic_ir.Ident "invalid_arg",
+                              [ Semantic_ir.String "value is not sequential" ] ) );
+                        ( Semantic_ir.PConstructor
+                            ("Some", Some (Semantic_ir.PVar adapter_name)),
+                          Semantic_ir.Ident adapter_name );
+                      ] )
+            in
             Ok
               (Semantic_ir.Fun
                  ( [ Semantic_ir.PVar value_name ],
                    Semantic_ir.Apply
-                     (Semantic_ir.Ident (name ^ "__seq"), [ value ]) ))
+                     (adapter, [ value ]) ))
         | _ ->
             Error.error "constrained Seqable value must be a function parameter")
     | None ->
@@ -118,9 +175,21 @@ let pack_seqable_argument env argument =
   match adapter with
   | Error _ as err -> err
   | Ok adapter ->
-      Ok
-        (Semantic_ir.Tuple
-           [ adapter; argument.semantic_expr ])
+      let adapter =
+        match element_mapper with
+        | None -> adapter
+        | Some mapper ->
+            Semantic_ir.Fun
+              ( [ Semantic_ir.PVar value_name ],
+                apply "Lg_runtime.Runtime_seq.map"
+                  [ mapper; Semantic_ir.Apply (adapter, [ value ]) ] )
+      in
+      Ok adapter
+
+let pack_seqable_argument ?element_mapper env argument =
+  seqable_adapter ?element_mapper env argument
+  |> Result.map (fun adapter ->
+         Semantic_ir.Tuple [ adapter; argument.semantic_expr ])
 
 let reduce_expr env ?(short_circuit = false) fn init collection sequence =
   if short_circuit then

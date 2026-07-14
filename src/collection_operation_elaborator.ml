@@ -190,12 +190,17 @@ let create ~compile_expr =
       | Ok (collection :: values) when values <> [] ->
           let add_value collection value =
             match collection.ty with
+            | TList (TUnknown | TVar _) ->
+                Ok
+                  (typed_ir (TList value.ty)
+                     (Semantic_ir.Cons
+                        (value.semantic_expr, collection.semantic_expr)))
             | TList inner when Types.equal inner value.ty ->
                 Ok
                   (typed_ir collection.ty
                      (Semantic_ir.Cons (value.semantic_expr, collection.semantic_expr)))
             | TList _ -> Error.error "conj value type must match list element type"
-            | TVector (TVar _) ->
+            | TVector (TUnknown | TVar _) ->
                 Ok
                   (typed_ir (TVector value.ty)
                      (Semantic_ir.Apply

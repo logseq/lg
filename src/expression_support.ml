@@ -5,6 +5,10 @@ module Env = Compiler_environment
 
 let rec truthiness_expression ty expression =
   match ty with
+  | ty when Types.is_dynamic ty ->
+      Semantic_ir.Apply
+        ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.truthy",
+          [ expression ] )
   | TBool -> expression
   | TNil -> Semantic_ir.Sequence [ expression; Semantic_ir.Bool false ]
   | TNullable payload_ty ->
@@ -80,7 +84,8 @@ let rec merge_branch_types left right =
         Some (TList inner)
     | TSeq TUnknown, TSeq inner | TSeq inner, TSeq TUnknown ->
         Some (TSeq inner)
-    | TVector (TVar _), TVector inner | TVector inner, TVector (TVar _) ->
+    | TVector (TUnknown | TVar _), TVector inner
+    | TVector inner, TVector (TUnknown | TVar _) ->
         Some (TVector inner)
     | TUnknown, ty | ty, TUnknown -> Some ty
     | _ when Types.defer_to_ocaml ~expected:left ~actual:right -> Some left
@@ -104,6 +109,18 @@ let merge_branch_expressions left right =
   match (Types.reduced_element left.ty, Types.reduced_element right.ty) with
   | Some left_inner, Some right_inner when Types.equal left_inner right_inner ->
       Some (left.ty, left.semantic_expr, right.semantic_expr)
+  | Some TNil, None ->
+      let nullable = TNullable right.ty in
+      Some
+        ( Types.reduced nullable,
+          left.semantic_expr,
+          continue (Semantic_ir.Constructor ("Some", Some right.semantic_expr)) )
+  | None, Some TNil ->
+      let nullable = TNullable left.ty in
+      Some
+        ( Types.reduced nullable,
+          continue (Semantic_ir.Constructor ("Some", Some left.semantic_expr)),
+          right.semantic_expr )
   | Some inner, None when Types.equal inner right.ty ->
       Some (left.ty, left.semantic_expr, continue right.semantic_expr)
   | None, Some inner when Types.equal left.ty inner ->

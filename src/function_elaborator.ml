@@ -49,18 +49,31 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
   | Ok specs ->
       let inference_params =
         specs
-        |> List.fold_left
-             (fun acc (spec : Destructure.param_spec) ->
-               let param_ty = Option.value spec.explicit_ty ~default:TUnknown in
-               let acc = (spec.source_name, param_ty) :: acc in
-               if spec.destructured then
-                 Destructure.pattern_names spec.pattern
-                 |> List.fold_left (fun acc name -> (name, TUnknown) :: acc) acc
-               else acc)
-             []
-        |> List.rev
+        |> List.mapi (fun index (spec : Destructure.param_spec) ->
+               let explicit_ty =
+                 Option.value spec.explicit_ty ~default:TUnknown
+               in
+               let param_ty =
+                 match List.nth_opt param_type_overrides index with
+                 | Some (Some ty) when not (Types.equal ty TUnknown) -> ty
+                 | _ -> explicit_ty
+               in
+               let destructured =
+                 if spec.destructured then
+                   Destructure.pattern_names spec.pattern
+                   |> List.map (fun name -> (name, TUnknown))
+                 else []
+               in
+               (spec.source_name, param_ty) :: destructured)
+        |> List.concat
       in
-      match Type_inference.infer_params ~lookup_function_ty inference_params body_forms with
+      let lookup_protocol_constraint =
+        Protocol.constraint_type scope env
+      in
+      match
+        Type_inference.infer_params ~lookup_function_ty
+          ~lookup_protocol_constraint inference_params body_forms
+      with
       | Error _ as err -> err
       | Ok inferred ->
           let inferred =
@@ -100,11 +113,12 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                          else inferred_ty
                        in
                        match List.nth_opt param_type_overrides index with
-                       | Some (Some ty) -> (spec, ty)
-                       | _ ->
+                       | Some (Some TUnknown) | None | Some None ->
                            (match spec.Destructure.explicit_ty with
                            | Some ty -> (spec, ty)
-                           | None -> (spec, inferred_ty)))
+                           | None -> (spec, inferred_ty))
+                       | Some (Some ty) -> (spec, ty)
+                       )
               in
               let param_bindings =
                 typed_specs
@@ -128,7 +142,7 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                   | (spec, target) :: rest ->
                       if not spec.Destructure.destructured then loop acc rest
                       else (
-                        match Destructure.bind_pattern target spec.pattern with
+                        match Destructure.bind_pattern ~env target spec.pattern with
                         | Error _ as err -> err
                         | Ok bindings -> loop (List.rev_append bindings acc) rest)
                 in
@@ -177,21 +191,45 @@ let fn_code ?(row_param_type_names = []) parts =
   let param_patterns =
     List.map2 (fun name ty -> (name, ty)) param_names param_tys
     |> List.mapi (fun index (name, ty) ->
-           let pattern =
-             match Types.seqable_constraint_element ty with
-             | Some _ ->
+           let rec capability_pattern ty =
+             match Types.protocol_constraint_info ty with
+             | Some (protocol_id, _, value_ty) ->
                  Semantic_ir.PTuple
-                   [ Semantic_ir.PVar (name ^ "__seq");
-                     Semantic_ir.PVar name ]
-             | None ->
-             match List.nth_opt row_param_type_names index with
-             | Some (Some type_name) ->
-                 Semantic_ir.PConstraint (Semantic_ir.PVar name, type_name)
-             | _ -> (
-                 match param_constraint_name ty with
-                 | Some type_name ->
-                     Semantic_ir.PConstraint (Semantic_ir.PVar name, type_name)
-                 | None -> Semantic_ir.PVar name)
+                   [ Semantic_ir.PVar
+                       (Types.protocol_witness_name name protocol_id);
+                     capability_pattern value_ty;
+                   ]
+             | None -> (
+                 match ty with
+                 | TOcaml_app (constraint_name, [ _element_ty; value_ty ])
+                   when constraint_name = Types.seqable_constraint_name
+                        || constraint_name =
+                           Types.optional_seqable_constraint_name
+                        || constraint_name =
+                           Types.optional_sequential_constraint_name ->
+                     Semantic_ir.PTuple
+                       [ Semantic_ir.PVar
+                           (if constraint_name = Types.seqable_constraint_name then
+                              name ^ "__seq"
+                            else name ^ "__seq_optional");
+                         capability_pattern value_ty;
+                       ]
+                 | _ -> Semantic_ir.PVar name)
+           in
+           let pattern =
+             if
+               Option.is_some (Types.protocol_constraint_info ty)
+               || Option.is_some (Types.seqable_constraint_element ty)
+             then capability_pattern ty
+             else
+               match List.nth_opt row_param_type_names index with
+               | Some (Some type_name) ->
+                   Semantic_ir.PConstraint (Semantic_ir.PVar name, type_name)
+               | _ -> (
+                   match param_constraint_name ty with
+                   | Some type_name ->
+                       Semantic_ir.PConstraint (Semantic_ir.PVar name, type_name)
+                   | None -> Semantic_ir.PVar name)
            in
            match List.nth_opt parts.param_identities index |> Option.join with
            | None -> pattern

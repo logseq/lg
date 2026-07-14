@@ -189,6 +189,31 @@ let create ~compile_expr =
       compile_some compile_none branch_error =
     match compile_expr scope env option_form with
     | Error _ as err -> err
+    | Ok option_expr when require_truthy && Types.is_dynamic option_expr.ty ->
+        let ocaml_name = Names.sanitize_name name in
+        let some_env =
+          Env.add (Names.scoped_key scope name)
+            (Types.binding ocaml_name option_expr.ty)
+            env
+        in
+        (match (compile_some some_env, compile_none ()) with
+        | (Error _ as error), _ -> error
+        | _, (Error _ as error) -> error
+        | Ok some_expr, Ok none_expr -> (
+            match merge_branch_expressions some_expr none_expr with
+            | None -> Error.error branch_error
+            | Some (result_ty, some_code, none_code) ->
+                Ok
+                  (typed_ir result_ty
+                     (Semantic_ir.Let
+                        ( [ ( Semantic_ir.PVar ocaml_name,
+                              option_expr.semantic_expr );
+                          ],
+                          Semantic_ir.If
+                            ( truthiness_expression option_expr.ty
+                                (Semantic_ir.Ident ocaml_name),
+                              some_code,
+                              none_code ) )))))
     | Ok option_expr -> (
         match option_payload_type option_expr.ty with
         | Error _ as err -> err
@@ -437,6 +462,32 @@ let create ~compile_expr =
         match compile_args_for scope env forms with
         | Error _ as err -> err
         | Ok expressions ->
+            let lower result_ty expressions =
+              let rec lower_expressions = function
+                | [] -> assert false
+                | [ expression ] ->
+                    coerce_expression_to_type result_ty expression.ty
+                      expression.semantic_expr
+                | expression :: rest ->
+                    let value_name = "logical_value" in
+                    let raw_value = Semantic_ir.Ident value_name in
+                    let value =
+                      coerce_expression_to_type result_ty expression.ty raw_value
+                    in
+                    let condition =
+                      truthiness_expression expression.ty raw_value
+                    in
+                    let next = lower_expressions rest in
+                    let result =
+                      match operator with
+                      | `And -> Semantic_ir.If (condition, next, value)
+                      | `Or -> Semantic_ir.If (condition, value, next)
+                    in
+                    Semantic_ir.Let
+                      ([ (Semantic_ir.PVar value_name, expression.semantic_expr) ], result)
+              in
+              Ok (typed_ir result_ty (lower_expressions expressions))
+            in
             let result_ty =
               match expressions with
               | [] -> None
@@ -448,37 +499,18 @@ let create ~compile_expr =
                     (Some first.ty) rest
             in
             (match result_ty with
+            | Some result_ty -> lower result_ty expressions
             | None ->
-                Error.error
-                  (match operator with
-                  | `And -> "and forms must return compatible types"
-                  | `Or -> "or forms must return compatible types")
-            | Some result_ty ->
-                let rec lower = function
-                  | [] -> assert false
-                  | [ expression ] ->
-                      coerce_expression_to_type result_ty expression.ty
-                        expression.semantic_expr
-                  | expression :: rest ->
-                      let value_name = "logical_value" in
-                      let raw_value = Semantic_ir.Ident value_name in
-                      let value =
-                        coerce_expression_to_type result_ty expression.ty
-                          raw_value
-                      in
-                      let condition =
-                        truthiness_expression expression.ty raw_value
-                      in
-                      let next = lower rest in
-                      let result =
-                        match operator with
-                        | `And -> Semantic_ir.If (condition, next, value)
-                        | `Or -> Semantic_ir.If (condition, value, next)
-                      in
-                      Semantic_ir.Let
-                        ([ (Semantic_ir.PVar value_name, expression.semantic_expr) ], result)
+                let dynamic_forms =
+                  List.map
+                    (fun form -> FList [ FSymbol "__lg_dynamic"; form ])
+                    forms
                 in
-                Ok (typed_ir result_ty (lower expressions))))
+                (match compile_args_for scope env dynamic_forms with
+                | Error _ as error -> error
+                | Ok dynamic_expressions ->
+                    lower (Types.dynamic_constraint TUnknown)
+                      dynamic_expressions)))
   
   and compile_match scope env target_form clauses =
     let rec parse_pairs acc = function
@@ -813,10 +845,12 @@ let create ~compile_expr =
                 | _, Ok _ -> Error.error "internal error: malformed try handlers")))
   
   and loop_branch_type left right =
-    match (left, right) with
-    | TUnknown, ty | ty, TUnknown -> Ok ty
-    | left, right when branch_types_compatible left right -> Ok left
-    | _ -> Error.error "loop branches must have same type"
+    match merge_branch_types left right with
+    | Some ty -> Ok ty
+    | None ->
+        Error.error
+          ("loop branches must have same type: " ^ Types.source_name left
+         ^ " and " ^ Types.source_name right)
   
   and compile_recur scope env loop_name param_tys arg_forms =
     if List.length arg_forms <> List.length param_tys then
@@ -1006,7 +1040,7 @@ let create ~compile_expr =
                 match compile_expr scope env value_form with
                 | Error _ as err -> err
                 | Ok value -> (
-                    match Destructure.bind_pattern value pattern with
+                    match Destructure.bind_pattern ~env value pattern with
                     | Error _ as err -> err
                     | Ok bindings ->
                         let env_bindings =

@@ -158,6 +158,16 @@ let find_implementation protocol_id method_id receiver_id registry =
   Implementation_map.find_opt (protocol_id, method_id, receiver_id)
     registry.implementations
 
+let implementations_for_method protocol_id method_id registry =
+  Implementation_map.fold
+    (fun (candidate_protocol, candidate_method, _) implementation matches ->
+      if
+        Protocol_id.equal protocol_id candidate_protocol
+        && Method_id.equal method_id candidate_method
+      then implementation :: matches
+      else matches)
+    registry.implementations []
+
 let implementation_locations registry =
   Implementation_map.bindings registry.implementation_locations
 

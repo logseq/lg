@@ -92,6 +92,12 @@ and compile_expr_unlocated scope (env : Env.t) = function
       Error.error "let-some requires bindings, then, and else"
   | FList (FSymbol "fn" :: params :: body_forms) ->
       compile_fn scope env params body_forms
+  | FList (FSymbol "new" :: FSymbol type_name :: args) ->
+      compile_call scope env (type_name ^ ".") args
+  | FList [ FSymbol "quote"; FSymbol symbol ] ->
+      Ok (typed_ir TSymbol (Semantic_ir.String symbol))
+  | FList (FSymbol "quote" :: _) ->
+      Error.error "quote currently supports symbol literals"
   | FList (FSymbol "do" :: body_forms) ->
       compile_body scope env "do requires at least one form" body_forms
   | FList [ FKeyword keyword; target ] ->
@@ -208,7 +214,17 @@ and prepare_fn ?(param_type_overrides = []) ?variadic_rest_index ?recur_target
   let lookup_function_ty name =
     match lookup_function scope env name with
     | Ok fn -> Ok fn.ty
-    | Error _ as err -> err
+    | Error _ -> (
+        match Protocol.lookup_marker scope env name with
+        | Some { protocol_id = Some protocol_id; ty = TFn (_ :: rest, return_ty); _ } -> (
+            match
+              Protocol.constraint_type scope env
+                (Protocol_id.to_string protocol_id)
+            with
+            | Some receiver_ty -> Ok (TFn (receiver_ty :: rest, return_ty))
+            | None -> Error.error ("unknown function " ^ name))
+        | Some marker -> Ok marker.ty
+        | None -> Error.error ("unknown function " ^ name))
   in
   let compile_function_body =
     match recur_target with
@@ -496,8 +512,97 @@ and prepare_inferred_recursive_fn ~ocaml_name scope env source_name params
       let self_binding =
         Types.binding ocaml_name (TFn (param_tys, TUnknown))
       in
-      let env = Env.add (Names.scoped_key scope source_name) self_binding env in
-      prepare_fn ~param_type_overrides scope env params body_forms
+      let provisional_env =
+        Env.add (Names.scoped_key scope source_name) self_binding env
+      in
+      let inference_params =
+        specs
+        |> List.fold_left
+             (fun params (spec : Destructure.param_spec) ->
+               let ty = Option.value spec.explicit_ty ~default:TUnknown in
+               let params = (spec.source_name, ty) :: params in
+               if spec.destructured then
+                 Destructure.pattern_names spec.pattern
+                 |> List.fold_left
+                      (fun params name -> (name, TUnknown) :: params)
+                      params
+               else params)
+             []
+        |> List.rev
+      in
+      let lookup_function_ty name =
+        match lookup_function scope provisional_env name with
+        | Ok fn -> Ok fn.ty
+        | Error _ -> (
+            match Protocol.lookup_marker scope provisional_env name with
+            | Some
+                { protocol_id = Some protocol_id;
+                  ty = TFn (_ :: rest, return_ty);
+                  _ } -> (
+                match
+                  Protocol.constraint_type scope provisional_env
+                    (Protocol_id.to_string protocol_id)
+                with
+                | Some receiver_ty ->
+                    Ok (TFn (receiver_ty :: rest, return_ty))
+                | None -> Error.error ("unknown function " ^ name))
+            | Some marker -> Ok marker.ty
+            | None -> Error.error ("unknown function " ^ name))
+      in
+      let lookup_protocol_constraint =
+        Protocol.constraint_type scope provisional_env
+      in
+      match
+        Type_inference.infer_params ~lookup_function_ty
+          ~lookup_protocol_constraint inference_params body_forms
+      with
+      | Error _ as err -> err
+      | Ok inferred ->
+          let inferred_param_tys =
+            List.map
+              (fun (spec : Destructure.param_spec) ->
+                List.assoc_opt spec.source_name inferred
+                |> Option.value ~default:TUnknown)
+              specs
+          in
+          let dynamic_param_tys =
+            List.map
+              (fun ty ->
+                if
+                  Option.is_some (Types.protocol_constraint_info ty)
+                  && Option.is_some (Types.seqable_constraint_info ty)
+                then Types.dynamic_constraint ty
+                else ty)
+              inferred_param_tys
+          in
+          if
+            List.exists Types.is_dynamic dynamic_param_tys
+            || List.exists2
+                 (fun inferred dynamic -> not (Types.equal inferred dynamic))
+                 inferred_param_tys dynamic_param_tys
+          then
+            let self_param_tys =
+              List.map2
+                (fun initial dynamic ->
+                  if Types.is_dynamic dynamic then dynamic else initial)
+                param_tys dynamic_param_tys
+            in
+            let self_binding =
+              Types.binding ocaml_name (TFn (self_param_tys, TUnknown))
+            in
+            let env =
+              Env.add (Names.scoped_key scope source_name) self_binding env
+            in
+            let overrides =
+              List.map2
+                (fun explicit dynamic ->
+                  if Types.is_dynamic dynamic then Some dynamic else explicit)
+                param_type_overrides dynamic_param_tys
+            in
+            prepare_fn ~param_type_overrides:overrides scope env params body_forms
+          else
+            prepare_fn ~param_type_overrides scope provisional_env params
+              body_forms
 
 and fn_code ?(row_param_type_names = []) parts =
   Function_elaborator.fn_code ~row_param_type_names parts

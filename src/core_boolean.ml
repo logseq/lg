@@ -16,6 +16,12 @@ let compile_not args =
   | Ok arg ->
       let expression =
         match arg.ty with
+        | ty when Types.is_dynamic ty ->
+            Semantic_ir.Prefix
+              ( "not",
+                Semantic_ir.Apply
+                  ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.truthy",
+                    [ arg.semantic_expr ] ) )
         | TBool -> Semantic_ir.Prefix ("not", arg.semantic_expr)
         | TNil ->
             Semantic_ir.Sequence [ arg.semantic_expr; Semantic_ir.Bool true ]
@@ -49,11 +55,30 @@ let compile_bool_literal_predicate name args expected =
 
 let compile_type_predicate name predicate args = type_predicate name predicate args
 
+let compile_runtime_type_predicate name runtime_function predicate args =
+  match one_arg name args with
+  | Error _ as error -> error
+  | Ok arg when Types.is_dynamic arg.ty ->
+      Ok
+        (typed_ir TBool
+           (Semantic_ir.Apply
+              (Semantic_ir.Ident runtime_function, [ arg.semantic_expr ])))
+  | Ok arg -> Ok (typed_ir TBool (Semantic_ir.Bool (predicate arg.ty)))
+
 let compile_string_family_predicate name ~keyword args =
   match one_arg name args with
   | Error _ as err -> err
   | Ok arg -> (
       match arg.ty with
+      | ty when Types.is_dynamic ty ->
+          let function_name =
+            if keyword then "Lg_runtime.Runtime_dynamic.is_keyword"
+            else "Lg_runtime.Runtime_dynamic.is_string"
+          in
+          Ok
+            (typed_ir TBool
+               (Semantic_ir.Apply
+                  (Semantic_ir.Ident function_name, [ arg.semantic_expr ])))
       | TUnknown ->
           let starts_with_colon =
             Semantic_ir.Apply
@@ -116,25 +141,42 @@ let compile name args =
   | "some?" -> compile_nil_predicate name args false
   | "true?" -> compile_bool_literal_predicate name args true
   | "false?" -> compile_bool_literal_predicate name args false
-  | "int?" -> compile_type_predicate name (function TInt -> true | _ -> false) args
+  | "int?" ->
+      compile_runtime_type_predicate name "Lg_runtime.Runtime_dynamic.is_int"
+        (function TInt -> true | _ -> false)
+        args
   | "number?" ->
-      compile_type_predicate name Types.is_numeric args
+      compile_runtime_type_predicate name "Lg_runtime.Runtime_dynamic.is_number"
+        Types.is_numeric args
   | "string?" -> compile_string_family_predicate name ~keyword:false args
   | "keyword?" -> compile_string_family_predicate name ~keyword:true args
-  | "boolean?" -> compile_type_predicate name (function TBool -> true | _ -> false) args
-  | "vector?" -> compile_type_predicate name (function TVector _ -> true | _ -> false) args
-  | "list?" | "seq?" -> compile_type_predicate name (function TList _ -> true | _ -> false) args
+  | "boolean?" ->
+      compile_runtime_type_predicate name "Lg_runtime.Runtime_dynamic.is_bool"
+        (function TBool -> true | _ -> false)
+        args
+  | "vector?" ->
+      compile_runtime_type_predicate name
+        "Lg_runtime.Runtime_dynamic.is_vector"
+        (function TVector _ -> true | _ -> false)
+        args
+  | "list?" ->
+      compile_runtime_type_predicate name "Lg_runtime.Runtime_dynamic.is_list"
+        (function TList _ -> true | _ -> false)
+        args
+  | "seq?" ->
+      compile_runtime_type_predicate name "Lg_runtime.Runtime_dynamic.is_seq"
+        (function TList _ | TSeq _ -> true | _ -> false)
+        args
   | "set?" -> compile_type_predicate name (function TSet _ -> true | _ -> false) args
   | "map?" ->
-      compile_type_predicate
-        name
+      compile_runtime_type_predicate name "Lg_runtime.Runtime_dynamic.is_map"
         (function TRecord _ | TNamed_record _ -> true | _ -> false)
         args
   | "fn?" -> compile_type_predicate name (function TFn _ -> true | _ -> false) args
   | "coll?" ->
-      compile_type_predicate name
+      compile_runtime_type_predicate name "Lg_runtime.Runtime_dynamic.is_coll"
         (function
-          | TList _ | TVector _ | TSet _ | TRecord _ | TNamed_record _ -> true
+          | TList _ | TVector _ | TSeq _ | TSet _ | TRecord _ | TNamed_record _ -> true
           | _ -> false)
         args
   | "associative?" ->

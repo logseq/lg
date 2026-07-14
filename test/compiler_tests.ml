@@ -2923,6 +2923,22 @@ let test_concise_standard_type_annotations () =
   assert_ocaml_runs "concise_standard_type_annotations" "2\n"
     ocaml_source
 
+let test_volatile_nil_uses_contextual_option_reference_type () =
+  let source =
+    {|
+(type-record holder (current :ref<option<int>>))
+(def value (record holder (current (volatile! nil))))
+(vreset! (:current value) (Some 7))
+(println
+  (match (deref (:current value))
+    (Some number) number
+    None 0))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "volatile_nil_uses_contextual_option_reference_type" "7\n"
+    ocaml_source
+
 let test_ocaml_arrays_reject_invalid_operations () =
   Lg.Compiler.compile_string {|(def values (array 1 "two"))|}
   |> expect_error_contains "OCaml array elements must have the same type";
@@ -3617,15 +3633,16 @@ let test_unannotated_function_parameters_reject_bad_int_calls () =
   Lg.Compiler.compile_string source
   |> expect_error "inc1 called with incompatible arguments"
 
-let test_unannotated_function_parameters_reject_bad_bool_calls () =
+let test_unannotated_function_parameters_use_clojure_truthiness () =
   let source =
     {|
 (defn flip [flag] (not flag))
-(def bad (flip 1))
+(println (str (flip 1) ":" (flip nil) ":" (flip false)))
 |}
   in
-  Lg.Compiler.compile_string source
-  |> expect_error "flip called with incompatible arguments"
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "unannotated_function_parameters_use_clojure_truthiness"
+    "false:true:true\n" ocaml_source
 
 let test_unannotated_function_parameters_infer_structural_map_fields () =
   let source =
@@ -3714,6 +3731,190 @@ let test_static_protocols_dispatch_by_receiver_type () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "static_protocols_dispatch_by_receiver_type"
     "int:7:str:Ada\n" ocaml_source
+
+let test_satisfies_question_checks_static_receivers () =
+  let source =
+    {|
+(defprotocol Labelled (label [value] :string))
+(extend-type :int Labelled (label [value] (str value)))
+(println
+  (str (satisfies? Labelled 7) ":"
+       (satisfies? Labelled "seven")))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "satisfies_question_checks_static_receivers"
+    "true:false\n" ocaml_source
+
+let test_satisfies_question_carries_a_generic_protocol_witness () =
+  let source =
+    {|
+(defprotocol Labelled (label [value] :string))
+(extend-type :int Labelled (label [value] (str value)))
+(defn labelled? [value] (satisfies? Labelled value))
+(println (str (labelled? 7) ":" (labelled? "seven")))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "satisfies_question_carries_a_generic_protocol_witness"
+    "true:false\n" ocaml_source
+
+let test_satisfies_question_guards_generic_protocol_dispatch () =
+  let source =
+    {|
+(defprotocol Labelled (label [value] :string))
+(extend-type :int Labelled (label [value] (str "int:" value)))
+(defn label-or-missing [value]
+  (if (satisfies? Labelled value)
+    (Labelled/label value)
+    "missing"))
+(println (str (label-or-missing 7) ":" (label-or-missing "seven")))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "satisfies_question_guards_generic_protocol_dispatch"
+    "int:7:missing\n" ocaml_source
+
+let test_generic_protocol_witness_supports_multiple_methods () =
+  let source =
+    {|
+(type-record pair-value (text :string) (number :int))
+(defprotocol PairValue
+  (pair-text [value] :string)
+  (pair-number [value] :int))
+(extend-type pair-value PairValue
+  (pair-text [value] (:text value))
+  (pair-number [value] (:number value)))
+(defn summarize [value]
+  (if (satisfies? PairValue value)
+    (str (PairValue/pair-text value) ":" (PairValue/pair-number value))
+    "missing"))
+(def value (record pair-value (text "ready") (number 7)))
+(println (str (summarize value) ":" (summarize 0)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "generic_protocol_witness_supports_multiple_methods"
+    "ready:7:missing\n" ocaml_source
+
+let test_generic_protocol_witness_evaluates_receiver_once () =
+  let source =
+    {|
+(type-record labelled-value (text :string))
+(defprotocol Labelled (label [value] :string))
+(extend-type labelled-value Labelled (label [value] (:text value)))
+(def calls (atom 0))
+(defn make-value []
+  (do
+    (swap! calls inc)
+    (record labelled-value (text "ready"))))
+(println (str (satisfies? Labelled (make-value)) ":" (deref calls)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "generic_protocol_witness_evaluates_receiver_once"
+    "true:1\n" ocaml_source
+
+let test_generic_protocol_witness_flows_through_sequence_callbacks () =
+  let source =
+    {|
+(type-record labelled-value (text :string))
+(defprotocol Labelled (label [value] :string))
+(extend-type labelled-value Labelled (label [value] (:text value)))
+(defn label-or-missing [value]
+  (if (satisfies? Labelled value)
+    (Labelled/label value)
+    "missing"))
+(defn labels [values]
+  (map label-or-missing values))
+(def one (record labelled-value (text "one")))
+(def two (record labelled-value (text "two")))
+(println (pr-str (labels [one two])))
+(println (pr-str (labels [1 2])))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "generic_protocol_witness_flows_through_sequence_callbacks"
+    "(\"one\" \"two\")\n(\"missing\" \"missing\")\n" ocaml_source
+
+let test_generic_protocol_witness_supports_parser_style_recursion () =
+  let source =
+    {|
+(type-record leaf (text :string))
+(defprotocol Traversable (walk-leaf [value] :string))
+(extend-type leaf Traversable (walk-leaf [value] (:text value)))
+(defn walk [value]
+  (cond
+    (satisfies? Traversable value) (Traversable/walk-leaf value)
+    (sequential? value) (apply str (map walk value))
+    :else "_"))
+(def value (record leaf (text "leaf")))
+(println (walk [value]))
+(println (walk [1 2]))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "generic_protocol_witness_supports_parser_style_recursion"
+    "leaf\n__\n" ocaml_source
+
+let test_generic_protocol_witness_carries_callbacks_through_recursion () =
+  let source =
+    {|
+(type-record leaf (text :string))
+(defprotocol Traversable
+  (walk-with [value f]))
+(extend-type leaf Traversable
+  (walk-with [value f] (f value)))
+(defn walk [value f]
+  (cond
+    (satisfies? Traversable value) (Traversable/walk-with value f)
+    (sequential? value) (walk (first value) f)
+    :else (f value)))
+(def value (record leaf (text "leaf")))
+(def walked (walk [value] (fn [x] x)))
+|}
+  in
+  ignore (Lg.Compiler.compile_string source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_dynamic_recursive_maps_support_assoc () =
+  let source =
+    {|
+(type-record leaf (text :string))
+(defprotocol Traversable (visit [value]))
+(extend-type leaf Traversable (visit [value] value))
+(defn rebuild [value]
+  (cond
+    (satisfies? Traversable value) (Traversable/visit value)
+    (map? value) (assoc value :ready true)
+    (seqable? value) (rebuild value)
+    :else value))
+(def rebuilt (rebuild {:answer 42}))
+|}
+  in
+  ignore (Lg.Compiler.compile_string source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_generic_protocol_witness_compiles_for_javascript_targets () =
+  let source =
+    {|
+(type-record labelled-value (text :string))
+(defprotocol Labelled (label [value] :string))
+(extend-type labelled-value Labelled (label [value] (:text value)))
+(defn label-or-missing [value]
+  (if (satisfies? Labelled value)
+    (Labelled/label value)
+    "missing"))
+(def value (record labelled-value (text "ready")))
+(println (label-or-missing value))
+|}
+  in
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
 let test_protocols_support_float_and_symbol_receivers () =
   let source =
@@ -4997,6 +5198,22 @@ let test_reduce_specializes_builtin_reducible_types () =
          if not (string_contains_substring ocaml_source expected) then
            failwith ("missing specialized reducible call " ^ expected))
 
+let test_reduce_infers_destructured_items_when_collection_is_generic () =
+  let source =
+    {|
+(defn pair-total [values]
+  (reduce
+    (fn [total [left right]] (+ total left right))
+    0
+    values))
+(println (pair-total [[1 2] [3 4]]))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "reduce_infers_destructured_items_when_collection_is_generic" "10\n"
+    ocaml_source
+
 let test_count_prefers_custom_counted_over_seqable () =
   let source =
     {|
@@ -5551,6 +5768,20 @@ let test_destructuring_supports_rest_and_defaults () =
   assert_ocaml_runs "destructuring_supports_rest_and_defaults"
     "Ada:0:37:100:10:20:3:4:10:20:2:4\n" ocaml_source
 
+let test_let_destructuring_accepts_generic_seqable_values () =
+  let source =
+    {|
+(defn first-pair [values]
+  (let [[left right] values]
+    (str left ":" right)))
+(println (first-pair ["a" "b"]))
+(println (first-pair (list "c" "d")))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "let_destructuring_accepts_generic_seqable_values"
+    "a:b\nc:d\n" ocaml_source
+
 let test_destructuring_preserves_row_polymorphic_function_calls () =
   let source =
     {|
@@ -5683,6 +5914,19 @@ let test_common_higher_order_helpers_reject_compare_type_mismatch () =
 let test_apply_rejects_bad_set_reducers () =
   Lg.Compiler.compile_string {|(def x (apply + (hash-set "a" "b")))|}
   |> expect_error "apply currently supports int binary reducers"
+
+let test_apply_distinct_accepts_generic_seqable_values () =
+  let source =
+    {|
+(defn all-distinct? [values]
+  (apply clojure.core/distinct? values))
+(println (all-distinct? [1 2 3]))
+(println (all-distinct? (list 1 2 1)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "apply_distinct_accepts_generic_seqable_values"
+    "true\nfalse\n" ocaml_source
 
 let test_set_core_api () =
   let source =
@@ -9839,6 +10083,8 @@ let tests =
       test_ocaml_refs_support_read_and_assignment );
     ( "concise standard type annotations",
       test_concise_standard_type_annotations );
+    ( "volatile nil uses contextual option reference type",
+      test_volatile_nil_uses_contextual_option_reference_type );
     ( "OCaml arrays reject invalid operations",
       test_ocaml_arrays_reject_invalid_operations );
     ( "OCaml refs reject invalid operations",
@@ -9939,8 +10185,8 @@ let tests =
       test_conditional_function_type_relationship_is_checked_by_ocaml );
     ( "unannotated function parameters reject bad int calls",
       test_unannotated_function_parameters_reject_bad_int_calls );
-    ( "unannotated function parameters reject bad bool calls",
-      test_unannotated_function_parameters_reject_bad_bool_calls );
+    ( "unannotated function parameters use Clojure truthiness",
+      test_unannotated_function_parameters_use_clojure_truthiness );
     ( "unannotated function parameters infer structural map fields",
       test_unannotated_function_parameters_infer_structural_map_fields );
     ( "contextual parameter inference preserves nested float assoc values",
@@ -9953,6 +10199,26 @@ let tests =
       test_unannotated_function_parameters_reject_missing_structural_map_fields );
     ( "static protocols dispatch by receiver type",
       test_static_protocols_dispatch_by_receiver_type );
+    ( "satisfies? checks static receivers",
+      test_satisfies_question_checks_static_receivers );
+    ( "satisfies? carries a generic protocol witness",
+      test_satisfies_question_carries_a_generic_protocol_witness );
+    ( "satisfies? guards generic protocol dispatch",
+      test_satisfies_question_guards_generic_protocol_dispatch );
+    ( "generic protocol witness supports multiple methods",
+      test_generic_protocol_witness_supports_multiple_methods );
+    ( "generic protocol witness evaluates receiver once",
+      test_generic_protocol_witness_evaluates_receiver_once );
+    ( "generic protocol witness flows through sequence callbacks",
+      test_generic_protocol_witness_flows_through_sequence_callbacks );
+    ( "generic protocol witness supports parser-style recursion",
+      test_generic_protocol_witness_supports_parser_style_recursion );
+    ( "generic protocol witness carries callbacks through recursion",
+      test_generic_protocol_witness_carries_callbacks_through_recursion );
+    ( "dynamic recursive maps support assoc",
+      test_dynamic_recursive_maps_support_assoc );
+    ( "generic protocol witness compiles for JavaScript targets",
+      test_generic_protocol_witness_compiles_for_javascript_targets );
     ( "protocols support float and symbol receivers",
       test_protocols_support_float_and_symbol_receivers );
     ( "protocols support generic host constructor receivers",
@@ -10130,6 +10396,8 @@ let tests =
       test_reduce_prefers_custom_reducible_over_seqable );
     ( "reduce specializes builtin Reducible types",
       test_reduce_specializes_builtin_reducible_types );
+    ( "reduce infers destructured items when collection is generic",
+      test_reduce_infers_destructured_items_when_collection_is_generic );
     ( "count prefers custom Counted over Seqable",
       test_count_prefers_custom_counted_over_seqable );
     ( "first and last accept all Seqable types",
@@ -10200,6 +10468,8 @@ let tests =
       test_destructuring_supports_direct_keyword_bindings );
     ( "destructuring supports rest and defaults",
       test_destructuring_supports_rest_and_defaults );
+    ( "let destructuring accepts generic seqable values",
+      test_let_destructuring_accepts_generic_seqable_values );
     ( "destructuring preserves row polymorphic function calls",
       test_destructuring_preserves_row_polymorphic_function_calls );
     ( "row polymorphic functions accept different map shapes",
@@ -10223,6 +10493,8 @@ let tests =
       test_common_higher_order_helpers_reject_mixed_juxt_returns );
     ( "common higher-order helpers reject compare type mismatch",
       test_common_higher_order_helpers_reject_compare_type_mismatch );
+    ( "apply distinct accepts generic seqable values",
+      test_apply_distinct_accepts_generic_seqable_values );
     ("apply rejects bad set reducers", test_apply_rejects_bad_set_reducers);
     ("set core api works", test_set_core_api);
     ("sets support named records", test_sets_support_named_records);

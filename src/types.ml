@@ -45,11 +45,102 @@ let seqable_constraint_name = "__lg_seqable_constraint"
 let seqable_constraint element_ty =
   TOcaml_app (seqable_constraint_name, [ element_ty; TUnknown ])
 
-let seqable_constraint_element = function
-  | TOcaml_app (name, [ element_ty; _container_ty ])
-    when name = seqable_constraint_name ->
-      Some element_ty
+let seqable_constraint_with_value element_ty value_ty =
+  TOcaml_app (seqable_constraint_name, [ element_ty; value_ty ])
+
+let optional_seqable_constraint_name = "__lg_optional_seqable_constraint"
+let optional_sequential_constraint_name = "__lg_optional_sequential_constraint"
+
+let optional_seqable_constraint element_ty value_ty =
+  TOcaml_app (optional_seqable_constraint_name, [ element_ty; value_ty ])
+
+let optional_sequential_constraint element_ty value_ty =
+  TOcaml_app (optional_sequential_constraint_name, [ element_ty; value_ty ])
+
+let dynamic_constraint_name = "__lg_dynamic_constraint"
+let dynamic_constraint capability =
+  TOcaml_app (dynamic_constraint_name, [ capability ])
+
+let dynamic_constraint_info = function
+  | TOcaml_app (name, [ capability ]) when name = dynamic_constraint_name ->
+      Some capability
   | _ -> None
+
+let is_dynamic ty = Option.is_some (dynamic_constraint_info ty)
+
+let protocol_constraint_prefix = "__lg_protocol_constraint:"
+
+let protocol_witness_type method_types =
+  List.fold_right (fun method_ty rest -> TTuple [ method_ty; rest ])
+    method_types TUnit
+
+let protocol_constraint protocol_id method_types value_ty =
+  TOcaml_app
+    ( protocol_constraint_prefix ^ Protocol_id.to_string protocol_id,
+      [ protocol_witness_type method_types; value_ty ] )
+
+let protocol_constraint_info = function
+  | TOcaml_app (name, [ witness_ty; value_ty ])
+    when String.starts_with ~prefix:protocol_constraint_prefix name ->
+      let id_text =
+        String.sub name (String.length protocol_constraint_prefix)
+          (String.length name - String.length protocol_constraint_prefix)
+      in
+      Some (Protocol_id.of_string id_text, witness_ty, value_ty)
+  | _ -> None
+
+let protocol_constraint_with_value constraint_ty value_ty =
+  match constraint_ty with
+  | TOcaml_app (name, [ witness_ty; _ ])
+    when String.starts_with ~prefix:protocol_constraint_prefix name ->
+      TOcaml_app (name, [ witness_ty; value_ty ])
+  | ty -> ty
+
+let rec seqable_constraint_element = function
+  | TOcaml_app (name, [ element_ty; _container_ty ])
+    when name = seqable_constraint_name
+         || name = optional_seqable_constraint_name
+         || name = optional_sequential_constraint_name ->
+      Some element_ty
+  | ty -> (
+      match protocol_constraint_info ty with
+      | Some (_, _, value_ty) -> seqable_constraint_element value_ty
+      | None -> None)
+
+let rec seqable_constraint_info = function
+  | TOcaml_app (name, [ element_ty; value_ty ])
+    when name = seqable_constraint_name ->
+      Some (`Required, element_ty, value_ty)
+  | TOcaml_app (name, [ element_ty; value_ty ])
+    when name = optional_seqable_constraint_name ->
+      Some (`Optional, element_ty, value_ty)
+  | TOcaml_app (name, [ element_ty; value_ty ])
+    when name = optional_sequential_constraint_name ->
+      Some (`Optional_sequential, element_ty, value_ty)
+  | ty -> (
+      match protocol_constraint_info ty with
+      | Some (_, _, value_ty) -> seqable_constraint_info value_ty
+      | None -> None)
+
+let rec constraint_value_type ty =
+  match dynamic_constraint_info ty with
+  | Some _ -> ty
+  | None ->
+  match protocol_constraint_info ty with
+  | Some (_, _, value_ty) -> constraint_value_type value_ty
+  | None -> (
+      match ty with
+      | TOcaml_app (name, [ _element_ty; value_ty ])
+        when name = seqable_constraint_name
+             || name = optional_seqable_constraint_name
+             || name = optional_sequential_constraint_name ->
+          constraint_value_type value_ty
+      | value_ty -> value_ty)
+
+let protocol_witness_name value_name protocol_id =
+  value_name ^ "__protocol_"
+  ^ String.sub (Digest.to_hex (Digest.string (Protocol_id.to_string protocol_id)))
+      0 12
 
 let next_seq_type_name = "__lg_next_seq"
 let next_seq inner = TOcaml_app (next_seq_type_name, [ inner ])
@@ -260,6 +351,15 @@ let rec source_name = function
   | TOcaml name -> name
   | TOcaml_app (name, [ inner; _ ]) when name = seqable_constraint_name ->
       "seqable<" ^ source_name inner ^ ">"
+  | TOcaml_app (name, [ capability ]) when name = dynamic_constraint_name ->
+      "dynamic<" ^ source_name capability ^ ">"
+  | TOcaml_app (name, [ _witness_ty; value_ty ])
+    when String.starts_with ~prefix:protocol_constraint_prefix name ->
+      let protocol_name =
+        String.sub name (String.length protocol_constraint_prefix)
+          (String.length name - String.length protocol_constraint_prefix)
+      in
+      "optional-protocol<" ^ protocol_name ^ ";" ^ source_name value_ty ^ ">"
   | TOcaml_app (name, [ inner ]) when name = next_seq_type_name ->
       "seq<" ^ source_name inner ^ ">"
   | TOcaml_app (name, [ inner ]) when name = reduced_type_name ->
@@ -313,9 +413,20 @@ let rec ocaml_name = function
   | TVar name -> "'" ^ name
   | TOcaml name -> name
   | TOcaml_app (name, []) -> name
+  | TOcaml_app (name, [ _capability ]) when name = dynamic_constraint_name ->
+      "Lg_runtime.Runtime_dynamic.t"
   | TOcaml_app (name, [ inner; container ]) when name = seqable_constraint_name ->
-      "((" ^ ocaml_name container ^ " -> " ^ ocaml_name inner
+      "((" ^ ocaml_name (constraint_value_type container) ^ " -> "
+      ^ ocaml_name inner
       ^ " Seq.t) * " ^ ocaml_name container ^ ")"
+  | TOcaml_app (name, [ inner; container ])
+    when name = optional_seqable_constraint_name
+         || name = optional_sequential_constraint_name ->
+      "((" ^ ocaml_name (constraint_value_type container) ^ " -> "
+      ^ ocaml_name inner ^ " Seq.t) option * " ^ ocaml_name container ^ ")"
+  | TOcaml_app (name, [ witness_ty; value_ty ])
+    when String.starts_with ~prefix:protocol_constraint_prefix name ->
+      "(" ^ ocaml_name witness_ty ^ " option * " ^ ocaml_name value_ty ^ ")"
   | TOcaml_app (name, [ inner ]) when name = next_seq_type_name ->
       ocaml_name inner ^ " Seq.t"
   | TOcaml_app (name, [ arg ]) -> ocaml_name arg ^ " " ^ name

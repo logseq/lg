@@ -59,6 +59,103 @@ let compile_type_variant = Type_definition_elaborator.compile_type_variant
 
 let rec compile scope env next_type = function
   | FList
+      (FSymbol "defrecord" :: ((FSymbol name) as name_form)
+      :: FVector raw_fields
+      :: interface_forms) ->
+      let rec field_names acc = function
+        | [] -> Ok (List.rev acc)
+        | FSymbol metadata :: rest
+          when String.starts_with ~prefix:"^" metadata ->
+            field_names acc rest
+        | FSymbol field_name :: rest -> field_names (field_name :: acc) rest
+        | _ -> Error.error "defrecord fields must be symbols"
+      in
+      let rec protocol_groups groups current = function
+        | [] -> (
+            match current with
+            | None -> Ok (List.rev groups)
+            | Some (protocol_name, methods) ->
+                Ok (List.rev ((protocol_name, List.rev methods) :: groups)))
+        | FSymbol protocol_name :: rest ->
+            let groups =
+              match current with
+              | None -> groups
+              | Some (name, methods) -> (name, List.rev methods) :: groups
+            in
+            protocol_groups groups (Some (protocol_name, [])) rest
+        | (FList _ as method_form) :: rest -> (
+            match current with
+            | None ->
+                Error.error "defrecord method requires a protocol name"
+            | Some (protocol_name, methods) ->
+                protocol_groups groups
+                  (Some (protocol_name, method_form :: methods)) rest)
+        | _ :: _ -> Error.error "invalid defrecord protocol implementation"
+      in
+      let items_of = function Group items -> items | item -> [ item ] in
+      Result.bind (field_names [] raw_fields) (fun fields ->
+          let type_parameters = [] in
+          let field_forms =
+            List.map
+              (fun field_name ->
+                FList [ FSymbol field_name; FKeyword ":dynamic" ])
+              fields
+          in
+          match
+            Type_definition_elaborator.compile_type_record
+              ?location:(Source_context.find name_form) ~allow_empty:true scope
+              env next_type name type_parameters field_forms
+          with
+          | Error _ as error -> error
+          | Ok (scope, env, next_type, type_item) -> (
+              match protocol_groups [] None interface_forms with
+              | Error _ as error -> error
+              | Ok groups ->
+                  let rec compile_groups env next_type items = function
+                    | [] -> Ok (scope, env, next_type, Group items)
+                    | (protocol_name, methods) :: rest -> (
+                        let methods =
+                          List.map
+                            (function
+                              | FList
+                                  (FSymbol method_name
+                                  :: (FVector
+                                       (FSymbol receiver_name :: _) as params)
+                                  :: body_forms) ->
+                                  let field_bindings =
+                                    fields
+                                    |> List.concat_map (fun field_name ->
+                                           [ FSymbol field_name;
+                                             FList
+                                               [ FSymbol (".-" ^ field_name);
+                                                 FSymbol receiver_name;
+                                               ];
+                                           ])
+                                  in
+                                  FList
+                                    [ FSymbol method_name;
+                                      params;
+                                      FList
+                                        (FSymbol "let"
+                                        :: FVector field_bindings
+                                        :: body_forms);
+                                    ]
+                              | method_form -> method_form)
+                            methods
+                        in
+                        match
+                          compile scope env next_type
+                            (FList
+                               (FSymbol "extend-type" :: FSymbol name
+                              :: FSymbol protocol_name :: methods))
+                        with
+                        | Error _ as error -> error
+                        | Ok (_, env, next_type, item) ->
+                            compile_groups env next_type
+                              (items @ items_of item) rest)
+                  in
+                  compile_groups env next_type (items_of type_item) groups))
+  | FList
       (FSymbol "deftype" :: ((FSymbol name) as name_form) :: FVector raw_fields
       :: _interface_forms) ->
       let rec field_names acc = function
@@ -578,6 +675,49 @@ let rec compile scope env next_type = function
       compile_extend_type scope env next_type receiver_form protocol_name
         method_forms
   | FList
+      (FSymbol "extend-protocol" :: FSymbol protocol_name :: implementations) ->
+      let is_receiver = function FSymbol _ | FKeyword _ -> true | _ -> false in
+      let rec groups grouped current = function
+        | [] -> (
+            match current with
+            | None -> Ok (List.rev grouped)
+            | Some (receiver, methods) ->
+                Ok (List.rev ((receiver, List.rev methods) :: grouped)))
+        | receiver :: rest when is_receiver receiver ->
+            let grouped =
+              match current with
+              | None -> grouped
+              | Some (previous, methods) ->
+                  (previous, List.rev methods) :: grouped
+            in
+            groups grouped (Some (receiver, [])) rest
+        | (FList _ as method_form) :: rest -> (
+            match current with
+            | None ->
+                Error.error "extend-protocol method requires a receiver type"
+            | Some (receiver, methods) ->
+                groups grouped (Some (receiver, method_form :: methods)) rest)
+        | _ :: _ -> Error.error "invalid extend-protocol implementation"
+      in
+      let items_of = function Group items -> items | item -> [ item ] in
+      (match groups [] None implementations with
+      | Error _ as error -> error
+      | Ok groups ->
+          let rec compile_groups env next_type items = function
+            | [] -> Ok (scope, env, next_type, Group items)
+            | (receiver, methods) :: rest -> (
+                match
+                  compile scope env next_type
+                    (FList
+                       (FSymbol "extend-type" :: receiver
+                      :: FSymbol protocol_name :: methods))
+                with
+                | Error _ as error -> error
+                | Ok (_, env, next_type, item) ->
+                    compile_groups env next_type (items @ items_of item) rest)
+          in
+          compile_groups env next_type [] groups)
+  | FList
       (FSymbol "module" :: ((FSymbol module_name) as name_form)
       :: ((FSymbol signature_name) as signature_form)
       :: forms) -> (
@@ -762,6 +902,28 @@ let rec compile scope env next_type = function
       Error.error "defn expects a name, parameter vector, and body"
   | FList (FSymbol "defonce" :: _) ->
       Error.error "defonce expects a name and value"
+  | FList (FSymbol name :: args) as form -> (
+      match Env.find_macro ~scope name env with
+      | None -> (
+          match compile_expr scope env form with
+          | Error _ as error -> error
+          | Ok expr -> (
+              match expr.record_values with
+              | Some _ ->
+                  Error.error "top-level map literals must be bound with def"
+              | None ->
+                  Ok
+                    ( scope,
+                      env,
+                      next_type,
+                      Value_binding
+                        { pattern = Ignore_pattern;
+                          expression = expr.semantic_expr;
+                        } )))
+      | Some definition -> (
+          match Macro_expander.expand ~compiler_env:env definition args with
+          | Error _ as error -> error
+          | Ok expanded -> compile scope env next_type expanded))
   | form -> (
       match compile_expr scope env form with
       | Error _ as err -> err

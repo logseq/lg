@@ -31,8 +31,11 @@ let compile_args_for compile_expr scope env arg_forms =
 
 let create ~compile_expr =
   let compile_args_for = compile_args_for compile_expr in
-  let collection_to_list_expr =
-    Core_sequence_transform.collection_to_list_expr
+  let collection_to_list_expr env collection =
+    Collection_capability.to_seq_expr env collection
+    |> Result.map (fun (element_type, sequence) ->
+           ( element_type,
+             apply "List.of_seq" [ sequence ] ))
   in
   let compile_function_arg scope env = function
     | FSymbol name -> lookup_function scope env name
@@ -56,8 +59,8 @@ let create ~compile_expr =
               | (Error _ as err), _ -> err
               | _, (Error _ as err) -> err
               | Ok fixed_args, Ok collection -> (
-                  match collection_to_list_expr collection with
-                  | Error _ -> Error.error "apply expects a list, vector, or set"
+                  match collection_to_list_expr env collection with
+                  | Error _ -> Error.error "apply expects a seqable value"
                   | Ok (inner, list_expr) -> (
                       match fn_form with
                       | FSymbol "str" ->
@@ -79,6 +82,47 @@ let create ~compile_expr =
                             @ [ collection_text ]
                           in
                           Ok (typed_ir TString (Codegen.concat_expr parts))
+                      | FSymbol ("distinct?" | "clojure.core/distinct?") ->
+                          if
+                            List.for_all
+                              (fun argument ->
+                                Types.equal inner TUnknown
+                                || Types.assignable ~policy:Host_boundary
+                                     ~expected:inner ~actual:argument.ty)
+                              fixed_args
+                          then
+                            let values_expr =
+                              match fixed_args with
+                              | [] -> list_expr
+                              | _ ->
+                                  Semantic_ir.Infix
+                                    ( "@",
+                                      Semantic_ir.List
+                                        (List.map
+                                           (fun argument -> argument.semantic_expr)
+                                           fixed_args),
+                                      list_expr )
+                            in
+                            Ok
+                              (typed_ir TBool
+                                 (Semantic_ir.Let
+                                    ( [ ( Semantic_ir.PVar "__lg_apply_values",
+                                          values_expr ) ],
+                                      Semantic_ir.Infix
+                                        ( "=",
+                                          apply "List.length"
+                                            [ apply "List.sort_uniq"
+                                                [ Semantic_ir.Ident
+                                                    "Stdlib.compare";
+                                                  Semantic_ir.Ident
+                                                    "__lg_apply_values";
+                                                ] ],
+                                          apply "List.length"
+                                            [ Semantic_ir.Ident
+                                                "__lg_apply_values" ] ) )))
+                          else
+                            Error.error
+                              "apply distinct? arguments must have the same type"
                       | _ -> (
                         match compile_function_arg scope env fn_form with
                         | Error _ as err -> err

@@ -1,0 +1,6 @@
+(ns datascript.db)
+
+(defn seqable? [value]
+  (and (not (string? value))
+       (or (clojure.core/seqable? value)
+           (array? value))))

@@ -16,7 +16,9 @@ let to_list sequence = List.of_seq sequence
 let fold_left fn init sequence = Seq.fold_left fn init sequence
 
 let map fn sequence = sequence |> Seq.map fn |> memoize
+let flat_map fn sequence = sequence |> Seq.flat_map fn |> memoize
 let filter predicate sequence = sequence |> Seq.filter predicate |> memoize
+let concat sequences = List.fold_right Seq.append sequences Seq.empty |> memoize
 let take count sequence = sequence |> Seq.take count |> memoize
 let drop count sequence =
   if count = 1 then

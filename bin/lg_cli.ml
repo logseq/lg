@@ -195,7 +195,12 @@ let report_diagnostics diagnostics =
     diagnostics
 
 let report_error (err : Lg.Compiler.compile_error) =
-  prerr_endline ("lg: " ^ err.Lg.Compiler.message);
+  let location =
+    match err.Lg.Compiler.location with
+    | None -> ""
+    | Some location -> Format.asprintf "%a: " Location.print_loc location
+  in
+  prerr_endline (location ^ "lg: " ^ err.Lg.Compiler.message);
   exit 1
 
 let () =

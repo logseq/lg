@@ -31,7 +31,8 @@ let compile_type_alias ?location scope env next_type name type_parameters manife
                   Type_alias { type_name; type_parameters; manifest; location } )))
   | _ -> Error.error "type-alias expects a type keyword target"
 
-let compile_type_record ?location scope env next_type name type_parameters field_forms =
+let compile_type_record ?location ?(allow_empty = false) scope env next_type name
+    type_parameters field_forms =
   let field_spec = function
     | FList [ ((FSymbol field_name) as name_form); FKeyword keyword ] -> (
         match Type_annotation.of_keyword_with_parameters type_parameters keyword with
@@ -65,7 +66,8 @@ let compile_type_record ?location scope env next_type name type_parameters field
   in
   match parse [] field_forms with
   | Error _ as err -> err
-  | Ok [] -> Error.error "type-record expects at least one field"
+  | Ok [] when not allow_empty ->
+      Error.error "type-record expects at least one field"
   | Ok fields ->
       let type_name = Names.sanitize_name name in
       (match declare_type scope env name Record with

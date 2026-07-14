@@ -155,6 +155,14 @@ let compile_name name args =
   | Ok arg -> (
       match arg.ty with
       | TString -> Ok (typed_ir TString arg.semantic_expr)
+      | ty when Types.is_dynamic ty ->
+          let identifier =
+            apply "Lg_runtime.Runtime_dynamic.as_identifier"
+              [ arg.semantic_expr ]
+          in
+          (match identifier_body_expr name { arg with semantic_expr = identifier; ty = TSymbol } with
+          | Error _ as error -> error
+          | Ok body -> Ok (typed_ir TString (identifier_name_expr body)))
       | TKeyword | TSymbol -> (
           match identifier_body_expr name arg with
           | Error _ as err -> err
@@ -166,6 +174,12 @@ let compile_keyword name args =
   | [ arg ] -> (
       match arg.ty with
       | TKeyword -> Ok (typed_ir TKeyword arg.semantic_expr)
+      | ty when Types.is_dynamic ty ->
+          Ok
+            (typed_ir TKeyword
+               (keyword_one_arg_expr
+                  (apply "Lg_runtime.Runtime_dynamic.as_identifier"
+                     [ arg.semantic_expr ])))
       | TString | TSymbol | TUnknown ->
           Ok (typed_ir TKeyword (keyword_one_arg_expr arg.semantic_expr))
       | _ -> Error.error "keyword expects keyword, string, or symbol")

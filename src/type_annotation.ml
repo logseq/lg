@@ -121,6 +121,7 @@ let of_keyword = function
   | ":keyword" -> Ok TKeyword
   | ":bool" -> Ok TBool
   | ":unit" -> Ok TUnit
+  | ":dynamic" -> Ok (Types.dynamic_constraint TUnknown)
   | ":nil" -> Error.error "nil is not a valid type annotation"
   | keyword when String.starts_with ~prefix:":ocaml/" keyword ->
       Error.error "the :ocaml/ type prefix is not supported"

@@ -39,6 +39,10 @@ let compile name args =
       | "rational?" -> static_bool (Types.equal arg.ty TInt)
       | "float?" | "double?" -> static_bool (Types.equal arg.ty TFloat)
       | "ratio?" | "decimal?" -> static_bool false
+      | "symbol?" when Types.is_dynamic arg.ty ->
+          bool
+            (apply "Lg_runtime.Runtime_dynamic.is_symbol"
+               [ arg.semantic_expr ])
       | "symbol?" -> static_bool (Types.equal arg.ty TSymbol)
       | "simple-symbol?" -> (
           match arg.ty with

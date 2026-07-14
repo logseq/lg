@@ -312,7 +312,7 @@ let bind_map (target : typed_expr) pairs =
           bind_fields [] parsed.field_bindings)
   | _ -> Error.error "map destructuring expects a map"
 
-let bind_sequence (target : typed_expr) forms =
+let bind_sequence env (target : typed_expr) forms =
   let bind_at inner index name =
     let semantic_expr =
       match target.ty with
@@ -384,16 +384,53 @@ let bind_sequence (target : typed_expr) forms =
             | Some name -> bindings @ [ local_binding name target.ty target.semantic_expr ]
           in
           Ok bindings)
-  | _ -> Error.error "sequential destructuring expects a list or vector"
+  | _ -> (
+      match
+        ( parse_sequence_pattern forms,
+          Collection_capability.to_seq_expr env target )
+      with
+      | (Error _ as err), _ -> err
+      | _, Error _ ->
+          Error.error
+            ("sequential destructuring expects a seqable value, got "
+           ^ Types.source_name target.ty)
+      | Ok pattern, Ok (inner, sequence) ->
+          let item_count = List.length pattern.item_names in
+          let bindings =
+            pattern.item_names
+            |> List.mapi (fun index name ->
+                   local_binding name inner
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.nth",
+                          [ Semantic_ir.Int index; sequence ] )))
+          in
+          let bindings =
+            match pattern.rest_name with
+            | None -> bindings
+            | Some name ->
+                bindings
+                @ [ local_binding name (TSeq inner)
+                      (Semantic_ir.Apply
+                         ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.drop",
+                           [ Semantic_ir.Int item_count; sequence ] )) ]
+          in
+          let bindings =
+            match pattern.sequence_as_name with
+            | None -> bindings
+            | Some name ->
+                bindings
+                @ [ local_binding name target.ty target.semantic_expr ]
+          in
+          Ok bindings)
 
-let bind_pattern (target : typed_expr) pattern =
+let bind_pattern ~env (target : typed_expr) pattern =
   let bindings =
     match pattern with
   | FSymbol name ->
       if ignore_name name then Ok []
       else Ok [ local_binding name target.ty target.semantic_expr ]
   | FMap pairs -> bind_map target pairs
-  | FVector forms -> bind_sequence target forms
+  | FVector forms -> bind_sequence env target forms
   | _ -> Error.error "unsupported destructuring pattern"
   in
   Result.map (attach_pattern_identities pattern) bindings

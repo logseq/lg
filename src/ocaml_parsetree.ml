@@ -44,15 +44,37 @@ let rec core_type = function
   | Types.TVar name -> Ast_helper.Typ.var ~loc name
   | Types.TOcaml name ->
       Ast_helper.Typ.constr ~loc (lid (longident_of_string name)) []
+  | Types.TOcaml_app (name, [ _capability ])
+    when name = Types.dynamic_constraint_name ->
+      type_constructor "Lg_runtime.Runtime_dynamic.t" []
   | Types.TOcaml_app (name, [ inner; container ])
     when name = Types.seqable_constraint_name ->
       let element = core_type inner in
+      let value = core_type (Types.constraint_value_type container) in
       let container = core_type container in
       let adapter =
-        Ast_helper.Typ.arrow ~loc Nolabel container
+        Ast_helper.Typ.arrow ~loc Nolabel value
           (type_constructor "Seq.t" [ element ])
       in
       Ast_helper.Typ.tuple ~loc [ (None, adapter); (None, container) ]
+  | Types.TOcaml_app (name, [ inner; container ])
+    when name = Types.optional_seqable_constraint_name
+         || name = Types.optional_sequential_constraint_name ->
+      let element = core_type inner in
+      let value = core_type (Types.constraint_value_type container) in
+      let container = core_type container in
+      let adapter =
+        Ast_helper.Typ.arrow ~loc Nolabel value
+          (type_constructor "Seq.t" [ element ])
+      in
+      Ast_helper.Typ.tuple ~loc
+        [ (None, type_constructor "option" [ adapter ]); (None, container) ]
+  | Types.TOcaml_app (name, [ witness_ty; value_ty ])
+    when String.starts_with ~prefix:Types.protocol_constraint_prefix name ->
+      Ast_helper.Typ.tuple ~loc
+        [ (None, type_constructor "option" [ core_type witness_ty ]);
+          (None, core_type value_ty);
+        ]
   | Types.TOcaml_app (name, [ inner ]) when name = Types.next_seq_type_name ->
       type_constructor "Seq.t" [ core_type inner ]
   | Types.TOcaml_app (name, args) ->
@@ -150,9 +172,16 @@ let record_type_definition type_name parameters fields location =
              (core_type field.ty))
   in
   let type_declaration =
-    Ast_helper.Type.mk ~loc:declaration_loc ~params:(type_parameters parameters)
-      ~kind:(Ptype_record label_declarations)
-      (Location.mkloc type_name declaration_loc)
+    if fields = [] then
+      Ast_helper.Type.mk ~loc:declaration_loc
+        ~params:(type_parameters parameters)
+        ~manifest:(Ast_helper.Typ.constr ~loc:declaration_loc (lid (Longident.Lident "unit")) [])
+        (Location.mkloc type_name declaration_loc)
+    else
+      Ast_helper.Type.mk ~loc:declaration_loc
+        ~params:(type_parameters parameters)
+        ~kind:(Ptype_record label_declarations)
+        (Location.mkloc type_name declaration_loc)
   in
   let recursion =
     if List.exists (fun (field : Types.field) -> type_mentions type_name field.ty) fields
