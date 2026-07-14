@@ -1,0 +1,10 @@
+(executable
+ (name transient_set_probe)
+ (libraries lg.runtime))
+
+(melange.emit
+ (target transient-set-probe)
+ (alias transient-set-probe)
+ (module_systems es6)
+ (modules transient_set_probe)
+ (libraries lg.runtime))

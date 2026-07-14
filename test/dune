@@ -7,6 +7,10 @@
  (name lgc_target_tests)
  (libraries lg))
 
+(test
+ (name runtime_transient_tests)
+ (libraries lg.runtime rrbvec))
+
 (rule
  (target lgc_native.ml)
  (deps cross_runtime.lgc ../bin/lg_cli.exe)
