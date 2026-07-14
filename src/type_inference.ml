@@ -31,19 +31,6 @@ let add_record_field_constraint name keyword field_ty params =
       | Ok fields -> Ok (replace_param name (TRecord fields) params))
   | Some _existing_ty -> Ok params
 
-let inferred_form_type params = function
-  | FInt _ -> TInt
-  | FFloat _ -> TFloat
-  | FChar _ -> TChar
-  | FString _ -> TString
-  | FBool _ -> TBool
-  | FKeyword _ -> TKeyword
-  | FSymbol name ->
-      List.assoc_opt name params |> Option.value ~default:TUnknown
-  | FList (FSymbol ("+" | "-" | "*" | "/" | "max" | "min") :: _) -> TInt
-  | FList [ FSymbol "not"; _ ] -> TBool
-  | _ -> TUnknown
-
 let rec numeric_form_type params = function
   | FInt _ -> TInt
   | FFloat _ -> TFloat
@@ -54,6 +41,20 @@ let rec numeric_form_type params = function
       if List.exists (Types.equal TFloat) types then TFloat
       else if List.exists (Types.equal TInt) types then TInt
       else TUnknown
+  | _ -> TUnknown
+
+let inferred_form_type params = function
+  | FInt _ -> TInt
+  | FFloat _ -> TFloat
+  | FChar _ -> TChar
+  | FString _ -> TString
+  | FBool _ -> TBool
+  | FKeyword _ -> TKeyword
+  | FSymbol name ->
+      List.assoc_opt name params |> Option.value ~default:TUnknown
+  | (FList (FSymbol ("+" | "-" | "*" | "/" | "max" | "min") :: _) as form) ->
+      numeric_form_type params form
+  | FList [ FSymbol "not"; _ ] -> TBool
   | _ -> TUnknown
 
 let infer_params ~lookup_function_ty params body_forms =

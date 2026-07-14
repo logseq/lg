@@ -2603,6 +2603,20 @@ let test_unannotated_function_parameters_infer_structural_map_fields () =
   assert_ocaml_runs "unannotated_function_parameters_infer_structural_map_fields" "37\n"
     ocaml_source
 
+let test_contextual_parameter_inference_preserves_nested_float_assoc_values () =
+  let source =
+    {|
+(def score {:value 1.0})
+(defn raise-score [score amount]
+  (assoc score :value (+ amount 0.5)))
+(println (str (:value (raise-score score 1.0))))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "contextual_parameter_inference_preserves_nested_float_assoc_values" "1.5\n"
+    ocaml_source
+
 let test_unannotated_function_parameters_reject_missing_structural_map_fields () =
   let source =
     {|
@@ -7944,6 +7958,8 @@ let tests =
       test_unannotated_function_parameters_reject_bad_bool_calls );
     ( "unannotated function parameters infer structural map fields",
       test_unannotated_function_parameters_infer_structural_map_fields );
+    ( "contextual parameter inference preserves nested float assoc values",
+      test_contextual_parameter_inference_preserves_nested_float_assoc_values );
     ( "unannotated function parameters reject missing structural map fields",
       test_unannotated_function_parameters_reject_missing_structural_map_fields );
     ( "static protocols dispatch by receiver type",
