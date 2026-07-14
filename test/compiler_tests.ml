@@ -3989,6 +3989,86 @@ let test_logseq_datascript_style_wrappers_use_collection_capabilities () =
     "logseq_datascript_style_wrappers_use_collection_capabilities"
     "3:6:1:3\n2:9:4:5\n" ocaml_source
 
+let test_sequence_navigation_accepts_all_seqable_types () =
+  let source =
+    {|
+(type-record datom (fields :ocaml/list<int>))
+(extend-type datom Seqable
+  (-seq [datom]
+    (map (fn [field] (+ field 0)) (ocaml-field datom fields))))
+(def value (ocaml-record datom (fields (list 1 2 3))))
+(def host-seq
+  (ocaml-call :ocaml/Seq.t<int> List.to_seq (list 7 8 9)))
+(println (pr-str (seq value)))
+(println (pr-str (rest value)))
+(println (pr-str (next value)))
+(println (second value))
+(println (pr-str (nthnext value 2)))
+(println (pr-str (nthrest value 3)))
+(println (pr-str (rest (ocaml-array 4 5 6))))
+(println (str (second "ab")))
+(println (+ (second host-seq) 0))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "sequence_navigation_accepts_all_seqable_types"
+    "(1 2 3)\n(2 3)\n(2 3)\n2\n(3)\n()\n(5 6)\nb\n8\n"
+    ocaml_source
+
+let test_generic_sequence_navigation_infers_seqable_dictionaries () =
+  let source =
+    {|
+(type-record datom (fields :ocaml/list<int>))
+(extend-type datom Seqable
+  (-seq [datom]
+    (map (fn [field] (+ field 0)) (ocaml-field datom fields))))
+(defn tail [values] (rest values))
+(defn next-tail [values] (next values))
+(defn item-two [values] (second values))
+(defn forwarded-tail [values] (tail values))
+(defn no-values? [values] (empty? values))
+(def value (ocaml-record datom (fields (list 1 2 3))))
+(println (pr-str (tail value)))
+(println (pr-str (next-tail (ocaml-array 4 5 6))))
+(println (+ (item-two value) 0))
+(println (pr-str (forwarded-tail (list 7 8 9))))
+(println (str (no-values? value) ":" (no-values? (ocaml-array-of :int))))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "generic_sequence_navigation_infers_seqable_dictionaries"
+    "(2 3)\n(5 6)\n2\n(8 9)\nfalse:true\n" ocaml_source
+
+let test_sequence_navigation_handles_empty_seqable_values () =
+  let source =
+    {|
+(println (pr-str (seq (list-of :int))))
+(println (pr-str (rest (vector-of :int))))
+(println (pr-str (next (ocaml-array-of :int))))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "sequence_navigation_handles_empty_seqable_values"
+    "()\n()\n()\n" ocaml_source
+
+let test_generic_sequence_navigation_evaluates_arguments_once () =
+  let source =
+    {|
+(def calls (ocaml-ref 0))
+(defn tail [values] (rest values))
+(println
+  (pr-str
+    (tail
+      (do
+        (ocaml-reset! calls (+ (ocaml-deref calls) 1))
+        [1 2 3]))))
+(println (ocaml-deref calls))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "generic_sequence_navigation_evaluates_arguments_once"
+    "(2 3)\n1\n" ocaml_source
+
 let test_batched_sequence_functions_reject_type_mismatch () =
   Cljml.Compiler.compile_string {|(def x (concat [1] ["two"]))|}
   |> expect_error "concat element types must match"
@@ -4051,7 +4131,7 @@ let test_additional_sequence_helpers_work () =
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "additional_sequence_helpers_work"
-    "[2 3 4]:[3 4]:[4]:1:[3 4]:[2]:1:5:[4 3 2 1]:true:false:(1 3 6 10)\n"
+    "(2 3 4):(3 4):(4):1:[3 4]:(2):1:5:[4 3 2 1]:true:false:(1 3 6 10)\n"
     ocaml_source
 
 let test_additional_sequence_helpers_reject_bad_counts () =
@@ -4397,11 +4477,11 @@ let test_set_positional_sequence_helpers () =
 (def empty-tail (rest (set-of :int)))
 (println
   (str (first xs) ":" (second xs) ":" (last xs) ":"
-       (count tail) ":" (contains? tail 1) ":" (empty? empty-tail)))
+       (count tail) ":" (first tail) ":" (empty? empty-tail)))
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "set_positional_sequence_helpers" "1:2:3:2:false:true\n"
+  assert_ocaml_runs "set_positional_sequence_helpers" "1:2:3:2:2:true\n"
     ocaml_source
 
 let test_set_positional_sequence_helpers_reject_non_collections () =
@@ -4685,7 +4765,7 @@ let test_rest_is_empty_safe () =
 |}
   in
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "rest_is_empty_safe" "true:():true:[]\n" ocaml_source
+  assert_ocaml_runs "rest_is_empty_safe" "true:():true:()\n" ocaml_source
 
 let test_lists_reject_mixed_element_types () =
   Cljml.Compiler.compile_string {|(def xs (list 1 "two"))|}
@@ -8647,6 +8727,14 @@ let tests =
       test_modules_export_host_ocaml_seqable_implementations );
     ( "Logseq Datascript style wrappers use collection capabilities",
       test_logseq_datascript_style_wrappers_use_collection_capabilities );
+    ( "sequence navigation accepts all Seqable types",
+      test_sequence_navigation_accepts_all_seqable_types );
+    ( "generic sequence navigation infers Seqable dictionaries",
+      test_generic_sequence_navigation_infers_seqable_dictionaries );
+    ( "sequence navigation handles empty Seqable values",
+      test_sequence_navigation_handles_empty_seqable_values );
+    ( "generic sequence navigation evaluates arguments once",
+      test_generic_sequence_navigation_evaluates_arguments_once );
     ( "batched sequence functions reject type mismatch",
       test_batched_sequence_functions_reject_type_mismatch );
     ( "batched sequence functions reject bad functions",

@@ -202,8 +202,16 @@ let infer_params ~lookup_function_ty params body_forms =
   and infer_form params = function
     | FList [ FSymbol "count"; FSymbol collection ] ->
         constrain_seqable TUnknown params collection
-    | FList [ FSymbol ("first" | "last"); FSymbol collection ] ->
+    | FList
+        [ FSymbol
+            ("first" | "second" | "last" | "seq" | "rest" | "next" | "empty?");
+          FSymbol collection ] ->
         constrain_seqable TUnknown params collection
+    | FList
+        [ FSymbol ("nthnext" | "nthrest"); FSymbol collection; count ] -> (
+        match infer_expected TInt params count with
+        | Error _ as err -> err
+        | Ok params -> constrain_seqable TUnknown params collection)
     | FList [ FSymbol "map"; fn; FSymbol collection ] ->
         let element_ty = inferred_unary_function_param params fn in
         constrain_seqable element_ty params collection

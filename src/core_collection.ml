@@ -26,21 +26,7 @@ let count env collection =
 
 let first env collection = Collection_capability.first_expr env collection
 
-let second collection =
-  match collection.ty with
-  | TList inner -> Ok (typed_ir inner (apply "List.nth" [ collection.semantic_expr; Semantic_ir.Int 1 ]))
-  | TSet inner ->
-      Types.set_module_name inner
-      |> Result.map (fun set_module ->
-             typed_ir inner
-               (apply "List.nth"
-                  [ apply (set_module ^ ".elements") [ collection.semantic_expr ]; Semantic_ir.Int 1 ]))
-  | TVector inner -> Ok (typed_ir inner (apply "Rrbvec.nth" [ collection.semantic_expr; Semantic_ir.Int 1 ]))
-  | TSeq inner ->
-      Ok
-        (typed_ir inner
-           (apply "Cljml.Runtime_seq.second" [ collection.semantic_expr ]))
-  | _ -> Error.error "second expects a list, vector, or set"
+let second env collection = Collection_capability.second_expr env collection
 
 let last env collection = Collection_capability.last_expr env collection
 
@@ -60,35 +46,11 @@ let pop collection =
            (apply "snd" [ apply "Option.get" [ apply "Rrbvec.pop_back" [ collection.semantic_expr ] ] ]))
   | _ -> Error.error "pop expects a list or vector"
 
-let rest collection =
-  let list_rest target =
-    Semantic_ir.Match
-      ( target,
-        [ (Semantic_ir.PList [], Semantic_ir.List []);
-          (Semantic_ir.PCons (Semantic_ir.PAny, Semantic_ir.PVar "rest"), Semantic_ir.Ident "rest") ] )
-  in
-  match collection.ty with
-  | TList _ ->
-      Ok (typed_ir collection.ty (list_rest collection.semantic_expr))
-  | TSet inner ->
-      Types.set_module_name inner
-      |> Result.map (fun set_module ->
-             typed_ir collection.ty
-               (apply (set_module ^ ".of_list")
-                  [ list_rest (apply (set_module ^ ".elements") [ collection.semantic_expr ]) ]))
-  | TVector _ ->
-      Ok
-        (typed_ir collection.ty
-           (apply "Rrbvec.of_list"
-              [ list_rest (apply "Rrbvec.to_list" [ collection.semantic_expr ]) ]))
-  | _ -> Error.error "rest expects a list, vector, or set"
+let rest env collection = Collection_capability.rest_expr env collection
 
-let seq collection =
-  match collection.ty with
-  | TList _ | TVector _ | TSet _ -> Ok collection
-  | _ -> Error.error "seq expects a collection"
+let seq env collection = Collection_capability.seq_expr env collection
 
-let empty_question collection =
+let empty_question env collection =
   match collection.ty with
   | TList _ -> Ok (typed_ir TBool (Semantic_ir.Infix ("=", collection.semantic_expr, Semantic_ir.List [])) )
   | TSet inner ->
@@ -97,7 +59,13 @@ let empty_question collection =
              typed_ir TBool (apply (set_module ^ ".is_empty") [ collection.semantic_expr ]))
   | TVector _ -> Ok (typed_ir TBool (apply "Rrbvec.is_empty" [ collection.semantic_expr ]))
   | TString -> Ok (typed_ir TBool (Semantic_ir.Infix ("=", collection.semantic_expr, Semantic_ir.String "")))
-  | _ -> Error.error "empty? expects a collection or string"
+  | _ -> (
+      match Collection_capability.to_seq_expr env collection with
+      | Ok (_, sequence) ->
+          Ok
+            (typed_ir TBool
+               (apply "Cljml.Runtime_seq.is_empty" [ sequence ]))
+      | Error _ -> Error.error "empty? expects a seqable value")
 
 let empty collection =
   match collection.ty with
@@ -176,13 +144,13 @@ let compile env name args =
           match name with
           | "count" -> count env collection
           | "first" -> first env collection
-          | "second" -> second collection
+          | "second" -> second env collection
           | "last" -> last env collection
           | "peek" -> peek collection
           | "pop" -> pop collection
-          | "rest" -> rest collection
-          | "seq" -> seq collection
-          | "empty?" -> empty_question collection
+          | "rest" -> rest env collection
+          | "seq" -> seq env collection
+          | "empty?" -> empty_question env collection
           | "empty" -> empty collection
           | "reverse" -> reverse collection
           | _ -> assert false))

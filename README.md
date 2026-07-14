@@ -279,25 +279,26 @@ The compiler infers record-like map shapes automatically:
   memoized lazy seq nodes are not recomputed on later reductions.
 - `Seqable` is a compiler-owned protocol. Named records and host wrapper types
   can implement `-seq`, returning a typed lazy seq, and then work directly with
-  `map` and `reduce`; implementations declared in modules are exported with the
-  module.
+  sequence navigation, `map`, and `reduce`; implementations declared in modules
+  are exported with the module.
 - `Reducible` is a compiler-owned optimization protocol. `reduce` uses a
   matching `-reduce` implementation before falling back to `Seqable`; built-in
   collections specialize directly to their native OCaml folds.
 - `Counted` and `Indexed` are compiler-owned protocols. `count` prefers
   `-count` before traversing a `Seqable`, while `nth` prefers `-nth` before its
-  seq fallback. `first` and `last` accept every built-in or custom `Seqable`.
-- Unannotated function parameters used by `map`, `reduce`, `count`, `first`, or
-  `last` infer a Seqable constraint. Calls pass a statically selected adapter
-  dictionary, so one generic function works with built-in and custom
-  collections without runtime type dispatch.
+  seq fallback. `first`, `second`, `last`, `seq`, `rest`, `next`, `nthnext`,
+  `nthrest`, and `empty?` accept every built-in or custom `Seqable`.
+- Unannotated function parameters used by sequence navigation, `empty?`, `map`,
+  `reduce`, or `count` infer a Seqable constraint. Calls pass a statically
+  selected adapter dictionary, so one generic function works with built-in and
+  custom collections without runtime type dispatch.
 - `apply` supports integer binary reducers over typed lists, vectors, and sets,
   including fixed leading integer arguments before the final collection.
 - `get` supports vector indexes, and `nth` supports typed default values for
   lists and vectors.
-- `first` and `last` work on every typed `Seqable`; `second` currently supports
-  lists, vectors, sets, and lazy seqs.
-- `rest` preserves the concrete list, vector, or set type and is empty-safe.
+- `first`, `second`, and `last` work on every typed `Seqable`.
+- `seq`, `rest`, `next`, `nthnext`, and `nthrest` return typed memoized lazy
+  seqs and are empty-safe while `nil` remains unsupported.
 - `empty` returns a same-typed empty list, vector, set, or string.
 - `into` transfers elements between typed list, vector, and set collections.
 - `take` and `drop` return typed memoized lazy seqs for every built-in seqable

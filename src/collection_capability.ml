@@ -46,6 +46,43 @@ let accepts_seqable env ty =
       Option.is_some
         (Core_protocols.find_seqable ty (Compiler_environment.protocols env))
 
+let element_type env collection =
+  match to_seq_expr env collection with
+  | Ok (inner, _) -> Some inner
+  | Error _ -> None
+
+let seq_expr env collection =
+  match to_seq_expr env collection with
+  | Error _ -> Error.error "seq expects a seqable value"
+  | Ok (inner, sequence) -> Ok (typed_ir (TSeq inner) sequence)
+
+let rest_expr env collection =
+  match to_seq_expr env collection with
+  | Error _ -> Error.error "rest expects a seqable value"
+  | Ok (inner, sequence) ->
+      Ok
+        (typed_ir (TSeq inner)
+           (apply "Cljml.Runtime_seq.drop" [ Semantic_ir.Int 1; sequence ]))
+
+let second_expr env collection =
+  match to_seq_expr env collection with
+  | Error _ -> Error.error "second expects a seqable value"
+  | Ok (inner, sequence) ->
+      Ok
+        (typed_ir inner
+           (apply "Cljml.Runtime_seq.second" [ sequence ]))
+
+let drop_expr env name collection count =
+  if not (Types.equal count.ty TInt) then Error.error (name ^ " count must be int")
+  else
+    match to_seq_expr env collection with
+    | Error _ -> Error.error (name ^ " expects a seqable value")
+    | Ok (inner, sequence) ->
+        Ok
+          (typed_ir (TSeq inner)
+             (apply "Cljml.Runtime_seq.drop"
+                [ count.semantic_expr; sequence ]))
+
 let pack_seqable_argument env argument =
   let value_name = "seqable_value__" in
   let value = Semantic_ir.Ident value_name in

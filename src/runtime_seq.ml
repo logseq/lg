@@ -52,3 +52,8 @@ let last sequence =
   match sequence () with
   | Seq.Nil -> invalid_arg "last of empty sequence"
   | Seq.Cons (value, rest) -> Seq.fold_left (fun _ value -> value) value rest
+
+let is_empty sequence =
+  match sequence () with
+  | Seq.Nil -> true
+  | Seq.Cons _ -> false

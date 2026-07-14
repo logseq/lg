@@ -327,9 +327,9 @@ Vectors support `first`, `second`, `last`, `peek`, `pop`, `rest`, `next`, `nthne
 `map`, `filter`, `take`, and `drop` return typed memoized lazy seqs. Already
 realized nodes are cached, so repeated traversal does not rerun producer side
 effects. Lists, vectors, sets, arrays, strings, and host `Seq.t`, list, and array
-values are built-in seqable inputs. `rest` and `next` still preserve their
-legacy concrete collection representation pending migration to the same seq
-abstraction. `nil` remains unsupported.
+values are built-in seqable inputs. `seq`, `rest`, `next`, `nthnext`, and
+`nthrest` return the same typed lazy-seq abstraction. `nil` remains unsupported,
+so empty navigation produces an empty lazy seq rather than `nil`.
 
 `first` and `last` accept all typed seqable values. `second` accepts lists,
 vectors, sets, and lazy seqs. Set iteration follows the canonical order from
@@ -352,8 +352,9 @@ values. Reducing a memoized lazy seq realizes each source node at most once.
 
 `Seqable` is reserved as a compiler-owned protocol. Custom named records and
 host wrapper types may use `(extend-type T Seqable (-seq [value] ...))`; `-seq`
-must return a typed lazy seq. Core `map` and `reduce` resolve this capability
-statically, including implementations exported from modules.
+must return a typed lazy seq. Core sequence navigation, `empty?`, `map`, and
+`reduce` resolve this capability statically, including implementations exported
+from modules.
 
 `Reducible` is also compiler-owned. A custom seqable type may implement
 `-reduce` for a direct reduction path; `reduce` selects it before the `Seqable`
@@ -363,13 +364,14 @@ their native OCaml fold operations.
 `Counted` and `Indexed` are compiler-owned capabilities. A matching `-count`
 avoids seq traversal, and a matching `-nth` provides direct indexed access;
 otherwise the core operations fall back to `Seqable` where meaningful.
-`first` and `last` accept all built-in and custom seqable values.
+`first`, `second`, `last`, `seq`, `rest`, `next`, `nthnext`, `nthrest`, and
+`empty?` accept all built-in and custom seqable values.
 
-Unannotated function parameters used by `map`, `reduce`, `count`, `first`, or
-`last` infer a Seqable constraint. The generated OCaml function receives a
-statically selected adapter dictionary together with the value. This supports
-generic collection functions across built-ins, module-exported host types, and
-Logseq/Datascript-style wrappers without runtime type inspection.
+Unannotated function parameters used by sequence navigation, `empty?`, `map`,
+`reduce`, or `count` infer a Seqable constraint. The generated OCaml function
+receives a statically selected adapter dictionary together with the value. This
+supports generic collection functions across built-ins, module-exported host
+types, and Logseq/Datascript-style wrappers without runtime type inspection.
 
 `reverse` returns a same-typed reversed list or vector.
 

@@ -593,7 +593,7 @@ let create ~compile_expr =
     | "rseq" -> (
         match compile_args () with
         | Error _ as err -> err
-        | Ok args -> Core_sequence.compile name args)
+        | Ok args -> Core_sequence.compile env name args)
     | "some" -> compile_some scope env arg_forms
     | "split-at" -> compile_sequence_transform_call scope env name arg_forms
     | "split-with" -> compile_split_with scope env arg_forms
@@ -807,6 +807,23 @@ let create ~compile_expr =
                       match List.nth_opt args index with
                       | Some arg -> arg.ty
                       | None -> ret)
+                  | _ -> ret
+                in
+                let ret =
+                  match ret with
+                  | TSeq TUnknown ->
+                      param_tys
+                      |> List.mapi (fun index param_ty -> (index, param_ty))
+                      |> List.find_map (fun (index, param_ty) ->
+                             match Types.seqable_constraint_element param_ty with
+                             | None -> None
+                             | Some _ -> (
+                                 match List.nth_opt args index with
+                                 | None -> None
+                                 | Some arg ->
+                                     Collection_capability.element_type env arg))
+                      |> Option.map (fun element_ty -> TSeq element_ty)
+                      |> Option.value ~default:ret
                   | _ -> ret
                 in
                 Ok
