@@ -190,6 +190,11 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                     env |> Env.add_bindings param_bindings
                     |> Env.add_bindings local_bindings
                   in
+                  let body_forms =
+                    match body_forms with
+                    | [] -> [ Ast.FSymbol "nil" ]
+                    | _ -> body_forms
+                  in
                   let compiled_body =
                     match compile_function_body with
                     | Some compile ->

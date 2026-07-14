@@ -1783,13 +1783,65 @@ let test_user_macros_track_helpers_passed_as_values () =
   assert_ocaml_runs "user_macros_track_helpers_passed_as_values" "42\n"
     ocaml_source
 
+let test_user_macros_receive_portable_namespace_environment () =
+  let source =
+    {|
+(defn cljs-env? [env]
+  (boolean (:ns env)))
+(defmacro portable [name]
+  (if (cljs-env? &env)
+    `(def ~(vary-meta name assoc :private true) 42)
+    `(def ~name 0)))
+(defmacro define-annotated [name]
+  `(defn ~(vary-meta name identity) [] 7))
+(portable ^:private answer)
+(define-annotated ^number annotated)
+(println (str answer ":" (annotated)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "user_macros_receive_portable_namespace_environment"
+    "42:7\n" ocaml_source
+
+let test_user_macros_support_collection_type_predicates () =
+  let source =
+    {|
+(defmacro vector-form? [form]
+  (vector? form))
+(println (str (vector-form? [1]) ":" (vector-form? (1))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "user_macros_support_collection_type_predicates"
+    "true:false\n" ocaml_source
+
+let test_user_macros_can_emit_top_level_do_definitions () =
+  let source =
+    {|
+(defmacro define-values []
+  `(do
+     (def first-value 20)
+     (def second-value 22)))
+(define-values)
+(println (+ first-value second-value))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "user_macros_can_emit_top_level_do_definitions" "42\n"
+    ocaml_source
+
 let test_rand_int_uses_exclusive_positive_bound () =
   let source = {|(println (rand-int 1))|} in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "rand_int_uses_exclusive_positive_bound" "0\n" ocaml_source
 
 let test_int_coerces_float_and_preserves_int () =
-  let source = {|(println (str (int 3.9) ":" (int 4)))|} in
+  let source =
+    {|
+(defn coerce [value] (int value))
+(println (str (coerce 3.9) ":" (coerce 4)))
+|}
+  in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "int_coerces_float_and_preserves_int" "3:4\n" ocaml_source
 
@@ -2855,6 +2907,8 @@ let test_threading_and_option_binding_forms_compile () =
 (def threaded-last (->> 41 (str "value=")))
 (defn maybe-thread [^:option<int> value]
   (some-> value (+ 1) str))
+(defn maybe-thread-last [^:option<int> value]
+  (some->> value (str "value=")))
 (def some-threaded
   (if-some [value (maybe-thread (Some 41))] value "missing"))
 (def some-missing
@@ -2879,12 +2933,12 @@ let test_threading_and_option_binding_forms_compile () =
   (str (option-score (Some 41)) ":" (option-score None) ":"
        threaded ":" threaded-last ":" combined ":" missing ":"
        (deref observed) ":" some-threaded ":" some-missing ":"
-       destructured-option))
+       destructured-option ":" (maybe-thread-last (Some 41))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "threading_and_option_binding_forms_compile"
-    "42:0:42:value=41:5:9:7:42:missing:5\n" ocaml_source;
+    "42:0:42:value=41:5:9:7:42:missing:5:value=41\n" ocaml_source;
   Lg.Compiler.compile_string {|(def bad (if-let [x] x 0))|}
   |> expect_error "if-let requires [name option], then, and else";
   Lg.Compiler.compile_string {|(def bad (-> 1 2))|}
@@ -4110,6 +4164,90 @@ let test_forward_declared_deftype_fields_keep_nominal_receiver () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_deftype_fields_accept_clojure_primitive_hints () =
+  let source =
+    {|
+(deftype Metric [^int value ^boolean ready])
+(defn usable? [^Metric metric]
+  (and (pos? (.-value metric)) (.-ready metric)))
+(println (usable? (Metric. 42 true)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "deftype_fields_accept_clojure_primitive_hints" "true\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_deftype_mutable_fields_support_set_bang () =
+  let source =
+    {|
+(defprotocol MutableMetric
+  (metric-value [metric] :int)
+  (set-metric-value! [metric value] :int))
+(deftype Metric [^:mutable ^int value]
+  MutableMetric
+  (metric-value [_] value)
+  (set-metric-value! [_ next-value]
+    (set! value next-value)))
+(def metric (Metric. 1))
+(set-metric-value! metric 42)
+(println (.-value metric))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "deftype_mutable_fields_support_set_bang" "42\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_deftype_methods_support_instance_call_syntax () =
+  let source =
+    {|
+(deftype Box [^int value]
+  Object
+  (score [_] value)
+  (doubleScore [this] (+ (.score this) (.score this))))
+(println (.doubleScore (Box. 21)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "deftype_methods_support_instance_call_syntax" "42\n"
+    ocaml_source
+
+let test_java_exception_constructors_map_to_runtime_exceptions () =
+  let source =
+    {|
+(println
+  (try
+    (throw (UnsupportedOperationException. "not supported"))
+    (catch _ "caught")))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "java_exception_constructors_map_to_runtime_exceptions"
+    "caught\n" ocaml_source
+
+let test_clojure_map_entry_compiles_as_two_element_vector () =
+  let source =
+    {|(println (pr-str (clojure.lang.MapEntry :answer 42)))|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "clojure_map_entry_compiles_as_two_element_vector"
+    "[:answer 42]\n" ocaml_source
+
+let test_set_literals_are_callable_as_membership_lookup () =
+  let source =
+    {|
+(println
+  (str (#{:e :a :v} :a) ":"
+       (nil? (#{:e :a :v} :missing))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "set_literals_are_callable_as_membership_lookup"
+    ":a:true\n" ocaml_source
+
 let test_generic_protocol_witness_compiles_for_javascript_targets () =
   let source =
     {|
@@ -4482,9 +4620,18 @@ let test_do_and_multi_form_bodies () =
   assert_ocaml_runs "do_and_multi_form_bodies"
     "inside-let\ninside-do\ninput:41\nresult:42\n" ocaml_source
 
-let test_fn_rejects_empty_body () =
-  Lg.Compiler.compile_string {|(def f (fn [x]))|}
-  |> expect_error "function body requires at least one form"
+let test_fn_empty_body_returns_nil () =
+  let source =
+    {|
+(def f (fn [x]))
+(defn g
+  ([x])
+  ([x y] y))
+(println (str (nil? (f 1)) ":" (nil? (g 1)) ":" (= (g 1 42) 42)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "fn_empty_body_returns_nil" "true:true:true\n" ocaml_source
 
 let test_vectors_support_mixed_element_types () =
   let source = {|(println (pr-str [1 "two"]))|} in
@@ -4888,6 +5035,20 @@ let test_batched_numeric_scalar_core_functions_work () =
 let test_batched_numeric_scalar_core_functions_reject_non_int_bit_args () =
   Lg.Compiler.compile_string {|(def x (bit-set 1 "2"))|}
   |> expect_error "expected int arguments for bit-set"
+
+let test_hash_combine_matches_clojure_32_bit_overflow () =
+  let source =
+    {|
+(println
+  (str (hash-combine 0 0) ":"
+       (clojure.lang.Util/hashCombine 1 2) ":"
+       (hash-combine -1 42) ":"
+       (hash-combine 2147483647 2147483647)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "hash_combine_matches_clojure_32_bit_overflow"
+    "-1640531527:-1640531462:1640531549:1103660680\n" ocaml_source
 
 let test_batched_numeric_scalar_core_functions_reject_unchecked_arity () =
   Lg.Compiler.compile_string {|(def x (unchecked-add 1))|}
@@ -10295,6 +10456,12 @@ let tests =
       test_user_macros_treat_host_classes_as_compile_time_values );
     ( "user macros track helpers passed as values",
       test_user_macros_track_helpers_passed_as_values );
+    ( "user macros receive portable namespace environment",
+      test_user_macros_receive_portable_namespace_environment );
+    ( "user macros support collection type predicates",
+      test_user_macros_support_collection_type_predicates );
+    ( "user macros can emit top-level do definitions",
+      test_user_macros_can_emit_top_level_do_definitions );
     ( "rand-int uses an exclusive positive bound",
       test_rand_int_uses_exclusive_positive_bound );
     ( "int coerces float and preserves int",
@@ -10622,6 +10789,18 @@ let tests =
       test_loop_nil_initial_value_can_become_optional );
     ( "forward declared deftype fields keep nominal receiver",
       test_forward_declared_deftype_fields_keep_nominal_receiver );
+    ( "deftype fields accept Clojure primitive hints",
+      test_deftype_fields_accept_clojure_primitive_hints );
+    ( "deftype mutable fields support set!",
+      test_deftype_mutable_fields_support_set_bang );
+    ( "deftype methods support instance call syntax",
+      test_deftype_methods_support_instance_call_syntax );
+    ( "Java exception constructors map to runtime exceptions",
+      test_java_exception_constructors_map_to_runtime_exceptions );
+    ( "Clojure MapEntry compiles as a two-element vector",
+      test_clojure_map_entry_compiles_as_two_element_vector );
+    ( "set literals are callable as membership lookup",
+      test_set_literals_are_callable_as_membership_lookup );
     ( "generic protocol witness compiles for JavaScript targets",
       test_generic_protocol_witness_compiles_for_javascript_targets );
     ( "protocols support float and symbol receivers",
@@ -10671,7 +10850,7 @@ let tests =
     ( "protocol identity disambiguates same named methods",
       test_protocol_identity_disambiguates_same_named_methods );
     ("do and multi-form bodies work", test_do_and_multi_form_bodies);
-    ("fn rejects empty body", test_fn_rejects_empty_body);
+    ("fn empty body returns nil", test_fn_empty_body_returns_nil);
     ("vectors support mixed element types", test_vectors_support_mixed_element_types);
     ("keyword values print as keywords", test_keyword_values_print_as_keywords);
     ("keys return keyword values", test_keys_return_keyword_values);
@@ -10735,6 +10914,8 @@ let tests =
       test_batched_numeric_scalar_core_functions_work );
     ( "batched numeric/scalar core functions reject non-int bit args",
       test_batched_numeric_scalar_core_functions_reject_non_int_bit_args );
+    ( "hash-combine matches Clojure 32-bit overflow",
+      test_hash_combine_matches_clojure_32_bit_overflow );
     ( "batched numeric/scalar core functions reject unchecked arity",
       test_batched_numeric_scalar_core_functions_reject_unchecked_arity );
     ( "batched numeric/scalar core functions reject bad name arg",

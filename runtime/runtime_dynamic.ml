@@ -324,6 +324,11 @@ let rec update_in target path update_fn arguments =
       assoc target key updated
 
 let as_int value = match value.payload with Int value -> value | _ -> invalid_arg "expected int"
+let to_int value =
+  match value.payload with
+  | Int value -> value
+  | Float value -> int_of_float value
+  | _ -> invalid_arg "expected numeric value"
 let as_float value = match value.payload with Float value -> value | _ -> invalid_arg "expected float"
 let as_char value = match value.payload with Char value -> value | _ -> invalid_arg "expected char"
 let as_string value =

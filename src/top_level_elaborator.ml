@@ -72,6 +72,19 @@ let compile_type_record = Type_definition_elaborator.compile_type_record
 let compile_type_variant = Type_definition_elaborator.compile_type_variant
 
 let rec compile scope env next_type = function
+  | FList (FSymbol "do" :: forms) ->
+      let items_of = function Group items -> items | item -> [ item ] in
+      let rec compile_forms scope env next_type items = function
+        | [] -> Ok (scope, env, next_type, Group (List.rev items))
+        | form :: rest -> (
+            match compile scope env next_type form with
+            | Error _ as error -> error
+            | Ok (scope, env, next_type, item) ->
+                compile_forms scope env next_type
+                  (List.rev_append (items_of item) items)
+                  rest)
+      in
+      compile_forms scope env next_type [] forms
   | FList
       (FSymbol "defrecord" :: ((FSymbol name) as name_form)
       :: FVector raw_fields
@@ -172,23 +185,47 @@ let rec compile scope env next_type = function
   | FList
       (FSymbol "deftype" :: ((FSymbol name) as name_form) :: FVector raw_fields
       :: _interface_forms) ->
-      let rec field_specs acc metadata = function
+      let rec field_specs acc metadata mutable_field = function
         | [] -> Ok (List.rev acc)
-        | FSymbol metadata :: rest
-          when String.starts_with ~prefix:"^" metadata ->
-            field_specs acc (Some metadata) rest
+        | FSymbol ("^:mutable" | "^:unsynchronized-mutable") :: rest ->
+            field_specs acc metadata true rest
+        | FSymbol metadata :: rest when String.starts_with ~prefix:"^" metadata ->
+            field_specs acc (Some metadata) mutable_field rest
         | FSymbol field_name :: rest ->
-            field_specs ((field_name, metadata) :: acc) None rest
+            field_specs
+              ((field_name, metadata, mutable_field) :: acc)
+              None false rest
         | _ -> Error.error "deftype fields must be symbols"
       in
-      Result.bind (field_specs [] None raw_fields) (fun fields ->
+      Result.bind (field_specs [] None false raw_fields) (fun fields ->
           if fields = [] then Error.error "deftype expects at least one field"
           else
             let definitions =
               fields
-              |> List.mapi (fun index (field_name, metadata) ->
+              |> List.mapi (fun index (field_name, metadata, mutable_field) ->
                      let parameter = "field" ^ string_of_int index in
+                     let field_type, parameters =
+                       match metadata with
+                       | Some ("^int" | "^long" | "^number") ->
+                           ("int", [])
+                       | Some ("^boolean" | "^Boolean") -> ("bool", [])
+                       | Some ("^double" | "^float") -> ("float", [])
+                       | Some "^String" -> ("string", [])
+                       | _ -> (parameter, [ parameter ])
+                     in
+                     let field_type =
+                       if mutable_field then "ref<" ^ field_type ^ ">"
+                       else field_type
+                     in
                      match metadata with
+                     | Some ("^int" | "^long" | "^number") ->
+                         (parameters, FList [ FSymbol field_name; FKeyword (":" ^ field_type) ])
+                     | Some ("^boolean" | "^Boolean") ->
+                         (parameters, FList [ FSymbol field_name; FKeyword (":" ^ field_type) ])
+                     | Some ("^double" | "^float") ->
+                         (parameters, FList [ FSymbol field_name; FKeyword (":" ^ field_type) ])
+                     | Some "^String" ->
+                         (parameters, FList [ FSymbol field_name; FKeyword (":" ^ field_type) ])
                      | Some "^clojure.lang.Associative" ->
                          let key_parameter = parameter ^ "_key" in
                          let value_parameter = parameter ^ "_value" in
@@ -200,10 +237,10 @@ let rec compile scope env next_type = function
                                 ^ key_parameter ^ ";" ^ value_parameter ^ ">");
                              ] )
                      | _ ->
-                         ( [ parameter ],
+                         ( parameters,
                            FList
                              [ FSymbol field_name;
-                               FKeyword (":" ^ parameter);
+                               FKeyword (":" ^ field_type);
                              ] ))
             in
             let type_parameters = List.concat_map fst definitions in
@@ -253,6 +290,45 @@ let rec compile scope env next_type = function
                   | FInt _ | FFloat _ | FChar _ | FString _ | FRegex _
                   | FBool _ | FKeyword _ ->
                       false
+                in
+                let rec rewrite_mutable_assignments = function
+                  | FList
+                      [ FSymbol "set!";
+                        FSymbol field_name;
+                        value_form ] -> (
+                      let keyword = ":" ^ field_name in
+                      match Types.find_field keyword record.fields with
+                      | Some { ty = TRef _; _ } ->
+                          FList
+                            [ FSymbol "reset!";
+                              FList
+                                [ FSymbol "__deftype-field-ref";
+                                  FKeyword keyword;
+                                  FSymbol receiver_name;
+                                ];
+                              rewrite_mutable_assignments value_form;
+                            ]
+                      | _ ->
+                          FList
+                            [ FSymbol "set!";
+                              FSymbol field_name;
+                              rewrite_mutable_assignments value_form;
+                            ])
+                  | FList forms ->
+                      FList (List.map rewrite_mutable_assignments forms)
+                  | FVector forms ->
+                      FVector (List.map rewrite_mutable_assignments forms)
+                  | FMap pairs ->
+                      FMap
+                        (List.map
+                           (fun (key, value) ->
+                             ( rewrite_mutable_assignments key,
+                               rewrite_mutable_assignments value ))
+                           pairs)
+                  | form -> form
+                in
+                let body_forms =
+                  List.map rewrite_mutable_assignments body_forms
                 in
                 let field_bindings =
                   record.fields

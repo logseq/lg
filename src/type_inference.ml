@@ -663,6 +663,8 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params body_for
         constrain_symbol (Types.dynamic_constraint TUnknown) params value
     | FList [ FSymbol "name"; FSymbol value ] ->
         constrain_symbol (Types.dynamic_constraint TUnknown) params value
+    | FList [ FSymbol "int"; FSymbol value ] ->
+        constrain_symbol (Types.dynamic_constraint TUnknown) params value
     | FList [ FSymbol "instance?"; FSymbol _type_name; FSymbol value ] ->
         constrain_symbol (Types.dynamic_constraint TUnknown) params value
     | FList (FSymbol name :: arguments) when List.mem_assoc name params ->
@@ -822,6 +824,8 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params body_for
             | "bit-flip"
             | "bit-test"
             | "bit-shift-right-zero-fill"
+            | "hash-combine"
+            | "clojure.lang.Util/hashCombine"
             | "unchecked-divide-int"
             | "unchecked-remainder-int" );
           left;

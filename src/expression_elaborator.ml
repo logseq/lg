@@ -25,6 +25,7 @@ type prepared_multi_arity_fn = {
 
 let some_thread_counter = ref 0
 let condp_counter = ref 0
+let callable_set_counter = ref 0
 
 let rec compile_expr scope (env : Env.t) form =
   match compile_expr_unlocated scope env form with
@@ -78,7 +79,9 @@ and compile_expr_unlocated scope (env : Env.t) = function
   | FList (FSymbol "->>" :: value :: steps) ->
       compile_thread scope env `Last value steps
   | FList (FSymbol "some->" :: value :: steps) ->
-      compile_some_thread scope env value steps
+      compile_some_thread scope env `First value steps
+  | FList (FSymbol "some->>" :: value :: steps) ->
+      compile_some_thread scope env `Last value steps
   | FList (FSymbol "if-let" :: binding :: then_form :: else_form :: []) ->
       compile_if_let scope env binding then_form else_form
   | FList (FSymbol "if-some" :: binding :: then_form :: else_form :: []) ->
@@ -136,6 +139,49 @@ and compile_expr_unlocated scope (env : Env.t) = function
   | FList (FSymbol "match" :: target :: clauses) ->
       compile_match scope env target clauses
   | FList (FSymbol "try" :: forms) -> compile_try scope env forms
+  | FList
+      [ FList (FSymbol ("hash-set" | "sorted-set") :: element_forms);
+        key_form ] ->
+      incr callable_set_counter;
+      let suffix = string_of_int !callable_set_counter in
+      let key_name =
+        "__lg_callable_set_key_" ^ suffix
+      in
+      let elements =
+        List.mapi
+          (fun index form ->
+            ( "__lg_callable_set_element_" ^ suffix ^ "_"
+              ^ string_of_int index,
+              form ))
+          element_forms
+      in
+      let body =
+        List.fold_right
+          (fun (element_name, _) otherwise ->
+            FList
+              [ FSymbol "if";
+                FList
+                  [ FSymbol "=";
+                    FSymbol key_name;
+                    FSymbol element_name;
+                  ];
+                FSymbol element_name;
+                otherwise;
+              ])
+          elements (FSymbol "nil")
+      in
+      let bindings =
+        FSymbol key_name :: key_form
+        :: List.concat_map
+             (fun (name, form) -> [ FSymbol name; form ])
+             elements
+      in
+      compile_expr scope env
+        (FList
+           [ FSymbol "let";
+             FVector bindings;
+             body;
+           ])
   | FList (FSymbol name :: args) -> (
       match Env.find_macro ~scope name env with
       | None -> compile_call scope env name args
@@ -189,12 +235,20 @@ and compile_thread scope env position value steps =
   in
   expand value steps
 
-and compile_some_thread scope env value steps =
-  let thread_first value = function
+and compile_some_thread scope env position value steps =
+  let thread value = function
     | FSymbol name -> Ok (FList [ FSymbol name; value ])
     | FList (FSymbol name :: args) ->
-        Ok (FList (FSymbol name :: value :: args))
-    | _ -> Error.error "some-> steps must be symbols or call forms"
+        let args =
+          match position with
+          | `First -> value :: args
+          | `Last -> args @ [ value ]
+        in
+        Ok (FList (FSymbol name :: args))
+    | _ ->
+        Error.error
+          ((match position with `First -> "some->" | `Last -> "some->>")
+         ^ " steps must be symbols or call forms")
   in
   let option_payload_type = function
     | TNullable payload_ty -> Some payload_ty
@@ -224,7 +278,7 @@ and compile_some_thread scope env value steps =
               (Types.binding ocaml_name binding_ty)
               env
           in
-          match thread_first (FSymbol source_name) step with
+          match thread (FSymbol source_name) step with
           | Error _ as error -> error
           | Ok threaded -> (
               match compile_expr scope step_env threaded with
@@ -510,7 +564,7 @@ and prepare_fn ?(param_type_overrides = []) ?variadic_rest_index ?recur_target
     body_forms
 
 and parse_multi_arity_clauses source_name forms =
-  let parse_clause = function
+  let rec parse_clause = function
     | FList (FVector raw_params :: body_forms) when body_forms <> [] ->
         let rec split fixed = function
           | [] -> Ok (List.rev fixed, None)
@@ -571,8 +625,8 @@ and parse_multi_arity_clauses source_name forms =
                                 rest_index;
                             return_ty = TUnknown;
                           } })))
-    | FList (FVector _ :: []) ->
-        Error.error "function body requires at least one form"
+    | FList [ (FVector _ as params_form) ] ->
+        parse_clause (FList [ params_form; FSymbol "nil" ])
     | _ ->
         Error.error
           ("defn " ^ source_name

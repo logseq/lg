@@ -145,6 +145,8 @@ module Lg_frontend : FRONTEND = struct
         :: normalize_metadata_sequence rest
     | Ast.FSymbol metadata :: rest when host_type_hint metadata ->
         normalize_metadata_sequence rest
+    | Ast.FSymbol metadata :: rest when metadata_symbol metadata ->
+        normalize_metadata_sequence rest
     | form :: rest ->
         normalize_metadata form :: normalize_metadata_sequence rest
     | [] -> []

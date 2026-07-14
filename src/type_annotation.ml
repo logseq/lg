@@ -58,6 +58,12 @@ let rec parse_ocaml_type source =
     | None ->
         if String.contains source '<' || String.contains source '>' then
           Error.error "malformed OCaml type application"
+        else if source = "int" then Ok TInt
+        else if source = "float" then Ok TFloat
+        else if source = "char" then Ok TChar
+        else if source = "string" then Ok TString
+        else if source = "bool" then Ok TBool
+        else if source = "unit" then Ok TUnit
         else
           (match String.rindex_opt source '/' with
           | Some separator when separator > 0 ->
@@ -199,9 +205,15 @@ let of_param_annotation annotation =
     let type_name =
       String.sub annotation 1 (String.length annotation - 1)
     in
-    (match Host_interop.type_annotation type_name with
-    | Some host_type -> Ok (TOcaml host_type)
-    | None -> Ok (TOcaml ("__lg_record:" ^ type_name)))
+    (match type_name with
+    | "int" | "long" | "number" -> Ok TInt
+    | "boolean" | "Boolean" -> Ok TBool
+    | "double" | "float" -> Ok TFloat
+    | "String" -> Ok TString
+    | _ -> (
+        match Host_interop.type_annotation type_name with
+        | Some host_type -> Ok (TOcaml host_type)
+        | None -> Ok (TOcaml ("__lg_record:" ^ type_name))))
   else Error.error "function parameters must be symbols"
 
 let parse_params = function

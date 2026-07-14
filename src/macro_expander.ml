@@ -47,6 +47,10 @@ let sequence_forms = function
 
 let truthy = function Form (FSymbol "nil" | FBool false) -> false | _ -> true
 
+let strip_internal_metadata = function
+  | FList [ FSymbol "__type-hint"; _; form ] -> form
+  | form -> form
+
 let host_class_symbol name =
   String.contains name '$'
   ||
@@ -185,7 +189,7 @@ let rec eval context = function
                   context.compiler_env
               with
               | Some definition -> Ok (Macro_function definition)
-              | None when List.mem name [ "conj"; "identity" ] ->
+              | None when List.mem name [ "assoc"; "conj"; "identity" ] ->
                   Ok (Builtin name)
               | None when host_class_symbol name -> Ok (Form (FSymbol name))
               | None -> Error.error ("unknown macro symbol " ^ name))))
@@ -255,6 +259,14 @@ let rec eval context = function
              namespace = context.namespace;
            })
   | FList (FSymbol "do" :: body) -> eval_body context body
+  | FList [ FKeyword keyword; target ] -> (
+      match eval context target with
+      | Error _ as error -> error
+      | Ok (Form (FMap entries)) -> (
+          match List.assoc_opt (FKeyword keyword) entries with
+          | Some value -> Ok (Form value)
+          | None -> Ok nil)
+      | Ok _ -> Ok nil)
   | FList (FSymbol ("and" | "clojure.core/and") :: forms) ->
       eval_and context forms
   | FList (FSymbol "or" :: forms) -> eval_or context forms
@@ -449,6 +461,14 @@ and apply_value context callable args =
           | _, (Error _ as error) -> error
           | _ -> Error.error "conj expects a macro vector or list")
       | _ -> Error.error "conj expects two macro arguments")
+  | Builtin "assoc" -> (
+      match args with
+      | [ Form (FMap entries); Form key; Form value ] ->
+          let entries =
+            (key, value) :: List.remove_assoc key entries
+          in
+          Ok (Form (FMap entries))
+      | _ -> Error.error "assoc expects a macro map, key, and value")
   | Builtin name -> Error.error ("unsupported macro function value " ^ name)
   | _ -> Error.error "macro value is not callable"
 
@@ -456,7 +476,7 @@ and invoke_definition context (definition : Macro_definition.t) arg_forms =
   match select_arity definition arg_forms with
   | Error _ as err -> err
   | Ok arity -> (
-      match bind_params [] arity.params arg_forms with
+      match bind_params context.locals arity.params arg_forms with
       | Error _ as err -> err
       | Ok locals ->
           eval_body
@@ -489,8 +509,32 @@ and eval_builtin context name arg_forms =
   match name with
   | "System/getProperty" -> Ok nil
   | "identity" -> unary (fun value -> Ok value)
+  | "boolean" -> unary (fun value -> Ok (Form (FBool (truthy value))))
   | "string?" ->
       unary (fun value -> Ok (Form (FBool (match value with Form (FString _) -> true | _ -> false))))
+  | "symbol?" ->
+      unary (fun value ->
+          Ok
+            (Form
+               (FBool
+                  (match value with Form (FSymbol _) -> true | _ -> false))))
+  | "keyword?" ->
+      unary (fun value ->
+          Ok
+            (Form
+               (FBool
+                  (match value with Form (FKeyword _) -> true | _ -> false))))
+  | "vector?" ->
+      unary (fun value ->
+          Ok
+            (Form
+               (FBool
+                  (match value with Form (FVector _) -> true | _ -> false))))
+  | "map?" ->
+      unary (fun value ->
+          Ok
+            (Form
+               (FBool (match value with Form (FMap _) -> true | _ -> false))))
   | "seq?" ->
       unary (fun value -> Ok (Form (FBool (match value with Form (FList _) -> true | _ -> false))))
   | "empty?" ->
@@ -539,6 +583,13 @@ and eval_builtin context name arg_forms =
           | _ -> Error.error "conj expects a macro vector or list")
       | Ok _ -> Error.error "conj expects two macro arguments"
       | Error _ as err -> err)
+  | "assoc" -> (
+      match eval_args () with
+      | Ok [ Form (FMap entries); Form key; Form value ] ->
+          Ok (Form (FMap ((key, value) :: List.remove_assoc key entries)))
+      | Ok _ -> Error.error "assoc expects a macro map, key, and value"
+      | Error _ as error -> error)
+  | "vary-meta" -> eval_vary_meta context arg_forms
   | "vec" ->
       unary (fun value ->
           sequence_forms value |> Result.map (fun forms -> Form (FVector forms)))
@@ -641,6 +692,25 @@ and eval_vswap context = function
       | Ok _ -> Error.error "vswap! expects a volatile macro value")
   | _ -> Error.error "vswap! expects a reference and function"
 
+and eval_vary_meta context = function
+  | form :: function_form :: extra_forms -> (
+      match
+        ( eval context form,
+          eval context function_form,
+          eval_forms context extra_forms )
+      with
+      | (Error _ as error), _, _ -> error
+      | _, (Error _ as error), _ -> error
+      | _, _, (Error _ as error) -> error
+      | Ok form, Ok fn, Ok extras -> (
+          match apply_value context fn (Form (FMap []) :: extras) with
+          | Error _ as error -> error
+          | Ok _ -> (
+              match form with
+              | Form form -> Ok (Form (strip_internal_metadata form))
+              | _ -> Ok form)))
+  | _ -> Error.error "vary-meta expects a form, function, and optional arguments"
+
 and syntax_quote context form =
   let generated = ref [] in
   let rec quote = function
@@ -718,5 +788,14 @@ and select_arity (definition : Macro_definition.t) args :
        ^ string_of_int (List.length args))
 
 let expand ~compiler_env (definition : Macro_definition.t) args =
-  let context = { compiler_env; namespace = definition.namespace; locals = [] } in
+  let macro_environment =
+    Form (FMap [ (FKeyword ":ns", FString definition.namespace) ])
+  in
+  let context =
+    {
+      compiler_env;
+      namespace = definition.namespace;
+      locals = [ ("&env", macro_environment) ];
+    }
+  in
   Result.bind (invoke_definition context definition args) form_of_value

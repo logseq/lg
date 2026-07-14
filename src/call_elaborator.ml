@@ -2004,6 +2004,7 @@ let create ~compile_expr =
                (Semantic_ir.Constructor (constructor_name, payload)))
     in
     match name with
+    | "clojure.lang.MapEntry" -> compile_vector scope env arg_forms
     | "js/parseInt" -> (
         match compile_args () with
         | Ok [ source; radix ]
@@ -2229,7 +2230,13 @@ let create ~compile_expr =
                   (prepare [] record.fields)
             | Ok _ -> Error.error (map_constructor ^ " expects 1 argument")))
     | constructor_name
-      when String.ends_with ~suffix:"." constructor_name -> (
+      when String.ends_with ~suffix:"." constructor_name
+           && not
+                (List.mem constructor_name
+                   [ "Exception.";
+                     "IllegalArgumentException.";
+                     "UnsupportedOperationException.";
+                   ]) -> (
         let type_name =
           String.sub constructor_name 0 (String.length constructor_name - 1)
         in
@@ -2262,10 +2269,15 @@ let create ~compile_expr =
                       (List.map (fun (field : field) -> field.ty)
                          record.fields)
                     ~actuals:
-                      (List.map
-                         (fun arg ->
-                           if is_empty_dynamic_map arg then TUnknown else arg.ty)
-                         args)
+                      (List.map2
+                         (fun (field : field) arg ->
+                           let actual =
+                             if is_empty_dynamic_map arg then TUnknown else arg.ty
+                           in
+                             match field.ty with
+                             | TRef _ -> TRef actual
+                             | _ -> actual)
+                         record.fields args)
                     (TNamed_record record)
                 in
                 let record =
@@ -2278,7 +2290,14 @@ let create ~compile_expr =
                   | [], [] -> Ok (List.rev values)
                   | (field : field) :: fields, arg :: args ->
                       let packed =
-                        if has_capability_constraint field.ty then
+                        if
+                          match field.ty with TRef _ -> true | _ -> false
+                        then
+                          Ok
+                            (Semantic_ir.Apply
+                               ( Semantic_ir.Ident "ref",
+                                 [ arg.semantic_expr ] ))
+                        else if has_capability_constraint field.ty then
                           pack_constrained_value env field.ty arg
                         else
                           match field.ty with
@@ -2324,6 +2343,24 @@ let create ~compile_expr =
                           (fun (field, arg) -> (field, arg.semantic_expr))
                            values);
                   }))))
+    | "__deftype-field-ref" -> (
+        match arg_forms with
+        | [ FKeyword keyword; target_form ] -> (
+            match compile_expr scope env target_form with
+            | Error _ as error -> error
+            | Ok target -> (
+                match target.ty with
+                | TRecord fields | TNamed_record { fields; _ } -> (
+                    match find_field keyword fields with
+                    | Some ({ ty = TRef _; _ } as field) ->
+                        Ok
+                          (typed_ir field.ty
+                             (Structural_map.field_expr target field))
+                    | Some _ ->
+                        Error.error ("field " ^ keyword ^ " is not mutable")
+                    | None -> Error.error ("unknown field " ^ keyword))
+                | _ -> Error.error "mutable field access expects a deftype value"))
+        | _ -> Error.error "mutable field access expects a field and deftype value")
     | field_access when String.starts_with ~prefix:".-" field_access -> (
         match compile_args () with
         | Error _ as err -> err
@@ -2336,6 +2373,12 @@ let create ~compile_expr =
             | TRecord fields | TNamed_record { fields; _ } -> (
                 match find_field keyword fields with
                 | None -> Error.error ("unknown field " ^ keyword)
+                | Some ({ ty = TRef value_ty; _ } as field) ->
+                    Ok
+                      (typed_ir value_ty
+                         (Semantic_ir.Prefix
+                            ( "!",
+                              Structural_map.field_expr target field )))
                 | Some field ->
                     Ok
                       (typed_ir field.ty
@@ -2349,6 +2392,50 @@ let create ~compile_expr =
                    [ ".valAt"; ".containsKey"; ".entryAt" ]) -> (
         match compile_args () with
         | Error _ as err -> err
+        | Ok (({ ty = TNamed_record record; _ } :: _) as args) ->
+            let source_method_name =
+              String.sub method_name 1 (String.length method_name - 1)
+            in
+            (match
+               lookup_deftype_method scope env record source_method_name
+                 (List.length args)
+             with
+            | Error _ ->
+                Error.error
+                  (method_name ^ " is not defined for " ^ record.type_name)
+            | Ok implementation -> (
+                match implementation.ty with
+                | TFn (parameter_tys, return_ty)
+                  when List.length parameter_tys = List.length args
+                       && List.for_all2
+                            (fun expected arg ->
+                              argument_compatible expected arg.ty)
+                            parameter_tys args ->
+                    let rec prepare acc parameter_tys args =
+                      match (parameter_tys, args) with
+                      | [], [] -> Ok (List.rev acc)
+                      | expected :: parameter_tys, arg :: args ->
+                          let expression =
+                            if Types.is_dynamic expected then
+                              pack_dynamic_value env expected arg
+                            else Ok arg.semantic_expr
+                          in
+                          (match expression with
+                          | Error _ as error -> error
+                          | Ok expression ->
+                              prepare (expression :: acc) parameter_tys args)
+                      | _ -> assert false
+                    in
+                    Result.map
+                      (fun arguments ->
+                        typed_ir return_ty
+                          (Semantic_ir.Apply
+                             ( Semantic_ir.Ident implementation.ocaml_name,
+                               arguments )))
+                      (prepare [] parameter_tys args)
+                | _ ->
+                    Error.error
+                      (method_name ^ " called with incompatible arguments")))
         | Ok ({ ty = TOcaml receiver_type; _ } :: _) -> (
             match Host_interop.instance_method ~receiver_type ~method_name with
             | None -> Error.error ("unsupported host method " ^ method_name)
@@ -2452,6 +2539,19 @@ let create ~compile_expr =
                           [ message.semantic_expr; data ] ))))
         | Ok [ _; _ ] -> Error.error "ex-info message must be a string"
         | Ok _ -> Error.error "ex-info expects 2 arguments")
+    | ( "Exception."
+      | "IllegalArgumentException."
+      | "UnsupportedOperationException." ) -> (
+        match compile_args () with
+        | Error _ as error -> error
+        | Ok [ message ] when Types.equal message.ty TString ->
+            Ok
+              (typed_ir (TOcaml "exn")
+                 (Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Lg_runtime.Runtime_exception.create",
+                      [ message.semantic_expr ] )))
+        | Ok [ _ ] -> Error.error (name ^ " expects a string message")
+        | Ok _ -> Error.error (name ^ " expects 1 argument"))
     | "throw" -> (
         match compile_args () with
         | Error _ as error -> error
@@ -2931,6 +3031,14 @@ let create ~compile_expr =
               (typed_ir TInt
                  (Semantic_ir.Apply
                     (Semantic_ir.Ident "Int64.to_int", [ semantic_expr ])))
+        | Ok [ { ty; semantic_expr; _ } ] when Types.is_dynamic ty ->
+            Ok
+              (typed_ir TInt
+                 (Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.to_int",
+                      [ semantic_expr ] )))
+        | Ok [ ({ ty = (TUnknown | TVar _); _ } as value) ] ->
+            Ok { value with ty = TInt }
         | Ok [ _ ] -> Error.error "int expects a numeric value"
         | Ok _ -> Error.error "int expects 1 argument")
     | "double" -> (
@@ -3414,6 +3522,19 @@ let create ~compile_expr =
         (match compile_args () with
         | Error _ as err -> err
         | Ok args -> Core_int.compile_binary name args)
+    | "hash-combine" | "clojure.lang.Util/hashCombine" -> (
+        match compile_args () with
+        | Error _ as error -> error
+        | Ok [ left; right ]
+          when Types.equal left.ty TInt && Types.equal right.ty TInt ->
+            Ok
+              (typed_ir TInt
+                 (Semantic_ir.Apply
+                    ( Semantic_ir.Ident
+                        "Lg_runtime.Runtime_int.hash_combine",
+                      [ left.semantic_expr; right.semantic_expr ] )))
+        | Ok [ _; _ ] -> Error.error (name ^ " expects int arguments")
+        | Ok _ -> Error.error (name ^ " expects 2 arguments"))
     | "pr-str" -> (
         match compile_args () with
         | Error _ as err -> err
