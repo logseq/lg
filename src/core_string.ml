@@ -1,6 +1,6 @@
 open Types
 
-let runtime name = "Cljml.Runtime_string." ^ name
+let runtime name = "Lg_runtime.Runtime_string." ^ name
 
 let fn args ret = TFn (args, ret)
 

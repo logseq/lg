@@ -1,0 +1,28 @@
+(require [clojure.string :as string])
+
+(def environment
+  #?(:native "native"
+     :melange "melange"
+     :js-of-ocaml "js-of-ocaml"))
+
+(defn sum
+  ([^:int value] value)
+  ([^:int left ^:int right] (+ left right))
+  ([^:int left ^:int right & more]
+   (reduce + (sum left right) more)))
+
+(def selected-sum sum)
+
+(def lazy-total (reduce + 0 (take 4 (range 1 10))))
+(def stopped
+  (reduce
+    (fn [acc value]
+      (if (= value 3) (reduced acc) (+ acc value)))
+    0
+    [1 2 3 100]))
+(def values (conj (hash-set 1 2) 3))
+(def joined (string/join "-" ["a" "b"]))
+
+(println
+  (str environment ":" (selected-sum 1 2 3 4) ":" lazy-total ":" stopped ":"
+       (contains? values 3) ":" joined))

@@ -1,4 +1,4 @@
 (library
- (name cljml)
- (public_name cljml)
- (libraries rrbvec compiler-libs.common cljml_compiler_support unix))
+ (name lg)
+ (public_name lg)
+ (libraries lg.runtime rrbvec compiler-libs.common lg_compiler_support unix))

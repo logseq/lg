@@ -2,7 +2,7 @@ type parser_result = {
   ast : Ast.form list;
   locations : Location.t list;
   form_locations : Source_context.entry list;
-  parsed_as : [ `Cljml ];
+  parsed_as : [ `Lg ];
 }
 
 type typed_result = {
@@ -26,10 +26,7 @@ type diagnostic = {
   location : Location.t option;
 }
 
-type compilation = {
-  ocaml_source : string;
-  diagnostics : diagnostic list;
-}
+type compilation = { ocaml_source : string; diagnostics : diagnostic list }
 
 type language_analysis = {
   typed_structure : Typedtree.structure;
@@ -44,14 +41,19 @@ type state = {
 }
 
 module type FRONTEND = sig
-  val implementation : ?filename:string -> string -> (parser_result, Error.t) result
+  val implementation :
+    ?target:Target.t ->
+    ?filename:string ->
+    string ->
+    (parser_result, Error.t) result
 end
 
-module Cljml_frontend : FRONTEND = struct
+module Lg_frontend : FRONTEND = struct
   let position filename source offset =
     let rec loop index line line_start =
       if index >= offset then
-        { Lexing.pos_fname = filename;
+        {
+          Lexing.pos_fname = filename;
           pos_lnum = line;
           pos_bol = line_start;
           pos_cnum = offset;
@@ -62,7 +64,8 @@ module Cljml_frontend : FRONTEND = struct
     loop 0 1 0
 
   let location filename source (span : Ast.source_span) =
-    { Location.loc_start = position filename source span.start_offset;
+    {
+      Location.loc_start = position filename source span.start_offset;
       loc_end = position filename source span.end_offset;
       loc_ghost = false;
     }
@@ -71,20 +74,25 @@ module Cljml_frontend : FRONTEND = struct
     match error.location with
     | None -> error
     | Some location ->
-        { error with
+        {
+          error with
           location =
             Some
-              { location with
+              {
+                location with
                 loc_start =
                   position filename source location.loc_start.Lexing.pos_cnum;
-                loc_end = position filename source location.loc_end.Lexing.pos_cnum;
-              } }
+                loc_end =
+                  position filename source location.loc_end.Lexing.pos_cnum;
+              };
+        }
 
-  let implementation ?(filename = "<string>") source =
+  let implementation ?(target = Target.default) ?(filename = "<string>") source
+      =
     match Lexer.tokenize source with
     | Error _ as err -> err
     | Ok tokens -> (
-        match Parser.parse_located tokens with
+        match Parser.parse_located ~target tokens with
         | Error error -> Error (normalize_error_location filename source error)
         | Ok located_ast ->
             let rec form_locations acc located =
@@ -94,14 +102,14 @@ module Cljml_frontend : FRONTEND = struct
                 located.Ast.children
             in
             Ok
-              { ast = List.map (fun located -> located.Ast.form) located_ast;
+              {
+                ast = List.map (fun located -> located.Ast.form) located_ast;
                 locations =
                   List.map
                     (fun located -> location filename source located.Ast.span)
                     located_ast;
-                form_locations =
-                  List.fold_left form_locations [] located_ast;
-                parsed_as = `Cljml;
+                form_locations = List.fold_left form_locations [] located_ast;
+                parsed_as = `Lg;
               })
 end
 
@@ -177,12 +185,7 @@ module Ocaml_typechecker = struct
             in
             (typed_structure, env))
       in
-      Ok
-        {
-          typed_structure;
-          compiler_env;
-          diagnostics = List.rev !diagnostics;
-        }
+      Ok { typed_structure; compiler_env; diagnostics = List.rev !diagnostics }
     with exn ->
       Error.error ?location:(exception_location exn)
         ("OCaml typecheck failed: " ^ exception_message exn)
@@ -266,13 +269,13 @@ let typecheck_incremental state (parsed : parser_result) =
                 typecheck_state;
               } ))
 
-let required_ocaml_packages source =
-  match Cljml_frontend.implementation source with
+let required_ocaml_packages ?(target = Target.default) source =
+  match Lg_frontend.implementation ~target source with
   | Error _ as err -> err
   | Ok parsed -> required_packages_from_ast parsed.ast
 
-let analyze ?(filename = "<string>") source =
-  match Cljml_frontend.implementation ~filename source with
+let analyze ?(target = Target.default) ?(filename = "<string>") source =
+  match Lg_frontend.implementation ~target ~filename source with
   | Error _ as err -> err
   | Ok parsed -> (
       match typecheck parsed with
@@ -292,16 +295,17 @@ let analyze ?(filename = "<string>") source =
                       diagnostics = analysis.diagnostics;
                     })))
 
-let interface ?(filename = "<string>") source =
-  match analyze ~filename source with
+let interface ?(target = Target.default) ?(filename = "<string>") source =
+  match analyze ~target ~filename source with
   | Error _ as err -> err
   | Ok analysis ->
       Ok
-        (Printtyp.wrap_printing_env ~error:false analysis.compiler_env (fun () ->
+        (Printtyp.wrap_printing_env ~error:false analysis.compiler_env
+           (fun () ->
              Format.asprintf "%a@." Printtyp.signature
                analysis.typed_structure.str_type))
 
-let analyze_workspace_with_errors sources =
+let analyze_workspace_with_errors ?(target = Target.default) sources =
   let validate_ocaml state =
     match Lowering.structure_of_located_items state.located_items with
     | Error _ as err -> err
@@ -310,7 +314,7 @@ let analyze_workspace_with_errors sources =
   let rec parse parsed errors = function
     | [] -> Ok (List.rev parsed, List.rev errors)
     | (filename, source) :: rest -> (
-        match Cljml_frontend.implementation ~filename source with
+        match Lg_frontend.implementation ~target ~filename source with
         | Error error -> parse parsed ((filename, error) :: errors) rest
         | Ok result -> parse ((filename, result) :: parsed) errors rest)
   in
@@ -323,16 +327,20 @@ let analyze_workspace_with_errors sources =
           | (filename, parsed) :: rest -> (
               match typecheck_incremental state parsed with
               | Error error ->
-                  try_pending ((filename, parsed) :: deferred)
-                    ((filename, error) :: errors) rest
+                  try_pending
+                    ((filename, parsed) :: deferred)
+                    ((filename, error) :: errors)
+                    rest
               | Ok (next_state, _typed) -> (
                   match validate_ocaml next_state with
                   | Ok () ->
                       compile next_state (filename :: compiled)
                         (List.rev_append deferred rest)
                   | Error error ->
-                      try_pending ((filename, parsed) :: deferred)
-                        ((filename, error) :: errors) rest))
+                      try_pending
+                        ((filename, parsed) :: deferred)
+                        ((filename, error) :: errors)
+                        rest))
         in
         try_pending [] [] pending
   in
@@ -341,8 +349,7 @@ let analyze_workspace_with_errors sources =
   | Ok (parsed, parse_errors) -> (
       match compile empty_state [] parsed with
       | Error _ as err -> err
-      | Ok (_state, [], compile_errors) ->
-          Ok ([], parse_errors @ compile_errors)
+      | Ok (_state, [], compile_errors) -> Ok ([], parse_errors @ compile_errors)
       | Ok (state, filenames, compile_errors) -> (
           match Lowering.structure_of_located_items state.located_items with
           | Error _ as err -> err
@@ -351,7 +358,8 @@ let analyze_workspace_with_errors sources =
               | Error _ as err -> err
               | Ok analysis ->
                   let result filename =
-                    { typed_structure = analysis.typed_structure;
+                    {
+                      typed_structure = analysis.typed_structure;
                       compiler_env = analysis.compiler_env;
                       typecheck_state = state.typecheck_state;
                       diagnostics =
@@ -366,19 +374,22 @@ let analyze_workspace_with_errors sources =
                     }
                   in
                   Ok
-                    ( List.map (fun filename -> (filename, result filename)) filenames,
+                    ( List.map
+                        (fun filename -> (filename, result filename))
+                        filenames,
                       parse_errors @ compile_errors ))))
 
-let analyze_workspace sources =
-  match analyze_workspace_with_errors sources with
+let analyze_workspace ?(target = Target.default) sources =
+  match analyze_workspace_with_errors ~target sources with
   | Error _ as err -> err
   | Ok ([], (_, error) :: _) -> Error error
-  | Ok ([], []) -> Error.error "workspace contains no analyzable cljml files"
+  | Ok ([], []) -> Error.error "workspace contains no analyzable lg files"
   | Ok (analyses, []) -> Ok analyses
   | Ok (analyses, _errors) -> Ok analyses
 
-let implementation_with_diagnostics ?(filename = "<string>") source =
-  match Cljml_frontend.implementation ~filename source with
+let implementation_with_diagnostics ?(target = Target.default)
+    ?(filename = "<string>") source =
+  match Lg_frontend.implementation ~target ~filename source with
   | Error _ as err -> err
   | Ok parsed -> (
       match typecheck parsed with
@@ -388,17 +399,19 @@ let implementation_with_diagnostics ?(filename = "<string>") source =
           | Error _ as err -> err
           | Ok (result, diagnostics) ->
               Ok
-                { ocaml_source = Ocaml_parsetree_backend.print result.structure;
+                {
+                  ocaml_source = Ocaml_parsetree_backend.print result.structure;
                   diagnostics;
                 }))
 
-let implementation ?(filename = "<string>") source =
-  match implementation_with_diagnostics ~filename source with
+let implementation ?(target = Target.default) ?(filename = "<string>") source =
+  match implementation_with_diagnostics ~target ~filename source with
   | Error _ as err -> err
   | Ok compilation -> Ok compilation.ocaml_source
 
-let implementation_parsetree ?(filename = "<string>") source =
-  match Cljml_frontend.implementation ~filename source with
+let implementation_parsetree ?(target = Target.default) ?(filename = "<string>")
+    source =
+  match Lg_frontend.implementation ~target ~filename source with
   | Error _ as err -> err
   | Ok parsed -> (
       match typecheck parsed with
@@ -408,8 +421,9 @@ let implementation_parsetree ?(filename = "<string>") source =
           | Error _ as err -> err
           | Ok (result, _diagnostics) -> Ok result.structure))
 
-let typecheck_parsetree ?(filename = "<string>") source =
-  match Cljml_frontend.implementation ~filename source with
+let typecheck_parsetree ?(target = Target.default) ?(filename = "<string>")
+    source =
+  match Lg_frontend.implementation ~target ~filename source with
   | Error _ as err -> err
   | Ok parsed -> (
       match typecheck parsed with
@@ -421,8 +435,9 @@ let typecheck_parsetree ?(filename = "<string>") source =
 
 let print_parsetree = Ocaml_parsetree_backend.print
 
-let compile_chunk_with_diagnostics ?(filename = "<string>") state source =
-  match Cljml_frontend.implementation ~filename source with
+let compile_chunk_with_diagnostics ?(target = Target.default)
+    ?(filename = "<string>") state source =
+  match Lg_frontend.implementation ~target ~filename source with
   | Error _ as err -> err
   | Ok parsed -> (
       match typecheck_incremental state parsed with
@@ -445,13 +460,15 @@ let compile_chunk_with_diagnostics ?(filename = "<string>") state source =
                             diagnostics;
                           } )))))
 
-let compile_chunk ?(filename = "<string>") state source =
-  match compile_chunk_with_diagnostics ~filename state source with
+let compile_chunk ?(target = Target.default) ?(filename = "<string>") state
+    source =
+  match compile_chunk_with_diagnostics ~target ~filename state source with
   | Error _ as err -> err
   | Ok (state, compilation) -> Ok (state, compilation.ocaml_source)
 
-let compile_chunk_parsetree ?(filename = "<string>") state source =
-  match Cljml_frontend.implementation ~filename source with
+let compile_chunk_parsetree ?(target = Target.default) ?(filename = "<string>")
+    state source =
+  match Lg_frontend.implementation ~target ~filename source with
   | Error _ as err -> err
   | Ok parsed -> (
       match typecheck_incremental state parsed with

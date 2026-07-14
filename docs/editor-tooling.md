@@ -1,13 +1,13 @@
 # Editor tooling
 
-cljml includes a standard Language Server Protocol endpoint over stdin/stdout:
+lg includes a standard Language Server Protocol endpoint over stdin/stdout:
 
 ```sh
-dune exec bin/cljml_cli.exe -- --lsp
+dune exec lg -- --lsp
 ```
 
 An installed or copied executable can be started directly with
-`cljml_cli --lsp`.
+`lg --lsp`.
 
 The server currently advertises full text-document synchronization and
 publishes compiler-backed diagnostics for:
@@ -27,13 +27,13 @@ The same cached OCaml Typedtree analysis powers:
 
 - `textDocument/hover`, with OCaml-inferred types;
 - `textDocument/definition`, including compiler-resolved value definitions;
-- `textDocument/completion`, with cljml source labels and OCaml type details;
+- `textDocument/completion`, with lg source labels and OCaml type details;
 - `textDocument/signatureHelp`, with OCaml-inferred parameter and return types;
 - `textDocument/references` and `textDocument/documentHighlight`, using OCaml
   symbol identities so shadowed bindings remain distinct;
 - `textDocument/prepareRename` and `textDocument/rename`, with exact source
   symbol edits;
-- `textDocument/documentSymbol` and `workspace/symbol`, preserving cljml names;
+- `textDocument/documentSymbol` and `workspace/symbol`, preserving lg names;
 - `textDocument/semanticTokens/full`, with compiler-resolved namespaces, types,
   functions, parameters, fields, constructors, protocols, and methods;
 - `textDocument/formatting`, with deterministic 80-column formatting that
@@ -51,22 +51,22 @@ successfully parsed and typechecked top-level prefix, so hover, completion, and
 navigation remain available for definitions above the edit.
 
 When the client supports dynamic watched-file registration, the server
-registers `**/*.cljml` after initialization. File creation, changes, deletion,
+registers `**/*.lgc` after initialization. File creation, changes, deletion,
 and renames then update the dependency index and republish affected diagnostics.
 
 ## Neovim
 
-Assign a `cljml` filetype and start the server from the project root:
+Assign a `lg` filetype and start the server from the project root:
 
 ```lua
-vim.filetype.add({ extension = { cljml = "cljml" } })
+vim.filetype.add({ extension = { lg = "lg" } })
 
 vim.api.nvim_create_autocmd("FileType", {
-  pattern = "cljml",
+  pattern = "lg",
   callback = function()
     vim.lsp.start({
-      name = "cljml",
-      cmd = { "cljml_cli", "--lsp" },
+      name = "lg",
+      cmd = { "lg", "--lsp" },
       root_dir = vim.fs.root(0, { "dune-project", ".git" }),
     })
   end,
@@ -76,19 +76,19 @@ vim.api.nvim_create_autocmd("FileType", {
 For development inside this repository, replace `cmd` with:
 
 ```lua
-cmd = { "dune", "exec", "bin/cljml_cli.exe", "--", "--lsp" }
+cmd = { "dune", "exec", "lg", "--", "--lsp" }
 ```
 
 ## Emacs Eglot
 
 ```elisp
-(add-to-list 'auto-mode-alist '("\\.cljml\\'" . clojure-mode))
+(add-to-list 'auto-mode-alist '("\\.lgc\\'" . clojure-mode))
 (add-to-list 'eglot-server-programs
-             '(clojure-mode . ("cljml_cli" "--lsp")))
+             '(clojure-mode . ("lg" "--lsp")))
 ```
 
 The core Reason editor baseline—types, formatting, diagnostics, completion, and
-jump-to-definition—is present. The server indexes `.cljml` files below the
+jump-to-definition—is present. The server indexes `.lgc` files below the
 workspace root, orders explicit module dependencies from compiler state, isolates
 invalid files, and provides cross-file definitions, references, rename, and
 workspace symbols, semantic tokens, signature help, delimiter quick fixes, and

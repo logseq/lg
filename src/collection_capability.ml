@@ -32,7 +32,7 @@ let to_seq_expr env collection =
                    ~actual:collection.ty ->
               Ok
                 ( inner,
-                  apply "Cljml.Runtime_seq.memoize"
+                  apply "Lg_runtime.Runtime_seq.memoize"
                     [ apply implementation.ocaml_name
                         [ collection.semantic_expr ] ] )
           | _ ->
@@ -62,7 +62,7 @@ let rest_expr env collection =
   | Ok (inner, sequence) ->
       Ok
         (typed_ir (TSeq inner)
-           (apply "Cljml.Runtime_seq.drop" [ Semantic_ir.Int 1; sequence ]))
+           (apply "Lg_runtime.Runtime_seq.drop" [ Semantic_ir.Int 1; sequence ]))
 
 let second_expr env collection =
   match to_seq_expr env collection with
@@ -70,7 +70,7 @@ let second_expr env collection =
   | Ok (inner, sequence) ->
       Ok
         (typed_ir inner
-           (apply "Cljml.Runtime_seq.second" [ sequence ]))
+           (apply "Lg_runtime.Runtime_seq.second" [ sequence ]))
 
 let drop_expr env name collection count =
   if not (Types.equal count.ty TInt) then Error.error (name ^ " count must be int")
@@ -80,7 +80,7 @@ let drop_expr env name collection count =
     | Ok (inner, sequence) ->
         Ok
           (typed_ir (TSeq inner)
-             (apply "Cljml.Runtime_seq.drop"
+             (apply "Lg_runtime.Runtime_seq.drop"
                 [ count.semantic_expr; sequence ]))
 
 let pack_seqable_argument env argument =
@@ -115,26 +115,26 @@ let reduce_expr env ?(short_circuit = false) fn init collection sequence =
   if short_circuit then
     match collection.ty with
     | TList _ | TOcaml_app ("list", [ _ ]) ->
-        apply "Cljml.Runtime_reduced.fold_list"
+        apply "Lg_runtime.Runtime_reduced.fold_list"
           [ fn.semantic_expr; init.semantic_expr; collection.semantic_expr ]
     | TVector _ ->
-        apply "Cljml.Runtime_reduced.fold_vector"
+        apply "Lg_runtime.Runtime_reduced.fold_vector"
           [ fn.semantic_expr; init.semantic_expr; collection.semantic_expr ]
     | TArray _ | TOcaml_app ("array", [ _ ]) ->
-        apply "Cljml.Runtime_reduced.fold_array"
+        apply "Lg_runtime.Runtime_reduced.fold_array"
           [ fn.semantic_expr; init.semantic_expr; collection.semantic_expr ]
     | TString ->
-        apply "Cljml.Runtime_reduced.fold_string"
+        apply "Lg_runtime.Runtime_reduced.fold_string"
           [ fn.semantic_expr; init.semantic_expr; collection.semantic_expr ]
     | TSeq _ | TOcaml_app (("Seq.t" | "Seq"), [ _ ]) ->
-        apply "Cljml.Runtime_reduced.fold_seq"
+        apply "Lg_runtime.Runtime_reduced.fold_seq"
           [ fn.semantic_expr; init.semantic_expr; collection.semantic_expr ]
     | _ ->
-        apply "Cljml.Runtime_reduced.fold_seq"
+        apply "Lg_runtime.Runtime_reduced.fold_seq"
           [ fn.semantic_expr; init.semantic_expr; sequence ]
   else
   let fallback () =
-    apply "Cljml.Runtime_seq.fold_left"
+    apply "Lg_runtime.Runtime_seq.fold_left"
       [ fn.semantic_expr; init.semantic_expr; sequence ]
   in
   match
@@ -220,14 +220,14 @@ let first_expr env collection =
             match Types.set_module_name element with
             | Ok set_module ->
                 apply (set_module ^ ".min_elt") [ collection.semantic_expr ]
-            | Error _ -> apply "Cljml.Runtime_seq.first" [ sequence ])
+            | Error _ -> apply "Lg_runtime.Runtime_seq.first" [ sequence ])
         | TArray _ | TOcaml_app ("array", [ _ ]) ->
             apply "Array.get" [ collection.semantic_expr; Semantic_ir.Int 0 ]
         | TString ->
             apply "String.get" [ collection.semantic_expr; Semantic_ir.Int 0 ]
         | TSeq _ | TOcaml_app (("Seq.t" | "Seq"), [ _ ]) ->
-            apply "Cljml.Runtime_seq.first" [ collection.semantic_expr ]
-        | _ -> apply "Cljml.Runtime_seq.first" [ sequence ]
+            apply "Lg_runtime.Runtime_seq.first" [ collection.semantic_expr ]
+        | _ -> apply "Lg_runtime.Runtime_seq.first" [ sequence ]
       in
       Ok (typed_ir inner expression)
 
@@ -247,7 +247,7 @@ let last_expr env collection =
             match Types.set_module_name element with
             | Ok set_module ->
                 apply (set_module ^ ".max_elt") [ collection.semantic_expr ]
-            | Error _ -> apply "Cljml.Runtime_seq.last" [ sequence ])
+            | Error _ -> apply "Lg_runtime.Runtime_seq.last" [ sequence ])
         | TArray _ | TOcaml_app ("array", [ _ ]) ->
             apply "Array.get"
               [ collection.semantic_expr;
@@ -257,8 +257,8 @@ let last_expr env collection =
               [ collection.semantic_expr;
                 last_index (apply "String.length" [ collection.semantic_expr ]) ]
         | TSeq _ | TOcaml_app (("Seq.t" | "Seq"), [ _ ]) ->
-            apply "Cljml.Runtime_seq.last" [ collection.semantic_expr ]
-        | _ -> apply "Cljml.Runtime_seq.last" [ sequence ]
+            apply "Lg_runtime.Runtime_seq.last" [ collection.semantic_expr ]
+        | _ -> apply "Lg_runtime.Runtime_seq.last" [ sequence ]
       in
       Ok (typed_ir inner expression)
 
@@ -312,5 +312,5 @@ let nth_expr env collection index =
       | Ok (inner, sequence) ->
           Ok
             (typed_ir inner
-               (apply "Cljml.Runtime_seq.nth"
+               (apply "Lg_runtime.Runtime_seq.nth"
                   [ index.semantic_expr; sequence ])))

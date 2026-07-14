@@ -1,15 +1,15 @@
 # Clojure Core Static Compiler Implementation Plan
 
-Goal: Build cljml into a statically typed Clojure-syntax language that compiles to OCaml and exposes a core API that stays close to Clojure where static typing permits.
+Goal: Build lg into a statically typed Clojure-syntax language that compiles to OCaml and exposes a core API that stays close to Clojure where static typing permits.
 
-Architecture: cljml should follow the same broad shape as ReasonML: parse a source syntax into an AST, elaborate that AST into OCaml Parsetree, then let the OCaml compiler own the full host-language type system.
+Architecture: lg should follow the same broad shape as ReasonML: parse a source syntax into an AST, elaborate that AST into OCaml Parsetree, then let the OCaml compiler own the full host-language type system.
 The frontend keeps Clojure surface syntax, while the backend emits OCaml data structures and functions so generated code can use the OCaml compiler, OCaml typechecker, and OCaml packages.
-The implementation should mirror ReasonML's toolchain boundary: a frontend parses source into an AST, an elaboration phase enforces cljml-specific semantics and builds typed OCaml items, and a backend emits OCaml source or Parsetree.
-cljml should also support incremental compilation: callers must be able to parse, typecheck, and emit one source chunk while preserving modules, aliases, generated type counters, and previously compiled bindings for later chunks.
+The implementation should mirror ReasonML's toolchain boundary: a frontend parses source into an AST, an elaboration phase enforces lg-specific semantics and builds typed OCaml items, and a backend emits OCaml source or Parsetree.
+lg should also support incremental compilation: callers must be able to parse, typecheck, and emit one source chunk while preserving modules, aliases, generated type counters, and previously compiled bindings for later chunks.
 
 Tech Stack: OCaml 5.4.1, Dune, generated OCaml backend, `RCmerci/rrbvec` for persistent vectors, integration tests that compile and run emitted OCaml.
 
-Related: Builds on the initial cljml prototype in `/Users/tiensonqin/Documents/cljml`.
+Related: Builds on the initial lg prototype in `/Users/tiensonqin/Documents/lg`.
 
 ## Problem statement
 
@@ -25,34 +25,34 @@ Clojure namespace declarations are not part of the language.
 
 The reference model is ReasonML in architecture rather than syntax.
 ReasonML preserves an alternate syntax over the OCaml toolchain.
-cljml should preserve Clojure-like syntax over an OCaml-typed backend.
-The long-term owner of complete function, module, pattern, and host-package typing should be OCaml's typechecker, not a parallel cljml reimplementation of OCaml's type system.
-cljml's type/lowering layer should remain as a semantic elaboration layer for Clojure-like surface rules, predictable collection representations, better source-level diagnostics, and compatibility checks that OCaml cannot infer from the source syntax alone.
-For unconstrained identity-style functions, cljml should preserve only enough
+lg should preserve Clojure-like syntax over an OCaml-typed backend.
+The long-term owner of complete function, module, pattern, and host-package typing should be OCaml's typechecker, not a parallel lg reimplementation of OCaml's type system.
+lg's type/lowering layer should remain as a semantic elaboration layer for Clojure-like surface rules, predictable collection representations, better source-level diagnostics, and compatibility checks that OCaml cannot infer from the source syntax alone.
+For unconstrained identity-style functions, lg should preserve only enough
 metadata to keep the return-parameter relationship visible to source-level core
 forms; OCaml should still own the actual call-site polymorphism.
 
 ClojureDart is the reference model for Clojure dialect ergonomics over a non-JVM host.
 Its docs emphasize explicit host differences, symbol munging, and host package interop as first-class compiler concerns.
-cljml should follow that posture for OCaml packages and should keep a documented differences surface instead of silently diverging from Clojure.
+lg should follow that posture for OCaml packages and should keep a documented differences surface instead of silently diverging from Clojure.
 
 API compatibility, runtime representation, and performance must be balanced explicitly.
 The source-level API should stay close to Clojure, but the elaborated OCaml representation should prefer predictable OCaml data structures over runtime dynamism.
-When exact Clojure behavior would require slow dynamic dispatch or weak static types, cljml should document the difference, choose a typed representation, and add tests that lock in that behavior.
+When exact Clojure behavior would require slow dynamic dispatch or weak static types, lg should document the difference, choose a typed representation, and add tests that lock in that behavior.
 
 ## Testing Plan
 
-I will add integration tests that compile cljml source strings to OCaml, compile the emitted OCaml with `ocamlc`, run the result, and assert stdout.
+I will add integration tests that compile lg source strings to OCaml, compile the emitted OCaml with `ocamlc`, run the result, and assert stdout.
 
 I will test Clojure-style forms using vector literals, map literals, ordinary prefix calls, and nested expressions.
 
 I will test static type errors for heterogeneous vectors, invalid arithmetic arguments, `get` on unknown map fields, `assoc` changing an existing field type, and `if` branch type mismatch.
 
-I will test command-line behavior through `dune exec bin/cljml_cli.exe -- --run examples/person.cljml`.
+I will test command-line behavior through `dune exec lg -- --run examples/person.lgc`.
 
 I will add extensive tests across these layers:
 
-- Reader/parser behavior for Clojure syntax accepted by cljml.
+- Reader/parser behavior for Clojure syntax accepted by lg.
 - Typechecker success and failure cases for every supported core API.
 - Generated OCaml compilation and execution for user-visible behavior.
 - Module, alias, open, and include resolution across source chunks.
@@ -112,24 +112,24 @@ The first type system should be explicit and structural.
 It should infer ordinary function parameter types from source-level constraints where possible, while allowing optional annotations for ambiguous cases.
 
 Scalar types are `int`, `string`, `symbol`, `keyword`, `bool`, and `unit`.
-cljml intentionally does not support a surface `nil` value or nilable type.
-`:unit` can be used as an explicit cljml annotation for side-effecting values,
+lg intentionally does not support a surface `nil` value or nilable type.
+`:unit` can be used as an explicit lg annotation for side-effecting values,
 including `^:unit` parameters and `ocaml-call` return types.
 Arithmetic starts as integer-only; ratio-producing Clojure arities such as unary `/` are documented differences until numeric tower support exists.
 
-Type predicates are resolved from static cljml types. This includes scalar
+Type predicates are resolved from static lg types. This includes scalar
 predicates and collection capability predicates such as `coll?`,
 `associative?`, `indexed?`, `seqable?`, `counted?`, `sequential?`,
 `reversible?`, and `sorted?`. Numeric tower predicates currently reflect the
 integer-only runtime.
 
 Scalar helpers such as `boolean`, `name`, `namespace`, `keyword`, and `symbol`
-are implemented for the types currently represented in cljml. Unchecked integer
+are implemented for the types currently represented in lg. Unchecked integer
 operations lower directly to OCaml integer operators.
 
 `if-not`, `when`, and `cond` are compiler-recognized forms in the static core.
-`cond` requires an `:else` branch because cljml does not add implicit nil results.
-cljml checks branch compatibility for cljml-owned core types, while
+`cond` requires an `:else` branch because lg does not add implicit nil results.
+lg checks branch compatibility for lg-owned core types, while
 OCaml-owned branch result compatibility is delegated to the OCaml typechecker.
 
 `match` is a compiler-recognized static pattern form. The current subset
@@ -157,7 +157,7 @@ Modules compile to OCaml modules. The current static subset supports
 `module-alias`, `def`, `defn`, and nested `module` forms in module bodies.
 Qualified calls such as `Math/add2` resolve through the type environment.
 `(open Math)` emits an OCaml `open` item and exposes already-known module
-value/function bindings as unqualified cljml symbols, including OCaml record
+value/function bindings as unqualified lg symbols, including OCaml record
 type metadata. `(include Math)` emits an OCaml `include` item, exposes
 already-known module bindings as unqualified symbols, and re-exports direct
 included bindings when used inside another module, including OCaml record type
@@ -296,8 +296,8 @@ compatibility is delegated to the OCaml typechecker.
 1. Replace the hard-coded parser with a general reader AST.
 
 2. Treat OCaml Parsetree plus the OCaml typechecker as the long-term typed backend boundary.
-   cljml should not grow a complete duplicate of OCaml's type system.
-   The cljml semantic layer should only keep source-level forms, core API compatibility rules, collection representation metadata, and diagnostics that cannot be delegated to OCaml.
+   lg should not grow a complete duplicate of OCaml's type system.
+   The lg semantic layer should only keep source-level forms, core API compatibility rules, collection representation metadata, and diagnostics that cannot be delegated to OCaml.
 
 3. Add reader tokens for brackets, comments, and nested expressions.
 
@@ -327,7 +327,7 @@ compatibility is delegated to the OCaml typechecker.
 
 16. Add a CLI `--run` path that compiles generated OCaml and executes it.
 
-17. Add a ClojureDart-style compatibility document that records cljml differences from JVM Clojure.
+17. Add a ClojureDart-style compatibility document that records lg differences from JVM Clojure.
 
 18. Treat symbol munging as a dedicated compiler module, not local string replacement.
     `Names` owns source-to-OCaml identifier munging, including OCaml reserved
@@ -358,7 +358,7 @@ compatibility is delegated to the OCaml typechecker.
     The first supported host-owned type boundary is opaque parameter
     annotations such as `^:ocaml/int`, which lower to OCaml constraints and are
     delegated to the OCaml typechecker instead of being fully interpreted by
-    cljml. Host-owned type application annotations such as
+    lg. Host-owned type application annotations such as
     `^:ocaml/option<int>`, `^:ocaml/result<string;string>`, and
     `^:ocaml/tuple<int;string>` lower to OCaml type constructors or tuple
     constraints; `;` separates multiple type arguments because commas are reader
@@ -380,13 +380,13 @@ compatibility is delegated to the OCaml typechecker.
     directly to OCaml. Tuple values such as `(ocaml-tuple 1 "Ada")` lower to
     OCaml tuples. `match` can lower uppercase symbols as OCaml constructor
     patterns for opaque host-owned targets. `(open Math)` lowers to a structured
-    OCaml open item and updates the cljml environment for already-known module
+    OCaml open item and updates the lg environment for already-known module
     bindings and OCaml record type metadata.
     `(include Math)` lowers to a structured OCaml include item, exposes
     already-known module bindings as unqualified symbols, and re-exports direct
     included bindings from module bodies.
     `(module-alias M Math)` lowers to an OCaml module alias in both source and
-    Parsetree backends and updates the cljml environment for already-known
+    Parsetree backends and updates the lg environment for already-known
     aliased module bindings. `(module-signature MathSig (val answer :ocaml/int))`
     lowers to an OCaml module type; abstract signature type items such as
     `(type user-id)` and manifest items such as `(type user-id :ocaml/int)`
@@ -403,21 +403,21 @@ compatibility is delegated to the OCaml typechecker.
     `[ocaml.Stdlib :as std]` and
     `(ocaml-call :string uppercase_ascii "ada")` after
     `[ocaml.String :refer [uppercase_ascii]]`, without adding those unknown
-    host functions to cljml's typed core table. OCaml value refers remain
+    host functions to lg's typed core table. OCaml value refers remain
     available inside module and functor bodies compiled from the current
     namespace. Function existence, argument arity, and argument compatibility
     remain owned by the OCaml compiler.
-    `Cljml.Compiler.typecheck_parsetree` runs the generated Parsetree through
+    `Lg.Compiler.typecheck_parsetree` runs the generated Parsetree through
     the OCaml compiler-libs typechecker as the current explicit final-truth
-    gate. It adds local Dune build CMI directories for cljml and `Rrbvec` when
+    gate. It adds local Dune build CMI directories for lg and `Rrbvec` when
     available, and accepts extra include directories through
-    `CLJML_OCAML_INCLUDE_PATH`. Public `compile_parsetree` and
+    `LG_OCAML_INCLUDE_PATH`. Public `compile_parsetree` and
     `compile_chunk_parsetree` now run this gate before returning. Public source
     APIs and CLI compile/run paths print the checked Parsetree output before
     returning or executing generated OCaml source. Diagnostic-aware source APIs
     capture enabled OCaml warnings; the CLI writes them to stderr and the LSP
     publishes them with warning severity, so exhaustiveness and redundancy
-    diagnostics cross the cljml tooling boundary without a parallel checker.
+    diagnostics cross the lg tooling boundary without a parallel checker.
 
 ## Phase 1 Task List
 
@@ -435,12 +435,12 @@ compatibility is delegated to the OCaml typechecker.
 
 7. Implement core API typing and code generation for Phase 1 APIs.
 
-8. Update `examples/person.cljml` to exercise top-level `require` and explicit
+8. Update `examples/person.lgc` to exercise top-level `require` and explicit
    modules without a namespace declaration.
 
 9. Run `rtk dune test --root .`.
 
-10. Run `rtk dune exec --root . bin/cljml_cli.exe -- --run examples/person.cljml`.
+10. Run `rtk dune exec --root . lg -- --run examples/person.lgc`.
 
 11. Refactor duplicated printing and type comparison code.
 
@@ -469,12 +469,12 @@ Arithmetic should reject strings, bools, vectors, maps, and unit.
 
 ## Questions
 
-Should cljml eventually use a persistent map library in addition to `Rrbvec` for vectors.
+Should lg eventually use a persistent map library in addition to `Rrbvec` for vectors.
 
 Empty collections can use explicit helper annotations such as `(vector-of :int)`,
 `(list-of :keyword)`, and `(set-of :keyword)`.
 
-Function parameters can use cljml annotations such as `^:unit` for
+Function parameters can use lg annotations such as `^:unit` for
 side-effecting values, and can also use opaque host-owned annotations such as
 `^:ocaml/int` when the body only needs to pass the value through or call host
 code that OCaml will typecheck. `ocaml-call` can use `:unit` as the explicit
@@ -499,7 +499,7 @@ or payload constructors such as `(type-variant message (Named :string))`, and
 constructor values can be emitted with `(ocaml-construct Active)` or
 `(ocaml-construct Named "Ada")`. For opaque host-owned targets, constructor
 patterns such as `(Msg.Named name)` lower directly to OCaml without requiring a
-cljml constructor binding.
+lg constructor binding.
 
 OCaml option/result constructors are available as explicit host forms:
 `(ocaml-some value)`, `(ocaml-none)`, `(ocaml-ok value)`, and
@@ -515,16 +515,16 @@ Keyword lookup syntax like `(:name user)` is supported in addition to `(get user
 
 Should Clojure sequence APIs be eager by default or backed by OCaml `Seq.t`.
 
-cljml uses top-level `require` for a small typed OCaml host interop table, for
+lg uses top-level `require` for a small typed OCaml host interop table, for
 example `[ocaml.String :as string]` or
 `[ocaml.String :refer [length]]`. For ordinary OCaml module functions outside
 that table, `(ocaml-call :type Module.function args...)` is the explicit
 interop escape hatch, and it can use required aliases/refers for OCaml modules
-without adding those functions to cljml's typed core table.
+without adding those functions to lg's typed core table.
 
 ## Testing Details
 
-The tests exercise source-level behavior by compiling cljml source to OCaml, compiling the generated OCaml with `ocamlc`, running the executable, and asserting stdout or compiler error messages.
+The tests exercise source-level behavior by compiling lg source to OCaml, compiling the generated OCaml with `ocamlc`, running the executable, and asserting stdout or compiler error messages.
 They do not test internal AST shapes directly.
 
 ## Implementation Details
@@ -542,15 +542,15 @@ They do not test internal AST shapes directly.
 - Keep tests behavior-oriented.
 - Keep CLI behavior compatible with the existing prototype.
 - Keep whole-file and incremental compilation paths sharing the same frontend, typechecker, and backend modules.
-- Keep cljml type analysis focused on source elaboration and Clojure-like core
-  semantics. Do not implement OCaml's full type system in cljml when the OCaml
+- Keep lg type analysis focused on source elaboration and Clojure-like core
+  semantics. Do not implement OCaml's full type system in lg when the OCaml
   compiler can own the check after Parsetree lowering.
-- Keep `Types` focused on cljml type shapes and per-binding lowering metadata.
+- Keep `Types` focused on lg type shapes and per-binding lowering metadata.
   Top-level/module lowering items belong in `Lowered`, and the test suite
   guards against moving those item definitions back into `Types`.
-- Use `Cljml.Compiler.typecheck_parsetree` when a test or caller needs the
+- Use `Lg.Compiler.typecheck_parsetree` when a test or caller needs the
   host-language truth check without shelling out to `ocamlc`; it should cover
-  generated code that depends on cljml runtime modules and `Rrbvec` CMIs.
+  generated code that depends on lg runtime modules and `Rrbvec` CMIs.
 - Keep public source and Parsetree compilation APIs gated by the OCaml
   typechecker. For incremental compilation, typecheck the accumulated Parsetree
   state while still returning only the current chunk's source or structure.

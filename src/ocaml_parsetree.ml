@@ -225,7 +225,7 @@ let node_id_attribute node_id =
           (Ast_helper.Exp.constant
              (Ast_helper.Const.string (Source_node_id.to_string node_id))) ]
   in
-  Ast_helper.Attr.mk (str "cljml.node_id") payload
+  Ast_helper.Attr.mk (str "lg.node_id") payload
 
 let record_definition var_name identity type_name set_module_name fields values =
   let type_item = record_type_definition type_name [] fields None in
@@ -274,7 +274,7 @@ let projected_record_definition var_name identity type_name set_module_name fiel
   with
   | Error _ as err -> err
   | Ok source_expr ->
-      let source_name = "__cljml_record_source" in
+      let source_name = "__lg_record_source" in
       let source_ident = Ast_helper.Exp.ident ~loc (lid (Longident.Lident source_name)) in
       let projected_fields =
         List.map

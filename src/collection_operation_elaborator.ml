@@ -104,13 +104,13 @@ let create ~compile_expr =
       let literal_zero = function FInt 0 -> true | _ -> false in
       let finite_range start stop step =
         typed_ir (TSeq TInt)
-          (apply "Cljml.Runtime_seq.range_until" [ start; stop; step ])
+          (apply "Lg_runtime.Runtime_seq.range_until" [ start; stop; step ])
       in
       match arg_forms with
       | [] ->
           Ok
             (typed_ir (TSeq TInt)
-               (apply "Cljml.Runtime_seq.range"
+               (apply "Lg_runtime.Runtime_seq.range"
                   [ Semantic_ir.Int 0; Semantic_ir.Int 1 ]))
       | [ end_form ] -> (
           match compile_expr scope env end_form with
@@ -273,7 +273,7 @@ let create ~compile_expr =
                   Ok
                     (typed_ir inner
                        (Semantic_ir.Match
-                          ( apply "Cljml.Runtime_seq.nth_opt"
+                          ( apply "Lg_runtime.Runtime_seq.nth_opt"
                               [ index.semantic_expr; sequence ],
                             [ ( Semantic_ir.PConstructor
                                   ("Some", Some (Semantic_ir.PVar "value")),

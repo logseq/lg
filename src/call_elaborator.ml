@@ -98,7 +98,7 @@ let create ~compile_expr =
     match parse [] forms with
     | Error _ as err -> err
     | Ok arguments -> compile [] arguments
-  
+
   and ocaml_apply function_name arguments =
     if List.exists (fun (label, _) -> Option.is_some label) arguments then
       Semantic_ir.Labelled_apply
@@ -110,7 +110,7 @@ let create ~compile_expr =
       Semantic_ir.Apply
         ( Semantic_ir.Ident function_name,
           List.map (fun (_, argument) -> argument.semantic_expr) arguments )
-  
+
   and compile_call scope env name arg_forms =
     let compile_args () = compile_args_for scope env arg_forms in
     let constructor ?(display_name = name) ?(constructor_name = name) return_ty
@@ -139,7 +139,7 @@ let create ~compile_expr =
             Ok
               (typed_ir (Types.reduced value.ty)
                  (Semantic_ir.Apply
-                    ( Semantic_ir.Ident "Cljml.Runtime_reduced.reduced",
+                    ( Semantic_ir.Ident "Lg_runtime.Runtime_reduced.reduced",
                       [ value.semantic_expr ] )))
         | Ok _ -> Error.error "reduced expects 1 arguments")
     | "reduced?" -> (
@@ -151,7 +151,7 @@ let create ~compile_expr =
                 Ok
                   (typed_ir TBool
                      (Semantic_ir.Apply
-                        ( Semantic_ir.Ident "Cljml.Runtime_reduced.is_reduced",
+                        ( Semantic_ir.Ident "Lg_runtime.Runtime_reduced.is_reduced",
                           [ value.semantic_expr ] )))
             | None ->
                 Ok
@@ -168,7 +168,7 @@ let create ~compile_expr =
                 Ok
                   (typed_ir inner
                      (Semantic_ir.Apply
-                        ( Semantic_ir.Ident "Cljml.Runtime_reduced.unreduced",
+                        ( Semantic_ir.Ident "Lg_runtime.Runtime_reduced.unreduced",
                           [ value.semantic_expr ] )))
             | None -> Ok value)
         | Ok _ -> Error.error "unreduced expects 1 arguments")
@@ -703,7 +703,7 @@ let create ~compile_expr =
                   (fun _ -> signature.result_type)
                   (List.length signature.payload_types)))
     | _ -> compile_named_function_call scope env name arg_forms
-  
+
   and compile_inferred_ocaml_call scope env function_name value_forms =
     match compile_ocaml_arguments scope env value_forms with
     | Error _ as err -> err
@@ -723,22 +723,22 @@ let create ~compile_expr =
                 | Error _ as err -> err
                 | Ok return_ty ->
                     Ok (typed_ir return_ty (ocaml_apply function_name arguments)))
-  
+
   and compile_int_unary_call scope env name build_code arg_forms =
     match compile_args_for scope env arg_forms with
     | Error _ as err -> err
     | Ok args -> Core_int.compile_unary name args build_code
-  
+
   and compile_boolean_call scope env name arg_forms =
     match compile_args_for scope env arg_forms with
     | Error _ as err -> err
     | Ok args -> Core_boolean.compile name args
-  
+
   and compile_collection_call scope env name arg_forms =
     match compile_args_for scope env arg_forms with
     | Error _ as err -> err
     | Ok args -> Core_collection.compile env name args
-  
+
   and compile_sequence_transform_call scope env name arg_forms =
     match (name, arg_forms) with
     | ("partition" | "partition-all"), FInt size :: _ when size <= 0 ->
@@ -757,7 +757,7 @@ let create ~compile_expr =
         match compile_args_for scope env arg_forms with
         | Error _ as err -> err
         | Ok args -> Core_sequence_transform.compile name args)
-  
+
   and compile_subs scope env arg_forms =
     match compile_args_for scope env arg_forms with
     | Error _ as err -> err
@@ -790,7 +790,7 @@ let create ~compile_expr =
         | TString, _, _ -> Error.error "subs indexes must be int"
         | _ -> Error.error "subs expects a string")
     | Ok _ -> Error.error "subs expects string, start, and optional end"
-  
+
   and compile_function_arg scope env = function
     | FSymbol name -> lookup_function scope env name
     | form -> compile_expr scope env form
@@ -822,7 +822,7 @@ let create ~compile_expr =
             Option.is_some arity.rest_param
             && argument_count >= List.length arity.fixed_params)
           indexed
-  
+
   and compile_named_function_call scope env name arg_forms =
     match lookup_binding scope env name with
     | Error _ -> (
@@ -884,7 +884,7 @@ let create ~compile_expr =
                         | None -> []
                         | Some _ ->
                             [ Semantic_ir.Apply
-                                ( Semantic_ir.Ident "Cljml.Runtime_seq.of_list",
+                                ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.of_list",
                                   [ Semantic_ir.List
                                       (List.map
                                          (fun arg -> arg.semantic_expr)
@@ -962,7 +962,7 @@ let create ~compile_expr =
                         (Semantic_ir.Ident fn.ocaml_name, arg_exprs))))
             | TFn _ -> Error.error (name ^ " called with incompatible arguments")
             | _ -> Error.error (name ^ " is not callable")))
-  
+
   and compile_protocol_call scope env name arg_forms =
     if Protocol.method_is_ambiguous scope env name then
       Error.error
@@ -1005,7 +1005,7 @@ let create ~compile_expr =
                         | TFn _ -> Error.error (name ^ " called with incompatible arguments")
                         | _ -> Error.error (name ^ " is not callable"))))
             | _ -> Error.error (name ^ " is not callable")))
-  
+
   and compile_args_for scope env arg_forms =
     let rec loop acc = function
       | [] -> Ok (List.rev acc)

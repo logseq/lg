@@ -9,7 +9,7 @@ let rec find_project_root dir =
 let existing_dirs dirs = List.filter Sys.file_exists dirs
 
 let env_include_dirs () =
-  match Sys.getenv_opt "CLJML_OCAML_INCLUDE_PATH" with
+  match Sys.getenv_opt "LG_OCAML_INCLUDE_PATH" with
   | None -> []
   | Some value ->
       value |> String.split_on_char ':' |> List.filter (fun dir -> dir <> "")
@@ -19,22 +19,24 @@ let project_include_dirs () =
   | None -> []
   | Some root ->
       existing_dirs
-        [ Filename.concat root "_build/default/src";
-          Filename.concat root "_build/default/src/.cljml.objs/byte";
+        [
+          Filename.concat root "_build/default/src";
+          Filename.concat root "_build/default/src/.lg.objs/byte";
+          Filename.concat root "_build/default/runtime";
+          Filename.concat root "_build/default/runtime/.lg_runtime.objs/byte";
           Filename.concat root "_build/default/vendor/rrbvec";
-          Filename.concat root "_build/default/vendor/rrbvec/.rrbvec.objs/byte" ]
+          Filename.concat root "_build/default/vendor/rrbvec/.rrbvec.objs/byte";
+        ]
 
 let include_dirs () = env_include_dirs () @ project_include_dirs ()
-
 let package_include_dirs = ref []
 let initialized_include_dirs = ref None
-
 let active_include_dirs () = include_dirs () @ !package_include_dirs
 
 let ensure_initialized () =
   let dirs = active_include_dirs () in
   if !initialized_include_dirs <> Some dirs then (
-    Cljml_compiler_support.Ocaml_value.init dirs;
+    Lg_compiler_support.Ocaml_value.init dirs;
     initialized_include_dirs := Some dirs)
 
 let add_include_dirs dirs =
@@ -44,20 +46,9 @@ let add_include_dirs dirs =
 
 let init () = ensure_initialized ()
 
-type parameter_label =
-  | Positional
-  | Labelled of string
-  | Optional of string
-
-type parameter = {
-  label : parameter_label;
-  ty : Types.ty;
-}
-
-type value_signature = {
-  parameters : parameter list;
-  return_type : Types.ty;
-}
+type parameter_label = Positional | Labelled of string | Optional of string
+type parameter = { label : parameter_label; ty : Types.ty }
+type value_signature = { parameters : parameter list; return_type : Types.ty }
 
 type constructor_signature = {
   payload_types : Types.ty list;
@@ -65,7 +56,7 @@ type constructor_signature = {
 }
 
 let rec of_compiler_type =
-  let open Cljml_compiler_support.Ocaml_value in
+  let open Lg_compiler_support.Ocaml_value in
   function
   | Variable id -> TVar ("ocaml_" ^ string_of_int id)
   | Arrow (Unlabelled, argument, result) ->
@@ -73,9 +64,9 @@ let rec of_compiler_type =
       TFn (of_compiler_type argument :: arguments, result)
   | Arrow ((Labelled _ | Optional _), _, _) -> TOcaml "labelled_function"
   | Tuple elements -> TTuple (List.map of_compiler_type elements)
-  | Constructor (name, arguments) ->
+  | Constructor (name, arguments) -> (
       let arguments = List.map of_compiler_type arguments in
-      (match (name, arguments) with
+      match (name, arguments) with
       | "int", [] -> TInt
       | "float", [] -> TFloat
       | "char", [] -> TChar
@@ -95,7 +86,7 @@ and function_parts compiler_type =
   | result -> ([], result)
 
 let rec signature_of_compiler_type =
-  let open Cljml_compiler_support.Ocaml_value in
+  let open Lg_compiler_support.Ocaml_value in
   function
   | Arrow (label, argument, result) ->
       let signature = signature_of_compiler_type result in
@@ -105,26 +96,33 @@ let rec signature_of_compiler_type =
         | Labelled name -> Labelled name
         | Optional name -> Optional name
       in
-      { signature with
-        parameters = { label; ty = of_compiler_type argument } :: signature.parameters;
+      {
+        signature with
+        parameters =
+          { label; ty = of_compiler_type argument } :: signature.parameters;
       }
-  | compiler_type -> { parameters = []; return_type = of_compiler_type compiler_type }
+  | compiler_type ->
+      { parameters = []; return_type = of_compiler_type compiler_type }
 
 let value_signature name =
-  match Cljml_compiler_support.Ocaml_value.lookup ~include_dirs:(include_dirs ()) name with
+  match
+    Lg_compiler_support.Ocaml_value.lookup ~include_dirs:(include_dirs ()) name
+  with
   | Error message -> Error.error message
   | Ok compiler_type -> Ok (signature_of_compiler_type compiler_type)
 
 let constructor_signature name =
   match
-    Cljml_compiler_support.Ocaml_value.lookup_constructor
+    Lg_compiler_support.Ocaml_value.lookup_constructor
       ~include_dirs:(include_dirs ()) name
   with
   | Error message -> Error.error message
   | Ok constructor ->
       Ok
-        { payload_types = List.map of_compiler_type constructor.arguments;
-          result_type = of_compiler_type constructor.result }
+        {
+          payload_types = List.map of_compiler_type constructor.arguments;
+          result_type = of_compiler_type constructor.result;
+        }
 
 let parameter_label_name = function
   | Positional -> None
@@ -148,18 +146,20 @@ let result_after_application signature arguments =
   match reject_duplicate [] named_labels with
   | Error _ as err -> err
   | Ok () -> (
-      match List.find_opt (fun label -> not (known_label label)) named_labels with
+      match
+        List.find_opt (fun label -> not (known_label label)) named_labels
+      with
       | Some label -> Error.error ("unknown OCaml argument label :" ^ label)
-      | None ->
+      | None -> (
           let consumed_named =
             arguments
             |> List.filter_map (function
-                 | None, _ -> None
-                 | Some label, actual_ty ->
-                     signature.parameters
-                     |> List.find_opt (fun parameter ->
-                            parameter_label_name parameter.label = Some label)
-                     |> Option.map (fun parameter -> (parameter.ty, actual_ty)))
+              | None, _ -> None
+              | Some label, actual_ty ->
+                  signature.parameters
+                  |> List.find_opt (fun parameter ->
+                      parameter_label_name parameter.label = Some label)
+                  |> Option.map (fun parameter -> (parameter.ty, actual_ty)))
           in
           let remaining =
             List.filter
@@ -175,12 +175,15 @@ let result_after_application signature arguments =
             | (None, actual_ty) :: rest ->
                 let rec consume prefix = function
                   | [] -> Error.error "too many positional OCaml arguments"
-                  | { label = Optional _; _ } :: parameters -> consume prefix parameters
+                  | { label = Optional _; _ } :: parameters ->
+                      consume prefix parameters
                   | ({ label = Labelled _; _ } as parameter) :: parameters ->
                       consume (parameter :: prefix) parameters
                   | { label = Positional; ty } :: parameters ->
-                      consume_positionals ((ty, actual_ty) :: consumed)
-                        (List.rev_append prefix parameters) rest
+                      consume_positionals
+                        ((ty, actual_ty) :: consumed)
+                        (List.rev_append prefix parameters)
+                        rest
                 in
                 consume [] remaining
           in
@@ -200,4 +203,4 @@ let result_after_application signature arguments =
                 | _ -> TOcaml "labelled_function"
               in
               let templates, actuals = List.split consumed in
-              Ok (Types.instantiate_type ~templates ~actuals result_ty))
+              Ok (Types.instantiate_type ~templates ~actuals result_ty)))

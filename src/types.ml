@@ -41,7 +41,7 @@ let binding ?(row_param_types = []) ?host_reference ?protocol_id
     overload_targets;
   }
 
-let seqable_constraint_name = "__cljml_seqable_constraint"
+let seqable_constraint_name = "__lg_seqable_constraint"
 let seqable_constraint element_ty =
   TOcaml_app (seqable_constraint_name, [ element_ty; TUnknown ])
 
@@ -51,7 +51,7 @@ let seqable_constraint_element = function
       Some element_ty
   | _ -> None
 
-let reduced_type_name = "Cljml.Runtime_reduced.t"
+let reduced_type_name = "Lg_runtime.Runtime_reduced.t"
 let reduced inner = TOcaml_app (reduced_type_name, [ inner ])
 
 let reduced_element = function
@@ -260,20 +260,20 @@ and overloaded_storage_type = function
       TTuple [ TFn (params, arity.return_ty); overloaded_storage_type rest ]
 
 and set_module_name = function
-  | TInt -> Ok "Cljml.Core_set.Int_set"
-  | TFloat -> Ok "Cljml.Core_set.Float_set"
-  | TString | TSymbol | TKeyword -> Ok "Cljml.Core_set.String_set"
-  | TBool -> Ok "Cljml.Core_set.Bool_set"
-  | TList TInt -> Ok "Cljml.Core_set.Int_list_set"
-  | TList TFloat -> Ok "Cljml.Core_set.Float_list_set"
-  | TList (TString | TSymbol | TKeyword) -> Ok "Cljml.Core_set.String_list_set"
-  | TList TBool -> Ok "Cljml.Core_set.Bool_list_set"
-  | TVector TInt -> Ok "Cljml.Core_set.Int_vector_set"
-  | TVector TFloat -> Ok "Cljml.Core_set.Float_vector_set"
+  | TInt -> Ok "Lg_runtime.Core_set.Int_set"
+  | TFloat -> Ok "Lg_runtime.Core_set.Float_set"
+  | TString | TSymbol | TKeyword -> Ok "Lg_runtime.Core_set.String_set"
+  | TBool -> Ok "Lg_runtime.Core_set.Bool_set"
+  | TList TInt -> Ok "Lg_runtime.Core_set.Int_list_set"
+  | TList TFloat -> Ok "Lg_runtime.Core_set.Float_list_set"
+  | TList (TString | TSymbol | TKeyword) -> Ok "Lg_runtime.Core_set.String_list_set"
+  | TList TBool -> Ok "Lg_runtime.Core_set.Bool_list_set"
+  | TVector TInt -> Ok "Lg_runtime.Core_set.Int_vector_set"
+  | TVector TFloat -> Ok "Lg_runtime.Core_set.Float_vector_set"
   | TVector (TString | TSymbol | TKeyword) ->
-      Ok "Cljml.Core_set.String_vector_set"
-  | TVector TBool -> Ok "Cljml.Core_set.Bool_vector_set"
-  | TVector (TVector TInt) -> Ok "Cljml.Core_set.Int_vector_vector_set"
+      Ok "Lg_runtime.Core_set.String_vector_set"
+  | TVector TBool -> Ok "Lg_runtime.Core_set.Bool_vector_set"
+  | TVector (TVector TInt) -> Ok "Lg_runtime.Core_set.Int_vector_vector_set"
   | TNamed_record record -> Ok record.set_module_name
   | ty -> Error.error ("sets require a generated comparator for " ^ source_name ty)
 

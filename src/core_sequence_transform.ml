@@ -17,31 +17,31 @@ let collection_to_seq_expr collection =
   | TSeq inner -> Ok (inner, collection.semantic_expr)
   | TList inner ->
       Ok
-        (inner, apply "Cljml.Runtime_seq.of_list" [ collection.semantic_expr ])
+        (inner, apply "Lg_runtime.Runtime_seq.of_list" [ collection.semantic_expr ])
   | TVector inner ->
       Ok
-        (inner, apply "Cljml.Runtime_seq.of_vector" [ collection.semantic_expr ])
+        (inner, apply "Lg_runtime.Runtime_seq.of_vector" [ collection.semantic_expr ])
   | TSet inner ->
       Types.set_module_name inner
       |> Result.map (fun set_module ->
              ( inner,
-               apply "Cljml.Runtime_seq.of_list"
+               apply "Lg_runtime.Runtime_seq.of_list"
                  [ apply (set_module ^ ".elements") [ collection.semantic_expr ] ] ))
   | TArray inner ->
       Ok
-        (inner, apply "Cljml.Runtime_seq.of_array" [ collection.semantic_expr ])
+        (inner, apply "Lg_runtime.Runtime_seq.of_array" [ collection.semantic_expr ])
   | TOcaml_app ("list", [ inner ]) ->
       Ok
-        (inner, apply "Cljml.Runtime_seq.of_list" [ collection.semantic_expr ])
+        (inner, apply "Lg_runtime.Runtime_seq.of_list" [ collection.semantic_expr ])
   | TOcaml_app ("array", [ inner ]) ->
       Ok
-        (inner, apply "Cljml.Runtime_seq.of_array" [ collection.semantic_expr ])
+        (inner, apply "Lg_runtime.Runtime_seq.of_array" [ collection.semantic_expr ])
   | TOcaml_app (("Seq.t" | "Seq"), [ inner ]) ->
       Ok
-        (inner, apply "Cljml.Runtime_seq.memoize" [ collection.semantic_expr ])
+        (inner, apply "Lg_runtime.Runtime_seq.memoize" [ collection.semantic_expr ])
   | TString ->
       Ok
-        (TChar, apply "Cljml.Runtime_seq.of_string" [ collection.semantic_expr ])
+        (TChar, apply "Lg_runtime.Runtime_seq.of_string" [ collection.semantic_expr ])
   | _ -> Error.error "collection value is not sequenceable"
 
 let collection_from_list_expr collection_ty list_expr =
@@ -255,15 +255,15 @@ let repeat count value =
   if Types.equal count.ty TInt then
     Ok
       (typed_ir (TSeq value.ty)
-         (apply "Cljml.Runtime_seq.take"
+         (apply "Lg_runtime.Runtime_seq.take"
             [ count.semantic_expr;
-              apply "Cljml.Runtime_seq.repeat" [ value.semantic_expr ] ]))
+              apply "Lg_runtime.Runtime_seq.repeat" [ value.semantic_expr ] ]))
   else Error.error "repeat count must be int"
 
 let repeat_forever value =
   Ok
     (typed_ir (TSeq value.ty)
-       (apply "Cljml.Runtime_seq.repeat" [ value.semantic_expr ]))
+       (apply "Lg_runtime.Runtime_seq.repeat" [ value.semantic_expr ]))
 
 let interpose separator collection =
   match collection_to_list_expr collection with

@@ -64,7 +64,7 @@ let empty_question env collection =
       | Ok (_, sequence) ->
           Ok
             (typed_ir TBool
-               (apply "Cljml.Runtime_seq.is_empty" [ sequence ]))
+               (apply "Lg_runtime.Runtime_seq.is_empty" [ sequence ]))
       | Error _ -> Error.error "empty? expects a seqable value")
 
 let empty collection =
@@ -121,8 +121,8 @@ let take_drop name count collection =
     | Error _ -> Error.error (name ^ " expects a seqable value")
     | Ok (inner, sequence) ->
         let runtime_name =
-          if name = "take" then "Cljml.Runtime_seq.take"
-          else "Cljml.Runtime_seq.drop"
+          if name = "take" then "Lg_runtime.Runtime_seq.take"
+          else "Lg_runtime.Runtime_seq.drop"
         in
         Ok
           (typed_ir (TSeq inner)

@@ -20,43 +20,54 @@ type state = Toolchain.state
 
 let empty_state = Toolchain.empty_state
 
-let compile_string source = Toolchain.implementation source
+let compile_string ?(target = Target.default) source =
+  Toolchain.implementation ~target source
 
-let compile_string_with_filename ~filename source =
-  Toolchain.implementation ~filename source
+let compile_string_with_filename ?(target = Target.default) ~filename source =
+  Toolchain.implementation ~target ~filename source
 
-let compile_string_with_diagnostics source =
-  Toolchain.implementation_with_diagnostics source
+let compile_string_with_diagnostics ?(target = Target.default) source =
+  Toolchain.implementation_with_diagnostics ~target source
 
-let compile_string_with_filename_and_diagnostics ~filename source =
-  Toolchain.implementation_with_diagnostics ~filename source
+let compile_string_with_filename_and_diagnostics ?(target = Target.default)
+    ~filename source =
+  Toolchain.implementation_with_diagnostics ~target ~filename source
 
-let required_ocaml_packages source = Toolchain.required_ocaml_packages source
+let required_ocaml_packages ?(target = Target.default) source =
+  Toolchain.required_ocaml_packages ~target source
 
-let infer_interface source = Toolchain.interface source
+let infer_interface ?(target = Target.default) source =
+  Toolchain.interface ~target source
 
-let infer_interface_with_filename ~filename source =
-  Toolchain.interface ~filename source
+let infer_interface_with_filename ?(target = Target.default) ~filename source =
+  Toolchain.interface ~target ~filename source
 
-let compile_parsetree source = Toolchain.implementation_parsetree source
+let compile_parsetree ?(target = Target.default) source =
+  Toolchain.implementation_parsetree ~target source
 
-let compile_parsetree_with_filename ~filename source =
-  Toolchain.implementation_parsetree ~filename source
+let compile_parsetree_with_filename ?(target = Target.default) ~filename source
+    =
+  Toolchain.implementation_parsetree ~target ~filename source
 
-let typecheck_parsetree source = Toolchain.typecheck_parsetree source
+let typecheck_parsetree ?(target = Target.default) source =
+  Toolchain.typecheck_parsetree ~target source
 
 let print_parsetree structure = Toolchain.print_parsetree structure
 
-let compile_chunk state source = Toolchain.compile_chunk state source
+let compile_chunk ?(target = Target.default) state source =
+  Toolchain.compile_chunk ~target state source
 
-let compile_chunk_with_filename ~filename state source =
-  Toolchain.compile_chunk ~filename state source
+let compile_chunk_with_filename ?(target = Target.default) ~filename state
+    source =
+  Toolchain.compile_chunk ~target ~filename state source
 
-let compile_chunk_with_filename_and_diagnostics ~filename state source =
-  Toolchain.compile_chunk_with_diagnostics ~filename state source
+let compile_chunk_with_filename_and_diagnostics ?(target = Target.default)
+    ~filename state source =
+  Toolchain.compile_chunk_with_diagnostics ~target ~filename state source
 
-let compile_chunk_parsetree state source =
-  Toolchain.compile_chunk_parsetree state source
+let compile_chunk_parsetree ?(target = Target.default) state source =
+  Toolchain.compile_chunk_parsetree ~target state source
 
-let compile_chunk_parsetree_with_filename ~filename state source =
-  Toolchain.compile_chunk_parsetree ~filename state source
+let compile_chunk_parsetree_with_filename ?(target = Target.default) ~filename
+    state source =
+  Toolchain.compile_chunk_parsetree ~target ~filename state source

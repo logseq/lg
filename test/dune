@@ -1,18 +1,98 @@
 (test
  (name compiler_tests)
- (libraries cljml unix rrbvec))
+ (deps ../src/lg.cma ../runtime/lg_runtime.cma ../vendor/rrbvec/rrbvec.cma)
+ (libraries lg unix rrbvec))
+
+(test
+ (name lgc_target_tests)
+ (libraries lg))
+
+(rule
+ (target lgc_native.ml)
+ (deps cross_runtime.lgc ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   native
+   %{dep:cross_runtime.lgc}
+   -o
+   %{target})))
+
+(executable
+ (name lgc_native)
+ (modules lgc_native)
+ (libraries lg.runtime rrbvec))
+
+(rule
+ (target lgc_melange.ml)
+ (deps cross_runtime.lgc ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   melange
+   %{dep:cross_runtime.lgc}
+   -o
+   %{target})))
+
+(melange.emit
+ (target lgc-melange)
+ (alias lgc-melange)
+ (module_systems es6)
+ (modules lgc_melange)
+ (libraries lg.runtime rrbvec))
+
+(rule
+ (target lgc_jsoo.ml)
+ (deps cross_runtime.lgc ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   js-of-ocaml
+   %{dep:cross_runtime.lgc}
+   -o
+   %{target})))
+
+(executable
+ (name lgc_jsoo)
+ (modes js)
+ (modules lgc_jsoo)
+ (libraries lg.runtime rrbvec))
+
+(rule
+ (alias runtest)
+ (deps
+  cross_runtime_smoke.sh
+  cross_runtime.expected
+  lgc_native.exe
+  (alias lgc-melange)
+  lgc-melange/test/lgc_melange.js
+  lgc_jsoo.bc.js)
+ (action
+  (run
+   sh
+   %{dep:cross_runtime_smoke.sh}
+   %{exe:lgc_native.exe}
+   %{dep:lgc-melange/test/lgc_melange.js}
+   %{dep:lgc_jsoo.bc.js}
+   %{dep:cross_runtime.expected})))
 
 (rule
  (alias runtest)
  (deps
   cli_smoke.sh
-  ../bin/cljml_cli.exe
-  ../examples/person.cljml
-  ../examples/checkout.cljml
-  ../examples/protocols.cljml)
+  ../bin/lg_cli.exe
+  ../examples/person.lgc
+  ../examples/checkout.lgc
+  ../examples/protocols.lgc)
  (action
-  (run sh %{dep:cli_smoke.sh} %{exe:../bin/cljml_cli.exe}
-   %{dep:../examples/person.cljml})))
+  (run
+   sh
+   %{dep:cli_smoke.sh}
+   %{exe:../bin/lg_cli.exe}
+   %{dep:../examples/person.lgc})))
 
 (rule
  (alias runtest)
@@ -24,21 +104,24 @@
   ../README.md
   compiler_tests.ml)
  (action
-  (chdir %{workspace_root}
+  (chdir
+   %{workspace_root}
    (run sh test/no_raw_ir_regression.sh))))
 
 (rule
  (alias runtest)
  (deps no_lowering_items_in_types.sh ../src/types.ml)
  (action
-  (chdir %{workspace_root}
+  (chdir
+   %{workspace_root}
    (run sh test/no_lowering_items_in_types.sh))))
 
 (rule
  (alias runtest)
  (deps no_legacy_source_backend.sh ../src/codegen.ml)
  (action
-  (chdir %{workspace_root}
+  (chdir
+   %{workspace_root}
    (run sh test/no_legacy_source_backend.sh))))
 
 (rule
@@ -51,5 +134,6 @@
   ../src/structural_map.ml
   ../src/core_compare.ml)
  (action
-  (chdir %{workspace_root}
+  (chdir
+   %{workspace_root}
    (run sh test/no_typed_expr_source_code.sh))))

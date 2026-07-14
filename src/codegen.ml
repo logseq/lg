@@ -57,7 +57,7 @@ let rec stringify_expr_ir ?(pr = false) expr =
            [ Semantic_ir.String " ";
              apply "List.map"
                [ scalar_mapper inner;
-                 apply "Cljml.Runtime_seq.to_list" [ expr.semantic_expr ] ] ])
+                 apply "Lg_runtime.Runtime_seq.to_list" [ expr.semantic_expr ] ] ])
         ")"
   | TVector inner ->
       wrap_expr "["

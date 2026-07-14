@@ -2,18 +2,18 @@
 
 ClojureDart is a Clojure dialect targeting Dart and Flutter.
 
-The relevant lesson for cljml is not Dart interop itself.
+The relevant lesson for lg is not Dart interop itself.
 The lesson is that a Clojure dialect over a typed host needs explicit compiler support for host differences, module imports, symbol munging, and compatibility documentation.
 
 Useful alignment points.
 
-| ClojureDart concern | cljml implication |
+| ClojureDart concern | lg implication |
 | --- | --- |
-| Source files stay Clojure-like while targeting Dart. | cljml source should stay Clojure-like while targeting OCaml. |
-| Host packages can be required with aliases. | cljml uses top-level `require` for OCaml module/package aliases without adding namespaces. |
-| Differences from JVM Clojure are documented. | cljml needs a `docs/differences.md` before broad API claims. |
-| Symbol munging is documented as an internal compiler concern. | cljml keeps `Names` as the single place for OCaml identifier munging. |
-| Reader and compiler are separate subsystems. | cljml keeps `Lexer`, `Parser`, `Toolchain`, `Typecheck`, and `Codegen` separated. |
+| Source files stay Clojure-like while targeting Dart. | lg source should stay Clojure-like while targeting OCaml. |
+| Host packages can be required with aliases. | lg uses top-level `require` for OCaml module/package aliases without adding namespaces. |
+| Differences from JVM Clojure are documented. | lg needs a `docs/differences.md` before broad API claims. |
+| Symbol munging is documented as an internal compiler concern. | lg keeps `Names` as the single place for OCaml identifier munging. |
+| Reader and compiler are separate subsystems. | lg keeps `Lexer`, `Parser`, `Toolchain`, `Typecheck`, and `Codegen` separated. |
 
 References used.
 

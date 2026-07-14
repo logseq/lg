@@ -655,7 +655,7 @@ let create ~compile_expr =
                            ~actual:inner ->
                       Ok
                         (typed_ir (TSeq ret)
-                           (apply "Cljml.Runtime_seq.map"
+                           (apply "Lg_runtime.Runtime_seq.map"
                               [ fn.semantic_expr; sequence ]))
                   | Ok { ty = TFn _; _ } ->
                       Error.error "map function argument type does not match sequence"
@@ -682,7 +682,7 @@ let create ~compile_expr =
                                ~expected:param_ty ~actual:inner ->
                           Ok
                             (typed_ir (TSeq inner)
-                               (apply "Cljml.Runtime_seq.filter"
+                               (apply "Lg_runtime.Runtime_seq.filter"
                                   [ fn.semantic_expr; sequence ]))
                       | TFn _ ->
                           Error.error

@@ -13,7 +13,7 @@ let condition_expression expr =
           (Semantic_ir.Apply
              ( Semantic_ir.Ident "not",
                [ Semantic_ir.Apply
-                   ( Semantic_ir.Ident "Cljml.Runtime_seq.is_empty",
+                   ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.is_empty",
                      [ expr.semantic_expr ] ) ] ))
     | _ -> Error.error "if condition must be bool"
 
@@ -56,7 +56,7 @@ let merge_branch_types left right =
 let merge_branch_expressions left right =
   let continue expression =
     Semantic_ir.Apply
-      (Semantic_ir.Ident "Cljml.Runtime_reduced.continue", [ expression ])
+      (Semantic_ir.Ident "Lg_runtime.Runtime_reduced.continue", [ expression ])
   in
   match (Types.reduced_element left.ty, Types.reduced_element right.ty) with
   | Some left_inner, Some right_inner when Types.equal left_inner right_inner ->
@@ -73,7 +73,7 @@ let unresolved_contextual_type = function
   | TList TUnknown -> true
   | _ -> false
 
-let cljml_metadata_type_for_ocaml_payload = function
+let lg_metadata_type_for_ocaml_payload = function
   | TOcaml "int" -> TInt
   | TOcaml "float" -> TFloat
   | TOcaml "char" -> TChar
@@ -82,14 +82,14 @@ let cljml_metadata_type_for_ocaml_payload = function
   | TOcaml "unit" -> TUnit
   | ty -> ty
 
-let rec cljml_metadata_type_for_ocaml_type = function
+let rec lg_metadata_type_for_ocaml_type = function
   | TOcaml "int" -> TInt
   | TOcaml "float" -> TFloat
   | TOcaml "char" -> TChar
   | TOcaml "string" -> TString
   | TOcaml "bool" -> TBool
   | TOcaml "unit" -> TUnit
-  | TTuple args -> TTuple (List.map cljml_metadata_type_for_ocaml_type args)
+  | TTuple args -> TTuple (List.map lg_metadata_type_for_ocaml_type args)
   | ty -> ty
 
 let ocaml_builtin_constructor_payloads target_ty constructor_name =
@@ -97,14 +97,14 @@ let ocaml_builtin_constructor_payloads target_ty constructor_name =
   | TOcaml "option", "Some" -> Some [ TUnknown ]
   | TOcaml "option", "None" -> Some []
   | TOcaml_app ("option", [ payload_ty ]), "Some" ->
-      Some [ cljml_metadata_type_for_ocaml_payload payload_ty ]
+      Some [ lg_metadata_type_for_ocaml_payload payload_ty ]
   | TOcaml_app ("option", [ _ ]), "None" -> Some []
   | TOcaml "result", "Ok" -> Some [ TUnknown ]
   | TOcaml "result", "Error" -> Some [ TUnknown ]
   | TOcaml_app ("result", [ ok_ty; _ ]), "Ok" ->
-      Some [ cljml_metadata_type_for_ocaml_payload ok_ty ]
+      Some [ lg_metadata_type_for_ocaml_payload ok_ty ]
   | TOcaml_app ("result", [ _; error_ty ]), "Error" ->
-      Some [ cljml_metadata_type_for_ocaml_payload error_ty ]
+      Some [ lg_metadata_type_for_ocaml_payload error_ty ]
   | _ -> None
 
 let record_type_key = Resolver.record_type_key

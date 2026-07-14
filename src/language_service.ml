@@ -117,7 +117,7 @@ let analyze_workspace sources =
   match analyze_workspace_with_errors sources with
   | Error _ as err -> err
   | Ok ([], (_, error) :: _) -> Error error
-  | Ok ([], []) -> Error.error "workspace contains no analyzable cljml files"
+  | Ok ([], []) -> Error.error "workspace contains no analyzable lg files"
   | Ok (analyses, []) -> Ok analyses
   | Ok (analyses, _errors) -> Ok analyses
 
@@ -172,7 +172,7 @@ let source_node_ids_of_attributes attributes =
   attributes
   |> List.filter_map
        (fun ({ Parsetree.attr_name = { txt; _ }; attr_payload; _ } : Parsetree.attribute) ->
-         if txt <> "cljml.node_id" then None
+         if txt <> "lg.node_id" then None
          else
            match attr_payload with
            | PStr
@@ -557,9 +557,9 @@ let type_identity_at analysis offset source_name =
   let consider location path declaration =
     consider_semantic_identity best ~offset ~location
       ~matches:(type_name_matches source_name path)
-      ~uid:(Cljml_compiler_support.Ocaml_type.uid declaration)
+      ~uid:(Lg_compiler_support.Ocaml_type.uid declaration)
       ~definition_location:
-        (Cljml_compiler_support.Ocaml_type.location declaration)
+        (Lg_compiler_support.Ocaml_type.location declaration)
   in
   let base = Tast_iterator.default_iterator in
   let iterator =
@@ -616,8 +616,8 @@ let module_identity_at analysis offset source_name =
             with
             | path, declaration ->
                 consider expression.exp_loc path
-                  (Cljml_compiler_support.Ocaml_module.uid declaration)
-                  (Cljml_compiler_support.Ocaml_module.location declaration)
+                  (Lg_compiler_support.Ocaml_module.uid declaration)
+                  (Lg_compiler_support.Ocaml_module.location declaration)
             | exception Not_found -> ();
           base.expr self expression);
       module_expr =
@@ -626,15 +626,15 @@ let module_identity_at analysis offset source_name =
           | Tmod_ident (path, _) ->
               let declaration = Env.find_module path module_expression.mod_env in
               consider module_expression.mod_loc path
-                (Cljml_compiler_support.Ocaml_module.uid declaration)
-                (Cljml_compiler_support.Ocaml_module.location declaration)
+                (Lg_compiler_support.Ocaml_module.uid declaration)
+                (Lg_compiler_support.Ocaml_module.location declaration)
           | Tmod_functor
               (Typedtree.Named (Some id, parameter_name, _), body) ->
               let path = Path.Pident id in
               let declaration = Env.find_module path body.mod_env in
               consider parameter_name.loc path
-                (Cljml_compiler_support.Ocaml_module.uid declaration)
-                (Cljml_compiler_support.Ocaml_module.location declaration)
+                (Lg_compiler_support.Ocaml_module.uid declaration)
+                (Lg_compiler_support.Ocaml_module.location declaration)
           | _ -> ());
           base.module_expr self module_expression);
       module_binding =
@@ -666,8 +666,8 @@ let module_type_identity_at analysis offset source_name =
           | Tmty_ident (path, _) ->
               let declaration = Env.find_modtype path module_type.mty_env in
               consider module_type.mty_loc path
-                (Cljml_compiler_support.Ocaml_module.type_uid declaration)
-                (Cljml_compiler_support.Ocaml_module.type_location declaration)
+                (Lg_compiler_support.Ocaml_module.type_uid declaration)
+                (Lg_compiler_support.Ocaml_module.type_location declaration)
           | _ -> ());
           base.module_type self module_type);
       module_type_declaration =
@@ -1049,7 +1049,7 @@ let ocaml_semantic_hover analysis uid source_name =
               let declaration = Env.find_module path module_expression.mod_env in
               if
                 uid_equal uid
-                  (Cljml_compiler_support.Ocaml_module.uid declaration)
+                  (Lg_compiler_support.Ocaml_module.uid declaration)
               then
                 set
                   ("module " ^ source_name ^ " : "
@@ -1060,7 +1060,7 @@ let ocaml_semantic_hover analysis uid source_name =
               let declaration = Env.find_module (Path.Pident id) body.mod_env in
               if
                 uid_equal uid
-                  (Cljml_compiler_support.Ocaml_module.uid declaration)
+                  (Lg_compiler_support.Ocaml_module.uid declaration)
               then
                 set
                  ("module " ^ Option.value parameter_name.txt ~default:source_name
@@ -1082,7 +1082,7 @@ let ocaml_semantic_hover analysis uid source_name =
               let declaration = Env.find_modtype path module_type.mty_env in
               if
                 uid_equal uid
-                  (Cljml_compiler_support.Ocaml_module.type_uid declaration)
+                  (Lg_compiler_support.Ocaml_module.type_uid declaration)
               then
                 set
                   ("module type " ^ source_name ^ " = "
@@ -1176,7 +1176,7 @@ let signature_call_at analysis offset =
          with
          | Some expression ->
              let parameters, return_type =
-               Cljml_compiler_support.Ocaml_type.arrow_parts expression.exp_type
+               Lg_compiler_support.Ocaml_type.arrow_parts expression.exp_type
              in
              if parameters = [] then None
              else Some (head, arguments, expression.exp_env, parameters, return_type)

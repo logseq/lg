@@ -1,4 +1,5 @@
 (library
  (name rrbvec)
- (public_name cljml.rrbvec)
+ (public_name lg.rrbvec)
+ (modes native byte melange)
  (wrapped false))

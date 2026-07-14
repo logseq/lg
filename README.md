@@ -1,15 +1,16 @@
-# cljml
+# lg
 
-`cljml` is a small prototype for a statically typed Lisp in the Clojure family.
+`lg` is a small prototype for a statically typed Lisp in the Clojure family.
 The current backend emits OCaml, so generated programs can be checked by the
-OCaml compiler and can later interoperate with OCaml packages.
+OCaml compiler and can interoperate with OCaml packages. `.lgc` source is
+shared by the native OCaml, Melange, and js_of_ocaml environments.
 
-The compiler pipeline is intentionally split into cljml syntax and typing
+The compiler pipeline is intentionally split into lg syntax and typing
 first, then OCaml lowering:
 
-- cljml has its own Lisp AST and typed IR for static Clojure-like semantics.
+- lg has its own Lisp AST and typed IR for static Clojure-like semantics.
   The long-term architecture follows ReasonML more than a standalone compiler:
-  cljml should elaborate Clojure-like syntax into OCaml Parsetree and leave the
+  lg should elaborate Clojure-like syntax into OCaml Parsetree and leave the
   complete host-language type system to the OCaml compiler.
 - Typed expressions form a `Semantic_ir` tree whose elaborated nodes retain
   `Semantic_type.ty` annotations. `Semantic_lowering` explicitly erases those
@@ -26,22 +27,22 @@ first, then OCaml lowering:
 - The checked Parsetree backend is now the stable output path. Public source
   compilation prints the OCaml source from the checked `Parsetree.structure`
   rather than from the legacy source backend.
-- `Cljml.Compiler.compile_parsetree` lowers compiled items independently into
+- `Lg.Compiler.compile_parsetree` lowers compiled items independently into
   `Parsetree.structure`. Structural records, ordinary top-level values,
   effects, row type definitions, functions, protocol implementations, and
   nested modules, module aliases, and module signatures are constructed
   directly. Typed expression payloads lower from shared `Ocaml_ir` nodes
   instead of reparsed OCaml snippets. The public `compile_parsetree` API now
   runs the generated structure through the OCaml typechecker before returning.
-- `Cljml.Compiler.typecheck_parsetree` runs the generated Parsetree through the
+- `Lg.Compiler.typecheck_parsetree` runs the generated Parsetree through the
   OCaml compiler-libs typechecker. This is the current explicit final-truth
   gate for host-owned checks such as ordinary OCaml module function calls. It
-  adds the local Dune build CMI directories for cljml and `Rrbvec` when they are
-  available, and accepts extra directories through `CLJML_OCAML_INCLUDE_PATH`.
-- `Cljml.Compiler.compile_chunk_parsetree` uses the same incremental compiler
+  adds the local Dune build CMI directories for lg and `Rrbvec` when they are
+  available, and accepts extra directories through `LG_OCAML_INCLUDE_PATH`.
+- `Lg.Compiler.compile_chunk_parsetree` uses the same incremental compiler
   state as `compile_chunk`, but returns an OCaml structure for the current
   chunk after typechecking the accumulated Parsetree state.
-- `Cljml.Compiler.compile_string`, `Cljml.Compiler.compile_chunk`, and the CLI
+- `Lg.Compiler.compile_string`, `Lg.Compiler.compile_chunk`, and the CLI
   compile/run paths use the checked Parsetree printer as their source output.
   Generated host-language errors are caught before source is returned or
   executed. `compile_string_with_diagnostics` and
@@ -55,10 +56,10 @@ first, then OCaml lowering:
   library API, CLI, and LSP. Incremental compilation preserves locations for
   accumulated chunks. Use
   `compile_string_with_filename` when embedding the compiler with a real path.
-- Core cljml type shapes remain in `Types`; lowered top-level/module items live
+- Core lg type shapes remain in `Types`; lowered top-level/module items live
   in `Lowered`, so backend item construction is kept separate from source type
   metadata.
-- Parsetree is not used as cljml's full type system. cljml has typed,
+- Parsetree is not used as lg's full type system. lg has typed,
   memoized lazy sequences, while `nil` lowers to OCaml `None` and remains
   statically constrained by option types.
 
@@ -110,7 +111,7 @@ The compiler infers record-like map shapes automatically:
   `module-signature`, `type-alias`, `type-variant`, `open`, `include`,
   `module-alias`, `def`, `defn`, and nested `module` forms inside a module.
   `(open Math)` emits OCaml `open Math` and exposes already-known module
-  value/function bindings as unqualified symbols in the current cljml
+  value/function bindings as unqualified symbols in the current lg
   environment, including OCaml record type metadata. `(include Math)` emits
   OCaml `include Math`, exposes already-known module bindings as unqualified
   symbols, and re-exports direct included bindings and OCaml record type
@@ -156,18 +157,18 @@ The compiler infers record-like map shapes automatically:
   Keyword lookup constraints such as `(:age person)` can infer required
   structural map fields when the field value type is known from context.
   Unconstrained identity-style functions keep their OCaml-owned polymorphism at
-  call sites, including `let`-bound `(fn [x] x)` values; cljml only preserves
+  call sites, including `let`-bound `(fn [x] x)` values; lg only preserves
   the return-parameter relationship needed by core forms such as `str`, and the
   OCaml typechecker remains the final check.
   Row-shaped structural map parameters can accept wider maps with the required
   fields; the compiler projects wide records to generated narrow row records
   before calling the OCaml function.
   Optional `^:int`, `^:string`, `^:symbol`, `^:keyword`, `^:bool`, or `^:unit`
-  annotations can make a cljml core parameter type explicit. `nil` lowers to
+  annotations can make a lg core parameter type explicit. `nil` lowers to
   polymorphic OCaml `None`; explicit option annotations use `^:option<T>`.
   Opaque host-owned
   annotations such as `^:ocaml/int` lower to OCaml parameter constraints and
-  are left for the OCaml typechecker; cljml core APIs do not treat them as
+  are left for the OCaml typechecker; lg core APIs do not treat them as
   known `:int` or `:string` values. Host-owned type applications use angle
   brackets, for example `^:ocaml/option<int>` and
   `^:ocaml/result<string;string>`. OCaml tuple annotations use the same syntax,
@@ -175,7 +176,7 @@ The compiler infers record-like map shapes automatically:
   arguments because commas are reader whitespace.
 - `(type-alias user-id :ocaml/int)` emits an OCaml type alias such as
   `type user_id = int`. The alias can be referenced from host-owned
-  annotations like `^:ocaml/user_id`; cljml does not expand or infer through
+  annotations like `^:ocaml/user_id`; lg does not expand or infer through
   the alias itself.
 - Aliases, records, and variants accept explicit type parameter vectors.
   `(type-alias maybe [a] :ocaml/option<param/a>)`,
@@ -189,11 +190,11 @@ The compiler infers record-like map shapes automatically:
   Module records can be constructed with qualified type names such as
   `(ocaml-record User.user ...)` or through module aliases such as
   `(ocaml-record U.user ...)`. Opened modules expose record type names in the
-  current scope, so `(open User)` allows `(ocaml-record user ...)`. cljml checks
+  current scope, so `(open User)` allows `(ocaml-record user ...)`. lg checks
   record shape and field names; field value compatibility remains owned by
   OCaml.
   Function parameters do not need named-record annotations. Field reads and
-  `assoc` updates infer row constraints, and cljml preserves nominal identity
+  `assoc` updates infer row constraints, and lg preserves nominal identity
   when exactly one declared record matches those constraints.
 - `(type-variant status Active Inactive)` emits a nullary OCaml variant type
   such as `type status = Active | Inactive`. Payload constructors can be
@@ -208,12 +209,12 @@ The compiler infers record-like map shapes automatically:
   their OCaml constructors. The older `ocaml-some`, `ocaml-none`, `ocaml-ok`,
   and `ocaml-error` forms remain compatible. Match forms can destructure them
   with OCaml constructor
-  patterns such as `(Some x)`, `None`, `(Ok value)`, and `(Error err)`. cljml
+  patterns such as `(Some x)`, `None`, `(Ok value)`, and `(Error err)`. lg
   validates constructor arity and type-application annotation shape, but leaves
   option/result payload compatibility to OCaml.
 - `(ocaml-tuple a b ...)` lowers to an OCaml tuple value. Match forms can
   destructure tuple values with `(ocaml-tuple x y ...)`, and tuple annotations
-  lower to OCaml tuple constraints. Tuple arity is checked by cljml; element
+  lower to OCaml tuple constraints. Tuple arity is checked by lg; element
   compatibility remains owned by OCaml.
 - `do`, `fn`, `defn`, and `let` bodies can contain multiple forms; earlier
   forms are evaluated for effects and the final form supplies the value.
@@ -223,8 +224,8 @@ The compiler infers record-like map shapes automatically:
   binding types, recur argument compatibility is delegated to the OCaml
   typechecker.
 - `if-not`, `when`, and `cond` are compiler-recognized conditional forms.
-  `cond` requires an `:else` branch in the current static subset. Core cljml
-  branch types are checked by cljml; OCaml-owned branch result compatibility is
+  `cond` requires an `:else` branch in the current static subset. Core lg
+  branch types are checked by lg; OCaml-owned branch result compatibility is
   delegated to the OCaml typechecker.
 - `match` is a compiler-recognized static pattern form. It supports scalar
   literal patterns, `_`, symbol binders, and fixed-length list/vector patterns
@@ -325,13 +326,13 @@ The compiler infers record-like map shapes automatically:
   sets where their result has a statically representable type.
 - `conj` accepts one or more same-typed values after a list, vector, or set.
 - `disj` accepts zero or more same-typed values after the set.
-- `(module-alias M Math)` aliases a previously compiled cljml/OCaml module;
+- `(module-alias M Math)` aliases a previously compiled lg/OCaml module;
   `(open Math)` exposes its known bindings without introducing namespaces.
 - `(require [ocaml.String :as string])` aliases an OCaml module. Ordinary
   functions are called directly, for example `(string/uppercase_ascii "ada")`.
 - `(require [ocaml.String :refer [uppercase_ascii]])` can refer an ordinary
   OCaml function and call it directly as `(uppercase_ascii "ada")` without
-  adding it to cljml's typed core table. These OCaml value refers are also
+  adding it to lg's typed core table. These OCaml value refers are also
   available inside module and functor bodies.
 - `(require [ocaml.core/Core.Int :as int])` combines the findlib package
   dependency and OCaml module alias. The separate
@@ -346,7 +347,7 @@ The compiler infers record-like map shapes automatically:
   type. Constructor names retain OCaml capitalization; payload compatibility
   remains checked by the OCaml typechecker.
 - `(Stdlib.abs -42)` reads the ordinary OCaml value signature from the compiler
-  environment so cljml can continue elaborating the inferred result. Module
+  environment so lg can continue elaborating the inferred result. Module
   aliases and referred OCaml values use the same direct form. `ocaml-call`
   remains as a compatibility escape hatch for an explicit host return type.
   OCaml checks function existence and argument compatibility.
@@ -377,7 +378,7 @@ The compiler infers record-like map shapes automatically:
   typed empty collections; `:symbol` and `:keyword` are supported alongside
   the other scalar type keywords.
 - Updating an existing field with a different type is rejected.
-- `Cljml.Compiler.compile_chunk` supports incremental compilation by returning
+- `Lg.Compiler.compile_chunk` supports incremental compilation by returning
   the next compiler state plus the OCaml emitted for the current source chunk
   after typechecking the accumulated Parsetree state.
 
@@ -390,34 +391,56 @@ Run the tests:
 dune test
 ```
 
+## Shared `.lgc` targets
+
+Ordinary forms are shared by every target. No reader annotation is needed for
+portable code. The compiler defaults to `native`; select another environment
+with `--target melange` or `--target js-of-ocaml`.
+
+Use a reader conditional only where code actually differs by environment:
+
+```clojure
+(def environment
+  #?(:native "native"
+     :melange "melange"
+     :js-of-ocaml "js-of-ocaml"
+     :default "unknown"))
+```
+
+The selected platform branch takes precedence over `:default`. Unselected
+branches are parsed but are not elaborated or type checked. The generated
+program depends on the small `lg.runtime` library, which builds in native,
+bytecode/js_of_ocaml, and Melange modes; the compiler and its `compiler-libs`
+dependency remain native tools.
+
 Compile the example to OCaml:
 
 ```sh
-dune exec bin/cljml_cli.exe -- examples/person.cljml -o /tmp/person.ml
+dune exec lg -- --target native examples/person.lgc -o /tmp/person.ml
 ocamlopt -I _build/default/vendor/rrbvec \
   -I _build/default/vendor/rrbvec/.rrbvec.objs/byte \
-  -I _build/default/src \
-  -I _build/default/src/.cljml.objs/byte \
-  -I _build/default/src/.cljml.objs/native \
+  -I _build/default/runtime \
+  -I _build/default/runtime/.lg_runtime.objs/byte \
+  -I _build/default/runtime/.lg_runtime.objs/native \
   -o /tmp/person \
   _build/default/vendor/rrbvec/rrbvec.cmxa \
-  _build/default/src/cljml.cmxa \
+  _build/default/runtime/lg_runtime.cmxa \
   /tmp/person.ml
 ```
 
 Run the example:
 
 ```sh
-dune exec bin/cljml_cli.exe -- --run examples/person.cljml
+dune exec lg -- --run examples/person.lgc
 ```
 
-Compile or run several cljml files in one incremental compiler state:
+Compile or run several lg files in one incremental compiler state:
 
 ```sh
-dune exec bin/cljml_cli.exe -- \
-  --compile-files src/math.cljml src/main.cljml -o app.ml
-dune exec bin/cljml_cli.exe -- \
-  --run-files src/math.cljml src/main.cljml
+dune exec lg -- \
+  --compile-files src/math.lgc src/main.lgc -o app.ml
+dune exec lg -- \
+  --run-files src/math.lgc src/main.lgc
 ```
 
 Files are processed in the supplied order. Modules, types,
@@ -426,14 +449,14 @@ to later files. Package dependencies are unioned for native linking, while
 errors retain the path and line of the owning input file.
 
 [`examples/multi_file/dune`](examples/multi_file/dune) is an executable Dune
-integration: a rule treats `.cljml` files as dependencies, generates `app.ml`,
+integration: a rule treats `.lgc` files as dependencies, generates `app.ml`,
 and compiles it with an ordinary executable stanza.
 
 Start compiler-backed editor diagnostics through the standard Language Server
 Protocol:
 
 ```sh
-dune exec bin/cljml_cli.exe -- --lsp
+dune exec lg -- --lsp
 ```
 
 The server supports full document synchronization; publishes errors plus OCaml
@@ -441,7 +464,7 @@ warnings such as non-exhaustive and redundant matches; and provides
 Typedtree-backed hover types, jump-to-definition, type-detailed completion, and
 identity-aware references, rename, highlights, document/workspace symbols, and
 comment-preserving document formatting. Workspace indexing includes unopened
-`.cljml` files and supports cross-file definitions, references, and rename. It
+`.lgc` files and supports cross-file definitions, references, and rename. It
 tracks module and top-level symbol dependency components, reanalyzes only the
 component affected by an edit, reuses unrelated Typedtree analyses, and keeps
 unaffected files available while another component contains an error.

@@ -1,4 +1,4 @@
 (library
- (name cljml_compiler_support)
- (public_name cljml.compiler_support)
+ (name lg_compiler_support)
+ (public_name lg.compiler_support)
  (libraries compiler-libs.common))

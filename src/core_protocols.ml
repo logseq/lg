@@ -86,58 +86,58 @@ let initial_registry =
   Protocol_registry.empty
   |> declare_seqable
   |> add_seqable Receiver_id.List_receiver
-       "Cljml.Runtime_seq.of_list"
+       "Lg_runtime.Runtime_seq.of_list"
   |> add_seqable Receiver_id.Vector_receiver
-       "Cljml.Runtime_seq.of_vector"
-  |> add_seqable Receiver_id.Set_receiver "Cljml.Core_protocols.seq_of_set"
-  |> add_seqable Receiver_id.Seq_receiver "Cljml.Runtime_seq.memoize"
+       "Lg_runtime.Runtime_seq.of_vector"
+  |> add_seqable Receiver_id.Set_receiver "Lg.Core_protocols.seq_of_set"
+  |> add_seqable Receiver_id.Seq_receiver "Lg_runtime.Runtime_seq.memoize"
   |> add_seqable Receiver_id.Array_receiver
-       "Cljml.Runtime_seq.of_array"
+       "Lg_runtime.Runtime_seq.of_array"
   |> add_seqable Receiver_id.String_receiver
-       "Cljml.Runtime_seq.of_string"
+       "Lg_runtime.Runtime_seq.of_string"
   |> add_seqable (Receiver_id.Host_receiver "list")
-       "Cljml.Runtime_seq.of_host_list"
+       "Lg_runtime.Runtime_seq.of_host_list"
   |> add_seqable (Receiver_id.Host_receiver "array")
-       "Cljml.Runtime_seq.of_host_array"
+       "Lg_runtime.Runtime_seq.of_host_array"
   |> add_seqable (Receiver_id.Host_receiver "Seq.t")
-       "Cljml.Runtime_seq.of_host_seq"
+       "Lg_runtime.Runtime_seq.of_host_seq"
   |> add_seqable (Receiver_id.Host_receiver "Seq")
-       "Cljml.Runtime_seq.of_host_seq_alias"
+       "Lg_runtime.Runtime_seq.of_host_seq_alias"
   |> declare_reducible
-  |> add_reducible Receiver_id.List_receiver "Cljml.Core_protocols.reduce_list"
+  |> add_reducible Receiver_id.List_receiver "Lg.Core_protocols.reduce_list"
   |> add_reducible Receiver_id.Vector_receiver
-       "Cljml.Core_protocols.reduce_vector"
-  |> add_reducible Receiver_id.Set_receiver "Cljml.Core_protocols.reduce_set"
-  |> add_reducible Receiver_id.Seq_receiver "Cljml.Core_protocols.reduce_seq"
-  |> add_reducible Receiver_id.Array_receiver "Cljml.Core_protocols.reduce_array"
-  |> add_reducible Receiver_id.String_receiver "Cljml.Core_protocols.reduce_string"
+       "Lg.Core_protocols.reduce_vector"
+  |> add_reducible Receiver_id.Set_receiver "Lg.Core_protocols.reduce_set"
+  |> add_reducible Receiver_id.Seq_receiver "Lg.Core_protocols.reduce_seq"
+  |> add_reducible Receiver_id.Array_receiver "Lg.Core_protocols.reduce_array"
+  |> add_reducible Receiver_id.String_receiver "Lg.Core_protocols.reduce_string"
   |> add_reducible (Receiver_id.Host_receiver "list")
-       "Cljml.Core_protocols.reduce_host_list"
+       "Lg.Core_protocols.reduce_host_list"
   |> add_reducible (Receiver_id.Host_receiver "array")
-       "Cljml.Core_protocols.reduce_host_array"
+       "Lg.Core_protocols.reduce_host_array"
   |> add_reducible (Receiver_id.Host_receiver "Seq.t")
-       "Cljml.Core_protocols.reduce_host_seq"
+       "Lg.Core_protocols.reduce_host_seq"
   |> add_reducible (Receiver_id.Host_receiver "Seq")
-       "Cljml.Core_protocols.reduce_host_seq_alias"
+       "Lg.Core_protocols.reduce_host_seq_alias"
   |> declare_counted
-  |> add_counted Receiver_id.List_receiver "Cljml.Core_protocols.count_list"
-  |> add_counted Receiver_id.Vector_receiver "Cljml.Core_protocols.count_vector"
-  |> add_counted Receiver_id.Set_receiver "Cljml.Core_protocols.count_set"
-  |> add_counted Receiver_id.Array_receiver "Cljml.Core_protocols.count_array"
-  |> add_counted Receiver_id.String_receiver "Cljml.Core_protocols.count_string"
+  |> add_counted Receiver_id.List_receiver "Lg.Core_protocols.count_list"
+  |> add_counted Receiver_id.Vector_receiver "Lg.Core_protocols.count_vector"
+  |> add_counted Receiver_id.Set_receiver "Lg.Core_protocols.count_set"
+  |> add_counted Receiver_id.Array_receiver "Lg.Core_protocols.count_array"
+  |> add_counted Receiver_id.String_receiver "Lg.Core_protocols.count_string"
   |> add_counted (Receiver_id.Host_receiver "list")
-       "Cljml.Core_protocols.count_host_list"
+       "Lg.Core_protocols.count_host_list"
   |> add_counted (Receiver_id.Host_receiver "array")
-       "Cljml.Core_protocols.count_host_array"
+       "Lg.Core_protocols.count_host_array"
   |> declare_indexed
-  |> add_indexed Receiver_id.List_receiver "Cljml.Core_protocols.nth_list"
-  |> add_indexed Receiver_id.Vector_receiver "Cljml.Core_protocols.nth_vector"
-  |> add_indexed Receiver_id.Array_receiver "Cljml.Core_protocols.nth_array"
-  |> add_indexed Receiver_id.String_receiver "Cljml.Core_protocols.nth_string"
+  |> add_indexed Receiver_id.List_receiver "Lg.Core_protocols.nth_list"
+  |> add_indexed Receiver_id.Vector_receiver "Lg.Core_protocols.nth_vector"
+  |> add_indexed Receiver_id.Array_receiver "Lg.Core_protocols.nth_array"
+  |> add_indexed Receiver_id.String_receiver "Lg.Core_protocols.nth_string"
   |> add_indexed (Receiver_id.Host_receiver "list")
-       "Cljml.Core_protocols.nth_host_list"
+       "Lg.Core_protocols.nth_host_list"
   |> add_indexed (Receiver_id.Host_receiver "array")
-       "Cljml.Core_protocols.nth_host_array"
+       "Lg.Core_protocols.nth_host_array"
 
 let find_seqable receiver_ty registry =
   match Receiver_id.of_type receiver_ty with

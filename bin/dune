@@ -1,4 +1,4 @@
 (executable
- (name cljml_cli)
- (public_name cljml)
- (libraries cljml rrbvec yojson))
+ (name lg_cli)
+ (public_name lg)
+ (libraries lg rrbvec yojson))

@@ -122,7 +122,7 @@ let create ~compile_expr =
 
   and option_payload_type = function
     | TOcaml_app ("option", [ payload_ty ]) ->
-        Ok (cljml_metadata_type_for_ocaml_payload payload_ty)
+        Ok (lg_metadata_type_for_ocaml_payload payload_ty)
     | TOcaml "option" -> Ok TUnknown
     | _ -> Error.error "option binding requires an option value"
 
@@ -415,7 +415,7 @@ let create ~compile_expr =
             | payload_ty :: payload_tys, pattern :: payload_patterns -> (
                 match
                   compile_pattern
-                    (cljml_metadata_type_for_ocaml_type payload_ty)
+                    (lg_metadata_type_for_ocaml_type payload_ty)
                     pattern
                 with
                 | Error _ as err -> err
@@ -641,7 +641,7 @@ let create ~compile_expr =
         | (Error _ as err), _ -> err
         | _, (Error _ as err) -> err
         | Ok body, Ok catches -> (
-            let exception_name = "__cljml_caught_exception" in
+            let exception_name = "__lg_caught_exception" in
             let exception_binding =
               ( Names.scoped_key scope exception_name,
                 Types.binding exception_name (TOcaml "exn") )

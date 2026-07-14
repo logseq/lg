@@ -206,7 +206,7 @@ let node_id_attribute node_id =
           (Ast_helper.Exp.constant
              (Ast_helper.Const.string (Source_node_id.to_string node_id))) ]
   in
-  Ast_helper.Attr.mk (str "cljml.node_id") payload
+  Ast_helper.Attr.mk (str "lg.node_id") payload
 
 let rec pattern_node_ids = function
   | PLocated (node_id, _, pattern) -> node_id :: pattern_node_ids pattern
@@ -348,7 +348,7 @@ and to_parsetree ~context = function
                         (Ast_helper.Const.string (Source_node_id.to_string node_id))) ]
              in
              let attribute =
-               Ast_helper.Attr.mk (str "cljml.node_id") payload
+               Ast_helper.Attr.mk (str "lg.node_id") payload
              in
              {
                expression with

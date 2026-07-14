@@ -1,10 +1,10 @@
 (rule
  (target app.ml)
- (deps math.cljml main.cljml)
+ (deps math.lgc main.lgc)
  (action
-  (run %{exe:../../bin/cljml_cli.exe} --compile-files %{deps} -o %{target})))
+  (run %{exe:../../bin/lg_cli.exe} --compile-files %{deps} -o %{target})))
 
 (executable
  (name app)
  (modules app)
- (libraries cljml rrbvec core))
+ (libraries lg rrbvec core))
