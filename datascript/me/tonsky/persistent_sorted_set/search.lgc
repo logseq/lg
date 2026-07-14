@@ -1,0 +1,39 @@
+(ns me.tonsky.persistent-sorted-set.search
+  (:require [me.tonsky.persistent-sorted-set.arrays :as arrays]))
+
+(defn binary-search-l [cmp arr right key]
+  (loop [left 0
+         right right]
+    (if (<= left right)
+      (let [middle (arrays/half (+ left right))
+            middle-key (arrays/aget arr middle)]
+        (if (neg? (cmp middle-key key))
+          (recur (inc middle) right)
+          (recur left (dec middle))))
+      left)))
+
+(defn binary-search-r [cmp arr right key]
+  (loop [left 0
+         right right]
+    (if (<= left right)
+      (let [middle (arrays/half (+ left right))
+            middle-key (arrays/aget arr middle)]
+        (if (pos? (cmp middle-key key))
+          (recur left (dec middle))
+          (recur (inc middle) right)))
+      left)))
+
+(defn lookup-exact [cmp arr key]
+  (let [length (arrays/alength arr)
+        idx (binary-search-l cmp arr (dec length) key)]
+    (if (and (< idx length)
+             (= 0 (cmp (arrays/aget arr idx) key)))
+      idx
+      -1)))
+
+(defn lookup-range [cmp arr key]
+  (let [length (arrays/alength arr)
+        idx (binary-search-l cmp arr (dec length) key)]
+    (if (= idx length)
+      -1
+      idx)))
