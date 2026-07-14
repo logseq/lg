@@ -305,15 +305,64 @@ let test_not_uses_static_clojure_truthiness () =
   assert_ocaml_runs "not_uses_static_clojure_truthiness" "true:false:false:false\n"
     ocaml_source
 
-let test_nil_surface_is_not_supported () =
-  Cljml.Compiler.compile_string {|(def x nil)|}
-  |> expect_error "nil is not supported";
+let test_nil_predicates_and_truthiness_use_options () =
+  let source =
+    {|
+(def absent nil)
+(def present (Some 7))
+(defn missing? [value] (nil? value))
+(defn present? [value] (some? value))
+(println
+  (str (nil? absent) ":" (some? absent) ":"
+       (nil? present) ":" (some? present) ":"
+       (nil? 1) ":" (some? 1) ":"
+       (not absent) ":" (not present) ":"
+       (missing? absent) ":" (missing? present) ":"
+       (present? absent) ":" (present? present)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "nil_predicates_and_truthiness_use_options"
+    "true:false:false:true:false:true:true:false:true:false:false:true\n"
+    ocaml_source
+
+let test_if_some_and_when_some_bind_option_payloads () =
+  let source =
+    {|
+(defn lookup [found?]
+  (if found? (Some 7) nil))
+(def found (if-some [value (lookup true)] (+ value 1) 0))
+(def missing (if-some [value (lookup false)] (+ value 1) 0))
+(when-some [value (lookup true)]
+  (println (+ value 2)))
+(when-some [value (lookup false)]
+  (println (+ value 2)))
+(println (str found ":" missing))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "if_some_and_when_some_bind_option_payloads"
+    "9\n8:0\n" ocaml_source
+
+let test_nil_predicates_evaluate_arguments_once () =
+  let source =
+    {|
+(def calls (ocaml-ref 0))
+(println
+  (nil?
+    (do
+      (ocaml-reset! calls (+ (ocaml-deref calls) 1))
+      nil)))
+(println (ocaml-deref calls))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "nil_predicates_evaluate_arguments_once" "true\n1\n"
+    ocaml_source
+
+let test_nil_type_annotation_remains_explicitly_unsupported () =
   Cljml.Compiler.compile_string {|(defn bad [^:nil x] x)|}
-  |> expect_error "unknown parameter type ^:nil";
-  Cljml.Compiler.compile_string {|(def x (nil? 1))|}
-  |> expect_error "unknown function nil?";
-  Cljml.Compiler.compile_string {|(def x (some? 1))|}
-  |> expect_error "unknown function some?"
+  |> expect_error "unknown parameter type ^:nil"
 
 let test_type_predicates () =
   let source =
@@ -4687,9 +4736,9 @@ let test_sets_reject_nil_elements () =
   Cljml.Compiler.compile_string {|(def values (set-of :nil))|}
   |> expect_error "unknown set element type :nil";
   Cljml.Compiler.compile_string {|(def values (hash-set nil))|}
-  |> expect_error "nil is not supported";
+  |> expect_error "sets require a generated comparator for ocaml/option<any>";
   Cljml.Compiler.compile_string {|(def values (set [nil]))|}
-  |> expect_error "nil is not supported"
+  |> expect_error "sets require a generated comparator for ocaml/option<any>"
 
 let test_set_of_rejects_unknown_types () =
   Cljml.Compiler.compile_string {|(def xs (set-of :record))|}
@@ -8224,7 +8273,14 @@ let tests =
     ("boolean core api works", test_boolean_core_api);
     ( "not uses static Clojure truthiness",
       test_not_uses_static_clojure_truthiness );
-    ("nil surface is not supported", test_nil_surface_is_not_supported);
+    ( "nil predicates and truthiness use options",
+      test_nil_predicates_and_truthiness_use_options );
+    ( "if-some and when-some bind option payloads",
+      test_if_some_and_when_some_bind_option_payloads );
+    ( "nil predicates evaluate arguments once",
+      test_nil_predicates_evaluate_arguments_once );
+    ( "nil type annotation remains explicitly unsupported",
+      test_nil_type_annotation_remains_explicitly_unsupported );
     ("type predicates work", test_type_predicates);
     ("type predicates reject wrong arity", test_type_predicates_reject_wrong_arity);
     ("subs core api works", test_subs_core_api);

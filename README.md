@@ -58,9 +58,9 @@ first, then OCaml lowering:
 - Core cljml type shapes remain in `Types`; lowered top-level/module items live
   in `Lowered`, so backend item construction is kept separate from source type
   metadata.
-- Parsetree is not used as cljml's full type system. cljml has a typed,
-  memoized lazy-seq representation, while `nil` remains outside the supported
-  surface.
+- Parsetree is not used as cljml's full type system. cljml has typed,
+  memoized lazy sequences, while `nil` lowers to OCaml `None` and remains
+  statically constrained by option types.
 
 Sets use persistent OCaml `Set.Make` modules rather than list-backed values.
 The runtime provides comparators for `int`, `string` (including keywords and
@@ -156,8 +156,9 @@ The compiler infers record-like map shapes automatically:
   fields; the compiler projects wide records to generated narrow row records
   before calling the OCaml function.
   Optional `^:int`, `^:string`, `^:symbol`, `^:keyword`, `^:bool`, or `^:unit`
-  annotations can make a cljml core parameter type explicit. `nil` is not a
-  supported surface value or parameter type. Opaque host-owned
+  annotations can make a cljml core parameter type explicit. `nil` lowers to
+  polymorphic OCaml `None`; explicit option annotations use `^:option<T>`.
+  Opaque host-owned
   annotations such as `^:ocaml/int` lower to OCaml parameter constraints and
   are left for the OCaml typechecker; cljml core APIs do not treat them as
   known `:int` or `:string` values. Host-owned type applications use angle
@@ -237,8 +238,9 @@ The compiler infers record-like map shapes automatically:
   forms such as `(when flag (println "ready"))` can appear at file scope.
 - `print` writes without a trailing newline; `println` writes with a trailing
   newline.
-- `not` follows the statically represented values: only `false` is falsey;
-  other values are truthy. cljml does not support a surface `nil` value.
+- `not` treats `false` and option `None` (`nil`) as falsey; other statically
+  represented values, including `Some false`, are truthy. `nil?` and `some?`
+  inspect options and fold statically for known non-option values.
 - `int?`, `integer?`, `number?`, `nat-int?`, `pos-int?`, `neg-int?`,
   `string?`, `keyword?`, `boolean?`, `vector?`, `list?`, `seq?`, `set?`,
   `map?`, `fn?`, `coll?`, `associative?`, `indexed?`, `seqable?`, and
@@ -298,7 +300,8 @@ The compiler infers record-like map shapes automatically:
   lists and vectors.
 - `first`, `second`, and `last` work on every typed `Seqable`.
 - `seq`, `rest`, `next`, `nthnext`, and `nthrest` return typed memoized lazy
-  seqs and are empty-safe while `nil` remains unsupported.
+  seqs and are empty-safe. Because these APIs return `Seq.t`, empty navigation
+  is an empty sequence rather than `nil`.
 - `empty` returns a same-typed empty list, vector, set, or string.
 - `into` transfers elements between typed list, vector, and set collections.
 - `take` and `drop` return typed memoized lazy seqs for every built-in seqable

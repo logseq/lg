@@ -26,6 +26,10 @@ and compile_expr_unlocated scope (env : Env.t) = function
   | FString value -> Ok (typed_ir TString (Semantic_ir.String value))
   | FBool value -> Ok (typed_ir TBool (Semantic_ir.Bool value))
   | FKeyword keyword -> Ok (typed_ir TKeyword (Semantic_ir.String keyword))
+  | FSymbol "nil" ->
+      Ok
+        (typed_ir (TOcaml_app ("option", [ TUnknown ]))
+           (Semantic_ir.Constructor ("None", None)))
   | FSymbol name -> (
       match Env.find_opt (Names.scoped_key scope name) env with
       | Some { ty = TFn ([], return_ty); ocaml_name; _ }
@@ -49,9 +53,15 @@ and compile_expr_unlocated scope (env : Env.t) = function
       compile_thread scope env `Last value steps
   | FList (FSymbol "if-let" :: binding :: then_form :: else_form :: []) ->
       compile_if_let scope env binding then_form else_form
+  | FList (FSymbol "if-some" :: binding :: then_form :: else_form :: []) ->
+      compile_if_let scope env binding then_form else_form
   | FList (FSymbol "if-let" :: _) ->
       Error.error "if-let requires [name option], then, and else"
+  | FList (FSymbol "if-some" :: _) ->
+      Error.error "if-some requires [name option], then, and else"
   | FList (FSymbol "when-let" :: binding :: body_forms) ->
+      compile_when_let scope env binding body_forms
+  | FList (FSymbol "when-some" :: binding :: body_forms) ->
       compile_when_let scope env binding body_forms
   | FList (FSymbol "let-some" :: bindings :: then_form :: else_form :: []) ->
       compile_let_some scope env bindings then_form else_form

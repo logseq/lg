@@ -93,7 +93,7 @@ let tokenize source =
             match (atom, int_of_string_opt atom) with
             | "true", _ -> Ok (Bool true)
             | "false", _ -> Ok (Bool false)
-            | "nil", _ -> Error.error "nil is not supported"
+            | "nil", _ -> Ok (Symbol atom)
             | _, Some value -> Ok (Int value)
             | _ -> (
                 match char_of_atom atom with

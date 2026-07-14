@@ -17,6 +17,14 @@ let compile_not args =
       let expression =
         match arg.ty with
         | TBool -> Semantic_ir.Prefix ("not", arg.semantic_expr)
+        | TOcaml_app ("option", [ _ ]) | TOcaml "option" ->
+            Semantic_ir.Match
+              ( arg.semantic_expr,
+                [ (Semantic_ir.PConstructor ("None", None), Semantic_ir.Bool true);
+                  ( Semantic_ir.PConstructor
+                      ("Some", Some Semantic_ir.PAny),
+                    Semantic_ir.Bool false );
+                ] )
         | _ -> Semantic_ir.Sequence [ arg.semantic_expr; Semantic_ir.Bool false ]
       in
       Ok (typed_ir TBool expression)
@@ -36,9 +44,32 @@ let compile_bool_literal_predicate name args expected =
 
 let compile_type_predicate name predicate args = type_predicate name predicate args
 
+let compile_nil_predicate name args expected_nil =
+  match one_arg name args with
+  | Error _ as err -> err
+  | Ok arg ->
+      let expression =
+        match arg.ty with
+        | TOcaml_app ("option", [ _ ]) | TOcaml "option" ->
+            Semantic_ir.Match
+              ( arg.semantic_expr,
+                [ ( Semantic_ir.PConstructor ("None", None),
+                    Semantic_ir.Bool expected_nil );
+                  ( Semantic_ir.PConstructor
+                      ("Some", Some Semantic_ir.PAny),
+                    Semantic_ir.Bool (not expected_nil) );
+                ] )
+        | _ ->
+            Semantic_ir.Sequence
+              [ arg.semantic_expr; Semantic_ir.Bool (not expected_nil) ]
+      in
+      Ok (typed_ir TBool expression)
+
 let compile name args =
   match name with
   | "not" -> compile_not args
+  | "nil?" -> compile_nil_predicate name args true
+  | "some?" -> compile_nil_predicate name args false
   | "true?" -> compile_bool_literal_predicate name args true
   | "false?" -> compile_bool_literal_predicate name args false
   | "int?" -> compile_type_predicate name (function TInt -> true | _ -> false) args

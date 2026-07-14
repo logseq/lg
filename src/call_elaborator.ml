@@ -443,7 +443,7 @@ let create ~compile_expr =
         match compile_args () with
         | Error _ as err -> err
         | Ok args -> Core_compare.compile name args)
-    | "not" | "true?" | "false?" | "int?" | "number?"
+    | "not" | "nil?" | "some?" | "true?" | "false?" | "int?" | "number?"
     | "string?" | "keyword?" | "boolean?" | "vector?" | "list?" | "seq?" | "set?"
     | "map?" | "fn?" | "coll?" | "associative?" | "indexed?" | "seqable?" | "counted?"
       -> compile_boolean_call scope env name arg_forms

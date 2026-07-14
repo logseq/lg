@@ -135,8 +135,9 @@ Clojure destructuring. Associative destructuring works on structural maps with
 `:keys`, direct `{local :keyword}` bindings, scalar literal `:or` defaults, and
 `:as`. Sequential destructuring works on typed vectors and lists with fixed
 positional bindings, `& rest`, and `:as`. Keyword argument destructuring,
-non-literal default expressions, and nil-padding are not supported yet. cljml
-does not have a surface `nil` value or nilable collection element type.
+non-literal default expressions, and nil-padding are not supported yet. A
+surface `nil` lowers to polymorphic OCaml `None`; homogeneous collection typing
+still requires all elements to share one option type.
 
 Row polymorphism is represented in cljml's static type compatibility: a
 function parameter inferred as a structural map with fields `:name` and `:age`
@@ -178,10 +179,10 @@ argument compatibility is delegated to the OCaml typechecker.
 because cljml does not add implicit nil results. OCaml-owned branch result
 compatibility is delegated to the OCaml typechecker.
 
-`if-let` and `when-let` bind the payload of an OCaml option. `let-some` accepts
-multiple sequential name/option pairs and evaluates one fallback when any
-binding is `None`. `->` and `->>` provide first- and last-argument threading
-without requiring a general macro system.
+`if-let`, `when-let`, `if-some`, and `when-some` bind the payload of an OCaml
+option. `let-some` accepts multiple sequential name/option pairs and evaluates
+one fallback when any binding is `None`. `->` and `->>` provide first- and
+last-argument threading without requiring a general macro system.
 
 `match` is a compiler-recognized static pattern form rather than a macro. The
 current subset supports scalar literal patterns, `_`, symbol binders, and
@@ -205,10 +206,11 @@ Top-level expression forms are supported and emit `let _ = ...`; top-level map l
 
 `print` and `println` follow Clojure's newline behavior.
 
-`not` follows the values represented by cljml: `false` is falsey, while
+`not` treats `false` and option `None` (`nil`) as falsey, while `Some` values,
 integers, strings, collections, keywords, symbols, and records are truthy. The
-argument is still evaluated before the boolean result is produced. cljml does
-not support a surface `nil` value, `nil?`, or `some?`.
+argument is still evaluated before the boolean result is produced. `nil?` and
+`some?` inspect options at runtime and fold statically for known non-option
+values.
 
 Type predicates such as `int?`, `integer?`, `number?`, `nat-int?`, `pos-int?`,
 `neg-int?`, `string?`, `keyword?`, `boolean?`, `vector?`, `list?`, `seq?`,
@@ -328,8 +330,8 @@ Vectors support `first`, `second`, `last`, `peek`, `pop`, `rest`, `next`, `nthne
 realized nodes are cached, so repeated traversal does not rerun producer side
 effects. Lists, vectors, sets, arrays, strings, and host `Seq.t`, list, and array
 values are built-in seqable inputs. `seq`, `rest`, `next`, `nthnext`, and
-`nthrest` return the same typed lazy-seq abstraction. `nil` remains unsupported,
-so empty navigation produces an empty lazy seq rather than `nil`.
+`nthrest` return the same typed lazy-seq abstraction. Empty navigation produces
+an empty lazy seq rather than `nil` because the static result type is `Seq.t`.
 
 `first` and `last` accept all typed seqable values. `second` accepts lists,
 vectors, sets, and lazy seqs. Set iteration follows the canonical order from
@@ -407,7 +409,8 @@ Sets compile to persistent OCaml `Set.Make` instances and support `hash-set`,
 `sorted-set`, `set-of`, `conj`, `disj`, `contains?`, `every?`, `not-any?`, `not-every?`,
 `map`, `filter`, and `reduce`. Built-in comparators cover scalar values,
 scalar lists and vectors, nested integer vectors, and named structural map
-records. `nil` is not a supported surface value or set element.
+records. `nil` is an option value, but option sets remain unsupported until
+they have a generated comparator.
 
 `conj` accepts one or more same-typed values after a list, vector, or set.
 
@@ -584,7 +587,7 @@ compatibility target. The current compiler boundary is aligned as follows:
 
 This does not make cljml a Reason syntax clone. `.re`/`.rei` parsing, `refmt`,
 JSX, and full `ocaml-lsp` feature parity are not cljml language requirements.
-Likewise, the documented absence of macros, nil, laziness, the JVM numeric
+Likewise, the documented absence of general macros, the JVM numeric
 tower, and dynamic Clojure runtime features is an intentional static Clojure
 dialect boundary rather than an OCaml backend gap.
 

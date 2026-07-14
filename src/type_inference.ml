@@ -200,6 +200,8 @@ let infer_params ~lookup_function_ty params body_forms =
     in
     infer_clauses params clauses
   and infer_form params = function
+    | FList [ FSymbol ("nil?" | "some?"); FSymbol value ] ->
+        constrain_symbol (TOcaml_app ("option", [ TUnknown ])) params value
     | FList [ FSymbol "count"; FSymbol collection ] ->
         constrain_seqable TUnknown params collection
     | FList
