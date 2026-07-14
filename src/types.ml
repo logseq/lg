@@ -8,6 +8,7 @@ type binding = {
   host_reference : host_reference option;
   return_param_index : int option;
   overload_targets : string list;
+  forward_declared : bool;
 }
 
 and host_reference =
@@ -30,7 +31,8 @@ let typed_ir ty semantic_expr =
   }
 
 let binding ?(row_param_types = []) ?host_reference ?protocol_id
-    ?return_param_index ?(overload_targets = []) ocaml_name ty =
+    ?return_param_index ?(overload_targets = []) ?(forward_declared = false)
+    ocaml_name ty =
   {
     ocaml_name;
     ty;
@@ -39,6 +41,7 @@ let binding ?(row_param_types = []) ?host_reference ?protocol_id
     host_reference;
     return_param_index;
     overload_targets;
+    forward_declared;
   }
 
 let seqable_constraint_name = "__lg_seqable_constraint"
@@ -432,7 +435,13 @@ let rec ocaml_name = function
   | TOcaml_app (name, [ arg ]) -> ocaml_name arg ^ " " ^ name
   | TOcaml_app (name, args) ->
       "(" ^ (args |> List.map ocaml_name |> String.concat ", ") ^ ") " ^ name
-  | TTuple args -> "(" ^ (args |> List.map ocaml_name |> String.concat " * ") ^ ")"
+  | TTuple args ->
+      let tuple_item ty =
+        match ty with
+        | TFn _ -> "(" ^ ocaml_name ty ^ ")"
+        | _ -> ocaml_name ty
+      in
+      "(" ^ (args |> List.map tuple_item |> String.concat " * ") ^ ")"
   | TArray inner -> ocaml_name inner ^ " array"
   | TRef inner -> ocaml_name inner ^ " ref"
   | TList inner -> ocaml_name inner ^ " list"

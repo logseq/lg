@@ -31,6 +31,14 @@ let lookup_record_type scope env type_name =
     | Some _ -> Error.error ("invalid record type metadata for " ^ type_name)
     | None -> Error.error ("unknown record type " ^ type_name)
   in
+  match String.rindex_opt type_name '/' with
+  | Some index ->
+      let alias = String.sub type_name 0 index in
+      let local_name =
+        String.sub type_name (index + 1) (String.length type_name - index - 1)
+      in
+      local_lookup alias local_name
+  | None ->
   match split_qualified_type_name type_name with
   | Some (module_path, local_name) -> (
       match local_lookup (Names.module_path_to_ocaml module_path) local_name with

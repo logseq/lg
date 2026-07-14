@@ -37,6 +37,20 @@ let rec form_mentions_symbol name = function
   | FKeyword _ ->
       false
 
+let expression_references_declaration env expression =
+  let declared_names =
+    Env.filter_map
+      (fun _ (binding : binding) ->
+        match binding.ty with
+        | TOcaml "__declared_fn" -> Some binding.ocaml_name
+        | _ when binding.forward_declared -> Some binding.ocaml_name
+        | _ -> None)
+      env
+  in
+  Semantic_ir.exists_identifier
+    (fun name -> List.mem name declared_names)
+    expression
+
 let compile_defprotocol = Protocol_elaborator.compile_defprotocol
 let compile_extend_type = Protocol_elaborator.compile_extend_type
 
@@ -597,9 +611,19 @@ let rec compile scope env next_type = function
                 Types.binding ~overload_targets:targets ocaml_name prepared.expr.ty
               in
               let value_item =
-                Value_binding
-                  { pattern = located_value_pattern name_form (Named ocaml_name);
-                    expression = prepared.expr.semantic_expr }
+                if
+                  expression_references_declaration env
+                    prepared.expr.semantic_expr
+                then
+                  Deferred_value_binding
+                    { name = ocaml_name;
+                      value_type = prepared.expr.ty;
+                      expression = prepared.expr.semantic_expr }
+                else
+                  Value_binding
+                    { pattern =
+                        located_value_pattern name_form (Named ocaml_name);
+                      expression = prepared.expr.semantic_expr }
               in
               Ok
                 ( scope,
@@ -650,14 +674,22 @@ let rec compile scope env next_type = function
                   in
                   let type_items = row_type_items row_param_types param_tys in
                   let value_item =
-                    Recursive_value_binding
-                      { name = ocaml_name;
-                        identity =
-                          Source_context.find name_form
-                          |> Option.map (fun location ->
-                                 (Source_node_id.of_location location, location));
-                        expression = expr.semantic_expr;
-                      }
+                    if
+                      expression_references_declaration env expr.semantic_expr
+                    then
+                      Deferred_value_binding
+                        { name = ocaml_name;
+                          value_type = expr.ty;
+                          expression = expr.semantic_expr }
+                    else
+                      Recursive_value_binding
+                        { name = ocaml_name;
+                          identity =
+                            Source_context.find name_form
+                            |> Option.map (fun location ->
+                                   (Source_node_id.of_location location, location));
+                          expression = expr.semantic_expr;
+                        }
                   in
                   Ok
                     ( scope,
@@ -691,14 +723,20 @@ let rec compile scope env next_type = function
               let binding = binding_of_expr ~row_param_types ocaml_name expr in
               let type_items = row_type_items row_param_types param_tys in
               let value_item =
-                Recursive_value_binding
-                  { name = ocaml_name;
-                    identity =
-                      Source_context.find name_form
-                      |> Option.map (fun location ->
-                             (Source_node_id.of_location location, location));
-                    expression = expr.semantic_expr;
-                  }
+                if expression_references_declaration env expr.semantic_expr then
+                  Deferred_value_binding
+                    { name = ocaml_name;
+                      value_type = expr.ty;
+                      expression = expr.semantic_expr }
+                else
+                  Recursive_value_binding
+                    { name = ocaml_name;
+                      identity =
+                        Source_context.find name_form
+                        |> Option.map (fun location ->
+                               (Source_node_id.of_location location, location));
+                      expression = expr.semantic_expr;
+                    }
               in
               Ok
                 ( scope,
@@ -728,11 +766,17 @@ let rec compile scope env next_type = function
               let binding = binding_of_expr ~row_param_types ocaml_name expr in
               let type_items = row_type_items row_param_types param_tys in
               let value_item =
-                Value_binding
-                  {
-                    pattern = located_value_pattern name_form (Named ocaml_name);
-                    expression = expr.semantic_expr;
-                  }
+                if expression_references_declaration env expr.semantic_expr then
+                  Deferred_value_binding
+                    { name = ocaml_name;
+                      value_type = expr.ty;
+                      expression = expr.semantic_expr }
+                else
+                  Value_binding
+                    { pattern =
+                        located_value_pattern name_form (Named ocaml_name);
+                      expression = expr.semantic_expr;
+                    }
               in
               Ok
                 ( scope,
@@ -896,7 +940,13 @@ let rec compile scope env next_type = function
         | FSymbol name :: rest ->
             let key = Names.scoped_key scope name in
             let ocaml_name = Names.ocaml_binding_name scope name in
-            let binding = Types.binding ocaml_name (TOcaml "__declared_fn") in
+            let binding =
+              match Env.find_opt key env with
+              | Some binding
+                when not (Types.equal binding.ty (TOcaml "__declared_fn")) ->
+                  binding
+              | _ -> Types.binding ocaml_name (TOcaml "__declared_fn")
+            in
             add_declarations (Env.add key binding env) rest
         | _ -> Error.error "declare expects symbols"
       in

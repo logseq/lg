@@ -167,7 +167,10 @@ let compile name args =
       compile_runtime_type_predicate name "Lg_runtime.Runtime_dynamic.is_seq"
         (function TList _ | TSeq _ -> true | _ -> false)
         args
-  | "set?" -> compile_type_predicate name (function TSet _ -> true | _ -> false) args
+  | "set?" ->
+      compile_runtime_type_predicate name "Lg_runtime.Runtime_dynamic.is_set"
+        (function TSet _ -> true | _ -> false)
+        args
   | "map?" ->
       compile_runtime_type_predicate name "Lg_runtime.Runtime_dynamic.is_map"
         (function TRecord _ | TNamed_record _ -> true | _ -> false)

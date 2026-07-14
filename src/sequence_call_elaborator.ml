@@ -37,6 +37,17 @@ let compile_args_for compile_expr scope env arg_forms =
   in
   loop [] arg_forms
 
+let returns_truthy_value = function
+  | TBool | TUnknown | TVar _ -> true
+  | ty -> Types.is_dynamic ty
+
+let truthy_call return_ty fn arguments =
+  let call = Semantic_ir.Apply (fn, arguments) in
+  if Types.equal return_ty TBool then call
+  else
+    Semantic_ir.Apply
+      (Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.truthy", [ call ])
+
 let create ~compile_expr =
   let special_forms : Special_form_elaborator.t =
     Special_form_elaborator.create ~compile_expr
@@ -59,21 +70,17 @@ let create ~compile_expr =
                typed_ir (TFn ([ element_ty ], body.ty))
                  (Semantic_ir.Fun
                     ([ Semantic_ir.PVar item_name ], body.semantic_expr)))
-    | FList (FSymbol "fn" :: FVector [ FSymbol name ] :: body_forms) ->
-        let binding = Types.binding (Names.sanitize_name name) element_ty in
-        let function_env = Env.add (Names.scoped_key scope name) binding env in
-        compile_body scope function_env "function body requires at least one form"
-          body_forms
-        |> Result.map (fun body ->
-               let pattern =
-                 match element_ty with
-                 | TNamed_record record ->
-                     Semantic_ir.PConstraint
-                       (Semantic_ir.PVar binding.ocaml_name, record.type_name)
-                 | _ -> Semantic_ir.PVar binding.ocaml_name
-               in
-               typed_ir (TFn ([ element_ty ], body.ty))
-                 (Semantic_ir.Fun ([ pattern ], body.semantic_expr)))
+    | FList
+        (FSymbol "fn" :: (FVector [ _ ] as params) :: body_forms) ->
+        let lookup_function_ty name =
+          match lookup_function scope env name with
+          | Ok fn -> Ok fn.ty
+          | Error _ as error -> error
+        in
+        Function_elaborator.prepare
+          ~param_type_overrides:[ Some element_ty ] ~lookup_function_ty
+          ~compile_body scope env params body_forms
+        |> Result.map Function_elaborator.fn_code
     | FSymbol name -> (
         match lookup_function scope env name with
         | Ok function_ -> Ok function_
@@ -361,13 +368,16 @@ let create ~compile_expr =
           | _, (Error _ as err) -> err
           | Ok fn, Ok collection -> (
               match (fn.ty, collection_to_list_expr collection) with
-              | TFn ([ param_ty ], TBool), Ok (inner, list_expr) when Types.equal param_ty inner ->
+              | TFn ([ param_ty ], return_ty), Ok (inner, list_expr)
+                when Types.equal param_ty inner
+                     && returns_truthy_value return_ty ->
                   let split_body =
                     Semantic_ir.Match
                       ( Semantic_ir.Ident "rest",
                         [ ( Semantic_ir.PCons (Semantic_ir.PVar "item", Semantic_ir.PVar "tail"),
                             Semantic_ir.If
-                              ( Semantic_ir.Apply (fn.semantic_expr, [ Semantic_ir.Ident "item" ]),
+                              ( truthy_call return_ty fn.semantic_expr
+                                  [ Semantic_ir.Ident "item" ],
                                 apply "split"
                                   [ Semantic_ir.Cons
                                       (Semantic_ir.Ident "item", Semantic_ir.Ident "prefix");
@@ -491,27 +501,37 @@ let create ~compile_expr =
     and compile_run_bang scope env arg_forms =
       match arg_forms with
       | fn_form :: collection_form :: [] -> (
-          match (compile_function_arg scope env fn_form, compile_expr scope env collection_form) with
-          | (Error _ as err), _ -> err
-          | _, (Error _ as err) -> err
-          | Ok fn, Ok collection -> (
-              match (fn.ty, collection_to_list_expr collection) with
-              | TFn ([ param_ty ], _ret), Ok (inner, list_expr) when Types.equal param_ty inner ->
-                  Ok
-                    (typed_ir TUnit
-                       (Semantic_ir.Let
-                          ( [ ( Semantic_ir.PUnit,
-                                apply "List.iter"
-                                  [ Semantic_ir.Fun
-                                      ( [ Semantic_ir.PVar "item" ],
-                                        apply "ignore"
-                                          [ Semantic_ir.Apply
-                                              (fn.semantic_expr, [ Semantic_ir.Ident "item" ]) ] );
-                                    list_expr ] ) ],
-                            Semantic_ir.Unit )))
-              | TFn _, Ok _ -> Error.error "run! function type does not match collection"
-              | _, Ok _ -> Error.error "run! expects a function"
-              | _, Error _ -> Error.error "run! expects a collection"))
+          match compile_expr scope env collection_form with
+          | Error _ as error -> error
+          | Ok collection -> (
+              match Collection_capability.to_seq_expr env collection with
+              | Error _ -> Error.error "run! expects a collection"
+              | Ok (inner, sequence) -> (
+                  match
+                    compile_function_arg_for_collection scope env inner fn_form
+                  with
+                  | Error _ as error -> error
+                  | Ok ({ ty = TFn ([ param_ty ], _); _ } as fn)
+                    when Types.assignable ~policy:Host_boundary
+                           ~expected:param_ty ~actual:inner ->
+                      Ok
+                        (typed_ir TUnit
+                           (Semantic_ir.Let
+                              ( [ ( Semantic_ir.PUnit,
+                                    apply "Seq.iter"
+                                      [ Semantic_ir.Fun
+                                          ( [ Semantic_ir.PVar "item" ],
+                                            apply "ignore"
+                                              [ Semantic_ir.Apply
+                                                  ( fn.semantic_expr,
+                                                    [ Semantic_ir.Ident
+                                                        "item" ] ) ] );
+                                        sequence ] ) ],
+                                Semantic_ir.Unit )))
+                  | Ok { ty = TFn _; _ } ->
+                      Error.error
+                        "run! function type does not match collection"
+                  | Ok _ -> Error.error "run! expects a function")))
       | _ -> Error.error "run! expects function and collection"
     
     and compile_map_indexed scope env arg_forms =

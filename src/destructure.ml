@@ -394,16 +394,21 @@ and bind_sequence env (target : typed_expr) forms =
           else
             let bind_tuple_item index name =
               let ty = List.nth element_tys index in
+              let ocaml_name = Names.sanitize_name name in
               let patterns =
                 List.mapi
                   (fun element_index _ ->
-                    if element_index = index then Semantic_ir.PVar name
+                    if element_index = index then
+                      Semantic_ir.PVar ocaml_name
                     else Semantic_ir.PAny)
                   element_tys
               in
               local_binding name ty
                 (Semantic_ir.Match
-                   (target.semantic_expr, [ (Semantic_ir.PTuple patterns, Semantic_ir.Ident name) ]))
+                   ( target.semantic_expr,
+                     [ ( Semantic_ir.PTuple patterns,
+                         Semantic_ir.Ident ocaml_name );
+                     ] ))
             in
             let bindings = List.mapi bind_tuple_item pattern.item_names in
             let bindings =

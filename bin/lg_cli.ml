@@ -110,11 +110,9 @@ let run_ocaml_source packages ocaml_source =
   let ml_path = Filename.temp_file "lg" ".ml" in
   let exe_path = Filename.temp_file "lg" ".exe" in
   write_output (Some ml_path) ocaml_source;
+  let packages = List.sort_uniq String.compare ("unix" :: packages) in
   let package_options =
-    match packages with
-    | [] -> ""
-    | packages ->
-        "-package " ^ Filename.quote (String.concat "," packages) ^ " -linkpkg "
+    "-package " ^ Filename.quote (String.concat "," packages) ^ " -linkpkg "
   in
   let compile_cmd =
     Printf.sprintf

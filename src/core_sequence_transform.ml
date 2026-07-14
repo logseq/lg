@@ -585,6 +585,12 @@ let into target source =
               Ok
                 (typed_ir target.ty
                    (apply "Rrbvec.append_list" [ target.semantic_expr; source_list_expr ])))
+      | TVector target_inner
+        when Types.is_dynamic target_inner && Types.is_dynamic source_inner ->
+          Ok
+            (typed_ir target.ty
+               (apply "Rrbvec.append_list"
+                  [ target.semantic_expr; source_list_expr ]))
       | TList target_inner when Types.equal target_inner source_inner ->
           Ok
             (typed_ir target.ty
@@ -592,6 +598,17 @@ let into target source =
                   [ Semantic_ir.Fun
                       ( [ Semantic_ir.PVar "acc"; Semantic_ir.PVar "item" ],
                         Semantic_ir.Cons (Semantic_ir.Ident "item", Semantic_ir.Ident "acc") );
+                    target.semantic_expr;
+                    source_list_expr ]))
+      | TList target_inner
+        when Types.is_dynamic target_inner && Types.is_dynamic source_inner ->
+          Ok
+            (typed_ir target.ty
+               (apply "List.fold_left"
+                  [ Semantic_ir.Fun
+                      ( [ Semantic_ir.PVar "acc"; Semantic_ir.PVar "item" ],
+                        Semantic_ir.Cons
+                          (Semantic_ir.Ident "item", Semantic_ir.Ident "acc") );
                     target.semantic_expr;
                     source_list_expr ]))
       | TSet target_inner when Types.equal target_inner source_inner ->

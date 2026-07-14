@@ -54,7 +54,8 @@ let ocaml_keywords =
 
 let legalize_ocaml_identifier candidate =
   let candidate =
-    if candidate = "" then "value_"
+    if candidate = "_" then "__lg_wildcard_value"
+    else if candidate = "" then "value_"
     else
       match candidate.[0] with
       | '0' .. '9' -> "value_" ^ candidate

@@ -152,13 +152,38 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                                    with
                                   | Error _ as err -> err
                                   | Ok env ->
+                                      let declared_names =
+                                        Env.filter_map
+                                          (fun _ (binding : binding) ->
+                                            match binding.ty with
+                                            | TOcaml "__declared_fn" ->
+                                                Some binding.ocaml_name
+                                            | _ when binding.forward_declared ->
+                                                Some binding.ocaml_name
+                                            | _ -> None)
+                                          env
+                                      in
+                                      let item =
+                                        if
+                                          Semantic_ir.exists_identifier
+                                            (fun name ->
+                                              List.mem name declared_names)
+                                            expr.semantic_expr
+                                        then
+                                          Deferred_value_binding
+                                            { name = ocaml_name;
+                                              value_type = expr.ty;
+                                              expression = expr.semantic_expr;
+                                            }
+                                        else
+                                          Value_binding
+                                            { pattern = Named ocaml_name;
+                                              expression = expr.semantic_expr;
+                                            }
+                                      in
                                       Ok
                                         ( env,
-                                          Value_binding
-                                            {
-                                              pattern = Named ocaml_name;
-                                              expression = expr.semantic_expr;
-                                            } )))))
+                                          item )))))
                         | _ -> Error.error "protocol method did not compile to a function"))))
         | _ -> Error.error "extend-type methods must be (method-name [params] body)"
       in

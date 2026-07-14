@@ -465,24 +465,34 @@ let test_incremental_anonymous_maps_reuse_equal_shapes () =
   assert_ocaml_runs "incremental_anonymous_maps_reuse_equal_shapes" "2\n"
     (first ^ "\n" ^ second)
 
-let test_anonymous_map_shapes_keep_field_types_distinct () =
-  Lg.Compiler.compile_string
+let test_heterogeneous_record_vectors_use_dynamic_values () =
+  let ocaml_source =
+    Lg.Compiler.compile_string
     {|
 (def integer-value {:value 1})
 (def string-value {:value "one"})
 (def values [integer-value string-value])
+(println (count values))
 |}
-  |> expect_error "vector elements must all have the same type"
+    |> expect_ok
+  in
+  assert_ocaml_runs "heterogeneous_record_vectors_use_dynamic_values" "2\n"
+    ocaml_source
 
-let test_anonymous_maps_remain_distinct_from_declared_records () =
-  Lg.Compiler.compile_string
+let test_declared_and_anonymous_records_share_dynamic_vectors () =
+  let ocaml_source =
+    Lg.Compiler.compile_string
     {|
 (type-record user (name :string))
 (def declared (record user (name "Ada")))
 (def anonymous {:name "Ada"})
 (def values [declared anonymous])
+(println (count values))
 |}
-  |> expect_error "vector elements must all have the same type"
+    |> expect_ok
+  in
+  assert_ocaml_runs "declared_and_anonymous_records_share_dynamic_vectors"
+    "2\n" ocaml_source
 
 let test_println_outputs_record_values () =
   let source =
@@ -4287,9 +4297,11 @@ let test_fn_rejects_empty_body () =
   Lg.Compiler.compile_string {|(def f (fn [x]))|}
   |> expect_error "function body requires at least one form"
 
-let test_vectors_reject_mixed_element_types () =
-  Lg.Compiler.compile_string {|(def xs [1 "two"])|}
-  |> expect_error "vector elements must all have the same type"
+let test_vectors_support_mixed_element_types () =
+  let source = {|(println (pr-str [1 "two"]))|} in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "vectors_support_mixed_element_types" "[1 \"two\"]\n"
+    ocaml_source
 
 let test_keyword_values_print_as_keywords () =
   let source =
@@ -4328,9 +4340,11 @@ let test_vals_rejects_heterogeneous_values () =
   Lg.Compiler.compile_string {|(def xs (vals {:name "Ada", :age 36}))|}
   |> expect_error "vals requires all map values to have the same type"
 
-let test_vectors_reject_mixed_keyword_and_string_elements () =
-  Lg.Compiler.compile_string {|(def xs [:name "name"])|}
-  |> expect_error "vector elements must all have the same type"
+let test_vectors_support_mixed_keyword_and_string_elements () =
+  let source = {|(println (pr-str [:name "name"]))|} in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "vectors_support_mixed_keyword_and_string_elements"
+    "[:name \"name\"]\n" ocaml_source
 
 let test_arithmetic_rejects_non_int_arguments () =
   Lg.Compiler.compile_string {|(def x (+ 1 "two"))|}
@@ -4603,16 +4617,17 @@ let test_when_not_negates_the_condition () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "when_not_negates_the_condition" "4:true\n" ocaml_source
 
-let test_conditional_forms_infer_bool_params () =
+let test_conditional_forms_accept_truthy_params () =
   let source =
     {|
 (defn status [flag]
   (if-not flag "closed" "open"))
-(def bad (status 1))
+(println (str (status 1) ":" (status false)))
 |}
   in
-  Lg.Compiler.compile_string source
-  |> expect_error "status called with incompatible arguments"
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "conditional_forms_accept_truthy_params" "open:closed\n"
+    ocaml_source
 
 let test_batched_core_functions_work () =
   let source =
@@ -4799,15 +4814,20 @@ let test_batched_predicate_collection_core_functions_reject_bad_run_function () 
   Lg.Compiler.compile_string {|(def x (run! (fn [^:string s] (println s)) [1 2]))|}
   |> expect_error "run! function type does not match collection"
 
-let test_batched_predicate_collection_core_functions_infer_bool_params () =
+let test_batched_predicate_collection_core_functions_accept_truthy_params () =
   let source =
     {|
 (defn prefix [flag xs] (split-with (fn [x] flag) xs))
-(def bad (prefix 1 [1 2]))
+(println (str (count (first (prefix 1 [1 2]))) ":"
+              (count (second (prefix 1 [1 2]))) ":"
+              (count (first (prefix false [1 2]))) ":"
+              (count (second (prefix false [1 2])))))
 |}
   in
-  Lg.Compiler.compile_string source
-  |> expect_error "prefix called with incompatible arguments"
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "batched_predicate_collection_core_functions_accept_truthy_params"
+    "2:0:0:2\n" ocaml_source
 
 let test_batched_identifier_and_constructor_core_functions_work () =
   let source =
@@ -4868,6 +4888,8 @@ let test_batched_sequence_functions_work () =
        (pr-str (distinct [1 2 2 3])) ":"
        (pr-str (sort [3 1 2])) ":"
        (pr-str (concat [1 2] (list 3 4))) ":"
+       (pr-str (cons 0 [1 2])) ":"
+       (:missing {:x 1} 9) ":"
        (pr-str (vec (list 1 2))) ":"
        (pr-str (set [2 1 2])) ":"
        (pr-str (repeat 3 "x")) ":"
@@ -4888,7 +4910,54 @@ let test_batched_sequence_functions_work () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "batched_sequence_functions_work"
-    "[1 3]:[1 2 3]:[3 4]:(1 2 3):(1 2 3):(1 2 3 4):[1 2]:#{1 2}:(\"x\" \"x\" \"x\"):(7 7 7):(1 0 2 0 3):(1 3 2 4):2:1:3:3:1:(0 1 3 6):[1 2 1]:(10 21):[1 3]:[2 3]:31:2:true\n"
+    "[1 3]:[1 2 3]:[3 4]:(1 2 3):(1 2 3):(1 2 3 4):(0 1 2):9:[1 2]:#{1 2}:(\"x\" \"x\" \"x\"):(7 7 7):(1 0 2 0 3):(1 3 2 4):2:1:3:3:1:(0 1 3 6):[1 2 1]:(10 21):[1 3]:[2 3]:31:2:true\n"
+    ocaml_source
+
+let test_metadata_map_values_constrain_function_parameters () =
+  let source =
+    {|
+(defn attach-source [obj source]
+  (with-meta obj {:source source}))
+(println (pr-str (:source (meta (attach-source {:x 1} [1 2])))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "metadata_map_values_constrain_function_parameters"
+    "[1 2]\n" ocaml_source
+
+let test_logical_or_preserves_nullable_dynamic_results () =
+  let source =
+    {|
+(type-record left-value (value :int))
+(type-record right-value (value :string))
+(defn parse-left [pick-left?]
+  (when pick-left? (record left-value (value 1))))
+(defn parse-right [pick-left?]
+  (when (not pick-left?) (record right-value (value "right"))))
+(defn parse-either [pick-left?]
+  (or (parse-left pick-left?) (parse-right pick-left?)))
+(println (some? (parse-either true)))
+(println (some? (parse-either false)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "logical_or_preserves_nullable_dynamic_results"
+    "true\ntrue\n" ocaml_source
+
+let test_match_coerces_nullable_branches () =
+  let source =
+    {|
+(type-record match-value (value :int))
+(defn choose [key]
+  (case key
+    :value (record match-value (value 1))
+    nil))
+(println (some? (choose :value)))
+(println (nil? (choose :missing)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "match_coerces_nullable_branches" "true\ntrue\n"
     ocaml_source
 
 let test_lazy_map_defers_incrementally_and_memoizes_realized_values () =
@@ -5825,6 +5894,18 @@ let test_row_polymorphic_functions_accept_different_map_shapes () =
   assert_ocaml_runs "row_polymorphic_functions_accept_different_map_shapes"
     "hi Ada:hi Milo\n" ocaml_source
 
+let test_row_types_bind_nested_capability_parameters () =
+  let source =
+    {|
+(defn no-vars? [{:keys [vars]}]
+  (empty? vars))
+(println "ok")
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "row_types_bind_nested_capability_parameters" "ok\n"
+    ocaml_source
+
 let test_destructuring_rejects_missing_map_fields () =
   let source =
     {|
@@ -5911,7 +5992,7 @@ let test_common_higher_order_helpers () =
 
 let test_common_higher_order_helpers_reject_bad_mapcat_result () =
   Lg.Compiler.compile_string {|(def x (mapcat (fn [x] (inc x)) [1 2]))|}
-  |> expect_error "mapcat function must return a collection"
+  |> expect_error "mapcat function must return a collection, got int"
 
 let test_common_higher_order_helpers_reject_bad_predicates () =
   Lg.Compiler.compile_string
@@ -6056,7 +6137,7 @@ let test_set_sequence_predicates_reject_bad_predicates () =
 
 let test_reduce_rejects_bad_set_reducers () =
   Lg.Compiler.compile_string {|(def x (reduce (fn [acc x] (str acc x)) 0 (hash-set 1 2)))|}
-  |> expect_error_contains "reduce function type does not match init and sequence"
+  |> expect_error_contains "reduced value must match init"
 
 let test_set_map_and_filter_core_api () =
   let source =
@@ -9780,10 +9861,10 @@ let tests =
       test_module_local_anonymous_maps_reuse_equal_shapes );
     ( "incremental anonymous maps reuse equal shapes",
       test_incremental_anonymous_maps_reuse_equal_shapes );
-    ( "anonymous map shapes keep field types distinct",
-      test_anonymous_map_shapes_keep_field_types_distinct );
-    ( "anonymous maps remain distinct from declared records",
-      test_anonymous_maps_remain_distinct_from_declared_records );
+    ( "heterogeneous record vectors use dynamic values",
+      test_heterogeneous_record_vectors_use_dynamic_values );
+    ( "declared and anonymous records share dynamic vectors",
+      test_declared_and_anonymous_records_share_dynamic_vectors );
     ("println outputs record values", test_println_outputs_record_values);
     ("println rejects unknown symbols", test_println_rejects_unknown_symbols);
     ("print and println match Clojure output", test_print_and_println_match_clojure_output);
@@ -10288,13 +10369,13 @@ let tests =
       test_protocol_identity_disambiguates_same_named_methods );
     ("do and multi-form bodies work", test_do_and_multi_form_bodies);
     ("fn rejects empty body", test_fn_rejects_empty_body);
-    ("vectors reject mixed element types", test_vectors_reject_mixed_element_types);
+    ("vectors support mixed element types", test_vectors_support_mixed_element_types);
     ("keyword values print as keywords", test_keyword_values_print_as_keywords);
     ("keys return keyword values", test_keys_return_keyword_values);
     ("vals return homogeneous values", test_vals_return_homogeneous_values);
     ("vals rejects heterogeneous values", test_vals_rejects_heterogeneous_values);
-    ( "vectors reject mixed keyword and string elements",
-      test_vectors_reject_mixed_keyword_and_string_elements );
+    ( "vectors support mixed keyword and string elements",
+      test_vectors_support_mixed_keyword_and_string_elements );
     ("arithmetic rejects non-int arguments", test_arithmetic_rejects_non_int_arguments);
     ("arithmetic core arities work", test_arithmetic_core_arities);
     ( "integer division rejects unsupported arities",
@@ -10338,8 +10419,8 @@ let tests =
     ("cond accepts Clojure truthy tests", test_cond_accepts_clojure_truthy_tests);
     ("when returns nullable value", test_when_returns_nullable_value);
     ("when-not negates the condition", test_when_not_negates_the_condition);
-    ( "conditional forms infer bool params",
-      test_conditional_forms_infer_bool_params );
+    ( "conditional forms accept truthy params",
+      test_conditional_forms_accept_truthy_params );
     ("batched core functions work", test_batched_core_functions_work);
     ( "batched core functions reject non-int arguments",
       test_batched_core_functions_reject_non_int_arguments );
@@ -10373,8 +10454,8 @@ let tests =
       test_batched_predicate_collection_core_functions_reject_bad_predicates );
     ( "batched predicate/collection core functions reject bad run function",
       test_batched_predicate_collection_core_functions_reject_bad_run_function );
-    ( "batched predicate/collection core functions infer bool params",
-      test_batched_predicate_collection_core_functions_infer_bool_params );
+    ( "batched predicate/collection core functions accept truthy params",
+      test_batched_predicate_collection_core_functions_accept_truthy_params );
     ( "batched identifier/constructor core functions work",
       test_batched_identifier_and_constructor_core_functions_work );
     ( "batched identifier/constructor core functions reject bad symbol args",
@@ -10386,6 +10467,11 @@ let tests =
     ( "batched identifier/constructor core functions reject bad list* tail",
       test_batched_identifier_and_constructor_core_functions_reject_bad_list_star_tail );
     ("batched sequence functions work", test_batched_sequence_functions_work);
+    ( "metadata map values constrain function parameters",
+      test_metadata_map_values_constrain_function_parameters );
+    ( "logical or preserves nullable dynamic results",
+      test_logical_or_preserves_nullable_dynamic_results );
+    ("match coerces nullable branches", test_match_coerces_nullable_branches);
     ( "lazy map defers incrementally and memoizes realized values",
       test_lazy_map_defers_incrementally_and_memoizes_realized_values );
     ( "lazy filter realizes only enough source values",
@@ -10495,6 +10581,8 @@ let tests =
       test_destructuring_preserves_row_polymorphic_function_calls );
     ( "row polymorphic functions accept different map shapes",
       test_row_polymorphic_functions_accept_different_map_shapes );
+    ( "row types bind nested capability parameters",
+      test_row_types_bind_nested_capability_parameters );
     ( "destructuring rejects missing map fields",
       test_destructuring_rejects_missing_map_fields );
     ( "destructuring rejects unsupported let sources",

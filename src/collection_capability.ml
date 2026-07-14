@@ -2,6 +2,13 @@ open Types
 
 let apply name args = Semantic_ir.Apply (Semantic_ir.Ident name, args)
 
+let identifier_holds_packed_constraint name =
+  String.starts_with ~prefix:"__lg_constrained_argument" name
+  || String.starts_with ~prefix:"__lg_dynamic_callback_arg_" name
+  || String.starts_with ~prefix:"__lg_nullable_callback_arg_" name
+  || String.starts_with ~prefix:"__lg_static_argument_" name
+  || String.starts_with ~prefix:"__lg_dynamic_protocol_arg_" name
+
 let rec to_seq_expr env collection =
   if Types.is_dynamic collection.ty then
     Ok
@@ -34,7 +41,8 @@ let rec to_seq_expr env collection =
   match Types.seqable_constraint_info collection.ty with
   | Some (constraint_kind, inner, _) -> (
       match Semantic_ir.unlocated collection.semantic_expr with
-      | Semantic_ir.Ident name ->
+      | Semantic_ir.Ident name
+        when not (identifier_holds_packed_constraint name) ->
           let adapter =
             match constraint_kind with
             | `Required -> Semantic_ir.Ident (name ^ "__seq")
@@ -43,9 +51,8 @@ let rec to_seq_expr env collection =
                 Semantic_ir.Match
                   ( Semantic_ir.Ident (name ^ "__seq_optional"),
                     [ ( Semantic_ir.PConstructor ("None", None),
-                        Semantic_ir.Apply
-                          ( Semantic_ir.Ident "invalid_arg",
-                            [ Semantic_ir.String "value is not sequential" ] ) );
+                        Semantic_ir.Fun
+                          ([ Semantic_ir.PAny ], Semantic_ir.Ident "Seq.empty") );
                       ( Semantic_ir.PConstructor
                           ("Some", Some (Semantic_ir.PVar adapter_name)),
                         Semantic_ir.Ident adapter_name );
@@ -71,10 +78,7 @@ let rec to_seq_expr env collection =
                 Semantic_ir.Match
                   ( Semantic_ir.Apply (Semantic_ir.Ident "fst", [ packed ]),
                     [ ( Semantic_ir.PConstructor ("None", None),
-                        Semantic_ir.Apply
-                          ( Semantic_ir.Ident "invalid_arg",
-                            [ Semantic_ir.String
-                                "value is not sequential" ] ) );
+                        Semantic_ir.Ident "Seq.empty" );
                       ( Semantic_ir.PConstructor
                           ("Some", Some (Semantic_ir.PVar adapter_name)),
                         Semantic_ir.Apply
@@ -175,7 +179,8 @@ let seqable_adapter ?element_mapper env argument =
     match Types.seqable_constraint_info argument.ty with
     | Some (constraint_kind, _, _) -> (
         match Semantic_ir.unlocated argument.semantic_expr with
-        | Semantic_ir.Ident name ->
+        | Semantic_ir.Ident name
+          when not (identifier_holds_packed_constraint name) ->
             let adapter =
               match constraint_kind with
               | `Required -> Semantic_ir.Ident (name ^ "__seq")

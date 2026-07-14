@@ -63,6 +63,11 @@ let first sequence =
   | Seq.Nil -> invalid_arg "first of empty sequence"
   | Seq.Cons (value, _) -> value
 
+let first_opt sequence =
+  match sequence () with
+  | Seq.Nil -> None
+  | Seq.Cons (value, _) -> Some value
+
 let second sequence =
   match sequence () with
   | Seq.Nil -> invalid_arg "second of empty sequence"

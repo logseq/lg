@@ -98,14 +98,15 @@ and compile_expr_unlocated scope (env : Env.t) = function
       compile_fn scope env params body_forms
   | FList (FSymbol "new" :: FSymbol type_name :: args) ->
       compile_call scope env (type_name ^ ".") args
-  | FList [ FSymbol "quote"; FSymbol symbol ] ->
-      Ok (typed_ir TSymbol (Semantic_ir.String symbol))
-  | FList (FSymbol "quote" :: _) ->
-      Error.error "quote currently supports symbol literals"
+  | FList [ FSymbol "quote"; value ] ->
+      compile_quoted scope env value
+  | FList (FSymbol "quote" :: _) -> Error.error "quote expects one form"
   | FList (FSymbol "do" :: body_forms) ->
       compile_body scope env "do requires at least one form" body_forms
   | FList [ FKeyword keyword; target ] ->
       compile_call scope env "get" [ target; FKeyword keyword ]
+  | FList [ FKeyword keyword; target; default ] ->
+      compile_call scope env "get" [ target; FKeyword keyword; default ]
   | FList (FKeyword _ :: _) -> Error.error "keyword lookup expects one argument"
   | FList (FSymbol "if" :: condition :: then_form :: else_form :: []) ->
       compile_if scope env condition then_form else_form
@@ -121,6 +122,12 @@ and compile_expr_unlocated scope (env : Env.t) = function
   | FList (FSymbol "case" :: target :: clauses) ->
       compile_case scope env target clauses
   | FList [ FSymbol "case" ] -> Error.error "case expects a target"
+  | FList (FSymbol "doseq" :: bindings :: body_forms) ->
+      compile_doseq scope env bindings body_forms
+  | FList [ FSymbol "for"; bindings; body ] ->
+      compile_for scope env bindings body
+  | FList (FSymbol "for" :: _) ->
+      Error.error "for expects a binding vector and body"
   | FList (FSymbol "and" :: forms) -> compile_logical scope env `And forms
   | FList (FSymbol "or" :: forms) -> compile_logical scope env `Or forms
   | FList (FSymbol "match" :: target :: clauses) ->
@@ -138,6 +145,31 @@ and compile_expr_unlocated scope (env : Env.t) = function
 
 and compile_vector scope env forms =
   (Lazy.force context).special_forms.compile_vector scope env forms
+
+and compile_quoted scope env = function
+  | FSymbol symbol ->
+      Ok (typed_ir TSymbol (Semantic_ir.String symbol))
+  | FVector forms ->
+      compile_expr scope env
+        (FVector
+           (List.map
+              (fun form -> FList [ FSymbol "quote"; form ])
+              forms))
+  | FList forms ->
+      compile_expr scope env
+        (FList
+           (FSymbol "list"
+           :: List.map
+                (fun form -> FList [ FSymbol "quote"; form ])
+                forms))
+  | FMap pairs ->
+      compile_expr scope env
+        (FMap
+           (pairs
+           |> List.map (fun (key, value) ->
+                  ( key,
+                    FList [ FSymbol "quote"; value ] ))))
+  | form -> compile_expr scope env form
 
 and compile_thread scope env position value steps =
   let rec expand value = function
@@ -275,6 +307,79 @@ and compile_case scope env target clauses =
         pairs (result :: pattern constant :: acc) rest
   in
   compile_match scope env target (pairs [] clauses)
+
+and compile_doseq scope env bindings body_forms =
+  let rec expand = function
+    | [] -> Ok (FList (FSymbol "do" :: body_forms))
+    | FKeyword ":let" :: FVector bindings :: rest ->
+        Result.map
+          (fun body -> FList [ FSymbol "let"; FVector bindings; body ])
+          (expand rest)
+    | FKeyword ":when" :: condition :: rest ->
+        Result.map
+          (fun body -> FList [ FSymbol "when"; condition; body ])
+          (expand rest)
+    | FKeyword ":while" :: _ ->
+        Error.error "doseq :while is not supported yet"
+    | ((FSymbol _ | FVector _ | FMap _) as pattern) :: collection :: rest ->
+        Result.map
+          (fun body ->
+            FList
+              [ FSymbol "do";
+                FList
+                  [ FSymbol "run!";
+                    FList [ FSymbol "fn"; FVector [ pattern ]; body ];
+                    collection;
+                  ];
+                FSymbol "nil";
+              ])
+          (expand rest)
+    | _ -> Error.error "doseq requires binding/collection pairs"
+  in
+  match (bindings, body_forms) with
+  | FVector forms, _ :: _ -> (
+      match expand forms with
+      | Error _ as error -> error
+      | Ok expanded -> compile_expr scope env expanded)
+  | FVector _, [] -> Error.error "doseq requires a body"
+  | _ -> Error.error "doseq bindings must be a vector"
+
+and compile_for scope env bindings body =
+  let rec has_generator = function
+    | [] -> false
+    | FKeyword _ :: _ :: rest -> has_generator rest
+    | (FSymbol _ | FVector _ | FMap _) :: _ :: _ -> true
+    | _ -> false
+  in
+  let rec expand = function
+    | [] -> Ok body
+    | FKeyword ":let" :: FVector bindings :: rest ->
+        Result.map
+          (fun body -> FList [ FSymbol "let"; FVector bindings; body ])
+          (expand rest)
+    | FKeyword ":when" :: _ ->
+        Error.error "for :when is not supported yet"
+    | FKeyword ":while" :: _ ->
+        Error.error "for :while is not supported yet"
+    | ((FSymbol _ | FVector _ | FMap _) as pattern) :: collection :: rest ->
+        Result.map
+          (fun body ->
+            let mapper =
+              FList [ FSymbol "fn"; FVector [ pattern ]; body ]
+            in
+            let function_name =
+              if has_generator rest then "mapcat" else "map"
+            in
+            FList [ FSymbol function_name; mapper; collection ])
+          (expand rest)
+    | _ -> Error.error "for requires binding/collection pairs"
+  in
+  match bindings with
+  | FVector forms -> (
+      match expand forms with
+      | Error _ as error -> error
+      | Ok expanded -> compile_expr scope env expanded)
+  | _ -> Error.error "for bindings must be a vector"
 
 and compile_map scope env pairs =
   (Lazy.force context).special_forms.compile_map scope env pairs
@@ -498,15 +603,58 @@ and prepare_multi_arity_fn ~ocaml_name scope env source_name forms =
           initial_arities
       in
       let all_targets = targets in
-      let rec compile compiled arities clauses remaining_targets =
+      let minimum_fixed_count =
+        parsed_clauses
+        |> List.map (fun clause -> clause.fixed_count)
+        |> List.fold_left min max_int
+      in
+      let rec form_conjoins name = function
+        | FList (FSymbol "conj" :: FSymbol target :: _)
+          when target = name -> true
+        | FList forms | FVector forms -> List.exists (form_conjoins name) forms
+        | FMap pairs ->
+            List.exists
+              (fun (key, value) ->
+                form_conjoins name key || form_conjoins name value)
+              pairs
+        | _ -> false
+      in
+      let rec compile final_pass compiled arities clauses remaining_targets =
         match (clauses, remaining_targets) with
         | [], [] ->
             let clauses = List.rev compiled in
-            let ty = TOverloaded_fn arities in
-            Ok
-              { clauses;
-                expr = typed_ir ty (multi_arity_value (List.map (fun c -> c.target_name) clauses));
-              }
+            let arity_for_count count =
+              arities
+              |> List.find_opt (fun (arity : fn_arity) ->
+                     match arity.rest_param with
+                     | None -> List.length arity.fixed_params = count
+                     | Some _ -> List.length arity.fixed_params <= count)
+            in
+            let arities =
+              List.map2
+                (fun (parsed : multi_arity_clause) arity ->
+                  match parsed.body_forms with
+                  | [ FList (FSymbol name :: arguments) ]
+                    when name = source_name
+                         || name = Names.scoped_key scope source_name -> (
+                      match arity_for_count (List.length arguments) with
+                      | Some target ->
+                          { arity with return_ty = target.return_ty }
+                      | None -> arity)
+                  | _ -> arity)
+                parsed_clauses arities
+            in
+            if not final_pass then
+              compile true [] arities parsed_clauses all_targets
+            else
+              let ty = TOverloaded_fn arities in
+              Ok
+                { clauses;
+                  expr =
+                    typed_ir ty
+                      (multi_arity_value
+                         (List.map (fun c -> c.target_name) clauses));
+                }
         | clause :: rest, target_name :: rest_targets ->
             let self_binding =
               Types.binding ~overload_targets:all_targets ocaml_name
@@ -516,15 +664,26 @@ and prepare_multi_arity_fn ~ocaml_name scope env source_name forms =
               Env.add (Names.scoped_key scope source_name) self_binding env
             in
             let param_type_overrides =
-              match clause.rest_index with
-              | None -> []
-              | Some index ->
-                  List.init (index + 1) (fun current ->
-                      if current <> index then None
-                      else
-                        match (List.nth arities (List.length compiled)).rest_param with
-                        | Some TUnknown | None -> None
-                        | Some element_ty -> Some (TSeq element_ty))
+              let params =
+                match clause.params with FVector params -> params | _ -> []
+              in
+              List.mapi
+                (fun index param ->
+                  match clause.rest_index with
+                  | Some rest_index when index = rest_index -> (
+                      match
+                        (List.nth arities (List.length compiled)).rest_param
+                      with
+                      | Some TUnknown | None -> None
+                      | Some element_ty -> Some (TSeq element_ty))
+                  | _ -> (
+                      match param with
+                      | FSymbol name
+                        when index >= minimum_fixed_count
+                             && List.exists (form_conjoins name) clause.body_forms ->
+                          Some (Types.dynamic_constraint TUnknown)
+                      | _ -> None))
+                params
             in
             (match
                prepare_fn ~param_type_overrides
@@ -560,12 +719,12 @@ and prepare_multi_arity_fn ~ocaml_name scope env source_name forms =
                     arities
                 in
                 let row_param_types = row_param_type_names target_name param_tys in
-                compile
+                compile final_pass
                   ({ target_name; parts; row_param_types } :: compiled)
                   arities rest rest_targets)
         | _ -> Error.error "internal error: multi-arity clause targets"
       in
-      compile [] initial_arities parsed_clauses targets
+      compile false [] initial_arities parsed_clauses targets
 
 and lower_prepared_multi_arity (prepared : prepared_multi_arity_fn) =
   let targets = List.map (fun clause -> clause.target_name) prepared.clauses in

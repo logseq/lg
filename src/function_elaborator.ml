@@ -14,7 +14,10 @@ let unique_named_records records =
       else record :: unique)
     [] records
 
-let infer_named_record scope env = function
+let rec infer_named_record scope env = function
+  | TNullable inner -> TNullable (infer_named_record scope env inner)
+  | TOcaml_app ("option", [ inner ]) ->
+      TOcaml_app ("option", [ infer_named_record scope env inner ])
   | TOcaml name when String.starts_with ~prefix:"__lg_record:" name ->
       let source_name =
         String.sub name (String.length "__lg_record:")
@@ -23,7 +26,14 @@ let infer_named_record scope env = function
       Resolver.lookup_record_type scope env source_name
       |> Result.map (fun record -> TNamed_record record)
       |> Result.value ~default:(TOcaml name)
-  | TRecord fields as inferred ->
+  | TRecord fields ->
+      let fields =
+        List.map
+          (fun (field : field) ->
+            { field with ty = infer_named_record scope env field.ty })
+          fields
+      in
+      let inferred = TRecord fields in
       let candidates =
         Env.filter_map
           (fun key (binding : binding) ->
@@ -40,6 +50,24 @@ let infer_named_record scope env = function
       in
       (match candidates with [ record ] -> TNamed_record record | _ -> inferred)
   | inferred -> inferred
+
+let rec pattern_constraint_type = function
+  | TUnknown | TVar _ -> TOcaml "_"
+  | TNullable ty -> TNullable (pattern_constraint_type ty)
+  | TOcaml_app (name, arguments) ->
+      TOcaml_app (name, List.map pattern_constraint_type arguments)
+  | TTuple items -> TTuple (List.map pattern_constraint_type items)
+  | TArray ty -> TArray (pattern_constraint_type ty)
+  | TRef ty -> TRef (pattern_constraint_type ty)
+  | TList ty -> TList (pattern_constraint_type ty)
+  | TVector ty -> TVector (pattern_constraint_type ty)
+  | TSet ty -> TSet (pattern_constraint_type ty)
+  | TSeq ty -> TSeq (pattern_constraint_type ty)
+  | TFn (parameters, return_type) ->
+      TFn
+        ( List.map pattern_constraint_type parameters,
+          pattern_constraint_type return_type )
+  | ty -> ty
 
 let prepare ?(param_type_overrides = []) ?variadic_rest_index
     ?compile_function_body ~lookup_function_ty ~compile_body scope env params
@@ -188,39 +216,40 @@ let fn_code ?(row_param_type_names = []) parts =
   let param_tys =
     parts.param_bindings |> List.map (fun (_key, (binding : binding)) -> binding.ty)
   in
+  let rec capability_pattern name ty =
+    match Types.protocol_constraint_info ty with
+    | Some (protocol_id, _, value_ty) ->
+        Semantic_ir.PTuple
+          [ Semantic_ir.PVar
+              (Types.protocol_witness_name name protocol_id);
+            capability_pattern name value_ty;
+          ]
+    | None -> (
+        match ty with
+        | TOcaml_app (constraint_name, [ _element_ty; value_ty ])
+          when constraint_name = Types.seqable_constraint_name
+               || constraint_name = Types.optional_seqable_constraint_name
+               || constraint_name = Types.optional_sequential_constraint_name ->
+            Semantic_ir.PTuple
+              [ Semantic_ir.PVar
+                  (if constraint_name = Types.seqable_constraint_name then
+                     name ^ "__seq"
+                   else name ^ "__seq_optional");
+                capability_pattern name value_ty;
+              ]
+        | _ -> Semantic_ir.PVar name)
+  in
   let param_patterns =
     List.map2 (fun name ty -> (name, ty)) param_names param_tys
     |> List.mapi (fun index (name, ty) ->
-           let rec capability_pattern ty =
-             match Types.protocol_constraint_info ty with
-             | Some (protocol_id, _, value_ty) ->
-                 Semantic_ir.PTuple
-                   [ Semantic_ir.PVar
-                       (Types.protocol_witness_name name protocol_id);
-                     capability_pattern value_ty;
-                   ]
-             | None -> (
-                 match ty with
-                 | TOcaml_app (constraint_name, [ _element_ty; value_ty ])
-                   when constraint_name = Types.seqable_constraint_name
-                        || constraint_name =
-                           Types.optional_seqable_constraint_name
-                        || constraint_name =
-                           Types.optional_sequential_constraint_name ->
-                     Semantic_ir.PTuple
-                       [ Semantic_ir.PVar
-                           (if constraint_name = Types.seqable_constraint_name then
-                              name ^ "__seq"
-                            else name ^ "__seq_optional");
-                         capability_pattern value_ty;
-                       ]
-                 | _ -> Semantic_ir.PVar name)
-           in
            let pattern =
              if
                Option.is_some (Types.protocol_constraint_info ty)
                || Option.is_some (Types.seqable_constraint_element ty)
-             then capability_pattern ty
+             then
+               Semantic_ir.PConstraint
+                 ( capability_pattern name ty,
+                   Types.ocaml_name (pattern_constraint_type ty) )
              else
                match List.nth_opt row_param_type_names index with
                | Some (Some type_name) ->
@@ -243,7 +272,15 @@ let fn_code ?(row_param_type_names = []) parts =
         Semantic_ir.Let
           ( List.map
               (fun (binding : Destructure.local_binding) ->
-                let pattern = Semantic_ir.PVar binding.ocaml_name in
+                let pattern =
+                  if
+                    Option.is_some
+                      (Types.protocol_constraint_info binding.ty)
+                    || Option.is_some
+                         (Types.seqable_constraint_element binding.ty)
+                  then capability_pattern binding.ocaml_name binding.ty
+                  else Semantic_ir.PVar binding.ocaml_name
+                in
                 let pattern =
                   match binding.identity with
                   | None -> pattern

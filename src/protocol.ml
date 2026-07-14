@@ -278,6 +278,18 @@ let common_method_return env protocol_id method_name =
   | first :: rest when List.for_all (Types.equal first) rest -> Some first
   | [] | _ -> None
 
+let common_method_return_param_index env protocol_id method_name =
+  let method_id = method_id protocol_id method_name in
+  let indices =
+    Protocol_registry.implementations_for_method protocol_id method_id
+      (Env.protocols env)
+    |> List.filter_map (fun (implementation : binding) ->
+           implementation.return_param_index)
+  in
+  match indices with
+  | first :: rest when List.for_all (( = ) first) rest -> Some first
+  | [] | _ -> None
+
 let method_position env (marker : binding) method_name =
   match marker.protocol_id with
   | None -> None

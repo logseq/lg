@@ -25,7 +25,7 @@ let longident_of_string name =
         (Longident.Lident first) rest
 
 let type_constructor name args =
-  Ast_helper.Typ.constr ~loc (lid (Longident.Lident name)) args
+  Ast_helper.Typ.constr ~loc (lid (longident_of_string name)) args
 
 let rec core_type = function
   | Types.TInt -> type_constructor "int" []
@@ -457,6 +457,8 @@ let rec structure_of_item = function
   | Recursive_value_binding { name; identity; expression } ->
       recursive_value_binding name identity expression
   | Recursive_value_bindings bindings -> recursive_value_bindings bindings
+  | Deferred_value_binding _ ->
+      invalid_arg "deferred value binding was not ordered before lowering"
   | Comment _ -> Ok []
   | Type_def { type_name; type_parameters; fields; location } ->
       Ok [ record_type_definition type_name type_parameters fields location ]

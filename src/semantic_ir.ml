@@ -86,3 +86,37 @@ let rec type_annotations expression =
   in
   let own = match expression with Typed (ty, _) -> [ ty ] | _ -> [] in
   own @ List.concat_map type_annotations (children expression)
+
+let rec exists_identifier predicate expression =
+  let children =
+    match expression with
+    | Typed (_, value) | Located (_, _, value) -> [ value ]
+    | Constructor (_, value) -> Option.to_list value
+    | Tuple values | List values | Array values | Sequence values -> values
+    | Apply (fn, args) | Uncurried_apply (fn, args) -> fn :: args
+    | Labelled_apply (fn, args) -> fn :: List.map snd args
+    | If (condition, then_expr, else_expr) ->
+        [ condition; then_expr; else_expr ]
+    | Fun (_, body) -> [ body ]
+    | Let (bindings, body) -> List.map snd bindings @ [ body ]
+    | LetRec (_, _, body, args) -> body :: args
+    | LetRecIn (_, _, body, next) -> [ body; next ]
+    | Match (target, cases) -> target :: List.map snd cases
+    | Match_guarded (target, cases) ->
+        target
+        :: List.concat_map
+             (fun (_, guard, body) -> Option.to_list guard @ [ body ])
+             cases
+    | Try (body, cases) ->
+        body
+        :: List.concat_map
+             (fun (_, guard, handler) -> Option.to_list guard @ [ handler ])
+             cases
+    | Infix (_, left, right) | Cons (left, right) -> [ left; right ]
+    | Prefix (_, value) | Field (value, _) -> [ value ]
+    | Record (fields, _) -> List.map snd fields
+    | Int _ | Float _ | String _ | Char _ | Bool _ | Unit | Ident _ -> []
+  in
+  match expression with
+  | Ident name when predicate name -> true
+  | _ -> List.exists (exists_identifier predicate) children

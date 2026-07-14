@@ -20,6 +20,7 @@ and payload =
   | List
   | Vector
   | Seq
+  | Set of t list
   | Map of (t * t) list
   | Opaque of string
 
@@ -48,6 +49,39 @@ let bool value = make (Bool value)
 let function_ value = make (Function value)
 let opaque name protocols = make ~protocols (Opaque name)
 let metadata value = Option.value value.metadata ~default:nil
+
+let rec to_string ~pr value =
+  let join values = values |> List.map (to_string ~pr:true) |> String.concat " " in
+  match value.payload with
+  | Nil -> "nil"
+  | Int value -> string_of_int value
+  | Float value -> string_of_float value
+  | Char value -> String.make 1 value
+  | String value -> if pr then Printf.sprintf "%S" value else value
+  | Symbol value | Keyword value -> value
+  | Bool value -> string_of_bool value
+  | Function _ -> "<function>"
+  | List -> "(" ^ join (List.of_seq (to_seq value)) ^ ")"
+  | Vector -> "[" ^ join (List.of_seq (to_seq value)) ^ "]"
+  | Seq -> "(" ^ join (List.of_seq (to_seq value)) ^ ")"
+  | Set values -> "#{" ^ join values ^ "}"
+  | Map entries ->
+      let entries =
+        entries
+        |> List.map (fun (key, value) ->
+               to_string ~pr:true key ^ " " ^ to_string ~pr:true value)
+        |> String.concat ", "
+      in
+      "{" ^ entries ^ "}"
+  | Opaque name -> "<" ^ name ^ ">"
+
+and to_seq value =
+  match value.sequence with
+  | Some sequence -> sequence ()
+  | None -> invalid_arg "dynamic value is not seqable"
+
+let str value = to_string ~pr:false value
+let pr_str value = to_string ~pr:true value
 
 let list values =
   make ~sequential:true ~sequence:(fun () -> List.to_seq values) List
@@ -89,6 +123,11 @@ let rec equal left right =
   | Bool left, Bool right -> left = right
   | List, List | Vector, Vector | Seq, Seq ->
       Seq.equal equal (to_seq left) (to_seq right)
+  | Set left, Set right ->
+      List.length left = List.length right
+      && List.for_all
+           (fun value -> List.exists (equal value) right)
+           left
   | Map left, Map right ->
       List.length left = List.length right
       && List.for_all
@@ -102,10 +141,29 @@ let rec equal left right =
   | Function _, Function _ -> false
   | _ -> false
 
-and to_seq value =
-  match value.sequence with
-  | Some sequence -> sequence ()
-  | None -> invalid_arg "dynamic value is not seqable"
+let set sequence =
+  let values =
+    Seq.fold_left
+      (fun values value ->
+        if List.exists (equal value) values then values else value :: values)
+      [] sequence
+    |> List.rev
+  in
+  make ~sequence:(fun () -> List.to_seq values) (Set values)
+
+let cons value collection = seq (Seq.cons value (to_seq collection))
+
+let conj collection value =
+  match collection.payload with
+  | Nil -> list [ value ]
+  | List -> list (value :: List.of_seq (to_seq collection))
+  | Vector ->
+      let values = collection |> to_seq |> List.of_seq |> Rrbvec.of_list in
+      vector (Rrbvec.push_back values value)
+  | Set values ->
+      if List.exists (equal value) values then collection
+      else make ~sequence:(fun () -> List.to_seq (value :: values)) (Set (value :: values))
+  | _ -> invalid_arg "dynamic conj expects a collection"
 
 let assoc value key replacement =
   match value.payload with
@@ -126,6 +184,14 @@ let get value key =
       | Some (_, value) -> value
       | None -> nil)
   | _ -> nil
+
+let get_default value key default =
+  match value.payload with
+  | Map entries -> (
+      match List.find_opt (fun (entry_key, _) -> equal key entry_key) entries with
+      | Some (_, value) -> value
+      | None -> default)
+  | _ -> default
 
 let empty value =
   match value.payload with
@@ -170,8 +236,24 @@ let is_list value = match value.payload with List -> true | _ -> false
 let is_vector value = match value.payload with Vector -> true | _ -> false
 let is_seq value = match value.payload with List | Seq -> true | _ -> false
 let is_map value = match value.payload with Map _ -> true | _ -> false
+let is_set value = match value.payload with Set _ -> true | _ -> false
 let is_coll value = is_seqable value
 let is_instance value type_name = value.type_name = Some type_name
+
+let group_by key_fn pack_key pack_item sequence =
+  Seq.fold_left
+    (fun groups item ->
+      let key = pack_key (key_fn item) in
+      let item = pack_item item in
+      let values =
+        match get groups key with
+        | { payload = Nil; _ } -> Rrbvec.empty
+        | { payload = Vector; sequence = Some values; _ } ->
+            values () |> List.of_seq |> Rrbvec.of_list
+        | _ -> invalid_arg "group-by value is not a vector"
+      in
+      assoc groups key (vector (Rrbvec.push_back values item)))
+    (map []) sequence
 
 let has_protocol value protocol_id =
   List.exists (fun protocol -> protocol.id = protocol_id) value.protocols
@@ -191,7 +273,55 @@ let invoke value protocol_id method_name arguments =
 let invoke_function value arguments =
   match value.payload with
   | Function function_ -> function_ arguments
+  | Set values -> (
+      match arguments with
+      | [ candidate ] ->
+          List.find_opt (equal candidate) values |> Option.value ~default:nil
+      | _ -> invalid_arg "dynamic set expects one argument")
   | _ -> invalid_arg "dynamic value is not a function"
+
+let set_union sets =
+  sets |> List.to_seq |> Seq.flat_map to_seq |> set
+
+let set_intersection sets =
+  match sets with
+  | [] -> set Seq.empty
+  | first :: rest ->
+      first |> to_seq
+      |> Seq.filter (fun value ->
+             List.for_all
+               (fun candidate ->
+                 candidate |> to_seq |> Seq.exists (equal value))
+               rest)
+      |> set
+
+let set_difference first rest =
+  first |> to_seq
+  |> Seq.filter (fun value ->
+         not
+           (List.exists
+              (fun candidate ->
+                candidate |> to_seq |> Seq.exists (equal value))
+              rest))
+  |> set
+
+let set_subset left right =
+  left |> to_seq
+  |> Seq.for_all (fun value -> right |> to_seq |> Seq.exists (equal value))
+
+let rec update_in target path update_fn arguments =
+  match path () with
+  | Seq.Nil -> invoke_function update_fn (target :: arguments)
+  | Seq.Cons (key, rest) ->
+      let nested =
+        match target.payload with
+        | Nil -> nil
+        | Map _ -> get target key
+        | _ -> invalid_arg "update-in target is not a map"
+      in
+      let updated = update_in nested rest update_fn arguments in
+      let target = match target.payload with Nil -> map [] | Map _ -> target | _ -> target in
+      assoc target key updated
 
 let as_int value = match value.payload with Int value -> value | _ -> invalid_arg "expected int"
 let as_float value = match value.payload with Float value -> value | _ -> invalid_arg "expected float"

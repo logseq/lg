@@ -43,6 +43,22 @@ let compile_args_for compile_expr scope env arg_forms =
 
 let create ~compile_expr =
   let compile_args_for = compile_args_for compile_expr in
+  let inferred_field_type env keyword =
+    let candidates =
+      Env.fold
+        (fun _ binding candidates ->
+          match binding.ty with
+          | TNamed_record { fields; _ } -> (
+              match find_field keyword fields with
+              | Some field
+                when not (List.exists (Types.equal field.ty) candidates) ->
+                  field.ty :: candidates
+              | Some _ | None -> candidates)
+          | _ -> candidates)
+        env []
+    in
+    match candidates with [ ty ] -> Some ty | _ -> None
+  in
   let special_forms : Special_form_elaborator.t =
     Special_form_elaborator.create ~compile_expr
   in
@@ -199,6 +215,12 @@ let create ~compile_expr =
                 Ok
                   (typed_ir collection.ty
                      (Semantic_ir.Cons (value.semantic_expr, collection.semantic_expr)))
+            | TList inner
+              when Types.is_dynamic inner && Types.is_dynamic value.ty ->
+                Ok
+                  (typed_ir collection.ty
+                     (Semantic_ir.Cons
+                        (value.semantic_expr, collection.semantic_expr)))
             | TList _ -> Error.error "conj value type must match list element type"
             | TVector (TUnknown | TVar _) ->
                 Ok
@@ -207,6 +229,13 @@ let create ~compile_expr =
                         ( Semantic_ir.Ident "Rrbvec.push_back",
                           [ collection.semantic_expr; value.semantic_expr ] )))
             | TVector inner when Types.equal inner value.ty ->
+                Ok
+                  (typed_ir collection.ty
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident "Rrbvec.push_back",
+                          [ collection.semantic_expr; value.semantic_expr ] )))
+            | TVector inner
+              when Types.is_dynamic inner && Types.is_dynamic value.ty ->
                 Ok
                   (typed_ir collection.ty
                      (Semantic_ir.Apply
@@ -237,14 +266,19 @@ let create ~compile_expr =
       match compile_args_for scope env arg_forms with
       | Error _ as err -> err
       | Ok [ value; collection ] -> (
-          match collection.ty with
-          | TList inner when Types.equal inner value.ty ->
+          match Collection_capability.to_seq_expr env collection with
+          | Ok (inner, sequence) when Types.same_shape inner value.ty ->
               Ok
-                (typed_ir collection.ty
-                   (Semantic_ir.Cons (value.semantic_expr, collection.semantic_expr)))
-          | TList _ -> Error.error "cons value type must match list element type"
-          | _ -> Error.error "cons expects a value and list")
-      | Ok _ -> Error.error "cons expects value and list"
+                (typed_ir (TSeq inner)
+                   (Semantic_ir.Apply
+                      ( Semantic_ir.Ident "Seq.cons",
+                        [ value.semantic_expr; sequence ] )))
+          | Ok _ -> Error.error "cons value type must match sequence element type"
+          | Error _ ->
+              Error.error
+                ("cons expects a value and seqable collection, got "
+               ^ Types.source_name collection.ty))
+      | Ok _ -> Error.error "cons expects a value and seqable collection"
     
     and compile_subvec scope env arg_forms =
       match compile_args_for scope env arg_forms with
@@ -313,6 +347,38 @@ let create ~compile_expr =
           | Error _ as err -> err
           | Ok target -> (
               match target.ty with
+              | TNullable record_ty | TOcaml_app ("option", [ record_ty ]) -> (
+                  match record_ty with
+                  | TRecord fields | TNamed_record { fields; _ } -> (
+                    match find_field keyword fields with
+                    | None -> Error.error ("unknown field " ^ keyword)
+                    | Some field ->
+                      let record_name = "__lg_optional_record" in
+                      let record =
+                        typed_ir record_ty (Semantic_ir.Ident record_name)
+                      in
+                      let field_value = Structural_map.field_expr record field in
+                      let result_ty, present =
+                        match field.ty with
+                        | TNullable _ | TOcaml_app ("option", _) ->
+                            (field.ty, field_value)
+                        | _ ->
+                            ( TNullable field.ty,
+                              Semantic_ir.Constructor
+                                ("Some", Some field_value) )
+                      in
+                      Ok
+                        (typed_ir result_ty
+                           (Semantic_ir.Match
+                              ( target.semantic_expr,
+                                [ ( Semantic_ir.PConstructor ("None", None),
+                                    Semantic_ir.Constructor ("None", None) );
+                                  ( Semantic_ir.PConstructor
+                                      ( "Some",
+                                        Some (Semantic_ir.PVar record_name) ),
+                                    present );
+                                ] ))))
+                  | _ -> Error.error "get expects a map")
               | TRecord fields | TNamed_record { fields; nominal = false; _ } -> (
                   match find_field keyword fields with
                   | Some field ->
@@ -348,9 +414,21 @@ let create ~compile_expr =
                                 ("unknown record field "
                                ^ Names.keyword_source_name keyword))
                       | _ -> assert false))
-              | TUnknown | TVar _ ->
+              | ty when Types.is_dynamic ty ->
                   Ok
-                    (typed_ir TUnknown
+                    (typed_ir ty
+                       (apply "Lg_runtime.Runtime_dynamic.get"
+                          [ target.semantic_expr;
+                            apply "Lg_runtime.Runtime_dynamic.keyword"
+                              [ Semantic_ir.String keyword ];
+                          ]))
+              | TUnknown | TVar _ ->
+                  let field_ty =
+                    Option.value (inferred_field_type env keyword)
+                      ~default:TUnknown
+                  in
+                  Ok
+                    (typed_ir field_ty
                        (Semantic_ir.Field
                           (target.semantic_expr, Names.keyword_to_ocaml_name keyword)))
               | ty when is_ocaml_owned_type ty ->

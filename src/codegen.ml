@@ -56,6 +56,11 @@ let rec stringify_expr_ir ?(pr = false) expr =
   | TUnit -> Semantic_ir.String ""
   | TNil ->
       Semantic_ir.Sequence [ expr.semantic_expr; Semantic_ir.String "nil" ]
+  | ty when Types.is_dynamic ty ->
+      apply
+        (if pr then "Lg_runtime.Runtime_dynamic.pr_str"
+         else "Lg_runtime.Runtime_dynamic.str")
+        [ expr.semantic_expr ]
   | TNullable inner ->
       Semantic_ir.Match
         ( expr.semantic_expr,
@@ -65,7 +70,14 @@ let rec stringify_expr_ir ?(pr = false) expr =
               stringify_expr_ir ~pr
                 (typed_ir inner (Semantic_ir.Ident "value")) );
           ] )
-  | TUnknown -> expr.semantic_expr
+  | TUnknown -> (
+      match Semantic_ir.unlocated expr.semantic_expr with
+      | Semantic_ir.Field _ ->
+          apply
+            (if pr then "Lg_runtime.Runtime_dynamic.pr_str"
+             else "Lg_runtime.Runtime_dynamic.str")
+            [ expr.semantic_expr ]
+      | _ -> expr.semantic_expr)
   | TMap_keys -> Semantic_ir.String "<map>"
   | TVar _ -> Semantic_ir.String "<value>"
   | TOcaml "Lg_runtime.Runtime_uuid.t" ->

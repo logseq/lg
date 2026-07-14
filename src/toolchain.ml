@@ -272,7 +272,9 @@ module Lg_frontend : FRONTEND = struct
                         ( List.rev require_entries |> List.concat,
                           List.rev exclusions |> List.concat,
                           List.rev imports |> List.concat )
-                  | Ast.FList (Ast.FKeyword ":require" :: entries) :: rest ->
+                  | Ast.FList
+                      (Ast.FKeyword (":require" | ":require-macros") :: entries)
+                    :: rest ->
                       parse_clauses (entries :: require_entries) exclusions imports
                         rest
                   | Ast.FList
@@ -287,7 +289,7 @@ module Lg_frontend : FRONTEND = struct
                         (entries :: imports) rest
                   | _ ->
                       Error.error
-                        "ns supports :require, :refer-clojure :exclude, and :import clauses"
+                        "ns supports :require, :require-macros, :refer-clojure :exclude, and :import clauses"
                 in
                 Result.map
                   (fun (require_entries, exclusions, imports) ->
@@ -643,37 +645,123 @@ let typecheck (parsed : parser_result) =
   match prepare_packages parsed.target parsed.ast with
   | Error _ as err -> err
   | Ok _ -> (
-      match
+      let initial_state =
+        Compiler_state.with_target parsed.target Typecheck.empty_state
+      in
+      let compile state =
         Source_context.with_locations parsed.form_locations (fun () ->
-            Typecheck.compile_forms_incremental
-              (Compiler_state.with_target parsed.target Typecheck.empty_state)
-              parsed.ast)
+            Typecheck.compile_forms_incremental state parsed.ast)
+      in
+      match compile initial_state
       with
       | Error _ as err -> err
-      | Ok (typecheck_state, items) ->
+      | Ok (first_state, _) ->
+          let rec declared_names declared = function
+            | [] -> List.rev declared
+            | Ast.FList (Ast.FSymbol "declare" :: form_names) :: rest ->
+                let declared =
+                  List.fold_left
+                    (fun declared -> function
+                      | Ast.FSymbol name -> name :: declared
+                      | _ -> declared)
+                    declared form_names
+                in
+                declared_names declared rest
+            | Ast.FList
+                [ Ast.FSymbol "defn-signature";
+                  Ast.FList
+                    (Ast.FSymbol ("defn" | "defn-")
+                    :: Ast.FSymbol name :: _);
+                ]
+              :: rest ->
+                declared_names (name :: declared) rest
+            | _ :: rest -> declared_names declared rest
+          in
+          let declarations =
+            let final_bindings =
+              Compiler_environment.to_bindings first_state.env
+            in
+            declared_names [] parsed.ast
+            |> List.concat_map (fun name ->
+                   let suffix = "/" ^ name in
+                   final_bindings
+                   |> List.filter (fun (key, _) ->
+                          key = name || String.ends_with ~suffix key))
+            |> List.map (fun (key, (binding : Types.binding)) ->
+                   (key, { binding with forward_declared = true }))
+            |> List.sort_uniq (fun (left, _) (right, _) ->
+                   String.compare left right)
+          in
+          let seeded_state =
+            { initial_state with
+              env =
+                Compiler_environment.add_bindings declarations
+                  initial_state.env }
+          in
+          (match compile seeded_state with
+          | Error _ as err -> err
+          | Ok (typecheck_state, items) ->
           Ok
             {
               ast = parsed.ast;
               items;
               locations = parsed.locations;
               typecheck_state;
-            })
+            }) )
 
 let typecheck_incremental state (parsed : parser_result) =
   match prepare_packages parsed.target parsed.ast with
   | Error _ as err -> err
   | Ok _ -> (
-      match
+      let initial_state =
+        if state.located_items = [] then
+          Compiler_state.with_target parsed.target state.typecheck_state
+        else state.typecheck_state
+      in
+      let compile typecheck_state =
         Source_context.with_locations parsed.form_locations (fun () ->
-            let typecheck_state =
-              if state.located_items = [] then
-                Compiler_state.with_target parsed.target state.typecheck_state
-              else state.typecheck_state
-            in
             Typecheck.compile_forms_incremental typecheck_state parsed.ast)
+      in
+      match compile initial_state
       with
       | Error _ as err -> err
-      | Ok (typecheck_state, items) ->
+      | Ok (first_state, _) ->
+          let rec signature_names names = function
+            | [] -> List.rev names
+            | Ast.FList
+                [ Ast.FSymbol "defn-signature";
+                  Ast.FList
+                    (Ast.FSymbol ("defn" | "defn-")
+                    :: Ast.FSymbol name :: _);
+                ]
+              :: rest ->
+                signature_names (name :: names) rest
+            | _ :: rest -> signature_names names rest
+          in
+          let final_bindings =
+            Compiler_environment.to_bindings first_state.env
+          in
+          let declarations =
+            signature_names [] parsed.ast
+            |> List.concat_map (fun name ->
+                   let suffix = "/" ^ name in
+                   final_bindings
+                   |> List.filter (fun (key, _) ->
+                          key = name || String.ends_with ~suffix key))
+            |> List.map (fun (key, (binding : Types.binding)) ->
+                   (key, { binding with forward_declared = true }))
+            |> List.sort_uniq (fun (left, _) (right, _) ->
+                   String.compare left right)
+          in
+          let seeded_state =
+            { initial_state with
+              env =
+                Compiler_environment.add_bindings declarations
+                  initial_state.env }
+          in
+          (match compile seeded_state with
+          | Error _ as err -> err
+          | Ok (typecheck_state, items) ->
           let located_items =
             state.located_items @ List.combine parsed.locations items
           in
@@ -685,7 +773,7 @@ let typecheck_incremental state (parsed : parser_result) =
                 items;
                 locations = parsed.locations;
                 typecheck_state;
-              } ))
+              } )))
 
 let required_ocaml_packages ?(target = Target.default) source =
   match Lg_frontend.implementation ~target source with

@@ -5,10 +5,18 @@ let accepts_int ty =
 
 let int value = Semantic_ir.Int value
 
+let int_expression arg =
+  if Types.is_dynamic arg.ty then
+    Semantic_ir.Apply
+      ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.as_int",
+        [ arg.semantic_expr ] )
+  else arg.semantic_expr
+
 let fold_infix operator first rest =
   List.fold_left
-    (fun expression arg -> Semantic_ir.Infix (operator, expression, arg.semantic_expr))
-    first.semantic_expr rest
+    (fun expression arg ->
+      Semantic_ir.Infix (operator, expression, int_expression arg))
+    (int_expression first) rest
 
 let expect_int_args name args =
   if List.for_all (fun arg -> accepts_int arg.ty) args then Ok ()
@@ -21,8 +29,8 @@ let compile_operator name args =
   | "/", ([] | [ _ ]) -> Error.error "/ expects at least 2 arguments"
   | _, [] -> Error.error (name ^ " expects at least 1 arguments")
   | _, [ arg ] when name = "-" ->
-      Ok (typed_ir TInt (Semantic_ir.Prefix ("~-", arg.semantic_expr)))
-  | _, [ arg ] -> Ok (typed_ir TInt arg.semantic_expr)
+      Ok (typed_ir TInt (Semantic_ir.Prefix ("~-", int_expression arg)))
+  | _, [ arg ] -> Ok (typed_ir TInt (int_expression arg))
   | _, first :: rest ->
       let op =
         match name with
@@ -37,7 +45,7 @@ let compile_operator name args =
 let compile_unary name args build_expr =
   match args with
   | [ arg ] ->
-      if accepts_int arg.ty then Ok (typed_ir TInt (build_expr arg.semantic_expr))
+      if accepts_int arg.ty then Ok (typed_ir TInt (build_expr (int_expression arg)))
       else Error.error ("expected int arguments for " ^ name)
   | _ -> Error.error (name ^ " expects 1 arguments")
 
@@ -47,19 +55,19 @@ let compile_binary name args =
       if accepts_int left.ty && accepts_int right.ty then
         let expression =
           match name with
-          | "quot" -> Semantic_ir.Infix ("/", left.semantic_expr, right.semantic_expr)
-          | "rem" -> Semantic_ir.Infix ("mod", left.semantic_expr, right.semantic_expr)
+          | "quot" -> Semantic_ir.Infix ("/", int_expression left, int_expression right)
+          | "rem" -> Semantic_ir.Infix ("mod", int_expression left, int_expression right)
           | "mod" ->
               Semantic_ir.Infix
                 ( "mod",
                   Semantic_ir.Infix
                     ( "+",
-                      Semantic_ir.Infix ("mod", left.semantic_expr, right.semantic_expr),
-                      right.semantic_expr ),
-                  right.semantic_expr )
-          | "bit-shift-left" -> Semantic_ir.Infix ("lsl", left.semantic_expr, right.semantic_expr)
-          | "bit-shift-right" -> Semantic_ir.Infix ("asr", left.semantic_expr, right.semantic_expr)
-          | _ -> left.semantic_expr
+                      Semantic_ir.Infix ("mod", int_expression left, int_expression right),
+                      int_expression right ),
+                  int_expression right )
+          | "bit-shift-left" -> Semantic_ir.Infix ("lsl", int_expression left, int_expression right)
+          | "bit-shift-right" -> Semantic_ir.Infix ("asr", int_expression left, int_expression right)
+          | _ -> int_expression left
         in
         Ok (typed_ir TInt expression)
       else Error.error ("expected int arguments for " ^ name)
@@ -78,8 +86,8 @@ let compile_min_max name args =
               List.fold_left
                 (fun expression arg ->
                   Semantic_ir.Apply
-                    (Semantic_ir.Ident fn, [ expression; arg.semantic_expr ]))
-                first.semantic_expr rest
+                    (Semantic_ir.Ident fn, [ expression; int_expression arg ]))
+                (int_expression first) rest
         in
         Ok (typed_ir TInt expression)
       else Error.error ("expected int arguments for " ^ name)

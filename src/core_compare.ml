@@ -1,4 +1,5 @@
 open Types
+open Expression_support
 
 let rec equality_expr left right =
   match (left.ty, right.ty) with
@@ -36,6 +37,15 @@ let rec equality_expr left right =
       Semantic_ir.Apply
         ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.equal",
           [ left.semantic_expr; right.semantic_expr ] )
+  | left_ty, _ when Types.is_dynamic left_ty -> (
+      match pack_plain_dynamic_value right with
+      | Some right ->
+          Semantic_ir.Apply
+            ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.equal",
+              [ left.semantic_expr; right ] )
+      | None -> Semantic_ir.Bool false)
+  | _, right_ty when Types.is_dynamic right_ty ->
+      equality_expr right left
   | (TRecord _ | TNamed_record _), right_type
     when Option.is_some (Types.dynamic_map_types right_type) -> (
       match left.record_values with

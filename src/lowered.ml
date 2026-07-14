@@ -64,6 +64,11 @@ type compiled_item =
       expression : Semantic_ir.t;
     }
   | Recursive_value_bindings of recursive_value list
+  | Deferred_value_binding of {
+      name : string;
+      value_type : Types.ty;
+      expression : Semantic_ir.t;
+    }
   | Comment of string
   | Type_def of {
       type_name : string;
