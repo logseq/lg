@@ -21,7 +21,8 @@ let bindings =
     binding "replace-first" (runtime "replace_first")
       (fn [ TString; TString; TString ] TString);
     binding "reverse" (runtime "reverse") (fn [ TString ] TString);
-    binding "split" (runtime "split") (fn [ TString; TString ] (TVector TString));
+    binding "split" (runtime "split")
+      (fn [ TString; TUnknown ] (TVector TString));
     binding "split-lines" (runtime "split_lines") (fn [ TString ] (TVector TString));
     binding "starts-with?" (runtime "starts_with") (fn [ TString; TString ] TBool);
     binding "trim" "String.trim" (fn [ TString ] TString);

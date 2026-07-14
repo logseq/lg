@@ -112,9 +112,10 @@ The first type system should be explicit and structural.
 It should infer ordinary function parameter types from source-level constraints where possible, while allowing optional annotations for ambiguous cases.
 
 Scalar types are `int`, `string`, `symbol`, `keyword`, `bool`, and `unit`.
-lg intentionally does not support a surface `nil` value or nilable type.
-`:unit` can be used as an explicit lg annotation for side-effecting values,
-including `^:unit` parameters and `ocaml-call` return types.
+lg represents surface `nil` separately from explicit OCaml option values.
+Control-flow joins lower a Clojure nilable type to an OCaml option. `:unit`
+remains available for host side-effecting values, including `^:unit`
+parameters and `ocaml-call` return types.
 Arithmetic starts as integer-only; ratio-producing Clojure arities such as unary `/` are documented differences until numeric tower support exists.
 
 Type predicates are resolved from static lg types. This includes scalar
@@ -128,8 +129,8 @@ are implemented for the types currently represented in lg. Unchecked integer
 operations lower directly to OCaml integer operators.
 
 `if-not`, `when`, and `cond` are compiler-recognized forms in the static core.
-`cond` requires an `:else` branch because lg does not add implicit nil results.
-lg checks branch compatibility for lg-owned core types, while
+Missing branches produce Clojure `nil`; joining `nil` with a concrete value
+produces a nullable result. lg checks branch compatibility for lg-owned core types, while
 OCaml-owned branch result compatibility is delegated to the OCaml typechecker.
 
 `match` is a compiler-recognized static pattern form. The current subset

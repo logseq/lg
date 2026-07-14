@@ -6,21 +6,22 @@ type state = Compiler_state.t
 let empty_state = Compiler_state.empty
 
 let compile_forms_incremental (state : Compiler_state.t) forms =
-  let rec loop env next_type items = function
-    | [] -> Ok (env, next_type, List.rev items)
+  let rec loop scope env next_type items = function
+    | [] -> Ok (scope, env, next_type, List.rev items)
     | form :: rest -> (
-        match compile_top_level "" env next_type form with
+        match compile_top_level scope env next_type form with
         | Error error ->
             Error
               (Error.with_location_if_missing (Source_context.find form) error)
-        | Ok (_scope, env, next_type, item) ->
-            loop env next_type (item :: items) rest)
+        | Ok (scope, env, next_type, item) ->
+            loop scope env next_type (item :: items) rest)
   in
-  match loop state.env state.next_type [] forms with
+  match loop state.scope state.env state.next_type [] forms with
   | Error _ as err -> err
-  | Ok (env, next_type, new_items) ->
+  | Ok (scope, env, next_type, new_items) ->
       let next_state =
         {
+          Compiler_state.scope;
           Compiler_state.env;
           next_type;
           items = state.items @ new_items;

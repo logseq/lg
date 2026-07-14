@@ -38,13 +38,18 @@ let resolve_protocol_id ~scope env protocol_id =
   else
     match Protocol_id.owner protocol_id with
     | [ module_path ] ->
-        (match
-           Module_registry.resolve_alias ~scope module_path (Env.modules env)
-         with
-        | None -> protocol_id
+        (match Env.resolve_namespace_alias ~scope module_path env with
         | Some target ->
-            Protocol_id.create ~owner:[ Module_id.to_string target ]
-              ~name:(Protocol_id.name protocol_id))
+            Protocol_id.create ~owner:[ target ]
+              ~name:(Protocol_id.name protocol_id)
+        | None -> (
+            match
+              Module_registry.resolve_alias ~scope module_path (Env.modules env)
+            with
+            | None -> protocol_id
+            | Some target ->
+                Protocol_id.create ~owner:[ Module_id.to_string target ]
+                  ~name:(Protocol_id.name protocol_id)))
     | _ -> protocol_id
 
 let method_is_ambiguous scope env method_name =
@@ -82,40 +87,52 @@ let registry_receiver_id = Receiver_id.of_type
 
 let lookup_marker scope env method_name =
   let registry = Env.protocols env in
+  let marker_for protocol_id method_name =
+    let method_id = method_id protocol_id method_name in
+    Protocol_registry.find_method protocol_id method_id registry
+    |> Option.map (fun (signature : Protocol_registry.method_signature) ->
+           marker_binding protocol_id
+             { method_id;
+               method_name;
+               param_tys = signature.param_tys;
+               return_ty = signature.return_ty;
+             })
+  in
   match List.rev (String.split_on_char '/' method_name) with
     | method_name :: protocol_name :: reversed_owner ->
         let protocol_name =
           String.concat "/" (List.rev (protocol_name :: reversed_owner))
         in
-        let protocol_id =
-          protocol_id scope protocol_name |> resolve_protocol_id ~scope env
+        let namespace_owner =
+          match Env.resolve_namespace_alias ~scope protocol_name env with
+          | Some target -> Some target
+          | None ->
+              let protocols =
+                Protocol_registry.protocols_for_method
+                  ~owner:[ protocol_name ] ~method_name registry
+              in
+              if protocols = [] then None else Some protocol_name
         in
-        let method_id = method_id protocol_id method_name in
-        Protocol_registry.find_method protocol_id method_id registry
-        |> Option.map (fun (signature : Protocol_registry.method_signature) ->
-               marker_binding protocol_id
-                 {
-                   method_id;
-                   method_name;
-                   param_tys = signature.param_tys;
-                   return_ty = signature.return_ty;
-                 })
+        (match namespace_owner with
+        | Some owner -> (
+            match
+              Protocol_registry.protocols_for_method ~owner:[ owner ]
+                ~method_name registry
+            with
+            | [ protocol_id ] -> marker_for protocol_id method_name
+            | [] | _ :: _ :: _ -> None)
+        | None ->
+            let protocol_id =
+              protocol_id scope protocol_name |> resolve_protocol_id ~scope env
+            in
+            marker_for protocol_id method_name)
     | [ method_name ] ->
         let owner = if scope = "" then [] else [ scope ] in
         (match
            Protocol_registry.protocols_for_method ~owner ~method_name registry
          with
         | [ protocol_id ] ->
-            let method_id = method_id protocol_id method_name in
-            Protocol_registry.find_method protocol_id method_id registry
-            |> Option.map (fun (signature : Protocol_registry.method_signature) ->
-                   marker_binding protocol_id
-                     {
-                       method_id;
-                       method_name;
-                       param_tys = signature.param_tys;
-                       return_ty = signature.return_ty;
-                     })
+            marker_for protocol_id method_name
         | [] | _ :: _ :: _ -> None)
     | [] -> None
 
@@ -154,14 +171,42 @@ let lookup_marker_impl env (marker : binding) method_name receiver_ty =
   | None -> None
   | Some protocol_id -> lookup_impl env protocol_id method_name receiver_ty
 
+let method_position env (marker : binding) method_name =
+  match marker.protocol_id with
+  | None -> None
+  | Some protocol_id -> (
+      match Protocol_registry.find_protocol protocol_id (Env.protocols env) with
+      | None -> None
+      | Some declaration ->
+          declaration.methods
+          |> Protocol_registry.Method_map.bindings
+          |> List.mapi (fun index (method_id, _) -> (index, Method_id.name method_id))
+          |> List.find_map (fun (index, name) ->
+                 if name = method_name then Some index else None))
+
+let method_count env (marker : binding) =
+  match marker.protocol_id with
+  | None -> 0
+  | Some protocol_id -> (
+      match Protocol_registry.find_protocol protocol_id (Env.protocols env) with
+      | None -> 0
+      | Some declaration -> Protocol_registry.Method_map.cardinal declaration.methods)
+
 let marker_has_protocol_id (marker : binding) protocol_id =
   Option.fold ~none:false
     ~some:(fun marker_id -> Protocol_id.equal marker_id protocol_id)
     marker.protocol_id
 
 let parse_method_signature = function
-  | FList [ FSymbol method_name; params; FKeyword return_keyword ] -> (
-      match (Type_annotation.parse_params params, Type_annotation.of_keyword return_keyword) with
+  | FList [ FSymbol method_name; params ]
+  | FList [ FSymbol method_name; params; FKeyword _ ] as method_form -> (
+      let return_ty =
+        match method_form with
+        | FList [ _; _; FKeyword return_keyword ] ->
+            Type_annotation.of_keyword return_keyword
+        | _ -> Ok TUnknown
+      in
+      match (Type_annotation.parse_params params, return_ty) with
       | (Error _ as err), _ -> err
       | _, (Error _ as err) -> err
       | Ok params, Ok return_ty ->
@@ -176,7 +221,7 @@ let parse_method_signature = function
               })
   | _ ->
       Error.error
-        "defprotocol methods must be (method-name [params] :return-type)"
+        "defprotocol methods must be (method-name [params]) or (method-name [params] :return-type)"
 
 let defprotocol scope protocol_name method_forms =
   let id = protocol_id scope protocol_name in

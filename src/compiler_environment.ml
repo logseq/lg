@@ -6,6 +6,11 @@ type t = {
   modules : Module_registry.t;
   types : Type_registry.t;
   anonymous_records : (string * Semantic_type.named_record) list;
+  namespace_aliases : (string * string) list;
+  core_exclusions : (string * string) list;
+  macros : (string * Macro_definition.t) list;
+  macro_functions : (string * Macro_definition.t) list;
+  macro_values : (string * Ast.form) list;
 }
 
 let empty =
@@ -15,6 +20,11 @@ let empty =
     modules = Module_registry.empty;
     types = Type_registry.empty;
     anonymous_records = [];
+    namespace_aliases = [];
+    core_exclusions = [];
+    macros = [];
+    macro_functions = [];
+    macro_values = [];
   }
 
 let find_opt name env =
@@ -58,6 +68,70 @@ let modules env = env.modules
 let with_modules modules env = { env with modules }
 let types env = env.types
 let with_types types env = { env with types }
+
+let add_namespace_alias ~scope ~alias ~target env =
+  let key = Names.scoped_key scope alias in
+  { env with namespace_aliases = (key, target) :: env.namespace_aliases }
+
+let resolve_namespace_alias ~scope alias env =
+  match List.assoc_opt (Names.scoped_key scope alias) env.namespace_aliases with
+  | Some _ as target -> target
+  | None -> List.assoc_opt alias env.namespace_aliases
+
+let add_core_exclusions ~scope names env =
+  let exclusions =
+    List.map (fun name -> (Names.scoped_key scope name, name)) names
+  in
+  { env with core_exclusions = exclusions @ env.core_exclusions }
+
+let core_excluded ~scope name env =
+  List.mem_assoc (Names.scoped_key scope name) env.core_exclusions
+
+let add_macro ~scope ~name definition env =
+  let key = Names.scoped_key scope name in
+  { env with macros = (key, definition) :: List.remove_assoc key env.macros }
+
+let add_macro_alias ~alias definition env =
+  { env with macros = (alias, definition) :: List.remove_assoc alias env.macros }
+
+let find_macro ~scope name env =
+  match List.assoc_opt (Names.scoped_key scope name) env.macros with
+  | Some _ as definition -> definition
+  | None -> List.assoc_opt name env.macros
+
+let namespace_macros namespace env =
+  let prefix = namespace ^ "/" in
+  env.macros
+  |> List.filter_map (fun (key, definition) ->
+         if String.starts_with ~prefix key then
+           let name =
+             String.sub key (String.length prefix)
+               (String.length key - String.length prefix)
+           in
+           Some (name, definition)
+         else None)
+
+let add_macro_function ~scope ~name definition env =
+  let key = Names.scoped_key scope name in
+  {
+    env with
+    macro_functions =
+      (key, definition) :: List.remove_assoc key env.macro_functions;
+  }
+
+let find_macro_function ~scope name env =
+  match List.assoc_opt (Names.scoped_key scope name) env.macro_functions with
+  | Some _ as definition -> definition
+  | None -> List.assoc_opt name env.macro_functions
+
+let add_macro_value ~scope ~name value env =
+  let key = Names.scoped_key scope name in
+  { env with macro_values = (key, value) :: List.remove_assoc key env.macro_values }
+
+let find_macro_value ~scope name env =
+  match List.assoc_opt (Names.scoped_key scope name) env.macro_values with
+  | Some _ as value -> value
+  | None -> List.assoc_opt name env.macro_values
 
 let rec anonymous_type_equal left right =
   match (left, right) with

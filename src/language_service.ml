@@ -1455,7 +1455,7 @@ let semantic_tokens analysis =
   let parameter_uids = function_parameter_uids analysis in
   let token_semantics (token : Ast.token) =
     match token.desc with
-    | String _ | Char _ -> [ { range = token.span; kind = `String } ]
+    | String _ | Regex _ | Char _ -> [ { range = token.span; kind = `String } ]
     | Int _ | Float _ -> [ { range = token.span; kind = `Number } ]
     | Keyword _ | Bool _ -> [ { range = token.span; kind = `Keyword } ]
     | Symbol _ ->
@@ -1476,7 +1476,9 @@ let semantic_tokens analysis =
                   semantic_kind_for_occurrence analysis declarations parameter_uids
                     occurrence occurrence_name })
             occurrences
-    | Lparen | Rparen | Lbracket | Rbracket | Lbrace | Set_lbrace | Rbrace -> []
+    | Lparen | Anon_lparen | Rparen | Lbracket | Rbracket | Lbrace
+    | Set_lbrace | Rbrace | Quote | Syntax_quote | Unquote
+    | Unquote_splicing | Deref -> []
   in
   analysis.tokens |> List.concat_map token_semantics
   |> List.sort (fun (left : semantic_token) (right : semantic_token) ->
@@ -1783,8 +1785,9 @@ let rec add_type_references add ty references =
         (fun references (field : Types.field) ->
           add_type_references add field.ty references)
         references fields
-  | TInt | TFloat | TChar | TString | TSymbol | TKeyword | TBool | TUnit
-  | TUnknown | TVar _ ->
+  | TNullable inner -> add_type_references add inner references
+  | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
+  | TBool | TUnit | TNil | TUnknown | TVar _ ->
       references
 
 let add_type_annotation_references add source references =
@@ -1804,7 +1807,8 @@ let rec declaration_type_references add references = function
       add_type_annotation_references add annotation references
   | FVector forms | FList forms ->
       List.fold_left (declaration_type_references add) references forms
-  | FSymbol _ | FBool _ | FInt _ | FFloat _ | FChar _ | FString _ | FMap _ ->
+  | FSymbol _ | FBool _ | FInt _ | FFloat _ | FChar _ | FString _ | FRegex _
+  | FMap _ ->
       references
 
 let add_symbol_references bound name references =
@@ -1932,7 +1936,7 @@ let referenced_symbols source =
           (fun references (key, value) ->
             form_references bound (form_references bound references key) value)
           references entries
-    | FBool _ | FInt _ | FFloat _ | FChar _ | FString _ | FKeyword _ ->
+    | FBool _ | FInt _ | FFloat _ | FChar _ | FString _ | FRegex _ | FKeyword _ ->
         references
   in
   match Lexer.tokenize source with

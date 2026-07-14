@@ -43,12 +43,16 @@ and compile_expr_unlocated scope (env : Env.t) = function
   | FFloat value -> Ok (typed_ir TFloat (Semantic_ir.Float value))
   | FChar value -> Ok (typed_ir TChar (Semantic_ir.Char value))
   | FString value -> Ok (typed_ir TString (Semantic_ir.String value))
+  | FRegex value ->
+      Ok (typed_ir TRegex (Semantic_ir.String ("\000lg-regex:" ^ value)))
   | FBool value -> Ok (typed_ir TBool (Semantic_ir.Bool value))
   | FKeyword keyword -> Ok (typed_ir TKeyword (Semantic_ir.String keyword))
   | FSymbol "nil" ->
-      Ok
-        (typed_ir (TOcaml_app ("option", [ TUnknown ]))
-           (Semantic_ir.Constructor ("None", None)))
+      Ok (typed_ir TNil (Semantic_ir.Constructor ("None", None)))
+  | FSymbol name when String.length name > 1 && name.[0] = '@' ->
+      let reference_name = String.sub name 1 (String.length name - 1) in
+      compile_expr scope env
+        (FList [ FSymbol "deref"; FSymbol reference_name ])
   | FSymbol name -> (
       match Env.find_opt (Names.scoped_key scope name) env with
       | Some { ty = TFn ([], return_ty); ocaml_name; _ }
@@ -73,7 +77,7 @@ and compile_expr_unlocated scope (env : Env.t) = function
   | FList (FSymbol "if-let" :: binding :: then_form :: else_form :: []) ->
       compile_if_let scope env binding then_form else_form
   | FList (FSymbol "if-some" :: binding :: then_form :: else_form :: []) ->
-      compile_if_let scope env binding then_form else_form
+      compile_if_some scope env binding then_form else_form
   | FList (FSymbol "if-let" :: _) ->
       Error.error "if-let requires [name option], then, and else"
   | FList (FSymbol "if-some" :: _) ->
@@ -81,7 +85,7 @@ and compile_expr_unlocated scope (env : Env.t) = function
   | FList (FSymbol "when-let" :: binding :: body_forms) ->
       compile_when_let scope env binding body_forms
   | FList (FSymbol "when-some" :: binding :: body_forms) ->
-      compile_when_let scope env binding body_forms
+      compile_when_some scope env binding body_forms
   | FList (FSymbol "let-some" :: bindings :: then_form :: else_form :: []) ->
       compile_let_some scope env bindings then_form else_form
   | FList (FSymbol "let-some" :: _) ->
@@ -95,6 +99,8 @@ and compile_expr_unlocated scope (env : Env.t) = function
   | FList (FKeyword _ :: _) -> Error.error "keyword lookup expects one argument"
   | FList (FSymbol "if" :: condition :: then_form :: else_form :: []) ->
       compile_if scope env condition then_form else_form
+  | FList [ FSymbol "if"; condition; then_form ] ->
+      compile_if scope env condition then_form (FSymbol "nil")
   | FList (FSymbol "if-not" :: condition :: then_form :: else_form :: []) ->
       compile_if_not scope env condition then_form else_form
   | FList (FSymbol "when" :: condition :: body_forms) ->
@@ -105,7 +111,13 @@ and compile_expr_unlocated scope (env : Env.t) = function
   | FList (FSymbol "match" :: target :: clauses) ->
       compile_match scope env target clauses
   | FList (FSymbol "try" :: forms) -> compile_try scope env forms
-  | FList (FSymbol name :: args) -> compile_call scope env name args
+  | FList (FSymbol name :: args) -> (
+      match Env.find_macro ~scope name env with
+      | None -> compile_call scope env name args
+      | Some definition -> (
+          match Macro_expander.expand ~compiler_env:env definition args with
+          | Error _ as err -> err
+          | Ok expanded -> compile_expr scope env expanded))
   | FList [] -> Error.error "empty list is not callable"
   | FList _ -> Error.error "call head must be a symbol"
 
@@ -140,8 +152,15 @@ and compile_if_let scope env binding then_form else_form =
   (Lazy.force context).special_forms.compile_if_let scope env binding then_form
     else_form
 
+and compile_if_some scope env binding then_form else_form =
+  (Lazy.force context).special_forms.compile_if_some scope env binding then_form
+    else_form
+
 and compile_when_let scope env binding body_forms =
   (Lazy.force context).special_forms.compile_when_let scope env binding body_forms
+
+and compile_when_some scope env binding body_forms =
+  (Lazy.force context).special_forms.compile_when_some scope env binding body_forms
 
 and compile_let_some scope env bindings then_form else_form =
   (Lazy.force context).special_forms.compile_let_some scope env bindings then_form

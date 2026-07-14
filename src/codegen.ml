@@ -4,10 +4,23 @@ let apply name args = Semantic_ir.Apply (Semantic_ir.Ident name, args)
 
 let concat_expr = function
   | [] -> Semantic_ir.String ""
-  | first :: rest ->
-      List.fold_left
-        (fun acc part -> Semantic_ir.Infix ("^", acc, part))
-        first rest
+  | parts ->
+      let bindings, values =
+        parts
+        |> List.mapi (fun index part ->
+               let name = "__lg_concat_" ^ string_of_int index in
+               ((Semantic_ir.PVar name, part), Semantic_ir.Ident name))
+        |> List.split
+      in
+      let body =
+        match values with
+        | [] -> assert false
+        | first :: rest ->
+            List.fold_left
+              (fun acc part -> Semantic_ir.Infix ("^", acc, part))
+              first rest
+      in
+      Semantic_ir.Let (bindings, body)
 
 let wrap_expr prefix value suffix =
   concat_expr [ Semantic_ir.String prefix; value; Semantic_ir.String suffix ]
@@ -35,13 +48,25 @@ let rec stringify_expr_ir ?(pr = false) expr =
   | TInt -> apply "string_of_int" [ expr.semantic_expr ]
   | TFloat -> apply "string_of_float" [ expr.semantic_expr ]
   | TChar -> apply "String.make" [ Semantic_ir.Int 1; expr.semantic_expr ]
-  | TString ->
+  | TString | TRegex ->
       if pr then apply "Printf.sprintf" [ Semantic_ir.String "%S"; expr.semantic_expr ]
       else expr.semantic_expr
   | TSymbol | TKeyword -> expr.semantic_expr
   | TBool -> apply "string_of_bool" [ expr.semantic_expr ]
   | TUnit -> Semantic_ir.String ""
+  | TNil ->
+      Semantic_ir.Sequence [ expr.semantic_expr; Semantic_ir.String "nil" ]
+  | TNullable inner ->
+      Semantic_ir.Match
+        ( expr.semantic_expr,
+          [ (Semantic_ir.PConstructor ("None", None), Semantic_ir.String "nil");
+            ( Semantic_ir.PConstructor
+                ("Some", Some (Semantic_ir.PVar "value")),
+              stringify_expr_ir ~pr
+                (typed_ir inner (Semantic_ir.Ident "value")) );
+          ] )
   | TUnknown -> expr.semantic_expr
+  | TMap_keys -> Semantic_ir.String "<map>"
   | TVar _ -> Semantic_ir.String "<value>"
   | TArray _ | TRef _ | TOcaml _ | TOcaml_app _ | TTuple _ ->
       Semantic_ir.String "<value>"

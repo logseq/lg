@@ -22,7 +22,7 @@ let source_identity form =
   Source_context.find form
   |> Option.map (fun location -> (Source_node_id.of_location location, location))
 
-let is_type_annotation name = String.starts_with ~prefix:"^:" name
+let is_type_annotation name = String.starts_with ~prefix:"^" name
 
 let keyword_for_local name = ":" ^ name
 
@@ -337,6 +337,36 @@ let bind_sequence (target : typed_expr) forms =
     local_binding name target.ty semantic_expr
   in
   match target.ty with
+  | TTuple element_tys -> (
+      match parse_sequence_pattern forms with
+      | Error _ as err -> err
+      | Ok pattern ->
+          if Option.is_some pattern.rest_name then
+            Error.error "tuple destructuring does not support & rest"
+          else if List.length pattern.item_names > List.length element_tys then
+            Error.error "tuple destructuring has too many elements"
+          else
+            let bind_tuple_item index name =
+              let ty = List.nth element_tys index in
+              let patterns =
+                List.mapi
+                  (fun element_index _ ->
+                    if element_index = index then Semantic_ir.PVar name
+                    else Semantic_ir.PAny)
+                  element_tys
+              in
+              local_binding name ty
+                (Semantic_ir.Match
+                   (target.semantic_expr, [ (Semantic_ir.PTuple patterns, Semantic_ir.Ident name) ]))
+            in
+            let bindings = List.mapi bind_tuple_item pattern.item_names in
+            let bindings =
+              match pattern.sequence_as_name with
+              | None -> bindings
+              | Some name ->
+                  bindings @ [ local_binding name target.ty target.semantic_expr ]
+            in
+            Ok bindings)
   | TList inner | TVector inner -> (
       match parse_sequence_pattern forms with
       | Error _ as err -> err

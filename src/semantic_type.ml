@@ -3,10 +3,14 @@ type ty =
   | TFloat
   | TChar
   | TString
+  | TRegex
+  | TMap_keys
   | TSymbol
   | TKeyword
   | TBool
   | TUnit
+  | TNil
+  | TNullable of ty
   | TUnknown
   | TVar of string
   | TOcaml of string

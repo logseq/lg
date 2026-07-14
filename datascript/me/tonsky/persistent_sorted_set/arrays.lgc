@@ -1,0 +1,48 @@
+(ns me.tonsky.persistent-sorted-set.arrays
+  (:refer-clojure :exclude [make-array into-array array aget aset alength array? aclone]))
+
+(defmacro make-array [size]
+  `(ocaml-array-make ~size))
+
+(defmacro into-array [values]
+  `(ocaml-array-from ~values))
+
+(defmacro aget [values index]
+  `(ocaml-array-get ~values ~index))
+
+(defmacro aset [values index value]
+  `(ocaml-array-set! ~values ~index ~value))
+
+(defmacro alength [values]
+  `(ocaml-array-length ~values))
+
+(defmacro array [& values]
+  `(ocaml-array-from [~@values]))
+
+(defmacro acopy [source source-start source-end target target-start]
+  `(ocaml-array-copy! ~source ~source-start ~source-end ~target ~target-start))
+
+(defmacro aclone [values]
+  `(ocaml-array-copy ~values))
+
+(defmacro aconcat [left right]
+  `(ocaml-array-append ~left ~right))
+
+(defmacro amap [f values]
+  `(ocaml-array-map ~f ~values))
+
+(defmacro asort [values cmp]
+  `(let [values# ~values]
+     (do
+       (ocaml-array-sort! ~cmp values#)
+       values#)))
+
+(defmacro array? [value]
+  `(ocaml-array? ~value))
+
+(defmacro alast [values]
+  `(let [values# ~values]
+     (ocaml-array-get values# (dec (ocaml-array-length values#)))))
+
+(defmacro half [value]
+  `(quot ~value 2))

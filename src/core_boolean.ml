@@ -17,6 +17,11 @@ let compile_not args =
       let expression =
         match arg.ty with
         | TBool -> Semantic_ir.Prefix ("not", arg.semantic_expr)
+        | TNil ->
+            Semantic_ir.Sequence [ arg.semantic_expr; Semantic_ir.Bool true ]
+        | TNullable inner ->
+            Semantic_ir.Prefix
+              ("not", Expression_support.truthiness_expression (TNullable inner) arg.semantic_expr)
         | TOcaml_app ("option", [ _ ]) | TOcaml "option" ->
             Semantic_ir.Match
               ( arg.semantic_expr,
@@ -44,12 +49,43 @@ let compile_bool_literal_predicate name args expected =
 
 let compile_type_predicate name predicate args = type_predicate name predicate args
 
+let compile_string_family_predicate name ~keyword args =
+  match one_arg name args with
+  | Error _ as err -> err
+  | Ok arg -> (
+      match arg.ty with
+      | TUnknown ->
+          let starts_with_colon =
+            Semantic_ir.Apply
+              ( Semantic_ir.Ident "Lg_runtime.Runtime_string.starts_with",
+                [ arg.semantic_expr; Semantic_ir.String ":" ] )
+          in
+          let expression =
+            if keyword then starts_with_colon
+            else Semantic_ir.Prefix ("not", starts_with_colon)
+          in
+          Ok (typed_ir TBool expression)
+      | actual ->
+          let matches = if keyword then Types.equal actual TKeyword else Types.equal actual TString in
+          Ok (typed_ir TBool (Semantic_ir.Bool matches)))
+
 let compile_nil_predicate name args expected_nil =
   match one_arg name args with
   | Error _ as err -> err
   | Ok arg ->
       let expression =
         match arg.ty with
+        | TNil ->
+            Semantic_ir.Sequence [ arg.semantic_expr; Semantic_ir.Bool expected_nil ]
+        | TNullable _ ->
+            Semantic_ir.Match
+              ( arg.semantic_expr,
+                [ ( Semantic_ir.PConstructor ("None", None),
+                    Semantic_ir.Bool expected_nil );
+                  ( Semantic_ir.PConstructor
+                      ("Some", Some Semantic_ir.PAny),
+                    Semantic_ir.Bool (not expected_nil) );
+                ] )
         | TOcaml_app ("option", [ _ ]) | TOcaml "option" ->
             Semantic_ir.Match
               ( arg.semantic_expr,
@@ -75,8 +111,8 @@ let compile name args =
   | "int?" -> compile_type_predicate name (function TInt -> true | _ -> false) args
   | "number?" ->
       compile_type_predicate name Types.is_numeric args
-  | "string?" -> compile_type_predicate name (function TString -> true | _ -> false) args
-  | "keyword?" -> compile_type_predicate name (function TKeyword -> true | _ -> false) args
+  | "string?" -> compile_string_family_predicate name ~keyword:false args
+  | "keyword?" -> compile_string_family_predicate name ~keyword:true args
   | "boolean?" -> compile_type_predicate name (function TBool -> true | _ -> false) args
   | "vector?" -> compile_type_predicate name (function TVector _ -> true | _ -> false) args
   | "list?" | "seq?" -> compile_type_predicate name (function TList _ -> true | _ -> false) args

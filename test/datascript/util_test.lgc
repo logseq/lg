@@ -1,0 +1,64 @@
+(ns datascript.test.util
+  (:require [datascript.util :as util]))
+
+(def environment #?(:native "native" :melange "melange"))
+
+(def find-calls (volatile! 0))
+(def found
+  (util/find
+    #(do
+       (vswap! find-calls inc)
+       (> % 2))
+    [1 2 3 4]))
+
+(println
+  (str environment ":find:"
+       (= 3 found) ":"
+       (= 3 (deref find-calls)) ":"
+       (nil? (util/find #(> % 9) [1 2 3]))))
+
+(println
+  (str environment ":collections:"
+       (= [1 2 3] (util/concatv [1] [] [2 3])) ":"
+       (= [[1 4] [2 5]] (util/zip [1 2 3] [4 5])) ":"
+       (= [[1 4 7] [2 5 8]] (util/zip [1 2] [4 5] [7 8])) ":"
+       (= [1 2 3] (util/distinct-by #(mod % 3) [1 4 2 5 3 6])) ":"
+       (= {:b 2} (util/removem #(= % :a) {:a 1 :b 2})) ":"
+       (= [1] (util/conjv nil 1)) ":"
+       (= #{1} (util/conjs nil 1))))
+
+(println
+  (str environment ":reduce:"
+       (= 11 (util/reduce-indexed
+               (fn [acc el idx] (+ acc (* el idx)))
+               0
+               [2 3 4])) ":"
+       (reduced? (util/reduce-indexed
+                   (fn [acc el idx]
+                     (if (= idx 1) (reduced acc) (+ acc el)))
+                   0
+                   [2 3 4])) ":"
+       (= 42 (util/single [42]))))
+
+(def macro-if
+  (util/if+
+    (and true :let [x 4] (> x 3))
+    (+ x 1)
+    0))
+(def macro-cond
+  (util/cond+
+    :let [x 2]
+    (> x 1) (+ x 3)
+    :else 0))
+
+(println
+  (str environment ":macros:"
+       (= 5 macro-if) ":"
+       (= 5 macro-cond) ":"
+       (= 3 (util/some-of nil nil 3 4))))
+
+(def timestamp 1700000000000)
+(def id (util/squuid timestamp))
+(println
+  (str environment ":squuid:"
+       (= timestamp (util/squuid-time-millis id))))

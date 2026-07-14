@@ -6,10 +6,13 @@ let collection_to_list_expr collection =
   match collection.ty with
   | TList inner -> Ok (inner, collection.semantic_expr)
   | TVector inner -> Ok (inner, apply "Rrbvec.to_list" [ collection.semantic_expr ])
+  | TArray inner -> Ok (inner, apply "Array.to_list" [ collection.semantic_expr ])
   | TSet inner ->
       Types.set_module_name inner
       |> Result.map (fun set_module ->
-             (inner, apply (set_module ^ ".elements") [ collection.semantic_expr ]))
+          (inner, apply (set_module ^ ".elements") [ collection.semantic_expr ]))
+  | TOcaml_app ("array", [ inner ]) ->
+      Ok (inner, apply "Array.to_list" [ collection.semantic_expr ])
   | _ -> Error.error "collection value is not sequenceable"
 
 let collection_to_seq_expr collection =

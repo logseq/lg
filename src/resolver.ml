@@ -84,6 +84,13 @@ let ocaml_call_target scope env function_name =
           match lookup_host_reference scope env alias with
           | Some { host_reference = Some (Ocaml_module module_path); _ } ->
               Some (module_path ^ "." ^ Names.sanitize_name member_name)
+          | None -> (
+              match Host_interop.implicit_module alias with
+              | Some module_path ->
+                  Some (module_path ^ "." ^ Names.sanitize_name member_name)
+              | None when String.length alias > 0 && starts_with_uppercase alias ->
+                  Some (alias ^ "." ^ Names.sanitize_name member_name)
+              | None -> None)
           | _ when String.length alias > 0 && starts_with_uppercase alias ->
               Some (alias ^ "." ^ Names.sanitize_name member_name)
           | _ -> None)

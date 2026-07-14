@@ -70,6 +70,36 @@ let replace_first source match_value replacement =
     search 0
 
 let split source separator =
+  let regex_prefix = "\000lg-regex:" in
+  let literal_regex pattern =
+    let buffer = Buffer.create (String.length pattern) in
+    let rec loop index =
+      if index >= String.length pattern then Buffer.contents buffer
+      else
+        match pattern.[index] with
+        | '\\' when index + 1 < String.length pattern ->
+            Buffer.add_char buffer pattern.[index + 1];
+            loop (index + 2)
+        | ('.' | '*' | '+' | '?' | '[' | ']' | '(' | ')' | '{' | '}' | '^'
+          | '$' | '|') as ch ->
+            invalid_arg
+              (Printf.sprintf
+                 "clojure.string/split does not yet support regex operator %c" ch)
+        | ch ->
+            Buffer.add_char buffer ch;
+            loop (index + 1)
+    in
+    loop 0
+  in
+  let separator =
+    if String.starts_with ~prefix:regex_prefix separator then
+      let pattern =
+        String.sub separator (String.length regex_prefix)
+          (String.length separator - String.length regex_prefix)
+      in
+      literal_regex pattern
+    else separator
+  in
   let separator_len = String.length separator in
   if separator_len = 0 then Rrbvec.of_list [ source ]
   else

@@ -329,6 +329,10 @@ let infer_params ~lookup_function_ty params body_forms =
     | FList [ FSymbol "not"; arg ] -> infer_expected TBool params arg
     | FList [ FKeyword keyword; FSymbol name ] ->
         add_record_field_constraint name keyword TUnknown params
+    | FList [ FSymbol "contains?"; FSymbol name; key ] -> (
+        match infer_expected TMap_keys params (FSymbol name) with
+        | Error _ as err -> err
+        | Ok params -> infer_expected TKeyword params key)
     | FList [ FSymbol "ocaml-field"; FSymbol name; FSymbol field_name ] ->
         add_record_field_constraint name (":" ^ field_name) TUnknown params
     | FList (FSymbol "assoc" :: target :: pairs) ->
@@ -342,6 +346,10 @@ let infer_params ~lookup_function_ty params body_forms =
             match infer_form params then_form with
             | Error _ as err -> err
             | Ok params -> infer_form params else_form))
+    | FList [ FSymbol "if"; condition; then_form ] -> (
+        match infer_expected TBool params condition with
+        | Error _ as err -> err
+        | Ok params -> infer_form params then_form)
     | FList [ FSymbol "if-not"; condition; then_form; else_form ] -> (
         match infer_expected TBool params condition with
         | Error _ as err -> err
@@ -403,7 +411,7 @@ let infer_params ~lookup_function_ty params body_forms =
     | FList (FSymbol "do" :: body_forms) -> infer_all params body_forms
     | FList (FSymbol "let" :: bindings :: body_forms) ->
         infer_let params bindings body_forms
-    | FList (FSymbol "fn" :: _params :: _body_forms) -> Ok params
+    | FList (FSymbol "fn" :: _params :: body_forms) -> infer_all params body_forms
     | FList (FSymbol name :: args) -> infer_known_call name params args
     | FVector forms -> infer_all params forms
     | FMap pairs ->
@@ -415,7 +423,8 @@ let infer_params ~lookup_function_ty params body_forms =
                | Ok params -> infer_form params value)
              (Ok params)
     | FList forms -> infer_all params forms
-    | FInt _ | FFloat _ | FChar _ | FString _ | FBool _ | FKeyword _ | FSymbol _ ->
+    | FInt _ | FFloat _ | FChar _ | FString _ | FRegex _ | FBool _ | FKeyword _
+    | FSymbol _ ->
         Ok params
   in
   infer_all params body_forms

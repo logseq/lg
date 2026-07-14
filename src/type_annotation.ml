@@ -175,6 +175,12 @@ let of_param_annotation annotation =
            || String.starts_with ~prefix:"^:tuple<" annotation ->
         Error.error ("invalid OCaml type annotation " ^ annotation)
     | Error _ -> Error.error ("unknown parameter type " ^ annotation)
+  else if String.starts_with ~prefix:"^" annotation && String.length annotation > 1
+  then
+    Ok
+      (TOcaml
+         ("__lg_record:"
+         ^ String.sub annotation 1 (String.length annotation - 1)))
   else Error.error "function parameters must be symbols"
 
 let parse_params = function

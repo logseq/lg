@@ -19,6 +19,7 @@ type t = {
   compile_subvec : call;
   compile_nth : call;
   compile_get : call;
+  compile_find : call;
   compile_assoc : call;
   compile_dissoc : call;
   compile_merge : call;
@@ -50,6 +51,19 @@ let create ~compile_expr =
     | FSymbol name -> lookup_function scope env name
     | form -> compile_expr scope env form
   in
+    let compile_deftype_method scope env record method_name args =
+      match lookup_deftype_method scope env record method_name (List.length args) with
+      | Error _ -> None
+      | Ok binding ->
+          let return_ty =
+            match binding.ty with TFn (_, return_ty) -> return_ty | _ -> TUnknown
+          in
+          Some
+            (typed_ir return_ty
+               (Semantic_ir.Apply
+                  ( Semantic_ir.Ident binding.ocaml_name,
+                    List.map (fun arg -> arg.semantic_expr) args )))
+    in
     let compile_list scope env forms =
       match forms with
       | [] -> Ok (typed_ir (TList TUnknown) (Semantic_ir.List []))
@@ -181,6 +195,12 @@ let create ~compile_expr =
                   (typed_ir collection.ty
                      (Semantic_ir.Cons (value.semantic_expr, collection.semantic_expr)))
             | TList _ -> Error.error "conj value type must match list element type"
+            | TVector (TVar _) ->
+                Ok
+                  (typed_ir (TVector value.ty)
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident "Rrbvec.push_back",
+                          [ collection.semantic_expr; value.semantic_expr ] )))
             | TVector inner when Types.equal inner value.ty ->
                 Ok
                   (typed_ir collection.ty
@@ -301,15 +321,43 @@ let create ~compile_expr =
                       Ok
                         (typed_ir field.ty
                            (Structural_map.field_expr target field))
-                  | None ->
-                      Error.error
-                        ("unknown record field " ^ Names.keyword_source_name keyword))
+                  | None -> (
+                      match target.ty with
+                      | TNamed_record record ->
+                          let key =
+                            typed_ir TKeyword (Semantic_ir.String keyword)
+                          in
+                          (match
+                             (match
+                                compile_deftype_method scope env record "valAt"
+                                  [ target; key ]
+                              with
+                              | Some _ as result -> result
+                              | None ->
+                                  compile_deftype_method scope env record
+                                    "-lookup" [ target; key ])
+                           with
+                          | Some result -> Ok result
+                          | None ->
+                              Error.error
+                                ("unknown record field "
+                               ^ Names.keyword_source_name keyword))
+                      | _ -> assert false))
               | ty when is_ocaml_owned_type ty ->
                   Ok
                     (typed_ir TUnknown
                        (Semantic_ir.Field
                           (target.semantic_expr, Names.keyword_to_ocaml_name keyword)))
-              | _ -> Error.error "get expects a map"))
+              | ty -> (
+                  match Types.dynamic_map_types ty with
+                  | Some (_key_ty, value_ty) ->
+                      Ok
+                        (typed_ir (TNullable value_ty)
+                           (apply "Lg_runtime.Runtime_map.get_option"
+                              [ target.semantic_expr;
+                                Semantic_ir.String keyword;
+                              ]))
+                  | None -> Error.error "get expects a map")))
       | [ target_form; index_form ] -> (
           match (compile_expr scope env target_form, compile_expr scope env index_form) with
           | (Error _ as err), _ -> err
@@ -321,7 +369,36 @@ let create ~compile_expr =
                     (typed_ir inner
                        (apply "Rrbvec.nth" [ target.semantic_expr; index.semantic_expr ]))
               | TVector _, _ -> Error.error "get vector index must be int"
-              | _ -> Error.error "get key must be a keyword"))
+              | TNamed_record record, _ -> (
+                  match
+                    (match
+                       compile_deftype_method scope env record "valAt"
+                         [ target; index ]
+                     with
+                    | Some _ as result -> result
+                    | None ->
+                        compile_deftype_method scope env record "-lookup"
+                          [ target; index ])
+                  with
+                  | Some result -> Ok result
+                  | None -> Error.error "get key must be a keyword")
+              | _ -> (
+                  match Types.dynamic_map_types target.ty with
+                  | Some (key_ty, value_ty)
+                    when Types.assignable ~policy:Host_boundary ~expected:key_ty
+                           ~actual:index.ty ->
+                      Ok
+                        (typed_ir (TNullable value_ty)
+                           (apply "Lg_runtime.Runtime_map.get_option"
+                              [ target.semantic_expr; index.semantic_expr ]))
+                  | None
+                    when Types.equal target.ty TUnknown
+                         || (match target.ty with TVar _ -> true | _ -> false) ->
+                      Ok
+                        (typed_ir (TNullable TUnknown)
+                           (apply "Lg_runtime.Runtime_map.get_option"
+                              [ target.semantic_expr; index.semantic_expr ]))
+                  | _ -> Error.error "get key must be a keyword")))
       | [ target_form; FKeyword keyword; default_form ] -> (
           match
             (compile_expr scope env target_form, compile_expr scope env default_form)
@@ -330,7 +407,7 @@ let create ~compile_expr =
           | _, (Error _ as err) -> err
           | Ok target, Ok default -> (
               match target.ty with
-              | TRecord fields | TNamed_record { fields; _ } -> (
+              | TRecord fields | TNamed_record { fields; nominal = false; _ } -> (
                   match find_field keyword fields with
                   | Some field when Types.equal field.ty default.ty ->
                       Ok
@@ -340,7 +417,50 @@ let create ~compile_expr =
                       Error.error
                         ("get default for " ^ keyword ^ " must be " ^ source_name field.ty)
                   | None -> Ok default)
-              | _ -> Error.error "get expects a map"))
+              | TNamed_record record -> (
+                  match find_field keyword record.fields with
+                  | Some field when Types.equal field.ty default.ty ->
+                      Ok
+                        (typed_ir field.ty
+                           (Structural_map.field_expr target field))
+                  | Some _ ->
+                      Error.error
+                        ("get default for " ^ keyword ^ " has incompatible type")
+                  | None ->
+                      let key = typed_ir TKeyword (Semantic_ir.String keyword) in
+                      (match
+                         (match
+                            compile_deftype_method scope env record "valAt"
+                              [ target; key; default ]
+                          with
+                          | Some _ as result -> result
+                          | None ->
+                              compile_deftype_method scope env record "-lookup"
+                                [ target; key; default ])
+                       with
+                      | Some result -> Ok result
+                      | None -> Ok default))
+              | _ -> (
+                  match Types.dynamic_map_types target.ty with
+                  | Some (_key_ty, value_ty)
+                    when default_form = FSymbol "nil" ->
+                      Ok
+                        (typed_ir (TNullable value_ty)
+                           (apply "Lg_runtime.Runtime_map.get_option"
+                              [ target.semantic_expr;
+                                Semantic_ir.String keyword;
+                              ]))
+                  | Some (_key_ty, value_ty)
+                    when Types.assignable ~policy:Host_boundary
+                           ~expected:value_ty ~actual:default.ty ->
+                      Ok
+                        (typed_ir value_ty
+                           (apply "Lg_runtime.Runtime_map.get_default"
+                              [ target.semantic_expr;
+                                Semantic_ir.String keyword;
+                                default.semantic_expr;
+                              ]))
+                  | _ -> Error.error "get expects a map")))
       | [ target_form; index_form; default_form ] -> (
           match
             ( compile_expr scope env target_form,
@@ -362,8 +482,84 @@ let create ~compile_expr =
                               (Semantic_ir.PConstructor ("None", None), default.semantic_expr) ] )))
               | TVector _, TInt -> Error.error "get default for vector must match element type"
               | TVector _, _ -> Error.error "get vector index must be int"
-              | _ -> Error.error "get key must be a keyword"))
+              | TNamed_record record, _ -> (
+                  match
+                    (match
+                       compile_deftype_method scope env record "valAt"
+                         [ target; index; default ]
+                     with
+                    | Some _ as result -> result
+                    | None ->
+                        compile_deftype_method scope env record "-lookup"
+                          [ target; index; default ])
+                  with
+                  | Some result -> Ok result
+                  | None -> Error.error "get key must be a keyword")
+              | _ -> (
+                  match Types.dynamic_map_types target.ty with
+                  | Some (key_ty, value_ty)
+                    when default_form = FSymbol "nil"
+                         && Types.assignable ~policy:Host_boundary
+                              ~expected:key_ty ~actual:index.ty ->
+                      Ok
+                        (typed_ir (TNullable value_ty)
+                           (apply "Lg_runtime.Runtime_map.get_option"
+                              [ target.semantic_expr; index.semantic_expr ]))
+                  | Some (key_ty, value_ty)
+                    when Types.assignable ~policy:Host_boundary ~expected:key_ty
+                           ~actual:index.ty
+                         && Types.assignable ~policy:Host_boundary
+                              ~expected:value_ty ~actual:default.ty ->
+                      Ok
+                        (typed_ir value_ty
+                           (apply "Lg_runtime.Runtime_map.get_default"
+                              [ target.semantic_expr;
+                                index.semantic_expr;
+                                default.semantic_expr;
+                              ]))
+                  | None
+                    when Types.equal target.ty TUnknown
+                         || (match target.ty with TVar _ -> true | _ -> false) ->
+                      if default_form = FSymbol "nil" then
+                        Ok
+                          (typed_ir (TNullable TUnknown)
+                             (apply "Lg_runtime.Runtime_map.get_option"
+                                [ target.semantic_expr; index.semantic_expr ]))
+                      else
+                        Ok
+                          (typed_ir default.ty
+                             (apply "Lg_runtime.Runtime_map.get_default"
+                                [ target.semantic_expr;
+                                  index.semantic_expr;
+                                  default.semantic_expr;
+                                ]))
+                  | _ -> Error.error "get key must be a keyword")))
       | _ -> Error.error "get expects 2 or 3 arguments"
+
+    and compile_find scope env arg_forms =
+      match compile_args_for scope env arg_forms with
+      | Error _ as err -> err
+      | Ok [ target; key ] -> (
+          match Types.dynamic_map_types target.ty with
+          | Some (key_ty, value_ty)
+            when Types.assignable ~policy:Host_boundary ~expected:key_ty
+                   ~actual:key.ty ->
+              Ok
+                (typed_ir
+                   (TOcaml_app ("option", [ TTuple [ key_ty; value_ty ] ]))
+                   (apply "Lg_runtime.Runtime_map.find"
+                      [ target.semantic_expr; key.semantic_expr ]))
+          | None
+            when Types.equal target.ty TUnknown
+                 || (match target.ty with TVar _ -> true | _ -> false) ->
+              Ok
+                (typed_ir
+                   (TOcaml_app
+                      ("option", [ TTuple [ key.ty; TUnknown ] ]))
+                   (apply "Lg_runtime.Runtime_map.find"
+                      [ target.semantic_expr; key.semantic_expr ]))
+          | _ -> Error.error "find expects a map and key")
+      | Ok _ -> Error.error "find expects 2 arguments"
     
     and compile_assoc scope env arg_forms =
       match arg_forms with
@@ -399,6 +595,39 @@ let create ~compile_expr =
                 | _ -> Error.error "assoc expects collection followed by key/value pairs"
               else
                 match target.ty with
+                | TNamed_record ({ nominal = true; _ } as record) -> (
+                    match compile_vector_pairs [] pair_forms with
+                    | Error _ as err -> err
+                    | Ok [] -> assert false
+                    | Ok ((first_key, first_value) :: remaining_pairs) ->
+                        let lookup_method current key value =
+                          match
+                            compile_deftype_method scope env record "assoc"
+                              [ current; key; value ]
+                          with
+                          | Some _ as result -> result
+                          | None ->
+                              compile_deftype_method scope env record "-assoc"
+                                [ current; key; value ]
+                        in
+                        let rec apply_pairs current = function
+                          | [] -> Ok current
+                          | (key, value) :: rest -> (
+                              match lookup_method current key value with
+                              | None ->
+                                  Error.error
+                                    "assoc expects an associative deftype"
+                              | Some updated ->
+                                  apply_pairs { updated with ty = target.ty } rest)
+                        in
+                        (match lookup_method target first_key first_value with
+                        | Some updated ->
+                            apply_pairs { updated with ty = target.ty }
+                              remaining_pairs
+                        | None -> (
+                            match compile_record_pairs [] pair_forms with
+                            | Error _ as err -> err
+                            | Ok pairs -> Structural_map.assoc_many target pairs)))
                 | TRecord _ | TNamed_record _ -> (
                     match compile_record_pairs [] pair_forms with
                     | Error _ as err -> err
@@ -423,23 +652,63 @@ let create ~compile_expr =
                         (match apply_pairs target.semantic_expr pairs with
                         | Error _ as err -> err
                         | Ok expr -> Ok (typed_ir target.ty expr)))
-                | _ -> Error.error "assoc expects a map or vector"))
+                | target_ty -> (
+                    let dynamic_target =
+                      Option.is_some (Types.dynamic_map_types target_ty)
+                      || Types.equal target_ty TUnknown
+                      || (match target_ty with TVar _ -> true | _ -> false)
+                    in
+                    if not dynamic_target then
+                      Error.error "assoc expects a map or vector"
+                    else
+                      match compile_vector_pairs [] pair_forms with
+                      | Error _ as err -> err
+                      | Ok [] -> assert false
+                      | Ok ((first_key, first_value) :: _ as pairs) ->
+                          let expression =
+                            List.fold_left
+                              (fun map (key, value) ->
+                                apply "Lg_runtime.Runtime_map.assoc"
+                                  [ map; key.semantic_expr; value.semantic_expr ])
+                              target.semantic_expr pairs
+                          in
+                          Ok
+                            (typed_ir
+                               (Types.dynamic_map first_key.ty first_value.ty)
+                               expression))))
       | _ -> Error.error "assoc expects collection followed by key/value pairs"
     
     and compile_dissoc scope env arg_forms =
       match arg_forms with
       | target_form :: key_forms -> (
-          let rec parse_keys acc = function
-            | [] -> Ok (List.rev acc)
-            | FKeyword keyword :: rest -> parse_keys (keyword :: acc) rest
-            | _ -> Error.error "dissoc expects map followed by keywords"
-          in
           match compile_expr scope env target_form with
           | Error _ as err -> err
           | Ok target -> (
-              match parse_keys [] key_forms with
-              | Error _ as err -> err
-              | Ok keywords -> Structural_map.dissoc_many target keywords))
+              match target.ty with
+              | TRecord _ | TNamed_record _ ->
+                  let rec parse_keywords acc = function
+                    | [] -> Ok (List.rev acc)
+                    | FKeyword keyword :: rest ->
+                        parse_keywords (keyword :: acc) rest
+                    | _ ->
+                        Error.error "dissoc expects map followed by keywords"
+                  in
+                  Result.bind (parse_keywords [] key_forms) (fun keywords ->
+                      Structural_map.dissoc_many target keywords)
+              | target_ty
+                when Option.is_some (Types.dynamic_map_types target_ty)
+                     || Types.equal target_ty TUnknown
+                     || (match target_ty with TVar _ -> true | _ -> false) ->
+                  Result.map
+                    (fun keys ->
+                      typed_ir target.ty
+                        (List.fold_left
+                           (fun map key ->
+                             apply "Lg_runtime.Runtime_map.dissoc"
+                               [ map; key.semantic_expr ])
+                           target.semantic_expr keys))
+                    (compile_args_for scope env key_forms)
+              | _ -> Error.error "dissoc expects a map"))
       | _ -> Error.error "dissoc expects map followed by keywords"
     
     and compile_merge scope env arg_forms =
@@ -454,7 +723,11 @@ let create ~compile_expr =
             parse_pairs ((FKeyword keyword, value_form) :: acc) rest
         | _ -> Error.error "hash-map expects keyword/value pairs"
       in
-      if arg_forms = [] || List.length arg_forms mod 2 <> 0 then
+      if arg_forms = [] then
+        Ok
+          (typed_ir (Types.dynamic_map TUnknown TUnknown)
+             (Semantic_ir.Ident "Lg_runtime.Runtime_map.empty"))
+      else if List.length arg_forms mod 2 <> 0 then
         Error.error "hash-map expects keyword/value pairs"
       else
         match parse_pairs [] arg_forms with
@@ -591,7 +864,35 @@ let create ~compile_expr =
                           Semantic_ir.Apply
                             (Semantic_ir.Ident "Rrbvec.length", [ target.semantic_expr ]) ) )))
         | TVector _, _ -> Error.error "contains? vector index must be int"
-        | _ -> Error.error "contains? expects a map, set, or vector"
+        | TMap_keys, TKeyword ->
+            Ok
+              (typed_ir TBool
+                 (Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Lg_runtime.Core_set.String_set.mem",
+                      [ value.semantic_expr; target.semantic_expr ] )))
+        | TMap_keys, _ -> Error.error "contains? map key must be a keyword"
+        | target_ty, _ -> (
+            match Types.dynamic_map_types target_ty with
+            | Some (key_ty, _)
+              when Types.assignable ~policy:Host_boundary ~expected:key_ty
+                     ~actual:value.ty ->
+                Ok
+                  (typed_ir TBool
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident "Lg_runtime.Runtime_map.mem",
+                          [ target.semantic_expr; value.semantic_expr ] )))
+            | None
+              when Types.equal target_ty TUnknown
+                   || (match target_ty with TVar _ -> true | _ -> false) ->
+                Ok
+                  (typed_ir TBool
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident "Lg_runtime.Runtime_map.mem",
+                          [ target.semantic_expr; value.semantic_expr ] )))
+            | _ ->
+                Error.error
+                  ("contains? expects a map, set, or vector, got "
+                 ^ source_name target.ty))
       in
       match arg_forms with
       | target_form :: FKeyword keyword :: [] -> (
@@ -652,4 +953,4 @@ let create ~compile_expr =
       | Ok _ -> Error.error "vals expects 1 arguments"
     
   in
-  { compile_list; compile_list_star; compile_range; compile_list_of; compile_vector_of; compile_conj; compile_cons; compile_subvec; compile_nth; compile_get; compile_assoc; compile_dissoc; compile_merge; compile_hash_map; compile_update; compile_select_keys; compile_contains; compile_keys; compile_vals }
+  { compile_list; compile_list_star; compile_range; compile_list_of; compile_vector_of; compile_conj; compile_cons; compile_subvec; compile_nth; compile_get; compile_find; compile_assoc; compile_dissoc; compile_merge; compile_hash_map; compile_update; compile_select_keys; compile_contains; compile_keys; compile_vals }

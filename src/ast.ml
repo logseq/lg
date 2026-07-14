@@ -5,6 +5,12 @@ type source_span = {
 
 type token_desc =
   | Lparen
+  | Anon_lparen
+  | Quote
+  | Syntax_quote
+  | Unquote
+  | Unquote_splicing
+  | Deref
   | Rparen
   | Lbracket
   | Rbracket
@@ -14,6 +20,7 @@ type token_desc =
   | Symbol of string
   | Keyword of string
   | String of string
+  | Regex of string
   | Int of int
   | Float of string
   | Char of char
@@ -28,6 +35,7 @@ type form =
   | FSymbol of string
   | FKeyword of string
   | FString of string
+  | FRegex of string
   | FInt of int
   | FFloat of string
   | FChar of char

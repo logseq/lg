@@ -42,7 +42,7 @@ let test_selects_each_target () =
 (def environment
   #?(:native "native-value"
      :melange "melange-value"
-     :js-of-ocaml "jsoo-value"))
+     :js "jsoo-value"))
 |}
   in
   let cases =
@@ -79,7 +79,7 @@ let test_does_not_elaborate_unselected_branches () =
 (def value
   #?(:native 42
      :melange missing-only-on-melange
-     :js-of-ocaml missing-only-on-jsoo))
+     :js missing-only-on-jsoo))
 |}
   in
   ignore (compile Lg.Target.Native source)
@@ -93,10 +93,40 @@ let test_native_is_the_default_compiler_target () =
   assert_contains generated "native-default";
   assert_not_contains generated "fallback-default"
 
+let test_clj_and_cljs_compatibility_features () =
+  let source =
+    {|
+(def environment #?(:clj "clj-value" :cljs "cljs-value"))
+|}
+  in
+  let cases =
+    [
+      (Lg.Target.Native, "clj-value", "cljs-value");
+      (Lg.Target.Melange, "cljs-value", "clj-value");
+      (Lg.Target.Js_of_ocaml, "cljs-value", "clj-value");
+    ]
+  in
+  List.iter
+    (fun (target, selected, unselected) ->
+      let generated = compile target source in
+      assert_contains generated selected;
+      assert_not_contains generated unselected)
+    cases
+
+let test_js_names_js_of_ocaml_target () =
+  (match Lg.Target.of_string "js" with
+  | Ok Lg.Target.Js_of_ocaml -> ()
+  | _ -> fail "expected js to select the js-of-ocaml target");
+  if Lg.Target.to_string Lg.Target.Js_of_ocaml <> "js" then
+    fail "expected the js-of-ocaml target name to be js";
+  let generated =
+    compile Lg.Target.Js_of_ocaml
+      {|(def environment #?(:js "js-value" :js-of-ocaml "legacy-value"))|}
+  in
+  assert_contains generated "js-value";
+  assert_not_contains generated "legacy-value"
+
 let test_rejects_invalid_reader_conditionals () =
-  Lg.Compiler.compile_string ~target:Lg.Target.Native
-    {|(def value #?(:melange 1))|}
-  |> expect_error "reader conditional has no :native or :default branch";
   Lg.Compiler.compile_string ~target:Lg.Target.Native
     {|(def value #?(:native 1 :melange))|}
   |> expect_error "reader conditional requires feature/form pairs";
@@ -107,6 +137,17 @@ let test_rejects_invalid_reader_conditionals () =
     {|(def value #?(:native 1 :native 2))|}
   |> expect_error "duplicate reader conditional feature :native"
 
+let test_omits_unmatched_reader_conditionals () =
+  let generated =
+    compile Lg.Target.Native
+      {|
+#?(:melange (def melange-only "melange-value"))
+(def native-value "native-value")
+|}
+  in
+  assert_contains generated "native-value";
+  assert_not_contains generated "melange-value"
+
 let tests =
   [
     ("selects each target", test_selects_each_target);
@@ -116,6 +157,11 @@ let tests =
       test_does_not_elaborate_unselected_branches );
     ( "native is the default compiler target",
       test_native_is_the_default_compiler_target );
+    ( "maps :cljs to JavaScript targets and :clj to Native",
+      test_clj_and_cljs_compatibility_features );
+    ("names js-of-ocaml target js", test_js_names_js_of_ocaml_target);
+    ( "omits unmatched reader conditionals",
+      test_omits_unmatched_reader_conditionals );
     ( "rejects invalid reader conditionals",
       test_rejects_invalid_reader_conditionals );
   ]

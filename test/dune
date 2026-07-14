@@ -49,7 +49,7 @@
   (source_tree datascript)
   datascript/value.lgc
   datascript/schema.lgc
-  datascript_value_test.lgc
+  datascript/value_test.lgc
   ../bin/lg_cli.exe)
  (action
   (run
@@ -59,14 +59,15 @@
    --compile-files
    %{dep:datascript/value.lgc}
    %{dep:datascript/schema.lgc}
-   %{dep:datascript_value_test.lgc}
+   %{dep:datascript/value_test.lgc}
    -o
    %{target})))
 
 (executable
  (name datascript_value_native)
  (modules datascript_value_native)
- (flags (:standard -w -32-37))
+ (flags
+  (:standard -w -32-37))
  (libraries lg.runtime rrbvec))
 
 (rule
@@ -75,7 +76,7 @@
   (source_tree datascript)
   datascript/value.lgc
   datascript/schema.lgc
-  datascript_value_test.lgc
+  datascript/value_test.lgc
   ../bin/lg_cli.exe)
  (action
   (run
@@ -85,7 +86,7 @@
    --compile-files
    %{dep:datascript/value.lgc}
    %{dep:datascript/schema.lgc}
-   %{dep:datascript_value_test.lgc}
+   %{dep:datascript/value_test.lgc}
    -o
    %{target})))
 
@@ -98,20 +99,131 @@
  (libraries lg.runtime rrbvec))
 
 (rule
+ (target datascript_schema_upstream_native.ml)
+ (deps datascript/upstream/schema.cljc ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   native
+   %{dep:datascript/upstream/schema.cljc}
+   -o
+   %{target})))
+
+(executable
+ (name datascript_schema_upstream_native)
+ (modules datascript_schema_upstream_native)
+ (flags
+  (:standard -w -32-37))
+ (libraries lg.runtime rrbvec))
+
+(rule
+ (target datascript_schema_upstream_melange.ml)
+ (deps datascript/upstream/schema.cljc ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   melange
+   %{dep:datascript/upstream/schema.cljc}
+   -o
+   %{target})))
+
+(melange.emit
+ (target datascript-schema-upstream-melange)
+ (alias datascript-schema-upstream-melange)
+ (module_systems es6)
+ (modules datascript_schema_upstream_melange)
+ (compile_flags -w -32-37)
+ (libraries lg.runtime rrbvec))
+
+(alias
+ (name runtest)
+ (deps
+  datascript_schema_upstream_native.exe
+  (alias datascript-schema-upstream-melange)
+  datascript-schema-upstream-melange/test/datascript_schema_upstream_melange.js))
+
+(rule
+ (target datascript_lru_native.ml)
+ (deps
+  datascript/upstream/lru.cljc
+  datascript/lru_test.lgc
+  ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   native
+   --compile-files
+   %{dep:datascript/upstream/lru.cljc}
+   %{dep:datascript/lru_test.lgc}
+   -o
+   %{target})))
+
+(executable
+ (name datascript_lru_native)
+ (modules datascript_lru_native)
+ (flags
+  (:standard -w -32-37))
+ (libraries lg.runtime rrbvec))
+
+(rule
+ (target datascript_lru_melange.ml)
+ (deps
+  datascript/upstream/lru.cljc
+  datascript/lru_test.lgc
+  ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   melange
+   --compile-files
+   %{dep:datascript/upstream/lru.cljc}
+   %{dep:datascript/lru_test.lgc}
+   -o
+   %{target})))
+
+(melange.emit
+ (target datascript-lru-melange)
+ (alias datascript-lru-melange)
+ (module_systems es6)
+ (modules datascript_lru_melange)
+ (compile_flags -w -32-37)
+ (libraries lg.runtime rrbvec))
+
+(rule
+ (alias datascript-lru)
+ (deps
+  datascript/value_smoke.sh
+  datascript/lru.expected
+  datascript_lru_native.exe
+  (alias datascript-lru-melange)
+  datascript-lru-melange/test/datascript_lru_melange.js)
+ (action
+  (run
+   sh
+   %{dep:datascript/value_smoke.sh}
+   %{exe:datascript_lru_native.exe}
+   %{dep:datascript-lru-melange/test/datascript_lru_melange.js}
+   %{dep:datascript/lru.expected})))
+
+(rule
  (alias runtest)
  (deps
-  datascript_value_smoke.sh
-  datascript_value.expected
+  datascript/value_smoke.sh
+  datascript/value.expected
   datascript_value_native.exe
   (alias datascript-value-melange)
   datascript-value-melange/test/datascript_value_melange.js)
  (action
   (run
    sh
-   %{dep:datascript_value_smoke.sh}
+   %{dep:datascript/value_smoke.sh}
    %{exe:datascript_value_native.exe}
    %{dep:datascript-value-melange/test/datascript_value_melange.js}
-   %{dep:datascript_value.expected})))
+   %{dep:datascript/value.expected})))
 
 (rule
  (target lgc_jsoo.ml)
@@ -197,6 +309,17 @@
 (rule
  (alias runtest)
  (deps
+  ../script/check_datascript_upstream_coverage.sh
+  datascript/upstream_tests.tsv
+  datascript/upstream_status.tsv)
+ (action
+  (chdir
+   %{workspace_root}
+   (run sh script/check_datascript_upstream_coverage.sh))))
+
+(rule
+ (alias runtest)
+ (deps
   no_typed_expr_source_code.sh
   ../src/types.ml
   ../src/destructure.ml
@@ -207,3 +330,133 @@
   (chdir
    %{workspace_root}
    (run sh test/no_typed_expr_source_code.sh))))
+
+(rule
+ (target datascript_util_native.ml)
+ (deps
+  datascript/upstream/util.cljc
+  datascript/util_test.lgc
+  ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   native
+   --compile-files
+   %{dep:datascript/upstream/util.cljc}
+   %{dep:datascript/util_test.lgc}
+   -o
+   %{target})))
+
+(executable
+ (name datascript_util_native)
+ (modules datascript_util_native)
+ (flags
+  (:standard -w -32-37))
+ (libraries lg.runtime rrbvec))
+
+(rule
+ (target datascript_util_melange.ml)
+ (deps
+  datascript/upstream/util.cljc
+  datascript/util_test.lgc
+  ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   melange
+   --compile-files
+   %{dep:datascript/upstream/util.cljc}
+   %{dep:datascript/util_test.lgc}
+   -o
+   %{target})))
+
+(melange.emit
+ (target datascript-util-melange)
+ (alias datascript-util-melange)
+ (module_systems es6)
+ (modules datascript_util_melange)
+ (compile_flags -w -32-37)
+ (libraries lg.runtime rrbvec))
+
+(rule
+ (alias datascript-util)
+ (deps
+  datascript/value_smoke.sh
+  datascript/util.expected
+  datascript_util_native.exe
+  (alias datascript-util-melange)
+  datascript-util-melange/test/datascript_util_melange.js)
+ (action
+  (run
+   sh
+   %{dep:datascript/value_smoke.sh}
+   %{exe:datascript_util_native.exe}
+   %{dep:datascript-util-melange/test/datascript_util_melange.js}
+   %{dep:datascript/util.expected})))
+
+(rule
+ (target persistent_sorted_set_arrays_native.ml)
+ (deps
+  ../datascript/me/tonsky/persistent_sorted_set/arrays.lgc
+  datascript/persistent_sorted_set/arrays_test.lgc
+  ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   native
+   --compile-files
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.lgc}
+   %{dep:datascript/persistent_sorted_set/arrays_test.lgc}
+   -o
+   %{target})))
+
+(executable
+ (name persistent_sorted_set_arrays_native)
+ (modules persistent_sorted_set_arrays_native)
+ (flags
+  (:standard -w -32-37))
+ (libraries lg.runtime rrbvec))
+
+(rule
+ (target persistent_sorted_set_arrays_melange.ml)
+ (deps
+  ../datascript/me/tonsky/persistent_sorted_set/arrays.lgc
+  datascript/persistent_sorted_set/arrays_test.lgc
+  ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   melange
+   --compile-files
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.lgc}
+   %{dep:datascript/persistent_sorted_set/arrays_test.lgc}
+   -o
+   %{target})))
+
+(melange.emit
+ (target persistent-sorted-set-arrays-melange)
+ (alias persistent-sorted-set-arrays-melange)
+ (module_systems es6)
+ (modules persistent_sorted_set_arrays_melange)
+ (compile_flags -w -32-37)
+ (libraries lg.runtime rrbvec))
+
+(rule
+ (alias runtest)
+ (deps
+  datascript/value_smoke.sh
+  datascript/persistent_sorted_set/arrays.expected
+  persistent_sorted_set_arrays_native.exe
+  (alias persistent-sorted-set-arrays-melange)
+  persistent-sorted-set-arrays-melange/test/persistent_sorted_set_arrays_melange.js)
+ (action
+  (run
+   sh
+   %{dep:datascript/value_smoke.sh}
+   %{exe:persistent_sorted_set_arrays_native.exe}
+   %{dep:persistent-sorted-set-arrays-melange/test/persistent_sorted_set_arrays_melange.js}
+   %{dep:datascript/persistent_sorted_set/arrays.expected})))

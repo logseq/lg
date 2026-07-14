@@ -76,7 +76,7 @@ let string_eq left right = Semantic_ir.Infix ("=", left, right)
 
 let identifier_body_expr name arg =
   match arg.ty with
-  | TString | TSymbol | TKeyword ->
+  | TString | TSymbol | TKeyword | TUnknown ->
       let value = Semantic_ir.Ident "value" in
       Ok
         (Semantic_ir.Let
@@ -109,9 +109,14 @@ let identifier_namespace_expr arg =
     ( [ (Semantic_ir.PVar "body", arg) ],
       Semantic_ir.Match
         ( string_rindex_opt (Semantic_ir.Ident "body") '/',
-          [ (Semantic_ir.PConstructor ("None", None), Semantic_ir.String "");
+          [ ( Semantic_ir.PConstructor ("None", None),
+              Semantic_ir.Constructor ("None", None) );
             ( Semantic_ir.PConstructor ("Some", Some (Semantic_ir.PVar "index")),
-              string_sub (Semantic_ir.Ident "body") (Semantic_ir.Int 0) (Semantic_ir.Ident "index") ) ] ) )
+              Semantic_ir.Constructor
+                ( "Some",
+                  Some
+                    (string_sub (Semantic_ir.Ident "body") (Semantic_ir.Int 0)
+                       (Semantic_ir.Ident "index")) ) ) ] ) )
 
 let keyword_one_arg_expr arg =
   let value = Semantic_ir.Ident "value" in
@@ -161,7 +166,8 @@ let compile_keyword name args =
   | [ arg ] -> (
       match arg.ty with
       | TKeyword -> Ok (typed_ir TKeyword arg.semantic_expr)
-      | TString | TSymbol -> Ok (typed_ir TKeyword (keyword_one_arg_expr arg.semantic_expr))
+      | TString | TSymbol | TUnknown ->
+          Ok (typed_ir TKeyword (keyword_one_arg_expr arg.semantic_expr))
       | _ -> Error.error "keyword expects keyword, string, or symbol")
   | [ namespace_arg; name_arg ] -> (
       match (identifier_body_expr name namespace_arg, identifier_body_expr name name_arg) with
@@ -176,9 +182,11 @@ let compile_namespace name args =
   | Error _ as err -> err
   | Ok arg -> (
       match arg.ty with
-      | TKeyword | TSymbol ->
+      | TKeyword | TSymbol | TUnknown ->
           Result.map
-            (fun body -> typed_ir TString (identifier_namespace_expr body))
+            (fun body ->
+              typed_ir (TOcaml_app ("option", [ TString ]))
+                (identifier_namespace_expr body))
             (identifier_body_expr name arg)
       | _ -> Error.error "namespace expects keyword or symbol")
 

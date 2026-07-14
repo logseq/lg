@@ -14,7 +14,15 @@ let unique_named_records records =
       else record :: unique)
     [] records
 
-let infer_named_record env = function
+let infer_named_record scope env = function
+  | TOcaml name when String.starts_with ~prefix:"__lg_record:" name ->
+      let source_name =
+        String.sub name (String.length "__lg_record:")
+          (String.length name - String.length "__lg_record:")
+      in
+      Resolver.lookup_record_type scope env source_name
+      |> Result.map (fun record -> TNamed_record record)
+      |> Result.value ~default:(TOcaml name)
   | TRecord fields as inferred ->
       let candidates =
         Env.filter_map
@@ -57,7 +65,7 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
       | Ok inferred ->
           let inferred =
             List.map
-              (fun (name, ty) -> (name, infer_named_record env ty))
+                (fun (name, ty) -> (name, infer_named_record scope env ty))
               inferred
           in
           let lookup_inferred name =

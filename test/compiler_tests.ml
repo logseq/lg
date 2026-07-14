@@ -606,6 +606,91 @@ let test_nil_predicates_evaluate_arguments_once () =
   assert_ocaml_runs "nil_predicates_evaluate_arguments_once" "true\n1\n"
     ocaml_source
 
+let test_control_flow_lifts_nilable_branches () =
+  let source =
+    {|
+(def present (if true 41 nil))
+(def absent (if false 41 nil))
+(def implicit-absent (if false 42))
+(def when-present (when true 43))
+(def when-absent (when false 43))
+(println
+  (str (if-some [value present] (+ value 1) 0) ":"
+       (nil? absent) ":"
+       (nil? implicit-absent) ":"
+       (if-some [value when-present] value 0) ":"
+       (nil? when-absent)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "control_flow_lifts_nilable_branches"
+    "42:true:true:43:true\n" ocaml_source
+
+let test_cond_uses_clojure_truthiness_and_implicit_nil () =
+  let source =
+    {|
+(def selected (cond nil 1 "truthy" 2))
+(def missing (cond false 1 nil 2))
+(println (str selected ":" (nil? missing)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "cond_uses_clojure_truthiness_and_implicit_nil"
+    "2:true\n" ocaml_source
+
+let test_if_let_and_if_some_distinguish_false_from_nil () =
+  let source =
+    {|
+(def value (if true false nil))
+(println
+  (str (if-let [bound value] :then :else) ":"
+       (if-some [bound value] :then :else)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "if_let_and_if_some_distinguish_false_from_nil"
+    ":else::then\n" ocaml_source
+
+let test_nilable_vectors_lift_values_and_empty_vectors_are_polymorphic () =
+  let source =
+    {|
+(def empty-values [])
+(def numbers (conj empty-values 42))
+(def maybe-numbers [1 nil])
+(println
+  (str (first numbers) ":" (count maybe-numbers) ":"
+       (nil? (get maybe-numbers 1))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "nilable_vectors_lift_values_and_empty_vectors_are_polymorphic"
+    "42:2:true\n" ocaml_source
+
+let test_logical_forms_lift_nilable_operands () =
+  let source =
+    {|
+(def fallback (or nil 7))
+(def missing (and 7 nil))
+(println (str (if-some [value fallback] value 0) ":" (nil? missing)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "logical_forms_lift_nilable_operands" "7:true\n"
+    ocaml_source
+
+let test_when_bindings_return_nullable_body_values () =
+  let source =
+    {|
+(def from-let (when-let [value (if true 3 nil)] (+ value 1)))
+(def from-some (when-some [value (if false 3 nil)] (+ value 1)))
+(println
+  (str (if-some [value from-let] value 0) ":" (nil? from-some)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "when_bindings_return_nullable_body_values" "4:true\n"
+    ocaml_source
+
 let test_nil_type_annotation_remains_explicitly_unsupported () =
   Lg.Compiler.compile_string {|(defn bad [^:nil x] x)|}
   |> expect_error "unknown parameter type ^:nil"
@@ -1376,9 +1461,171 @@ let test_modules_prevent_unqualified_symbol_collisions () =
   assert_ocaml_runs "modules_prevent_unqualified_symbol_collisions" "1:2\n"
     ocaml_source
 
-let test_namespace_form_is_removed () =
-  Lg.Compiler.compile_string {|(ns legacy.core)|}
-  |> expect_error "unknown function ns"
+let test_namespace_scopes_following_forms_without_ocaml_modules () =
+  let source =
+    {|
+(ns app.math)
+(def answer 40)
+(defn add2 [x] (+ x 2))
+(println (str answer ":" (add2 answer)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "module App" then
+    failwith "ns compatibility must not emit an OCaml module";
+  assert_ocaml_runs "namespace_scopes_following_forms_without_ocaml_modules"
+    "40:42\n" ocaml_source
+
+let test_namespace_require_aliases_local_modules_across_files () =
+  let state, math_ocaml =
+    Lg.Compiler.compile_chunk Lg.Compiler.empty_state
+      {|
+(ns app.math)
+(defn add [left right] (+ left right))
+|}
+    |> expect_ok
+  in
+  let _state, main_ocaml =
+    Lg.Compiler.compile_chunk state
+      {|
+(ns app.main
+  (:require [app.math :as math]))
+(println (math/add 20 22))
+|}
+    |> expect_ok
+  in
+  assert_ocaml_runs "namespace_require_aliases_local_modules_across_files"
+    "42\n" (math_ocaml ^ "\n" ^ main_ocaml)
+
+let test_namespace_load_only_require_exposes_qualified_clojure_string () =
+  let source =
+    {|
+(ns app.text
+  (:require [clojure.string]))
+(println (clojure.string/upper-case "ada"))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "namespace_load_only_require_exposes_qualified_clojure_string" "ADA\n"
+    ocaml_source
+
+let test_namespace_refer_clojure_exclude_allows_local_replacement () =
+  let source =
+    {|
+(ns app.search
+  (:refer-clojure :exclude [find]))
+(defn find [value] (+ value 1))
+(println (find 41))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "namespace_refer_clojure_exclude_allows_local_replacement" "42\n"
+    ocaml_source
+
+let test_namespace_refer_clojure_exclude_hides_core_binding () =
+  Lg.Compiler.compile_string
+    {|
+(ns app.search
+  (:refer-clojure :exclude [find]))
+(def result (find (fn [value] true) [1]))
+|}
+  |> expect_error "unknown function find"
+
+let test_namespace_accepts_host_import_clause () =
+  let source =
+    {|
+(ns app.uuid
+  (:import [java.util UUID]))
+(println 42)
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "namespace_accepts_host_import_clause" "42\n" ocaml_source
+
+let test_top_level_definitions_accept_clojure_metadata () =
+  let source =
+    {|
+(def ^:dynamic *answer* 41)
+(defn ^:private increment [value] (+ value 1))
+(println (increment *answer*))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "top_level_definitions_accept_clojure_metadata" "42\n"
+    ocaml_source
+
+let test_user_macros_expand_syntax_quote_and_unquote () =
+  let source =
+    {|
+(defmacro choose [test then else]
+  `(if ~test ~then ~else))
+(println (choose true 42 0))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "user_macros_expand_syntax_quote_and_unquote" "42\n"
+    ocaml_source
+
+let test_rand_int_uses_exclusive_positive_bound () =
+  let source = {|(println (rand-int 1))|} in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "rand_int_uses_exclusive_positive_bound" "0\n" ocaml_source
+
+let test_int_coerces_float_and_preserves_int () =
+  let source = {|(println (str (int 3.9) ":" (int 4)))|} in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "int_coerces_float_and_preserves_int" "3:4\n" ocaml_source
+
+let test_namespace_rejects_malformed_and_repeated_forms () =
+  Lg.Compiler.compile_string {|(ns)|}
+  |> expect_error "ns expects a namespace symbol and optional clauses";
+  Lg.Compiler.compile_string {|(ns :app)|}
+  |> expect_error "ns expects a namespace symbol and optional clauses";
+  Lg.Compiler.compile_string {|(ns app.one) (ns app.two)|}
+  |> expect_error "ns may only appear once at the start of a file"
+
+let test_datascript_schema_accepts_dynamic_keyword_or_string_values () =
+  let source =
+    {|
+(defn system-keyword? [value]
+  (and (or (keyword? value) (string? value))
+       (if-let [ns (namespace (keyword value))]
+         (= "db" ns)
+         false)))
+(println (str (system-keyword? :db/ident) ":"
+              (system-keyword? "db/ident") ":"
+              (system-keyword? :user/name)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "datascript_schema_accepts_dynamic_keyword_or_string_values"
+    "true:true:false\n" ocaml_source
+
+let test_datascript_schema_reads_regex_literals () =
+  let source =
+    {|
+(require [clojure.string])
+(println (first (clojure.string/split "db.install" #"\.")))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "datascript_schema_reads_regex_literals" "db\n" ocaml_source
+
+let test_datascript_schema_reads_anonymous_functions_for_dynamic_contains () =
+  let source =
+    {|
+(def schema-keys #{:db/ident :db/doc})
+(defn schema-entity? [entity]
+  (some #(contains? entity %) schema-keys))
+(println (boolean (schema-entity? {:db/ident 1, :db/doc 2})))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "datascript_schema_reads_anonymous_functions_for_dynamic_contains"
+    "true\n" ocaml_source
 
 let test_top_level_require_imports_ocaml_modules () =
   let source =
@@ -1391,10 +1638,10 @@ let test_top_level_require_imports_ocaml_modules () =
   assert_ocaml_runs "top_level_require_imports_ocaml_modules" "ADA\n"
     ocaml_source
 
-let test_top_level_require_rejects_lg_namespace_imports () =
+let test_top_level_require_rejects_unknown_lg_namespace () =
   Lg.Compiler.compile_string {|(require [people.core :as people])|}
   |> expect_error_contains
-       "require only accepts OCaml packages, OCaml modules, and clojure.string"
+       "cannot require unknown namespace people.core"
 
 let test_ocaml_keyword_names_are_munged () =
   let source =
@@ -3881,21 +4128,31 @@ let test_if_not_rejects_branch_type_mismatch () =
   Lg.Compiler.compile_string {|(def x (if-not true 1 "one"))|}
   |> expect_error "if-not branches must have same type"
 
-let test_cond_rejects_missing_else () =
-  Lg.Compiler.compile_string {|(def x (cond false 1))|}
-  |> expect_error "cond requires an :else branch"
+let test_cond_returns_nil_without_else () =
+  let ocaml_source =
+    Lg.Compiler.compile_string {|(println (nil? (cond false 1)))|}
+    |> expect_ok
+  in
+  assert_ocaml_runs "cond_returns_nil_without_else" "true\n" ocaml_source
 
 let test_cond_rejects_branch_type_mismatch () =
   Lg.Compiler.compile_string {|(def x (cond false 1 :else "one"))|}
   |> expect_error "cond branches must have same type"
 
-let test_cond_rejects_non_bool_tests () =
-  Lg.Compiler.compile_string {|(def x (cond 1 "one" :else "fallback"))|}
-  |> expect_error "cond tests must be bool"
+let test_cond_accepts_clojure_truthy_tests () =
+  let ocaml_source =
+    Lg.Compiler.compile_string {|(println (cond 1 "one" :else "fallback"))|}
+    |> expect_ok
+  in
+  assert_ocaml_runs "cond_accepts_clojure_truthy_tests" "one\n" ocaml_source
 
-let test_when_rejects_value_body () =
-  Lg.Compiler.compile_string {|(def x (when true 1))|}
-  |> expect_error "when body must be unit"
+let test_when_returns_nullable_value () =
+  let ocaml_source =
+    Lg.Compiler.compile_string
+      {|(println (if-some [value (when true 1)] value 0))|}
+    |> expect_ok
+  in
+  assert_ocaml_runs "when_returns_nullable_value" "1\n" ocaml_source
 
 let test_conditional_forms_infer_bool_params () =
   let source =
@@ -4116,9 +4373,11 @@ let test_batched_identifier_and_constructor_core_functions_work () =
 (def m2 (sorted-map :ready true))
 (def s1 (sorted-set 3 1 2 2))
 (def listed (list* 1 2 [3 4]))
+(defn namespace-or-empty [value]
+  (if-let [ns (namespace value)] ns ""))
 (println
-  (str (name qualified) ":" (namespace qualified) ":" (name kw) ":" (namespace kw) ":"
-       (name kw2) ":" (namespace kw2) ":" (pr-str more-names) ":"
+  (str (name qualified) ":" (namespace-or-empty qualified) ":" (name kw) ":" (namespace-or-empty kw) ":"
+       (name kw2) ":" (namespace-or-empty kw2) ":" (pr-str more-names) ":"
        (:name m1) ":" (:ready m2) ":" (pr-str s1) ":" (pr-str listed) ":"
        (symbol? simple) ":" (symbol? :ready) ":"
        (simple-symbol? simple) ":" (simple-symbol? qualified) ":"
@@ -5400,9 +5659,9 @@ let test_sets_reject_nil_elements () =
   Lg.Compiler.compile_string {|(def values (set-of :nil))|}
   |> expect_error "unknown set element type :nil";
   Lg.Compiler.compile_string {|(def values (hash-set nil))|}
-  |> expect_error "sets require a generated comparator for ocaml/option<any>";
+  |> expect_error "sets require a generated comparator for nil";
   Lg.Compiler.compile_string {|(def values (set [nil]))|}
-  |> expect_error "sets require a generated comparator for ocaml/option<any>"
+  |> expect_error "sets require a generated comparator for nil"
 
 let test_set_of_rejects_unknown_types () =
   Lg.Compiler.compile_string {|(def xs (set-of :record))|}
@@ -8967,6 +9226,18 @@ let tests =
       test_if_some_and_when_some_bind_option_payloads );
     ( "nil predicates evaluate arguments once",
       test_nil_predicates_evaluate_arguments_once );
+    ( "control flow lifts nilable branches",
+      test_control_flow_lifts_nilable_branches );
+    ( "cond uses Clojure truthiness and implicit nil",
+      test_cond_uses_clojure_truthiness_and_implicit_nil );
+    ( "if-let and if-some distinguish false from nil",
+      test_if_let_and_if_some_distinguish_false_from_nil );
+    ( "nilable vectors lift values and empty vectors are polymorphic",
+      test_nilable_vectors_lift_values_and_empty_vectors_are_polymorphic );
+    ( "logical forms lift nilable operands",
+      test_logical_forms_lift_nilable_operands );
+    ( "when bindings return nullable body values",
+      test_when_bindings_return_nullable_body_values );
     ( "nil type annotation remains explicitly unsupported",
       test_nil_type_annotation_remains_explicitly_unsupported );
     ("type predicates work", test_type_predicates);
@@ -9041,11 +9312,38 @@ let tests =
     ("modules resolve qualified symbols", test_modules_resolve_qualified_symbols);
     ( "modules prevent unqualified symbol collisions",
       test_modules_prevent_unqualified_symbol_collisions );
-    ( "top-level require rejects lg namespace imports",
-      test_top_level_require_rejects_lg_namespace_imports );
+    ( "top-level require rejects unknown lg namespace",
+      test_top_level_require_rejects_unknown_lg_namespace );
     ( "top-level require imports OCaml modules",
       test_top_level_require_imports_ocaml_modules );
-    ("namespace form is removed", test_namespace_form_is_removed);
+    ( "namespace scopes following forms without OCaml modules",
+      test_namespace_scopes_following_forms_without_ocaml_modules );
+    ( "namespace require aliases local modules across files",
+      test_namespace_require_aliases_local_modules_across_files );
+    ( "namespace load-only require exposes qualified clojure.string",
+      test_namespace_load_only_require_exposes_qualified_clojure_string );
+    ( "namespace refer-clojure exclude allows local replacement",
+      test_namespace_refer_clojure_exclude_allows_local_replacement );
+    ( "namespace refer-clojure exclude hides core binding",
+      test_namespace_refer_clojure_exclude_hides_core_binding );
+    ( "namespace accepts host import clause",
+      test_namespace_accepts_host_import_clause );
+    ( "top-level definitions accept Clojure metadata",
+      test_top_level_definitions_accept_clojure_metadata );
+    ( "user macros expand syntax quote and unquote",
+      test_user_macros_expand_syntax_quote_and_unquote );
+    ( "rand-int uses an exclusive positive bound",
+      test_rand_int_uses_exclusive_positive_bound );
+    ( "int coerces float and preserves int",
+      test_int_coerces_float_and_preserves_int );
+    ( "namespace rejects malformed and repeated forms",
+      test_namespace_rejects_malformed_and_repeated_forms );
+    ( "datascript schema accepts dynamic keyword or string values",
+      test_datascript_schema_accepts_dynamic_keyword_or_string_values );
+    ( "datascript schema reads regex literals",
+      test_datascript_schema_reads_regex_literals );
+    ( "datascript schema reads anonymous functions for dynamic contains",
+      test_datascript_schema_reads_anonymous_functions_for_dynamic_contains );
     ("ocaml keyword names are munged", test_ocaml_keyword_names_are_munged);
     ( "module aliases replace legacy import aliases",
       test_module_aliases_replace_legacy_import_aliases );
@@ -9414,10 +9712,10 @@ let tests =
     ("if rejects branch type mismatch", test_if_rejects_branch_type_mismatch);
     ("conditional forms work", test_conditional_forms_work);
     ("if-not rejects branch type mismatch", test_if_not_rejects_branch_type_mismatch);
-    ("cond rejects missing else", test_cond_rejects_missing_else);
+    ("cond returns nil without else", test_cond_returns_nil_without_else);
     ("cond rejects branch type mismatch", test_cond_rejects_branch_type_mismatch);
-    ("cond rejects non-bool tests", test_cond_rejects_non_bool_tests);
-    ("when rejects value body", test_when_rejects_value_body);
+    ("cond accepts Clojure truthy tests", test_cond_accepts_clojure_truthy_tests);
+    ("when returns nullable value", test_when_returns_nullable_value);
     ( "conditional forms infer bool params",
       test_conditional_forms_infer_bool_params );
     ("batched core functions work", test_batched_core_functions_work);

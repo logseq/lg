@@ -54,6 +54,14 @@ let seqable_constraint_element = function
 let reduced_type_name = "Lg_runtime.Runtime_reduced.t"
 let reduced inner = TOcaml_app (reduced_type_name, [ inner ])
 
+let dynamic_map key value =
+  TOcaml_app ("Lg_runtime.Runtime_map.t", [ key; value ])
+
+let dynamic_map_types = function
+  | TOcaml_app ("Lg_runtime.Runtime_map.t", [ key; value ]) ->
+      Some (key, value)
+  | _ -> None
+
 let reduced_element = function
   | TOcaml_app (name, [ inner ]) when name = reduced_type_name -> Some inner
   | _ -> None
@@ -66,11 +74,15 @@ let rec equal left right =
   | TFloat, TFloat
   | TChar, TChar
   | TString, TString
+  | TRegex, TRegex
+  | TMap_keys, TMap_keys
   | TSymbol, TSymbol
   | TKeyword, TKeyword
   | TBool, TBool
-  | TUnit, TUnit ->
+  | TUnit, TUnit
+  | TNil, TNil ->
       true
+  | TNullable left, TNullable right -> equal left right
   | TOcaml left, TOcaml right -> left = right
   | TOcaml_app (left_name, left_args), TOcaml_app (right_name, right_args) ->
       left_name = right_name
@@ -127,6 +139,7 @@ let rec row_compatible ~expected ~actual =
                  || row_compatible ~expected:expected_field.ty
                       ~actual:actual_field.ty
              | None -> false)
+  | TMap_keys, (TRecord _ | TNamed_record _) -> true
   | _ -> false
 
 let same_shape left right =
@@ -151,7 +164,7 @@ type assignability_policy = Nominal | Structural | Host_boundary
 
 let classify_assignability ~expected ~actual =
   match (expected, actual) with
-  | TUnknown, _ | _, TUnknown -> Unknown
+  | TUnknown, _ | _, TUnknown | TVar _, _ | _, TVar _ -> Unknown
   | _ ->
       if equal expected actual then Equal
       else if row_compatible ~expected ~actual then Row_compatible
@@ -171,10 +184,14 @@ let rec source_name = function
   | TFloat -> "float"
   | TChar -> "char"
   | TString -> "string"
+  | TRegex -> "regex"
+  | TMap_keys -> "map"
   | TSymbol -> "symbol"
   | TKeyword -> "keyword"
   | TBool -> "bool"
   | TUnit -> "unit"
+  | TNil -> "nil"
+  | TNullable inner -> "nullable<" ^ source_name inner ^ ">"
   | TUnknown -> "any"
   | TVar name -> "param/" ^ name
   | TOcaml name -> "ocaml/" ^ name
@@ -219,10 +236,14 @@ let rec ocaml_name = function
   | TFloat -> "float"
   | TChar -> "char"
   | TString -> "string"
+  | TRegex -> "string"
+  | TMap_keys -> "string Lg_runtime.Core_set.String_set.t"
   | TSymbol -> "string"
   | TKeyword -> "string"
   | TBool -> "bool"
   | TUnit -> "unit"
+  | TNil -> "'a option"
+  | TNullable inner -> ocaml_name inner ^ " option"
   | TUnknown -> "'a"
   | TVar name -> "'" ^ name
   | TOcaml name -> name
@@ -247,7 +268,14 @@ let rec ocaml_name = function
       (args |> List.map ocaml_name |> String.concat " -> ") ^ " -> " ^ ocaml_name ret
   | TOverloaded_fn arities -> ocaml_name (overloaded_storage_type arities)
   | TRecord _ -> "record"
-  | TNamed_record record -> record.type_name
+  | TNamed_record record -> (
+      match record.type_parameters with
+      | [] -> record.type_name
+      | [ parameter ] -> "'" ^ parameter ^ " " ^ record.type_name
+      | parameters ->
+          "("
+          ^ String.concat ", " (List.map (fun parameter -> "'" ^ parameter) parameters)
+          ^ ") " ^ record.type_name)
 
 and overloaded_storage_type = function
   | [] -> TUnit
@@ -297,9 +325,10 @@ let rec qualify_module_type module_path ty =
     if String.contains name '.' then name else module_path ^ "." ^ name
   in
   match ty with
-  | TInt | TFloat | TChar | TString | TSymbol | TKeyword | TBool | TUnit | TUnknown
+  | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword | TBool | TUnit | TNil | TUnknown
   | TVar _ | TOcaml _ ->
       ty
+  | TNullable inner -> TNullable (qualify_module_type module_path inner)
   | TOcaml_app (name, args) ->
       TOcaml_app (name, List.map (qualify_module_type module_path) args)
   | TTuple args -> TTuple (List.map (qualify_module_type module_path) args)
@@ -359,9 +388,11 @@ let rec remap_module_type ~from_path ~to_path ty =
     | _ -> type_id
   in
   match ty with
-  | TInt | TFloat | TChar | TString | TSymbol | TKeyword | TBool | TUnit | TUnknown
+  | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword | TBool | TUnit | TNil | TUnknown
   | TVar _ | TOcaml _ ->
       ty
+  | TNullable inner ->
+      TNullable (remap_module_type ~from_path ~to_path inner)
   | TOcaml_app (name, args) ->
       TOcaml_app (name, List.map (remap_module_type ~from_path ~to_path) args)
   | TTuple args -> TTuple (List.map (remap_module_type ~from_path ~to_path) args)
@@ -478,6 +509,8 @@ let rec substitute_type_variables substitutions = function
       List.assoc_opt name substitutions |> Option.value ~default:(TVar name)
   | TOcaml_app (name, args) ->
       TOcaml_app (name, List.map (substitute_type_variables substitutions) args)
+  | TNullable inner ->
+      TNullable (substitute_type_variables substitutions inner)
   | TTuple args -> TTuple (List.map (substitute_type_variables substitutions) args)
   | TArray inner -> TArray (substitute_type_variables substitutions inner)
   | TRef inner -> TRef (substitute_type_variables substitutions inner)
@@ -519,7 +552,7 @@ let rec substitute_type_variables substitutions = function
                 })
               record.fields;
         }
-  | (TInt | TFloat | TChar | TString | TSymbol | TKeyword | TBool | TUnit
+  | (TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword | TBool | TUnit | TNil
     | TUnknown | TOcaml _) as ty ->
       ty
 

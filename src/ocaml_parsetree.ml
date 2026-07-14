@@ -31,9 +31,15 @@ let rec core_type = function
   | Types.TInt -> type_constructor "int" []
   | Types.TFloat -> type_constructor "float" []
   | Types.TChar -> type_constructor "char" []
-  | Types.TString | Types.TSymbol | Types.TKeyword -> type_constructor "string" []
+  | Types.TString | Types.TRegex | Types.TSymbol | Types.TKeyword ->
+      type_constructor "string" []
+  | Types.TMap_keys ->
+      Ast_helper.Typ.constr ~loc
+        (lid (longident_of_string "Lg_runtime.Core_set.String_set.t")) []
   | Types.TBool -> type_constructor "bool" []
   | Types.TUnit -> type_constructor "unit" []
+  | Types.TNil -> type_constructor "option" [ Ast_helper.Typ.any ~loc () ]
+  | Types.TNullable inner -> type_constructor "option" [ core_type inner ]
   | Types.TUnknown -> Ast_helper.Typ.var ~loc "a"
   | Types.TVar name -> Ast_helper.Typ.var ~loc name
   | Types.TOcaml name ->

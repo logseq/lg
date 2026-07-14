@@ -44,6 +44,175 @@ let compile_type_variant = Type_definition_elaborator.compile_type_variant
 
 let rec compile scope env next_type = function
   | FList
+      (FSymbol "deftype" :: ((FSymbol name) as name_form) :: FVector raw_fields
+      :: _interface_forms) ->
+      let rec field_names acc = function
+        | [] -> Ok (List.rev acc)
+        | FSymbol metadata :: rest
+          when String.starts_with ~prefix:"^" metadata ->
+            field_names acc rest
+        | FSymbol field_name :: rest -> field_names (field_name :: acc) rest
+        | _ -> Error.error "deftype fields must be symbols"
+      in
+      Result.bind (field_names [] raw_fields) (fun fields ->
+          if fields = [] then Error.error "deftype expects at least one field"
+          else
+            let type_parameters =
+              List.mapi (fun index _ -> "field" ^ string_of_int index) fields
+            in
+            let field_forms =
+              List.map2
+                (fun field_name parameter ->
+                  FList
+                    [ FSymbol field_name;
+                      FKeyword (":param/" ^ parameter);
+                    ])
+                fields type_parameters
+            in
+            compile_type_record ?location:(Source_context.find name_form) scope env
+              next_type name type_parameters field_forms)
+  | FList
+      (FSymbol "deftype-methods" :: FSymbol type_name :: interface_forms) -> (
+      match Resolver.lookup_record_type scope env type_name with
+      | Error _ as err -> err
+      | Ok record ->
+          let receiver_ty = TNamed_record record in
+          let rec compile_methods env items current_interface = function
+            | [] -> Ok (scope, env, next_type, Group (List.rev items))
+            | FSymbol interface_name :: rest ->
+                compile_methods env items (Some interface_name) rest
+            | FList
+                (FSymbol method_name :: (FVector params as params_form)
+                :: body_forms)
+              :: rest ->
+                if current_interface = Some "IPrintWithWriter" then
+                  compile_methods env items current_interface rest
+                else
+                let arity = List.length params in
+                let source_name =
+                  Expression_support.deftype_method_name record method_name arity
+                in
+                let ocaml_name = Names.sanitize_name source_name in
+                let receiver_name, params_form =
+                  match params with
+                  | FSymbol "_" :: remaining ->
+                      let receiver_name = "__lg_deftype_this" in
+                      ( receiver_name,
+                        FVector (FSymbol receiver_name :: remaining) )
+                  | FSymbol receiver_name :: _ -> (receiver_name, params_form)
+                  | _ -> ("__lg_deftype_this", params_form)
+                in
+                let rec form_mentions name = function
+                  | FSymbol candidate -> candidate = name
+                  | FList forms | FVector forms ->
+                      List.exists (form_mentions name) forms
+                  | FMap pairs ->
+                      List.exists
+                        (fun (key, value) ->
+                          form_mentions name key || form_mentions name value)
+                        pairs
+                  | FInt _ | FFloat _ | FChar _ | FString _ | FRegex _
+                  | FBool _ | FKeyword _ ->
+                      false
+                in
+                let field_bindings =
+                  record.fields
+                  |> List.filter (fun (field : field) ->
+                         let source_name =
+                           Names.keyword_source_name field.keyword
+                         in
+                         List.exists (form_mentions source_name) body_forms)
+                  |> List.concat_map (fun (field : field) ->
+                         let source_name =
+                           Names.keyword_source_name field.keyword
+                         in
+                         [ FSymbol source_name;
+                           FList
+                             [ FSymbol (".-" ^ source_name);
+                               FSymbol receiver_name;
+                             ];
+                         ])
+                in
+                let body_forms =
+                  [ FList
+                      (FSymbol "let" :: FVector field_bindings :: body_forms)
+                  ]
+                in
+                (match
+                   Expression_elaborator.compile_fn
+                     ~param_type_overrides:[ Some receiver_ty ] scope env
+                     params_form body_forms
+                 with
+                | Error _ as err -> err
+                | Ok implementation ->
+                    let binding = binding_of_expr ocaml_name implementation in
+                    let env =
+                      Env.add (Names.scoped_key scope source_name) binding env
+                    in
+                    let item =
+                      Value_binding
+                        { pattern = Named ocaml_name;
+                          expression = implementation.semantic_expr;
+                        }
+                    in
+                    compile_methods env (item :: items) current_interface rest)
+            | _ :: _ ->
+                Error.error
+                  "deftype methods must be (method-name [params] body...)"
+          in
+          compile_methods env [] None interface_forms)
+  | FList (FSymbol "defn-group" :: definitions) ->
+      let rec compile_definitions env row_items bindings = function
+        | [] ->
+            Ok
+              ( scope,
+                env,
+                next_type,
+                Group
+                  (List.rev row_items
+                  @ [ Recursive_value_bindings (List.rev bindings) ]) )
+        | FList
+            (FSymbol ("defn" | "defn-") :: ((FSymbol name) as name_form)
+            :: params :: body_forms)
+          :: rest -> (
+            match prepare_fn scope env params body_forms with
+            | Error _ as err -> err
+            | Ok parts ->
+                let ocaml_name = Names.ocaml_binding_name scope name in
+                let param_tys =
+                  parts.param_bindings
+                  |> List.map (fun (_key, (binding : binding)) -> binding.ty)
+                in
+                let row_param_types =
+                  row_param_type_names ocaml_name param_tys
+                in
+                let expr =
+                  fn_code ~row_param_type_names:row_param_types parts
+                in
+                let binding =
+                  binding_of_expr ~row_param_types ocaml_name expr
+                in
+                let env =
+                  Env.add (Names.scoped_key scope name) binding env
+                in
+                let rows = row_type_items row_param_types param_tys in
+                let recursive_binding =
+                  { name = ocaml_name;
+                    identity =
+                      Source_context.find name_form
+                      |> Option.map (fun location ->
+                             (Source_node_id.of_location location, location));
+                    expression = expr.semantic_expr;
+                  }
+                in
+                compile_definitions env
+                  (List.rev_append rows row_items)
+                  (recursive_binding :: bindings) rest)
+        | _ :: _ ->
+            Error.error "defn-group only supports function definitions"
+      in
+      compile_definitions env [] [] definitions
+  | FList
       (FSymbol "module-signature" :: ((FSymbol signature_name) as name_form)
       :: item_forms) ->
       compile_module_signature ?location:(Source_context.find name_form) scope env
@@ -396,6 +565,71 @@ let rec compile scope env next_type = function
               next_type,
               Value_binding
                 { pattern = Unit_pattern; expression = expr.semantic_expr } ))
+  | FList [ FSymbol "namespace-scope"; FSymbol namespace_name ] ->
+      Ok (namespace_name, env, next_type, Comment ("namespace " ^ namespace_name))
+  | FList (FSymbol "refer-clojure-exclude" :: names) ->
+      let rec parse_names acc = function
+        | [] -> Ok (List.rev acc)
+        | FSymbol name :: rest -> parse_names (name :: acc) rest
+        | _ -> Error.error ":refer-clojure :exclude expects a vector of symbols"
+      in
+      Result.map
+        (fun names ->
+          let env = Env.add_core_exclusions ~scope names env in
+          (scope, env, next_type, Comment "refer-clojure exclude"))
+        (parse_names [] names)
+  | FList (FSymbol "host-import" :: entries) ->
+      let rec add_classes env package = function
+        | [] -> Ok env
+        | FSymbol class_name :: rest -> (
+            match Require.add_host_import env package class_name with
+            | Error _ as err -> err
+            | Ok env -> add_classes env package rest)
+        | _ -> Error.error ":import class names must be symbols"
+      in
+      let rec add_entries env = function
+        | [] -> Ok env
+        | FVector (FSymbol package :: classes) :: rest -> (
+            match add_classes env package classes with
+            | Error _ as err -> err
+            | Ok env -> add_entries env rest)
+        | _ -> Error.error ":import expects vectors containing a package and classes"
+      in
+      Result.map
+        (fun env -> (scope, env, next_type, Comment "host import"))
+        (add_entries env entries)
+  | FList (FSymbol "defmacro" :: FSymbol name :: forms) ->
+      Result.map
+        (fun definition ->
+          let env = Env.add_macro ~scope ~name definition env in
+          (scope, env, next_type, Comment ("macro " ^ name)))
+        (Macro_definition.create ~namespace:scope ~name forms)
+  | FList (FSymbol "macro-helper-defn" :: FSymbol name :: forms) ->
+      Result.map
+        (fun definition ->
+          let env = Env.add_macro_function ~scope ~name definition env in
+          (scope, env, next_type, Comment ("macro helper " ^ name)))
+        (Macro_definition.create ~namespace:scope ~name forms)
+  | FList (FSymbol "macro-helper-def" :: FSymbol name :: forms) ->
+      let value = match forms with [] -> FSymbol "nil" | value :: _ -> value in
+      let env = Env.add_macro_value ~scope ~name value env in
+      Ok (scope, env, next_type, Comment ("macro value " ^ name))
+  | FList [ FSymbol ("def" as kind); FSymbol name ] ->
+      compile scope env next_type
+        (FList [ FSymbol kind; FSymbol name; FSymbol "nil" ])
+  | FList (FSymbol "declare" :: names) ->
+      let rec add_declarations env = function
+        | [] -> Ok env
+        | FSymbol name :: rest ->
+            let key = Names.scoped_key scope name in
+            let ocaml_name = Names.ocaml_binding_name scope name in
+            let binding = Types.binding ocaml_name (TOcaml "__declared_fn") in
+            add_declarations (Env.add key binding env) rest
+        | _ -> Error.error "declare expects symbols"
+      in
+      Result.map
+        (fun env -> (scope, env, next_type, Comment "declare"))
+        (add_declarations env names)
   | FList (FSymbol "require" :: entries) -> (
       match Require.parse_entries entries with
       | Error _ as err -> err
@@ -403,6 +637,18 @@ let rec compile scope env next_type = function
           let rec apply_specs env = function
             | [] -> Ok env
             | Require.Package _ :: rest -> apply_specs env rest
+            | Require.Load { module_name } :: rest ->
+                let result =
+                  if module_name = "clojure.string" then
+                    Ok
+                      (Require.add_clojure_string_alias_bindings env module_name)
+                  else if String.starts_with ~prefix:"ocaml." module_name then
+                    Ok (Require.add_ocaml_alias_bindings env module_name module_name)
+                  else Require.ensure_namespace env module_name
+                in
+                (match result with
+                | Error _ as err -> err
+                | Ok env -> apply_specs env rest)
             | Require.Alias { module_name; alias } :: rest ->
                 if String.starts_with ~prefix:"ocaml." module_name then
                   apply_specs
@@ -412,18 +658,22 @@ let rec compile scope env next_type = function
                   apply_specs
                     (Require.add_clojure_string_alias_bindings env alias)
                     rest
-                else
-                  Error.error
-                    "require only accepts OCaml packages, OCaml modules, and clojure.string"
+                else (
+                  match Require.add_lg_alias_bindings env module_name alias with
+                  | Error _ as err -> err
+                  | Ok env ->
+                      let env =
+                        Env.add_namespace_alias ~scope ~alias
+                          ~target:module_name env
+                      in
+                      apply_specs env rest)
             | Require.Refer { module_name; names } :: rest ->
                 let result =
                   if String.starts_with ~prefix:"ocaml." module_name then
                     Require.add_ocaml_refer_bindings env scope module_name names
                   else if module_name = "clojure.string" then
                     Require.add_clojure_string_refer_bindings env scope names
-                  else
-                    Error.error
-                      "require only accepts OCaml packages, OCaml modules, and clojure.string"
+                  else Require.add_lg_refer_bindings env scope module_name names
                 in
                 (match result with
                 | Error _ as err -> err

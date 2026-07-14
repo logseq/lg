@@ -16,7 +16,11 @@ type t = {
     string -> Env.t -> Ast.form -> Ast.form -> Ast.form -> expression_result;
   compile_if_let :
     string -> Env.t -> Ast.form -> Ast.form -> Ast.form -> expression_result;
+  compile_if_some :
+    string -> Env.t -> Ast.form -> Ast.form -> Ast.form -> expression_result;
   compile_when_let :
+    string -> Env.t -> Ast.form -> Ast.form list -> expression_result;
+  compile_when_some :
     string -> Env.t -> Ast.form -> Ast.form list -> expression_result;
   compile_let_some :
     string -> Env.t -> Ast.form -> Ast.form -> Ast.form -> expression_result;
@@ -61,26 +65,42 @@ let create ~compile_expr =
   let compile_args_for = compile_args_for compile_expr in
   let rec compile_vector scope env forms =
     match forms with
-    | [] -> Error.error "empty vector requires a type annotation"
+    | [] ->
+        Ok
+          (typed_ir (TVector (TVar "vector_element"))
+             (Semantic_ir.Ident "Rrbvec.empty"))
     | first :: rest -> (
         match compile_expr scope env first with
         | Error _ as err -> err
         | Ok first_expr ->
             let rec loop acc = function
               | [] ->
+                  let expressions = List.rev acc in
+                  let element_ty =
+                    List.fold_left
+                      (fun merged expr ->
+                        Option.bind merged (fun ty ->
+                            merge_branch_types ty expr.ty))
+                      (Some first_expr.ty) expressions
+                  in
+                  (match element_ty with
+                  | None -> Error.error "vector elements must all have the same type"
+                  | Some element_ty ->
                   let values =
-                    List.rev acc |> List.map (fun expr -> expr.semantic_expr)
+                    expressions
+                    |> List.map (fun expr ->
+                           coerce_expression_to_type element_ty expr.ty
+                             expr.semantic_expr)
                   in
                   Ok
-                    (typed_ir (TVector first_expr.ty)
+                    (typed_ir (TVector element_ty)
                        (Semantic_ir.Apply
-                          (Semantic_ir.Ident "Rrbvec.of_list", [ Semantic_ir.List values ])))
+                          (Semantic_ir.Ident "Rrbvec.of_list", [ Semantic_ir.List values ]))))
               | form :: rest -> (
                   match compile_expr scope env form with
                   | Error _ as err -> err
                   | Ok expr ->
-                      if Types.equal first_expr.ty expr.ty then loop (expr :: acc) rest
-                      else Error.error "vector elements must all have the same type")
+                      loop (expr :: acc) rest)
             in
             loop [ first_expr ] rest)
   
@@ -95,6 +115,11 @@ let create ~compile_expr =
     let rec loop acc = function
       | [] ->
           let pairs = List.rev acc in
+          if pairs = [] then
+            Ok
+              (typed_ir (Types.dynamic_map TUnknown TUnknown)
+                 (Semantic_ir.Ident "Lg_runtime.Runtime_map.empty"))
+          else
           let keyword_pairs = List.map (fun (keyword, value) -> (keyword, value)) pairs in
           Structural_map.validate_unique_keywords keyword_pairs
           |> Result.map (fun () ->
@@ -123,9 +148,12 @@ let create ~compile_expr =
     loop [] pairs
 
   and option_payload_type = function
+    | TNullable payload_ty -> Ok payload_ty
+    | TNil -> Ok TUnknown
     | TOcaml_app ("option", [ payload_ty ]) ->
         Ok (lg_metadata_type_for_ocaml_payload payload_ty)
     | TOcaml "option" -> Ok TUnknown
+    | TUnknown | TVar _ -> Ok TUnknown
     | _ -> Error.error "option binding requires an option value"
 
   and parse_option_binding form error_message =
@@ -133,8 +161,8 @@ let create ~compile_expr =
     | FVector [ FSymbol name; option_form ] -> Ok (name, option_form)
     | _ -> Error.error error_message
 
-  and compile_option_match scope env name option_form compile_some compile_none
-      branch_error =
+  and compile_option_match ?(require_truthy = false) scope env name option_form
+      compile_some compile_none branch_error =
     match compile_expr scope env option_form with
     | Error _ as err -> err
     | Ok option_expr -> (
@@ -151,18 +179,27 @@ let create ~compile_expr =
             | (Error _ as err), _ -> err
             | _, (Error _ as err) -> err
             | Ok some_expr, Ok none_expr -> (
-                match merge_branch_types some_expr.ty none_expr.ty with
+                match merge_branch_expressions some_expr none_expr with
                 | None -> Error.error branch_error
-                | Some result_ty ->
+                | Some (result_ty, some_code, none_code) ->
+                    let some_code =
+                      if require_truthy then
+                        Semantic_ir.If
+                          ( truthiness_expression payload_ty
+                              (Semantic_ir.Ident ocaml_name),
+                            some_code,
+                            none_code )
+                      else some_code
+                    in
                     Ok
                       (typed_ir result_ty
                          (Semantic_ir.Match
                             ( option_expr.semantic_expr,
                               [ ( Semantic_ir.PConstructor
-                                    ("Some", Some (Semantic_ir.PVar ocaml_name)),
-                                  some_expr.semantic_expr );
+                                  ("Some", Some (Semantic_ir.PVar ocaml_name)),
+                                  some_code );
                                 ( Semantic_ir.PConstructor ("None", None),
-                                  none_expr.semantic_expr );
+                                  none_code );
                               ] )))))
 
   and compile_if_let scope env binding_form then_form else_form =
@@ -172,28 +209,46 @@ let create ~compile_expr =
     with
     | Error _ as err -> err
     | Ok (name, option_form) ->
-        compile_option_match scope env name option_form
+        compile_option_match ~require_truthy:true scope env name option_form
           (fun some_env -> compile_expr scope some_env then_form)
           (fun () -> compile_expr scope env else_form)
           "if-let branches must have same type"
 
-  and compile_when_let scope env binding_form body_forms =
+  and compile_if_some scope env binding_form then_form else_form =
     match
       parse_option_binding binding_form
-        "when-let requires [name option] and a body"
+        "if-some requires [name option], then, and else"
     with
     | Error _ as err -> err
     | Ok (name, option_form) ->
         compile_option_match scope env name option_form
+          (fun some_env -> compile_expr scope some_env then_form)
+          (fun () -> compile_expr scope env else_form)
+          "if-some branches must have same type"
+
+  and compile_when_binding ~require_truthy scope env binding_form body_forms
+      error_prefix =
+    match
+      parse_option_binding binding_form
+        (error_prefix ^ " requires [name option] and a body")
+    with
+    | Error _ as err -> err
+    | Ok (name, option_form) ->
+        compile_option_match ~require_truthy scope env name option_form
           (fun some_env ->
-            match
-              compile_body scope some_env "when-let requires a body" body_forms
-            with
-            | Ok body when Types.equal body.ty TUnit -> Ok body
-            | Ok _ -> Error.error "when-let body must return unit"
-            | Error _ as err -> err)
-          (fun () -> Ok (typed_ir TUnit Semantic_ir.Unit))
-          "when-let body must return unit"
+            compile_body scope some_env (error_prefix ^ " requires a body")
+              body_forms)
+          (fun () ->
+            Ok (typed_ir TNil (Semantic_ir.Constructor ("None", None))))
+          (error_prefix ^ " body cannot be made nullable")
+
+  and compile_when_let scope env binding_form body_forms =
+    compile_when_binding ~require_truthy:true scope env binding_form body_forms
+      "when-let"
+
+  and compile_when_some scope env binding_form body_forms =
+    compile_when_binding ~require_truthy:false scope env binding_form body_forms
+      "when-some"
 
   and compile_let_some scope env bindings_form then_form else_form =
     let rec parse_bindings acc = function
@@ -279,18 +334,21 @@ let create ~compile_expr =
     | Ok condition, Ok body -> (
         match condition_expression condition with
         | Error _ as err -> err
-        | Ok condition_code ->
-            if Types.equal body.ty TUnit then
-              Ok
-                (typed_ir body.ty
-                   (Semantic_ir.If
-                      (condition_code, body.semantic_expr, Semantic_ir.Unit)))
-            else Error.error "when body must be unit")
+        | Ok condition_code -> (
+            let nil =
+              typed_ir TNil (Semantic_ir.Constructor ("None", None))
+            in
+            match merge_branch_expressions body nil with
+            | Some (result_ty, body_code, nil_code) ->
+                Ok
+                  (typed_ir result_ty
+                     (Semantic_ir.If (condition_code, body_code, nil_code)))
+            | None -> Error.error "when body cannot be made nullable"))
   
   and compile_cond scope env clauses =
     let parse_pairs clauses =
       let rec loop acc = function
-        | [] -> Error.error "cond requires an :else branch"
+        | [] -> Ok (List.rev acc, FSymbol "nil")
         | [ _ ] -> Error.error "cond requires test/expression pairs"
         | FKeyword ":else" :: else_form :: [] -> Ok (List.rev acc, else_form)
         | FKeyword ":else" :: _ -> Error.error "cond :else must be last"
@@ -301,8 +359,7 @@ let create ~compile_expr =
     let compile_test form =
       match compile_expr scope env form with
       | Error _ as err -> err
-      | Ok test ->
-          if Types.equal test.ty TBool then Ok test else Error.error "cond tests must be bool"
+      | Ok test -> Ok test
     in
     let rec compile_pairs acc = function
       | [] -> Ok (List.rev acc)
@@ -318,20 +375,30 @@ let create ~compile_expr =
         match (compile_pairs [] pairs, compile_expr scope env else_form) with
         | (Error _ as err), _ -> err
         | _, (Error _ as err) -> err
-        | Ok pairs, Ok else_expr ->
-            if
-              List.for_all
-                (fun (_test, value) -> branch_types_compatible value.ty else_expr.ty)
-                pairs
-            then
+        | Ok pairs, Ok else_expr -> (
+            let result_ty =
+              List.fold_left
+                (fun merged (_test, value) ->
+                  Option.bind merged (fun ty ->
+                      merge_branch_types ty value.ty))
+                (Some else_expr.ty) pairs
+            in
+            match result_ty with
+            | Some result_ty ->
               let expression =
                 List.fold_right
                   (fun (test, value) acc ->
-                    Semantic_ir.If (test.semantic_expr, value.semantic_expr, acc))
-                  pairs else_expr.semantic_expr
+                    Semantic_ir.If
+                      ( truthiness_expression test.ty test.semantic_expr,
+                        coerce_expression_to_type result_ty value.ty
+                          value.semantic_expr,
+                        acc ))
+                  pairs
+                  (coerce_expression_to_type result_ty else_expr.ty
+                     else_expr.semantic_expr)
               in
-              Ok (typed_ir else_expr.ty expression)
-            else Error.error "cond branches must have same type")
+              Ok (typed_ir result_ty expression)
+            | None -> Error.error "cond branches must have same type"))
 
   and compile_logical scope env operator forms =
     match forms with
@@ -365,12 +432,18 @@ let create ~compile_expr =
             | Some result_ty ->
                 let rec lower = function
                   | [] -> assert false
-                  | [ expression ] -> expression.semantic_expr
+                  | [ expression ] ->
+                      coerce_expression_to_type result_ty expression.ty
+                        expression.semantic_expr
                   | expression :: rest ->
                       let value_name = "logical_value" in
-                      let value = Semantic_ir.Ident value_name in
+                      let raw_value = Semantic_ir.Ident value_name in
+                      let value =
+                        coerce_expression_to_type result_ty expression.ty
+                          raw_value
+                      in
                       let condition =
-                        truthiness_expression expression.ty value
+                        truthiness_expression expression.ty raw_value
                       in
                       let next = lower rest in
                       let result =
@@ -926,7 +999,9 @@ let create ~compile_expr =
   
   in
   { compile_vector; compile_map; compile_if; compile_if_not; compile_if_let;
-    compile_when_let; compile_let_some; compile_when; compile_cond; compile_match;
+    compile_if_some;
+    compile_when_let; compile_when_some; compile_let_some; compile_when;
+    compile_cond; compile_match;
     compile_logical;
     compile_body; compile_try; loop_branch_type; compile_recur; compile_loop_tail;
     compile_loop_tail_body; compile_loop; compile_let }

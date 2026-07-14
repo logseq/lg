@@ -40,6 +40,8 @@ type state = {
   located_items : (Location.t * Lowered.compiled_item) list;
 }
 
+module String_set = Set.Make (String)
+
 module type FRONTEND = sig
   val implementation :
     ?target:Target.t ->
@@ -87,6 +89,312 @@ module Lg_frontend : FRONTEND = struct
               };
         }
 
+  let namespace_scope_form span namespace_name =
+    {
+      Ast.form =
+        Ast.FList [ Ast.FSymbol "namespace-scope"; Ast.FSymbol namespace_name ];
+      span;
+      children = [];
+    }
+
+  let metadata_symbol name = String.starts_with ~prefix:"^" name
+
+  let host_type_hint name =
+    metadata_symbol name && not (String.starts_with ~prefix:"^:" name)
+
+  let rec drop_definition_metadata = function
+    | Ast.FSymbol metadata :: rest when metadata_symbol metadata ->
+        drop_definition_metadata rest
+    | forms -> forms
+
+  let rec normalize_metadata = function
+    | Ast.FList
+        (Ast.FSymbol (("def" | "defonce" | "defn" | "defn-") as head)
+        :: forms) ->
+        Ast.FList
+          (Ast.FSymbol head
+          :: normalize_metadata_sequence (drop_definition_metadata forms))
+    | Ast.FList forms -> Ast.FList (normalize_metadata_sequence forms)
+    | Ast.FVector forms -> Ast.FVector (normalize_metadata_sequence forms)
+    | Ast.FMap entries ->
+        Ast.FMap
+          (List.map
+             (fun (key, value) ->
+               (normalize_metadata key, normalize_metadata value))
+             entries)
+    | form -> form
+
+  and normalize_metadata_sequence = function
+    | Ast.FSymbol metadata :: rest when host_type_hint metadata ->
+        normalize_metadata_sequence rest
+    | form :: rest ->
+        normalize_metadata form :: normalize_metadata_sequence rest
+    | [] -> []
+
+  let normalize_located_metadata located =
+    { located with Ast.form = normalize_metadata located.Ast.form }
+
+  let extract_compile_time_helpers located_ast =
+    let rec quoted_refs refs = function
+      | Ast.FList
+          [ Ast.FSymbol ("unquote" | "unquote-splicing"); expression ] ->
+          form_refs refs expression
+      | Ast.FList forms | Ast.FVector forms ->
+          List.fold_left quoted_refs refs forms
+      | Ast.FMap entries ->
+          List.fold_left
+            (fun refs (key, value) ->
+              quoted_refs (quoted_refs refs key) value)
+            refs entries
+      | _ -> refs
+    and form_refs refs = function
+      | Ast.FList [ Ast.FSymbol "syntax-quote"; quoted ] ->
+          quoted_refs refs quoted
+      | Ast.FList (Ast.FSymbol name :: forms) ->
+          List.fold_left form_refs (String_set.add name refs) forms
+      | Ast.FList forms | Ast.FVector forms ->
+          List.fold_left form_refs refs forms
+      | Ast.FMap entries ->
+          List.fold_left
+            (fun refs (key, value) -> form_refs (form_refs refs key) value)
+            refs entries
+      | Ast.FSymbol name
+        when String.length name > 2 && name.[0] = '*'
+             && name.[String.length name - 1] = '*' ->
+          String_set.add name refs
+      | _ -> refs
+    in
+    let definitions =
+      located_ast
+      |> List.filter_map (fun located ->
+             match located.Ast.form with
+             | Ast.FList
+                 (Ast.FSymbol ("def" | "defonce" | "defn" | "defn-")
+                 :: Ast.FSymbol name :: forms) ->
+                 Some (name, forms)
+             | _ -> None)
+    in
+    let initial_refs =
+      List.fold_left
+        (fun refs located ->
+          match located.Ast.form with
+          | Ast.FList (Ast.FSymbol "defmacro" :: _name :: forms) ->
+              List.fold_left form_refs refs forms
+          | _ -> refs)
+        String_set.empty located_ast
+    in
+    let rec close refs =
+      let expanded =
+        List.fold_left
+          (fun refs (name, forms) ->
+            if String_set.mem name refs then
+              List.fold_left form_refs refs forms
+            else refs)
+          refs definitions
+      in
+      if String_set.equal refs expanded then refs else close expanded
+    in
+    let helper_names = close initial_refs in
+    List.map
+      (fun located ->
+        match located.Ast.form with
+        | Ast.FList
+            (Ast.FSymbol ("defn" | "defn-") :: Ast.FSymbol name :: forms)
+          when String_set.mem name helper_names ->
+            {
+              located with
+              Ast.form =
+                Ast.FList
+                  (Ast.FSymbol "macro-helper-defn" :: Ast.FSymbol name :: forms);
+            }
+        | Ast.FList
+            (Ast.FSymbol ("def" | "defonce") :: Ast.FSymbol name :: forms)
+          when String_set.mem name helper_names ->
+            {
+              located with
+              Ast.form =
+                Ast.FList
+                  (Ast.FSymbol "macro-helper-def" :: Ast.FSymbol name :: forms);
+            }
+        | _ -> located)
+      located_ast
+
+  let lower_namespace located_ast =
+    let is_namespace = function
+      | { Ast.form = Ast.FList (Ast.FSymbol "ns" :: _); _ } -> true
+      | _ -> false
+    in
+    match located_ast with
+    | [] -> Ok []
+    | { Ast.form = Ast.FList (Ast.FSymbol "ns" :: forms); span; _ } :: body -> (
+        if List.exists is_namespace body then
+          Error.error "ns may only appear once at the start of a file"
+        else
+          let rec drop_namespace_metadata = function
+            | Ast.FSymbol metadata :: rest
+              when String.starts_with ~prefix:"^" metadata ->
+                drop_namespace_metadata rest
+            | forms -> forms
+          in
+          match drop_namespace_metadata forms with
+          | Ast.FSymbol namespace_name :: clauses ->
+              let segments = String.split_on_char '.' namespace_name in
+              if List.exists (fun segment -> segment = "") segments then
+                Error.error "ns expects a namespace symbol and optional clauses"
+              else
+                let rec parse_clauses require_entries exclusions imports = function
+                  | [] ->
+                      Ok
+                        ( List.rev require_entries |> List.concat,
+                          List.rev exclusions |> List.concat,
+                          List.rev imports |> List.concat )
+                  | Ast.FList (Ast.FKeyword ":require" :: entries) :: rest ->
+                      parse_clauses (entries :: require_entries) exclusions imports
+                        rest
+                  | Ast.FList
+                      [ Ast.FKeyword ":refer-clojure";
+                        Ast.FKeyword ":exclude";
+                        Ast.FVector names ]
+                    :: rest ->
+                      parse_clauses require_entries (names :: exclusions) imports
+                        rest
+                  | Ast.FList (Ast.FKeyword ":import" :: entries) :: rest ->
+                      parse_clauses require_entries exclusions
+                        (entries :: imports) rest
+                  | _ ->
+                      Error.error
+                        "ns supports :require, :refer-clojure :exclude, and :import clauses"
+                in
+                Result.map
+                  (fun (require_entries, exclusions, imports) ->
+                    let namespace_form = namespace_scope_form span namespace_name in
+                    let synthetic_form head entries =
+                      {
+                        Ast.form =
+                          Ast.FList (Ast.FSymbol head :: entries);
+                        span;
+                        children = [];
+                      }
+                    in
+                    let clauses =
+                      []
+                      |> (fun forms ->
+                           if require_entries = [] then forms
+                           else synthetic_form "require" require_entries :: forms)
+                      |> (fun forms ->
+                           if exclusions = [] then forms
+                           else
+                             synthetic_form "refer-clojure-exclude" exclusions
+                             :: forms)
+                      |> (fun forms ->
+                           if imports = [] then forms
+                           else synthetic_form "host-import" imports :: forms)
+                      |> List.rev
+                    in
+                    namespace_form :: clauses @ body)
+                  (parse_clauses [] [] [] clauses)
+          | _ -> Error.error "ns expects a namespace symbol and optional clauses")
+    | first :: rest ->
+        if List.exists is_namespace rest then
+          Error.error "ns may only appear once at the start of a file"
+        else Ok (first :: rest)
+
+  let defer_deftype_methods located_ast =
+    let declared_names =
+      located_ast
+      |> List.concat_map (fun located ->
+             match located.Ast.form with
+             | Ast.FList (Ast.FSymbol "declare" :: names) ->
+                 List.filter_map
+                   (function Ast.FSymbol name -> Some name | _ -> None)
+                   names
+             | _ -> [])
+    in
+    let definition_name located =
+      match located.Ast.form with
+      | Ast.FList
+          (Ast.FSymbol ("def" | "defonce" | "defn" | "defn-")
+          :: Ast.FSymbol name :: _) ->
+          Some name
+      | _ -> None
+    in
+    let flush output_rev deferred_rev = deferred_rev @ output_rev in
+    let rec loop output_rev deferred_rev unresolved = function
+      | [] -> List.rev (flush output_rev deferred_rev)
+      | ({ Ast.form =
+             Ast.FList
+               (Ast.FSymbol "deftype" :: name :: fields :: (_ :: _ as methods));
+           _ } as located)
+        :: rest ->
+          let type_form =
+            { located with
+              Ast.form = Ast.FList [ Ast.FSymbol "deftype"; name; fields ];
+            }
+          in
+          let methods_form =
+            { located with
+              Ast.form =
+                Ast.FList
+                  (Ast.FSymbol "deftype-methods" :: name :: methods);
+            }
+          in
+          let output_rev = type_form :: output_rev in
+          let deferred_rev = methods_form :: deferred_rev in
+          if unresolved = [] then
+            loop (flush output_rev deferred_rev) [] unresolved rest
+          else loop output_rev deferred_rev unresolved rest
+      | form :: rest ->
+          let unresolved =
+            match definition_name form with
+            | None -> unresolved
+            | Some name -> List.filter (fun declared -> declared <> name) unresolved
+          in
+          let output_rev = form :: output_rev in
+          if unresolved = [] && deferred_rev <> [] then
+            loop (flush output_rev deferred_rev) [] unresolved rest
+          else loop output_rev deferred_rev unresolved rest
+    in
+    loop [] [] declared_names located_ast
+
+  let group_declared_functions located_ast =
+    let declared_names =
+      located_ast
+      |> List.concat_map (fun located ->
+             match located.Ast.form with
+             | Ast.FList (Ast.FSymbol "declare" :: names) ->
+                 List.filter_map
+                   (function Ast.FSymbol name -> Some name | _ -> None)
+                   names
+             | _ -> [])
+    in
+    let rec loop output_rev definitions_rev unresolved = function
+      | [] ->
+          if definitions_rev = [] then List.rev output_rev
+          else List.rev output_rev @ List.rev definitions_rev
+      | ({ Ast.form =
+             Ast.FList
+               (Ast.FSymbol ("defn" | "defn-") :: Ast.FSymbol name :: _);
+           _ } as definition)
+        :: rest
+        when List.mem name declared_names ->
+          let definitions_rev = definition :: definitions_rev in
+          let unresolved = List.filter (fun candidate -> candidate <> name) unresolved in
+          if unresolved = [] then
+            let definitions = List.rev definitions_rev in
+            let group =
+              { definition with
+                Ast.form =
+                  Ast.FList
+                    (Ast.FSymbol "defn-group"
+                    :: List.map (fun item -> item.Ast.form) definitions);
+              }
+            in
+            loop (group :: output_rev) [] unresolved rest
+          else loop output_rev definitions_rev unresolved rest
+      | form :: rest -> loop (form :: output_rev) definitions_rev unresolved rest
+    in
+    loop [] [] declared_names located_ast
+
   let implementation ?(target = Target.default) ?(filename = "<string>") source
       =
     match Lexer.tokenize source with
@@ -94,23 +402,35 @@ module Lg_frontend : FRONTEND = struct
     | Ok tokens -> (
         match Parser.parse_located ~target tokens with
         | Error error -> Error (normalize_error_location filename source error)
-        | Ok located_ast ->
-            let rec form_locations acc located =
-              let location = location filename source located.Ast.span in
-              List.fold_left form_locations
-                ((located.Ast.form, location) :: acc)
-                located.Ast.children
-            in
-            Ok
-              {
-                ast = List.map (fun located -> located.Ast.form) located_ast;
-                locations =
-                  List.map
-                    (fun located -> location filename source located.Ast.span)
-                    located_ast;
-                form_locations = List.fold_left form_locations [] located_ast;
-                parsed_as = `Lg;
-              })
+        | Ok original_located_ast -> (
+            match lower_namespace original_located_ast with
+            | Error error -> Error (normalize_error_location filename source error)
+            | Ok located_ast ->
+                let located_ast =
+                  located_ast
+                  |> List.map normalize_located_metadata
+                  |> extract_compile_time_helpers
+                  |> defer_deftype_methods |> group_declared_functions
+                in
+                let rec form_locations acc located =
+                  let location = location filename source located.Ast.span in
+                  List.fold_left form_locations
+                    ((located.Ast.form, location) :: acc)
+                    located.Ast.children
+                in
+                Ok
+                  {
+                    ast = List.map (fun located -> located.Ast.form) located_ast;
+                    locations =
+                      List.map
+                        (fun located -> location filename source located.Ast.span)
+                        located_ast;
+                    form_locations =
+                      List.fold_left form_locations
+                        (List.fold_left form_locations [] original_located_ast)
+                        located_ast;
+                    parsed_as = `Lg;
+                  }))
 end
 
 module Ocaml_parsetree_backend = struct

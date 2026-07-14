@@ -47,6 +47,23 @@ let read_string source start =
   in
   loop start
 
+let read_regex source start =
+  let buffer = Buffer.create 16 in
+  let rec loop i =
+    if i >= String.length source then Error.error "unterminated regex"
+    else
+      match source.[i] with
+      | '"' -> Ok (Buffer.contents buffer, i + 1)
+      | '\\' when i + 1 < String.length source ->
+          Buffer.add_char buffer '\\';
+          Buffer.add_char buffer source.[i + 1];
+          loop (i + 2)
+      | ch ->
+          Buffer.add_char buffer ch;
+          loop (i + 1)
+  in
+  loop start
+
 let read_atom source start =
   let rec loop i =
     if i >= String.length source || is_delimiter source.[i] then i
@@ -75,11 +92,23 @@ let tokenize source =
     else
       match source.[i] with
       | '(' -> loop (i + 1) (token Lparen i (i + 1) :: tokens)
+      | '\'' -> loop (i + 1) (token Quote i (i + 1) :: tokens)
+      | '`' -> loop (i + 1) (token Syntax_quote i (i + 1) :: tokens)
+      | '~' when i + 1 < String.length source && source.[i + 1] = '@' ->
+          loop (i + 2) (token Unquote_splicing i (i + 2) :: tokens)
+      | '~' -> loop (i + 1) (token Unquote i (i + 1) :: tokens)
+      | '@' -> loop (i + 1) (token Deref i (i + 1) :: tokens)
+      | '#' when i + 1 < String.length source && source.[i + 1] = '(' ->
+          loop (i + 2) (token Anon_lparen i (i + 2) :: tokens)
       | ')' -> loop (i + 1) (token Rparen i (i + 1) :: tokens)
       | '[' -> loop (i + 1) (token Lbracket i (i + 1) :: tokens)
       | ']' -> loop (i + 1) (token Rbracket i (i + 1) :: tokens)
       | '#' when i + 1 < String.length source && source.[i + 1] = '{' ->
           loop (i + 2) (token Set_lbrace i (i + 2) :: tokens)
+      | '#' when i + 1 < String.length source && source.[i + 1] = '"' -> (
+          match read_regex source (i + 2) with
+          | Ok (value, next) -> loop next (token (Regex value) i next :: tokens)
+          | Error _ as err -> err)
       | '{' -> loop (i + 1) (token Lbrace i (i + 1) :: tokens)
       | '}' -> loop (i + 1) (token Rbrace i (i + 1) :: tokens)
       | '"' -> (

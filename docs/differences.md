@@ -199,14 +199,16 @@ static types of the loop bindings. For OCaml-owned loop binding types, recur
 argument compatibility is delegated to the OCaml typechecker.
 
 `if-not`, `when`, and `cond` are compiler-recognized forms rather than macros.
-`when` currently supports unit bodies, and `cond` requires an `:else` branch
-because lg does not add implicit nil results. OCaml-owned branch result
-compatibility is delegated to the OCaml typechecker.
+Missing branches produce Clojure `nil`. lg joins `nil` with a concrete branch
+as a nullable result and lowers the joined value to an OCaml option.
+OCaml-owned branch result compatibility is delegated to the OCaml typechecker.
 
-`if-let`, `when-let`, `if-some`, and `when-some` bind the payload of an OCaml
-option. `let-some` accepts multiple sequential name/option pairs and evaluates
-one fallback when any binding is `None`. `->` and `->>` provide first- and
-last-argument threading without requiring a general macro system.
+`if-let`, `when-let`, `if-some`, and `when-some` bind the payload of a nullable
+value or an OCaml option. The `-let` forms additionally apply Clojure
+truthiness to the payload, while the `-some` forms only distinguish nil from a
+present value. `let-some` accepts multiple sequential name/option pairs and
+evaluates one fallback when any binding is nil. `->` and `->>` provide first-
+and last-argument threading without requiring a general macro system.
 
 `match` is a compiler-recognized static pattern form rather than a macro. The
 current subset supports scalar literal patterns, `_`, symbol binders, and
@@ -425,9 +427,9 @@ bounded one-, two-, and three-argument forms remain lazy.
 `interleave` accepts two or more typed list, vector, or set inputs with the same
 element type. It eagerly returns an OCaml list and stops at the shortest input.
 
-Empty vector literals still require explicit element typing.
+Empty vector literals are polymorphic and acquire an element type from use.
 
-Use `(vector-of :int)`, `(vector-of :string)`, `(vector-of :symbol)`, `(vector-of :keyword)`, or `(vector-of :bool)` for typed empty vectors.
+Use `(vector-of :int)`, `(vector-of :string)`, `(vector-of :symbol)`, `(vector-of :keyword)`, or `(vector-of :bool)` when an explicit empty-vector element type is useful at a host boundary.
 
 Use `(list-of :int)`, `(list-of :string)`, `(list-of :symbol)`, `(list-of :keyword)`, or `(list-of :bool)` for typed empty lists.
 

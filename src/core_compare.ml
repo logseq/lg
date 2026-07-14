@@ -1,7 +1,36 @@
 open Types
 
 let rec equality_expr left right =
-  match left.ty with
+  match (left.ty, right.ty) with
+  | TNullable _, TNil ->
+      Semantic_ir.Match
+        ( left.semantic_expr,
+          [ (Semantic_ir.PConstructor ("None", None), Semantic_ir.Bool true);
+            ( Semantic_ir.PConstructor ("Some", Some Semantic_ir.PAny),
+              Semantic_ir.Bool false );
+          ] )
+  | TNil, TNullable _ -> equality_expr right left
+  | TNullable inner, right_ty
+    when Types.assignable ~policy:Host_boundary ~expected:inner
+           ~actual:right_ty ->
+      Semantic_ir.Match
+        ( left.semantic_expr,
+          [ (Semantic_ir.PConstructor ("None", None), Semantic_ir.Bool false);
+            ( Semantic_ir.PConstructor
+                ("Some", Some (Semantic_ir.PVar "nullable_value")),
+              equality_expr
+                (typed_ir inner (Semantic_ir.Ident "nullable_value"))
+                right );
+          ] )
+  | left_ty, TNullable inner
+    when Types.assignable ~policy:Host_boundary ~expected:inner
+           ~actual:left_ty ->
+      equality_expr right left
+  | TNil, TNil -> Semantic_ir.Infix ("=", left.semantic_expr, right.semantic_expr)
+  | TNil, _ | _, TNil ->
+      Semantic_ir.Sequence
+        [ left.semantic_expr; right.semantic_expr; Semantic_ir.Bool false ]
+  | _ -> (match left.ty with
   | TSet inner -> (
       match Types.set_module_name inner with
       | Ok set_module ->
@@ -22,7 +51,7 @@ let rec equality_expr left right =
                equality_expr left_field right_field)
       in
       and_expressions parts
-  | _ -> Semantic_ir.Infix ("=", left.semantic_expr, right.semantic_expr)
+  | _ -> Semantic_ir.Infix ("=", left.semantic_expr, right.semantic_expr))
 
 and and_expressions = function
   | [] -> Semantic_ir.Bool true
@@ -56,7 +85,14 @@ let compile name args =
           List.for_all
             (fun arg ->
               Types.same_shape first.ty arg.ty
-              || first.ty = TUnknown || arg.ty = TUnknown
+              || (match (first.ty, arg.ty) with
+                 | TNil, TNullable _ | TNullable _, TNil -> true
+                 | TNullable inner, ty | ty, TNullable inner ->
+                     Types.assignable ~policy:Host_boundary ~expected:inner
+                       ~actual:ty
+                 | _ -> false)
+              || Types.assignable ~policy:Host_boundary ~expected:first.ty
+                   ~actual:arg.ty
               || Types.defer_to_ocaml ~expected:first.ty ~actual:arg.ty)
             args
         then
@@ -66,7 +102,22 @@ let compile name args =
           in
           Ok (typed_ir TBool expression)
         else Error.error (name ^ " arguments must have the same type")
-      else if List.for_all (fun arg -> Types.equal first.ty arg.ty) args
-              && Types.is_numeric first.ty then
-        Ok (typed_ir TBool (and_expressions (pairwise_expressions name args)))
-      else Error.error (name ^ " numeric arguments must all have the same type")
+      else
+        let numeric_ty =
+          List.find_map
+            (fun arg -> if Types.is_numeric arg.ty then Some arg.ty else None)
+            args
+        in
+        (match numeric_ty with
+        | Some expected
+          when List.for_all
+                 (fun arg ->
+                   Types.assignable ~policy:Host_boundary ~expected
+                     ~actual:arg.ty)
+                 args ->
+            Ok
+              (typed_ir TBool
+                 (and_expressions (pairwise_expressions name args)))
+        | _ ->
+            Error.error
+              (name ^ " numeric arguments must all have the same type"))

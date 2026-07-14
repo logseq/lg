@@ -13,7 +13,15 @@ let two_args name args =
 let apply name args = Semantic_ir.Apply (Semantic_ir.Ident name, args)
 
 let count env collection =
-  if Collection_capability.is_counted env collection then
+  if
+    Option.is_some (Types.dynamic_map_types collection.ty)
+    || Types.equal collection.ty TUnknown
+    || match collection.ty with TVar _ -> true | _ -> false
+  then
+    Ok
+      (typed_ir TInt
+         (apply "Lg_runtime.Runtime_map.count" [ collection.semantic_expr ]))
+  else if Collection_capability.is_counted env collection then
     Collection_capability.count_expr env collection
     |> Result.map (typed_ir TInt)
   else
@@ -24,7 +32,19 @@ let count env collection =
       Collection_capability.count_expr env collection
       |> Result.map (typed_ir TInt)
 
-let first env collection = Collection_capability.first_expr env collection
+let first env collection =
+  match Types.dynamic_map_types collection.ty with
+  | Some (key_ty, value_ty) ->
+      Ok
+        (typed_ir (TTuple [ key_ty; value_ty ])
+           (apply "Lg_runtime.Runtime_map.first_exn" [ collection.semantic_expr ]))
+  | None
+    when Types.equal collection.ty TUnknown
+         || (match collection.ty with TVar _ -> true | _ -> false) ->
+      Ok
+        (typed_ir (TTuple [ TUnknown; TUnknown ])
+           (apply "Lg_runtime.Runtime_map.first_exn" [ collection.semantic_expr ]))
+  | None -> Collection_capability.first_expr env collection
 
 let second env collection = Collection_capability.second_expr env collection
 

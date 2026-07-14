@@ -39,6 +39,7 @@ let create ~compile_expr =
   let compile_subvec = collection.compile_subvec in
   let compile_nth = collection.compile_nth in
   let compile_get = collection.compile_get in
+  let compile_find = collection.compile_find in
   let compile_assoc = collection.compile_assoc in
   let compile_dissoc = collection.compile_dissoc in
   let compile_merge = collection.compile_merge in
@@ -112,6 +113,12 @@ let create ~compile_expr =
           List.map (fun (_, argument) -> argument.semantic_expr) arguments )
 
   and compile_call scope env name arg_forms =
+    match lookup_binding scope env name with
+    | Ok _ when not (Resolver.starts_with_uppercase name) ->
+        compile_named_function_call scope env name arg_forms
+    | Error _ when Env.core_excluded ~scope name env ->
+        Error.error ("unknown function " ^ name)
+    | Ok _ | Error _ ->
     let compile_args () = compile_args_for scope env arg_forms in
     let constructor ?(display_name = name) ?(constructor_name = name) return_ty
         expected_arity =
@@ -132,6 +139,112 @@ let create ~compile_expr =
                (Semantic_ir.Constructor (constructor_name, payload)))
     in
     match name with
+    | constructor_name
+      when String.ends_with ~suffix:"." constructor_name -> (
+        let type_name =
+          String.sub constructor_name 0 (String.length constructor_name - 1)
+        in
+        match Env.find_opt type_name env with
+        | Some { host_reference = Some (Ocaml_module module_path); _ } ->
+            compile_inferred_ocaml_call scope env (module_path ^ ".create")
+              arg_forms
+        | _ -> (match Resolver.lookup_record_type scope env type_name with
+        | Error _ as err -> err
+        | Ok record -> (
+            match compile_args () with
+            | Error _ as err -> err
+            | Ok args when List.length args <> List.length record.fields ->
+                Error.error
+                  (constructor_name ^ " expects "
+                 ^ string_of_int (List.length record.fields)
+                 ^ " arguments")
+            | Ok args ->
+                let instantiated =
+                  Types.instantiate_type
+                    ~templates:
+                      (List.map (fun parameter -> TVar parameter)
+                         record.type_parameters)
+                    ~actuals:(List.map (fun arg -> arg.ty) args)
+                    (TNamed_record record)
+                in
+                let record =
+                  match instantiated with
+                  | TNamed_record record -> record
+                  | _ -> record
+                in
+                let values = List.combine record.fields args in
+                Ok
+                  {
+                    (typed_ir (TNamed_record record)
+                       (Semantic_ir.Record
+                          ( List.map
+                              (fun ((field : field), arg) ->
+                                (field.ocaml_name, arg.semantic_expr))
+                              values,
+                            Some
+                              (record_type_application record.type_name
+                                 record.type_parameters) ))) with
+                    record_values =
+                      Some
+                        (List.map
+                           (fun (field, arg) -> (field, arg.semantic_expr))
+                           values);
+                  })))
+    | method_name when String.starts_with ~prefix:"." method_name -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok ({ ty = TOcaml receiver_type; _ } :: _) -> (
+            match Host_interop.instance_method ~receiver_type ~method_name with
+            | None -> Error.error ("unsupported host method " ^ method_name)
+            | Some function_name ->
+                compile_inferred_ocaml_call scope env function_name arg_forms)
+        | Ok ({ ty = TOcaml_app (receiver_type, []); _ } :: _) -> (
+            match Host_interop.instance_method ~receiver_type ~method_name with
+            | None -> Error.error ("unsupported host method " ^ method_name)
+            | Some function_name ->
+                compile_inferred_ocaml_call scope env function_name arg_forms)
+        | Ok _ -> Error.error (method_name ^ " expects a host receiver"))
+    | field_access when String.starts_with ~prefix:".-" field_access -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [ target ] -> (
+            let keyword =
+              ":"
+              ^ String.sub field_access 2 (String.length field_access - 2)
+            in
+            match target.ty with
+            | TRecord fields | TNamed_record { fields; _ } -> (
+                match find_field keyword fields with
+                | None -> Error.error ("unknown field " ^ keyword)
+                | Some field ->
+                    Ok
+                      (typed_ir field.ty
+                         (Structural_map.field_expr target field)))
+            | _ -> Error.error (field_access ^ " expects a deftype value"))
+        | Ok _ -> Error.error (field_access ^ " expects 1 argument"))
+    | ".valAt" | "-lookup" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [ target; key ] ->
+            Ok
+              (typed_ir (TNullable TUnknown)
+                 (Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Lg_runtime.Runtime_map.get_option",
+                      [ target.semantic_expr; key.semantic_expr ] )))
+        | Ok [ target; key; default ] ->
+            Ok
+              (typed_ir (TNullable TUnknown)
+                 (Semantic_ir.Apply
+                    ( Semantic_ir.Ident
+                        "Lg_runtime.Runtime_map.get_option_default",
+                      [ target.semantic_expr;
+                        key.semantic_expr;
+                        default.semantic_expr;
+                      ] )))
+        | Ok _ -> Error.error ".valAt expects 2 or 3 arguments")
+    | ".containsKey" -> compile_contains scope env arg_forms
+    | ".entryAt" -> compile_find scope env arg_forms
+    | "-contains-key?" -> compile_contains scope env arg_forms
     | "reduced" -> (
         match compile_args () with
         | Error _ as err -> err
@@ -214,6 +327,31 @@ let create ~compile_expr =
             | Error _ as err -> err
             | Ok element_ty -> Ok (typed_ir (TArray element_ty) (Semantic_ir.Array [])))
         | _ -> Error.error "ocaml-array-of expects one type")
+    | "ocaml-array-make" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [ { ty = TInt; semantic_expr; _ } ] ->
+            let empty_value =
+              apply "Obj.magic" [ Semantic_ir.Constructor ("None", None) ]
+            in
+            Ok
+              (typed_ir (TArray TUnknown)
+                 (apply "Array.make" [ semantic_expr; empty_value ]))
+        | Ok [ _ ] -> Error.error "ocaml-array-make size must be int"
+        | Ok _ -> Error.error "ocaml-array-make expects 1 argument")
+    | "ocaml-array-from" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [ ({ ty = TArray _; semantic_expr; _ } as array) ] ->
+            Ok { array with semantic_expr = apply "Array.copy" [ semantic_expr ] }
+        | Ok [ collection ] -> (
+            match Core_sequence_transform.collection_to_seq_expr collection with
+            | Error _ -> Error.error "ocaml-array-from expects a seqable value"
+            | Ok (element_ty, sequence) ->
+                Ok
+                  (typed_ir (TArray element_ty)
+                     (apply "Array.of_seq" [ sequence ])))
+        | Ok _ -> Error.error "ocaml-array-from expects 1 argument")
     | "ocaml-array-get" -> (
         match compile_args () with
         | Error _ as err -> err
@@ -235,7 +373,11 @@ let create ~compile_expr =
             | TArray element_ty ->
                 if not (Types.equal index.ty TInt) then
                   Error.error "OCaml array index must be int"
-                else if not (Types.equal element_ty value.ty) then
+                else if
+                  not
+                    (Types.assignable ~policy:Host_boundary ~expected:element_ty
+                       ~actual:value.ty)
+                then
                   Error.error "OCaml array value must match element type"
                 else
                   Ok
@@ -244,6 +386,97 @@ let create ~compile_expr =
                           [ array.semantic_expr; index.semantic_expr; value.semantic_expr ]))
             | _ -> Error.error "ocaml-array-set! expects an OCaml array")
         | Ok _ -> Error.error "ocaml-array-set! expects 3 arguments")
+    | "ocaml-array-length" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [ { ty = TArray _; semantic_expr; _ } ] ->
+            Ok (typed_ir TInt (apply "Array.length" [ semantic_expr ]))
+        | Ok [ _ ] -> Error.error "ocaml-array-length expects an OCaml array"
+        | Ok _ -> Error.error "ocaml-array-length expects 1 argument")
+    | "ocaml-array-copy!" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok
+            [ { ty = TArray source_ty; semantic_expr = source; _ };
+              { ty = TInt; semantic_expr = source_start; _ };
+              { ty = TInt; semantic_expr = source_end; _ };
+              { ty = TArray target_ty; semantic_expr = target; _ };
+              { ty = TInt; semantic_expr = target_start; _ } ]
+          when Types.assignable ~policy:Host_boundary ~expected:target_ty
+                 ~actual:source_ty
+               || Types.assignable ~policy:Host_boundary ~expected:source_ty
+                    ~actual:target_ty ->
+            let length = Semantic_ir.Infix ("-", source_end, source_start) in
+            Ok
+              (typed_ir TUnit
+                 (apply "Array.blit"
+                    [ source; source_start; target; target_start; length ]))
+        | Ok [ _; _; _; _; _ ] ->
+            Error.error "ocaml-array-copy! expects compatible arrays and int indexes"
+        | Ok _ -> Error.error "ocaml-array-copy! expects 5 arguments")
+    | "ocaml-array-copy" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [ ({ ty = TArray _; semantic_expr; _ } as array) ] ->
+            Ok { array with semantic_expr = apply "Array.copy" [ semantic_expr ] }
+        | Ok [ _ ] -> Error.error "ocaml-array-copy expects an OCaml array"
+        | Ok _ -> Error.error "ocaml-array-copy expects 1 argument")
+    | "ocaml-array-append" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok
+            [ { ty = TArray left_ty; semantic_expr = left; _ };
+              { ty = TArray right_ty; semantic_expr = right; _ } ]
+          when Types.assignable ~policy:Host_boundary ~expected:left_ty
+                 ~actual:right_ty
+               || Types.assignable ~policy:Host_boundary ~expected:right_ty
+                    ~actual:left_ty ->
+            let element_ty = if Types.equal left_ty TUnknown then right_ty else left_ty in
+            Ok
+              (typed_ir (TArray element_ty)
+                 (apply "Array.append" [ left; right ]))
+        | Ok [ _; _ ] -> Error.error "ocaml-array-append expects compatible arrays"
+        | Ok _ -> Error.error "ocaml-array-append expects 2 arguments")
+    | "ocaml-array-map" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok
+            [ { ty = TFn ([ parameter_ty ], return_ty); semantic_expr = fn; _ };
+              { ty = TArray element_ty; semantic_expr = array; _ } ]
+          when Types.assignable ~policy:Host_boundary ~expected:parameter_ty
+                 ~actual:element_ty ->
+            Ok
+              (typed_ir (TArray return_ty)
+                 (apply "Array.map" [ fn; array ]))
+        | Ok [ _; _ ] ->
+            Error.error "ocaml-array-map expects a unary function and compatible array"
+        | Ok _ -> Error.error "ocaml-array-map expects 2 arguments")
+    | "ocaml-array-sort!" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok
+            [ { ty = TFn ([ left_ty; right_ty ], TInt); semantic_expr = cmp; _ };
+              { ty = TArray element_ty; semantic_expr = array; _ } ]
+          when Types.assignable ~policy:Host_boundary ~expected:left_ty
+                 ~actual:element_ty
+               && Types.assignable ~policy:Host_boundary ~expected:right_ty
+                    ~actual:element_ty ->
+            Ok (typed_ir TUnit (apply "Array.sort" [ cmp; array ]))
+        | Ok [ _; _ ] ->
+            Error.error "ocaml-array-sort! expects a comparator and compatible array"
+        | Ok _ -> Error.error "ocaml-array-sort! expects 2 arguments")
+    | "ocaml-array?" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [ value ] ->
+            Ok
+              (typed_ir TBool
+                 (Semantic_ir.Sequence
+                    [ value.semantic_expr;
+                      Semantic_ir.Bool
+                        (match value.ty with TArray _ -> true | _ -> false);
+                    ]))
+        | Ok _ -> Error.error "ocaml-array? expects 1 argument")
     | "ocaml-ref" -> (
         match compile_args () with
         | Error _ as err -> err
@@ -479,6 +712,162 @@ let create ~compile_expr =
         compile_int_unary_call scope env name
           (fun expression -> Semantic_ir.Infix ("-", expression, Semantic_ir.Int 1))
           arg_forms
+    | "rand-int" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [ { ty = TInt; semantic_expr; _ } ] ->
+            Ok
+              (typed_ir TInt
+                 (Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Lg_runtime.Runtime_random.rand_int",
+                      [ semantic_expr ] )))
+        | Ok [ _ ] -> Error.error "rand-int expects an int"
+        | Ok _ -> Error.error "rand-int expects 1 argument")
+    | "int" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [ ({ ty = TInt; _ } as value) ] -> Ok value
+        | Ok [ { ty = TFloat; semantic_expr; _ } ] ->
+            Ok
+              (typed_ir TInt
+                 (Semantic_ir.Apply
+                    (Semantic_ir.Ident "int_of_float", [ semantic_expr ])))
+        | Ok [ { ty = TOcaml "int64"; semantic_expr; _ } ] ->
+            Ok
+              (typed_ir TInt
+                 (Semantic_ir.Apply
+                    (Semantic_ir.Ident "Int64.to_int", [ semantic_expr ])))
+        | Ok [ _ ] -> Error.error "int expects a numeric value"
+        | Ok _ -> Error.error "int expects 1 argument")
+    | "reify" -> (
+        match arg_forms with
+        | FSymbol protocol_name :: method_forms ->
+            let compile_method = function
+              | FList (FSymbol method_name :: params :: body_forms) -> (
+                  match
+                    Protocol.lookup_protocol_marker scope env protocol_name method_name
+                  with
+                  | None ->
+                      Error.error
+                        ("protocol " ^ protocol_name ^ " does not define method "
+                       ^ method_name)
+                  | Some marker -> (
+                      match
+                        ( Protocol.method_position env marker method_name,
+                          compile_expr scope env
+                            (FList
+                               (FSymbol "fn"
+                               :: (match params with
+                                  | FVector (FSymbol "_" :: remaining) ->
+                                      FVector remaining
+                                  | _ -> params)
+                               :: body_forms)) )
+                      with
+                      | None, _ -> Error.error ("unknown protocol method " ^ method_name)
+                      | _, (Error _ as err) -> err
+                      | Some position, Ok implementation ->
+                          Ok (position, marker, implementation)))
+              | _ -> Error.error "reify methods must be (method-name [params] body...)"
+            in
+            let rec compile_methods acc = function
+              | [] -> Ok (List.sort (fun (left, _, _) (right, _, _) -> compare left right) acc)
+              | method_form :: rest -> (
+                  match compile_method method_form with
+                  | Error _ as err -> err
+                  | Ok method_impl -> compile_methods (method_impl :: acc) rest)
+            in
+            (match compile_methods [] method_forms with
+            | Error _ as err -> err
+            | Ok [] -> Error.error "reify expects at least one method"
+            | Ok ((_, marker, _) :: _ as implementations) ->
+                if List.length implementations <> Protocol.method_count env marker then
+                  Error.error
+                    ("reify must implement every method of protocol " ^ protocol_name)
+                else
+                  let methods =
+                    List.map (fun (_, _, implementation) -> implementation) implementations
+                  in
+                  let payload_ty, payload_expr =
+                    match methods with
+                    | [ method_impl ] -> (method_impl.ty, method_impl.semantic_expr)
+                    | _ ->
+                        ( TTuple (List.map (fun method_impl -> method_impl.ty) methods),
+                          Semantic_ir.Tuple
+                            (List.map (fun method_impl -> method_impl.semantic_expr) methods) )
+                  in
+                  Ok
+                    (typed_ir
+                       (TOcaml_app ("Lg_runtime.Runtime_reify.t", [ payload_ty ]))
+                       payload_expr))
+        | _ -> Error.error "reify expects a protocol and method implementations")
+    | "volatile!" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [ initial ] ->
+            Ok
+              (typed_ir (TRef initial.ty)
+                 (Semantic_ir.Apply
+                    (Semantic_ir.Ident "ref", [ initial.semantic_expr ])))
+        | Ok _ -> Error.error "volatile! expects 1 argument")
+    | "deref" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [ reference ] -> (
+            match reference.ty with
+            | TRef value_ty ->
+                Ok
+                  (typed_ir value_ty
+                     (Semantic_ir.Prefix ("!", reference.semantic_expr)))
+            | _ -> Error.error "deref expects a reference")
+        | Ok _ -> Error.error "deref expects 1 argument")
+    | "vswap!" -> (
+        match arg_forms with
+        | reference_form :: function_form :: extra_forms -> (
+            match compile_expr scope env reference_form with
+            | Error _ as err -> err
+            | Ok reference -> (
+                match reference.ty with
+                | TRef value_ty ->
+                    let value_name = "__lg_vswap_value" in
+                    let updater_env =
+                      Env.add (Names.scoped_key scope value_name)
+                        (Types.binding value_name value_ty)
+                        env
+                    in
+                    let updater_body =
+                      FList
+                        (function_form :: FSymbol value_name :: extra_forms)
+                    in
+                    (match compile_expr scope updater_env updater_body with
+                    | Error _ as err -> err
+                    | Ok updater_body ->
+                        let updater =
+                          typed_ir (TFn ([ value_ty ], updater_body.ty))
+                            (Semantic_ir.Fun
+                               ([ Semantic_ir.PVar value_name ],
+                                updater_body.semantic_expr))
+                        in
+                        let updated_name = "__lg_vswap_updated" in
+                        let updated_expr =
+                          Semantic_ir.Apply
+                            ( updater.semantic_expr,
+                              [ Semantic_ir.Prefix
+                                  ("!", reference.semantic_expr)
+                              ] )
+                        in
+                        Ok
+                          (typed_ir value_ty
+                             (Semantic_ir.Let
+                                ( [ (Semantic_ir.PVar updated_name, updated_expr) ],
+                                  Semantic_ir.Sequence
+                                    [ Semantic_ir.Infix
+                                        ( ":=",
+                                          reference.semantic_expr,
+                                          Semantic_ir.Ident updated_name );
+                                      Semantic_ir.Ident updated_name
+                                    ] ))))
+                | _ -> Error.error "vswap! expects a reference as its first argument"))
+        | _ -> Error.error "vswap! expects a reference, function, and optional arguments")
     | "=" | "not=" | "<" | "<=" | ">" | ">=" -> (
         match compile_args () with
         | Error _ as err -> err
@@ -615,7 +1004,8 @@ let create ~compile_expr =
     | "subvec" -> compile_subvec scope env arg_forms
     | "nth" -> compile_nth scope env arg_forms
     | "get" -> compile_get scope env arg_forms
-    | "assoc" -> compile_assoc scope env arg_forms
+    | "find" -> compile_find scope env arg_forms
+    | "assoc" | "-assoc" -> compile_assoc scope env arg_forms
     | "dissoc" -> compile_dissoc scope env arg_forms
     | "merge" -> compile_merge scope env arg_forms
     | "update" -> compile_update scope env arg_forms
@@ -714,6 +1104,18 @@ let create ~compile_expr =
             match Ocaml_signature.value_signature function_name with
             | Error _ as err -> err
             | Ok signature -> (
+                let arguments =
+                  match (arguments, signature.parameters) with
+                  | [],
+                    [
+                      {
+                        Ocaml_signature.label = Ocaml_signature.Positional;
+                        ty = TUnit;
+                      };
+                    ] ->
+                      [ (None, typed_ir TUnit Semantic_ir.Unit) ]
+                  | _ -> arguments
+                in
                 let argument_types =
                   List.map (fun (label, argument) -> (label, argument.ty)) arguments
                 in
@@ -839,6 +1241,27 @@ let create ~compile_expr =
         | Error _ as err -> err
         | Ok args -> (
             match fn.ty with
+            | (TUnknown | TVar _)
+              when (match arg_forms with
+                   | [ _key; FSymbol "nil" ] -> true
+                   | _ -> false) -> (
+                match args with
+                | [ key; _default ] ->
+                    Ok
+                      (typed_ir (TNullable TUnknown)
+                         (Semantic_ir.Apply
+                            ( Semantic_ir.Ident
+                                "Lg_runtime.Runtime_map.get_option",
+                              [ Semantic_ir.Ident fn.ocaml_name;
+                                key.semantic_expr;
+                              ] )))
+                | _ -> assert false)
+            | TOcaml "__declared_fn" | TUnknown | TVar _ ->
+                Ok
+                  (typed_ir TUnknown
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident fn.ocaml_name,
+                          List.map (fun arg -> arg.semantic_expr) args )))
             | TOverloaded_fn arities -> (
                 match select_overloaded_arity arities (List.length args) with
                 | None ->
@@ -925,7 +1348,19 @@ let create ~compile_expr =
                           let row_type_name =
                             List.nth_opt fn.row_param_types index |> Option.join
                           in
-                          let expression = row_arg_expr row_type_name expected_ty arg in
+                          let expression =
+                            match (expected_ty, arg.record_values) with
+                            | TMap_keys, Some values ->
+                                Semantic_ir.Apply
+                                  ( Semantic_ir.Ident
+                                      "Lg_runtime.Core_set.String_set.of_list",
+                                    [ Semantic_ir.List
+                                        (List.map
+                                           (fun ((field : field), _) ->
+                                             Semantic_ir.String field.keyword)
+                                           values) ] )
+                            | _ -> row_arg_expr row_type_name expected_ty arg
+                          in
                           compile_arg_exprs (index + 1) (expression :: acc) rest
                 in
                 (match compile_arg_exprs 0 [] args with
@@ -987,44 +1422,98 @@ let create ~compile_expr =
     if Protocol.method_is_ambiguous scope env name then
       Error.error
         ("ambiguous protocol method " ^ name ^ "; use Protocol/method")
-    else match Protocol.lookup_marker scope env name with
-    | None -> Error.error ("unknown function " ^ name)
-    | Some marker -> (
-        match compile_args_for scope env arg_forms with
-        | Error _ as err -> err
-        | Ok args -> (
-            match marker.ty with
-            | TFn (param_tys, _ret) when List.length param_tys <> List.length args ->
-                Error.error (name ^ " called with incompatible arguments")
-            | TFn (_, _) -> (
-                match args with
-                | [] -> Error.error (name ^ " called with incompatible arguments")
-                | receiver :: _ -> (
-                    let method_name = Protocol.method_basename name in
-                    match
-                      Protocol.lookup_marker_impl env marker method_name receiver.ty
-                    with
-                    | None ->
-                        Error.error
-                          ("no protocol implementation for " ^ name ^ " and "
-                         ^ source_name receiver.ty)
-                    | Some impl -> (
-                        match impl.ty with
-                        | TFn (param_tys, ret)
-                          when List.length param_tys = List.length args
-                               && List.for_all2
-                                    (fun expected arg ->
-                                      Types.assignable ~policy:Host_boundary ~expected
-                                        ~actual:arg.ty)
-                                    param_tys args ->
-                            Ok
-                              (typed_ir ret
-                                 (Semantic_ir.Apply
-                                    ( Semantic_ir.Ident impl.ocaml_name,
-                                      List.map (fun arg -> arg.semantic_expr) args )))
-                        | TFn _ -> Error.error (name ^ " called with incompatible arguments")
-                        | _ -> Error.error (name ^ " is not callable"))))
-            | _ -> Error.error (name ^ " is not callable")))
+    else
+      match Protocol.lookup_marker scope env name with
+      | None -> Error.error ("unknown function " ^ name)
+      | Some marker -> (
+          match compile_args_for scope env arg_forms with
+          | Error _ as err -> err
+          | Ok args -> (
+              match marker.ty with
+              | TFn (param_tys, _ret)
+                when List.length param_tys <> List.length args ->
+                  Error.error (name ^ " called with incompatible arguments")
+              | TFn (_, _) -> (
+                  match args with
+                  | [] -> Error.error (name ^ " called with incompatible arguments")
+                  | receiver :: _ ->
+                      let method_name = Protocol.method_basename name in
+                      (match receiver.ty with
+                      | TOcaml_app ("Lg_runtime.Runtime_reify.t", [ payload_ty ]) -> (
+                          match Protocol.method_position env marker method_name with
+                          | None -> Error.error ("unknown protocol method " ^ method_name)
+                          | Some position ->
+                              let method_expr =
+                                match payload_ty with
+                                | TTuple method_tys ->
+                                    let binding_name = "__lg_reify_method" in
+                                    let patterns =
+                                      List.mapi
+                                        (fun index _ ->
+                                          if index = position then
+                                            Semantic_ir.PVar binding_name
+                                          else Semantic_ir.PAny)
+                                        method_tys
+                                    in
+                                    Semantic_ir.Match
+                                      ( receiver.semantic_expr,
+                                        [ ( Semantic_ir.PTuple patterns,
+                                            Semantic_ir.Ident binding_name ) ] )
+                                | _ -> receiver.semantic_expr
+                              in
+                              let method_ty =
+                                match payload_ty with
+                                | TTuple method_tys ->
+                                    List.nth_opt method_tys position
+                                    |> Option.value ~default:TUnknown
+                                | method_ty -> method_ty
+                              in
+                              let call_args =
+                                match method_ty with
+                                | TFn (params, _)
+                                  when List.length params = List.length args - 1 ->
+                                    List.tl args
+                                | _ -> args
+                              in
+                              let return_ty =
+                                match marker.ty with
+                                | TFn (_, return_ty) -> return_ty
+                                | _ -> TUnknown
+                              in
+                              Ok
+                                (typed_ir return_ty
+                                   (Semantic_ir.Apply
+                                      ( method_expr,
+                                        List.map (fun arg -> arg.semantic_expr) call_args ))))
+                      | _ -> (
+                          match
+                            Protocol.lookup_marker_impl env marker method_name receiver.ty
+                          with
+                          | None ->
+                              Error.error
+                                ("no protocol implementation for " ^ name ^ " and "
+                               ^ source_name receiver.ty)
+                          | Some impl -> (
+                              match impl.ty with
+                              | TFn (param_tys, ret)
+                                when List.length param_tys = List.length args
+                                     && List.for_all2
+                                          (fun expected arg ->
+                                            Types.assignable ~policy:Host_boundary
+                                              ~expected ~actual:arg.ty)
+                                          param_tys args ->
+                                  Ok
+                                    (typed_ir ret
+                                       (Semantic_ir.Apply
+                                          ( Semantic_ir.Ident impl.ocaml_name,
+                                            List.map
+                                              (fun arg -> arg.semantic_expr)
+                                              args )))
+                              | TFn _ ->
+                                  Error.error
+                                    (name ^ " called with incompatible arguments")
+                              | _ -> Error.error (name ^ " is not callable")))))
+              | _ -> Error.error (name ^ " is not callable")))
 
   and compile_args_for scope env arg_forms =
     let rec loop acc = function

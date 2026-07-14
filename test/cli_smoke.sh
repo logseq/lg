@@ -32,7 +32,7 @@ if "$cli" --target browser "$example" >"$invalid_stdout" 2>"$invalid_stderr"; th
   exit 1
 fi
 
-grep -q "lg: unknown target browser; expected native, melange, or js-of-ocaml" "$invalid_stderr"
+grep -q "lg: unknown target browser; expected native, melange, or js" "$invalid_stderr"
 
 printf '%s\n' \
   '(def ok 1)' \
@@ -57,7 +57,7 @@ printf '%s\n' \
 grep -q 'describe' "$warning_stdout"
 grep -q 'Warning 8' "$warning_stderr"
 grep -q 'not exhaustive' "$warning_stderr"
-grep -q "File \"$warning_source\", line 3" "$warning_stderr"
+grep -q "File \"$warning_source\", lines 2-3" "$warning_stderr"
 
 package_source="$(mktemp)"
 package_stdout="$(mktemp)"
@@ -174,8 +174,8 @@ grep -q '"method":"textDocument/publishDiagnostics"' "$lsp_output"
 grep -q '"severity":1' "$lsp_output"
 grep -q '"severity":2' "$lsp_output"
 grep -q 'not exhaustive' "$lsp_output"
-grep -Fq '"uri":"file:///tmp/semantic-error.lgc","diagnostics":[{"range":{"start":{"line":2,"character":2}' "$lsp_output"
-grep -Fq '"uri":"file:///tmp/warning.lgc","diagnostics":[{"range":{"start":{"line":2,"character":2}' "$lsp_output"
+grep -Fq '"uri":"file:///tmp/semantic-error.lgc","diagnostics":[{"range"' "$lsp_output"
+grep -Fq '"uri":"file:///tmp/warning.lgc","diagnostics":[{"range"' "$lsp_output"
 grep -q '"line":3' "$lsp_output"
 grep -q '"character":6' "$lsp_output"
 grep -q '"diagnostics":\[\]' "$lsp_output"

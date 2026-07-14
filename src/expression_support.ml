@@ -6,7 +6,8 @@ module Env = Compiler_environment
 let rec truthiness_expression ty expression =
   match ty with
   | TBool -> expression
-  | TOcaml_app ("option", [ payload_ty ]) ->
+  | TNil -> Semantic_ir.Sequence [ expression; Semantic_ir.Bool false ]
+  | TNullable payload_ty ->
       Semantic_ir.Match
         ( expression,
           [ (Semantic_ir.PConstructor ("None", None), Semantic_ir.Bool false);
@@ -15,7 +16,7 @@ let rec truthiness_expression ty expression =
               truthiness_expression payload_ty
                 (Semantic_ir.Ident "truthy_value") );
           ] )
-  | TOcaml "option" ->
+  | TOcaml_app ("option", [ _ ]) | TOcaml "option" ->
       Semantic_ir.Match
         ( expression,
           [ (Semantic_ir.PConstructor ("None", None), Semantic_ir.Bool false);
@@ -51,23 +52,39 @@ let is_ocaml_constructor_pattern_target target_ty name =
      | TUnknown | TVar _ -> String.contains name '.' || String.contains name '/'
      | _ -> false)
 
-let branch_types_compatible left right =
-  Types.equal left right
-  || left = TUnknown || right = TUnknown
-  || (match (left, right) with
-     | TList TUnknown, TList _ | TList _, TList TUnknown -> true
-     | _ -> false)
-  || Types.defer_to_ocaml ~expected:left ~actual:right
-
-let merge_branch_types left right =
+let rec merge_branch_types left right =
   if Types.equal left right then Some left
   else
     match (left, right) with
+    | TNil, (TOcaml_app ("option", _) as option_ty)
+    | (TOcaml_app ("option", _) as option_ty), TNil
+    | TNil, (TOcaml "option" as option_ty)
+    | (TOcaml "option" as option_ty), TNil ->
+        Some option_ty
+    | TNil, TNullable inner | TNullable inner, TNil -> Some (TNullable inner)
+    | TNil, ty | ty, TNil -> Some (TNullable ty)
+    | TNullable left, TNullable right ->
+        Option.map (fun inner -> TNullable inner) (merge_branch_types left right)
+    | TNullable inner, ty | ty, TNullable inner ->
+        Option.map (fun merged -> TNullable merged)
+          (merge_branch_types inner ty)
     | TList TUnknown, TList inner | TList inner, TList TUnknown ->
         Some (TList inner)
+    | TVector (TVar _), TVector inner | TVector inner, TVector (TVar _) ->
+        Some (TVector inner)
     | TUnknown, ty | ty, TUnknown -> Some ty
     | _ when Types.defer_to_ocaml ~expected:left ~actual:right -> Some left
     | _ -> None
+
+let branch_types_compatible left right =
+  Option.is_some (merge_branch_types left right)
+
+let coerce_expression_to_type target_ty source_ty expression =
+  match (target_ty, source_ty) with
+  | TNullable _, TNil -> expression
+  | TNullable _, TNullable _ -> expression
+  | TNullable _, _ -> Semantic_ir.Constructor ("Some", Some expression)
+  | _ -> expression
 
 let merge_branch_expressions left right =
   let continue expression =
@@ -81,9 +98,14 @@ let merge_branch_expressions left right =
       Some (left.ty, left.semantic_expr, continue right.semantic_expr)
   | None, Some inner when Types.equal left.ty inner ->
       Some (right.ty, continue left.semantic_expr, right.semantic_expr)
-  | _ ->
-      merge_branch_types left.ty right.ty
-      |> Option.map (fun ty -> (ty, left.semantic_expr, right.semantic_expr))
+  | _ -> (
+      match merge_branch_types left.ty right.ty with
+      | None -> None
+      | Some result_ty ->
+          Some
+            ( result_ty,
+              coerce_expression_to_type result_ty left.ty left.semantic_expr,
+              coerce_expression_to_type result_ty right.ty right.semantic_expr ))
 
 let unresolved_contextual_type = function
   | TList TUnknown -> true
@@ -150,6 +172,13 @@ let is_constructor_name name =
   | [] -> false
 
 let lookup_binding = Resolver.lookup_binding
+
+let deftype_method_name (record : named_record) method_name arity =
+  "__deftype/" ^ Type_id.to_string record.type_id ^ "/" ^ method_name ^ "/"
+  ^ string_of_int arity
+
+let lookup_deftype_method scope env record method_name arity =
+  lookup_binding scope env (deftype_method_name record method_name arity)
 
 let binding_of_expr ?(row_param_types = []) ocaml_name expr =
   Types.binding ~row_param_types ?return_param_index:expr.return_param_index
@@ -260,17 +289,54 @@ type compiled_fn_parts = {
 let row_param_type_names prefix param_tys =
   param_tys
   |> List.mapi (fun index -> function
-       | TRecord _ -> Some (prefix ^ "_row" ^ string_of_int index)
+       | TRecord fields ->
+           let type_name = prefix ^ "_row" ^ string_of_int index in
+           let parameters =
+             fields
+             |> List.filter_map (fun (field : field) ->
+                    match field.ty with TUnknown -> Some () | _ -> None)
+             |> List.mapi (fun index () -> "'a" ^ string_of_int index)
+           in
+           let applied_name =
+             match parameters with
+             | [] -> type_name
+             | [ parameter ] -> parameter ^ " " ^ type_name
+             | parameters ->
+                 "(" ^ String.concat ", " parameters ^ ") " ^ type_name
+           in
+           Some applied_name
        | _ -> None)
 
 let row_type_items row_type_names param_tys =
   List.map2
     (fun row_type_name param_ty ->
       match (row_type_name, param_ty) with
-      | Some type_name, TRecord fields ->
+      | Some applied_name, TRecord fields ->
+          let type_name =
+            match String.rindex_opt applied_name ' ' with
+            | None -> applied_name
+            | Some index ->
+                String.sub applied_name (index + 1)
+                  (String.length applied_name - index - 1)
+          in
+          let next_parameter = ref 0 in
+          let fields =
+            List.map
+              (fun (field : field) ->
+                match field.ty with
+                | TUnknown ->
+                    let parameter = "a" ^ string_of_int !next_parameter in
+                    incr next_parameter;
+                    { field with ty = TVar parameter }
+                | _ -> field)
+              fields
+          in
+          let type_parameters =
+            List.init !next_parameter (fun index -> "a" ^ string_of_int index)
+          in
           Some
             (Type_def
-               { type_name; type_parameters = []; fields; location = None })
+               { type_name; type_parameters; fields; location = None })
       | _ -> None)
     row_type_names param_tys
   |> List.filter_map Fun.id

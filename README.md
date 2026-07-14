@@ -60,8 +60,8 @@ first, then OCaml lowering:
   in `Lowered`, so backend item construction is kept separate from source type
   metadata.
 - Parsetree is not used as lg's full type system. lg has typed,
-  memoized lazy sequences, while `nil` lowers to OCaml `None` and remains
-  statically constrained by option types.
+  memoized lazy sequences and a source-level nullable type. `nil` lowers to
+  OCaml `None`, and nullable joins lower to typed OCaml options.
 
 Sets use persistent OCaml `Set.Make` modules rather than list-backed values.
 The runtime provides comparators for `int`, `string` (including keywords and
@@ -165,7 +165,8 @@ The compiler infers record-like map shapes automatically:
   before calling the OCaml function.
   Optional `^:int`, `^:string`, `^:symbol`, `^:keyword`, `^:bool`, or `^:unit`
   annotations can make a lg core parameter type explicit. `nil` lowers to
-  polymorphic OCaml `None`; explicit option annotations use `^:option<T>`.
+  polymorphic OCaml `None`; control-flow joins infer nullable types, while
+  explicit host option annotations use `^:option<T>`.
   Opaque host-owned
   annotations such as `^:ocaml/int` lower to OCaml parameter constraints and
   are left for the OCaml typechecker; lg core APIs do not treat them as
@@ -224,9 +225,11 @@ The compiler infers record-like map shapes automatically:
   binding types, recur argument compatibility is delegated to the OCaml
   typechecker.
 - `if-not`, `when`, and `cond` are compiler-recognized conditional forms.
-  `cond` requires an `:else` branch in the current static subset. Core lg
-  branch types are checked by lg; OCaml-owned branch result compatibility is
-  delegated to the OCaml typechecker.
+  Missing `if` and `cond` branches, and the false branch of `when`, produce
+  Clojure `nil`. When another branch returns a value, lg infers a nullable
+  result and lowers it to an OCaml option. Core lg branch types are checked by
+  lg; OCaml-owned branch result compatibility is delegated to the OCaml
+  typechecker.
 - `match` is a compiler-recognized static pattern form. It supports scalar
   literal patterns, `_`, symbol binders, and fixed-length list/vector patterns
   such as `[]`, `[x]`, and `[x y]`. Structured OCaml patterns include
@@ -246,9 +249,11 @@ The compiler infers record-like map shapes automatically:
   forms such as `(when flag (println "ready"))` can appear at file scope.
 - `print` writes without a trailing newline; `println` writes with a trailing
   newline.
-- `not` treats `false` and option `None` (`nil`) as falsey; other statically
-  represented values, including `Some false`, are truthy. `nil?` and `some?`
-  inspect options and fold statically for known non-option values.
+- `not` treats `false` and `nil` as falsey. Nullable values apply Clojure
+  truthiness to their payload, so a nullable `false` is also falsey. Explicit
+  host option values remain host objects, so `Some false` is truthy. `nil?` and
+  `some?` inspect nullable and option values and fold statically for known
+  non-nullable values.
 - `int?`, `integer?`, `number?`, `nat-int?`, `pos-int?`, `neg-int?`,
   `string?`, `keyword?`, `boolean?`, `vector?`, `list?`, `seq?`, `set?`,
   `map?`, `fn?`, `coll?`, `associative?`, `indexed?`, `seqable?`, and
