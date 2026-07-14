@@ -120,10 +120,16 @@ let lookup_marker scope env method_name =
     | [] -> None
 
 let lookup_protocol_marker scope env protocol_name method_name =
-  let id = protocol_id scope protocol_name in
-  let id = resolve_protocol_id ~scope env id in
+  let registry = Env.protocols env in
+  let scoped_id = protocol_id scope protocol_name |> resolve_protocol_id ~scope env in
+  let root_id = Protocol_id.create ~owner:[] ~name:protocol_name in
+  let id =
+    if Option.is_some (Protocol_registry.find_protocol scoped_id registry) then
+      scoped_id
+    else root_id
+  in
   let method_id = method_id id method_name in
-  match Protocol_registry.find_method id method_id (Env.protocols env) with
+  match Protocol_registry.find_method id method_id registry with
   | Some (signature : Protocol_registry.method_signature) ->
       Some
         (marker_binding id

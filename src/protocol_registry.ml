@@ -289,10 +289,16 @@ let export_owner ~from_owner ~to_owner ~from_module ~to_module source target =
   { declarations; implementations; implementation_locations; implementation_names }
 
 let qualify_implementations ~owner ~module_name registry =
+  let owner_prefix =
+    Names.sanitize_name (String.concat "/" owner) ^ "_"
+  in
   let implementations =
     Implementation_map.fold
       (fun (protocol_id, method_id, receiver_id) (binding : Types.binding) result ->
-        if Protocol_id.owner protocol_id = owner then
+        if
+          Protocol_id.owner protocol_id = owner
+          || String.starts_with ~prefix:owner_prefix binding.ocaml_name
+        then
           let receiver_id =
             match receiver_id with
             | Record_receiver type_id -> Record_receiver type_id

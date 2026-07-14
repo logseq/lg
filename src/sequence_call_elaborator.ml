@@ -643,7 +643,7 @@ let create ~compile_expr =
           match compile_expr scope env collection_form with
           | Error _ as err -> err
           | Ok collection -> (
-              match Core_sequence_transform.collection_to_seq_expr collection with
+              match Collection_capability.to_seq_expr env collection with
               | Error _ -> Error.error "map expects a seqable value"
               | Ok (inner, sequence) -> (
                   match
@@ -668,7 +668,7 @@ let create ~compile_expr =
           match compile_expr scope env collection_form with
           | Error _ as err -> err
           | Ok collection -> (
-              match Core_sequence_transform.collection_to_seq_expr collection with
+              match Collection_capability.to_seq_expr env collection with
               | Error _ -> Error.error "filter expects a seqable value"
               | Ok (inner, sequence) -> (
                   match
@@ -697,7 +697,7 @@ let create ~compile_expr =
           | (Error _ as err), _ -> err
           | _, (Error _ as err) -> err
           | Ok init, Ok collection -> (
-              match Core_sequence_transform.collection_to_seq_expr collection with
+              match Collection_capability.to_seq_expr env collection with
               | Error _ -> Error.error "reduce expects a seqable value"
               | Ok (inner, sequence) -> (
                   match compile_reducer scope env init.ty inner fn_form with

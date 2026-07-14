@@ -10,7 +10,7 @@ type t = {
 let empty =
   {
     symbols = Symbol_map.empty;
-    protocols = Protocol_registry.empty;
+    protocols = Core_protocols.initial_registry;
     modules = Module_registry.empty;
     types = Type_registry.empty;
   }

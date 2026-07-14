@@ -350,6 +350,11 @@ the element types match.
 sets, arrays, strings, typed lazy seqs, and host OCaml `Seq.t`, list, and array
 values. Reducing a memoized lazy seq realizes each source node at most once.
 
+`Seqable` is reserved as a compiler-owned protocol. Custom named records and
+host wrapper types may use `(extend-type T Seqable (-seq [value] ...))`; `-seq`
+must return a typed lazy seq. Core `map` and `reduce` resolve this capability
+statically, including implementations exported from modules.
+
 `reverse` returns a same-typed reversed list or vector.
 
 `every?`, `not-any?`, `not-every?`, and the current static subset of `some`

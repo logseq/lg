@@ -277,6 +277,10 @@ The compiler infers record-like map shapes automatically:
 - `reduce` accepts typed lists, vectors, sets, OCaml arrays, strings, lazy seqs,
   and host OCaml `Seq.t`, list, and array values. It eagerly consumes its input;
   memoized lazy seq nodes are not recomputed on later reductions.
+- `Seqable` is a compiler-owned protocol. Named records and host wrapper types
+  can implement `-seq`, returning a typed lazy seq, and then work directly with
+  `map` and `reduce`; implementations declared in modules are exported with the
+  module.
 - `apply` supports integer binary reducers over typed lists, vectors, and sets,
   including fixed leading integer arguments before the final collection.
 - `get` supports vector indexes, and `nth` supports typed default values for

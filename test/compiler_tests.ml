@@ -3730,6 +3730,39 @@ let test_reduce_realizes_lazy_seq_once () =
   assert_ocaml_runs "reduce_realizes_lazy_seq_once" "0\n6\n3\n6\n3\n"
     ocaml_source
 
+let test_custom_records_can_implement_core_seqable () =
+  let source =
+    {|
+(type-record cursor (values :ocaml/list<int>))
+(extend-type cursor Seqable
+  (-seq [cursor]
+    (map (fn [x] x) (ocaml-field cursor values))))
+(def values (ocaml-record cursor (values (list 1 2 3))))
+(println (pr-str (map inc values)))
+(println (reduce (fn [acc x] (+ acc x)) 0 values))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "custom_records_can_implement_core_seqable"
+    "(2 3 4)\n6\n" ocaml_source
+
+let test_modules_export_core_seqable_implementations () =
+  let source =
+    {|
+(module Cursors
+  (type-record cursor (values :ocaml/list<int>))
+  (extend-type cursor Seqable
+    (-seq [cursor]
+      (map (fn [x] x) (ocaml-field cursor values))))
+  (def values (ocaml-record cursor (values (list 4 5)))))
+(println (pr-str (map inc Cursors/values)))
+(println (reduce (fn [acc x] (+ acc x)) 0 Cursors/values))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "modules_export_core_seqable_implementations"
+    "(5 6)\n9\n" ocaml_source
+
 let test_batched_sequence_functions_reject_type_mismatch () =
   Cljml.Compiler.compile_string {|(def x (concat [1] ["two"]))|}
   |> expect_error "concat element types must match"
@@ -8362,6 +8395,10 @@ let tests =
     ( "reduce accepts all builtin seqable types",
       test_reduce_accepts_all_builtin_seqable_types );
     ("reduce realizes lazy seq once", test_reduce_realizes_lazy_seq_once);
+    ( "custom records can implement core Seqable",
+      test_custom_records_can_implement_core_seqable );
+    ( "modules export core Seqable implementations",
+      test_modules_export_core_seqable_implementations );
     ( "batched sequence functions reject type mismatch",
       test_batched_sequence_functions_reject_type_mismatch );
     ( "batched sequence functions reject bad functions",
