@@ -118,3 +118,11 @@ type compiled_item =
       fields : Types.field list;
       values : (Types.field * Semantic_ir.t) list;
     }
+  | Projected_record_def of {
+      var_name : string;
+      identity : (Source_node_id.t * Location.t) option;
+      type_name : string;
+      set_module_name : string;
+      fields : Types.field list;
+      source : Semantic_ir.t;
+    }

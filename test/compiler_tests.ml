@@ -2617,6 +2617,39 @@ let test_contextual_parameter_inference_preserves_nested_float_assoc_values () =
     "contextual_parameter_inference_preserves_nested_float_assoc_values" "1.5\n"
     ocaml_source
 
+let test_top_level_defs_project_function_returned_structural_records_once () =
+  let source =
+    {|
+(def score {:value 1.0})
+(def calls (ocaml-ref 0))
+(defn raise-score [score amount]
+  (do
+    (ocaml-reset! calls (+ (ocaml-deref calls) 1))
+    (assoc score :value (+ amount 0.5))))
+(def updated (raise-score score 1.0))
+(println (str (:value updated) ":" (ocaml-deref calls)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "top_level_defs_project_function_returned_structural_records_once" "1.5:1\n"
+    ocaml_source
+
+let test_module_defs_project_function_returned_structural_records () =
+  let source =
+    {|
+(module Scores
+  (def score {:value 1.0})
+  (defn raise-score [score amount]
+    (assoc score :value (+ amount 0.5)))
+  (def updated (raise-score score 1.0)))
+(println (str (:value Scores/updated)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "module_defs_project_function_returned_structural_records"
+    "1.5\n" ocaml_source
+
 let test_unannotated_function_parameters_reject_missing_structural_map_fields () =
   let source =
     {|
@@ -7992,6 +8025,10 @@ let tests =
       test_unannotated_function_parameters_infer_structural_map_fields );
     ( "contextual parameter inference preserves nested float assoc values",
       test_contextual_parameter_inference_preserves_nested_float_assoc_values );
+    ( "top-level defs project function-returned structural records once",
+      test_top_level_defs_project_function_returned_structural_records_once );
+    ( "module defs project function-returned structural records",
+      test_module_defs_project_function_returned_structural_records );
     ( "unannotated function parameters reject missing structural map fields",
       test_unannotated_function_parameters_reject_missing_structural_map_fields );
     ( "static protocols dispatch by receiver type",

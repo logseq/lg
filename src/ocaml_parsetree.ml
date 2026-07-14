@@ -249,6 +249,54 @@ let record_definition var_name identity type_name set_module_name fields values 
           set_item;
           Ast_helper.Str.value ~loc Nonrecursive [ value_binding ] ]
 
+let projected_record_definition var_name identity type_name set_module_name fields
+    source =
+  let type_item = record_type_definition type_name [] fields None in
+  let set_item =
+    set_module_definition set_module_name
+      (Types.named_record ~type_name ~set_module_name fields)
+  in
+  match
+    Ocaml_ir.to_parsetree ~context:("record source " ^ var_name)
+      (Semantic_lowering.expression source)
+  with
+  | Error _ as err -> err
+  | Ok source_expr ->
+      let source_name = "__cljml_record_source" in
+      let source_ident = Ast_helper.Exp.ident ~loc (lid (Longident.Lident source_name)) in
+      let projected_fields =
+        List.map
+          (fun (field : Types.field) ->
+            let label = lid (Longident.Lident field.ocaml_name) in
+            (label, Ast_helper.Exp.field ~loc source_ident label))
+          fields
+      in
+      let record_expr = Ast_helper.Exp.record ~loc projected_fields None in
+      let projected_expr =
+        Ast_helper.Exp.let_ ~loc Nonrecursive
+          [ Ast_helper.Vb.mk ~loc
+              (Ast_helper.Pat.var ~loc (str source_name))
+              source_expr ]
+          record_expr
+        |> fun expression ->
+        Ast_helper.Exp.constraint_ ~loc expression (type_constructor type_name [])
+      in
+      let pattern = Ast_helper.Pat.var ~loc (str var_name) in
+      let pattern =
+        match identity with
+        | None -> pattern
+        | Some (node_id, location) ->
+            { pattern with
+              ppat_loc = location;
+              ppat_attributes = node_id_attribute node_id :: pattern.ppat_attributes;
+            }
+      in
+      let value_binding = Ast_helper.Vb.mk ~loc pattern projected_expr in
+      Ok
+        [ type_item;
+          set_item;
+          Ast_helper.Str.value ~loc Nonrecursive [ value_binding ] ]
+
 let rec value_pattern = function
   | Named name -> Ast_helper.Pat.var ~loc (str name)
   | Unit_pattern ->
@@ -428,6 +476,10 @@ let rec structure_of_item = function
             (Ast_helper.Incl.mk ~loc:module_loc module_expr) ]
   | Record_def { var_name; identity; type_name; set_module_name; fields; values } ->
       record_definition var_name identity type_name set_module_name fields values
+  | Projected_record_def
+      { var_name; identity; type_name; set_module_name; fields; source } ->
+      projected_record_definition var_name identity type_name set_module_name fields
+        source
 
 and structure_of_items items =
   let rec loop acc = function

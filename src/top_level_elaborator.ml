@@ -164,29 +164,41 @@ let compile scope env next_type = function
           | Error _ as err -> err
           | Ok () -> (match expr.ty with
           | TRecord fields -> (
-              match expr.record_values with
-              | None -> Error.error "internal error: record expression missing values"
-              | Some values ->
-                  let type_name = "t" ^ string_of_int next_type in
-                  let set_module_name = "Set_" ^ type_name in
-                  let binding =
-                    Types.binding ocaml_name
-                      (Types.named_record ~type_name ~set_module_name fields)
-                  in
-                  Ok
-                    ( scope,
-                      Env.add env_key binding env,
-                      next_type + 1,
-                      Record_def
-                        { var_name = ocaml_name;
-                          identity =
-                            Source_context.find name_form
-                            |> Option.map (fun location ->
-                                   (Source_node_id.of_location location, location));
-                          type_name;
-                          set_module_name;
-                          fields;
-                          values } ))
+              let type_name = "t" ^ string_of_int next_type in
+              let set_module_name = "Set_" ^ type_name in
+              let binding =
+                Types.binding ocaml_name
+                  (Types.named_record ~type_name ~set_module_name fields)
+              in
+              let identity =
+                Source_context.find name_form
+                |> Option.map (fun location ->
+                       (Source_node_id.of_location location, location))
+              in
+              let item =
+                match expr.record_values with
+                | Some values ->
+                    Record_def
+                      { var_name = ocaml_name;
+                        identity;
+                        type_name;
+                        set_module_name;
+                        fields;
+                        values }
+                | None ->
+                    Projected_record_def
+                      { var_name = ocaml_name;
+                        identity;
+                        type_name;
+                        set_module_name;
+                        fields;
+                        source = expr.semantic_expr }
+              in
+              Ok
+                ( scope,
+                  Env.add env_key binding env,
+                  next_type + 1,
+                  item ))
           | _ ->
               let binding = binding_of_expr ocaml_name expr in
               Ok

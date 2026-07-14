@@ -380,43 +380,52 @@ let rec compile_module ?location ?signature_name ?signature_location
             | Error _ as err -> err
             | Ok () -> (match expr.ty with
             | TRecord fields -> (
-                match expr.record_values with
-                | None -> Error.error "internal error: record expression missing values"
-                | Some values ->
-                    let type_name = "t" ^ string_of_int next_type in
-                    let set_module_name = "Set_" ^ type_name in
-                    let local_record_ty =
-                      Types.named_record ~type_name ~set_module_name fields
-                    in
-                    let public_record_ty =
-                      Types.named_record
-                        ~type_name:(Names.module_path_to_ocaml module_path ^ "." ^ type_name)
-                        ~set_module_name:
-                          (Names.module_path_to_ocaml module_path ^ "." ^ set_module_name)
-                        fields
-                    in
-                    let local_binding = Types.binding local_name local_record_ty in
-                    let public_binding =
-                      Types.binding (module_binding_ocaml_name module_path name)
-                        public_record_ty
-                    in
-                    let item =
+                let type_name = "t" ^ string_of_int next_type in
+                let set_module_name = "Set_" ^ type_name in
+                let local_record_ty =
+                  Types.named_record ~type_name ~set_module_name fields
+                in
+                let public_record_ty =
+                  Types.named_record
+                    ~type_name:(Names.module_path_to_ocaml module_path ^ "." ^ type_name)
+                    ~set_module_name:
+                      (Names.module_path_to_ocaml module_path ^ "." ^ set_module_name)
+                    fields
+                in
+                let local_binding = Types.binding local_name local_record_ty in
+                let public_binding =
+                  Types.binding (module_binding_ocaml_name module_path name)
+                    public_record_ty
+                in
+                let identity =
+                  Source_context.find name_form
+                  |> Option.map (fun location ->
+                         (Source_node_id.of_location location, location))
+                in
+                let item =
+                  match expr.record_values with
+                  | Some values ->
                       Record_def
                         { var_name = local_name;
-                          identity =
-                            Source_context.find name_form
-                            |> Option.map (fun location ->
-                                   (Source_node_id.of_location location, location));
+                          identity;
                           type_name;
                           set_module_name;
                           fields;
                           values }
-                    in
-                    Ok
-                      ( Env.add key local_binding env,
-                        public_bindings @ [ (key, public_binding) ],
-                        next_type + 1,
-                        item :: items ))
+                  | None ->
+                      Projected_record_def
+                        { var_name = local_name;
+                          identity;
+                          type_name;
+                          set_module_name;
+                          fields;
+                          source = expr.semantic_expr }
+                in
+                Ok
+                  ( Env.add key local_binding env,
+                    public_bindings @ [ (key, public_binding) ],
+                    next_type + 1,
+                    item :: items ))
             | _ ->
                 let item =
                   Value_binding
