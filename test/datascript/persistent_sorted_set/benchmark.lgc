@@ -51,7 +51,7 @@
         (inc idx)))))
 
 (def set-10k (insert-all ints-10k))
-(def set-300k (pset/from-sequential int-compare ints-300k))
+(def set-300k (insert-all ints-300k))
 
 (defn conj-10k []
   (insert-all ints-10k))
@@ -91,12 +91,24 @@
     (sum-iterator iterator 0)
     0))
 
+(defn doseq-300k []
+  (let [result (ocaml-ref 0)
+        _
+        (pset/set-reduce
+          set-300k
+          (fn [state value]
+            (let [_
+                  (ocaml-reset! result (+ (ocaml-deref result) value))]
+              state))
+          0)]
+    (ocaml-deref result)))
+
 (defn reduce-300k []
   (pset/set-reduce set-300k (fn [left right] (+ left right)) 0))
 
 (benchmark "conj-10K" 100 (conj-10k))
 (benchmark "disj-10K" 50 (disj-10k))
 (benchmark "contains-10K" 200 (contains-10k))
-(benchmark "doseq-300K" 100 (reduce-300k))
+(benchmark "doseq-300K" 100 (doseq-300k))
 (benchmark "next-300K" 100 (next-300k))
 (benchmark "reduce-300K" 100 (reduce-300k))
