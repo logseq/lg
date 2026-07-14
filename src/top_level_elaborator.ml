@@ -7,6 +7,8 @@ module Env = Compiler_environment
 let compile_expr = Expression_elaborator.compile_expr
 let prepare_fn = Expression_elaborator.prepare_fn
 let prepare_recursive_fn = Expression_elaborator.prepare_recursive_fn
+let prepare_inferred_recursive_fn =
+  Expression_elaborator.prepare_inferred_recursive_fn
 let fn_code = Expression_elaborator.fn_code
 let compile_fn = Expression_elaborator.compile_fn
 let compile_args_for = Expression_elaborator.compile_args_for
@@ -21,6 +23,19 @@ let lookup_record_type = Resolver.lookup_record_type
 let record_type_key = Resolver.record_type_key
 let inherit_scope_ocaml_value_refers =
   Expression_support.inherit_scope_ocaml_value_refers
+
+let rec form_mentions_symbol name = function
+  | FSymbol candidate -> candidate = name
+  | FList forms | FVector forms ->
+      List.exists (form_mentions_symbol name) forms
+  | FMap pairs ->
+      List.exists
+        (fun (key, value) ->
+          form_mentions_symbol name key || form_mentions_symbol name value)
+        pairs
+  | FInt _ | FFloat _ | FChar _ | FString _ | FRegex _ | FBool _
+  | FKeyword _ ->
+      false
 
 let compile_defprotocol = Protocol_elaborator.compile_defprotocol
 let compile_extend_type = Protocol_elaborator.compile_extend_type
@@ -475,6 +490,43 @@ let rec compile scope env next_type = function
                       Env.add env_key binding env,
                       next_type,
                       Group (type_items @ [ value_item ]) ))))
+  | FList
+      (FSymbol ("defn" | "defn-") :: ((FSymbol name) as name_form) :: params
+      :: body_forms)
+    when List.exists (form_mentions_symbol name) body_forms -> (
+      let ocaml_name = Names.ocaml_binding_name scope name in
+      match
+        prepare_inferred_recursive_fn ~ocaml_name scope env name params body_forms
+      with
+      | Error _ as err -> err
+      | Ok parts ->
+          let param_tys =
+            parts.param_bindings
+            |> List.map (fun (_key, (binding : binding)) -> binding.ty)
+          in
+          let row_param_types = row_param_type_names ocaml_name param_tys in
+          let expr = fn_code ~row_param_type_names:row_param_types parts in
+          let env_key = Names.scoped_key scope name in
+          (match check_emitted_name_collision env ~source_key:env_key ~ocaml_name with
+          | Error _ as err -> err
+          | Ok () ->
+              let binding = binding_of_expr ~row_param_types ocaml_name expr in
+              let type_items = row_type_items row_param_types param_tys in
+              let value_item =
+                Recursive_value_binding
+                  { name = ocaml_name;
+                    identity =
+                      Source_context.find name_form
+                      |> Option.map (fun location ->
+                             (Source_node_id.of_location location, location));
+                    expression = expr.semantic_expr;
+                  }
+              in
+              Ok
+                ( scope,
+                  Env.add env_key binding env,
+                  next_type,
+                  Group (type_items @ [ value_item ]) )))
   | FList
       (FSymbol ("defn" | "defn-") :: ((FSymbol name) as name_form) :: params
       :: body_forms) -> (

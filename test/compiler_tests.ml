@@ -2314,6 +2314,34 @@ let test_parameterized_records_instantiate_field_types () =
   assert_ocaml_runs "parameterized_records_instantiate_field_types" "42:A\n"
     ocaml_source
 
+let test_recursive_record_array_fields_work_with_array_primitives () =
+  let source =
+    {|
+(type-record tree [a]
+  (keys :ocaml/array<param/a>)
+  (children :ocaml/array<tree<param/a>>))
+(def leaf
+  (ocaml-record tree
+    (keys (ocaml-array 1 2 3))
+    (children (ocaml-array-make 0))))
+(def root
+  (ocaml-record tree
+    (keys (ocaml-array 3))
+    (children (ocaml-array leaf))))
+(defn last-key [node]
+  (let [children (ocaml-field node children)]
+    (if (= 0 (ocaml-array-length children))
+      (let [keys (ocaml-field node keys)]
+        (ocaml-array-get keys (dec (ocaml-array-length keys))))
+      (last-key
+        (ocaml-array-get children (dec (ocaml-array-length children)))))))
+(println (+ (last-key root) 0))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "recursive_record_array_fields_work_with_array_primitives"
+    "3\n" ocaml_source
+
 let test_parameterized_variants_instantiate_constructor_payloads () =
   let source =
     {|
@@ -9512,6 +9540,8 @@ let tests =
       test_parameterized_variants_instantiate_constructor_payloads );
     ( "parameterized records instantiate field types",
       test_parameterized_records_instantiate_field_types );
+    ( "recursive record array fields work with array primitives",
+      test_recursive_record_array_fields_work_with_array_primitives );
     ( "parameterized types compile inside modules",
       test_parameterized_types_compile_inside_modules );
     ( "parameterized record relationships are checked by OCaml",

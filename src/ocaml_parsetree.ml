@@ -112,6 +112,31 @@ let type_parameters parameters =
 
 let declaration_location = Option.value ~default:loc
 
+let rec type_mentions name = function
+  | Types.TOcaml candidate -> candidate = name
+  | Types.TOcaml_app (candidate, args) ->
+      candidate = name || List.exists (type_mentions name) args
+  | Types.TTuple args -> List.exists (type_mentions name) args
+  | Types.TArray inner | Types.TRef inner | Types.TList inner
+  | Types.TVector inner | Types.TSet inner | Types.TSeq inner
+  | Types.TNullable inner ->
+      type_mentions name inner
+  | Types.TFn (params, return_ty) ->
+      List.exists (type_mentions name) params || type_mentions name return_ty
+  | Types.TOverloaded_fn arities ->
+      List.exists
+        (fun (arity : Types.fn_arity) ->
+          List.exists (type_mentions name) arity.fixed_params
+          || Option.fold ~none:false ~some:(type_mentions name) arity.rest_param
+          || type_mentions name arity.return_ty)
+        arities
+  | Types.TRecord fields | Types.TNamed_record { fields; _ } ->
+      List.exists (fun (field : Types.field) -> type_mentions name field.ty) fields
+  | Types.TInt | Types.TFloat | Types.TChar | Types.TString | Types.TRegex
+  | Types.TMap_keys | Types.TSymbol | Types.TKeyword | Types.TBool | Types.TUnit
+  | Types.TNil | Types.TUnknown | Types.TVar _ ->
+      false
+
 let record_type_definition type_name parameters fields location =
   let declaration_loc = declaration_location location in
   let label_declarations =
@@ -127,7 +152,12 @@ let record_type_definition type_name parameters fields location =
       ~kind:(Ptype_record label_declarations)
       (Location.mkloc type_name declaration_loc)
   in
-  Ast_helper.Str.type_ ~loc Nonrecursive [ type_declaration ]
+  let recursion =
+    if List.exists (fun (field : Types.field) -> type_mentions type_name field.ty) fields
+    then Recursive
+    else Nonrecursive
+  in
+  Ast_helper.Str.type_ ~loc recursion [ type_declaration ]
 
 let type_alias_definition type_name parameters manifest location =
   let declaration_loc = declaration_location location in

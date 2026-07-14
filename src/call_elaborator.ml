@@ -14,6 +14,9 @@ type t = {
 
 let array_element_type = function
   | TArray element_ty -> Some element_ty
+  | TOcaml "array" -> Some TUnknown
+  | TOcaml_app ("array", [ element_ty ]) ->
+      Some (lg_metadata_type_for_ocaml_type element_ty)
   | TUnknown | TVar _ -> Some TUnknown
   | _ -> None
 

@@ -479,6 +479,26 @@ and prepare_recursive_fn ~ocaml_name scope env source_name return_ty params
                 ("recursive defn " ^ source_name ^ " must return "
                ^ Types.source_name return_ty)
 
+and prepare_inferred_recursive_fn ~ocaml_name scope env source_name params
+    body_forms =
+  match Destructure.parse_param_specs params with
+  | Error _ as err -> err
+  | Ok specs ->
+      let param_type_overrides =
+        List.map (fun (spec : Destructure.param_spec) -> spec.explicit_ty) specs
+      in
+      let param_tys =
+        List.map
+          (fun (spec : Destructure.param_spec) ->
+            Option.value spec.explicit_ty ~default:TUnknown)
+          specs
+      in
+      let self_binding =
+        Types.binding ocaml_name (TFn (param_tys, TUnknown))
+      in
+      let env = Env.add (Names.scoped_key scope source_name) self_binding env in
+      prepare_fn ~param_type_overrides scope env params body_forms
+
 and fn_code ?(row_param_type_names = []) parts =
   Function_elaborator.fn_code ~row_param_type_names parts
 
