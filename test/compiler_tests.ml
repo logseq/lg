@@ -3763,6 +3763,50 @@ let test_modules_export_core_seqable_implementations () =
   assert_ocaml_runs "modules_export_core_seqable_implementations"
     "(5 6)\n9\n" ocaml_source
 
+let test_reduce_prefers_custom_reducible_over_seqable () =
+  let source =
+    {|
+(def seq-calls (ocaml-ref 0))
+(type-record cursor (values :ocaml/list<int>))
+(extend-type cursor Seqable
+  (-seq [cursor]
+    (do
+      (ocaml-reset! seq-calls (+ (ocaml-deref seq-calls) 1))
+      (map (fn [x] x) (ocaml-field cursor values)))))
+(extend-type cursor Reducible
+  (-reduce [cursor reducer init]
+    (+ init 100)))
+(def values (ocaml-record cursor (values (list 1 2 3))))
+(println (reduce (fn [acc x] (+ acc x)) 0 values))
+(println (ocaml-deref seq-calls))
+(println (first (map inc values)))
+(println (ocaml-deref seq-calls))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "reduce_prefers_custom_reducible_over_seqable"
+    "100\n0\n2\n1\n" ocaml_source
+
+let test_reduce_specializes_builtin_reducible_types () =
+  let source =
+    {|
+(def list-total (reduce (fn [acc x] (+ acc x)) 0 (list 1 2)))
+(def vector-total (reduce (fn [acc x] (+ acc x)) 0 [1 2]))
+(def array-total (reduce (fn [acc x] (+ acc x)) 0 (ocaml-array 1 2)))
+(def string-value (reduce (fn [acc ch] (str acc ch)) "" "ab"))
+(def seq-total (reduce (fn [acc x] (+ acc x)) 0 (range 3)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  [ "List.fold_left";
+    "Rrbvec.fold_left";
+    "Array.fold_left";
+    "String.fold_left";
+    "Seq.fold_left" ]
+  |> List.iter (fun expected ->
+         if not (string_contains_substring ocaml_source expected) then
+           failwith ("missing specialized reducible call " ^ expected))
+
 let test_batched_sequence_functions_reject_type_mismatch () =
   Cljml.Compiler.compile_string {|(def x (concat [1] ["two"]))|}
   |> expect_error "concat element types must match"
@@ -8399,6 +8443,10 @@ let tests =
       test_custom_records_can_implement_core_seqable );
     ( "modules export core Seqable implementations",
       test_modules_export_core_seqable_implementations );
+    ( "reduce prefers custom Reducible over Seqable",
+      test_reduce_prefers_custom_reducible_over_seqable );
+    ( "reduce specializes builtin Reducible types",
+      test_reduce_specializes_builtin_reducible_types );
     ( "batched sequence functions reject type mismatch",
       test_batched_sequence_functions_reject_type_mismatch );
     ( "batched sequence functions reject bad functions",

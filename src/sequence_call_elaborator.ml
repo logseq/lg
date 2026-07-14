@@ -710,8 +710,8 @@ let create ~compile_expr =
                              && Types.equal ret init.ty ->
                           Ok
                             (typed_ir init.ty
-                               (apply "Cljml.Runtime_seq.fold_left"
-                                  [ fn.semantic_expr; init.semantic_expr; sequence ]))
+                               (Collection_capability.reduce_expr env fn init
+                                  collection sequence))
                       | TFn _ ->
                           Error.error
                             "reduce function type does not match init and sequence"

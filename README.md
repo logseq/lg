@@ -281,6 +281,9 @@ The compiler infers record-like map shapes automatically:
   can implement `-seq`, returning a typed lazy seq, and then work directly with
   `map` and `reduce`; implementations declared in modules are exported with the
   module.
+- `Reducible` is a compiler-owned optimization protocol. `reduce` uses a
+  matching `-reduce` implementation before falling back to `Seqable`; built-in
+  collections specialize directly to their native OCaml folds.
 - `apply` supports integer binary reducers over typed lists, vectors, and sets,
   including fixed leading integer arguments before the final collection.
 - `get` supports vector indexes, and `nth` supports typed default values for

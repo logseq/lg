@@ -355,6 +355,11 @@ host wrapper types may use `(extend-type T Seqable (-seq [value] ...))`; `-seq`
 must return a typed lazy seq. Core `map` and `reduce` resolve this capability
 statically, including implementations exported from modules.
 
+`Reducible` is also compiler-owned. A custom seqable type may implement
+`-reduce` for a direct reduction path; `reduce` selects it before the `Seqable`
+fallback. Built-in lists, vectors, sets, arrays, strings, and lazy seqs lower to
+their native OCaml fold operations.
+
 `reverse` returns a same-typed reversed list or vector.
 
 `every?`, `not-any?`, `not-every?`, and the current static subset of `some`

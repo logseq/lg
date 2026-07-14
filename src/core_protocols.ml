@@ -2,6 +2,8 @@ open Types
 
 let seqable_id = Protocol_id.create ~owner:[] ~name:"Seqable"
 let seq_method_id = Method_id.create ~owner:[ "Seqable" ] ~name:"-seq"
+let reducible_id = Protocol_id.create ~owner:[] ~name:"Reducible"
+let reduce_method_id = Method_id.create ~owner:[ "Reducible" ] ~name:"-reduce"
 
 let add_or_fail result =
   match result with
@@ -25,6 +27,23 @@ let add_seqable receiver ocaml_name registry =
     registry
   |> add_or_fail
 
+let declare_reducible registry =
+  Protocol_registry.declare reducible_id
+    [ { Protocol_registry.method_id = reduce_method_id;
+        param_tys = [ TUnknown; TUnknown; TUnknown ];
+        return_ty = TUnknown } ]
+    registry
+  |> add_or_fail
+
+let add_reducible receiver ocaml_name registry =
+  let binding =
+    Types.binding ~protocol_id:reducible_id ocaml_name
+      (TFn ([ TUnknown; TUnknown; TUnknown ], TUnknown))
+  in
+  Protocol_registry.add_implementation reducible_id reduce_method_id receiver
+    binding registry
+  |> add_or_fail
+
 let initial_registry =
   Protocol_registry.empty
   |> declare_seqable
@@ -46,10 +65,33 @@ let initial_registry =
        "Cljml.Runtime_seq.of_host_seq"
   |> add_seqable (Receiver_id.Host_receiver "Seq")
        "Cljml.Runtime_seq.of_host_seq_alias"
+  |> declare_reducible
+  |> add_reducible Receiver_id.List_receiver "Cljml.Core_protocols.reduce_list"
+  |> add_reducible Receiver_id.Vector_receiver
+       "Cljml.Core_protocols.reduce_vector"
+  |> add_reducible Receiver_id.Set_receiver "Cljml.Core_protocols.reduce_set"
+  |> add_reducible Receiver_id.Seq_receiver "Cljml.Core_protocols.reduce_seq"
+  |> add_reducible Receiver_id.Array_receiver "Cljml.Core_protocols.reduce_array"
+  |> add_reducible Receiver_id.String_receiver "Cljml.Core_protocols.reduce_string"
+  |> add_reducible (Receiver_id.Host_receiver "list")
+       "Cljml.Core_protocols.reduce_host_list"
+  |> add_reducible (Receiver_id.Host_receiver "array")
+       "Cljml.Core_protocols.reduce_host_array"
+  |> add_reducible (Receiver_id.Host_receiver "Seq.t")
+       "Cljml.Core_protocols.reduce_host_seq"
+  |> add_reducible (Receiver_id.Host_receiver "Seq")
+       "Cljml.Core_protocols.reduce_host_seq_alias"
 
 let find_seqable receiver_ty registry =
   match Receiver_id.of_type receiver_ty with
   | None -> None
   | Some receiver ->
       Protocol_registry.find_implementation seqable_id seq_method_id receiver
+        registry
+
+let find_reducible receiver_ty registry =
+  match Receiver_id.of_type receiver_ty with
+  | None -> None
+  | Some receiver ->
+      Protocol_registry.find_implementation reducible_id reduce_method_id receiver
         registry
