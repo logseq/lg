@@ -2738,6 +2738,17 @@ let test_threading_and_option_binding_forms_compile () =
   (if-let [x value] (+ x 1) 0))
 (def threaded (-> 41 (+ 1) str))
 (def threaded-last (->> 41 (str "value=")))
+(defn maybe-thread [^:option<int> value]
+  (some-> value (+ 1) str))
+(def some-threaded
+  (if-some [value (maybe-thread (Some 41))] value "missing"))
+(def some-missing
+  (if-some [value (maybe-thread None)] value "missing"))
+(def destructured-option
+  (if-some [value (when-let [[left right] (Some [2 3])]
+                    (+ left right))]
+    value
+    0))
 (def combined
   (let-some [left (Some 2) right (Some 3)]
     (+ left right)
@@ -2752,16 +2763,19 @@ let test_threading_and_option_binding_forms_compile () =
 (println
   (str (option-score (Some 41)) ":" (option-score None) ":"
        threaded ":" threaded-last ":" combined ":" missing ":"
-       (deref observed)))
+       (deref observed) ":" some-threaded ":" some-missing ":"
+       destructured-option))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "threading_and_option_binding_forms_compile"
-    "42:0:42:value=41:5:9:7\n" ocaml_source;
+    "42:0:42:value=41:5:9:7:42:missing:5\n" ocaml_source;
   Lg.Compiler.compile_string {|(def bad (if-let [x] x 0))|}
   |> expect_error "if-let requires [name option], then, and else";
   Lg.Compiler.compile_string {|(def bad (-> 1 2))|}
   |> expect_error "threading steps must be symbols or call forms";
+  Lg.Compiler.compile_string {|(def bad (some-> (Some 1) 2))|}
+  |> expect_error "some-> steps must be symbols or call forms";
   Lg.Compiler.compile_string
     {|(def bad (let-some [x (Some 1) y] x 0))|}
   |> expect_error "let-some bindings require name/option pairs"
@@ -4872,7 +4886,7 @@ let test_batched_sequence_functions_work () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "batched_sequence_functions_work"
-    "[1 3]:[1 2 3]:[3 4]:[1 2 3]:(1 2 3):(1 2 3 4):[1 2]:#{1 2}:(\"x\" \"x\" \"x\"):(7 7 7):(1 0 2 0 3):(1 3 2 4):2:1:3:3:1:(0 1 3 6):[1 2 1]:(10 21):[1 3]:[2 3]:31\n"
+    "[1 3]:[1 2 3]:[3 4]:(1 2 3):(1 2 3):(1 2 3 4):[1 2]:#{1 2}:(\"x\" \"x\" \"x\"):(7 7 7):(1 0 2 0 3):(1 3 2 4):2:1:3:3:1:(0 1 3 6):[1 2 1]:(10 21):[1 3]:[2 3]:31\n"
     ocaml_source
 
 let test_lazy_map_defers_incrementally_and_memoizes_realized_values () =
@@ -6362,14 +6376,19 @@ let test_match_expression_works () =
 (def one-vector-score (match [7] [] 0 [x] x _ 99))
 (def two-vector-score (match [3 4] [] 0 [x] x [x y] (+ x y) _ 99))
 (def many-vector-score (match [1 2 3] [] 0 [x] x [x y] (+ x y) _ 99))
+(def case-keyword (case :keys :keys "keys" :syms "syms" "other"))
+(def case-default (case :strs :keys "keys" :syms "syms" "other"))
+(def case-grouped (case 2 (1 2) "small" "other"))
 (println
   (str (describe 0) ":" (describe 2) ":"
        empty-list-score ":" one-list-score ":" two-list-score ":" many-list-score ":"
-       empty-vector-score ":" one-vector-score ":" two-vector-score ":" many-vector-score))
+       empty-vector-score ":" one-vector-score ":" two-vector-score ":" many-vector-score ":"
+       case-keyword ":" case-default ":" case-grouped))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "match_expression_works" "zero:n=2:0:7:7:99:0:7:7:99\n"
+  assert_ocaml_runs "match_expression_works"
+    "zero:n=2:0:7:7:99:0:7:7:99:keys:other:small\n"
     ocaml_source
 
 let test_match_rejects_branch_type_mismatch () =

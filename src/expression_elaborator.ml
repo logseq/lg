@@ -23,6 +23,8 @@ type prepared_multi_arity_fn = {
   expr : typed_expr;
 }
 
+let some_thread_counter = ref 0
+
 let rec compile_expr scope (env : Env.t) form =
   match compile_expr_unlocated scope env form with
   | Error error ->
@@ -74,6 +76,8 @@ and compile_expr_unlocated scope (env : Env.t) = function
       compile_thread scope env `First value steps
   | FList (FSymbol "->>" :: value :: steps) ->
       compile_thread scope env `Last value steps
+  | FList (FSymbol "some->" :: value :: steps) ->
+      compile_some_thread scope env value steps
   | FList (FSymbol "if-let" :: binding :: then_form :: else_form :: []) ->
       compile_if_let scope env binding then_form else_form
   | FList (FSymbol "if-some" :: binding :: then_form :: else_form :: []) ->
@@ -114,6 +118,9 @@ and compile_expr_unlocated scope (env : Env.t) = function
   | FList (FSymbol "when-not" :: condition :: body_forms) ->
       compile_when scope env (FList [ FSymbol "not"; condition ]) body_forms
   | FList (FSymbol "cond" :: clauses) -> compile_cond scope env clauses
+  | FList (FSymbol "case" :: target :: clauses) ->
+      compile_case scope env target clauses
+  | FList [ FSymbol "case" ] -> Error.error "case expects a target"
   | FList (FSymbol "and" :: forms) -> compile_logical scope env `And forms
   | FList (FSymbol "or" :: forms) -> compile_logical scope env `Or forms
   | FList (FSymbol "match" :: target :: clauses) ->
@@ -146,6 +153,128 @@ and compile_thread scope env position value steps =
     | _ -> Error.error "threading steps must be symbols or call forms"
   in
   expand value steps
+
+and compile_some_thread scope env value steps =
+  let thread_first value = function
+    | FSymbol name -> Ok (FList [ FSymbol name; value ])
+    | FList (FSymbol name :: args) ->
+        Ok (FList (FSymbol name :: value :: args))
+    | _ -> Error.error "some-> steps must be symbols or call forms"
+  in
+  let option_payload_type = function
+    | TNullable payload_ty -> Some payload_ty
+    | TNil -> Some TUnknown
+    | TOcaml_app ("option", [ payload_ty ]) ->
+        Some (lg_metadata_type_for_ocaml_payload payload_ty)
+    | TOcaml "option" -> Some TUnknown
+    | _ -> None
+  in
+  let nil = typed_ir TNil (Semantic_ir.Constructor ("None", None)) in
+  let merge_with_nil threaded =
+    match merge_branch_expressions threaded nil with
+    | Some merged -> Ok merged
+    | None -> Error.error "some-> result cannot be made nullable"
+  in
+  let rec continue env current = function
+    | [] -> Ok current
+    | step :: rest ->
+        incr some_thread_counter;
+        let source_name =
+          "__lg_some_thread_value_" ^ string_of_int !some_thread_counter
+        in
+        let ocaml_name = Names.sanitize_name source_name in
+        let compile_rest binding_ty =
+          let step_env =
+            Env.add (Names.scoped_key scope source_name)
+              (Types.binding ocaml_name binding_ty)
+              env
+          in
+          match thread_first (FSymbol source_name) step with
+          | Error _ as error -> error
+          | Ok threaded -> (
+              match compile_expr scope step_env threaded with
+              | Error _ as error -> error
+              | Ok threaded -> continue step_env threaded rest)
+        in
+        (match option_payload_type current.ty with
+        | Some payload_ty -> (
+            match compile_rest payload_ty with
+            | Error _ as error -> error
+            | Ok threaded -> (
+                match merge_with_nil threaded with
+                | Error _ as error -> error
+                | Ok (result_ty, some_code, none_code) ->
+                    Ok
+                      (typed_ir result_ty
+                         (Semantic_ir.Match
+                            ( current.semantic_expr,
+                              [ ( Semantic_ir.PConstructor
+                                    ("Some", Some (Semantic_ir.PVar ocaml_name)),
+                                  some_code );
+                                ( Semantic_ir.PConstructor ("None", None),
+                                  none_code );
+                              ] )))))
+        | None when Types.is_dynamic current.ty -> (
+            match compile_rest current.ty with
+            | Error _ as error -> error
+            | Ok threaded -> (
+                match merge_with_nil threaded with
+                | Error _ as error -> error
+                | Ok (result_ty, some_code, none_code) ->
+                    Ok
+                      (typed_ir result_ty
+                         (Semantic_ir.Let
+                            ( [ (Semantic_ir.PVar ocaml_name, current.semantic_expr) ],
+                              Semantic_ir.If
+                                ( Semantic_ir.Apply
+                                    ( Semantic_ir.Ident
+                                        "Lg_runtime.Runtime_dynamic.is_nil",
+                                      [ Semantic_ir.Ident ocaml_name ] ),
+                                  none_code,
+                                  some_code ) )))))
+        | None -> (
+            match compile_rest current.ty with
+            | Error _ as error -> error
+            | Ok threaded ->
+                Ok
+                  { threaded with
+                    semantic_expr =
+                      Semantic_ir.Let
+                        ( [ (Semantic_ir.PVar ocaml_name, current.semantic_expr) ],
+                          threaded.semantic_expr );
+                  }))
+  in
+  match compile_expr scope env value with
+  | Error _ as error -> error
+  | Ok value -> continue env value steps
+
+and compile_case scope env target clauses =
+  let rec grouped_pattern = function
+    | [] -> FSymbol "_"
+    | [ pattern ] -> pattern
+    | pattern :: rest ->
+        FList [ FSymbol "or"; pattern; grouped_pattern rest ]
+  in
+  let pattern = function
+    | FList patterns -> grouped_pattern patterns
+    | pattern -> pattern
+  in
+  let rec pairs acc = function
+    | [] ->
+        List.rev
+          (FList
+             [ FSymbol "throw";
+               FList
+                 [ FSymbol "ex-info";
+                   FString "No matching clause";
+                   FMap [] ];
+             ]
+          :: FSymbol "_" :: acc)
+    | [ default ] -> List.rev (default :: FSymbol "_" :: acc)
+    | constant :: result :: rest ->
+        pairs (result :: pattern constant :: acc) rest
+  in
+  compile_match scope env target (pairs [] clauses)
 
 and compile_map scope env pairs =
   (Lazy.force context).special_forms.compile_map scope env pairs

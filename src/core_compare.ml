@@ -31,6 +31,11 @@ let rec equality_expr left right =
       Semantic_ir.Sequence
         [ left.semantic_expr; right.semantic_expr; Semantic_ir.Bool false ]
   | _ -> (match (left.ty, right.ty) with
+  | left_ty, right_ty
+    when Types.is_dynamic left_ty && Types.is_dynamic right_ty ->
+      Semantic_ir.Apply
+        ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.equal",
+          [ left.semantic_expr; right.semantic_expr ] )
   | (TRecord _ | TNamed_record _), right_type
     when Option.is_some (Types.dynamic_map_types right_type) -> (
       match left.record_values with

@@ -15,9 +15,26 @@ let of_string value = value |> String.to_seq |> memoize
 let to_list sequence = List.of_seq sequence
 let fold_left fn init sequence = Seq.fold_left fn init sequence
 
+let rec for_all predicate sequence =
+  match sequence () with
+  | Seq.Nil -> true
+  | Seq.Cons (value, rest) -> predicate value && for_all predicate rest
+
 let map fn sequence = sequence |> Seq.map fn |> memoize
 let flat_map fn sequence = sequence |> Seq.flat_map fn |> memoize
 let filter predicate sequence = sequence |> Seq.filter predicate |> memoize
+
+let distinct equal sequence =
+  let rec loop seen sequence =
+    memoize (fun () ->
+        match sequence () with
+        | Seq.Nil -> Seq.Nil
+        | Seq.Cons (value, rest) ->
+            if List.exists (equal value) seen then (loop seen rest) ()
+            else Seq.Cons (value, loop (value :: seen) rest))
+  in
+  loop [] sequence
+
 let concat sequences = List.fold_right Seq.append sequences Seq.empty |> memoize
 let take count sequence = sequence |> Seq.take count |> memoize
 let drop count sequence =

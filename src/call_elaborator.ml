@@ -398,9 +398,17 @@ and pack_dynamic_payload env expected_dynamic argument =
         in
         pack_fields [] fields
         |> Result.map (fun fields ->
-               Semantic_ir.Apply
-                 ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.map",
-                   [ Semantic_ir.List fields ] ))
+               match argument.ty with
+               | TNamed_record record ->
+                   Semantic_ir.Apply
+                     ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.record",
+                       [ Semantic_ir.String record.type_name;
+                         Semantic_ir.List fields;
+                       ] )
+               | _ ->
+                   Semantic_ir.Apply
+                     ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.map",
+                       [ Semantic_ir.List fields ] ))
     | _ ->
         Error.error
           ("cannot pass " ^ Types.source_name argument.ty
@@ -2335,6 +2343,27 @@ let create ~compile_expr =
     | "string?" | "keyword?" | "boolean?" | "vector?" | "list?" | "seq?" | "set?"
     | "map?" | "fn?" | "coll?" | "associative?" | "indexed?" | "seqable?" | "counted?"
       -> compile_boolean_call scope env name arg_forms
+    | "instance?" -> (
+        match arg_forms with
+        | [ FSymbol type_name; value_form ] -> (
+            match
+              ( Resolver.lookup_record_type scope env type_name,
+                compile_expr scope env value_form )
+            with
+            | (Error _ as error), _ -> error
+            | _, (Error _ as error) -> error
+            | Ok record, Ok value ->
+                let dynamic_ty = Types.dynamic_constraint TUnknown in
+                (match pack_dynamic_value env dynamic_ty value with
+                | Error _ as error -> error
+                | Ok value ->
+                    Ok
+                      (typed_ir TBool
+                         (Semantic_ir.Apply
+                            ( Semantic_ir.Ident
+                                "Lg_runtime.Runtime_dynamic.is_instance",
+                              [ value; Semantic_ir.String record.type_name ] )))))
+        | _ -> Error.error "instance? expects a record type and value")
     | "integer?" | "nat-int?" | "pos-int?" | "neg-int?" | "boolean" | "bit-set"
     | "bit-clear" | "bit-flip" | "bit-test" | "bit-shift-right-zero-fill"
     | "unchecked-add" | "unchecked-add-int" | "unchecked-subtract"
@@ -2558,12 +2587,14 @@ let create ~compile_expr =
         compile_sequence_bool_predicate scope env name arg_forms
     | "map" -> compile_map_call scope env arg_forms
     | "filter" -> compile_filter scope env arg_forms
-    | "remove" | "take-while" | "drop-while" | "distinct" | "dedupe" | "sort" ->
+    | "distinct" -> compile_distinct scope env arg_forms
+    | "remove" | "take-while" | "drop-while" | "dedupe" | "sort" ->
         compile_sequence_transform_call scope env name arg_forms
     | "sort-by" -> compile_sort_by scope env arg_forms
     | "concat" -> compile_concat scope env arg_forms
     | "mapcat" -> compile_mapcat scope env arg_forms
-    | "vec" | "set" | "repeat" ->
+    | "vec" -> compile_vec scope env arg_forms
+    | "set" | "repeat" ->
         compile_sequence_transform_call scope env name arg_forms
     | "repeatedly" -> compile_repeatedly scope env arg_forms
     | "interpose" | "interleave" | "partition" | "partition-all" ->
@@ -2796,6 +2827,52 @@ let create ~compile_expr =
         match compile_args_for scope env arg_forms with
         | Error _ as err -> err
         | Ok args -> Core_sequence_transform.compile name args)
+
+  and compile_vec scope env arg_forms =
+    match compile_args_for scope env arg_forms with
+    | Error _ as error -> error
+    | Ok [ collection ] -> (
+        match Collection_capability.to_seq_expr env collection with
+        | Error _ -> Error.error "vec expects a list, vector, or set"
+        | Ok (inner, sequence) ->
+            Ok
+              (typed_ir (TVector inner)
+                 (Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Rrbvec.of_list",
+                      [ Semantic_ir.Apply
+                          ( Semantic_ir.Ident
+                              "Lg_runtime.Runtime_seq.to_list",
+                            [ sequence ] );
+                      ] ))))
+    | Ok _ -> Error.error "vec expects 1 arguments"
+
+  and compile_distinct scope env arg_forms =
+    match compile_args_for scope env arg_forms with
+    | Error _ as error -> error
+    | Ok [ collection ] -> (
+        match Collection_capability.to_seq_expr env collection with
+        | Error _ ->
+            Error.error
+              ("distinct expects a seqable value, got "
+             ^ Types.source_name collection.ty)
+        | Ok (inner, sequence) -> (
+            let left = typed_ir inner (Semantic_ir.Ident "left") in
+            let right = typed_ir inner (Semantic_ir.Ident "right") in
+            match Core_compare.compile "=" [ left; right ] with
+            | Error _ as error -> error
+            | Ok equality ->
+                let equal =
+                  Semantic_ir.Fun
+                    ( [ Semantic_ir.PVar "left"; Semantic_ir.PVar "right" ],
+                      equality.semantic_expr )
+                in
+                Ok
+                  (typed_ir (TSeq inner)
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident
+                            "Lg_runtime.Runtime_seq.distinct",
+                          [ equal; sequence ] )))))
+    | Ok _ -> Error.error "distinct expects 1 arguments"
 
   and compile_subs scope env arg_forms =
     match compile_args_for scope env arg_forms with

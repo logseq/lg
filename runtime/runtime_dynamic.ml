@@ -4,6 +4,7 @@ type t = {
   sequential : bool;
   protocols : protocol list;
   metadata : t option;
+  type_name : string option;
 }
 
 and payload =
@@ -29,8 +30,9 @@ and protocol = {
 
 let protocol id methods = { id; methods }
 
-let make ?sequence ?(sequential = false) ?(protocols = []) ?metadata payload =
-  { payload; sequence; sequential; protocols; metadata }
+let make ?sequence ?(sequential = false) ?(protocols = []) ?metadata ?type_name
+    payload =
+  { payload; sequence; sequential; protocols; metadata; type_name }
 
 let with_protocols value protocols = { value with protocols }
 let with_metadata value metadata = { value with metadata = Some metadata }
@@ -61,6 +63,14 @@ let seq values =
 
 let map entries =
   make
+    ~sequence:(fun () ->
+      entries
+      |> List.to_seq
+      |> Seq.map (fun (key, value) -> vector (Rrbvec.of_list [ key; value ])))
+    (Map entries)
+
+let record type_name entries =
+  make ~type_name
     ~sequence:(fun () ->
       entries
       |> List.to_seq
@@ -148,6 +158,7 @@ let into target source =
 let is_sequential value = value.sequential
 let is_seqable value = Option.is_some value.sequence
 let truthy value = match value.payload with Nil | Bool false -> false | _ -> true
+let is_nil value = match value.payload with Nil -> true | _ -> false
 let is_symbol value = match value.payload with Symbol _ -> true | _ -> false
 let is_keyword value = match value.payload with Keyword _ -> true | _ -> false
 let is_string value = match value.payload with String _ -> true | _ -> false
@@ -160,6 +171,7 @@ let is_vector value = match value.payload with Vector -> true | _ -> false
 let is_seq value = match value.payload with List | Seq -> true | _ -> false
 let is_map value = match value.payload with Map _ -> true | _ -> false
 let is_coll value = is_seqable value
+let is_instance value type_name = value.type_name = Some type_name
 
 let has_protocol value protocol_id =
   List.exists (fun protocol -> protocol.id = protocol_id) value.protocols

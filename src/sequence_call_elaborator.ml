@@ -708,62 +708,55 @@ let create ~compile_expr =
     and compile_sequence_bool_predicate scope env name arg_forms =
       match arg_forms with
       | fn_form :: collection_form :: [] -> (
-          match (compile_function_arg scope env fn_form, compile_expr scope env collection_form) with
-          | (Error _ as err), _ -> err
-          | _, (Error _ as err) -> err
-          | Ok fn, Ok collection -> (
-              let build all_expr =
-                match name with
-                | "every?" -> all_expr
-                | "not-any?" -> all_expr
-                | "not-every?" -> Semantic_ir.Prefix ("not", all_expr)
-                | _ -> all_expr
-              in
-              let predicate_expr =
-                match name with
-                | "not-any?" ->
-                    Semantic_ir.Fun
-                      ( [ Semantic_ir.PVar "item" ],
-                        Semantic_ir.Prefix
-                          ("not", Semantic_ir.Apply (fn.semantic_expr, [ Semantic_ir.Ident "item" ])) )
-                | _ -> fn.semantic_expr
-              in
-              match (fn.ty, collection.ty) with
-              | TFn ([ param_ty ], TBool), TList inner when Types.equal param_ty inner ->
-                  let all_expr = apply "List.for_all" [ predicate_expr; collection.semantic_expr ] in
-                  Ok (typed_ir TBool (build all_expr))
-              | TFn _, TList _ -> Error.error (name ^ " expects a predicate matching list elements")
-              | _, TList _ -> Error.error (name ^ " expects a function")
-              | TFn ([ param_ty ], TBool), TVector inner when Types.equal param_ty inner ->
-                  let all_expr = apply "Rrbvec.for_all" [ predicate_expr; collection.semantic_expr ] in
-                  Ok (typed_ir TBool (build all_expr))
-              | TFn _, TVector _ ->
-                  Error.error (name ^ " expects a predicate matching vector elements")
-              | _, TVector _ -> Error.error (name ^ " expects a function")
-              | TFn ([ param_ty ], TBool), TSet inner
-                when Types.assignable ~policy:Host_boundary ~expected:param_ty ~actual:inner ->
-                  Types.set_module_name inner
-                  |> Result.map (fun set_module ->
-                         let fn_expr = constrain_record_function_argument_expr fn inner in
-                         let predicate_expr =
-                           match name with
-                           | "not-any?" ->
-                               Semantic_ir.Fun
-                                 ( [ Semantic_ir.PVar "item" ],
-                                   Semantic_ir.Prefix
-                                     ( "not",
-                                       Semantic_ir.Apply (fn_expr, [ Semantic_ir.Ident "item" ]) ) )
-                           | _ -> fn_expr
-                         in
-                         let all_expr =
-                           apply "List.for_all"
-                             [ predicate_expr;
-                               apply (set_module ^ ".elements") [ collection.semantic_expr ] ]
-                         in
-                         typed_ir TBool (build all_expr))
-              | TFn _, TSet _ -> Error.error (name ^ " expects a predicate matching set elements")
-              | _, TSet _ -> Error.error (name ^ " expects a function")
-              | _ -> Error.error (name ^ " expects a list, vector, or set")))
+          match compile_expr scope env collection_form with
+          | Error _ as error -> error
+          | Ok collection -> (
+              match Collection_capability.to_seq_expr env collection with
+              | Error _ -> Error.error (name ^ " expects a seqable value")
+              | Ok (inner, sequence) -> (
+                  match
+                    compile_function_arg_for_collection scope env inner fn_form
+                  with
+                  | Error _ as error -> error
+                  | Ok ({ ty = TFn ([ param_ty ], TBool); _ } as predicate)
+                    when Types.assignable ~policy:Host_boundary
+                           ~expected:param_ty ~actual:inner ->
+                      let predicate_expr =
+                        constrain_record_function_argument_expr predicate inner
+                      in
+                      let predicate_expr =
+                        if name = "not-any?" then
+                          Semantic_ir.Fun
+                            ( [ Semantic_ir.PVar "item" ],
+                              Semantic_ir.Prefix
+                                ( "not",
+                                  Semantic_ir.Apply
+                                    ( predicate_expr,
+                                      [ Semantic_ir.Ident "item" ] ) ) )
+                        else predicate_expr
+                      in
+                      let result =
+                        apply "Lg_runtime.Runtime_seq.for_all"
+                          [ predicate_expr; sequence ]
+                      in
+                      let result =
+                        if name = "not-every?" then
+                          Semantic_ir.Prefix ("not", result)
+                        else result
+                      in
+                      Ok (typed_ir TBool result)
+                  | Ok { ty = TFn _; _ } ->
+                      let collection_name =
+                        match collection.ty with
+                        | TList _ -> "list"
+                        | TVector _ -> "vector"
+                        | TSet _ -> "set"
+                        | _ -> "sequence"
+                      in
+                      Error.error
+                        (name ^ " expects a predicate matching "
+                       ^ collection_name ^ " elements")
+                  | Ok _ -> Error.error (name ^ " expects a function"))))
       | _ -> Error.error (name ^ " expects function and collection")
     
     and compile_map_call scope env arg_forms =

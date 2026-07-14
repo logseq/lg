@@ -182,21 +182,48 @@ let create ~compile_expr =
 
   and parse_option_binding form error_message =
     match form with
-    | FVector [ FSymbol name; option_form ] -> Ok (name, option_form)
+    | FVector [ ((FSymbol _ | FVector _ | FMap _) as pattern); option_form ] ->
+        Ok (pattern, option_form)
     | _ -> Error.error error_message
 
-  and compile_option_match ?(require_truthy = false) scope env name option_form
+  and compile_option_match ?(require_truthy = false) scope env pattern option_form
       compile_some compile_none branch_error =
+    let payload_name = "__lg_option_value" in
+    let compile_some_branch payload_ty =
+      let payload = typed_ir payload_ty (Semantic_ir.Ident payload_name) in
+      match Destructure.bind_pattern ~env payload pattern with
+      | Error _ as error -> error
+      | Ok bindings ->
+          let env_bindings =
+            bindings
+            |> List.map (fun (binding : Destructure.local_binding) ->
+                   ( Names.scoped_key scope binding.source_name,
+                     Types.binding binding.ocaml_name binding.ty ))
+          in
+          let some_env = Env.add_bindings env_bindings env in
+          (match compile_some some_env with
+          | Error _ as error -> error
+          | Ok expression ->
+              let ir_bindings =
+                bindings
+                |> List.map (fun (binding : Destructure.local_binding) ->
+                       ( located_pattern binding.identity
+                           (Semantic_ir.PVar binding.ocaml_name),
+                         binding.semantic_expr ))
+              in
+              if ir_bindings = [] then Ok expression
+              else
+                Ok
+                  { expression with
+                    semantic_expr =
+                      Semantic_ir.Let
+                        (ir_bindings, expression.semantic_expr);
+                  })
+    in
     match compile_expr scope env option_form with
     | Error _ as err -> err
     | Ok option_expr when require_truthy && Types.is_dynamic option_expr.ty ->
-        let ocaml_name = Names.sanitize_name name in
-        let some_env =
-          Env.add (Names.scoped_key scope name)
-            (Types.binding ocaml_name option_expr.ty)
-            env
-        in
-        (match (compile_some some_env, compile_none ()) with
+        (match (compile_some_branch option_expr.ty, compile_none ()) with
         | (Error _ as error), _ -> error
         | _, (Error _ as error) -> error
         | Ok some_expr, Ok none_expr -> (
@@ -206,25 +233,19 @@ let create ~compile_expr =
                 Ok
                   (typed_ir result_ty
                      (Semantic_ir.Let
-                        ( [ ( Semantic_ir.PVar ocaml_name,
+                        ( [ ( Semantic_ir.PVar payload_name,
                               option_expr.semantic_expr );
                           ],
                           Semantic_ir.If
                             ( truthiness_expression option_expr.ty
-                                (Semantic_ir.Ident ocaml_name),
+                                (Semantic_ir.Ident payload_name),
                               some_code,
                               none_code ) )))))
     | Ok option_expr -> (
         match option_payload_type option_expr.ty with
         | Error _ as err -> err
         | Ok payload_ty ->
-            let ocaml_name = Names.sanitize_name name in
-            let some_env =
-              Env.add (Names.scoped_key scope name)
-                (Types.binding ocaml_name payload_ty)
-                env
-            in
-            match (compile_some some_env, compile_none ()) with
+            match (compile_some_branch payload_ty, compile_none ()) with
             | (Error _ as err), _ -> err
             | _, (Error _ as err) -> err
             | Ok some_expr, Ok none_expr -> (
@@ -235,7 +256,7 @@ let create ~compile_expr =
                       if require_truthy then
                         Semantic_ir.If
                           ( truthiness_expression payload_ty
-                              (Semantic_ir.Ident ocaml_name),
+                              (Semantic_ir.Ident payload_name),
                             some_code,
                             none_code )
                       else some_code
@@ -245,7 +266,7 @@ let create ~compile_expr =
                          (Semantic_ir.Match
                             ( option_expr.semantic_expr,
                               [ ( Semantic_ir.PConstructor
-                                  ("Some", Some (Semantic_ir.PVar ocaml_name)),
+                                  ("Some", Some (Semantic_ir.PVar payload_name)),
                                   some_code );
                                 ( Semantic_ir.PConstructor ("None", None),
                                   none_code );
@@ -302,8 +323,8 @@ let create ~compile_expr =
   and compile_let_some scope env bindings_form then_form else_form =
     let rec parse_bindings acc = function
       | [] -> Ok (List.rev acc)
-      | FSymbol name :: option_form :: rest ->
-          parse_bindings ((name, option_form) :: acc) rest
+      | ((FSymbol _) as pattern) :: option_form :: rest ->
+          parse_bindings ((pattern, option_form) :: acc) rest
       | _ -> Error.error "let-some bindings require name/option pairs"
     in
     match bindings_form with
@@ -317,8 +338,8 @@ let create ~compile_expr =
             | Ok else_expr ->
                 let rec compile_bindings current_env = function
                   | [] -> compile_expr scope current_env then_form
-                  | (name, option_form) :: rest ->
-                      compile_option_match scope current_env name option_form
+                  | (pattern, option_form) :: rest ->
+                      compile_option_match scope current_env pattern option_form
                         (fun some_env -> compile_bindings some_env rest)
                         (fun () -> Ok else_expr)
                         "let-some branches must have same type"
@@ -347,7 +368,27 @@ let create ~compile_expr =
                       ( condition_code,
                         then_code,
                         else_code )))
-            | None -> Error.error "if branches must have same type")
+            | None -> (
+                match
+                  ( Collection_capability.to_seq_expr env then_expr,
+                    Collection_capability.to_seq_expr env else_expr )
+                with
+                | Ok (then_inner, then_sequence),
+                  Ok (else_inner, else_sequence)
+                  when Types.equal then_inner else_inner
+                       || Types.equal then_inner TUnknown
+                       || Types.equal else_inner TUnknown
+                       || Types.is_dynamic then_inner
+                       || Types.is_dynamic else_inner ->
+                    let inner =
+                      if Types.equal then_inner TUnknown then else_inner
+                      else then_inner
+                    in
+                    Ok
+                      (typed_ir (TSeq inner)
+                         (Semantic_ir.If
+                            (condition_code, then_sequence, else_sequence)))
+                | _ -> Error.error "if branches must have same type"))
   
   and compile_if_not scope env condition then_form else_form =
     match

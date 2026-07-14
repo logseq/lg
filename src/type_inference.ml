@@ -425,6 +425,8 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params body_for
         constrain_symbol (Types.dynamic_constraint TUnknown) params value
     | FList [ FSymbol "name"; FSymbol value ] ->
         constrain_symbol (Types.dynamic_constraint TUnknown) params value
+    | FList [ FSymbol "instance?"; FSymbol _type_name; FSymbol value ] ->
+        constrain_symbol (Types.dynamic_constraint TUnknown) params value
     | FList (FSymbol name :: arguments) when List.mem_assoc name params ->
         let parameter_tys = List.map (inferred_form_type params) arguments in
         (match
@@ -452,7 +454,8 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params body_for
         [ FSymbol "seqable?"; FSymbol collection ] ->
         constrain_optional_seqable TUnknown params collection
     | FList [ FSymbol "sequential?"; FSymbol collection ] ->
-        constrain_optional_seqable ~sequential:true TUnknown params collection
+        constrain_optional_seqable ~sequential:true
+          (Types.dynamic_constraint TUnknown) params collection
     | FList
         [ FSymbol "satisfies?"; FSymbol protocol_name; FSymbol receiver ] -> (
         match lookup_protocol_constraint protocol_name with
@@ -650,6 +653,24 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params body_for
         infer_clauses params clauses
     | FList (FSymbol "match" :: target :: clauses) ->
         infer_match params target clauses
+    | FList (FSymbol "case" :: target :: clauses) ->
+        let rec grouped_pattern = function
+          | [] -> FSymbol "_"
+          | [ pattern ] -> pattern
+          | pattern :: rest ->
+              FList [ FSymbol "or"; pattern; grouped_pattern rest ]
+        in
+        let pattern = function
+          | FList patterns -> grouped_pattern patterns
+          | pattern -> pattern
+        in
+        let rec pairs acc = function
+          | [] -> List.rev (FSymbol "nil" :: FSymbol "_" :: acc)
+          | [ default ] -> List.rev (default :: FSymbol "_" :: acc)
+          | constant :: result :: rest ->
+              pairs (result :: pattern constant :: acc) rest
+        in
+        infer_match params target (pairs [] clauses)
     | FList
         [
           FSymbol "split-with";
