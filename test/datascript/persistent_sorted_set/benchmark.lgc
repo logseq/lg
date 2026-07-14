@@ -1,0 +1,102 @@
+(ns me.tonsky.persistent-sorted-set.benchmark
+  (:require
+    [me.tonsky.persistent-sorted-set.arrays :as arrays]
+    [me.tonsky.persistent-sorted-set.set :as pset]))
+
+(defn int-compare [left right]
+  (- left right))
+
+(defn now []
+  (ocaml-call :float Sys.time))
+
+(defmacro benchmark [name iterations expression]
+  `(do
+     (loop [warmup# 0]
+       (if (< warmup# 10)
+         (do
+           ~expression
+           (recur (inc warmup#)))
+         nil))
+     (let [started# (now)]
+       (loop [iteration# 0]
+         (if (< iteration# ~iterations)
+           (do
+             ~expression
+             (recur (inc iteration#)))
+           nil))
+       (let [elapsed# (Float.sub (now) started#)
+             millis#
+             (Float.div
+               (Float.mul elapsed# 1000.0)
+               (double ~iterations))]
+         (println (str ~name ":" (Float.to_string millis#)))))))
+
+(def ints-10k
+  (arrays/amap
+    (fn [idx] (mod (* idx 7919) 10000))
+    (arrays/into-array (range 0 10000))))
+
+(def ints-300k
+  (arrays/amap
+    (fn [idx] (mod (* idx 7919) 300000))
+    (arrays/into-array (range 0 300000))))
+
+(defn insert-all [values]
+  (loop [set (pset/empty-set int-compare)
+         idx 0]
+    (if (= idx (arrays/alength values))
+      set
+      (recur
+        (pset/set-conj set (arrays/aget values idx))
+        (inc idx)))))
+
+(def set-10k (insert-all ints-10k))
+(def set-300k (pset/from-sequential int-compare ints-300k))
+
+(defn conj-10k []
+  (insert-all ints-10k))
+
+(defn disj-10k []
+  (loop [set set-10k
+         idx 0]
+    (if (= idx (arrays/alength ints-10k))
+      set
+      (recur
+        (pset/set-disj set (arrays/aget ints-10k idx))
+        (inc idx)))))
+
+(defn contains-10k []
+  (loop [idx 0
+         found 0]
+    (if (= idx (arrays/alength ints-10k))
+      found
+      (recur
+        (inc idx)
+        (if (pset/set-contains? set-10k (arrays/aget ints-10k idx))
+          (inc found)
+          found)))))
+
+(defn sum-iterator [iterator result]
+  (if-some [next-iterator
+            (me.tonsky.persistent-sorted-set.traversal/iter-next iterator)]
+    (sum-iterator
+      next-iterator
+      (+ result
+         (me.tonsky.persistent-sorted-set.traversal/iter-first iterator)))
+    (+ result
+       (me.tonsky.persistent-sorted-set.traversal/iter-first iterator))))
+
+(defn next-300k []
+  (if-some [iterator (pset/set-iter set-300k)]
+    (sum-iterator iterator 0)
+    0))
+
+(defn reduce-300k []
+  (pset/set-reduce set-300k (fn [left right] (+ left right)) 0))
+
+(benchmark "conj-10K" 100 (conj-10k))
+(benchmark "disj-10K" 50 (disj-10k))
+(benchmark "contains-10K" 200 (contains-10k))
+(benchmark "doseq-300K" 100 (reduce-300k))
+(benchmark "next-300K" 100 (next-300k))
+(benchmark "reduce-300K" 100 (reduce-300k))

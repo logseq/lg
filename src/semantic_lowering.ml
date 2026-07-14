@@ -35,6 +35,8 @@ let rec expression = function
   | List values -> List (List.map expression values)
   | Array values -> Array (List.map expression values)
   | Apply (fn, args) -> Apply (expression fn, List.map expression args)
+  | Uncurried_apply (fn, args) ->
+      Uncurried_apply (expression fn, List.map expression args)
   | Labelled_apply (fn, args) ->
       Labelled_apply
         (expression fn, List.map (fun (label, arg) -> (label, expression arg)) args)

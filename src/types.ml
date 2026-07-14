@@ -173,6 +173,10 @@ let classify_assignability ~expected ~actual =
 
 let rec assignable ~policy ~expected ~actual =
   match (expected, actual) with
+  | TNamed_record expected, TNamed_record actual
+    when expected.type_name = actual.type_name ->
+      equal (TNamed_record expected) (TNamed_record actual)
+      || policy = Host_boundary
   | TFn (expected_params, expected_return), TFn (actual_params, actual_return)
     when List.length expected_params = List.length actual_params ->
       List.for_all2

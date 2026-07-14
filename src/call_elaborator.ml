@@ -348,19 +348,103 @@ let create ~compile_expr =
                && Types.assignable ~policy:Host_boundary ~expected:parameter_ty
                     ~actual:next_ty ->
             Ok
-              (typed_ir (TOcaml_app ("Seq.t", [ element_ty ]))
+              (typed_ir (TSeq element_ty)
                  (apply "Lg_runtime.Runtime_seq.memoize"
                     [ apply "Seq.unfold" [ step; initial.semantic_expr ] ]))
         | Ok [ _; _ ] ->
             Error.error
               "ocaml-seq-unfold expects a state step function and initial state"
         | Ok _ -> Error.error "ocaml-seq-unfold expects 2 arguments")
+    | ("ocaml-uncurried-call" | "ocaml-uncurried-compare") as name -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok
+            [ { ty = TFn ([ left_ty; right_ty ], return_ty); semantic_expr = fn; _ };
+              left;
+              right ]
+          when Types.assignable ~policy:Host_boundary ~expected:left_ty
+                 ~actual:left.ty
+               && Types.assignable ~policy:Host_boundary ~expected:right_ty
+                    ~actual:right.ty ->
+            Ok
+              (typed_ir (if name = "ocaml-uncurried-compare" then TInt else return_ty)
+                 (Semantic_ir.Uncurried_apply
+                    (fn, [ left.semantic_expr; right.semantic_expr ])))
+        | Ok _ ->
+            Error.error
+              (name
+             ^ " expects a binary function and two compatible arguments"))
+    | ("ocaml-array-to-seq" | "ocaml-array-to-rseq") as name -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [ array ] -> (
+            match array_element_type array.ty with
+            | Some element_ty ->
+                let runtime_name =
+                  if name = "ocaml-array-to-seq" then
+                    "Lg_runtime.Runtime_seq.of_array"
+                  else "Lg_runtime.Runtime_seq.of_array_rev"
+                in
+                Ok
+                  (typed_ir (TSeq element_ty)
+                     (apply runtime_name [ array.semantic_expr ]))
+            | None -> Error.error (name ^ " expects an OCaml array"))
+        | Ok _ -> Error.error (name ^ " expects 1 argument"))
+    | ("ocaml-seq-flat-map" | "ocaml-seq-flat-map-rev") as name -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [ { ty = TFn ([ parameter_ty ], return_type); semantic_expr = fn; _ };
+               collection ] -> (
+            match
+              ( array_element_type collection.ty,
+                return_type )
+            with
+            | Some element_ty,
+              (TSeq return_ty | TOcaml_app (("Seq.t" | "Seq"), [ return_ty ]))
+              when Types.assignable ~policy:Host_boundary ~expected:parameter_ty
+                     ~actual:element_ty ->
+                Ok
+                  (typed_ir (TSeq return_ty)
+                     (apply "Lg_runtime.Runtime_seq.memoize"
+                        [ apply "Seq.flat_map"
+                            [ fn;
+                              apply
+                                (if name = "ocaml-seq-flat-map" then
+                                   "Lg_runtime.Runtime_seq.of_array"
+                                 else "Lg_runtime.Runtime_seq.of_array_rev")
+                                [ collection.semantic_expr ] ] ]))
+            | Some element_ty, TUnknown
+              when Types.assignable ~policy:Host_boundary ~expected:parameter_ty
+                     ~actual:element_ty ->
+                Ok
+                  (typed_ir (TSeq TUnknown)
+                     (apply "Lg_runtime.Runtime_seq.memoize"
+                        [ apply "Seq.flat_map"
+                            [ fn;
+                              apply
+                                (if name = "ocaml-seq-flat-map" then
+                                   "Lg_runtime.Runtime_seq.of_array"
+                                 else "Lg_runtime.Runtime_seq.of_array_rev")
+                                [ collection.semantic_expr ] ] ]))
+            | _ ->
+                Error.error
+                  (name
+                 ^ " expects a sequence function and compatible array"))
+        | Ok _ -> Error.error (name ^ " expects 2 arguments"))
     | "ocaml-array" -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok [] -> Error.error "empty OCaml array requires a type"
         | Ok (first :: rest as values) ->
-            if List.for_all (fun value -> Types.equal first.ty value.ty) rest then
+            if
+              List.for_all
+                (fun value ->
+                  Types.assignable ~policy:Host_boundary ~expected:first.ty
+                    ~actual:value.ty
+                  || Types.assignable ~policy:Host_boundary ~expected:value.ty
+                       ~actual:first.ty)
+                rest
+            then
               Ok
                 (typed_ir (TArray first.ty)
                    (Semantic_ir.Array (List.map (fun value -> value.semantic_expr) values)))
@@ -397,7 +481,7 @@ let create ~compile_expr =
                   (typed_ir (TArray element_ty)
                      (apply "Array.of_seq" [ sequence ])))
         | Ok _ -> Error.error "ocaml-array-from expects 1 argument")
-    | "ocaml-array-get" -> (
+    | ("ocaml-array-get" | "ocaml-array-unsafe-get") as name -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok [ array; index ] -> (
@@ -406,11 +490,14 @@ let create ~compile_expr =
                 if int_parameter_type index.ty then
                   Ok
                     (typed_ir element_ty
-                       (apply "Array.get" [ array.semantic_expr; index.semantic_expr ]))
+                       (apply
+                          (if name = "ocaml-array-get" then "Array.get"
+                           else "Array.unsafe_get")
+                          [ array.semantic_expr; index.semantic_expr ]))
                 else Error.error "OCaml array index must be int"
-            | None -> Error.error "ocaml-array-get expects an OCaml array")
-        | Ok _ -> Error.error "ocaml-array-get expects 2 arguments")
-    | "ocaml-array-set!" -> (
+            | None -> Error.error (name ^ " expects an OCaml array"))
+        | Ok _ -> Error.error (name ^ " expects 2 arguments"))
+    | ("ocaml-array-set!" | "ocaml-array-unsafe-set!") as name -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok [ array; index; value ] -> (
@@ -427,10 +514,12 @@ let create ~compile_expr =
                 else
                   Ok
                     (typed_ir TUnit
-                       (apply "Array.set"
+                       (apply
+                          (if name = "ocaml-array-set!" then "Array.set"
+                           else "Array.unsafe_set")
                           [ array.semantic_expr; index.semantic_expr; value.semantic_expr ]))
-            | None -> Error.error "ocaml-array-set! expects an OCaml array")
-        | Ok _ -> Error.error "ocaml-array-set! expects 3 arguments")
+            | None -> Error.error (name ^ " expects an OCaml array"))
+        | Ok _ -> Error.error (name ^ " expects 3 arguments"))
     | "ocaml-array-length" -> (
         match compile_args () with
         | Error _ as err -> err

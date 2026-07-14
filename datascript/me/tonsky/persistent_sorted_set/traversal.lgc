@@ -5,6 +5,23 @@
     [me.tonsky.persistent-sorted-set.path :as path]
     [me.tonsky.persistent-sorted-set.search :as search]))
 
+#?(:native
+   (type-record iterator [value]
+     (iter-root :ocaml/tree<param/value>)
+     (iter-shift :int)
+     (iter-left :int)
+     (iter-right :int)
+     (iter-keys :ocaml/array<param/value>)
+     (iter-idx :int))
+   :melange
+   (type-record iterator [value]
+     (iter-root :ocaml/tree<param/value>)
+     (iter-shift :int)
+     (iter-left :float)
+     (iter-right :float)
+     (iter-keys :ocaml/array<param/value>)
+     (iter-idx :int)))
+
 (defn node-keys-at-path [root current-path shift]
   (loop [node root
          level shift]
@@ -153,17 +170,73 @@
       (prev-path root right shift))))
 
 (defn node-seq [root shift]
-  (let [right
-        (next-path
-          root
-          (rightmost-path root path/empty-path shift)
-          shift)]
-    (node-seq-between root path/empty-path right shift)))
+  (if (= 0 shift)
+    (ocaml-array-to-seq (nodes/node-keys root))
+    (ocaml-seq-flat-map
+      (fn [child] (node-seq child (dec shift)))
+      (nodes/node-children root))))
 
 (defn node-rseq [root shift]
-  (let [right
-        (next-path
+  (if (= 0 shift)
+    (ocaml-array-to-rseq (nodes/node-keys root))
+    (ocaml-seq-flat-map-rev
+      (fn [child] (node-rseq child (dec shift)))
+      (nodes/node-children root))))
+
+(defn- make-iterator [root shift left right keys idx]
+  (ocaml-record iterator
+    (iter-root root)
+    (iter-shift shift)
+    (iter-left left)
+    (iter-right right)
+    (iter-keys keys)
+    (iter-idx idx)))
+
+(defn iter-first [iterator]
+  (arrays/aget
+    (ocaml-field iterator iter-keys)
+    (ocaml-field iterator iter-idx)))
+
+(defn iter-next [iterator]
+  (let [root (ocaml-field iterator iter-root)
+        shift (ocaml-field iterator iter-shift)
+        left (ocaml-field iterator iter-left)
+        right (ocaml-field iterator iter-right)
+        keys (ocaml-field iterator iter-keys)
+        idx (ocaml-field iterator iter-idx)]
+    (if (< (inc idx) (arrays/alength keys))
+      (let [next-left (path/path-inc left)]
+        (if (path/path-lt next-left right)
+          (Some
+            (make-iterator
+              root shift next-left right keys (inc idx)))
+          nil))
+      (let [next-left (next-path root left shift)]
+        (if (path/path-lt next-left right)
+          (Some
+            (make-iterator
+              root
+              shift
+              next-left
+              right
+              (node-keys-at-path root next-left shift)
+              (path/path-get next-left 0)))
+          nil)))))
+
+(defn node-iter [root shift]
+  (if (= 0 (nodes/node-len root))
+    nil
+    (let [left path/empty-path
+          right
+          (next-path
+            root
+            (rightmost-path root path/empty-path shift)
+            shift)]
+      (Some
+        (make-iterator
           root
-          (rightmost-path root path/empty-path shift)
-          shift)]
-    (node-rseq-between root path/empty-path right shift)))
+          shift
+          left
+          right
+          (node-keys-at-path root left shift)
+          0)))))

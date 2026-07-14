@@ -8,16 +8,16 @@
   `(ocaml-array-from ~values))
 
 (defmacro aget [values index]
-  `(ocaml-array-get ~values ~index))
+  `(ocaml-array-unsafe-get ~values ~index))
 
 (defmacro aset [values index value]
-  `(ocaml-array-set! ~values ~index ~value))
+  `(ocaml-array-unsafe-set! ~values ~index ~value))
 
 (defmacro alength [values]
   `(ocaml-array-length ~values))
 
 (defmacro array [& values]
-  `(ocaml-array-from [~@values]))
+  `(ocaml-array ~@values))
 
 (defmacro acopy [source source-start source-end target target-start]
   `(ocaml-array-copy! ~source ~source-start ~source-end ~target ~target-start))
@@ -45,7 +45,7 @@
 
 (defmacro alast [values]
   `(let [values# ~values]
-     (ocaml-array-get values# (dec (ocaml-array-length values#)))))
+     (ocaml-array-unsafe-get values# (dec (ocaml-array-length values#)))))
 
 (defmacro half [value]
   `(quot ~value 2))

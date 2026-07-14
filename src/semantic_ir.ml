@@ -30,6 +30,7 @@ type t =
   | List of t list
   | Array of t list
   | Apply of t * t list
+  | Uncurried_apply of t * t list
   | Labelled_apply of t * (string option * t) list
   | If of t * t * t
   | Fun of pattern list * t
@@ -60,7 +61,7 @@ let rec type_annotations expression =
     | Typed (_, value) | Located (_, _, value) -> [ value ]
     | Constructor (_, value) -> Option.to_list value
     | Tuple values | List values | Array values | Sequence values -> values
-    | Apply (fn, args) -> fn :: args
+    | Apply (fn, args) | Uncurried_apply (fn, args) -> fn :: args
     | Labelled_apply (fn, args) -> fn :: List.map snd args
     | If (condition, then_expr, else_expr) -> [ condition; then_expr; else_expr ]
     | Fun (_, body) -> [ body ]

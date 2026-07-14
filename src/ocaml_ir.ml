@@ -29,6 +29,7 @@ type t =
   | List of t list
   | Array of t list
   | Apply of t * t list
+  | Uncurried_apply of t * t list
   | Labelled_apply of t * (string option * t) list
   | If of t * t * t
   | Fun of pattern list * t
@@ -99,6 +100,12 @@ let rec to_source = function
       ^ " "
       ^ (args |> List.map (fun arg -> "(" ^ to_source arg ^ ")") |> String.concat " ")
       ^ ")"
+  | Uncurried_apply (fn, args) ->
+      "(("
+      ^ to_source fn
+      ^ " "
+      ^ (args |> List.map (fun arg -> "(" ^ to_source arg ^ ")") |> String.concat " ")
+      ^ ")[@u])"
   | Labelled_apply (fn, args) ->
       let argument_source = function
         | None, argument -> "(" ^ to_source argument ^ ")"
@@ -403,6 +410,50 @@ and to_parsetree ~context = function
           Ok
             (Ast_helper.Exp.apply ~loc fn
                (List.map (fun arg -> (Asttypes.Nolabel, arg)) args)))
+  | Uncurried_apply (fn, args) -> (
+      match (to_parsetree ~context fn, expressions_to_parsetree ~context args) with
+      | (Error _ as err), _ -> err
+      | _, (Error _ as err) -> err
+      | Ok fn, Ok args ->
+          let type_var name = Ast_helper.Typ.var ~loc name in
+          let function_type =
+            Ast_helper.Typ.arrow ~loc Asttypes.Nolabel (type_var "left")
+              (Ast_helper.Typ.arrow ~loc Asttypes.Nolabel (type_var "right")
+                 (type_var "result"))
+          in
+          let uncurried_type =
+            { function_type with
+              ptyp_attributes =
+                Ast_helper.Attr.mk (str "u") (PStr [])
+                :: function_type.ptyp_attributes }
+          in
+          let coerce =
+            Ast_helper.Val.mk ~loc ~prim:[ "%identity" ] (str "coerce")
+              (Ast_helper.Typ.arrow ~loc Asttypes.Nolabel function_type
+                 uncurried_type)
+          in
+          let direct_module =
+            Ast_helper.Mod.structure ~loc
+              [ Ast_helper.Str.primitive ~loc coerce ]
+          in
+          let fn =
+            Ast_helper.Exp.apply ~loc
+              (Ast_helper.Exp.ident ~loc
+                 (lid (longident_of_string "Lg_direct.coerce")))
+              [ (Asttypes.Nolabel, fn) ]
+          in
+          let application =
+            Ast_helper.Exp.apply ~loc fn
+              (List.map (fun arg -> (Asttypes.Nolabel, arg)) args)
+          in
+          let attribute = Ast_helper.Attr.mk (str "u") (PStr []) in
+          let application =
+            { application with
+              pexp_attributes = attribute :: application.pexp_attributes }
+          in
+          Ok
+            (Ast_helper.Exp.letmodule ~loc (Location.mkloc (Some "Lg_direct") loc)
+               direct_module application))
   | Labelled_apply (fn, args) -> (
       let rec arguments_to_parsetree acc = function
         | [] -> Ok (List.rev acc)

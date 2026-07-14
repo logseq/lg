@@ -21,6 +21,7 @@ set-large:true:true:true:true:true:true:true
 set-slice:true:true:true:true:true:true:true
 set-insert-stress:true:true:true:true
 set-delete-stress:true:true:true:true:true:true:true
+set-iterator:true:true:true
 lookup:true:true:true:true
 insert:true:true:true:true
 split:true:true:true:true:true:true
@@ -44,3 +45,4 @@ set-large:true:true:true:true:true:true:true
 set-slice:true:true:true:true:true:true:true
 set-insert-stress:true:true:true:true
 set-delete-stress:true:true:true:true:true:true:true
+set-iterator:true:true:true

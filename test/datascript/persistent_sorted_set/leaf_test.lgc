@@ -401,3 +401,24 @@
        (= 0 (pset/set-count emptied-set)) ":"
        (= 0 (pset/set-shift emptied-set)) ":"
        (empty? (pset/set-seq emptied-set))))
+
+(defn consume-iterator [iterator count total]
+  (if-some [next-iterator (traversal/iter-next iterator)]
+    (consume-iterator
+      next-iterator
+      (inc count)
+      (+ total (traversal/iter-first iterator)))
+    (tuple
+      (inc count)
+      (+ total (traversal/iter-first iterator)))))
+
+(if-some [iterator (pset/set-iter large-set)]
+  (let [result (consume-iterator iterator 0 0)]
+    (match result
+      (tuple count total)
+      (println
+        (str "set-iterator:"
+             (= 2000 count) ":"
+             (= 1999000 total) ":"
+             (= 0 (traversal/iter-first iterator))))))
+  (println "set-iterator:false:false:false"))

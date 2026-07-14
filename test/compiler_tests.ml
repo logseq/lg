@@ -2757,13 +2757,17 @@ let test_ocaml_arrays_support_construction_read_and_mutation () =
     {|
 (def values (ocaml-array 1 2 3))
 (ocaml-array-set! values 1 42)
+(ocaml-array-unsafe-set! values 2 99)
 (def empty-values (ocaml-array-of :int))
-(println (str (+ (ocaml-array-get values 1) 0) ":" (Array.length empty-values)))
+(println
+  (str (+ (ocaml-array-get values 1) 0) ":"
+       (+ (ocaml-array-unsafe-get values 2) 0) ":"
+       (Array.length empty-values)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "ocaml_arrays_support_construction_read_and_mutation"
-    "42:0\n" ocaml_source
+    "42:99:0\n" ocaml_source
 
 let test_ocaml_array_primitives_support_polymorphic_helpers () =
   let source =
@@ -4626,6 +4630,45 @@ let test_ocaml_seq_unfold_builds_typed_lazy_sequences () =
   Lg.Compiler.compile_string {|(ocaml-seq-unfold (fn [x] (inc x)) 0)|}
   |> expect_error_contains
        "ocaml-seq-unfold expects a state step function and initial state"
+
+let test_ocaml_array_sequences_flat_map_lazily () =
+  let source =
+    {|
+(def arrays
+  (ocaml-array
+    (ocaml-array 1 2)
+    (ocaml-array 3 4)))
+(def values
+  (ocaml-seq-flat-map
+    (fn [items] (ocaml-array-to-seq items))
+    arrays))
+(println
+  (str (reduce + 0 values) ":"
+       (reduce
+         (fn [acc value] (+ (* acc 10) value))
+         0
+         (ocaml-array-to-rseq (ocaml-array 1 2 3)))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "ocaml_array_sequences_flat_map_lazily" "10:321\n"
+    ocaml_source
+
+let test_ocaml_uncurried_call_emits_melange_direct_application () =
+  let source =
+    {|
+(defn add-two [left right] (+ left right))
+(println (ocaml-uncurried-call add-two 2 3))
+|}
+  in
+  let ocaml_source =
+    Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if not (string_contains_substring ocaml_source "[@u") then
+    failwith "expected an uncurried Melange application";
+  Lg.Compiler.compile_string {|(ocaml-uncurried-call (fn [x] x) 1 2)|}
+  |> expect_error_contains
+       "ocaml-uncurried-call expects a binary function and two compatible arguments"
 
 let test_reduce_accepts_all_builtin_seqable_types () =
   let source =
@@ -9908,6 +9951,10 @@ let tests =
       test_lazy_map_accepts_all_builtin_seqable_types );
     ( "OCaml Seq unfold builds typed lazy sequences",
       test_ocaml_seq_unfold_builds_typed_lazy_sequences );
+    ( "OCaml array sequences flat-map lazily",
+      test_ocaml_array_sequences_flat_map_lazily );
+    ( "OCaml uncurried call runs fixed-arity callbacks",
+      test_ocaml_uncurried_call_emits_melange_direct_application );
     ( "reduce accepts all builtin seqable types",
       test_reduce_accepts_all_builtin_seqable_types );
     ("reduce realizes lazy seq once", test_reduce_realizes_lazy_seq_once);

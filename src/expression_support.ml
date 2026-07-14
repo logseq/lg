@@ -70,6 +70,8 @@ let rec merge_branch_types left right =
           (merge_branch_types inner ty)
     | TList TUnknown, TList inner | TList inner, TList TUnknown ->
         Some (TList inner)
+    | TSeq TUnknown, TSeq inner | TSeq inner, TSeq TUnknown ->
+        Some (TSeq inner)
     | TVector (TVar _), TVector inner | TVector inner, TVector (TVar _) ->
         Some (TVector inner)
     | TUnknown, ty | ty, TUnknown -> Some ty

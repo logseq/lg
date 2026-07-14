@@ -46,9 +46,16 @@
           (= idx length)
           true
 
-          (not (= 0 (cmp
-                      (arrays/aget left (+ idx left-from))
-                      (arrays/aget right (+ idx right-from)))))
+          (not (= 0
+                  #?(:melange
+                     (ocaml-uncurried-compare
+                       cmp
+                       (arrays/aget left (+ idx left-from))
+                       (arrays/aget right (+ idx right-from)))
+                     :native
+                     (cmp
+                       (arrays/aget left (+ idx left-from))
+                       (arrays/aget right (+ idx right-from))))))
           false
 
           :else

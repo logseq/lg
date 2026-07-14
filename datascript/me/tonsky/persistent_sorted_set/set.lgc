@@ -65,7 +65,11 @@
             (recur
               (inc idx)
               value
-              (if (= 0 (cmp value previous)) count (inc count)))))))))
+              (if (= 0 #?(:melange
+                           (ocaml-uncurried-compare cmp value previous)
+                           :native (cmp value previous)))
+                count
+                (inc count)))))))))
 
 (defn sorted-array-distinct [values cmp]
   (let [length (arrays/alength values)
@@ -80,7 +84,9 @@
                  previous (arrays/aget values 0)]
             (if (< source-idx length)
               (let [value (arrays/aget values source-idx)]
-                (if (= 0 (cmp value previous))
+                (if (= 0 #?(:melange
+                             (ocaml-uncurried-compare cmp value previous)
+                             :native (cmp value previous)))
                   (recur (inc source-idx) result-idx value)
                   (do
                     (arrays/aset result result-idx value)
@@ -185,6 +191,12 @@
 
 (defn set-rseq [set]
   (traversal/node-rseq (set-root set) (set-shift set)))
+
+(defn set-iter [set]
+  (traversal/node-iter (set-root set) (set-shift set)))
+
+(defn set-reduce [set f initial]
+  (nodes/node-fold (set-root set) f initial))
 
 (defn- set-slice-bounds [set key-from key-to]
   (if-some [left

@@ -7,7 +7,8 @@
     (if (<= left right)
       (let [middle (arrays/half (+ left right))
             middle-key (arrays/aget arr middle)]
-        (if (neg? (cmp middle-key key))
+        (if (neg? #?(:melange (ocaml-uncurried-compare cmp middle-key key)
+                     :native (cmp middle-key key)))
           (recur (inc middle) right)
           (recur left (dec middle))))
       left)))
@@ -18,7 +19,8 @@
     (if (<= left right)
       (let [middle (arrays/half (+ left right))
             middle-key (arrays/aget arr middle)]
-        (if (pos? (cmp middle-key key))
+        (if (pos? #?(:melange (ocaml-uncurried-compare cmp middle-key key)
+                     :native (cmp middle-key key)))
           (recur left (dec middle))
           (recur (inc middle) right)))
       left)))
@@ -27,7 +29,9 @@
   (let [length (arrays/alength arr)
         idx (binary-search-l cmp arr (dec length) key)]
     (if (and (< idx length)
-             (= 0 (cmp (arrays/aget arr idx) key)))
+             (= 0 #?(:melange
+                      (ocaml-uncurried-compare cmp (arrays/aget arr idx) key)
+                      :native (cmp (arrays/aget arr idx) key))))
       idx
       -1)))
 

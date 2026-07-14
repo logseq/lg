@@ -246,6 +246,19 @@ let infer_params ~lookup_function_ty params body_forms =
           (TFn ([ TUnknown; TUnknown ], TInt))
           params comparator
     | FList
+        [ FSymbol ("ocaml-uncurried-call" | "ocaml-uncurried-compare" as name);
+          FSymbol fn;
+          left;
+          right ] ->
+        let return_ty =
+          if name = "ocaml-uncurried-compare" then TInt else TUnknown
+        in
+        constrain_symbol
+          (TFn
+             ( [ inferred_form_type params left; inferred_form_type params right ],
+               return_ty ))
+          params fn
+    | FList
         [ FSymbol
             ("first" | "second" | "last" | "seq" | "rest" | "next" | "empty?");
           FSymbol collection ] ->

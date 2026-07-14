@@ -44,6 +44,42 @@
 (defn node-children [node]
   (ocaml-field node children))
 
+(defn node-fold [node f initial]
+  (let [keys (node-keys node)
+        children (node-children node)]
+    (if (= 0 (arrays/alength children))
+      (loop [idx 0
+             result initial]
+        (if (= idx (arrays/alength keys))
+          result
+          (recur
+            (inc idx)
+            #?(:melange
+               (ocaml-uncurried-call f result (arrays/aget keys idx))
+               :native (f result (arrays/aget keys idx))))))
+      (loop [idx 0
+             result initial]
+        (if (= idx (arrays/alength children))
+          result
+          (let [child (arrays/aget children idx)
+                child-keys (node-keys child)
+                child-children (node-children child)]
+            (if (= 0 (arrays/alength child-children))
+              (let [next-result
+                    (loop [key-idx 0
+                           key-result result]
+                      (if (= key-idx (arrays/alength child-keys))
+                        key-result
+                        (recur
+                          (inc key-idx)
+                          #?(:melange
+                             (ocaml-uncurried-call
+                               f key-result (arrays/aget child-keys key-idx))
+                             :native
+                             (f key-result (arrays/aget child-keys key-idx))))))]
+                (recur (inc idx) next-result))
+              (recur (inc idx) (node-fold child f result)))))))))
+
 (defn- node-merge [node next _storage]
   (make-tree
     (arrays/aconcat (ocaml-field node keys) (ocaml-field next keys))
@@ -133,7 +169,11 @@
             keys-length (arrays/alength keys)]
         (cond
           (and (< idx keys-length)
-               (= 0 (cmp key (arrays/aget keys idx))))
+               (= 0
+                  #?(:melange
+                     (ocaml-uncurried-compare
+                       cmp key (arrays/aget keys idx))
+                     :native (cmp key (arrays/aget keys idx)))))
           nil
 
           (= keys-length max-len)
