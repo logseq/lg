@@ -338,6 +338,11 @@ let create ~compile_expr =
                   | None ->
                       Error.error
                         ("unknown record field " ^ Names.keyword_source_name keyword))
+              | ty when is_ocaml_owned_type ty ->
+                  Ok
+                    (typed_ir TUnknown
+                       (Semantic_ir.Field
+                          (target.semantic_expr, Names.keyword_to_ocaml_name keyword)))
               | _ -> Error.error "get expects a map"))
       | [ target_form; index_form ] -> (
           match (compile_expr scope env target_form, compile_expr scope env index_form) with

@@ -1150,6 +1150,34 @@ let test_keyword_lookup_syntax () =
   let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "keyword_lookup_syntax" "Ada:36\n" ocaml_source
 
+let test_keyword_lookup_supports_typed_external_ocaml_records () =
+  let ocaml_source =
+    Cljml.Compiler.compile_string
+      {|
+(defn incremented-file-size [^:ocaml/Unix.stats value]
+  (+ (:st-size value) 1))
+|}
+    |> expect_ok
+  in
+  if not (string_contains_substring ocaml_source ".st_size") then
+    failwith "external OCaml record lookup should emit a native field access"
+
+let test_keyword_lookup_delegates_unknown_external_fields_to_ocaml () =
+  Cljml.Compiler.compile_string
+    {|
+(defn bad-field [^:ocaml/Unix.stats value]
+  (:missing value))
+|}
+  |> expect_error_contains "no field missing"
+
+let test_keyword_lookup_delegates_non_record_host_types_to_ocaml () =
+  Cljml.Compiler.compile_string
+    {|
+(defn bad-field [^:ocaml/int value]
+  (:missing value))
+|}
+  |> expect_error_contains "record field"
+
 let test_typed_empty_vectors () =
   let source =
     {|
@@ -7688,6 +7716,12 @@ let tests =
       test_module_aliases_replace_legacy_import_aliases );
     ("open replaces namespace refer", test_open_replaces_required_refer);
     ("keyword lookup syntax works", test_keyword_lookup_syntax);
+    ( "keyword lookup supports typed external OCaml records",
+      test_keyword_lookup_supports_typed_external_ocaml_records );
+    ( "keyword lookup delegates unknown external fields to OCaml",
+      test_keyword_lookup_delegates_unknown_external_fields_to_ocaml );
+    ( "keyword lookup delegates non-record host types to OCaml",
+      test_keyword_lookup_delegates_non_record_host_types_to_ocaml );
     ("typed empty vectors work", test_typed_empty_vectors);
     ("vector-of rejects unknown types", test_vector_of_rejects_unknown_types);
     ("ocaml module require aliases work", test_ocaml_module_require_aliases);
