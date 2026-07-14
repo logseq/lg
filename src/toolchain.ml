@@ -185,10 +185,7 @@ module Lg_frontend : FRONTEND = struct
           List.fold_left
             (fun refs (key, value) -> form_refs (form_refs refs key) value)
             refs entries
-      | Ast.FSymbol name
-        when String.length name > 2 && name.[0] = '*'
-             && name.[String.length name - 1] = '*' ->
-          String_set.add name refs
+      | Ast.FSymbol name -> String_set.add name refs
       | _ -> refs
     in
     let definitions =
@@ -269,6 +266,21 @@ module Lg_frontend : FRONTEND = struct
               if List.exists (fun segment -> segment = "") segments then
                 Error.error "ns expects a namespace symbol and optional clauses"
               else
+                let normalize_import = function
+                  | Ast.FSymbol qualified_name -> (
+                      match String.rindex_opt qualified_name '.' with
+                      | Some separator ->
+                          let package = String.sub qualified_name 0 separator in
+                          let class_name =
+                            String.sub qualified_name (separator + 1)
+                              (String.length qualified_name - separator - 1)
+                          in
+                          Ast.FVector
+                            [ Ast.FSymbol package; Ast.FSymbol class_name ]
+                      | None -> Ast.FSymbol qualified_name)
+                  | Ast.FList entries -> Ast.FVector entries
+                  | entry -> entry
+                in
                 let rec parse_clauses require_entries exclusions imports = function
                   | [] ->
                       Ok
@@ -289,7 +301,7 @@ module Lg_frontend : FRONTEND = struct
                         rest
                   | Ast.FList (Ast.FKeyword ":import" :: entries) :: rest ->
                       parse_clauses require_entries exclusions
-                        (entries :: imports) rest
+                        (List.map normalize_import entries :: imports) rest
                   | _ ->
                       Error.error
                         "ns supports :require, :require-macros, :refer-clojure :exclude, and :import clauses"
@@ -445,6 +457,84 @@ module Lg_frontend : FRONTEND = struct
           true
       | _ -> false
     in
+    let drop_compile_time_only_host_imports located_ast =
+      let runtime_forms =
+        List.filter
+          (fun located ->
+            (not (is_compile_time_form located))
+            &&
+            match located.Ast.form with
+            | Ast.FList (Ast.FSymbol "host-import" :: _) -> false
+            | _ -> true)
+          located_ast
+      in
+      let symbol_uses_class class_name symbol =
+        symbol = class_name
+        || symbol = "^" ^ class_name
+        || String.starts_with ~prefix:(class_name ^ "/") symbol
+        || String.starts_with ~prefix:(class_name ^ ".") symbol
+      in
+      let rec form_uses_class class_name = function
+        | Ast.FSymbol symbol -> symbol_uses_class class_name symbol
+        | Ast.FList forms | Ast.FVector forms ->
+            List.exists (form_uses_class class_name) forms
+        | Ast.FMap entries ->
+            List.exists
+              (fun (key, value) ->
+                form_uses_class class_name key
+                || form_uses_class class_name value)
+              entries
+        | _ -> false
+      in
+      let class_is_used class_name =
+        List.exists
+          (fun located -> form_uses_class class_name located.Ast.form)
+          runtime_forms
+      in
+      List.filter_map
+        (fun located ->
+          match located.Ast.form with
+          | Ast.FList (Ast.FSymbol "host-import" :: entries) ->
+              let entries =
+                List.filter_map
+                  (function
+                    | Ast.FVector (package :: classes) ->
+                        let classes =
+                          List.filter
+                            (function
+                              | Ast.FSymbol class_name -> class_is_used class_name
+                              | _ -> true)
+                            classes
+                        in
+                        if classes = [] then None
+                        else Some (Ast.FVector (package :: classes))
+                    | entry -> Some entry)
+                  entries
+              in
+              if entries = [] then None
+              else
+                Some
+                  {
+                    located with
+                    Ast.form =
+                      Ast.FList (Ast.FSymbol "host-import" :: entries);
+                  }
+          | _ -> Some located)
+        located_ast
+    in
+    let drop_clojure_compiler_directives located_ast =
+      List.filter
+        (fun located ->
+          match located.Ast.form with
+          | Ast.FList
+              [ Ast.FSymbol "set!";
+                Ast.FSymbol
+                  ("*warn-on-reflection*" | "*unchecked-math*");
+                _ ] ->
+              false
+          | _ -> true)
+        located_ast
+    in
     let same_span left right =
       left.Ast.span.start_offset = right.Ast.span.start_offset
       && left.Ast.span.end_offset = right.Ast.span.end_offset
@@ -498,6 +588,8 @@ module Lg_frontend : FRONTEND = struct
                   located_ast
                   |> List.map normalize_located_metadata
                   |> extract_compile_time_helpers
+                  |> drop_clojure_compiler_directives
+                  |> drop_compile_time_only_host_imports
                   |> defer_deftype_methods |> group_declared_functions
                 in
                 let rec form_locations acc located =

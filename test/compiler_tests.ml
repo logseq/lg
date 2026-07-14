@@ -722,6 +722,36 @@ let test_type_predicates_reject_wrong_arity () =
   Lg.Compiler.compile_string {|(def x (vector? [1] [2]))|}
   |> expect_error "vector? expects 1 arguments"
 
+let test_instance_predicate_supports_clojure_collection_interfaces () =
+  let source =
+    {|
+(defn inspect [value]
+  (str (instance? clojure.lang.Seqable value) ":"
+       (instance? Iterable value) ":"
+       (instance? java.util.Map value)))
+(println (str (inspect [1]) ":" (inspect {:a 1}) ":" (inspect 1)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "instance_predicate_supports_clojure_collection_interfaces"
+    "true:true:false:true:true:true:false:false:false\n" ocaml_source
+
+let test_condp_selects_first_match_and_evaluates_target_once () =
+  let source =
+    {|
+(def calls (atom 0))
+(def result
+  (condp = (do (swap! calls inc) 2)
+    1 "one"
+    2 "two"
+    "other"))
+(println (str result ":" (deref calls)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "condp_selects_first_match_and_evaluates_target_once"
+    "two:1\n" ocaml_source
+
 let test_subs_core_api () =
   let source =
     {|
@@ -1554,6 +1584,55 @@ let test_namespace_accepts_host_import_clause () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "namespace_accepts_host_import_clause" "42\n" ocaml_source
 
+let test_namespace_accepts_qualified_host_import_symbol () =
+  let source =
+    {|
+(ns app.uuid
+  (:import java.util.UUID))
+(def value (UUID/randomUUID))
+(println (= value value))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "namespace_accepts_qualified_host_import_symbol" "true\n"
+    ocaml_source
+
+let test_namespace_drops_compile_time_only_host_import () =
+  let source =
+    {|
+(ns app.macro-import
+  (:import clojure.lang.IFn$OOL))
+(defmacro passthrough [body]
+  (let [_ (quote IFn$OOL)]
+    body))
+(println (passthrough 42))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "namespace_drops_compile_time_only_host_import" "42\n"
+    ocaml_source
+
+let test_namespace_rejects_runtime_unknown_host_import () =
+  Lg.Compiler.compile_string
+    {|
+(ns app.runtime-import
+  (:import missing.host.RuntimeClass))
+(def value RuntimeClass/member)
+|}
+  |> expect_error "unsupported host import missing.host.RuntimeClass"
+
+let test_namespace_ignores_clojure_compiler_directives () =
+  let source =
+    {|
+(ns app.compiler-directives)
+(set! *warn-on-reflection* true)
+(println 42)
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "namespace_ignores_clojure_compiler_directives" "42\n"
+    ocaml_source
+
 let test_host_import_type_hint_supports_instance_methods () =
   let source =
     {|
@@ -1676,6 +1755,32 @@ let test_user_macros_expand_syntax_quote_and_unquote () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "user_macros_expand_syntax_quote_and_unquote" "42\n"
+    ocaml_source
+
+let test_user_macros_treat_host_classes_as_compile_time_values () =
+  let source =
+    {|
+(defmacro host-class-equal? []
+  (= java.lang.Boolean java.lang.Boolean))
+(println (host-class-equal?))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "user_macros_treat_host_classes_as_compile_time_values"
+    "true\n" ocaml_source
+
+let test_user_macros_track_helpers_passed_as_values () =
+  let source =
+    {|
+(defn emit [value]
+  value)
+(defmacro emit-first [value]
+  (first (map emit [value])))
+(println (emit-first 42))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "user_macros_track_helpers_passed_as_values" "42\n"
     ocaml_source
 
 let test_rand_int_uses_exclusive_positive_bound () =
@@ -4855,6 +4960,76 @@ let test_clojure_string_module_rejects_unknown_refer () =
 (require [clojure.string :refer [missing]])
 |}
   |> expect_error "cannot refer unknown symbol clojure.string/missing"
+
+let test_clojure_walk_preserves_collections_and_traversal_order () =
+  let source =
+    {|
+(ns walk-example
+  (:require [clojure.walk :as walk]))
+
+(defn replace-two [^:dynamic value]
+  (if (= value 2) 20 value))
+
+(println
+  (= {:items [1 {:value 20}]
+      :values #{20}}
+     (walk/postwalk replace-two
+       {:items [1 {:value 2}]
+        :values #{2}})))
+
+(defn expand [^:dynamic value]
+  (cond
+    (= value 1) [2]
+    (= value 2) 20
+    :else value))
+
+(println (= [[2]] (walk/postwalk expand [1])))
+(println (= [[20]] (walk/prewalk expand [1])))
+(println
+  (= [:new 20]
+     (walk/walk replace-two (fn [^:dynamic value] value) [:new 2])))
+(println
+  (= (assoc {} :new 1)
+     (walk/postwalk
+       (fn [^:dynamic value] (if (= value :old) :new value))
+       {:old 1})))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "clojure_walk_preserves_collections_and_traversal_order"
+    "true\ntrue\ntrue\ntrue\ntrue\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_clojure_data_diff_matches_recursive_collection_semantics () =
+  let source =
+    {|
+(ns data-example
+  (:require [clojure.data :as data]))
+
+(println (pr-str (data/diff 1 1)))
+(println (pr-str (data/diff 1 2)))
+(println (pr-str (data/diff {:a 1 :b 2} {:a 1 :b 3 :c 4})))
+(println (pr-str (data/diff [1 2] [1 3 4])))
+(println (pr-str (data/diff #{1 2} #{2 3})))
+(println (pr-str (data/diff [1] {:a 1})))
+
+(deftype ComparableBox [value]
+  clojure.data/EqualityPartition
+  (equality-partition [_] :comparable-box)
+  clojure.data/Diff
+  (diff-similar [_ _]
+    ["left" "right" "custom"]))
+
+(println (pr-str (data/diff (ComparableBox. 1) (ComparableBox. 2))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "clojure_data_diff_matches_recursive_collection_semantics"
+    "[nil nil 1]\n[1 2 nil]\n[{:b 2} {:b 3, :c 4} {:a 1}]\n[[nil 2] [nil 3 4] [1]]\n[#{1} #{3} #{2}]\n[[1] {:a 1} nil]\n[\"left\" \"right\" \"custom\"]\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_batched_predicate_collection_core_functions_work () =
   let source =
@@ -9998,6 +10173,10 @@ let tests =
       test_nil_type_annotation_remains_explicitly_unsupported );
     ("type predicates work", test_type_predicates);
     ("type predicates reject wrong arity", test_type_predicates_reject_wrong_arity);
+    ( "instance? supports Clojure collection interfaces",
+      test_instance_predicate_supports_clojure_collection_interfaces );
+    ( "condp selects first match and evaluates target once",
+      test_condp_selects_first_match_and_evaluates_target_once );
     ("subs core api works", test_subs_core_api);
     ("subs rejects non-string sources", test_subs_rejects_non_string_sources);
     ("subs rejects non-int indexes", test_subs_rejects_non_int_indexes);
@@ -10084,6 +10263,14 @@ let tests =
       test_namespace_refer_clojure_exclude_hides_core_binding );
     ( "namespace accepts host import clause",
       test_namespace_accepts_host_import_clause );
+    ( "namespace accepts qualified host import symbol",
+      test_namespace_accepts_qualified_host_import_symbol );
+    ( "namespace drops compile-time-only host import",
+      test_namespace_drops_compile_time_only_host_import );
+    ( "namespace rejects runtime unknown host import",
+      test_namespace_rejects_runtime_unknown_host_import );
+    ( "namespace ignores Clojure compiler directives",
+      test_namespace_ignores_clojure_compiler_directives );
     ( "host import type hint supports instance methods",
       test_host_import_type_hint_supports_instance_methods );
     ( "System currentTimeMillis compiles for native",
@@ -10104,6 +10291,10 @@ let tests =
       test_top_level_definitions_accept_clojure_metadata );
     ( "user macros expand syntax quote and unquote",
       test_user_macros_expand_syntax_quote_and_unquote );
+    ( "user macros treat host classes as compile-time values",
+      test_user_macros_treat_host_classes_as_compile_time_values );
+    ( "user macros track helpers passed as values",
+      test_user_macros_track_helpers_passed_as_values );
     ( "rand-int uses an exclusive positive bound",
       test_rand_int_uses_exclusive_positive_bound );
     ( "int coerces float and preserves int",
@@ -10558,6 +10749,10 @@ let tests =
       test_clojure_string_module_rejects_bad_args );
     ( "clojure.string module rejects unknown refer",
       test_clojure_string_module_rejects_unknown_refer );
+    ( "clojure.walk preserves collections and traversal order",
+      test_clojure_walk_preserves_collections_and_traversal_order );
+    ( "clojure.data diff matches recursive collection semantics",
+      test_clojure_data_diff_matches_recursive_collection_semantics );
     ( "batched predicate/collection core functions work",
       test_batched_predicate_collection_core_functions_work );
     ( "batched predicate/collection core functions reject bad counts",

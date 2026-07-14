@@ -8,6 +8,20 @@ let counted_id = Protocol_id.create ~owner:[] ~name:"Counted"
 let count_method_id = Method_id.create ~owner:[ "Counted" ] ~name:"-count"
 let indexed_id = Protocol_id.create ~owner:[] ~name:"Indexed"
 let nth_method_id = Method_id.create ~owner:[ "Indexed" ] ~name:"-nth"
+let data_owner = [ "clojure.data" ]
+
+let equality_partition_id =
+  Protocol_id.create ~owner:data_owner ~name:"EqualityPartition"
+
+let equality_partition_method_id =
+  Method_id.create
+    ~owner:(data_owner @ [ "EqualityPartition" ])
+    ~name:"equality-partition"
+
+let diff_id = Protocol_id.create ~owner:data_owner ~name:"Diff"
+
+let diff_method_id =
+  Method_id.create ~owner:(data_owner @ [ "Diff" ]) ~name:"diff-similar"
 
 let add_or_fail result =
   match result with
@@ -71,6 +85,20 @@ let declare_indexed registry =
         param_tys = [ TUnknown; TInt ];
         return_ty = TUnknown } ]
     registry
+  |> add_or_fail
+
+let declare_data_protocols registry =
+  let dynamic = Types.dynamic_constraint TUnknown in
+  registry
+  |> Protocol_registry.declare equality_partition_id
+       [ { Protocol_registry.method_id = equality_partition_method_id;
+           param_tys = [ dynamic ];
+           return_ty = TKeyword } ]
+  |> add_or_fail
+  |> Protocol_registry.declare diff_id
+       [ { Protocol_registry.method_id = diff_method_id;
+           param_tys = [ dynamic; dynamic ];
+           return_ty = dynamic } ]
   |> add_or_fail
 
 let add_indexed receiver ocaml_name registry =
@@ -138,6 +166,7 @@ let initial_registry =
        "Lg.Core_protocols.nth_host_list"
   |> add_indexed (Receiver_id.Host_receiver "array")
        "Lg.Core_protocols.nth_host_array"
+  |> declare_data_protocols
 
 let find_seqable receiver_ty registry =
   match Receiver_id.of_type receiver_ty with

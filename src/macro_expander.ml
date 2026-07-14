@@ -5,6 +5,7 @@ module Env = Compiler_environment
 type value =
   | Form of form
   | Closure of closure
+  | Macro_function of Macro_definition.t
   | Builtin of string
   | Volatile of value ref
 
@@ -26,7 +27,9 @@ type context = {
 let gensym_counter = ref 0
 
 let nil = Form (FSymbol "nil")
-let form_of_value = function Form form -> Ok form | _ -> Error.error "expected macro form"
+let form_of_value = function
+  | Form form -> Ok form
+  | _ -> Error.error "expected macro form"
 
 let sequence_forms = function
   | Form (FList forms | FVector forms) -> Ok forms
@@ -37,10 +40,21 @@ let sequence_forms = function
       Error.error ("expected sequential macro value, got keyword " ^ keyword)
   | Form _ -> Error.error "expected sequential macro value, got scalar form"
   | Closure _ -> Error.error "expected sequential macro value, got function"
+  | Macro_function _ ->
+      Error.error "expected sequential macro value, got function"
   | Builtin _ -> Error.error "expected sequential macro value, got function"
   | Volatile _ -> Error.error "expected sequential macro value, got volatile"
 
 let truthy = function Form (FSymbol "nil" | FBool false) -> false | _ -> true
+
+let host_class_symbol name =
+  String.contains name '$'
+  ||
+  match String.rindex_opt name '.' with
+  | Some separator when separator + 1 < String.length name ->
+      let initial = name.[separator + 1] in
+      initial >= 'A' && initial <= 'Z'
+  | _ -> false
 
 let rec split_params fixed = function
   | [] -> Ok (List.rev fixed, None)
@@ -165,9 +179,16 @@ let rec eval context = function
       | None -> (
           match Env.find_macro_value ~scope:context.namespace name context.compiler_env with
           | Some initial_value -> eval context initial_value
-          | None when List.mem name [ "conj"; "identity" ] ->
-              Ok (Builtin name)
-          | None -> Error.error ("unknown macro symbol " ^ name)))
+          | None -> (
+              match
+                Env.find_macro_function ~scope:context.namespace name
+                  context.compiler_env
+              with
+              | Some definition -> Ok (Macro_function definition)
+              | None when List.mem name [ "conj"; "identity" ] ->
+                  Ok (Builtin name)
+              | None when host_class_symbol name -> Ok (Form (FSymbol name))
+              | None -> Error.error ("unknown macro symbol " ^ name))))
   | (FInt _ | FFloat _ | FChar _ | FString _ | FRegex _ | FBool _ | FKeyword _)
     as form ->
       Ok (Form form)
@@ -239,6 +260,8 @@ let rec eval context = function
   | FList (FSymbol "or" :: forms) -> eval_or context forms
   | FList (FSymbol ("cond" | "clojure.core/cond") :: clauses) ->
       eval_cond context clauses
+  | FList (FSymbol ("condp" | "clojure.core/condp") :: predicate :: target :: clauses) ->
+      eval_condp context predicate target clauses
   | FList (FSymbol "case" :: target :: clauses) ->
       eval_case context target clauses
   | FList [ FSymbol "for"; FVector [ pattern; collection ]; body ] ->
@@ -304,6 +327,28 @@ and eval_cond context = function
       | Ok value ->
           if truthy value then eval context expression else eval_cond context rest)
   | _ -> Error.error "macro cond requires test/expression pairs"
+
+and eval_condp context predicate target clauses =
+  match (predicate, eval context target) with
+  | _, (Error _ as error) -> error
+  | FSymbol predicate_name, Ok target ->
+      let target_name = "\000lg-condp-target" in
+      let context =
+        { context with locals = (target_name, target) :: context.locals }
+      in
+      let rec select = function
+        | [] -> Error.error "macro condp requires a default expression"
+        | [ default ] -> eval context default
+        | test :: expression :: rest -> (
+            match
+              eval_call context predicate_name [ test; FSymbol target_name ]
+            with
+            | Error _ as error -> error
+            | Ok matched ->
+                if truthy matched then eval context expression else select rest)
+      in
+      select clauses
+  | _ -> Error.error "macro condp predicate must be a symbol"
 
 and eval_case context target clauses =
   match eval context target with
@@ -375,6 +420,20 @@ and apply_value context callable args =
               eval_body
                 { context with namespace = closure.namespace; locals }
                 closure.body))
+  | Macro_function definition ->
+      let placeholders = List.map (fun _ -> FSymbol "nil") args in
+      (match select_arity definition placeholders with
+      | Error _ as error -> error
+      | Ok arity -> (
+          match bind_value_params context.locals arity.params args with
+          | Error _ as error -> error
+          | Ok locals ->
+              eval_body
+                { context with
+                  namespace = definition.namespace;
+                  locals;
+                }
+                arity.body))
   | Builtin "identity" -> (
       match args with
       | [ value ] -> Ok value

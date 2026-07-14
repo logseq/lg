@@ -285,16 +285,36 @@ let rec compile scope env next_type = function
                 | Error _ as err -> err
                 | Ok implementation ->
                     let binding = binding_of_expr ocaml_name implementation in
-                    let env =
-                      Env.add (Names.scoped_key scope source_name) binding env
+                    let register_protocol env =
+                      match current_interface with
+                      | Some protocol_name
+                        when Option.is_some
+                               (Protocol.find_protocol_id scope env protocol_name)
+                        -> (
+                          match
+                            Protocol_elaborator.marker scope env protocol_name
+                              method_name
+                          with
+                          | Error _ as error -> error
+                          | Ok marker ->
+                              Protocol_elaborator.add_implementation env
+                                method_name receiver_ty marker binding)
+                      | _ -> Ok env
                     in
-                    let item =
-                      Value_binding
-                        { pattern = Named ocaml_name;
-                          expression = implementation.semantic_expr;
-                        }
-                    in
-                    compile_methods env (item :: items) current_interface rest)
+                    (match register_protocol env with
+                    | Error _ as error -> error
+                    | Ok env ->
+                        let env =
+                          Env.add (Names.scoped_key scope source_name) binding env
+                        in
+                        let item =
+                          Value_binding
+                            { pattern = Named ocaml_name;
+                              expression = implementation.semantic_expr;
+                            }
+                        in
+                        compile_methods env (item :: items) current_interface
+                          rest))
             | _ :: _ ->
                 Error.error
                   "deftype methods must be (method-name [params] body...)"
@@ -975,11 +995,8 @@ let rec compile scope env next_type = function
             | Require.Package _ :: rest -> apply_specs env rest
             | Require.Load { module_name } :: rest ->
                 let result =
-                  if module_name = "clojure.set" then
-                    Ok env
-                  else if module_name = "clojure.string" then
-                    Ok
-                      (Require.add_clojure_string_alias_bindings env module_name)
+                  if Require.core_namespace module_name then
+                    Ok (Require.add_core_alias_bindings env module_name module_name)
                   else if String.starts_with ~prefix:"ocaml." module_name then
                     Ok (Require.add_ocaml_alias_bindings env module_name module_name)
                   else Require.ensure_namespace env module_name
@@ -993,11 +1010,7 @@ let rec compile scope env next_type = function
                     (Require.add_ocaml_alias_bindings env module_name alias)
                     rest
                 else if Require.core_namespace module_name then
-                  let env =
-                    if module_name = "clojure.string" then
-                      Require.add_clojure_string_alias_bindings env alias
-                    else env
-                  in
+                  let env = Require.add_core_alias_bindings env module_name alias in
                   apply_specs
                     (Env.add_namespace_alias ~scope ~alias ~target:module_name env)
                     rest

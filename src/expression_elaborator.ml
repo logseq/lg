@@ -24,6 +24,7 @@ type prepared_multi_arity_fn = {
 }
 
 let some_thread_counter = ref 0
+let condp_counter = ref 0
 
 let rec compile_expr scope (env : Env.t) form =
   match compile_expr_unlocated scope env form with
@@ -119,6 +120,8 @@ and compile_expr_unlocated scope (env : Env.t) = function
   | FList (FSymbol "when-not" :: condition :: body_forms) ->
       compile_when scope env (FList [ FSymbol "not"; condition ]) body_forms
   | FList (FSymbol "cond" :: clauses) -> compile_cond scope env clauses
+  | FList (FSymbol "condp" :: predicate :: target :: clauses) ->
+      compile_condp scope env predicate target clauses
   | FList (FSymbol "case" :: target :: clauses) ->
       compile_case scope env target clauses
   | FList [ FSymbol "case" ] -> Error.error "case expects a target"
@@ -413,6 +416,40 @@ and compile_when scope env condition body_forms =
 
 and compile_cond scope env clauses =
   (Lazy.force context).special_forms.compile_cond scope env clauses
+
+and compile_condp scope env predicate target clauses =
+  incr condp_counter;
+  let target_name = "__lg_condp_target_" ^ string_of_int !condp_counter in
+  let rec expand = function
+    | [] ->
+        Ok
+          (FList
+             [ FSymbol "throw";
+               FList
+                 [ FSymbol "ex-info";
+                   FString "No matching clause in condp";
+                   FMap [];
+                 ];
+             ])
+    | [ default ] -> Ok default
+    | test :: expression :: rest ->
+        Result.map
+          (fun otherwise ->
+            FList
+              [ FSymbol "if";
+                FList [ predicate; test; FSymbol target_name ];
+                expression;
+                otherwise;
+              ])
+          (expand rest)
+  in
+  Result.bind (expand clauses) (fun body ->
+      compile_expr scope env
+        (FList
+           [ FSymbol "let";
+             FVector [ FSymbol target_name; target ];
+             body;
+           ]))
 
 and compile_logical scope env operator forms =
   (Lazy.force context).special_forms.compile_logical scope env operator forms

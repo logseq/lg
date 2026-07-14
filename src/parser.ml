@@ -1,9 +1,16 @@
 open Ast
 
 let omitted_reader_form = "\000lg-reader-omitted"
+let spliced_reader_form = "\000lg-reader-spliced"
 
 let is_omitted_reader_form located =
   located.form = FSymbol omitted_reader_form
+
+let spliced_reader_forms located =
+  match located.form with
+  | FList (FSymbol marker :: _) when marker = spliced_reader_form ->
+      Some located.children
+  | _ -> None
 
 let located ?(children = []) form span = { form; span; children }
 
@@ -39,6 +46,36 @@ let rec parse_one ~target = function
            [] rest) (fun (forms, close_span, rest) ->
           select_reader_conditional target reader_span close_span forms
           |> Result.map (fun selected -> (selected, rest)))
+  | { desc = Symbol "#?@"; span = reader_span }
+    :: { desc = Lparen; span = open_span }
+    :: rest ->
+      Result.bind
+        (parse_until ~target Rparen open_span
+           "splicing reader conditional; expected ')'" [] rest)
+        (fun (forms, close_span, rest) ->
+          Result.bind
+            (select_reader_conditional target reader_span close_span forms)
+            (fun selected ->
+                 let forms =
+                   match selected.form with
+                   | FSymbol omitted when omitted = omitted_reader_form -> Ok []
+                   | FList _ | FVector _ -> Ok selected.children
+                   | _ ->
+                       error_at selected.span
+                         "splicing reader conditional must select a list or vector"
+                 in
+                 Result.map
+                   (fun forms ->
+                     ( located ~children:forms
+                         (FList
+                            (FSymbol spliced_reader_form
+                            :: List.map (fun form -> form.form) forms))
+                         {
+                           start_offset = reader_span.start_offset;
+                           end_offset = close_span.end_offset;
+                         },
+                       rest ))
+                   forms))
   | { desc = Quote; span } :: rest ->
       parse_reader_prefix ~target span "quote" rest
   | { desc = Syntax_quote; span } :: rest ->
@@ -90,7 +127,11 @@ let rec parse_one ~target = function
               },
             rest ))
   | { desc = Lbrace; span = open_span } :: rest ->
-      parse_map ~target open_span [] rest
+      Result.bind
+        (parse_until ~target Rbrace open_span "map; expected '}'" [] rest)
+        (fun (forms, close_span, rest) ->
+          map_of_forms open_span close_span forms
+          |> Result.map (fun form -> (form, rest)))
   | { desc = Set_lbrace; span = open_span } :: rest ->
       parse_until ~target Rbrace open_span "set; expected '}'" [] rest
       |> Result.map (fun (forms, close_span, rest) ->
@@ -181,34 +222,32 @@ and parse_until ~target closing open_span description acc = function
       match parse_one ~target tokens with
       | Ok (form, rest) when is_omitted_reader_form form ->
           parse_until ~target closing open_span description acc rest
-      | Ok (form, rest) ->
-          parse_until ~target closing open_span description (form :: acc) rest
+      | Ok (form, rest) -> (
+          match spliced_reader_forms form with
+          | Some forms ->
+              parse_until ~target closing open_span description
+                (List.rev_append forms acc) rest
+          | None ->
+              parse_until ~target closing open_span description (form :: acc)
+                rest)
       | Error _ as err -> err)
 
-and parse_map ~target open_span acc = function
-  | { desc = Rbrace; span = close_span } :: rest ->
-      let pairs = List.rev acc in
-      Ok
-        ( located
-            ~children:
-              (pairs |> List.concat_map (fun (key, value) -> [ key; value ]))
-            (FMap
-               (pairs |> List.map (fun (key, value) -> (key.form, value.form))))
-            {
-              start_offset = open_span.start_offset;
-              end_offset = close_span.end_offset;
-            },
-          rest )
-  | [] -> error_at open_span "unterminated map; expected '}'"
-  | tokens -> (
-      match parse_present ~target tokens with
-      | Error _ as err -> err
-      | Ok (key, rest) -> (
-          match parse_present ~target rest with
-          | Error _ ->
-              Error.error "map literal requires an even number of forms"
-          | Ok (value, rest) ->
-              parse_map ~target open_span ((key, value) :: acc) rest))
+and map_of_forms open_span close_span forms =
+  let rec pairs acc = function
+    | [] -> Ok (List.rev acc)
+    | key :: value :: rest -> pairs ((key, value) :: acc) rest
+    | [ _ ] -> Error.error "map literal requires an even number of forms"
+  in
+  Result.map
+    (fun pairs ->
+      located
+        ~children:(pairs |> List.concat_map (fun (key, value) -> [ key; value ]))
+        (FMap (pairs |> List.map (fun (key, value) -> (key.form, value.form))))
+        {
+          start_offset = open_span.start_offset;
+          end_offset = close_span.end_offset;
+        })
+    (pairs [] forms)
 
 and parse_present ~target tokens =
   match parse_one ~target tokens with

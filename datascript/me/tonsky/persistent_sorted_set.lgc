@@ -1,0 +1,51 @@
+(ns me.tonsky.persistent-sorted-set
+  (:refer-clojure :exclude [conj disj])
+  (:require
+    [me.tonsky.persistent-sorted-set.arrays :as arrays]
+    [me.tonsky.persistent-sorted-set.set :as impl]))
+
+(defn conj [set key cmp]
+  (impl/set-conj-with set key cmp))
+
+(defn disj [set key cmp]
+  (impl/set-disj-with set key cmp))
+
+(defn slice
+  ([set key-from key-to]
+   (impl/set-slice set key-from key-to))
+  ([set key-from key-to cmp]
+   (impl/set-slice-with set key-from key-to cmp)))
+
+(defn rslice
+  ([set key-from key-to]
+   (impl/set-rslice set key-from key-to))
+  ([set key-from key-to cmp]
+   (impl/set-rslice-with set key-from key-to cmp)))
+
+(defn seek
+  ([values target]
+   (filter #(not (neg? (compare % target))) values))
+  ([values target cmp]
+   (filter #(not (neg? (cmp % target))) values)))
+
+(defn from-sorted-array
+  ([cmp values]
+   (impl/from-sorted-array cmp values))
+  ([cmp values length]
+   (impl/from-sorted-array cmp (arrays/aslice values 0 length)))
+  ([cmp values length opts]
+   (let [set (impl/from-sorted-array cmp (arrays/aslice values 0 length))]
+     (if-some [storage (:storage opts)]
+       (impl/with-storage set storage)
+       set))))
+
+(defn sorted-set* [opts]
+  (let [set (impl/empty-set (:cmp opts))]
+    (if-some [storage (:storage opts)]
+      (impl/with-storage set storage)
+      set)))
+
+(defn settings [_]
+  (assoc {}
+    :branching-factor 32
+    :ref-type :strong))

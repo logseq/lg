@@ -38,13 +38,19 @@ let ocaml_module_path module_name =
       (String.length module_name - String.length prefix)
   else module_name
 
-let add_clojure_string_alias_bindings env alias =
-  Core_string.bindings
+let core_bindings = function
+  | "clojure.data" -> Core_data.bindings
+  | "clojure.string" -> Core_string.bindings
+  | "clojure.walk" -> Core_walk.bindings
+  | _ -> []
+
+let add_core_alias_bindings env module_name alias =
+  core_bindings module_name
   |> List.map (fun (name, binding) -> (alias ^ "/" ^ name, binding))
   |> fun bindings -> Env.add_bindings bindings env
 
 let core_namespace = function
-  | "clojure.set" | "clojure.string" -> true
+  | "clojure.data" | "clojure.set" | "clojure.string" | "clojure.walk" -> true
   | _ -> false
 
 let add_clojure_string_refer_bindings env scope names =

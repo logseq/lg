@@ -115,7 +115,7 @@
               nil)))
         result))))
 
-(defn from-sorted-array [cmp values]
+(defn from-sorted-array-with-storage [cmp values storage]
   (let [leaves
         (arrays/amap
           (fn [keys] (nodes/new-leaf keys))
@@ -125,7 +125,7 @@
       (let [length (arrays/alength current-level)]
         (cond
           (= 0 length)
-          (make-set (nodes/new-leaf (arrays/empty-array)) 0 0 cmp nil)
+          (make-set (nodes/new-leaf (arrays/empty-array)) 0 0 cmp storage)
 
           (= 1 length)
           (make-set
@@ -133,7 +133,7 @@
             shift
             (arrays/alength values)
             cmp
-            nil)
+            storage)
 
           :else
           (recur
@@ -147,6 +147,9 @@
               (partition-array current-level))
             (inc shift)))))))
 
+(defn from-sorted-array [cmp values]
+  (from-sorted-array-with-storage cmp values nil))
+
 (defn from-sequential [cmp values]
   (let [sorted (into-array values)]
     (asort! cmp sorted)
@@ -155,6 +158,14 @@
 (defn empty-set [cmp]
   (make-set (nodes/new-leaf (arrays/empty-array)) 0 0 cmp nil))
 
+(defn empty-set-with-storage [cmp storage]
+  (make-set (nodes/new-leaf (arrays/empty-array)) 0 0 cmp storage))
+
+(defn with-storage [set storage]
+  (do
+    (vreset! (:storage set) (Some storage))
+    set))
+
 (defn set-lookup [set key]
   (nodes/node-lookup
     (set-root set) (set-comparator set) key (set-storage set)))
@@ -162,10 +173,10 @@
 (defn set-contains? [set key]
   (not (nil? (set-lookup set key))))
 
-(defn set-conj [set key]
+(defn set-conj-with [set key cmp]
   (if-some [roots
             (nodes/node-conj
-              (set-root set) (set-comparator set) key (set-storage set))]
+              (set-root set) cmp key (set-storage set))]
     (if (= 1 (arrays/alength roots))
       (make-set
         (arrays/aget roots 0)
@@ -185,11 +196,14 @@
         (set-storage set)))
     set))
 
-(defn set-disj [set key]
+(defn set-conj [set key]
+  (set-conj-with set key (set-comparator set)))
+
+(defn set-disj-with [set key cmp]
   (if-some [roots
             (nodes/node-disj
               (set-root set)
-              (set-comparator set)
+              cmp
               key
               true
               nil
@@ -212,6 +226,9 @@
           (set-storage set))))
     set))
 
+(defn set-disj [set key]
+  (set-disj-with set key (set-comparator set)))
+
 (defn set-seq [set]
   (traversal/node-seq
     (set-root set) (set-shift set) (set-storage set)))
@@ -227,19 +244,19 @@
 (defn set-reduce [set f initial]
   (nodes/node-fold (set-root set) f initial (set-storage set)))
 
-(defn- set-slice-bounds [set key-from key-to]
+(defn- set-slice-bounds [set key-from key-to cmp]
   (if-some [left
             (traversal/seek-path
               (set-root set)
               key-from
-              (set-comparator set)
+              cmp
               (set-shift set)
               (set-storage set))]
     (let [right
           (traversal/rseek-path
             (set-root set)
             key-to
-            (set-comparator set)
+            cmp
             (set-shift set)
             (set-storage set))]
       (if (path/path-lt left right)
@@ -247,8 +264,8 @@
         nil))
     nil))
 
-(defn set-slice [set key-from key-to]
-  (if-some [bounds (set-slice-bounds set key-from key-to)]
+(defn set-slice-with [set key-from key-to cmp]
+  (if-some [bounds (set-slice-bounds set key-from key-to cmp)]
     (match bounds
       (tuple left right)
       (Some
@@ -256,14 +273,20 @@
           (set-root set) left right (set-shift set) (set-storage set))))
     nil))
 
-(defn set-rslice [set key-from key-to]
-  (if-some [bounds (set-slice-bounds set key-from key-to)]
+(defn set-slice [set key-from key-to]
+  (set-slice-with set key-from key-to (set-comparator set)))
+
+(defn set-rslice-with [set key-from key-to cmp]
+  (if-some [bounds (set-slice-bounds set key-from key-to cmp)]
     (match bounds
       (tuple left right)
       (Some
         (traversal/node-rseq-between
           (set-root set) left right (set-shift set) (set-storage set))))
     nil))
+
+(defn set-rslice [set key-from key-to]
+  (set-rslice-with set key-from key-to (set-comparator set)))
 
 (defn restore-by [cmp address storage shift count]
   (make-restored-set shift count cmp storage address))
@@ -279,3 +302,12 @@
         address (nodes/node-store root storage-value)]
     (vreset! (:_address set) (Some address))
     address))
+
+(extend-type btset Seqable
+  (-seq [set] (set-seq set)))
+
+(extend-type btset Counted
+  (-count [set] (set-count set)))
+
+(extend-type btset Reducible
+  (-reduce [set f initial] (set-reduce set f initial)))

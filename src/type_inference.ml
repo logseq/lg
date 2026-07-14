@@ -752,6 +752,11 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params body_for
         let element_ty = inferred_unary_function_param params fn in
         constrain_seqable element_ty params collection
     | FList
+        [ FSymbol ("filter" | "remove" | "take-while" | "drop-while"); fn;
+          FSymbol collection ] ->
+        let element_ty = inferred_unary_function_param params fn in
+        constrain_seqable element_ty params collection
+    | FList
         [ FSymbol ("map" | "mapv"); _fn;
           FList [ FKeyword keyword; FSymbol collection ] ] ->
         add_record_field_constraint collection keyword

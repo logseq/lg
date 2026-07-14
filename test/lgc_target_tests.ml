@@ -174,6 +174,26 @@ let test_omits_unmatched_reader_conditionals () =
   assert_contains generated "native-value";
   assert_not_contains generated "melange-value"
 
+let test_splices_reader_conditionals_into_collections () =
+  let source =
+    {|
+(def values [#?@(:clj ["native-splice-a" "native-splice-b"]
+                   :cljs ["js-splice-a" "js-splice-b"])])
+(def options {#?@(:clj [:b "native-splice-map"]
+                       :cljs [:b "js-splice-map"])})
+(defn #?@(:clj [^Boolean selected?] :cljs [^boolean selected?])
+  [value]
+  value)
+(println (str values ":" (:b options) ":" (selected? true)))
+|}
+  in
+  let generated = compile Lg.Target.Native source in
+  assert_contains generated "selected";
+  assert_contains generated "native-splice-a";
+  assert_contains generated "native-splice-map";
+  assert_not_contains generated "js-splice-a";
+  assert_not_contains generated "js-splice-map"
+
 let tests =
   [
     ("reader discard omits forms", test_reader_discard_omits_forms);
@@ -191,6 +211,8 @@ let tests =
       test_javascript_targets_load_clj_macro_definitions );
     ( "omits unmatched reader conditionals",
       test_omits_unmatched_reader_conditionals );
+    ( "splices reader conditionals into collections",
+      test_splices_reader_conditionals_into_collections );
     ( "rejects invalid reader conditionals",
       test_rejects_invalid_reader_conditionals );
   ]

@@ -1,0 +1,12 @@
+(ns datascript.inline
+  (:refer-clojure :exclude [update]))
+
+(defn update
+  ([m k f]
+   (assoc m k (f (get m k))))
+  ([m k f x]
+   (assoc m k (f (get m k) x)))
+  ([m k f x y]
+   (assoc m k (f (get m k) x y)))
+  ([m k f x y z]
+   (assoc m k (f (get m k) x y z))))

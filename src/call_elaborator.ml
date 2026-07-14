@@ -3227,23 +3227,46 @@ let create ~compile_expr =
     | "instance?" -> (
         match arg_forms with
         | [ FSymbol type_name; value_form ] -> (
-            match
-              ( Resolver.lookup_record_type scope env type_name,
-                compile_expr scope env value_form )
-            with
-            | (Error _ as error), _ -> error
-            | _, (Error _ as error) -> error
-            | Ok record, Ok value ->
-                let dynamic_ty = Types.dynamic_constraint TUnknown in
-                (match pack_dynamic_value env dynamic_ty value with
+            let collection_interface_predicate =
+              match type_name with
+              | "clojure.lang.Seqable" | "Iterable" ->
+                  Some "Lg_runtime.Runtime_dynamic.is_seqable"
+              | "java.util.Map" -> Some "Lg_runtime.Runtime_dynamic.is_map"
+              | _ -> None
+            in
+            match collection_interface_predicate with
+            | Some predicate -> (
+                match compile_expr scope env value_form with
                 | Error _ as error -> error
                 | Ok value ->
-                    Ok
-                      (typed_ir TBool
-                         (Semantic_ir.Apply
-                            ( Semantic_ir.Ident
-                                "Lg_runtime.Runtime_dynamic.is_instance",
-                              [ value; Semantic_ir.String record.type_name ] )))))
+                    let dynamic_ty = Types.dynamic_constraint TUnknown in
+                    (match pack_dynamic_value env dynamic_ty value with
+                    | Error _ as error -> error
+                    | Ok value ->
+                        Ok
+                          (typed_ir TBool
+                             (Semantic_ir.Apply
+                                (Semantic_ir.Ident predicate, [ value ])))))
+            | None -> (
+                match
+                  ( Resolver.lookup_record_type scope env type_name,
+                    compile_expr scope env value_form )
+                with
+                | (Error _ as error), _ -> error
+                | _, (Error _ as error) -> error
+                | Ok record, Ok value ->
+                    let dynamic_ty = Types.dynamic_constraint TUnknown in
+                    (match pack_dynamic_value env dynamic_ty value with
+                    | Error _ as error -> error
+                    | Ok value ->
+                        Ok
+                          (typed_ir TBool
+                             (Semantic_ir.Apply
+                                ( Semantic_ir.Ident
+                                    "Lg_runtime.Runtime_dynamic.is_instance",
+                                  [ value;
+                                    Semantic_ir.String record.type_name;
+                                  ] ))))))
         | _ -> Error.error "instance? expects a record type and value")
     | "integer?" | "nat-int?" | "pos-int?" | "neg-int?" | "boolean" | "bit-set"
     | "bit-clear" | "bit-flip" | "bit-test" | "bit-shift-right-zero-fill"
