@@ -430,7 +430,11 @@ let rec dynamic_unpack env ty expression =
             (fun fields ->
               Semantic_ir.Record (fields, Some record.type_name))
             (unpack_fields [] record.fields)
-      | (TVector element_ty | TList element_ty | TSeq element_ty) as collection_ty ->
+      | ( TVector element_ty
+        | TList element_ty
+        | TSeq element_ty
+        | TArray element_ty
+        | TOcaml_app ("array", [ element_ty ]) ) as collection_ty ->
           let item_name = "__lg_dynamic_collection_item" in
           dynamic_unpack env element_ty (Semantic_ir.Ident item_name)
           |> Result.map (fun unpacked_item ->
@@ -456,6 +460,9 @@ let rec dynamic_unpack env ty expression =
                          [ Semantic_ir.Apply
                              (Semantic_ir.Ident "List.of_seq", [ mapped ]);
                          ] )
+                 | TArray _ | TOcaml_app ("array", [ _ ]) ->
+                     Semantic_ir.Apply
+                       (Semantic_ir.Ident "Array.of_seq", [ mapped ])
                  | _ -> assert false)
       | _ ->
           Error.error
@@ -1288,7 +1295,8 @@ let adapt_dynamic_callback env expected arg =
   match (expected, arg.ty) with
   | TFn (expected_params, expected_return),
     TFn (actual_params, actual_return)
-    when expects_dynamic_value expected_return
+    when (Types.is_dynamic expected_return
+         || callback_parameters_need_adapter expected_params actual_params)
          && callback_parameters_compatible expected_params actual_params ->
       let parameter_names =
         List.mapi
@@ -4168,6 +4176,11 @@ let create ~compile_expr =
                         then
                           Ok
                             (constrained_argument_value argument)
+                        else if
+                          Types.is_dynamic argument.ty
+                          && not (expects_dynamic_value expected)
+                        then
+                          dynamic_unpack env expected argument.semantic_expr
                         else
                           match (expected, argument.ty) with
                           | TFn (_, TBool), TFn (_, actual_return)
@@ -4175,7 +4188,9 @@ let create ~compile_expr =
                               Ok (adapt_truthy_callback expected argument)
                           | TFn (expected_params, expected_return),
                             TFn (actual_params, actual_return)
-                            when expects_dynamic_value expected_return
+                            when (Types.is_dynamic expected_return
+                                 || callback_parameters_need_adapter
+                                      expected_params actual_params)
                                  &&
                                  (not (Types.is_dynamic actual_return)
                                  || callback_parameters_need_adapter
@@ -4278,6 +4293,12 @@ let create ~compile_expr =
                                       | _ -> false) ->
                                 dynamic_row_argument env record.type_name
                                   record.fields arg
+                            | _
+                              when Types.is_dynamic arg.ty
+                                   && not
+                                        (expects_dynamic_value expected_ty) ->
+                                dynamic_unpack env expected_ty
+                                  arg.semantic_expr
                             | _ -> (
                                 match
                                   maybe_reduced_callback_payload expected_ty
@@ -4293,7 +4314,9 @@ let create ~compile_expr =
                                     | TFn
                                         (expected_params, expected_return),
                                       TFn (actual_params, actual_return)
-                                      when expects_dynamic_value expected_return
+                                      when (Types.is_dynamic expected_return
+                                           || callback_parameters_need_adapter
+                                                expected_params actual_params)
                                            &&
                                            (not
                                               (Types.is_dynamic actual_return)
@@ -4364,6 +4387,7 @@ let create ~compile_expr =
                 (match compile_arg_exprs 0 [] args with
                 | Error _ as err -> err
                 | Ok arg_exprs ->
+                let storage_ret = ret in
                 let ret =
                   let callback_return =
                     args
@@ -4384,7 +4408,9 @@ let create ~compile_expr =
                 in
                 let ret =
                   match (fn.return_param_index, ret) with
-                  | Some index, TUnknown -> (
+                  | Some index, ret
+                    when Types.equal ret TUnknown || Types.is_dynamic ret
+                         || (match ret with TVar _ -> true | _ -> false) -> (
                       match List.nth_opt args index with
                       | Some arg -> arg.ty
                       | None -> ret)
@@ -4428,12 +4454,19 @@ let create ~compile_expr =
                 let call =
                   Semantic_ir.Apply (Semantic_ir.Ident fn.ocaml_name, arg_exprs)
                 in
+                let call =
+                  if Types.is_dynamic storage_ret && not (Types.is_dynamic ret)
+                  then dynamic_unpack env ret call
+                  else Ok call
+                in
                 let reduced_payload =
                   List.combine param_tys args
                   |> List.find_map (fun (expected, actual) ->
                          maybe_reduced_callback_payload expected actual.ty)
                 in
-                (match reduced_payload with
+                (match call with
+                | Error _ as error -> error
+                | Ok call -> (match reduced_payload with
                 | None -> Ok (typed_ir ret call)
                 | Some payload_ty
                   when Types.assignable ~policy:Host_boundary ~expected:ret
@@ -4479,7 +4512,7 @@ let create ~compile_expr =
                                   ] ) )))
                 | Some _ ->
                     Error.error
-                      "reduced callback value must match the function result"))
+                      "reduced callback value must match the function result")))
             | TSet element_ty -> (
                 match args with
                 | [ arg ] when Types.same_shape element_ty arg.ty ->

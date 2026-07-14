@@ -1269,14 +1269,7 @@ let create ~compile_expr =
                   | Error _ as err -> err
                   | Ok value ->
                       let value =
-                        match value.ty with
-                        | TNil ->
-                            Ok
-                              (typed_ir (Types.dynamic_constraint TUnknown)
-                                 (Semantic_ir.Ident
-                                    "Lg_runtime.Runtime_dynamic.nil"))
-                        | ty -> (
-                        match Types.seqable_constraint_info ty with
+                        match Types.seqable_constraint_info value.ty with
                         | None -> Ok value
                         | Some (_, element_ty, _) -> (
                             match
@@ -1290,7 +1283,7 @@ let create ~compile_expr =
                                       Types.dynamic_constraint TUnknown
                                   | ty -> ty
                                 in
-                                Ok (typed_ir (TSeq element_ty) sequence)))
+                                Ok (typed_ir (TSeq element_ty) sequence))
                       in
                       Result.bind value (fun value ->
                           compile_bindings (name :: names)

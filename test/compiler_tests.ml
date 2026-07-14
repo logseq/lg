@@ -3921,6 +3921,59 @@ let test_dynamic_recursive_maps_support_assoc () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_equality_infers_comparator_return_type () =
+  let source =
+    {|
+(defn comparator-negative? [cmp values key]
+  (neg? (cmp (unsafe-aget values 0) key)))
+(defn matches [cmp values key]
+  (let [_checked (comparator-negative? cmp values key)]
+    (= 0 (cmp (unsafe-aget values 0) key))))
+(println
+  (str (matches (fn [left right] (- left right)) (array 4) 4) ":"
+       (matches (fn [left right] (- left right)) (array 4) 3)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "equality_infers_comparator_return_type" "true:false\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_dynamic_arrays_recover_generic_elements () =
+  let source =
+    {|
+(defn first-plus-one [values]
+  (+ (unsafe-aget values 0) 1))
+(def int-box (assoc {} :value (array 1)))
+(println (first-plus-one (get int-box :value)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "dynamic_arrays_recover_generic_elements" "2\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_loop_nil_initial_value_can_become_optional () =
+  let source =
+    {|
+(defn find-value []
+  (loop [index 0
+         result nil]
+    (if (= index 1)
+      result
+      (recur (inc index) (Some 42)))))
+(Stdlib.ignore (find-value))
+(println "ok")
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "loop_nil_initial_value_can_become_optional" "ok\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_generic_protocol_witness_compiles_for_javascript_targets () =
   let source =
     {|
@@ -10319,6 +10372,12 @@ let tests =
       test_generic_protocol_witness_carries_callbacks_through_recursion );
     ( "dynamic recursive maps support assoc",
       test_dynamic_recursive_maps_support_assoc );
+    ( "equality infers comparator return type",
+      test_equality_infers_comparator_return_type );
+    ( "dynamic arrays recover generic elements",
+      test_dynamic_arrays_recover_generic_elements );
+    ( "loop nil initial value can become optional",
+      test_loop_nil_initial_value_can_become_optional );
     ( "generic protocol witness compiles for JavaScript targets",
       test_generic_protocol_witness_compiles_for_javascript_targets );
     ( "protocols support float and symbol receivers",

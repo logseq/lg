@@ -850,7 +850,8 @@ and prepare_inferred_recursive_fn ~ocaml_name scope env source_name params
             List.map
               (fun (spec : Destructure.param_spec) ->
                 List.assoc_opt spec.source_name inferred
-                |> Option.value ~default:TUnknown)
+                |> Option.value ~default:TUnknown
+                |> Function_elaborator.infer_named_record scope env)
               specs
           in
           let dynamic_param_tys =

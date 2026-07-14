@@ -59,6 +59,7 @@ let is_ocaml_owned_type = function
 let is_ocaml_constructor_pattern_target target_ty name =
   is_ocaml_owned_type target_ty
   || (match target_ty with
+     | TNullable _ -> List.mem name [ "Some"; "None" ]
      | TUnknown | TVar _ ->
          List.mem name [ "Some"; "None"; "Ok"; "Error" ]
          || String.contains name '.' || String.contains name '/'
@@ -101,6 +102,8 @@ let rec merge_branch_types left right =
     | TVector (TUnknown | TVar _), TVector inner
     | TVector inner, TVector (TUnknown | TVar _) ->
         Some (TVector inner)
+    | TVar _, TVar _ -> Some left
+    | TVar _, ty | ty, TVar _ -> Some ty
     | TUnknown, ty | ty, TUnknown -> Some ty
     | _ when Types.defer_to_ocaml ~expected:left ~actual:right -> Some left
     | _ -> None
@@ -412,6 +415,8 @@ let rec lg_metadata_type_for_ocaml_type = function
 
 let ocaml_builtin_constructor_payloads target_ty constructor_name =
   match (target_ty, constructor_name) with
+  | TNullable payload_ty, "Some" -> Some [ payload_ty ]
+  | TNullable _, "None" -> Some []
   | TOcaml "option", "Some" -> Some [ TUnknown ]
   | TOcaml "option", "None" -> Some []
   | TOcaml_app ("option", [ payload_ty ]), "Some" ->
