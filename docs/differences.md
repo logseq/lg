@@ -168,6 +168,9 @@ function and expose a single callable value. Exact fixed arities are selected
 before a final variadic fallback; extra arguments are packed into a lazy
 sequence. Cross-arity calls, clause-local tail `recur`, aliases, and module
 exports preserve the same dispatch metadata.
+`defn-` shares these lowering rules. Top-level compilation has no separate
+export boundary; in a `module`, later forms can call it but external
+module-member lookup cannot.
 Unconstrained identity-style functions such as `(defn id [x] x)` and
 `(let [id (fn [x] x)] ...)` preserve OCaml-owned call-site polymorphism. cljml
 tracks only the fact that the return value is the same parameter so its core API

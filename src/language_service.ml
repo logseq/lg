@@ -1234,7 +1234,7 @@ let prepare_rename analysis ~offset =
   |> Option.map (fun occurrence -> occurrence.range)
 
 let symbol_kind = function
-  | "defn" -> Some `Function
+  | "defn" | "defn-" -> Some `Function
   | "def" -> Some `Variable
   | "module" | "module-alias" | "module-apply" | "module-functor" ->
       Some `Module
@@ -1337,6 +1337,7 @@ let rec document_symbol_selections symbols =
 let special_form_names =
   [ "def";
     "defn";
+    "defn-";
     "fn";
     "let";
     "if";
@@ -1696,7 +1697,7 @@ let provided_symbols source =
                   Workspace_symbol_set.add
                     (workspace_symbol Module_type_symbol name) symbols
               | FList
-                  (FSymbol ("def" | "defn") :: FSymbol name :: _) ->
+                  (FSymbol ("def" | "defn" | "defn-") :: FSymbol name :: _) ->
                   Workspace_symbol_set.add (workspace_symbol Value_symbol name)
                     symbols
               | FList
@@ -1848,9 +1849,21 @@ let referenced_symbols source =
         let bound = String_set.union bound (pattern_names params) in
         forms bound references body
     | _ -> references
+  and function_clause_references bound references = function
+    | FList (params :: body) ->
+        let references = pattern_references bound references params in
+        let bound = String_set.union bound (pattern_names params) in
+        forms bound references body
+    | _ -> references
   and form_references bound references = function
     | FSymbol name -> add_symbol_references bound name references
-    | FList (FSymbol "defn" :: FSymbol _ :: params :: body) ->
+    | FList
+        (FSymbol ("defn" | "defn-") :: FSymbol _
+        :: ((FList _) :: _ as clauses)) ->
+        List.fold_left
+          (function_clause_references bound)
+          references clauses
+    | FList (FSymbol ("defn" | "defn-") :: FSymbol _ :: params :: body) ->
         let references = pattern_references bound references params in
         let bound = String_set.union bound (pattern_names params) in
         forms bound references body

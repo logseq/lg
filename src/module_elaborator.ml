@@ -149,6 +149,10 @@ let compile_module_apply ?location ?functor_location scope env next_type module_
 let rec compile_module ?location ?signature_name ?signature_location
     ?(register_module = true) scope env next_type module_path module_segment forms =
   let env = inherit_scope_ocaml_value_refers scope module_path env in
+  let export_function definition public_bindings binding =
+    if definition = "defn-" then public_bindings
+    else public_bindings @ [ binding ]
+  in
   let rec compile_module_form env public_bindings next_type items = function
     | FList
         (FSymbol "module-signature" :: ((FSymbol signature_name) as name_form)
@@ -437,7 +441,8 @@ let rec compile_module ?location ?signature_name ?signature_location
                     next_type,
                     item :: items ))))
     | FList
-        (FSymbol "defn" :: ((FSymbol name) as _name_form)
+        (FSymbol (("defn" | "defn-") as definition)
+        :: ((FSymbol name) as _name_form)
         :: ((FList _) as first_clause) :: remaining_clauses) ->
         let local_name = Names.sanitize_name name in
         let public_name = module_binding_ocaml_name module_path name in
@@ -475,23 +480,26 @@ let rec compile_module ?location ?signature_name ?signature_location
                 in
                 Ok
                   ( Env.add key local_binding env,
-                    public_bindings @ [ (key, public_binding) ],
+                    export_function definition public_bindings
+                      (key, public_binding),
                     next_type,
                     Group
                       (row_items
                       @ [ Recursive_value_bindings recursive_bindings; value_item ])
                     :: items )))
     | FList
-        (FSymbol "defn" :: ((FSymbol _name) as name_form)
+        (FSymbol (("defn" | "defn-") as definition)
+        :: ((FSymbol _name) as name_form)
         :: ((FVector params) as params_form) :: body_forms)
       when List.exists (function FSymbol "&" -> true | _ -> false) params ->
         compile_module_form env public_bindings next_type items
           (FList
-             [ FSymbol "defn";
+             [ FSymbol definition;
                name_form;
                FList (params_form :: body_forms) ])
     | FList
-        (FSymbol "defn" :: ((FSymbol name) as name_form) :: params
+        (FSymbol (("defn" | "defn-") as definition)
+        :: ((FSymbol name) as name_form) :: params
         :: FKeyword return_keyword
         :: body_forms) -> (
         match Type_annotation.of_keyword return_keyword with
@@ -542,10 +550,13 @@ let rec compile_module ?location ?signature_name ?signature_location
                     in
                     Ok
                       ( Env.add key local_binding env,
-                        public_bindings @ [ (key, public_binding) ],
+                        export_function definition public_bindings
+                          (key, public_binding),
                         next_type,
                         Group (type_items @ [ value_item ]) :: items ))))
-    | FList (FSymbol "defn" :: FSymbol name :: params :: body_forms) -> (
+    | FList
+        (FSymbol (("defn" | "defn-") as definition) :: FSymbol name :: params
+        :: body_forms) -> (
         match prepare_fn module_path env params body_forms with
         | Error _ as err -> err
         | Ok parts -> (
@@ -582,7 +593,8 @@ let rec compile_module ?location ?signature_name ?signature_location
                 in
                 Ok
                   ( Env.add key local_binding env,
-                    public_bindings @ [ (key, public_binding) ],
+                    export_function definition public_bindings
+                      (key, public_binding),
                     next_type,
                     Group (type_items @ [ value_item ]) :: items )
             | _ -> Error.error "defn body did not compile to a function")))
@@ -626,9 +638,11 @@ let rec compile_module ?location ?signature_name ?signature_location
                 public_bindings @ nested_public_bindings,
                 next_type,
                 nested_item :: items ))
+    | FList (FSymbol ("defn" | "defn-") :: _) ->
+        Error.error "defn expects a name, parameter vector, and body"
     | _ ->
         Error.error
-          "module forms must be module-signature, type-alias, type-record, type-variant, open, include, module-alias, defprotocol, extend-type, def, defn, or module"
+          "module forms must be module-signature, type-alias, type-record, type-variant, open, include, module-alias, defprotocol, extend-type, def, defn, defn-, or module"
   and loop env public_bindings next_type items = function
     | [] ->
         let module_name = Names.module_segment_to_ocaml module_segment in

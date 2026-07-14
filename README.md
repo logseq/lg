@@ -145,6 +145,9 @@ The compiler infers record-like map shapes automatically:
   fixed arities take precedence over the variadic fallback, variadic arguments
   arrive as a lazy sequence, and multi-arity functions remain callable through
   aliases and module exports. Tail-position `recur` targets its current clause.
+- `defn-` uses the same single-, multi-, variadic-, and recursive-function
+  lowering. Inside a module it remains available to later module forms without
+  being added to the module's exported bindings.
 - `let`, `fn`, and `defn` support a static destructuring subset. Map
   destructuring supports `{:keys [...]}`, `{local :keyword}`, scalar literal
   `:or` defaults, and `:as` for structural maps; vector/list destructuring

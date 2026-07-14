@@ -2789,6 +2789,71 @@ let test_multi_arity_defn_rejects_unsupported_calls () =
 |}
   |> expect_error "score called with unsupported arity 0"
 
+let test_private_defn_supports_single_and_typed_recursive_arities () =
+  let source =
+    {|
+(defn- add-one [^:int value] (+ value 1))
+(defn- factorial [^:int value] :int
+  (if (= value 0) 1 (* value (factorial (dec value)))))
+(println (str (add-one 41) ":" (factorial 5)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "private_defn_supports_single_and_typed_recursive_arities"
+    "42:120\n" ocaml_source
+
+let test_private_defn_supports_variadic_and_multi_arity_recur () =
+  let source =
+    {|
+(defn- total [& values] (reduce + 0 values))
+(defn- ascending?
+  ([^:int x] true)
+  ([^:int x ^:int y] (< x y))
+  ([^:int x ^:int y & more]
+   (if (ascending? x y)
+     (if (next more)
+       (recur y (first more) (next more))
+       (ascending? y (first more)))
+     false)))
+(println (str (total 1 2 3 4) ":" (ascending? 1 2 3 4) ":"
+              (ascending? 1 3 2 4)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "private_defn_supports_variadic_and_multi_arity_recur"
+    "10:true:false\n" ocaml_source
+
+let test_module_private_defn_is_internal_only () =
+  let source =
+    {|
+(module Math
+  (defn- hidden [^:int value] (+ value 1))
+  (defn public [^:int value] (hidden value)))
+(println (str (Math/public 41)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "module_private_defn_is_internal_only" "42\n" ocaml_source;
+  Cljml.Compiler.compile_string
+    {|
+(module Math
+  (defn- hidden [^:int value] (+ value 1))
+  (defn public [^:int value] (hidden value)))
+(def leaked (Math/hidden 41))
+|}
+  |> expect_error_contains "Unbound module Math"
+
+let test_private_defn_rejects_invalid_declarations () =
+  Cljml.Compiler.compile_string
+    {|
+(defn- bad
+  ([value] value)
+  ([other] other))
+|}
+  |> expect_error "defn bad has duplicate arity 1";
+  Cljml.Compiler.compile_string {|(defn- bad)|}
+  |> expect_error "defn expects a name, parameter vector, and body"
+
 let test_unannotated_function_parameters_infer_from_body () =
   let source =
     {|
@@ -6373,6 +6438,17 @@ let test_language_service_document_symbols_preserve_source_names () =
   | None -> failwith "expected add-one document symbol");
   if find "result" = None then failwith "expected result document symbol"
 
+let test_language_service_recognizes_private_defn () =
+  let source = "(defn- hidden [value] (+ value 1))\n" in
+  let analysis =
+    Cljml.Language_service.analyze
+      ~filename:"file:///tmp/private-defn.cljml" source
+    |> expect_ok
+  in
+  match Cljml.Language_service.document_symbols analysis with
+  | [ { name = "hidden"; kind = `Function; _ } ] -> ()
+  | _ -> failwith "expected defn- to produce a function document symbol"
+
 let document_symbol_hierarchy_source =
   {|
 (module-signature ValueSig (val value :int))
@@ -7044,7 +7120,7 @@ let test_module_definitions_reject_expressions () =
   (println "side effect"))
 |}
   |> expect_error
-       "module forms must be module-signature, type-alias, type-record, type-variant, open, include, module-alias, defprotocol, extend-type, def, defn, or module"
+       "module forms must be module-signature, type-alias, type-record, type-variant, open, include, module-alias, defprotocol, extend-type, def, defn, defn-, or module"
 
 let test_module_definitions_support_type_aliases () =
   let source =
@@ -8888,6 +8964,14 @@ let tests =
       test_multi_arity_defn_rejects_invalid_declarations );
     ( "multi-arity defn rejects unsupported calls",
       test_multi_arity_defn_rejects_unsupported_calls );
+    ( "private defn supports single and typed recursive arities",
+      test_private_defn_supports_single_and_typed_recursive_arities );
+    ( "private defn supports variadic and multi-arity recur",
+      test_private_defn_supports_variadic_and_multi_arity_recur );
+    ( "module private defn is internal only",
+      test_module_private_defn_is_internal_only );
+    ( "private defn rejects invalid declarations",
+      test_private_defn_rejects_invalid_declarations );
     ( "unannotated function parameters infer from body",
       test_unannotated_function_parameters_infer_from_body );
     ( "identity function is polymorphic at call sites",
@@ -9271,6 +9355,8 @@ let tests =
       test_language_service_type_capabilities );
     ( "language service document symbols preserve source names",
       test_language_service_document_symbols_preserve_source_names );
+    ( "language service recognizes private defn",
+      test_language_service_recognizes_private_defn );
     ( "language service document symbols include semantic children",
       test_language_service_document_symbols_include_semantic_children );
     ( "language service semantic tokens classify symbols",

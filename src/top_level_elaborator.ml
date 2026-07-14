@@ -211,7 +211,7 @@ let rec compile scope env next_type = function
                       expression = expr.semantic_expr;
                     } ))))
   | FList
-      (FSymbol "defn" :: ((FSymbol name) as name_form)
+      (FSymbol ("defn" | "defn-") :: ((FSymbol name) as name_form)
       :: ((FList _) as first_clause) :: remaining_clauses) ->
       let ocaml_name = Names.ocaml_binding_name scope name in
       let env_key = Names.scoped_key scope name in
@@ -244,16 +244,17 @@ let rec compile scope env next_type = function
                     @ [ Recursive_value_bindings recursive_bindings; value_item ])
                 )))
   | FList
-      (FSymbol "defn" :: ((FSymbol _name) as name_form)
+      (FSymbol (("defn" | "defn-") as definition)
+      :: ((FSymbol _name) as name_form)
       :: ((FVector params) as params_form) :: body_forms)
     when List.exists (function FSymbol "&" -> true | _ -> false) params ->
       compile scope env next_type
         (FList
-           [ FSymbol "defn";
+           [ FSymbol definition;
              name_form;
              FList (params_form :: body_forms) ])
   | FList
-      (FSymbol "defn" :: ((FSymbol name) as name_form) :: params
+      (FSymbol ("defn" | "defn-") :: ((FSymbol name) as name_form) :: params
       :: FKeyword return_keyword
       :: body_forms) -> (
       match Type_annotation.of_keyword return_keyword with
@@ -298,7 +299,8 @@ let rec compile scope env next_type = function
                       next_type,
                       Group (type_items @ [ value_item ]) ))))
   | FList
-      (FSymbol "defn" :: ((FSymbol name) as name_form) :: params :: body_forms) -> (
+      (FSymbol ("defn" | "defn-") :: ((FSymbol name) as name_form) :: params
+      :: body_forms) -> (
       match prepare_fn scope env params body_forms with
       | Error _ as err -> err
       | Ok parts when unresolved_contextual_type parts.body.ty ->
@@ -434,6 +436,8 @@ let rec compile scope env next_type = function
                 { pattern = Ignore_pattern; expression = expr.semantic_expr } ))
   | FList (FSymbol "recur" :: _) ->
       Error.error "recur is only valid in a loop tail position"
+  | FList (FSymbol ("defn" | "defn-") :: _) ->
+      Error.error "defn expects a name, parameter vector, and body"
   | form -> (
       match compile_expr scope env form with
       | Error _ as err -> err
