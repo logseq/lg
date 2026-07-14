@@ -44,7 +44,7 @@
     (:children node)))
 
 (defn- children-addresses [children]
-  (arrays/amap (fn [_child] nil) children))
+  (arrays/amap (fn [child] (node-address child)) children))
 
 (defn- loaded-children [children]
   (arrays/amap (fn [child] (Some child)) children))
@@ -145,6 +145,47 @@
       (let [delete (:delete storage-value)]
         (delete (arrays/array address-value)))
       nil)
+    nil))
+
+(defn- address-option-equals? [candidate address]
+  (match candidate
+    (Some value) (= value address)
+    None false))
+
+(defn- address-present? [addresses address]
+  (loop [idx 0]
+    (if (= idx (arrays/alength addresses))
+      false
+      (if (address-option-equals? (arrays/aget addresses idx) address)
+        true
+        (recur (inc idx))))))
+
+(defn- removed-address? [candidate new-addresses]
+  (match candidate
+    (Some address)
+    (not (address-present? new-addresses address))
+    None false))
+
+(defn- address-value [candidate]
+  (match candidate
+    (Some address) address
+    None (Stdlib.failwith "persistent sorted set address is unavailable")))
+
+(defn- removed-addresses [addresses from to new-addresses]
+  (arrays/into-array
+    (map
+      address-value
+      (filter
+        (fn [candidate] (removed-address? candidate new-addresses))
+        (array-to-seq (arrays/aslice addresses from to))))))
+
+(defn- delete-removed-addresses [storage addresses from to new-addresses]
+  (if-some [storage-value storage]
+    (let [removed
+          (removed-addresses addresses from to new-addresses)]
+      (when (> (arrays/alength removed) 0)
+        (let [delete (:delete storage-value)]
+          (delete removed))))
     nil))
 
 (defn- node-merge [node next storage]
@@ -329,6 +370,13 @@
                       left-idx
                       right-idx
                       (children-addresses disjoined))]
+                (when (> right-idx left-idx)
+                  (delete-removed-addresses
+                    storage
+                    (:_addresses node)
+                    left-idx
+                    right-idx
+                    new-addresses))
                 (rotate
                   (new-node-state
                     new-keys

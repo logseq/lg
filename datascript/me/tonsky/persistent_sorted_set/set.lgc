@@ -13,19 +13,19 @@
   (shift :int)
   (cnt :int)
   (comparator :fn<value;value;int>)
-  (storage :option<storage<value>>)
+  (storage :ref<option<storage<value>>>)
   (_address :ref<option<int64>>))
 
 (defn- make-set [root shift cnt comparator storage]
-  (record btset (root (volatile! (Some root))) (shift shift) (cnt cnt) (comparator comparator) (storage storage) (_address (volatile! nil))))
+  (record btset (root (volatile! (Some root))) (shift shift) (cnt cnt) (comparator comparator) (storage (volatile! storage)) (_address (volatile! nil))))
 
 (defn- make-restored-set [shift cnt comparator storage address]
-  (record btset (root (volatile! nil)) (shift shift) (cnt cnt) (comparator comparator) (storage (Some storage)) (_address (volatile! (Some address)))))
+  (record btset (root (volatile! nil)) (shift shift) (cnt cnt) (comparator comparator) (storage (volatile! (Some storage))) (_address (volatile! (Some address)))))
 
 (defn set-root [set]
   (if-some [root (deref (:root set))]
     root
-    (match (:storage set)
+    (match (deref (:storage set))
       (Some storage)
       (match (deref (:_address set))
         (Some address)
@@ -53,30 +53,24 @@
   (:comparator set))
 
 (defn set-storage [set]
-  (:storage set))
+  (deref (:storage set)))
 
 (defn- partition-array [values]
   (let [length (arrays/alength values)]
-    (if (= 0 length)
-      (arrays/empty-array)
-      (let [group-count (quot (+ length (dec average-len)) average-len)
-            base-size (quot length group-count)
-            larger-groups (mod length group-count)
-            first-size (+ base-size (if (< 0 larger-groups) 1 0))
-            result
-            (arrays/make-array
-              group-count
-              (arrays/aslice values 0 first-size))]
-        (loop [group 0
-               offset 0]
-          (if (< group group-count)
-            (let [size (+ base-size (if (< group larger-groups) 1 0))
-                  next-offset (+ offset size)]
-              (arrays/aset
-                result group (arrays/aslice values offset next-offset))
-              (recur (inc group) next-offset))
-            nil))
-        result))))
+    (loop [offset 0
+           parts []]
+      (if (= offset length)
+        (arrays/into-array parts)
+        (let [remaining (- length offset)
+              size
+              (cond
+                (<= remaining nodes/max-len) remaining
+                (>= remaining (+ average-len nodes/min-len)) average-len
+                :else (arrays/half remaining))
+              next-offset (+ offset size)]
+          (recur
+            next-offset
+            (conj parts (arrays/aslice values offset next-offset))))))))
 
 (defn- unique-count [values cmp]
   (let [length (arrays/alength values)]
@@ -275,7 +269,13 @@
   (make-restored-set shift count cmp storage address))
 
 (defn store [set storage]
+  (when (nil? (set-storage set))
+    (vreset! (:storage set) (Some storage)))
   (let [root (set-root set)
-        address (nodes/node-store root storage)]
+        storage-value
+        (match (set-storage set)
+          (Some value) value
+          None (Stdlib.failwith "persistent sorted set storage is unavailable"))
+        address (nodes/node-store root storage-value)]
     (vreset! (:_address set) (Some address))
     address))

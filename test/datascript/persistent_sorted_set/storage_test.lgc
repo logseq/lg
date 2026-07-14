@@ -52,6 +52,29 @@
     int-compare
     (arrays/into-array (range 0 size))))
 
+(defn addressed? [address]
+  (match address
+    (Some _value) true
+    None false))
+
+(defn all-addressed? [addresses]
+  (loop [idx 0]
+    (if (= idx (arrays/alength addresses))
+      true
+      (if (addressed? (arrays/aget addresses idx))
+        (recur (inc idx))
+        false))))
+
+(let [children-33 (nodes/node-children (pset/set-root (range-set 33)))
+      children-65 (nodes/node-children (pset/set-root (range-set 65)))]
+  (println
+    (str "partition:"
+         (= 16 (nodes/node-len (arrays/aget children-33 0))) ":"
+         (= 17 (nodes/node-len (arrays/aget children-33 1))) ":"
+         (= 24 (nodes/node-len (arrays/aget children-65 0))) ":"
+         (= 24 (nodes/node-len (arrays/aget children-65 1))) ":"
+         (= 17 (nodes/node-len (arrays/aget children-65 2))))))
+
 (match (make-memory-storage)
   (tuple storage reads writes accessed deleted)
   (let [original (range-set 100)
@@ -61,7 +84,7 @@
         restored (pset/restore-by int-compare root-address storage 1 100)]
     (println
       (str "store:"
-           (= 6 first-write-count) ":"
+           (= 5 first-write-count) ":"
            (= root-address repeated-address) ":"
            (= first-write-count (deref writes))))
     (println
@@ -78,9 +101,9 @@
     (println
       (str "walk:"
            (= 4950 (pset/set-reduce restored (fn [left right] (+ left right)) 0)) ":"
-           (= 6 (deref reads)) ":"
+           (= 5 (deref reads)) ":"
            (= 4950 (pset/set-reduce restored (fn [left right] (+ left right)) 0)) ":"
-           (= 6 (deref reads))))
+           (= 5 (deref reads))))
     (let [updated (pset/set-conj restored 100)
           writes-before (deref writes)]
       (pset/store updated storage)
@@ -92,6 +115,38 @@
              (= 0 (deref deleted)))))))
 
 (match (make-memory-storage)
+  (tuple storage _reads _writes _accessed _deleted)
+  (let [original (range-set 100)
+        _root-address (pset/store original storage)
+        updated (pset/set-conj original 100)]
+    (println
+      (str "addresses-preserved:"
+           (all-addressed?
+             (nodes/node-addresses (pset/set-root updated)))))))
+
+(match (make-memory-storage)
+  (tuple storage _reads _writes _accessed deleted)
+  (let [original (range-set 33)
+        _root-address (pset/store original storage)
+        updated (pset/set-disj original 16)]
+    (println
+      (str "delete-removed:"
+           (= 2 (deref deleted)) ":"
+           (nil? (pset/set-lookup updated 16)) ":"
+           (= 16 (pset/set-lookup original 16))))))
+
+(match (make-memory-storage)
+  (tuple storage _reads _writes _accessed deleted)
+  (let [original (range-set 33)
+        _root-address (pset/store original storage)
+        updated (pset/set-disj original 0)]
+    (println
+      (str "store-attaches:"
+           (= 0 (deref deleted)) ":"
+           (nil? (pset/set-lookup updated 0)) ":"
+           (= 0 (pset/set-lookup original 0))))))
+
+(match (make-memory-storage)
   (tuple storage _reads _writes _accessed deleted)
   (let [original (range-set 33)
         root-address (pset/store original storage)
@@ -99,7 +154,7 @@
         updated (pset/set-disj restored 0)]
     (println
       (str "delete:"
-           (= 1 (deref deleted)) ":"
+           (= 0 (deref deleted)) ":"
            (nil? (pset/set-lookup updated 0)) ":"
            (= 0 (pset/set-lookup restored 0))))))
 
