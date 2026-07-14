@@ -39,6 +39,16 @@ let binding ?(row_param_types = []) ?host_reference ?protocol_id
     return_param_index;
   }
 
+let seqable_constraint_name = "__cljml_seqable_constraint"
+let seqable_constraint element_ty =
+  TOcaml_app (seqable_constraint_name, [ element_ty; TUnknown ])
+
+let seqable_constraint_element = function
+  | TOcaml_app (name, [ element_ty; _container_ty ])
+    when name = seqable_constraint_name ->
+      Some element_ty
+  | _ -> None
+
 let rec equal left right =
   match (left, right) with
   | TUnknown, TUnknown -> true
@@ -150,6 +160,8 @@ let rec source_name = function
   | TUnknown -> "any"
   | TVar name -> "param/" ^ name
   | TOcaml name -> "ocaml/" ^ name
+  | TOcaml_app (name, [ inner; _ ]) when name = seqable_constraint_name ->
+      "seqable<" ^ source_name inner ^ ">"
   | TOcaml_app (name, args) ->
       "ocaml/" ^ name ^ "<"
       ^ (args |> List.map source_name |> String.concat ",")
@@ -181,6 +193,9 @@ let rec ocaml_name = function
   | TVar name -> "'" ^ name
   | TOcaml name -> name
   | TOcaml_app (name, []) -> name
+  | TOcaml_app (name, [ inner; container ]) when name = seqable_constraint_name ->
+      "((" ^ ocaml_name container ^ " -> " ^ ocaml_name inner
+      ^ " Seq.t) * " ^ ocaml_name container ^ ")"
   | TOcaml_app (name, [ arg ]) -> ocaml_name arg ^ " " ^ name
   | TOcaml_app (name, args) ->
       "(" ^ (args |> List.map ocaml_name |> String.concat ", ") ^ ") " ^ name

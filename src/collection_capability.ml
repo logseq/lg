@@ -3,6 +3,17 @@ open Types
 let apply name args = Semantic_ir.Apply (Semantic_ir.Ident name, args)
 
 let to_seq_expr env collection =
+  match Types.seqable_constraint_element collection.ty with
+  | Some inner -> (
+      match Semantic_ir.unlocated collection.semantic_expr with
+      | Semantic_ir.Ident name ->
+          Ok
+            ( inner,
+              Semantic_ir.Apply
+                ( Semantic_ir.Ident (name ^ "__seq"),
+                  [ collection.semantic_expr ] ) )
+      | _ -> Error.error "constrained Seqable value must be a function parameter")
+  | None ->
   match Core_protocols.find_seqable collection.ty (Compiler_environment.protocols env) with
   | None -> Error.error "collection value is not seqable"
   | Some implementation -> (
@@ -16,9 +27,52 @@ let to_seq_expr env collection =
               Ok
                 ( inner,
                   apply implementation.ocaml_name [ collection.semantic_expr ] )
+          | TFn ([ receiver_ty ], TOcaml_app (("Seq.t" | "Seq"), [ inner ]))
+            when Types.assignable ~policy:Host_boundary ~expected:receiver_ty
+                   ~actual:collection.ty ->
+              Ok
+                ( inner,
+                  apply "Cljml.Runtime_seq.memoize"
+                    [ apply implementation.ocaml_name
+                        [ collection.semantic_expr ] ] )
           | _ ->
               Error.error
                 "Seqable/-seq implementation must return a typed lazy seq"))
+
+let accepts_seqable env ty =
+  match Types.seqable_constraint_element ty with
+  | Some _ -> true
+  | None ->
+      Option.is_some
+        (Core_protocols.find_seqable ty (Compiler_environment.protocols env))
+
+let pack_seqable_argument env argument =
+  let value_name = "seqable_value__" in
+  let value = Semantic_ir.Ident value_name in
+  let adapter =
+    match Types.seqable_constraint_element argument.ty with
+    | Some _ -> (
+        match Semantic_ir.unlocated argument.semantic_expr with
+        | Semantic_ir.Ident name ->
+            Ok
+              (Semantic_ir.Fun
+                 ( [ Semantic_ir.PVar value_name ],
+                   Semantic_ir.Apply
+                     (Semantic_ir.Ident (name ^ "__seq"), [ value ]) ))
+        | _ ->
+            Error.error "constrained Seqable value must be a function parameter")
+    | None ->
+        let parameter = typed_ir argument.ty value in
+        to_seq_expr env parameter
+        |> Result.map (fun (_, sequence) ->
+               Semantic_ir.Fun ([ Semantic_ir.PVar value_name ], sequence))
+  in
+  match adapter with
+  | Error _ as err -> err
+  | Ok adapter ->
+      Ok
+        (Semantic_ir.Tuple
+           [ adapter; argument.semantic_expr ])
 
 let reduce_expr env fn init collection sequence =
   let fallback () =

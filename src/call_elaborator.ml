@@ -775,16 +775,32 @@ let create ~compile_expr =
               when List.length param_tys = List.length args
                    && List.for_all2
                         (fun expected arg ->
-                          Types.assignable ~policy:Host_boundary ~expected
-                            ~actual:arg.ty)
+                          match Types.seqable_constraint_element expected with
+                          | Some _ -> Collection_capability.accepts_seqable env arg.ty
+                          | None ->
+                              Types.assignable ~policy:Host_boundary ~expected
+                                ~actual:arg.ty)
                         param_tys args ->
-                let arg_exprs =
-                  args
-                  |> List.mapi (fun index arg ->
-                         let row_type_name = List.nth_opt fn.row_param_types index |> Option.join in
-                        let expected_ty = List.nth param_tys index in
-                        row_arg_expr row_type_name expected_ty arg)
+                let rec compile_arg_exprs index acc = function
+                  | [] -> Ok (List.rev acc)
+                  | arg :: rest ->
+                      let expected_ty = List.nth param_tys index in
+                      match Types.seqable_constraint_element expected_ty with
+                      | Some _ -> (
+                          match Collection_capability.pack_seqable_argument env arg with
+                          | Error _ as err -> err
+                          | Ok expression ->
+                              compile_arg_exprs (index + 1) (expression :: acc) rest)
+                      | None ->
+                          let row_type_name =
+                            List.nth_opt fn.row_param_types index |> Option.join
+                          in
+                          let expression = row_arg_expr row_type_name expected_ty arg in
+                          compile_arg_exprs (index + 1) (expression :: acc) rest
                 in
+                (match compile_arg_exprs 0 [] args with
+                | Error _ as err -> err
+                | Ok arg_exprs ->
                 let ret =
                   match (fn.return_param_index, ret) with
                   | Some index, TUnknown -> (
@@ -793,7 +809,10 @@ let create ~compile_expr =
                       | None -> ret)
                   | _ -> ret
                 in
-                Ok (typed_ir ret (Semantic_ir.Apply (Semantic_ir.Ident fn.ocaml_name, arg_exprs)))
+                Ok
+                  (typed_ir ret
+                     (Semantic_ir.Apply
+                        (Semantic_ir.Ident fn.ocaml_name, arg_exprs))))
             | TFn _ -> Error.error (name ^ " called with incompatible arguments")
             | _ -> Error.error (name ^ " is not callable")))
   

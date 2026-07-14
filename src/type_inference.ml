@@ -12,6 +12,18 @@ let constrain_symbol expected_ty params name =
   | Some TUnknown -> Ok (replace_param name expected_ty params)
   | Some _existing_ty -> Ok params
 
+let constrain_seqable element_ty params name =
+  match List.assoc_opt name params with
+  | None -> Ok params
+  | Some TUnknown ->
+      Ok (replace_param name (Types.seqable_constraint element_ty) params)
+  | Some existing -> (
+      match Types.seqable_constraint_element existing with
+      | Some TUnknown when element_ty <> TUnknown ->
+          Ok (replace_param name (Types.seqable_constraint element_ty) params)
+      | Some _ -> Ok params
+      | None -> Ok params)
+
 let add_record_field_constraint name keyword field_ty params =
   let merge_fields fields =
     match find_field keyword fields with
@@ -101,6 +113,33 @@ let infer_params ~lookup_function_ty params body_forms =
             | Ok params -> infer_expected expected_ty params arg)
           (Ok params) param_tys args
     | _ -> infer_all params args
+  and inferred_unary_function_param _params = function
+    | FSymbol name -> (
+        match lookup_function_ty name with
+        | Ok (TFn ([ param_ty ], _)) -> param_ty
+        | _ -> TUnknown)
+    | FList (FSymbol "fn" :: FVector [ FSymbol name ] :: body_forms) -> (
+        match infer_all [ (name, TUnknown) ] body_forms with
+        | Ok inferred ->
+            List.assoc_opt name inferred |> Option.value ~default:TUnknown
+        | Error _ -> TUnknown)
+    | _ -> TUnknown
+  and inferred_reducer_item params init = function
+    | FSymbol name -> (
+        match lookup_function_ty name with
+        | Ok (TFn ([ _; item_ty ], _)) -> item_ty
+        | _ -> TUnknown)
+    | FList
+        (FSymbol "fn" :: FVector [ FSymbol accumulator; FSymbol item ]
+        :: body_forms) ->
+        let accumulator_ty = inferred_form_type params init in
+        (match
+           infer_all [ (accumulator, accumulator_ty); (item, TUnknown) ] body_forms
+         with
+        | Ok inferred ->
+            List.assoc_opt item inferred |> Option.value ~default:TUnknown
+        | Error _ -> TUnknown)
+    | _ -> TUnknown
   and infer_let params bindings body_forms =
     match bindings with
     | FVector forms ->
@@ -161,6 +200,16 @@ let infer_params ~lookup_function_ty params body_forms =
     in
     infer_clauses params clauses
   and infer_form params = function
+    | FList [ FSymbol "count"; FSymbol collection ] ->
+        constrain_seqable TUnknown params collection
+    | FList [ FSymbol ("first" | "last"); FSymbol collection ] ->
+        constrain_seqable TUnknown params collection
+    | FList [ FSymbol "map"; fn; FSymbol collection ] ->
+        let element_ty = inferred_unary_function_param params fn in
+        constrain_seqable element_ty params collection
+    | FList [ FSymbol "reduce"; reducer; init; FSymbol collection ] ->
+        let element_ty = inferred_reducer_item params init reducer in
+        constrain_seqable element_ty params collection
     | FList (FSymbol ("+" | "-" | "*" | "/" | "max" | "min") :: args) ->
         let expected_ty =
           if List.exists (fun arg -> Types.equal (numeric_form_type params arg) TFloat) args

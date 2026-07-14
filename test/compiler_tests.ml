@@ -3877,6 +3877,118 @@ let test_nth_accepts_indexed_and_seqable_host_types () =
   assert_ocaml_runs "nth_accepts_indexed_and_seqable_host_types"
     "2\nb\n9\n" ocaml_source
 
+let test_generic_sequence_functions_infer_seqable_dictionaries () =
+  let source =
+    {|
+(type-record cursor (values :ocaml/list<int>))
+(extend-type cursor Seqable
+  (-seq [cursor]
+    (map (fn [x] x) (ocaml-field cursor values))))
+(defn total [values]
+  (reduce + 0 values))
+(defn increment-all [values]
+  (map inc values))
+(defn size [values]
+  (count values))
+(defn forwarded-total [values]
+  (total values))
+(def custom (ocaml-record cursor (values (list 4 5))))
+(def host-seq
+  (ocaml-call :ocaml/Seq.t<int> List.to_seq (list 6 7)))
+(println (str (total (list 1 2)) ":" (total [1 2]) ":"
+              (total (ocaml-array 1 2)) ":" (total custom) ":"
+              (total host-seq)))
+(println (pr-str (increment-all custom)))
+(println (str (size [1 2 3]) ":" (size custom)))
+(println (forwarded-total (ocaml-array 8 9)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "generic_sequence_functions_infer_seqable_dictionaries"
+    "3:3:3:9:13\n(5 6)\n3:2\n17\n" ocaml_source
+
+let test_generic_seqable_returns_instantiate_element_types () =
+  let source =
+    {|
+(defn head [values] (first values))
+(defn tail-value [values] (last values))
+(println (+ (head [4 5]) 1))
+(println (+ (tail-value (ocaml-array 6 7)) 1))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "generic_seqable_returns_instantiate_element_types"
+    "5\n8\n" ocaml_source
+
+let test_seqable_dictionary_arguments_evaluate_once () =
+  let source =
+    {|
+(def calls (ocaml-ref 0))
+(defn total [values] (reduce + 0 values))
+(println
+  (total
+    (do
+      (ocaml-reset! calls (+ (ocaml-deref calls) 1))
+      [1 2 3])))
+(println (ocaml-deref calls))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "seqable_dictionary_arguments_evaluate_once" "6\n1\n"
+    ocaml_source
+
+let test_modules_export_host_ocaml_seqable_implementations () =
+  let source =
+    {|
+(module QueueSeq
+  (extend-type :ocaml/Queue.t<int> Seqable
+    (-seq [queue]
+      (ocaml-call :ocaml/Seq.t<int> Queue.to_seq queue))))
+(def values
+  (ocaml-call :ocaml/Queue.t<int> Queue.of_seq
+    (ocaml-call :ocaml/Seq.t<int> List.to_seq (list 1 2 3))))
+(println (pr-str (map inc values)))
+(println (reduce (fn [acc x] (+ acc x)) 0 values))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "modules_export_host_ocaml_seqable_implementations"
+    "(2 3 4)\n6\n" ocaml_source
+
+let test_logseq_datascript_style_wrappers_use_collection_capabilities () =
+  let source =
+    {|
+(module Datascript
+  (type-record query-result (rows :ocaml/list<int>))
+  (extend-type query-result Seqable
+    (-seq [result]
+      (map (fn [row] row) (ocaml-field result rows))))
+  (extend-type query-result Counted
+    (-count [result]
+      (+ (ocaml-call :ocaml/int List.length (ocaml-field result rows)) 0))))
+(module Logseq
+  (type-record block-children (blocks :ocaml/array<int>))
+  (extend-type block-children Seqable
+    (-seq [children]
+      (map (fn [block] block) (ocaml-field children blocks))))
+  (extend-type block-children Counted
+    (-count [children]
+      (+ (ocaml-call :ocaml/int Array.length (ocaml-field children blocks)) 0))))
+(defn summarize [values]
+  (str (count values) ":" (reduce + 0 values) ":" (first values) ":" (last values)))
+(def query
+  (ocaml-record Datascript.query-result (rows (list 1 2 3))))
+(def children
+  (ocaml-record Logseq.block-children (blocks (ocaml-array 4 5))))
+(println (summarize query))
+(println (summarize children))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "logseq_datascript_style_wrappers_use_collection_capabilities"
+    "3:6:1:3\n2:9:4:5\n" ocaml_source
+
 let test_batched_sequence_functions_reject_type_mismatch () =
   Cljml.Compiler.compile_string {|(def x (concat [1] ["two"]))|}
   |> expect_error "concat element types must match"
@@ -8525,6 +8637,16 @@ let tests =
       test_custom_records_can_implement_core_indexed );
     ( "nth accepts Indexed and Seqable host types",
       test_nth_accepts_indexed_and_seqable_host_types );
+    ( "generic sequence functions infer Seqable dictionaries",
+      test_generic_sequence_functions_infer_seqable_dictionaries );
+    ( "generic Seqable returns instantiate element types",
+      test_generic_seqable_returns_instantiate_element_types );
+    ( "Seqable dictionary arguments evaluate once",
+      test_seqable_dictionary_arguments_evaluate_once );
+    ( "modules export host OCaml Seqable implementations",
+      test_modules_export_host_ocaml_seqable_implementations );
+    ( "Logseq Datascript style wrappers use collection capabilities",
+      test_logseq_datascript_style_wrappers_use_collection_capabilities );
     ( "batched sequence functions reject type mismatch",
       test_batched_sequence_functions_reject_type_mismatch );
     ( "batched sequence functions reject bad functions",

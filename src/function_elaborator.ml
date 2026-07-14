@@ -149,6 +149,12 @@ let fn_code ?(row_param_type_names = []) parts =
     List.map2 (fun name ty -> (name, ty)) param_names param_tys
     |> List.mapi (fun index (name, ty) ->
            let pattern =
+             match Types.seqable_constraint_element ty with
+             | Some _ ->
+                 Semantic_ir.PTuple
+                   [ Semantic_ir.PVar (name ^ "__seq");
+                     Semantic_ir.PVar name ]
+             | None ->
              match List.nth_opt row_param_type_names index with
              | Some (Some type_name) ->
                  Semantic_ir.PConstraint (Semantic_ir.PVar name, type_name)

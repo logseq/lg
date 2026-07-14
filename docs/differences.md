@@ -365,6 +365,12 @@ avoids seq traversal, and a matching `-nth` provides direct indexed access;
 otherwise the core operations fall back to `Seqable` where meaningful.
 `first` and `last` accept all built-in and custom seqable values.
 
+Unannotated function parameters used by `map`, `reduce`, `count`, `first`, or
+`last` infer a Seqable constraint. The generated OCaml function receives a
+statically selected adapter dictionary together with the value. This supports
+generic collection functions across built-ins, module-exported host types, and
+Logseq/Datascript-style wrappers without runtime type inspection.
+
 `reverse` returns a same-typed reversed list or vector.
 
 `every?`, `not-any?`, `not-every?`, and the current static subset of `some`

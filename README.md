@@ -287,6 +287,10 @@ The compiler infers record-like map shapes automatically:
 - `Counted` and `Indexed` are compiler-owned protocols. `count` prefers
   `-count` before traversing a `Seqable`, while `nth` prefers `-nth` before its
   seq fallback. `first` and `last` accept every built-in or custom `Seqable`.
+- Unannotated function parameters used by `map`, `reduce`, `count`, `first`, or
+  `last` infer a Seqable constraint. Calls pass a statically selected adapter
+  dictionary, so one generic function works with built-in and custom
+  collections without runtime type dispatch.
 - `apply` supports integer binary reducers over typed lists, vectors, and sets,
   including fixed leading integer arguments before the final collection.
 - `get` supports vector indexes, and `nth` supports typed default values for

@@ -38,6 +38,15 @@ let rec core_type = function
   | Types.TVar name -> Ast_helper.Typ.var ~loc name
   | Types.TOcaml name ->
       Ast_helper.Typ.constr ~loc (lid (longident_of_string name)) []
+  | Types.TOcaml_app (name, [ inner; container ])
+    when name = Types.seqable_constraint_name ->
+      let element = core_type inner in
+      let container = core_type container in
+      let adapter =
+        Ast_helper.Typ.arrow ~loc Nolabel container
+          (type_constructor "Seq.t" [ element ])
+      in
+      Ast_helper.Typ.tuple ~loc [ (None, adapter); (None, container) ]
   | Types.TOcaml_app (name, args) ->
       Ast_helper.Typ.constr ~loc (lid (longident_of_string name))
         (List.map core_type args)

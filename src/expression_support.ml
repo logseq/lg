@@ -271,6 +271,7 @@ let constrain_record_function_argument_expr fn element_ty =
   | _ -> fn.semantic_expr
 
 let param_constraint_name = function
+  | TOcaml_app (name, [ _; _ ]) when name = Types.seqable_constraint_name -> None
   | (TInt | TFloat | TChar | TString | TSymbol | TKeyword | TBool | TUnit
     | TArray _ | TRef _ | TOcaml _ | TOcaml_app _ | TTuple _ | TNamed_record _) as ty ->
       Some (Types.ocaml_name ty)
