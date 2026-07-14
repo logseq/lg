@@ -6,6 +6,7 @@ let of_vector values = values |> Rrbvec.to_list |> of_list
 let of_array values = values |> Array.to_seq |> memoize
 let of_string value = value |> String.to_seq |> memoize
 let to_list sequence = List.of_seq sequence
+let fold_left fn init sequence = Seq.fold_left fn init sequence
 
 let map fn sequence = sequence |> Seq.map fn |> memoize
 let filter predicate sequence = sequence |> Seq.filter predicate |> memoize

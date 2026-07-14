@@ -64,6 +64,38 @@ let create ~compile_expr =
                  (Semantic_ir.Fun ([ pattern ], body.semantic_expr)))
     | form -> compile_function_arg scope env form
   in
+  let compile_reducer scope env accumulator_ty element_ty = function
+    | FList
+        (FSymbol "fn" :: FVector [ FSymbol accumulator; FSymbol element ]
+        :: body_forms) ->
+        let accumulator_binding =
+          Types.binding (Names.sanitize_name accumulator) accumulator_ty
+        in
+        let element_binding =
+          Types.binding (Names.sanitize_name element) element_ty
+        in
+        let function_env =
+          env
+          |> Env.add (Names.scoped_key scope accumulator) accumulator_binding
+          |> Env.add (Names.scoped_key scope element) element_binding
+        in
+        let pattern binding ty =
+          match ty with
+          | TNamed_record record ->
+              Semantic_ir.PConstraint
+                (Semantic_ir.PVar binding.ocaml_name, record.type_name)
+          | _ -> Semantic_ir.PVar binding.ocaml_name
+        in
+        compile_body scope function_env "function body requires at least one form"
+          body_forms
+        |> Result.map (fun body ->
+               typed_ir (TFn ([ accumulator_ty; element_ty ], body.ty))
+                 (Semantic_ir.Fun
+                    ( [ pattern accumulator_binding accumulator_ty;
+                        pattern element_binding element_ty ],
+                      body.semantic_expr )))
+    | form -> compile_function_arg scope env form
+  in
     let rec collection_to_list_expr collection =
       Core_sequence_transform.collection_to_list_expr collection
     
@@ -661,45 +693,29 @@ let create ~compile_expr =
     and compile_reduce scope env arg_forms =
       match arg_forms with
       | fn_form :: init_form :: collection_form :: [] -> (
-          match
-            ( compile_function_arg scope env fn_form,
-              compile_expr scope env init_form,
-              compile_expr scope env collection_form )
-          with
-          | (Error _ as err), _, _ -> err
-          | _, (Error _ as err), _ -> err
-          | _, _, (Error _ as err) -> err
-          | Ok fn, Ok init, Ok collection -> (
-              match (fn.ty, collection.ty) with
-              | TFn ([ acc_ty; item_ty ], ret), TList inner
-                when Types.equal acc_ty init.ty && Types.equal item_ty inner && Types.equal ret init.ty ->
-                  Ok
-                    (typed_ir init.ty
-                       (apply "List.fold_left"
-                          [ fn.semantic_expr; init.semantic_expr; collection.semantic_expr ]))
-              | TFn _, TList _ -> Error.error "reduce function type does not match init and list"
-              | _, TList _ -> Error.error "reduce expects a function"
-              | TFn ([ acc_ty; item_ty ], ret), TVector inner
-                when Types.equal acc_ty init.ty && Types.equal item_ty inner && Types.equal ret init.ty ->
-                 Ok
-                    (typed_ir init.ty
-                       (apply "Rrbvec.fold_left"
-                          [ fn.semantic_expr; init.semantic_expr; collection.semantic_expr ]))
-              | TFn _, TVector _ -> Error.error "reduce function type does not match init and vector"
-              | _, TVector _ -> Error.error "reduce expects a function"
-              | TFn ([ acc_ty; item_ty ], ret), TSet inner
-                when Types.equal acc_ty init.ty && Types.equal item_ty inner && Types.equal ret init.ty ->
-                  Types.set_module_name inner
-                  |> Result.map (fun set_module ->
-                         typed_ir init.ty
-                           (apply "List.fold_left"
-                              [ fn.semantic_expr;
-                                init.semantic_expr;
-                                apply (set_module ^ ".elements")
-                                  [ collection.semantic_expr ] ]))
-              | TFn _, TSet _ -> Error.error "reduce function type does not match init and set"
-              | _, TSet _ -> Error.error "reduce expects a function"
-              | _ -> Error.error "reduce expects a list, vector, or set"))
+          match (compile_expr scope env init_form, compile_expr scope env collection_form) with
+          | (Error _ as err), _ -> err
+          | _, (Error _ as err) -> err
+          | Ok init, Ok collection -> (
+              match Core_sequence_transform.collection_to_seq_expr collection with
+              | Error _ -> Error.error "reduce expects a seqable value"
+              | Ok (inner, sequence) -> (
+                  match compile_reducer scope env init.ty inner fn_form with
+                  | Error _ as err -> err
+                  | Ok fn -> (
+                      match fn.ty with
+                      | TFn ([ acc_ty; item_ty ], ret)
+                        when Types.equal acc_ty init.ty
+                             && Types.equal item_ty inner
+                             && Types.equal ret init.ty ->
+                          Ok
+                            (typed_ir init.ty
+                               (apply "Cljml.Runtime_seq.fold_left"
+                                  [ fn.semantic_expr; init.semantic_expr; sequence ]))
+                      | TFn _ ->
+                          Error.error
+                            "reduce function type does not match init and sequence"
+                      | _ -> Error.error "reduce expects a function"))))
       | _ -> Error.error "reduce expects function, init, and collection"
     
   in

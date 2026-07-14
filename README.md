@@ -274,6 +274,9 @@ The compiler infers record-like map shapes automatically:
   for the current typed collection/function subset.
 - `interleave` accepts two or more same-element-type collections and stops when
   the shortest input is exhausted.
+- `reduce` accepts typed lists, vectors, sets, OCaml arrays, strings, lazy seqs,
+  and host OCaml `Seq.t`, list, and array values. It eagerly consumes its input;
+  memoized lazy seq nodes are not recomputed on later reductions.
 - `apply` supports integer binary reducers over typed lists, vectors, and sets,
   including fixed leading integer arguments before the final collection.
 - `get` supports vector indexes, and `nth` supports typed default values for
@@ -282,7 +285,8 @@ The compiler infers record-like map shapes automatically:
 - `rest` preserves the concrete list, vector, or set type and is empty-safe.
 - `empty` returns a same-typed empty list, vector, set, or string.
 - `into` transfers elements between typed list, vector, and set collections.
-- `take` and `drop` return same-typed list or vector slices.
+- `take` and `drop` return typed memoized lazy seqs for every built-in seqable
+  input.
 - `reverse` returns a same-typed reversed list or vector.
 - `every?`, `not-any?`, and `not-every?` work on typed lists, vectors, and
   sets.

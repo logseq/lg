@@ -3691,6 +3691,45 @@ let test_lazy_map_accepts_all_builtin_seqable_types () =
     "(2 3)\n(2 3)\n(2 3)\n(2 3)\n(\"a\" \"b\")\n(5 6)\n"
     ocaml_source
 
+let test_reduce_accepts_all_builtin_seqable_types () =
+  let source =
+    {|
+(def host-seq
+  (ocaml-call :ocaml/Seq.t<int> List.to_seq (list 4 5)))
+(println (reduce (fn [acc x] (+ acc x)) 0 (list 1 2)))
+(println (reduce (fn [acc x] (+ acc x)) 0 [1 2]))
+(println (reduce (fn [acc x] (+ acc x)) 0 (hash-set 2 1)))
+(println (reduce (fn [acc x] (+ acc x)) 0 (ocaml-array 1 2)))
+(println (reduce (fn [acc ch] (str acc ch)) "" "ab"))
+(println (reduce (fn [acc x] (+ acc x)) 0 host-seq))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "reduce_accepts_all_builtin_seqable_types"
+    "3\n3\n3\n3\nab\n9\n" ocaml_source
+
+let test_reduce_realizes_lazy_seq_once () =
+  let source =
+    {|
+(def calls (ocaml-ref 0))
+(def values
+  (map
+    (fn [x]
+      (do
+        (ocaml-reset! calls (+ (ocaml-deref calls) 1))
+        x))
+    [1 2 3]))
+(println (ocaml-deref calls))
+(println (reduce + 0 values))
+(println (ocaml-deref calls))
+(println (reduce + 0 values))
+(println (ocaml-deref calls))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "reduce_realizes_lazy_seq_once" "0\n6\n3\n6\n3\n"
+    ocaml_source
+
 let test_batched_sequence_functions_reject_type_mismatch () =
   Cljml.Compiler.compile_string {|(def x (concat [1] ["two"]))|}
   |> expect_error "concat element types must match"
@@ -4138,7 +4177,7 @@ let test_set_sequence_predicates_reject_bad_predicates () =
 
 let test_reduce_rejects_bad_set_reducers () =
   Cljml.Compiler.compile_string {|(def x (reduce (fn [acc x] (str acc x)) 0 (hash-set 1 2)))|}
-  |> expect_error "reduce function type does not match init and set"
+  |> expect_error "reduce function type does not match init and sequence"
 
 let test_set_map_and_filter_core_api () =
   let source =
@@ -8320,6 +8359,9 @@ let tests =
       test_lazy_take_bounds_infinite_range_and_repeat );
     ( "lazy map accepts all builtin seqable types",
       test_lazy_map_accepts_all_builtin_seqable_types );
+    ( "reduce accepts all builtin seqable types",
+      test_reduce_accepts_all_builtin_seqable_types );
+    ("reduce realizes lazy seq once", test_reduce_realizes_lazy_seq_once);
     ( "batched sequence functions reject type mismatch",
       test_batched_sequence_functions_reject_type_mismatch );
     ( "batched sequence functions reject bad functions",

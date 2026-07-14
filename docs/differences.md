@@ -346,6 +346,10 @@ the element types match.
 
 `take` and `drop` return lazy seqs and accept every built-in seqable type.
 
+`reduce` is eager and accepts every built-in seqable type: lists, vectors,
+sets, arrays, strings, typed lazy seqs, and host OCaml `Seq.t`, list, and array
+values. Reducing a memoized lazy seq realizes each source node at most once.
+
 `reverse` returns a same-typed reversed list or vector.
 
 `every?`, `not-any?`, `not-every?`, and the current static subset of `some`
