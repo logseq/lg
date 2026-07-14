@@ -1,0 +1,169 @@
+(ns me.tonsky.persistent-sorted-set.traversal
+  (:require
+    [me.tonsky.persistent-sorted-set.arrays :as arrays]
+    [me.tonsky.persistent-sorted-set.nodes :as nodes]
+    [me.tonsky.persistent-sorted-set.path :as path]
+    [me.tonsky.persistent-sorted-set.search :as search]))
+
+(defn node-keys-at-path [root current-path shift]
+  (loop [node root
+         level shift]
+    (if (pos? level)
+      (recur
+        (arrays/aget
+          (nodes/node-children node)
+          (path/path-get current-path level))
+        (dec level))
+      (nodes/node-keys node))))
+
+(defn node-value-at-path [root current-path shift]
+  (arrays/aget
+    (node-keys-at-path root current-path shift)
+    (path/path-get current-path 0)))
+
+(defn rightmost-path [root current-path level]
+  (loop [node root
+         current-path current-path
+         level level]
+    (if (pos? level)
+      (let [children (nodes/node-children node)
+            last-idx (dec (arrays/alength children))]
+        (recur
+          (arrays/aget children last-idx)
+          (path/path-set current-path level last-idx)
+          (dec level)))
+      (path/path-set
+        current-path
+        0
+        (dec (arrays/alength (nodes/node-keys node)))))))
+
+(defn- next-path-inner [node current-path level]
+  (let [idx (path/path-get current-path level)]
+    (if (pos? level)
+      (let [children (nodes/node-children node)
+            child (arrays/aget children idx)]
+        (if-some [sub-path
+                  (next-path-inner child current-path (dec level))]
+          (Some (path/path-set sub-path level idx))
+          (if (< (inc idx) (arrays/alength children))
+            (Some (path/path-set path/empty-path level (inc idx)))
+            nil)))
+      (if (< (inc idx) (nodes/node-len node))
+        (Some (path/path-set path/empty-path 0 (inc idx)))
+        nil))))
+
+(defn next-path [root current-path shift]
+  (if (path/path-lt current-path path/empty-path)
+    path/empty-path
+    (if-some [result (next-path-inner root current-path shift)]
+      result
+      (path/path-inc
+        (rightmost-path root path/empty-path shift)))))
+
+(defn- prev-path-inner [node current-path level]
+  (let [idx (path/path-get current-path level)]
+    (cond
+      (and (= 0 level) (= 0 idx))
+      nil
+
+      (= 0 level)
+      (Some (path/path-set path/empty-path 0 (dec idx)))
+
+      (>= idx (nodes/node-len node))
+      (Some (rightmost-path node current-path level))
+
+      :else
+      (let [children (nodes/node-children node)
+            child (arrays/aget children idx)]
+        (if-some [sub-path
+                  (prev-path-inner child current-path (dec level))]
+          (Some (path/path-set sub-path level idx))
+          (if (= 0 idx)
+            nil
+            (let [previous-idx (dec idx)
+                  previous-path
+                  (rightmost-path
+                    (arrays/aget children previous-idx)
+                    current-path
+                    (dec level))]
+              (Some (path/path-set previous-path level previous-idx)))))))))
+
+(defn prev-path [root current-path shift]
+  (if (> (path/path-get current-path (inc shift)) 0)
+    (rightmost-path root current-path shift)
+    (if-some [result (prev-path-inner root current-path shift)]
+      result
+      (path/path-dec path/empty-path))))
+
+(defn seek-path [root key cmp shift]
+  (loop [node root
+         current-path path/empty-path
+         level shift]
+    (let [keys (nodes/node-keys node)
+          keys-length (arrays/alength keys)]
+      (if (= 0 level)
+        (let [idx (search/binary-search-l cmp keys (dec keys-length) key)]
+          (if (= idx keys-length)
+            nil
+            (Some (path/path-set current-path 0 idx))))
+        (let [idx (search/binary-search-l cmp keys (- keys-length 2) key)]
+          (recur
+            (arrays/aget (nodes/node-children node) idx)
+            (path/path-set current-path level idx)
+            (dec level)))))))
+
+(defn rseek-path [root key cmp shift]
+  (loop [node root
+         current-path path/empty-path
+         level shift]
+    (let [keys (nodes/node-keys node)
+          keys-length (arrays/alength keys)]
+      (if (= 0 level)
+        (path/path-set
+          current-path
+          0
+          (search/binary-search-r cmp keys (dec keys-length) key))
+        (let [idx (search/binary-search-r cmp keys (- keys-length 2) key)]
+          (recur
+            (arrays/aget (nodes/node-children node) idx)
+            (path/path-set current-path level idx)
+            (dec level)))))))
+
+(defn node-seq-between [root left right shift]
+  (ocaml-seq-unfold
+    (fn [current]
+      (if (path/path-lt current right)
+        (Some
+          (tuple
+            (node-value-at-path root current shift)
+            (next-path root current shift)))
+        nil))
+    left))
+
+(defn node-rseq-between [root left right shift]
+  (let [before-left (prev-path root left shift)]
+    (ocaml-seq-unfold
+      (fn [current]
+        (if (path/path-lt before-left current)
+          (Some
+            (tuple
+              (node-value-at-path root current shift)
+              (prev-path root current shift)))
+          nil))
+      (prev-path root right shift))))
+
+(defn node-seq [root shift]
+  (let [right
+        (next-path
+          root
+          (rightmost-path root path/empty-path shift)
+          shift)]
+    (node-seq-between root path/empty-path right shift)))
+
+(defn node-rseq [root shift]
+  (let [right
+        (next-path
+          root
+          (rightmost-path root path/empty-path shift)
+          shift)]
+    (node-rseq-between root path/empty-path right shift)))

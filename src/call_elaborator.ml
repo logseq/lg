@@ -331,6 +331,30 @@ let create ~compile_expr =
             | [ value ] -> TOcaml_app ("result", [ TUnknown; value.ty ])
             | _ -> TUnknown)
           1
+    | "ocaml-seq-unfold" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok
+            [ { ty =
+                  TFn
+                    ( [ parameter_ty ],
+                      TOcaml_app
+                        ("option", [ TTuple [ element_ty; next_ty ] ]) );
+                semantic_expr = step;
+                _ };
+              initial ]
+          when Types.assignable ~policy:Host_boundary ~expected:parameter_ty
+                 ~actual:initial.ty
+               && Types.assignable ~policy:Host_boundary ~expected:parameter_ty
+                    ~actual:next_ty ->
+            Ok
+              (typed_ir (TOcaml_app ("Seq.t", [ element_ty ]))
+                 (apply "Lg_runtime.Runtime_seq.memoize"
+                    [ apply "Seq.unfold" [ step; initial.semantic_expr ] ]))
+        | Ok [ _; _ ] ->
+            Error.error
+              "ocaml-seq-unfold expects a state step function and initial state"
+        | Ok _ -> Error.error "ocaml-seq-unfold expects 2 arguments")
     | "ocaml-array" -> (
         match compile_args () with
         | Error _ as err -> err

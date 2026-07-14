@@ -745,7 +745,10 @@ let create ~compile_expr =
                       match fn.ty with
                       | TFn ([ acc_ty; item_ty ], ret)
                         when Types.equal acc_ty init.ty
-                             && Types.equal item_ty inner
+                             && (Types.equal item_ty inner
+                                || Types.equal inner TUnknown
+                                || Types.assignable ~policy:Host_boundary
+                                     ~expected:item_ty ~actual:inner)
                              && Types.equal ret init.ty ->
                           Ok
                             (typed_ir init.ty
@@ -753,7 +756,10 @@ let create ~compile_expr =
                                   collection sequence))
                       | TFn ([ acc_ty; item_ty ], ret)
                         when Types.equal acc_ty init.ty
-                             && Types.equal item_ty inner
+                             && (Types.equal item_ty inner
+                                || Types.equal inner TUnknown
+                                || Types.assignable ~policy:Host_boundary
+                                     ~expected:item_ty ~actual:inner)
                              && (match Types.reduced_element ret with
                                 | Some reduced_ty ->
                                     Types.equal reduced_ty init.ty

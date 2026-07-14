@@ -4590,6 +4590,26 @@ let test_lazy_map_accepts_all_builtin_seqable_types () =
     "(2 3)\n(2 3)\n(2 3)\n(2 3)\n(\"a\" \"b\")\n(5 6)\n"
     ocaml_source
 
+let test_ocaml_seq_unfold_builds_typed_lazy_sequences () =
+  let source =
+    {|
+(def values
+  (ocaml-seq-unfold
+    (fn [state]
+      (if (< state 4)
+        (Some (tuple state (inc state)))
+        nil))
+    1))
+(println (reduce + 0 values))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "ocaml_seq_unfold_builds_typed_lazy_sequences" "6\n"
+    ocaml_source;
+  Lg.Compiler.compile_string {|(ocaml-seq-unfold (fn [x] (inc x)) 0)|}
+  |> expect_error_contains
+       "ocaml-seq-unfold expects a state step function and initial state"
+
 let test_reduce_accepts_all_builtin_seqable_types () =
   let source =
     {|
@@ -9869,6 +9889,8 @@ let tests =
       test_lazy_take_bounds_infinite_range_and_repeat );
     ( "lazy map accepts all builtin seqable types",
       test_lazy_map_accepts_all_builtin_seqable_types );
+    ( "OCaml Seq unfold builds typed lazy sequences",
+      test_ocaml_seq_unfold_builds_typed_lazy_sequences );
     ( "reduce accepts all builtin seqable types",
       test_reduce_accepts_all_builtin_seqable_types );
     ("reduce realizes lazy seq once", test_reduce_realizes_lazy_seq_once);

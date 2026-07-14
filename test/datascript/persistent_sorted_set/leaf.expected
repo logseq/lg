@@ -10,6 +10,11 @@ delete-merge-right:true:true:true:true
 delete-redistribute-right:true:true:true:true
 delete-stable:true:true:true:true
 delete-branch:true:true:true:true:true
+traversal:true:true:true:true:true
+seek:true:true:true:true
+traversal-deep:true:true:true:true
+sequence:true:true:true:true:true
+sequence-range:true:true:true:true:true
 lookup:true:true:true:true
 insert:true:true:true:true
 split:true:true:true:true:true:true
@@ -22,3 +27,8 @@ delete-merge-right:true:true:true:true
 delete-redistribute-right:true:true:true:true
 delete-stable:true:true:true:true
 delete-branch:true:true:true:true:true
+traversal:true:true:true:true:true
+seek:true:true:true:true
+traversal-deep:true:true:true:true
+sequence:true:true:true:true:true
+sequence-range:true:true:true:true:true

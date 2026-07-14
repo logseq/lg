@@ -606,6 +606,8 @@
   ../datascript/me/tonsky/persistent_sorted_set/array_ops.lgc
   ../datascript/me/tonsky/persistent_sorted_set/search.lgc
   ../datascript/me/tonsky/persistent_sorted_set/nodes.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/path.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/traversal.lgc
   datascript/persistent_sorted_set/leaf_test.lgc
   ../bin/lg_cli.exe)
  (action
@@ -618,6 +620,8 @@
    %{dep:../datascript/me/tonsky/persistent_sorted_set/array_ops.lgc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/search.lgc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/nodes.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/path.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/traversal.lgc}
    %{dep:datascript/persistent_sorted_set/leaf_test.lgc}
    -o
    %{target})))
@@ -636,6 +640,8 @@
   ../datascript/me/tonsky/persistent_sorted_set/array_ops.lgc
   ../datascript/me/tonsky/persistent_sorted_set/search.lgc
   ../datascript/me/tonsky/persistent_sorted_set/nodes.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/path.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/traversal.lgc
   datascript/persistent_sorted_set/leaf_test.lgc
   ../bin/lg_cli.exe)
  (action
@@ -648,6 +654,8 @@
    %{dep:../datascript/me/tonsky/persistent_sorted_set/array_ops.lgc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/search.lgc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/nodes.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/path.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/traversal.lgc}
    %{dep:datascript/persistent_sorted_set/leaf_test.lgc}
    -o
    %{target})))

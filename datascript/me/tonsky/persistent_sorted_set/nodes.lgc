@@ -38,6 +38,12 @@
 (defn node-len [node]
   (arrays/alength (ocaml-field node keys)))
 
+(defn node-keys [node]
+  (ocaml-field node keys))
+
+(defn node-children [node]
+  (ocaml-field node children))
+
 (defn- node-merge [node next _storage]
   (make-tree
     (arrays/aconcat (ocaml-field node keys) (ocaml-field next keys))
