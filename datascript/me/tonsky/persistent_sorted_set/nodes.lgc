@@ -1,0 +1,69 @@
+(ns me.tonsky.persistent-sorted-set.nodes
+  (:require
+    [me.tonsky.persistent-sorted-set.arrays :as arrays]
+    [me.tonsky.persistent-sorted-set.array-ops :as ops]
+    [me.tonsky.persistent-sorted-set.search :as search]))
+
+(def max-len 32)
+
+(defprotocol INode
+  (node-lim-key [_])
+  (node-len [_])
+  (node-lookup [_ cmp key storage])
+  (node-child [_ idx storage])
+  (node-conj [_ cmp key storage]))
+
+(deftype Leaf [keys _address _dirty])
+
+(defn new-leaf [keys]
+  (Leaf. keys nil true))
+
+(defn- new-leaf-address [keys address]
+  (Leaf. keys address true))
+
+(extend-type Leaf
+  INode
+  (node-lim-key [this]
+    (arrays/alast (ocaml-field this keys)))
+
+  (node-len [this]
+    (arrays/alength (ocaml-field this keys)))
+
+  (node-child [this idx _storage]
+    (arrays/aget (ocaml-field this keys) idx))
+
+  (node-lookup [this cmp key storage]
+    (let [idx (search/lookup-exact cmp (ocaml-field this keys) key)]
+      (when-not (= -1 idx)
+        (node-child this idx storage))))
+
+  (node-conj [this cmp key _storage]
+    (let [keys (ocaml-field this keys)
+          address (ocaml-field this _address)
+          idx (search/binary-search-l cmp keys (dec (arrays/alength keys)) key)
+          keys-length (arrays/alength keys)]
+      (cond
+        (and (< idx keys-length)
+             (= 0 (cmp key (arrays/aget keys idx))))
+        nil
+
+        (= keys-length max-len)
+        (let [middle (arrays/half (inc keys-length))]
+          (if (> idx middle)
+            (arrays/array
+              (new-leaf-address (arrays/aslice keys 0 middle) address)
+              (new-leaf
+                (ops/cut-n-splice
+                  keys middle keys-length idx idx (arrays/array key))))
+            (arrays/array
+              (new-leaf-address
+                (ops/cut-n-splice
+                  keys 0 middle idx idx (arrays/array key))
+                address)
+              (new-leaf (arrays/aslice keys middle keys-length)))))
+
+        :else
+        (arrays/array
+          (new-leaf-address
+            (ops/splice keys idx idx (arrays/array key))
+            address))))))

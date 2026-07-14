@@ -25,6 +25,9 @@
 (defmacro aclone [values]
   `(ocaml-array-copy ~values))
 
+(defmacro aslice [values from to]
+  `(ocaml-array-slice ~values ~from ~to))
+
 (defmacro aconcat [left right]
   `(ocaml-array-append ~left ~right))
 

@@ -4183,6 +4183,17 @@ let test_when_returns_nullable_value () =
   in
   assert_ocaml_runs "when_returns_nullable_value" "1\n" ocaml_source
 
+let test_when_not_negates_the_condition () =
+  let source =
+    {|
+(def skipped (when-not true 1))
+(def value (when-not false (+ 2 2)))
+(println (str (if-some [x value] x 0) ":" (nil? skipped)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "when_not_negates_the_condition" "4:true\n" ocaml_source
+
 let test_conditional_forms_infer_bool_params () =
   let source =
     {|
@@ -9765,6 +9776,7 @@ let tests =
     ("cond rejects branch type mismatch", test_cond_rejects_branch_type_mismatch);
     ("cond accepts Clojure truthy tests", test_cond_accepts_clojure_truthy_tests);
     ("when returns nullable value", test_when_returns_nullable_value);
+    ("when-not negates the condition", test_when_not_negates_the_condition);
     ( "conditional forms infer bool params",
       test_conditional_forms_infer_bool_params );
     ("batched core functions work", test_batched_core_functions_work);

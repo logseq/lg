@@ -26,4 +26,5 @@
   (str "transform:"
        (= [6 8 4] (vec mapped)) ":"
        (= [2 3 4] (vec values)) ":"
+       (= [3 4] (vec (arrays/aslice values 1 3))) ":"
        (= [7 8] (vec (arrays/into-array [7 8])))))

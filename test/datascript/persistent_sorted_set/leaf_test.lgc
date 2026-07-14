@@ -1,0 +1,39 @@
+(ns me.tonsky.persistent-sorted-set.test.leaf
+  (:require
+    [me.tonsky.persistent-sorted-set.arrays :as arrays]
+    [me.tonsky.persistent-sorted-set.nodes :as nodes]))
+
+(defn int-compare [left right]
+  (compare left right))
+
+(def leaf (nodes/new-leaf (arrays/array 1 3 5)))
+(println
+  (str "lookup:"
+       (= 3 (nodes/node-len leaf)) ":"
+       (= 5 (nodes/node-lim-key leaf)) ":"
+       (= 3 (nodes/node-lookup leaf int-compare 3 nil)) ":"
+       (nil? (nodes/node-lookup leaf int-compare 4 nil))))
+
+(if-some [inserted-nodes (nodes/node-conj leaf int-compare 4 nil)]
+  (let [inserted (arrays/aget inserted-nodes 0)]
+    (println
+      (str "insert:"
+           (= 1 (arrays/alength inserted-nodes)) ":"
+           (= 4 (nodes/node-len inserted)) ":"
+           (= 4 (nodes/node-lookup inserted int-compare 4 nil)) ":"
+           (nil? (nodes/node-conj inserted int-compare 4 nil)))))
+  (println "insert:false:false:false:false"))
+
+(def full-leaf (nodes/new-leaf (arrays/into-array (range 0 32))))
+(if-some [split-nodes (nodes/node-conj full-leaf int-compare 40 nil)]
+  (let [split-left (arrays/aget split-nodes 0)
+        split-right (arrays/aget split-nodes 1)]
+    (println
+      (str "split:"
+           (= 2 (arrays/alength split-nodes)) ":"
+           (= 16 (nodes/node-len split-left)) ":"
+           (= 17 (nodes/node-len split-right)) ":"
+           (= 15 (nodes/node-lim-key split-left)) ":"
+           (= 40 (nodes/node-lim-key split-right)) ":"
+           (= 40 (nodes/node-lookup split-right int-compare 40 nil)))))
+  (println "split:false:false:false:false:false:false"))

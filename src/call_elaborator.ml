@@ -14,7 +14,7 @@ type t = {
 
 let array_element_type = function
   | TArray element_ty -> Some element_ty
-  | TUnknown -> Some TUnknown
+  | TUnknown | TVar _ -> Some TUnknown
   | _ -> None
 
 let compatible_array_types left right =
@@ -24,6 +24,10 @@ let compatible_array_types left right =
       || Types.equal right TUnknown
       || Types.assignable ~policy:Host_boundary ~expected:left ~actual:right
       || Types.assignable ~policy:Host_boundary ~expected:right ~actual:left
+  | _ -> false
+
+let int_parameter_type = function
+  | TInt | TUnknown | TVar _ -> true
   | _ -> false
 
 let create ~compile_expr =
@@ -372,7 +376,7 @@ let create ~compile_expr =
         | Ok [ array; index ] -> (
             match array_element_type array.ty with
             | Some element_ty ->
-                if Types.equal index.ty TInt then
+                if int_parameter_type index.ty then
                   Ok
                     (typed_ir element_ty
                        (apply "Array.get" [ array.semantic_expr; index.semantic_expr ]))
@@ -385,7 +389,7 @@ let create ~compile_expr =
         | Ok [ array; index; value ] -> (
             match array_element_type array.ty with
             | Some element_ty ->
-                if not (Types.equal index.ty TInt) then
+                if not (int_parameter_type index.ty) then
                   Error.error "OCaml array index must be int"
                 else if
                   not
@@ -403,9 +407,16 @@ let create ~compile_expr =
     | "ocaml-array-length" -> (
         match compile_args () with
         | Error _ as err -> err
-        | Ok [ { ty = (TArray _ | TUnknown); semantic_expr; _ } ] ->
-            Ok (typed_ir TInt (apply "Array.length" [ semantic_expr ]))
-        | Ok [ _ ] -> Error.error "ocaml-array-length expects an OCaml array"
+        | Ok [ value ] -> (
+            match array_element_type value.ty with
+            | Some _ ->
+                Ok
+                  (typed_ir TInt
+                     (apply "Array.length" [ value.semantic_expr ]))
+            | None ->
+                Error.error
+                  ("ocaml-array-length expects an OCaml array, got "
+                 ^ Types.source_name value.ty))
         | Ok _ -> Error.error "ocaml-array-length expects 1 argument")
     | "ocaml-array-copy!" -> (
         match compile_args () with
@@ -436,6 +447,21 @@ let create ~compile_expr =
                  (apply "Array.copy" [ semantic_expr ]))
         | Ok [ _ ] -> Error.error "ocaml-array-copy expects an OCaml array"
         | Ok _ -> Error.error "ocaml-array-copy expects 1 argument")
+    | "ocaml-array-slice" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok
+            [ { ty = array_type; semantic_expr = array; _ };
+              { ty = TInt; semantic_expr = from; _ };
+              { ty = TInt; semantic_expr = to_; _ } ] -> (
+            match array_element_type array_type with
+            | Some element_ty ->
+                let length = Semantic_ir.Infix ("-", to_, from) in
+                Ok
+                  (typed_ir (TArray element_ty)
+                     (apply "Array.sub" [ array; from; length ]))
+            | None -> Error.error "ocaml-array-slice expects an OCaml array")
+        | Ok _ -> Error.error "ocaml-array-slice expects an array and two int indexes")
     | "ocaml-array-append" -> (
         match compile_args () with
         | Error _ as err -> err

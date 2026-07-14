@@ -598,3 +598,80 @@
    %{exe:persistent_sorted_set_helpers_native.exe}
    %{dep:persistent-sorted-set-helpers-melange/test/persistent_sorted_set_helpers_melange.js}
    %{dep:datascript/persistent_sorted_set/helpers.expected})))
+
+(rule
+ (target persistent_sorted_set_leaf_native.ml)
+ (deps
+  ../datascript/me/tonsky/persistent_sorted_set/arrays.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/array_ops.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/search.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/nodes.lgc
+  datascript/persistent_sorted_set/leaf_test.lgc
+  ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   native
+   --compile-files
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/array_ops.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/search.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/nodes.lgc}
+   %{dep:datascript/persistent_sorted_set/leaf_test.lgc}
+   -o
+   %{target})))
+
+(executable
+ (name persistent_sorted_set_leaf_native)
+ (modules persistent_sorted_set_leaf_native)
+ (flags
+  (:standard -w -32-37))
+ (libraries lg.runtime rrbvec))
+
+(rule
+ (target persistent_sorted_set_leaf_melange.ml)
+ (deps
+  ../datascript/me/tonsky/persistent_sorted_set/arrays.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/array_ops.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/search.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/nodes.lgc
+  datascript/persistent_sorted_set/leaf_test.lgc
+  ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   melange
+   --compile-files
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/array_ops.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/search.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/nodes.lgc}
+   %{dep:datascript/persistent_sorted_set/leaf_test.lgc}
+   -o
+   %{target})))
+
+(melange.emit
+ (target persistent-sorted-set-leaf-melange)
+ (alias persistent-sorted-set-leaf-melange)
+ (module_systems es6)
+ (modules persistent_sorted_set_leaf_melange)
+ (compile_flags -w -32-37)
+ (libraries lg.runtime rrbvec))
+
+(rule
+ (alias runtest)
+ (deps
+  datascript/value_smoke.sh
+  datascript/persistent_sorted_set/leaf.expected
+  persistent_sorted_set_leaf_native.exe
+  (alias persistent-sorted-set-leaf-melange)
+  persistent-sorted-set-leaf-melange/test/persistent_sorted_set_leaf_melange.js)
+ (action
+  (run
+   sh
+   %{dep:datascript/value_smoke.sh}
+   %{exe:persistent_sorted_set_leaf_native.exe}
+   %{dep:persistent-sorted-set-leaf-melange/test/persistent_sorted_set_leaf_melange.js}
+   %{dep:datascript/persistent_sorted_set/leaf.expected})))
