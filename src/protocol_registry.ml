@@ -14,11 +14,22 @@ type declaration = {
   method_locations : Location.t Method_map.t;
 }
 
-type receiver_id =
+type receiver_id = Receiver_id.t =
   | Int_receiver
+  | Float_receiver
+  | Char_receiver
   | String_receiver
+  | Symbol_receiver
   | Keyword_receiver
   | Bool_receiver
+  | Unit_receiver
+  | List_receiver
+  | Vector_receiver
+  | Set_receiver
+  | Array_receiver
+  | Ref_receiver
+  | Tuple_receiver
+  | Host_receiver of string
   | Record_receiver of Type_id.t
 
 module Implementation_key = struct

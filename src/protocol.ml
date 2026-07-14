@@ -60,30 +60,24 @@ let method_is_ambiguous scope env method_name =
 
 let receiver_id = function
   | TInt -> Some "int"
+  | TFloat -> Some "float"
+  | TChar -> Some "char"
   | TString -> Some "string"
+  | TSymbol -> Some "symbol"
   | TKeyword -> Some "keyword"
   | TBool -> Some "bool"
+  | TUnit -> Some "unit"
+  | TList _ -> Some "list"
+  | TVector _ -> Some "vector"
+  | TSet _ -> Some "set"
+  | TArray _ -> Some "array"
+  | TRef _ -> Some "ref"
+  | TTuple _ -> Some "tuple"
+  | TOcaml name | TOcaml_app (name, _) -> Some name
   | TNamed_record record -> Some record.type_name
   | _ -> None
 
-let registry_receiver_id = function
-  | TInt -> Some Protocol_registry.Int_receiver
-  | TString -> Some String_receiver
-  | TKeyword -> Some Keyword_receiver
-  | TBool -> Some Bool_receiver
-  | TNamed_record record -> Some (Record_receiver record.type_id)
-  | _ -> None
-
-let receiver_annotation receiver_ty =
-  let keyword =
-    match receiver_ty with
-    | TInt -> Some ":int"
-    | TString -> Some ":string"
-    | TKeyword -> Some ":keyword"
-    | TBool -> Some ":bool"
-    | _ -> None
-  in
-  Option.map (fun keyword -> "^" ^ keyword) keyword
+let registry_receiver_id = Receiver_id.of_type
 
 let lookup_marker scope env method_name =
   let registry = Env.protocols env in
@@ -217,14 +211,12 @@ let annotate_receiver receiver_ty = function
             Error.error
               ("protocol implementation receiver must be " ^ source_name receiver_ty))
   | FVector (FSymbol name :: rest) -> (
-      match receiver_ty with
-      | TNamed_record _ -> Ok (FVector (FSymbol name :: rest))
-      | _ -> (match receiver_annotation receiver_ty with
+      match registry_receiver_id receiver_ty with
+      | Some _ -> Ok (FVector (FSymbol name :: rest))
       | None ->
           Error.error
             ("protocol implementations do not support receiver type "
-           ^ source_name receiver_ty)
-      | Some annotation -> Ok (FVector (FSymbol annotation :: FSymbol name :: rest))))
+           ^ source_name receiver_ty))
   | FVector _ -> Error.error "protocol methods must have a receiver parameter"
   | _ -> Error.error "protocol method parameters must be a vector"
 

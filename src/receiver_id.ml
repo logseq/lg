@@ -1,0 +1,36 @@
+type t =
+  | Int_receiver
+  | Float_receiver
+  | Char_receiver
+  | String_receiver
+  | Symbol_receiver
+  | Keyword_receiver
+  | Bool_receiver
+  | Unit_receiver
+  | List_receiver
+  | Vector_receiver
+  | Set_receiver
+  | Array_receiver
+  | Ref_receiver
+  | Tuple_receiver
+  | Host_receiver of string
+  | Record_receiver of Type_id.t
+
+let of_type = function
+  | Semantic_type.TInt -> Some Int_receiver
+  | TFloat -> Some Float_receiver
+  | TChar -> Some Char_receiver
+  | TString -> Some String_receiver
+  | TSymbol -> Some Symbol_receiver
+  | TKeyword -> Some Keyword_receiver
+  | TBool -> Some Bool_receiver
+  | TUnit -> Some Unit_receiver
+  | TList _ -> Some List_receiver
+  | TVector _ -> Some Vector_receiver
+  | TSet _ -> Some Set_receiver
+  | TArray _ -> Some Array_receiver
+  | TRef _ -> Some Ref_receiver
+  | TTuple _ -> Some Tuple_receiver
+  | TOcaml name | TOcaml_app (name, _) -> Some (Host_receiver name)
+  | TNamed_record record -> Some (Record_receiver record.type_id)
+  | TUnknown | TVar _ | TFn _ | TRecord _ -> None

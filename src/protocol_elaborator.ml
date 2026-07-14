@@ -90,11 +90,7 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                 match Protocol.annotate_receiver receiver_ty params with
                 | Error _ as err -> err
                 | Ok params -> (
-                    let param_type_overrides =
-                      match receiver_ty with
-                      | TNamed_record _ -> [ Some receiver_ty ]
-                      | _ -> []
-                    in
+                    let param_type_overrides = [ Some receiver_ty ] in
                     match
                       Expression_elaborator.compile_fn ~param_type_overrides scope env params body_forms
                     with

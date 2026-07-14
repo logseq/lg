@@ -2679,6 +2679,63 @@ let test_static_protocols_dispatch_by_receiver_type () =
   assert_ocaml_runs "static_protocols_dispatch_by_receiver_type"
     "int:7:str:Ada\n" ocaml_source
 
+let test_protocols_support_float_and_symbol_receivers () =
+  let source =
+    {|
+(defprotocol Labelled (label [value] :string))
+(extend-type :float Labelled
+  (label [value] (str "float:" value)))
+(extend-type :symbol Labelled
+  (label [value] (str "symbol:" (name value))))
+(println (str (label 2.5) ":" (label (symbol "ready"))))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "protocols_support_float_and_symbol_receivers"
+    "float:2.5:symbol:ready\n" ocaml_source
+
+let test_protocols_support_generic_host_constructor_receivers () =
+  let source =
+    {|
+(defprotocol Described (describe [value] :string))
+(extend-type :option<int> Described
+  (describe [value]
+    (match value
+      (Some number) (str "some:" number)
+      None "none")))
+(println (str (describe (Some 7)) ":" (describe None)))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "protocols_support_generic_host_constructor_receivers"
+    "some:7:none\n" ocaml_source
+
+let test_protocols_support_external_ocaml_receivers () =
+  let source =
+    {|
+(defprotocol Sized (byte-size [value] :int))
+(extend-type :Unix/stats Sized
+  (byte-size [value] (:st-size value)))
+(defn file-size [^:Unix/stats stats]
+  (byte-size stats))
+|}
+  in
+  let ocaml_source = Cljml.Compiler.compile_string source |> expect_ok in
+  if not (string_contains_substring ocaml_source ".st_size") then
+    failwith "external protocol implementation should compile native field access"
+
+let test_protocols_reject_duplicate_host_constructor_implementations () =
+  Cljml.Compiler.compile_string
+    {|
+(defprotocol Described (describe [value] :string))
+(extend-type :option<int> Described
+  (describe [value] "first"))
+(extend-type :option<string> Described
+  (describe [value] "second"))
+|}
+  |> expect_error
+       "duplicate implementation of Described/describe for ocaml/option<ocaml/string>"
+
 let test_static_protocols_reject_missing_implementation () =
   let source =
     {|
@@ -8033,6 +8090,14 @@ let tests =
       test_unannotated_function_parameters_reject_missing_structural_map_fields );
     ( "static protocols dispatch by receiver type",
       test_static_protocols_dispatch_by_receiver_type );
+    ( "protocols support float and symbol receivers",
+      test_protocols_support_float_and_symbol_receivers );
+    ( "protocols support generic host constructor receivers",
+      test_protocols_support_generic_host_constructor_receivers );
+    ( "protocols support external OCaml receivers",
+      test_protocols_support_external_ocaml_receivers );
+    ( "protocols reject duplicate host constructor implementations",
+      test_protocols_reject_duplicate_host_constructor_implementations );
     ( "static protocols reject missing implementations",
       test_static_protocols_reject_missing_implementation );
     ( "static protocols reject return type mismatch",
