@@ -2335,23 +2335,23 @@ let test_recursive_record_array_fields_work_with_array_primitives () =
   (keys :array<a>)
   (children :array<tree<a>>))
 (def leaf
-  (record tree (keys (ocaml-array 1 2 3)) (children (Array.of_list (list)))))
+  (record tree (keys (array 1 2 3)) (children (Array.of_list (list)))))
 (def root
-  (record tree (keys (ocaml-array 3)) (children (ocaml-array leaf))))
+  (record tree (keys (array 3)) (children (array leaf))))
 (defn last-key [node]
   (let [children (:children node)]
-    (if (= 0 (ocaml-array-length children))
+    (if (= 0 (alength children))
       (let [keys (:keys node)]
-        (ocaml-array-get keys (dec (ocaml-array-length keys))))
+        (aget keys (dec (alength keys))))
       (last-key
-        (ocaml-array-get children (dec (ocaml-array-length children)))))))
+        (aget children (dec (alength children)))))))
 (defn append-children [left right]
-  (ocaml-array-append
+  (aconcat
     (:children left)
     (:children right)))
 (println
   (str (+ (last-key root) 0) ":"
-       (ocaml-array-length (append-children root root))))
+       (alength (append-children root root))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -2759,13 +2759,13 @@ let test_double_converts_ints_and_preserves_floats () =
 let test_ocaml_arrays_support_construction_read_and_mutation () =
   let source =
     {|
-(def values (ocaml-array 1 2 3))
-(ocaml-array-set! values 1 42)
-(ocaml-array-unsafe-set! values 2 99)
-(def empty-values (ocaml-array-of :int))
+(def values (array 1 2 3))
+(aset values 1 42)
+(unsafe-aset values 2 99)
+(def empty-values (array-of :int))
 (println
-  (str (+ (ocaml-array-get values 1) 0) ":"
-       (+ (ocaml-array-unsafe-get values 2) 0) ":"
+  (str (+ (aget values 1) 0) ":"
+       (+ (unsafe-aget values 2) 0) ":"
        (Array.length empty-values)))
 |}
   in
@@ -2779,17 +2779,17 @@ let test_ocaml_array_primitives_support_polymorphic_helpers () =
 (defn copy-array [source]
   (Array.copy source))
 (defn first-array [values]
-  (ocaml-array-get values 0))
+  (aget values 0))
 (defn seq-to-sorted-array [cmp values]
-  (let [result (ocaml-array-from values)]
-    (ocaml-array-sort! cmp result)
+  (let [result (into-array values)]
+    (asort! cmp result)
     result))
-(def copied (copy-array (ocaml-array 7 8 9)))
+(def copied (copy-array (array 7 8 9)))
 (def converted
   (seq-to-sorted-array (fn [left right] (- left right)) [5 4]))
 (println
-  (str (ocaml-array-length copied) ":" (+ (first-array copied) 0) ":"
-       (ocaml-array-length converted) ":" (+ (ocaml-array-get converted 1) 0)))
+  (str (alength copied) ":" (+ (first-array copied) 0) ":"
+       (alength converted) ":" (+ (aget converted 1) 0)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -2815,8 +2815,8 @@ let test_concise_standard_type_annotations () =
   (current :ref<option<value>>)
   (visit :fn<value;unit>))
 (def holder-value
-  (record holder (values (ocaml-array 1 2)) (current (volatile! (Some 1))) (visit (fn [value] (Stdlib.ignore value)))))
-(println (ocaml-array-length (:values holder-value)))
+  (record holder (values (array 1 2)) (current (volatile! (Some 1))) (visit (fn [value] (Stdlib.ignore value)))))
+(println (alength (:values holder-value)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -2824,17 +2824,17 @@ let test_concise_standard_type_annotations () =
     ocaml_source
 
 let test_ocaml_arrays_reject_invalid_operations () =
-  Lg.Compiler.compile_string {|(def values (ocaml-array 1 "two"))|}
+  Lg.Compiler.compile_string {|(def values (array 1 "two"))|}
   |> expect_error_contains "OCaml array elements must have the same type";
-  Lg.Compiler.compile_string {|(def value (ocaml-array-get 42 0))|}
-  |> expect_error_contains "ocaml-array-get expects an OCaml array";
+  Lg.Compiler.compile_string {|(def value (aget 42 0))|}
+  |> expect_error_contains "aget expects an OCaml array";
   Lg.Compiler.compile_string
-    {|(def value (ocaml-array-get (ocaml-array 1 2) "0"))|}
+    {|(def value (aget (array 1 2) "0"))|}
   |> expect_error_contains "OCaml array index must be int";
   Lg.Compiler.compile_string
-    {|(ocaml-array-set! (ocaml-array 1 2) 0 "bad")|}
+    {|(aset (array 1 2) 0 "bad")|}
   |> expect_error_contains "OCaml array value must match element type";
-  Lg.Compiler.compile_string {|(def values (ocaml-array))|}
+  Lg.Compiler.compile_string {|(def values (array))|}
   |> expect_error_contains "empty OCaml array requires a type"
 
 let test_ocaml_refs_reject_invalid_operations () =
@@ -4626,7 +4626,7 @@ let test_lazy_map_accepts_all_builtin_seqable_types () =
 (println (pr-str (map inc (list 1 2))))
 (println (pr-str (map inc [1 2])))
 (println (pr-str (map inc (hash-set 2 1))))
-(println (pr-str (map inc (ocaml-array 1 2))))
+(println (pr-str (map inc (array 1 2))))
 (println (pr-str (map (fn [ch] (str ch)) "ab")))
 (println (pr-str (map inc host-seq)))
 |}
@@ -4640,7 +4640,7 @@ let test_ocaml_seq_unfold_builds_typed_lazy_sequences () =
   let source =
     {|
 (def values
-  (ocaml-seq-unfold
+  (seq-unfold
     (fn [state]
       (if (< state 4)
         (Some (tuple state (inc state)))
@@ -4652,27 +4652,27 @@ let test_ocaml_seq_unfold_builds_typed_lazy_sequences () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "ocaml_seq_unfold_builds_typed_lazy_sequences" "6\n"
     ocaml_source;
-  Lg.Compiler.compile_string {|(ocaml-seq-unfold (fn [x] (inc x)) 0)|}
+  Lg.Compiler.compile_string {|(seq-unfold (fn [x] (inc x)) 0)|}
   |> expect_error_contains
-       "ocaml-seq-unfold expects a state step function and initial state"
+       "seq-unfold expects a state step function and initial state"
 
 let test_ocaml_array_sequences_flat_map_lazily () =
   let source =
     {|
 (def arrays
-  (ocaml-array
-    (ocaml-array 1 2)
-    (ocaml-array 3 4)))
+  (array
+    (array 1 2)
+    (array 3 4)))
 (def values
-  (ocaml-seq-flat-map
-    (fn [items] (ocaml-array-to-seq items))
+  (seq-flat-map
+    (fn [items] (array-to-seq items))
     arrays))
 (println
   (str (reduce + 0 values) ":"
        (reduce
          (fn [acc value] (+ (* acc 10) value))
          0
-         (ocaml-array-to-rseq (ocaml-array 1 2 3)))))
+         (array-to-rseq (array 1 2 3)))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -4683,7 +4683,7 @@ let test_ocaml_uncurried_call_emits_melange_direct_application () =
   let source =
     {|
 (defn add-two [left right] (+ left right))
-(println (ocaml-uncurried-call add-two 2 3))
+(println (uncurried-call add-two 2 3))
 |}
   in
   let ocaml_source =
@@ -4691,9 +4691,9 @@ let test_ocaml_uncurried_call_emits_melange_direct_application () =
   in
   if not (string_contains_substring ocaml_source "[@u") then
     failwith "expected an uncurried Melange application";
-  Lg.Compiler.compile_string {|(ocaml-uncurried-call (fn [x] x) 1 2)|}
+  Lg.Compiler.compile_string {|(uncurried-call (fn [x] x) 1 2)|}
   |> expect_error_contains
-       "ocaml-uncurried-call expects a binary function and two compatible arguments"
+       "uncurried-call expects a binary function and two compatible arguments"
 
 let test_reduce_accepts_all_builtin_seqable_types () =
   let source =
@@ -4703,7 +4703,7 @@ let test_reduce_accepts_all_builtin_seqable_types () =
 (println (reduce (fn [acc x] (+ acc x)) 0 (list 1 2)))
 (println (reduce (fn [acc x] (+ acc x)) 0 [1 2]))
 (println (reduce (fn [acc x] (+ acc x)) 0 (hash-set 2 1)))
-(println (reduce (fn [acc x] (+ acc x)) 0 (ocaml-array 1 2)))
+(println (reduce (fn [acc x] (+ acc x)) 0 (array 1 2)))
 (println (reduce (fn [acc ch] (str acc ch)) "" "ab"))
 (println (reduce (fn [acc x] (+ acc x)) 0 host-seq))
 |}
@@ -4797,7 +4797,7 @@ let test_reduce_short_circuits_builtin_and_custom_seqable_types () =
 (println
   (str (sum-before-three (list 1 2 3 100)) ":"
        (sum-before-three [1 2 3 100]) ":"
-       (sum-before-three (ocaml-array 1 2 3 100)) ":"
+       (sum-before-three (array 1 2 3 100)) ":"
        (sum-before-three custom) ":" text ":"
        (reduce (fn [acc x] (reduced (+ acc x))) 10 (list-of :int))))
 |}
@@ -4868,7 +4868,7 @@ let test_reduce_specializes_builtin_reducible_types () =
     {|
 (def list-total (reduce (fn [acc x] (+ acc x)) 0 (list 1 2)))
 (def vector-total (reduce (fn [acc x] (+ acc x)) 0 [1 2]))
-(def array-total (reduce (fn [acc x] (+ acc x)) 0 (ocaml-array 1 2)))
+(def array-total (reduce (fn [acc x] (+ acc x)) 0 (array 1 2)))
 (def string-value (reduce (fn [acc ch] (str acc ch)) "" "ab"))
 (def seq-total (reduce (fn [acc x] (+ acc x)) 0 (range 3)))
 |}
@@ -4915,7 +4915,7 @@ let test_first_and_last_accept_all_seqable_types () =
 (def host-seq
   (List.to_seq (list 7 8)))
 (println (str (+ (first values) 0) ":" (+ (last values) 0)))
-(println (str (first (ocaml-array 1 2)) ":" (last (ocaml-array 1 2))))
+(println (str (first (array 1 2)) ":" (last (array 1 2))))
 (println (str (first "ab") ":" (last "ab")))
 (println (str (+ (first host-seq) 0) ":" (+ (last host-seq) 0)))
 |}
@@ -4944,7 +4944,7 @@ let test_nth_accepts_indexed_and_seqable_host_types () =
     {|
 (def host-seq
   (List.to_seq (list 7 8 9)))
-(println (nth (ocaml-array 1 2 3) 1))
+(println (nth (array 1 2 3) 1))
 (println (str (nth "abc" 1)))
 (println (+ (nth host-seq 2) 0))
 |}
@@ -4972,11 +4972,11 @@ let test_generic_sequence_functions_infer_seqable_dictionaries () =
 (def host-seq
   (List.to_seq (list 6 7)))
 (println (str (total (list 1 2)) ":" (total [1 2]) ":"
-              (total (ocaml-array 1 2)) ":" (total custom) ":"
+              (total (array 1 2)) ":" (total custom) ":"
               (total host-seq)))
 (println (pr-str (increment-all custom)))
 (println (str (size [1 2 3]) ":" (size custom)))
-(println (forwarded-total (ocaml-array 8 9)))
+(println (forwarded-total (array 8 9)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -4989,7 +4989,7 @@ let test_generic_seqable_returns_instantiate_element_types () =
 (defn head [values] (first values))
 (defn tail-value [values] (last values))
 (println (+ (head [4 5]) 1))
-(println (+ (tail-value (ocaml-array 6 7)) 1))
+(println (+ (tail-value (array 6 7)) 1))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -5054,7 +5054,7 @@ let test_logseq_datascript_style_wrappers_use_collection_capabilities () =
 (def query
   (record Datascript.query-result (rows (list 1 2 3))))
 (def children
-  (record Logseq.block-children (blocks (ocaml-array 4 5))))
+  (record Logseq.block-children (blocks (array 4 5))))
 (println (summarize query))
 (println (summarize children))
 |}
@@ -5080,7 +5080,7 @@ let test_sequence_navigation_accepts_all_seqable_types () =
 (println (second value))
 (println (pr-str (nthnext value 2)))
 (println (pr-str (nthrest value 3)))
-(println (pr-str (rest (ocaml-array 4 5 6))))
+(println (pr-str (rest (array 4 5 6))))
 (println (str (second "ab")))
 (println (+ (second host-seq) 0))
 |}
@@ -5104,10 +5104,10 @@ let test_generic_sequence_navigation_infers_seqable_dictionaries () =
 (defn no-values? [values] (empty? values))
 (def value (record datom (fields (list 1 2 3))))
 (println (pr-str (tail value)))
-(println (pr-str (next-tail (ocaml-array 4 5 6))))
+(println (pr-str (next-tail (array 4 5 6))))
 (println (+ (item-two value) 0))
 (println (pr-str (forwarded-tail (list 7 8 9))))
-(println (str (no-values? value) ":" (no-values? (ocaml-array-of :int))))
+(println (str (no-values? value) ":" (no-values? (array-of :int))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -5119,7 +5119,7 @@ let test_sequence_navigation_handles_empty_seqable_values () =
     {|
 (println (pr-str (seq (list-of :int))))
 (println (pr-str (rest (vector-of :int))))
-(println (pr-str (next (ocaml-array-of :int))))
+(println (pr-str (next (array-of :int))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in

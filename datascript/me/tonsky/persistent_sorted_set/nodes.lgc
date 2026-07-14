@@ -129,7 +129,7 @@
           (recur
             (inc idx)
             #?(:melange
-               (ocaml-uncurried-call f result (arrays/aget keys idx))
+               (uncurried-call f result (arrays/aget keys idx))
                :native (f result (arrays/aget keys idx)))))))
     (loop [idx 0
            result initial]
@@ -235,7 +235,7 @@
         (cond
           (and (< idx keys-length)
                (= 0 #?(:melange
-                        (ocaml-uncurried-compare cmp key (arrays/aget keys idx))
+                        (uncurried-compare cmp key (arrays/aget keys idx))
                         :native (cmp key (arrays/aget keys idx)))))
           nil
           (= keys-length max-len)

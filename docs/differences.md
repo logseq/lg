@@ -504,8 +504,8 @@ existence, argument arity, and argument compatibility are checked by the OCaml
 typechecker.
 
 OCaml floats and characters use native literals such as `1.5` and `\a`.
-OCaml arrays use `(ocaml-array 1 2 3)`, `(ocaml-array-of :int)`,
-`ocaml-array-get`, and `ocaml-array-set!`. Mutable references use `atom`,
+OCaml arrays use `(array 1 2 3)`, `(array-of :int)`,
+`aget`, and `aset`. Mutable references use `atom`,
 `deref`, `reset!`, and `swap!`. These forms preserve their element types and
 mutation semantics in the generated Parsetree. Core lg arithmetic remains
 statically typed: uniform integer operands select integer operators, while

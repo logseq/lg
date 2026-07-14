@@ -145,7 +145,7 @@
             (dec level)))))))
 
 (defn node-seq-between [root left right shift storage]
-  (ocaml-seq-unfold
+  (seq-unfold
     (fn [current]
       (if (path/path-lt current right)
         (Some
@@ -157,7 +157,7 @@
 
 (defn node-rseq-between [root left right shift storage]
   (let [before-left (prev-path root left shift storage)]
-    (ocaml-seq-unfold
+    (seq-unfold
       (fn [current]
         (if (path/path-lt before-left current)
           (Some
@@ -169,16 +169,16 @@
 
 (defn node-seq [root shift storage]
   (if (= 0 shift)
-    (ocaml-array-to-seq (nodes/node-keys root))
-    (ocaml-seq-flat-map
+    (array-to-seq (nodes/node-keys root))
+    (seq-flat-map
       (fn [idx]
         (node-seq (nodes/node-child root idx storage) (dec shift) storage))
       (arrays/into-array (range 0 (nodes/node-child-count root))))))
 
 (defn node-rseq [root shift storage]
   (if (= 0 shift)
-    (ocaml-array-to-rseq (nodes/node-keys root))
-    (ocaml-seq-flat-map-rev
+    (array-to-rseq (nodes/node-keys root))
+    (seq-flat-map-rev
       (fn [idx]
         (node-rseq (nodes/node-child root idx storage) (dec shift) storage))
       (arrays/into-array (range 0 (nodes/node-child-count root))))))

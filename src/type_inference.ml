@@ -253,19 +253,19 @@ let infer_params ~lookup_function_ty params body_forms =
         constrain_symbol (TOcaml_app ("option", [ TUnknown ])) params value
     | FList [ FSymbol "count"; FSymbol collection ] ->
         constrain_seqable TUnknown params collection
-    | FList [ FSymbol "ocaml-array-from"; FSymbol collection ] ->
+    | FList [ FSymbol "into-array"; FSymbol collection ] ->
         constrain_seqable TUnknown params collection
-    | FList [ FSymbol "ocaml-array-sort!"; FSymbol comparator; _ ] ->
+    | FList [ FSymbol "asort!"; FSymbol comparator; _ ] ->
         constrain_symbol
           (TFn ([ TUnknown; TUnknown ], TInt))
           params comparator
     | FList
-        [ FSymbol ("ocaml-uncurried-call" | "ocaml-uncurried-compare" as name);
+        [ FSymbol ("uncurried-call" | "uncurried-compare" as name);
           FSymbol fn;
           left;
           right ] ->
         let return_ty =
-          if name = "ocaml-uncurried-compare" then TInt else TUnknown
+          if name = "uncurried-compare" then TInt else TUnknown
         in
         constrain_symbol
           (TFn

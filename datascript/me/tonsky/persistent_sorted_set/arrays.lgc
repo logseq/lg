@@ -8,47 +8,52 @@
   `(Array.make ~size ~initial))
 
 (defmacro into-array [values]
-  `(ocaml-array-from ~values))
+  `(array-from ~values))
 
 (defmacro aget [values index]
-  `(ocaml-array-unsafe-get ~values ~index))
+  `(unsafe-aget ~values ~index))
 
 (defmacro aset [values index value]
-  `(ocaml-array-unsafe-set! ~values ~index ~value))
+  `(unsafe-aset ~values ~index ~value))
 
 (defmacro alength [values]
-  `(ocaml-array-length ~values))
+  `(Array.length ~values))
 
 (defmacro array [& values]
-  `(ocaml-array ~@values))
+  `(array-values ~@values))
 
 (defmacro acopy [source source-start source-end target target-start]
-  `(ocaml-array-copy! ~source ~source-start ~source-end ~target ~target-start))
+  `(Array.blit
+     ~source
+     ~source-start
+     ~target
+     ~target-start
+     (- ~source-end ~source-start)))
 
 (defmacro aclone [values]
-  `(ocaml-array-copy ~values))
+  `(Array.copy ~values))
 
 (defmacro aslice [values from to]
-  `(ocaml-array-slice ~values ~from ~to))
+  `(Array.sub ~values ~from (- ~to ~from)))
 
 (defmacro aconcat [left right]
-  `(ocaml-array-append ~left ~right))
+  `(Array.append ~left ~right))
 
 (defmacro amap [f values]
-  `(ocaml-array-map ~f ~values))
+  `(Array.map ~f ~values))
 
 (defmacro asort [values cmp]
   `(let [values# ~values]
      (do
-       (ocaml-array-sort! ~cmp values#)
+       (asort! ~cmp values#)
        values#)))
 
 (defmacro array? [value]
-  `(ocaml-array? ~value))
+  `(array-value? ~value))
 
 (defmacro alast [values]
   `(let [values# ~values]
-     (ocaml-array-unsafe-get values# (dec (ocaml-array-length values#)))))
+     (unsafe-aget values# (dec (Array.length values#)))))
 
 (defmacro half [value]
   `(quot ~value 2))

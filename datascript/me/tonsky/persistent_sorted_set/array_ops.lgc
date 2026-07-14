@@ -7,18 +7,18 @@
         right-length (- cut-to splice-to)
         values-end (+ left-length values-length)
         result-length (+ left-length values-length right-length)]
-    (Array.init
-      result-length
-      (fn [idx]
-        (cond
-          (< idx left-length)
-          (arrays/aget arr (+ cut-from idx))
-
-          (< idx values-end)
-          (arrays/aget values (- idx left-length))
-
-          :else
-          (arrays/aget arr (+ splice-to (- idx values-end))))))))
+    (if (= 0 result-length)
+      (arrays/empty-array)
+      (let [initial
+            (cond
+              (> left-length 0) (arrays/aget arr cut-from)
+              (> values-length 0) (arrays/aget values 0)
+              :else (arrays/aget arr splice-to))
+            result (Array.make result-length initial)]
+        (arrays/acopy arr cut-from splice-from result 0)
+        (arrays/acopy values 0 values-length result left-length)
+        (arrays/acopy arr splice-to cut-to result values-end)
+        result))))
 
 (defn splice [arr splice-from splice-to values]
   (cut-n-splice arr 0 (arrays/alength arr) splice-from splice-to values))
@@ -36,12 +36,25 @@
         (fn [idx]
           (if (< idx left-length)
             (arrays/aget left idx)
-            (arrays/aget right (- idx left-length))))]
-    (arrays/array
-      (Array.init result-left-length combined-at)
-      (Array.init
-        result-right-length
-        (fn [idx] (combined-at (+ result-left-length idx)))))))
+            (arrays/aget right (- idx left-length))))
+        result-left (Array.make result-left-length (combined-at 0))
+        result-right
+        (Array.make
+          result-right-length
+          (combined-at result-left-length))]
+    (if (<= left-length result-left-length)
+      (do
+        (arrays/acopy left 0 left-length result-left 0)
+        (arrays/acopy
+          right 0 (- result-left-length left-length) result-left left-length)
+        (arrays/acopy
+          right (- result-left-length left-length) right-length result-right 0))
+      (do
+        (arrays/acopy left 0 result-left-length result-left 0)
+        (arrays/acopy left result-left-length left-length result-right 0)
+        (arrays/acopy
+          right 0 right-length result-right (- left-length result-left-length))))
+    (arrays/array result-left result-right)))
 
 (defn eq-arr [cmp left left-from left-to right right-from right-to]
   (let [length (- left-to left-from)]
@@ -54,7 +67,7 @@
 
           (not (= 0
                   #?(:melange
-                     (ocaml-uncurried-compare
+                     (uncurried-compare
                        cmp
                        (arrays/aget left (+ idx left-from))
                        (arrays/aget right (+ idx right-from)))

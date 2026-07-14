@@ -92,7 +92,7 @@
               (inc idx)
               value
               (if (= 0 #?(:melange
-                           (ocaml-uncurried-compare cmp value previous)
+                           (uncurried-compare cmp value previous)
                            :native (cmp value previous)))
                 count
                 (inc count)))))))))
@@ -112,7 +112,7 @@
             (if (< source-idx length)
               (let [value (arrays/aget values source-idx)]
                 (if (= 0 #?(:melange
-                             (ocaml-uncurried-compare cmp value previous)
+                             (uncurried-compare cmp value previous)
                              :native (cmp value previous)))
                   (recur (inc source-idx) result-idx value)
                   (do
@@ -154,8 +154,8 @@
             (inc shift)))))))
 
 (defn from-sequential [cmp values]
-  (let [sorted (ocaml-array-from values)]
-    (ocaml-array-sort! cmp sorted)
+  (let [sorted (into-array values)]
+    (asort! cmp sorted)
     (from-sorted-array cmp (sorted-array-distinct sorted cmp))))
 
 (defn empty-set [cmp]

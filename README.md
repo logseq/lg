@@ -354,8 +354,8 @@ The compiler infers record-like map shapes automatically:
   aliases and referred OCaml values use the same direct form.
   OCaml checks function existence and argument compatibility.
 - OCaml-native scalar and mutable values stay explicit: float and character
-  literals use `1.5` and `\a`; `(ocaml-array ...)`, `(ocaml-array-of :int)`,
-  `ocaml-array-get`, and `ocaml-array-set!` lower to OCaml arrays; `atom`,
+  literals use `1.5` and `\a`; `(array ...)`, `(array-of :int)`,
+  `aget`, and `aset` lower to OCaml arrays; `atom`,
   `deref`, `reset!`, and `swap!` lower to OCaml references. Core arithmetic
   operators select integer or float OCaml operators from static operand types.
 - OCaml labelled and optional arguments use keyword/value pairs, for example
