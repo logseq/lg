@@ -1372,6 +1372,14 @@ let create ~compile_expr =
         in
         Result.bind (expand clauses) (fun form ->
             compile_loop_tail scope env loop_name param_tys form)
+    | (FList (FSymbol name :: args) as form) -> (
+        match Env.find_macro ~scope name env with
+        | None -> compile_expr scope env form
+        | Some definition ->
+            Result.bind
+              (Macro_expander.expand ~compiler_env:env definition args)
+              (fun expanded ->
+                compile_loop_tail scope env loop_name param_tys expanded))
     | form -> compile_expr scope env form
   and compile_loop_tail_body scope env loop_name param_tys forms =
     match forms with

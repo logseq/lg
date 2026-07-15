@@ -7406,6 +7406,26 @@ let test_loop_recur_remains_tail_through_let_and_cond () =
   assert_ocaml_runs "loop_recur_remains_tail_through_let_and_cond" "5\n"
     ocaml_source
 
+let test_loop_recur_remains_tail_through_macros () =
+  let source =
+    {|
+(defmacro tail-if [condition then else]
+  `(if ~condition ~then ~else))
+(def result
+  (loop [value 0]
+    (tail-if (= value 5)
+      value
+      (recur (inc value)))))
+(println result)
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "loop_recur_remains_tail_through_macros" "5\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
 let test_loop_and_recur_delegate_ocaml_owned_alias_compatibility () =
   let source =
     {|
@@ -13037,6 +13057,8 @@ let tests =
     ("loop and recur are tail-recursive", test_loop_and_recur_are_tail_recursive);
     ( "loop/recur remains tail through let and cond",
       test_loop_recur_remains_tail_through_let_and_cond );
+    ( "loop/recur remains tail through macros",
+      test_loop_recur_remains_tail_through_macros );
     ( "loop and recur delegate OCaml-owned alias compatibility",
       test_loop_and_recur_delegate_ocaml_owned_alias_compatibility );
     ( "loop and recur delegate OCaml-owned mismatch to OCaml",
