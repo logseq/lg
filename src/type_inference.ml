@@ -1163,11 +1163,40 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
               (Types.dynamic_constraint TUnknown)
               params collection
         | _ -> infer_all params arguments)
-    | FList (FSymbol "apply" :: _function :: arguments) -> (
-        match List.rev arguments with
-        | FSymbol collection :: _ ->
-            constrain_seqable TUnknown params collection
-        | _ -> infer_all params arguments)
+    | FList (FSymbol "apply" :: function_form :: arguments) ->
+        let is_dynamic_function_type ty =
+          Types.is_dynamic ty
+          || match ty with TUnknown | TVar _ -> true | _ -> false
+        in
+        let dynamic_function =
+          match function_form with
+          | FSymbol name -> (
+              match List.assoc_opt name params with
+              | Some ty -> is_dynamic_function_type ty
+              | None -> (
+                  match lookup_function_ty name with
+                  | Ok ty -> is_dynamic_function_type ty
+                  | Error _ -> false))
+          | _ ->
+              is_dynamic_function_type
+                (inferred_form_type params function_form)
+        in
+        if dynamic_function then
+          match List.rev arguments with
+          | collection :: reversed_fixed ->
+              let dynamic = Types.dynamic_constraint TUnknown in
+              Result.bind
+                (infer_expected_all dynamic params (List.rev reversed_fixed))
+                (fun params ->
+                  match collection with
+                  | FSymbol name -> constrain_seqable dynamic params name
+                  | collection -> infer_form params collection)
+          | [] -> Ok params
+        else (
+          match List.rev arguments with
+          | FSymbol collection :: _ ->
+              constrain_seqable TUnknown params collection
+          | _ -> infer_all params arguments)
     | FList [ FSymbol ("map" | "mapv"); fn; FSymbol collection ] ->
         let element_ty = inferred_unary_function_param params fn in
         constrain_seqable element_ty params collection
@@ -1690,6 +1719,16 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
               List.map (rewrite_aliases aliases) body_forms
             in
             let rec infer_alias_constraints params = function
+              | FList
+                  (FSymbol apply_name :: FSymbol function_name :: arguments)
+                when apply_name = "apply"
+                     || String.ends_with ~suffix:"/apply" apply_name -> (
+                  match List.assoc_opt function_name aliases with
+                  | Some function_form ->
+                      infer_form params
+                        (FList
+                           (FSymbol apply_name :: function_form :: arguments))
+                  | None -> Ok params)
               | FList [ FSymbol reduce_name; reducer; init; FSymbol collection ]
                 when reduce_name = "reduce"
                      || String.ends_with ~suffix:"/reduce" reduce_name -> (

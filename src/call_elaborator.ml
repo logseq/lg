@@ -1682,6 +1682,7 @@ let create ~compile_expr =
   in
   let functions : Function_combinator_elaborator.t =
     Function_combinator_elaborator.create ~compile_expr ~dynamic_unpack
+      ~pack_dynamic_value
   in
   let comparisons : Comparison_set_elaborator.t =
     Comparison_set_elaborator.create ~compile_expr ~pack_dynamic_value

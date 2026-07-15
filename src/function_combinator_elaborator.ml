@@ -30,7 +30,7 @@ let compile_args_for compile_expr scope env arg_forms =
   in
   loop [] arg_forms
 
-let create ~compile_expr ~dynamic_unpack =
+let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
   let compile_args_for = compile_args_for compile_expr in
   let collection_to_list_expr env collection =
     Collection_capability.to_seq_expr env collection
@@ -436,6 +436,60 @@ let create ~compile_expr ~dynamic_unpack =
                                                                argument count";
                                                           ] );
                                                   ] ))))
+                          | fn_type
+                            when Types.is_dynamic fn_type
+                                 || (match fn_type with
+                                    | TUnknown | TVar _ -> true
+                                    | _ -> false) ->
+                              let dynamic = Types.dynamic_constraint TUnknown in
+                              let rec pack_fixed packed = function
+                                | [] -> Ok (List.rev packed)
+                                | argument :: rest ->
+                                    Result.bind
+                                      (pack_dynamic_value env dynamic argument)
+                                      (fun argument ->
+                                        pack_fixed (argument :: packed) rest)
+                              in
+                              let pack_rest =
+                                if
+                                  Types.is_dynamic inner
+                                  || match inner with
+                                     | TUnknown | TVar _ -> true
+                                     | _ -> false
+                                then Ok list_expr
+                                else
+                                  let argument_name = "__lg_apply_dynamic_arg" in
+                                  let argument =
+                                    typed_ir inner
+                                      (Semantic_ir.Ident argument_name)
+                                  in
+                                  Result.map
+                                    (fun argument ->
+                                      apply "List.map"
+                                        [
+                                          Semantic_ir.Fun
+                                            ( [ Semantic_ir.PVar argument_name ],
+                                              argument );
+                                          list_expr;
+                                        ])
+                                    (pack_dynamic_value env dynamic argument)
+                              in
+                              (match (pack_fixed [] fixed_args, pack_rest) with
+                              | (Error _ as error), _ -> error
+                              | _, (Error _ as error) -> error
+                              | Ok fixed, Ok rest ->
+                                  let arguments =
+                                    match fixed with
+                                    | [] -> rest
+                                    | _ ->
+                                        Semantic_ir.Infix
+                                          ("@", Semantic_ir.List fixed, rest)
+                                  in
+                                  Ok
+                                    (typed_ir dynamic
+                                       (apply
+                                          "Lg_runtime.Runtime_dynamic.invoke_function"
+                                          [ fn.semantic_expr; arguments ])))
                           | _ -> Error.error "apply expects a function"))))))
       | _ -> Error.error "apply expects function and collection"
     and compile_comp scope env arg_forms =

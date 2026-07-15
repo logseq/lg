@@ -1256,6 +1256,8 @@ let test_compiler_phases_have_explicit_boundaries () =
             Lg.Function_combinator_elaborator.create
               ~compile_expr:Lg.Expression_elaborator.compile_expr
               ~dynamic_unpack:(fun _ _ expression -> Ok expression)
+              ~pack_dynamic_value:(fun _env _expected value ->
+                Ok value.Lg.Types.semantic_expr)
           in
         operations.compile_identity "" Lg.Compiler_environment.empty
           [ Lg.Ast.FInt 1 ]
@@ -7818,6 +7820,28 @@ let test_apply_calls_overloaded_functions_with_dynamic_arguments () =
   assert_ocaml_runs "apply_calls_overloaded_functions_with_dynamic_arguments"
     "1\n" ocaml_source
 
+let test_apply_calls_dynamic_runtime_functions () =
+  let source =
+    {|
+(defrecord Holder [function])
+(defn call-runtime [holder initial arguments]
+  (let [function (:function holder)]
+    (apply function initial arguments)))
+(def result
+  (call-runtime
+    (Holder. (fn [initial left right] (+ initial left right)))
+    1
+    [2 3]))
+(println result)
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "apply_calls_dynamic_runtime_functions" "6\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
 let test_set_core_api () =
   let source =
     {|
@@ -13114,6 +13138,8 @@ let tests =
       test_apply_distinct_accepts_generic_seqable_values );
     ( "apply calls overloaded functions with dynamic arguments",
       test_apply_calls_overloaded_functions_with_dynamic_arguments );
+    ( "apply calls dynamic runtime functions",
+      test_apply_calls_dynamic_runtime_functions );
     ("apply rejects bad set reducers", test_apply_rejects_bad_set_reducers);
     ("set core api works", test_set_core_api);
     ("sets support named records", test_sets_support_named_records);
