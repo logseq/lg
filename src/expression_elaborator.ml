@@ -27,6 +27,19 @@ let some_thread_counter = ref 0
 let condp_counter = ref 0
 let callable_set_counter = ref 0
 let dynamic_case_counter = ref 0
+let callable_expression_counter = ref 0
+
+let record_constructor_type scope env name =
+  if String.ends_with ~suffix:"." name then
+    let type_name = String.sub name 0 (String.length name - 1) in
+    match Resolver.lookup_record_type scope env type_name with
+    | Ok record ->
+        Some
+          (TFn
+             ( List.map (fun (field : field) -> field.ty) record.fields,
+               TNamed_record record ))
+    | Error _ -> None
+  else None
 
 let rec compile_expr scope (env : Env.t) form =
   match compile_expr_unlocated scope env form with
@@ -66,7 +79,10 @@ and compile_expr_unlocated scope (env : Env.t) = function
       | Some binding -> Ok (typed_ir binding.ty (Semantic_ir.Ident binding.ocaml_name))
       | None when name = "None" ->
           Ok (typed_ir (TOcaml_app ("option", [ TUnknown ])) (Semantic_ir.Constructor (name, None)))
-      | None -> Error.error ("unknown symbol " ^ name))
+      | None -> (
+          match lookup_function scope env name with
+          | Ok function_ -> Ok function_
+          | Error _ -> Error.error ("unknown symbol " ^ name)))
   | FVector forms -> compile_vector scope env forms
   | FMap pairs -> compile_map scope env pairs
   | FList (FSymbol "loop" :: bindings :: body_forms) ->
@@ -191,7 +207,18 @@ and compile_expr_unlocated scope (env : Env.t) = function
           | Error _ as err -> err
           | Ok expanded -> compile_expr scope env expanded))
   | FList [] -> Error.error "empty list is not callable"
-  | FList _ -> Error.error "call head must be a symbol"
+  | FList (function_form :: arguments) ->
+      incr callable_expression_counter;
+      let function_name =
+        "__lg_callable_expression_"
+        ^ string_of_int !callable_expression_counter
+      in
+      compile_expr scope env
+        (FList
+           [ FSymbol "let";
+             FVector [ FSymbol function_name; function_form ];
+             FList (FSymbol function_name :: arguments);
+           ])
 
 and compile_vector scope env forms =
   (Lazy.force context).special_forms.compile_vector scope env forms
@@ -592,7 +619,9 @@ and prepare_fn ?(param_type_overrides = []) ?variadic_rest_index ?recur_target
     match lookup_function scope env name with
     | Ok fn -> Ok fn.ty
     | Error _ -> (
-        match Protocol.lookup_marker scope env name with
+        match record_constructor_type scope env name with
+        | Some ty -> Ok ty
+        | None -> (match Protocol.lookup_marker scope env name with
         | Some { protocol_id = Some protocol_id; ty = TFn (_ :: rest, return_ty); _ } -> (
             match
               Protocol.constraint_type scope env
@@ -601,7 +630,7 @@ and prepare_fn ?(param_type_overrides = []) ?variadic_rest_index ?recur_target
             | Some receiver_ty -> Ok (TFn (receiver_ty :: rest, return_ty))
             | None -> Error.error ("unknown function " ^ name))
         | Some marker -> Ok marker.ty
-        | None -> Error.error ("unknown function " ^ name))
+        | None -> Error.error ("unknown function " ^ name)))
   in
   let compile_function_body =
     match recur_target with
@@ -965,7 +994,9 @@ and prepare_inferred_recursive_fn ~ocaml_name scope env source_name params
         match lookup_function scope provisional_env name with
         | Ok fn -> Ok fn.ty
         | Error _ -> (
-            match Protocol.lookup_marker scope provisional_env name with
+            match record_constructor_type scope provisional_env name with
+            | Some ty -> Ok ty
+            | None -> (match Protocol.lookup_marker scope provisional_env name with
             | Some
                 { protocol_id = Some protocol_id;
                   ty = TFn (_ :: rest, return_ty);
@@ -978,7 +1009,7 @@ and prepare_inferred_recursive_fn ~ocaml_name scope env source_name params
                     Ok (TFn (receiver_ty :: rest, return_ty))
                 | None -> Error.error ("unknown function " ^ name))
             | Some marker -> Ok marker.ty
-            | None -> Error.error ("unknown function " ^ name))
+            | None -> Error.error ("unknown function " ^ name)))
       in
       let lookup_protocol_constraint =
         Protocol.constraint_type scope provisional_env

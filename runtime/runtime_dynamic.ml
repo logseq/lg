@@ -141,6 +141,50 @@ let rec equal left right =
   | Function _, Function _ -> false
   | _ -> false
 
+let compare left right =
+  match (left.payload, right.payload) with
+  | Nil, Nil -> 0
+  | Nil, _ -> -1
+  | _, Nil -> 1
+  | Int left, Int right -> Stdlib.compare left right
+  | Float left, Float right -> Stdlib.compare left right
+  | Int left, Float right -> Stdlib.compare (float_of_int left) right
+  | Float left, Int right -> Stdlib.compare left (float_of_int right)
+  | Char left, Char right -> Stdlib.compare left right
+  | String left, String right
+  | Symbol left, Symbol right
+  | Keyword left, Keyword right ->
+      String.compare left right
+  | Bool left, Bool right -> Bool.compare left right
+  | _ -> invalid_arg "dynamic values are not comparable"
+
+let class_ value =
+  let name =
+    match value.payload with
+    | Nil -> None
+    | Int _ -> Some "java.lang.Long"
+    | Float _ -> Some "java.lang.Double"
+    | Char _ -> Some "java.lang.Character"
+    | String _ -> Some "java.lang.String"
+    | Symbol _ -> Some "clojure.lang.Symbol"
+    | Keyword _ -> Some "clojure.lang.Keyword"
+    | Bool _ -> Some "java.lang.Boolean"
+    | Function _ -> Some "clojure.lang.AFunction"
+    | List -> Some "clojure.lang.PersistentList"
+    | Vector -> Some "clojure.lang.PersistentVector"
+    | Seq -> Some "clojure.lang.ISeq"
+    | Set _ -> Some "clojure.lang.PersistentHashSet"
+    | Map _ -> Some "clojure.lang.PersistentArrayMap"
+    | Opaque name -> Some name
+  in
+  match name with None -> nil | Some name -> string name
+
+let is_comparable value =
+  match value.payload with
+  | Nil | Int _ | Float _ | Char _ | String _ | Symbol _ | Keyword _ | Bool _ ->
+      true
+  | Function _ | List | Vector | Seq | Set _ | Map _ | Opaque _ -> false
+
 let set sequence =
   let values =
     Seq.fold_left
@@ -312,6 +356,39 @@ let invoke value protocol_id method_name arguments =
           invalid_arg
             ("missing protocol method " ^ protocol_id ^ "/" ^ method_name)
       | Some method_ -> method_ arguments)
+
+let as_transient value =
+  if has_protocol value "IEditableCollection" then
+    invoke value "IEditableCollection" "-as-transient" []
+  else
+    match value.payload with
+    | Vector | Set _ | Map _ -> value
+    | _ -> invalid_arg "transient expects an editable collection"
+
+let persistent value =
+  if has_protocol value "ITransientCollection" then
+    invoke value "ITransientCollection" "-persistent!" []
+  else
+    match value.payload with
+    | Vector | Set _ | Map _ -> value
+    | _ -> invalid_arg "persistent! expects a transient collection"
+
+let conj_bang collection value =
+  if has_protocol collection "ITransientCollection" then
+    invoke collection "ITransientCollection" "-conj!" [ value ]
+  else conj collection value
+
+let assoc_bang collection key value = assoc collection key value
+
+let disj_bang collection value =
+  if has_protocol collection "ITransientSet" then
+    invoke collection "ITransientSet" "-disjoin!" [ value ]
+  else
+    match collection.payload with
+    | Set values ->
+        let values = List.filter (fun candidate -> not (equal candidate value)) values in
+        make ~sequence:(fun () -> List.to_seq values) (Set values)
+    | _ -> invalid_arg "disj! expects a transient set"
 
 let invoke_function value arguments =
   match value.payload with

@@ -41,6 +41,13 @@ let compile_args_for compile_expr scope env arg_forms =
   in
   loop [] arg_forms
 
+let rec dynamicize_unknown = function
+  | TUnknown | TVar _ -> Types.dynamic_constraint TUnknown
+  | TNullable ty -> TNullable (dynamicize_unknown ty)
+  | TOcaml_app ("option", [ ty ]) ->
+      TOcaml_app ("option", [ dynamicize_unknown ty ])
+  | ty -> ty
+
 let create ~compile_expr =
   let compile_args_for = compile_args_for compile_expr in
   let pack_dynamic_scalar value =
@@ -105,26 +112,53 @@ let create ~compile_expr =
                 match (parameter_tys, args) with
                 | [], [] -> Some (List.rev prepared)
                 | expected :: parameter_tys, argument :: args ->
-                    let expression =
+                    let prepared_argument =
                       if
                         (Types.equal expected TUnknown
                         || match expected with TVar _ -> true | _ -> false)
                         && Types.equal argument.ty TNil
-                      then Some argument.semantic_expr
+                        &&
+                        (match return_ty with
+                        | TNullable _ | TOcaml_app ("option", [ _ ]) -> true
+                        | _ -> false)
+                      then Some (argument.semantic_expr, argument.ty)
                       else if
                         Types.is_dynamic expected
                         || Types.equal expected TUnknown
                         || match expected with TVar _ -> true | _ -> false
                       then
-                        pack_plain_dynamic_value argument
-                      else Some argument.semantic_expr
+                        Option.map
+                          (fun expression ->
+                            ( expression,
+                              Types.dynamic_constraint TUnknown ))
+                          (pack_plain_dynamic_value argument)
+                      else Some (argument.semantic_expr, argument.ty)
                     in
-                    Option.bind expression (fun expression ->
-                        prepare (expression :: prepared) parameter_tys args)
+                    Option.bind prepared_argument (fun argument ->
+                        prepare (argument :: prepared) parameter_tys args)
                 | _ -> None
               in
               Option.map
-                (fun arguments ->
+                (fun prepared ->
+                  let arguments = List.map fst prepared in
+                  let actual_tys = List.map snd prepared in
+                  let return_ty =
+                    Types.instantiate_type ~templates:parameter_tys
+                      ~actuals:actual_tys return_ty
+                  in
+                  let crossed_dynamic_boundary =
+                    List.exists2
+                      (fun expected actual ->
+                        (Types.equal expected TUnknown
+                        || match expected with TVar _ -> true | _ -> false)
+                        && Types.is_dynamic actual)
+                      parameter_tys actual_tys
+                  in
+                  let return_ty =
+                    if crossed_dynamic_boundary then
+                      dynamicize_unknown return_ty
+                    else return_ty
+                  in
                   typed_ir return_ty
                     (Semantic_ir.Apply
                        (Semantic_ir.Ident binding.ocaml_name, arguments)))

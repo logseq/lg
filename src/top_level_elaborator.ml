@@ -366,6 +366,9 @@ let rec compile scope env next_type = function
                       | Some protocol_name
                         when Option.is_some
                                (Protocol.find_protocol_id scope env protocol_name)
+                             && Option.is_some
+                                  (Protocol.lookup_protocol_marker scope env
+                                     protocol_name method_name)
                         -> (
                           match
                             Protocol_elaborator.marker scope env protocol_name
@@ -396,6 +399,36 @@ let rec compile scope env next_type = function
                   "deftype methods must be (method-name [params] body...)"
           in
           compile_methods env [] None interface_forms)
+  | FList
+      (FSymbol "defmethod" :: FSymbol "print-method" :: FSymbol type_name
+      :: ((FVector _) as params_form) :: body_forms) -> (
+      match Resolver.lookup_record_type scope env type_name with
+      | Error _ as error -> error
+      | Ok record ->
+            let source_name = Expression_support.print_method_name record in
+            let ocaml_name = Names.sanitize_name source_name in
+            match
+              Expression_elaborator.compile_fn
+                ~param_type_overrides:
+                  [ Some (TNamed_record record); Some (TOcaml "Buffer.t") ]
+                scope env params_form body_forms
+            with
+            | Error _ as error -> error
+            | Ok implementation ->
+                let binding = binding_of_expr ocaml_name implementation in
+                let env =
+                  Env.add (Names.scoped_key scope source_name) binding env
+                in
+                Ok
+                  ( scope,
+                    env,
+                    next_type,
+                    Value_binding
+                      { pattern = Named ocaml_name;
+                        expression = implementation.semantic_expr;
+                      } ))
+  | FList (FSymbol "defmethod" :: _) ->
+      Error.error "defmethod currently supports print-method"
   | FList (FSymbol "defn-group" :: definitions) ->
       let env =
         definitions
@@ -696,6 +729,66 @@ let rec compile scope env next_type = function
                     } ))))
   | FList
       (FSymbol (("defn" | "defn-") as definition)
+      :: ((FSymbol _) as name_form) :: FMap _attributes :: rest) ->
+      compile scope env next_type
+        (FList (FSymbol definition :: name_form :: rest))
+  | FList
+      (FSymbol (("defn" | "defn-") as definition)
+      :: ((FSymbol _) as name_form)
+      :: FList [ FSymbol "__type-hint"; FSymbol annotation; params ]
+      :: body_forms) ->
+      compile scope env next_type
+        (FList
+           (FSymbol definition :: name_form :: FSymbol annotation :: params
+          :: body_forms))
+  | FList
+      (FSymbol (("defn" | "defn-") as definition)
+      :: ((FSymbol name) as name_form) :: FSymbol annotation :: params
+      :: body_forms)
+    when String.starts_with ~prefix:"^" annotation -> (
+      if not (List.exists (form_mentions_symbol name) body_forms)
+      then
+        let body =
+          match body_forms with
+          | [ body ] -> body
+          | body_forms -> FList (FSymbol "do" :: body_forms)
+        in
+        compile scope env next_type
+          (FList
+             [ FSymbol definition;
+               name_form;
+               params;
+               FList
+                 [ FSymbol "__type-hint";
+                   FSymbol annotation;
+                   body;
+                 ];
+             ])
+      else
+      match Type_annotation.of_param_annotation annotation with
+      | Error _ as error -> error
+      | Ok return_ty ->
+          let return_keyword =
+            match return_ty with
+            | TInt -> Ok ":int"
+            | TFloat -> Ok ":float"
+            | TChar -> Ok ":char"
+            | TString -> Ok ":string"
+            | TSymbol -> Ok ":symbol"
+            | TKeyword -> Ok ":keyword"
+            | TBool -> Ok ":bool"
+            | TUnit -> Ok ":unit"
+            | ty when Types.is_dynamic ty -> Ok ":dynamic"
+            | TOcaml name -> Ok (":" ^ name)
+            | _ -> Error.error "unsupported defn return type hint"
+          in
+          Result.bind return_keyword (fun return_keyword ->
+              compile scope env next_type
+                (FList
+                   (FSymbol definition :: name_form :: params
+                  :: FKeyword return_keyword :: body_forms))))
+  | FList
+      (FSymbol (("defn" | "defn-") as definition)
       :: ((FSymbol _) as name_form) :: FString _docstring :: forms) ->
       compile scope env next_type
         (FList (FSymbol definition :: name_form :: forms))
@@ -898,11 +991,45 @@ let rec compile scope env next_type = function
       :: method_forms) ->
       compile_defprotocol ?location:(Source_context.find name_form) scope env next_type
         protocol_name method_forms
-  | FList
-      (FSymbol "extend-type" :: receiver_form :: FSymbol protocol_name
-      :: method_forms) ->
-      compile_extend_type scope env next_type receiver_form protocol_name
-        method_forms
+  | FList (FSymbol "extend-type" :: receiver_form :: implementations) ->
+      let rec groups grouped current = function
+        | [] -> (
+            match current with
+            | None -> Ok (List.rev grouped)
+            | Some (protocol_name, methods) ->
+                Ok
+                  (List.rev
+                     ((protocol_name, List.rev methods) :: grouped)))
+        | FSymbol protocol_name :: rest ->
+            let grouped =
+              match current with
+              | None -> grouped
+              | Some (previous, methods) ->
+                  (previous, List.rev methods) :: grouped
+            in
+            groups grouped (Some (protocol_name, [])) rest
+        | (FList _ as method_form) :: rest -> (
+            match current with
+            | None -> Error.error "extend-type requires a protocol name"
+            | Some (protocol_name, methods) ->
+                groups grouped
+                  (Some (protocol_name, method_form :: methods)) rest)
+        | _ :: _ -> Error.error "invalid extend-type implementation"
+      in
+      let items_of = function Group items -> items | item -> [ item ] in
+      Result.bind (groups [] None implementations) (fun groups ->
+          let rec compile_groups env next_type items = function
+            | [] -> Ok (scope, env, next_type, Group items)
+            | (protocol_name, methods) :: rest -> (
+                match
+                  compile_extend_type scope env next_type receiver_form
+                    protocol_name methods
+                with
+                | Error _ as error -> error
+                | Ok (_, env, next_type, item) ->
+                    compile_groups env next_type (items @ items_of item) rest)
+          in
+          compile_groups env next_type [] groups)
   | FList
       (FSymbol "extend-protocol" :: FSymbol protocol_name :: implementations) ->
       let is_receiver = function FSymbol _ | FKeyword _ -> true | _ -> false in

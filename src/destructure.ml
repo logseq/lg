@@ -149,6 +149,25 @@ let parse_param_specs = function
                      identity = source_identity name_form }
                   :: acc)
                   rest)
+        | FList
+            [ FSymbol "__type-hint";
+              FSymbol annotation;
+              ((FSymbol name) as name_form);
+            ]
+          :: rest -> (
+            match Type_annotation.of_param_annotation annotation with
+            | Error _ as error -> error
+            | Ok ty ->
+                loop (index + 1)
+                  ({ pattern = FSymbol name;
+                     source_name = name;
+                     ocaml_name = Names.sanitize_name name;
+                     explicit_ty = Some ty;
+                     destructured = false;
+                     identity = source_identity name_form;
+                   }
+                  :: acc)
+                  rest)
         | ((FSymbol name) as name_form) :: rest ->
             loop (index + 1)
               ({ pattern = FSymbol name;

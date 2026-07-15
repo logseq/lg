@@ -208,6 +208,9 @@ let of_param_annotation annotation =
     in
     (match type_name with
     | "int" | "long" | "number" -> Ok TInt
+    | "Object" | "java.lang.Object" | "Number" | "java.lang.Number"
+    | "Comparable" | "java.lang.Comparable" ->
+        Ok (Types.dynamic_constraint TUnknown)
     | "boolean" | "Boolean" -> Ok TBool
     | "double" | "float" -> Ok TFloat
     | "String" -> Ok TString

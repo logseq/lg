@@ -116,7 +116,7 @@ let satisfied_protocols env receiver_ty =
   |> List.filter_map (fun (protocol_id, _) ->
          let compiler_protocol =
            List.mem (Protocol_id.name protocol_id)
-             [ "Seqable"; "Reducible"; "Counted"; "Indexed" ]
+             [ "Seqable"; "Reducible"; "Counted"; "Indexed"; "Emptyable" ]
          in
          if (not compiler_protocol) && type_satisfies env protocol_id receiver_ty
          then Some protocol_id

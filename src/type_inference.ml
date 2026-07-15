@@ -92,9 +92,18 @@ let constrain_symbol expected_ty params name =
   | Some existing_ty ->
       Ok (replace_param name (refine_type existing_ty expected_ty) params)
 
+let constrain_comparable_symbol params name =
+  match List.assoc_opt name params with
+  | Some (TNullable _ | TOcaml_app ("option", [ _ ])) ->
+      Ok
+        (replace_param name
+           (Types.dynamic_constraint TUnknown)
+           params)
+  | _ -> Ok params
+
 let constrain_seqable element_ty params name =
   let rec add_constraint = function
-    | TUnknown -> Types.seqable_constraint element_ty
+    | TUnknown | TVar _ -> Types.seqable_constraint element_ty
     | TOcaml_app (constraint_name, [ existing_element; value_ty ])
       when constraint_name = Types.seqable_constraint_name
            || constraint_name = Types.optional_seqable_constraint_name
@@ -126,7 +135,7 @@ let constrain_optional_seqable ?(sequential = false) element_ty params name =
     else Types.optional_seqable_constraint element_ty value_ty
   in
   let rec add_constraint = function
-    | TUnknown -> make_optional element_ty TUnknown
+    | TUnknown | TVar _ -> make_optional element_ty TUnknown
     | TOcaml_app (constraint_name, [ existing_element; value_ty ])
       when constraint_name = Types.seqable_constraint_name
            || constraint_name = Types.optional_seqable_constraint_name
@@ -661,8 +670,19 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params body_for
             | "map?" | "fn?" | "coll?" );
           FSymbol value ] ->
         constrain_symbol (Types.dynamic_constraint TUnknown) params value
-    | FList [ FSymbol ("name" | "hash"); FSymbol value ] ->
+    | FList [ FSymbol ("name" | "hash" | "class"); FSymbol value ] ->
         constrain_symbol (Types.dynamic_constraint TUnknown) params value
+    | FList [ FSymbol ".compareTo"; FSymbol left; FSymbol right ] -> (
+        match
+          constrain_symbol (Types.dynamic_constraint TUnknown) params left
+        with
+        | Error _ as error -> error
+        | Ok params ->
+            constrain_symbol (Types.dynamic_constraint TUnknown) params right)
+    | FList [ FSymbol "compare"; FSymbol left; FSymbol right ] -> (
+        match constrain_comparable_symbol params left with
+        | Error _ as error -> error
+        | Ok params -> constrain_comparable_symbol params right)
     | FList [ FSymbol "int"; FSymbol value ] ->
         constrain_symbol (Types.dynamic_constraint TUnknown) params value
     | FList [ FSymbol "instance?"; FSymbol _type_name; FSymbol value ] ->

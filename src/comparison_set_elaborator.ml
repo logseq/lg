@@ -34,8 +34,11 @@ let create ~compile_expr =
     | FSymbol name -> lookup_function scope env name
     | form -> compile_expr scope env form
   in
-  let comparable_type = function
-    | TInt | TFloat | TString | TSymbol | TKeyword | TBool | TUnknown -> true
+  let rec comparable_type = function
+    | TInt | TFloat | TString | TSymbol | TKeyword | TBool | TUnknown | TVar _ ->
+        true
+    | TNullable inner | TOcaml_app ("option", [ inner ]) ->
+        comparable_type inner
     | _ -> false
   in
     let compile_distinct_question scope env arg_forms =
@@ -58,9 +61,18 @@ let create ~compile_expr =
     and compile_compare scope env arg_forms =
       match compile_args_for scope env arg_forms with
       | Error _ as err -> err
+      | Ok [ left; right ]
+        when Types.is_dynamic left.ty && Types.is_dynamic right.ty ->
+          Ok
+            (typed_ir TInt
+               (apply "Lg_runtime.Runtime_dynamic.compare"
+                  [ left.semantic_expr; right.semantic_expr ]))
       | Ok [ left; right ] ->
           if not (Types.equal left.ty right.ty) then
-            Error.error "compare arguments must have the same type"
+            Error.error
+              ("compare arguments must have the same type: "
+              ^ Types.source_name left.ty ^ " and "
+              ^ Types.source_name right.ty)
           else if not (comparable_type left.ty) then
             Error.error "compare expects comparable arguments"
           else

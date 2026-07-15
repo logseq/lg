@@ -7,7 +7,9 @@ type value =
   | Closure of closure
   | Macro_function of Macro_definition.t
   | Builtin of string
+  | Juxt of value list
   | Volatile of value ref
+  | Recur of value list
 
 and closure = {
   params : form list;
@@ -29,10 +31,25 @@ let gensym_counter = ref 0
 let nil = Form (FSymbol "nil")
 let form_of_value = function
   | Form form -> Ok form
-  | _ -> Error.error "expected macro form"
+  | Closure _ | Macro_function _ | Builtin _ | Juxt _ | Volatile _ | Recur _ ->
+      Error.error "expected macro form"
 
-let sequence_forms = function
-  | Form (FList forms | FVector forms) -> Ok forms
+let rec sequence_forms = function
+  | Form (FList [ FSymbol "__type-hint"; _; form ]) ->
+      sequence_forms (Form form)
+  | Form (FVector forms) ->
+      let rec attach_metadata attached = function
+        | FSymbol metadata :: form :: rest
+          when String.starts_with ~prefix:"^" metadata ->
+            attach_metadata
+              (FList [ FSymbol "__type-hint"; FSymbol metadata; form ]
+              :: attached)
+              rest
+        | form :: rest -> attach_metadata (form :: attached) rest
+        | [] -> List.rev attached
+      in
+      Ok (attach_metadata [] forms)
+  | Form (FList forms) -> Ok forms
   | Form (FSymbol "nil") -> Ok []
   | Form (FSymbol symbol) ->
       Error.error ("expected sequential macro value, got symbol " ^ symbol)
@@ -42,10 +59,15 @@ let sequence_forms = function
   | Closure _ -> Error.error "expected sequential macro value, got function"
   | Macro_function _ ->
       Error.error "expected sequential macro value, got function"
-  | Builtin _ -> Error.error "expected sequential macro value, got function"
+  | Builtin _ | Juxt _ -> Error.error "expected sequential macro value, got function"
+  | Recur _ -> Error.error "recur is only valid in macro loop tail position"
   | Volatile _ -> Error.error "expected sequential macro value, got volatile"
 
-let truthy = function Form (FSymbol "nil" | FBool false) -> false | _ -> true
+let truthy = function
+  | Form (FSymbol "nil" | FBool false) -> false
+  | Form _ | Closure _ | Macro_function _ | Builtin _ | Juxt _ | Volatile _
+  | Recur _ ->
+      true
 
 let strip_internal_metadata = function
   | FList [ FSymbol "__type-hint"; _; form ] -> form
@@ -189,7 +211,10 @@ let rec eval context = function
                   context.compiler_env
               with
               | Some definition -> Ok (Macro_function definition)
-              | None when List.mem name [ "assoc"; "conj"; "identity" ] ->
+              | None
+                when List.mem name
+                       [ "assoc"; "conj"; "identity"; "list"; "first";
+                         "second"; "last"; "next"; "nnext"; "butlast" ] ->
                   Ok (Builtin name)
               | None when host_class_symbol name -> Ok (Form (FSymbol name))
               | None -> Error.error ("unknown macro symbol " ^ name))))
@@ -249,6 +274,53 @@ let rec eval context = function
       eval_let context bindings body
   | FList (FSymbol "binding" :: FVector bindings :: body) ->
       eval_let context bindings body
+  | FList (FSymbol "loop" :: FVector bindings :: body) ->
+      eval_loop context bindings body
+  | FList (FSymbol "recur" :: arguments) ->
+      Result.map (fun values -> Recur values) (eval_forms context arguments)
+  | FList (FSymbol (("->" | "->>") as operator) :: initial :: steps) ->
+      let threaded =
+        List.fold_left
+          (fun value step ->
+            match (operator, step) with
+            | "->", FSymbol name | "->>", FSymbol name ->
+                FList [ FSymbol name; value ]
+            | "->", FList (head :: arguments) ->
+                FList (head :: value :: arguments)
+            | "->>", FList forms -> FList (forms @ [ value ])
+            | _ -> step)
+          initial steps
+      in
+      eval context threaded
+  | FList
+      (FSymbol (("some->" | "some->>") as operator) :: initial :: steps) ->
+      let direction = if operator = "some->" then "->" else "->>" in
+      let rec expand value = function
+        | [] -> value
+        | step :: rest ->
+            incr gensym_counter;
+            let binding = FSymbol ("G__some_thread_" ^ string_of_int !gensym_counter) in
+            let threaded =
+              match (direction, step) with
+              | "->", FSymbol name | "->>", FSymbol name ->
+                  FList [ FSymbol name; binding ]
+              | "->", FList (head :: arguments) ->
+                  FList (head :: binding :: arguments)
+              | "->>", FList forms -> FList (forms @ [ binding ])
+              | _ -> step
+            in
+            FList
+              [ FSymbol "let";
+                FVector [ binding; value ];
+                FList
+                  [ FSymbol "if";
+                    FList [ FSymbol "nil?"; binding ];
+                    FSymbol "nil";
+                    expand threaded rest;
+                  ];
+              ]
+      in
+      eval context (expand initial steps)
   | FList (FSymbol "fn" :: FVector params :: body) ->
       Ok
         (Closure
@@ -313,6 +385,39 @@ and eval_let context bindings body =
     | _ -> Error.error "macro let requires binding pairs"
   in
   bind context.locals bindings
+
+and eval_loop context bindings body =
+  let rec evaluate_bindings locals patterns values = function
+    | [] -> Ok (List.rev patterns, List.rev values)
+    | pattern :: expression :: rest -> (
+        match eval { context with locals } expression with
+        | Error _ as error -> error
+        | Ok value -> (
+            match bind_pattern locals pattern value with
+            | Error _ as error -> error
+            | Ok locals ->
+                evaluate_bindings locals (pattern :: patterns) (value :: values)
+                  rest))
+    | _ -> Error.error "macro loop requires binding pairs"
+  in
+  let rec bind_values locals patterns values =
+    match (patterns, values) with
+    | [], [] -> Ok locals
+    | pattern :: patterns, value :: values -> (
+        match bind_pattern locals pattern value with
+        | Error _ as error -> error
+        | Ok locals -> bind_values locals patterns values)
+    | _ -> Error.error "macro recur argument count mismatch"
+  in
+  Result.bind (evaluate_bindings context.locals [] [] bindings)
+    (fun (patterns, initial_values) ->
+      let rec iterate values =
+        Result.bind (bind_values context.locals patterns values) (fun locals ->
+            match eval_body { context with locals } body with
+            | Ok (Recur values) -> iterate values
+            | result -> result)
+      in
+      iterate initial_values)
 
 and eval_and context = function
   | [] -> Ok (Form (FBool true))
@@ -469,7 +574,33 @@ and apply_value context callable args =
           in
           Ok (Form (FMap entries))
       | _ -> Error.error "assoc expects a macro map, key, and value")
+  | Builtin "list" ->
+      let rec collect forms = function
+        | [] -> Ok (Form (FList (List.rev forms)))
+        | value :: rest -> (
+            match form_of_value value with
+            | Error _ as error -> error
+            | Ok form -> collect (form :: forms) rest)
+      in
+      collect [] args
+  | Builtin ("first" | "second" | "last" | "next" | "nnext" | "butlast" as name) -> (
+      match args with
+      | [ value ] -> sequence_operation name value
+      | _ -> Error.error (name ^ " expects one macro argument"))
+  | Juxt functions ->
+      let rec invoke results = function
+        | [] -> Ok (Form (FVector (List.rev results)))
+        | function_ :: rest -> (
+            match apply_value context function_ args with
+            | Error _ as error -> error
+            | Ok value -> (
+                match form_of_value value with
+                | Error _ as error -> error
+                | Ok form -> invoke (form :: results) rest))
+      in
+      invoke [] functions
   | Builtin name -> Error.error ("unsupported macro function value " ^ name)
+  | Recur _ -> Error.error "recur value is not callable"
   | _ -> Error.error "macro value is not callable"
 
 and invoke_definition context (definition : Macro_definition.t) arg_forms =
@@ -508,7 +639,7 @@ and eval_builtin context name arg_forms =
   in
   match name with
   | "System/getProperty" -> Ok nil
-  | "identity" -> unary (fun value -> Ok value)
+  | "identity" | "num" -> unary (fun value -> Ok value)
   | "boolean" -> unary (fun value -> Ok (Form (FBool (truthy value))))
   | "string?" ->
       unary (fun value -> Ok (Form (FBool (match value with Form (FString _) -> true | _ -> false))))
@@ -537,10 +668,62 @@ and eval_builtin context name arg_forms =
                (FBool (match value with Form (FMap _) -> true | _ -> false))))
   | "seq?" ->
       unary (fun value -> Ok (Form (FBool (match value with Form (FList _) -> true | _ -> false))))
+  | "sequential?" ->
+      unary (fun value ->
+          Ok
+            (Form
+               (FBool
+                  (match value with
+                  | Form (FList _ | FVector _) -> true
+                  | _ -> false))))
   | "empty?" ->
       unary (fun value ->
           sequence_forms value
           |> Result.map (fun forms -> Form (FBool (forms = []))))
+  | "not-empty" ->
+      unary (fun value ->
+          sequence_forms value
+          |> Result.map (function [] -> nil | _ -> value))
+  | "reverse" ->
+      unary (fun value ->
+          sequence_forms value
+          |> Result.map (fun forms -> Form (FList (List.rev forms))))
+  | "count" ->
+      unary (fun value ->
+          sequence_forms value
+          |> Result.map (fun forms -> Form (FInt (List.length forms))))
+  | "take" | "drop" -> (
+      match eval_args () with
+      | Ok [ Form (FInt count); collection ] ->
+          Result.map
+            (fun forms ->
+              let rec take count taken forms =
+                if count <= 0 then List.rev taken
+                else
+                  match forms with
+                  | [] -> List.rev taken
+                  | form :: rest -> take (count - 1) (form :: taken) rest
+              in
+              let rec drop count forms =
+                if count <= 0 then forms
+                else
+                  match forms with
+                  | [] -> []
+                  | _ :: rest -> drop (count - 1) rest
+              in
+              Form
+                (FList
+                   (if name = "take" then take count [] forms
+                    else drop count forms)))
+            (sequence_forms collection)
+      | Ok _ -> Error.error (name ^ " expects an int and collection")
+      | Error _ as error -> error)
+  | "/" -> (
+      match eval_args () with
+      | Ok [ Form (FInt left); Form (FInt right) ] when right <> 0 ->
+          Ok (Form (FInt (left / right)))
+      | Ok _ -> Error.error "/ expects two integer macro arguments"
+      | Error _ as error -> error)
   | "nil?" ->
       unary (fun value -> Ok (Form (FBool (value = nil))))
   | "first" | "second" | "last" | "next" | "nnext" | "butlast" ->
@@ -589,12 +772,23 @@ and eval_builtin context name arg_forms =
           Ok (Form (FMap ((key, value) :: List.remove_assoc key entries)))
       | Ok _ -> Error.error "assoc expects a macro map, key, and value"
       | Error _ as error -> error)
+  | "with-meta" -> (
+      match eval_args () with
+      | Ok [ Form form; Form (FMap _) ] ->
+          Ok (Form (strip_internal_metadata form))
+      | Ok _ -> Error.error "with-meta expects a form and metadata map"
+      | Error _ as error -> error)
   | "vary-meta" -> eval_vary_meta context arg_forms
   | "vec" ->
       unary (fun value ->
           sequence_forms value |> Result.map (fun forms -> Form (FVector forms)))
   | "map" | "mapcat" -> eval_map context name arg_forms
+  | "filter" -> eval_filter context arg_forms
+  | "into" -> eval_into context arg_forms
+  | "juxt" ->
+      Result.map (fun functions -> Juxt functions) (eval_args ())
   | "reduce" -> eval_reduce context arg_forms
+  | "apply" -> eval_apply context arg_forms
   | "volatile!" -> unary (fun value -> Ok (Volatile (ref value)))
   | "deref" ->
       unary (function
@@ -605,6 +799,68 @@ and eval_builtin context name arg_forms =
       incr gensym_counter;
       Ok (Form (FSymbol ("G__" ^ string_of_int !gensym_counter)))
   | _ -> Error.error ("unsupported macro function " ^ name)
+
+and eval_apply context = function
+  | callable_form :: argument_forms when argument_forms <> [] -> (
+      let fixed_forms, sequence_form =
+        match List.rev argument_forms with
+        | sequence_form :: reversed_fixed ->
+            (List.rev reversed_fixed, sequence_form)
+        | [] -> assert false
+      in
+      match
+        ( eval context callable_form,
+          eval_forms context fixed_forms,
+          eval context sequence_form )
+      with
+      | (Error _ as error), _, _ | _, (Error _ as error), _
+      | _, _, (Error _ as error) ->
+          error
+      | Ok callable, Ok fixed, Ok sequence ->
+          Result.bind (sequence_forms sequence) (fun forms ->
+              apply_value context callable
+                (fixed @ List.map (fun form -> Form form) forms)))
+  | _ -> Error.error "apply expects a function and an argument sequence"
+
+and eval_filter context = function
+  | [ predicate_form; collection_form ] -> (
+      match (eval context predicate_form, eval context collection_form) with
+      | (Error _ as error), _ | _, (Error _ as error) -> error
+      | Ok predicate, Ok collection ->
+          Result.bind (sequence_forms collection) (fun forms ->
+              let rec filter selected = function
+                | [] -> Ok (Form (FList (List.rev selected)))
+                | form :: rest -> (
+                    match apply_value context predicate [ Form form ] with
+                    | Error _ as error -> error
+                    | Ok keep ->
+                        filter
+                          (if truthy keep then form :: selected else selected)
+                          rest)
+              in
+              filter [] forms))
+  | _ -> Error.error "filter expects a predicate and collection"
+
+and eval_into context = function
+  | [ target_form; source_form ] -> (
+      match (eval context target_form, eval context source_form) with
+      | (Error _ as error), _ | _, (Error _ as error) -> error
+      | Ok target, Ok source ->
+          Result.bind (sequence_forms source) (fun forms ->
+              match target with
+              | Form (FVector values) -> Ok (Form (FVector (values @ forms)))
+              | Form (FList values) -> Ok (Form (FList (List.rev_append forms values)))
+              | Form (FMap entries) ->
+                  let rec add entries = function
+                    | [] -> Ok (Form (FMap entries))
+                    | FVector [ key; value ] :: rest
+                    | FList [ key; value ] :: rest ->
+                        add ((key, value) :: List.remove_assoc key entries) rest
+                    | _ -> Error.error "into map expects key/value entries"
+                  in
+                  add entries forms
+              | _ -> Error.error "into expects a macro collection"))
+  | _ -> Error.error "into expects a target and source collection"
 
 and sequence_operation name value =
   match sequence_forms value with
@@ -715,6 +971,11 @@ and syntax_quote context form =
   let generated = ref [] in
   let rec quote = function
     | FList [ FSymbol "unquote"; expression ] -> eval context expression
+    | FList [ FSymbol "if-cljs"; then_form; _else_form ] ->
+        (* LG exposes a namespace-bearing macro environment and uses the
+           portable defrecord model on every runtime target. Select the same
+           branch as ClojureScript without evaluating JVM compiler helpers. *)
+        quote then_form
     | FList forms -> quote_sequence (fun forms -> FList forms) forms
     | FVector forms -> quote_sequence (fun forms -> FVector forms) forms
     | FMap entries ->

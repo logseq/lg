@@ -1,5 +1,10 @@
 open Types
 
+let method_id protocol_id name =
+  Method_id.create
+    ~owner:(Protocol_id.owner protocol_id @ [ Protocol_id.name protocol_id ])
+    ~name
+
 let seqable_id = Protocol_id.create ~owner:[] ~name:"Seqable"
 let seq_method_id = Method_id.create ~owner:[ "Seqable" ] ~name:"-seq"
 let reducible_id = Protocol_id.create ~owner:[] ~name:"Reducible"
@@ -8,6 +13,21 @@ let counted_id = Protocol_id.create ~owner:[] ~name:"Counted"
 let count_method_id = Method_id.create ~owner:[ "Counted" ] ~name:"-count"
 let indexed_id = Protocol_id.create ~owner:[] ~name:"Indexed"
 let nth_method_id = Method_id.create ~owner:[ "Indexed" ] ~name:"-nth"
+let emptyable_id = Protocol_id.create ~owner:[] ~name:"Emptyable"
+let empty_method_id = Method_id.create ~owner:[ "Emptyable" ] ~name:"-empty"
+let object_id = Protocol_id.create ~owner:[] ~name:"Object"
+
+let clojure_hash_id =
+  Protocol_id.create ~owner:[] ~name:"clojure.lang.IHashEq"
+
+let clojure_collection_id =
+  Protocol_id.create ~owner:[] ~name:"clojure.lang.IPersistentCollection"
+
+let clojure_transient_collection_id =
+  Protocol_id.create ~owner:[] ~name:"clojure.lang.ITransientCollection"
+
+let clojure_editable_collection_id =
+  Protocol_id.create ~owner:[] ~name:"clojure.lang.IEditableCollection"
 let data_owner = [ "clojure.data" ]
 
 let equality_partition_id =
@@ -87,6 +107,14 @@ let declare_indexed registry =
     registry
   |> add_or_fail
 
+let declare_emptyable registry =
+  Protocol_registry.declare emptyable_id
+    [ { Protocol_registry.method_id = empty_method_id;
+        param_tys = [ TUnknown ];
+        return_ty = TUnknown } ]
+    registry
+  |> add_or_fail
+
 let declare_data_protocols registry =
   let dynamic = Types.dynamic_constraint TUnknown in
   registry
@@ -98,6 +126,60 @@ let declare_data_protocols registry =
   |> Protocol_registry.declare diff_id
        [ { Protocol_registry.method_id = diff_method_id;
            param_tys = [ dynamic; dynamic ];
+           return_ty = dynamic } ]
+  |> add_or_fail
+
+let declare_clojure_host_protocols registry =
+  let dynamic = Types.dynamic_constraint TUnknown in
+  registry
+  |> Protocol_registry.declare object_id
+       [ { Protocol_registry.method_id = method_id object_id "hashCode";
+           param_tys = [ dynamic ];
+           return_ty = TInt };
+         { Protocol_registry.method_id = method_id object_id "toString";
+           param_tys = [ dynamic ];
+           return_ty = TString };
+         { Protocol_registry.method_id = method_id object_id "equals";
+           param_tys = [ dynamic; dynamic ];
+           return_ty = TBool } ]
+  |> add_or_fail
+  |> Protocol_registry.declare clojure_hash_id
+       [ { Protocol_registry.method_id = method_id clojure_hash_id "hasheq";
+           param_tys = [ dynamic ];
+           return_ty = TInt } ]
+  |> add_or_fail
+  |> Protocol_registry.declare clojure_collection_id
+       [ { Protocol_registry.method_id = method_id clojure_collection_id "count";
+           param_tys = [ dynamic ];
+           return_ty = TInt };
+         { Protocol_registry.method_id = method_id clojure_collection_id "equiv";
+           param_tys = [ dynamic; dynamic ];
+           return_ty = TBool };
+         { Protocol_registry.method_id = method_id clojure_collection_id "empty";
+           param_tys = [ dynamic ];
+           return_ty = dynamic };
+         { Protocol_registry.method_id = method_id clojure_collection_id "cons";
+           param_tys = [ dynamic; dynamic ];
+           return_ty = dynamic } ]
+  |> add_or_fail
+  |> Protocol_registry.declare clojure_editable_collection_id
+       [ { Protocol_registry.method_id =
+             method_id clojure_editable_collection_id "empty";
+           param_tys = [ dynamic ];
+           return_ty = dynamic };
+         { Protocol_registry.method_id =
+             method_id clojure_editable_collection_id "asTransient";
+           param_tys = [ dynamic ];
+           return_ty = dynamic } ]
+  |> add_or_fail
+  |> Protocol_registry.declare clojure_transient_collection_id
+       [ { Protocol_registry.method_id =
+             method_id clojure_transient_collection_id "conj";
+           param_tys = [ dynamic; dynamic ];
+           return_ty = dynamic };
+         { Protocol_registry.method_id =
+             method_id clojure_transient_collection_id "persistent";
+           param_tys = [ dynamic ];
            return_ty = dynamic } ]
   |> add_or_fail
 
@@ -166,6 +248,8 @@ let initial_registry =
        "Lg.Core_protocols.nth_host_list"
   |> add_indexed (Receiver_id.Host_receiver "array")
        "Lg.Core_protocols.nth_host_array"
+  |> declare_emptyable
+  |> declare_clojure_host_protocols
   |> declare_data_protocols
 
 let find_seqable receiver_ty registry =
@@ -194,4 +278,11 @@ let find_indexed receiver_ty registry =
   | None -> None
   | Some receiver ->
       Protocol_registry.find_implementation indexed_id nth_method_id receiver
+        registry
+
+let find_emptyable receiver_ty registry =
+  match Receiver_id.of_type receiver_ty with
+  | None -> None
+  | Some receiver ->
+      Protocol_registry.find_implementation emptyable_id empty_method_id receiver
         registry

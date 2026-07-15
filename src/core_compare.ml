@@ -143,7 +143,9 @@ let compile name args =
         if
           List.for_all
             (fun arg ->
-              Types.same_shape first.ty arg.ty
+              Types.is_dynamic first.ty
+              || Types.is_dynamic arg.ty
+              || Types.same_shape first.ty arg.ty
               || (match (first.ty, arg.ty) with
                  | TNil, TNullable _ | TNullable _, TNil -> true
                  | TNullable inner, ty | ty, TNullable inner ->
@@ -160,7 +162,10 @@ let compile name args =
             if name = "not=" then Semantic_ir.Prefix ("not", equal_expr) else equal_expr
           in
           Ok (typed_ir TBool expression)
-        else Error.error (name ^ " arguments must have the same type")
+        else
+          Error.error
+            (name ^ " arguments must have the same type: "
+            ^ String.concat ", " (List.map (fun arg -> Types.source_name arg.ty) args))
       else
         let numeric_ty =
           List.find_map

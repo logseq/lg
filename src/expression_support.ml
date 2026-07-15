@@ -92,8 +92,17 @@ let rec merge_branch_types left right =
                && plain_dynamic_compatible_type right ->
             Some (TNullable (Types.dynamic_constraint TUnknown))
         | None -> None)
+    | TOcaml_app ("option", [ left ]), TOcaml_app ("option", [ right ]) ->
+        Option.map
+          (fun merged -> TOcaml_app ("option", [ merged ]))
+          (merge_branch_types left right)
     | TNullable inner, ty | ty, TNullable inner ->
         Option.map (fun merged -> TNullable merged)
+          (merge_branch_types inner ty)
+    | TOcaml_app ("option", [ inner ]), ty
+    | ty, TOcaml_app ("option", [ inner ]) ->
+        Option.map
+          (fun merged -> TOcaml_app ("option", [ merged ]))
           (merge_branch_types inner ty)
     | left, right
       when plain_dynamic_compatible_type left
@@ -261,6 +270,24 @@ let coerce_expression_to_type ?(stored = false) target_ty source_ty expression =
                 ("Some", Some (Semantic_ir.PVar value_name)),
               Semantic_ir.Constructor ("Some", Some packed) );
           ] )
+  | TNullable target, source
+    when Types.is_dynamic target && not (Types.is_dynamic source)
+         && not (Types.equal source TNil) ->
+      let value = typed_ir source expression in
+      let packed =
+        pack_plain_dynamic_value value
+        |> Option.value ~default:value.semantic_expr
+      in
+      Semantic_ir.Constructor ("Some", Some packed)
+  | TOcaml_app ("option", [ target ]), source
+    when Types.is_dynamic target && not (Types.is_dynamic source)
+         && not (Types.equal source TNil) ->
+      let value = typed_ir source expression in
+      let packed =
+        pack_plain_dynamic_value value
+        |> Option.value ~default:value.semantic_expr
+      in
+      Semantic_ir.Constructor ("Some", Some packed)
   | target_ty, TOcaml_app (constraint_name, [ _element_ty; _value_ty ])
     when (match target_ty with
          | TSeq _ -> true
@@ -298,7 +325,13 @@ let coerce_expression_to_type ?(stored = false) target_ty source_ty expression =
           ] )
   | TNullable _, TNil -> expression
   | TNullable _, TNullable _ -> expression
+  | TNullable _, TOcaml_app ("option", [ _ ]) -> expression
   | TNullable _, _ -> Semantic_ir.Constructor ("Some", Some expression)
+  | TOcaml_app ("option", [ _ ]), TNil -> expression
+  | TOcaml_app ("option", [ _ ]), TNullable _ -> expression
+  | TOcaml_app ("option", [ _ ]), TOcaml_app ("option", [ _ ]) -> expression
+  | TOcaml_app ("option", [ _ ]), _ ->
+      Semantic_ir.Constructor ("Some", Some expression)
   | _ -> expression
 
 let merge_branch_expressions left right =
@@ -470,6 +503,12 @@ let deftype_method_name (record : named_record) method_name arity =
 let lookup_deftype_method scope env record method_name arity =
   lookup_binding scope env (deftype_method_name record method_name arity)
 
+let print_method_name (record : named_record) =
+  "__print_method/" ^ Type_id.to_string record.type_id
+
+let lookup_print_method scope env record =
+  lookup_binding scope env (print_method_name record)
+
 let binding_of_expr ?(row_param_types = []) ocaml_name expr =
   Types.binding ~row_param_types ?return_param_index:expr.return_param_index
     ocaml_name expr.ty
@@ -546,6 +585,26 @@ let lookup_function scope env name =
                (Semantic_ir.Fun
                   ( [ Semantic_ir.PVar "x" ],
                     Semantic_ir.Prefix ("not", Semantic_ir.Ident "x") )))
+      | "transient" ->
+          let dynamic = Types.dynamic_constraint TUnknown in
+          Ok
+            (typed_ir (TFn ([ dynamic ], dynamic))
+               (Semantic_ir.Fun
+                  ( [ Semantic_ir.PVar "collection" ],
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident
+                          "Lg_runtime.Runtime_dynamic.as_transient",
+                        [ Semantic_ir.Ident "collection" ] ) )))
+      | "persistent!" ->
+          let dynamic = Types.dynamic_constraint TUnknown in
+          Ok
+            (typed_ir (TFn ([ dynamic ], dynamic))
+               (Semantic_ir.Fun
+                  ( [ Semantic_ir.PVar "collection" ],
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident
+                          "Lg_runtime.Runtime_dynamic.persistent",
+                        [ Semantic_ir.Ident "collection" ] ) )))
       | _ -> Error.error ("unknown function " ^ name))
 
 let ocaml_call_target = Resolver.ocaml_call_target

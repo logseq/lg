@@ -635,6 +635,27 @@ let create ~compile_expr =
             | None -> Error.error "when body cannot be made nullable"))
   
   and compile_cond scope env clauses =
+    let anonymous_fn = function
+      | FList (FSymbol "fn" :: FVector _ :: _) -> true
+      | _ -> false
+    in
+    let contextualize_fn = function
+      | FList (FSymbol "fn" :: FVector params :: body) ->
+          let params =
+            List.map
+              (function
+                | FSymbol name ->
+                    FList
+                      [ FSymbol "__type-hint";
+                        FSymbol "^Object";
+                        FSymbol name;
+                      ]
+                | param -> param)
+              params
+          in
+          FList (FSymbol "fn" :: FVector params :: body)
+      | form -> form
+    in
     let parse_pairs clauses =
       let rec loop acc = function
         | [] -> Ok (List.rev acc, FSymbol "nil")
@@ -661,6 +682,15 @@ let create ~compile_expr =
     match parse_pairs clauses with
     | Error _ as err -> err
     | Ok (pairs, else_form) -> (
+        let pairs, else_form =
+          let values = else_form :: List.map snd pairs in
+          if List.for_all anonymous_fn values then
+            ( List.map
+                (fun (test, value) -> (test, contextualize_fn value))
+                pairs,
+              contextualize_fn else_form )
+          else (pairs, else_form)
+        in
         match (compile_pairs [] pairs, compile_expr scope env else_form) with
         | (Error _ as err), _ -> err
         | _, (Error _ as err) -> err
@@ -707,7 +737,11 @@ let create ~compile_expr =
                      else_expr.semantic_expr)
               in
               Ok (typed_ir result_ty expression)
-            | None -> Error.error "cond branches must have same type"))
+            | None ->
+                Error.error
+                  ("cond branches must have same type: "
+                  ^ String.concat ", "
+                      (List.map Types.source_name branch_types))))
 
   and compile_logical scope env operator forms =
     match forms with
@@ -1065,6 +1099,30 @@ let create ~compile_expr =
       | form :: rest -> split_body (form :: acc) rest
     in
     let parse_catch = function
+      | FList
+          (FSymbol "catch" :: FSymbol exception_type :: FSymbol binding
+          :: body_forms) -> (
+          match body_forms with
+          | [] -> Error.error "catch requires a type, binding, and body"
+          | _ ->
+              let constructor =
+                match exception_type with
+                | "ClassCastException" -> "Invalid_argument"
+                | _ -> exception_type
+              in
+              let pattern =
+                FList
+                  [ FSymbol "as";
+                    FList [ FSymbol constructor; FSymbol "_" ];
+                    FSymbol binding;
+                  ]
+              in
+              let body =
+                match body_forms with
+                | [ body ] -> body
+                | body_forms -> FList (FSymbol "do" :: body_forms)
+              in
+              Ok (pattern, body))
       | FList (FSymbol "catch" :: pattern :: body_forms) -> (
           match body_forms with
           | [] -> Error.error "catch requires a pattern and body"
@@ -1081,9 +1139,15 @@ let create ~compile_expr =
           | Ok clause -> parse_catches (clause :: acc) rest)
     in
     let compatible_try_type body_ty handlers_ty =
+      match (body_ty, handlers_ty) with
+      | TUnknown, ty when plain_dynamic_compatible_type ty ->
+          Ok (Types.dynamic_constraint TUnknown)
+      | ty, TUnknown when plain_dynamic_compatible_type ty ->
+          Ok (Types.dynamic_constraint TUnknown)
+      | _ -> (
       match merge_branch_types body_ty handlers_ty with
       | Some ty -> Ok ty
-      | None -> Error.error "try body and handlers must have the same type"
+      | None -> Error.error "try body and handlers must have the same type")
     in
     match split_body [] forms with
     | Error _ as err -> err
@@ -1280,8 +1344,12 @@ let create ~compile_expr =
                   match compile_expr scope env value_form with
                   | Error _ as err -> err
                   | Ok value ->
+                      let value_ty =
+                        if Types.equal value.ty TNil then TNullable TUnknown
+                        else value.ty
+                      in
                       let value =
-                        match Types.seqable_constraint_info value.ty with
+                        match Types.seqable_constraint_info value_ty with
                         | None -> Ok value
                         | Some (_, element_ty, _) -> (
                             match
@@ -1300,7 +1368,7 @@ let create ~compile_expr =
                       Result.bind value (fun value ->
                           compile_bindings (name :: names)
                             (Destructure.source_identity name_form :: identities)
-                            (value :: values) (value.ty :: tys) rest))
+                            (value :: values) (value_ty :: tys) rest))
             | _ -> Error.error "loop binding names must be symbols"
           in
           (match compile_bindings [] [] [] [] forms with

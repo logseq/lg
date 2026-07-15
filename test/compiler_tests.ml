@@ -1687,6 +1687,19 @@ let test_transient_collection_operations_preserve_values () =
   assert_ocaml_runs "transient_collection_operations_preserve_values"
     "true:true\n" ocaml_source
 
+let test_transient_operations_are_first_class_functions () =
+  let source =
+    {|
+(def to-transient transient)
+(def to-persistent persistent!)
+(def values (to-persistent (conj! (to-transient [1]) 2)))
+(println (= values [1 2]))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "transient_operations_are_first_class_functions" "true\n"
+    ocaml_source
+
 let test_assert_accepts_optional_message () =
   let source =
     {|
@@ -4146,6 +4159,24 @@ let test_loop_nil_initial_value_can_become_optional () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_loop_nil_initial_value_accepts_nullable_function_returns () =
+  let source =
+    {|
+(defn maybe-values [value]
+  (if (pos? value) (array value) nil))
+(defn collect-values []
+  (loop [index 0
+         result nil]
+    (if (= index 1)
+      result
+      (recur (inc index) (maybe-values 42)))))
+(Stdlib.ignore (collect-values))
+|}
+  in
+  ignore (Lg.Compiler.compile_string source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_forward_declared_deftype_fields_keep_nominal_receiver () =
   let source =
     {|
@@ -4229,6 +4260,37 @@ let test_deftype_methods_support_instance_call_syntax () =
   assert_ocaml_runs "deftype_methods_support_instance_call_syntax" "42\n"
     ocaml_source
 
+let test_generic_collection_returns_preserve_concrete_element_types () =
+  let source =
+    {|
+(type-record address-store
+  (addresses :array<option<int64>>)
+  (delete :fn<array<int64>;unit>))
+(defn address-value [candidate]
+  (match candidate
+    (Some address) address
+    None (Stdlib.failwith "missing address")))
+(defn address-option-equals? [candidate address]
+  (match candidate
+    (Some value) (= value address)
+    None false))
+(defn address-present? [candidate]
+  (match candidate
+    (Some address) (address-option-equals? candidate address)
+    None false))
+(defn removed-addresses [addresses]
+  (into-array
+    (map address-value
+      (filter address-present? (array-to-seq addresses)))))
+(defn delete-addresses [store]
+  (let [delete (:delete store)]
+    (delete (removed-addresses (:addresses store)))))
+|}
+  in
+  ignore (Lg.Compiler.compile_string source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_java_exception_constructors_map_to_runtime_exceptions () =
   let source =
     {|
@@ -4254,6 +4316,190 @@ let test_java_exception_constructors_support_empty_messages () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "java_exception_constructors_support_empty_messages"
     "caught\n" ocaml_source
+
+let test_print_method_defmethod_writes_custom_record_representations () =
+  let source =
+    {|
+(deftype Person [name])
+(defmethod print-method Person [^Person person ^java.io.Writer writer]
+  (.write writer "#person ")
+  (binding [*out* writer]
+    (pr (.-name person))))
+(println (pr-str (Person. "Ada")))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "print_method_defmethod_writes_custom_record_representations"
+    "#person \"Ada\"\n" ocaml_source
+
+let test_defn_accepts_attribute_maps_and_return_hints () =
+  let source =
+    {|
+(defn add
+  {:inline (fn [x y] (list '+ x y))}
+  ^long [x y]
+  (long (+ x y)))
+(println (add 20 22))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "defn_accepts_attribute_maps_and_return_hints" "42\n"
+    ocaml_source
+
+let test_compare_supports_dynamic_scalar_values () =
+  let source =
+    {|
+(defn cmp [x y]
+  (if (nil? x) 0 (if (nil? y) 0 (compare x y))))
+(println (str (cmp 1 2) ":" (cmp "b" "a") ":" (cmp :a :a)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "compare_supports_dynamic_scalar_values" "-1:1:0\n"
+    ocaml_source
+
+let test_class_and_identical_support_dynamic_values () =
+  let source =
+    {|
+(defn same-class? [x y] (identical? (class x) (class y)))
+(defn class-name [^Object x]
+  (if (nil? x) x (.getName (. x (getClass)))))
+(println (str (same-class? 1 2) ":" (same-class? 1 "1") ":"
+              (class-name 1)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "class_and_identical_support_dynamic_values"
+    "true:false:java.lang.Long\n" ocaml_source
+
+let test_clojure_static_dot_calls_support_hasheq () =
+  let source =
+    {|
+(println (= (hash :answer) (. clojure.lang.Util (hasheq :answer))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "clojure_static_dot_calls_support_hasheq" "true\n"
+    ocaml_source
+
+let test_clojure_number_and_comparable_interop () =
+  let source =
+    {|
+(defn value-compare [x y]
+  (cond
+    (instance? Number x) (clojure.lang.Numbers/compare x y)
+    (instance? Comparable x) (.compareTo x y)
+    :else 0))
+(println (str (value-compare 1 2) ":" (value-compare "b" "a")))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "clojure_number_and_comparable_interop" "-1:1\n"
+    ocaml_source
+
+let test_clojure_equals_interop_supports_dynamic_values () =
+  let source =
+    {|
+(defn string-equals [^Object value] (.equals "a" value))
+(defn keyword-equals [^Object value] (.equals :a value))
+(println (str (string-equals "a") ":" (string-equals 1) ":"
+              (keyword-equals :a)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "clojure_equals_interop_supports_dynamic_values"
+    "true:false:true\n" ocaml_source
+
+let test_try_supports_clojure_exception_type_bindings () =
+  let source =
+    {|
+(def diff
+  (try
+    1
+    (catch ClassCastException _ :incomparable)))
+(println
+  (try
+    (try
+      (raise (Invalid_argument "bad"))
+      (catch ClassCastException error (throw error)))
+    (catch _ "caught")))
+(println (str (= diff :incomparable) ":" (== diff 1)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "try_supports_clojure_exception_type_bindings"
+    "caught\nfalse:true\n"
+    ocaml_source
+
+let test_macros_can_clear_form_metadata () =
+  let source =
+    {|
+(defmacro without-meta [value]
+  (with-meta value {}))
+(println (without-meta ^long 42))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "macros_can_clear_form_metadata" "42\n" ocaml_source
+
+let test_macros_can_apply_functions_to_argument_sequences () =
+  let source =
+    {|
+(defmacro emit-call [function & arguments]
+  (apply list function arguments))
+(println (emit-call + 20 22))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "macros_can_apply_functions_to_argument_sequences" "42\n"
+    ocaml_source
+
+let test_cond_contextualizes_anonymous_function_branches () =
+  let source =
+    {|
+(defn predicate-for [value]
+  (cond
+    (string? value) (fn [candidate] (string? candidate))
+    (nil? value) (fn [candidate] (nil? candidate))
+    :else (fn [candidate] (= value candidate))))
+(println (str ((predicate-for "a") "b") ":"
+              ((predicate-for nil) nil) ":"
+              ((predicate-for 1) 1)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "cond_contextualizes_anonymous_function_branches"
+    "true:true:true\n" ocaml_source
+
+let test_callable_expressions_are_evaluated_once () =
+  let source =
+    {|
+(def calls (volatile! 0))
+(def result
+  ((do (vswap! calls inc) (fn [value] (+ value 1))) 41))
+(println (str result ":" (deref calls)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "callable_expressions_are_evaluated_once" "42:1\n"
+    ocaml_source
+
+let test_extend_type_supports_multiple_protocol_groups () =
+  let source =
+    {|
+(defprotocol LeftValue (left-value [value]))
+(defprotocol RightValue (right-value [value]))
+(deftype PairValue [left right])
+(extend-type PairValue
+  LeftValue (left-value [value] (.-left value))
+  RightValue (right-value [value] (.-right value)))
+(def pair (PairValue. 20 22))
+(println (+ (left-value pair) (right-value pair)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "extend_type_supports_multiple_protocol_groups" "42\n"
+    ocaml_source
 
 let test_clojure_map_entry_compiles_as_two_element_vector () =
   let source =
@@ -4747,7 +4993,7 @@ let test_not_equal_core_api () =
 
 let test_not_equal_rejects_mixed_types () =
   Lg.Compiler.compile_string {|(def x (not= 1 "1"))|}
-  |> expect_error "not= arguments must have the same type"
+  |> expect_error "not= arguments must have the same type: int, string"
 
 let test_collection_equality_core_api () =
   let source =
@@ -6515,7 +6761,7 @@ let test_common_higher_order_helpers_reject_mixed_juxt_returns () =
 
 let test_common_higher_order_helpers_reject_compare_type_mismatch () =
   Lg.Compiler.compile_string {|(def x (compare 1 "1"))|}
-  |> expect_error "compare arguments must have the same type"
+  |> expect_error "compare arguments must have the same type: int and string"
 
 let test_apply_rejects_bad_set_reducers () =
   Lg.Compiler.compile_string {|(def x (apply + (hash-set "a" "b")))|}
@@ -6808,6 +7054,23 @@ let test_into_core_api () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "into_core_api" "[1 2 3]:(3 2 1):#{1 2 3}\n" ocaml_source
+
+let test_into_accepts_inferred_seqable_parameters () =
+  let source =
+    {|
+(defn append-all [values]
+  (if (empty? values)
+    []
+    (into [] values)))
+(def appended (append-all [1 2 3]))
+(println (str (count appended) ":" (= 1 (first appended))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "into_accepts_inferred_seqable_parameters" "3:true\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_into_rejects_element_type_mismatch () =
   Lg.Compiler.compile_string {|(def x (into [1] ["two"]))|}
@@ -10535,6 +10798,8 @@ let tests =
       test_javascript_targets_compile_date_and_radix_interop );
     ( "transient collection operations preserve values",
       test_transient_collection_operations_preserve_values );
+    ( "transient operations are first-class functions",
+      test_transient_operations_are_first_class_functions );
     ( "assert accepts optional message",
       test_assert_accepts_optional_message );
     ( "into cat flattens one collection level",
@@ -10882,6 +11147,8 @@ let tests =
       test_dynamic_arrays_recover_generic_elements );
     ( "loop nil initial value can become optional",
       test_loop_nil_initial_value_can_become_optional );
+    ( "loop nil initial value accepts nullable function returns",
+      test_loop_nil_initial_value_accepts_nullable_function_returns );
     ( "forward declared deftype fields keep nominal receiver",
       test_forward_declared_deftype_fields_keep_nominal_receiver );
     ( "deftype fields accept Clojure primitive hints",
@@ -10892,10 +11159,38 @@ let tests =
       test_deftype_mutable_fields_support_set_bang );
     ( "deftype methods support instance call syntax",
       test_deftype_methods_support_instance_call_syntax );
+    ( "generic collection returns preserve concrete element types",
+      test_generic_collection_returns_preserve_concrete_element_types );
     ( "Java exception constructors map to runtime exceptions",
       test_java_exception_constructors_map_to_runtime_exceptions );
     ( "Java exception constructors support empty messages",
       test_java_exception_constructors_support_empty_messages );
+    ( "print-method defmethod writes custom record representations",
+      test_print_method_defmethod_writes_custom_record_representations );
+    ( "defn accepts attribute maps and return hints",
+      test_defn_accepts_attribute_maps_and_return_hints );
+    ( "compare supports dynamic scalar values",
+      test_compare_supports_dynamic_scalar_values );
+    ( "class and identical? support dynamic values",
+      test_class_and_identical_support_dynamic_values );
+    ( "Clojure static dot calls support hasheq",
+      test_clojure_static_dot_calls_support_hasheq );
+    ( "Clojure Number and Comparable interop",
+      test_clojure_number_and_comparable_interop );
+    ( "Clojure equals interop supports dynamic values",
+      test_clojure_equals_interop_supports_dynamic_values );
+    ( "try supports Clojure exception type bindings",
+      test_try_supports_clojure_exception_type_bindings );
+    ( "macros can clear form metadata",
+      test_macros_can_clear_form_metadata );
+    ( "macros can apply functions to argument sequences",
+      test_macros_can_apply_functions_to_argument_sequences );
+    ( "cond contextualizes anonymous function branches",
+      test_cond_contextualizes_anonymous_function_branches );
+    ( "callable expressions are evaluated once",
+      test_callable_expressions_are_evaluated_once );
+    ( "extend-type supports multiple protocol groups",
+      test_extend_type_supports_multiple_protocol_groups );
     ( "Clojure MapEntry compiles as a two-element vector",
       test_clojure_map_entry_compiles_as_two_element_vector );
     ( "set literals are callable as membership lookup",
@@ -11240,6 +11535,8 @@ let tests =
     ("empty core api works", test_empty_core_api);
     ("empty rejects unsupported values", test_empty_rejects_unsupported_values);
     ("into core api works", test_into_core_api);
+    ( "into accepts inferred seqable parameters",
+      test_into_accepts_inferred_seqable_parameters );
     ("into rejects element type mismatch", test_into_rejects_element_type_mismatch);
     ("typed empty sets work", test_typed_empty_sets);
     ("sets reject nil elements", test_sets_reject_nil_elements);

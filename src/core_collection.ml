@@ -129,9 +129,12 @@ let rec empty_question env collection =
           Ok
             (typed_ir TBool
                (apply "Lg_runtime.Runtime_seq.is_empty" [ sequence ]))
-      | Error _ -> Error.error "empty? expects a seqable value")
+      | Error _ ->
+          Error.error
+            ("empty? expects a seqable value, got "
+            ^ Types.source_name collection.ty))
 
-let empty collection =
+let empty env collection =
   match collection.ty with
   | ty when Types.is_dynamic ty ->
       Ok
@@ -145,7 +148,18 @@ let empty collection =
              typed_ir collection.ty (Semantic_ir.Ident (set_module ^ ".empty")))
   | TVector _ -> Ok (typed_ir collection.ty (Semantic_ir.Ident "Rrbvec.empty"))
   | TString -> Ok (typed_ir TString (Semantic_ir.String ""))
-  | _ -> Error.error "empty expects a collection or string"
+  | _ -> (
+      match
+        Core_protocols.find_emptyable collection.ty
+          (Compiler_environment.protocols env)
+      with
+      | Some { ty = TFn ([ receiver_ty ], return_ty); ocaml_name; _ }
+        when Types.assignable ~policy:Host_boundary ~expected:receiver_ty
+               ~actual:collection.ty ->
+          Ok
+            (typed_ir return_ty
+               (apply ocaml_name [ collection.semantic_expr ]))
+      | _ -> Error.error "empty expects a collection or string")
 
 let take_list_expr count source =
   let n = Semantic_ir.Ident "n" in
@@ -220,7 +234,7 @@ let compile env name args =
           | "rest" -> rest env collection
           | "seq" -> seq env collection
           | "empty?" -> empty_question env collection
-          | "empty" -> empty collection
+          | "empty" -> empty env collection
           | "reverse" -> reverse collection
           | _ -> assert false))
   | "take" | "drop" -> (

@@ -309,5 +309,8 @@
 (extend-type btset Counted
   (-count [set] (set-count set)))
 
+(extend-type btset Emptyable
+  (-empty [set] (empty-set (set-comparator set))))
+
 (extend-type btset Reducible
   (-reduce [set f initial] (set-reduce set f initial)))

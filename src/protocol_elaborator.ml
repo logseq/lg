@@ -84,6 +84,40 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
   match protocol_receiver_type scope env receiver_form with
   | Error _ as err -> err
   | Ok receiver_ty ->
+      let rec form_mentions name = function
+        | FSymbol candidate -> candidate = name
+        | FList forms | FVector forms ->
+            List.exists (form_mentions name) forms
+        | FMap pairs ->
+            List.exists
+              (fun (key, value) ->
+                form_mentions name key || form_mentions name value)
+              pairs
+        | FInt _ | FFloat _ | FChar _ | FString _ | FRegex _ | FBool _
+        | FKeyword _ ->
+            false
+      in
+      let bind_record_fields params body_forms =
+        match (receiver_ty, params) with
+        | TNamed_record record, FVector (FSymbol receiver_name :: _) ->
+            let bindings =
+              record.fields
+              |> List.filter (fun (field : field) ->
+                     let name = Names.keyword_source_name field.keyword in
+                     List.exists (form_mentions name) body_forms)
+              |> List.concat_map (fun (field : field) ->
+                     let name = Names.keyword_source_name field.keyword in
+                     [ FSymbol name;
+                       FList
+                         [ FSymbol (".-" ^ name);
+                           FSymbol receiver_name;
+                         ];
+                     ])
+            in
+            if bindings = [] then body_forms
+            else [ FList (FSymbol "let" :: FVector bindings :: body_forms) ]
+        | _ -> body_forms
+      in
       let compile_method env = function
         | FList (((FSymbol method_name) as name_form) :: params :: body_forms) -> (
             match marker scope env protocol_name method_name with
@@ -92,6 +126,7 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                 match Protocol.annotate_receiver receiver_ty params with
                 | Error _ as err -> err
                 | Ok params -> (
+                    let body_forms = bind_record_fields params body_forms in
                     let param_type_overrides = [ Some receiver_ty ] in
                     match
                       Expression_elaborator.compile_fn ~param_type_overrides scope env params body_forms
