@@ -168,6 +168,9 @@ let compare left right =
   | Bool left, Bool right -> Bool.compare left right
   | _ -> invalid_arg "dynamic values are not comparable"
 
+let sort collection =
+  collection |> to_seq |> List.of_seq |> List.sort compare |> list
+
 let class_ value =
   let name =
     match value.payload with

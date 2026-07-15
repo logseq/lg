@@ -217,12 +217,17 @@ let dedupe collection =
       Ok (typed_ir collection.ty (collection_from_list_expr collection.ty list_expr))
 
 let sort collection =
-  match collection_to_list_expr collection with
-  | Error _ -> Error.error "sort expects a list, vector, or set"
-  | Ok (inner, list_expr) ->
-      Ok
-        (typed_ir (TList inner)
-           (apply "List.sort" [ Semantic_ir.Ident "compare"; list_expr ]))
+  if Types.is_dynamic collection.ty then
+    Ok
+      (typed_ir collection.ty
+         (apply "Lg_runtime.Runtime_dynamic.sort" [ collection.semantic_expr ]))
+  else
+    match collection_to_list_expr collection with
+    | Error _ -> Error.error "sort expects a list, vector, or set"
+    | Ok (inner, list_expr) ->
+        Ok
+          (typed_ir (TList inner)
+             (apply "List.sort" [ Semantic_ir.Ident "compare"; list_expr ]))
 
 let concat collections =
   let rec loop element_ty exprs = function

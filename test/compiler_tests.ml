@@ -6488,6 +6488,21 @@ let test_batched_sequence_functions_work () =
      6):[1 2 1]:(10 21):[1 3]:[2 3]:31:2:true\n"
     ocaml_source
 
+let test_sort_accepts_dynamic_collections () =
+  let source =
+    {|
+(defrecord Box [values])
+(def sorted (sort (:values (Box. [3 1 2]))))
+(println (pr-str sorted))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "sort_accepts_dynamic_collections" "(1 2 3)\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
 let test_metadata_map_values_constrain_function_parameters () =
   let source =
     {|
@@ -12876,6 +12891,7 @@ let tests =
       test_batched_identifier_and_constructor_core_functions_reject_bad_list_star_tail
     );
     ("batched sequence functions work", test_batched_sequence_functions_work);
+    ("sort accepts dynamic collections", test_sort_accepts_dynamic_collections);
     ( "metadata map values constrain function parameters",
       test_metadata_map_values_constrain_function_parameters );
     ( "logical or preserves nullable dynamic results",
