@@ -558,6 +558,31 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
             List.assoc_opt item inferred |> Option.value ~default:TUnknown
         | Error _ -> TUnknown)
     | _ -> TUnknown
+  and inferred_kv_reducer_types params init = function
+    | FSymbol name -> (
+        match lookup_function_ty name with
+        | Ok (TFn ([ _; key_ty; value_ty ], _)) -> (key_ty, value_ty)
+        | _ -> (TUnknown, TUnknown))
+    | FList
+        (FSymbol "fn"
+        :: FVector [ accumulator; FSymbol key; FSymbol value ]
+        :: body_forms) -> (
+        let accumulator_ty = inferred_form_type params init in
+        let reducer_params =
+          [ (key, TUnknown); (value, TUnknown) ]
+          @
+          match accumulator with
+          | FSymbol name -> [ (name, accumulator_ty) ]
+          | _ -> []
+        in
+        match infer_all reducer_params body_forms with
+        | Ok inferred ->
+            ( List.assoc_opt key inferred
+              |> Option.value ~default:TUnknown,
+              List.assoc_opt value inferred
+              |> Option.value ~default:TUnknown )
+        | Error _ -> (TUnknown, TUnknown))
+    | _ -> (TUnknown, TUnknown)
   and infer_let params bindings body_forms =
     match bindings with
     | FVector forms -> (
@@ -1325,9 +1350,16 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
         | Error _ as error -> error
         | Ok params -> infer_all params values)
     | FList [ FSymbol "reduce-kv"; reducer; init; FSymbol name ] -> (
+        let key_ty, value_ty = inferred_kv_reducer_types params init reducer in
+        let unresolved name = function
+          | TUnknown | TVar _ -> TVar name
+          | ty -> ty
+        in
         match
           infer_expected
-            (Types.dynamic_map (TVar "map_key") (TVar "map_value"))
+            (Types.dynamic_map
+               (unresolved "map_key" key_ty)
+               (unresolved "map_value" value_ty))
             params (FSymbol name)
         with
         | Error _ as error -> error

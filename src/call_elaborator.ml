@@ -1246,6 +1246,14 @@ let rec pack_constrained_value env expected argument =
           in
           let element_mapper =
             match Collection_capability.element_type env argument with
+            | Some actual_element when Types.is_dynamic actual_element ->
+                let item_name = "__lg_seqable_item" in
+                dynamic_unpack env expected_element
+                  (Semantic_ir.Ident item_name)
+                |> Result.map (fun unpacked ->
+                       Some
+                         (Semantic_ir.Fun
+                            ([ Semantic_ir.PVar item_name ], unpacked)))
             | Some actual_element
               when has_capability_constraint expected_element ->
                 let item_name = "__lg_seqable_item" in
@@ -1433,6 +1441,24 @@ let rec adapt_value_to_type env expected actual =
     | _ ->
         Ok
           (coerce_expression_to_type expected actual.ty actual.semantic_expr)
+
+let adapt_record_values_to_map env key_ty value_ty values =
+  let rec build map = function
+    | [] -> Ok map
+    | ((field : field), value) :: rest ->
+        let key =
+          typed_ir TKeyword (Semantic_ir.String field.keyword)
+        in
+        let value = typed_ir field.ty value in
+        Result.bind (adapt_value_to_type env key_ty key) (fun key ->
+            Result.bind (adapt_value_to_type env value_ty value) (fun value ->
+                build
+                  (Semantic_ir.Apply
+                     ( Semantic_ir.Ident "Lg_runtime.Runtime_map.assoc",
+                       [ map; key; value ] ))
+                  rest))
+  in
+  build (Semantic_ir.Ident "Lg_runtime.Runtime_map.empty") values
 
 let typed_row_argument env type_name expected_fields argument =
   let actual_fields =
@@ -6182,27 +6208,19 @@ let create ~compile_expr =
                                                                 field.keyword)
                                                             values);
                                                      ] ))
-                                          | expected_ty, Some values
-                                            when Option.is_some
-                                                   (Types.dynamic_map_types
-                                                      expected_ty) ->
-                                              Ok
-                                                (List.fold_left
-                                                   (fun map
-                                                      ((field : field), value)
-                                                    ->
-                                                     Semantic_ir.Apply
-                                                       ( Semantic_ir.Ident
-                                                           "Lg_runtime.Runtime_map.assoc",
-                                                       [
-                                                         map;
-                                                           Semantic_ir.String
-                                                             field.keyword;
-                                                           value;
-                                                         ] ))
-                                                   (Semantic_ir.Ident
-                                                      "Lg_runtime.Runtime_map.empty")
-                                                   values)
+                                          | expected_ty, Some values -> (
+                                              match
+                                                Types.dynamic_map_types
+                                                  expected_ty
+                                              with
+                                              | Some (key_ty, value_ty) ->
+                                                  adapt_record_values_to_map
+                                                    env key_ty value_ty values
+                                              | None ->
+                                                  Ok
+                                                    (row_arg_expr
+                                                       row_type_name
+                                                       expected_ty arg))
                                           | _ ->
                                               Ok
                                                 (row_arg_expr row_type_name

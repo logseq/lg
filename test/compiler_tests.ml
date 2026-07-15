@@ -8043,6 +8043,34 @@ let test_reduce_kv_accepts_dynamic_maps () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_map_value_parameters_support_guarded_sequence_use () =
+  let source =
+    {|
+(defn sum-values [values]
+  (reduce (fn [total value] (+ total value)) 0 values))
+(defn multi-value? [value]
+  (vector? value))
+(defn resolve-like [entity]
+  (reduce-kv
+    (fn [[total seen] _attribute value]
+      (if (multi-value? value)
+        [(+ total (sum-values value)) (inc seen)]
+        [total seen]))
+    [0 0]
+    entity))
+(println (resolve-like {:values [1 2]}))
+(println (resolve-like {:value 7}))
+(println (resolve-like {}))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "map_value_parameters_support_guarded_sequence_use"
+    "[3 1]\n[0 0]\n[0 0]\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
 let test_set_literals_accept_dynamic_elements () =
   let source =
     {|
@@ -12779,6 +12807,8 @@ let tests =
     ( "assoc accepts nullable dynamic maps",
       test_assoc_accepts_nullable_dynamic_maps );
     ("reduce-kv accepts dynamic maps", test_reduce_kv_accepts_dynamic_maps);
+    ( "map value parameters support guarded sequence use",
+      test_map_value_parameters_support_guarded_sequence_use );
     ( "set literals accept dynamic elements",
       test_set_literals_accept_dynamic_elements );
     ( "contains? infers generic membership for variable keys",
