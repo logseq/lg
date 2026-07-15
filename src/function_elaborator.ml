@@ -13,6 +13,21 @@ let unique_named_records records =
       else record :: unique)
     [] records
 
+let same_host_wrapper expected actual =
+  let same_outer =
+    match (expected, actual) with
+    | TArray _, TArray _ | TRef _, TRef _ | TNullable _, TNullable _ -> true
+    | TOcaml_app (expected_name, expected_args),
+      TOcaml_app (actual_name, actual_args) ->
+        expected_name = actual_name
+        && List.length expected_args = List.length actual_args
+    | TTuple expected_items, TTuple actual_items ->
+        List.length expected_items = List.length actual_items
+    | _ -> false
+  in
+  same_outer
+  && Types.assignable ~policy:Host_boundary ~expected ~actual
+
 let record_inference_compatible env ~allow_expected_dynamic expected_fields
     actual_fields =
   expected_fields
@@ -36,12 +51,18 @@ let record_inference_compatible env ~allow_expected_dynamic expected_fields
                    Protocol.type_satisfies env protocol_id actual.ty
                | None -> false
              in
+             let expected_seqable_compatible =
+               Option.is_some (Types.seqable_constraint_info expected.ty)
+               && Collection_capability.accepts_seqable env actual.ty
+             in
              Types.is_dynamic actual.ty
              || (match actual.ty with TUnknown | TVar _ -> true | _ -> false)
              || (match expected.ty with TUnknown | TVar _ -> true | _ -> false)
              || expected_dynamic_compatible
              || expected_protocol_compatible
+             || expected_seqable_compatible
              || Types.equal expected.ty actual.ty
+             || same_host_wrapper expected.ty actual.ty
              || Types.row_compatible ~expected:expected.ty ~actual:actual.ty)
 
 let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
@@ -151,6 +172,7 @@ let rec pattern_constraint_type = function
   | TVector ty -> TVector (pattern_constraint_type ty)
   | TSet ty -> TSet (pattern_constraint_type ty)
   | TSeq ty -> TSeq (pattern_constraint_type ty)
+  | TRecord _ -> TOcaml "_"
   | TFn (parameters, return_type) ->
       TFn
         ( List.map pattern_constraint_type parameters,
@@ -222,10 +244,13 @@ let normalize_prepost_body = function
 let prepare ?(param_type_overrides = []) ?variadic_rest_index
     ?compile_function_body ~lookup_function_ty ~compile_body scope env params
     body_forms =
-  let body_forms = normalize_prepost_body body_forms in
-  match Destructure.parse_param_specs params with
-  | Error _ as err -> err
-  | Ok specs -> (
+  match Macro_expander.expand_all_forms ~scope ~compiler_env:env body_forms with
+  | Error _ as error -> error
+  | Ok body_forms ->
+      let body_forms = normalize_prepost_body body_forms in
+      match Destructure.parse_param_specs params with
+      | Error _ as err -> err
+      | Ok specs -> (
       let inference_params =
         specs
         |> List.mapi (fun index (spec : Destructure.param_spec) ->
@@ -423,10 +448,11 @@ let fn_code ?(row_param_type_names = []) parts =
                 | TRecord _ -> Semantic_ir.PVar name
                | _ -> (
                    match param_constraint_name ty with
-                   | Some type_name ->
+                   | Some _ ->
                         Semantic_ir.PConstraint
-                          (Semantic_ir.PVar name, type_name)
-                    | None -> Semantic_ir.PVar name))
+                          ( Semantic_ir.PVar name,
+                            Types.ocaml_name (pattern_constraint_type ty) )
+                   | None -> Semantic_ir.PVar name))
            in
            match List.nth_opt parts.param_identities index |> Option.join with
            | None -> pattern

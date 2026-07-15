@@ -97,6 +97,10 @@ and compile_expr_unlocated scope (env : Env.t) = function
   | FBool value -> Ok (typed_ir TBool (Semantic_ir.Bool value))
   | FKeyword keyword -> Ok (typed_ir TKeyword (Semantic_ir.String keyword))
   | FSymbol "nil" -> Ok (typed_ir TNil (Semantic_ir.Constructor ("None", None)))
+  | FSymbol "js/Error"
+    when Env.target env = Target.Melange
+         || Env.target env = Target.Js_of_ocaml ->
+      Ok (typed_ir TUnit Semantic_ir.Unit)
   | FSymbol name when String.length name > 1 && name.[0] = '@' ->
       let reference_name = String.sub name 1 (String.length name - 1) in
       compile_expr scope env (FList [ FSymbol "deref"; FSymbol reference_name ])
@@ -282,12 +286,35 @@ and compile_thread scope env position value steps =
 
 and compile_cond_thread scope env position value clauses =
   let operator = match position with `First -> "->" | `Last -> "->>" in
+  let array_normalization_proves_array current condition step =
+    match (condition, step) with
+    | ( FList
+          [
+            FSymbol "not";
+            FList
+              [ FSymbol ("array?" | "array-value?"); candidate ];
+          ],
+        (FSymbol "array-from" | FList [ FSymbol "array-from" ]) ) ->
+        candidate = current
+    | _ -> false
+  in
   let rec expand current = function
     | [] -> Ok current
     | condition :: step :: rest ->
         incr some_thread_counter;
         let name =
           "__lg_cond_thread_value_" ^ string_of_int !some_thread_counter
+        in
+        let threaded = FList [ FSymbol operator; FSymbol name; step ] in
+        let unchanged =
+          if array_normalization_proves_array current condition step then
+            FList
+              [
+                FSymbol "__lg_dynamic-narrow";
+                threaded;
+                FSymbol name;
+              ]
+          else FSymbol name
         in
         Result.map
           (fun continuation ->
@@ -298,8 +325,8 @@ and compile_cond_thread scope env position value clauses =
                 [
                   FSymbol "if";
                   condition;
-                  FList [ FSymbol operator; FSymbol name; step ];
-                  FSymbol name;
+                  threaded;
+                  unchanged;
                 ])
              rest)
     | [ _ ] -> Error.error (operator ^ " requires condition/step pairs")
@@ -679,9 +706,34 @@ and prepare_fn ?(param_type_overrides = []) ?variadic_rest_index ?recur_target
           (fun body_env param_tys forms ->
             compile_loop_tail_body scope body_env target_name param_tys forms)
   in
-  Function_elaborator.prepare ~param_type_overrides ?variadic_rest_index
-    ?compile_function_body ~lookup_function_ty ~compile_body scope env params
-    body_forms
+  let prepare param_type_overrides =
+    Function_elaborator.prepare ~param_type_overrides ?variadic_rest_index
+      ?compile_function_body ~lookup_function_ty ~compile_body scope env params
+      body_forms
+  in
+  Result.bind (prepare param_type_overrides) (fun parts ->
+      let record_values = Option.value parts.body.record_values ~default:[] in
+      let refined = ref false in
+      let param_type_overrides =
+        parts.param_bindings
+        |> List.mapi (fun index (_key, (binding : binding)) ->
+               match List.nth_opt param_type_overrides index with
+               | Some (Some ty) when not (Types.equal ty TUnknown) -> Some ty
+               | _ -> (
+                   match
+                     List.find_opt
+                       (fun (_field, value) ->
+                         match Semantic_ir.unlocated value with
+                         | Semantic_ir.Ident name -> name = binding.ocaml_name
+                         | _ -> false)
+                       record_values
+                   with
+                   | None -> None
+                   | Some (field, _) ->
+                       refined := true;
+                       Some field.ty))
+      in
+      if !refined then prepare param_type_overrides else Ok parts)
 
 and parse_multi_arity_clauses source_name forms =
   let rec parse_clause = function
@@ -995,6 +1047,7 @@ and prepare_recursive_fn ~ocaml_name scope env source_name return_ty params
         in
         let env =
           Env.add (Names.scoped_key scope source_name) self_binding env
+          |> Env.add ocaml_name self_binding
         in
         match
           prepare_fn
@@ -1073,6 +1126,22 @@ and prepare_inferred_recursive_fn ~ocaml_name scope env source_name params
                 else ty)
               inferred_param_tys
           in
+          let prepare_recursive_parts self_param_tys overrides =
+            let prepare return_ty =
+              let self_binding =
+                Types.binding ocaml_name (TFn (self_param_tys, return_ty))
+              in
+              let env =
+                Env.add (Names.scoped_key scope source_name) self_binding env
+                |> Env.add ocaml_name self_binding
+              in
+              prepare_fn ~param_type_overrides:overrides
+                ~recur_target:ocaml_name scope env params body_forms
+            in
+            Result.bind (prepare TUnknown) (fun provisional ->
+                if Types.equal provisional.body.ty TUnknown then Ok provisional
+                else prepare provisional.body.ty)
+          in
           if
             List.exists Types.is_dynamic dynamic_param_tys
             || List.exists2
@@ -1085,12 +1154,6 @@ and prepare_inferred_recursive_fn ~ocaml_name scope env source_name params
                   if Types.is_dynamic dynamic then dynamic else inferred)
                 inferred_param_tys dynamic_param_tys
             in
-            let self_binding =
-              Types.binding ocaml_name (TFn (self_param_tys, TUnknown))
-            in
-            let env =
-              Env.add (Names.scoped_key scope source_name) self_binding env
-            in
             let overrides =
               List.map2
                 (fun explicit inferred ->
@@ -1100,11 +1163,9 @@ and prepare_inferred_recursive_fn ~ocaml_name scope env source_name params
                   | None -> Some inferred)
                 param_type_overrides dynamic_param_tys
             in
-            prepare_fn ~param_type_overrides:overrides scope env params
-              body_forms
+            prepare_recursive_parts self_param_tys overrides
           else
-            prepare_fn ~param_type_overrides scope provisional_env params
-              body_forms)
+            prepare_recursive_parts inferred_param_tys param_type_overrides)
 
 and fn_code ?(row_param_type_names = []) parts =
   Function_elaborator.fn_code ~row_param_type_names parts

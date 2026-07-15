@@ -130,7 +130,7 @@
             (inc idx)
             #?(:melange
                (uncurried-call f result (arrays/aget keys idx))
-               :native (f result (arrays/aget keys idx)))))))
+               :default (f result (arrays/aget keys idx)))))))
     (loop [idx 0
            result initial]
       (if (= idx (node-child-count node))
@@ -277,7 +277,7 @@
           (and (< idx keys-length)
                (= 0 #?(:melange
                         (uncurried-compare cmp key (arrays/aget keys idx))
-                        :native (cmp key (arrays/aget keys idx)))))
+                        :default (cmp key (arrays/aget keys idx)))))
           nil
           (= keys-length max-len)
           (let [middle (arrays/half (inc keys-length))]

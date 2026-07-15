@@ -259,6 +259,35 @@ let is_numeric = function TInt | TFloat -> true | _ -> false
 
 let rec row_compatible ~expected ~actual =
   match (expected, actual) with
+  | expected, actual when equal expected actual -> true
+  | TUnknown, _ | _, TUnknown | TVar _, _ | _, TVar _ -> true
+  | TNullable expected, TNullable actual
+  | TArray expected, TArray actual
+  | TRef expected, TRef actual
+  | TList expected, TList actual
+  | TVector expected, TVector actual
+  | TSet expected, TSet actual
+  | TSeq expected, TSeq actual ->
+      row_compatible ~expected ~actual
+  | TOcaml_app (expected_name, expected_args),
+    TOcaml_app (actual_name, actual_args)
+    when expected_name = actual_name
+         && List.length expected_args = List.length actual_args ->
+      List.for_all2
+        (fun expected actual -> row_compatible ~expected ~actual)
+        expected_args actual_args
+  | TTuple expected, TTuple actual
+    when List.length expected = List.length actual ->
+      List.for_all2
+        (fun expected actual -> row_compatible ~expected ~actual)
+        expected actual
+  | TFn (expected_params, expected_return),
+    TFn (actual_params, actual_return)
+    when List.length expected_params = List.length actual_params ->
+      List.for_all2
+        (fun expected actual -> row_compatible ~expected ~actual)
+        expected_params actual_params
+      && row_compatible ~expected:expected_return ~actual:actual_return
   | TNamed_record expected, TNamed_record actual
     when expected.nominal || actual.nominal ->
       Type_id.equal expected.type_id actual.type_id
@@ -335,18 +364,32 @@ let rec assignable ~policy ~expected ~actual =
       equal (TNamed_record expected) (TNamed_record actual)
       || policy = Host_boundary
   | TNamed_record expected, TRecord actual when policy = Host_boundary ->
+      let extensible =
+        List.exists
+          (fun field -> field.keyword = record_extension_keyword)
+          expected.fields
+      in
       List.for_all
         (fun actual_field ->
-          List.exists
-            (fun expected_field -> expected_field.keyword = actual_field.keyword)
-            expected.fields)
+          extensible
+          || List.exists
+               (fun expected_field ->
+                 expected_field.keyword = actual_field.keyword)
+               expected.fields)
         actual
   | TRecord expected, TNamed_record actual when policy = Host_boundary ->
+      let extensible =
+        List.exists
+          (fun field -> field.keyword = record_extension_keyword)
+          actual.fields
+      in
       List.for_all
         (fun expected_field ->
-          List.exists
-            (fun actual_field -> actual_field.keyword = expected_field.keyword)
-            actual.fields)
+          extensible
+          || List.exists
+               (fun actual_field ->
+                 actual_field.keyword = expected_field.keyword)
+               actual.fields)
         expected
   | TFn (expected_params, expected_return), TFn (actual_params, actual_return)
     when List.length expected_params = List.length actual_params ->
@@ -693,6 +736,8 @@ let bind_type_variable substitutions name actual =
 let rec infer_type_substitutions substitutions ~template ~actual =
   match (template, actual) with
   | TVar name, actual -> bind_type_variable substitutions name actual
+  | TNullable template, TNullable actual ->
+      infer_type_substitutions substitutions ~template ~actual
   | TOcaml_app (template_name, template_args),
     TOcaml_app (actual_name, actual_args)
     when template_name = actual_name
@@ -718,6 +763,16 @@ let rec infer_type_substitutions substitutions ~template ~actual =
   | TOverloaded_fn templates, TOverloaded_fn actuals
     when List.length templates = List.length actuals ->
       List.fold_left2 infer_arity_substitutions substitutions templates actuals
+  | (TRecord template_fields | TNamed_record { fields = template_fields; _ }),
+    (TRecord actual_fields | TNamed_record { fields = actual_fields; _ }) ->
+      List.fold_left
+        (fun substitutions (template_field : field) ->
+          match find_field template_field.keyword actual_fields with
+          | None -> substitutions
+          | Some actual_field ->
+              infer_type_substitutions substitutions
+                ~template:template_field.ty ~actual:actual_field.ty)
+        substitutions template_fields
   | _ -> substitutions
 
 and infer_arity_substitutions substitutions template actual =

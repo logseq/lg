@@ -41,6 +41,28 @@ let rec form_mentions_symbol name = function
   | FInt _ | FFloat _ | FChar _ | FString _ | FRegex _ | FBool _ | FKeyword _ ->
       false
 
+let rec form_has_function_recur = function
+  | FList (FSymbol ("fn" | "fn*" | "defn" | "defn-" | "loop" | "loop*") :: _)
+    ->
+      false
+  | FList (FSymbol "recur" :: _) -> true
+  | FList forms | FVector forms -> List.exists form_has_function_recur forms
+  | FMap pairs ->
+      List.exists
+        (fun (key, value) ->
+          form_has_function_recur key || form_has_function_recur value)
+        pairs
+  | FSymbol _ | FInt _ | FFloat _ | FChar _ | FString _ | FRegex _ | FBool _
+  | FKeyword _ ->
+      false
+
+let function_is_recursive scope name body_forms =
+  List.exists (form_mentions_symbol name) body_forms
+  || List.exists
+       (form_mentions_symbol (Names.scoped_key scope name))
+       body_forms
+  || List.exists form_has_function_recur body_forms
+
 let order_protocol_groups groups =
   let method_names (_, methods) =
     List.filter_map
@@ -696,11 +718,22 @@ let rec compile scope env next_type = function
                               binding env
                         in
                         let item =
-                          Value_binding
+                          if
+                            expression_references_declaration env
+                              implementation.semantic_expr
+                          then
+                            Deferred_value_binding
+                              {
+                                name = ocaml_name;
+                                value_type = implementation.ty;
+                                expression = implementation.semantic_expr;
+                              }
+                          else
+                            Value_binding
                               {
                                 pattern = Named ocaml_name;
-                              expression = implementation.semantic_expr;
-                            }
+                                expression = implementation.semantic_expr;
+                              }
                         in
                         compile_methods env (item :: items) current_interface
                           rest))
@@ -743,7 +776,7 @@ let rec compile scope env next_type = function
                     } )))
   | FList (FSymbol "defmethod" :: _) ->
       Error.error "defmethod currently supports print-method"
-  | FList (FSymbol "defn-group" :: definitions) ->
+  | FList (FSymbol "recursive-definition-group" :: definitions) ->
       let env =
         definitions
         |> List.fold_left
@@ -760,7 +793,45 @@ let rec compile scope env next_type = function
                | _ -> env)
              env
       in
-      let rec compile_definitions env row_items bindings = function
+      let method_definitions, function_definitions =
+        List.partition
+          (function
+            | FList (FSymbol "deftype-methods" :: _) -> true
+            | _ -> false)
+          definitions
+      in
+      let recursive_bindings item =
+        let items = match item with Group items -> items | item -> [ item ] in
+        let rec collect bindings = function
+          | [] -> Ok (List.rev bindings)
+          | Value_binding { pattern = Named name; expression } :: rest ->
+              collect
+                ({ name; identity = None; expression } :: bindings)
+                rest
+          | Deferred_value_binding { name; expression; _ } :: rest ->
+              collect
+                ({ name; identity = None; expression } :: bindings)
+                rest
+          | _ :: _ ->
+              Error.error
+                "recursive deftype methods must compile to named functions"
+        in
+        collect [] items
+      in
+      let rec compile_methods env next_type bindings = function
+        | [] -> Ok (env, next_type, bindings)
+        | method_form :: rest -> (
+            match compile scope env next_type method_form with
+            | Error _ as error -> error
+            | Ok (_, env, next_type, item) -> (
+                match recursive_bindings item with
+                | Error _ as error -> error
+                | Ok methods ->
+                    compile_methods env next_type
+                      (List.rev_append methods bindings)
+                      rest))
+      in
+      let rec compile_definitions env next_type row_items bindings = function
         | [] ->
             Ok
               ( scope,
@@ -772,15 +843,48 @@ let rec compile scope env next_type = function
         | FList
             (FSymbol ("defn" | "defn-")
             :: (FSymbol name as name_form)
+            :: (FList _ as first_clause)
+            :: remaining_clauses)
+          :: rest -> (
+            let ocaml_name = Names.ocaml_binding_name scope name in
+            match
+              Expression_elaborator.prepare_multi_arity_fn ~ocaml_name scope env
+                name (first_clause :: remaining_clauses)
+            with
+            | Error _ as error -> error
+            | Ok prepared ->
+                let targets, rows, arity_bindings =
+                  Expression_elaborator.lower_prepared_multi_arity prepared
+                in
+                let binding =
+                  Types.binding ~overload_targets:targets ocaml_name
+                    prepared.expr.ty
+                in
+                let env =
+                  Env.add (Names.scoped_key scope name) binding env
+                in
+                let dispatch_binding =
+                  {
+                    name = ocaml_name;
+                    identity =
+                      Source_context.find name_form
+                      |> Option.map (fun location ->
+                             (Source_node_id.of_location location, location));
+                    expression = prepared.expr.semantic_expr;
+                  }
+                in
+                let new_bindings = arity_bindings @ [ dispatch_binding ] in
+                compile_definitions env next_type
+                  (List.rev_append rows row_items)
+                  (List.rev_append new_bindings bindings)
+                  rest)
+        | FList
+            (FSymbol ("defn" | "defn-")
+            :: (FSymbol name as name_form)
             :: params :: body_forms)
           :: rest -> (
             let ocaml_name = Names.ocaml_binding_name scope name in
-            let recursive =
-              List.exists (form_mentions_symbol name) body_forms
-              || List.exists
-                   (form_mentions_symbol (Names.scoped_key scope name))
-                   body_forms
-            in
+            let recursive = function_is_recursive scope name body_forms in
             let prepared =
               match (recursive, params) with
               | true, FVector _ ->
@@ -816,13 +920,50 @@ let rec compile scope env next_type = function
                     expression = expr.semantic_expr;
                   }
                 in
-                compile_definitions env
+                compile_definitions env next_type
                   (List.rev_append rows row_items)
                   (recursive_binding :: bindings)
                   rest)
-        | _ :: _ -> Error.error "defn-group only supports function definitions"
+        | _ :: _ ->
+            Error.error
+              "recursive definition groups only support functions and deftype methods"
       in
-      compile_definitions env [] [] definitions
+      Result.bind (compile_methods env next_type [] method_definitions)
+        (fun (env, next_type, method_bindings) ->
+          compile_definitions env next_type [] method_bindings
+            function_definitions)
+  | FList
+      [
+        FSymbol "defn-signature";
+        FList
+          (FSymbol ("defn" | "defn-")
+          :: FSymbol name
+          :: (FList _ as first_clause)
+          :: remaining_clauses);
+      ] -> (
+      let ocaml_name = Names.ocaml_binding_name scope name in
+      match
+        Expression_elaborator.prepare_multi_arity_fn ~ocaml_name scope env name
+          (first_clause :: remaining_clauses)
+      with
+      | Error _ ->
+          Ok
+            ( scope,
+              env,
+              next_type,
+              Comment ("deferred function signature " ^ name) )
+      | Ok prepared ->
+          let targets, _, _ =
+            Expression_elaborator.lower_prepared_multi_arity prepared
+          in
+          let binding =
+            Types.binding ~overload_targets:targets ocaml_name prepared.expr.ty
+          in
+          Ok
+            ( scope,
+              Env.add (Names.scoped_key scope name) binding env,
+              next_type,
+              Comment ("function signature " ^ name) ))
   | FList
       [
         FSymbol "defn-signature";
@@ -830,12 +971,7 @@ let rec compile scope env next_type = function
           (FSymbol ("defn" | "defn-") :: FSymbol name :: params :: body_forms);
       ] -> (
       let ocaml_name = Names.ocaml_binding_name scope name in
-      let recursive =
-        List.exists (form_mentions_symbol name) body_forms
-        || List.exists
-             (form_mentions_symbol (Names.scoped_key scope name))
-             body_forms
-      in
+      let recursive = function_is_recursive scope name body_forms in
       let prepared =
         match (recursive, params) with
         | true, FVector _ ->
@@ -1130,7 +1266,7 @@ let rec compile scope env next_type = function
       :: FSymbol annotation
       :: params :: body_forms)
     when String.starts_with ~prefix:"^" annotation -> (
-      if not (List.exists (form_mentions_symbol name) body_forms) then
+      if not (function_is_recursive scope name body_forms) then
         let body =
           match body_forms with
           | [ body ] -> body
@@ -1298,10 +1434,7 @@ let rec compile scope env next_type = function
       (FSymbol ("defn" | "defn-")
       :: (FSymbol name as name_form)
       :: params :: body_forms)
-    when List.exists (form_mentions_symbol name) body_forms
-      || List.exists
-           (form_mentions_symbol (Names.scoped_key scope name))
-           body_forms -> (
+    when function_is_recursive scope name body_forms -> (
       let ocaml_name = Names.ocaml_binding_name scope name in
       match
         prepare_inferred_recursive_fn ~ocaml_name scope env name params

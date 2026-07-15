@@ -68,10 +68,17 @@ let method_is_ambiguous scope env method_name =
   if String.contains method_name '/' then false
   else
     let owner = if scope = "" then [] else [ scope ] in
-    (match
+    let protocols =
       Protocol_registry.protocols_for_method ~owner ~method_name
         (Env.protocols env)
-    with
+    in
+    let protocols =
+      if protocols = [] && owner <> [] then
+        Protocol_registry.protocols_for_method ~owner:[] ~method_name
+          (Env.protocols env)
+      else protocols
+    in
+    (match protocols with
     | _ :: _ :: _ -> true
     | [] | [ _ ] -> false)
 
@@ -136,6 +143,51 @@ let constraint_type scope env protocol_name =
              in
              Types.protocol_constraint protocol_id method_types TUnknown)
 
+let instantiate_receiver_binding receiver_ty (implementation : binding) =
+  match implementation.ty with
+  | TFn (template_receiver :: _, _) ->
+      let receiver_value_ty =
+        match template_receiver with
+        | TNamed_record { type_parameters = [ parameter ]; _ } ->
+            let substitutions =
+              Types.infer_type_substitutions [] ~template:template_receiver
+                ~actual:receiver_ty
+            in
+            (match List.assoc_opt parameter substitutions with
+            | Some TUnknown | None -> None
+            | Some ty -> Some ty)
+        | _ -> None
+      in
+      let ty =
+        Types.instantiate_type ~templates:[ template_receiver ]
+          ~actuals:[ receiver_ty ] implementation.ty
+      in
+      let ty =
+        match (receiver_value_ty, ty) with
+        | Some value_ty, TFn (receiver :: parameters, return_ty) ->
+            TFn
+              ( receiver
+                :: List.map
+                     (function TUnknown -> value_ty | ty -> ty)
+                     parameters,
+                return_ty )
+        | _ -> ty
+      in
+      {
+        implementation with
+        ty;
+      }
+  | _ -> implementation
+
+let apply_method_signature
+    (signature : Protocol_registry.method_signature)
+    (implementation : binding) =
+  match implementation.ty with
+  | TFn (parameters, (TUnknown | TVar _))
+    when not (Types.equal signature.return_ty TUnknown) ->
+      { implementation with ty = TFn (parameters, signature.return_ty) }
+  | _ -> implementation
+
 let witness_implementations env protocol_id receiver_ty =
   match
     ( Protocol_registry.find_protocol protocol_id (Env.protocols env),
@@ -145,12 +197,21 @@ let witness_implementations env protocol_id receiver_ty =
       let implementations =
         declaration.methods
         |> Protocol_registry.Method_map.bindings
-        |> List.map (fun (method_id, _) ->
+        |> List.map (fun (method_id, signature) ->
                Protocol_registry.find_implementation protocol_id method_id
-                 receiver_id (Env.protocols env))
+                 receiver_id (Env.protocols env)
+               |> Option.map (fun implementation ->
+                      implementation
+                      |> instantiate_receiver_binding receiver_ty
+                      |> apply_method_signature signature))
       in
       if List.for_all Option.is_some implementations then
-        Some (List.map Option.get implementations)
+        Some
+          (List.map
+             (fun implementation ->
+               instantiate_receiver_binding receiver_ty
+                 (Option.get implementation))
+             implementations)
       else None
   | None, _ | _, None -> None
 
@@ -162,7 +223,7 @@ let witness_methods env protocol_id receiver_ty =
   | Some (declaration : Protocol_registry.declaration), Some receiver_id ->
       let rec collect methods = function
         | [] -> Some (List.rev methods)
-        | (method_id, _) :: rest -> (
+        | (method_id, signature) :: rest -> (
             match
               Protocol_registry.find_implementation protocol_id method_id
                 receiver_id (Env.protocols env)
@@ -170,7 +231,11 @@ let witness_methods env protocol_id receiver_ty =
             | None -> None
             | Some implementation ->
                 collect
-                  ((Method_id.name method_id, implementation) :: methods)
+                  ( ( Method_id.name method_id,
+                      implementation
+                      |> instantiate_receiver_binding receiver_ty
+                      |> apply_method_signature signature )
+                  :: methods )
                   rest)
       in
       collect []
@@ -225,9 +290,16 @@ let lookup_marker scope env method_name =
                   method_name))
     | [ method_name ] ->
         let owner = if scope = "" then [] else [ scope ] in
-        (match
-           Protocol_registry.protocols_for_method ~owner ~method_name registry
-         with
+        let protocols =
+          Protocol_registry.protocols_for_method ~owner ~method_name registry
+        in
+        let protocols =
+          if protocols = [] && owner <> [] then
+            Protocol_registry.protocols_for_method ~owner:[] ~method_name
+              registry
+          else protocols
+        in
+        (match protocols with
         | [ protocol_id ] ->
             marker_for protocol_id method_name
         | [] | _ :: _ :: _ -> None)
@@ -259,8 +331,17 @@ let lookup_impl env protocol_id method_name receiver_ty =
   match registry_receiver_id receiver_ty with
   | Some receiver_id ->
       let method_id = method_id protocol_id method_name in
+      let registry = Env.protocols env in
       Protocol_registry.find_implementation protocol_id method_id receiver_id
-        (Env.protocols env)
+        registry
+      |> Option.map (fun implementation ->
+             let implementation =
+               instantiate_receiver_binding receiver_ty implementation
+             in
+             match Protocol_registry.find_method protocol_id method_id registry with
+             | None -> implementation
+             | Some signature ->
+                 apply_method_signature signature implementation)
   | None -> None
 
 let lookup_marker_impl env (marker : binding) method_name receiver_ty =

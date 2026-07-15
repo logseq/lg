@@ -58,6 +58,18 @@
      (defrecord ~name ~fields)
      (extend-type ~name ~@impls)))
 
+#?(:clj
+   (defmacro declare+ [name & _arglists]
+     `(declare ~name)))
+
+#?(:clj
+   (defmacro defn+ [name & body]
+     `(defn ~name ~@body)))
+
+#?(:clj
+   (defmacro defcomp [name args & body]
+     `(defn ~name ~args ~@body)))
+
 ;; ----------------------------------------------------------------------------
 
 (declare hash-datom equiv-datom seq-datom nth-datom assoc-datom val-at-datom)
@@ -272,7 +284,8 @@
     (cond
       (= x y) 0
       (and (sequential? x) (sequential? y)) (seq-compare x y)
-      (satisfies? IComparable x) (-compare x y)
+      #?@(:clj  [(instance? Comparable x)   (.compareTo ^Comparable x y)]
+          :cljs [(satisfies? IComparable x) (-compare x y)])
       (not (class-identical? x y)) (class-compare x y)
       (or (number? x) (string? x) (array? x) (keyword? x) (true? x) (false? x)) (compare x y)
       :else (int-compare (ihash x) (ihash y)))

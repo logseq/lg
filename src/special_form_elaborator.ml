@@ -227,11 +227,22 @@ let create ~compile_expr =
                    in
                    compile_dynamic_pairs [] pairs
                    |> Result.map (fun entries ->
-                        typed_ir
-                          (Types.dynamic_constraint TUnknown)
-                            (Semantic_ir.Apply
-                             ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.map",
-                                 [ Semantic_ir.List entries ] )))
+                        let values =
+                          List.map
+                            (fun (keyword, _form, value) ->
+                              (make_field keyword value.ty, value.semantic_expr))
+                            pairs
+                        in
+                        {
+                          (typed_ir
+                             (Types.dynamic_constraint TUnknown)
+                             (Semantic_ir.Apply
+                                ( Semantic_ir.Ident
+                                    "Lg_runtime.Runtime_dynamic.map",
+                                  [ Semantic_ir.List entries ] )))
+                          with
+                          record_values = Some values;
+                        })
                  else
                    let fields =
                      pairs
@@ -1163,12 +1174,15 @@ let create ~compile_expr =
                 | _ -> exception_type
               in
               let pattern =
-                FList
-                  [
-                    FSymbol "as";
-                    FList [ FSymbol constructor; FSymbol "_" ];
-                    FSymbol binding;
-                  ]
+                if exception_type = "js/Error" then
+                  FList [ FSymbol "as"; FSymbol "_"; FSymbol binding ]
+                else
+                  FList
+                    [
+                      FSymbol "as";
+                      FList [ FSymbol constructor; FSymbol "_" ];
+                      FSymbol binding;
+                    ]
               in
               let body =
                 match body_forms with
@@ -1277,12 +1291,18 @@ let create ~compile_expr =
                 else
                   Error.error
                     ("recur argument " ^ string_of_int index ^ " must be "
-                   ^ Types.source_name expected_ty)
+                   ^ Types.source_name expected_ty ^ ", got "
+                   ^ Types.source_name arg.ty)
             | _ -> Error.error "internal error: recur argument validation"
           in
           validate 1 param_tys args
           |> Result.map (fun () ->
-                 typed_ir TUnknown
+                 let return_ty =
+                   match Env.find_opt loop_name env with
+                   | Some { ty = TFn (_, return_ty); _ } -> return_ty
+                   | _ -> TUnknown
+                 in
+                 typed_ir return_ty
                    (Semantic_ir.Apply
                       ( Semantic_ir.Ident loop_name,
                         List.map2
@@ -1310,12 +1330,18 @@ let create ~compile_expr =
             | (Error _ as err), _ -> err
             | _, (Error _ as err) -> err
             | Ok condition_code, Ok result_ty ->
+                let coerce_branch branch =
+                  if Types.equal branch.ty TUnknown then branch.semantic_expr
+                  else
+                    coerce_expression_to_type result_ty branch.ty
+                      branch.semantic_expr
+                in
                 Ok
                   (typed_ir result_ty
                      (Semantic_ir.If
                         ( condition_code,
-                          then_expr.semantic_expr,
-                          else_expr.semantic_expr )))))
+                          coerce_branch then_expr,
+                          coerce_branch else_expr )))))
     | FList [ FSymbol "if-not"; condition_form; then_form; else_form ] ->
         compile_loop_tail scope env loop_name param_tys
           (FList
@@ -1417,12 +1443,12 @@ let create ~compile_expr =
                   match compile_expr scope env value_form with
                   | Error _ as err -> err
                   | Ok value ->
-                      let value_ty =
+                      let binding_ty =
                         if Types.equal value.ty TNil then TNullable TUnknown
                         else value.ty
                       in
                       let value =
-                        match Types.seqable_constraint_info value_ty with
+                        match Types.seqable_constraint_info binding_ty with
                         | None -> Ok value
                         | Some (_, element_ty, _) -> (
                             match
@@ -1439,9 +1465,14 @@ let create ~compile_expr =
                                 Ok (typed_ir (TSeq element_ty) sequence))
                       in
                       Result.bind value (fun value ->
+                          let binding_ty =
+                            match Types.seqable_constraint_info binding_ty with
+                            | Some _ -> value.ty
+                            | None -> binding_ty
+                          in
                           compile_bindings (name :: names)
                             (Destructure.source_identity name_form :: identities)
-                            (value :: values) (value_ty :: tys) rest))
+                            (value :: values) (binding_ty :: tys) rest))
             | _ -> Error.error "loop binding names must be symbols"
           in
           match compile_bindings [] [] [] [] forms with

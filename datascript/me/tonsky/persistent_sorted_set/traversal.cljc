@@ -14,7 +14,7 @@
      (iter-keys :array<value>)
      (iter-idx :int)
      (iter-storage :option<storage<value>>))
-   :melange
+   :cljs
    (type-record iterator [value]
      (iter-root :tree<value>)
      (iter-shift :int)

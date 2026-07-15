@@ -46,7 +46,13 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
     else overloaded_projection (apply "snd" [ expression ]) (index - 1)
   in
   let prepare_apply_argument env ~actual_ty ~expected_ty expression =
-    if Types.is_dynamic expected_ty then Ok expression
+    if Types.is_dynamic expected_ty then
+      if
+        Types.is_dynamic actual_ty
+        || match actual_ty with TUnknown | TVar _ -> true | _ -> false
+      then Ok expression
+      else
+        pack_dynamic_value env expected_ty (typed_ir actual_ty expression)
     else if Types.is_dynamic actual_ty then
       dynamic_unpack env expected_ty expression
     else if

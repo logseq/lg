@@ -327,90 +327,65 @@ module Lg_frontend : FRONTEND = struct
           Error.error "ns may only appear once at the start of a file"
         else Ok (first :: rest)
 
-  let defer_deftype_methods located_ast =
-    let declared_names =
-      located_ast
-      |> List.concat_map (fun located ->
-             match located.Ast.form with
-             | Ast.FList (Ast.FSymbol "declare" :: names) ->
-                 List.filter_map
-                   (function Ast.FSymbol name -> Some name | _ -> None)
-                   names
-             | _ -> [])
-    in
-    let definition_name located =
-      match located.Ast.form with
-      | Ast.FList
-          (Ast.FSymbol ("def" | "defonce" | "defn" | "defn-")
-          :: Ast.FSymbol name
-          :: _) ->
-          Some name
-      | _ -> None
-    in
-    let flush output_rev deferred_rev = deferred_rev @ output_rev in
-    let rec loop output_rev deferred_rev unresolved = function
-      | [] -> List.rev (flush output_rev deferred_rev)
-      | ({
-           Ast.form =
-             Ast.FList
-               (Ast.FSymbol "deftype" :: name :: fields :: (_ :: _ as methods));
-           _;
-         } as located)
-        :: rest ->
-          let type_form =
-            {
-              located with
-              Ast.form = Ast.FList [ Ast.FSymbol "deftype"; name; fields ];
-            }
-          in
-          let methods_form =
-            {
-              located with
-              Ast.form =
-                Ast.FList (Ast.FSymbol "deftype-methods" :: name :: methods);
-            }
-          in
-          let output_rev = type_form :: output_rev in
-          let deferred_rev = methods_form :: deferred_rev in
-          if unresolved = [] then
-            loop (flush output_rev deferred_rev) [] unresolved rest
-          else loop output_rev deferred_rev unresolved rest
-      | form :: rest ->
-          let unresolved =
-            match definition_name form with
-            | None -> unresolved
-            | Some name ->
-                List.filter (fun declared -> declared <> name) unresolved
-          in
-          let output_rev = form :: output_rev in
-          if unresolved = [] && deferred_rev <> [] then
-            loop (flush output_rev deferred_rev) [] unresolved rest
-          else loop output_rev deferred_rev unresolved rest
-    in
-    loop [] [] declared_names located_ast
+  let split_deftype_methods located_ast =
+    located_ast
+    |> List.concat_map (fun located ->
+           match located.Ast.form with
+           | Ast.FList
+               (Ast.FSymbol "deftype" :: name :: fields :: (_ :: _ as methods))
+             ->
+               [
+                 {
+                   located with
+                   Ast.form =
+                     Ast.FList [ Ast.FSymbol "deftype"; name; fields ];
+                 };
+                 {
+                   located with
+                   Ast.form =
+                     Ast.FList
+                       (Ast.FSymbol "deftype-methods" :: name :: methods);
+                 };
+               ]
+           | _ -> [ located ])
 
   let group_declared_functions located_ast =
-    let declared_names =
-      located_ast
-      |> List.concat_map (fun located ->
-             match located.Ast.form with
-             | Ast.FList (Ast.FSymbol "declare" :: names) ->
-                 List.filter_map
-                   (function Ast.FSymbol name -> Some name | _ -> None)
-                   names
-             | _ -> [])
+    let declaration_names = function
+      | Ast.FList (Ast.FSymbol "declare" :: names) ->
+          List.filter_map
+            (function Ast.FSymbol name -> Some name | _ -> None)
+            names
+      | _ -> []
     in
-    let rec loop output_rev definitions_rev unresolved = function
+    let rec loop output_rev group_rev unresolved = function
       | [] ->
-          if definitions_rev = [] then List.rev output_rev
-          else List.rev output_rev @ List.rev definitions_rev
+          if group_rev = [] then List.rev output_rev
+          else List.rev output_rev @ List.rev group_rev
+      | ({ Ast.form = Ast.FList (Ast.FSymbol "declare" :: _); _ } as form)
+        :: rest ->
+          let unresolved =
+            declaration_names form.Ast.form
+            |> List.fold_left
+                 (fun unresolved name ->
+                   if List.mem name unresolved then unresolved
+                   else unresolved @ [ name ])
+                 unresolved
+          in
+          loop (form :: output_rev) group_rev unresolved rest
+      | ({
+           Ast.form = Ast.FList (Ast.FSymbol "deftype-methods" :: _);
+           _;
+         } as methods)
+        :: rest
+        when unresolved <> [] ->
+          loop output_rev (methods :: group_rev) unresolved rest
       | ({
            Ast.form =
              Ast.FList (Ast.FSymbol ("defn" | "defn-") :: Ast.FSymbol name :: _);
            _;
          } as definition)
         :: rest
-        when definitions_rev <> [] || List.mem name declared_names ->
+        when group_rev <> [] || List.mem name unresolved ->
           let signature =
             {
               definition with
@@ -418,29 +393,29 @@ module Lg_frontend : FRONTEND = struct
                 Ast.FList [ Ast.FSymbol "defn-signature"; definition.Ast.form ];
             }
           in
-          let definitions_rev = definition :: definitions_rev in
+          let group_rev = definition :: group_rev in
           let unresolved =
-            if List.mem name declared_names then
+            if List.mem name unresolved then
               List.filter (fun candidate -> candidate <> name) unresolved
             else unresolved
           in
           if unresolved = [] then
-            let definitions = List.rev definitions_rev in
+            let definitions = List.rev group_rev in
             let group =
               {
                 definition with
                 Ast.form =
                   Ast.FList
-                    (Ast.FSymbol "defn-group"
+                    (Ast.FSymbol "recursive-definition-group"
                     :: List.map (fun item -> item.Ast.form) definitions);
               }
             in
             loop (group :: signature :: output_rev) [] unresolved rest
-          else loop (signature :: output_rev) definitions_rev unresolved rest
+          else loop (signature :: output_rev) group_rev unresolved rest
       | form :: rest ->
-          loop (form :: output_rev) definitions_rev unresolved rest
+          loop (form :: output_rev) group_rev unresolved rest
     in
-    loop [] [] declared_names located_ast
+    loop [] [] [] located_ast
 
   let implementation ?(target = Target.default) ?(filename = "<string>") source
       =
@@ -470,7 +445,7 @@ module Lg_frontend : FRONTEND = struct
       left.Ast.span.start_offset = right.Ast.span.start_offset
       && left.Ast.span.end_offset = right.Ast.span.end_offset
     in
-    let add_clj_compile_time_forms tokens original_located_ast located_ast =
+    let add_clj_compile_time_forms tokens located_ast =
       match target with
       | Target.Native -> Ok located_ast
       | Target.Melange | Target.Js_of_ocaml -> (
@@ -485,10 +460,16 @@ module Lg_frontend : FRONTEND = struct
                     |> List.map normalize_located_metadata
                     |> extract_compile_time_helpers
                     |> List.filter is_compile_time_form
-                    |> List.filter (fun candidate ->
-                           not
-                          (List.exists (same_span candidate)
-                                original_located_ast))
+                  in
+                  let located_ast =
+                    List.filter
+                      (fun located ->
+                        not
+                          (List.exists
+                             (fun compile_time_form ->
+                               same_span compile_time_form located)
+                             compile_time_forms))
+                      located_ast
                   in
                   match located_ast with
                   | ({
@@ -510,8 +491,7 @@ module Lg_frontend : FRONTEND = struct
                 Error (normalize_error_location filename source error)
             | Ok target_located_ast -> (
                 match
-                  add_clj_compile_time_forms tokens original_located_ast
-                    target_located_ast
+                  add_clj_compile_time_forms tokens target_located_ast
                 with
                 | Error error ->
                     Error (normalize_error_location filename source error)
@@ -521,7 +501,7 @@ module Lg_frontend : FRONTEND = struct
                   |> List.map normalize_located_metadata
                   |> extract_compile_time_helpers
                   |> drop_clojure_compiler_directives
-                  |> defer_deftype_methods |> group_declared_functions
+                  |> split_deftype_methods |> group_declared_functions
                 in
                 let rec form_locations acc located =
                       let location =

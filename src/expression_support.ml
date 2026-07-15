@@ -193,6 +193,22 @@ let rec pack_plain_dynamic_value value =
   | TKeyword -> Some (runtime "keyword" [ value.semantic_expr ])
   | TBool -> Some (runtime "bool" [ value.semantic_expr ])
   | TNil -> Some (Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.nil")
+  | TArray element_ty ->
+      let item_name = "__lg_plain_dynamic_array_item" in
+      let item = typed_ir element_ty (Semantic_ir.Ident item_name) in
+      Option.map
+        (fun packed_item ->
+          runtime "array"
+            [
+              Semantic_ir.Apply
+                ( Semantic_ir.Ident "Array.map",
+                  [
+                    Semantic_ir.Fun
+                      ([ Semantic_ir.PVar item_name ], packed_item);
+                    value.semantic_expr;
+                  ] );
+            ])
+        (pack_plain_dynamic_value item)
   | TVector element_ty | TList element_ty | TSeq element_ty ->
       let item_name = "__lg_plain_dynamic_item" in
       let item = typed_ir element_ty (Semantic_ir.Ident item_name) in
@@ -223,6 +239,22 @@ let rec pack_plain_dynamic_value value =
                     ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.map",
                       [ mapper; value.semantic_expr ] );
                 ])
+        (pack_plain_dynamic_value item)
+  | TOcaml_app (name, [ element_ty ]) when name = Types.next_seq_type_name ->
+      let item_name = "__lg_plain_dynamic_seq_item" in
+      let item = typed_ir element_ty (Semantic_ir.Ident item_name) in
+      Option.map
+        (fun packed_item ->
+          runtime "seq"
+            [
+              Semantic_ir.Apply
+                ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.map",
+                  [
+                    Semantic_ir.Fun
+                      ([ Semantic_ir.PVar item_name ], packed_item);
+                    value.semantic_expr;
+                  ] );
+            ])
         (pack_plain_dynamic_value item)
   | TNamed_record record ->
       let rec fields packed = function
@@ -813,6 +845,26 @@ let lookup_function scope env name =
                     Semantic_ir.Apply
                       ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.persistent",
                         [ Semantic_ir.Ident "collection" ] ) )))
+      | "pr-writer" ->
+          let dynamic = Types.dynamic_constraint TUnknown in
+          Ok
+            (typed_ir
+               (TFn ([ dynamic; TOcaml "Buffer.t"; dynamic ], TUnit))
+               (Semantic_ir.Fun
+                  ( [
+                      Semantic_ir.PVar "value";
+                      Semantic_ir.PVar "writer";
+                      Semantic_ir.PVar "opts";
+                    ],
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident "Lg_runtime.Runtime_print.write",
+                        [
+                          Semantic_ir.Ident "writer";
+                          Semantic_ir.Apply
+                            ( Semantic_ir.Ident
+                                "Lg_runtime.Runtime_dynamic.pr_str",
+                              [ Semantic_ir.Ident "value" ] );
+                        ] ) )))
       | "assoc" ->
           let dynamic = Types.dynamic_constraint TUnknown in
           Ok
@@ -904,7 +956,7 @@ let parameterize_row_fields fields =
                  rest_param = Option.map parameterize arity.rest_param;
                  return_ty = parameterize arity.return_ty })
              arities)
-    | TRecord fields -> TRecord (List.map parameterize_field fields)
+    | TRecord _ -> TVar (fresh_parameter ())
     | (TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol
       | TKeyword | TBool | TUnit | TNil | TOcaml _ | TNamed_record _) as ty ->
         ty

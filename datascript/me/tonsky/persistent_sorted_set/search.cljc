@@ -8,7 +8,7 @@
       (let [middle (arrays/half (+ left right))
             middle-key (arrays/aget arr middle)]
         (if (neg? #?(:melange (uncurried-compare cmp middle-key key)
-                     :native (cmp middle-key key)))
+                     :default (cmp middle-key key)))
           (recur (inc middle) right)
           (recur left (dec middle))))
       left)))
@@ -20,7 +20,7 @@
       (let [middle (arrays/half (+ left right))
             middle-key (arrays/aget arr middle)]
         (if (pos? #?(:melange (uncurried-compare cmp middle-key key)
-                     :native (cmp middle-key key)))
+                     :default (cmp middle-key key)))
           (recur left (dec middle))
           (recur (inc middle) right)))
       left)))
@@ -31,7 +31,7 @@
     (if (and (< idx length)
              (= 0 #?(:melange
                       (uncurried-compare cmp (arrays/aget arr idx) key)
-                      :native (cmp (arrays/aget arr idx) key))))
+                      :default (cmp (arrays/aget arr idx) key))))
       idx
       -1)))
 

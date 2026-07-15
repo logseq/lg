@@ -71,7 +71,7 @@
                        cmp
                        (arrays/aget left (+ idx left-from))
                        (arrays/aget right (+ idx right-from)))
-                     :native
+                     :default
                      (cmp
                        (arrays/aget left (+ idx left-from))
                        (arrays/aget right (+ idx right-from))))))

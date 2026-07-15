@@ -22,6 +22,7 @@ and payload =
   | Keyword of string
   | Bool of bool
   | Function of (t list -> t)
+  | Array of t array
   | List
   | Vector
   | Seq
@@ -81,6 +82,11 @@ let rec to_string ~pr value =
   | Symbol value | Keyword value -> value
   | Bool value -> string_of_bool value
   | Function _ -> "<function>"
+  | Array values ->
+      "#js ["
+      ^ (values |> Array.to_list |> List.map (to_string ~pr:true)
+        |> String.concat " ")
+      ^ "]"
   | Reference _ -> "#object[clojure.lang.Atom]"
   | List -> "(" ^ join (List.of_seq (to_seq value)) ^ ")"
   | Vector -> "[" ^ join (List.of_seq (to_seq value)) ^ "]"
@@ -112,6 +118,8 @@ let vector values =
   make ~sequential:true
     ~sequence:(fun () -> values |> Rrbvec.to_list |> List.to_seq)
     Vector
+
+let array values = make ~sequence:(fun () -> Array.to_seq values) (Array values)
 
 let regex_match = function
   | None -> nil
@@ -149,6 +157,7 @@ let rec equal left right =
   | Symbol left, Symbol right -> left = right
   | Keyword left, Keyword right -> left = right
   | Bool left, Bool right -> left = right
+  | Array left, Array right -> left == right
   | List, List | Vector, Vector | Seq, Seq ->
       Seq.equal equal (to_seq left) (to_seq right)
   | Set left, Set right ->
@@ -168,7 +177,7 @@ let rec equal left right =
   | Function _, Function _ -> false
   | _ -> false
 
-let compare left right =
+let rec compare left right =
   match (left.payload, right.payload) with
   | Nil, Nil -> 0
   | Nil, _ -> -1
@@ -183,6 +192,16 @@ let compare left right =
   | Keyword left, Keyword right ->
       String.compare left right
   | Bool left, Bool right -> Bool.compare left right
+  | Array left, Array right ->
+      let rec compare_at index =
+        if index = Array.length left then
+          Int.compare (Array.length left) (Array.length right)
+        else if index = Array.length right then 1
+        else
+          let result = compare left.(index) right.(index) in
+          if result = 0 then compare_at (index + 1) else result
+      in
+      compare_at 0
   | _ -> invalid_arg "dynamic values are not comparable"
 
 let sort collection =
@@ -200,6 +219,7 @@ let class_ value =
     | Keyword _ -> Some "clojure.lang.Keyword"
     | Bool _ -> Some "java.lang.Boolean"
     | Function _ -> Some "clojure.lang.AFunction"
+    | Array _ -> Some "js/Array"
     | Reference _ -> Some "clojure.lang.Atom"
     | List -> Some "clojure.lang.PersistentList"
     | Vector -> Some "clojure.lang.PersistentVector"
@@ -212,7 +232,8 @@ let class_ value =
 
 let is_comparable value =
   match value.payload with
-  | Nil | Int _ | Float _ | Char _ | String _ | Symbol _ | Keyword _ | Bool _ ->
+  | Nil | Int _ | Float _ | Char _ | String _ | Symbol _ | Keyword _ | Bool _
+  | Array _ ->
       true
   | Function _ | Reference _ | List | Vector | Seq | Set _ | Map _ | Opaque _ ->
       false
@@ -319,6 +340,7 @@ let contains value key =
       List.exists (fun (entry_key, _) -> equal key entry_key) entries
   | Set values, _ -> List.exists (equal key) values
   | Vector, Int index -> index >= 0 && index < Seq.length (to_seq value)
+  | Array values, Int index -> index >= 0 && index < Array.length values
   | _ -> false
 
 let entries value =
@@ -394,12 +416,16 @@ let is_negative value =
   | _ -> invalid_arg "neg? expects a numeric value"
 
 let is_bool value = match value.payload with Bool _ -> true | _ -> false
+let is_array value = match value.payload with Array _ -> true | _ -> false
 let is_list value = match value.payload with List -> true | _ -> false
 let is_vector value = match value.payload with Vector -> true | _ -> false
 let is_seq value = match value.payload with List | Seq -> true | _ -> false
 let is_map value = match value.payload with Map _ -> true | _ -> false
 let is_set value = match value.payload with Set _ -> true | _ -> false
-let is_coll value = is_seqable value
+let is_coll value =
+  match value.payload with
+  | List | Vector | Seq | Set _ | Map _ -> true
+  | _ -> false
 let is_instance value type_name = value.type_name = Some type_name
 
 let call value arguments =
@@ -441,7 +467,7 @@ let rec hash value =
   | String value -> Runtime_hash.hash_string value
   | Symbol value -> Runtime_hash.hash_symbol value
   | Keyword value -> Runtime_hash.hash_keyword value
-  | List | Vector | Seq ->
+  | Array _ | List | Vector | Seq ->
       value |> to_seq |> Seq.map hash |> Runtime_hash.hash_ordered
   | Set values ->
       values |> List.to_seq |> Seq.map hash |> Runtime_hash.hash_unordered

@@ -22,6 +22,7 @@ let transient_collection_id =
   Protocol_id.create ~owner:[] ~name:"ITransientCollection"
 
 let transient_set_id = Protocol_id.create ~owner:[] ~name:"ITransientSet"
+let comparable_id = Protocol_id.create ~owner:[] ~name:"IComparable"
 let object_id = Protocol_id.create ~owner:[] ~name:"Object"
 let clojure_hash_id = Protocol_id.create ~owner:[] ~name:"clojure.lang.IHashEq"
 
@@ -211,6 +212,15 @@ let declare_data_protocols registry =
 let declare_clojure_host_protocols registry =
   let dynamic = Types.dynamic_constraint TUnknown in
   registry
+  |> Protocol_registry.declare comparable_id
+       [
+         {
+           Protocol_registry.method_id = method_id comparable_id "-compare";
+           param_tys = [ TUnknown; TUnknown ];
+           return_ty = TInt;
+         };
+       ]
+  |> add_or_fail
   |> Protocol_registry.declare object_id
        [
          {

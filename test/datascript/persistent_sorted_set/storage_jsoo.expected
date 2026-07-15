@@ -1,0 +1,11 @@
+partition:true:true:true:true:true
+store:true:true:true
+restore-lazy:true:true
+lookup-cache:true:true:true:true:true
+walk:true:true:true:true
+incremental:true:true:true:true
+addresses-preserved:true
+delete-removed:true:true:true
+store-attaches:true:true:true
+delete:true:true:true
+empty:true:true:true:true:true

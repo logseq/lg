@@ -34,7 +34,7 @@
                 (unsafe-aget ~source (+ idx# ~source-start)))
               (recur (inc idx#)))
             nil)))
-     :native
+     :default
      `(Array.blit
         ~source
         ~source-start

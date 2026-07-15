@@ -4,6 +4,8 @@ let apply name args = Semantic_ir.Apply (Semantic_ir.Ident name, args)
 
 let identifier_holds_packed_constraint name =
   String.starts_with ~prefix:"__lg_constrained_argument" name
+  || String.starts_with ~prefix:"__lg_dynamic_optional_value" name
+  || String.starts_with ~prefix:"__lg_optional_seqable_value" name
   || String.starts_with ~prefix:"__lg_dynamic_callback_arg_" name
   || String.starts_with ~prefix:"__lg_nullable_callback_arg_" name
   || String.starts_with ~prefix:"__lg_static_argument_" name
@@ -22,7 +24,9 @@ let rec to_seq_expr env collection =
       let value_name = "__lg_optional_seqable_value" in
       let value = typed_ir value_ty (Semantic_ir.Ident value_name) in
         match to_seq_expr env value with
-      | Error _ -> Error.error "optional value is not seqable"
+      | Error _ ->
+          Error.error
+            ("optional value is not seqable: " ^ Types.source_name value_ty)
       | Ok (element_ty, sequence) ->
           Ok
             ( element_ty,

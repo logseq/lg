@@ -369,6 +369,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
       | Error _ as err -> err
       | Ok (collection :: values) when values <> [] ->
           let add_value collection value =
+            let value = unwrap_protocol_value value in
             match collection.ty with
             | TList (TUnknown | TVar _) ->
                 Ok
@@ -622,7 +623,10 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                         Structural_map.extension_get target fields keyword
                       with
                       | Some result -> Ok result
-                      | None -> Error.error ("unknown field " ^ keyword)))
+                      | None ->
+                          Ok
+                            (typed_ir (TNullable TUnknown)
+                               (Semantic_ir.Constructor ("None", None)))))
               | TNamed_record { fields; nominal = true; _ } -> (
                   match find_field keyword fields with
                   | Some field ->
@@ -1351,9 +1355,14 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                                   keyword
                               with
                               | Some target -> Ok target
-                              | None ->
-                                  Error.error
-                                    ("cannot dissoc unknown field " ^ keyword))
+                              | None -> (
+                                  match target.ty with
+                                  | TRecord _
+                                  | TNamed_record { nominal = false; _ } ->
+                                      Ok target
+                                  | _ ->
+                                      Error.error
+                                        ("cannot dissoc unknown field " ^ keyword)))
                           | Some _ -> Structural_map.dissoc target fields keyword
                         in
                         Result.bind result (fun target ->

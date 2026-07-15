@@ -1101,3 +1101,63 @@ let expand ~compiler_env (definition : Macro_definition.t) args =
     }
   in
   Result.bind (invoke_definition context definition args) form_of_value
+
+let thread_form position value steps =
+  let thread value = function
+    | FSymbol name -> FList [ FSymbol name; value ]
+    | FKeyword _ as keyword -> FList [ keyword; value ]
+    | FList (function_form :: arguments) ->
+        if position = `First then
+          FList (function_form :: value :: arguments)
+        else FList (function_form :: arguments @ [ value ])
+    | step -> FList [ step; value ]
+  in
+  List.fold_left thread value steps
+
+let rec expand_all ~scope ~compiler_env = function
+  | FList (FSymbol ("quote" | "syntax-quote") :: _ as forms) ->
+      Ok (FList forms)
+  | FList (FSymbol ("->" | "->>") as operator :: value :: steps) ->
+      let position = if operator = FSymbol "->" then `First else `Last in
+      expand_all ~scope ~compiler_env (thread_form position value steps)
+  | FList
+      (FSymbol ("cond->" | "cond->>" | "some->" | "some->>") :: _ as forms)
+    ->
+      Ok (FList forms)
+  | FList (FSymbol name :: args) -> (
+      match Env.find_macro ~scope name compiler_env with
+      | Some definition ->
+          Result.bind (expand ~compiler_env definition args) (fun expanded ->
+              expand_all ~scope ~compiler_env expanded)
+      | None ->
+          Result.map
+            (fun forms -> FList forms)
+            (expand_all_forms ~scope ~compiler_env (FSymbol name :: args)))
+  | FList forms ->
+      Result.map
+        (fun forms -> FList forms)
+        (expand_all_forms ~scope ~compiler_env forms)
+  | FVector forms ->
+      Result.map
+        (fun forms -> FVector forms)
+        (expand_all_forms ~scope ~compiler_env forms)
+  | FMap pairs ->
+      let rec expand_pairs expanded = function
+        | [] -> Ok (FMap (List.rev expanded))
+        | (key, value) :: rest ->
+            Result.bind (expand_all ~scope ~compiler_env key) (fun key ->
+                Result.bind (expand_all ~scope ~compiler_env value)
+                  (fun value ->
+                    expand_pairs ((key, value) :: expanded) rest))
+      in
+      expand_pairs [] pairs
+  | form -> Ok form
+
+and expand_all_forms ~scope ~compiler_env forms =
+  let rec loop expanded = function
+    | [] -> Ok (List.rev expanded)
+    | form :: rest ->
+        Result.bind (expand_all ~scope ~compiler_env form) (fun form ->
+            loop (form :: expanded) rest)
+  in
+  loop [] forms

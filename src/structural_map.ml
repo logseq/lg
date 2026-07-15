@@ -127,7 +127,9 @@ let assoc target fields keyword value =
     when not
            (Types.equal field.ty value.ty
            || unresolved_field field
-           || (Types.is_dynamic field.ty && Types.is_dynamic value.ty))
+           || (Types.is_dynamic field.ty && Types.is_dynamic value.ty)
+           || Types.assignable ~policy:Host_boundary ~expected:field.ty
+                ~actual:value.ty)
     ->
       Error.error
         (Printf.sprintf "cannot assoc %s as %s because it is already %s" keyword

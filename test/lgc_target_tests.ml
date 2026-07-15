@@ -152,6 +152,20 @@ let test_javascript_targets_load_clj_macro_definitions () =
          let generated = compile target source in
          assert_contains generated "42")
 
+let test_javascript_targets_preload_self_required_macros () =
+  let source =
+    {|
+(ns compat.self-macros
+  #?(:cljs (:require-macros [compat.self-macros :refer [portable]])))
+(defmacro portable [value] value)
+(def answer (portable 42))
+|}
+  in
+  [ Lg.Target.Melange; Lg.Target.Js_of_ocaml ]
+  |> List.iter (fun target ->
+         let generated = compile target source in
+         assert_contains generated "42")
+
 let test_rejects_invalid_reader_conditionals () =
   Lg.Compiler.compile_string ~target:Lg.Target.Native
     {|(def value #?(:native 1 :melange))|}
@@ -194,6 +208,20 @@ let test_splices_reader_conditionals_into_collections () =
   assert_not_contains generated "js-splice-a";
   assert_not_contains generated "js-splice-map"
 
+let test_javascript_spliced_recur_marks_defn_recursive () =
+  let source =
+    {|
+(defn normalize [value]
+  (cond
+    (int? value) value
+    #?@(:cljs [(array? value) (recur (array-seq value))])
+    :else 0))
+(def answer (normalize 42))
+|}
+  in
+  [ Lg.Target.Melange; Lg.Target.Js_of_ocaml ]
+  |> List.iter (fun target -> ignore (compile target source))
+
 let tests =
   [
     ("reader discard omits forms", test_reader_discard_omits_forms);
@@ -209,10 +237,14 @@ let tests =
     ("names js-of-ocaml target js", test_js_names_js_of_ocaml_target);
     ( "loads :clj macro definitions for JavaScript targets",
       test_javascript_targets_load_clj_macro_definitions );
+    ( "preloads self-required macros for JavaScript targets",
+      test_javascript_targets_preload_self_required_macros );
     ( "omits unmatched reader conditionals",
       test_omits_unmatched_reader_conditionals );
     ( "splices reader conditionals into collections",
       test_splices_reader_conditionals_into_collections );
+    ( "JavaScript spliced recur marks defn recursive",
+      test_javascript_spliced_recur_marks_defn_recursive );
     ( "rejects invalid reader conditionals",
       test_rejects_invalid_reader_conditionals );
   ]

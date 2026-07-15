@@ -772,6 +772,43 @@
  (libraries lg.runtime rrbvec))
 
 (rule
+ (target persistent_sorted_set_storage_jsoo.ml)
+ (deps
+  ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/array_ops.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/search.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/nodes.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/path.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/traversal.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/set.cljc
+  datascript/persistent_sorted_set/storage_test.cljc
+  ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   js
+   --compile-files
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/array_ops.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/search.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/nodes.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/path.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/traversal.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/set.cljc}
+   %{dep:datascript/persistent_sorted_set/storage_test.cljc}
+   -o
+   %{target})))
+
+(executable
+ (name persistent_sorted_set_storage_jsoo)
+ (modes js)
+ (modules persistent_sorted_set_storage_jsoo)
+ (flags
+  (:standard -w -32-37))
+ (libraries lg.runtime rrbvec))
+
+(rule
  (alias runtest)
  (deps
   datascript/value_smoke.sh
@@ -786,6 +823,19 @@
    %{exe:persistent_sorted_set_storage_native.exe}
    %{dep:persistent-sorted-set-storage-melange/test/persistent_sorted_set_storage_melange.js}
    %{dep:datascript/persistent_sorted_set/storage.expected})))
+
+(rule
+ (alias runtest)
+ (deps
+  datascript/jsoo_smoke.sh
+  datascript/persistent_sorted_set/storage_jsoo.expected
+  persistent_sorted_set_storage_jsoo.bc.js)
+ (action
+  (run
+   sh
+   %{dep:datascript/jsoo_smoke.sh}
+   %{dep:persistent_sorted_set_storage_jsoo.bc.js}
+   %{dep:datascript/persistent_sorted_set/storage_jsoo.expected})))
 
 (rule
  (target persistent_sorted_set_benchmark_native.ml)

@@ -87,7 +87,7 @@
               value
               (if (= 0 #?(:melange
                            (uncurried-compare cmp value previous)
-                           :native (cmp value previous)))
+                           :default (cmp value previous)))
                 count
                 (inc count)))))))))
 
@@ -107,7 +107,7 @@
               (let [value (arrays/aget values source-idx)]
                 (if (= 0 #?(:melange
                              (uncurried-compare cmp value previous)
-                             :native (cmp value previous)))
+                             :default (cmp value previous)))
                   (recur (inc source-idx) result-idx value)
                   (do
                     (arrays/aset result result-idx value)

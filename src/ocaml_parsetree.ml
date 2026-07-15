@@ -27,7 +27,7 @@ let longident_of_string name =
 let type_constructor name args =
   Ast_helper.Typ.constr ~loc (lid (longident_of_string name)) args
 
-let rec core_type = function
+let rec core_type ?(type_variables = []) = function
   | Types.TInt -> type_constructor "int" []
   | Types.TFloat -> type_constructor "float" []
   | Types.TChar -> type_constructor "char" []
@@ -39,7 +39,8 @@ let rec core_type = function
   | Types.TBool -> type_constructor "bool" []
   | Types.TUnit -> type_constructor "unit" []
   | Types.TNil -> type_constructor "option" [ Ast_helper.Typ.any ~loc () ]
-  | Types.TNullable inner -> type_constructor "option" [ core_type inner ]
+  | Types.TNullable inner ->
+      type_constructor "option" [ core_type ~type_variables inner ]
   | Types.TUnknown -> Ast_helper.Typ.var ~loc "a"
   | Types.TVar name -> Ast_helper.Typ.var ~loc name
   | Types.TOcaml name ->
@@ -49,9 +50,11 @@ let rec core_type = function
       type_constructor "Lg_runtime.Runtime_dynamic.t" []
   | Types.TOcaml_app (name, [ inner; container ])
     when name = Types.seqable_constraint_name ->
-      let element = core_type inner in
-      let value = core_type (Types.constraint_value_type container) in
-      let container = core_type container in
+      let element = core_type ~type_variables inner in
+      let value =
+        core_type ~type_variables (Types.constraint_value_type container)
+      in
+      let container = core_type ~type_variables container in
       let adapter =
         Ast_helper.Typ.arrow ~loc Nolabel value
           (type_constructor "Seq.t" [ element ])
@@ -60,9 +63,11 @@ let rec core_type = function
   | Types.TOcaml_app (name, [ inner; container ])
     when name = Types.optional_seqable_constraint_name
          || name = Types.optional_sequential_constraint_name ->
-      let element = core_type inner in
-      let value = core_type (Types.constraint_value_type container) in
-      let container = core_type container in
+      let element = core_type ~type_variables inner in
+      let value =
+        core_type ~type_variables (Types.constraint_value_type container)
+      in
+      let container = core_type ~type_variables container in
       let adapter =
         Ast_helper.Typ.arrow ~loc Nolabel value
           (type_constructor "Seq.t" [ element ])
@@ -72,45 +77,63 @@ let rec core_type = function
   | Types.TOcaml_app (name, [ witness_ty; value_ty ])
     when String.starts_with ~prefix:Types.protocol_constraint_prefix name ->
       Ast_helper.Typ.tuple ~loc
-        [ (None, type_constructor "option" [ core_type witness_ty ]);
-          (None, core_type value_ty);
+        [ (None,
+            type_constructor "option"
+              [ core_type ~type_variables witness_ty ]);
+          (None, core_type ~type_variables value_ty);
         ]
   | Types.TOcaml_app (name, [ inner ]) when name = Types.next_seq_type_name ->
-      type_constructor "Seq.t" [ core_type inner ]
+      type_constructor "Seq.t" [ core_type ~type_variables inner ]
   | Types.TOcaml_app (name, args) ->
       Ast_helper.Typ.constr ~loc (lid (longident_of_string name))
-        (List.map core_type args)
+        (List.map (core_type ~type_variables) args)
   | Types.TTuple args ->
       Ast_helper.Typ.tuple ~loc
-        (List.map (fun arg -> (None, core_type arg)) args)
-  | Types.TArray inner -> type_constructor "array" [ core_type inner ]
-  | Types.TRef inner -> type_constructor "ref" [ core_type inner ]
-  | Types.TList inner -> type_constructor "list" [ core_type inner ]
-  | Types.TSeq inner -> type_constructor "Seq.t" [ core_type inner ]
+        (List.map
+           (fun arg -> (None, core_type ~type_variables arg))
+           args)
+  | Types.TArray inner ->
+      type_constructor "array" [ core_type ~type_variables inner ]
+  | Types.TRef inner ->
+      type_constructor "ref" [ core_type ~type_variables inner ]
+  | Types.TList inner ->
+      type_constructor "list" [ core_type ~type_variables inner ]
+  | Types.TSeq inner ->
+      type_constructor "Seq.t" [ core_type ~type_variables inner ]
   | Types.TSet inner -> (
       match Types.set_module_name inner with
       | Ok set_module ->
           Ast_helper.Typ.constr ~loc
             (lid (longident_of_string (set_module ^ ".t"))) []
-      | Error _ -> type_constructor "unsupported_set" [ core_type inner ])
+      | Error _ ->
+          type_constructor "unsupported_set"
+            [ core_type ~type_variables inner ])
   | Types.TVector inner ->
       Ast_helper.Typ.constr ~loc
         (lid
            (Longident.Ldot
               (lid (Longident.Lident "Rrbvec"), str "t")))
-        [ core_type inner ]
+        [ core_type ~type_variables inner ]
   | Types.TFn (args, ret) ->
       let args = match args with [] -> [ Types.TUnit ] | _ -> args in
       List.fold_right
-        (fun arg result -> Ast_helper.Typ.arrow ~loc Nolabel (core_type arg) result)
-        args (core_type ret)
+        (fun arg result ->
+          Ast_helper.Typ.arrow ~loc Nolabel
+            (core_type ~type_variables arg)
+            result)
+        args (core_type ~type_variables ret)
   | Types.TOverloaded_fn arities ->
-      core_type (Types.overloaded_storage_type arities)
+      core_type ~type_variables (Types.overloaded_storage_type arities)
   | Types.TRecord _ -> type_constructor "record" []
   | Types.TNamed_record record ->
       Ast_helper.Typ.constr ~loc
         (lid (longident_of_string record.type_name))
-        (List.map (fun _ -> Ast_helper.Typ.any ~loc ()) record.type_parameters)
+        (List.map
+           (fun parameter ->
+             if List.mem parameter type_variables then
+               Ast_helper.Typ.var ~loc parameter
+             else Ast_helper.Typ.any ~loc ())
+           record.type_parameters)
 
 let record_values_to_parsetree var_name values =
   let rec loop acc = function
@@ -169,7 +192,7 @@ let record_type_definition type_name parameters fields location =
            let field_loc = declaration_location field.location in
            Ast_helper.Type.field ~loc:field_loc
              (Location.mkloc field.ocaml_name field_loc)
-             (core_type field.ty))
+             (core_type ~type_variables:parameters field.ty))
   in
   let type_declaration =
     if fields = [] then

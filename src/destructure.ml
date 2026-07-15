@@ -348,7 +348,7 @@ and infer_sequence_type forms lookup_local_ty =
                match acc with
                | None -> Some ty
                | Some existing when Types.equal existing ty -> Some existing
-               | Some _ -> Some TUnknown)
+               | Some _ -> Some (Types.dynamic_constraint TUnknown))
              None
         |> Option.value ~default:TUnknown
       in

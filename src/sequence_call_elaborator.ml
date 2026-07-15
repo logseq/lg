@@ -49,7 +49,7 @@ let truthy_call return_ty fn arguments =
     Semantic_ir.Apply
       (Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.truthy", [ call ])
 
-let create ~compile_expr ~pack_dynamic_value =
+let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
   let special_forms : Special_form_elaborator.t =
     Special_form_elaborator.create ~compile_expr
   in
@@ -57,6 +57,31 @@ let create ~compile_expr ~pack_dynamic_value =
   let compile_function_arg scope env = function
     | FSymbol name -> lookup_function scope env name
     | form -> compile_expr scope env form
+  in
+  let adapt_unary_function env actual_ty fn =
+    match fn.ty with
+    | TFn ([ expected_ty ], return_ty)
+      when Types.is_dynamic actual_ty && not (Types.is_dynamic expected_ty) ->
+        let item_name = "__lg_dynamic_sequence_item" in
+        Result.map
+          (fun item ->
+            typed_ir (TFn ([ actual_ty ], return_ty))
+              (Semantic_ir.Fun
+                 ( [ Semantic_ir.PVar item_name ],
+                   Semantic_ir.Apply (fn.semantic_expr, [ item ]) )))
+          (dynamic_unpack env expected_ty (Semantic_ir.Ident item_name))
+    | TFn ([ expected_ty ], return_ty)
+      when Types.is_dynamic expected_ty && not (Types.is_dynamic actual_ty) ->
+        let item_name = "__lg_static_sequence_item" in
+        let item = typed_ir actual_ty (Semantic_ir.Ident item_name) in
+        Result.map
+          (fun item ->
+            typed_ir (TFn ([ actual_ty ], return_ty))
+              (Semantic_ir.Fun
+                 ( [ Semantic_ir.PVar item_name ],
+                   Semantic_ir.Apply (fn.semantic_expr, [ item ]) )))
+          (pack_dynamic_value env expected_ty item)
+    | _ -> Ok fn
   in
   let compile_function_arg_for_collection scope env element_ty = function
     | FKeyword keyword ->
@@ -1146,10 +1171,12 @@ let create ~compile_expr ~pack_dynamic_value =
                   | Ok ({ ty = TFn ([ param_ty ], ret); _ } as fn)
                     when Types.assignable ~policy:Host_boundary ~expected:param_ty
                            ~actual:inner ->
-                      Ok
-                        (typed_ir (TSeq ret)
-                           (apply "Lg_runtime.Runtime_seq.map"
-                              [ fn.semantic_expr; sequence ]))
+                      Result.map
+                        (fun fn ->
+                          typed_ir (TSeq ret)
+                            (apply "Lg_runtime.Runtime_seq.map"
+                               [ fn.semantic_expr; sequence ]))
+                        (adapt_unary_function env inner fn)
                   | Ok { ty = TFn _; _ } ->
                     Error.error
                       "map function argument type does not match sequence"
@@ -1175,10 +1202,12 @@ let create ~compile_expr ~pack_dynamic_value =
                       | TFn ([ param_ty ], TBool)
                         when Types.assignable ~policy:Host_boundary
                                ~expected:param_ty ~actual:inner ->
-                          Ok
-                            (typed_ir (TSeq inner)
-                               (apply "Lg_runtime.Runtime_seq.filter"
-                                  [ fn.semantic_expr; sequence ]))
+                          Result.map
+                            (fun fn ->
+                              typed_ir (TSeq inner)
+                                (apply "Lg_runtime.Runtime_seq.filter"
+                                   [ fn.semantic_expr; sequence ]))
+                            (adapt_unary_function env inner fn)
                     | ty when Types.is_dynamic ty ->
                         let item_name = "__lg_dynamic_filter_item" in
                         let item =

@@ -73,6 +73,8 @@ and refine_nonmatching_type existing inferred =
       TVector (refine_type existing inferred)
   | TSet existing, TSet inferred -> TSet (refine_type existing inferred)
   | TSeq existing, TSeq inferred -> TSeq (refine_type existing inferred)
+  | TRecord existing, TRecord inferred ->
+      TRecord (merge_record_fields existing inferred)
   | TVar _, inferred -> inferred
   | existing, TVar _ -> existing
   | ( TFn (existing_params, existing_return),
@@ -82,6 +84,41 @@ and refine_nonmatching_type existing inferred =
         ( List.map2 refine_type existing_params inferred_params,
           refine_type existing_return inferred_return )
   | existing, _ -> existing
+
+and merge_record_fields existing inferred =
+  List.fold_left
+    (fun fields (inferred_field : field) ->
+      match find_field inferred_field.keyword fields with
+      | None -> fields @ [ inferred_field ]
+      | Some existing_field ->
+          List.map
+            (fun (field : field) ->
+              if field.keyword = inferred_field.keyword then
+                {
+                  existing_field with
+                  ty = refine_type existing_field.ty inferred_field.ty;
+                }
+              else field)
+            fields)
+    existing inferred
+
+let same_refinable_wrapper left right =
+  match (left, right) with
+  | TNullable _, TNullable _
+  | TArray _, TArray _
+  | TRef _, TRef _
+  | TList _, TList _
+  | TVector _, TVector _
+  | TSet _, TSet _
+  | TSeq _, TSeq _
+  | TRecord _, TRecord _ ->
+      true
+  | TOcaml_app (left_name, left_args), TOcaml_app (right_name, right_args) ->
+      left_name = right_name && List.length left_args = List.length right_args
+  | TTuple left, TTuple right -> List.length left = List.length right
+  | TFn (left_params, _), TFn (right_params, _) ->
+      List.length left_params = List.length right_params
+  | _ -> false
 
 let constrain_symbol expected_ty params name =
   match List.assoc_opt name params with
@@ -111,6 +148,28 @@ let rec materialize_dynamic_unknown = function
         ( List.map materialize_dynamic_unknown parameters,
           materialize_dynamic_unknown return_ty )
   | ty -> ty
+
+let rec stored_value_type ty =
+  match Types.protocol_constraint_info ty with
+  | Some (_, _, value_ty) -> stored_value_type value_ty
+  | None -> ty
+
+let record_ref_field_value_type params receiver keyword =
+  match List.assoc_opt receiver params with
+  | None -> None
+  | Some receiver_ty -> (
+      match Types.record_fields receiver_ty with
+      | None -> None
+      | Some fields -> (
+          match Types.find_field keyword fields with
+          | Some { ty = TRef value_ty; _ } -> Some value_ty
+          | Some _ | None -> None))
+
+let rec assoc_root_symbol = function
+  | FSymbol name -> Some name
+  | FList (FSymbol ("assoc" | "clojure.core/assoc") :: target :: _) ->
+      assoc_root_symbol target
+  | _ -> None
 
 let constrain_comparable_symbol params name =
   match List.assoc_opt name params with
@@ -199,6 +258,7 @@ let add_record_field_constraint name keyword field_ty params =
               :: List.filter
                    (fun candidate -> candidate.keyword <> keyword)
                    fields)
+        | TRef _, TRef TUnknown -> Ok fields
         | ( TNullable (TRecord existing_fields),
             TNullable (TRecord inferred_fields) ) ->
             let merge_nested fields (inferred : field) =
@@ -241,13 +301,19 @@ let add_record_field_constraint name keyword field_ty params =
               :: List.filter
                    (fun candidate -> candidate.keyword <> keyword)
                    fields)
+        | existing, inferred when same_refinable_wrapper existing inferred ->
+            Ok
+              (make_field keyword (refine_type existing inferred)
+              :: List.filter
+                   (fun candidate -> candidate.keyword <> keyword)
+                   fields)
         | _ ->
             Error.error
               ("cannot infer " ^ keyword ^ " as " ^ Types.source_name field_ty
              ^ " because it is already " ^ Types.source_name field.ty))
   in
   let rec add_constraint = function
-    | TUnknown -> Ok (TRecord [ make_field keyword field_ty ])
+    | TUnknown | TVar _ -> Ok (TRecord [ make_field keyword field_ty ])
     | TRecord fields ->
         Result.map (fun fields -> TRecord fields) (merge_fields fields)
     | ty when Types.is_dynamic ty ->
@@ -291,6 +357,20 @@ let inferred_form_type params = function
   | FSymbol name -> List.assoc_opt name params |> Option.value ~default:TUnknown
   | FList (FSymbol ("+" | "-" | "*" | "/" | "max" | "min") :: _) as form ->
       numeric_form_type params form
+  | FList [ FSymbol ("first" | "second" | "last"); FSymbol receiver ] -> (
+      let normalize = function
+        | TUnknown | TVar _ -> Types.dynamic_constraint TUnknown
+        | ty -> ty
+      in
+      match List.assoc_opt receiver params with
+      | Some ty -> (
+          match Types.seqable_constraint_element ty with
+          | Some element_ty -> normalize element_ty
+          | None -> (
+              match Types.next_seq_element ty with
+              | Some element_ty -> normalize element_ty
+              | None -> if Types.is_dynamic ty then ty else TUnknown))
+      | None -> TUnknown)
   | FList (_function :: FSymbol receiver :: _) -> (
       match List.assoc_opt receiver params with
       | Some ty when Types.is_dynamic ty -> ty
@@ -360,6 +440,51 @@ let constrain_maybe_reduced_callbacks params forms =
   in
   List.fold_left visit params forms
 
+let rec rewrite_simple_aliases aliases = function
+  | FSymbol name as form -> (
+      match List.assoc_opt name aliases with
+      | Some ((FSymbol _ | FKeyword _) as alias) ->
+          rewrite_simple_aliases (List.remove_assoc name aliases) alias
+      | _ -> form)
+  | FList (FSymbol binding_form :: FVector bindings :: body_forms)
+    when binding_form = "let" || binding_form = "let*"
+         || binding_form = "loop"
+         || String.ends_with ~suffix:"/let" binding_form
+         || String.ends_with ~suffix:"/let*" binding_form ->
+      let rec rewrite_bindings aliases rewritten = function
+        | FSymbol name :: value :: rest ->
+            let value = rewrite_simple_aliases aliases value in
+            rewrite_bindings (List.remove_assoc name aliases)
+              (value :: FSymbol name :: rewritten)
+              rest
+        | rest -> (aliases, List.rev_append rewritten rest)
+      in
+      let body_aliases, bindings = rewrite_bindings aliases [] bindings in
+      FList
+        (FSymbol binding_form :: FVector bindings
+        :: List.map (rewrite_simple_aliases body_aliases) body_forms)
+  | FList (FSymbol "fn" :: FVector parameters :: body_forms) ->
+      let aliases =
+        List.fold_left
+          (fun aliases -> function
+            | FSymbol name -> List.remove_assoc name aliases
+            | _ -> aliases)
+          aliases parameters
+      in
+      FList
+        (FSymbol "fn" :: FVector parameters
+        :: List.map (rewrite_simple_aliases aliases) body_forms)
+  | FList forms -> FList (List.map (rewrite_simple_aliases aliases) forms)
+  | FVector forms -> FVector (List.map (rewrite_simple_aliases aliases) forms)
+  | FMap pairs ->
+      FMap
+        (List.map
+           (fun (key, value) ->
+             ( rewrite_simple_aliases aliases key,
+               rewrite_simple_aliases aliases value ))
+           pairs)
+  | form -> form
+
 let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
     body_forms =
   let next_type_variable = ref 0 in
@@ -370,6 +495,74 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
   in
   let rec infer_expected expected_ty params = function
     | FSymbol name -> constrain_symbol expected_ty params name
+    | FList (FSymbol let_name :: bindings :: body_forms)
+      when let_name = "let" || let_name = "let*"
+           || String.ends_with ~suffix:"/let" let_name
+           || String.ends_with ~suffix:"/let*" let_name ->
+        infer_let ~expected_body:expected_ty params bindings body_forms
+    | FList (FSymbol ("assoc" | "clojure.core/assoc") :: target :: pairs) -> (
+        match Types.record_fields expected_ty with
+        | None -> infer_assoc params target pairs
+        | Some expected_fields ->
+            let rec assigned_keywords assigned = function
+              | FKeyword keyword :: _value :: rest ->
+                  assigned_keywords (keyword :: assigned) rest
+              | _key :: _value :: rest -> assigned_keywords assigned rest
+              | _ -> assigned
+            in
+            let assigned = assigned_keywords [] pairs in
+            let preserved =
+              List.filter
+                (fun (field : field) ->
+                  not (List.mem field.keyword assigned))
+                expected_fields
+            in
+            let infer_target =
+              match target with
+              | FSymbol name ->
+                  List.fold_left
+                    (fun result (field : field) ->
+                      Result.bind result (fun params ->
+                          add_record_field_constraint name field.keyword
+                            field.ty params))
+                    (Ok params) preserved
+              | target when preserved = [] -> infer_form params target
+              | target -> infer_expected (TRecord preserved) params target
+            in
+            Result.bind infer_target (fun params ->
+                infer_assoc params target pairs))
+    | FList
+        [ FSymbol ("array-from" | "into-array" | "to-array"); collection ]
+      when match expected_ty with TArray _ -> true | _ -> false -> (
+        let element_ty =
+          match expected_ty with TArray element_ty -> element_ty | _ -> assert false
+        in
+        match collection with
+        | FSymbol name -> constrain_seqable element_ty params name
+        | collection -> infer_form params collection)
+    | FList
+        (FSymbol (("cond->" | "cond->>") as operator) :: value :: clauses) ->
+        let thread position step =
+          match step with
+          | FSymbol name -> FList [ FSymbol name; value ]
+          | FKeyword _ as keyword -> FList [ keyword; value ]
+          | FList (FSymbol name :: arguments) ->
+              if position = `First then
+                FList (FSymbol name :: value :: arguments)
+              else FList ((FSymbol name :: arguments) @ [ value ])
+          | form -> form
+        in
+        let position = if operator = "cond->" then `First else `Last in
+        let rec infer_clauses params = function
+          | [] -> Ok params
+          | condition :: step :: rest ->
+              Result.bind (infer_truthy params condition) (fun params ->
+                  Result.bind
+                    (infer_expected expected_ty params (thread position step))
+                    (fun params -> infer_clauses params rest))
+          | [ form ] -> infer_form params form
+        in
+        infer_clauses params clauses
     | FList [ FSymbol ("aget" | "unsafe-aget"); FSymbol array; index ] -> (
         match constrain_symbol (TArray expected_ty) params array with
         | Error _ as error -> error
@@ -386,8 +579,36 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
         infer_expected_all expected_ty params args
     | FList [ FKeyword keyword; FSymbol name ] ->
         add_record_field_constraint name keyword expected_ty params
+    | FList [ FSymbol field_access; FSymbol name ]
+      when String.starts_with ~prefix:".-" field_access ->
+        let keyword =
+          ":"
+          ^ String.sub field_access 2 (String.length field_access - 2)
+        in
+        let field_ty =
+          if Types.is_dynamic expected_ty then TUnknown else expected_ty
+        in
+        add_record_field_constraint name keyword field_ty params
     | FList [ FSymbol "get"; FSymbol name; FKeyword keyword ] ->
         add_record_field_constraint name keyword expected_ty params
+    | FList [ FSymbol "get"; target; key ] ->
+        let target_ty = inferred_form_type params target in
+        if match target_ty with TVector _ -> true | _ -> false then
+          Result.bind
+            (infer_expected (TVector expected_ty) params target)
+            (fun params -> infer_expected TInt params key)
+        else
+          let key_ty =
+            inferred_form_type params key |> materialize_dynamic_unknown
+          in
+          let value_ty =
+            match expected_ty with
+            | TNullable inner | TOcaml_app ("option", [ inner ]) -> inner
+            | ty -> ty
+          in
+          Result.bind
+            (infer_expected (Types.dynamic_map key_ty value_ty) params target)
+            (fun params -> infer_expected key_ty params key)
     | FMap pairs when Types.is_dynamic expected_ty ->
         pairs
         |> List.fold_left
@@ -505,7 +726,8 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
     then
       infer_expected_all (Types.dynamic_constraint TUnknown) params args
     else
-    match lookup_function_ty name with
+    let function_ty = lookup_function_ty name in
+    match function_ty with
       | Ok (TFn (param_tys, _ret)) when List.length param_tys = List.length args
         ->
         List.fold_left2
@@ -591,7 +813,15 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
               |> Option.value ~default:TUnknown )
         | Error _ -> (TUnknown, TUnknown))
     | _ -> (TUnknown, TUnknown)
-  and infer_let params bindings body_forms =
+  and infer_let ?expected_body params bindings body_forms =
+    let infer_body params body_forms =
+      match (expected_body, List.rev body_forms) with
+      | Some expected, last :: reversed_prefix ->
+          Result.bind (infer_all params (List.rev reversed_prefix)) (fun params ->
+              infer_expected expected params last)
+      | Some _, [] -> Ok params
+      | None, _ -> infer_all params body_forms
+    in
     match bindings with
     | FVector forms -> (
         let rec macro_slots slots = function
@@ -602,6 +832,28 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
           | _ -> slots
         in
         let slots = macro_slots [] forms in
+        let rec local_names names = function
+          | pattern :: _value :: rest ->
+              local_names
+                (List.rev_append (Destructure.pattern_names pattern) names)
+                rest
+          | _ -> List.rev names
+        in
+        let provisional_names = local_names [] forms |> List.sort_uniq String.compare in
+        let provisional_params =
+          List.map (fun name -> (name, TUnknown)) provisional_names
+          @ List.filter
+              (fun (name, _) -> not (List.mem name provisional_names))
+              params
+        in
+        let inferred_locals =
+          infer_body provisional_params body_forms
+          |> Result.value ~default:provisional_params
+        in
+        let lookup_inferred_local name =
+          List.assoc_opt name inferred_locals
+          |> Option.value ~default:TUnknown
+        in
         let rec infer_slot_writes params = function
           | FList [ FSymbol ("vreset!" | "reset!"); FSymbol slot; value ]
             when List.mem slot slots ->
@@ -623,15 +875,24 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
         in
         let rec infer_values params = function
           | [] -> Ok params
-          | FVector _ :: FSymbol source :: rest -> (
-              match constrain_seqable TUnknown params source with
+          | (FVector _ as pattern) :: FSymbol source :: rest -> (
+              let element_ty =
+                match
+                  Destructure.infer_pattern_type pattern lookup_inferred_local
+                with
+                | Ok (TVector element_ty) -> element_ty
+                | Ok _ | Error _ -> TUnknown
+              in
+              match constrain_seqable element_ty params source with
               | Error _ as err -> err
               | Ok params -> infer_values params rest)
-          | FMap _ :: FSymbol source :: rest -> (
-              match
-                constrain_symbol
-                  (Types.dynamic_constraint TUnknown)
-                  params source
+          | (FMap _ as pattern) :: FSymbol source :: rest -> (
+              let map_ty =
+                Destructure.infer_pattern_type pattern lookup_inferred_local
+                |> Result.value
+                     ~default:(Types.dynamic_constraint TUnknown)
+              in
+              match constrain_symbol map_ty params source
               with
               | Error _ as error -> error
               | Ok params -> infer_values params rest)
@@ -652,17 +913,80 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
                 (Ok params) body_forms
             with
             | Error _ as error -> error
-            | Ok params -> infer_all params body_forms))
+            | Ok params -> (
+                let rec simple_bindings bindings = function
+                  | [] -> Some (List.rev bindings)
+                  | FSymbol name :: value :: rest ->
+                      simple_bindings ((name, value) :: bindings) rest
+                  | _ -> None
+                in
+                match simple_bindings [] forms with
+                | None -> infer_body params body_forms
+                | Some bindings ->
+                    let body_forms =
+                      List.map (rewrite_simple_aliases bindings) body_forms
+                    in
+                    let local_names = List.map fst bindings in
+                    let outer_params =
+                      List.filter
+                        (fun (name, _) -> not (List.mem name local_names))
+                        params
+                    in
+                    let rec initial_locals locals = function
+                      | [] -> List.rev locals
+                      | (name, value) :: rest ->
+                          let ty =
+                            inferred_form_type
+                              (List.rev_append locals outer_params)
+                              value
+                          in
+                          let ty =
+                            if Types.equal ty TUnknown then
+                              TVar ("let_" ^ Names.sanitize_name name)
+                            else ty
+                          in
+                          initial_locals ((name, ty) :: locals) rest
+                    in
+                    let local_params = initial_locals [] bindings in
+                    Result.bind
+                      (infer_all (local_params @ outer_params)
+                         (List.map snd bindings))
+                      (fun binding_params ->
+                      Result.bind
+                      (infer_body binding_params body_forms)
+                      (fun inferred ->
+                        let rec propagate params = function
+                          | [] -> Ok params
+                          | (name, value) :: rest ->
+                              let expected =
+                                List.assoc_opt name params
+                                |> Option.value ~default:TUnknown
+                              in
+                              (match expected with
+                              | TUnknown | TVar _ -> propagate params rest
+                              | expected ->
+                                  Result.bind
+                                    (infer_expected expected params value)
+                                    (fun params -> propagate params rest))
+                        in
+                        Result.map
+                          (fun inferred ->
+                            List.filter
+                              (fun (name, _) ->
+                                not (List.mem name local_names))
+                              inferred)
+                          (propagate inferred (List.rev bindings)))))))
     | _ -> infer_all params body_forms
   and infer_assoc params target pairs =
+    let target_name = assoc_root_symbol target in
     let rec infer_pairs params = function
       | [] -> Ok params
       | FKeyword keyword :: value_form :: rest -> (
           match infer_form params value_form with
           | Error _ as err -> err
           | Ok params -> (
-              match target with
-              | FSymbol name -> (
+              match target_name with
+              | Some name -> (
                   let field_ty =
                     match value_form with
                     | FSymbol value_name -> (
@@ -691,7 +1015,7 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
                       with
                   | Error _ as err -> err
                       | Ok params -> infer_pairs params rest))
-              | _ -> infer_pairs params rest))
+              | None -> infer_pairs params rest))
       | forms ->
           infer_expected_all (Types.dynamic_constraint TUnknown) params forms
     in
@@ -799,15 +1123,82 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
               | Error _ as err -> err
               | Ok params -> infer_clauses params rest))
     in
-    infer_clauses params clauses
+    Result.bind (infer_clauses params clauses) (fun params ->
+        let rec result_forms results = function
+          | _pattern :: result :: rest ->
+              result_forms (result :: results) rest
+          | _ -> List.rev results
+        in
+        let results = result_forms [] clauses in
+        let result_types =
+          results
+          |> List.map (inferred_form_type params)
+          |> List.filter (fun ty ->
+                 not (Types.equal ty TUnknown)
+                 &&
+                 match ty with TVar _ -> false | _ -> true)
+        in
+        let concrete_types =
+          result_types
+          |> List.fold_left
+               (fun unique ty ->
+                 if List.exists (Types.equal ty) unique then unique
+                 else ty :: unique)
+               []
+        in
+        let requires_dynamic =
+          List.exists Types.is_dynamic result_types
+          || List.length concrete_types > 1
+          || List.exists
+               (function
+                 | FSymbol name -> (
+                     match List.assoc_opt name params with
+                     | Some (TUnknown | TVar _) -> true
+                     | _ -> false)
+                 | _ -> false)
+               results
+        in
+        if not requires_dynamic then Ok params
+        else
+          results
+          |> List.fold_left
+               (fun result -> function
+                 | FSymbol name ->
+                     Result.bind result (fun params ->
+                         constrain_symbol
+                           (Types.dynamic_constraint TUnknown)
+                           params name)
+                 | _ -> result)
+               (Ok params))
+  and update_signature updater extra_argument_count =
+    match lookup_function_ty updater with
+    | Ok (TFn (field_ty :: extra_tys, return_ty))
+      when List.length extra_tys = extra_argument_count ->
+        Some (field_ty, extra_tys, return_ty)
+    | Ok (TOverloaded_fn arities) ->
+        Option.bind
+          (select_fn_arity arities (extra_argument_count + 1))
+          (fun arity ->
+            match arity.fixed_params with
+            | field_ty :: extra_tys
+              when Option.is_none arity.rest_param
+                   && List.length extra_tys = extra_argument_count ->
+                Some (field_ty, extra_tys, arity.return_ty)
+            | _ -> None)
+    | Ok _ | Error _ -> None
+  and updated_value_type field_ty return_ty =
+    match field_ty with
+    | TNullable inner | TOcaml_app ("option", [ inner ])
+      when not (Types.equal return_ty TUnknown)
+           && Types.assignable ~policy:Host_boundary ~expected:inner
+                ~actual:return_ty ->
+        refine_type inner return_ty
+    | _ -> refine_type field_ty return_ty
   and infer_form params = function
     | FList [ FSymbol "__type-hint"; FSymbol annotation; value ] -> (
         match Type_annotation.of_param_annotation annotation with
         | Error _ as error -> error
-        | Ok hinted_ty -> (
-            match value with
-            | FSymbol name -> constrain_symbol hinted_ty params name
-            | value -> infer_form params value))
+        | Ok _hinted_ty -> infer_form params value)
     | FList (FSymbol "record" :: _record_type :: field_forms) ->
         let values =
           List.filter_map
@@ -894,6 +1285,7 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
                 "int?";
                 "number?";
                 "boolean?";
+                "array?";
                 "vector?";
                 "list?";
                 "seq?";
@@ -913,8 +1305,8 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
         [
           FSymbol
             ( "symbol?" | "keyword?" | "string?" | "int?" | "number?"
-            | "boolean?" | "vector?" | "list?" | "seq?" | "set?" | "map?"
-            | "fn?" | "coll?" );
+            | "boolean?" | "array?" | "vector?" | "list?" | "seq?" | "set?"
+            | "map?" | "fn?" | "coll?" );
           FSymbol value;
         ] ->
         constrain_symbol (Types.dynamic_constraint TUnknown) params value
@@ -941,6 +1333,13 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
           params [ left; right ]
     | FList [ FSymbol "int"; FSymbol value ] ->
         constrain_symbol (Types.dynamic_constraint TUnknown) params value
+    | FList [ FSymbol field_access; FSymbol name ]
+      when String.starts_with ~prefix:".-" field_access ->
+        let keyword =
+          ":"
+          ^ String.sub field_access 2 (String.length field_access - 2)
+        in
+        add_record_field_constraint name keyword TUnknown params
     | FList [ FSymbol "instance?"; FSymbol _type_name; FSymbol value ] ->
         constrain_symbol (Types.dynamic_constraint TUnknown) params value
     | FList (FSymbol name :: arguments) when List.mem_assoc name params -> (
@@ -950,6 +1349,20 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
         | Ok params -> infer_all params arguments)
     | FList [ FSymbol "deref"; FList [ FKeyword keyword; FSymbol name ] ] ->
         add_record_field_constraint name keyword (TRef TUnknown) params
+    | FList
+        [
+          FSymbol ("vreset!" | "reset!");
+          FList
+            [
+              FSymbol "__deftype-field-ref";
+              FKeyword keyword;
+              FSymbol receiver;
+            ];
+          value;
+        ] -> (
+        match record_ref_field_value_type params receiver keyword with
+        | Some ty -> infer_expected ty params value
+        | None -> infer_form params value)
     | FList
         [ FSymbol "vreset!"; FList [ FKeyword keyword; FSymbol name ]; value ]
       ->
@@ -973,9 +1386,26 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
         let params =
           match (target, key) with
           | FSymbol target, FKeyword keyword ->
+              let field_ty =
+                match nested_arguments with
+                | nested_key :: FSymbol updater :: extra_arguments -> (
+                    match
+                      update_signature updater (List.length extra_arguments)
+                    with
+                    | Some (updater_field_ty, _, return_ty) ->
+                        let key_ty =
+                          inferred_form_type params nested_key
+                          |> materialize_dynamic_unknown
+                        in
+                        let value_ty =
+                          updated_value_type updater_field_ty return_ty
+                        in
+                        Types.dynamic_map key_ty value_ty
+                    | None -> Types.dynamic_constraint TUnknown)
+                | _ -> Types.dynamic_constraint TUnknown
+              in
               add_record_field_constraint target keyword
-                (Types.dynamic_constraint TUnknown)
-                params
+                field_ty params
           | _ -> Ok params
         in
         Result.bind params (fun params ->
@@ -1019,28 +1449,11 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
         :: FKeyword keyword
         :: FSymbol updater
         :: extra_arguments) -> (
-        let signature =
-          match lookup_function_ty updater with
-          | Ok (TFn (field_ty :: extra_tys, return_ty))
-            when List.length extra_tys = List.length extra_arguments ->
-              Some (field_ty, extra_tys, return_ty)
-          | Ok (TOverloaded_fn arities) ->
-              Option.bind
-                (select_fn_arity arities (List.length extra_arguments + 1))
-                (fun arity ->
-                  match arity.fixed_params with
-                  | field_ty :: extra_tys
-                    when Option.is_none arity.rest_param
-                         && List.length extra_tys = List.length extra_arguments
-                    ->
-                      Some (field_ty, extra_tys, arity.return_ty)
-                  | _ -> None)
-          | Ok _ | Error _ -> None
-        in
+        let signature = update_signature updater (List.length extra_arguments) in
         match signature with
         | None -> infer_all params extra_arguments
         | Some (field_ty, extra_tys, return_ty) -> (
-            let field_ty = refine_type field_ty return_ty in
+            let field_ty = updated_value_type field_ty return_ty in
             let row_updater =
               match field_ty with
               | TRecord _ | TNamed_record _ -> true
@@ -1064,6 +1477,22 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
                     Result.bind result (fun params ->
                         infer_expected expected params argument))
                   (Ok params) extra_tys extra_arguments))
+    | FList
+        (FSymbol "update"
+        :: FSymbol target
+        :: key
+        :: updater
+        :: extra_arguments) ->
+        let target_ty, key_ty =
+          match List.assoc_opt target params with
+          | Some (TVector _ as ty) -> (ty, TInt)
+          | _ ->
+              let dynamic = Types.dynamic_constraint TUnknown in
+              (dynamic, dynamic)
+        in
+        Result.bind (constrain_symbol target_ty params target) (fun params ->
+            Result.bind (infer_expected key_ty params key) (fun params ->
+                infer_all params (updater :: extra_arguments)))
     | FList [ FSymbol "get"; FSymbol target; key ]
       when match key with FKeyword _ -> false | _ -> true -> (
         let dynamic = Types.dynamic_constraint TUnknown in
@@ -1071,6 +1500,12 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
         | Error _ as error -> error
         | Ok params -> infer_expected dynamic params key)
     | FList [ FSymbol ("aget" | "unsafe-aget"); FSymbol array; index ] -> (
+        match constrain_symbol (TArray TUnknown) params array with
+        | Error _ as error -> error
+        | Ok params -> infer_expected TInt params index)
+    | FList [ FSymbol "array-seq"; FSymbol array ] ->
+        constrain_symbol (TArray TUnknown) params array
+    | FList [ FSymbol "array-seq"; FSymbol array; index ] -> (
         match constrain_symbol (TArray TUnknown) params array with
         | Error _ as error -> error
         | Ok params -> infer_expected TInt params index)
@@ -1089,8 +1524,28 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
         match lookup_protocol_constraint protocol_name with
         | None -> Error.error ("unknown protocol " ^ protocol_name)
         | Some constraint_ty -> constrain_symbol constraint_ty params receiver)
-    | FList [ FSymbol "asort!"; FSymbol comparator; _ ] ->
-        constrain_symbol (TFn ([ TUnknown; TUnknown ], TInt)) params comparator
+    | FList
+        [ FSymbol "asort!"; FSymbol comparator; FSymbol array ] ->
+        let comparator_ty =
+          match List.assoc_opt comparator params with
+          | Some ty -> Some ty
+          | None -> Result.to_option (lookup_function_ty comparator)
+        in
+        let element_ty =
+          match comparator_ty with
+          | Some (TFn ([ left; right ], TInt))
+            when Types.equal left right
+                 && not (Types.equal left TUnknown)
+                 && (match left with TVar _ -> false | _ -> true) ->
+              left
+          | _ -> TUnknown
+        in
+        Result.bind (constrain_symbol (TArray element_ty) params array)
+          (fun params ->
+            if List.mem_assoc comparator params then
+              constrain_symbol (TFn ([ element_ty; element_ty ], TInt)) params
+                comparator
+            else Ok params)
     | FList
         [
           FSymbol (("uncurried-call" | "uncurried-compare") as name);
@@ -1196,8 +1651,46 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
           | [] -> Ok params
         else (
           match List.rev arguments with
-          | FSymbol collection :: _ ->
-              constrain_seqable TUnknown params collection
+          | FSymbol collection :: reversed_fixed ->
+              let fixed_count = List.length reversed_fixed in
+              let rec drop count values =
+                if count <= 0 then values
+                else
+                  match values with
+                  | [] -> []
+                  | _ :: rest -> drop (count - 1) rest
+              in
+              let remaining_parameters = function
+                | TFn (parameter_tys, _) -> drop fixed_count parameter_tys
+                | TOverloaded_fn arities ->
+                    arities
+                    |> List.concat_map (fun arity ->
+                           if fixed_count > List.length arity.fixed_params then
+                             []
+                           else
+                             drop fixed_count arity.fixed_params
+                             @ Option.to_list arity.rest_param)
+                | _ -> []
+              in
+              let function_ty =
+                match function_form with
+                | FSymbol name -> (
+                    match List.assoc_opt name params with
+                    | Some ty -> ty
+                    | None ->
+                        lookup_function_ty name
+                        |> Result.value ~default:TUnknown)
+                | form -> inferred_form_type params form
+              in
+              let element_ty =
+                match remaining_parameters function_ty with
+                | [] -> TUnknown
+                | first :: rest
+                  when List.for_all (Types.equal first) rest ->
+                    first
+                | _ -> Types.dynamic_constraint TUnknown
+              in
+              constrain_seqable element_ty params collection
           | _ -> infer_all params arguments)
     | FList [ FSymbol ("map" | "mapv"); fn; FSymbol collection ] ->
         let element_ty = inferred_unary_function_param params fn in
@@ -1225,6 +1718,9 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
           FSymbol collection;
         ] ->
         let element_ty = inferred_unary_function_param params fn in
+        let element_ty =
+          if Types.is_dynamic element_ty then TUnknown else element_ty
+        in
         constrain_seqable element_ty params collection
     | FList
         [
@@ -1312,15 +1808,28 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
         let expected_ty =
           let concrete =
             args
-            |> List.find_map (fun arg ->
+            |> List.filter_map (fun arg ->
                    match inferred_form_type params arg with
                    | TUnknown | TVar _ -> None
                    | ty when Types.is_dynamic ty -> None
                    | ty -> Some ty)
+            |> List.fold_left
+                 (fun unique ty ->
+                   if List.exists (Types.equal ty) unique then unique
+                   else ty :: unique)
+                 []
           in
           match concrete with
-          | Some ty -> ty
-          | None ->
+          | [ ty ] -> ty
+          | _ :: _ :: _
+            when List.exists
+                   (function
+                     | FSymbol name -> List.mem_assoc name params
+                     | _ -> false)
+                   args ->
+              Types.dynamic_constraint TUnknown
+          | ty :: _ -> ty
+          | [] ->
               args
               |> List.find_map (fun arg ->
                      match inferred_form_type params arg with
@@ -1374,16 +1883,25 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
           (Core_form_expansion.update_in target keys function_form argument_forms)
     | FList (FSymbol ("assoc" | "clojure.core/assoc") :: target :: pairs) ->
         infer_assoc params target pairs
-    | FList (FSymbol "conj" :: FSymbol target :: values) -> (
+    | FList [ FSymbol ("transient" | "persistent!"); collection ] ->
+        infer_expected (Types.dynamic_constraint TUnknown) params collection
+    | FList (FSymbol "conj" :: target :: values) -> (
         let element_ty =
           values
           |> List.find_map (fun value ->
                  match inferred_form_type params value with
                  | TUnknown -> None
-                 | ty -> Some ty)
+                 | ty -> Some (stored_value_type ty))
           |> Option.value ~default:TUnknown
         in
-        match constrain_symbol (TVector element_ty) params target with
+        let collection_ty =
+          match inferred_form_type params target with
+          | TList _ -> TList element_ty
+          | TSet _ -> TSet element_ty
+          | TVector _ -> TVector element_ty
+          | _ -> TVector element_ty
+        in
+        match infer_expected collection_ty params target with
         | Error _ as error -> error
         | Ok params -> infer_all params values)
     | FList [ FSymbol "reduce-kv"; reducer; init; FSymbol name ] -> (
@@ -1448,6 +1966,59 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
                   | Ok params -> infer_clauses params rest))
         in
         infer_clauses params clauses
+    | FList (FSymbol "try" :: forms) ->
+        let is_catch = function
+          | FList (FSymbol "catch" :: _) -> true
+          | _ -> false
+        in
+        let body_forms, catch_forms =
+          List.partition (fun form -> not (is_catch form)) forms
+        in
+        let catch_bodies =
+          catch_forms
+          |> List.filter_map (function
+               | FList (FSymbol "catch" :: _pattern :: body_forms) ->
+                   Some body_forms
+               | _ -> None)
+        in
+        let all_forms = body_forms @ List.concat catch_bodies in
+        Result.bind (infer_all params all_forms) (fun params ->
+            let rec last = function
+              | [] -> None
+              | [ form ] -> Some form
+              | _ :: rest -> last rest
+            in
+            let result_forms =
+              List.filter_map last (body_forms :: catch_bodies)
+            in
+            let result_types =
+              List.map (inferred_form_type params) result_forms
+            in
+            let has_unknown =
+              List.exists
+                (function TUnknown | TVar _ -> true | _ -> false)
+                result_types
+            in
+            let concrete_types =
+              result_types
+              |> List.filter (fun ty ->
+                     not (Types.equal ty TUnknown)
+                     && match ty with TVar _ -> false | _ -> true)
+              |> List.fold_left
+                   (fun unique ty ->
+                     if List.exists (Types.equal ty) unique then unique
+                     else ty :: unique)
+                   []
+            in
+            if
+              List.length concrete_types > 1
+              || (has_unknown && concrete_types <> [])
+              || List.exists Types.is_dynamic concrete_types
+            then
+              infer_expected_all
+                (Types.dynamic_constraint TUnknown)
+                params result_forms
+            else Ok params)
     | FList (FSymbol "match" :: target :: clauses) ->
         infer_match params target clauses
     | FList (FSymbol "case" :: target :: clauses) ->
@@ -1508,6 +2079,32 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
         match infer_all params body_forms with
         | Error _ as err -> err
         | Ok params -> infer_collection params collection)
+    | FList
+        [
+          FSymbol "pr-sequential-writer";
+          writer;
+          printer;
+          prefix;
+          separator;
+          suffix;
+          opts;
+          collection;
+        ] ->
+        Result.bind (infer_expected (TOcaml "Buffer.t") params writer)
+          (fun params ->
+            Result.bind (infer_form params printer) (fun params ->
+                Result.bind (infer_expected TString params prefix) (fun params ->
+                    Result.bind
+                      (infer_expected TString params separator)
+                      (fun params ->
+                        Result.bind
+                          (infer_expected TString params suffix)
+                          (fun params ->
+                            Result.bind (infer_form params opts) (fun params ->
+                                match collection with
+                                | FSymbol name ->
+                                    constrain_seqable TUnknown params name
+                                | _ -> infer_collection params collection))))))
     | FList (FSymbol ("doseq" | "for") :: bindings :: body_forms) ->
         infer_generator_bindings params bindings body_forms
     | FList (FSymbol (("cond->" | "cond->>") as operator) :: value :: clauses)
@@ -1668,57 +2265,8 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
               | FVector forms -> parse_aliases [] forms
               | _ -> []
             in
-            let rec rewrite_aliases aliases = function
-              | FSymbol name as form -> (
-                  match List.assoc_opt name aliases with
-                  | Some ((FSymbol _ | FKeyword _) as alias) ->
-                      rewrite_aliases (List.remove_assoc name aliases) alias
-                  | _ -> form)
-              | FList
-                  (FSymbol binding_form :: FVector nested_bindings :: body_forms)
-                when binding_form = "let" || binding_form = "let*"
-                     || binding_form = "loop"
-                     || String.ends_with ~suffix:"/let" binding_form
-                     || String.ends_with ~suffix:"/let*" binding_form ->
-                  let rec rewrite_bindings aliases rewritten = function
-                    | FSymbol name :: value :: rest ->
-                        let value = rewrite_aliases aliases value in
-                        rewrite_bindings (List.remove_assoc name aliases)
-                          (value :: FSymbol name :: rewritten)
-                          rest
-                    | rest -> (aliases, List.rev_append rewritten rest)
-                  in
-                  let body_aliases, nested_bindings =
-                    rewrite_bindings aliases [] nested_bindings
-                  in
-                  FList
-                    (FSymbol binding_form :: FVector nested_bindings
-                    :: List.map (rewrite_aliases body_aliases) body_forms)
-              | FList (FSymbol "fn" :: FVector parameters :: body_forms) ->
-                  let aliases =
-                    List.fold_left
-                      (fun aliases -> function
-                        | FSymbol name -> List.remove_assoc name aliases
-                        | _ -> aliases)
-                      aliases parameters
-                  in
-                  FList
-                    (FSymbol "fn" :: FVector parameters
-                    :: List.map (rewrite_aliases aliases) body_forms)
-              | FList forms -> FList (List.map (rewrite_aliases aliases) forms)
-              | FVector forms ->
-                  FVector (List.map (rewrite_aliases aliases) forms)
-              | FMap pairs ->
-                  FMap
-                    (List.map
-                       (fun (key, value) ->
-                         ( rewrite_aliases aliases key,
-                           rewrite_aliases aliases value ))
-                       pairs)
-              | form -> form
-            in
             let rewritten_body_forms =
-              List.map (rewrite_aliases aliases) body_forms
+              List.map (rewrite_simple_aliases aliases) body_forms
             in
             let rec infer_alias_constraints params = function
               | FList
@@ -1773,8 +2321,57 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
                         infer_alias_constraints params form))
                   (Ok params)
                   (binding_values @ rewritten_body_forms)))
-    | FList (FSymbol "fn" :: _params :: body_forms) ->
-        infer_all params body_forms
+    | FList (FSymbol "fn" :: (FVector _ as fn_params) :: body_forms) -> (
+        match Destructure.parse_param_specs fn_params with
+        | Error _ -> infer_all params body_forms
+        | Ok specs ->
+            let local_bindings =
+              specs
+              |> List.concat_map (fun (spec : Destructure.param_spec) ->
+                     let source_ty =
+                       Option.value spec.explicit_ty ~default:TUnknown
+                     in
+                     let destructured =
+                       if spec.destructured then
+                         Destructure.pattern_names spec.pattern
+                         |> List.map (fun name -> (name, TUnknown))
+                       else []
+                     in
+                     (spec.source_name, source_ty) :: destructured)
+            in
+            let local_names = List.map fst local_bindings in
+            let shadowed =
+              params
+              |> List.filter (fun (name, _) -> List.mem name local_names)
+            in
+            let local_params =
+              local_bindings
+              @ List.filter
+                  (fun (name, _) -> not (List.mem name local_names))
+                  params
+            in
+            let rec infer_local remaining local_params =
+              Result.bind (infer_all local_params body_forms) (fun inferred ->
+                  if remaining = 0 then Ok inferred
+                  else
+                    let stable =
+                      List.length local_params = List.length inferred
+                      && List.for_all2
+                           (fun (left_name, left_ty) (right_name, right_ty) ->
+                             left_name = right_name
+                             && Types.equal left_ty right_ty)
+                           local_params inferred
+                    in
+                    if stable then Ok inferred
+                    else infer_local (remaining - 1) inferred)
+            in
+            Result.map
+              (fun inferred ->
+                shadowed
+                @ List.filter
+                    (fun (name, _) -> not (List.mem name local_names))
+                    inferred)
+              (infer_local 3 local_params))
     | FList
         [
           FSymbol ("into" | "clojure.core/into");
@@ -1795,6 +2392,27 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
                 | FSymbol name -> constrain_seqable dynamic params name
                 | collection -> infer_form params collection))
           (Ok params) collections
+    | FList (FList [ FKeyword keyword; FSymbol receiver ] :: arguments) -> (
+        match
+          match List.assoc_opt receiver params with
+          | None -> None
+          | Some ty -> Types.record_fields ty
+        with
+        | None -> infer_all params arguments
+        | Some fields -> (
+            match Types.find_field keyword fields with
+            | Some { ty = TFn (parameter_tys, _); _ }
+              when List.length parameter_tys = List.length arguments ->
+                let rec infer_arguments params expected actual =
+                  match (expected, actual) with
+                  | [], [] -> Ok params
+                  | expected_ty :: expected, argument :: actual ->
+                      Result.bind (infer_expected expected_ty params argument)
+                        (fun params -> infer_arguments params expected actual)
+                  | _ -> assert false
+                in
+                infer_arguments params parameter_tys arguments
+            | _ -> infer_all params arguments))
     | FList (FSymbol name :: args) -> infer_known_call name params args
     | FVector forms -> infer_all params forms
     | FMap pairs ->
@@ -1825,4 +2443,16 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
     | FSymbol _ ->
         Ok params
   in
-  infer_all (constrain_maybe_reduced_callbacks params body_forms) body_forms
+  let same_params left right =
+    List.length left = List.length right
+    && List.for_all2
+         (fun (left_name, left_ty) (right_name, right_ty) ->
+           left_name = right_name && Types.equal left_ty right_ty)
+         left right
+  in
+  let rec stabilize remaining params =
+    Result.bind (infer_all params body_forms) (fun inferred ->
+        if remaining = 0 || same_params params inferred then Ok inferred
+        else stabilize (remaining - 1) inferred)
+  in
+  stabilize 3 (constrain_maybe_reduced_callbacks params body_forms)
