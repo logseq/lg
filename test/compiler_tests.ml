@@ -8162,6 +8162,32 @@ let test_apply_accepts_concat_as_a_core_function () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
+let test_reduce_preserves_refined_vector_element_types () =
+  let source =
+    {|
+(defn collect-entry-values [entity]
+  (let [eid (:db/id entity)
+        entries
+        (apply concat
+          (reduce
+            (fn [buckets [attribute value]]
+              (assoc buckets 0
+                (conj (nth buckets 0) [attribute value])))
+            [[] []]
+            entity))]
+    (mapv (fn [[_ value]] (+ value 0)) entries)))
+(println (collect-entry-values {:db/id 10 :a 1 :b 2}))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "reduce_preserves_refined_vector_element_types"
+    "[10 1 2]\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
 let test_set_literals_accept_dynamic_elements () =
   let source =
     {|
@@ -12908,6 +12934,8 @@ let tests =
       test_update_refines_empty_nested_vector_elements );
     ( "apply accepts concat as a core function",
       test_apply_accepts_concat_as_a_core_function );
+    ( "reduce preserves refined vector element types",
+      test_reduce_preserves_refined_vector_element_types );
     ( "set literals accept dynamic elements",
       test_set_literals_accept_dynamic_elements );
     ( "contains? infers generic membership for variable keys",

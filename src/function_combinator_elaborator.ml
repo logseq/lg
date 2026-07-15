@@ -157,9 +157,12 @@ let create ~compile_expr ~dynamic_unpack =
                           (match
                              ( collect_fixed (),
                                Collection_capability.to_seq_expr env collection )
-                           with
+                          with
                           | (Error _ as error), _ -> error
-                          | _, (Error _ as error) -> error
+                          | _, Error _ ->
+                              Error.error
+                                ("apply concat expects collections, got "
+                               ^ Types.source_name inner)
                           | Ok fixed_sequences, Ok (element_ty, sequence) ->
                               if
                                 List.for_all

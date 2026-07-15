@@ -1308,7 +1308,7 @@ let create ~compile_expr ~pack_dynamic_value =
                                   ~expected:init.ty ~actual:ret
                              && Option.is_none (Types.reduced_element ret) ->
                           Ok
-                            (typed_ir init.ty
+                            (typed_ir ret
                                (Collection_capability.reduce_expr env fn init
                                   collection sequence))
                       | TFn ([ acc_ty; item_ty ], ret)

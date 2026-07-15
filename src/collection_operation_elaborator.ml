@@ -1136,13 +1136,18 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                     | Ok pairs ->
                         Result.bind (adapt_dynamic_fields fields pairs)
                           (assoc_record_pairs target))
-                | TVector inner -> (
+                | TVector _ -> (
                     match compile_vector_pairs [] pair_forms with
                     | Error _ as err -> err
                   | Ok pairs -> (
-                        let rec apply_pairs expr = function
-                          | [] -> Ok expr
+                        let rec apply_pairs vector_ty expr = function
+                          | [] -> Ok (vector_ty, expr)
                           | (index, value) :: rest ->
+                              let inner =
+                                match vector_ty with
+                                | TVector inner -> inner
+                                | _ -> assert false
+                              in
                               if not (Types.equal index.ty TInt) then
                                 Error.error "assoc vector index must be int"
                               else if
@@ -1153,7 +1158,11 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                                 Error.error
                                   "assoc vector value must match element type"
                               else
-                                apply_pairs
+                                let vector_ty =
+                                  if Types.equal inner value.ty then vector_ty
+                                  else TVector value.ty
+                                in
+                                apply_pairs vector_ty
                                   (apply "Rrbvec.set"
                                    [
                                      expr;
@@ -1162,9 +1171,9 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                                    ])
                                   rest
                         in
-                      match apply_pairs target.semantic_expr pairs with
+                      match apply_pairs target.ty target.semantic_expr pairs with
                         | Error _ as err -> err
-                        | Ok expr -> Ok (typed_ir target.ty expr)))
+                        | Ok (result_ty, expr) -> Ok (typed_ir result_ty expr)))
               | target_ty
                 when Types.is_dynamic target_ty
                      || Types.equal target_ty TUnknown
