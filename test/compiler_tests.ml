@@ -7504,6 +7504,21 @@ let test_let_destructuring_supports_nested_sequences () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
+let test_let_bindings_support_value_type_hints () =
+  let source =
+    {|
+(defrecord Datom [value])
+(let [datom ^Datom (Datom. 42)]
+  (println (.-value datom)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "let_bindings_support_value_type_hints" "42\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
 let test_destructuring_rejects_unsupported_let_sources () =
   Lg.Compiler.compile_string {|(def x (let [{:keys [name]} [1 2]] name))|}
   |> expect_error "map destructuring expects a map"
@@ -12843,6 +12858,8 @@ let tests =
       test_destructuring_rejects_missing_map_fields );
     ( "let destructuring supports nested sequences",
       test_let_destructuring_supports_nested_sequences );
+    ( "let bindings support value type hints",
+      test_let_bindings_support_value_type_hints );
     ( "destructuring rejects unsupported let sources",
       test_destructuring_rejects_unsupported_let_sources );
     ( "destructuring rejects bad rest binding",

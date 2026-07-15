@@ -27,6 +27,20 @@ let is_type_annotation name = String.starts_with ~prefix:"^" name
 let keyword_for_local name = ":" ^ name
 let ignore_name name = name = "_"
 
+let normalize_binding_type_hints forms =
+  let rec normalize normalized = function
+    | pattern :: FSymbol annotation :: value :: rest
+      when is_type_annotation annotation ->
+        normalize
+          (FList [ FSymbol "__type-hint"; FSymbol annotation; value ]
+          :: pattern :: normalized)
+          rest
+    | pattern :: value :: rest ->
+        normalize (value :: pattern :: normalized) rest
+    | remaining -> List.rev_append normalized remaining
+  in
+  normalize [] forms
+
 let local_binding ?identity source_name ty semantic_expr =
   {
     source_name;

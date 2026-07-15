@@ -1509,6 +1509,7 @@ let create ~compile_expr =
     in
     match bindings with
     | FVector forms ->
+        let forms = Destructure.normalize_binding_type_hints forms in
         if List.length forms mod 2 <> 0 then
           Error.error "let bindings require an even number of forms"
         else

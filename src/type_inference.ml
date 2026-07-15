@@ -794,10 +794,13 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
     in
     infer_clauses params clauses
   and infer_form params = function
-    | FList [ FSymbol "__type-hint"; FSymbol annotation; FSymbol value ] -> (
+    | FList [ FSymbol "__type-hint"; FSymbol annotation; value ] -> (
         match Type_annotation.of_param_annotation annotation with
         | Error _ as error -> error
-        | Ok hinted_ty -> constrain_symbol hinted_ty params value)
+        | Ok hinted_ty -> (
+            match value with
+            | FSymbol name -> constrain_symbol hinted_ty params name
+            | value -> infer_form params value))
     | FList (FSymbol "record" :: _record_type :: field_forms) ->
         let values =
           List.filter_map
@@ -1613,6 +1616,12 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
       when let_name = "let" || let_name = "let*"
            || String.ends_with ~suffix:"/let" let_name
            || String.ends_with ~suffix:"/let*" let_name ->
+        let bindings =
+          match bindings with
+          | FVector forms ->
+              FVector (Destructure.normalize_binding_type_hints forms)
+          | bindings -> bindings
+        in
         Result.bind (infer_let params bindings body_forms) (fun params ->
             let rec parse_aliases aliases = function
               | [] -> aliases
