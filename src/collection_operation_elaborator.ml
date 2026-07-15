@@ -534,7 +534,32 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   match record_ty with
                   | TRecord fields | TNamed_record { fields; _ } -> (
                     match find_field keyword fields with
-                    | None -> Error.error ("unknown field " ^ keyword)
+                    | None -> (
+                        let record_name = "__lg_optional_record" in
+                        let record =
+                          typed_ir record_ty (Semantic_ir.Ident record_name)
+                        in
+                        match
+                          Structural_map.extension_get record fields keyword
+                        with
+                        | None -> Error.error ("unknown field " ^ keyword)
+                        | Some lookup ->
+                            Ok
+                              (typed_ir lookup.ty
+                                 (Semantic_ir.Match
+                                    ( target.semantic_expr,
+                                      [
+                                        ( Semantic_ir.PConstructor
+                                            ("None", None),
+                                          Semantic_ir.Ident
+                                            "Lg_runtime.Runtime_dynamic.nil" );
+                                        ( Semantic_ir.PConstructor
+                                            ( "Some",
+                                              Some
+                                                (Semantic_ir.PVar record_name)
+                                            ),
+                                          lookup.semantic_expr );
+                                      ] ))))
                     | Some field ->
                       let record_name = "__lg_optional_record" in
                       let record =
@@ -592,7 +617,12 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                       Ok
                         (typed_ir field.ty
                            (Structural_map.field_expr target field))
-                  | None -> Error.error ("unknown field " ^ keyword))
+                  | None -> (
+                      match
+                        Structural_map.extension_get target fields keyword
+                      with
+                      | Some result -> Ok result
+                      | None -> Error.error ("unknown field " ^ keyword)))
               | TNamed_record { fields; nominal = true; _ } -> (
                   match find_field keyword fields with
                   | Some field ->
@@ -600,27 +630,33 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                         (typed_ir field.ty
                            (Structural_map.field_expr target field))
                   | None -> (
-                      match target.ty with
-                    | TNamed_record record -> (
-                          let key =
-                            typed_ir TKeyword (Semantic_ir.String keyword)
-                          in
-                        match
-                          match
-                                compile_deftype_method scope env record "valAt"
-                                  [ target; key ]
+                      match
+                        Structural_map.extension_get target fields keyword
+                      with
+                      | Some result -> Ok result
+                      | None -> (
+                          match target.ty with
+                          | TNamed_record record -> (
+                              let key =
+                                typed_ir TKeyword
+                                  (Semantic_ir.String keyword)
+                              in
+                              match
+                                match
+                                  compile_deftype_method scope env record
+                                    "valAt" [ target; key ]
+                                with
+                                | Some _ as result -> result
+                                | None ->
+                                    compile_deftype_method scope env record
+                                      "-lookup" [ target; key ]
                               with
-                              | Some _ as result -> result
+                              | Some result -> Ok result
                               | None ->
-                              compile_deftype_method scope env record "-lookup"
-                                [ target; key ]
-                           with
-                          | Some result -> Ok result
-                          | None ->
-                              Error.error
-                                ("unknown record field "
-                               ^ Names.keyword_source_name keyword))
-                      | _ -> assert false))
+                                  Error.error
+                                    ("unknown record field "
+                                   ^ Names.keyword_source_name keyword))
+                          | _ -> assert false)))
               | ty when Types.is_dynamic ty ->
                   Ok
                     (typed_ir ty
@@ -672,7 +708,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                 let concrete_fields =
                   record.fields
                   |> List.filter (fun (field : field) ->
-                      not
+                      (not (Types.is_record_extension_field field))
+                      && not
                         (Types.is_dynamic field.ty
                         || Types.equal field.ty TUnknown
                         || Types.equal field.ty TMap_keys
@@ -976,6 +1013,31 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
             in
             adapt [] pairs
           in
+          let rec assoc_record_pairs target = function
+            | [] -> Ok target
+            | (keyword, value) :: rest -> (
+                let fields =
+                  match target.ty with
+                  | TRecord fields | TNamed_record { fields; _ } -> fields
+                  | _ -> []
+                in
+                match find_field keyword fields with
+                | None
+                  when Option.is_some
+                         (Types.find_record_extension_field fields) ->
+                    let dynamic = Types.dynamic_constraint TUnknown in
+                    Result.bind (pack_dynamic_value env dynamic value)
+                      (fun value ->
+                        match
+                          Structural_map.extension_assoc target fields keyword
+                            value
+                        with
+                        | Some target -> assoc_record_pairs target rest
+                        | None -> assert false)
+                | _ ->
+                    Result.bind (Structural_map.assoc target fields keyword value)
+                      (fun target -> assoc_record_pairs target rest))
+          in
           let rec compile_vector_pairs acc = function
             | [] -> Ok (List.rev acc)
             | index_form :: value_form :: rest -> (
@@ -1065,7 +1127,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                             | Ok pairs ->
                                 Result.bind
                                   (adapt_dynamic_fields record.fields pairs)
-                                  (Structural_map.assoc_many target))
+                                  (assoc_record_pairs target))
                       )
                   )
                 | TRecord fields | TNamed_record { fields; _ } -> (
@@ -1073,7 +1135,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                     | Error _ as err -> err
                     | Ok pairs ->
                         Result.bind (adapt_dynamic_fields fields pairs)
-                          (Structural_map.assoc_many target))
+                          (assoc_record_pairs target))
                 | TVector inner -> (
                     match compile_vector_pairs [] pair_forms with
                     | Error _ as err -> err
@@ -1260,8 +1322,32 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                         parse_keywords (keyword :: acc) rest
                   | _ -> Error.error "dissoc expects map followed by keywords"
                   in
-                  Result.bind (parse_keywords [] key_forms) (fun keywords ->
-                      Structural_map.dissoc_many target keywords)
+                  let rec dissoc_keywords target = function
+                    | [] -> Ok target
+                    | keyword :: rest ->
+                        let fields =
+                          match target.ty with
+                          | TRecord fields | TNamed_record { fields; _ } -> fields
+                          | _ -> []
+                        in
+                        let result =
+                          match find_field keyword fields with
+                          | None -> (
+                              match
+                                Structural_map.extension_dissoc target fields
+                                  keyword
+                              with
+                              | Some target -> Ok target
+                              | None ->
+                                  Error.error
+                                    ("cannot dissoc unknown field " ^ keyword))
+                          | Some _ -> Structural_map.dissoc target fields keyword
+                        in
+                        Result.bind result (fun target ->
+                            dissoc_keywords target rest)
+                  in
+                  Result.bind (parse_keywords [] key_forms)
+                    (dissoc_keywords target)
               | target_ty
                 when Option.is_some (Types.dynamic_map_types target_ty)
                      || Types.equal target_ty TUnknown
@@ -1402,6 +1488,15 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
       let instantiate ty = Types.instantiate_type ~templates ~actuals ty in
       (List.map instantiate param_tys, instantiate return_ty)
     in
+    let rec prepare_updater_arguments prepared expected arguments =
+      match (expected, arguments) with
+      | [], [] -> Ok (List.rev prepared)
+      | expected :: expected_rest, argument :: argument_rest ->
+          Result.bind (prepare expected argument) (fun argument ->
+              prepare_updater_arguments (argument :: prepared) expected_rest
+                argument_rest)
+      | _ -> Error.error "update function argument count mismatch"
+    in
     let compile_dynamic target index fn extra_args =
       Result.bind (pack_dynamic_value env dynamic index) (fun key ->
           let old_value =
@@ -1416,16 +1511,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                 instantiate_updater parameter_tys return_ty extra_args
               in
               let arguments = old_value :: extra_args in
-              let rec prepare_all prepared expected arguments =
-                match (expected, arguments) with
-                | [], [] -> Ok (List.rev prepared)
-                | expected :: expected_rest, argument :: argument_rest ->
-                    Result.bind (prepare expected argument) (fun argument ->
-                        prepare_all (argument :: prepared) expected_rest
-                          argument_rest)
-                | _ -> Error.error "update function argument count mismatch"
-              in
-              Result.bind (prepare_all [] parameter_tys arguments)
+              Result.bind
+                (prepare_updater_arguments [] parameter_tys arguments)
                 (fun arguments ->
                   let result =
                     typed_ir return_ty
@@ -1437,6 +1524,43 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                         (apply "Lg_runtime.Runtime_dynamic.assoc"
                            [ target.semantic_expr; key; result ]))
                     (pack_dynamic_value env dynamic result))
+          | _ -> Error.error "update expects a function")
+    in
+    let compile_extension target fields keyword fn extra_args =
+      match Types.find_record_extension_field fields with
+      | None -> Error.error ("cannot update unknown field " ^ keyword)
+      | Some extension_field -> (
+          let old_value =
+            typed_ir dynamic
+              (apply "Lg_runtime.Runtime_map.get_default"
+                 [
+                   Structural_map.field_expr target extension_field;
+                   Semantic_ir.String keyword;
+                   Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.nil";
+                 ])
+          in
+          match fn.ty with
+          | TFn (parameter_tys, return_ty)
+            when List.length parameter_tys = List.length extra_args + 1 ->
+              let parameter_tys, return_ty =
+                instantiate_updater parameter_tys return_ty extra_args
+              in
+              Result.bind
+                (prepare_updater_arguments [] parameter_tys
+                   (old_value :: extra_args))
+                (fun arguments ->
+                  let result =
+                    typed_ir return_ty
+                      (Semantic_ir.Apply (fn.semantic_expr, arguments))
+                  in
+                  Result.bind (pack_dynamic_value env dynamic result)
+                    (fun result ->
+                      match
+                        Structural_map.extension_assoc target fields keyword
+                          result
+                      with
+                      | Some target -> Ok target
+                      | None -> assert false))
           | _ -> Error.error "update expects a function")
     in
       match arg_forms with
@@ -1472,7 +1596,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
               match target.ty with
               | TRecord fields | TNamed_record { fields; _ } -> (
                   match find_field keyword fields with
-                  | None -> Error.error ("cannot update unknown field " ^ keyword)
+                  | None ->
+                      compile_extension target fields keyword fn extra_args
                   | Some field -> (
                       match fn.ty with
                       | TFn (param_tys, ret)
@@ -1757,10 +1882,14 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
           | Ok target -> (
               match target.ty with
               | TRecord fields | TNamed_record { fields; _ } ->
-                  Ok
-                    (typed_ir TBool
-                     (Semantic_ir.Bool
-                        (Option.is_some (find_field keyword fields))))
+                  if Option.is_some (find_field keyword fields) then
+                    Ok (typed_ir TBool (Semantic_ir.Bool true))
+                  else (
+                    match
+                      Structural_map.extension_contains target fields keyword
+                    with
+                    | Some result -> Ok result
+                    | None -> Ok (typed_ir TBool (Semantic_ir.Bool false)))
               | _ ->
                   compile_collection_contains target
                     (typed_ir TKeyword (Semantic_ir.String keyword))))
@@ -1778,16 +1907,35 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
       | Ok [ target ] -> (
           match target.ty with
           | TRecord fields | TNamed_record { fields; _ } ->
+              let visible_fields = Types.record_constructor_fields fields in
+              let declared_keys =
+                Semantic_ir.List
+                  (List.map
+                     (fun (field : field) ->
+                       Semantic_ir.String field.keyword)
+                     visible_fields)
+              in
+              let keys =
+                match Types.find_record_extension_field fields with
+                | None -> declared_keys
+                | Some extension_field ->
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident "List.append",
+                        [
+                          declared_keys;
+                          Semantic_ir.Apply
+                            ( Semantic_ir.Ident "List.map",
+                              [
+                                Semantic_ir.Ident "fst";
+                                Structural_map.field_expr target extension_field;
+                              ] );
+                        ] )
+              in
               Ok
                 (typed_ir (TVector TKeyword)
                    (Semantic_ir.Apply
                       ( Semantic_ir.Ident "Rrbvec.of_list",
-                      [
-                        Semantic_ir.List
-                            (fields
-                            |> List.map (fun (field : field) ->
-                              Semantic_ir.String field.keyword));
-                      ] )))
+                        [ keys ] )))
           | _ -> Error.error "keys expects a map")
       | Ok _ -> Error.error "keys expects 1 arguments"
     and compile_vals scope env arg_forms =

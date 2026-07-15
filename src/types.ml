@@ -165,6 +165,9 @@ let maybe_reduced_callback_result inner =
 let dynamic_map key value =
   TOcaml_app ("Lg_runtime.Runtime_map.t", [ key; value ])
 
+let record_extension_keyword = ":__lg/extmap"
+let record_extension_type = dynamic_map TKeyword (dynamic_constraint TUnknown)
+
 let dynamic_map_types = function
   | TOcaml_app ("Lg_runtime.Runtime_map.t", [ key; value ]) ->
       Some (key, value)
@@ -633,6 +636,18 @@ let find_field keyword fields =
 
 let make_field ?location keyword ty =
   { keyword; ocaml_name = Names.keyword_to_ocaml_name keyword; ty; location }
+
+let make_record_extension_field () =
+  make_field record_extension_keyword record_extension_type
+
+let is_record_extension_field field =
+  field.keyword = record_extension_keyword
+
+let find_record_extension_field fields =
+  List.find_opt is_record_extension_field fields
+
+let record_constructor_fields fields =
+  List.filter (fun field -> not (is_record_extension_field field)) fields
 
 type type_substitutions = (string * ty) list
 

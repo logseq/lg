@@ -18,7 +18,16 @@ let record_inference_compatible ~allow_expected_dynamic expected_fields
   expected_fields
   |> List.for_all (fun (expected : field) ->
          match find_field expected.keyword actual_fields with
-         | None -> false
+         | None ->
+             let unresolved =
+               Types.is_dynamic expected.ty
+               || match expected.ty with
+                  | TUnknown | TVar _ -> true
+                  | _ -> false
+             in
+             unresolved
+             && Option.is_some
+                  (Types.find_record_extension_field actual_fields)
          | Some actual ->
              let expected_dynamic_compatible =
                match Types.dynamic_constraint_info expected.ty with
@@ -45,7 +54,9 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
       match Types.dynamic_constraint_info ty with
       | None -> assert false
       | Some capability -> (
-          match infer_named_record ~allow_dynamic_fields:true scope env capability with
+          match
+            infer_named_record ~allow_dynamic_fields:true scope env capability
+          with
           | TNamed_record _ as record -> record
           | capability -> Types.dynamic_constraint capability))
   | ty when Option.is_some (Types.protocol_constraint_info ty) -> (
@@ -89,6 +100,29 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
             else None)
           env
         |> unique_named_records
+      in
+      let direct_match_count record =
+        fields
+        |> List.fold_left
+             (fun count field ->
+               match find_field field.keyword record.fields with
+               | Some actual when not (Types.is_record_extension_field actual) ->
+                   count + 1
+               | Some _ | None -> count)
+             0
+      in
+      let best_direct_matches =
+        candidates
+        |> List.fold_left
+             (fun best record -> max best (direct_match_count record))
+             0
+      in
+      let candidates =
+        if best_direct_matches = 0 then candidates
+        else
+          List.filter
+            (fun record -> direct_match_count record = best_direct_matches)
+            candidates
       in
       match candidates with [ record ] -> TNamed_record record | _ -> inferred)
   | inferred -> inferred

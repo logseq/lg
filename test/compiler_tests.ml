@@ -5546,6 +5546,33 @@ let test_defrecord_field_hints_reject_unknown_record_types () =
   Lg.Compiler.compile_string {|(defrecord Holder [^Missing value])|}
   |> expect_error_contains "unknown record type Missing"
 
+let test_defrecord_preserves_extension_map_entries () =
+  let source =
+    {|
+(defrecord Report [value])
+(defn extend-report [report]
+  (let [current (or (:extra report) 40)]
+    (assoc report :extra (inc current))))
+(def base (Report. 1))
+(def extended (extend-report base))
+(def updated (update extended :extra inc))
+(def cleaned (dissoc updated :extra))
+(println
+  [(:value updated)
+   (:extra updated)
+   (contains? cleaned :extra)
+   (count (keys updated))
+   (count (keys cleaned))])
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "defrecord_preserves_extension_map_entries"
+    "[1 42 false 2 1]\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
 let test_assoc_in_updates_nested_maps () =
   let source =
     {|
@@ -12423,6 +12450,8 @@ let tests =
       test_assoc_accepts_protocol_constrained_named_records );
     ( "defrecord field hints reject unknown record types",
       test_defrecord_field_hints_reject_unknown_record_types );
+    ( "defrecord preserves extension map entries",
+      test_defrecord_preserves_extension_map_entries );
     ( "update preserves named records with opaque fields",
       test_update_preserves_named_records_with_opaque_fields );
     ("assoc-in updates nested maps", test_assoc_in_updates_nested_maps);

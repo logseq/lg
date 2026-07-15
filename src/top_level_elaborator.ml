@@ -363,6 +363,7 @@ let rec compile scope env next_type = function
             List.map2
               (fun field_name ty -> Types.make_field (":" ^ field_name) ty)
               fields field_types
+            @ [ Types.make_record_extension_field () ]
           in
           match
             compile_type_record_fields

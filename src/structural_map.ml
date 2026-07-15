@@ -58,25 +58,80 @@ let named_record_expr record values =
 let as_named_record record target =
   named_record_expr record (values_for target record.fields)
 
+let replace_field target fields keyword expression =
+  let values =
+    fields
+    |> List.map (fun (field : field) ->
+           if field.keyword = keyword then (field, expression)
+           else (field, field_expr target field))
+  in
+  match target.ty with
+  | TNamed_record record -> named_record_expr record values
+  | _ -> record_expr fields values
+
+let extension_get target fields keyword =
+  match Types.find_record_extension_field fields with
+  | None -> None
+  | Some field ->
+      Some
+        (typed_ir
+           (Types.dynamic_constraint TUnknown)
+           (Semantic_ir.Apply
+              ( Semantic_ir.Ident "Lg_runtime.Runtime_map.get_default",
+                [
+                  field_expr target field;
+                  Semantic_ir.String keyword;
+                  Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.nil";
+                ] )))
+
+let extension_assoc target fields keyword value =
+  match Types.find_record_extension_field fields with
+  | None -> None
+  | Some field ->
+      Some
+        (replace_field target fields field.keyword
+           (Semantic_ir.Apply
+              ( Semantic_ir.Ident "Lg_runtime.Runtime_map.assoc",
+                [
+                  field_expr target field;
+                  Semantic_ir.String keyword;
+                  value;
+                ] )))
+
+let extension_dissoc target fields keyword =
+  match Types.find_record_extension_field fields with
+  | None -> None
+  | Some field ->
+      Some
+        (replace_field target fields field.keyword
+           (Semantic_ir.Apply
+              ( Semantic_ir.Ident "Lg_runtime.Runtime_map.dissoc",
+                [ field_expr target field; Semantic_ir.String keyword ] )))
+
+let extension_contains target fields keyword =
+  match Types.find_record_extension_field fields with
+  | None -> None
+  | Some field ->
+      Some
+        (typed_ir TBool
+           (Semantic_ir.Apply
+              ( Semantic_ir.Ident "Lg_runtime.Runtime_map.mem",
+                [ field_expr target field; Semantic_ir.String keyword ] )))
+
+let unresolved_field (field : field) =
+  match field.ty with TUnknown | TVar _ -> true | _ -> false
+
 let assoc target fields keyword value =
   match find_field keyword fields with
-  | Some field when not (Types.equal field.ty value.ty) ->
+  | Some field
+    when not
+           (Types.equal field.ty value.ty || unresolved_field field)
+    ->
       Error.error
         (Printf.sprintf "cannot assoc %s as %s because it is already %s" keyword
            (source_name value.ty) (source_name field.ty))
   | Some _ ->
-      let values =
-        fields
-        |> List.map (fun (field : field) ->
-               let expression =
-                 if field.keyword = keyword then value.semantic_expr
-                 else field_expr target field
-               in
-               (field, expression))
-      in
-      (match target.ty with
-      | TNamed_record record -> Ok (named_record_expr record values)
-      | _ -> Ok (record_expr fields values))
+      Ok (replace_field target fields keyword value.semantic_expr)
   | None ->
       let new_field = make_field keyword value.ty in
       let old_fields = fields in
@@ -168,18 +223,15 @@ let merge maps =
 let update_value target fields keyword value_ty value_expr =
   match find_field keyword fields with
   | None -> Error.error ("cannot update unknown field " ^ keyword)
-  | Some field when not (Types.equal field.ty value_ty) ->
+  | Some field
+    when not
+           (Types.equal field.ty value_ty || unresolved_field field)
+    ->
       Error.error
         (Printf.sprintf "cannot update %s as %s because it is already %s" keyword
            (source_name value_ty) (source_name field.ty))
   | Some _ ->
-      let values =
-        fields
-        |> List.map (fun (field : field) ->
-               if field.keyword = keyword then (field, value_expr)
-               else (field, field_expr target field))
-      in
-      Ok (record_expr fields values)
+      Ok (replace_field target fields keyword value_expr)
 
 let select_keys target fields keywords =
   if keywords = [] then Error.error "select-keys requires at least one key"

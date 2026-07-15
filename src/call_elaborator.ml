@@ -2712,6 +2712,10 @@ let create ~compile_expr =
             | Error _ as error -> error
             | Ok [ source ] ->
                 let source_field field =
+                  if Types.is_record_extension_field field then
+                    typed_ir field.ty
+                      (Semantic_ir.Ident "Lg_runtime.Runtime_map.empty")
+                  else
                   match source.ty with
                   | TRecord fields | TNamed_record { fields; _ } -> (
                       match find_field field.keyword fields with
@@ -2805,14 +2809,17 @@ let create ~compile_expr =
                       match Resolver.lookup_record_type scope env type_name with
         | Error _ as err -> err
         | Ok record -> (
+            let constructor_fields =
+              Types.record_constructor_fields record.fields
+            in
             match compile_args () with
             | Error _ as err -> err
                           | Ok args
-                            when List.length args <> List.length record.fields
+                            when List.length args <> List.length constructor_fields
                             ->
                 Error.error
                   (constructor_name ^ " expects "
-                 ^ string_of_int (List.length record.fields)
+                 ^ string_of_int (List.length constructor_fields)
                  ^ " arguments")
                           | Ok args -> (
                 let is_empty_dynamic_map arg =
@@ -2831,7 +2838,7 @@ let create ~compile_expr =
                     ~templates:
                                     (List.map
                                        (fun (field : field) -> field.ty)
-                         record.fields)
+                         constructor_fields)
                     ~actuals:
                       (List.map2
                          (fun (field : field) arg ->
@@ -2843,13 +2850,16 @@ let create ~compile_expr =
                              match field.ty with
                              | TRef _ -> TRef actual
                              | _ -> actual)
-                         record.fields args)
+                         constructor_fields args)
                     (TNamed_record record)
                 in
                 let record =
                   match instantiated with
                   | TNamed_record record -> record
                   | _ -> record
+                in
+                let constructor_fields =
+                  Types.record_constructor_fields record.fields
                 in
                 let rec prepare_values values fields args =
                   match (fields, args) with
@@ -2905,9 +2915,21 @@ let create ~compile_expr =
                                     Error.error
                                       "record constructor arity mismatch"
                 in
-                              match prepare_values [] record.fields args with
+                              match prepare_values [] constructor_fields args with
                 | Error _ as error -> error
                 | Ok values ->
+                let values =
+                  match Types.find_record_extension_field record.fields with
+                  | None -> values
+                  | Some field ->
+                      values
+                      @ [
+                          ( field,
+                            typed_ir field.ty
+                              (Semantic_ir.Ident
+                                 "Lg_runtime.Runtime_map.empty") );
+                        ]
+                in
                 let expression =
                   if values = [] then Semantic_ir.Unit
                   else
