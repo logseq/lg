@@ -7465,6 +7465,21 @@ let test_destructuring_rejects_missing_map_fields () =
   Lg.Compiler.compile_string source
   |> expect_error "next-age called with incompatible arguments"
 
+let test_let_destructuring_supports_nested_sequences () =
+  let source =
+    {|
+(let [[_ left [middle _ right]] [0 1 [2 0 3]]]
+  (println (str left ":" middle ":" right)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "let_destructuring_supports_nested_sequences" "1:2:3\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
 let test_destructuring_rejects_unsupported_let_sources () =
   Lg.Compiler.compile_string {|(def x (let [{:keys [name]} [1 2]] name))|}
   |> expect_error "map destructuring expects a map"
@@ -12723,6 +12738,8 @@ let tests =
       test_row_types_bind_nested_capability_parameters );
     ( "destructuring rejects missing map fields",
       test_destructuring_rejects_missing_map_fields );
+    ( "let destructuring supports nested sequences",
+      test_let_destructuring_supports_nested_sequences );
     ( "destructuring rejects unsupported let sources",
       test_destructuring_rejects_unsupported_let_sources );
     ( "destructuring rejects bad rest binding",

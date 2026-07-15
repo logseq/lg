@@ -48,7 +48,7 @@ type map_pattern = {
 }
 
 type sequence_pattern = {
-  item_names : string list;
+  item_patterns : form list;
   rest_name : string option;
   sequence_as_name : string option;
 }
@@ -57,11 +57,15 @@ let parse_sequence_pattern forms =
   let rec loop items rest_name as_name = function
     | [] ->
         Ok
-          { item_names = List.rev items; rest_name; sequence_as_name = as_name }
+          {
+            item_patterns = List.rev items;
+            rest_name;
+            sequence_as_name = as_name;
+          }
     | [ FKeyword ":as"; FSymbol name ] ->
         Ok
           {
-            item_names = List.rev items;
+            item_patterns = List.rev items;
             rest_name;
             sequence_as_name = (if ignore_name name then as_name else Some name);
           }
@@ -76,10 +80,9 @@ let parse_sequence_pattern forms =
             as_name rest
     | FSymbol "&" :: _ ->
         Error.error "sequential destructuring & must be followed by a symbol"
-    | FSymbol name :: rest when Option.is_none rest_name ->
-        loop
-          (if ignore_name name then items else name :: items)
-          rest_name as_name rest
+    | ((FSymbol _ | FVector _ | FMap _) as pattern) :: rest
+      when Option.is_none rest_name ->
+        loop (pattern :: items) rest_name as_name rest
     | _ :: _ when Option.is_some rest_name ->
         Error.error "sequential destructuring only supports :as after & rest"
     | _ :: _ -> Error.error "unsupported sequential destructuring form"
@@ -95,8 +98,8 @@ let rec pattern_names = function
 and sequence_pattern_names forms =
   match parse_sequence_pattern forms with
   | Error _ -> []
-  | Ok { item_names; rest_name; sequence_as_name } ->
-      item_names
+  | Ok { item_patterns; rest_name; sequence_as_name } ->
+      List.concat_map pattern_names item_patterns
       @ (rest_name |> Option.to_list)
       @ (sequence_as_name |> Option.to_list)
 
@@ -321,10 +324,13 @@ and infer_sequence_type forms lookup_local_ty =
   | Error _ as err -> err
   | Ok pattern ->
       let element_ty =
-        pattern.item_names
+        pattern.item_patterns
         |> List.fold_left
-             (fun acc name ->
-               let ty = lookup_local_ty name in
+             (fun acc item_pattern ->
+               let ty =
+                 infer_pattern_type item_pattern lookup_local_ty
+                 |> Result.value ~default:TUnknown
+               in
                match acc with
                | None -> Some ty
                | Some existing when Types.equal existing ty -> Some existing
@@ -414,7 +420,7 @@ let rec bind_map ~env (target : typed_expr) pairs =
   | _ -> Error.error "map destructuring expects a map"
 
 and bind_sequence env (target : typed_expr) forms =
-  let bind_at inner index name =
+  let item_at inner index =
     let semantic_expr =
       match target.ty with
       | TList _ ->
@@ -427,7 +433,15 @@ and bind_sequence env (target : typed_expr) forms =
               [ target.semantic_expr; Semantic_ir.Int index ] )
       | _ -> target.semantic_expr
     in
-    local_binding name inner semantic_expr
+    typed_ir inner semantic_expr
+  in
+  let rec bind_items item_at index acc = function
+    | [] -> Ok (List.rev acc)
+    | pattern :: rest -> (
+        match bind_pattern ~env (item_at index) pattern with
+        | Error _ as error -> error
+        | Ok bindings ->
+            bind_items item_at (index + 1) (List.rev_append bindings acc) rest)
   in
   let bind_rest count name =
     let semantic_expr =
@@ -455,54 +469,55 @@ and bind_sequence env (target : typed_expr) forms =
       | Ok pattern ->
           if Option.is_some pattern.rest_name then
             Error.error "tuple destructuring does not support & rest"
-          else if List.length pattern.item_names > List.length element_tys then
+          else if List.length pattern.item_patterns > List.length element_tys
+          then
             Error.error "tuple destructuring has too many elements"
           else
-            let bind_tuple_item index name =
+            let tuple_item_at index =
               let ty = List.nth element_tys index in
-              let ocaml_name = Names.sanitize_name name in
+              let value_name = "__lg_tuple_item_" ^ string_of_int index in
               let patterns =
                 List.mapi
                   (fun element_index _ ->
-                    if element_index = index then Semantic_ir.PVar ocaml_name
+                    if element_index = index then
+                      Semantic_ir.PVar value_name
                     else Semantic_ir.PAny)
                   element_tys
               in
-              local_binding name ty
+              typed_ir ty
                 (Semantic_ir.Match
                    ( target.semantic_expr,
                      [
                        ( Semantic_ir.PTuple patterns,
-                         Semantic_ir.Ident ocaml_name );
+                         Semantic_ir.Ident value_name );
                      ] ))
             in
-            let bindings = List.mapi bind_tuple_item pattern.item_names in
-            let bindings =
-              match pattern.sequence_as_name with
-              | None -> bindings
-              | Some name ->
-                  bindings
-                  @ [ local_binding name target.ty target.semantic_expr ]
-            in
-            Ok bindings)
+            Result.map
+              (fun bindings ->
+                match pattern.sequence_as_name with
+                | None -> bindings
+                | Some name ->
+                    bindings
+                    @ [ local_binding name target.ty target.semantic_expr ])
+              (bind_items tuple_item_at 0 [] pattern.item_patterns))
   | TList inner | TVector inner -> (
       match parse_sequence_pattern forms with
       | Error _ as err -> err
       | Ok pattern ->
-          let item_count = List.length pattern.item_names in
-          let bindings = pattern.item_names |> List.mapi (bind_at inner) in
-          let bindings =
-            match pattern.rest_name with
-            | None -> bindings
-            | Some name -> bindings @ [ bind_rest item_count name ]
-          in
-          let bindings =
-            match pattern.sequence_as_name with
-            | None -> bindings
-            | Some name ->
-                bindings @ [ local_binding name target.ty target.semantic_expr ]
-          in
-          Ok bindings)
+          let item_count = List.length pattern.item_patterns in
+          Result.map
+            (fun bindings ->
+              let bindings =
+                match pattern.rest_name with
+                | None -> bindings
+                | Some name -> bindings @ [ bind_rest item_count name ]
+              in
+              match pattern.sequence_as_name with
+              | None -> bindings
+              | Some name ->
+                  bindings
+                  @ [ local_binding name target.ty target.semantic_expr ])
+            (bind_items (item_at inner) 0 [] pattern.item_patterns))
   | _ -> (
       match
         ( parse_sequence_pattern forms,
@@ -514,34 +529,34 @@ and bind_sequence env (target : typed_expr) forms =
             ("sequential destructuring expects a seqable value, got "
            ^ Types.source_name target.ty)
       | Ok pattern, Ok (inner, sequence) ->
-          let item_count = List.length pattern.item_names in
-          let bindings =
-            pattern.item_names
-            |> List.mapi (fun index name ->
-                   local_binding name inner
-                     (Semantic_ir.Apply
-                        ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.nth",
-                          [ Semantic_ir.Int index; sequence ] )))
+          let item_count = List.length pattern.item_patterns in
+          let sequence_item_at index =
+            typed_ir inner
+              (Semantic_ir.Apply
+                 ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.nth",
+                   [ Semantic_ir.Int index; sequence ] ))
           in
-          let bindings =
-            match pattern.rest_name with
-            | None -> bindings
-            | Some name ->
-                bindings
-                @ [
-                    local_binding name (TSeq inner)
-                      (Semantic_ir.Apply
-                         ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.drop",
-                           [ Semantic_ir.Int item_count; sequence ] ));
-                  ]
-          in
-          let bindings =
-            match pattern.sequence_as_name with
-            | None -> bindings
-            | Some name ->
-                bindings @ [ local_binding name target.ty target.semantic_expr ]
-          in
-          Ok bindings)
+          Result.map
+            (fun bindings ->
+              let bindings =
+                match pattern.rest_name with
+                | None -> bindings
+                | Some name ->
+                    bindings
+                    @ [
+                        local_binding name (TSeq inner)
+                          (Semantic_ir.Apply
+                             ( Semantic_ir.Ident
+                                 "Lg_runtime.Runtime_seq.drop",
+                               [ Semantic_ir.Int item_count; sequence ] ));
+                      ]
+              in
+              match pattern.sequence_as_name with
+              | None -> bindings
+              | Some name ->
+                  bindings
+                  @ [ local_binding name target.ty target.semantic_expr ])
+            (bind_items sequence_item_at 0 [] pattern.item_patterns))
 
 and bind_pattern ~env (target : typed_expr) pattern =
   let bindings =
