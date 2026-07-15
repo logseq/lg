@@ -8086,6 +8086,26 @@ let test_map_value_parameters_support_guarded_sequence_use () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
+let test_reduce_accepts_open_map_entries () =
+  let source =
+    {|
+(defn sum-entity-values [entity]
+  (let [eid (:db/id entity)]
+    (reduce
+      (fn [total [attribute value]]
+        (if (= attribute :db/id) total (+ total value)))
+      0
+      entity)))
+(println (sum-entity-values {:db/id 10 :a 1 :b 2}))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "reduce_accepts_open_map_entries" "3\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
 let test_set_literals_accept_dynamic_elements () =
   let source =
     {|
@@ -12826,6 +12846,7 @@ let tests =
     ("reduce-kv accepts dynamic maps", test_reduce_kv_accepts_dynamic_maps);
     ( "map value parameters support guarded sequence use",
       test_map_value_parameters_support_guarded_sequence_use );
+    ("reduce accepts open map entries", test_reduce_accepts_open_map_entries);
     ( "set literals accept dynamic elements",
       test_set_literals_accept_dynamic_elements );
     ( "contains? infers generic membership for variable keys",

@@ -121,6 +121,7 @@ let constrain_comparable_symbol params name =
 let constrain_seqable element_ty params name =
   let rec add_constraint = function
     | TUnknown | TVar _ -> Types.seqable_constraint element_ty
+    | TRecord _ as map_ty -> Types.dynamic_constraint map_ty
     | TOcaml_app (constraint_name, [ existing_element; value_ty ])
       when constraint_name = Types.seqable_constraint_name
            || constraint_name = Types.optional_seqable_constraint_name
