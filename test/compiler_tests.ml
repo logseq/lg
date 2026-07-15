@@ -7842,6 +7842,37 @@ let test_apply_calls_dynamic_runtime_functions () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
+let test_dynamic_named_records_preserve_mutable_field_identity () =
+  let source =
+    {|
+(defprotocol Searchable
+  (search-values [value]))
+(type-record mutable
+  (value :ref<int>))
+(deftype Store [values]
+  Searchable
+  (search-values [_] values))
+(defn ^mutable first-mutable [store]
+  (first (search-values store)))
+(defn replace-static! [^mutable mutable-value]
+  (reset! (:value mutable-value) 42))
+(defn replace-first! [values]
+  (if-some [value (first-mutable (Store. values))]
+    (replace-static! value)
+    0))
+(def mutable-value (record mutable (value (atom 1))))
+(replace-first! [mutable-value])
+(println (deref (:value mutable-value)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "dynamic_named_records_preserve_mutable_field_identity"
+    "42\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
 let test_set_core_api () =
   let source =
     {|
@@ -13140,6 +13171,8 @@ let tests =
       test_apply_calls_overloaded_functions_with_dynamic_arguments );
     ( "apply calls dynamic runtime functions",
       test_apply_calls_dynamic_runtime_functions );
+    ( "dynamic named records preserve mutable field identity",
+      test_dynamic_named_records_preserve_mutable_field_identity );
     ("apply rejects bad set reducers", test_apply_rejects_bad_set_reducers);
     ("set core api works", test_set_core_api);
     ("sets support named records", test_sets_support_named_records);

@@ -67,26 +67,8 @@ let rec materialize_protocol_unknown = function
           materialize_protocol_unknown return_ty )
   | ty -> ty
 
-let rec supports_structural_dynamic_packing = function
-  | TInt | TFloat | TChar | TString | TSymbol | TKeyword | TBool | TNil
-  | TUnknown | TVar _ ->
-      true
-  | ty when Types.is_dynamic ty -> true
-  | TNullable ty | TArray ty | TList ty | TVector ty | TSet ty | TSeq ty ->
-      supports_structural_dynamic_packing ty
-  | TOcaml_app (("option" | "list" | "array" | "Seq.t" | "Seq"), [ ty ]) ->
-      supports_structural_dynamic_packing ty
-  | TOcaml_app ("Lg_runtime.Runtime_reify.t", [ _ ]) -> true
-  | TTuple items -> List.for_all supports_structural_dynamic_packing items
-  | TFn (parameters, return_ty) ->
-      List.for_all supports_structural_dynamic_packing (return_ty :: parameters)
-  | TRecord fields | TNamed_record { fields; _ } ->
-      List.for_all
-        (fun (field : field) -> supports_structural_dynamic_packing field.ty)
-        fields
-  | TRef _ | TOverloaded_fn _ | TRegex | TMap_keys | TUnit | TOcaml _
-  | TOcaml_app _ ->
-      false
+let supports_structural_dynamic_packing =
+  Types.supports_structural_dynamic_packing
 
 let supports_dynamic_field_projection = function
   | TNamed_record _ -> true
@@ -514,7 +496,38 @@ let rec dynamic_unpack env ty expression =
               in
               Ok (Semantic_ir.Tuple [ adapter; value ]))
       | TNamed_record record ->
-          unpack_record record.fields (Some record.type_name)
+          if supports_structural_dynamic_packing ty then
+            unpack_record record.fields (Some record.type_name)
+          else
+            let value_name = "__lg_nominal_record" in
+            let tag_name = Types.nominal_tag_name record in
+            Ok
+              (Semantic_ir.Match
+                 ( Semantic_ir.Apply
+                     ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.nominal",
+                       [ expression ] ),
+                   [
+                     ( Semantic_ir.PConstructor
+                         ( "Some",
+                           Some
+                             (Semantic_ir.PConstructor
+                                ( "Lg_runtime.Runtime_dynamic.Nominal",
+                                  Some
+                                    (Semantic_ir.PTuple
+                                       [
+                                         Semantic_ir.PConstructor
+                                           (tag_name, None);
+                                         Semantic_ir.PVar value_name;
+                                       ]) )) ),
+                       Semantic_ir.Ident value_name );
+                     ( Semantic_ir.PAny,
+                       Semantic_ir.Apply
+                         ( Semantic_ir.Ident "invalid_arg",
+                           [
+                             Semantic_ir.String
+                               ("dynamic value is not " ^ record.type_name);
+                           ] ) );
+                   ] ))
       | TRecord fields -> unpack_record fields None
       | map_ty when Option.is_some (Types.dynamic_map_types map_ty) -> (
           match Types.dynamic_map_types map_ty with
@@ -996,9 +1009,18 @@ and pack_dynamic_payload env expected_dynamic argument =
         Result.map
           (fun fields ->
             Semantic_ir.Apply
-              ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.opaque",
-                [ Semantic_ir.String record.type_name; Semantic_ir.List fields ]
-              ))
+              ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.with_nominal",
+                [
+                  Semantic_ir.Constructor
+                    (Types.nominal_tag_name record, None);
+                  argument.semantic_expr;
+                  Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.opaque",
+                      [
+                        Semantic_ir.String record.type_name;
+                        Semantic_ir.List fields;
+                      ] );
+                ] ))
           (pack_fields [] record.fields)
     | TRecord fields | TNamed_record { fields; _ } ->
         let rec pack_fields packed = function
@@ -6256,8 +6278,8 @@ let create ~compile_expr =
                                  match arg.ty with
                                       | TUnknown | TVar _ -> true
                                  | _ -> false ->
-                                dynamic_row_argument env record.type_name
-                                  record.fields arg
+                                dynamic_unpack env (TNamed_record record)
+                                  arg.semantic_expr
                           | _ when expects_optional_dynamic_value expected_ty ->
                               Ok
                                 (coerce_expression_to_type expected_ty arg.ty

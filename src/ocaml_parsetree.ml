@@ -190,6 +190,41 @@ let record_type_definition type_name parameters fields location =
   in
   Ast_helper.Str.type_ ~loc recursion [ type_declaration ]
 
+let nominal_tag_extension constructor_name record_type location =
+  let declaration_loc = declaration_location location in
+  let warning_attribute =
+    Ast_helper.Attr.mk ~loc:declaration_loc
+      (Location.mkloc "warning" declaration_loc)
+      (PStr
+         [
+           Ast_helper.Str.eval ~loc:declaration_loc
+             (Ast_helper.Exp.constant ~loc:declaration_loc
+                (Ast_helper.Const.string ~loc:declaration_loc "-38"));
+         ])
+  in
+  let result_type =
+    Ast_helper.Typ.constr ~loc:declaration_loc
+      (lid (longident_of_string "Lg_runtime.Runtime_dynamic.nominal_tag"))
+      [ core_type record_type ]
+  in
+  let constructor =
+    Ast_helper.Te.decl ~loc:declaration_loc ~args:(Pcstr_tuple [])
+      ~res:result_type (Location.mkloc constructor_name declaration_loc)
+  in
+  let extension =
+    Ast_helper.Te.mk ~loc:declaration_loc ~attrs:[ warning_attribute ]
+      ~params:
+        [
+          ( Ast_helper.Typ.any ~loc:declaration_loc (),
+            (NoVariance, NoInjectivity) );
+        ]
+      (Location.mkloc
+         (longident_of_string "Lg_runtime.Runtime_dynamic.nominal_tag")
+         declaration_loc)
+      [ constructor ]
+  in
+  Ast_helper.Str.type_extension ~loc:declaration_loc extension
+
 let type_alias_definition type_name parameters manifest location =
   let declaration_loc = declaration_location location in
   let type_declaration =
@@ -461,7 +496,26 @@ let rec structure_of_item = function
       invalid_arg "deferred value binding was not ordered before lowering"
   | Comment _ -> Ok []
   | Type_def { type_name; type_parameters; fields; location } ->
-      Ok [ record_type_definition type_name type_parameters fields location ]
+      let record_type =
+        Types.named_record ~nominal:true ~type_name ~type_parameters
+          ~set_module_name:(type_name ^ "_set") fields
+      in
+      let constructor_name =
+        match record_type with
+        | Types.TNamed_record record -> Types.nominal_tag_name record
+        | _ -> assert false
+      in
+      let type_definition =
+        record_type_definition type_name type_parameters fields location
+      in
+      if Types.supports_structural_dynamic_packing record_type then
+        Ok [ type_definition ]
+      else
+        Ok
+          [
+            type_definition;
+            nominal_tag_extension constructor_name record_type location;
+          ]
   | Type_alias { type_name; type_parameters; manifest; location } ->
       Ok [ type_alias_definition type_name type_parameters manifest location ]
   | Type_variant { type_name; type_parameters; constructors; location } ->

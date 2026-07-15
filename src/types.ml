@@ -73,6 +73,27 @@ let dynamic_constraint_info = function
 
 let is_dynamic ty = Option.is_some (dynamic_constraint_info ty)
 
+let rec supports_structural_dynamic_packing = function
+  | TInt | TFloat | TChar | TString | TSymbol | TKeyword | TBool | TNil
+  | TUnknown | TVar _ ->
+      true
+  | ty when is_dynamic ty -> true
+  | TNullable ty | TArray ty | TList ty | TVector ty | TSet ty | TSeq ty ->
+      supports_structural_dynamic_packing ty
+  | TOcaml_app (("option" | "list" | "array" | "Seq.t" | "Seq"), [ ty ]) ->
+      supports_structural_dynamic_packing ty
+  | TOcaml_app ("Lg_runtime.Runtime_reify.t", [ _ ]) -> true
+  | TTuple items -> List.for_all supports_structural_dynamic_packing items
+  | TFn (parameters, return_ty) ->
+      List.for_all supports_structural_dynamic_packing (return_ty :: parameters)
+  | TRecord fields | TNamed_record { fields; _ } ->
+      List.for_all
+        (fun (field : field) -> supports_structural_dynamic_packing field.ty)
+        fields
+  | TRef _ | TOverloaded_fn _ | TRegex | TMap_keys | TUnit | TOcaml _
+  | TOcaml_app _ ->
+      false
+
 let protocol_constraint_prefix = "__lg_protocol_constraint:"
 
 let protocol_witness_type method_types =
@@ -512,6 +533,17 @@ let named_record ?(type_parameters = []) ?type_id ?(nominal = false) ~type_name
   let type_id = Option.value type_id ~default:(type_id_of_name type_name) in
   TNamed_record
     { type_id; nominal; type_name; type_parameters; set_module_name; fields }
+
+let nominal_tag_name (record : named_record) =
+  match String.rindex_opt record.type_name '.' with
+  | None -> "Lg_nominal_" ^ record.type_name
+  | Some separator ->
+      let module_path = String.sub record.type_name 0 separator in
+      let local_name =
+        String.sub record.type_name (separator + 1)
+          (String.length record.type_name - separator - 1)
+      in
+      module_path ^ ".Lg_nominal_" ^ local_name
 
 let rec qualify_module_type module_path ty =
   let qualify_name name =

@@ -1,3 +1,6 @@
+type _ nominal_tag = ..
+type nominal = Nominal : 'a nominal_tag * 'a -> nominal
+
 type t = {
   payload : payload;
   sequence : (unit -> t Seq.t) option;
@@ -5,6 +8,7 @@ type t = {
   protocols : protocol list;
   metadata : t option;
   type_name : string option;
+  nominal : nominal option;
 }
 
 and payload =
@@ -32,10 +36,14 @@ let protocol id methods = { id; methods }
 
 let make ?sequence ?(sequential = false) ?(protocols = []) ?metadata ?type_name
     payload =
-  { payload; sequence; sequential; protocols; metadata; type_name }
+  { payload; sequence; sequential; protocols; metadata; type_name; nominal = None }
 
 let with_protocols value protocols = { value with protocols }
 let with_metadata value metadata = { value with metadata = Some metadata }
+let with_nominal tag payload value =
+  { value with nominal = Some (Nominal (tag, payload)) }
+
+let nominal value = value.nominal
 let nil = make Nil
 let int value = make (Int value)
 let float value = make (Float value)
