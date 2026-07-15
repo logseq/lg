@@ -6139,6 +6139,30 @@ let test_doseq_infers_seqable_parameters () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_for_supports_when_clauses () =
+  let source =
+    {|
+(println (pr-str (for [x [1 2 3 4] :when (even? x)] x)))
+(println
+  (pr-str
+    (for [x [1 2 3] :let [y (+ x 10)] :when (odd? x)] y)))
+(println
+  (pr-str
+    (for [x [1 2]
+          y [10 20]
+          :when (= y 20)
+          :when (odd? (+ x y))]
+      (+ x y))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "for_supports_when_clauses" "(2 4)\n(11 13)\n(21)\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
 let test_merge_accepts_dynamic_map_parameters () =
   let source =
     {|
@@ -12628,6 +12652,7 @@ let tests =
       test_batched_predicate_collection_core_functions_reject_bad_run_function
     );
     ("doseq infers seqable parameters", test_doseq_infers_seqable_parameters);
+    ("for supports when clauses", test_for_supports_when_clauses);
     ( "merge accepts dynamic map parameters",
       test_merge_accepts_dynamic_map_parameters );
     ( "record arguments fill missing optional fields",

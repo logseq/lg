@@ -525,9 +525,10 @@ and compile_doseq scope env bindings body_forms =
   | _ -> Error.error "doseq bindings must be a vector"
 
 and compile_for scope env bindings body =
-  let rec has_generator = function
+  let rec produces_sequence = function
     | [] -> false
-    | FKeyword _ :: _ :: rest -> has_generator rest
+    | FKeyword ":when" :: _ -> true
+    | FKeyword _ :: _ :: rest -> produces_sequence rest
     | (FSymbol _ | FVector _ | FMap _) :: _ :: _ -> true
     | _ -> false
   in
@@ -537,14 +538,21 @@ and compile_for scope env bindings body =
         Result.map
           (fun body -> FList [ FSymbol "let"; FVector bindings; body ])
           (expand rest)
-    | FKeyword ":when" :: _ -> Error.error "for :when is not supported yet"
+    | FKeyword ":when" :: condition :: rest ->
+        Result.map
+          (fun body ->
+            let when_true =
+              if produces_sequence rest then body else FVector [ body ]
+            in
+            FList [ FSymbol "if"; condition; when_true; FVector [] ])
+          (expand rest)
     | FKeyword ":while" :: _ -> Error.error "for :while is not supported yet"
     | ((FSymbol _ | FVector _ | FMap _) as pattern) :: collection :: rest ->
         Result.map
           (fun body ->
             let mapper = FList [ FSymbol "fn"; FVector [ pattern ]; body ] in
             let function_name =
-              if has_generator rest then "mapcat" else "map"
+              if produces_sequence rest then "mapcat" else "map"
             in
             FList [ FSymbol function_name; mapper; collection ])
           (expand rest)
