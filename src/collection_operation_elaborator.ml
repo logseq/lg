@@ -1145,9 +1145,13 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                           | (index, value) :: rest ->
                               if not (Types.equal index.ty TInt) then
                                 Error.error "assoc vector index must be int"
-                              else if not (Types.equal value.ty inner) then
-                              Error.error
-                                "assoc vector value must match element type"
+                              else if
+                                not
+                                  (Types.assignable ~policy:Host_boundary
+                                     ~expected:inner ~actual:value.ty)
+                              then
+                                Error.error
+                                  "assoc vector value must match element type"
                               else
                                 apply_pairs
                                   (apply "Rrbvec.set"

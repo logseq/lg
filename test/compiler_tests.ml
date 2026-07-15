@@ -8106,6 +8106,24 @@ let test_reduce_accepts_open_map_entries () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
+let test_update_refines_empty_nested_vector_elements () =
+  let source =
+    {|
+(let [buckets [[] []]
+      attribute :a
+      value 1
+      result (assoc buckets 0 (conj (nth buckets 0) [attribute value]))]
+  (println (= [[[:a 1]] []] result)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "update_refines_empty_nested_vector_elements"
+    "true\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
 let test_set_literals_accept_dynamic_elements () =
   let source =
     {|
@@ -12847,6 +12865,8 @@ let tests =
     ( "map value parameters support guarded sequence use",
       test_map_value_parameters_support_guarded_sequence_use );
     ("reduce accepts open map entries", test_reduce_accepts_open_map_entries);
+    ( "update refines empty nested vector elements",
+      test_update_refines_empty_nested_vector_elements );
     ( "set literals accept dynamic elements",
       test_set_literals_accept_dynamic_elements );
     ( "contains? infers generic membership for variable keys",
