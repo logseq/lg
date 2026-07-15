@@ -5541,6 +5541,84 @@ let create ~compile_expr =
                 Core_sequence_transform.compile "into" [ target; source ]))
   and compile_sequence_transform_call scope env name arg_forms =
     match (name, arg_forms) with
+    | "interleave", collection_forms -> (
+        match compile_args_for scope env collection_forms with
+        | Error _ as error -> error
+        | Ok collections when List.length collections < 2 ->
+            Core_sequence_transform.compile name collections
+        | Ok collections ->
+            let rec collect prepared = function
+              | [] -> Ok (List.rev prepared)
+              | collection :: rest -> (
+                  match Collection_capability.to_seq_expr env collection with
+                  | Error _ -> Error.error "interleave expects collections"
+                  | Ok (element_type, sequence) ->
+                      collect ((element_type, sequence) :: prepared) rest)
+            in
+            Result.bind (collect [] collections) (fun prepared ->
+                let needs_dynamic =
+                  List.exists
+                    (fun (element_type, _) ->
+                      Types.is_dynamic element_type
+                      || match element_type with
+                         | TUnknown | TVar _ -> true
+                         | _ -> false)
+                    prepared
+                in
+                let common_type =
+                  if needs_dynamic then Types.dynamic_constraint TUnknown
+                  else fst (List.hd prepared)
+                in
+                if
+                  (not needs_dynamic)
+                  && List.exists
+                       (fun (element_type, _) ->
+                         not (Types.equal common_type element_type))
+                       prepared
+                then Error.error "interleave element types must match"
+                else
+                  let rec prepare_collections collections = function
+                    | [] -> Ok (List.rev collections)
+                    | (element_type, sequence) :: rest ->
+                        let sequence =
+                          if
+                            needs_dynamic
+                            && not (Types.is_dynamic element_type)
+                            &&
+                            match element_type with
+                            | TUnknown | TVar _ -> false
+                            | _ -> true
+                          then
+                            let item_name = "__lg_interleave_item" in
+                            let item =
+                              typed_ir element_type
+                                (Semantic_ir.Ident item_name)
+                            in
+                            Result.map
+                              (fun packed ->
+                                Semantic_ir.Apply
+                                  ( Semantic_ir.Ident
+                                      "Lg_runtime.Runtime_seq.map",
+                                    [
+                                      Semantic_ir.Fun
+                                        ([ Semantic_ir.PVar item_name ], packed);
+                                      sequence;
+                                    ] ))
+                              (pack_dynamic_value env common_type item)
+                          else Ok sequence
+                        in
+                        Result.bind sequence (fun sequence ->
+                            prepare_collections
+                              (sequence :: collections) rest)
+                  in
+                  Result.map
+                    (fun sequences ->
+                      typed_ir (TSeq common_type)
+                        (Semantic_ir.Apply
+                           ( Semantic_ir.Ident
+                               "Lg_runtime.Runtime_seq.interleave",
+                             [ Semantic_ir.List sequences ] )))
+                    (prepare_collections [] prepared)))
     | ("partition" | "partition-all"), FInt size :: _ when size <= 0 ->
         Error.error (name ^ " size must be positive")
     | "take-nth", FInt count :: _ when count <= 0 ->

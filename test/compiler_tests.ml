@@ -7222,6 +7222,26 @@ let test_interleave_accepts_multiple_collections () =
   assert_ocaml_runs "interleave_accepts_multiple_collections"
     "(1 10 100 2 20 200)\n" ocaml_source
 
+let test_interleave_accepts_inferred_seqable_parameters () =
+  let source =
+    {|
+(defn weave [values]
+  (interleave values (repeat :flush)))
+(def woven (take 4 (weave [1 2])))
+(println
+  (str (= (first woven) 1) ":"
+       (= (second woven) :flush) ":"
+       (= (count woven) 4)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "interleave_accepts_inferred_seqable_parameters"
+    "true:true:true\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
 let test_interleave_rejects_later_type_mismatches () =
   Lg.Compiler.compile_string {|(def x (interleave [1] (list 2) ["three"]))|}
   |> expect_error "interleave element types must match"
@@ -12994,6 +13014,8 @@ let tests =
       test_batched_sequence_functions_reject_reduce_kv_non_collection );
     ( "interleave accepts multiple collections",
       test_interleave_accepts_multiple_collections );
+    ( "interleave accepts inferred seqable parameters",
+      test_interleave_accepts_inferred_seqable_parameters );
     ( "interleave rejects later type mismatches",
       test_interleave_rejects_later_type_mismatches );
     ( "interleave requires two collections",

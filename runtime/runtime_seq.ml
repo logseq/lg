@@ -45,6 +45,26 @@ let distinct equal sequence =
   loop [] sequence
 
 let concat sequences = List.fold_right Seq.append sequences Seq.empty |> memoize
+
+let interleave sequences =
+  let rec split heads tails = function
+    | [] -> Some (List.rev heads, List.rev tails)
+    | sequence :: rest -> (
+        match sequence () with
+        | Seq.Nil -> None
+        | Seq.Cons (head, tail) -> split (head :: heads) (tail :: tails) rest)
+  in
+  let rec next pending sequences =
+    memoize (fun () ->
+        match pending with
+        | head :: rest -> Seq.Cons (head, next rest sequences)
+        | [] -> (
+            match split [] [] sequences with
+            | None -> Seq.Nil
+            | Some (heads, tails) -> (next heads tails) ()))
+  in
+  next [] sequences
+
 let take count sequence = sequence |> Seq.take count |> memoize
 
 let drop count sequence =
