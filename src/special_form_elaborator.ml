@@ -1533,10 +1533,16 @@ let create ~compile_expr =
                         let env_bindings =
                           match (pattern, bindings) with
                           | FSymbol name, [ binding ] ->
+                              let constant_keyword =
+                                match value_form with
+                                | FKeyword keyword -> Some keyword
+                                | _ -> None
+                              in
                               [
                                 ( Names.scoped_key scope name,
                                   Types.binding
                                     ?return_param_index:value.return_param_index
+                                    ?constant_keyword
                                     binding.ocaml_name binding.ty );
                               ]
                           | _ ->

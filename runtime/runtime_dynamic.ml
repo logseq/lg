@@ -378,6 +378,16 @@ let is_instance value type_name = value.type_name = Some type_name
 let call value arguments =
   match value.payload with
   | Function function_ -> function_ arguments
+  | Map _ -> (
+      match arguments with
+      | [ key ] -> get value key
+      | [ key; default ] -> get_default value key default
+      | _ -> invalid_arg "dynamic map expects one or two arguments")
+  | Set values -> (
+      match arguments with
+      | [ candidate ] ->
+          List.find_opt (equal candidate) values |> Option.value ~default:nil
+      | _ -> invalid_arg "dynamic set expects one argument")
   | _ -> invalid_arg "dynamic value is not callable"
 
 let deref value =
@@ -485,15 +495,7 @@ let disj_bang collection value =
         make ~sequence:(fun () -> List.to_seq values) (Set values)
     | _ -> invalid_arg "disj! expects a transient set"
 
-let invoke_function value arguments =
-  match value.payload with
-  | Function function_ -> function_ arguments
-  | Set values -> (
-      match arguments with
-      | [ candidate ] ->
-          List.find_opt (equal candidate) values |> Option.value ~default:nil
-      | _ -> invalid_arg "dynamic set expects one argument")
-  | _ -> invalid_arg "dynamic value is not a function"
+let invoke_function = call
 
 let set_union sets = sets |> List.to_seq |> Seq.flat_map to_seq |> set
 

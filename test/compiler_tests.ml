@@ -4757,6 +4757,24 @@ let test_set_literals_are_callable_as_membership_lookup () =
   assert_ocaml_runs "set_literals_are_callable_as_membership_lookup" ":a:true\n"
     ocaml_source
 
+let test_static_sets_accept_dynamic_lookup_values () =
+  let source =
+    {|
+(def schema-attr? #{:db/id :db/ident})
+(defrecord Datom [^:dynamic a])
+(defn schema-datom? [datom]
+  (schema-attr? (.-a ^Datom datom)))
+(println (some? (schema-datom? (Datom. :db/id))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "static_sets_accept_dynamic_lookup_values" "true\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
 let test_generic_protocol_witness_compiles_for_javascript_targets () =
   let source =
     {|
@@ -5365,6 +5383,96 @@ let test_update_supports_extra_arguments () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "update_supports_extra_arguments" "Ada:37\n" ocaml_source
+
+let test_keyword_let_bindings_preserve_static_map_access () =
+  let source =
+    {|
+(def result
+  (let [record {:age 40}
+        key :age]
+    (assoc record key (+ (get record key) 2))))
+(println (:age result))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "keyword_let_bindings_preserve_static_map_access" "42\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_assoc_packs_values_for_dynamic_record_fields () =
+  let source =
+    {|
+(defrecord Holder [^:dynamic payload])
+(def container (Holder. {:answer 1}))
+(def result (assoc container :payload {:answer 42}))
+(println (get (:payload result) :answer))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "assoc_packs_values_for_dynamic_record_fields" "42\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
+let test_assoc_in_updates_nested_maps () =
+  let source =
+    {|
+(defn set-score [db user-id score]
+  (assoc-in db [:users user-id :score] score))
+(def result (set-score {:users {1 {:score 1}}} 1 42))
+(println (get-in result [:users 1 :score]))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "assoc_in_updates_nested_maps" "42\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
+let test_assoc_in_preserves_named_records_with_references () =
+  let source =
+    {|
+(defrecord State [^:dynamic schema root])
+(def initial (State. {:old 1} (volatile! nil)))
+(defn update-state [db key value]
+  (let [schema (or (:schema db) {})]
+    (if (schema key)
+      (-> db (assoc-in [:schema key] value))
+      (-> db (assoc-in [:schema key] value)))))
+(def result (update-state initial :answer 42))
+(println (get (:schema result) :answer))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "assoc_in_preserves_named_records_with_references" "42\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
+let test_threaded_forms_accumulate_record_fields () =
+  let source =
+    {|
+(defn add-fields [report]
+  (-> report
+    (assoc :first 20)
+    (assoc :second 22)))
+(def result (add-fields {:initial 0 :first 0 :second 0}))
+(println (+ (:first result) (:second result)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "threaded_forms_accumulate_record_fields" "42\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
 let test_update_infers_record_fields_from_updater_functions () =
   let source =
@@ -12086,6 +12194,8 @@ let tests =
       test_clojure_map_entry_compiles_as_two_element_vector );
     ( "set literals are callable as membership lookup",
       test_set_literals_are_callable_as_membership_lookup );
+    ( "static sets accept dynamic lookup values",
+      test_static_sets_accept_dynamic_lookup_values );
     ( "generic protocol witness compiles for JavaScript targets",
       test_generic_protocol_witness_compiles_for_javascript_targets );
     ( "protocols support float and symbol receivers",
@@ -12174,6 +12284,15 @@ let tests =
       test_merge_rejects_incompatible_overlapping_fields );
     ("update rejects type changes", test_update_rejects_type_changes);
     ("update supports extra arguments", test_update_supports_extra_arguments);
+    ( "keyword let bindings preserve static map access",
+      test_keyword_let_bindings_preserve_static_map_access );
+    ( "assoc packs values for dynamic record fields",
+      test_assoc_packs_values_for_dynamic_record_fields );
+    ("assoc-in updates nested maps", test_assoc_in_updates_nested_maps);
+    ( "assoc-in preserves named records with references",
+      test_assoc_in_preserves_named_records_with_references );
+    ( "threaded forms accumulate record fields",
+      test_threaded_forms_accumulate_record_fields );
     ( "update infers record fields from updater functions",
       test_update_infers_record_fields_from_updater_functions );
     ( "update works as a nested map updater",

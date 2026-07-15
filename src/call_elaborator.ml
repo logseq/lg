@@ -288,6 +288,36 @@ let rec dynamic_unpack env ty expression =
     | TBool | TOcaml "bool" -> Some "Lg_runtime.Runtime_dynamic.as_bool"
     | _ -> None
   in
+  let unpack_record fields type_name =
+    let rec unpack_fields values = function
+      | [] -> Ok (List.rev values)
+      | (field : field) :: fields ->
+          let dynamic_value =
+            Semantic_ir.Apply
+              ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.get",
+                [
+                  expression;
+                  Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.keyword",
+                      [ Semantic_ir.String field.keyword ] );
+                ] )
+          in
+          (match dynamic_unpack env field.ty dynamic_value with
+          | Error (error : Error.t) ->
+              Error
+                {
+                  error with
+                  message =
+                    error.message ^ " while recovering record field "
+                    ^ field.keyword;
+                }
+          | Ok value ->
+              unpack_fields ((field.ocaml_name, value) :: values) fields)
+    in
+    Result.map
+      (fun fields -> Semantic_ir.Record (fields, type_name))
+      (unpack_fields [] fields)
+  in
   match scalar_function with
   | Some function_name ->
       Ok (Semantic_ir.Apply (Semantic_ir.Ident function_name, [ expression ]))
@@ -484,27 +514,38 @@ let rec dynamic_unpack env ty expression =
               in
               Ok (Semantic_ir.Tuple [ adapter; value ]))
       | TNamed_record record ->
-          let rec unpack_fields values = function
-            | [] -> Ok (List.rev values)
-            | (field : field) :: fields ->
-                let dynamic_value =
-                  Semantic_ir.Apply
-                    ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.get",
-                      [
-                        expression;
-                        Semantic_ir.Apply
-                          ( Semantic_ir.Ident
-                              "Lg_runtime.Runtime_dynamic.keyword",
-                            [ Semantic_ir.String field.keyword ] );
-                      ] )
-                in
-                Result.bind (dynamic_unpack env field.ty dynamic_value)
-                  (fun value ->
-                    unpack_fields ((field.ocaml_name, value) :: values) fields)
-          in
-          Result.map
-            (fun fields -> Semantic_ir.Record (fields, Some record.type_name))
-            (unpack_fields [] record.fields)
+          unpack_record record.fields (Some record.type_name)
+      | TRecord fields -> unpack_record fields None
+      | map_ty when Option.is_some (Types.dynamic_map_types map_ty) -> (
+          match Types.dynamic_map_types map_ty with
+          | None -> assert false
+          | Some (key_ty, value_ty) ->
+              let key_name = "__lg_dynamic_map_key" in
+              let value_name = "__lg_dynamic_map_value" in
+              Result.bind
+                (dynamic_unpack env key_ty (Semantic_ir.Ident key_name))
+                (fun key ->
+                  Result.map
+                    (fun value ->
+                      Semantic_ir.Apply
+                        ( Semantic_ir.Ident "List.map",
+                          [
+                            Semantic_ir.Fun
+                              ( [
+                                  Semantic_ir.PTuple
+                                    [
+                                      Semantic_ir.PVar key_name;
+                                      Semantic_ir.PVar value_name;
+                                    ];
+                                ],
+                                Semantic_ir.Tuple [ key; value ] );
+                            Semantic_ir.Apply
+                              ( Semantic_ir.Ident
+                                  "Lg_runtime.Runtime_dynamic.entries",
+                                [ expression ] );
+                          ] ))
+                    (dynamic_unpack env value_ty
+                       (Semantic_ir.Ident value_name))))
       | ( TVector element_ty
         | TList element_ty
         | TSeq element_ty
@@ -539,6 +580,25 @@ let rec dynamic_unpack env ty expression =
                      Semantic_ir.Apply
                        (Semantic_ir.Ident "Array.of_seq", [ mapped ])
                  | _ -> assert false)
+      | TSet element_ty ->
+          let item_name = "__lg_dynamic_set_item" in
+          Result.bind (Types.set_module_name element_ty) (fun set_module ->
+              dynamic_unpack env element_ty (Semantic_ir.Ident item_name)
+              |> Result.map (fun unpacked_item ->
+                     let mapped =
+                       Semantic_ir.Apply
+                         ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.map",
+                           [ Semantic_ir.Fun
+                               ([ Semantic_ir.PVar item_name ], unpacked_item);
+                             Semantic_ir.Apply
+                               ( Semantic_ir.Ident
+                                   "Lg_runtime.Runtime_dynamic.to_seq",
+                                 [ expression ] );
+                           ] )
+                     in
+                     Semantic_ir.Apply
+                       ( Semantic_ir.Ident (set_module ^ ".of_seq"),
+                         [ mapped ] )))
       | _ ->
           Error.error
             ("cannot recover " ^ Types.source_name ty
@@ -1338,6 +1398,42 @@ let dynamic_row_argument env type_name fields argument =
     (fun fields -> Semantic_ir.Record (fields, Some type_name))
     (build [] fields)
 
+let rec adapt_value_to_type env expected actual =
+  if Types.equal expected actual.ty then Ok actual.semantic_expr
+  else if Types.is_dynamic expected then pack_dynamic_value env expected actual
+  else if Types.is_dynamic actual.ty then
+    dynamic_unpack env expected actual.semantic_expr
+  else
+    match
+      (Types.dynamic_map_types expected, Types.dynamic_map_types actual.ty)
+    with
+    | Some (expected_key, expected_value), Some (actual_key, actual_value) ->
+        let key_name = "__lg_adapt_map_key" in
+        let value_name = "__lg_adapt_map_value" in
+        let key = typed_ir actual_key (Semantic_ir.Ident key_name) in
+        let value = typed_ir actual_value (Semantic_ir.Ident value_name) in
+        Result.bind (adapt_value_to_type env expected_key key) (fun key ->
+            Result.map
+              (fun value ->
+                Semantic_ir.Apply
+                  ( Semantic_ir.Ident "List.map",
+                    [
+                      Semantic_ir.Fun
+                        ( [
+                            Semantic_ir.PTuple
+                              [
+                                Semantic_ir.PVar key_name;
+                                Semantic_ir.PVar value_name;
+                              ];
+                          ],
+                          Semantic_ir.Tuple [ key; value ] );
+                      actual.semantic_expr;
+                    ] ))
+              (adapt_value_to_type env expected_value value))
+    | _ ->
+        Ok
+          (coerce_expression_to_type expected actual.ty actual.semantic_expr)
+
 let typed_row_argument env type_name expected_fields argument =
   let actual_fields =
     match argument.ty with
@@ -1366,14 +1462,7 @@ let typed_row_argument env type_name expected_fields argument =
                 let value =
                   if has_capability_constraint expected.ty then
                     pack_constrained_value env expected.ty actual_value
-                  else if
-                    Types.is_dynamic actual.ty
-                    && not (Types.is_dynamic expected.ty)
-                  then dynamic_unpack env expected.ty actual_value.semantic_expr
-                  else
-                    Ok
-                      (coerce_expression_to_type expected.ty actual.ty
-                         actual_value.semantic_expr)
+                  else adapt_value_to_type env expected.ty actual_value
                 in
                 Result.bind value (fun value ->
                     build ((expected.ocaml_name, value) :: values) rest))
@@ -3723,19 +3812,17 @@ let create ~compile_expr =
                              (Semantic_ir.Record
                                 ( List.map
                                     (fun ((field : field), value) ->
-                                                ( field.ocaml_name,
-                                                  value.semantic_expr ))
+                                      (field.ocaml_name, value.semantic_expr))
                                     values,
                                   Some
-                                              (record_type_application
-                                                 record.type_name
+                                    (record_type_application record.type_name
                                        record.type_parameters) )))
                           with
                           record_values =
                             Some
                               (List.map
-                                           (fun ((field : field), value) ->
-                                             (field, value.semantic_expr))
+                                 (fun ((field : field), value) ->
+                                   (field, value.semantic_expr))
                                  values);
                         }))
         | _ -> Error.error "record expects a record type and fields")
@@ -5021,8 +5108,10 @@ let create ~compile_expr =
     | "subvec" -> compile_subvec scope env arg_forms
     | "nth" -> compile_nth scope env arg_forms
     | "get" -> compile_get scope env arg_forms
+    | "get-in" -> compile_get_in scope env arg_forms
     | "find" -> compile_find scope env arg_forms
     | "assoc" | "-assoc" -> compile_assoc scope env arg_forms
+    | "assoc-in" -> compile_assoc_in scope env arg_forms
     | "assoc!" -> compile_assoc_bang scope env arg_forms
     | "dissoc" -> compile_dissoc scope env arg_forms
     | "merge" -> compile_merge scope env arg_forms
@@ -5642,6 +5731,23 @@ let create ~compile_expr =
                       "group-by function type does not match collection"
                 | Ok _ -> Error.error "group-by expects a function")))
     | _ -> Error.error "group-by expects function and collection"
+  and compile_get_in scope env arg_forms =
+    match arg_forms with
+    | [ target; FVector keys ] ->
+        compile_expr scope env (Core_form_expansion.get_in target keys None)
+    | [ target; FVector keys; default ] ->
+        compile_expr scope env
+          (Core_form_expansion.get_in target keys (Some default))
+    | [ _; _ ] | [ _; _; _ ] ->
+        Error.error "get-in currently requires a vector path"
+    | _ -> Error.error "get-in expects target, path, and optional default"
+  and compile_assoc_in scope env arg_forms =
+    match arg_forms with
+    | [ target; FVector keys; value ] ->
+        compile_expr scope env (Core_form_expansion.assoc_in target keys value)
+    | [ _target; _path; _value ] ->
+        Error.error "assoc-in currently requires a vector path"
+    | _ -> Error.error "assoc-in expects target, path, and value"
   and compile_update_in scope env arg_forms =
     match arg_forms with
     | target_form :: path_form :: function_form :: argument_forms -> (
@@ -6257,14 +6363,20 @@ let create ~compile_expr =
                   (pack_arguments [] args)
             | TSet element_ty -> (
                 match args with
-                | [ arg ] when Types.same_shape element_ty arg.ty ->
-                    Result.map
+                | [ arg ]
+                  when Types.same_shape element_ty arg.ty
+                       || Types.is_dynamic arg.ty
+                       || Types.is_dynamic element_ty ->
+                    Result.bind
+                      (adapt_value_to_type env element_ty arg)
+                      (fun argument ->
+                        Result.map
                       (fun set_module ->
                         let present =
                           Semantic_ir.Apply
                             ( Semantic_ir.Ident (set_module ^ ".mem"),
                               [
-                                arg.semantic_expr;
+                                argument;
                                 Semantic_ir.Ident fn.ocaml_name;
                               ] )
                         in
@@ -6273,9 +6385,9 @@ let create ~compile_expr =
                           (Semantic_ir.If
                              ( present,
                                Semantic_ir.Constructor
-                                 ("Some", Some arg.semantic_expr),
+                                 ("Some", Some argument),
                                Semantic_ir.Constructor ("None", None) )))
-                      (Types.set_module_name element_ty)
+                      (Types.set_module_name element_ty))
                 | [ _ ] ->
                     Error.error (name ^ " called with incompatible arguments")
                 | _ -> Error.error (name ^ " expects 1 arguments"))

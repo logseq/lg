@@ -9,6 +9,7 @@ type binding = {
   return_param_index : int option;
   overload_targets : string list;
   forward_declared : bool;
+  constant_keyword : string option;
 }
 
 and host_reference =
@@ -32,7 +33,7 @@ let typed_ir ty semantic_expr =
 
 let binding ?(row_param_types = []) ?host_reference ?protocol_id
     ?return_param_index ?(overload_targets = []) ?(forward_declared = false)
-    ocaml_name ty =
+    ?constant_keyword ocaml_name ty =
   {
     ocaml_name;
     ty;
@@ -42,6 +43,7 @@ let binding ?(row_param_types = []) ?host_reference ?protocol_id
     return_param_index;
     overload_targets;
     forward_declared;
+    constant_keyword;
   }
 
 let seqable_constraint_name = "__lg_seqable_constraint"

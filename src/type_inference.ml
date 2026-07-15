@@ -459,7 +459,28 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
       | Some index ->
           String.sub name (index + 1) (String.length name - index - 1)
     in
-    if String.starts_with ~prefix:"->" member_name then
+    if member_name = "->" || member_name = "->>" then
+      match args with
+      | [] -> Ok params
+      | value :: steps ->
+          let thread step =
+            match step with
+            | FSymbol name -> FList [ FSymbol name; value ]
+            | FList (function_ :: arguments) ->
+                if member_name = "->" then
+                  FList (function_ :: value :: arguments)
+                else FList (function_ :: arguments @ [ value ])
+            | step -> FList [ step; value ]
+          in
+          Result.bind (infer_form params value) (fun params ->
+              List.fold_left
+                (fun result step ->
+                  Result.bind result (fun params ->
+                      infer_form params (thread step)))
+                (Ok params) steps)
+    else if
+      String.starts_with ~prefix:"->" member_name
+    then
       infer_expected_all (Types.dynamic_constraint TUnknown) params args
     else
     match lookup_function_ty name with
@@ -637,6 +658,45 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
     match infer_target with
     | Error _ as err -> err
     | Ok params -> infer_pairs params pairs
+  and infer_assoc_in params target keys value =
+    Result.bind (infer_all params (keys @ [ value ])) (fun params ->
+        let params =
+          keys
+          |> List.fold_left
+               (fun result key ->
+                 Result.bind result (fun params ->
+                     match key with
+                     | FKeyword _ -> Ok params
+                     | key ->
+                         infer_expected
+                           (Types.dynamic_constraint TUnknown)
+                           params key))
+               (Ok params)
+        in
+        Result.bind params (fun params ->
+        let value_ty =
+          match inferred_form_type params value with
+          | TUnknown | TVar _ -> Types.dynamic_constraint TUnknown
+          | ty -> ty
+        in
+        Result.bind (infer_expected value_ty params value) (fun params ->
+        let target_ty =
+          List.fold_right
+            (fun key nested_ty ->
+              match key with
+              | FKeyword keyword ->
+                  TRecord [ make_field keyword nested_ty ]
+              | key ->
+                  let key_ty =
+                    match inferred_form_type params key with
+                    | TUnknown | TVar _ -> Types.dynamic_constraint TUnknown
+                    | ty -> ty
+                  in
+                  Types.dynamic_map key_ty
+                    (Types.dynamic_constraint nested_ty))
+            keys value_ty
+        in
+        infer_expected target_ty params target)))
   and infer_match params target clauses =
     let pattern_type = function
       | FInt _ -> Some TInt
@@ -860,21 +920,30 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
         :: FSymbol "update"
         :: nested_arguments) ->
         let nested_value = "__lg_nested_update_value" in
-        infer_form params
-          (FList
-             [
-               FSymbol "update";
-               target;
-               key;
-               FList
+        let params =
+          match (target, key) with
+          | FSymbol target, FKeyword keyword ->
+              add_record_field_constraint target keyword
+                (Types.dynamic_constraint TUnknown)
+                params
+          | _ -> Ok params
+        in
+        Result.bind params (fun params ->
+            infer_form params
+              (FList
                  [
-                   FSymbol "fn";
-                   FVector [ FSymbol nested_value ];
+                   FSymbol "update";
+                   target;
+                   key;
                    FList
-                     (FSymbol "update" :: FSymbol nested_value
-                    :: nested_arguments);
-                 ];
-             ])
+                     [
+                       FSymbol "fn";
+                       FVector [ FSymbol nested_value ];
+                       FList
+                         (FSymbol "update" :: FSymbol nested_value
+                        :: nested_arguments);
+                     ];
+                 ]))
     | FList
         (FSymbol "update"
         :: FSymbol target
@@ -1201,6 +1270,26 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
         match infer_expected dynamic params (FSymbol name) with
         | Error _ as error -> error
         | Ok params -> infer_expected dynamic params key)
+    | FList
+        [ FSymbol ("get-in" | "clojure.core/get-in"); target; FVector keys ] ->
+        infer_form params (Core_form_expansion.get_in target keys None)
+    | FList
+        [
+          FSymbol ("get-in" | "clojure.core/get-in");
+          target;
+          FVector keys;
+          default;
+        ] ->
+        infer_form params
+          (Core_form_expansion.get_in target keys (Some default))
+    | FList
+        [
+          FSymbol ("assoc-in" | "clojure.core/assoc-in");
+          target;
+          FVector keys;
+          value;
+        ] ->
+        infer_assoc_in params target keys value
     | FList (FSymbol ("assoc" | "clojure.core/assoc") :: target :: pairs) ->
         infer_assoc params target pairs
     | FList (FSymbol "conj" :: FSymbol target :: values) -> (
