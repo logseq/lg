@@ -1693,17 +1693,49 @@ let test_javascript_targets_compile_date_and_radix_interop () =
 let test_transient_collection_operations_preserve_values () =
   let source =
     {|
+(defrecord Box [values])
+(defrecord ReducerInput [values keys])
 (def vector-values
   (persistent! (assoc! (conj! (transient [1]) 2) 0 3)))
 (def set-values (persistent! (conj! (transient (hash-set 1)) 2)))
+(def map-values
+  (persistent!
+    (dissoc! (transient (hash-map "a" 1 "b" 2)) "a")))
+(defn remove-key [values]
+  (persistent! (dissoc! (transient values) "a")))
+(def inferred-map-values
+  (remove-key (hash-map "a" 1 "b" 2)))
+(def dynamic-map-values
+  (persistent!
+    (dissoc!
+      (transient (:values (Box. (hash-map "a" 1 "b" 2))))
+      "a")))
+(defn remove-keys [input]
+  (let [values (transient (:values input))
+        remove-key (fn [values key] (dissoc! values key))
+        values (reduce remove-key values (:keys input))]
+    (persistent! values)))
+(def reduced-map-values
+  (remove-keys
+    (ReducerInput. (hash-map "a" 1 "b" 2) ["a"])))
 (println
   (str (= vector-values [3 2]) ":"
-       (= set-values #{1 2})))
+       (= set-values #{1 2}) ":"
+       (= (get map-values "b") 2) ":"
+       (= (count map-values) 1) ":"
+       (= (count inferred-map-values) 1) ":"
+       (= (get dynamic-map-values "b") 2) ":"
+       (= (count dynamic-map-values) 1) ":"
+       (= (count reduced-map-values) 1)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "transient_collection_operations_preserve_values"
-    "true:true\n" ocaml_source
+    "true:true:true:true:true:true:true:true\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
 let test_transient_operations_are_first_class_functions () =
   let source =

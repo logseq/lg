@@ -2159,6 +2159,56 @@ let create ~compile_expr =
     | _ ->
         Error.error
           "assoc! expects a transient collection followed by key/value pairs"
+  and compile_dissoc_bang scope env = function
+    | [ collection_form; key_form ] -> (
+        match
+          ( compile_expr scope env collection_form,
+            compile_expr scope env key_form )
+        with
+        | (Error _ as error), _ -> error
+        | _, (Error _ as error) -> error
+        | Ok collection, Ok key
+          when Types.is_dynamic collection.ty
+               || (match collection.ty with
+                  | TUnknown | TVar _ -> true
+                  | _ -> false)
+          ->
+            let dynamic = Types.dynamic_constraint TUnknown in
+            Result.map
+              (fun key ->
+                typed_ir dynamic
+                  (Semantic_ir.Apply
+                     ( Semantic_ir.Ident
+                         "Lg_runtime.Runtime_dynamic.dissoc_bang",
+                       [ collection.semantic_expr; key ] )))
+              (pack_dynamic_value env dynamic key)
+        | Ok collection, Ok key -> (
+            match collection.ty with
+            | TOcaml_app
+                ( "Lg_runtime.Runtime_transient.map",
+                  [ key_type; value_type ] )
+              when Types.equal key_type TUnknown
+                   || Types.same_shape key_type key.ty ->
+                let key_type =
+                  if Types.equal key_type TUnknown then key.ty else key_type
+                in
+                Ok
+                  (typed_ir
+                     (TOcaml_app
+                        ( "Lg_runtime.Runtime_transient.map",
+                          [ key_type; value_type ] ))
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident
+                            "Lg_runtime.Runtime_transient.map_dissoc",
+                          [ collection.semantic_expr; key.semantic_expr ] )))
+            | TOcaml_app ("Lg_runtime.Runtime_transient.map", _) ->
+                Error.error
+                  "dissoc! key type must match the transient map key type"
+            | _ ->
+                Error.error
+                  ("dissoc! expects a transient map, got "
+                 ^ Types.source_name collection.ty)))
+    | _ -> Error.error "dissoc! expects a transient map and key"
   and compile_persistent_bang scope env = function
     | [ collection_form ] -> (
         match compile_expr scope env collection_form with
@@ -5138,6 +5188,7 @@ let create ~compile_expr =
     | "assoc" | "-assoc" -> compile_assoc scope env arg_forms
     | "assoc-in" -> compile_assoc_in scope env arg_forms
     | "assoc!" -> compile_assoc_bang scope env arg_forms
+    | "dissoc!" -> compile_dissoc_bang scope env arg_forms
     | "dissoc" -> compile_dissoc scope env arg_forms
     | "merge" -> compile_merge scope env arg_forms
     | "update" -> compile_update scope env arg_forms

@@ -83,6 +83,11 @@ let map_assoc map key value =
   Hashtbl.replace map.entries key value;
   map
 
+let map_dissoc map key =
+  ensure_active map.active;
+  Hashtbl.remove map.entries key;
+  map
+
 let map_persistent map =
   ensure_active map.active;
   let result =

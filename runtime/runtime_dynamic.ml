@@ -482,6 +482,7 @@ let conj_bang collection value =
   else conj collection value
 
 let assoc_bang collection key value = assoc collection key value
+let dissoc_bang collection key = dissoc collection key
 
 let disj_bang collection value =
   if has_protocol collection "ITransientSet" then
