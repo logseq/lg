@@ -434,11 +434,8 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
     | FList
         [ FKeyword nested_keyword; FList [ FKeyword keyword; FSymbol name ] ] ->
         add_record_field_constraint name keyword
-          (TNullable
-             (TRecord
-                [
-                  make_field nested_keyword (Types.dynamic_constraint TUnknown);
-                ]))
+          (TRecord
+             [ make_field nested_keyword (Types.dynamic_constraint TUnknown) ])
           params
     | form -> infer_form params form
   and infer_collection params = function
@@ -1296,11 +1293,8 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
     | FList
         [ FKeyword nested_keyword; FList [ FKeyword keyword; FSymbol name ] ] ->
         add_record_field_constraint name keyword
-          (TNullable
-             (TRecord
-                [
-                  make_field nested_keyword (Types.dynamic_constraint TUnknown);
-                ]))
+          (TRecord
+             [ make_field nested_keyword (Types.dynamic_constraint TUnknown) ])
           params
     | FList [ FKeyword keyword; FSymbol name ] ->
         add_record_field_constraint name keyword TUnknown params

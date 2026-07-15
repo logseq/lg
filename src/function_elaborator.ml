@@ -19,15 +19,7 @@ let record_inference_compatible ~allow_expected_dynamic expected_fields
   |> List.for_all (fun (expected : field) ->
          match find_field expected.keyword actual_fields with
          | None ->
-             let unresolved =
-               Types.is_dynamic expected.ty
-               || match expected.ty with
-                  | TUnknown | TVar _ -> true
-                  | _ -> false
-             in
-             unresolved
-             && Option.is_some
-                  (Types.find_record_extension_field actual_fields)
+             Option.is_some (Types.find_record_extension_field actual_fields)
          | Some actual ->
              let expected_dynamic_compatible =
                match Types.dynamic_constraint_info expected.ty with
@@ -40,6 +32,7 @@ let record_inference_compatible ~allow_expected_dynamic expected_fields
              in
              Types.is_dynamic actual.ty
              || (match actual.ty with TUnknown | TVar _ -> true | _ -> false)
+             || (match expected.ty with TUnknown | TVar _ -> true | _ -> false)
              || expected_dynamic_compatible
              || Types.equal expected.ty actual.ty
              || Types.row_compatible ~expected:expected.ty ~actual:actual.ty)

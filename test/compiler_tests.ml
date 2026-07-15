@@ -7519,6 +7519,34 @@ let test_let_bindings_support_value_type_hints () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
+let test_nested_record_fields_preserve_outer_record_inference () =
+  let source =
+    {|
+(defrecord DB [max-tx])
+(defrecord TxReport [^DB db-before ^DB db-after tx-data])
+(defrecord Datom [value])
+(defn transact-report [report datom]
+  (let [before ^DB (:db-before report)
+        db (:db-after report)
+        value (:value datom)]
+    report))
+(defn transact-add [report]
+  (let [db (:db-after report)
+        report' (assoc report :extra true)
+        new-datom (Datom. 2)]
+    (transact-report report' new-datom)))
+(def result (transact-add (TxReport. (DB. 1) (DB. 1) [])))
+(println "ok")
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "nested_record_fields_preserve_outer_record_inference"
+    "ok\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
 let test_destructuring_rejects_unsupported_let_sources () =
   Lg.Compiler.compile_string {|(def x (let [{:keys [name]} [1 2]] name))|}
   |> expect_error "map destructuring expects a map"
@@ -12860,6 +12888,8 @@ let tests =
       test_let_destructuring_supports_nested_sequences );
     ( "let bindings support value type hints",
       test_let_bindings_support_value_type_hints );
+    ( "nested record fields preserve outer record inference",
+      test_nested_record_fields_preserve_outer_record_inference );
     ( "destructuring rejects unsupported let sources",
       test_destructuring_rejects_unsupported_let_sources );
     ( "destructuring rejects bad rest binding",
