@@ -243,15 +243,29 @@ let add_record_field_constraint name keyword field_ty params =
               ("cannot infer " ^ keyword ^ " as " ^ Types.source_name field_ty
              ^ " because it is already " ^ Types.source_name field.ty))
   in
+  let rec add_constraint = function
+    | TUnknown -> Ok (TRecord [ make_field keyword field_ty ])
+    | TRecord fields ->
+        Result.map (fun fields -> TRecord fields) (merge_fields fields)
+    | ty when Types.is_dynamic ty ->
+        let capability =
+          Types.dynamic_constraint_info ty |> Option.value ~default:TUnknown
+        in
+        Result.map Types.dynamic_constraint (add_constraint capability)
+    | ty -> (
+        match Types.protocol_constraint_info ty with
+        | Some (_, _, value_ty) ->
+            Result.map
+              (Types.protocol_constraint_with_value ty)
+              (add_constraint value_ty)
+        | None -> Ok ty)
+  in
   match List.assoc_opt name params with
   | None -> Ok params
-  | Some TUnknown ->
-      Ok (replace_param name (TRecord [ make_field keyword field_ty ]) params)
-  | Some (TRecord fields) -> (
-      match merge_fields fields with
-      | Error _ as err -> err
-      | Ok fields -> Ok (replace_param name (TRecord fields) params))
-  | Some _existing_ty -> Ok params
+  | Some existing_ty ->
+      Result.map
+        (fun ty -> replace_param name ty params)
+        (add_constraint existing_ty)
 
 let rec numeric_form_type params = function
   | FInt _ -> TInt
@@ -1573,6 +1587,58 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
               | FVector forms -> parse_aliases [] forms
               | _ -> []
             in
+            let rec rewrite_aliases aliases = function
+              | FSymbol name as form -> (
+                  match List.assoc_opt name aliases with
+                  | Some ((FSymbol _ | FKeyword _) as alias) ->
+                      rewrite_aliases (List.remove_assoc name aliases) alias
+                  | _ -> form)
+              | FList
+                  (FSymbol binding_form :: FVector nested_bindings :: body_forms)
+                when binding_form = "let" || binding_form = "let*"
+                     || binding_form = "loop"
+                     || String.ends_with ~suffix:"/let" binding_form
+                     || String.ends_with ~suffix:"/let*" binding_form ->
+                  let rec rewrite_bindings aliases rewritten = function
+                    | FSymbol name :: value :: rest ->
+                        let value = rewrite_aliases aliases value in
+                        rewrite_bindings (List.remove_assoc name aliases)
+                          (value :: FSymbol name :: rewritten)
+                          rest
+                    | rest -> (aliases, List.rev_append rewritten rest)
+                  in
+                  let body_aliases, nested_bindings =
+                    rewrite_bindings aliases [] nested_bindings
+                  in
+                  FList
+                    (FSymbol binding_form :: FVector nested_bindings
+                    :: List.map (rewrite_aliases body_aliases) body_forms)
+              | FList (FSymbol "fn" :: FVector parameters :: body_forms) ->
+                  let aliases =
+                    List.fold_left
+                      (fun aliases -> function
+                        | FSymbol name -> List.remove_assoc name aliases
+                        | _ -> aliases)
+                      aliases parameters
+                  in
+                  FList
+                    (FSymbol "fn" :: FVector parameters
+                    :: List.map (rewrite_aliases aliases) body_forms)
+              | FList forms -> FList (List.map (rewrite_aliases aliases) forms)
+              | FVector forms ->
+                  FVector (List.map (rewrite_aliases aliases) forms)
+              | FMap pairs ->
+                  FMap
+                    (List.map
+                       (fun (key, value) ->
+                         ( rewrite_aliases aliases key,
+                           rewrite_aliases aliases value ))
+                       pairs)
+              | form -> form
+            in
+            let rewritten_body_forms =
+              List.map (rewrite_aliases aliases) body_forms
+            in
             let rec infer_alias_constraints params = function
               | FList [ FSymbol reduce_name; reducer; init; FSymbol collection ]
                 when reduce_name = "reduce"
@@ -1606,12 +1672,16 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
                       if index mod 2 = 1 then Some form else None)
               | _ -> []
             in
-            List.fold_left
-              (fun result form ->
-                Result.bind result (fun params ->
-                    infer_alias_constraints params form))
-              (Ok params)
-              (binding_values @ body_forms))
+            Result.bind
+              (if rewritten_body_forms = body_forms then Ok params
+               else infer_all params rewritten_body_forms)
+              (fun params ->
+                List.fold_left
+                  (fun result form ->
+                    Result.bind result (fun params ->
+                        infer_alias_constraints params form))
+                  (Ok params)
+                  (binding_values @ rewritten_body_forms)))
     | FList (FSymbol "fn" :: _params :: body_forms) ->
         infer_all params body_forms
     | FList (FSymbol name :: args) -> infer_known_call name params args

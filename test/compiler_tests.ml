@@ -5417,6 +5417,74 @@ let test_assoc_packs_values_for_dynamic_record_fields () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
+let test_assoc_accepts_protocol_constrained_named_records () =
+  let source =
+    {|
+(defprotocol HasValue
+  (read-value [value] :int))
+(defrecord state [value items]
+  HasValue
+  (read-value [state] (+ (.-value state) 0)))
+(defrecord other-state [value]
+  HasValue
+  (read-value [state] (+ (.-value state) 0)))
+(defn add-item [items item]
+  (conj items item))
+(defn replace-value [state]
+  (if (read-value state)
+    (-> state
+      (update :items add-item 2)
+      (assoc :value 42))
+    state))
+(def initial (state. 1 [1]))
+(let [updated (replace-value initial)]
+  (println [(:value updated) (count (:items updated))]))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "assoc_accepts_protocol_constrained_named_records" "[42 2]\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
+let test_update_preserves_named_records_with_opaque_fields () =
+  let source =
+    {|
+(type-record tree [value]
+  (item :value))
+(type-record database
+  (root :ref<option<tree<int>>>)
+  (max-eid :int))
+(defn advance-max-eid [db ^:int eid]
+  (assoc db :max-eid eid))
+(defn allocate-eid [report eid]
+  (let [m report
+        k :db-after]
+    (assoc m k (advance-max-eid (get m k) eid))))
+(def initial-db
+  (record database
+    (root (volatile! (Some (record tree (item 7)))))
+    (max-eid 1)))
+(def updated
+  (allocate-eid {:db-after initial-db} 42))
+(def db (:db-after updated))
+(println
+  [(:max-eid db)
+   (match (deref (:root db))
+     (Some root) (:item root)
+     None 0)])
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "update_preserves_named_records_with_opaque_fields"
+    "[42 7]\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
 let test_assoc_in_updates_nested_maps () =
   let source =
     {|
@@ -12288,6 +12356,10 @@ let tests =
       test_keyword_let_bindings_preserve_static_map_access );
     ( "assoc packs values for dynamic record fields",
       test_assoc_packs_values_for_dynamic_record_fields );
+    ( "assoc accepts protocol constrained named records",
+      test_assoc_accepts_protocol_constrained_named_records );
+    ( "update preserves named records with opaque fields",
+      test_update_preserves_named_records_with_opaque_fields );
     ("assoc-in updates nested maps", test_assoc_in_updates_nested_maps);
     ( "assoc-in preserves named records with references",
       test_assoc_in_preserves_named_records_with_references );

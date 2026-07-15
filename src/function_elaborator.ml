@@ -13,10 +13,31 @@ let unique_named_records records =
       else record :: unique)
     [] records
 
-let rec infer_named_record scope env = function
-  | TNullable inner -> TNullable (infer_named_record scope env inner)
+let record_inference_compatible ~allow_expected_dynamic expected_fields
+    actual_fields =
+  expected_fields
+  |> List.for_all (fun (expected : field) ->
+         match find_field expected.keyword actual_fields with
+         | None -> false
+         | Some actual ->
+             Types.is_dynamic actual.ty
+             || (match actual.ty with TUnknown | TVar _ -> true | _ -> false)
+             || (allow_expected_dynamic && Types.is_dynamic expected.ty)
+             || Types.equal expected.ty actual.ty
+             || Types.row_compatible ~expected:expected.ty ~actual:actual.ty)
+
+let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
+  | TNullable inner ->
+      TNullable (infer_named_record ~allow_dynamic_fields scope env inner)
   | TOcaml_app ("option", [ inner ]) ->
-      TOcaml_app ("option", [ infer_named_record scope env inner ])
+      TOcaml_app
+        ("option", [ infer_named_record ~allow_dynamic_fields scope env inner ])
+  | ty when Option.is_some (Types.protocol_constraint_info ty) -> (
+      match Types.protocol_constraint_info ty with
+      | None -> assert false
+      | Some (_, _, value_ty) ->
+          Types.protocol_constraint_with_value ty
+            (infer_named_record ~allow_dynamic_fields:true scope env value_ty))
   | TOcaml name when String.starts_with ~prefix:"__lg_record:" name ->
       let source_name =
         String.sub name
@@ -39,10 +60,15 @@ let rec infer_named_record scope env = function
           (fun key (binding : binding) ->
             if String.starts_with ~prefix:"__record/" key then
               match binding.ty with
-              | TNamed_record record
-                when Types.row_compatible ~expected:(TRecord fields)
-                       ~actual:binding.ty ->
-                  Some record
+              | TNamed_record record ->
+                  if
+                    record_inference_compatible
+                      ~allow_expected_dynamic:allow_dynamic_fields fields
+                      record.fields
+                    || Types.row_compatible ~expected:(TRecord fields)
+                         ~actual:binding.ty
+                  then Some record
+                  else None
               | _ -> None
             else None)
           env

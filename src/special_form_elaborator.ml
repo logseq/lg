@@ -609,7 +609,22 @@ let create ~compile_expr =
                       (typed_ir (TSeq inner)
                          (Semantic_ir.If
                             (condition_code, then_sequence, else_sequence)))
-                    | _ -> Error.error "if branches must have same type")))
+                    | _ ->
+                        let describe_type = function
+                          | TRecord fields ->
+                              "map {"
+                              ^ String.concat ", "
+                                  (List.map
+                                     (fun (field : field) -> field.keyword)
+                                     fields)
+                              ^ "}"
+                          | TNamed_record record -> record.type_name
+                          | ty -> Types.source_name ty
+                        in
+                        Error.error
+                          ("if branches must have same type: "
+                          ^ describe_type then_expr.ty ^ " and "
+                          ^ describe_type else_expr.ty))))
         )
   and compile_if_not scope env condition then_form else_form =
     match

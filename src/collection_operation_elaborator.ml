@@ -45,6 +45,15 @@ let rec dynamicize_unknown = function
   | TNullable ty -> TNullable (dynamicize_unknown ty)
   | TOcaml_app ("option", [ ty ]) ->
       TOcaml_app ("option", [ dynamicize_unknown ty ])
+  | TOcaml_app (name, arguments) ->
+      TOcaml_app (name, List.map dynamicize_unknown arguments)
+  | TTuple items -> TTuple (List.map dynamicize_unknown items)
+  | TArray ty -> TArray (dynamicize_unknown ty)
+  | TRef ty -> TRef (dynamicize_unknown ty)
+  | TList ty -> TList (dynamicize_unknown ty)
+  | TVector ty -> TVector (dynamicize_unknown ty)
+  | TSet ty -> TSet (dynamicize_unknown ty)
+  | TSeq ty -> TSeq (dynamicize_unknown ty)
   | TRecord fields ->
       TRecord
         (List.map
@@ -105,6 +114,22 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
         | Ok { constant_keyword = Some keyword; _ } -> FKeyword keyword
         | Ok _ | Error _ -> form)
     | form -> form
+  in
+  let unwrap_protocol_value value =
+    let rec unwrap ty expression =
+      match Types.protocol_constraint_info ty with
+      | None -> (ty, expression)
+      | Some (_, _, value_ty) ->
+          let expression =
+            match Semantic_ir.unlocated expression with
+            | Semantic_ir.Ident _ -> expression
+            | _ ->
+                Semantic_ir.Apply (Semantic_ir.Ident "snd", [ expression ])
+          in
+          unwrap value_ty expression
+    in
+    let ty, semantic_expr = unwrap value.ty value.semantic_expr in
+    { value with ty; semantic_expr }
   in
   let special_forms : Special_form_elaborator.t =
     Special_form_elaborator.create ~compile_expr
@@ -503,6 +528,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
           match compile_expr scope env target_form with
           | Error _ as err -> err
           | Ok target -> (
+              let target = unwrap_protocol_value target in
               match target.ty with
               | TNullable record_ty | TOcaml_app ("option", [ record_ty ]) -> (
                   match record_ty with
@@ -634,6 +660,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
           | (Error _ as err), _ -> err
           | _, (Error _ as err) -> err
           | Ok target, Ok index -> (
+              let target = unwrap_protocol_value target in
               match (target.ty, index.ty) with
               | TVector inner, TInt ->
                   Ok
@@ -749,6 +776,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
           | (Error _ as err), _ -> err
           | _, (Error _ as err) -> err
           | Ok target, Ok default -> (
+              let target = unwrap_protocol_value target in
               match target.ty with
               | TRecord fields | TNamed_record { fields; nominal = false; _ } -> (
                   match find_field keyword fields with
@@ -813,6 +841,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
           | _, (Error _ as err), _ -> err
           | _, _, (Error _ as err) -> err
           | Ok target, Ok index, Ok default -> (
+              let target = unwrap_protocol_value target in
               match (target.ty, index.ty) with
               | TVector inner, TInt when Types.equal inner default.ty ->
                   Ok
@@ -985,6 +1014,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
         match compile_expr scope env target_form with
           | Error _ as err -> err
           | Ok target -> (
+              let target = unwrap_protocol_value target in
               if pair_forms = [] || List.length pair_forms mod 2 <> 0 then
                 match target.ty with
                 | TRecord _ | TNamed_record _ ->
@@ -1411,15 +1441,25 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
     in
       match arg_forms with
       | target_form :: FKeyword keyword :: fn_form :: extra_forms -> (
+          let with_context context = function
+            | Ok _ as result -> result
+            | Error (error : Error.t) ->
+                Error { error with message = error.message ^ " " ^ context }
+          in
           match
-            ( compile_expr scope env target_form,
-              compile_function_arg scope env fn_form,
-              compile_args_for scope env extra_forms )
+            ( compile_expr scope env target_form
+              |> with_context ("while compiling update target " ^ keyword),
+              compile_function_arg scope env fn_form
+              |> with_context ("while compiling updater for " ^ keyword),
+              compile_args_for scope env extra_forms
+              |> with_context ("while compiling update arguments for " ^ keyword)
+            )
           with
           | (Error _ as err), _, _ -> err
           | _, (Error _ as err), _ -> err
           | _, _, (Error _ as err) -> err
           | Ok target, Ok fn, Ok extra_args -> (
+            let target = unwrap_protocol_value target in
             let updater_row_type =
               match fn_form with
               | FSymbol name -> (
@@ -1441,12 +1481,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                           instantiate_updater param_tys ret extra_args
                         in
                         let param_tys, ret =
-                          if
-                            Types.is_dynamic field.ty
-                            &&
-                            match param_tys with
-                            | TRecord _ :: _ -> true
-                            | _ -> false
+                          if Types.is_dynamic field.ty
                           then
                             ( List.map dynamicize_unknown param_tys,
                               dynamicize_unknown ret )
@@ -1562,6 +1597,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
           | _, _, (Error _ as err), _ -> err
           | _, _, _, (Error _ as err) -> err
           | Ok target, Ok index, Ok fn, Ok extra_args -> (
+              let target = unwrap_protocol_value target in
               match (target.ty, index.ty) with
               | TVector inner, TInt -> (
                   match fn.ty with
