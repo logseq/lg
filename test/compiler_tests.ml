@@ -6606,6 +6606,35 @@ let test_doseq_infers_seqable_parameters () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_doseq_prefers_reducible_over_seqable () =
+  let source =
+    {|
+(type-record direct-values (items :array<int>))
+(def seq-calls (atom 0))
+(extend-type direct-values Seqable
+  (-seq [values]
+    (do
+      (swap! seq-calls inc)
+      (array-to-seq (:items values)))))
+(extend-type direct-values Reducible
+  (-reduce [_ f initial]
+    (f (f (f initial 1) 2) 3)))
+(def values (record direct-values (items (array 1 2 3))))
+(def total (atom 0))
+(doseq [value values]
+  (swap! total + value))
+(println (str (deref total) ":" (deref seq-calls)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "doseq_prefers_reducible_over_seqable" "6:0\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source
+    |> expect_ok)
+
 let test_for_supports_when_clauses () =
   let source =
     {|
@@ -14017,6 +14046,8 @@ let tests =
       test_batched_predicate_collection_core_functions_reject_bad_run_function
     );
     ("doseq infers seqable parameters", test_doseq_infers_seqable_parameters);
+    ( "doseq prefers reducible over seqable",
+      test_doseq_prefers_reducible_over_seqable );
     ("for supports when clauses", test_for_supports_when_clauses);
     ( "merge accepts dynamic map parameters",
       test_merge_accepts_dynamic_map_parameters );

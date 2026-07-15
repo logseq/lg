@@ -911,3 +911,40 @@
   (pps melange.ppx))
  (compile_flags -w -32-37)
  (libraries lg.runtime rrbvec))
+
+(rule
+ (target persistent_sorted_set_benchmark_jsoo.ml)
+ (deps
+  ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/array_ops.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/search.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/nodes.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/path.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/traversal.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/set.cljc
+  datascript/persistent_sorted_set/benchmark.cljc
+  ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   js
+   --compile-files
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/array_ops.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/search.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/nodes.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/path.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/traversal.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/set.cljc}
+   %{dep:datascript/persistent_sorted_set/benchmark.cljc}
+   -o
+   %{target})))
+
+(executable
+ (name persistent_sorted_set_benchmark_jsoo)
+ (modes js)
+ (modules persistent_sorted_set_benchmark_jsoo)
+ (flags
+  (:standard -w -32-37))
+ (libraries lg.runtime rrbvec))

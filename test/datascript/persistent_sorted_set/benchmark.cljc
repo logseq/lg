@@ -190,15 +190,9 @@
     0))
 
 (defn doseq-300k []
-  (let [result (atom 0)
-        _
-        (pset/set-reduce
-          set-300k
-          (fn [state value]
-            (let [_
-                  (reset! result (+ (deref result) value))]
-              state))
-          0)]
+  (let [result (atom 0)]
+    (doseq [value set-300k]
+      (reset! result (+ (deref result) value)))
     (deref result)))
 
 (defn reduce-300k []

@@ -720,24 +720,29 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   | Ok ({ ty = TFn ([ param_ty ], _); _ } as fn)
                   when Types.assignable ~policy:Host_boundary ~expected:param_ty
                          ~actual:inner ->
+                      let reducer =
+                        typed_ir (TFn ([ TUnit; inner ], TUnit))
+                          (Semantic_ir.Fun
+                             ( [ Semantic_ir.PUnit; Semantic_ir.PVar "item" ],
+                               Semantic_ir.Sequence
+                                 [
+                                   apply "ignore"
+                                     [
+                                       Semantic_ir.Apply
+                                         ( fn.semantic_expr,
+                                           [ Semantic_ir.Ident "item" ] );
+                                     ];
+                                   Semantic_ir.Unit;
+                                 ] ))
+                      in
+                      let initial = typed_ir TUnit Semantic_ir.Unit in
                       Ok
                         (typed_ir TUnit
                            (Semantic_ir.Let
                             ( [
                                 ( Semantic_ir.PUnit,
-                                    apply "Seq.iter"
-                                    [
-                                      Semantic_ir.Fun
-                                          ( [ Semantic_ir.PVar "item" ],
-                                            apply "ignore"
-                                            [
-                                              Semantic_ir.Apply
-                                                  ( fn.semantic_expr,
-                                                  [ Semantic_ir.Ident "item" ]
-                                                );
-                                            ] );
-                                      sequence;
-                                    ] );
+                                  Collection_capability.reduce_expr env reducer
+                                    initial collection sequence );
                               ],
                                 Semantic_ir.Unit )))
                   | Ok { ty = TFn _; _ } ->
