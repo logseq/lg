@@ -131,6 +131,73 @@ let create ~compile_expr ~dynamic_unpack =
                   | Error _ -> Error.error "apply expects a seqable value"
                   | Ok (inner, list_expr) -> (
                       match fn_form with
+                      | FSymbol ("concat" | "clojure.core/concat") ->
+                          let collection_name = "__lg_apply_concat_collection" in
+                          let collection =
+                            typed_ir inner (Semantic_ir.Ident collection_name)
+                          in
+                          let collect_fixed () =
+                            let rec collect sequences = function
+                              | [] -> Ok (List.rev sequences)
+                              | collection :: rest -> (
+                                  match
+                                    Collection_capability.to_seq_expr env
+                                      collection
+                                  with
+                                  | Error _ ->
+                                      Error.error
+                                        "apply concat expects collections"
+                                  | Ok (element_ty, sequence) ->
+                                      collect
+                                        ((element_ty, sequence) :: sequences)
+                                        rest)
+                            in
+                            collect [] fixed_args
+                          in
+                          (match
+                             ( collect_fixed (),
+                               Collection_capability.to_seq_expr env collection )
+                           with
+                          | (Error _ as error), _ -> error
+                          | _, (Error _ as error) -> error
+                          | Ok fixed_sequences, Ok (element_ty, sequence) ->
+                              if
+                                List.for_all
+                                  (fun (fixed_element_ty, _) ->
+                                    Types.assignable ~policy:Host_boundary
+                                      ~expected:element_ty
+                                      ~actual:fixed_element_ty)
+                                  fixed_sequences
+                              then
+                                let rest_sequences =
+                                  apply "List.map"
+                                    [
+                                      Semantic_ir.Fun
+                                        ( [
+                                            Semantic_ir.PVar collection_name;
+                                          ],
+                                          sequence );
+                                      list_expr;
+                                    ]
+                                in
+                                let sequences =
+                                  match fixed_sequences with
+                                  | [] -> rest_sequences
+                                  | _ ->
+                                      Semantic_ir.Infix
+                                        ( "@",
+                                          Semantic_ir.List
+                                            (List.map snd fixed_sequences),
+                                          rest_sequences )
+                                in
+                                Ok
+                                  (typed_ir (TSeq element_ty)
+                                     (apply
+                                        "Lg_runtime.Runtime_seq.concat"
+                                        [ sequences ]))
+                              else
+                                Error.error
+                                  "apply concat element types must match")
                       | FSymbol "str" ->
                           let value_name = "__lg_apply_str_value" in
                           let stringify_value =

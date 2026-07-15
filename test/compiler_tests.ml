@@ -8124,6 +8124,20 @@ let test_update_refines_empty_nested_vector_elements () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
+let test_apply_accepts_concat_as_a_core_function () =
+  let source =
+    {|
+(println (pr-str (apply concat [0] [[1 2] [3 4]])))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "apply_accepts_concat_as_a_core_function" "(0 1 2 3 4)\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
 let test_set_literals_accept_dynamic_elements () =
   let source =
     {|
@@ -12867,6 +12881,8 @@ let tests =
     ("reduce accepts open map entries", test_reduce_accepts_open_map_entries);
     ( "update refines empty nested vector elements",
       test_update_refines_empty_nested_vector_elements );
+    ( "apply accepts concat as a core function",
+      test_apply_accepts_concat_as_a_core_function );
     ( "set literals accept dynamic elements",
       test_set_literals_accept_dynamic_elements );
     ( "contains? infers generic membership for variable keys",
