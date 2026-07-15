@@ -29,7 +29,7 @@ let compile_args_for compile_expr scope env arg_forms =
   in
   loop [] arg_forms
 
-let create ~compile_expr =
+let create ~compile_expr ~dynamic_unpack =
   let compile_args_for = compile_args_for compile_expr in
   let collection_to_list_expr env collection =
     Collection_capability.to_seq_expr env collection
@@ -40,6 +40,70 @@ let create ~compile_expr =
   let compile_function_arg scope env = function
     | FSymbol name -> lookup_function scope env name
     | form -> compile_expr scope env form
+  in
+  let rec overloaded_projection expression index =
+    if index = 0 then apply "fst" [ expression ]
+    else overloaded_projection (apply "snd" [ expression ]) (index - 1)
+  in
+  let prepare_apply_argument env ~actual_ty ~expected_ty expression =
+    if Types.is_dynamic expected_ty then Ok expression
+    else if Types.is_dynamic actual_ty then dynamic_unpack env expected_ty expression
+    else if
+      Types.assignable ~policy:Host_boundary ~expected:expected_ty
+        ~actual:actual_ty
+    then Ok expression
+    else
+      Error.error
+        ("apply argument type mismatch: expected "
+        ^ Types.source_name expected_ty
+        ^ ", got " ^ Types.source_name actual_ty)
+  in
+  let compile_exact_apply env ~fn ~target ~fixed_args ~inner
+      ~parameter_tys ~return_ty =
+    let fixed_count = List.length fixed_args in
+    if fixed_count > List.length parameter_tys then None
+    else
+      let fixed_parameter_tys = List.filteri (fun index _ -> index < fixed_count) parameter_tys in
+      let remaining_parameter_tys = drop fixed_count parameter_tys in
+      let argument_names =
+        List.mapi
+          (fun index _ -> "__lg_apply_argument_" ^ string_of_int index)
+          remaining_parameter_tys
+      in
+      let rec prepare_fixed prepared expected arguments =
+        match (expected, arguments) with
+        | [], [] -> Ok (List.rev prepared)
+        | expected_ty :: expected, argument :: arguments ->
+            Result.bind
+              (prepare_apply_argument env ~actual_ty:argument.ty ~expected_ty
+                 argument.semantic_expr)
+              (fun expression ->
+                prepare_fixed (expression :: prepared) expected arguments)
+        | _ -> Error.error "internal apply argument mismatch"
+      in
+      let rec prepare_remaining prepared expected names =
+        match (expected, names) with
+        | [], [] -> Ok (List.rev prepared)
+        | expected_ty :: expected, name :: names ->
+            Result.bind
+              (prepare_apply_argument env ~actual_ty:inner ~expected_ty
+                 (Semantic_ir.Ident name))
+              (fun expression ->
+                prepare_remaining (expression :: prepared) expected names)
+        | _ -> Error.error "internal apply argument mismatch"
+      in
+      Some
+        (Result.bind
+           (prepare_fixed [] fixed_parameter_tys fixed_args)
+           (fun fixed_arguments ->
+             Result.map
+               (fun remaining_arguments ->
+                 ( Semantic_ir.PList
+                     (List.map (fun name -> Semantic_ir.PVar name) argument_names),
+                   typed_ir return_ty
+                     (Semantic_ir.Apply
+                        (target fn.semantic_expr, fixed_arguments @ remaining_arguments)) ))
+               (prepare_remaining [] remaining_parameter_tys argument_names)))
   in
     let compile_apply scope env arg_forms =
       let rec split_last acc = function
@@ -147,7 +211,75 @@ let create ~compile_expr =
                                   [ fn.semantic_expr; Semantic_ir.Int 0; values_expr ]))
                           | TFn ([ TInt; TInt ], TInt) ->
                               Error.error "apply currently supports int binary reducers"
-                          | TFn _ -> Error.error "apply currently supports int binary reducers"
+                          | TFn (parameter_tys, return_ty) -> (
+                              match
+                                compile_exact_apply env ~fn
+                                  ~target:(fun expression -> expression)
+                                  ~fixed_args ~inner ~parameter_tys
+                                  ~return_ty
+                              with
+                              | None -> Error.error "apply has too many fixed arguments"
+                              | Some result ->
+                                  Result.map
+                                    (fun (pattern, result) ->
+                                      typed_ir return_ty
+                                        (Semantic_ir.Match
+                                           ( list_expr,
+                                             [ (pattern, result.semantic_expr);
+                                               ( Semantic_ir.PAny,
+                                                 apply "invalid_arg"
+                                                   [ Semantic_ir.String
+                                                       "wrong apply argument count" ] );
+                                             ] )))
+                                    result)
+                          | TOverloaded_fn arities ->
+                              let compiled =
+                                arities
+                                |> List.mapi (fun index arity ->
+                                       match arity.rest_param with
+                                       | Some _ -> None
+                                       | None ->
+                                           compile_exact_apply env ~fn
+                                             ~target:(fun expression ->
+                                               overloaded_projection expression index)
+                                             ~fixed_args ~inner
+                                             ~parameter_tys:arity.fixed_params
+                                             ~return_ty:arity.return_ty)
+                                |> List.filter_map Fun.id
+                              in
+                              let rec collect cases return_ty = function
+                                | [] -> Ok (List.rev cases, return_ty)
+                                | result :: rest -> (
+                                    match result with
+                                    | Error _ as error -> error
+                                    | Ok (pattern, expression) -> (
+                                        match return_ty with
+                                        | None -> collect [ (pattern, expression) ] (Some expression.ty) rest
+                                        | Some ty when Types.equal ty expression.ty ->
+                                            collect ((pattern, expression) :: cases) return_ty rest
+                                        | Some _ ->
+                                            Error.error
+                                              "apply overloads must return the same type"))
+                              in
+                              Result.bind (collect [] None compiled)
+                                (fun (cases, return_ty) ->
+                                  match (cases, return_ty) with
+                                  | [], _ -> Error.error "apply has no matching function arity"
+                                  | _, None -> Error.error "apply has no matching function arity"
+                                  | cases, Some return_ty ->
+                                      Ok
+                                        (typed_ir return_ty
+                                           (Semantic_ir.Match
+                                              ( list_expr,
+                                                List.map
+                                                  (fun (pattern, expression) ->
+                                                    (pattern, expression.semantic_expr))
+                                                  cases
+                                                @ [ ( Semantic_ir.PAny,
+                                                      apply "invalid_arg"
+                                                        [ Semantic_ir.String
+                                                            "wrong apply argument count" ] );
+                                                  ] ))))
                           | _ -> Error.error "apply expects a function"))))))
       | _ -> Error.error "apply expects function and collection"
     

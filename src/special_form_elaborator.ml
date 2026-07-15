@@ -83,32 +83,29 @@ let create ~compile_expr =
                             merge_branch_types ty expr.ty))
                       (Some first_expr.ty) expressions
                   in
+                  let rec compile_dynamic values = function
+                    | [] ->
+                        Ok
+                          (typed_ir (Types.dynamic_constraint TUnknown)
+                             (Semantic_ir.Apply
+                                ( Semantic_ir.Ident
+                                    "Lg_runtime.Runtime_dynamic.vector",
+                                  [ Semantic_ir.Apply
+                                      ( Semantic_ir.Ident "Rrbvec.of_list",
+                                        [ Semantic_ir.List (List.rev values) ] );
+                                  ] )))
+                    | form :: forms -> (
+                        match
+                          compile_expr scope env
+                            (FList [ FSymbol "__lg_dynamic"; form ])
+                        with
+                        | Error _ as error -> error
+                        | Ok value ->
+                            compile_dynamic (value.semantic_expr :: values) forms)
+                  in
                   (match element_ty with
-                  | None ->
-                      let rec compile_dynamic values = function
-                        | [] ->
-                            Ok
-                              (typed_ir (Types.dynamic_constraint TUnknown)
-                                 (Semantic_ir.Apply
-                                    ( Semantic_ir.Ident
-                                        "Lg_runtime.Runtime_dynamic.vector",
-                                      [ Semantic_ir.Apply
-                                          ( Semantic_ir.Ident
-                                              "Rrbvec.of_list",
-                                            [ Semantic_ir.List
-                                                (List.rev values) ] );
-                                      ] )))
-                        | form :: forms -> (
-                            match
-                              compile_expr scope env
-                                (FList [ FSymbol "__lg_dynamic"; form ])
-                            with
-                            | Error _ as error -> error
-                            | Ok value ->
-                                compile_dynamic
-                                  (value.semantic_expr :: values)
-                                  forms)
-                      in
+                  | None -> compile_dynamic [] forms
+                  | Some element_ty when Types.is_dynamic element_ty ->
                       compile_dynamic [] forms
                   | Some element_ty
                     when not
@@ -1084,10 +1081,9 @@ let create ~compile_expr =
           | Ok clause -> parse_catches (clause :: acc) rest)
     in
     let compatible_try_type body_ty handlers_ty =
-      match (body_ty, handlers_ty) with
-      | TUnknown, ty | ty, TUnknown -> Ok ty
-      | _ when branch_types_compatible body_ty handlers_ty -> Ok body_ty
-      | _ -> Error.error "try body and handlers must have the same type"
+      match merge_branch_types body_ty handlers_ty with
+      | Some ty -> Ok ty
+      | None -> Error.error "try body and handlers must have the same type"
     in
     match split_body [] forms with
     | Error _ as err -> err
@@ -1116,7 +1112,18 @@ let create ~compile_expr =
                 with
                 | _, (Error _ as err) -> err
                 | Semantic_ir.Match_guarded (_, cases), Ok ty ->
-                    Ok (typed_ir ty (Semantic_ir.Try (body.semantic_expr, cases)))
+                    let body_expression =
+                      coerce_expression_to_type ty body.ty body.semantic_expr
+                    in
+                    let cases =
+                      List.map
+                        (fun (pattern, guard, expression) ->
+                          ( pattern,
+                            guard,
+                            coerce_expression_to_type ty handlers.ty expression ))
+                        cases
+                    in
+                    Ok (typed_ir ty (Semantic_ir.Try (body_expression, cases)))
                 | _, Ok _ -> Error.error "internal error: malformed try handlers")))
   
   and loop_branch_type left right =
@@ -1139,7 +1146,12 @@ let create ~compile_expr =
             match (expected, actual) with
             | [], [] -> Ok ()
             | expected_ty :: expected, arg :: actual ->
-                if branch_types_compatible expected_ty arg.ty then
+                if
+                  Types.assignable ~policy:Host_boundary
+                    ~expected:expected_ty ~actual:arg.ty
+                  || Types.defer_to_ocaml ~expected:expected_ty
+                       ~actual:arg.ty
+                then
                   validate (index + 1) expected actual
                 else
                   Error.error

@@ -43,6 +43,33 @@ let compile_args_for compile_expr scope env arg_forms =
 
 let create ~compile_expr =
   let compile_args_for = compile_args_for compile_expr in
+  let pack_dynamic_scalar value =
+    if
+      Types.is_dynamic value.ty
+      || Types.equal value.ty TUnknown
+      || match value.ty with TVar _ -> true | _ -> false
+    then Ok value.semantic_expr
+    else
+      let constructor =
+        match value.ty with
+        | TInt -> Some "int"
+        | TFloat -> Some "float"
+        | TChar -> Some "char"
+        | TString -> Some "string"
+        | TSymbol -> Some "symbol"
+        | TKeyword -> Some "keyword"
+        | TBool -> Some "bool"
+        | _ -> None
+      in
+      match constructor with
+      | Some constructor ->
+          Ok
+            (Semantic_ir.Apply
+               ( Semantic_ir.Ident
+                   ("Lg_runtime.Runtime_dynamic." ^ constructor),
+                 [ value.semantic_expr ] ))
+      | None -> Error.error "value cannot cross a dynamic boundary"
+  in
   let inferred_field_type env keyword =
     let candidates =
       Env.fold
@@ -71,14 +98,38 @@ let create ~compile_expr =
       match lookup_deftype_method scope env record method_name (List.length args) with
       | Error _ -> None
       | Ok binding ->
-          let return_ty =
-            match binding.ty with TFn (_, return_ty) -> return_ty | _ -> TUnknown
-          in
-          Some
-            (typed_ir return_ty
-               (Semantic_ir.Apply
-                  ( Semantic_ir.Ident binding.ocaml_name,
-                    List.map (fun arg -> arg.semantic_expr) args )))
+          (match binding.ty with
+          | TFn (parameter_tys, return_ty)
+            when List.length parameter_tys = List.length args ->
+              let rec prepare prepared parameter_tys args =
+                match (parameter_tys, args) with
+                | [], [] -> Some (List.rev prepared)
+                | expected :: parameter_tys, argument :: args ->
+                    let expression =
+                      if
+                        (Types.equal expected TUnknown
+                        || match expected with TVar _ -> true | _ -> false)
+                        && Types.equal argument.ty TNil
+                      then Some argument.semantic_expr
+                      else if
+                        Types.is_dynamic expected
+                        || Types.equal expected TUnknown
+                        || match expected with TVar _ -> true | _ -> false
+                      then
+                        pack_plain_dynamic_value argument
+                      else Some argument.semantic_expr
+                    in
+                    Option.bind expression (fun expression ->
+                        prepare (expression :: prepared) parameter_tys args)
+                | _ -> None
+              in
+              Option.map
+                (fun arguments ->
+                  typed_ir return_ty
+                    (Semantic_ir.Apply
+                       (Semantic_ir.Ident binding.ocaml_name, arguments)))
+                (prepare [] parameter_tys args)
+          | _ -> None)
     in
     let compile_list scope env forms =
       match forms with
@@ -89,16 +140,38 @@ let create ~compile_expr =
           | Ok first_expr ->
               let rec loop acc = function
                 | [] ->
-                    let values =
-                      List.rev acc |> List.map (fun expr -> expr.semantic_expr)
-                    in
-                    Ok (typed_ir (TList first_expr.ty) (Semantic_ir.List values))
+                    let values = List.rev acc in
+                    if
+                      List.for_all
+                        (fun value -> Types.equal first_expr.ty value.ty)
+                        values
+                    then
+                      Ok
+                        (typed_ir (TList first_expr.ty)
+                           (Semantic_ir.List
+                              (List.map
+                                 (fun value -> value.semantic_expr)
+                                 values)))
+                    else
+                      let rec pack packed = function
+                        | [] -> Ok (List.rev packed)
+                        | value :: rest -> (
+                            match pack_plain_dynamic_value value with
+                            | None ->
+                                Error.error
+                                  "list element cannot cross a dynamic boundary"
+                            | Some value -> pack (value :: packed) rest)
+                      in
+                      Result.map
+                        (fun values ->
+                          typed_ir (Types.dynamic_constraint TUnknown)
+                            (apply "Lg_runtime.Runtime_dynamic.list"
+                               [ Semantic_ir.List values ]))
+                        (pack [] values)
                 | form :: rest -> (
                     match compile_expr scope env form with
                     | Error _ as err -> err
-                    | Ok expr ->
-                        if Types.equal first_expr.ty expr.ty then loop (expr :: acc) rest
-                        else Error.error "list elements must all have the same type")
+                    | Ok expr -> loop (expr :: acc) rest)
               in
               loop [ first_expr ] rest)
     
@@ -484,7 +557,10 @@ let create ~compile_expr =
                         (typed_ir (TNullable TUnknown)
                            (apply "Lg_runtime.Runtime_map.get_option"
                               [ target.semantic_expr; index.semantic_expr ]))
-                  | _ -> Error.error "get key must be a keyword")))
+                  | _ ->
+                      Error.error
+                        ("get key type " ^ source_name index.ty
+                       ^ " is not supported for " ^ source_name target.ty))))
       | [ target_form; FKeyword keyword; default_form ] -> (
           match
             (compile_expr scope env target_form, compile_expr scope env default_form)
@@ -619,7 +695,10 @@ let create ~compile_expr =
                                   index.semantic_expr;
                                   default.semantic_expr;
                                 ]))
-                  | _ -> Error.error "get key must be a keyword")))
+                  | _ ->
+                      Error.error
+                        ("get key type " ^ source_name index.ty
+                       ^ " is not supported for " ^ source_name target.ty))))
       | _ -> Error.error "get expects 2 or 3 arguments"
 
     and compile_find scope env arg_forms =
@@ -794,6 +873,26 @@ let create ~compile_expr =
                                [ map; key.semantic_expr ])
                            target.semantic_expr keys))
                     (compile_args_for scope env key_forms)
+              | target_ty when Types.is_dynamic target_ty ->
+                  Result.bind
+                    (compile_args_for scope env key_forms)
+                    (fun keys ->
+                      let rec pack packed = function
+                        | [] -> Ok (List.rev packed)
+                        | key :: rest -> (
+                            match pack_dynamic_scalar key with
+                            | Error _ as error -> error
+                            | Ok key -> pack (key :: packed) rest)
+                      in
+                      Result.map
+                        (fun keys ->
+                          typed_ir target.ty
+                            (List.fold_left
+                               (fun map key ->
+                                 apply "Lg_runtime.Runtime_dynamic.dissoc"
+                                   [ map; key ])
+                               target.semantic_expr keys))
+                        (pack [] keys))
               | _ -> Error.error "dissoc expects a map"))
       | _ -> Error.error "dissoc expects map followed by keywords"
     
@@ -970,6 +1069,15 @@ let create ~compile_expr =
                     ( Semantic_ir.Ident "Lg_runtime.Core_set.String_set.mem",
                       [ value.semantic_expr; target.semantic_expr ] )))
         | TMap_keys, _ -> Error.error "contains? map key must be a keyword"
+        | target_ty, _ when Types.is_dynamic target_ty ->
+            Result.map
+              (fun value ->
+                typed_ir TBool
+                  (Semantic_ir.Apply
+                     ( Semantic_ir.Ident
+                         "Lg_runtime.Runtime_dynamic.contains",
+                       [ target.semantic_expr; value ] )))
+              (pack_dynamic_scalar value)
         | target_ty, _ -> (
             match Types.dynamic_map_types target_ty with
             | Some (key_ty, _)

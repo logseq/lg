@@ -95,6 +95,10 @@ let rec merge_branch_types left right =
     | TNullable inner, ty | ty, TNullable inner ->
         Option.map (fun merged -> TNullable merged)
           (merge_branch_types inner ty)
+    | left, right
+      when plain_dynamic_compatible_type left
+           && plain_dynamic_compatible_type right ->
+        Some (Types.dynamic_constraint TUnknown)
     | TList TUnknown, TList inner | TList inner, TList TUnknown ->
         Some (TList inner)
     | TSeq TUnknown, TSeq inner | TSeq inner, TSeq TUnknown ->
@@ -149,6 +153,7 @@ let rec pack_plain_dynamic_value value =
   in
   match value.ty with
   | ty when Types.is_dynamic ty -> Some value.semantic_expr
+  | TUnknown | TVar _ -> Some value.semantic_expr
   | TInt -> Some (runtime "int" [ value.semantic_expr ])
   | TFloat -> Some (runtime "float" [ value.semantic_expr ])
   | TChar -> Some (runtime "char" [ value.semantic_expr ])

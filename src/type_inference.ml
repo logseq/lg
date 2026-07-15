@@ -661,7 +661,7 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params body_for
             | "map?" | "fn?" | "coll?" );
           FSymbol value ] ->
         constrain_symbol (Types.dynamic_constraint TUnknown) params value
-    | FList [ FSymbol "name"; FSymbol value ] ->
+    | FList [ FSymbol ("name" | "hash"); FSymbol value ] ->
         constrain_symbol (Types.dynamic_constraint TUnknown) params value
     | FList [ FSymbol "int"; FSymbol value ] ->
         constrain_symbol (Types.dynamic_constraint TUnknown) params value
@@ -834,7 +834,7 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params body_for
         match infer_expected TInt params left with
         | Error _ as err -> err
         | Ok params -> infer_expected TInt params right)
-    | FList (FSymbol ("<" | "<=" | ">" | ">=") :: args) ->
+    | FList (FSymbol ("==" | "<" | "<=" | ">" | ">=") :: args) ->
         let expected_ty =
           if List.exists (fun arg -> Types.equal (numeric_form_type params arg) TFloat) args
           then TFloat

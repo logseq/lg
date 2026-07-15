@@ -12,6 +12,16 @@ type t = {
     string -> Env.t -> Ast.form list -> (typed_expr list, Error.t) result;
 }
 
+let java_exception_constructors =
+  [ "Exception.";
+    "IllegalArgumentException.";
+    "IndexOutOfBoundsException.";
+    "UnsupportedOperationException.";
+  ]
+
+let is_java_exception_constructor name =
+  List.mem name java_exception_constructors
+
 let array_element_type = function
   | TArray element_ty -> Some element_ty
   | TOcaml "array" -> Some TUnknown
@@ -1373,7 +1383,7 @@ let create ~compile_expr =
     Sequence_call_elaborator.create ~compile_expr
   in
   let functions : Function_combinator_elaborator.t =
-    Function_combinator_elaborator.create ~compile_expr
+    Function_combinator_elaborator.create ~compile_expr ~dynamic_unpack
   in
   let comparisons : Comparison_set_elaborator.t =
     Comparison_set_elaborator.create ~compile_expr
@@ -2231,12 +2241,7 @@ let create ~compile_expr =
             | Ok _ -> Error.error (map_constructor ^ " expects 1 argument")))
     | constructor_name
       when String.ends_with ~suffix:"." constructor_name
-           && not
-                (List.mem constructor_name
-                   [ "Exception.";
-                     "IllegalArgumentException.";
-                     "UnsupportedOperationException.";
-                   ]) -> (
+           && not (is_java_exception_constructor constructor_name) -> (
         let type_name =
           String.sub constructor_name 0 (String.length constructor_name - 1)
         in
@@ -2290,16 +2295,23 @@ let create ~compile_expr =
                   | [], [] -> Ok (List.rev values)
                   | (field : field) :: fields, arg :: args ->
                       let packed =
-                        if
-                          match field.ty with TRef _ -> true | _ -> false
-                        then
+                        match field.ty with
+                        | TRef inner when Types.is_dynamic inner ->
+                            Result.map
+                              (fun value ->
+                                Semantic_ir.Apply
+                                  (Semantic_ir.Ident "ref", [ value ]))
+                              (pack_dynamic_value env inner arg)
+                        | TRef _ ->
                           Ok
                             (Semantic_ir.Apply
                                ( Semantic_ir.Ident "ref",
                                  [ arg.semantic_expr ] ))
-                        else if has_capability_constraint field.ty then
+                        | _ when Types.is_dynamic field.ty ->
+                          pack_dynamic_value env field.ty arg
+                        | _ when has_capability_constraint field.ty ->
                           pack_constrained_value env field.ty arg
-                        else
+                        | _ ->
                           match field.ty with
                           | ( TOcaml_app
                                 ("Lg_runtime.Runtime_map.t", [ _; _ ])
@@ -2454,6 +2466,27 @@ let create ~compile_expr =
     | ".valAt" | "-lookup" -> (
         match compile_args () with
         | Error _ as err -> err
+        | Ok [ target; key ] when Types.is_dynamic target.ty ->
+            Result.map
+              (fun key ->
+                typed_ir target.ty
+                  (Semantic_ir.Apply
+                     ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.get",
+                       [ target.semantic_expr; key ] )))
+              (pack_dynamic_value env target.ty key)
+        | Ok [ target; key; default ] when Types.is_dynamic target.ty -> (
+            match
+              ( pack_dynamic_value env target.ty key,
+                pack_dynamic_value env target.ty default )
+            with
+            | (Error _ as error), _ | _, (Error _ as error) -> error
+            | Ok key, Ok default ->
+                Ok
+                  (typed_ir target.ty
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident
+                            "Lg_runtime.Runtime_dynamic.get_default",
+                          [ target.semantic_expr; key; default ] ))))
         | Ok [ target; key ] ->
             Ok
               (typed_ir (TNullable TUnknown)
@@ -2539,11 +2572,15 @@ let create ~compile_expr =
                           [ message.semantic_expr; data ] ))))
         | Ok [ _; _ ] -> Error.error "ex-info message must be a string"
         | Ok _ -> Error.error "ex-info expects 2 arguments")
-    | ( "Exception."
-      | "IllegalArgumentException."
-      | "UnsupportedOperationException." ) -> (
+    | name when is_java_exception_constructor name -> (
         match compile_args () with
         | Error _ as error -> error
+        | Ok [] ->
+            Ok
+              (typed_ir (TOcaml "exn")
+                 (Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Lg_runtime.Runtime_exception.create",
+                      [ Semantic_ir.String name ] )))
         | Ok [ message ] when Types.equal message.ty TString ->
             Ok
               (typed_ir (TOcaml "exn")
@@ -3324,10 +3361,45 @@ let create ~compile_expr =
         | _ ->
             Error.error
               (swap_name ^ " expects a reference, function, and optional arguments"))
-    | "=" | "not=" | "<" | "<=" | ">" | ">=" -> (
+    | "=" | "==" | "not=" | "<" | "<=" | ">" | ">=" -> (
         match compile_args () with
         | Error _ as err -> err
-        | Ok args -> Core_compare.compile name args)
+        | Ok args ->
+            let numeric_ty =
+              if name = "==" && List.exists (fun arg -> Types.equal arg.ty TFloat) args
+              then Some TFloat
+              else
+                List.find_map
+                  (fun arg ->
+                    if Types.equal arg.ty TInt || Types.equal arg.ty TFloat then
+                      Some arg.ty
+                    else None)
+                  args
+            in
+            let rec adapt adapted = function
+              | [] -> Ok (List.rev adapted)
+              | arg :: rest -> (
+                  match numeric_ty with
+                  | Some expected when Types.is_dynamic arg.ty -> (
+                      match dynamic_unpack env expected arg.semantic_expr with
+                      | Error _ as error -> error
+                      | Ok semantic_expr ->
+                          adapt ({ arg with ty = expected; semantic_expr } :: adapted) rest)
+                  | Some TFloat when name = "==" && Types.equal arg.ty TInt ->
+                      adapt
+                        ({ arg with
+                           ty = TFloat;
+                           semantic_expr =
+                             Semantic_ir.Apply
+                               ( Semantic_ir.Ident "float_of_int",
+                                 [ arg.semantic_expr ] );
+                         }
+                        :: adapted)
+                        rest
+                  | _ -> adapt (arg :: adapted) rest)
+            in
+            Result.bind (adapt [] args)
+              (Core_compare.compile (if name = "==" then "=" else name)))
     | "not" | "nil?" | "some?" | "true?" | "false?" | "int?" | "number?"
     | "string?" | "keyword?" | "boolean?" | "vector?" | "list?" | "seq?" | "set?"
     | "map?" | "fn?" | "coll?" | "associative?" | "indexed?" | "seqable?" | "counted?"
@@ -3535,6 +3607,19 @@ let create ~compile_expr =
                       [ left.semantic_expr; right.semantic_expr ] )))
         | Ok [ _; _ ] -> Error.error (name ^ " expects int arguments")
         | Ok _ -> Error.error (name ^ " expects 2 arguments"))
+    | "hash" -> (
+        match compile_args () with
+        | Error _ as error -> error
+        | Ok [ value ] ->
+            let dynamic_ty = Types.dynamic_constraint TUnknown in
+            Result.map
+              (fun value ->
+                typed_ir TInt
+                  (Semantic_ir.Apply
+                     ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.hash",
+                       [ value ] )))
+              (pack_dynamic_value env dynamic_ty value)
+        | Ok _ -> Error.error "hash expects 1 argument")
     | "pr-str" -> (
         match compile_args () with
         | Error _ as err -> err
@@ -3723,6 +3808,13 @@ let create ~compile_expr =
   and compile_int_unary_call scope env name build_code arg_forms =
     match compile_args_for scope env arg_forms with
     | Error _ as err -> err
+    | Ok [ arg ] when Types.is_dynamic arg.ty -> (
+        match dynamic_unpack env TInt arg.semantic_expr with
+        | Error _ as error -> error
+        | Ok semantic_expr ->
+            Core_int.compile_unary name
+              [ { arg with ty = TInt; semantic_expr } ]
+              build_code)
     | Ok args -> Core_int.compile_unary name args build_code
 
   and compile_boolean_call scope env name arg_forms =
@@ -4340,6 +4432,11 @@ let create ~compile_expr =
                         if has_capability_constraint expected then
                           pack_constrained_value env expected argument
                         else if
+                          Types.is_dynamic expected
+                          && not (Types.is_dynamic argument.ty)
+                        then
+                          pack_dynamic_value env expected argument
+                        else if
                           expects_dynamic_value expected
                           && has_capability_constraint argument.ty
                         then
@@ -4462,6 +4559,10 @@ let create ~compile_expr =
                                       | _ -> false) ->
                                 dynamic_row_argument env record.type_name
                                   record.fields arg
+                            | _
+                              when Types.is_dynamic expected_ty
+                                   && not (Types.is_dynamic arg.ty) ->
+                                pack_dynamic_value env expected_ty arg
                             | _
                               when Types.is_dynamic arg.ty
                                    && not
@@ -4682,6 +4783,25 @@ let create ~compile_expr =
                 | Some _ ->
                     Error.error
                       "reduced callback value must match the function result")))
+            | ty when Types.is_dynamic ty ->
+                let dynamic_ty = Types.dynamic_constraint TUnknown in
+                let rec pack_arguments packed = function
+                  | [] -> Ok (List.rev packed)
+                  | argument :: rest -> (
+                      match pack_dynamic_value env dynamic_ty argument with
+                      | Error _ as error -> error
+                      | Ok argument ->
+                          pack_arguments (argument :: packed) rest)
+                in
+                Result.map
+                  (fun arguments ->
+                    typed_ir dynamic_ty
+                      (Semantic_ir.Apply
+                         ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.call",
+                           [ Semantic_ir.Ident fn.ocaml_name;
+                             Semantic_ir.List arguments;
+                           ] )))
+                  (pack_arguments [] args)
             | TSet element_ty -> (
                 match args with
                 | [ arg ] when Types.same_shape element_ty arg.ty ->

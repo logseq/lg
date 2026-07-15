@@ -908,22 +908,22 @@ let create ~compile_expr =
                                       { init with ty = nullable_result }
                                       collection sequence)))
                       | TFn ([ acc_ty; item_ty ], ret)
-                        when Expression_support.branch_types_compatible acc_ty
-                               init.ty
+                        when Types.assignable ~policy:Host_boundary
+                               ~expected:acc_ty ~actual:init.ty
                              && (Types.equal item_ty inner
                                 || Types.equal inner TUnknown
                                 || Types.assignable ~policy:Host_boundary
                                      ~expected:item_ty ~actual:inner)
-                             && Expression_support.branch_types_compatible ret
-                                  init.ty
+                             && Types.assignable ~policy:Host_boundary
+                                  ~expected:init.ty ~actual:ret
                              && Option.is_none (Types.reduced_element ret) ->
                           Ok
                             (typed_ir init.ty
                                (Collection_capability.reduce_expr env fn init
                                   collection sequence))
                       | TFn ([ acc_ty; item_ty ], ret)
-                        when Expression_support.branch_types_compatible acc_ty
-                               init.ty
+                        when Types.assignable ~policy:Host_boundary
+                               ~expected:acc_ty ~actual:init.ty
                              && (Types.equal item_ty inner
                                 || Types.equal inner TUnknown
                                 || Types.assignable ~policy:Host_boundary
@@ -931,24 +931,24 @@ let create ~compile_expr =
                              && (match Types.reduced_element ret with
                                 | Some (TNullable _) -> false
                                 | Some reduced_ty ->
-                                    Expression_support.branch_types_compatible
-                                      reduced_ty init.ty
+                                    Types.assignable ~policy:Host_boundary
+                                      ~expected:init.ty ~actual:reduced_ty
                                 | None -> false) ->
                           Ok
                             (typed_ir init.ty
                                (Collection_capability.reduce_expr env
                                   ~short_circuit:true fn init collection sequence))
                       | TFn ([ acc_ty; item_ty ], ret)
-                        when Expression_support.branch_types_compatible acc_ty
-                               init.ty
+                        when Types.assignable ~policy:Host_boundary
+                               ~expected:acc_ty ~actual:init.ty
                              && (Types.equal item_ty inner
                                 || Types.equal inner TUnknown
                                 || Types.assignable ~policy:Host_boundary
                                      ~expected:item_ty ~actual:inner) -> (
                           match Types.reduced_element ret with
                           | Some (TNullable result_ty)
-                            when Expression_support.branch_types_compatible
-                                   result_ty init.ty ->
+                            when Types.assignable ~policy:Host_boundary
+                                   ~expected:init.ty ~actual:result_ty ->
                               let nullable_init = TNullable init.ty in
                               let accumulator = Semantic_ir.Ident "accumulator" in
                               let item = Semantic_ir.Ident "item" in

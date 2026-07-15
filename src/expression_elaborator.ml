@@ -26,6 +26,7 @@ type prepared_multi_arity_fn = {
 let some_thread_counter = ref 0
 let condp_counter = ref 0
 let callable_set_counter = ref 0
+let dynamic_case_counter = ref 0
 
 let rec compile_expr scope (env : Env.t) form =
   match compile_expr_unlocated scope env form with
@@ -363,7 +364,58 @@ and compile_case scope env target clauses =
     | constant :: result :: rest ->
         pairs (result :: pattern constant :: acc) rest
   in
-  compile_match scope env target (pairs [] clauses)
+  match compile_expr scope env target with
+  | Error _ as error -> error
+  | Ok target_expression when Types.is_dynamic target_expression.ty ->
+      incr dynamic_case_counter;
+      let target_name =
+        "__lg_dynamic_case_target_" ^ string_of_int !dynamic_case_counter
+      in
+      let condition constant =
+        let constants = match constant with FList forms -> forms | form -> [ form ] in
+        match constants with
+        | [] -> FBool false
+        | first :: rest ->
+            List.fold_left
+              (fun condition constant ->
+                FList
+                  [ FSymbol "or";
+                    condition;
+                    FList
+                      [ FSymbol "=";
+                        FSymbol target_name;
+                        constant;
+                      ];
+                  ])
+              (FList [ FSymbol "="; FSymbol target_name; first ])
+              rest
+      in
+      let rec expand = function
+        | [] ->
+            FList
+              [ FSymbol "throw";
+                FList
+                  [ FSymbol "ex-info";
+                    FString "No matching clause";
+                    FMap [];
+                  ];
+              ]
+        | [ default ] -> default
+        | constant :: result :: rest ->
+            FList
+              [ FSymbol "if";
+                condition constant;
+                result;
+                expand rest;
+              ]
+      in
+      compile_expr scope env
+        (FList
+           [ FSymbol "let";
+             FVector [ FSymbol target_name; target ];
+             expand clauses;
+           ])
+  | Ok _ -> compile_match scope env target (pairs [] clauses)
 
 and compile_doseq scope env bindings body_forms =
   let rec expand = function

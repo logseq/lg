@@ -211,7 +211,7 @@ let rec compile scope env next_type = function
                        | Some ("^boolean" | "^Boolean") -> ("bool", [])
                        | Some ("^double" | "^float") -> ("float", [])
                        | Some "^String" -> ("string", [])
-                       | _ -> (parameter, [ parameter ])
+                       | _ -> ("dynamic", [])
                      in
                      let field_type =
                        if mutable_field then "ref<" ^ field_type ^ ">"

@@ -1233,6 +1233,7 @@ let test_compiler_phases_have_explicit_boundaries () =
           let operations =
             Lg.Function_combinator_elaborator.create
               ~compile_expr:Lg.Expression_elaborator.compile_expr
+              ~dynamic_unpack:(fun _ _ expression -> Ok expression)
           in
           operations.compile_identity ""
             Lg.Compiler_environment.empty [ Lg.Ast.FInt 1 ]
@@ -4179,6 +4180,19 @@ let test_deftype_fields_accept_clojure_primitive_hints () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_deftype_unhinted_fields_preserve_dynamic_values () =
+  let source =
+    {|
+(deftype Box [value])
+(defn box-hash [^Box box]
+  (hash (.-value box)))
+(println (str (box-hash (Box. 42)) ":" (box-hash (Box. "abc"))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "deftype_unhinted_fields_preserve_dynamic_values"
+    "1871679806:74834163\n" ocaml_source
+
 let test_deftype_mutable_fields_support_set_bang () =
   let source =
     {|
@@ -4226,6 +4240,19 @@ let test_java_exception_constructors_map_to_runtime_exceptions () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "java_exception_constructors_map_to_runtime_exceptions"
+    "caught\n" ocaml_source
+
+let test_java_exception_constructors_support_empty_messages () =
+  let source =
+    {|
+(println
+  (try
+    (throw (IndexOutOfBoundsException.))
+    (catch _ "caught")))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "java_exception_constructors_support_empty_messages"
     "caught\n" ocaml_source
 
 let test_clojure_map_entry_compiles_as_two_element_vector () =
@@ -4891,9 +4918,10 @@ let test_contains_rejects_vector_non_int_indexes () =
   Lg.Compiler.compile_string {|(def x (contains? [1 2] "0"))|}
   |> expect_error "contains? vector index must be int"
 
-let test_if_rejects_branch_type_mismatch () =
-  Lg.Compiler.compile_string {|(def x (if true 1 "one"))|}
-  |> expect_error "if branches must have same type"
+let test_if_supports_mixed_branch_types () =
+  let source = {|(println (pr-str (if true 1 "one")))|} in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "if_supports_mixed_branch_types" "1\n" ocaml_source
 
 let test_conditional_forms_work () =
   let source =
@@ -4912,9 +4940,11 @@ let test_conditional_forms_work () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "conditional_forms_work" "when-fired\nopen:ready\n" ocaml_source
 
-let test_if_not_rejects_branch_type_mismatch () =
-  Lg.Compiler.compile_string {|(def x (if-not true 1 "one"))|}
-  |> expect_error "if-not branches must have same type"
+let test_if_not_supports_mixed_branch_types () =
+  let source = {|(println (pr-str (if-not true 1 "one")))|} in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "if_not_supports_mixed_branch_types" "\"one\"\n"
+    ocaml_source
 
 let test_cond_returns_nil_without_else () =
   let ocaml_source =
@@ -4923,9 +4953,11 @@ let test_cond_returns_nil_without_else () =
   in
   assert_ocaml_runs "cond_returns_nil_without_else" "true\n" ocaml_source
 
-let test_cond_rejects_branch_type_mismatch () =
-  Lg.Compiler.compile_string {|(def x (cond false 1 :else "one"))|}
-  |> expect_error "cond branches must have same type"
+let test_cond_supports_mixed_branch_types () =
+  let source = {|(println (pr-str (cond false 1 :else "one")))|} in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "cond_supports_mixed_branch_types" "\"one\"\n"
+    ocaml_source
 
 let test_cond_accepts_clojure_truthy_tests () =
   let ocaml_source =
@@ -5049,6 +5081,45 @@ let test_hash_combine_matches_clojure_32_bit_overflow () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "hash_combine_matches_clojure_32_bit_overflow"
     "-1640531527:-1640531462:1640531549:1103660680\n" ocaml_source
+
+let test_hash_matches_clojure_scalar_and_collection_values () =
+  let source =
+    {|
+(println
+  (str (hash nil) ":" (hash true) ":" (hash false) ":"
+       (hash 1) ":" (hash -1) ":" (hash 42) ":"
+       (hash 1.5) ":" (hash "abc") ":" (hash :db/ident) ":"
+       (hash [1 2]) ":" (hash (list 1 2)) ":"
+       (hash (hash-set 1 2)) ":" (hash {:a 1 :b 2})))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "hash_matches_clojure_scalar_and_collection_values"
+    "0:1231:1237:1392991556:1651860712:1871679806:1073217536:74834163:-737096:156247261:156247261:460223544:161871944\n"
+    ocaml_source
+
+let test_numeric_double_equals_supports_mixed_numbers () =
+  let source =
+    {|(println (str (== 1 1) ":" (== 1 1.0) ":" (== 1 2)))|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "numeric_double_equals_supports_mixed_numbers"
+    "true:true:false\n" ocaml_source
+
+let test_case_supports_dynamic_keyword_and_string_targets () =
+  let source =
+    {|
+(defn choose [^:dynamic value]
+  (case value
+    :answer 1
+    "answer" 2
+    0))
+(println (str (choose :answer) ":" (choose "answer") ":" (choose :missing)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "case_supports_dynamic_keyword_and_string_targets"
+    "1:2:0\n" ocaml_source
 
 let test_batched_numeric_scalar_core_functions_reject_unchecked_arity () =
   Lg.Compiler.compile_string {|(def x (unchecked-add 1))|}
@@ -6463,6 +6534,19 @@ let test_apply_distinct_accepts_generic_seqable_values () =
   assert_ocaml_runs "apply_distinct_accepts_generic_seqable_values"
     "true\nfalse\n" ocaml_source
 
+let test_apply_calls_overloaded_functions_with_dynamic_arguments () =
+  let source =
+    {|
+(defn make-value
+  ([^int e a v] e)
+  ([^int e a v tx] e))
+(println (apply make-value [1 :name "Ada"]))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "apply_calls_overloaded_functions_with_dynamic_arguments"
+    "1\n" ocaml_source
+
 let test_set_core_api () =
   let source =
     {|
@@ -6826,9 +6910,11 @@ let test_rest_is_empty_safe () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "rest_is_empty_safe" "true:():true:()\n" ocaml_source
 
-let test_lists_reject_mixed_element_types () =
-  Lg.Compiler.compile_string {|(def xs (list 1 "two"))|}
-  |> expect_error "list elements must all have the same type"
+let test_lists_support_mixed_element_types () =
+  let source = {|(println (pr-str (list 1 "two" :three)))|} in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "lists_support_mixed_element_types" "(1 \"two\" :three)\n"
+    ocaml_source
 
 let test_conj_rejects_list_type_mismatch () =
   Lg.Compiler.compile_string {|(def xs (conj (list 1) "two"))|}
@@ -6912,9 +6998,10 @@ let test_match_expression_works () =
     "zero:n=2:0:7:7:99:0:7:7:99:keys:other:small\n"
     ocaml_source
 
-let test_match_rejects_branch_type_mismatch () =
-  Lg.Compiler.compile_string {|(def x (match 1 0 "zero" _ 1))|}
-  |> expect_error "match branches must have same type"
+let test_match_supports_mixed_branch_types () =
+  let source = {|(println (pr-str (match 1 0 "zero" _ 1)))|} in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "match_supports_mixed_branch_types" "1\n" ocaml_source
 
 let test_match_rejects_bad_clause_count () =
   Lg.Compiler.compile_string {|(def x (match 1 0 "zero" _))|}
@@ -8740,9 +8827,17 @@ let test_try_and_raise_reject_malformed_forms () =
   Lg.Compiler.compile_string {|(def value (raise 1 2))|}
   |> expect_error "raise expects 1 arguments"
 
-let test_try_rejects_branch_type_mismatch () =
-  Lg.Compiler.compile_string {|(def value (try 42 (catch _ "bad")))|}
-  |> expect_error "try body and handlers must have the same type"
+let test_try_supports_mixed_branch_types () =
+  let source =
+    {|
+(def normal (try 42 (catch _ "bad")))
+(def caught (try (raise (Failure "boom")) (catch _ "bad")))
+(println (str (pr-str normal) ":" (pr-str caught)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "try_supports_mixed_branch_types" "42:\"bad\"\n"
+    ocaml_source
 
 let test_raise_payload_is_checked_by_ocaml () =
   Lg.Compiler.compile_string {|(def value (raise 42))|}
@@ -10791,12 +10886,16 @@ let tests =
       test_forward_declared_deftype_fields_keep_nominal_receiver );
     ( "deftype fields accept Clojure primitive hints",
       test_deftype_fields_accept_clojure_primitive_hints );
+    ( "deftype unhinted fields preserve dynamic values",
+      test_deftype_unhinted_fields_preserve_dynamic_values );
     ( "deftype mutable fields support set!",
       test_deftype_mutable_fields_support_set_bang );
     ( "deftype methods support instance call syntax",
       test_deftype_methods_support_instance_call_syntax );
     ( "Java exception constructors map to runtime exceptions",
       test_java_exception_constructors_map_to_runtime_exceptions );
+    ( "Java exception constructors support empty messages",
+      test_java_exception_constructors_support_empty_messages );
     ( "Clojure MapEntry compiles as a two-element vector",
       test_clojure_map_entry_compiles_as_two_element_vector );
     ( "set literals are callable as membership lookup",
@@ -10893,11 +10992,11 @@ let tests =
     ("select-keys rejects unknown fields", test_select_keys_rejects_unknown_fields);
     ("contains supports vector indexes", test_contains_supports_vector_indexes);
     ("contains rejects vector non-int indexes", test_contains_rejects_vector_non_int_indexes);
-    ("if rejects branch type mismatch", test_if_rejects_branch_type_mismatch);
+    ("if supports mixed branch types", test_if_supports_mixed_branch_types);
     ("conditional forms work", test_conditional_forms_work);
-    ("if-not rejects branch type mismatch", test_if_not_rejects_branch_type_mismatch);
+    ("if-not supports mixed branch types", test_if_not_supports_mixed_branch_types);
     ("cond returns nil without else", test_cond_returns_nil_without_else);
-    ("cond rejects branch type mismatch", test_cond_rejects_branch_type_mismatch);
+    ("cond supports mixed branch types", test_cond_supports_mixed_branch_types);
     ("cond accepts Clojure truthy tests", test_cond_accepts_clojure_truthy_tests);
     ("when returns nullable value", test_when_returns_nullable_value);
     ("when-not negates the condition", test_when_not_negates_the_condition);
@@ -10916,6 +11015,12 @@ let tests =
       test_batched_numeric_scalar_core_functions_reject_non_int_bit_args );
     ( "hash-combine matches Clojure 32-bit overflow",
       test_hash_combine_matches_clojure_32_bit_overflow );
+    ( "hash matches Clojure scalar and collection values",
+      test_hash_matches_clojure_scalar_and_collection_values );
+    ( "numeric == supports mixed numbers",
+      test_numeric_double_equals_supports_mixed_numbers );
+    ( "case supports dynamic keyword and string targets",
+      test_case_supports_dynamic_keyword_and_string_targets );
     ( "batched numeric/scalar core functions reject unchecked arity",
       test_batched_numeric_scalar_core_functions_reject_unchecked_arity );
     ( "batched numeric/scalar core functions reject bad name arg",
@@ -11094,6 +11199,8 @@ let tests =
       test_common_higher_order_helpers_reject_compare_type_mismatch );
     ( "apply distinct accepts generic seqable values",
       test_apply_distinct_accepts_generic_seqable_values );
+    ( "apply calls overloaded functions with dynamic arguments",
+      test_apply_calls_overloaded_functions_with_dynamic_arguments );
     ("apply rejects bad set reducers", test_apply_rejects_bad_set_reducers);
     ("set core api works", test_set_core_api);
     ("sets support named records", test_sets_support_named_records);
@@ -11146,7 +11253,7 @@ let tests =
     ( "syntax convergence: empty lists infer type from branch context",
       test_empty_lists_infer_type_from_branch_context );
     ("rest is empty-safe", test_rest_is_empty_safe);
-    ("lists reject mixed element types", test_lists_reject_mixed_element_types);
+    ("lists support mixed element types", test_lists_support_mixed_element_types);
     ("conj rejects list type mismatch", test_conj_rejects_list_type_mismatch);
     ("collection positional helpers work", test_collection_positional_helpers);
     ("subvec core api works", test_subvec_core_api);
@@ -11156,7 +11263,7 @@ let tests =
     ("let rejects odd binding forms", test_let_rejects_odd_binding_forms);
     ("map rejects non-function argument", test_map_rejects_non_function_argument);
     ("match expression works", test_match_expression_works);
-    ("match rejects branch type mismatch", test_match_rejects_branch_type_mismatch);
+    ("match supports mixed branch types", test_match_supports_mixed_branch_types);
     ("match rejects bad clause count", test_match_rejects_bad_clause_count);
     ("match rejects pattern type mismatch", test_match_rejects_pattern_type_mismatch);
     ("match infers target type from patterns", test_match_infers_target_type_from_patterns);
@@ -11260,8 +11367,8 @@ let tests =
       test_try_supports_normal_results_multiple_body_forms_and_handlers );
     ( "try and raise reject malformed forms",
       test_try_and_raise_reject_malformed_forms );
-    ( "try rejects branch type mismatch",
-      test_try_rejects_branch_type_mismatch );
+    ( "try supports mixed branch types",
+      test_try_supports_mixed_branch_types );
     ( "raise payload is checked by OCaml",
       test_raise_payload_is_checked_by_ocaml );
     ("module definitions work", test_module_definitions_work);

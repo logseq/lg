@@ -64,6 +64,7 @@ let rec parse_ocaml_type source =
         else if source = "string" then Ok TString
         else if source = "bool" then Ok TBool
         else if source = "unit" then Ok TUnit
+        else if source = "dynamic" then Ok (Types.dynamic_constraint TUnknown)
         else
           (match String.rindex_opt source '/' with
           | Some separator when separator > 0 ->

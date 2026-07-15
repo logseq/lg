@@ -177,6 +177,12 @@ let assoc value key replacement =
       map (replace [] entries)
   | _ -> invalid_arg "dynamic value is not associative"
 
+let dissoc value key =
+  match value.payload with
+  | Map entries ->
+      map (List.filter (fun (existing_key, _) -> not (equal key existing_key)) entries)
+  | _ -> invalid_arg "dynamic value is not associative"
+
 let get value key =
   match value.payload with
   | Map entries -> (
@@ -192,6 +198,14 @@ let get_default value key default =
       | Some (_, value) -> value
       | None -> default)
   | _ -> default
+
+let contains value key =
+  match (value.payload, key.payload) with
+  | Map entries, _ ->
+      List.exists (fun (entry_key, _) -> equal key entry_key) entries
+  | Set values, _ -> List.exists (equal key) values
+  | Vector, Int index -> index >= 0 && index < Seq.length (to_seq value)
+  | _ -> false
 
 let empty value =
   match value.payload with
@@ -239,6 +253,35 @@ let is_map value = match value.payload with Map _ -> true | _ -> false
 let is_set value = match value.payload with Set _ -> true | _ -> false
 let is_coll value = is_seqable value
 let is_instance value type_name = value.type_name = Some type_name
+
+let call value arguments =
+  match value.payload with
+  | Function function_ -> function_ arguments
+  | _ -> invalid_arg "dynamic value is not callable"
+
+let rec hash value =
+  match value.payload with
+  | Nil -> 0
+  | Bool true -> 1231
+  | Bool false -> 1237
+  | Int value -> Runtime_hash.hash_int value
+  | Float value -> Runtime_hash.hash_float value
+  | Char value -> Char.code value
+  | String value -> Runtime_hash.hash_string value
+  | Symbol value -> Runtime_hash.hash_symbol value
+  | Keyword value -> Runtime_hash.hash_keyword value
+  | List | Vector | Seq ->
+      value |> to_seq |> Seq.map hash |> Runtime_hash.hash_ordered
+  | Set values -> values |> List.to_seq |> Seq.map hash |> Runtime_hash.hash_unordered
+  | Map entries ->
+      entries
+      |> List.to_seq
+      |> Seq.map (fun (key, value) ->
+             [ hash key; hash value ]
+             |> List.to_seq |> Runtime_hash.hash_ordered)
+      |> Runtime_hash.hash_unordered
+  | Function _ -> 0
+  | Opaque name -> Runtime_hash.hash_string name
 
 let group_by key_fn pack_key pack_item sequence =
   Seq.fold_left
