@@ -5253,6 +5253,26 @@ let test_vals_return_homogeneous_values () =
   assert_ocaml_runs "vals_return_homogeneous_values" "[1 2]:[1 2 3]:[10 20]\n"
     ocaml_source
 
+let test_vals_accept_dynamic_maps () =
+  let source =
+    {|
+(defrecord Box [values])
+(def static-values
+  (vals (persistent! (transient (hash-map "a" 1 "b" 2)))))
+(def dynamic-values
+  (vals (:values (Box. (hash-map "a" 1 "b" 2)))))
+(println
+  (str (= (count static-values) 2) ":"
+       (= (count dynamic-values) 2)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "vals_accept_dynamic_maps" "true:true\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
 let test_vals_rejects_heterogeneous_values () =
   Lg.Compiler.compile_string {|(def xs (vals {:name "Ada", :age 36}))|}
   |> expect_error "vals requires all map values to have the same type"
@@ -12693,6 +12713,7 @@ let tests =
     ("keyword values print as keywords", test_keyword_values_print_as_keywords);
     ("keys return keyword values", test_keys_return_keyword_values);
     ("vals return homogeneous values", test_vals_return_homogeneous_values);
+    ("vals accept dynamic maps", test_vals_accept_dynamic_maps);
     ("vals rejects heterogeneous values", test_vals_rejects_heterogeneous_values);
     ( "vectors support mixed keyword and string elements",
       test_vectors_support_mixed_keyword_and_string_elements );

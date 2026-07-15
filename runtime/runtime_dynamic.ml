@@ -258,6 +258,12 @@ let dissoc value key =
            entries)
   | _ -> invalid_arg "dynamic value is not associative"
 
+let vals value =
+  match value.payload with
+  | Map entries ->
+      entries |> List.map snd |> Rrbvec.of_list |> vector
+  | _ -> invalid_arg "vals expects a map"
+
 let get value key =
   match (value.payload, key.payload) with
   | Opaque (_, fields), Keyword keyword -> (

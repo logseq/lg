@@ -1954,30 +1954,54 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
     and compile_vals scope env arg_forms =
       match compile_args_for scope env arg_forms with
       | Error _ as err -> err
-      | Ok [ target ] -> (
-          match target.ty with
-          | TRecord [] | TNamed_record { fields = []; _ } ->
-              Error.error "vals requires a non-empty map"
-        | TRecord (first :: rest) | TNamed_record { fields = first :: rest; _ }
-          ->
-            if
-              List.for_all
-                (fun (field : field) -> Types.equal first.ty field.ty)
-                rest
-            then
+      | Ok [ target ] ->
+          if Types.is_dynamic target.ty then
+            Ok
+              (typed_ir target.ty
+                 (Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.vals",
+                      [ target.semantic_expr ] )))
+          else (
+            match Types.dynamic_map_types target.ty with
+            | Some (_key_type, value_type) ->
                 Ok
-                  (typed_ir (TVector first.ty)
+                  (typed_ir (TVector value_type)
                      (Semantic_ir.Apply
                         ( Semantic_ir.Ident "Rrbvec.of_list",
-                        [
-                          Semantic_ir.List
-                            (first :: rest
-                              |> List.map (fun (field : field) ->
-                                Structural_map.field_expr target field));
-                        ] )))
-            else
-              Error.error "vals requires all map values to have the same type"
-          | _ -> Error.error "vals expects a map")
+                          [
+                            Semantic_ir.Apply
+                              ( Semantic_ir.Ident "List.map",
+                                [
+                                  Semantic_ir.Ident "snd";
+                                  target.semantic_expr;
+                                ] );
+                          ] )))
+            | None -> (
+                match target.ty with
+                | TRecord [] | TNamed_record { fields = []; _ } ->
+                    Error.error "vals requires a non-empty map"
+                | TRecord (first :: rest)
+                | TNamed_record { fields = first :: rest; _ } ->
+                    if
+                      List.for_all
+                        (fun (field : field) -> Types.equal first.ty field.ty)
+                        rest
+                    then
+                      Ok
+                        (typed_ir (TVector first.ty)
+                           (Semantic_ir.Apply
+                              ( Semantic_ir.Ident "Rrbvec.of_list",
+                                [
+                                  Semantic_ir.List
+                                    (first :: rest
+                                    |> List.map (fun (field : field) ->
+                                           Structural_map.field_expr target
+                                             field));
+                                ] )))
+                    else
+                      Error.error
+                        "vals requires all map values to have the same type"
+                | _ -> Error.error "vals expects a map"))
       | Ok _ -> Error.error "vals expects 1 arguments"
   in
   {
