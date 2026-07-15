@@ -7547,6 +7547,25 @@ let test_nested_record_fields_preserve_outer_record_inference () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
+let test_threaded_keyword_access_preserves_nested_record_inference () =
+  let source =
+    {|
+(defrecord DB [max-tx])
+(defrecord TxReport [^DB db-before])
+(defn current-tx [report]
+  (-> report :db-before :max-tx long inc))
+(def result (current-tx (TxReport. (DB. 1))))
+(println result)
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "threaded_keyword_access_preserves_nested_record_inference"
+    "2\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
 let test_destructuring_rejects_unsupported_let_sources () =
   Lg.Compiler.compile_string {|(def x (let [{:keys [name]} [1 2]] name))|}
   |> expect_error "map destructuring expects a map"
@@ -12890,6 +12909,8 @@ let tests =
       test_let_bindings_support_value_type_hints );
     ( "nested record fields preserve outer record inference",
       test_nested_record_fields_preserve_outer_record_inference );
+    ( "threaded keyword access preserves nested record inference",
+      test_threaded_keyword_access_preserves_nested_record_inference );
     ( "destructuring rejects unsupported let sources",
       test_destructuring_rejects_unsupported_let_sources );
     ( "destructuring rejects bad rest binding",

@@ -475,7 +475,7 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
       match args with
       | [] -> Ok params
       | value :: steps ->
-          let thread step =
+          let thread value step =
             match step with
             | FSymbol name -> FList [ FSymbol name; value ]
             | FList (function_ :: arguments) ->
@@ -484,12 +484,20 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
                 else FList (function_ :: arguments @ [ value ])
             | step -> FList [ step; value ]
           in
+          let rec infer_steps params threaded_value = function
+            | [] -> Ok params
+            | step :: rest ->
+                let threaded = thread threaded_value step in
+                let inference_form =
+                  match step with
+                  | FList _ -> thread value step
+                  | _ -> threaded
+                in
+                Result.bind (infer_form params inference_form) (fun params ->
+                    infer_steps params threaded rest)
+          in
           Result.bind (infer_form params value) (fun params ->
-              List.fold_left
-                (fun result step ->
-                  Result.bind result (fun params ->
-                      infer_form params (thread step)))
-                (Ok params) steps)
+              infer_steps params value steps)
     else if
       String.starts_with ~prefix:"->" member_name
     then
