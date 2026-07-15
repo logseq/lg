@@ -5522,6 +5522,28 @@ let test_assoc_accepts_protocol_constrained_named_records () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
+let test_nested_named_records_resolve_protocol_receivers () =
+  let source =
+    {|
+(defprotocol IDB
+  (-attrs-by [db property]))
+(defrecord DB []
+  IDB
+  (-attrs-by [_db property] [property]))
+(defrecord TxReport [^DB db-after])
+(defn has-tuples? [report]
+  (not (empty? (-attrs-by (:db-after report) :db.type/tuple))))
+(println (has-tuples? (TxReport. (DB.))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "nested_named_records_resolve_protocol_receivers" "true\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
 let test_update_preserves_named_records_with_opaque_fields () =
   let source =
     {|
@@ -12768,6 +12790,8 @@ let tests =
       test_assoc_packs_values_for_dynamic_record_fields );
     ( "assoc accepts protocol constrained named records",
       test_assoc_accepts_protocol_constrained_named_records );
+    ( "nested named records resolve protocol receivers",
+      test_nested_named_records_resolve_protocol_receivers );
     ( "defrecord field hints reject unknown record types",
       test_defrecord_field_hints_reject_unknown_record_types );
     ( "defrecord preserves extension map entries",

@@ -13,7 +13,7 @@ let unique_named_records records =
       else record :: unique)
     [] records
 
-let record_inference_compatible ~allow_expected_dynamic expected_fields
+let record_inference_compatible env ~allow_expected_dynamic expected_fields
     actual_fields =
   expected_fields
   |> List.for_all (fun (expected : field) ->
@@ -30,10 +30,17 @@ let record_inference_compatible ~allow_expected_dynamic expected_fields
                | Some _ -> allow_expected_dynamic
                | None -> false
              in
+             let expected_protocol_compatible =
+               match Types.protocol_constraint_info expected.ty with
+               | Some (protocol_id, _, _) ->
+                   Protocol.type_satisfies env protocol_id actual.ty
+               | None -> false
+             in
              Types.is_dynamic actual.ty
              || (match actual.ty with TUnknown | TVar _ -> true | _ -> false)
              || (match expected.ty with TUnknown | TVar _ -> true | _ -> false)
              || expected_dynamic_compatible
+             || expected_protocol_compatible
              || Types.equal expected.ty actual.ty
              || Types.row_compatible ~expected:expected.ty ~actual:actual.ty)
 
@@ -82,7 +89,7 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
               match binding.ty with
               | TNamed_record record ->
                   if
-                    record_inference_compatible
+                    record_inference_compatible env
                       ~allow_expected_dynamic:allow_dynamic_fields fields
                       record.fields
                     || Types.row_compatible ~expected:(TRecord fields)

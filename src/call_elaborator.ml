@@ -6566,8 +6566,8 @@ let create ~compile_expr =
                               with
                               | None ->
                                   Error.error
-                                    "protocol-constrained receiver must be a \
-                                     function parameter"
+                                    ("protocol-constrained receiver for " ^ name
+                                   ^ " must be a function parameter")
                               | Some witness ->
                                   let methods_name = "__lg_protocol_methods" in
                                   let methods =
