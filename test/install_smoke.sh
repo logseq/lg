@@ -15,7 +15,7 @@ output=$(mktemp "${TMPDIR:-/tmp}/lg-install-smoke.XXXXXX.ml")
 interface=$(mktemp "${TMPDIR:-/tmp}/lg-install-smoke.XXXXXX.mli")
 trap 'rm -f "$output" "$interface"' EXIT
 
-"$compiler" "$root/examples/person.lgc" -o "$output"
+"$compiler" "$root/examples/person.cljc" -o "$output"
 grep -Fq 'let' "$output"
-"$compiler" --interface "$root/examples/person.lgc" -o "$interface"
+"$compiler" --interface "$root/examples/person.cljc" -o "$interface"
 grep -Fq 'val label : string' "$interface"

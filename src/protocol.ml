@@ -214,10 +214,15 @@ let lookup_marker scope env method_name =
             | [ protocol_id ] -> marker_for protocol_id method_name
             | [] | _ :: _ :: _ -> None)
         | None ->
-            let protocol_id =
+            let scoped_id =
               protocol_id scope protocol_name |> resolve_protocol_id ~scope env
             in
-            marker_for protocol_id method_name)
+            (match marker_for scoped_id method_name with
+            | Some _ as marker -> marker
+            | None ->
+                marker_for
+                  (Protocol_id.create ~owner:[] ~name:protocol_name)
+                  method_name))
     | [ method_name ] ->
         let owner = if scope = "" then [] else [ scope ] in
         (match

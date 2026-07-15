@@ -28,6 +28,9 @@
   ([values target cmp]
    (filter #(not (neg? (cmp % target))) values)))
 
+(defn comparator [set]
+  (impl/set-comparator set))
+
 (defn from-sorted-array
   ([cmp values]
    (impl/from-sorted-array cmp values))

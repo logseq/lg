@@ -3,8 +3,8 @@ set -eu
 
 cli="$1"
 example="$2"
-checkout_example="$(dirname "$example")/checkout.lgc"
-protocols_example="$(dirname "$example")/protocols.lgc"
+checkout_example="$(dirname "$example")/checkout.cljc"
+protocols_example="$(dirname "$example")/protocols.cljc"
 
 output="$($cli --run "$example")"
 
@@ -72,8 +72,8 @@ printf '%s\n' \
 
 [ "$(cat "$package_stdout")" = "42" ]
 
-math_source="$multi_dir/math.lgc"
-main_source="$multi_dir/main.lgc"
+math_source="$multi_dir/math.cljc"
+main_source="$multi_dir/main.cljc"
 multi_output="$multi_dir/app.ml"
 multi_stdout="$multi_dir/stdout"
 
@@ -92,10 +92,10 @@ grep -q 'magnitude_plus_two' "$multi_output"
 "$cli" --run-files "$math_source" "$main_source" > "$multi_stdout"
 [ "$(cat "$multi_stdout")" = "42" ]
 
-bad_source="$multi_dir/bad.lgc"
+bad_source="$multi_dir/bad.cljc"
 bad_stderr="$multi_dir/bad.stderr"
-watched_provider="$multi_dir/watched-provider.lgc"
-watched_consumer="$multi_dir/watched-consumer.lgc"
+watched_provider="$multi_dir/watched-provider.cljc"
+watched_consumer="$multi_dir/watched-consumer.cljc"
 printf '%s\n' \
   '(def bad (Stdlib.abs "bad"))' > "$bad_source"
 printf '%s\n' '(module Watched (def value 42))' > "$watched_provider"
@@ -120,22 +120,22 @@ send_lsp_message() {
 {
   send_lsp_message "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"rootUri\":\"file://$multi_dir\",\"capabilities\":{\"workspace\":{\"didChangeWatchedFiles\":{\"dynamicRegistration\":true}}}}}"
   send_lsp_message '{"jsonrpc":"2.0","method":"initialized","params":{}}'
-  send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/editor.lgc","languageId":"lg","version":1,"text":"(def answer\n  (if true\n    (Stdlib.abs\n      \"bad\")\n    0))"}}}'
-  send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":"file:///tmp/editor.lgc","version":2},"contentChanges":[{"text":"(def ok 1)\n(def good (Stdlib.abs -42))"}]}}'
-  send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/semantic-error.lgc","languageId":"lg","version":1,"text":"(def ok 1)\n(def bad\n  (+ 1 \"x\"))"}}}'
-  send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/warning.lgc","languageId":"lg","version":1,"text":"(type-variant status Active Inactive)\n(defn describe [^:status status]\n  (match status Active \"active\"))"}}}'
-  send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/service.lgc","languageId":"lg","version":1,"text":"(def answer 41)\n(defn add-one [x] (+ x 1))\n(def result (add-one answer))"}}}'
-  send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/format.lgc","languageId":"lg","version":1,"text":"(def   answer  41)"}}}'
-  send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/incomplete.lgc","languageId":"lg","version":1,"text":"(def answer 41)\n(def broken (+ answer"}}}'
-  send_lsp_message '{"jsonrpc":"2.0","id":3,"method":"textDocument/hover","params":{"textDocument":{"uri":"file:///tmp/service.lgc"},"position":{"line":2,"character":14}}}'
-  send_lsp_message '{"jsonrpc":"2.0","id":4,"method":"textDocument/definition","params":{"textDocument":{"uri":"file:///tmp/service.lgc"},"position":{"line":2,"character":22}}}'
-  send_lsp_message '{"jsonrpc":"2.0","id":5,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///tmp/service.lgc"},"position":{"line":2,"character":29}}}'
-  send_lsp_message '{"jsonrpc":"2.0","id":6,"method":"textDocument/formatting","params":{"textDocument":{"uri":"file:///tmp/format.lgc"},"options":{"tabSize":2,"insertSpaces":true}}}'
-  send_lsp_message '{"jsonrpc":"2.0","id":7,"method":"textDocument/references","params":{"textDocument":{"uri":"file:///tmp/service.lgc"},"position":{"line":2,"character":22},"context":{"includeDeclaration":true}}}'
-  send_lsp_message '{"jsonrpc":"2.0","id":8,"method":"textDocument/documentHighlight","params":{"textDocument":{"uri":"file:///tmp/service.lgc"},"position":{"line":2,"character":22}}}'
-  send_lsp_message '{"jsonrpc":"2.0","id":9,"method":"textDocument/prepareRename","params":{"textDocument":{"uri":"file:///tmp/service.lgc"},"position":{"line":2,"character":22}}}'
-  send_lsp_message '{"jsonrpc":"2.0","id":10,"method":"textDocument/rename","params":{"textDocument":{"uri":"file:///tmp/service.lgc"},"position":{"line":2,"character":22},"newName":"total"}}'
-  send_lsp_message '{"jsonrpc":"2.0","id":11,"method":"textDocument/documentSymbol","params":{"textDocument":{"uri":"file:///tmp/service.lgc"}}}'
+  send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/editor.cljc","languageId":"lg","version":1,"text":"(def answer\n  (if true\n    (Stdlib.abs\n      \"bad\")\n    0))"}}}'
+  send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":"file:///tmp/editor.cljc","version":2},"contentChanges":[{"text":"(def ok 1)\n(def good (Stdlib.abs -42))"}]}}'
+  send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/semantic-error.cljc","languageId":"lg","version":1,"text":"(def ok 1)\n(def bad\n  (+ 1 \"x\"))"}}}'
+  send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/warning.cljc","languageId":"lg","version":1,"text":"(type-variant status Active Inactive)\n(defn describe [^:status status]\n  (match status Active \"active\"))"}}}'
+  send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/service.cljc","languageId":"lg","version":1,"text":"(def answer 41)\n(defn add-one [x] (+ x 1))\n(def result (add-one answer))"}}}'
+  send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/format.cljc","languageId":"lg","version":1,"text":"(def   answer  41)"}}}'
+  send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/incomplete.cljc","languageId":"lg","version":1,"text":"(def answer 41)\n(def broken (+ answer"}}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":3,"method":"textDocument/hover","params":{"textDocument":{"uri":"file:///tmp/service.cljc"},"position":{"line":2,"character":14}}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":4,"method":"textDocument/definition","params":{"textDocument":{"uri":"file:///tmp/service.cljc"},"position":{"line":2,"character":22}}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":5,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///tmp/service.cljc"},"position":{"line":2,"character":29}}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":6,"method":"textDocument/formatting","params":{"textDocument":{"uri":"file:///tmp/format.cljc"},"options":{"tabSize":2,"insertSpaces":true}}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":7,"method":"textDocument/references","params":{"textDocument":{"uri":"file:///tmp/service.cljc"},"position":{"line":2,"character":22},"context":{"includeDeclaration":true}}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":8,"method":"textDocument/documentHighlight","params":{"textDocument":{"uri":"file:///tmp/service.cljc"},"position":{"line":2,"character":22}}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":9,"method":"textDocument/prepareRename","params":{"textDocument":{"uri":"file:///tmp/service.cljc"},"position":{"line":2,"character":22}}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":10,"method":"textDocument/rename","params":{"textDocument":{"uri":"file:///tmp/service.cljc"},"position":{"line":2,"character":22},"newName":"total"}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":11,"method":"textDocument/documentSymbol","params":{"textDocument":{"uri":"file:///tmp/service.cljc"}}}'
   send_lsp_message '{"jsonrpc":"2.0","id":12,"method":"workspace/symbol","params":{"query":"add"}}'
   send_lsp_message "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didOpen\",\"params\":{\"textDocument\":{\"uri\":\"file://$main_source\",\"languageId\":\"lg\",\"version\":1,\"text\":\"(println (Math/magnitude-plus-two 40))\\n\"}}}"
   send_lsp_message "{\"jsonrpc\":\"2.0\",\"id\":13,\"method\":\"textDocument/definition\",\"params\":{\"textDocument\":{\"uri\":\"file://$main_source\"},\"position\":{\"line\":0,\"character\":14}}}"
@@ -146,11 +146,11 @@ send_lsp_message() {
   send_lsp_message "{\"jsonrpc\":\"2.0\",\"method\":\"workspace/didChangeWatchedFiles\",\"params\":{\"changes\":[{\"uri\":\"file://$watched_provider\",\"type\":3}]}}"
   send_lsp_message "{\"jsonrpc\":\"2.0\",\"id\":18,\"method\":\"textDocument/definition\",\"params\":{\"textDocument\":{\"uri\":\"file://$watched_consumer\"},\"position\":{\"line\":0,\"character\":13}}}"
   send_lsp_message "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didChange\",\"params\":{\"textDocument\":{\"uri\":\"file://$math_source\",\"version\":2},\"contentChanges\":[{\"text\":\"(module Math (def value 1))\\n\"}]}}"
-  send_lsp_message '{"jsonrpc":"2.0","id":19,"method":"textDocument/semanticTokens/full","params":{"textDocument":{"uri":"file:///tmp/service.lgc"}}}'
-  send_lsp_message '{"jsonrpc":"2.0","id":20,"method":"textDocument/signatureHelp","params":{"textDocument":{"uri":"file:///tmp/service.lgc"},"position":{"line":2,"character":27}}}'
-  send_lsp_message '{"jsonrpc":"2.0","id":21,"method":"textDocument/hover","params":{"textDocument":{"uri":"file:///tmp/incomplete.lgc"},"position":{"line":0,"character":6}}}'
-  send_lsp_message '{"jsonrpc":"2.0","id":22,"method":"textDocument/codeAction","params":{"textDocument":{"uri":"file:///tmp/incomplete.lgc"},"range":{"start":{"line":1,"character":21},"end":{"line":1,"character":21}},"context":{"diagnostics":[]}}}'
-  send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didClose","params":{"textDocument":{"uri":"file:///tmp/editor.lgc"}}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":19,"method":"textDocument/semanticTokens/full","params":{"textDocument":{"uri":"file:///tmp/service.cljc"}}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":20,"method":"textDocument/signatureHelp","params":{"textDocument":{"uri":"file:///tmp/service.cljc"},"position":{"line":2,"character":27}}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":21,"method":"textDocument/hover","params":{"textDocument":{"uri":"file:///tmp/incomplete.cljc"},"position":{"line":0,"character":6}}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":22,"method":"textDocument/codeAction","params":{"textDocument":{"uri":"file:///tmp/incomplete.cljc"},"range":{"start":{"line":1,"character":21},"end":{"line":1,"character":21}},"context":{"diagnostics":[]}}}'
+  send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didClose","params":{"textDocument":{"uri":"file:///tmp/editor.cljc"}}}'
   send_lsp_message '{"jsonrpc":"2.0","id":2,"method":"shutdown","params":null}'
   send_lsp_message '{"jsonrpc":"2.0","method":"exit","params":null}'
 } | "$cli" --lsp > "$lsp_output"
@@ -169,13 +169,13 @@ grep -q '"workspaceSymbolProvider":true' "$lsp_output"
 grep -q '"semanticTokensProvider"' "$lsp_output"
 grep -q '"signatureHelpProvider"' "$lsp_output"
 grep -q '"method":"client/registerCapability"' "$lsp_output"
-grep -Fq '"globPattern":"**/*.lgc"' "$lsp_output"
+grep -Fq '"globPattern":"**/*.cljc"' "$lsp_output"
 grep -q '"method":"textDocument/publishDiagnostics"' "$lsp_output"
 grep -q '"severity":1' "$lsp_output"
 grep -q '"severity":2' "$lsp_output"
 grep -q 'not exhaustive' "$lsp_output"
-grep -Fq '"uri":"file:///tmp/semantic-error.lgc","diagnostics":[{"range"' "$lsp_output"
-grep -Fq '"uri":"file:///tmp/warning.lgc","diagnostics":[{"range"' "$lsp_output"
+grep -Fq '"uri":"file:///tmp/semantic-error.cljc","diagnostics":[{"range"' "$lsp_output"
+grep -Fq '"uri":"file:///tmp/warning.cljc","diagnostics":[{"range"' "$lsp_output"
 grep -q '"line":3' "$lsp_output"
 grep -q '"character":6' "$lsp_output"
 grep -q '"diagnostics":\[\]' "$lsp_output"

@@ -1315,7 +1315,7 @@ let test_semantic_ast_preserves_nested_types () =
 let test_source_node_identity_reaches_parsetree () =
   let source = "(def answer (+ 1 2))" in
   let structure =
-    Lg.Compiler.compile_parsetree_with_filename ~filename:"identity.lgc" source
+    Lg.Compiler.compile_parsetree_with_filename ~filename:"identity.cljc" source
     |> expect_ok
   in
   let node_ids = ref [] in
@@ -1336,7 +1336,7 @@ let test_source_node_identity_reaches_parsetree () =
   | [] -> failwith "expected source node identities on lowered expressions"
   | _ -> (
       let analysis =
-        Lg.Toolchain.analyze ~filename:"identity.lgc" source |> expect_ok
+        Lg.Toolchain.analyze ~filename:"identity.cljc" source |> expect_ok
       in
       let typed_node_ids = ref 0 in
       let iterator =
@@ -1356,28 +1356,28 @@ let test_source_node_identity_reaches_parsetree () =
       if !typed_node_ids = 0 then
         failwith "expected source node identities on typed expressions";
       let language_analysis =
-        Lg.Language_service.analyze ~filename:"identity.lgc" source |> expect_ok
+        Lg.Language_service.analyze ~filename:"identity.cljc" source |> expect_ok
       in
       let offset = expect_substring_index source "1" in
       match Lg.Language_service.source_node_id_at language_analysis ~offset with
-      | Some id when String.starts_with ~prefix:"identity.lgc:" id -> ()
+      | Some id when String.starts_with ~prefix:"identity.cljc:" id -> ()
       | Some id -> failwith ("unexpected source node identity " ^ id)
       | None -> failwith "expected LSP lookup to return a source node identity")
 
 let test_source_node_identity_covers_value_bindings () =
   let source = "(def answer 42)" in
   let analysis =
-    Lg.Language_service.analyze ~filename:"binding-identity.lgc" source
+    Lg.Language_service.analyze ~filename:"binding-identity.cljc" source
     |> expect_ok
   in
   let offset = expect_substring_index source "answer" in
   match Lg.Language_service.source_node_id_at analysis ~offset with
-  | Some id when String.starts_with ~prefix:"binding-identity.lgc:" id -> ()
+  | Some id when String.starts_with ~prefix:"binding-identity.cljc:" id -> ()
   | Some id -> failwith ("unexpected binding source node identity " ^ id)
   | None -> failwith "expected value binding to preserve source node identity"
 
 let test_source_node_identity_covers_record_value_bindings () =
-  let filename = "record-binding-identity.lgc" in
+  let filename = "record-binding-identity.cljc" in
   let source = "(def user {:name \"Ada\"})" in
   let analysis = Lg.Language_service.analyze ~filename source |> expect_ok in
   let offset = expect_substring_index source "user" in
@@ -1400,7 +1400,7 @@ let expect_source_id_at_text filename source analysis text =
   | None -> failwith ("expected source node identity at " ^ text)
 
 let test_source_node_identity_covers_recursive_bindings () =
-  let filename = "recursive-identity.lgc" in
+  let filename = "recursive-identity.cljc" in
   let source =
     "(defn countdown [^:int n] :int\n  (if (= n 0) 0 (countdown (dec n))))"
   in
@@ -1408,19 +1408,19 @@ let test_source_node_identity_covers_recursive_bindings () =
   expect_source_id_at_text filename source analysis "countdown"
 
 let test_source_node_identity_covers_function_parameters () =
-  let filename = "parameter-identity.lgc" in
+  let filename = "parameter-identity.cljc" in
   let source = "(defn add-one [value] (+ value 1))" in
   let analysis = Lg.Language_service.analyze ~filename source |> expect_ok in
   expect_source_id_at_text filename source analysis "value"
 
 let test_source_node_identity_covers_annotated_parameters () =
-  let filename = "annotated-parameter-identity.lgc" in
+  let filename = "annotated-parameter-identity.cljc" in
   let source = "(defn increment [^:int value] (+ value 1))" in
   let analysis = Lg.Language_service.analyze ~filename source |> expect_ok in
   expect_source_id_at_text filename source analysis "value"
 
 let test_source_node_identity_covers_destructuring_bindings () =
-  let filename = "destructuring-identity.lgc" in
+  let filename = "destructuring-identity.cljc" in
   let source =
     {|
 (defn summarize [[first & rest :as all]]
@@ -1435,13 +1435,13 @@ let test_source_node_identity_covers_destructuring_bindings () =
     [ "first"; "rest"; "all"; "name"; "person" ]
 
 let test_source_node_identity_covers_let_bindings () =
-  let filename = "let-identity.lgc" in
+  let filename = "let-identity.cljc" in
   let source = "(def result (let [local 41] (+ local 1)))" in
   let analysis = Lg.Language_service.analyze ~filename source |> expect_ok in
   expect_source_id_at_text filename source analysis "local"
 
 let test_source_node_identity_covers_let_destructuring () =
-  let filename = "let-destructuring-identity.lgc" in
+  let filename = "let-destructuring-identity.cljc" in
   let source =
     {|
 (def user {:name "Ada"})
@@ -1462,7 +1462,7 @@ let test_source_node_identity_covers_let_destructuring () =
   expect_source_id_at_text filename source analysis "person"
 
 let test_source_node_identity_covers_match_bindings () =
-  let filename = "match-identity.lgc" in
+  let filename = "match-identity.cljc" in
   let source =
     {|
 (type-variant message (Named :string))
@@ -1477,7 +1477,7 @@ let test_source_node_identity_covers_match_bindings () =
     [ "value"; "whole" ]
 
 let test_source_node_identity_covers_loop_bindings () =
-  let filename = "loop-identity.lgc" in
+  let filename = "loop-identity.cljc" in
   let source =
     "(def result (loop [counter 0] (if (= counter 2) counter (recur (inc \
      counter)))))"
@@ -1486,7 +1486,7 @@ let test_source_node_identity_covers_loop_bindings () =
   expect_source_id_at_text filename source analysis "counter"
 
 let test_source_node_identity_covers_catch_bindings () =
-  let filename = "catch-identity.lgc" in
+  let filename = "catch-identity.cljc" in
   let source =
     {|
 (def result
@@ -1594,51 +1594,13 @@ let test_namespace_refer_clojure_exclude_hides_core_binding () =
 |}
   |> expect_error "unknown function find"
 
-let test_namespace_accepts_host_import_clause () =
-  let source = {|
-(ns app.uuid
-  (:import [java.util UUID]))
-(println 42)
-|} in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "namespace_accepts_host_import_clause" "42\n" ocaml_source
-
-let test_namespace_accepts_qualified_host_import_symbol () =
-  let source =
-    {|
-(ns app.uuid
-  (:import java.util.UUID))
-(def value (UUID/randomUUID))
-(println (= value value))
-|}
-  in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "namespace_accepts_qualified_host_import_symbol" "true\n"
-    ocaml_source
-
-let test_namespace_drops_compile_time_only_host_import () =
-  let source =
-    {|
-(ns app.macro-import
-  (:import clojure.lang.IFn$OOL))
-(defmacro passthrough [body]
-  (let [_ (quote IFn$OOL)]
-    body))
-(println (passthrough 42))
-|}
-  in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "namespace_drops_compile_time_only_host_import" "42\n"
-    ocaml_source
-
-let test_namespace_rejects_runtime_unknown_host_import () =
+let test_namespace_rejects_import_clause () =
   Lg.Compiler.compile_string
     {|
-(ns app.runtime-import
-  (:import missing.host.RuntimeClass))
-(def value RuntimeClass/member)
+(ns app.invalid
+  (:import clojure.lang.IFn$OOL))
 |}
-  |> expect_error "unsupported host import missing.host.RuntimeClass"
+  |> expect_error "lg namespaces do not support :import"
 
 let test_namespace_ignores_clojure_compiler_directives () =
   let source =
@@ -1650,21 +1612,6 @@ let test_namespace_ignores_clojure_compiler_directives () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "namespace_ignores_clojure_compiler_directives" "42\n"
-    ocaml_source
-
-let test_host_import_type_hint_supports_instance_methods () =
-  let source =
-    {|
-(ns app.uuid
-  (:import [java.util UUID]))
-(defn high [value]
-  (.getMostSignificantBits ^UUID value))
-(def value (UUID/randomUUID))
-(println (= (high value) (high value)))
-|}
-  in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "host_import_type_hint_supports_instance_methods" "true\n"
     ocaml_source
 
 let test_system_current_time_millis_compiles_for_native () =
@@ -4591,24 +4538,6 @@ let test_java_writer_annotations_work_in_ordinary_functions () =
   assert_ocaml_runs "java_writer_annotations_work_in_ordinary_functions"
     "#person [\"Ada\"] [:ok]\n" ocaml_source
 
-let test_clojure_sorted_annotations_expose_dynamic_comparators () =
-  let source =
-    {|
-(type-record sorted-box
-  (comparator :fn<int;int;int>))
-(defn comparator-for [sets key]
-  (.comparator ^clojure.lang.Sorted (get sets key)))
-(def cmp
-  (comparator-for
-    (hash-map :box (record sorted-box (comparator (fn [left right] (- left right)))))
-    :box))
-(println (cmp 7 2))
-|}
-  in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "clojure_sorted_annotations_expose_dynamic_comparators"
-    "5\n" ocaml_source
-
 let test_defn_accepts_attribute_maps_and_return_hints () =
   let source =
     {|
@@ -5681,6 +5610,30 @@ let test_assoc_in_preserves_named_records_with_references () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "assoc_in_preserves_named_records_with_references" "42\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
+let test_assoc_accepts_refined_dynamic_record_fields () =
+  let source =
+    {|
+(defrecord State [^:dynamic schema])
+(defn with-schema [db schema]
+  {:pre [(or (nil? schema) (map? schema))]}
+  (assoc db :schema schema))
+(defn next-value [value]
+  {:post [(> % value)]}
+  (inc value))
+(println (nil? (:schema (with-schema (State. {}) nil))))
+(println (= 42 (:answer (:schema (with-schema (State. nil) {:answer 42})))))
+(println (next-value 41))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "assoc_accepts_refined_dynamic_record_fields"
+    "true\ntrue\n42\n"
     ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
@@ -7277,6 +7230,80 @@ let test_additional_sequence_helpers_work () =
     "(2 3 4):(3 4):(4):1:[3 4]:(2):1:5:[4 3 2 1]:true:true:(1 3 6 10)\n"
     ocaml_source
 
+let test_rseq_dispatches_to_reversible_protocol () =
+  let source =
+    {|
+(ns app.reversible)
+(deftype ReversibleBox [values]
+  IReversible
+  (-rseq [_] [3 2 1]))
+(println (pr-str (rseq (ReversibleBox. [1 2 3]))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "rseq_dispatches_to_reversible_protocol" "[3 2 1]\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
+let test_deftype_protocol_methods_support_multiple_arities () =
+  let source =
+    {|
+(deftype LookupBox [value]
+  ILookup
+  (-lookup
+    ([_ key] (if (= key :value) value nil))
+    ([_ key not-found] (if (= key :value) value not-found))))
+(def box (LookupBox. 42))
+(println (str (get box :value) ":" (get box :missing 7)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "deftype_protocol_methods_support_multiple_arities" "42:7\n"
+    ocaml_source
+
+let test_macros_preserve_nested_parameter_type_hints () =
+  let source =
+    {|
+(defprotocol Identified
+  (-id [value]))
+(deftype Item [value]
+  Identified
+  (-id [_] value))
+(defn- choose-first-form [forms]
+  (first (drop 0 forms)))
+(defmacro first-form [forms]
+  (choose-first-form forms))
+(def item-value
+  (first-form
+    [(fn [^Item item]
+       (+ (.-value item) (-id item)))]))
+(println (item-value (Item. 21)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "macros_preserve_nested_parameter_type_hints" "42\n"
+    ocaml_source
+
+let test_protocol_calls_recover_structurally_inferred_named_records () =
+  let source =
+    {|
+(defprotocol Identified
+  (-id [value]))
+(deftype Item [value]
+  Identified
+  (-id [_] value))
+(defn item-score [item]
+  (+ (:value item) (-id item)))
+(println (item-score (Item. 21)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "protocol_calls_recover_structurally_inferred_named_records"
+    "42\n" ocaml_source
+
 let test_additional_sequence_helpers_reject_bad_counts () =
   Lg.Compiler.compile_string {|(def x (nthnext [1 2] "1"))|}
   |> expect_error "nthnext count must be int"
@@ -7868,6 +7895,25 @@ let test_dynamic_named_records_preserve_mutable_field_identity () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "dynamic_named_records_preserve_mutable_field_identity"
     "42\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
+let test_nil_and_sequential_guards_preserve_seqability () =
+  let source =
+    {|
+(defn guarded-count [values]
+  (if (or (nil? values) (sequential? values))
+    (count values)
+    -1))
+(println (guarded-count nil))
+(println (guarded-count [1 2]))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "nil_and_sequential_guards_preserve_seqability" "0\n2\n"
+    ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
   ignore
@@ -8761,7 +8807,7 @@ let test_compile_diagnostics_capture_ocaml_match_warnings () =
   in
   let compilation =
     Lg.Compiler.compile_string_with_filename_and_diagnostics
-      ~filename:"warning.lgc" source
+      ~filename:"warning.cljc" source
     |> expect_ok
   in
   match compilation.diagnostics with
@@ -8772,7 +8818,7 @@ let test_compile_diagnostics_capture_ocaml_match_warnings () =
       then
         failwith
           ("expected non-exhaustive match warning, got: " ^ diagnostic.message);
-      if not (string_contains_substring diagnostic.message "warning.lgc") then
+      if not (string_contains_substring diagnostic.message "warning.cljc") then
         failwith ("expected warning filename, got: " ^ diagnostic.message)
   | diagnostics ->
       failwith
@@ -8798,7 +8844,7 @@ let test_compile_diagnostics_are_empty_for_exhaustive_matches () =
 let test_parser_diagnostics_locate_unterminated_delimiters () =
   let source = "(def ok 1)\n(def broken [1 2" in
   match
-    Lg.Compiler.compile_string_with_filename ~filename:"broken.lgc" source
+    Lg.Compiler.compile_string_with_filename ~filename:"broken.cljc" source
   with
   | Ok _ -> failwith "expected an unterminated vector error"
   | Error error -> (
@@ -8806,7 +8852,7 @@ let test_parser_diagnostics_locate_unterminated_delimiters () =
         failwith ("unexpected parser error: " ^ error.message);
       match error.location with
       | Some location ->
-          if location.loc_start.Lexing.pos_fname <> "broken.lgc" then
+          if location.loc_start.Lexing.pos_fname <> "broken.cljc" then
             failwith "parser error should preserve the source filename";
           if location.loc_start.Lexing.pos_lnum <> 2 then
             failwith "parser error should point to the opening delimiter line";
@@ -8817,7 +8863,7 @@ let test_parser_diagnostics_locate_unterminated_delimiters () =
 let test_language_service_recovers_completed_prefix () =
   let source = "(def answer 41)\n(def broken (+ answer" in
   match
-    Lg.Language_service.recover_completed_prefix ~filename:"editing.lgc" source
+    Lg.Language_service.recover_completed_prefix ~filename:"editing.cljc" source
   with
   | None -> failwith "expected semantic analysis for the completed prefix"
   | Some analysis ->
@@ -8837,7 +8883,7 @@ let language_service_source =
 |}
 
 let analyze_language_service_source () =
-  Lg.Language_service.analyze ~filename:"file:///tmp/service.lgc"
+  Lg.Language_service.analyze ~filename:"file:///tmp/service.cljc"
     language_service_source
   |> expect_ok
 
@@ -8895,7 +8941,7 @@ let test_language_service_signature_help_uses_typed_call_site () =
 |}
   in
   let analysis =
-    Lg.Language_service.analyze ~filename:"file:///tmp/signature-help.lgc"
+    Lg.Language_service.analyze ~filename:"file:///tmp/signature-help.cljc"
       source
     |> expect_ok
   in
@@ -8933,7 +8979,7 @@ let test_language_service_references_use_typed_identity () =
 |}
   in
   let analysis =
-    Lg.Language_service.analyze ~filename:"file:///tmp/references.lgc" source
+    Lg.Language_service.analyze ~filename:"file:///tmp/references.cljc" source
     |> expect_ok
   in
   let top_level_usage = expect_substring_index source "value (use" in
@@ -8978,7 +9024,7 @@ let constructor_language_service_source =
 |}
 
 let analyze_constructor_language_service_source () =
-  Lg.Language_service.analyze ~filename:"file:///tmp/constructor-service.lgc"
+  Lg.Language_service.analyze ~filename:"file:///tmp/constructor-service.cljc"
     constructor_language_service_source
   |> expect_ok
 
@@ -9041,8 +9087,8 @@ let test_language_service_completion_includes_constructors () =
 let test_workspace_constructor_definition_resolves_across_files () =
   let provider = "(type-variant status Active (Named :string))\n" in
   let consumer = "(def named (Named \"Ada\"))\n" in
-  let provider_uri = "file:///tmp/status.lgc" in
-  let consumer_uri = "file:///tmp/status-main.lgc" in
+  let provider_uri = "file:///tmp/status.cljc" in
+  let consumer_uri = "file:///tmp/status-main.cljc" in
   let analyses =
     Lg.Language_service.analyze_workspace
       [ (consumer_uri, consumer); (provider_uri, provider) ]
@@ -9070,7 +9116,7 @@ let test_constructor_references_keep_module_identities_distinct () =
 |}
   in
   let analysis =
-    Lg.Language_service.analyze ~filename:"file:///tmp/constructor-modules.lgc"
+    Lg.Language_service.analyze ~filename:"file:///tmp/constructor-modules.cljc"
       source
     |> expect_ok
   in
@@ -9121,7 +9167,7 @@ let type_language_service_source =
 |}
 
 let analyze_type_language_service_source () =
-  Lg.Language_service.analyze ~filename:"file:///tmp/type-service.lgc"
+  Lg.Language_service.analyze ~filename:"file:///tmp/type-service.cljc"
     type_language_service_source
   |> expect_ok
 
@@ -9203,8 +9249,8 @@ let test_language_service_completion_includes_source_type_names () =
 let test_workspace_type_definition_resolves_across_files () =
   let provider = "(type-record user (name :string))\n" in
   let consumer = "(def ada (record user (name \"Ada\")))\n" in
-  let provider_uri = "file:///tmp/user-type.lgc" in
-  let consumer_uri = "file:///tmp/user-main.lgc" in
+  let provider_uri = "file:///tmp/user-type.cljc" in
+  let consumer_uri = "file:///tmp/user-main.cljc" in
   let analyses =
     Lg.Language_service.analyze_workspace
       [ (consumer_uri, consumer); (provider_uri, provider) ]
@@ -9232,7 +9278,7 @@ let test_type_references_keep_module_identities_distinct () =
 |}
   in
   let analysis =
-    Lg.Language_service.analyze ~filename:"file:///tmp/type-modules.lgc" source
+    Lg.Language_service.analyze ~filename:"file:///tmp/type-modules.cljc" source
     |> expect_ok
   in
   let usage =
@@ -9281,7 +9327,7 @@ let module_language_service_source =
 |}
 
 let analyze_module_language_service_source () =
-  Lg.Language_service.analyze ~filename:"file:///tmp/module-service.lgc"
+  Lg.Language_service.analyze ~filename:"file:///tmp/module-service.cljc"
     module_language_service_source
   |> expect_ok
 
@@ -9372,8 +9418,8 @@ let test_module_references_keep_module_identities_distinct () =
 let test_workspace_module_definition_resolves_across_files () =
   let provider = "(module Math (def answer 42))\n" in
   let consumer = "(def answer Math/answer)\n" in
-  let provider_uri = "file:///tmp/math-module.lgc" in
-  let consumer_uri = "file:///tmp/math-main.lgc" in
+  let provider_uri = "file:///tmp/math-module.cljc" in
+  let consumer_uri = "file:///tmp/math-main.cljc" in
   let analyses =
     Lg.Language_service.analyze_workspace
       [ (consumer_uri, consumer); (provider_uri, provider) ]
@@ -9442,7 +9488,7 @@ let module_construct_language_service_source =
 
 let analyze_module_construct_language_service_source () =
   Lg.Language_service.analyze
-    ~filename:"file:///tmp/module-construct-service.lgc"
+    ~filename:"file:///tmp/module-construct-service.cljc"
     module_construct_language_service_source
   |> expect_ok
 
@@ -9558,7 +9604,7 @@ let protocol_language_service_source =
 |}
 
 let analyze_protocol_language_service_source () =
-  Lg.Language_service.analyze ~filename:"file:///tmp/protocol-service.lgc"
+  Lg.Language_service.analyze ~filename:"file:///tmp/protocol-service.cljc"
     protocol_language_service_source
   |> expect_ok
 
@@ -9641,7 +9687,7 @@ let test_protocol_method_references_keep_protocol_identities_distinct () =
 |}
   in
   let analysis =
-    Lg.Language_service.analyze ~filename:"file:///tmp/protocol-identities.lgc"
+    Lg.Language_service.analyze ~filename:"file:///tmp/protocol-identities.cljc"
       source
     |> expect_ok
   in
@@ -9660,8 +9706,8 @@ let test_workspace_protocol_definition_resolves_across_files () =
      (extend-type :int Labelled (label [value] (str value)))\n"
   in
   let consumer = "(def result (Labelled/label 42))\n" in
-  let provider_uri = "file:///tmp/protocol-provider.lgc" in
-  let consumer_uri = "file:///tmp/protocol-consumer.lgc" in
+  let provider_uri = "file:///tmp/protocol-provider.cljc" in
+  let consumer_uri = "file:///tmp/protocol-consumer.cljc" in
   let analyses =
     Lg.Language_service.analyze_workspace
       [ (consumer_uri, consumer); (provider_uri, provider) ]
@@ -9689,7 +9735,7 @@ let test_module_and_protocol_namespaces_remain_distinct () =
   in
   let analysis =
     Lg.Language_service.analyze
-      ~filename:"file:///tmp/protocol-module-clash.lgc" source
+      ~filename:"file:///tmp/protocol-module-clash.cljc" source
     |> expect_ok
   in
   let module_usage = expect_substring_index source "Shared/value" in
@@ -9775,7 +9821,7 @@ let field_language_service_source =
 |}
 
 let analyze_field_language_service_source () =
-  Lg.Language_service.analyze ~filename:"file:///tmp/field-service.lgc"
+  Lg.Language_service.analyze ~filename:"file:///tmp/field-service.cljc"
     field_language_service_source
   |> expect_ok
 
@@ -9825,7 +9871,7 @@ let test_field_references_keep_record_identities_distinct () =
 |}
   in
   let analysis =
-    Lg.Language_service.analyze ~filename:"file:///tmp/field-identities.lgc"
+    Lg.Language_service.analyze ~filename:"file:///tmp/field-identities.cljc"
       source
     |> expect_ok
   in
@@ -9842,8 +9888,8 @@ let test_workspace_field_definition_resolves_across_files () =
   let consumer =
     "(def ada (record user (name \"Ada\")))\n(def label (:name ada))\n"
   in
-  let provider_uri = "file:///tmp/field-provider.lgc" in
-  let consumer_uri = "file:///tmp/field-consumer.lgc" in
+  let provider_uri = "file:///tmp/field-provider.cljc" in
+  let consumer_uri = "file:///tmp/field-consumer.cljc" in
   let analyses =
     Lg.Language_service.analyze_workspace
       [ (consumer_uri, consumer); (provider_uri, provider) ]
@@ -9963,7 +10009,7 @@ let test_language_service_document_symbols_preserve_source_names () =
 let test_language_service_recognizes_private_defn () =
   let source = "(defn- hidden [value] (+ value 1))\n" in
   let analysis =
-    Lg.Language_service.analyze ~filename:"file:///tmp/private-defn.lgc" source
+    Lg.Language_service.analyze ~filename:"file:///tmp/private-defn.cljc" source
     |> expect_ok
   in
   match Lg.Language_service.document_symbols analysis with
@@ -9988,7 +10034,7 @@ let document_symbol_hierarchy_source =
 let test_language_service_document_symbols_include_semantic_children () =
   let analysis =
     Lg.Language_service.analyze
-      ~filename:"file:///tmp/document-symbol-hierarchy.lgc"
+      ~filename:"file:///tmp/document-symbol-hierarchy.cljc"
       document_symbol_hierarchy_source
     |> expect_ok
   in
@@ -10025,7 +10071,7 @@ let test_language_service_document_symbols_include_semantic_children () =
 
 let test_language_service_semantic_tokens_classify_symbols () =
   let analysis =
-    Lg.Language_service.analyze ~filename:"file:///tmp/semantic-tokens.lgc"
+    Lg.Language_service.analyze ~filename:"file:///tmp/semantic-tokens.cljc"
       document_symbol_hierarchy_source
     |> expect_ok
   in
@@ -10074,24 +10120,24 @@ let test_language_service_workspace_resolves_cross_file_identity () =
   let main = "(def result (Math/magnitude-plus-two 40))\n" in
   let analyses =
     Lg.Language_service.analyze_workspace
-      [ ("file:///tmp/main.lgc", main); ("file:///tmp/math.lgc", math) ]
+      [ ("file:///tmp/main.cljc", main); ("file:///tmp/math.cljc", math) ]
     |> expect_ok
   in
-  let main_analysis = List.assoc "file:///tmp/main.lgc" analyses in
+  let main_analysis = List.assoc "file:///tmp/main.cljc" analyses in
   let usage = expect_substring_index main "Math/magnitude-plus-two 40" in
   if Lg.Language_service.semantic_uid_at main_analysis ~offset:usage = None then
     failwith "expected required workspace symbol to have a typed identity";
   match Lg.Language_service.definition main_analysis ~offset:usage with
   | Some location
-    when location.Location.loc_start.Lexing.pos_fname = "file:///tmp/math.lgc"
+    when location.Location.loc_start.Lexing.pos_fname = "file:///tmp/math.cljc"
     ->
       ()
-  | _ -> failwith "expected required workspace symbol definition in math.lgc"
+  | _ -> failwith "expected required workspace symbol definition in math.cljc"
 
 let test_workspace_index_reanalyzes_only_dependency_component () =
-  let math_uri = "file:///tmp/math.lgc" in
-  let main_uri = "file:///tmp/main.lgc" in
-  let other_uri = "file:///tmp/other.lgc" in
+  let math_uri = "file:///tmp/math.cljc" in
+  let main_uri = "file:///tmp/main.cljc" in
+  let other_uri = "file:///tmp/other.cljc" in
   let index =
     Lg.Language_service.create_workspace_index
       [
@@ -10128,8 +10174,8 @@ let test_workspace_index_reanalyzes_only_dependency_component () =
     failwith "unchanged workspace documents must not be reanalyzed"
 
 let test_workspace_index_tracks_top_level_symbol_dependencies () =
-  let values_uri = "file:///tmp/values.lgc" in
-  let consumer_uri = "file:///tmp/consumer.lgc" in
+  let values_uri = "file:///tmp/values.cljc" in
+  let consumer_uri = "file:///tmp/consumer.cljc" in
   let index =
     Lg.Language_service.create_workspace_index
       [
@@ -10150,15 +10196,15 @@ let test_workspace_index_tracks_module_alias_dependencies () =
   let analyses =
     Lg.Language_service.create_workspace_index
       [
-        ("file:///tmp/workspace-math.lgc", "(module Math (def value 42))\n");
-        ("file:///tmp/workspace-alias.lgc", "(module-alias M Math)\n");
-        ("file:///tmp/workspace-alias-user.lgc", "(def result M/value)\n");
+        ("file:///tmp/workspace-math.cljc", "(module Math (def value 42))\n");
+        ("file:///tmp/workspace-alias.cljc", "(module-alias M Math)\n");
+        ("file:///tmp/workspace-alias-user.cljc", "(def result M/value)\n");
       ]
     |> expect_ok
   in
   if
     Lg.Language_service.workspace_analysis analyses
-      "file:///tmp/workspace-alias-user.lgc"
+      "file:///tmp/workspace-alias-user.cljc"
     = None
   then failwith "workspace index must connect module alias consumers"
 
@@ -10166,22 +10212,22 @@ let test_workspace_index_tracks_variant_constructor_dependencies () =
   let analyses =
     Lg.Language_service.create_workspace_index
       [
-        ( "file:///tmp/workspace-status.lgc",
+        ( "file:///tmp/workspace-status.cljc",
           "(type-variant status Active (Named :string))\n" );
-        ( "file:///tmp/workspace-status-user.lgc",
+        ( "file:///tmp/workspace-status-user.cljc",
           "(def current (Named \"Ada\"))\n" );
       ]
     |> expect_ok
   in
   if
     Lg.Language_service.workspace_analysis analyses
-      "file:///tmp/workspace-status-user.lgc"
+      "file:///tmp/workspace-status-user.cljc"
     = None
   then failwith "workspace index must connect variant constructor consumers"
 
 let test_workspace_index_ignores_lexically_bound_names () =
-  let provider_uri = "file:///tmp/workspace-global-value.lgc" in
-  let local_uri = "file:///tmp/workspace-local-value.lgc" in
+  let provider_uri = "file:///tmp/workspace-global-value.cljc" in
+  let local_uri = "file:///tmp/workspace-local-value.cljc" in
   let index =
     Lg.Language_service.create_workspace_index
       [
@@ -10207,8 +10253,8 @@ let test_workspace_index_ignores_lexically_bound_names () =
     failwith "local-only files must reuse their previous analysis"
 
 let test_workspace_index_tracks_qualified_type_dependencies () =
-  let provider_uri = "file:///tmp/workspace-domain-type.lgc" in
-  let consumer_uri = "file:///tmp/workspace-domain-type-user.lgc" in
+  let provider_uri = "file:///tmp/workspace-domain-type.cljc" in
+  let consumer_uri = "file:///tmp/workspace-domain-type-user.cljc" in
   let index =
     Lg.Language_service.create_workspace_index
       [
@@ -10222,8 +10268,8 @@ let test_workspace_index_tracks_qualified_type_dependencies () =
       "qualified OCaml type annotations must depend on their module provider"
 
 let test_workspace_index_tracks_concise_type_dependencies () =
-  let provider_uri = "file:///tmp/a-workspace-domain-concise.lgc" in
-  let consumer_uri = "file:///tmp/z-workspace-domain-concise-user.lgc" in
+  let provider_uri = "file:///tmp/a-workspace-domain-concise.cljc" in
+  let consumer_uri = "file:///tmp/z-workspace-domain-concise-user.cljc" in
   let index =
     Lg.Language_service.create_workspace_index
       [
@@ -10241,8 +10287,8 @@ let test_workspace_index_tracks_concise_type_dependencies () =
     failwith "concise type annotations must invalidate their module consumers"
 
 let test_workspace_index_tracks_declaration_type_dependencies () =
-  let provider_uri = "file:///tmp/a-workspace-domain-declaration.lgc" in
-  let consumer_uri = "file:///tmp/z-workspace-domain-declaration-user.lgc" in
+  let provider_uri = "file:///tmp/a-workspace-domain-declaration.cljc" in
+  let consumer_uri = "file:///tmp/z-workspace-domain-declaration-user.cljc" in
   let consumer =
     {|
 (type-alias user-option :option<Domain.user>)
@@ -10267,9 +10313,9 @@ let test_workspace_index_tracks_declaration_type_dependencies () =
     failwith "type declarations must invalidate qualified type consumers"
 
 let test_workspace_index_separates_module_and_protocol_providers () =
-  let module_uri = "file:///tmp/workspace-shared-module.lgc" in
-  let protocol_uri = "file:///tmp/workspace-shared-protocol.lgc" in
-  let consumer_uri = "file:///tmp/workspace-shared-user.lgc" in
+  let module_uri = "file:///tmp/workspace-shared-module.cljc" in
+  let protocol_uri = "file:///tmp/workspace-shared-protocol.cljc" in
+  let consumer_uri = "file:///tmp/workspace-shared-user.cljc" in
   let index =
     Lg.Language_service.create_workspace_index
       [
@@ -10287,10 +10333,10 @@ let test_workspace_index_separates_module_and_protocol_providers () =
     failwith "module and protocol providers with the same name must coexist"
 
 let test_workspace_index_handles_file_removal_readd_and_rename () =
-  let provider_uri = "file:///tmp/lifecycle-math.lgc" in
-  let renamed_uri = "file:///tmp/lifecycle-renamed-math.lgc" in
-  let consumer_uri = "file:///tmp/lifecycle-main.lgc" in
-  let other_uri = "file:///tmp/lifecycle-other.lgc" in
+  let provider_uri = "file:///tmp/lifecycle-math.cljc" in
+  let renamed_uri = "file:///tmp/lifecycle-renamed-math.cljc" in
+  let consumer_uri = "file:///tmp/lifecycle-main.cljc" in
+  let other_uri = "file:///tmp/lifecycle-other.cljc" in
   let provider_source = "(module Math (def answer 42))\n" in
   let consumer_source = "(def result Math/answer)\n" in
   let index =
@@ -10347,9 +10393,9 @@ let test_workspace_index_rejects_duplicate_providers () =
   match
     Lg.Language_service.create_workspace_index
       [
-        ("file:///tmp/provider-one.lgc", "(def shared-value 1)\n");
-        ("file:///tmp/provider-two.lgc", "(def shared-value 2)\n");
-        ("file:///tmp/provider-user.lgc", "(def result shared-value)\n");
+        ("file:///tmp/provider-one.cljc", "(def shared-value 1)\n");
+        ("file:///tmp/provider-two.cljc", "(def shared-value 2)\n");
+        ("file:///tmp/provider-user.cljc", "(def result shared-value)\n");
       ]
   with
   | Error error
@@ -10361,9 +10407,9 @@ let test_workspace_index_rejects_duplicate_providers () =
   | Ok _ -> failwith "workspace index must reject duplicate symbol providers"
 
 let test_workspace_index_contains_component_errors () =
-  let math_uri = "file:///tmp/error-math.lgc" in
-  let main_uri = "file:///tmp/error-main.lgc" in
-  let other_uri = "file:///tmp/error-other.lgc" in
+  let math_uri = "file:///tmp/error-math.cljc" in
+  let main_uri = "file:///tmp/error-main.cljc" in
+  let other_uri = "file:///tmp/error-other.cljc" in
   let index =
     Lg.Language_service.create_workspace_index
       [
@@ -10394,8 +10440,8 @@ let test_workspace_index_contains_component_errors () =
     failwith "component errors must not discard unrelated cached analyses"
 
 let test_workspace_index_records_partial_component_errors () =
-  let math_uri = "file:///tmp/partial-math.lgc" in
-  let main_uri = "file:///tmp/partial-main.lgc" in
+  let math_uri = "file:///tmp/partial-math.cljc" in
+  let main_uri = "file:///tmp/partial-main.cljc" in
   let index =
     Lg.Language_service.create_workspace_index
       [
@@ -10412,8 +10458,8 @@ let test_workspace_index_records_partial_component_errors () =
     failwith "omitted component files must retain their analysis error"
 
 let test_workspace_diagnostics_belong_to_their_source_file () =
-  let status_uri = "file:///tmp/diagnostic-status.lgc" in
-  let main_uri = "file:///tmp/diagnostic-main.lgc" in
+  let status_uri = "file:///tmp/diagnostic-status.cljc" in
+  let main_uri = "file:///tmp/diagnostic-main.cljc" in
   let analyses =
     Lg.Language_service.analyze_workspace
       [
@@ -12345,18 +12391,10 @@ let tests =
       test_namespace_refer_clojure_exclude_allows_local_replacement );
     ( "namespace refer-clojure exclude hides core binding",
       test_namespace_refer_clojure_exclude_hides_core_binding );
-    ( "namespace accepts host import clause",
-      test_namespace_accepts_host_import_clause );
-    ( "namespace accepts qualified host import symbol",
-      test_namespace_accepts_qualified_host_import_symbol );
-    ( "namespace drops compile-time-only host import",
-      test_namespace_drops_compile_time_only_host_import );
-    ( "namespace rejects runtime unknown host import",
-      test_namespace_rejects_runtime_unknown_host_import );
+    ( "namespace rejects import clauses",
+      test_namespace_rejects_import_clause );
     ( "namespace ignores Clojure compiler directives",
       test_namespace_ignores_clojure_compiler_directives );
-    ( "host import type hint supports instance methods",
-      test_host_import_type_hint_supports_instance_methods );
     ( "System currentTimeMillis compiles for native",
       test_system_current_time_millis_compiles_for_native );
     ( "JavaScript targets compile Date and radix interop",
@@ -12757,8 +12795,6 @@ let tests =
       test_print_method_defmethod_writes_custom_record_representations );
     ( "Java Writer annotations work in ordinary functions",
       test_java_writer_annotations_work_in_ordinary_functions );
-    ( "Clojure Sorted annotations expose dynamic comparators",
-      test_clojure_sorted_annotations_expose_dynamic_comparators );
     ( "defn accepts attribute maps and return hints",
       test_defn_accepts_attribute_maps_and_return_hints );
     ( "compare supports dynamic scalar values",
@@ -12896,6 +12932,8 @@ let tests =
     ("assoc-in updates nested maps", test_assoc_in_updates_nested_maps);
     ( "assoc-in preserves named records with references",
       test_assoc_in_preserves_named_records_with_references );
+    ( "assoc accepts refined dynamic record fields",
+      test_assoc_accepts_refined_dynamic_record_fields );
     ( "threaded forms accumulate record fields",
       test_threaded_forms_accumulate_record_fields );
     ( "update infers record fields from updater functions",
@@ -13096,6 +13134,14 @@ let tests =
     ( "interleave requires two collections",
       test_interleave_requires_two_collections );
     ("additional sequence helpers work", test_additional_sequence_helpers_work);
+    ( "rseq dispatches to reversible protocol",
+      test_rseq_dispatches_to_reversible_protocol );
+    ( "deftype protocol methods support multiple arities",
+      test_deftype_protocol_methods_support_multiple_arities );
+    ( "macros preserve nested parameter type hints",
+      test_macros_preserve_nested_parameter_type_hints );
+    ( "protocol calls recover structurally inferred named records",
+      test_protocol_calls_recover_structurally_inferred_named_records );
     ( "additional sequence helpers reject bad counts",
       test_additional_sequence_helpers_reject_bad_counts );
     ( "some returns first truthy predicate value",
@@ -13173,6 +13219,8 @@ let tests =
       test_apply_calls_dynamic_runtime_functions );
     ( "dynamic named records preserve mutable field identity",
       test_dynamic_named_records_preserve_mutable_field_identity );
+    ( "nil and sequential guards preserve seqability",
+      test_nil_and_sequential_guards_preserve_seqability );
     ("apply rejects bad set reducers", test_apply_rejects_bad_set_reducers);
     ("set core api works", test_set_core_api);
     ("sets support named records", test_sets_support_named_records);

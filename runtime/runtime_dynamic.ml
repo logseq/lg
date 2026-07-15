@@ -1,5 +1,6 @@
 type _ nominal_tag = ..
 type nominal = Nominal : 'a nominal_tag * 'a -> nominal
+type _ nominal_tag += Uuid_tag : Runtime_uuid.t nominal_tag
 
 type t = {
   payload : payload;
@@ -49,6 +50,13 @@ let int value = make (Int value)
 let float value = make (Float value)
 let char value = make (Char value)
 let string value = make (String value)
+let uuid value = with_nominal Uuid_tag value (string (Runtime_uuid.to_string value))
+
+let as_uuid value : Runtime_uuid.t =
+  match nominal value with
+  | Some (Nominal (Uuid_tag, uuid)) -> uuid
+  | _ -> invalid_arg "dynamic value is not a UUID"
+
 let symbol value = make (Symbol value)
 let keyword value = make (Keyword value)
 let bool value = make (Bool value)
@@ -89,9 +97,10 @@ let rec to_string ~pr value =
   | Opaque (name, _) -> "<" ^ name ^ ">"
 
 and to_seq value =
-  match value.sequence with
-  | Some sequence -> sequence ()
-  | None -> invalid_arg "dynamic value is not seqable"
+  match (value.payload, value.sequence) with
+  | Nil, _ -> Seq.empty
+  | _, Some sequence -> sequence ()
+  | _, None -> invalid_arg "dynamic value is not seqable"
 
 let str value = to_string ~pr:false value
 let pr_str value = to_string ~pr:true value
@@ -350,7 +359,8 @@ let into target source =
   | _ -> invalid_arg "dynamic into target is not a collection"
 
 let is_sequential value = value.sequential
-let is_seqable value = Option.is_some value.sequence
+let is_seqable value =
+  match value.payload with Nil -> true | _ -> Option.is_some value.sequence
 
 let truthy value =
   match value.payload with Nil | Bool false -> false | _ -> true

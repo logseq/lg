@@ -47,6 +47,18 @@ let record_inference_compatible env ~allow_expected_dynamic expected_fields
 let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
   | TNullable inner ->
       TNullable (infer_named_record ~allow_dynamic_fields scope env inner)
+  | TArray inner ->
+      TArray (infer_named_record ~allow_dynamic_fields scope env inner)
+  | TRef inner -> TRef (infer_named_record ~allow_dynamic_fields scope env inner)
+  | TList inner ->
+      TList (infer_named_record ~allow_dynamic_fields scope env inner)
+  | TVector inner ->
+      TVector (infer_named_record ~allow_dynamic_fields scope env inner)
+  | TSet inner -> TSet (infer_named_record ~allow_dynamic_fields scope env inner)
+  | TSeq inner -> TSeq (infer_named_record ~allow_dynamic_fields scope env inner)
+  | TTuple items ->
+      TTuple
+        (List.map (infer_named_record ~allow_dynamic_fields scope env) items)
   | TOcaml_app ("option", [ inner ]) ->
       TOcaml_app
         ("option", [ infer_named_record ~allow_dynamic_fields scope env inner ])
@@ -145,21 +157,86 @@ let rec pattern_constraint_type = function
           pattern_constraint_type return_type )
   | ty -> ty
 
+let rec replace_post_result result_name = function
+  | Ast.FSymbol "%" -> Ast.FSymbol result_name
+  | Ast.FList forms ->
+      Ast.FList (List.map (replace_post_result result_name) forms)
+  | Ast.FVector forms ->
+      Ast.FVector (List.map (replace_post_result result_name) forms)
+  | Ast.FMap pairs ->
+      Ast.FMap
+        (List.map
+           (fun (key, value) ->
+             ( replace_post_result result_name key,
+               replace_post_result result_name value ))
+           pairs)
+  | form -> form
+
+let normalize_prepost_body = function
+  | Ast.FMap pairs :: body_forms as original ->
+      let clauses keyword =
+        pairs
+        |> List.find_map (function
+             | Ast.FKeyword key, Ast.FVector forms when key = keyword ->
+                 Some forms
+             | _ -> None)
+      in
+      let pre = clauses ":pre" in
+      let post = clauses ":post" in
+      if Option.is_none pre && Option.is_none post then original
+      else
+        let assertions forms =
+          List.map
+            (fun form -> Ast.FList [ Ast.FSymbol "assert"; form ])
+            forms
+        in
+        let pre = Option.value pre ~default:[] |> assertions in
+        let post = Option.value post ~default:[] in
+        if post = [] then pre @ body_forms
+        else
+          let result_name = "__lg_post_result" in
+          let result =
+            match body_forms with
+            | [] -> Ast.FSymbol "nil"
+            | [ form ] -> form
+            | forms -> Ast.FList (Ast.FSymbol "do" :: forms)
+          in
+          let post =
+            post
+            |> List.map (replace_post_result result_name)
+            |> assertions
+          in
+          pre
+          @ [
+              Ast.FList
+                [
+                  Ast.FSymbol "let";
+                  Ast.FVector [ Ast.FSymbol result_name; result ];
+                  Ast.FList
+                    (Ast.FSymbol "do" :: post
+                   @ [ Ast.FSymbol result_name ]);
+                ];
+            ]
+  | body_forms -> body_forms
+
 let prepare ?(param_type_overrides = []) ?variadic_rest_index
     ?compile_function_body ~lookup_function_ty ~compile_body scope env params
     body_forms =
+  let body_forms = normalize_prepost_body body_forms in
   match Destructure.parse_param_specs params with
   | Error _ as err -> err
   | Ok specs -> (
       let inference_params =
         specs
         |> List.mapi (fun index (spec : Destructure.param_spec) ->
-            let explicit_ty = Option.value spec.explicit_ty ~default:TUnknown in
-               let param_ty =
-                 match List.nth_opt param_type_overrides index with
-                 | Some (Some ty) when not (Types.equal ty TUnknown) -> ty
-                 | _ -> explicit_ty
-               in
+            let param_ty =
+              match spec.explicit_ty with
+              | Some ty when not (Types.equal ty TUnknown) -> ty
+              | _ -> (
+                  match List.nth_opt param_type_overrides index with
+                  | Some (Some ty) when not (Types.equal ty TUnknown) -> ty
+                  | _ -> TUnknown)
+            in
                let destructured =
                  if spec.destructured then
                    Destructure.pattern_names spec.pattern
@@ -212,12 +289,16 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                                | ty -> ty)
                          else inferred_ty
                        in
-                       match List.nth_opt param_type_overrides index with
-                    | Some (Some TUnknown) | None | Some None -> (
-                        match spec.Destructure.explicit_ty with
-                        | Some ty -> (spec, infer_named_record scope env ty)
-                           | None -> (spec, inferred_ty))
-                    | Some (Some ty) -> (spec, ty))
+                       match spec.Destructure.explicit_ty with
+                       | Some ty when not (Types.equal ty TUnknown) ->
+                           (spec, infer_named_record scope env ty)
+                       | _ -> (
+                           match List.nth_opt param_type_overrides index with
+                           | Some (Some ty) ->
+                               if Types.equal ty TUnknown then
+                                 (spec, inferred_ty)
+                               else (spec, ty)
+                           | None | Some None -> (spec, inferred_ty)))
               in
               let param_bindings =
                 typed_specs

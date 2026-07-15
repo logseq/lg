@@ -6,7 +6,7 @@ The goal is API familiarity, not JVM Clojure runtime identity.
 
 ## Shared source and target selection
 
-`.lgc` files are shared by native OCaml, Melange, and js_of_ocaml. Forms
+`.cljc` files are shared by native OCaml, Melange, and js_of_ocaml. Forms
 without reader conditionals are available on every target, and `native` is the
 default compiler target.
 
@@ -301,7 +301,7 @@ The CLI exposes the same state across files with
 `--compile-files ... -o output.ml` and `--run-files ...`. Input order defines
 compilation order. Each file keeps its own diagnostic filename and line map,
 while module/type state and the union of findlib package dependencies
-flow forward. A Dune rule can list `.lgc` files as dependencies, generate one
+flow forward. A Dune rule can list `.cljc` files as dependencies, generate one
 `.ml` target with `--compile-files`, and compile it through an ordinary library
 or executable stanza; see `examples/multi_file/dune`.
 

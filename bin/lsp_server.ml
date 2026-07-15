@@ -47,7 +47,7 @@ let rec lg_files path =
     Sys.readdir path |> Array.to_list
     |> List.filter (fun name -> not (excluded_directory name))
     |> List.concat_map (fun name -> lg_files (Filename.concat path name))
-  else if Filename.check_suffix path ".lgc" then [ path ]
+  else if Filename.check_suffix path ".cljc" then [ path ]
   else []
 
 let rebuild_workspace ?changed_uri () =
@@ -151,7 +151,7 @@ let update_watched_workspace_file uri change_type =
   if change_type = 3 then remove_workspace_source uri
   else
     let path = path_of_file_uri uri in
-    if Filename.check_suffix path ".lgc" && Sys.file_exists path then (
+    if Filename.check_suffix path ".cljc" && Sys.file_exists path then (
       Hashtbl.replace workspace_sources uri (read_file path);
       rebuild_workspace ~changed_uri:uri ())
     else []
@@ -321,7 +321,7 @@ let register_watched_files () =
                                 `List
                                   [ `Assoc
                                       [ ( "globPattern",
-                                          `String "**/*.lgc" );
+                                          `String "**/*.cljc" );
                                         ("kind", `Int 7) ] ] ) ] ) ] ] ) ] ) ])
 
 let initialize_result =

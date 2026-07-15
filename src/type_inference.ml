@@ -153,6 +153,8 @@ let constrain_optional_seqable ?(sequential = false) element_ty params name =
   in
   let rec add_constraint = function
     | TUnknown | TVar _ -> make_optional element_ty TUnknown
+    | TNullable _ | TOcaml_app ("option", [ _ ]) ->
+        Types.dynamic_constraint TUnknown
     | TOcaml_app (constraint_name, [ existing_element; value_ty ])
       when constraint_name = Types.seqable_constraint_name
            || constraint_name = Types.optional_seqable_constraint_name

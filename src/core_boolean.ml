@@ -128,6 +128,14 @@ let compile_nil_predicate name args expected_nil =
             in
             if expected_nil then is_empty
             else Semantic_ir.Prefix ("not", is_empty)
+        | ty when Types.is_dynamic ty ->
+            let is_nil =
+              Semantic_ir.Apply
+                ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.is_nil",
+                  [ arg.semantic_expr ] )
+            in
+            if expected_nil then is_nil
+            else Semantic_ir.Prefix ("not", is_nil)
         | _ ->
             Semantic_ir.Sequence
               [ arg.semantic_expr; Semantic_ir.Bool (not expected_nil) ]

@@ -143,23 +143,6 @@ let add_ocaml_alias_bindings env module_name alias =
   in
   Env.add_bindings bindings env
 
-let add_host_import env package class_name =
-  let module_path =
-    match Host_interop.imported_module ~package ~class_name with
-    | Some module_path -> Ok module_path
-    | None ->
-        Error.error
-          ("unsupported host import " ^ package ^ "." ^ class_name)
-  in
-  Result.map
-    (fun module_path ->
-      let binding =
-        Types.binding ~host_reference:(Ocaml_module module_path) module_path
-          (TOcaml "__module")
-      in
-      Env.add class_name binding env)
-    module_path
-
 let add_ocaml_refer_bindings env scope module_name names =
   let host_functions = ocaml_host_functions module_name in
   let module_path = ocaml_module_path module_name in

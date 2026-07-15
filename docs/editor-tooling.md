@@ -51,7 +51,7 @@ successfully parsed and typechecked top-level prefix, so hover, completion, and
 navigation remain available for definitions above the edit.
 
 When the client supports dynamic watched-file registration, the server
-registers `**/*.lgc` after initialization. File creation, changes, deletion,
+registers `**/*.cljc` after initialization. File creation, changes, deletion,
 and renames then update the dependency index and republish affected diagnostics.
 
 ## Neovim
@@ -82,13 +82,13 @@ cmd = { "dune", "exec", "lg", "--", "--lsp" }
 ## Emacs Eglot
 
 ```elisp
-(add-to-list 'auto-mode-alist '("\\.lgc\\'" . clojure-mode))
+(add-to-list 'auto-mode-alist '("\\.cljc\\'" . clojure-mode))
 (add-to-list 'eglot-server-programs
              '(clojure-mode . ("lg" "--lsp")))
 ```
 
 The core Reason editor baseline—types, formatting, diagnostics, completion, and
-jump-to-definition—is present. The server indexes `.lgc` files below the
+jump-to-definition—is present. The server indexes `.cljc` files below the
 workspace root, orders explicit module dependencies from compiler state, isolates
 invalid files, and provides cross-file definitions, references, rename, and
 workspace symbols, semantic tokens, signature help, delimiter quick fixes, and

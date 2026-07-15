@@ -39,8 +39,8 @@ datascript/test/lookup_refs.cljc:test-lookup-refs-transact	missing	-	-
 datascript/test/lookup_refs.cljc:test-lookup-refs-transact-multi	missing	-	-
 datascript/test/lookup_refs.cljc:lookup-refs-index-access	missing	-	-
 datascript/test/lookup_refs.cljc:test-lookup-refs-query	missing	-	-
-datascript/test/lru.cljc:test-lru	covered	test/datascript/lru_test.lgc	-
-datascript/test/lru.cljc:test-cache	covered	test/datascript/lru_test.lgc	-
+datascript/test/lru.cljc:test-lru	covered	test/datascript/lru_test.cljc	-
+datascript/test/lru.cljc:test-cache	covered	test/datascript/lru_test.cljc	-
 datascript/test/parser.cljc:bindings	missing	-	-
 datascript/test/parser.cljc:in	missing	-	-
 datascript/test/parser.cljc:with	missing	-	-

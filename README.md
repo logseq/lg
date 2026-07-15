@@ -2,7 +2,7 @@
 
 `lg` is a small prototype for a statically typed Lisp in the Clojure family.
 The current backend emits OCaml, so generated programs can be checked by the
-OCaml compiler and can interoperate with OCaml packages. `.lgc` source is
+OCaml compiler and can interoperate with OCaml packages. `.cljc` source is
 shared by the native OCaml, Melange, and js_of_ocaml environments.
 
 The compiler pipeline is intentionally split into lg syntax and typing
@@ -393,7 +393,7 @@ Run the tests:
 dune test
 ```
 
-## Shared `.lgc` targets
+## Shared `.cljc` targets
 
 Ordinary forms are shared by every target. No reader annotation is needed for
 portable code. The compiler defaults to `native`; select another environment
@@ -418,7 +418,7 @@ dependency remain native tools.
 Compile the example to OCaml:
 
 ```sh
-dune exec lg -- --target native examples/person.lgc -o /tmp/person.ml
+dune exec lg -- --target native examples/person.cljc -o /tmp/person.ml
 ocamlopt -I _build/default/vendor/rrbvec \
   -I _build/default/vendor/rrbvec/.rrbvec.objs/byte \
   -I _build/default/runtime \
@@ -433,16 +433,16 @@ ocamlopt -I _build/default/vendor/rrbvec \
 Run the example:
 
 ```sh
-dune exec lg -- --run examples/person.lgc
+dune exec lg -- --run examples/person.cljc
 ```
 
 Compile or run several lg files in one incremental compiler state:
 
 ```sh
 dune exec lg -- \
-  --compile-files src/math.lgc src/main.lgc -o app.ml
+  --compile-files src/math.cljc src/main.cljc -o app.ml
 dune exec lg -- \
-  --run-files src/math.lgc src/main.lgc
+  --run-files src/math.cljc src/main.cljc
 ```
 
 Files are processed in the supplied order. Modules, types,
@@ -451,7 +451,7 @@ to later files. Package dependencies are unioned for native linking, while
 errors retain the path and line of the owning input file.
 
 [`examples/multi_file/dune`](examples/multi_file/dune) is an executable Dune
-integration: a rule treats `.lgc` files as dependencies, generates `app.ml`,
+integration: a rule treats `.cljc` files as dependencies, generates `app.ml`,
 and compiles it with an ordinary executable stanza.
 
 Start compiler-backed editor diagnostics through the standard Language Server
@@ -466,7 +466,7 @@ warnings such as non-exhaustive and redundant matches; and provides
 Typedtree-backed hover types, jump-to-definition, type-detailed completion, and
 identity-aware references, rename, highlights, document/workspace symbols, and
 comment-preserving document formatting. Workspace indexing includes unopened
-`.lgc` files and supports cross-file definitions, references, and rename. It
+`.cljc` files and supports cross-file definitions, references, and rename. It
 tracks module and top-level symbol dependency components, reanalyzes only the
 component affected by an edit, reuses unrelated Typedtree analyses, and keeps
 unaffected files available while another component contains an error.

@@ -1,8 +1,8 @@
 let usage () =
   prerr_endline
-    "Usage: lg <input.lgc> [-o output.ml] | --interface <input.lgc> [-o \
-     output.mli] | --run <input.lgc> | --compile-files <input.lgc>... -o \
-     output.ml | --run-files <input.lgc>... | --lsp";
+    "Usage: lg <input.cljc> [-o output.ml] | --interface <input.cljc> [-o \
+     output.mli] | --run <input.cljc> | --compile-files <input.cljc>... -o \
+     output.ml | --run-files <input.cljc>... | --lsp";
   exit 2
 
 let read_file path =

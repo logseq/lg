@@ -268,6 +268,8 @@ let rec dynamic_unpack env ty expression =
     | TSymbol -> Some "Lg_runtime.Runtime_dynamic.as_symbol"
     | TKeyword -> Some "Lg_runtime.Runtime_dynamic.as_keyword"
     | TBool | TOcaml "bool" -> Some "Lg_runtime.Runtime_dynamic.as_bool"
+    | TOcaml "Lg_runtime.Runtime_uuid.t" ->
+        Some "Lg_runtime.Runtime_dynamic.as_uuid"
     | _ -> None
   in
   let unpack_record fields type_name =
@@ -661,6 +663,11 @@ and pack_dynamic_payload env expected_dynamic argument =
         Ok
           (Semantic_ir.Apply
              ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.string",
+               [ argument.semantic_expr ] ))
+    | TOcaml "Lg_runtime.Runtime_uuid.t" ->
+        Ok
+          (Semantic_ir.Apply
+             ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.uuid",
                [ argument.semantic_expr ] ))
     | TSymbol ->
         Ok
@@ -5252,10 +5259,18 @@ let create ~compile_expr =
     | "butlast" | "take-last" | "drop-last" | "take-nth" ->
         compile_sequence_transform_call scope env name arg_forms
               | "next" | "nthnext" | "nthrest" | "ffirst" | "fnext" | "nfirst"
-              | "nnext" | "rseq" -> (
+              | "nnext" -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok args -> Core_sequence.compile env name args)
+    | "rseq" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [ ({ ty = (TList _ | TVector _); _ } as collection) ] ->
+            Core_sequence.compile env name [ collection ]
+        | Ok [ _ ] ->
+            compile_protocol_call scope env "IReversible/-rseq" arg_forms
+        | Ok _ -> Error.error "rseq expects 1 arguments")
     | "some" -> compile_some scope env arg_forms
               | "split-at" ->
                   compile_sequence_transform_call scope env name arg_forms

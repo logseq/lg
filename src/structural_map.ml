@@ -125,7 +125,9 @@ let assoc target fields keyword value =
   match find_field keyword fields with
   | Some field
     when not
-           (Types.equal field.ty value.ty || unresolved_field field)
+           (Types.equal field.ty value.ty
+           || unresolved_field field
+           || (Types.is_dynamic field.ty && Types.is_dynamic value.ty))
     ->
       Error.error
         (Printf.sprintf "cannot assoc %s as %s because it is already %s" keyword

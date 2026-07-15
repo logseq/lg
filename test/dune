@@ -13,13 +13,13 @@
 
 (rule
  (target lgc_native.ml)
- (deps cross_runtime.lgc ../bin/lg_cli.exe)
+ (deps cross_runtime.cljc ../bin/lg_cli.exe)
  (action
   (run
    %{exe:../bin/lg_cli.exe}
    --target
    native
-   %{dep:cross_runtime.lgc}
+   %{dep:cross_runtime.cljc}
    -o
    %{target})))
 
@@ -30,13 +30,13 @@
 
 (rule
  (target lgc_melange.ml)
- (deps cross_runtime.lgc ../bin/lg_cli.exe)
+ (deps cross_runtime.cljc ../bin/lg_cli.exe)
  (action
   (run
    %{exe:../bin/lg_cli.exe}
    --target
    melange
-   %{dep:cross_runtime.lgc}
+   %{dep:cross_runtime.cljc}
    -o
    %{target})))
 
@@ -51,9 +51,9 @@
  (target datascript_value_native.ml)
  (deps
   (source_tree datascript)
-  datascript/value.lgc
-  datascript/schema.lgc
-  datascript/value_test.lgc
+  datascript/value.cljc
+  datascript/schema.cljc
+  datascript/value_test.cljc
   ../bin/lg_cli.exe)
  (action
   (run
@@ -61,9 +61,9 @@
    --target
    native
    --compile-files
-   %{dep:datascript/value.lgc}
-   %{dep:datascript/schema.lgc}
-   %{dep:datascript/value_test.lgc}
+   %{dep:datascript/value.cljc}
+   %{dep:datascript/schema.cljc}
+   %{dep:datascript/value_test.cljc}
    -o
    %{target})))
 
@@ -78,9 +78,9 @@
  (target datascript_value_melange.ml)
  (deps
   (source_tree datascript)
-  datascript/value.lgc
-  datascript/schema.lgc
-  datascript/value_test.lgc
+  datascript/value.cljc
+  datascript/schema.cljc
+  datascript/value_test.cljc
   ../bin/lg_cli.exe)
  (action
   (run
@@ -88,9 +88,9 @@
    --target
    melange
    --compile-files
-   %{dep:datascript/value.lgc}
-   %{dep:datascript/schema.lgc}
-   %{dep:datascript/value_test.lgc}
+   %{dep:datascript/value.cljc}
+   %{dep:datascript/schema.cljc}
+   %{dep:datascript/value_test.cljc}
    -o
    %{target})))
 
@@ -152,7 +152,7 @@
  (target datascript_lru_native.ml)
  (deps
   datascript/upstream/lru.cljc
-  datascript/lru_test.lgc
+  datascript/lru_test.cljc
   ../bin/lg_cli.exe)
  (action
   (run
@@ -161,7 +161,7 @@
    native
    --compile-files
    %{dep:datascript/upstream/lru.cljc}
-   %{dep:datascript/lru_test.lgc}
+   %{dep:datascript/lru_test.cljc}
    -o
    %{target})))
 
@@ -176,7 +176,7 @@
  (target datascript_lru_melange.ml)
  (deps
   datascript/upstream/lru.cljc
-  datascript/lru_test.lgc
+  datascript/lru_test.cljc
   ../bin/lg_cli.exe)
  (action
   (run
@@ -185,7 +185,7 @@
    melange
    --compile-files
    %{dep:datascript/upstream/lru.cljc}
-   %{dep:datascript/lru_test.lgc}
+   %{dep:datascript/lru_test.cljc}
    -o
    %{target})))
 
@@ -231,13 +231,13 @@
 
 (rule
  (target lgc_jsoo.ml)
- (deps cross_runtime.lgc ../bin/lg_cli.exe)
+ (deps cross_runtime.cljc ../bin/lg_cli.exe)
  (action
   (run
    %{exe:../bin/lg_cli.exe}
    --target
    js-of-ocaml
-   %{dep:cross_runtime.lgc}
+   %{dep:cross_runtime.cljc}
    -o
    %{target})))
 
@@ -270,15 +270,15 @@
  (deps
   cli_smoke.sh
   ../bin/lg_cli.exe
-  ../examples/person.lgc
-  ../examples/checkout.lgc
-  ../examples/protocols.lgc)
+  ../examples/person.cljc
+  ../examples/checkout.cljc
+  ../examples/protocols.cljc)
  (action
   (run
    sh
    %{dep:cli_smoke.sh}
    %{exe:../bin/lg_cli.exe}
-   %{dep:../examples/person.lgc})))
+   %{dep:../examples/person.cljc})))
 
 (rule
  (alias runtest)
@@ -339,7 +339,7 @@
  (target datascript_util_native.ml)
  (deps
   datascript/upstream/util.cljc
-  datascript/util_test.lgc
+  datascript/util_test.cljc
   ../bin/lg_cli.exe)
  (action
   (run
@@ -348,7 +348,7 @@
    native
    --compile-files
    %{dep:datascript/upstream/util.cljc}
-   %{dep:datascript/util_test.lgc}
+   %{dep:datascript/util_test.cljc}
    -o
    %{target})))
 
@@ -363,7 +363,7 @@
  (target datascript_util_melange.ml)
  (deps
   datascript/upstream/util.cljc
-  datascript/util_test.lgc
+  datascript/util_test.cljc
   ../bin/lg_cli.exe)
  (action
   (run
@@ -372,7 +372,7 @@
    melange
    --compile-files
    %{dep:datascript/upstream/util.cljc}
-   %{dep:datascript/util_test.lgc}
+   %{dep:datascript/util_test.cljc}
    -o
    %{target})))
 
@@ -403,8 +403,8 @@
 (rule
  (target persistent_sorted_set_arrays_native.ml)
  (deps
-  ../datascript/me/tonsky/persistent_sorted_set/arrays.lgc
-  datascript/persistent_sorted_set/arrays_test.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
+  datascript/persistent_sorted_set/arrays_test.cljc
   ../bin/lg_cli.exe)
  (action
   (run
@@ -412,8 +412,8 @@
    --target
    native
    --compile-files
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.lgc}
-   %{dep:datascript/persistent_sorted_set/arrays_test.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
+   %{dep:datascript/persistent_sorted_set/arrays_test.cljc}
    -o
    %{target})))
 
@@ -427,8 +427,8 @@
 (rule
  (target persistent_sorted_set_arrays_melange.ml)
  (deps
-  ../datascript/me/tonsky/persistent_sorted_set/arrays.lgc
-  datascript/persistent_sorted_set/arrays_test.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
+  datascript/persistent_sorted_set/arrays_test.cljc
   ../bin/lg_cli.exe)
  (action
   (run
@@ -436,8 +436,8 @@
    --target
    melange
    --compile-files
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.lgc}
-   %{dep:datascript/persistent_sorted_set/arrays_test.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
+   %{dep:datascript/persistent_sorted_set/arrays_test.cljc}
    -o
    %{target})))
 
@@ -468,8 +468,8 @@
 (rule
  (target persistent_sorted_set_path_native.ml)
  (deps
-  ../datascript/me/tonsky/persistent_sorted_set/path.lgc
-  datascript/persistent_sorted_set/path_test.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/path.cljc
+  datascript/persistent_sorted_set/path_test.cljc
   ../bin/lg_cli.exe)
  (action
   (run
@@ -477,8 +477,8 @@
    --target
    native
    --compile-files
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/path.lgc}
-   %{dep:datascript/persistent_sorted_set/path_test.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/path.cljc}
+   %{dep:datascript/persistent_sorted_set/path_test.cljc}
    -o
    %{target})))
 
@@ -492,8 +492,8 @@
 (rule
  (target persistent_sorted_set_path_melange.ml)
  (deps
-  ../datascript/me/tonsky/persistent_sorted_set/path.lgc
-  datascript/persistent_sorted_set/path_test.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/path.cljc
+  datascript/persistent_sorted_set/path_test.cljc
   ../bin/lg_cli.exe)
  (action
   (run
@@ -501,8 +501,8 @@
    --target
    melange
    --compile-files
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/path.lgc}
-   %{dep:datascript/persistent_sorted_set/path_test.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/path.cljc}
+   %{dep:datascript/persistent_sorted_set/path_test.cljc}
    -o
    %{target})))
 
@@ -533,10 +533,10 @@
 (rule
  (target persistent_sorted_set_helpers_native.ml)
  (deps
-  ../datascript/me/tonsky/persistent_sorted_set/arrays.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/array_ops.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/search.lgc
-  datascript/persistent_sorted_set/helpers_test.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/array_ops.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/search.cljc
+  datascript/persistent_sorted_set/helpers_test.cljc
   ../bin/lg_cli.exe)
  (action
   (run
@@ -544,10 +544,10 @@
    --target
    native
    --compile-files
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/array_ops.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/search.lgc}
-   %{dep:datascript/persistent_sorted_set/helpers_test.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/array_ops.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/search.cljc}
+   %{dep:datascript/persistent_sorted_set/helpers_test.cljc}
    -o
    %{target})))
 
@@ -561,10 +561,10 @@
 (rule
  (target persistent_sorted_set_helpers_melange.ml)
  (deps
-  ../datascript/me/tonsky/persistent_sorted_set/arrays.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/array_ops.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/search.lgc
-  datascript/persistent_sorted_set/helpers_test.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/array_ops.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/search.cljc
+  datascript/persistent_sorted_set/helpers_test.cljc
   ../bin/lg_cli.exe)
  (action
   (run
@@ -572,10 +572,10 @@
    --target
    melange
    --compile-files
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/array_ops.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/search.lgc}
-   %{dep:datascript/persistent_sorted_set/helpers_test.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/array_ops.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/search.cljc}
+   %{dep:datascript/persistent_sorted_set/helpers_test.cljc}
    -o
    %{target})))
 
@@ -608,14 +608,14 @@
 (rule
  (target persistent_sorted_set_leaf_native.ml)
  (deps
-  ../datascript/me/tonsky/persistent_sorted_set/arrays.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/array_ops.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/search.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/nodes.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/path.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/traversal.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/set.lgc
-  datascript/persistent_sorted_set/leaf_test.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/array_ops.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/search.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/nodes.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/path.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/traversal.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/set.cljc
+  datascript/persistent_sorted_set/leaf_test.cljc
   ../bin/lg_cli.exe)
  (action
   (run
@@ -623,14 +623,14 @@
    --target
    native
    --compile-files
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/array_ops.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/search.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/nodes.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/path.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/traversal.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/set.lgc}
-   %{dep:datascript/persistent_sorted_set/leaf_test.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/array_ops.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/search.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/nodes.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/path.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/traversal.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/set.cljc}
+   %{dep:datascript/persistent_sorted_set/leaf_test.cljc}
    -o
    %{target})))
 
@@ -644,14 +644,14 @@
 (rule
  (target persistent_sorted_set_leaf_melange.ml)
  (deps
-  ../datascript/me/tonsky/persistent_sorted_set/arrays.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/array_ops.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/search.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/nodes.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/path.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/traversal.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/set.lgc
-  datascript/persistent_sorted_set/leaf_test.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/array_ops.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/search.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/nodes.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/path.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/traversal.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/set.cljc
+  datascript/persistent_sorted_set/leaf_test.cljc
   ../bin/lg_cli.exe)
  (action
   (run
@@ -659,14 +659,14 @@
    --target
    melange
    --compile-files
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/array_ops.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/search.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/nodes.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/path.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/traversal.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/set.lgc}
-   %{dep:datascript/persistent_sorted_set/leaf_test.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/array_ops.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/search.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/nodes.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/path.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/traversal.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/set.cljc}
+   %{dep:datascript/persistent_sorted_set/leaf_test.cljc}
    -o
    %{target})))
 
@@ -699,14 +699,14 @@
 (rule
  (target persistent_sorted_set_storage_native.ml)
  (deps
-  ../datascript/me/tonsky/persistent_sorted_set/arrays.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/array_ops.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/search.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/nodes.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/path.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/traversal.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/set.lgc
-  datascript/persistent_sorted_set/storage_test.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/array_ops.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/search.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/nodes.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/path.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/traversal.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/set.cljc
+  datascript/persistent_sorted_set/storage_test.cljc
   ../bin/lg_cli.exe)
  (action
   (run
@@ -714,14 +714,14 @@
    --target
    native
    --compile-files
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/array_ops.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/search.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/nodes.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/path.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/traversal.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/set.lgc}
-   %{dep:datascript/persistent_sorted_set/storage_test.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/array_ops.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/search.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/nodes.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/path.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/traversal.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/set.cljc}
+   %{dep:datascript/persistent_sorted_set/storage_test.cljc}
    -o
    %{target})))
 
@@ -735,14 +735,14 @@
 (rule
  (target persistent_sorted_set_storage_melange.ml)
  (deps
-  ../datascript/me/tonsky/persistent_sorted_set/arrays.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/array_ops.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/search.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/nodes.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/path.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/traversal.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/set.lgc
-  datascript/persistent_sorted_set/storage_test.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/array_ops.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/search.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/nodes.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/path.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/traversal.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/set.cljc
+  datascript/persistent_sorted_set/storage_test.cljc
   ../bin/lg_cli.exe)
  (action
   (run
@@ -750,14 +750,14 @@
    --target
    melange
    --compile-files
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/array_ops.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/search.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/nodes.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/path.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/traversal.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/set.lgc}
-   %{dep:datascript/persistent_sorted_set/storage_test.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/array_ops.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/search.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/nodes.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/path.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/traversal.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/set.cljc}
+   %{dep:datascript/persistent_sorted_set/storage_test.cljc}
    -o
    %{target})))
 
@@ -790,14 +790,14 @@
 (rule
  (target persistent_sorted_set_benchmark_native.ml)
  (deps
-  ../datascript/me/tonsky/persistent_sorted_set/arrays.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/array_ops.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/search.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/nodes.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/path.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/traversal.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/set.lgc
-  datascript/persistent_sorted_set/benchmark.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/array_ops.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/search.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/nodes.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/path.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/traversal.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/set.cljc
+  datascript/persistent_sorted_set/benchmark.cljc
   ../bin/lg_cli.exe)
  (action
   (run
@@ -805,14 +805,14 @@
    --target
    native
    --compile-files
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/array_ops.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/search.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/nodes.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/path.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/traversal.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/set.lgc}
-   %{dep:datascript/persistent_sorted_set/benchmark.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/array_ops.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/search.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/nodes.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/path.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/traversal.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/set.cljc}
+   %{dep:datascript/persistent_sorted_set/benchmark.cljc}
    -o
    %{target})))
 
@@ -826,14 +826,14 @@
 (rule
  (target persistent_sorted_set_benchmark_melange.ml)
  (deps
-  ../datascript/me/tonsky/persistent_sorted_set/arrays.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/array_ops.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/search.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/nodes.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/path.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/traversal.lgc
-  ../datascript/me/tonsky/persistent_sorted_set/set.lgc
-  datascript/persistent_sorted_set/benchmark.lgc
+  ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/array_ops.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/search.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/nodes.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/path.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/traversal.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/set.cljc
+  datascript/persistent_sorted_set/benchmark.cljc
   ../bin/lg_cli.exe)
  (action
   (run
@@ -841,14 +841,14 @@
    --target
    melange
    --compile-files
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/array_ops.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/search.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/nodes.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/path.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/traversal.lgc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set/set.lgc}
-   %{dep:datascript/persistent_sorted_set/benchmark.lgc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/array_ops.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/search.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/nodes.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/path.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/traversal.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/set.cljc}
+   %{dep:datascript/persistent_sorted_set/benchmark.cljc}
    -o
    %{target})))
 

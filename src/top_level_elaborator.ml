@@ -380,36 +380,59 @@ let rec compile scope env next_type = function
                   let rec compile_groups env next_type items = function
                     | [] -> Ok (scope, env, next_type, Group items)
                     | (protocol_name, methods) :: rest -> (
-                        let methods =
-                          List.map
-                            (function
-                              | FList
-                                  (FSymbol method_name
-                                  :: (FVector (FSymbol receiver_name :: _) as
+                        let wrap_method method_name receiver_name params
+                            body_forms =
+                          let field_bindings =
+                            fields
+                            |> List.concat_map (fun field_name ->
+                                   [
+                                     FSymbol field_name;
+                                     FList
+                                       [
+                                         FSymbol (".-" ^ field_name);
+                                         FSymbol receiver_name;
+                                       ];
+                                   ])
+                          in
+                          FList
+                            [
+                              FSymbol method_name;
+                              params;
+                              FList
+                                (FSymbol "let" :: FVector field_bindings
+                               :: body_forms);
+                            ]
+                        in
+                        let expand_method = function
+                          | FList
+                              (FSymbol method_name
+                              :: (FVector (FSymbol receiver_name :: _) as params)
+                              :: body_forms) ->
+                              [
+                                wrap_method method_name receiver_name params
+                                  body_forms;
+                              ]
+                          | (FList (FSymbol method_name :: arities) as method_form)
+                            ->
+                              let rec expand acc = function
+                                | [] -> Some (List.rev acc)
+                                | FList
+                                    ((FVector (FSymbol receiver_name :: _) as
                                       params)
-                                  :: body_forms) ->
-                                  let field_bindings =
-                                    fields
-                                    |> List.concat_map (fun field_name ->
-                                        [
-                                          FSymbol field_name;
-                                             FList
-                                            [
-                                              FSymbol (".-" ^ field_name);
-                                                 FSymbol receiver_name;
-                                               ];
-                                           ])
-                                  in
-                                  FList
-                                    [
-                                      FSymbol method_name;
-                                      params;
-                                      FList
-                                        (FSymbol "let" :: FVector field_bindings
-                                        :: body_forms);
-                                    ]
-                              | method_form -> method_form)
-                            methods
+                                    :: body_forms)
+                                  :: rest ->
+                                    expand
+                                      (wrap_method method_name receiver_name
+                                         params body_forms
+                                      :: acc)
+                                      rest
+                                | _ -> None
+                              in
+                              Option.value (expand [] arities)
+                                ~default:[ method_form ]
+                          | method_form -> [ method_form ]
+                        in
+                        let methods = List.concat_map expand_method methods
                         in
                         let implementation_form =
                         match
@@ -519,6 +542,22 @@ let rec compile scope env next_type = function
             | [] -> Ok (scope, env, next_type, Group (List.rev items))
             | FSymbol interface_name :: rest ->
                 compile_methods env items (Some interface_name) rest
+            | FList (FSymbol method_name :: arities) :: rest
+              when arities <> []
+                   && List.for_all
+                        (function
+                          | FList (FVector _ :: _) -> true
+                          | _ -> false)
+                        arities ->
+                let methods =
+                  List.map
+                    (function
+                      | FList ((FVector _ as params) :: body_forms) ->
+                          FList (FSymbol method_name :: params :: body_forms)
+                      | _ -> assert false)
+                    arities
+                in
+                compile_methods env items current_interface (methods @ rest)
             | FList
                 (FSymbol method_name
                 :: (FVector params as params_form)
@@ -1512,28 +1551,6 @@ let rec compile scope env next_type = function
           let env = Env.add_core_exclusions ~scope names env in
           (scope, env, next_type, Comment "refer-clojure exclude"))
         (parse_names [] names)
-  | FList (FSymbol "host-import" :: entries) ->
-      let rec add_classes env package = function
-        | [] -> Ok env
-        | FSymbol class_name :: rest -> (
-            match Require.add_host_import env package class_name with
-            | Error _ as err -> err
-            | Ok env -> add_classes env package rest)
-        | _ -> Error.error ":import class names must be symbols"
-      in
-      let rec add_entries env = function
-        | [] -> Ok env
-        | FVector (FSymbol package :: classes) :: rest -> (
-            match add_classes env package classes with
-            | Error _ as err -> err
-            | Ok env -> add_entries env rest)
-        | _ ->
-            Error.error
-              ":import expects vectors containing a package and classes"
-      in
-      Result.map
-        (fun env -> (scope, env, next_type, Comment "host import"))
-        (add_entries env entries)
   | FList (FSymbol "defmacro" :: FSymbol name :: forms) ->
       Result.map
         (fun definition ->

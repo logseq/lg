@@ -1,6 +1,6 @@
 (rule
  (target app.ml)
- (deps math.lgc main.lgc)
+ (deps math.cljc main.cljc)
  (action
   (run %{exe:../../bin/lg_cli.exe} --compile-files %{deps} -o %{target})))
 

@@ -3,3 +3,5 @@
 *.cmo
 *.cmx
 *.o
+.lsp/
+.clj-kondo/
