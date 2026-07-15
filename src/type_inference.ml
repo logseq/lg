@@ -1734,6 +1734,16 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
                   (binding_values @ rewritten_body_forms)))
     | FList (FSymbol "fn" :: _params :: body_forms) ->
         infer_all params body_forms
+    | FList
+        [
+          FSymbol ("into" | "clojure.core/into");
+          target;
+          transducer;
+          source;
+        ] ->
+        Result.bind
+          (Core_form_expansion.apply_transducer source transducer)
+          (fun transformed -> infer_all params [ target; transformed ])
     | FList (FSymbol name :: args) -> infer_known_call name params args
     | FVector forms -> infer_all params forms
     | FMap pairs ->

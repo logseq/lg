@@ -7992,6 +7992,51 @@ let test_eduction_applies_map_filter_and_cat_transducers () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_into_applies_composed_transducers () =
+  let source =
+    {|
+(defn transform [values]
+  (into #{}
+    (comp
+      (filter (fn [value] (> value 1)))
+      (map inc))
+    values))
+(def transformed (transform [1 2 3]))
+(println
+  (str (count transformed) ":"
+       (contains? transformed 3) ":"
+       (contains? transformed 4)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "into_applies_composed_transducers" "2:true:true\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
+let test_into_transducers_build_dynamic_sets () =
+  let source =
+    {|
+(defrecord Datom [value])
+(defn retract [datoms]
+  (into #{}
+    (comp
+      (filter (fn [^Datom datom] (> (.-value datom) 1)))
+      (map (fn [^Datom datom] [:retract (.-value datom)])))
+    datoms))
+(def result (retract [(Datom. 1) (Datom. 2) (Datom. 3)]))
+(println (count result))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "into_transducers_build_dynamic_sets" "2\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
 let test_filter_accepts_dynamic_callable_record_fields () =
   let source =
     {|
@@ -12976,6 +13021,10 @@ let tests =
       test_into_accepts_inferred_seqable_parameters );
     ( "Eduction applies map filter and cat transducers",
       test_eduction_applies_map_filter_and_cat_transducers );
+    ( "into applies composed transducers",
+      test_into_applies_composed_transducers );
+    ( "into transducers build dynamic sets",
+      test_into_transducers_build_dynamic_sets );
     ( "filter accepts dynamic callable record fields",
       test_filter_accepts_dynamic_callable_record_fields );
     ( "sequence operations accept host optional collections",

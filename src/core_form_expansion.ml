@@ -53,3 +53,25 @@ let update_in target keys function_form argument_forms =
     | key :: rest -> key :: FSymbol "update" :: update_arguments rest
   in
   FList (FSymbol "update" :: target :: update_arguments keys)
+
+let rec apply_transducer collection = function
+  | FList [ FSymbol "map"; function_form ] ->
+      Ok (FList [ FSymbol "map"; function_form; collection ])
+  | FList [ FSymbol "filter"; predicate_form ] ->
+      Ok (FList [ FSymbol "filter"; predicate_form; collection ])
+  | FSymbol "cat" ->
+      Ok
+        (FList
+           [
+             FSymbol "mapcat";
+             FList
+               [ FSymbol "fn"; FVector [ FSymbol "value" ]; FSymbol "value" ];
+             collection;
+           ])
+  | FList (FSymbol "comp" :: transducers) ->
+      List.fold_left
+        (fun result transducer ->
+          Result.bind result (fun collection ->
+              apply_transducer collection transducer))
+        (Ok collection) transducers
+  | _ -> Error.error "transducers support map, filter, and cat"

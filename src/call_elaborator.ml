@@ -2242,30 +2242,7 @@ let create ~compile_expr =
       | Some separator ->
           String.sub name (separator + 1) (String.length name - separator - 1)
     in
-    let rec apply_transducer collection = function
-      | FList [ FSymbol "map"; function_form ] ->
-          Ok (FList [ FSymbol "map"; function_form; collection ])
-      | FList [ FSymbol "filter"; predicate_form ] ->
-          Ok (FList [ FSymbol "filter"; predicate_form; collection ])
-      | FSymbol "cat" ->
-          Ok
-            (FList
-               [
-                 FSymbol "mapcat";
-                 FList
-                   [
-                     FSymbol "fn"; FVector [ FSymbol "value" ]; FSymbol "value";
-                   ];
-                 collection;
-               ])
-      | FList (FSymbol "comp" :: transducers) ->
-          List.fold_left
-            (fun result transducer ->
-              Result.bind result (fun collection ->
-                  apply_transducer collection transducer))
-            (Ok collection) transducers
-      | _ -> Error.error "Eduction supports map, filter, and cat transducers"
-    in
+    let apply_transducer = Core_form_expansion.apply_transducer in
     if member_name = "->Eduction" then
       match arg_forms with
       | [ transducer; collection ] ->
@@ -5188,6 +5165,10 @@ let create ~compile_expr =
             | Ok target, Ok source ->
                           Core_sequence_transform.compile "into-cat"
                             [ target; source ])
+        | [ target_form; transducer_form; source_form ] ->
+            Result.bind (apply_transducer source_form transducer_form)
+              (fun transformed ->
+                compile_into scope env target_form transformed)
         | [ target_form; source_form ] ->
             compile_into scope env target_form source_form
                   | _ ->
