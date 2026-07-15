@@ -1,20 +1,19 @@
 open Types
 open Lowered
-
 module Env = Compiler_environment
 
 let rec truthiness_expression ty expression =
   match ty with
   | ty when Types.is_dynamic ty ->
       Semantic_ir.Apply
-        ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.truthy",
-          [ expression ] )
+        (Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.truthy", [ expression ])
   | TBool -> expression
   | TNil -> Semantic_ir.Sequence [ expression; Semantic_ir.Bool false ]
   | TNullable payload_ty ->
       Semantic_ir.Match
         ( expression,
-          [ (Semantic_ir.PConstructor ("None", None), Semantic_ir.Bool false);
+          [
+            (Semantic_ir.PConstructor ("None", None), Semantic_ir.Bool false);
             ( Semantic_ir.PConstructor
                 ("Some", Some (Semantic_ir.PVar "truthy_value")),
               truthiness_expression payload_ty
@@ -23,22 +22,27 @@ let rec truthiness_expression ty expression =
   | TOcaml_app ("option", [ _ ]) | TOcaml "option" ->
       Semantic_ir.Match
         ( expression,
-          [ (Semantic_ir.PConstructor ("None", None), Semantic_ir.Bool false);
+          [
+            (Semantic_ir.PConstructor ("None", None), Semantic_ir.Bool false);
             ( Semantic_ir.PConstructor ("Some", Some Semantic_ir.PAny),
               Semantic_ir.Bool true );
           ] )
   | TSeq _ ->
       Semantic_ir.Apply
         ( Semantic_ir.Ident "not",
-          [ Semantic_ir.Apply
+          [
+            Semantic_ir.Apply
               ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.is_empty",
-                [ expression ] ) ] )
+                [ expression ] );
+          ] )
   | TOcaml_app (name, [ _ ]) when name = Types.next_seq_type_name ->
       Semantic_ir.Apply
         ( Semantic_ir.Ident "not",
-          [ Semantic_ir.Apply
+          [
+            Semantic_ir.Apply
               ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.is_empty",
-                [ expression ] ) ] )
+                [ expression ] );
+          ] )
   | _ -> Semantic_ir.Sequence [ expression; Semantic_ir.Bool true ]
 
 let condition_expression expr =
@@ -50,20 +54,24 @@ let rec drop n xs =
   if n <= 0 then xs
   else match xs with [] -> [] | _ :: rest -> drop (n - 1) rest
 
-let option_for_all predicate = function None -> true | Some value -> predicate value
+let option_for_all predicate = function
+  | None -> true
+  | Some value -> predicate value
 
 let is_ocaml_owned_type = function
-  | TFloat | TChar | TArray _ | TRef _ | TOcaml _ | TOcaml_app _ | TTuple _ -> true
+  | TFloat | TChar | TArray _ | TRef _ | TOcaml _ | TOcaml_app _ | TTuple _ ->
+      true
   | _ -> false
 
 let is_ocaml_constructor_pattern_target target_ty name =
   is_ocaml_owned_type target_ty
-  || (match target_ty with
+  ||
+  match target_ty with
      | TNullable _ -> List.mem name [ "Some"; "None" ]
      | TUnknown | TVar _ ->
          List.mem name [ "Some"; "None"; "Ok"; "Error" ]
          || String.contains name '.' || String.contains name '/'
-     | _ -> false)
+  | _ -> false
 
 let plain_dynamic_compatible_type = function
   | TInt | TFloat | TChar | TString | TSymbol | TKeyword | TBool | TNil
@@ -97,10 +105,11 @@ let rec merge_branch_types left right =
           (fun merged -> TOcaml_app ("option", [ merged ]))
           (merge_branch_types left right)
     | TNullable inner, ty | ty, TNullable inner ->
-        Option.map (fun merged -> TNullable merged)
+        Option.map
+          (fun merged -> TNullable merged)
           (merge_branch_types inner ty)
-    | TOcaml_app ("option", [ inner ]), ty
-    | ty, TOcaml_app ("option", [ inner ]) ->
+    | TOcaml_app ("option", [ inner ]), ty | ty, TOcaml_app ("option", [ inner ])
+      ->
         Option.map
           (fun merged -> TOcaml_app ("option", [ merged ]))
           (merge_branch_types inner ty)
@@ -110,8 +119,7 @@ let rec merge_branch_types left right =
         Some (Types.dynamic_constraint TUnknown)
     | TList TUnknown, TList inner | TList inner, TList TUnknown ->
         Some (TList inner)
-    | TSeq TUnknown, TSeq inner | TSeq inner, TSeq TUnknown ->
-        Some (TSeq inner)
+    | TSeq TUnknown, TSeq inner | TSeq inner, TSeq TUnknown -> Some (TSeq inner)
     | TVector (TUnknown | TVar _), TVector inner
     | TVector inner, TVector (TUnknown | TVar _) ->
         Some (TVector inner)
@@ -131,8 +139,8 @@ let capability_storage_expression ty expression =
         match Types.protocol_constraint_info ty with
         | Some (protocol_id, _, value_ty) ->
             Semantic_ir.Tuple
-              [ Semantic_ir.Ident
-                  (Types.protocol_witness_name name protocol_id);
+              [
+                Semantic_ir.Ident (Types.protocol_witness_name name protocol_id);
                 build name value_ty;
               ]
         | None -> (
@@ -140,10 +148,11 @@ let capability_storage_expression ty expression =
             | TOcaml_app (constraint_name, [ _element_ty; value_ty ])
               when constraint_name = Types.seqable_constraint_name
                    || constraint_name = Types.optional_seqable_constraint_name
-                   || constraint_name =
-                      Types.optional_sequential_constraint_name ->
+                   || constraint_name
+                      = Types.optional_sequential_constraint_name ->
                 Semantic_ir.Tuple
-                  [ Semantic_ir.Ident
+                  [
+                    Semantic_ir.Ident
                       (if constraint_name = Types.seqable_constraint_name then
                          name ^ "__seq"
                        else name ^ "__seq_optional");
@@ -182,31 +191,39 @@ let rec pack_plain_dynamic_value value =
           match value.ty with
           | TVector _ ->
               runtime "vector"
-                [ Semantic_ir.Apply
+                [
+                  Semantic_ir.Apply
                     ( Semantic_ir.Ident "Rrbvec.map",
-                      [ mapper; value.semantic_expr ] ) ]
+                      [ mapper; value.semantic_expr ] );
+                ]
           | TList _ ->
               runtime "list"
-                [ Semantic_ir.Apply
+                [
+                  Semantic_ir.Apply
                     ( Semantic_ir.Ident "List.map",
-                      [ mapper; value.semantic_expr ] ) ]
+                      [ mapper; value.semantic_expr ] );
+                ]
           | _ ->
               runtime "seq"
-                [ Semantic_ir.Apply
+                [
+                  Semantic_ir.Apply
                     ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.map",
-                      [ mapper; value.semantic_expr ] ) ])
+                      [ mapper; value.semantic_expr ] );
+                ])
         (pack_plain_dynamic_value item)
   | TNamed_record record ->
       let rec fields packed = function
         | [] -> Some (List.rev packed)
-        | (field : field) :: rest ->
+        | (field : field) :: rest -> (
             let field_value =
               typed_ir field.ty (Structural_map.field_expr value field)
             in
-            (match pack_plain_dynamic_value field_value with
+            match pack_plain_dynamic_value field_value with
             | None -> None
             | Some field_value ->
-                let key = runtime "keyword" [ Semantic_ir.String field.keyword ] in
+                let key =
+                  runtime "keyword" [ Semantic_ir.String field.keyword ]
+                in
                 fields (Semantic_ir.Tuple [ key; field_value ] :: packed) rest)
       in
       Option.map
@@ -221,8 +238,7 @@ let coerce_expression_to_type ?(stored = false) target_ty source_ty expression =
   | TVector element_ty, source_ty when Types.is_dynamic source_ty ->
       let dynamic name arguments =
         Semantic_ir.Apply
-          ( Semantic_ir.Ident ("Lg_runtime.Runtime_dynamic." ^ name),
-            arguments )
+          (Semantic_ir.Ident ("Lg_runtime.Runtime_dynamic." ^ name), arguments)
       in
       let item_name = "__lg_dynamic_vector_item" in
       let item = Semantic_ir.Ident item_name in
@@ -240,11 +256,14 @@ let coerce_expression_to_type ?(stored = false) target_ty source_ty expression =
       in
       Semantic_ir.Apply
         ( Semantic_ir.Ident "Rrbvec.of_list",
-          [ Semantic_ir.Apply
+          [
+            Semantic_ir.Apply
               ( Semantic_ir.Ident "List.of_seq",
-                [ Semantic_ir.Apply
+                [
+                  Semantic_ir.Apply
                     ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.map",
-                      [ Semantic_ir.Fun
+                      [
+                        Semantic_ir.Fun
                           ([ Semantic_ir.PVar item_name ], unpacked_item);
                         dynamic "to_seq" [ expression ];
                       ] );
@@ -264,14 +283,16 @@ let coerce_expression_to_type ?(stored = false) target_ty source_ty expression =
       in
       Semantic_ir.Match
         ( expression,
-          [ ( Semantic_ir.PConstructor ("None", None),
+          [
+            ( Semantic_ir.PConstructor ("None", None),
               Semantic_ir.Constructor ("None", None) );
             ( Semantic_ir.PConstructor
                 ("Some", Some (Semantic_ir.PVar value_name)),
               Semantic_ir.Constructor ("Some", Some packed) );
           ] )
   | TNullable target, source
-    when Types.is_dynamic target && not (Types.is_dynamic source)
+    when Types.is_dynamic target
+         && (not (Types.is_dynamic source))
          && not (Types.equal source TNil) ->
       let value = typed_ir source expression in
       let packed =
@@ -280,7 +301,8 @@ let coerce_expression_to_type ?(stored = false) target_ty source_ty expression =
       in
       Semantic_ir.Constructor ("Some", Some packed)
   | TOcaml_app ("option", [ target ]), source
-    when Types.is_dynamic target && not (Types.is_dynamic source)
+    when Types.is_dynamic target
+         && (not (Types.is_dynamic source))
          && not (Types.equal source TNil) ->
       let value = typed_ir source expression in
       let packed =
@@ -304,7 +326,8 @@ let coerce_expression_to_type ?(stored = false) target_ty source_ty expression =
         else
           Semantic_ir.Match
             ( adapter,
-              [ ( Semantic_ir.PConstructor ("None", None),
+              [
+                ( Semantic_ir.PConstructor ("None", None),
                   Semantic_ir.Apply
                     ( Semantic_ir.Ident "invalid_arg",
                       [ Semantic_ir.String "value is not sequential" ] ) );
@@ -316,12 +339,10 @@ let coerce_expression_to_type ?(stored = false) target_ty source_ty expression =
       Semantic_ir.Match
         ( (if stored then expression
            else capability_storage_expression source_ty expression),
-          [ ( Semantic_ir.PTuple
-                [ Semantic_ir.PVar adapter_name;
-                  Semantic_ir.PVar value_name;
-                ],
-              Semantic_ir.Apply
-                (adapter, [ Semantic_ir.Ident value_name ]) );
+          [
+            ( Semantic_ir.PTuple
+                [ Semantic_ir.PVar adapter_name; Semantic_ir.PVar value_name ],
+              Semantic_ir.Apply (adapter, [ Semantic_ir.Ident value_name ]) );
           ] )
   | TNullable _, TNil -> expression
   | TNullable _, TNullable _ -> expression
@@ -339,8 +360,9 @@ let merge_branch_expressions left right =
     let rec merge types left_values right_values =
       match (types, left_values, right_values) with
       | [], [], [] -> Some ([], [], [])
-      | (left_ty, right_ty) :: types, left_value :: left_values,
-        right_value :: right_values ->
+      | ( (left_ty, right_ty) :: types,
+          left_value :: left_values,
+          right_value :: right_values ) ->
           let merged_ty =
             match merge_branch_types left_ty right_ty with
             | Some ty -> Some ty
@@ -365,17 +387,17 @@ let merge_branch_expressions left right =
     in
     merge (List.combine left_types right_types) left_items right_items
   in
-  match
-    (left.ty, right.ty)
-  with
+  match (left.ty, right.ty) with
   | TTuple left_types, TTuple right_types
     when List.length left_types = List.length right_types ->
       let left_names =
-        List.mapi (fun index _ -> "__lg_left_tuple_" ^ string_of_int index)
+        List.mapi
+          (fun index _ -> "__lg_left_tuple_" ^ string_of_int index)
           left_types
       in
       let right_names =
-        List.mapi (fun index _ -> "__lg_right_tuple_" ^ string_of_int index)
+        List.mapi
+          (fun index _ -> "__lg_right_tuple_" ^ string_of_int index)
           right_types
       in
       Option.map
@@ -383,7 +405,8 @@ let merge_branch_expressions left right =
           let rebuild expression names items =
             Semantic_ir.Match
               ( expression,
-                [ ( Semantic_ir.PTuple
+                [
+                  ( Semantic_ir.PTuple
                       (List.map (fun name -> Semantic_ir.PVar name) names),
                     Semantic_ir.Tuple items );
                 ] )
@@ -395,25 +418,29 @@ let merge_branch_expressions left right =
            (List.map (fun name -> Semantic_ir.Ident name) left_names)
            right_types
            (List.map (fun name -> Semantic_ir.Ident name) right_names))
-  | _ ->
+  | _ -> (
   let continue expression =
     Semantic_ir.Apply
-      (Semantic_ir.Ident "Lg_runtime.Runtime_reduced.continue", [ expression ])
+          ( Semantic_ir.Ident "Lg_runtime.Runtime_reduced.continue",
+            [ expression ] )
   in
   match (Types.reduced_element left.ty, Types.reduced_element right.ty) with
-  | Some left_inner, Some right_inner when Types.equal left_inner right_inner ->
+      | Some left_inner, Some right_inner
+        when Types.equal left_inner right_inner ->
       Some (left.ty, left.semantic_expr, right.semantic_expr)
   | Some TNil, None ->
       let nullable = TNullable right.ty in
       Some
         ( Types.reduced nullable,
           left.semantic_expr,
-          continue (Semantic_ir.Constructor ("Some", Some right.semantic_expr)) )
+              continue
+                (Semantic_ir.Constructor ("Some", Some right.semantic_expr)) )
   | None, Some TNil ->
       let nullable = TNullable left.ty in
       Some
         ( Types.reduced nullable,
-          continue (Semantic_ir.Constructor ("Some", Some left.semantic_expr)),
+              continue
+                (Semantic_ir.Constructor ("Some", Some left.semantic_expr)),
           right.semantic_expr )
   | Some inner, None when Types.equal inner right.ty ->
       Some (left.ty, left.semantic_expr, continue right.semantic_expr)
@@ -426,11 +453,10 @@ let merge_branch_expressions left right =
           Some
             ( result_ty,
               coerce_expression_to_type result_ty left.ty left.semantic_expr,
-              coerce_expression_to_type result_ty right.ty right.semantic_expr ))
+                  coerce_expression_to_type result_ty right.ty
+                    right.semantic_expr )))
 
-let unresolved_contextual_type = function
-  | TList TUnknown -> true
-  | _ -> false
+let unresolved_contextual_type = function TList TUnknown -> true | _ -> false
 
 let lg_metadata_type_for_ocaml_payload = function
   | TOcaml "int" -> TInt
@@ -475,8 +501,9 @@ let record_type_application type_name parameters =
   | [] -> type_name
   | [ _ ] -> "_ " ^ type_name
   | parameters ->
-      "(" ^ String.concat ", " (List.map (fun _ -> "_") parameters) ^ ") "
-      ^ type_name
+      "("
+      ^ String.concat ", " (List.map (fun _ -> "_") parameters)
+      ^ ") " ^ type_name
 
 let lookup_record_type = Resolver.lookup_record_type
 
@@ -488,7 +515,8 @@ let starts_with_uppercase name =
 
 let is_constructor_name name =
   let segments =
-    name |> String.split_on_char '/' |> List.concat_map (String.split_on_char '.')
+    name |> String.split_on_char '/'
+    |> List.concat_map (String.split_on_char '.')
   in
   match List.rev segments with
   | segment :: _ -> starts_with_uppercase segment
@@ -497,8 +525,9 @@ let is_constructor_name name =
 let lookup_binding = Resolver.lookup_binding
 
 let deftype_method_name (record : named_record) method_name arity =
-  "__deftype/" ^ Type_id.to_string record.type_id ^ "/" ^ method_name ^ "/"
-  ^ string_of_int arity
+  "__deftype/"
+  ^ Type_id.to_string record.type_id
+  ^ "/" ^ method_name ^ "/" ^ string_of_int arity
 
 let lookup_deftype_method scope env record method_name arity =
   lookup_binding scope env (deftype_method_name record method_name arity)
@@ -531,64 +560,213 @@ let allocate_anonymous_record ~owner env next_type fields =
         | TNamed_record record -> record
         | _ -> assert false
       in
-      { record;
+      {
+        record;
         env = Env.add_anonymous_record ~owner record env;
         next_type = next_type + 1;
-        fresh = true }
+        fresh = true;
+      }
+
+type nested_record_allocation = {
+  nested_fields : field list;
+  env : Env.t;
+  next_type : int;
+  items : compiled_item list;
+}
+
+let allocate_nested_anonymous_records ~owner env next_type fields =
+  let rec allocate_type env next_type items = function
+    | TRecord fields ->
+        let allocated = allocate_fields env next_type items fields in
+        let record =
+          allocate_anonymous_record ~owner allocated.env allocated.next_type
+            allocated.nested_fields
+        in
+        let items =
+          if record.fresh then
+            allocated.items
+            @ [
+                Type_def
+                  {
+                    type_name = record.record.type_name;
+                    type_parameters = record.record.type_parameters;
+                    fields = record.record.fields;
+                    location = None;
+                  };
+              ]
+          else allocated.items
+        in
+        (TNamed_record record.record, record.env, record.next_type, items)
+    | TNullable inner ->
+        map_inner env next_type items (fun inner -> TNullable inner) inner
+    | TOcaml_app (name, arguments) ->
+        let arguments, env, next_type, items =
+          allocate_types env next_type items arguments
+        in
+        (TOcaml_app (name, arguments), env, next_type, items)
+    | TTuple arguments ->
+        let arguments, env, next_type, items =
+          allocate_types env next_type items arguments
+        in
+        (TTuple arguments, env, next_type, items)
+    | TArray inner ->
+        map_inner env next_type items (fun inner -> TArray inner) inner
+    | TRef inner ->
+        map_inner env next_type items (fun inner -> TRef inner) inner
+    | TList inner ->
+        map_inner env next_type items (fun inner -> TList inner) inner
+    | TVector inner ->
+        map_inner env next_type items (fun inner -> TVector inner) inner
+    | TSet inner ->
+        map_inner env next_type items (fun inner -> TSet inner) inner
+    | TSeq inner ->
+        map_inner env next_type items (fun inner -> TSeq inner) inner
+    | TFn (parameters, return_type) ->
+        let parameters, env, next_type, items =
+          allocate_types env next_type items parameters
+        in
+        let return_type, env, next_type, items =
+          allocate_type env next_type items return_type
+        in
+        (TFn (parameters, return_type), env, next_type, items)
+    | TOverloaded_fn arities ->
+        let rec allocate_arities env next_type items allocated = function
+          | [] -> (TOverloaded_fn (List.rev allocated), env, next_type, items)
+          | arity :: rest ->
+              let fixed_params, env, next_type, items =
+                allocate_types env next_type items arity.fixed_params
+              in
+              let rest_param, env, next_type, items =
+                match arity.rest_param with
+                | None -> (None, env, next_type, items)
+                | Some rest_param ->
+                    let rest_param, env, next_type, items =
+                      allocate_type env next_type items rest_param
+                    in
+                    (Some rest_param, env, next_type, items)
+              in
+              let return_ty, env, next_type, items =
+                allocate_type env next_type items arity.return_ty
+              in
+              allocate_arities env next_type items
+                ({ fixed_params; rest_param; return_ty } :: allocated)
+                rest
+        in
+        allocate_arities env next_type items [] arities
+    | ( TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol
+      | TKeyword | TBool | TUnit | TNil | TUnknown | TVar _ | TOcaml _
+      | TNamed_record _ ) as ty ->
+        (ty, env, next_type, items)
+  and map_inner env next_type items wrap inner =
+    let inner, env, next_type, items =
+      allocate_type env next_type items inner
+    in
+    (wrap inner, env, next_type, items)
+  and allocate_types env next_type items types =
+    let rec loop env next_type items allocated = function
+      | [] -> (List.rev allocated, env, next_type, items)
+      | ty :: rest ->
+          let ty, env, next_type, items =
+            allocate_type env next_type items ty
+          in
+          loop env next_type items (ty :: allocated) rest
+    in
+    loop env next_type items [] types
+  and allocate_fields env next_type items fields =
+    let rec loop env next_type items allocated = function
+      | [] -> { nested_fields = List.rev allocated; env; next_type; items }
+      | (field : field) :: rest ->
+          let ty, env, next_type, items =
+            allocate_type env next_type items field.ty
+          in
+          loop env next_type items ({ field with ty } :: allocated) rest
+    in
+    loop env next_type items [] fields
+  in
+  allocate_fields env next_type [] fields
 
 let check_emitted_name_collision = Resolver.check_emitted_name_collision
 
 let lookup_function scope env name =
   match lookup_binding scope env name with
-  | Ok binding -> Ok (typed_ir binding.ty (Semantic_ir.Ident binding.ocaml_name))
+  | Ok binding ->
+      Ok (typed_ir binding.ty (Semantic_ir.Ident binding.ocaml_name))
   | Error _ -> (
       match name with
       | "+" ->
           Ok
-            (typed_ir (TFn ([ TInt; TInt ], TInt))
+            (typed_ir
+               (TFn ([ TInt; TInt ], TInt))
                (Semantic_ir.Fun
                   ( [ Semantic_ir.PVar "a"; Semantic_ir.PVar "b" ],
-                    Semantic_ir.Infix ("+", Semantic_ir.Ident "a", Semantic_ir.Ident "b") )))
+                    Semantic_ir.Infix
+                      ("+", Semantic_ir.Ident "a", Semantic_ir.Ident "b") )))
       | "-" ->
           Ok
-            (typed_ir (TFn ([ TInt; TInt ], TInt))
+            (typed_ir
+               (TFn ([ TInt; TInt ], TInt))
                (Semantic_ir.Fun
                   ( [ Semantic_ir.PVar "a"; Semantic_ir.PVar "b" ],
-                    Semantic_ir.Infix ("-", Semantic_ir.Ident "a", Semantic_ir.Ident "b") )))
+                    Semantic_ir.Infix
+                      ("-", Semantic_ir.Ident "a", Semantic_ir.Ident "b") )))
       | "*" ->
           Ok
-            (typed_ir (TFn ([ TInt; TInt ], TInt))
+            (typed_ir
+               (TFn ([ TInt; TInt ], TInt))
                (Semantic_ir.Fun
                   ( [ Semantic_ir.PVar "a"; Semantic_ir.PVar "b" ],
-                    Semantic_ir.Infix ("*", Semantic_ir.Ident "a", Semantic_ir.Ident "b") )))
+                    Semantic_ir.Infix
+                      ("*", Semantic_ir.Ident "a", Semantic_ir.Ident "b") )))
       | "/" ->
           Ok
-            (typed_ir (TFn ([ TInt; TInt ], TInt))
+            (typed_ir
+               (TFn ([ TInt; TInt ], TInt))
                (Semantic_ir.Fun
                   ( [ Semantic_ir.PVar "a"; Semantic_ir.PVar "b" ],
-                    Semantic_ir.Infix ("/", Semantic_ir.Ident "a", Semantic_ir.Ident "b") )))
+                    Semantic_ir.Infix
+                      ("/", Semantic_ir.Ident "a", Semantic_ir.Ident "b") )))
       | "inc" ->
           Ok
-            (typed_ir (TFn ([ TInt ], TInt))
+            (typed_ir
+               (TFn ([ TInt ], TInt))
                (Semantic_ir.Fun
                   ( [ Semantic_ir.PVar "x" ],
-                    Semantic_ir.Infix ("+", Semantic_ir.Ident "x", Semantic_ir.Int 1) )))
+                    Semantic_ir.Infix
+                      ("+", Semantic_ir.Ident "x", Semantic_ir.Int 1) )))
       | "dec" ->
           Ok
-            (typed_ir (TFn ([ TInt ], TInt))
+            (typed_ir
+               (TFn ([ TInt ], TInt))
                (Semantic_ir.Fun
                   ( [ Semantic_ir.PVar "x" ],
-                    Semantic_ir.Infix ("-", Semantic_ir.Ident "x", Semantic_ir.Int 1) )))
+                    Semantic_ir.Infix
+                      ("-", Semantic_ir.Ident "x", Semantic_ir.Int 1) )))
+      | ("max" | "min") as name ->
+          let comparison = if name = "max" then ">=" else "<=" in
+          Ok
+            (typed_ir
+               (TFn ([ TInt; TInt ], TInt))
+               (Semantic_ir.Fun
+                  ( [ Semantic_ir.PVar "a"; Semantic_ir.PVar "b" ],
+                    Semantic_ir.If
+                      ( Semantic_ir.Infix
+                          ( comparison,
+                            Semantic_ir.Ident "a",
+                            Semantic_ir.Ident "b" ),
+                        Semantic_ir.Ident "a",
+                        Semantic_ir.Ident "b" ) )))
       | "not" ->
           Ok
-            (typed_ir (TFn ([ TBool ], TBool))
+            (typed_ir
+               (TFn ([ TBool ], TBool))
                (Semantic_ir.Fun
                   ( [ Semantic_ir.PVar "x" ],
                     Semantic_ir.Prefix ("not", Semantic_ir.Ident "x") )))
       | "transient" ->
           let dynamic = Types.dynamic_constraint TUnknown in
           Ok
-            (typed_ir (TFn ([ dynamic ], dynamic))
+            (typed_ir
+               (TFn ([ dynamic ], dynamic))
                (Semantic_ir.Fun
                   ( [ Semantic_ir.PVar "collection" ],
                     Semantic_ir.Apply
@@ -598,13 +776,31 @@ let lookup_function scope env name =
       | "persistent!" ->
           let dynamic = Types.dynamic_constraint TUnknown in
           Ok
-            (typed_ir (TFn ([ dynamic ], dynamic))
+            (typed_ir
+               (TFn ([ dynamic ], dynamic))
                (Semantic_ir.Fun
                   ( [ Semantic_ir.PVar "collection" ],
                     Semantic_ir.Apply
-                      ( Semantic_ir.Ident
-                          "Lg_runtime.Runtime_dynamic.persistent",
+                      ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.persistent",
                         [ Semantic_ir.Ident "collection" ] ) )))
+      | "assoc" ->
+          let dynamic = Types.dynamic_constraint TUnknown in
+          Ok
+            (typed_ir
+               (TFn ([ dynamic; dynamic; dynamic ], dynamic))
+               (Semantic_ir.Fun
+                  ( [
+                      Semantic_ir.PVar "collection";
+                      Semantic_ir.PVar "key";
+                      Semantic_ir.PVar "value";
+                    ],
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.assoc",
+                        [
+                          Semantic_ir.Ident "collection";
+                          Semantic_ir.Ident "key";
+                          Semantic_ir.Ident "value";
+                        ] ) )))
       | _ -> Error.error ("unknown function " ^ name))
 
 let ocaml_call_target = Resolver.ocaml_call_target
@@ -615,16 +811,18 @@ let inherit_scope_ocaml_value_refers scope module_path env =
   let prefix = scope ^ "/" in
   let prefix_len = String.length prefix in
   let inherited =
-    Env.filter_map (fun key (binding : binding) ->
+    Env.filter_map
+      (fun key (binding : binding) ->
            match binding.host_reference with
-           | Some (Ocaml_value _) when
-               String.length key > prefix_len
+        | Some (Ocaml_value _)
+          when String.length key > prefix_len
                && String.sub key 0 prefix_len = prefix ->
                let name =
                  String.sub key prefix_len (String.length key - prefix_len)
                in
                Some (Names.scoped_key module_path name, binding)
-           | _ -> None) env
+        | _ -> None)
+      env
   in
   Env.add_bindings inherited env
 
@@ -697,8 +895,7 @@ let row_param_type_names prefix param_tys =
              match parameters with
              | [] -> type_name
              | [ parameter ] -> parameter ^ " " ^ type_name
-             | parameters ->
-                 "(" ^ String.concat ", " parameters ^ ") " ^ type_name
+          | parameters -> "(" ^ String.concat ", " parameters ^ ") " ^ type_name
            in
            Some applied_name
        | _ -> None)
@@ -717,8 +914,7 @@ let row_type_items row_type_names param_tys =
           in
           let fields, type_parameters = parameterize_row_fields fields in
           Some
-            (Type_def
-               { type_name; type_parameters; fields; location = None })
+            (Type_def { type_name; type_parameters; fields; location = None })
       | _ -> None)
     row_type_names param_tys
   |> List.filter_map Fun.id
@@ -730,7 +926,9 @@ let row_project_expr type_name fields arg =
       Semantic_ir.Record
         ( List.map
             (fun (field : field) ->
-              (field.ocaml_name, Semantic_ir.Field (Semantic_ir.Ident source, field.ocaml_name)))
+              ( field.ocaml_name,
+                Semantic_ir.Field (Semantic_ir.Ident source, field.ocaml_name)
+              ))
             fields,
           Some type_name ) )
 
@@ -756,11 +954,14 @@ let coerce_set_element element_ty value =
                 | None -> Error.error "set record coercion is missing a field"
                 | Some actual_field ->
                     project_fields
-                      ((field.ocaml_name, Structural_map.field_expr value actual_field) :: acc)
+                      (( field.ocaml_name,
+                         Structural_map.field_expr value actual_field )
+                      :: acc)
                       rest)
           in
           project_fields [] expected.fields
-          |> Result.map (fun fields -> Semantic_ir.Record (fields, Some expected.type_name))
+          |> Result.map (fun fields ->
+              Semantic_ir.Record (fields, Some expected.type_name))
       | _ -> Error.error "set value type must match record element type")
   | _ ->
       if Types.equal element_ty value.ty then Ok value.semantic_expr

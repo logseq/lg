@@ -312,5 +312,18 @@
 (extend-type btset Emptyable
   (-empty [set] (empty-set (set-comparator set))))
 
+(extend-type btset IReversible
+  (-rseq [set] (set-rseq set)))
+
+(extend-type btset IEditableCollection
+  (-as-transient [set] set))
+
+(extend-type btset ITransientCollection
+  (-conj! [set key] (set-conj set key))
+  (-persistent! [set] set))
+
+(extend-type btset ITransientSet
+  (-disjoin! [set key] (set-disj set key)))
+
 (extend-type btset Reducible
   (-reduce [set f initial] (set-reduce set f initial)))

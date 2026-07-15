@@ -11,6 +11,7 @@ let of_array_rev values =
     else Seq.Cons (Array.get values index, next (index - 1))
   in
   next (Array.length values - 1) |> memoize
+
 let of_string value = value |> String.to_seq |> memoize
 let to_list sequence = List.of_seq sequence
 let fold_left fn init sequence = Seq.fold_left fn init sequence
@@ -21,6 +22,14 @@ let rec for_all predicate sequence =
   | Seq.Cons (value, rest) -> predicate value && for_all predicate rest
 
 let map fn sequence = sequence |> Seq.map fn |> memoize
+
+let rec map2 fn left right =
+  memoize (fun () ->
+      match (left (), right ()) with
+      | Seq.Cons (left_value, left_rest), Seq.Cons (right_value, right_rest) ->
+          Seq.Cons (fn left_value right_value, map2 fn left_rest right_rest)
+      | Seq.Nil, _ | _, Seq.Nil -> Seq.Nil)
+
 let flat_map fn sequence = sequence |> Seq.flat_map fn |> memoize
 let filter predicate sequence = sequence |> Seq.filter predicate |> memoize
 
@@ -37,12 +46,12 @@ let distinct equal sequence =
 
 let concat sequences = List.fold_right Seq.append sequences Seq.empty |> memoize
 let take count sequence = sequence |> Seq.take count |> memoize
+
 let drop count sequence =
   if count = 1 then
-    match sequence () with
-    | Seq.Nil -> Seq.empty
-    | Seq.Cons (_, rest) -> rest
+    match sequence () with Seq.Nil -> Seq.empty | Seq.Cons (_, rest) -> rest
   else sequence |> Seq.drop count |> memoize
+
 let repeat value = Seq.repeat value |> memoize
 
 let range start step =
@@ -64,9 +73,7 @@ let first sequence =
   | Seq.Cons (value, _) -> value
 
 let first_opt sequence =
-  match sequence () with
-  | Seq.Nil -> None
-  | Seq.Cons (value, _) -> Some value
+  match sequence () with Seq.Nil -> None | Seq.Cons (value, _) -> Some value
 
 let second sequence =
   match sequence () with
@@ -90,9 +97,7 @@ let last sequence =
   | Seq.Cons (value, rest) -> Seq.fold_left (fun _ value -> value) value rest
 
 let is_empty sequence =
-  match sequence () with
-  | Seq.Nil -> true
-  | Seq.Cons _ -> false
+  match sequence () with Seq.Nil -> true | Seq.Cons _ -> false
 
 let zip_vectors collections =
   let length =

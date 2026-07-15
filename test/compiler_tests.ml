@@ -60,7 +60,8 @@ let expect_error_contains expected = function
   | Error (err : Lg.Compiler.compile_error) ->
       if not (string_contains_substring err.message expected) then
         failwith
-          (Printf.sprintf "expected error containing %S, got %S" expected err.message)
+          (Printf.sprintf "expected error containing %S, got %S" expected
+             err.message)
 
 let typecheck_items source =
   match Lg.Lexer.tokenize source with
@@ -79,8 +80,7 @@ let typecheck_state source =
       match Lg.Parser.parse tokens with
       | Error (err : Lg.Error.t) -> failwith err.message
       | Ok forms ->
-          Lg.Typecheck.compile_forms_incremental Lg.Typecheck.empty_state
-            forms
+          Lg.Typecheck.compile_forms_incremental Lg.Typecheck.empty_state forms
           |> expect_ok |> fst)
 
 let expect_structured_value_expression source =
@@ -111,13 +111,16 @@ let rec find_repo_root dir =
   if Sys.file_exists (Filename.concat dir "dune-project") then dir
   else
     let parent = Filename.dirname dir in
-    if parent = dir then failwith "could not find repo root" else find_repo_root parent
+    if parent = dir then failwith "could not find repo root"
+    else find_repo_root parent
 
 let repo_root () = find_repo_root (Sys.getcwd ())
 
-let rrbvec_build_dir () = Filename.concat (repo_root ()) "_build/default/vendor/rrbvec"
+let rrbvec_build_dir () =
+  Filename.concat (repo_root ()) "_build/default/vendor/rrbvec"
 
-let rrbvec_cmi_dir () = Filename.concat (rrbvec_build_dir ()) ".rrbvec.objs/byte"
+let rrbvec_cmi_dir () =
+  Filename.concat (rrbvec_build_dir ()) ".rrbvec.objs/byte"
 
 let lg_build_dir () = Filename.concat (repo_root ()) "_build/default/src"
 
@@ -125,7 +128,6 @@ let lg_runtime_build_dir () =
   Filename.concat (repo_root ()) "_build/default/runtime"
 
 let lg_byte_cmi_dir () = Filename.concat (lg_build_dir ()) ".lg.objs/byte"
-
 let lg_cma () = Filename.concat (lg_build_dir ()) "lg.cma"
 
 let lg_runtime_byte_cmi_dir () =
@@ -136,10 +138,7 @@ let lg_runtime_cma () =
 
 let rrbvec_cma () = Filename.concat (rrbvec_build_dir ()) "rrbvec.cma"
 
-type compile_job = {
-  name : string;
-  ocaml_source : string;
-}
+type compile_job = { name : string; ocaml_source : string }
 
 type run_job = {
   name : string;
@@ -180,7 +179,8 @@ let compile_only_command dir ml_path =
 let compile_and_run_command dir ml_path exe_path output_path =
   let compile_cmd =
     Printf.sprintf
-      "cd %s && ocamlc -I %s -I %s -I %s -I %s -I %s -I %s -o %s %s %s %s %s"
+      "cd %s && ocamlfind ocamlc -package re -linkpkg -I %s -I %s -I %s -I %s \
+       -I %s -I %s -o %s %s %s %s %s"
       (Filename.quote dir)
       (Filename.quote (rrbvec_build_dir ()))
       (Filename.quote (rrbvec_cmi_dir ()))
@@ -208,8 +208,8 @@ let compile_job_immediately (job : compile_job) =
   | 0 -> ()
   | code ->
       failwith
-        (Printf.sprintf "generated OCaml did not compile, exit code %d:\n%s" code
-           job.ocaml_source)
+        (Printf.sprintf "generated OCaml did not compile, exit code %d:\n%s"
+           code job.ocaml_source)
 
 let read_file path =
   let ic = open_in path in
@@ -231,14 +231,14 @@ let run_job_immediately (job : run_job) =
   match Sys.command compile_cmd with
   | code when code <> 0 ->
       failwith
-        (Printf.sprintf "generated OCaml did not compile, exit code %d:\n%s" code
-           job.ocaml_source)
+        (Printf.sprintf "generated OCaml did not compile, exit code %d:\n%s"
+           code job.ocaml_source)
   | _ -> (
       match Sys.command run_cmd with
       | code when code <> 0 ->
           failwith
-            (Printf.sprintf "generated executable failed, exit code %d:\n%s" code
-               job.ocaml_source)
+            (Printf.sprintf "generated executable failed, exit code %d:\n%s"
+               code job.ocaml_source)
       | _ ->
           let actual = read_file output_path in
           assert_equal_string job.expected_output actual)
@@ -249,7 +249,7 @@ let wrapped_module index source =
 let flush_compile_jobs (jobs : compile_job list) =
   match jobs with
   | [] -> ()
-  | _ ->
+  | _ -> (
       let dir = test_dir () in
       let ml_path = Filename.concat dir "compile_batch.ml" in
       let source =
@@ -259,17 +259,17 @@ let flush_compile_jobs (jobs : compile_job list) =
         |> String.concat "\n"
       in
       write_file ml_path source;
-      (match Sys.command (compile_only_command dir ml_path) with
+      match Sys.command (compile_only_command dir ml_path) with
       | 0 -> ()
       | code ->
           List.iter compile_job_immediately jobs;
           failwith
             (Printf.sprintf
-               "batched generated OCaml failed with exit code %d, but isolated cases passed"
+               "batched generated OCaml failed with exit code %d, but isolated \
+                cases passed"
                code))
 
-let run_marker phase index =
-  Printf.sprintf "__LG_TEST_%s_%04d__\n" phase index
+let run_marker phase index = Printf.sprintf "__LG_TEST_%s_%04d__\n" phase index
 
 let wrapped_run_module index (job : run_job) =
   Printf.sprintf "let () = print_string %S\n%slet () = print_string %S\n"
@@ -280,14 +280,12 @@ let wrapped_run_module index (job : run_job) =
 let flush_run_jobs (jobs : run_job list) =
   match jobs with
   | [] -> ()
-  | _ ->
+  | _ -> (
       let dir = test_dir () in
       let ml_path = Filename.concat dir "run_batch.ml" in
       let exe_path = Filename.concat dir "run_batch" in
       let output_path = Filename.concat dir "run_batch.out" in
-      let source =
-        jobs |> List.mapi wrapped_run_module |> String.concat "\n"
-      in
+      let source = jobs |> List.mapi wrapped_run_module |> String.concat "\n" in
       let expected =
         jobs
         |> List.mapi (fun index job ->
@@ -303,36 +301,42 @@ let flush_run_jobs (jobs : run_job list) =
         List.iter run_job_immediately jobs;
         failwith message
       in
-      (match Sys.command compile_cmd with
+      match Sys.command compile_cmd with
       | code when code <> 0 ->
           fallback
             (Printf.sprintf
-               "batched generated OCaml failed with exit code %d, but isolated cases passed"
+               "batched generated OCaml failed with exit code %d, but isolated \
+                cases passed"
                code)
       | _ -> (
           match Sys.command run_cmd with
           | code when code <> 0 ->
               fallback
                 (Printf.sprintf
-                   "batched generated executable failed with exit code %d, but isolated cases passed"
+                   "batched generated executable failed with exit code %d, but \
+                    isolated cases passed"
                    code)
           | _ ->
               let actual = read_file output_path in
               if actual <> expected then
-                fallback "batched generated output differed, but isolated cases passed"))
+                fallback
+                  "batched generated output differed, but isolated cases passed"
+          ))
 
 let assert_ocaml_compiles name ocaml_source =
   pending_compile_jobs := { name; ocaml_source } :: !pending_compile_jobs
 
 let assert_ocaml_runs name expected_output ocaml_source =
-  pending_run_jobs := { name; expected_output; ocaml_source } :: !pending_run_jobs
+  pending_run_jobs :=
+    { name; expected_output; ocaml_source } :: !pending_run_jobs
 
 let flush_ocaml_jobs () =
   let compile_jobs = List.rev !pending_compile_jobs in
   let run_jobs = List.rev !pending_run_jobs in
   pending_compile_jobs := [];
   pending_run_jobs := [];
-  time_phase "generated compile batch" (fun () -> flush_compile_jobs compile_jobs);
+  time_phase "generated compile batch" (fun () ->
+      flush_compile_jobs compile_jobs);
   time_phase "generated run batch" (fun () -> flush_run_jobs run_jobs)
 
 let test_records_assoc_and_dissoc () =
@@ -368,8 +372,7 @@ let test_dissoc_rejects_unknown_fields () =
 
 let test_map_rejects_duplicate_fields () =
   let source = {|(def x {:name "Ada", :name "Grace"})|} in
-  Lg.Compiler.compile_string source
-  |> expect_error "duplicate field :name"
+  Lg.Compiler.compile_string source |> expect_error "duplicate field :name"
 
 let test_hash_map_constructs_structural_maps () =
   let source =
@@ -379,7 +382,8 @@ let test_hash_map_constructs_structural_maps () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "hash_map_constructs_structural_maps" "Ada:36\n" ocaml_source
+  assert_ocaml_runs "hash_map_constructs_structural_maps" "Ada:36\n"
+    ocaml_source
 
 let test_hash_map_rejects_duplicate_fields () =
   Lg.Compiler.compile_string {|(def x (hash-map :name "Ada" :name "Grace"))|}
@@ -388,6 +392,20 @@ let test_hash_map_rejects_duplicate_fields () =
 let test_hash_map_rejects_odd_key_value_forms () =
   Lg.Compiler.compile_string {|(def x (hash-map :name "Ada" :age))|}
   |> expect_error "hash-map expects keyword/value pairs"
+
+let test_map_literals_accept_computed_keys () =
+  let source =
+    {|
+(defn nested [outer-key inner-key value]
+  {outer-key {inner-key value}})
+(def result (nested :outer :inner 42))
+(println (get (get result :outer) :inner))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "map_literals_accept_computed_keys" "42\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_anonymous_maps_reuse_equal_shapes () =
   let source =
@@ -450,8 +468,7 @@ let test_module_local_anonymous_maps_reuse_equal_shapes () =
 
 let test_incremental_anonymous_maps_reuse_equal_shapes () =
   let state, first =
-    Lg.Compiler.compile_chunk Lg.Compiler.empty_state
-      {|(def x {:a 1 :b "x"})|}
+    Lg.Compiler.compile_chunk Lg.Compiler.empty_state {|(def x {:a 1 :b "x"})|}
     |> expect_ok
   in
   let _state, second =
@@ -491,8 +508,8 @@ let test_declared_and_anonymous_records_share_dynamic_vectors () =
 |}
     |> expect_ok
   in
-  assert_ocaml_runs "declared_and_anonymous_records_share_dynamic_vectors"
-    "2\n" ocaml_source
+  assert_ocaml_runs "declared_and_anonymous_records_share_dynamic_vectors" "2\n"
+    ocaml_source
 
 let test_println_outputs_record_values () =
   let source =
@@ -504,23 +521,22 @@ let test_println_outputs_record_values () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "println_outputs_record_values" "{:name \"Ada\", :admin? true}\n"
-    ocaml_source
+  assert_ocaml_runs "println_outputs_record_values"
+    "{:name \"Ada\", :admin? true}\n" ocaml_source
 
 let test_println_rejects_unknown_symbols () =
   Lg.Compiler.compile_string {|(println missing)|}
   |> expect_error "unknown symbol missing"
 
 let test_print_and_println_match_clojure_output () =
-  let source =
-    {|
+  let source = {|
 (print "a")
 (print "b")
 (println "c")
-|}
-  in
+|} in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "print_and_println_match_clojure_output" "abc\n" ocaml_source
+  assert_ocaml_runs "print_and_println_match_clojure_output" "abc\n"
+    ocaml_source
 
 let test_core_api_nested_calls_maps_and_vectors () =
   let source =
@@ -549,7 +565,9 @@ let test_core_api_if_and_vector_ops () =
   assert_ocaml_runs "core_api_if_and_vector_ops" "ok:1:3\n" ocaml_source
 
 let test_boolean_core_api () =
-  let source = {|(println (str (not false) ":" (true? true) ":" (false? false)))|} in
+  let source =
+    {|(println (str (not false) ":" (true? true) ":" (false? false)))|}
+  in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "boolean_core_api" "true:true:true\n" ocaml_source
 
@@ -558,8 +576,8 @@ let test_not_uses_static_clojure_truthiness () =
     {|(println (str (not false) ":" (not 0) ":" (not "Ada") ":" (not [1])))|}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "not_uses_static_clojure_truthiness" "true:false:false:false\n"
-    ocaml_source
+  assert_ocaml_runs "not_uses_static_clojure_truthiness"
+    "true:false:false:false\n" ocaml_source
 
 let test_nil_predicates_and_truthiness_use_options () =
   let source =
@@ -597,8 +615,8 @@ let test_if_some_and_when_some_bind_option_payloads () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "if_some_and_when_some_bind_option_payloads"
-    "9\n8:0\n" ocaml_source
+  assert_ocaml_runs "if_some_and_when_some_bind_option_payloads" "9\n8:0\n"
+    ocaml_source
 
 let test_nil_predicates_evaluate_arguments_once () =
   let source =
@@ -645,8 +663,8 @@ let test_cond_uses_clojure_truthiness_and_implicit_nil () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "cond_uses_clojure_truthiness_and_implicit_nil"
-    "2:true\n" ocaml_source
+  assert_ocaml_runs "cond_uses_clojure_truthiness_and_implicit_nil" "2:true\n"
+    ocaml_source
 
 let test_if_let_and_if_some_distinguish_false_from_nil () =
   let source =
@@ -673,7 +691,8 @@ let test_nilable_vectors_lift_values_and_empty_vectors_are_polymorphic () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "nilable_vectors_lift_values_and_empty_vectors_are_polymorphic"
+  assert_ocaml_runs
+    "nilable_vectors_lift_values_and_empty_vectors_are_polymorphic"
     "42:2:true\n" ocaml_source
 
 let test_logical_forms_lift_nilable_operands () =
@@ -716,7 +735,8 @@ let test_type_predicates () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "type_predicates"
-    "true:true:true:true:true:true:true:true:true:false:false:false\n" ocaml_source
+    "true:true:true:true:true:true:true:true:true:false:false:false\n"
+    ocaml_source
 
 let test_type_predicates_reject_wrong_arity () =
   Lg.Compiler.compile_string {|(def x (vector? [1] [2]))|}
@@ -775,8 +795,7 @@ let test_type_relations_are_explicit_and_strict () =
   let name = Lg.Types.make_field ":name" Lg.Types.TString in
   let narrow = Lg.Types.TRecord [ name ] in
   let wide =
-    Lg.Types.TRecord
-      [ name; Lg.Types.make_field ":age" Lg.Types.TInt ]
+    Lg.Types.TRecord [ name; Lg.Types.make_field ":age" Lg.Types.TInt ]
   in
   if not (Lg.Types.row_compatible ~expected:narrow ~actual:wide) then
     failwith "wider structural records must remain row-compatible";
@@ -788,8 +807,7 @@ let test_type_relations_are_explicit_and_strict () =
     failwith "generated records must remain row-compatible with structural rows";
   if
     not
-      (Lg.Types.defer_to_ocaml
-         ~expected:(Lg.Types.TOcaml "user_id")
+      (Lg.Types.defer_to_ocaml ~expected:(Lg.Types.TOcaml "user_id")
          ~actual:Lg.Types.TInt)
   then failwith "opaque OCaml relationships must be explicitly deferred"
 
@@ -799,22 +817,20 @@ let test_assignability_reports_the_selected_semantic_rule () =
   let narrow = TRecord [ name ] in
   let wide = TRecord [ name; make_field ":age" TInt ] in
   let expect expected actual =
-    if actual <> expected then failwith "unexpected assignability classification"
+    if actual <> expected then
+      failwith "unexpected assignability classification"
   in
   expect Equal (classify_assignability ~expected:TInt ~actual:TInt);
   expect Unknown (classify_assignability ~expected:TUnknown ~actual:TInt);
-  expect Row_compatible
-    (classify_assignability ~expected:narrow ~actual:wide);
+  expect Row_compatible (classify_assignability ~expected:narrow ~actual:wide);
   expect Deferred_to_ocaml
     (classify_assignability ~expected:(TOcaml "user_id") ~actual:TInt);
-  expect Incompatible
-    (classify_assignability ~expected:TString ~actual:TInt);
+  expect Incompatible (classify_assignability ~expected:TString ~actual:TInt);
   if assignable ~policy:Nominal ~expected:narrow ~actual:wide then
     failwith "nominal assignment must not accept structural width";
   if not (assignable ~policy:Structural ~expected:narrow ~actual:wide) then
     failwith "structural assignment should accept wider records";
-  if
-    assignable ~policy:Structural ~expected:(TOcaml "user_id") ~actual:TInt
+  if assignable ~policy:Structural ~expected:(TOcaml "user_id") ~actual:TInt
   then failwith "structural assignment must not defer to OCaml";
   if
     not
@@ -861,8 +877,8 @@ let test_declared_type_ids_preserve_source_identity () =
     Lg.Type_registry.find_by_emitted_name "Domain.user_profile"
       (Lg.Compiler_environment.types state.env)
   with
-  | Some declaration
-    when Lg.Type_id.equal declaration.type_id record.type_id -> ()
+  | Some declaration when Lg.Type_id.equal declaration.type_id record.type_id ->
+      ()
   | _ -> failwith "module type declarations must survive in the typed registry"
 
 let test_type_namespace_rejects_emitted_name_collisions () =
@@ -891,9 +907,7 @@ let test_compiler_identities_are_stable_and_distinct () =
     failwith "protocol identity must preserve its qualified source name"
 
 let test_typed_protocol_and_module_registries () =
-  let protocol =
-    Lg.Protocol_id.create ~owner:[ "Domain" ] ~name:"Labelled"
-  in
+  let protocol = Lg.Protocol_id.create ~owner:[ "Domain" ] ~name:"Labelled" in
   let method_id =
     Lg.Method_id.create ~owner:[ "Domain"; "Labelled" ] ~name:"label"
   in
@@ -949,15 +963,12 @@ let test_typed_protocol_and_module_registries () =
 
 let test_protocol_elaboration_populates_typed_registry () =
   let state =
-    typecheck_state
-      {|
+    typecheck_state {|
 (defprotocol Labelled (label [x] :string))
 |}
   in
   let protocol = Lg.Protocol_id.create ~owner:[] ~name:"Labelled" in
-  let method_id =
-    Lg.Method_id.create ~owner:[ "Labelled" ] ~name:"label"
-  in
+  let method_id = Lg.Method_id.create ~owner:[ "Labelled" ] ~name:"label" in
   match
     Lg.Protocol_registry.find_method protocol method_id
       (Lg.Compiler_environment.protocols state.env)
@@ -974,9 +985,7 @@ let test_protocol_implementation_populates_typed_registry () =
 |}
   in
   let protocol = Lg.Protocol_id.create ~owner:[] ~name:"Labelled" in
-  let method_id =
-    Lg.Method_id.create ~owner:[ "Labelled" ] ~name:"label"
-  in
+  let method_id = Lg.Method_id.create ~owner:[ "Labelled" ] ~name:"label" in
   match
     Lg.Protocol_registry.find_implementation protocol method_id
       Lg.Protocol_registry.Int_receiver
@@ -994,17 +1003,14 @@ let test_module_protocols_preserve_typed_registry_state () =
   (extend-type :int Labelled (label [x] (str x))))
 |}
   in
-  let protocol =
-    Lg.Protocol_id.create ~owner:[ "Labels" ] ~name:"Labelled"
-  in
+  let protocol = Lg.Protocol_id.create ~owner:[ "Labels" ] ~name:"Labelled" in
   let method_id =
     Lg.Method_id.create ~owner:[ "Labels"; "Labelled" ] ~name:"label"
   in
   let protocols = Lg.Compiler_environment.protocols state.env in
   if
     Lg.Protocol_registry.find_method protocol method_id protocols = None
-    ||
-    Lg.Protocol_registry.find_implementation protocol method_id
+    || Lg.Protocol_registry.find_implementation protocol method_id
       Lg.Protocol_registry.Int_receiver protocols
     = None
   then failwith "module compilation must preserve typed protocol registry state"
@@ -1067,8 +1073,7 @@ let test_protocol_metadata_does_not_use_encoded_symbol_keys () =
     failwith "protocol metadata must not be encoded as symbol-table keys"
 
 let test_emitted_ocaml_names_reject_source_collisions () =
-  Lg.Compiler.compile_string
-    {|
+  Lg.Compiler.compile_string {|
 (def foo-bar 1)
 (def foo_bar 2)
 |}
@@ -1141,13 +1146,11 @@ let test_typed_environment_respects_lexical_shadowing () =
     ocaml_source
 
 let test_typed_environment_replaces_top_level_bindings () =
-  let source =
-    {|
+  let source = {|
 (def value 1)
 (def value "Ada")
 (println value)
-|}
-  in
+|} in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "typed_environment_replaces_top_level_bindings" "Ada\n"
     ocaml_source
@@ -1163,32 +1166,29 @@ let test_compiler_phases_have_explicit_boundaries () =
     failwith "resolver should return the typed binding";
   ignore (Lg.Lowering.structure_of_located_items []);
   let expression =
-      Lg.Expression_elaborator.compile_expr ""
-        Lg.Compiler_environment.empty (Lg.Ast.FInt 1)
+    Lg.Expression_elaborator.compile_expr "" Lg.Compiler_environment.empty
+      (Lg.Ast.FInt 1)
       |> expect_ok
     in
     if expression.ty <> Lg.Types.TInt then
       failwith "expression elaboration should have one owner";
     match
-      Lg.Top_level_elaborator.compile ""
-        Lg.Compiler_environment.empty 1 (Lg.Ast.FInt 1)
+    Lg.Top_level_elaborator.compile "" Lg.Compiler_environment.empty 1
+      (Lg.Ast.FInt 1)
       |> expect_ok
     with
-    | _, _, _, Lg.Lowered.Value_binding _ ->
+  | _, _, _, Lg.Lowered.Value_binding _ -> (
         if
           not
-            (Lg.Expression_support.branch_types_compatible
-               Lg.Types.TInt Lg.Types.TInt)
+          (Lg.Expression_support.branch_types_compatible Lg.Types.TInt
+             Lg.Types.TInt)
         then failwith "expression semantic helpers should have one owner";
         let parts : Lg.Expression_support.compiled_fn_parts =
           {
-            param_bindings =
-              [ ("x", Lg.Types.binding "x" Lg.Types.TInt) ];
+          param_bindings = [ ("x", Lg.Types.binding "x" Lg.Types.TInt) ];
             param_identities = [ None ];
             destructured_bindings = [];
-            body =
-              Lg.Types.typed_ir Lg.Types.TInt
-                (Lg.Semantic_ir.Ident "x");
+          body = Lg.Types.typed_ir Lg.Types.TInt (Lg.Semantic_ir.Ident "x");
           }
         in
         let fn = Lg.Function_elaborator.fn_code parts in
@@ -1199,9 +1199,8 @@ let test_compiler_phases_have_explicit_boundaries () =
             Lg.Special_form_elaborator.create
               ~compile_expr:Lg.Expression_elaborator.compile_expr
           in
-          operations.compile_if ""
-            Lg.Compiler_environment.empty (Lg.Ast.FBool true)
-            (Lg.Ast.FInt 1) (Lg.Ast.FInt 2)
+        operations.compile_if "" Lg.Compiler_environment.empty
+          (Lg.Ast.FBool true) (Lg.Ast.FInt 1) (Lg.Ast.FInt 2)
           |> expect_ok
         in
         if conditional.ty <> Lg.Types.TInt then
@@ -1211,8 +1210,8 @@ let test_compiler_phases_have_explicit_boundaries () =
             Lg.Call_elaborator.create
               ~compile_expr:Lg.Expression_elaborator.compile_expr
           in
-          operations.compile_call ""
-            Lg.Compiler_environment.empty "inc" [ Lg.Ast.FInt 1 ]
+        operations.compile_call "" Lg.Compiler_environment.empty "inc"
+          [ Lg.Ast.FInt 1 ]
           |> expect_ok
         in
         if call.ty <> Lg.Types.TInt then
@@ -1221,9 +1220,11 @@ let test_compiler_phases_have_explicit_boundaries () =
           let operations =
             Lg.Collection_operation_elaborator.create
               ~compile_expr:Lg.Expression_elaborator.compile_expr
+            ~pack_dynamic_value:(fun _env _expected value ->
+              Ok value.Lg.Types.semantic_expr)
+            ~dynamic_unpack:(fun _env _expected expression -> Ok expression)
           in
-          operations.compile_list ""
-            Lg.Compiler_environment.empty
+        operations.compile_list "" Lg.Compiler_environment.empty
             [ Lg.Ast.FInt 1; Lg.Ast.FInt 2 ]
           |> expect_ok
         in
@@ -1235,13 +1236,12 @@ let test_compiler_phases_have_explicit_boundaries () =
               ~compile_expr:Lg.Expression_elaborator.compile_expr
               ~dynamic_unpack:(fun _ _ expression -> Ok expression)
           in
-          operations.compile_identity ""
-            Lg.Compiler_environment.empty [ Lg.Ast.FInt 1 ]
+        operations.compile_identity "" Lg.Compiler_environment.empty
+          [ Lg.Ast.FInt 1 ]
           |> expect_ok
         in
-        if
-          identity.ty <> Lg.Types.TInt
-        then failwith "core higher-order call elaboration should have one owner";
+      if identity.ty <> Lg.Types.TInt then
+        failwith "core higher-order call elaboration should have one owner";
         let context =
           Lg.Elaboration_context.create
             ~compile_expr:Lg.Expression_elaborator.compile_expr
@@ -1267,47 +1267,43 @@ let test_compiler_phases_have_explicit_boundaries () =
         if result.ty <> Lg.Types.TInt then
           failwith "typed elaboration context should route calls";
         let scalar =
-          Lg.Expression_elaborator.compile_expr ""
-            Lg.Compiler_environment.empty (Lg.Ast.FInt 7)
+        Lg.Expression_elaborator.compile_expr "" Lg.Compiler_environment.empty
+          (Lg.Ast.FInt 7)
           |> expect_ok
         in
         (match Lg.Semantic_ir.unlocated scalar.semantic_expr with
         | Lg.Semantic_ir.Int 7 -> ()
         | _ -> failwith "typed expressions should carry semantic AST nodes");
-        (match Lg.Lowering.expression scalar.semantic_expr with
+      match Lg.Lowering.expression scalar.semantic_expr with
         | Lg.Ocaml_ir.Int 7 -> ()
         | _ -> failwith "semantic lowering should produce backend IR")
     | _ -> failwith "top-level elaboration should have one owner"
 
 let test_semantic_ast_preserves_nested_types () =
   let expression =
-    Lg.Expression_elaborator.compile_expr ""
-      Lg.Compiler_environment.empty
-      (Lg.Ast.FList
-         [ Lg.Ast.FSymbol "+"; Lg.Ast.FInt 1; Lg.Ast.FInt 2 ])
+    Lg.Expression_elaborator.compile_expr "" Lg.Compiler_environment.empty
+      (Lg.Ast.FList [ Lg.Ast.FSymbol "+"; Lg.Ast.FInt 1; Lg.Ast.FInt 2 ])
     |> expect_ok
   in
-  let annotations =
-    Lg.Semantic_ir.type_annotations expression.semantic_expr
-  in
+  let annotations = Lg.Semantic_ir.type_annotations expression.semantic_expr in
   if annotations <> [ Lg.Types.TInt; Lg.Types.TInt; Lg.Types.TInt ] then
     failwith "semantic AST must preserve parent and child expression types"
 
 let test_source_node_identity_reaches_parsetree () =
   let source = "(def answer (+ 1 2))" in
   let structure =
-    Lg.Compiler.compile_parsetree_with_filename ~filename:"identity.lgc"
-      source
+    Lg.Compiler.compile_parsetree_with_filename ~filename:"identity.lgc" source
     |> expect_ok
   in
   let node_ids = ref [] in
   let iterator =
-    { Ast_iterator.default_iterator with
+    {
+      Ast_iterator.default_iterator with
       expr =
         (fun self expression ->
           List.iter
-            (fun ({ Parsetree.attr_name = { txt; _ }; _ } : Parsetree.attribute) ->
-              if txt = "lg.node_id" then node_ids := txt :: !node_ids)
+            (fun ({ Parsetree.attr_name = { txt; _ }; _ } : Parsetree.attribute)
+               -> if txt = "lg.node_id" then node_ids := txt :: !node_ids)
             expression.pexp_attributes;
           Ast_iterator.default_iterator.expr self expression);
     }
@@ -1315,17 +1311,19 @@ let test_source_node_identity_reaches_parsetree () =
   iterator.structure iterator structure;
   match !node_ids with
   | [] -> failwith "expected source node identities on lowered expressions"
-  | _ ->
+  | _ -> (
       let analysis =
         Lg.Toolchain.analyze ~filename:"identity.lgc" source |> expect_ok
       in
       let typed_node_ids = ref 0 in
       let iterator =
-        { Tast_iterator.default_iterator with
+        {
+          Tast_iterator.default_iterator with
           expr =
             (fun self expression ->
               List.iter
-                (fun ({ Parsetree.attr_name = { txt; _ }; _ } : Parsetree.attribute) ->
+                (fun ({ Parsetree.attr_name = { txt; _ }; _ } :
+                       Parsetree.attribute) ->
                   if txt = "lg.node_id" then incr typed_node_ids)
                 expression.exp_attributes;
               Tast_iterator.default_iterator.expr self expression);
@@ -1335,14 +1333,13 @@ let test_source_node_identity_reaches_parsetree () =
       if !typed_node_ids = 0 then
         failwith "expected source node identities on typed expressions";
       let language_analysis =
-        Lg.Language_service.analyze ~filename:"identity.lgc" source
-        |> expect_ok
+        Lg.Language_service.analyze ~filename:"identity.lgc" source |> expect_ok
       in
       let offset = expect_substring_index source "1" in
       match Lg.Language_service.source_node_id_at language_analysis ~offset with
       | Some id when String.starts_with ~prefix:"identity.lgc:" id -> ()
       | Some id -> failwith ("unexpected source node identity " ^ id)
-      | None -> failwith "expected LSP lookup to return a source node identity"
+      | None -> failwith "expected LSP lookup to return a source node identity")
 
 let test_source_node_identity_covers_value_bindings () =
   let source = "(def answer 42)" in
@@ -1363,8 +1360,8 @@ let test_source_node_identity_covers_record_value_bindings () =
   let offset = expect_substring_index source "user" in
   match Lg.Language_service.source_node_id_at analysis ~offset with
   | Some id
-    when Lg.Language_service.source_node_id_range id
-         = Some (offset, offset + 4) ->
+    when Lg.Language_service.source_node_id_range id = Some (offset, offset + 4)
+    ->
       ()
   | _ -> failwith "record value binding must preserve exact source identity"
 
@@ -1459,7 +1456,8 @@ let test_source_node_identity_covers_match_bindings () =
 let test_source_node_identity_covers_loop_bindings () =
   let filename = "loop-identity.lgc" in
   let source =
-    "(def result (loop [counter 0] (if (= counter 2) counter (recur (inc counter)))))"
+    "(def result (loop [counter 0] (if (= counter 2) counter (recur (inc \
+     counter)))))"
   in
   let analysis = Lg.Language_service.analyze ~filename source |> expect_ok in
   expect_source_id_at_text filename source analysis "counter"
@@ -1487,8 +1485,7 @@ let test_modules_resolve_qualified_symbols () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "modules_resolve_qualified_symbols" "Ada!\n"
-    ocaml_source
+  assert_ocaml_runs "modules_resolve_qualified_symbols" "Ada!\n" ocaml_source
 
 let test_modules_prevent_unqualified_symbol_collisions () =
   let source =
@@ -1536,7 +1533,8 @@ let test_namespace_require_aliases_local_modules_across_files () =
     |> expect_ok
   in
   assert_ocaml_runs "namespace_require_aliases_local_modules_across_files"
-    "42\n" (math_ocaml ^ "\n" ^ main_ocaml)
+    "42\n"
+    (math_ocaml ^ "\n" ^ main_ocaml)
 
 let test_namespace_load_only_require_exposes_qualified_clojure_string () =
   let source =
@@ -1561,9 +1559,8 @@ let test_namespace_refer_clojure_exclude_allows_local_replacement () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs
-    "namespace_refer_clojure_exclude_allows_local_replacement" "42\n"
-    ocaml_source
+  assert_ocaml_runs "namespace_refer_clojure_exclude_allows_local_replacement"
+    "42\n" ocaml_source
 
 let test_namespace_refer_clojure_exclude_hides_core_binding () =
   Lg.Compiler.compile_string
@@ -1575,13 +1572,11 @@ let test_namespace_refer_clojure_exclude_hides_core_binding () =
   |> expect_error "unknown function find"
 
 let test_namespace_accepts_host_import_clause () =
-  let source =
-    {|
+  let source = {|
 (ns app.uuid
   (:import [java.util UUID]))
 (println 42)
-|}
-  in
+|} in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "namespace_accepts_host_import_clause" "42\n" ocaml_source
 
@@ -1668,9 +1663,11 @@ let test_javascript_targets_compile_date_and_radix_interop () =
 (def now (.getTime (js/Date.)))
 |}
   in
-  ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source
+    |> expect_ok)
 
 let test_transient_collection_operations_preserve_values () =
   let source =
@@ -1712,11 +1709,9 @@ let test_assert_accepts_optional_message () =
   assert_ocaml_runs "assert_accepts_optional_message" "42\n" ocaml_source
 
 let test_into_cat_flattens_one_collection_level () =
-  let source =
-    {|
+  let source = {|
 (println (= [1 2 3] (into [] cat [[1 2] [3]])))
-|}
-  in
+|} in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "into_cat_flattens_one_collection_level" "true\n"
     ocaml_source
@@ -1735,6 +1730,22 @@ let test_mapv_vector_zips_multiple_collections () =
   assert_ocaml_runs "mapv_vector_zips_multiple_collections" "true:true\n"
     ocaml_source
 
+let test_map_and_mapv_accept_multiple_collections () =
+  let source =
+    {|
+(defn combine [left right]
+  (mapv (fn [x y] (+ x y)) left right))
+(println
+  (str (pr-str (combine [1 2 3] [10 20])) ":"
+       (pr-str (map (fn [x y] (- x y)) [10 20 30] [1 2]))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "map_and_mapv_accept_multiple_collections"
+    "[11 22]:(9 18)\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_fnil_wraps_core_conj_with_default_collection () =
   let source =
     {|
@@ -1744,8 +1755,8 @@ let test_fnil_wraps_core_conj_with_default_collection () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "fnil_wraps_core_conj_with_default_collection"
-    "true:true\n" ocaml_source
+  assert_ocaml_runs "fnil_wraps_core_conj_with_default_collection" "true:true\n"
+    ocaml_source
 
 let test_top_level_definitions_accept_clojure_metadata () =
   let source =
@@ -1894,6 +1905,33 @@ let test_datascript_schema_reads_regex_literals () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "datascript_schema_reads_regex_literals" "db\n" ocaml_source
 
+let test_re_matches_returns_clojure_match_values () =
+  let source =
+    {|
+(println
+  (str (pr-str (re-matches #"a+" "aaa")) ":"
+       (pr-str (re-matches #"([a-z]+)-([0-9]+)" "abc-42")) ":"
+       (pr-str (re-matches #"a+" "baaa"))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "re_matches_returns_clojure_match_values"
+    "\"aaa\":[\"abc-42\" \"abc\" \"42\"]:nil\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_subs_accepts_guarded_dynamic_strings () =
+  let source =
+    {|
+(let [[_ name] (re-matches #"([a-z]+)" "alpha")]
+  (println (subs name 1)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "subs_accepts_guarded_dynamic_strings" "lpha\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_datascript_schema_reads_anonymous_functions_for_dynamic_contains () =
   let source =
     {|
@@ -1905,8 +1943,8 @@ let test_datascript_schema_reads_anonymous_functions_for_dynamic_contains () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs
-    "datascript_schema_reads_anonymous_functions_for_dynamic_contains"
-    "true\n" ocaml_source
+    "datascript_schema_reads_anonymous_functions_for_dynamic_contains" "true\n"
+    ocaml_source
 
 let test_top_level_require_imports_ocaml_modules () =
   let source =
@@ -1921,8 +1959,7 @@ let test_top_level_require_imports_ocaml_modules () =
 
 let test_top_level_require_rejects_unknown_lg_namespace () =
   Lg.Compiler.compile_string {|(require [people.core :as people])|}
-  |> expect_error_contains
-       "cannot require unknown namespace people.core"
+  |> expect_error_contains "cannot require unknown namespace people.core"
 
 let test_ocaml_keyword_names_are_munged () =
   let source =
@@ -1937,7 +1974,8 @@ let test_ocaml_keyword_names_are_munged () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "ocaml_keyword_names_are_munged" "2:2:person:core\n" ocaml_source
+  assert_ocaml_runs "ocaml_keyword_names_are_munged" "2:2:person:core\n"
+    ocaml_source
 
 let test_module_aliases_replace_legacy_import_aliases () =
   let source =
@@ -1948,7 +1986,8 @@ let test_module_aliases_replace_legacy_import_aliases () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "module_aliases_replace_legacy_import_aliases" "Ada\n" ocaml_source
+  assert_ocaml_runs "module_aliases_replace_legacy_import_aliases" "Ada\n"
+    ocaml_source
 
 let test_open_replaces_required_refer () =
   let source =
@@ -2051,7 +2090,8 @@ let test_typed_function_parameters () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "typed_function_parameters" "42:hi Ada::admin?!:3\n" ocaml_source
+  assert_ocaml_runs "typed_function_parameters" "42:hi Ada::admin?!:3\n"
+    ocaml_source
 
 let test_unit_annotations_compile_through_source_backend () =
   let source =
@@ -2066,12 +2106,10 @@ let test_unit_annotations_compile_through_source_backend () =
     "item:1\nunit-ok\n" ocaml_source
 
 let test_host_owned_ocaml_type_annotations_compile () =
-  let source =
-    {|
+  let source = {|
 (defn host-id [^:int x] x)
 (def answer (host-id 42))
-|}
-  in
+|} in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   if not (String.contains ocaml_source ':') then
     failwith "expected generated OCaml to contain a type constraint";
@@ -2090,15 +2128,13 @@ let test_generic_ocaml_calls_compile_through_source_backend () =
     "ADA:42\n" ocaml_source
 
 let test_generic_ocaml_calls_accept_unit_return_type () =
-  let source =
-    {|
+  let source = {|
 (def ignored (Stdlib.ignore 42))
 (println "ignored")
-|}
-  in
+|} in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "generic_ocaml_calls_accept_unit_return_type"
-    "ignored\n" ocaml_source
+  assert_ocaml_runs "generic_ocaml_calls_accept_unit_return_type" "ignored\n"
+    ocaml_source
 
 let test_generic_ocaml_calls_resolve_required_module_aliases () =
   let source =
@@ -2123,8 +2159,8 @@ let test_generic_ocaml_calls_resolve_required_module_refers () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "generic_ocaml_calls_resolve_required_module_refers"
-    "ADA\n" ocaml_source
+  assert_ocaml_runs "generic_ocaml_calls_resolve_required_module_refers" "ADA\n"
+    ocaml_source
 
 let test_generic_ocaml_calls_resolve_required_module_refers_in_modules () =
   let source =
@@ -2136,8 +2172,9 @@ let test_generic_ocaml_calls_resolve_required_module_refers_in_modules () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "generic_ocaml_calls_resolve_required_module_refers_in_modules"
-    "ADA\n" ocaml_source
+  assert_ocaml_runs
+    "generic_ocaml_calls_resolve_required_module_refers_in_modules" "ADA\n"
+    ocaml_source
 
 let test_generic_ocaml_calls_resolve_required_module_refers_in_functors () =
   let source =
@@ -2155,8 +2192,9 @@ let test_generic_ocaml_calls_resolve_required_module_refers_in_functors () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "generic_ocaml_calls_resolve_required_module_refers_in_functors"
-    "ADA!\n" ocaml_source
+  assert_ocaml_runs
+    "generic_ocaml_calls_resolve_required_module_refers_in_functors" "ADA!\n"
+    ocaml_source
 
 let test_typed_ocaml_refers_are_available_in_modules () =
   let source =
@@ -2199,19 +2237,17 @@ let test_generic_ocaml_calls_resolve_opened_ocaml_modules () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "generic_ocaml_calls_resolve_opened_ocaml_modules"
-    "ADA\n" ocaml_source
+  assert_ocaml_runs "generic_ocaml_calls_resolve_opened_ocaml_modules" "ADA\n"
+    ocaml_source
 
 let test_compile_string_runs_ocaml_typecheck_gate_for_host_calls () =
-  Lg.Compiler.compile_string
-    {|
+  Lg.Compiler.compile_string {|
 (def answer (Stdlib.abs "bad"))
 |}
   |> expect_error_contains "string"
 
 let test_ocaml_errors_include_lg_source_locations () =
-  Lg.Compiler.compile_string
-    {|
+  Lg.Compiler.compile_string {|
 (def ok 1)
 
 (def answer (Stdlib.abs "bad"))
@@ -2220,8 +2256,7 @@ let test_ocaml_errors_include_lg_source_locations () =
 
 let test_parsetree_items_preserve_top_level_source_locations () =
   let structure =
-    Lg.Compiler.compile_parsetree
-      {|
+    Lg.Compiler.compile_parsetree {|
 (def first 1)
 
 (def second 2)
@@ -2230,10 +2265,12 @@ let test_parsetree_items_preserve_top_level_source_locations () =
   in
   match structure with
   | [ first; second ] ->
-      if first.pstr_loc.loc_start.pos_fname <> "<string>"
+      if
+        first.pstr_loc.loc_start.pos_fname <> "<string>"
          || first.pstr_loc.loc_start.pos_lnum <> 2
       then failwith "expected first Parsetree item at <string>:2";
-      if second.pstr_loc.loc_start.pos_fname <> "<string>"
+      if
+        second.pstr_loc.loc_start.pos_fname <> "<string>"
          || second.pstr_loc.loc_start.pos_lnum <> 4
       then failwith "expected second Parsetree item at <string>:4"
   | _ -> failwith "expected two located Parsetree items"
@@ -2245,12 +2282,12 @@ let test_incremental_parsetree_preserves_chunk_source_locations () =
     |> expect_ok
   in
   let _, structure =
-    Lg.Compiler.compile_chunk_parsetree state "\n\n(def second 2)"
-    |> expect_ok
+    Lg.Compiler.compile_chunk_parsetree state "\n\n(def second 2)" |> expect_ok
   in
   match structure with
   | [ item ] ->
-      if item.pstr_loc.loc_start.pos_fname <> "<string>"
+      if
+        item.pstr_loc.loc_start.pos_fname <> "<string>"
          || item.pstr_loc.loc_start.pos_lnum <> 3
       then failwith "expected incremental Parsetree item at <string>:3"
   | _ -> failwith "expected one incremental Parsetree item"
@@ -2263,22 +2300,29 @@ let test_ocaml_errors_include_nested_expression_locations () =
 let test_parsetree_expressions_preserve_nested_source_locations () =
   let structure =
     Lg.Compiler.compile_parsetree
-      "(def answer\n  (if true\n    (String.uppercase_ascii\n      \"bad\")\n    \"ok\"))"
+      "(def answer\n\
+      \  (if true\n\
+      \    (String.uppercase_ascii\n\
+      \      \"bad\")\n\
+      \    \"ok\"))"
   in
   match structure with
   | Error err ->
       failwith ("expected valid nested expression, got: " ^ err.message)
-  | Ok
-      [ { pstr_desc = Pstr_value (_, [ binding ]); _ } ] -> (
+  | Ok [ { pstr_desc = Pstr_value (_, [ binding ]); _ } ] -> (
       match binding.pvb_expr.pexp_desc with
       | Pexp_ifthenelse (_, then_expression, _) -> (
           match then_expression.pexp_desc with
           | Pexp_apply (_, [ (_, argument) ]) ->
               let start = argument.pexp_loc.loc_start in
               let finish = argument.pexp_loc.loc_end in
-              if start.pos_lnum <> 4 || start.pos_cnum - start.pos_bol <> 6
+              if
+                start.pos_lnum <> 4
+                || start.pos_cnum - start.pos_bol <> 6
                  || finish.pos_cnum - finish.pos_bol <> 11
-              then failwith "expected nested string expression at line 4, characters 6-11"
+              then
+                failwith
+                  "expected nested string expression at line 4, characters 6-11"
           | _ -> failwith "expected nested OCaml application")
       | _ -> failwith "expected generated conditional expression")
   | Ok _ -> failwith "expected one generated value item"
@@ -2292,8 +2336,8 @@ let test_inferred_ocaml_calls_use_compiler_signatures () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "inferred_ocaml_calls_use_compiler_signatures"
-    "ADA:42\n" ocaml_source
+  assert_ocaml_runs "inferred_ocaml_calls_use_compiler_signatures" "ADA:42\n"
+    ocaml_source
 
 let test_inferred_ocaml_calls_preserve_type_variable_identity () =
   let source =
@@ -2304,8 +2348,8 @@ let test_inferred_ocaml_calls_preserve_type_variable_identity () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "inferred_ocaml_calls_preserve_type_variable_identity"
-    "3\n" ocaml_source
+  assert_ocaml_runs "inferred_ocaml_calls_preserve_type_variable_identity" "3\n"
+    ocaml_source
 
 let test_inferred_ocaml_calls_resolve_aliases_and_refers () =
   let source =
@@ -2318,19 +2362,17 @@ let test_inferred_ocaml_calls_resolve_aliases_and_refers () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "inferred_ocaml_calls_resolve_aliases_and_refers"
-    "ADA:42\n" ocaml_source
+  assert_ocaml_runs "inferred_ocaml_calls_resolve_aliases_and_refers" "ADA:42\n"
+    ocaml_source
 
 let test_inferred_ocaml_calls_reject_incompatible_arguments () =
-  Lg.Compiler.compile_string
-    {|
+  Lg.Compiler.compile_string {|
 (def answer (Stdlib.abs "bad"))
 |}
   |> expect_error_contains "string"
 
 let test_inferred_ocaml_calls_reject_unknown_values () =
-  Lg.Compiler.compile_string
-    {|
+  Lg.Compiler.compile_string {|
 (def answer (Stdlib.not_a_real_value 42))
 |}
   |> expect_error_contains "Unbound value"
@@ -2343,8 +2385,8 @@ let test_inferred_ocaml_calls_support_required_labels () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "inferred_ocaml_calls_support_required_labels"
-    "true\n" ocaml_source
+  assert_ocaml_runs "inferred_ocaml_calls_support_required_labels" "true\n"
+    ocaml_source
 
 let test_inferred_ocaml_calls_support_optional_labels () =
   let source =
@@ -2356,8 +2398,8 @@ let test_inferred_ocaml_calls_support_optional_labels () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "inferred_ocaml_calls_support_optional_labels"
-    "2\n" ocaml_source
+  assert_ocaml_runs "inferred_ocaml_calls_support_optional_labels" "2\n"
+    ocaml_source
 
 let test_inferred_ocaml_calls_preserve_partial_labelled_functions () =
   let source =
@@ -2391,8 +2433,7 @@ let test_inferred_ocaml_calls_reject_bad_labels () =
   (String.starts_with "ada" :prefix "ad" :prefix "a"))
 |}
   |> expect_error_contains "duplicate OCaml argument label :prefix";
-  Lg.Compiler.compile_string
-    {|(def value (String.starts_with "ada" :prefix))|}
+  Lg.Compiler.compile_string {|(def value (String.starts_with "ada" :prefix))|}
   |> expect_error_contains "OCaml argument label :prefix requires a value"
 
 let test_inferred_labelled_calls_delegate_value_types_to_ocaml () =
@@ -2417,11 +2458,11 @@ let test_ocaml_package_requires_report_missing_packages () =
             [ocaml.Missing :as missing])
 (def answer (missing/value 42))
 |}
-  |> expect_error_contains "OCaml package lg-package-that-does-not-exist was not found"
+  |> expect_error_contains
+       "OCaml package lg-package-that-does-not-exist was not found"
 
 let test_ocaml_package_requires_reject_invalid_package_names () =
-  Lg.Compiler.compile_string
-    {|
+  Lg.Compiler.compile_string {|
 (require [ocaml.package/bad;name])
 |}
   |> expect_error_contains "invalid OCaml package name"
@@ -2520,11 +2561,11 @@ let test_generic_ocaml_calls_reject_bad_forms () =
   |> expect_error_contains "unknown function ocaml-construct";
   Lg.Compiler.compile_string {|(defn bad [^:ocaml/int value] value)|}
   |> expect_error_contains "the :ocaml/ type prefix is not supported";
-  Lg.Compiler.compile_string
-    {|(type-record box [value] (item :param/value))|}
+  Lg.Compiler.compile_string {|(type-record box [value] (item :param/value))|}
   |> expect_error_contains "the :param/ type prefix is not supported"
 
-let test_parsetree_typecheck_gate_rejects_invalid_required_module_alias_calls () =
+let test_parsetree_typecheck_gate_rejects_invalid_required_module_alias_calls ()
+    =
   Lg.Compiler.compile_parsetree
     {|
 (require [ocaml.Stdlib :as std])
@@ -2541,8 +2582,7 @@ let test_parsetree_typecheck_gate_accepts_valid_host_calls () =
   |> expect_ok
 
 let test_parsetree_typecheck_gate_rejects_invalid_host_calls () =
-  Lg.Compiler.typecheck_parsetree
-    {|
+  Lg.Compiler.typecheck_parsetree {|
 (def answer (Stdlib.abs "bad"))
 |}
   |> expect_error_contains "string"
@@ -2568,7 +2608,8 @@ let test_type_aliases_compile_through_source_backend () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   if not (String.contains ocaml_source '=') then
     failwith "expected generated OCaml to contain a type alias";
-  assert_ocaml_runs "type_aliases_compile_through_source_backend" "" ocaml_source
+  assert_ocaml_runs "type_aliases_compile_through_source_backend" ""
+    ocaml_source
 
 let test_parameterized_type_declarations_compile () =
   let source =
@@ -2696,20 +2737,15 @@ let test_parameterized_variant_relationships_are_checked_by_ocaml () =
   |> expect_error_contains "string"
 
 let test_parameterized_type_declarations_reject_bad_parameters () =
-  Lg.Compiler.compile_string
-    {|(type-alias maybe [a a] :option<a>)|}
+  Lg.Compiler.compile_string {|(type-alias maybe [a a] :option<a>)|}
   |> expect_error_contains "duplicate type parameter a";
-  Lg.Compiler.compile_string
-    {|(type-record pair [a :bad] (value :a))|}
+  Lg.Compiler.compile_string {|(type-record pair [a :bad] (value :a))|}
   |> expect_error_contains "type parameters must be symbols";
-  Lg.Compiler.compile_string
-    {|(type-variant box [a] (Box :missing))|}
+  Lg.Compiler.compile_string {|(type-variant box [a] (Box :missing))|}
   |> expect_error_contains "Unbound type constructor missing";
-  Lg.Compiler.compile_string
-    {|(type-alias maybe [] :option<int>)|}
+  Lg.Compiler.compile_string {|(type-alias maybe [] :option<int>)|}
   |> expect_error_contains "type parameter vector must not be empty";
-  Lg.Compiler.compile_string
-    {|(type-record bad [a] (callback :fn<int>))|}
+  Lg.Compiler.compile_string {|(type-record bad [a] (callback :fn<int>))|}
   |> expect_error_contains "unknown record field type :fn<int>"
 
 let test_ocaml_owned_branch_types_are_checked_by_ocaml () =
@@ -2738,7 +2774,8 @@ let test_ocaml_owned_branch_type_mismatch_is_delegated_to_ocaml () =
 |}
   |> expect_error_contains "string"
 
-let test_ocaml_option_and_result_constructors_compile_through_source_backend () =
+let test_ocaml_option_and_result_constructors_compile_through_source_backend ()
+    =
   let source =
     {|
 (def present (Some 42))
@@ -2749,8 +2786,8 @@ let test_ocaml_option_and_result_constructors_compile_through_source_backend () 
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs
-    "ocaml_option_and_result_constructors_compile_through_source_backend"
-    "" ocaml_source
+    "ocaml_option_and_result_constructors_compile_through_source_backend" ""
+    ocaml_source
 
 let test_ocaml_option_and_result_constructors_reject_bad_arity () =
   Lg.Compiler.compile_string {|(def value (Some ))|}
@@ -2873,7 +2910,8 @@ let test_ocaml_type_application_annotations_compile_through_source_backend () =
     "ocaml_type_application_annotations_compile_through_source_backend"
     "42:0:Ada:bad\n" ocaml_source
 
-let test_ocaml_type_application_annotations_delegate_argument_mismatch_to_ocaml () =
+let test_ocaml_type_application_annotations_delegate_argument_mismatch_to_ocaml
+    () =
   Lg.Compiler.compile_string
     {|
 (def present (Some "bad"))
@@ -2886,11 +2924,9 @@ let test_ocaml_type_application_annotations_delegate_argument_mismatch_to_ocaml 
   |> expect_error_contains "string"
 
 let test_ocaml_type_application_annotations_reject_bad_forms () =
-  Lg.Compiler.compile_string
-    {|(defn bad [^:option<> value] value)|}
+  Lg.Compiler.compile_string {|(defn bad [^:option<> value] value)|}
   |> expect_error "invalid type annotation ^:option<>";
-  Lg.Compiler.compile_string
-    {|(defn bad [^:result<int> value] value)|}
+  Lg.Compiler.compile_string {|(defn bad [^:result<int> value] value)|}
   |> expect_error "invalid type annotation ^:result<int>"
 
 let test_concise_host_type_annotations_compile () =
@@ -2909,8 +2945,8 @@ let test_concise_host_type_annotations_compile () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "concise_host_type_annotations_compile"
-    "42:Ada:Grace:7\n" ocaml_source
+  assert_ocaml_runs "concise_host_type_annotations_compile" "42:Ada:Grace:7\n"
+    ocaml_source
 
 let test_threading_and_option_binding_forms_compile () =
   let source =
@@ -2959,8 +2995,7 @@ let test_threading_and_option_binding_forms_compile () =
   |> expect_error "threading steps must be symbols or call forms";
   Lg.Compiler.compile_string {|(def bad (some-> (Some 1) 2))|}
   |> expect_error "some-> steps must be symbols or call forms";
-  Lg.Compiler.compile_string
-    {|(def bad (let-some [x (Some 1) y] x 0))|}
+  Lg.Compiler.compile_string {|(def bad (let-some [x (Some 1) y] x 0))|}
   |> expect_error "let-some bindings require name/option pairs"
 
 let test_combined_host_package_import_compiles () =
@@ -3003,8 +3038,7 @@ let test_ocaml_tuple_values_delegate_argument_mismatch_to_ocaml () =
 let test_ocaml_tuple_values_reject_bad_forms () =
   Lg.Compiler.compile_string {|(def value (tuple 1))|}
   |> expect_error "tuple expects at least 2 values";
-  Lg.Compiler.compile_string
-    {|(defn bad [^:tuple<int> value] value)|}
+  Lg.Compiler.compile_string {|(defn bad [^:tuple<int> value] value)|}
   |> expect_error "invalid type annotation ^:tuple<int>";
   Lg.Compiler.compile_string
     {|
@@ -3084,14 +3118,16 @@ let test_ocaml_array_primitives_support_polymorphic_helpers () =
 (def copied (copy-array (array 7 8 9)))
 (def converted
   (seq-to-sorted-array (fn [left right] (- left right)) [5 4]))
+(def converted-with-to-array (to-array [1 2 3]))
 (println
   (str (alength copied) ":" (+ (first-array copied) 0) ":"
-       (alength converted) ":" (+ (aget converted 1) 0)))
+       (alength converted) ":" (+ (aget converted 1) 0) ":"
+       (alength converted-with-to-array)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "ocaml_array_primitives_support_polymorphic_helpers"
-    "3:7:2:5\n" ocaml_source
+    "3:7:2:5:3\n" ocaml_source
 
 let test_ocaml_refs_support_read_and_assignment () =
   let source =
@@ -3117,8 +3153,7 @@ let test_concise_standard_type_annotations () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "concise_standard_type_annotations" "2\n"
-    ocaml_source
+  assert_ocaml_runs "concise_standard_type_annotations" "2\n" ocaml_source
 
 let test_volatile_nil_uses_contextual_option_reference_type () =
   let source =
@@ -3153,11 +3188,9 @@ let test_ocaml_arrays_reject_invalid_operations () =
   |> expect_error_contains "OCaml array elements must have the same type";
   Lg.Compiler.compile_string {|(def value (aget 42 0))|}
   |> expect_error_contains "aget expects an OCaml array";
-  Lg.Compiler.compile_string
-    {|(def value (aget (array 1 2) "0"))|}
+  Lg.Compiler.compile_string {|(def value (aget (array 1 2) "0"))|}
   |> expect_error_contains "OCaml array index must be int";
-  Lg.Compiler.compile_string
-    {|(aset (array 1 2) 0 "bad")|}
+  Lg.Compiler.compile_string {|(aset (array 1 2) 0 "bad")|}
   |> expect_error_contains "OCaml array value must match element type";
   Lg.Compiler.compile_string {|(def values (array))|}
   |> expect_error_contains "empty OCaml array requires a type"
@@ -3284,8 +3317,8 @@ let test_ocaml_record_values_support_module_alias_types () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "ocaml_record_values_support_module_alias_types"
-    "Ada:42\n" ocaml_source
+  assert_ocaml_runs "ocaml_record_values_support_module_alias_types" "Ada:42\n"
+    ocaml_source
 
 let test_ocaml_record_values_support_opened_module_types () =
   let source =
@@ -3298,8 +3331,8 @@ let test_ocaml_record_values_support_opened_module_types () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "ocaml_record_values_support_opened_module_types"
-    "Ada:42\n" ocaml_source
+  assert_ocaml_runs "ocaml_record_values_support_opened_module_types" "Ada:42\n"
+    ocaml_source
 
 let test_ocaml_record_values_support_opened_module_types_in_module_body () =
   let source =
@@ -3314,8 +3347,9 @@ let test_ocaml_record_values_support_opened_module_types_in_module_body () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "ocaml_record_values_support_opened_module_types_in_module_body"
-    "Ada:42\n" ocaml_source
+  assert_ocaml_runs
+    "ocaml_record_values_support_opened_module_types_in_module_body" "Ada:42\n"
+    ocaml_source
 
 let test_ocaml_record_values_support_included_module_types () =
   let source =
@@ -3388,7 +3422,8 @@ let test_ocaml_variants_compile_through_source_backend () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "ocaml_variants_compile_through_source_backend" "" ocaml_source
+  assert_ocaml_runs "ocaml_variants_compile_through_source_backend" ""
+    ocaml_source
 
 let test_ocaml_payload_variants_compile_through_source_backend () =
   let source =
@@ -3540,12 +3575,10 @@ let test_datascript_schema_constants_behavior () =
     ocaml_source
 
 let test_typed_function_parameters_reject_bad_calls () =
-  let source =
-    {|
+  let source = {|
 (defn inc1 [^:int x] (+ x 1))
 (def bad (inc1 "Ada"))
-|}
-  in
+|} in
   Lg.Compiler.compile_string source
   |> expect_error "inc1 called with incompatible arguments"
 
@@ -3578,13 +3611,11 @@ let test_typed_recursive_functions () =
   assert_ocaml_runs "typed_recursive_functions" "120:55\n" ocaml_source
 
 let test_typed_recursive_functions_require_valid_signatures () =
-  Lg.Compiler.compile_string
-    {|
+  Lg.Compiler.compile_string {|
 (defn bad [n] :int (bad n))
 |}
   |> expect_error "recursive defn parameters require type annotations";
-  Lg.Compiler.compile_string
-    {|
+  Lg.Compiler.compile_string {|
 (defn bad [^:int n] :string
   0)
 |}
@@ -3783,8 +3814,8 @@ let test_unannotated_function_parameters_infer_from_body () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "unannotated_function_parameters_infer_from_body" "42:true\n"
-    ocaml_source
+  assert_ocaml_runs "unannotated_function_parameters_infer_from_body"
+    "42:true\n" ocaml_source
 
 let test_identity_function_is_polymorphic_at_call_sites () =
   let source =
@@ -3833,12 +3864,10 @@ let test_conditional_function_type_relationship_is_checked_by_ocaml () =
   |> expect_error_contains "expected of type"
 
 let test_unannotated_function_parameters_reject_bad_int_calls () =
-  let source =
-    {|
+  let source = {|
 (defn inc1 [x] (+ x 1))
 (def bad (inc1 "Ada"))
-|}
-  in
+|} in
   Lg.Compiler.compile_string source
   |> expect_error "inc1 called with incompatible arguments"
 
@@ -3862,7 +3891,8 @@ let test_unannotated_function_parameters_infer_structural_map_fields () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "unannotated_function_parameters_infer_structural_map_fields" "37\n"
+  assert_ocaml_runs
+    "unannotated_function_parameters_infer_structural_map_fields" "37\n"
     ocaml_source
 
 let test_contextual_parameter_inference_preserves_nested_float_assoc_values () =
@@ -3912,7 +3942,8 @@ let test_module_defs_project_function_returned_structural_records () =
   assert_ocaml_runs "module_defs_project_function_returned_structural_records"
     "1.5\n" ocaml_source
 
-let test_unannotated_function_parameters_reject_missing_structural_map_fields () =
+let test_unannotated_function_parameters_reject_missing_structural_map_fields ()
+    =
   let source =
     {|
 (def user {:name "Ada"})
@@ -3952,8 +3983,8 @@ let test_satisfies_question_checks_static_receivers () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "satisfies_question_checks_static_receivers"
-    "true:false\n" ocaml_source
+  assert_ocaml_runs "satisfies_question_checks_static_receivers" "true:false\n"
+    ocaml_source
 
 let test_satisfies_question_carries_a_generic_protocol_witness () =
   let source =
@@ -4135,8 +4166,7 @@ let test_dynamic_arrays_recover_generic_elements () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "dynamic_arrays_recover_generic_elements" "2\n"
-    ocaml_source;
+  assert_ocaml_runs "dynamic_arrays_recover_generic_elements" "2\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -4260,6 +4290,160 @@ let test_deftype_methods_support_instance_call_syntax () =
   assert_ocaml_runs "deftype_methods_support_instance_call_syntax" "42\n"
     ocaml_source
 
+let test_defrecord_fields_infer_host_records_from_protocol_methods () =
+  let source =
+    {|
+(type-record state (root :ref<option<int>>))
+(defn root-value [value]
+  (deref (:root value)))
+(defprotocol Rooted
+  (read-root [value]))
+(do
+  (defrecord Container [state])
+  (extend-type Container
+    Rooted
+    (read-root [container]
+      (root-value (.-state container)))))
+(def container (Container. (record state (root (volatile! (Some 42))))))
+(println (match (read-root container) (Some value) value None 0))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "defrecord_fields_infer_host_records_from_protocol_methods"
+    "42\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_defrecord_fields_preserve_protocol_capabilities () =
+  let source =
+    {|
+(defprotocol Searchable
+  (search [value key]))
+(type-record source (prefix :string))
+(extend-type source
+  Searchable
+  (search [value key]
+    (str (:prefix value) key)))
+(do
+  (defrecord Wrapper [source])
+  (extend-type Wrapper
+    Searchable
+    (search [wrapper key]
+      (search (.-source wrapper) key))))
+(def wrapped (Wrapper. (record source (prefix "item-"))))
+(println (search wrapped "42"))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "defrecord_fields_preserve_protocol_capabilities"
+    "item-42\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_defrecord_protocol_methods_support_forward_calls () =
+  let source =
+    {|
+(defprotocol Measured
+  (measure [value]))
+(defprotocol Values
+  (values [value]))
+(do
+  (defrecord Wrapper [items])
+  (extend-type Wrapper
+    Measured
+    (measure [wrapper]
+      (count (values wrapper)))
+    Values
+    (values [wrapper]
+      (.-items wrapper))))
+(def wrapped (Wrapper. [1 2 3]))
+(println (measure wrapped))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "defrecord_protocol_methods_support_forward_calls" "3\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_defrecord_host_interfaces_support_overloaded_methods () =
+  let source =
+    {|
+(do
+  (defrecord Lookup [value])
+  (extend-type Lookup
+    clojure.lang.ILookup
+    (valAt [lookup key]
+      (if (= key :value) (.-value lookup) nil))
+    (valAt [lookup key not-found]
+      (if (= key :value) (.-value lookup) not-found))))
+(def lookup (Lookup. 42))
+(println (str (get lookup :value) ":" (get lookup :missing 7)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "defrecord_host_interfaces_support_overloaded_methods"
+    "42:7\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_expression_type_hints_narrow_dynamic_records () =
+  let source =
+    {|
+(defrecord Item [value])
+(defn item-value [item]
+  (.-value ^Item item))
+(println (item-value (Item. 42)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "expression_type_hints_narrow_dynamic_records" "42\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_opaque_records_project_safe_fields_without_casts () =
+  let source =
+    {|
+(type-record state
+  (root :ref<option<int>>)
+  (label :string))
+(defrecord Holder [value])
+(defn held-state ^state [holder]
+  (.-value ^Holder holder))
+(def state-value
+  (record state
+    (root (volatile! (Some 1)))
+    (label "ready")))
+(println (.-label (held-state (Holder. state-value))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "opaque_records_project_safe_fields_without_casts" "ready\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_instance_question_recognizes_namespaced_protocol_interfaces () =
+  let source =
+    {|
+(ns example.protocols)
+(defprotocol Labelled
+  (label [value]))
+(type-record item (name :string))
+(extend-type item Labelled
+  (label [value] (:name value)))
+(def value (record item (name "ready")))
+(println (instance? example.protocols.Labelled value))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "instance_question_recognizes_namespaced_protocol_interfaces" "true\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_generic_collection_returns_preserve_concrete_element_types () =
   let source =
     {|
@@ -4329,8 +4513,46 @@ let test_print_method_defmethod_writes_custom_record_representations () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "print_method_defmethod_writes_custom_record_representations"
+  assert_ocaml_runs
+    "print_method_defmethod_writes_custom_record_representations"
     "#person \"Ada\"\n" ocaml_source
+
+let test_java_writer_annotations_work_in_ordinary_functions () =
+  let source =
+    {|
+(defn write-prefix [^java.io.Writer writer]
+  (.write writer "#person "))
+(defn write-values [^java.io.Writer writer values]
+  (binding [*out* writer]
+    (apply pr values)))
+(deftype Person [name])
+(defmethod print-method Person [^Person person ^java.io.Writer writer]
+  (write-prefix writer)
+  (write-values writer [[(.-name person)] [:ok]]))
+(println (pr-str (Person. "Ada")))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "java_writer_annotations_work_in_ordinary_functions"
+    "#person [\"Ada\"] [:ok]\n" ocaml_source
+
+let test_clojure_sorted_annotations_expose_dynamic_comparators () =
+  let source =
+    {|
+(type-record sorted-box
+  (comparator :fn<int;int;int>))
+(defn comparator-for [sets key]
+  (.comparator ^clojure.lang.Sorted (get sets key)))
+(def cmp
+  (comparator-for
+    (hash-map :box (record sorted-box (comparator (fn [left right] (- left right)))))
+    :box))
+(println (cmp 7 2))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "clojure_sorted_annotations_expose_dynamic_comparators"
+    "5\n" ocaml_source
 
 let test_defn_accepts_attribute_maps_and_return_hints () =
   let source =
@@ -4365,12 +4587,12 @@ let test_class_and_identical_support_dynamic_values () =
 (defn class-name [^Object x]
   (if (nil? x) x (.getName (. x (getClass)))))
 (println (str (same-class? 1 2) ":" (same-class? 1 "1") ":"
-              (class-name 1)))
+              (class-name 1) ":" (type 1)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "class_and_identical_support_dynamic_values"
-    "true:false:java.lang.Long\n" ocaml_source
+    "true:false:java.lang.Long:java.lang.Long\n" ocaml_source
 
 let test_clojure_static_dot_calls_support_hasheq () =
   let source =
@@ -4410,6 +4632,23 @@ let test_clojure_equals_interop_supports_dynamic_values () =
   assert_ocaml_runs "clojure_equals_interop_supports_dynamic_values"
     "true:false:true\n" ocaml_source
 
+let test_identical_and_equals_infer_heterogeneous_parameters () =
+  let source =
+    {|
+(defn tx-id? [value]
+  (or (identical? :db/current-tx value)
+      (.equals ":db/current-tx" value)
+      (.equals "datascript.tx" value)))
+(println (str (tx-id? :db/current-tx) ":" (tx-id? "datascript.tx") ":"
+              (tx-id? 1)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "identical_and_equals_infer_heterogeneous_parameters"
+    "true:true:false\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_try_supports_clojure_exception_type_bindings () =
   let source =
     {|
@@ -4428,8 +4667,7 @@ let test_try_supports_clojure_exception_type_bindings () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "try_supports_clojure_exception_type_bindings"
-    "caught\nfalse:true\n"
-    ocaml_source
+    "caught\nfalse:true\n" ocaml_source
 
 let test_macros_can_clear_form_metadata () =
   let source =
@@ -4502,9 +4740,7 @@ let test_extend_type_supports_multiple_protocol_groups () =
     ocaml_source
 
 let test_clojure_map_entry_compiles_as_two_element_vector () =
-  let source =
-    {|(println (pr-str (clojure.lang.MapEntry :answer 42)))|}
-  in
+  let source = {|(println (pr-str (clojure.lang.MapEntry :answer 42)))|} in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "clojure_map_entry_compiles_as_two_element_vector"
     "[:answer 42]\n" ocaml_source
@@ -4518,8 +4754,8 @@ let test_set_literals_are_callable_as_membership_lookup () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "set_literals_are_callable_as_membership_lookup"
-    ":a:true\n" ocaml_source
+  assert_ocaml_runs "set_literals_are_callable_as_membership_lookup" ":a:true\n"
+    ocaml_source
 
 let test_generic_protocol_witness_compiles_for_javascript_targets () =
   let source =
@@ -4538,7 +4774,8 @@ let test_generic_protocol_witness_compiles_for_javascript_targets () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source
+    |> expect_ok)
 
 let test_protocols_support_float_and_symbol_receivers () =
   let source =
@@ -4583,7 +4820,8 @@ let test_protocols_support_external_ocaml_receivers () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   if not (string_contains_substring ocaml_source ".st_size") then
-    failwith "external protocol implementation should compile native field access"
+    failwith
+      "external protocol implementation should compile native field access"
 
 let test_protocols_reject_duplicate_host_constructor_implementations () =
   Lg.Compiler.compile_string
@@ -4733,7 +4971,8 @@ let test_protocols_support_named_record_receivers () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "protocols_support_named_record_receivers" "Ada\n" ocaml_source
+  assert_ocaml_runs "protocols_support_named_record_receivers" "Ada\n"
+    ocaml_source
 
 let test_named_record_updates_preserve_protocol_identity () =
   let source =
@@ -4762,8 +5001,8 @@ let test_keyword_access_reads_nominal_record_fields () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "keyword_access_reads_nominal_record_fields"
-    "Ada:lg\n" ocaml_source;
+  assert_ocaml_runs "keyword_access_reads_nominal_record_fields" "Ada:lg\n"
+    ocaml_source;
   Lg.Compiler.compile_string
     {|
 (type-record user (name :string))
@@ -4815,8 +5054,8 @@ let test_module_local_named_record_parameters_are_inferred () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "module_local_named_record_parameters_are_inferred" "Grace\n"
-    ocaml_source
+  assert_ocaml_runs "module_local_named_record_parameters_are_inferred"
+    "Grace\n" ocaml_source
 
 let test_protocols_inside_modules_export_methods_and_record_impls () =
   let source =
@@ -4913,11 +5152,9 @@ let test_vectors_support_mixed_element_types () =
     ocaml_source
 
 let test_keyword_values_print_as_keywords () =
-  let source =
-    {|
+  let source = {|
 (println (str :admin? ":" (pr-str :admin?)))
-|}
-  in
+|} in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "keyword_values_print_as_keywords" ":admin?::admin?\n"
     ocaml_source
@@ -4989,7 +5226,8 @@ let test_not_equal_core_api () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "not_equal_core_api" "true:false:true:true:false\n" ocaml_source
+  assert_ocaml_runs "not_equal_core_api" "true:false:true:true:false\n"
+    ocaml_source
 
 let test_not_equal_rejects_mixed_types () =
   Lg.Compiler.compile_string {|(def x (not= 1 "1"))|}
@@ -5007,7 +5245,8 @@ let test_collection_equality_core_api () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "collection_equality_core_api" "true:false:true:true:true:true\n" ocaml_source
+  assert_ocaml_runs "collection_equality_core_api"
+    "true:false:true:true:true:true\n" ocaml_source
 
 let test_get_rejects_unknown_map_fields () =
   let source = {|(def user {:name "Ada"})(def x (get user :age))|} in
@@ -5098,7 +5337,8 @@ let test_map_merge_update_and_select_keys () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "map_merge_update_and_select_keys" "Ada:true:38:2\n" ocaml_source
+  assert_ocaml_runs "map_merge_update_and_select_keys" "Ada:true:38:2\n"
+    ocaml_source
 
 let test_merge_rejects_incompatible_overlapping_fields () =
   let source = {|(def bad (merge {:age 36} {:age "old"}))|} in
@@ -5126,10 +5366,66 @@ let test_update_supports_extra_arguments () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "update_supports_extra_arguments" "Ada:37\n" ocaml_source
 
+let test_update_infers_record_fields_from_updater_functions () =
+  let source =
+    {|
+(defn advance [db eid]
+  (assoc db :max-eid eid))
+(defn allocate [report eid]
+  (update report :db-after advance eid))
+(println (:max-eid (:db-after (allocate {:db-after {:max-eid 1}} 42))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "update_infers_record_fields_from_updater_functions" "42\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_update_works_as_a_nested_map_updater () =
+  let source =
+    {|
+(def result (update {:inner {:count 40}} :inner update :count + 2))
+(println (:count (:inner result)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "update_works_as_a_nested_map_updater" "42\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_update_works_as_a_nested_vector_updater () =
+  let source =
+    {|
+(def result (update {:items [1 2 3]} :items update 1 + 40))
+(println (nth (:items result) 1))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "update_works_as_a_nested_vector_updater" "42\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_nested_update_passes_all_extra_arguments () =
+  let source =
+    {|
+(defn combine [current x y] (+ current (+ x y)))
+(def result (update {:inner {:count 10}} :inner update :count combine 20 12))
+(println (:count (:inner result)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "nested_update_passes_all_extra_arguments" "42\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_update_rejects_extra_argument_type_mismatch () =
   let source = {|(def bad (update {:age 36} :age + "one"))|} in
   Lg.Compiler.compile_string source
-  |> expect_error "update function arguments do not match field and extra arguments"
+  |> expect_error
+       "update function arguments do not match field and extra arguments"
 
 let test_update_supports_vector_indexes () =
   let source =
@@ -5158,7 +5454,8 @@ let test_contains_supports_vector_indexes () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "contains_supports_vector_indexes" "true:false:false\n" ocaml_source
+  assert_ocaml_runs "contains_supports_vector_indexes" "true:false:false\n"
+    ocaml_source
 
 let test_contains_rejects_vector_non_int_indexes () =
   Lg.Compiler.compile_string {|(def x (contains? [1 2] "0"))|}
@@ -5184,7 +5481,8 @@ let test_conditional_forms_work () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "conditional_forms_work" "when-fired\nopen:ready\n" ocaml_source
+  assert_ocaml_runs "conditional_forms_work" "when-fired\nopen:ready\n"
+    ocaml_source
 
 let test_if_not_supports_mixed_branch_types () =
   let source = {|(println (pr-str (if-not true 1 "one")))|} in
@@ -5194,16 +5492,14 @@ let test_if_not_supports_mixed_branch_types () =
 
 let test_cond_returns_nil_without_else () =
   let ocaml_source =
-    Lg.Compiler.compile_string {|(println (nil? (cond false 1)))|}
-    |> expect_ok
+    Lg.Compiler.compile_string {|(println (nil? (cond false 1)))|} |> expect_ok
   in
   assert_ocaml_runs "cond_returns_nil_without_else" "true\n" ocaml_source
 
 let test_cond_supports_mixed_branch_types () =
   let source = {|(println (pr-str (cond false 1 :else "one")))|} in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "cond_supports_mixed_branch_types" "\"one\"\n"
-    ocaml_source
+  assert_ocaml_runs "cond_supports_mixed_branch_types" "\"one\"\n" ocaml_source
 
 let test_cond_accepts_clojure_truthy_tests () =
   let ocaml_source =
@@ -5336,18 +5632,18 @@ let test_hash_matches_clojure_scalar_and_collection_values () =
        (hash 1) ":" (hash -1) ":" (hash 42) ":"
        (hash 1.5) ":" (hash "abc") ":" (hash :db/ident) ":"
        (hash [1 2]) ":" (hash (list 1 2)) ":"
-       (hash (hash-set 1 2)) ":" (hash {:a 1 :b 2})))
+       (hash (hash-set 1 2)) ":" (hash {:a 1 :b 2}) ":"
+       (= (hash-unordered-coll [1 2])
+          (hash-unordered-coll [2 1]))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "hash_matches_clojure_scalar_and_collection_values"
-    "0:1231:1237:1392991556:1651860712:1871679806:1073217536:74834163:-737096:156247261:156247261:460223544:161871944\n"
+    "0:1231:1237:1392991556:1651860712:1871679806:1073217536:74834163:-737096:156247261:156247261:460223544:161871944:true\n"
     ocaml_source
 
 let test_numeric_double_equals_supports_mixed_numbers () =
-  let source =
-    {|(println (str (== 1 1) ":" (== 1 1.0) ":" (== 1 2)))|}
-  in
+  let source = {|(println (str (== 1 1) ":" (== 1 1.0) ":" (== 1 2)))|} in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "numeric_double_equals_supports_mixed_numbers"
     "true:true:false\n" ocaml_source
@@ -5364,8 +5660,8 @@ let test_case_supports_dynamic_keyword_and_string_targets () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "case_supports_dynamic_keyword_and_string_targets"
-    "1:2:0\n" ocaml_source
+  assert_ocaml_runs "case_supports_dynamic_keyword_and_string_targets" "1:2:0\n"
+    ocaml_source
 
 let test_batched_numeric_scalar_core_functions_reject_unchecked_arity () =
   Lg.Compiler.compile_string {|(def x (unchecked-add 1))|}
@@ -5411,7 +5707,8 @@ let test_clojure_string_module_batch_works () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "clojure_string_module_batch_works"
-    "ADA|ada|Ada|cba|hi|left|right|line|baNANA|baNAna|$1\ntrue:true:true:true:2:4:[\"a\" \"b\" \"c\"]:[\"a\" \"b\"]\n"
+    "ADA|ada|Ada|cba|hi|left|right|line|baNANA|baNAna|$1\n\
+     true:true:true:true:2:4:[\"a\" \"b\" \"c\"]:[\"a\" \"b\"]\n"
     ocaml_source
 
 let test_clojure_string_module_refer_works () =
@@ -5433,8 +5730,7 @@ let test_clojure_string_module_rejects_bad_args () =
   |> expect_error "str/upper-case called with incompatible arguments"
 
 let test_clojure_string_module_rejects_unknown_refer () =
-  Lg.Compiler.compile_string
-    {|
+  Lg.Compiler.compile_string {|
 (require [clojure.string :refer [missing]])
 |}
   |> expect_error "cannot refer unknown symbol clojure.string/missing"
@@ -5504,7 +5800,13 @@ let test_clojure_data_diff_matches_recursive_collection_semantics () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "clojure_data_diff_matches_recursive_collection_semantics"
-    "[nil nil 1]\n[1 2 nil]\n[{:b 2} {:b 3, :c 4} {:a 1}]\n[[nil 2] [nil 3 4] [1]]\n[#{1} #{3} #{2}]\n[[1] {:a 1} nil]\n[\"left\" \"right\" \"custom\"]\n"
+    "[nil nil 1]\n\
+     [1 2 nil]\n\
+     [{:b 2} {:b 3, :c 4} {:a 1}]\n\
+     [[nil 2] [nil 3 4] [1]]\n\
+     [#{1} #{3} #{2}]\n\
+     [[1] {:a 1} nil]\n\
+     [\"left\" \"right\" \"custom\"]\n"
     ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
@@ -5536,7 +5838,11 @@ let test_batched_predicate_collection_core_functions_work () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "batched_predicate_collection_core_functions_work"
-    "true:true:false:false:false:false:false:true:false:true:false:true:true:true:true:false:true:false:false:3:5:[1 2 3 4]:[4 5]:[1 2 3]:[1 3 5]:2:[1 2]:[3 4 5]:[1 2 3]:[4 5]:3:2:2:done:[1 2 3 4 5]\nitem:1\nitem:2\n"
+    "true:true:false:false:false:false:false:true:false:true:false:true:true:true:true:false:true:false:false:3:5:[1 \
+     2 3 4]:[4 5]:[1 2 3]:[1 3 5]:2:[1 2]:[3 4 5]:[1 2 3]:[4 5]:3:2:2:done:[1 \
+     2 3 4 5]\n\
+     item:1\n\
+     item:2\n"
     ocaml_source
 
 let test_batched_predicate_collection_core_functions_reject_bad_counts () =
@@ -5544,12 +5850,180 @@ let test_batched_predicate_collection_core_functions_reject_bad_counts () =
   |> expect_error "take-nth n must be positive"
 
 let test_batched_predicate_collection_core_functions_reject_bad_predicates () =
-  Lg.Compiler.compile_string {|(def x (split-with (fn [^:string s] true) [1 2]))|}
+  Lg.Compiler.compile_string
+    {|(def x (split-with (fn [^:string s] true) [1 2]))|}
   |> expect_error "split-with expects a predicate matching collection elements"
 
-let test_batched_predicate_collection_core_functions_reject_bad_run_function () =
-  Lg.Compiler.compile_string {|(def x (run! (fn [^:string s] (println s)) [1 2]))|}
+let test_batched_predicate_collection_core_functions_reject_bad_run_function ()
+    =
+  Lg.Compiler.compile_string
+    {|(def x (run! (fn [^:string s] (println s)) [1 2]))|}
   |> expect_error "run! function type does not match collection"
+
+let test_doseq_infers_seqable_parameters () =
+  let source =
+    {|
+(defn consume-entries [entries key]
+  (doseq [entry entries]
+    nil)
+  (get entries key))
+(println (consume-entries {:answer 42} :answer))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "doseq_infers_seqable_parameters" "42\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_merge_accepts_dynamic_map_parameters () =
+  let source =
+    {|
+(defn combine [schema]
+  (merge {:implicit true} schema))
+(def combined (combine {:answer 42}))
+(println (str (get combined :implicit) ":" (get combined :answer)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "merge_accepts_dynamic_map_parameters" "true:42\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_record_arguments_fill_missing_optional_fields () =
+  let source =
+    {|
+(defn option-value [opts]
+  (if-some [storage (:storage opts)]
+    1
+    2))
+(println (option-value {}))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "record_arguments_fill_missing_optional_fields" "2\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_reify_preserves_protocols_across_dynamic_fields () =
+  let source =
+    {|
+(defprotocol Value
+  (-value [this]))
+(defn make-value []
+  (reify Value
+    (-value [_] 42)))
+(defrecord Holder [value])
+(def holder (Holder. (make-value)))
+(println (-value (.-value holder)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "reify_preserves_protocols_across_dynamic_fields" "42\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_parameters_preserve_multiple_protocol_constraints () =
+  let source =
+    {|
+(defprotocol LeftValue
+  (-left [this]))
+(defprotocol RightValue
+  (-right [this]))
+(defrecord Pair []
+  LeftValue
+  (-left [_] 20)
+  RightValue
+  (-right [_] 22))
+(defn total [value]
+  (+ (-left value) (-right value)))
+(println (total (Pair.)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "parameters_preserve_multiple_protocol_constraints" "42\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_references_preserve_state_across_dynamic_fields () =
+  let source =
+    {|
+(defrecord State [counter])
+(def state (State. (atom 0)))
+(println (deref (.-counter state)))
+(println (zero? (deref (.-counter state))))
+(reset! (.-counter state) 4)
+(println (swap! (.-counter state) inc))
+(println (deref (.-counter state)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "references_preserve_state_across_dynamic_fields"
+    "0\ntrue\n5\n5\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_truthy_guards_preserve_dynamic_numeric_parameters () =
+  let source =
+    {|
+(defn max-present [left right]
+  (if (and right (> right left)) right left))
+(println (max-present 1 nil))
+(println (max-present 1 2))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "truthy_guards_preserve_dynamic_numeric_parameters" "1\n2\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_let_aliases_propagate_seqable_constraints () =
+  let source =
+    {|
+(defn sum-values [record]
+  (let [values (:values record)]
+    (reduce + 0 values)))
+(println (sum-values {:values [1 2 3]}))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "let_aliases_propagate_seqable_constraints" "6\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_nested_drop_while_infers_seqable_parameters () =
+  let source =
+    {|
+(defn first-valid [values]
+  (first (drop-while (fn [value] (< value 2)) values)))
+(println (first-valid [1 2 3]))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "nested_drop_while_infers_seqable_parameters" "2\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_loop_initializers_propagate_seqable_constraints () =
+  let source =
+    {|
+(defn first-loop [values]
+  (loop [remaining (seq values)]
+    (first remaining)))
+(println (+ (first-loop [42]) 0))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "loop_initializers_propagate_seqable_constraints" "42\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_batched_predicate_collection_core_functions_accept_truthy_params () =
   let source =
@@ -5593,22 +6067,44 @@ let test_batched_identifier_and_constructor_core_functions_work () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "batched_identifier_and_constructor_core_functions_work"
-    "name:user:name:user:id:user:[ready user/name]:Ada:true:#{1 2 3}:(1 2 3 4):true:false:true:false:true:false:true:true:true\n"
+    "name:user:name:user:id:user:[ready user/name]:Ada:true:#{1 2 3}:(1 2 3 \
+     4):true:false:true:false:true:false:true:true:true\n"
     ocaml_source
 
-let test_batched_identifier_and_constructor_core_functions_reject_bad_symbol_args () =
+let test_batched_identifier_and_constructor_core_functions_reject_bad_symbol_args
+    () =
   Lg.Compiler.compile_string {|(def x (symbol 1))|}
   |> expect_error "symbol expects string, keyword, or symbol"
 
-let test_batched_identifier_and_constructor_core_functions_reject_bad_keyword_args () =
+let test_batched_identifier_and_constructor_core_functions_reject_bad_keyword_args
+    () =
   Lg.Compiler.compile_string {|(def x (keyword "user" 1))|}
-  |> expect_error "keyword namespace and name must be string, keyword, or symbol"
+  |> expect_error
+       "keyword namespace and name must be string, keyword, or symbol"
 
-let test_batched_identifier_and_constructor_core_functions_reject_bad_namespace_args () =
+let test_batched_identifier_and_constructor_core_functions_reject_bad_namespace_args
+    () =
   Lg.Compiler.compile_string {|(def x (namespace 1))|}
   |> expect_error "namespace expects keyword or symbol"
 
-let test_batched_identifier_and_constructor_core_functions_reject_bad_list_star_tail () =
+let test_namespace_accepts_guarded_dynamic_identifiers () =
+  let source =
+    {|
+(defn namespace-if-keyword [value]
+  (if (keyword? value)
+    (if-let [ns (namespace value)] (= ns "user") false)
+    false))
+(println
+  (str (namespace-if-keyword :user/name) ":"
+       (namespace-if-keyword "user/name")))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "namespace_accepts_guarded_dynamic_identifiers"
+    "true:false\n" ocaml_source
+
+let test_batched_identifier_and_constructor_core_functions_reject_bad_list_star_tail
+    () =
   Lg.Compiler.compile_string {|(def x (list* 1 2 3))|}
   |> expect_error "list* final argument must be a collection"
 
@@ -5647,7 +6143,9 @@ let test_batched_sequence_functions_work () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "batched_sequence_functions_work"
-    "[1 3]:[1 2 3]:[3 4]:(1 2 3):(1 2 3):(1 2 3 4):(0 1 2):9:[1 2]:#{1 2}:(\"x\" \"x\" \"x\"):(7 7 7):(1 0 2 0 3):(1 3 2 4):2:1:3:3:1:(0 1 3 6):[1 2 1]:(10 21):[1 3]:[2 3]:31:2:true\n"
+    "[1 3]:[1 2 3]:[3 4]:(1 2 3):(1 2 3):(1 2 3 4):(0 1 2):9:[1 2]:#{1 \
+     2}:(\"x\" \"x\" \"x\"):(7 7 7):(1 0 2 0 3):(1 3 2 4):2:1:3:3:1:(0 1 3 \
+     6):[1 2 1]:(10 21):[1 3]:[2 3]:31:2:true\n"
     ocaml_source
 
 let test_metadata_map_values_constrain_function_parameters () =
@@ -5770,8 +6268,7 @@ let test_lazy_map_accepts_all_builtin_seqable_types () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "lazy_map_accepts_all_builtin_seqable_types"
-    "(2 3)\n(2 3)\n(2 3)\n(2 3)\n(\"a\" \"b\")\n(5 6)\n"
-    ocaml_source
+    "(2 3)\n(2 3)\n(2 3)\n(2 3)\n(\"a\" \"b\")\n(5 6)\n" ocaml_source
 
 let test_ocaml_seq_unfold_builds_typed_lazy_sequences () =
   let source =
@@ -5908,8 +6405,8 @@ let test_reduce_stops_without_realizing_remaining_values () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "reduce_stops_without_realizing_remaining_values"
-    "6\n4\n" ocaml_source
+  assert_ocaml_runs "reduce_stops_without_realizing_remaining_values" "6\n4\n"
+    ocaml_source
 
 let test_nil_initialized_reduce_returns_nullable_reduced_value () =
   let source =
@@ -5974,8 +6471,8 @@ let test_custom_records_can_implement_core_seqable () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "custom_records_can_implement_core_seqable"
-    "(2 3 4)\n6\n" ocaml_source
+  assert_ocaml_runs "custom_records_can_implement_core_seqable" "(2 3 4)\n6\n"
+    ocaml_source
 
 let test_modules_export_core_seqable_implementations () =
   let source =
@@ -5991,8 +6488,8 @@ let test_modules_export_core_seqable_implementations () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "modules_export_core_seqable_implementations"
-    "(5 6)\n9\n" ocaml_source
+  assert_ocaml_runs "modules_export_core_seqable_implementations" "(5 6)\n9\n"
+    ocaml_source
 
 let test_reduce_prefers_custom_reducible_over_seqable () =
   let source =
@@ -6029,11 +6526,13 @@ let test_reduce_specializes_builtin_reducible_types () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  [ "List.fold_left";
+  [
+    "List.fold_left";
     "Rrbvec.fold_left";
     "Array.fold_left";
     "String.fold_left";
-    "Seq.fold_left" ]
+    "Seq.fold_left";
+  ]
   |> List.iter (fun expected ->
          if not (string_contains_substring ocaml_source expected) then
            failwith ("missing specialized reducible call " ^ expected))
@@ -6121,8 +6620,8 @@ let test_nth_accepts_indexed_and_seqable_host_types () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "nth_accepts_indexed_and_seqable_host_types"
-    "2\nb\n9\n" ocaml_source
+  assert_ocaml_runs "nth_accepts_indexed_and_seqable_host_types" "2\nb\n9\n"
+    ocaml_source
 
 let test_generic_sequence_functions_infer_seqable_dictionaries () =
   let source =
@@ -6164,8 +6663,8 @@ let test_generic_seqable_returns_instantiate_element_types () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "generic_seqable_returns_instantiate_element_types"
-    "5\n8\n" ocaml_source
+  assert_ocaml_runs "generic_seqable_returns_instantiate_element_types" "5\n8\n"
+    ocaml_source
 
 let test_seqable_dictionary_arguments_evaluate_once () =
   let source =
@@ -6258,8 +6757,7 @@ let test_sequence_navigation_accepts_all_seqable_types () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "sequence_navigation_accepts_all_seqable_types"
-    "(1 2 3)\n(2 3)\n(2 3)\n2\n(3)\n()\n(5 6)\nb\n8\n"
-    ocaml_source
+    "(1 2 3)\n(2 3)\n(2 3)\n2\n(3)\n()\n(5 6)\nb\n8\n" ocaml_source
 
 let test_generic_sequence_navigation_infers_seqable_dictionaries () =
   let source =
@@ -6408,8 +6906,8 @@ let test_some_returns_first_truthy_predicate_value () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "some_returns_first_truthy_predicate_value"
-    "value-3:true\n" ocaml_source
+  assert_ocaml_runs "some_returns_first_truthy_predicate_value" "value-3:true\n"
+    ocaml_source
 
 let test_clojure_truthiness_in_conditions () =
   let source =
@@ -6548,14 +7046,11 @@ let test_loop_and_recur_delegate_ocaml_owned_mismatch_to_ocaml () =
 let test_loop_and_recur_reject_invalid_calls () =
   Lg.Compiler.compile_string {|(recur 1)|}
   |> expect_error "recur is only valid in a loop tail position";
-  Lg.Compiler.compile_string
-    {|(loop [n 1] (recur n 0))|}
+  Lg.Compiler.compile_string {|(loop [n 1] (recur n 0))|}
   |> expect_error "recur expects 1 arguments";
-  Lg.Compiler.compile_string
-    {|(loop [n 1] (recur "one"))|}
+  Lg.Compiler.compile_string {|(loop [n 1] (recur "one"))|}
   |> expect_error "recur argument 1 must be int";
-  Lg.Compiler.compile_string
-    {|(loop [n 1] (+ 1 (recur (dec n))))|}
+  Lg.Compiler.compile_string {|(loop [n 1] (+ 1 (recur (dec n))))|}
   |> expect_error "recur is only valid in a loop tail position"
 
 let test_destructuring_in_let_and_functions () =
@@ -6622,6 +7117,25 @@ let test_let_destructuring_accepts_generic_seqable_values () =
   assert_ocaml_runs "let_destructuring_accepts_generic_seqable_values"
     "a:b\nc:d\n" ocaml_source
 
+let test_macro_slots_preserve_dynamic_seqable_values () =
+  let source =
+    {|
+(defn first-through-slot [value]
+  (let [slot (volatile! nil)]
+    (vreset! slot value)
+    (let [[first-value] (deref slot)]
+      first-value)))
+(println
+  (str (first-through-slot ["vector"]) ":"
+       (first-through-slot (list "list"))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "macro_slots_preserve_dynamic_seqable_values"
+    "vector:list\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_destructuring_preserves_row_polymorphic_function_calls () =
   let source =
     {|
@@ -6632,8 +7146,23 @@ let test_destructuring_preserves_row_polymorphic_function_calls () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "destructuring_preserves_row_polymorphic_function_calls" "hi Ada\n"
-    ocaml_source
+  assert_ocaml_runs "destructuring_preserves_row_polymorphic_function_calls"
+    "hi Ada\n" ocaml_source
+
+let test_map_destructuring_as_preserves_open_map_access () =
+  let source =
+    {|
+(defn restore-value [{:keys [value] :as options}]
+  (or (:restored options) value))
+(println (restore-value {:value 42}))
+(println (restore-value {:value 42 :restored 7}))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "map_destructuring_as_preserves_open_map_access" "42\n7\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_row_polymorphic_functions_accept_different_map_shapes () =
   let source =
@@ -6697,7 +7226,8 @@ let test_sequence_core_api_on_vectors () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "sequence_core_api_on_vectors" "2:4:2:6:2:false\n" ocaml_source
+  assert_ocaml_runs "sequence_core_api_on_vectors" "2:4:2:6:2:false\n"
+    ocaml_source
 
 let test_function_helpers () =
   let source =
@@ -6742,7 +7272,8 @@ let test_common_higher_order_helpers () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "common_higher_order_helpers"
-    "(1 2 2 3 3 4):(1 2 2 3):(3 2 1):true:false:true:false:false:true:[9 10 11]:15:10:true:false:-1:1:4:1\n"
+    "(1 2 2 3 3 4):(1 2 2 3):(3 2 1):true:false:true:false:false:true:[9 10 \
+     11]:15:10:true:false:-1:1:4:1\n"
     ocaml_source
 
 let test_common_higher_order_helpers_reject_bad_mapcat_result () =
@@ -6843,8 +7374,7 @@ let test_sets_support_primitive_lists_and_vectors () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "sets_support_primitive_lists_and_vectors"
-    "1:true:2:true:#{(1 2)}:#{[1 2] [2 3]}\n"
-    ocaml_source
+    "1:true:2:true:#{(1 2)}:#{[1 2] [2 3]}\n" ocaml_source
 
 let test_sets_support_nested_composite_elements () =
   let source =
@@ -6900,11 +7430,13 @@ let test_set_sequence_core_api () =
   assert_ocaml_runs "set_sequence_core_api" "true:true:true:6\n" ocaml_source
 
 let test_set_sequence_predicates_reject_bad_predicates () =
-  Lg.Compiler.compile_string {|(def x (every? (fn [x] (+ x 1)) (hash-set 1 2)))|}
+  Lg.Compiler.compile_string
+    {|(def x (every? (fn [x] (+ x 1)) (hash-set 1 2)))|}
   |> expect_error "every? expects a predicate matching set elements"
 
 let test_reduce_rejects_bad_set_reducers () =
-  Lg.Compiler.compile_string {|(def x (reduce (fn [acc x] (str acc x)) 0 (hash-set 1 2)))|}
+  Lg.Compiler.compile_string
+    {|(def x (reduce (fn [acc x] (str acc x)) 0 (hash-set 1 2)))|}
   |> expect_error_contains "reduced value must match init"
 
 let test_set_map_and_filter_core_api () =
@@ -6920,11 +7452,13 @@ let test_set_map_and_filter_core_api () =
   assert_ocaml_runs "set_map_and_filter_core_api" "(2 3 4):(3 4)\n" ocaml_source
 
 let test_set_map_rejects_function_type_mismatch () =
-  Lg.Compiler.compile_string {|(def xs (map (fn [^:string x] x) (hash-set 1 2)))|}
+  Lg.Compiler.compile_string
+    {|(def xs (map (fn [^:string x] x) (hash-set 1 2)))|}
   |> expect_error "map function argument type does not match sequence"
 
 let test_set_filter_rejects_non_bool_predicates () =
-  Lg.Compiler.compile_string {|(def xs (filter (fn [x] (+ x 1)) (hash-set 1 2)))|}
+  Lg.Compiler.compile_string
+    {|(def xs (filter (fn [x] (+ x 1)) (hash-set 1 2)))|}
   |> expect_error "filter expects a predicate matching sequence elements"
 
 let test_list_core_api () =
@@ -7020,7 +7554,8 @@ let test_sequence_boolean_predicates () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "sequence_boolean_predicates" "true:true:true\n" ocaml_source
+  assert_ocaml_runs "sequence_boolean_predicates" "true:true:true\n"
+    ocaml_source
 
 let test_sequence_boolean_predicates_reject_non_bool_predicates () =
   Lg.Compiler.compile_string {|(def x (every? (fn [x] (+ x 1)) [1 2]))|}
@@ -7069,6 +7604,207 @@ let test_into_accepts_inferred_seqable_parameters () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "into_accepts_inferred_seqable_parameters" "3:true\n"
     ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_eduction_applies_map_filter_and_cat_transducers () =
+  let source =
+    {|
+(def mapped (->Eduction (map inc) [1 2 3]))
+(def filtered (->Eduction (filter (fn [value] (> value 1))) [1 2 3]))
+(def flattened
+  (->Eduction (comp (map (fn [value] [value (inc value)])) cat) [1 3]))
+(def transduced (transduce (map inc) + 0 [1 2 3]))
+(println
+  (str (pr-str (vec mapped)) ":"
+       (pr-str (vec filtered)) ":"
+       (pr-str (vec flattened)) ":" transduced))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "eduction_applies_map_filter_and_cat_transducers"
+    "[2 3 4]:[2 3]:[1 2 3 4]:9\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_filter_accepts_dynamic_callable_record_fields () =
+  let source =
+    {|
+(defrecord Filter [pred])
+(def filter-value
+  (Filter. (fn [value] (> value 1))))
+(println (pr-str (vec (filter (.-pred filter-value) [1 2 3]))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "filter_accepts_dynamic_callable_record_fields" "[2 3]\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_sequence_operations_accept_host_optional_collections () =
+  let source =
+    {|
+(def values (Some [1 2 3]))
+(println (pr-str (vec (filter (fn [value] (> value 1)) values))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "sequence_operations_accept_host_optional_collections"
+    "[2 3]\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_reduce_infers_seqable_record_fields () =
+  let source =
+    {|
+(defn sum-values [value]
+  (reduce + 0 (:values value)))
+(println (sum-values {:values [1 2 3]}))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "reduce_infers_seqable_record_fields" "6\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_thread_macros_accept_keyword_steps () =
+  let source =
+    {|
+(defrecord Box [answer])
+(println (-> (Box. 42) :answer))
+(println (some-> (Box. 7) :answer))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "thread_macros_accept_keyword_steps" "42\n7\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_cond_thread_macros_apply_selected_steps () =
+  let source =
+    {|
+(defn adjust [value increment? double?]
+  (cond-> value
+    increment? inc
+    double? (* 2)))
+(println (adjust 3 true false))
+(println (adjust 3 true true))
+(println (first (cond->> [1 2 3] true (map inc))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "cond_thread_macros_apply_selected_steps" "4\n8\n2\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_update_accepts_first_class_assoc_on_dynamic_maps () =
+  let source =
+    {|
+(def result (update {} :nested assoc :answer 42))
+(println (get (get result :nested) :answer))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "update_accepts_first_class_assoc_on_dynamic_maps" "42\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_assoc_infers_dynamic_maps_for_variable_keys () =
+  let source =
+    {|
+(defn put [m k v] (assoc m k v))
+(def result (put {} :answer 42))
+(println (get result :answer))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "assoc_infers_dynamic_maps_for_variable_keys" "42\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_assoc_accepts_dynamic_collection_boundaries () =
+  let source =
+    {|
+(defn put [^:dynamic m ^:dynamic k ^:dynamic v]
+  (assoc m k v))
+(def result (put {} :answer 42))
+(println (get result :answer))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "assoc_accepts_dynamic_collection_boundaries" "42\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_assoc_accepts_nullable_dynamic_maps () =
+  let source =
+    {|
+(defn put [m k v]
+  (if (nil? m)
+    (assoc m k v)
+    (assoc m k v)))
+(def result (put {} :answer 42))
+(println (get result :answer))
+(defn first-value [value] (first [value 0]))
+(def first-result (assoc (first-value {}) :second 7))
+(println (get first-result :second))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "assoc_accepts_nullable_dynamic_maps" "42\n7\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_reduce_kv_accepts_dynamic_maps () =
+  let source =
+    {|
+(defrecord Holder [value])
+(defn copy-map [holder]
+  (reduce-kv
+    (fn [result key value]
+      (assoc result key value))
+    {}
+    (.-value ^Holder holder)))
+(def copied (copy-map (Holder. {:answer 42})))
+(println (get copied :answer))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "reduce_kv_accepts_dynamic_maps" "42\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_set_literals_accept_dynamic_elements () =
+  let source =
+    {|
+(defrecord Holder [value])
+(defn singleton [holder]
+  #{(.-value ^Holder holder)})
+(def values (singleton (Holder. :answer)))
+(println (contains? values :answer))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "set_literals_accept_dynamic_elements" "true\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_contains_infers_generic_membership_for_variable_keys () =
+  let source =
+    {|
+(defn member? [collection value]
+  (contains? collection value))
+(println (member? #{1 2} 2))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "contains_infers_generic_membership_for_variable_keys"
+    "true\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -7179,6 +7915,19 @@ let test_lists_support_mixed_element_types () =
   assert_ocaml_runs "lists_support_mixed_element_types" "(1 \"two\" :three)\n"
     ocaml_source
 
+let test_mixed_lists_pack_optional_values () =
+  let source =
+    {|
+(defn context [value]
+  (when (some? value) true)
+  (list 'context value))
+(println (str (pr-str (context nil)) ":" (pr-str (context 42))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "mixed_lists_pack_optional_values"
+    "(context nil):(context 42)\n" ocaml_source
+
 let test_conj_rejects_list_type_mismatch () =
   Lg.Compiler.compile_string {|(def xs (conj (list 1) "two"))|}
   |> expect_error "conj value type must match list element type"
@@ -7258,8 +8007,7 @@ let test_match_expression_works () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "match_expression_works"
-    "zero:n=2:0:7:7:99:0:7:7:99:keys:other:small\n"
-    ocaml_source
+    "zero:n=2:0:7:7:99:0:7:7:99:keys:other:small\n" ocaml_source
 
 let test_match_supports_mixed_branch_types () =
   let source = {|(println (pr-str (match 1 0 "zero" _ 1)))|} in
@@ -7320,7 +8068,8 @@ let test_compile_diagnostics_capture_ocaml_match_warnings () =
   | [ diagnostic ] ->
       if diagnostic.severity <> `Warning then
         failwith "expected an OCaml warning diagnostic";
-      if not (string_contains_substring diagnostic.message "not exhaustive") then
+      if not (string_contains_substring diagnostic.message "not exhaustive")
+      then
         failwith
           ("expected non-exhaustive match warning, got: " ^ diagnostic.message);
       if not (string_contains_substring diagnostic.message "warning.lgc") then
@@ -7348,12 +8097,14 @@ let test_compile_diagnostics_are_empty_for_exhaustive_matches () =
 
 let test_parser_diagnostics_locate_unterminated_delimiters () =
   let source = "(def ok 1)\n(def broken [1 2" in
-  match Lg.Compiler.compile_string_with_filename ~filename:"broken.lgc" source with
+  match
+    Lg.Compiler.compile_string_with_filename ~filename:"broken.lgc" source
+  with
   | Ok _ -> failwith "expected an unterminated vector error"
-  | Error error ->
+  | Error error -> (
       if error.message <> "unterminated vector; expected ']'" then
         failwith ("unexpected parser error: " ^ error.message);
-      (match error.location with
+      match error.location with
       | Some location ->
           if location.loc_start.Lexing.pos_fname <> "broken.lgc" then
             failwith "parser error should preserve the source filename";
@@ -7392,11 +8143,14 @@ let analyze_language_service_source () =
 
 let test_language_service_hover_uses_ocaml_types () =
   let analysis = analyze_language_service_source () in
-  let offset = expect_substring_index language_service_source "add-one answer" in
+  let offset =
+    expect_substring_index language_service_source "add-one answer"
+  in
   match Lg.Language_service.hover analysis ~offset with
   | Some hover ->
       if not (string_contains_substring hover.contents "int -> int") then
-        failwith ("expected inferred OCaml function type, got: " ^ hover.contents)
+        failwith
+          ("expected inferred OCaml function type, got: " ^ hover.contents)
   | None -> failwith "expected hover information for add-one"
 
 let test_language_service_definition_resolves_source_binding () =
@@ -7483,7 +8237,9 @@ let test_language_service_references_use_typed_identity () =
     |> expect_ok
   in
   let top_level_usage = expect_substring_index source "value (use" in
-  let references = Lg.Language_service.references analysis ~offset:top_level_usage in
+  let references =
+    Lg.Language_service.references analysis ~offset:top_level_usage
+  in
   let referenced_text = List.map (span_text source) references in
   if referenced_text <> [ "value"; "value" ] then
     failwith
@@ -7495,15 +8251,17 @@ let test_language_service_rename_returns_exact_symbol_edits () =
   let usage = expect_substring_index language_service_source "answer))" in
   match Lg.Language_service.rename analysis ~offset:usage ~new_name:"total" with
   | Error err -> failwith ("expected rename edits, got: " ^ err.Lg.Error.message)
-  | Ok edits ->
-      if List.length edits <> 2 then failwith "expected definition and usage edits";
+  | Ok edits -> (
+      if List.length edits <> 2 then
+        failwith "expected definition and usage edits";
       List.iter
         (fun (edit : Lg.Language_service.text_edit) ->
-          if edit.new_text <> "total" then failwith "expected rename replacement total";
+          if edit.new_text <> "total" then
+            failwith "expected rename replacement total";
           if span_text language_service_source edit.range <> "answer" then
             failwith "expected rename to edit only source symbol spans")
         edits;
-      (match
+      match
          Lg.Language_service.rename analysis ~offset:usage ~new_name:"bad name"
        with
       | Error _ -> ()
@@ -7520,8 +8278,7 @@ let constructor_language_service_source =
 |}
 
 let analyze_constructor_language_service_source () =
-  Lg.Language_service.analyze
-    ~filename:"file:///tmp/constructor-service.lgc"
+  Lg.Language_service.analyze ~filename:"file:///tmp/constructor-service.lgc"
     constructor_language_service_source
   |> expect_ok
 
@@ -7552,15 +8309,16 @@ let test_language_service_constructor_references_and_rename_use_identity () =
     failwith
       ("expected constructor declaration/expression/pattern references, got: "
       ^ String.concat "," referenced_text);
-  match Lg.Language_service.rename analysis ~offset:usage ~new_name:"Labelled" with
+  match
+    Lg.Language_service.rename analysis ~offset:usage ~new_name:"Labelled"
+  with
   | Error err -> failwith ("expected constructor rename, got: " ^ err.message)
   | Ok edits ->
       if List.length edits <> 3 then
         failwith "expected constructor declaration/expression/pattern edits";
       List.iter
         (fun (edit : Lg.Language_service.text_edit) ->
-          if
-            span_text constructor_language_service_source edit.range <> "Named"
+          if span_text constructor_language_service_source edit.range <> "Named"
           then failwith "expected constructor rename to edit exact spans")
         edits
 
@@ -7572,8 +8330,7 @@ let test_language_service_completion_includes_constructors () =
   in
   match
     List.find_opt
-      (fun (item : Lg.Language_service.completion_item) ->
-        item.label = "Named")
+      (fun (item : Lg.Language_service.completion_item) -> item.label = "Named")
       items
   with
   | Some item when string_contains_substring item.detail "string" -> ()
@@ -7596,7 +8353,8 @@ let test_workspace_constructor_definition_resolves_across_files () =
   match Lg.Language_service.definition consumer_analysis ~offset:usage with
   | Some location
     when location.Location.loc_start.Lexing.pos_fname = provider_uri
-         && location.loc_start.pos_cnum = expect_substring_index provider "Named" ->
+         && location.loc_start.pos_cnum
+            = expect_substring_index provider "Named" ->
       ()
   | _ -> failwith "expected cross-file constructor definition"
 
@@ -7612,8 +8370,8 @@ let test_constructor_references_keep_module_identities_distinct () =
 |}
   in
   let analysis =
-    Lg.Language_service.analyze
-      ~filename:"file:///tmp/constructor-modules.lgc" source
+    Lg.Language_service.analyze ~filename:"file:///tmp/constructor-modules.lgc"
+      source
     |> expect_ok
   in
   let usage =
@@ -7669,13 +8427,21 @@ let analyze_type_language_service_source () =
 
 let test_language_service_type_definition_and_references_use_identity () =
   let analysis = analyze_type_language_service_source () in
-  let declaration = expect_substring_index type_language_service_source "user (name" in
-  let usage = expect_substring_index type_language_service_source "user (name \"Ada\"" in
+  let declaration =
+    expect_substring_index type_language_service_source "user (name"
+  in
+  let usage =
+    expect_substring_index type_language_service_source "user (name \"Ada\""
+  in
   (match Lg.Language_service.definition analysis ~offset:usage with
-  | Some location when location.Location.loc_start.Lexing.pos_cnum = declaration -> ()
+  | Some location when location.Location.loc_start.Lexing.pos_cnum = declaration
+    ->
+      ()
   | _ -> failwith "expected record type definition");
   let references = Lg.Language_service.references analysis ~offset:usage in
-  let referenced_text = List.map (span_text type_language_service_source) references in
+  let referenced_text =
+    List.map (span_text type_language_service_source) references
+  in
   if referenced_text <> [ "user"; "user" ] then
     failwith
       ("expected record type declaration/usage references, got: "
@@ -7683,8 +8449,12 @@ let test_language_service_type_definition_and_references_use_identity () =
 
 let test_language_service_type_rename_edits_plain_type_spans () =
   let analysis = analyze_type_language_service_source () in
-  let usage = expect_substring_index type_language_service_source "user (name \"Ada\"" in
-  match Lg.Language_service.rename analysis ~offset:usage ~new_name:"person" with
+  let usage =
+    expect_substring_index type_language_service_source "user (name \"Ada\""
+  in
+  match
+    Lg.Language_service.rename analysis ~offset:usage ~new_name:"person"
+  with
   | Error err -> failwith ("expected type rename, got: " ^ err.message)
   | Ok edits ->
       if List.length edits <> 2 then
@@ -7698,10 +8468,16 @@ let test_language_service_type_rename_edits_plain_type_spans () =
 let test_language_service_alias_and_variant_annotations_resolve_types () =
   let analysis = analyze_type_language_service_source () in
   let check declaration_text usage_text =
-    let declaration = expect_substring_index type_language_service_source declaration_text in
-    let usage = expect_substring_index type_language_service_source usage_text in
+    let declaration =
+      expect_substring_index type_language_service_source declaration_text
+    in
+    let usage =
+      expect_substring_index type_language_service_source usage_text
+    in
     match Lg.Language_service.definition analysis ~offset:usage with
-    | Some location when location.Location.loc_start.Lexing.pos_cnum = declaration -> ()
+    | Some location
+      when location.Location.loc_start.Lexing.pos_cnum = declaration ->
+        ()
     | _ -> failwith ("expected type definition for " ^ usage_text)
   in
   check "user-id :int" "user_id value";
@@ -7714,7 +8490,9 @@ let test_language_service_completion_includes_source_type_names () =
       ~offset:(String.length type_language_service_source)
   in
   let labels =
-    List.map (fun (item : Lg.Language_service.completion_item) -> item.label) items
+    List.map
+      (fun (item : Lg.Language_service.completion_item) -> item.label)
+      items
   in
   List.iter
     (fun name ->
@@ -7737,7 +8515,8 @@ let test_workspace_type_definition_resolves_across_files () =
   match Lg.Language_service.definition analysis ~offset:usage with
   | Some location
     when location.Location.loc_start.Lexing.pos_fname = provider_uri
-         && location.loc_start.pos_cnum = expect_substring_index provider "user" ->
+         && location.loc_start.pos_cnum = expect_substring_index provider "user"
+    ->
       ()
   | _ -> failwith "expected cross-file type definition"
 
@@ -7753,8 +8532,7 @@ let test_type_references_keep_module_identities_distinct () =
 |}
   in
   let analysis =
-    Lg.Language_service.analyze ~filename:"file:///tmp/type-modules.lgc"
-      source
+    Lg.Language_service.analyze ~filename:"file:///tmp/type-modules.lgc" source
     |> expect_ok
   in
   let usage =
@@ -7816,7 +8594,9 @@ let test_language_service_module_definition_and_references_use_identity () =
     expect_substring_index module_language_service_source "First/value"
   in
   (match Lg.Language_service.definition analysis ~offset:usage with
-  | Some location when location.Location.loc_start.Lexing.pos_cnum = declaration -> ()
+  | Some location when location.Location.loc_start.Lexing.pos_cnum = declaration
+    ->
+      ()
   | _ -> failwith "expected module definition");
   let references = Lg.Language_service.references analysis ~offset:usage in
   let referenced_text =
@@ -7832,7 +8612,9 @@ let test_language_service_module_rename_edits_only_module_segments () =
   let usage =
     expect_substring_index module_language_service_source "First/value"
   in
-  match Lg.Language_service.rename analysis ~offset:usage ~new_name:"Primary" with
+  match
+    Lg.Language_service.rename analysis ~offset:usage ~new_name:"Primary"
+  with
   | Error err -> failwith ("expected module rename, got: " ^ err.message)
   | Ok edits ->
       if List.length edits <> 2 then
@@ -7848,7 +8630,9 @@ let test_language_service_module_and_member_offsets_are_distinct () =
   let usage =
     expect_substring_index module_language_service_source "First/value"
   in
-  let module_definition = Lg.Language_service.definition analysis ~offset:usage in
+  let module_definition =
+    Lg.Language_service.definition analysis ~offset:usage
+  in
   let value_definition =
     Lg.Language_service.definition analysis
       ~offset:(usage + String.length "First/")
@@ -7856,15 +8640,17 @@ let test_language_service_module_and_member_offsets_are_distinct () =
   match (module_definition, value_definition) with
   | Some module_location, Some value_location
     when module_location.loc_start.pos_cnum
-         = expect_substring_index module_language_service_source "First ValueSig"
+         = expect_substring_index module_language_service_source
+             "First ValueSig"
          && value_location.loc_start.pos_cnum
-            = expect_substring_index module_language_service_source "value :int" ->
+            = expect_substring_index module_language_service_source "value :int"
+    ->
       ()
   | Some module_location, Some value_location ->
       failwith
-        (Printf.sprintf
-           "expected module/member definitions at %d/%d, got %d/%d"
-           (expect_substring_index module_language_service_source "First ValueSig")
+        (Printf.sprintf "expected module/member definitions at %d/%d, got %d/%d"
+           (expect_substring_index module_language_service_source
+              "First ValueSig")
            (expect_substring_index module_language_service_source "value :int")
            module_location.loc_start.pos_cnum value_location.loc_start.pos_cnum)
   | _ -> failwith "expected module and member definitions"
@@ -7898,7 +8684,8 @@ let test_workspace_module_definition_resolves_across_files () =
   match Lg.Language_service.definition analysis ~offset:usage with
   | Some location
     when location.Location.loc_start.Lexing.pos_fname = provider_uri
-         && location.loc_start.pos_cnum = expect_substring_index provider "Math" ->
+         && location.loc_start.pos_cnum = expect_substring_index provider "Math"
+    ->
       ()
   | _ -> failwith "expected cross-file module definition"
 
@@ -7911,7 +8698,9 @@ let test_language_service_module_signature_definition_and_references () =
     expect_substring_index module_language_service_source "ValueSig (def"
   in
   (match Lg.Language_service.definition analysis ~offset:usage with
-  | Some location when location.Location.loc_start.Lexing.pos_cnum = declaration -> ()
+  | Some location when location.Location.loc_start.Lexing.pos_cnum = declaration
+    ->
+      ()
   | _ -> failwith "expected module signature definition");
   let references = Lg.Language_service.references analysis ~offset:usage in
   let referenced_text =
@@ -7929,7 +8718,9 @@ let test_language_service_completion_includes_modules_and_signatures () =
       ~offset:(String.length module_language_service_source)
   in
   let labels =
-    List.map (fun (item : Lg.Language_service.completion_item) -> item.label) items
+    List.map
+      (fun (item : Lg.Language_service.completion_item) -> item.label)
+      items
   in
   List.iter
     (fun name ->
@@ -7957,7 +8748,8 @@ let analyze_module_construct_language_service_source () =
 
 let assert_module_definition_offset analysis ~usage ~expected message =
   match Lg.Language_service.definition analysis ~offset:usage with
-  | Some location when location.Location.loc_start.Lexing.pos_cnum = expected -> ()
+  | Some location when location.Location.loc_start.Lexing.pos_cnum = expected ->
+      ()
   | Some location ->
       failwith
         (Printf.sprintf "%s: expected %d, got %d" message expected
@@ -7980,7 +8772,8 @@ let test_language_service_module_constructs_preserve_exact_locations () =
     ~usage:(expect_substring_index source "open Alias" + String.length "open ")
     ~expected:alias_declaration "open module";
   assert_module_definition_offset analysis
-    ~usage:(expect_substring_index source "include Alias" + String.length "include ")
+    ~usage:
+      (expect_substring_index source "include Alias" + String.length "include ")
     ~expected:alias_declaration "include module";
   assert_module_definition_offset analysis
     ~usage:(expect_substring_index source "Arg ArgSig" + String.length "Arg ")
@@ -7989,7 +8782,8 @@ let test_language_service_module_constructs_preserve_exact_locations () =
     ~usage:(expect_substring_index source "Arg/value")
     ~expected:parameter_declaration "functor parameter";
   assert_module_definition_offset analysis
-    ~usage:(expect_substring_index source "Output Make" + String.length "Output ")
+    ~usage:
+      (expect_substring_index source "Output Make" + String.length "Output ")
     ~expected:functor_declaration "applied functor";
   assert_module_definition_offset analysis
     ~usage:(expect_substring_index source "Make Input" + String.length "Make ")
@@ -8005,7 +8799,8 @@ let test_language_service_module_constructs_preserve_exact_locations () =
       (fun (span : Lg.Ast.source_span) -> span.start_offset)
       parameter_references
   in
-  if parameter_reference_offsets <> [ parameter_declaration; parameter_usage ] then
+  if parameter_reference_offsets <> [ parameter_declaration; parameter_usage ]
+  then
     failwith "functor parameter references must include its exact declaration";
   match
     Lg.Language_service.rename analysis ~offset:parameter_usage
@@ -8076,7 +8871,9 @@ let test_language_service_protocol_definition_references_and_rename () =
     expect_substring_index protocol_language_service_source "Labelled/label"
   in
   (match Lg.Language_service.definition analysis ~offset:usage with
-  | Some location when location.Location.loc_start.Lexing.pos_cnum = declaration -> ()
+  | Some location when location.Location.loc_start.Lexing.pos_cnum = declaration
+    ->
+      ()
   | _ -> failwith "expected protocol definition");
   let references = Lg.Language_service.references analysis ~offset:usage in
   let referenced_text =
@@ -8089,11 +8886,12 @@ let test_language_service_protocol_definition_references_and_rename () =
   match Lg.Language_service.rename analysis ~offset:usage ~new_name:"Named" with
   | Error err -> failwith ("expected protocol rename, got: " ^ err.message)
   | Ok edits ->
-      if List.length edits <> 3 then failwith "expected three protocol rename edits";
+      if List.length edits <> 3 then
+        failwith "expected three protocol rename edits";
       List.iter
         (fun (edit : Lg.Language_service.text_edit) ->
-          if span_text protocol_language_service_source edit.range <> "Labelled" then
-            failwith "protocol rename must edit exact protocol segments")
+          if span_text protocol_language_service_source edit.range <> "Labelled"
+          then failwith "protocol rename must edit exact protocol segments")
         edits
 
 let test_language_service_protocol_method_definition_references_and_rename () =
@@ -8106,7 +8904,9 @@ let test_language_service_protocol_method_definition_references_and_rename () =
   in
   let usage = qualified + String.length "Labelled/" in
   (match Lg.Language_service.definition analysis ~offset:usage with
-  | Some location when location.Location.loc_start.Lexing.pos_cnum = declaration -> ()
+  | Some location when location.Location.loc_start.Lexing.pos_cnum = declaration
+    ->
+      ()
   | _ -> failwith "expected protocol method definition");
   let references = Lg.Language_service.references analysis ~offset:usage in
   let referenced_text =
@@ -8116,14 +8916,17 @@ let test_language_service_protocol_method_definition_references_and_rename () =
     failwith
       ("expected method declaration, implementation, and call references, got: "
       ^ String.concat "," referenced_text);
-  match Lg.Language_service.rename analysis ~offset:usage ~new_name:"name-of" with
+  match
+    Lg.Language_service.rename analysis ~offset:usage ~new_name:"name-of"
+  with
   | Error err -> failwith ("expected method rename, got: " ^ err.message)
   | Ok edits ->
-      if List.length edits <> 3 then failwith "expected three method rename edits";
+      if List.length edits <> 3 then
+        failwith "expected three method rename edits";
       List.iter
         (fun (edit : Lg.Language_service.text_edit) ->
-          if span_text protocol_language_service_source edit.range <> "label" then
-            failwith "method rename must edit exact method segments")
+          if span_text protocol_language_service_source edit.range <> "label"
+          then failwith "method rename must edit exact method segments")
         edits
 
 let test_protocol_method_references_keep_protocol_identities_distinct () =
@@ -8169,7 +8972,8 @@ let test_workspace_protocol_definition_resolves_across_files () =
   match Lg.Language_service.definition analysis ~offset:usage with
   | Some location
     when location.Location.loc_start.Lexing.pos_fname = provider_uri
-         && location.loc_start.pos_cnum = expect_substring_index provider "Labelled" ->
+         && location.loc_start.pos_cnum
+            = expect_substring_index provider "Labelled" ->
       ()
   | _ -> failwith "expected cross-file protocol definition"
 
@@ -8184,8 +8988,8 @@ let test_module_and_protocol_namespaces_remain_distinct () =
 |}
   in
   let analysis =
-    Lg.Language_service.analyze ~filename:"file:///tmp/protocol-module-clash.lgc"
-      source
+    Lg.Language_service.analyze
+      ~filename:"file:///tmp/protocol-module-clash.lgc" source
     |> expect_ok
   in
   let module_usage = expect_substring_index source "Shared/value" in
@@ -8211,7 +9015,9 @@ let test_module_and_protocol_namespaces_remain_distinct () =
         failwith "same-named module references must remain isolated";
       if protocol_refs <> [ "Shared"; "Shared"; "Shared" ] then
         failwith "same-named protocol references must remain isolated"
-  | _ -> failwith "module and protocol qualifiers with the same name must stay distinct"
+  | _ ->
+      failwith
+        "module and protocol qualifiers with the same name must stay distinct"
 
 let test_language_service_completion_includes_protocols_and_methods () =
   let analysis = analyze_protocol_language_service_source () in
@@ -8220,7 +9026,9 @@ let test_language_service_completion_includes_protocols_and_methods () =
       ~offset:(String.length protocol_language_service_source)
   in
   let labels =
-    List.map (fun (item : Lg.Language_service.completion_item) -> item.label) items
+    List.map
+      (fun (item : Lg.Language_service.completion_item) -> item.label)
+      items
   in
   List.iter
     (fun name ->
@@ -8234,7 +9042,8 @@ let test_language_service_protocol_capabilities () =
       ( "protocol identity",
         test_language_service_protocol_definition_references_and_rename );
       ( "method identity",
-        test_language_service_protocol_method_definition_references_and_rename );
+        test_language_service_protocol_method_definition_references_and_rename
+      );
       ( "same method names",
         test_protocol_method_references_keep_protocol_identities_distinct );
       ( "cross-file protocol",
@@ -8272,12 +9081,16 @@ let analyze_field_language_service_source () =
 
 let test_language_service_field_definition_references_and_rename () =
   let analysis = analyze_field_language_service_source () in
-  let declaration = expect_substring_index field_language_service_source "name :string" in
+  let declaration =
+    expect_substring_index field_language_service_source "name :string"
+  in
   let usage =
     expect_substring_index field_language_service_source ":name ada"
   in
   (match Lg.Language_service.definition analysis ~offset:usage with
-  | Some location when location.Location.loc_start.Lexing.pos_cnum = declaration -> ()
+  | Some location when location.Location.loc_start.Lexing.pos_cnum = declaration
+    ->
+      ()
   | _ -> failwith "expected record field definition");
   let references = Lg.Language_service.references analysis ~offset:usage in
   let referenced_text =
@@ -8285,9 +9098,12 @@ let test_language_service_field_definition_references_and_rename () =
   in
   if referenced_text <> [ "name"; "name"; "name"; "name" ] then
     failwith
-      ("expected field declaration, construction, access, and pattern references, got: "
+      ("expected field declaration, construction, access, and pattern \
+        references, got: "
       ^ String.concat "," referenced_text);
-  match Lg.Language_service.rename analysis ~offset:usage ~new_name:"display-name" with
+  match
+    Lg.Language_service.rename analysis ~offset:usage ~new_name:"display-name"
+  with
   | Error err -> failwith ("expected field rename, got: " ^ err.message)
   | Ok edits ->
       if List.length edits <> 4 then failwith "expected four exact field edits";
@@ -8313,9 +9129,7 @@ let test_field_references_keep_record_identities_distinct () =
       source
     |> expect_ok
   in
-  let usage =
-    expect_substring_index source ":name ada"
-  in
+  let usage = expect_substring_index source ":name ada" in
   let references = Lg.Language_service.references analysis ~offset:usage in
   let referenced_text = List.map (span_text source) references in
   if referenced_text <> [ "name"; "name"; "name" ] then
@@ -8326,8 +9140,7 @@ let test_field_references_keep_record_identities_distinct () =
 let test_workspace_field_definition_resolves_across_files () =
   let provider = "(type-record user (name :string))\n" in
   let consumer =
-    "(def ada (record user (name \"Ada\")))\n\
-     (def label (:name ada))\n"
+    "(def ada (record user (name \"Ada\")))\n(def label (:name ada))\n"
   in
   let provider_uri = "file:///tmp/field-provider.lgc" in
   let consumer_uri = "file:///tmp/field-consumer.lgc" in
@@ -8341,7 +9154,8 @@ let test_workspace_field_definition_resolves_across_files () =
   match Lg.Language_service.definition analysis ~offset:usage with
   | Some location
     when location.Location.loc_start.Lexing.pos_fname = provider_uri
-         && location.loc_start.pos_cnum = expect_substring_index provider "name" ->
+         && location.loc_start.pos_cnum = expect_substring_index provider "name"
+    ->
       ()
   | _ -> failwith "expected cross-file field definition"
 
@@ -8352,7 +9166,9 @@ let test_language_service_completion_includes_record_fields () =
       ~offset:(String.length field_language_service_source)
   in
   let labels =
-    List.map (fun (item : Lg.Language_service.completion_item) -> item.label) items
+    List.map
+      (fun (item : Lg.Language_service.completion_item) -> item.label)
+      items
   in
   List.iter
     (fun name ->
@@ -8397,7 +9213,9 @@ let assert_semantic_hover analysis source ~offset ~symbol ~expected =
 let test_language_service_semantic_hover_capabilities () =
   let constructor_analysis = analyze_constructor_language_service_source () in
   assert_semantic_hover constructor_analysis constructor_language_service_source
-    ~offset:(expect_substring_index constructor_language_service_source "Named :string")
+    ~offset:
+      (expect_substring_index constructor_language_service_source
+         "Named :string")
     ~symbol:"Named" ~expected:"constructor Named";
   let type_analysis = analyze_type_language_service_source () in
   assert_semantic_hover type_analysis type_language_service_source
@@ -8405,10 +9223,12 @@ let test_language_service_semantic_hover_capabilities () =
     ~symbol:"user" ~expected:"type user";
   let module_analysis = analyze_module_language_service_source () in
   assert_semantic_hover module_analysis module_language_service_source
-    ~offset:(expect_substring_index module_language_service_source "First/value")
+    ~offset:
+      (expect_substring_index module_language_service_source "First/value")
     ~symbol:"First" ~expected:"module First";
   assert_semantic_hover module_analysis module_language_service_source
-    ~offset:(expect_substring_index module_language_service_source "ValueSig (val")
+    ~offset:
+      (expect_substring_index module_language_service_source "ValueSig (val")
     ~symbol:"ValueSig" ~expected:"module type ValueSig";
   let protocol_analysis = analyze_protocol_language_service_source () in
   let protocol_usage =
@@ -8421,7 +9241,8 @@ let test_language_service_semantic_hover_capabilities () =
     ~symbol:"label" ~expected:"label :";
   let field_analysis = analyze_field_language_service_source () in
   assert_semantic_hover field_analysis field_language_service_source
-    ~offset:(expect_substring_index field_language_service_source "name :string")
+    ~offset:
+      (expect_substring_index field_language_service_source "name :string")
     ~symbol:"name" ~expected:"name : string"
 
 let test_language_service_document_symbols_preserve_source_names () =
@@ -8442,8 +9263,7 @@ let test_language_service_document_symbols_preserve_source_names () =
 let test_language_service_recognizes_private_defn () =
   let source = "(defn- hidden [value] (+ value 1))\n" in
   let analysis =
-    Lg.Language_service.analyze
-      ~filename:"file:///tmp/private-defn.lgc" source
+    Lg.Language_service.analyze ~filename:"file:///tmp/private-defn.lgc" source
     |> expect_ok
   in
   match Lg.Language_service.document_symbols analysis with
@@ -8475,8 +9295,7 @@ let test_language_service_document_symbols_include_semantic_children () =
   let symbols = Lg.Language_service.document_symbols analysis in
   let find name symbols =
     List.find_opt
-      (fun (symbol : Lg.Language_service.document_symbol) ->
-        symbol.name = name)
+      (fun (symbol : Lg.Language_service.document_symbol) -> symbol.name = name)
       symbols
     |> Option.get
   in
@@ -8499,17 +9318,14 @@ let test_language_service_document_symbols_include_semantic_children () =
   if child_names service <> [ "get"; "item"; "Nested" ] then
     failwith "module signature symbol must include its declarations";
   let field = find "name" user.children in
-  if span_text document_symbol_hierarchy_source field.selection_range <> "name" then
-    failwith "document symbol selection range must be the declaration name";
-  if
-    span_text document_symbol_hierarchy_source field.range
-    <> "(name :string)"
+  if span_text document_symbol_hierarchy_source field.selection_range <> "name"
+  then failwith "document symbol selection range must be the declaration name";
+  if span_text document_symbol_hierarchy_source field.range <> "(name :string)"
   then failwith "field document symbol range must cover its declaration"
 
 let test_language_service_semantic_tokens_classify_symbols () =
   let analysis =
-    Lg.Language_service.analyze
-      ~filename:"file:///tmp/semantic-tokens.lgc"
+    Lg.Language_service.analyze ~filename:"file:///tmp/semantic-tokens.lgc"
       document_symbol_hierarchy_source
     |> expect_ok
   in
@@ -8525,7 +9341,8 @@ let test_language_service_semantic_tokens_classify_symbols () =
     (fun (text, kind) ->
       if not (has text kind) then
         failwith ("expected semantic token classification for " ^ text))
-    [ ("module", `Keyword);
+    [
+      ("module", `Keyword);
       ("Domain", `Namespace);
       ("user", `Type);
       ("name", `Property);
@@ -8534,7 +9351,8 @@ let test_language_service_semantic_tokens_classify_symbols () =
       ("render", `Method);
       ("identity", `Function);
       ("value", `Parameter);
-      (":string", `Keyword) ];
+      (":string", `Keyword);
+    ];
   let qualified =
     expect_substring_index document_symbol_hierarchy_source "Domain/identity"
   in
@@ -8548,18 +9366,12 @@ let test_language_service_semantic_tokens_classify_symbols () =
   in
   if not (has_at qualified "Domain" `Namespace) then
     failwith "qualified semantic token must split the module segment";
-  if
-    not
-      (has_at (qualified + String.length "Domain/") "identity" `Function)
+  if not (has_at (qualified + String.length "Domain/") "identity" `Function)
   then failwith "qualified semantic token must split the member segment"
 
 let test_language_service_workspace_resolves_cross_file_identity () =
-  let math =
-    "(module Math (defn magnitude-plus-two [x] (+ x 2)))\n"
-  in
-  let main =
-    "(def result (Math/magnitude-plus-two 40))\n"
-  in
+  let math = "(module Math (defn magnitude-plus-two [x] (+ x 2)))\n" in
+  let main = "(def result (Math/magnitude-plus-two 40))\n" in
   let analyses =
     Lg.Language_service.analyze_workspace
       [ ("file:///tmp/main.lgc", main); ("file:///tmp/math.lgc", math) ]
@@ -8571,7 +9383,8 @@ let test_language_service_workspace_resolves_cross_file_identity () =
     failwith "expected required workspace symbol to have a typed identity";
   match Lg.Language_service.definition main_analysis ~offset:usage with
   | Some location
-    when location.Location.loc_start.Lexing.pos_fname = "file:///tmp/math.lgc" ->
+    when location.Location.loc_start.Lexing.pos_fname = "file:///tmp/math.lgc"
+    ->
       ()
   | _ -> failwith "expected required workspace symbol definition in math.lgc"
 
@@ -8581,25 +9394,27 @@ let test_workspace_index_reanalyzes_only_dependency_component () =
   let other_uri = "file:///tmp/other.lgc" in
   let index =
     Lg.Language_service.create_workspace_index
-      [ (math_uri, "(module Math (def answer 40))\n");
+      [
+        (math_uri, "(module Math (def answer 40))\n");
         (main_uri, "(def result (+ Math/answer 2))\n");
-        (other_uri, "(module Other (def value 7))\n") ]
+        (other_uri, "(module Other (def value 7))\n");
+      ]
     |> expect_ok
   in
   let other_before =
-    Lg.Language_service.workspace_analysis index other_uri
-    |> Option.get
+    Lg.Language_service.workspace_analysis index other_uri |> Option.get
   in
   let index, reanalyzed =
     Lg.Language_service.update_workspace_index index ~filename:math_uri
       ~source:"(module Math (def answer 41))\n"
     |> expect_ok
   in
-  if List.sort String.compare reanalyzed <> List.sort String.compare [ math_uri; main_uri ]
+  if
+    List.sort String.compare reanalyzed
+    <> List.sort String.compare [ math_uri; main_uri ]
   then failwith "workspace invalidation must follow dependency edges only";
   let other_after =
-    Lg.Language_service.workspace_analysis index other_uri
-    |> Option.get
+    Lg.Language_service.workspace_analysis index other_uri |> Option.get
   in
   if other_before != other_after then
     failwith "unrelated workspace analyses must be reused";
@@ -8617,8 +9432,10 @@ let test_workspace_index_tracks_top_level_symbol_dependencies () =
   let consumer_uri = "file:///tmp/consumer.lgc" in
   let index =
     Lg.Language_service.create_workspace_index
-      [ (values_uri, "(def shared-answer 40)\n");
-        (consumer_uri, "(def result (+ shared-answer 2))\n") ]
+      [
+        (values_uri, "(def shared-answer 40)\n");
+        (consumer_uri, "(def result (+ shared-answer 2))\n");
+      ]
     |> expect_ok
   in
   let _index, reanalyzed =
@@ -8632,9 +9449,11 @@ let test_workspace_index_tracks_top_level_symbol_dependencies () =
 let test_workspace_index_tracks_module_alias_dependencies () =
   let analyses =
     Lg.Language_service.create_workspace_index
-      [ ("file:///tmp/workspace-math.lgc", "(module Math (def value 42))\n");
+      [
+        ("file:///tmp/workspace-math.lgc", "(module Math (def value 42))\n");
         ("file:///tmp/workspace-alias.lgc", "(module-alias M Math)\n");
-        ("file:///tmp/workspace-alias-user.lgc", "(def result M/value)\n") ]
+        ("file:///tmp/workspace-alias-user.lgc", "(def result M/value)\n");
+      ]
     |> expect_ok
   in
   if
@@ -8646,10 +9465,12 @@ let test_workspace_index_tracks_module_alias_dependencies () =
 let test_workspace_index_tracks_variant_constructor_dependencies () =
   let analyses =
     Lg.Language_service.create_workspace_index
-      [ ( "file:///tmp/workspace-status.lgc",
+      [
+        ( "file:///tmp/workspace-status.lgc",
           "(type-variant status Active (Named :string))\n" );
         ( "file:///tmp/workspace-status-user.lgc",
-          "(def current (Named \"Ada\"))\n" ) ]
+          "(def current (Named \"Ada\"))\n" );
+      ]
     |> expect_ok
   in
   if
@@ -8663,9 +9484,10 @@ let test_workspace_index_ignores_lexically_bound_names () =
   let local_uri = "file:///tmp/workspace-local-value.lgc" in
   let index =
     Lg.Language_service.create_workspace_index
-      [ (provider_uri, "(def value 1)\n(def nested 2)\n");
-        ( local_uri,
-          "(defn identity [value] (let [nested value] nested))\n" ) ]
+      [
+        (provider_uri, "(def value 1)\n(def nested 2)\n");
+        (local_uri, "(defn identity [value] (let [nested value] nested))\n");
+      ]
     |> expect_ok
   in
   let local_before =
@@ -8689,27 +9511,30 @@ let test_workspace_index_tracks_qualified_type_dependencies () =
   let consumer_uri = "file:///tmp/workspace-domain-type-user.lgc" in
   let index =
     Lg.Language_service.create_workspace_index
-      [ (provider_uri, "(module Domain (type-record user (name :string)))\n");
-        ( consumer_uri,
-          "(defn keep [^:Domain.user value] value)\n" ) ]
+      [
+        (provider_uri, "(module Domain (type-record user (name :string)))\n");
+        (consumer_uri, "(defn keep [^:Domain.user value] value)\n");
+      ]
     |> expect_ok
   in
   if Lg.Language_service.workspace_analysis index consumer_uri = None then
-    failwith "qualified OCaml type annotations must depend on their module provider"
+    failwith
+      "qualified OCaml type annotations must depend on their module provider"
 
 let test_workspace_index_tracks_concise_type_dependencies () =
   let provider_uri = "file:///tmp/a-workspace-domain-concise.lgc" in
   let consumer_uri = "file:///tmp/z-workspace-domain-concise-user.lgc" in
   let index =
     Lg.Language_service.create_workspace_index
-      [ (provider_uri, "(module Domain (type-record user (name :string)))\n");
-        (consumer_uri, "(defn keep [^:Domain/user value] value)\n") ]
+      [
+        (provider_uri, "(module Domain (type-record user (name :string)))\n");
+        (consumer_uri, "(defn keep [^:Domain/user value] value)\n");
+      ]
     |> expect_ok
   in
   let _index, reanalyzed =
     Lg.Language_service.update_workspace_index index ~filename:provider_uri
-      ~source:
-        "(module Domain (type-record user (name :string) (age :int)))\n"
+      ~source:"(module Domain (type-record user (name :string) (age :int)))\n"
     |> expect_ok
   in
   if List.sort String.compare reanalyzed <> [ provider_uri; consumer_uri ] then
@@ -8727,14 +9552,15 @@ let test_workspace_index_tracks_declaration_type_dependencies () =
   in
   let index =
     Lg.Language_service.create_workspace_index
-      [ (provider_uri, "(module Domain (type-record user (name :string)))\n");
-        (consumer_uri, consumer) ]
+      [
+        (provider_uri, "(module Domain (type-record user (name :string)))\n");
+        (consumer_uri, consumer);
+      ]
     |> expect_ok
   in
   let _index, reanalyzed =
     Lg.Language_service.update_workspace_index index ~filename:provider_uri
-      ~source:
-        "(module Domain (type-record user (name :string) (age :int)))\n"
+      ~source:"(module Domain (type-record user (name :string) (age :int)))\n"
     |> expect_ok
   in
   if List.sort String.compare reanalyzed <> [ provider_uri; consumer_uri ] then
@@ -8746,13 +9572,15 @@ let test_workspace_index_separates_module_and_protocol_providers () =
   let consumer_uri = "file:///tmp/workspace-shared-user.lgc" in
   let index =
     Lg.Language_service.create_workspace_index
-      [ (module_uri, "(module Shared (def value 1))\n");
+      [
+        (module_uri, "(module Shared (def value 1))\n");
         ( protocol_uri,
           "(defprotocol Shared (label [value] :string))\n\
            (extend-type :int Shared (label [value] (str value)))\n" );
         ( consumer_uri,
           "(def module-value Shared/value)\n\
-           (def protocol-value (Shared/label 1))\n" ) ]
+           (def protocol-value (Shared/label 1))\n" );
+      ]
     |> expect_ok
   in
   if Lg.Language_service.workspace_analysis index consumer_uri = None then
@@ -8767,8 +9595,11 @@ let test_workspace_index_handles_file_removal_readd_and_rename () =
   let consumer_source = "(def result Math/answer)\n" in
   let index =
     Lg.Language_service.create_workspace_index
-      [ (provider_uri, provider_source); (consumer_uri, consumer_source);
-        (other_uri, "(def stable 7)\n") ]
+      [
+        (provider_uri, provider_source);
+        (consumer_uri, consumer_source);
+        (other_uri, "(def stable 7)\n");
+      ]
     |> expect_ok
   in
   let other_before =
@@ -8779,7 +9610,8 @@ let test_workspace_index_handles_file_removal_readd_and_rename () =
     |> expect_ok
   in
   if List.sort String.compare affected <> [ consumer_uri; provider_uri ] then
-    failwith "removing a provider must invalidate the deleted file and dependents";
+    failwith
+      "removing a provider must invalidate the deleted file and dependents";
   if Lg.Language_service.workspace_analysis index provider_uri <> None then
     failwith "removed files must not retain an analysis";
   if Lg.Language_service.workspace_error index consumer_uri = None then
@@ -8806,20 +9638,26 @@ let test_workspace_index_handles_file_removal_readd_and_rename () =
   in
   let usage = expect_substring_index consumer_source "Math/answer" in
   match Lg.Language_service.definition consumer ~offset:usage with
-  | Some location when location.Location.loc_start.Lexing.pos_fname = renamed_uri -> ()
+  | Some location
+    when location.Location.loc_start.Lexing.pos_fname = renamed_uri ->
+      ()
   | _ -> failwith "definitions must move to the re-added provider URI"
 
 let test_workspace_index_rejects_duplicate_providers () =
   match
     Lg.Language_service.create_workspace_index
-      [ ("file:///tmp/provider-one.lgc", "(def shared-value 1)\n");
+      [
+        ("file:///tmp/provider-one.lgc", "(def shared-value 1)\n");
         ("file:///tmp/provider-two.lgc", "(def shared-value 2)\n");
-        ("file:///tmp/provider-user.lgc", "(def result shared-value)\n") ]
+        ("file:///tmp/provider-user.lgc", "(def result shared-value)\n");
+      ]
   with
   | Error error
     when string_contains_substring error.message
-           "workspace symbol shared-value has multiple providers" -> ()
-  | Error error -> failwith ("unexpected workspace provider error: " ^ error.message)
+           "workspace symbol shared-value has multiple providers" ->
+      ()
+  | Error error ->
+      failwith ("unexpected workspace provider error: " ^ error.message)
   | Ok _ -> failwith "workspace index must reject duplicate symbol providers"
 
 let test_workspace_index_contains_component_errors () =
@@ -8828,9 +9666,11 @@ let test_workspace_index_contains_component_errors () =
   let other_uri = "file:///tmp/error-other.lgc" in
   let index =
     Lg.Language_service.create_workspace_index
-      [ (math_uri, "(module Math (def answer 40))\n");
+      [
+        (math_uri, "(module Math (def answer 40))\n");
         (main_uri, "(def result Math/answer)\n");
-        (other_uri, "(def stable 7)\n") ]
+        (other_uri, "(def stable 7)\n");
+      ]
     |> expect_ok
   in
   let other_before =
@@ -8841,7 +9681,9 @@ let test_workspace_index_contains_component_errors () =
       ~source:"(module Math"
     |> expect_ok
   in
-  if List.sort String.compare reanalyzed <> List.sort String.compare [ math_uri; main_uri ]
+  if
+    List.sort String.compare reanalyzed
+    <> List.sort String.compare [ math_uri; main_uri ]
   then failwith "invalid edits must remain scoped to their dependency component";
   if Lg.Language_service.workspace_error index math_uri = None then
     failwith "invalid workspace documents must retain their analysis error";
@@ -8856,8 +9698,10 @@ let test_workspace_index_records_partial_component_errors () =
   let main_uri = "file:///tmp/partial-main.lgc" in
   let index =
     Lg.Language_service.create_workspace_index
-      [ (math_uri, "(module Math (def answer 40))\n");
-        (main_uri, "(def result (Math/missing 2))\n") ]
+      [
+        (math_uri, "(module Math (def answer 40))\n");
+        (main_uri, "(def result (Math/missing 2))\n");
+      ]
     |> expect_ok
   in
   if Lg.Language_service.workspace_analysis index math_uri = None then
@@ -8872,14 +9716,17 @@ let test_workspace_diagnostics_belong_to_their_source_file () =
   let main_uri = "file:///tmp/diagnostic-main.lgc" in
   let analyses =
     Lg.Language_service.analyze_workspace
-      [ ( status_uri,
+      [
+        ( status_uri,
           {|
 (type-variant status Active Inactive)
 (module Status
   (defn describe [^:status value]
     (match value Active "active")))
-|} );
-        (main_uri, "(def label (Status/describe Active))\n") ]
+|}
+        );
+        (main_uri, "(def label (Status/describe Active))\n");
+      ]
     |> expect_ok
   in
   let status = List.assoc status_uri analyses in
@@ -8896,7 +9743,8 @@ let test_formatter_normalizes_whitespace () =
 
 let test_formatter_wraps_long_nested_forms () =
   let source =
-    "(defn describe [person] (str (:name person) \":\" (:age person) \":\" (:admin? person) \":\" (:role person)))"
+    "(defn describe [person] (str (:name person) \":\" (:age person) \":\" \
+     (:admin? person) \":\" (:role person)))"
   in
   let expected =
     {|(defn
@@ -8908,12 +9756,8 @@ let test_formatter_wraps_long_nested_forms () =
   Lg.Formatter.format source |> expect_ok |> assert_equal_string expected
 
 let test_formatter_preserves_comments_strings_and_is_idempotent () =
-  let source =
-    "; before\n(def message \"[not ; syntax]\") ; after\n"
-  in
-  let expected =
-    "; before\n(def message \"[not ; syntax]\")\n; after\n"
-  in
+  let source = "; before\n(def message \"[not ; syntax]\") ; after\n" in
+  let expected = "; before\n(def message \"[not ; syntax]\")\n; after\n" in
   let formatted = Lg.Formatter.format source |> expect_ok in
   assert_equal_string expected formatted;
   Lg.Formatter.format formatted |> expect_ok |> assert_equal_string formatted
@@ -8922,7 +9766,8 @@ let test_formatter_rejects_unbalanced_delimiters () =
   Lg.Formatter.format "(def answer 42]"
   |> expect_error_value "mismatched closing delimiter ]"
 
-let test_match_delegates_opaque_module_constructor_payload_patterns_to_ocaml () =
+let test_match_delegates_opaque_module_constructor_payload_patterns_to_ocaml ()
+    =
   let source =
     {|
 (module Msg
@@ -9017,8 +9862,7 @@ let test_record_patterns_reject_unknown_and_duplicate_fields () =
   |> expect_error_contains "duplicate record pattern field name"
 
 let test_record_patterns_require_record_targets () =
-  Lg.Compiler.compile_string
-    {|(def value (match 42 (record (name x)) x))|}
+  Lg.Compiler.compile_string {|(def value (match 42 (record (name x)) x))|}
   |> expect_error_contains "record pattern expects a record target"
 
 let test_or_patterns_require_the_same_binders () =
@@ -9123,13 +9967,14 @@ let test_module_definitions_work () =
   assert_ocaml_runs "module_definitions_work" "44:Ada:hi Grace\n" ocaml_source
 
 let test_module_definitions_reject_expressions () =
-  Lg.Compiler.compile_string
-    {|
+  Lg.Compiler.compile_string {|
 (module Math
   (println "side effect"))
 |}
   |> expect_error
-       "module forms must be module-signature, type-alias, type-record, type-variant, open, include, module-alias, defprotocol, extend-type, def, defonce, defn, defn-, or module"
+       "module forms must be module-signature, type-alias, type-record, \
+        type-variant, open, include, module-alias, defprotocol, extend-type, \
+        def, defonce, defn, defn-, or module"
 
 let test_module_definitions_support_type_aliases () =
   let source =
@@ -9341,7 +10186,8 @@ let test_module_signatures_support_nested_modules () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "module_signatures_support_nested_modules" "42\n" ocaml_source
+  assert_ocaml_runs "module_signatures_support_nested_modules" "42\n"
+    ocaml_source
 
 let test_functor_parameters_expose_nested_signature_modules () =
   let source =
@@ -9487,16 +10333,15 @@ let test_module_signature_abstract_types_are_checked_by_ocaml () =
 let test_module_signatures_reject_bad_forms () =
   Lg.Compiler.compile_string {|(module-signature MathSig)|}
   |> expect_error "module-signature expects at least one signature item";
-  Lg.Compiler.compile_string
-    {|(module-signature MathSig (value answer :int))|}
+  Lg.Compiler.compile_string {|(module-signature MathSig (value answer :int))|}
   |> expect_error
-       "module-signature items must be val, type, module, or include declarations";
-  Lg.Compiler.compile_string
-    {|(module-signature OuterSig (module Inner))|}
+       "module-signature items must be val, type, module, or include \
+        declarations";
+  Lg.Compiler.compile_string {|(module-signature OuterSig (module Inner))|}
   |> expect_error
-       "module-signature items must be val, type, module, or include declarations";
-  Lg.Compiler.compile_string
-    {|(module-signature ExtendedSig (include))|}
+       "module-signature items must be val, type, module, or include \
+        declarations";
+  Lg.Compiler.compile_string {|(module-signature ExtendedSig (include))|}
   |> expect_error "module-signature include expects one module type";
   Lg.Compiler.compile_string
     {|(module-signature MathSig (val answer :unknown))|}
@@ -9507,11 +10352,9 @@ let test_module_signatures_reject_bad_forms () =
   Lg.Compiler.compile_string
     {|(module-signature BoxSig (type box [a] :option<b>))|}
   |> expect_error "unknown type parameter b";
-  Lg.Compiler.compile_string
-    {|(module-signature BoxSig (type box [a a]))|}
+  Lg.Compiler.compile_string {|(module-signature BoxSig (type box [a a]))|}
   |> expect_error "duplicate type parameter a";
-  Lg.Compiler.compile_string
-    {|(module-signature BoxSig (type box []))|}
+  Lg.Compiler.compile_string {|(module-signature BoxSig (type box []))|}
   |> expect_error "type parameter vector must not be empty"
 
 let test_module_functors_apply_modules () =
@@ -9578,8 +10421,8 @@ let test_module_functor_applications_expose_record_types () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "module_functor_applications_expose_record_types"
-    "Ada:42\n" ocaml_source
+  assert_ocaml_runs "module_functor_applications_expose_record_types" "Ada:42\n"
+    ocaml_source
 
 let test_module_functor_applications_expose_protocols () =
   let source =
@@ -9678,9 +10521,7 @@ let test_module_functor_applications_register_nested_modules () =
 (module-apply App Make Empty)
 |}
   in
-  let nested_id =
-    Lg.Module_id.create ~owner:[ "App" ] ~name:"Inner"
-  in
+  let nested_id = Lg.Module_id.create ~owner:[ "App" ] ~name:"Inner" in
   if
     not
       (Lg.Module_registry.mem_module nested_id
@@ -9719,9 +10560,8 @@ let test_module_functor_applications_preserve_nested_module_aliases () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs
-    "module_functor_applications_preserve_nested_module_aliases" "alias:9\n"
-    ocaml_source
+  assert_ocaml_runs "module_functor_applications_preserve_nested_module_aliases"
+    "alias:9\n" ocaml_source
 
 let test_module_functor_application_is_checked_by_ocaml () =
   Lg.Compiler.compile_string
@@ -9809,11 +10649,9 @@ let test_incremental_compilation_preserves_modules () =
     |> expect_ok
   in
   let _state, app_ocaml =
-    Lg.Compiler.compile_chunk state
-      {|
+    Lg.Compiler.compile_chunk state {|
 (println (Math/add2 40))
-|}
-    |> expect_ok
+|} |> expect_ok
   in
   assert_ocaml_runs "incremental_compilation_preserves_modules" "42\n"
     (module_ocaml ^ "\n\n" ^ app_ocaml)
@@ -9830,8 +10668,7 @@ let test_incremental_compilation_preserves_opened_modules () =
     |> expect_ok
   in
   let _state, app_ocaml =
-    Lg.Compiler.compile_chunk state
-      {|
+    Lg.Compiler.compile_chunk state {|
 (open Math)
 (println (add2 answer))
 |}
@@ -9877,14 +10714,13 @@ let test_incremental_compilation_preserves_state () =
 |}
     |> expect_ok
   in
-  assert_ocaml_runs "incremental_compilation_preserves_state"
-    "Ada:true:36\n" (people_ocaml ^ "\n\n" ^ app_ocaml)
+  assert_ocaml_runs "incremental_compilation_preserves_state" "Ada:true:36\n"
+    (people_ocaml ^ "\n\n" ^ app_ocaml)
 
 let test_incremental_compilation_preserves_record_sets () =
   let state = Lg.Compiler.empty_state in
   let state, people_ocaml =
-    Lg.Compiler.compile_chunk state
-      {|
+    Lg.Compiler.compile_chunk state {|
 (def ada {:name "Ada", :age 36})
 |}
     |> expect_ok
@@ -9903,8 +10739,7 @@ let test_incremental_compilation_preserves_record_sets () =
 let test_incremental_compilation_preserves_composite_sets () =
   let state = Lg.Compiler.empty_state in
   let state, collections_ocaml =
-    Lg.Compiler.compile_chunk state
-      {|
+    Lg.Compiler.compile_chunk state {|
 (def values (hash-set [1 2]))
 |}
     |> expect_ok
@@ -9917,7 +10752,8 @@ let test_incremental_compilation_preserves_composite_sets () =
 |}
     |> expect_ok
   in
-  assert_ocaml_runs "incremental_compilation_preserves_composite_sets" "2:true\n"
+  assert_ocaml_runs "incremental_compilation_preserves_composite_sets"
+    "2:true\n"
     (collections_ocaml ^ "\n\n" ^ app_ocaml)
 
 let test_module_definitions_support_record_sets () =
@@ -9930,7 +10766,8 @@ let test_module_definitions_support_record_sets () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "module_definitions_support_record_sets" "1:true\n" ocaml_source
+  assert_ocaml_runs "module_definitions_support_record_sets" "1:true\n"
+    ocaml_source
 
 let test_module_definitions_support_composite_sets () =
   let source =
@@ -9963,11 +10800,9 @@ let test_incremental_compilation_preserves_protocols () =
     |> expect_ok
   in
   let _state, call_ocaml =
-    Lg.Compiler.compile_chunk state
-      {|
+    Lg.Compiler.compile_chunk state {|
 (println (label 42))
-|}
-    |> expect_ok
+|} |> expect_ok
   in
   assert_ocaml_runs "incremental_compilation_preserves_protocols" "int:42\n"
     (protocol_ocaml ^ "\n\n" ^ call_ocaml)
@@ -9988,7 +10823,8 @@ let test_parsetree_backend_prints_runnable_ocaml () =
   in
   let structure = Lg.Compiler.compile_parsetree source |> expect_ok in
   let ocaml_source = Lg.Compiler.print_parsetree structure in
-  assert_ocaml_runs "parsetree_backend_prints_runnable_ocaml" "Ada:36\n" ocaml_source
+  assert_ocaml_runs "parsetree_backend_prints_runnable_ocaml" "Ada:36\n"
+    ocaml_source
 
 let test_parsetree_backend_supports_record_sets () =
   let source =
@@ -10000,7 +10836,8 @@ let test_parsetree_backend_supports_record_sets () =
   in
   let structure = Lg.Compiler.compile_parsetree source |> expect_ok in
   let ocaml_source = Lg.Compiler.print_parsetree structure in
-  assert_ocaml_runs "parsetree_backend_supports_record_sets" "1:true\n" ocaml_source
+  assert_ocaml_runs "parsetree_backend_supports_record_sets" "1:true\n"
+    ocaml_source
 
 let test_parsetree_backend_supports_composite_sets () =
   let source =
@@ -10037,8 +10874,8 @@ let test_parsetree_backend_supports_generic_ocaml_calls () =
   in
   let structure = Lg.Compiler.compile_parsetree source |> expect_ok in
   let ocaml_source = Lg.Compiler.print_parsetree structure in
-  assert_ocaml_runs "parsetree_backend_supports_generic_ocaml_calls"
-    "ADA:42\n" ocaml_source
+  assert_ocaml_runs "parsetree_backend_supports_generic_ocaml_calls" "ADA:42\n"
+    ocaml_source
 
 let test_parsetree_backend_supports_ocaml_option_and_result_constructors () =
   let source =
@@ -10051,8 +10888,9 @@ let test_parsetree_backend_supports_ocaml_option_and_result_constructors () =
   in
   let structure = Lg.Compiler.compile_parsetree source |> expect_ok in
   let ocaml_source = Lg.Compiler.print_parsetree structure in
-  assert_ocaml_runs "parsetree_backend_supports_ocaml_option_and_result_constructors"
-    "" ocaml_source
+  assert_ocaml_runs
+    "parsetree_backend_supports_ocaml_option_and_result_constructors" ""
+    ocaml_source
 
 let test_parsetree_backend_supports_ocaml_option_and_result_patterns () =
   let source =
@@ -10155,8 +10993,8 @@ let test_parsetree_backend_supports_payload_variants () =
   in
   let structure = Lg.Compiler.compile_parsetree source |> expect_ok in
   let ocaml_source = Lg.Compiler.print_parsetree structure in
-  assert_ocaml_runs "parsetree_backend_supports_payload_variants"
-    "Ada:Ada:42\n" ocaml_source
+  assert_ocaml_runs "parsetree_backend_supports_payload_variants" "Ada:Ada:42\n"
+    ocaml_source
 
 let test_parsetree_backend_supports_ocaml_constructor_patterns () =
   let source =
@@ -10217,7 +11055,8 @@ let test_parsetree_backend_supports_module_alias () =
   in
   let structure = Lg.Compiler.compile_parsetree source |> expect_ok in
   let ocaml_source = Lg.Compiler.print_parsetree structure in
-  assert_ocaml_runs "parsetree_backend_supports_module_alias" "42\n" ocaml_source
+  assert_ocaml_runs "parsetree_backend_supports_module_alias" "42\n"
+    ocaml_source
 
 let test_parsetree_backend_supports_module_signatures () =
   let source =
@@ -10257,8 +11096,7 @@ let test_parsetree_backend_preserves_static_errors () =
   |> expect_error_value "expected int arguments for +"
 
 let test_parsetree_backend_runs_ocaml_typecheck_gate () =
-  Lg.Compiler.compile_parsetree
-    {|
+  Lg.Compiler.compile_parsetree {|
 (def answer (Stdlib.abs "bad"))
 |}
   |> expect_error_contains "string"
@@ -10270,15 +11108,21 @@ let test_parsetree_backend_builds_native_record_items () =
   in
   match structure with
   | [ type_item; set_module_item; value_item ] -> (
-      match (type_item.pstr_desc, set_module_item.pstr_desc, value_item.pstr_desc) with
+      match
+        (type_item.pstr_desc, set_module_item.pstr_desc, value_item.pstr_desc)
+      with
       | Pstr_type _, Pstr_module _, Pstr_value _ -> ()
-      | _ -> failwith "expected record type, comparator module, and value structure items")
-  | _ -> failwith "expected record type, comparator module, and value structure items"
+      | _ ->
+          failwith
+            "expected record type, comparator module, and value structure items"
+      )
+  | _ ->
+      failwith
+        "expected record type, comparator module, and value structure items"
 
 let test_parsetree_backend_builds_native_value_items () =
   let structure =
-    Lg.Compiler.compile_parsetree
-      {|
+    Lg.Compiler.compile_parsetree {|
 (def answer 42)
 (println answer)
 |}
@@ -10404,7 +11248,8 @@ let test_parsetree_backend_builds_native_module_functor_items () =
       match (functor_item.pstr_desc, apply_item.pstr_desc) with
       | Pstr_module functor_binding, Pstr_module apply_binding -> (
           match
-            (functor_binding.pmb_expr.pmod_desc, apply_binding.pmb_expr.pmod_desc)
+            ( functor_binding.pmb_expr.pmod_desc,
+              apply_binding.pmb_expr.pmod_desc )
           with
           | Pmod_functor _, Pmod_apply _ -> ()
           | _ -> failwith "expected functor and application module expressions")
@@ -10413,19 +11258,20 @@ let test_parsetree_backend_builds_native_module_functor_items () =
 
 let test_parsetree_backend_builds_native_scalar_expressions () =
   List.iter expect_structured_value_expression
-    [ {|(def answer 42)|};
+    [
+      {|(def answer 42)|};
       {|(def result (boolean 1))|};
       {|(def result (integer? 1))|};
       {|(def result (bit-set 1 2))|};
       {|(def result (name :user/name))|};
       {|(def result (namespace :user/name))|};
       {|(def result (keyword "user" "name"))|};
-      {|(def result (symbol :user :name))|} ]
+      {|(def result (symbol :user :name))|};
+    ]
 
 let test_parsetree_backend_builds_native_collection_expressions () =
   let structure =
-    Lg.Compiler.compile_parsetree
-      {|
+    Lg.Compiler.compile_parsetree {|
 (def xs [1 2 3])
 (def ys (list 4 5 6))
 |}
@@ -10437,12 +11283,14 @@ let test_parsetree_backend_builds_native_collection_expressions () =
     | _ -> failwith "expected one value binding"
   in
   match structure with
-  | [ vector_item; list_item ] ->
+  | [ vector_item; list_item ] -> (
       let vector_expr = value_expression vector_item in
       let list_expr = value_expression list_item in
-      (match (vector_expr.pexp_desc, list_expr.pexp_desc) with
+      match (vector_expr.pexp_desc, list_expr.pexp_desc) with
       | Pexp_apply _, Pexp_construct _ -> ()
-      | _ -> failwith "expected vector application and list constructor expressions")
+      | _ ->
+          failwith
+            "expected vector application and list constructor expressions")
   | _ -> failwith "expected vector and list value bindings"
 
 let test_parsetree_backend_builds_native_conditional_expressions () =
@@ -10469,9 +11317,12 @@ let test_parsetree_backend_builds_native_conditional_expressions () =
         not
           (List.for_all
              (fun (expression : Parsetree.expression) ->
-               match expression.pexp_desc with Pexp_ifthenelse _ -> true | _ -> false)
+               match expression.pexp_desc with
+               | Pexp_ifthenelse _ -> true
+               | _ -> false)
              expressions)
-      then failwith "expected native conditional expressions with ghost locations"
+      then
+        failwith "expected native conditional expressions with ghost locations"
   | _ -> failwith "expected three conditional value bindings"
 
 let test_parsetree_backend_builds_native_function_expressions () =
@@ -10482,13 +11333,15 @@ let test_parsetree_backend_builds_native_sequence_expressions () =
 
 let test_parsetree_backend_builds_native_sequence_navigation_expressions () =
   List.iter expect_structured_value_expression
-    [ {|(def result (next (list 1 2)))|};
+    [
+      {|(def result (next (list 1 2)))|};
       {|(def result (next [1 2]))|};
       {|(def result (nthnext (list 1 2 3) 2))|};
       {|(def result (nthnext [1 2 3] 2))|};
       {|(def result (nthrest (list 1 2 3) 2))|};
       {|(def result (nthrest [1 2 3] 2))|};
-      {|(def result (rseq [1 2]))|} ]
+      {|(def result (rseq [1 2]))|};
+    ]
 
 let test_parsetree_backend_builds_native_let_expressions () =
   expect_structured_value_expression
@@ -10507,8 +11360,7 @@ let test_parsetree_backend_builds_native_integer_expressions () =
     {|(def result (bit-or (+ 1 2) (bit-shift-left 1 2)))|}
 
 let test_parsetree_backend_builds_native_comparison_expressions () =
-  expect_structured_value_expression
-    {|(def result (< 1 2 3))|}
+  expect_structured_value_expression {|(def result (< 1 2 3))|}
 
 let test_parsetree_backend_builds_native_record_field_expressions () =
   expect_structured_value_expression
@@ -10542,17 +11394,20 @@ let test_parsetree_backend_builds_native_collection_index_expressions () =
   expect_structured_value_expression {|(def x (nth [1 2 3] 1))|}
 
 let test_parsetree_backend_builds_native_map_vector_expressions () =
-  expect_structured_value_expression {|(def names (keys {:name "Ada", :age 36}))|}
+  expect_structured_value_expression
+    {|(def names (keys {:name "Ada", :age 36}))|}
 
 let test_parsetree_backend_builds_native_contains_expressions () =
-  expect_structured_value_expression {|(def present? (contains? {:name "Ada"} :name))|}
+  expect_structured_value_expression
+    {|(def present? (contains? {:name "Ada"} :name))|}
 
 let test_parsetree_backend_builds_native_set_constructor_expressions () =
   expect_structured_value_expression {|(def ids (hash-set 3 1 2))|}
 
 let test_parsetree_backend_builds_native_sequence_transform_expressions () =
   List.iter expect_structured_value_expression
-    [ {|(def result (sort [3 1 2]))|};
+    [
+      {|(def result (sort [3 1 2]))|};
       {|(def result (concat [1 2] (list 3 4)))|};
       {|(def result (vec (list 1 2)))|};
       {|(def result (set [1 1 2]))|};
@@ -10563,7 +11418,8 @@ let test_parsetree_backend_builds_native_sequence_transform_expressions () =
       {|(def result (partition-all 2 [1 2 3]))|};
       {|(def result (split-at 2 [1 2 3]))|};
       {|(def result (bounded-count 2 [1 2 3]))|};
-      {|(def result (dorun [1 2 3]))|} ]
+      {|(def result (dorun [1 2 3]))|};
+    ]
 
 let test_incremental_parsetree_backend_preserves_state () =
   let state = Lg.Compiler.empty_state in
@@ -10601,8 +11457,8 @@ let test_compile_string_prints_parsetree_backend_output () =
   in
   let source_output = Lg.Compiler.compile_string source |> expect_ok in
   let parsetree_output =
-    Lg.Compiler.compile_parsetree source |> expect_ok
-    |> Lg.Compiler.print_parsetree
+    Lg.Compiler.compile_parsetree source
+    |> expect_ok |> Lg.Compiler.print_parsetree
   in
   if source_output <> parsetree_output then
     failwith "compile_string should print the checked Parsetree backend output"
@@ -10618,8 +11474,8 @@ let test_infer_interface_prints_checked_signature () =
   in
   if not (string_contains_substring inferred "type nonrec user") then
     failwith "inferred interface should include the record type";
-  if not (string_contains_substring inferred "val user_name : user -> string") then
-    failwith "inferred interface should include the function signature"
+  if not (string_contains_substring inferred "val user_name : user -> string")
+  then failwith "inferred interface should include the function signature"
 
 let test_compile_chunk_prints_parsetree_backend_output () =
   let source =
@@ -10641,13 +11497,18 @@ let test_compile_chunk_prints_parsetree_backend_output () =
 
 let tests =
   [
-    ("records, assoc, and dissoc generate typed OCaml", test_records_assoc_and_dissoc);
-    ("assoc rejects changing an existing field type", test_assoc_rejects_type_changes);
+    ( "records, assoc, and dissoc generate typed OCaml",
+      test_records_assoc_and_dissoc );
+    ( "assoc rejects changing an existing field type",
+      test_assoc_rejects_type_changes );
     ("dissoc rejects unknown fields", test_dissoc_rejects_unknown_fields);
     ("map literals reject duplicate fields", test_map_rejects_duplicate_fields);
-    ("hash-map constructs structural maps", test_hash_map_constructs_structural_maps);
+    ( "hash-map constructs structural maps",
+      test_hash_map_constructs_structural_maps );
     ("hash-map rejects duplicate fields", test_hash_map_rejects_duplicate_fields);
-    ("hash-map rejects odd key value forms", test_hash_map_rejects_odd_key_value_forms);
+    ( "hash-map rejects odd key value forms",
+      test_hash_map_rejects_odd_key_value_forms );
+    ("map literals accept computed keys", test_map_literals_accept_computed_keys);
     ("anonymous maps reuse equal shapes", test_anonymous_maps_reuse_equal_shapes);
     ( "anonymous map shape ignores field order",
       test_anonymous_map_shape_ignores_field_order );
@@ -10663,7 +11524,8 @@ let tests =
       test_declared_and_anonymous_records_share_dynamic_vectors );
     ("println outputs record values", test_println_outputs_record_values);
     ("println rejects unknown symbols", test_println_rejects_unknown_symbols);
-    ("print and println match Clojure output", test_print_and_println_match_clojure_output);
+    ( "print and println match Clojure output",
+      test_print_and_println_match_clojure_output );
     ( "core api supports nested calls, maps, and vectors",
       test_core_api_nested_calls_maps_and_vectors );
     ("core api supports if and vector ops", test_core_api_if_and_vector_ops);
@@ -10691,7 +11553,8 @@ let tests =
     ( "nil type annotation remains explicitly unsupported",
       test_nil_type_annotation_remains_explicitly_unsupported );
     ("type predicates work", test_type_predicates);
-    ("type predicates reject wrong arity", test_type_predicates_reject_wrong_arity);
+    ( "type predicates reject wrong arity",
+      test_type_predicates_reject_wrong_arity );
     ( "instance? supports Clojure collection interfaces",
       test_instance_predicate_supports_clojure_collection_interfaces );
     ( "condp selects first match and evaluates target once",
@@ -10800,12 +11663,13 @@ let tests =
       test_transient_collection_operations_preserve_values );
     ( "transient operations are first-class functions",
       test_transient_operations_are_first_class_functions );
-    ( "assert accepts optional message",
-      test_assert_accepts_optional_message );
+    ("assert accepts optional message", test_assert_accepts_optional_message);
     ( "into cat flattens one collection level",
       test_into_cat_flattens_one_collection_level );
     ( "mapv vector zips multiple collections",
       test_mapv_vector_zips_multiple_collections );
+    ( "map and mapv accept multiple collections",
+      test_map_and_mapv_accept_multiple_collections );
     ( "fnil wraps core conj with default collection",
       test_fnil_wraps_core_conj_with_default_collection );
     ( "top-level definitions accept Clojure metadata",
@@ -10832,6 +11696,10 @@ let tests =
       test_datascript_schema_accepts_dynamic_keyword_or_string_values );
     ( "datascript schema reads regex literals",
       test_datascript_schema_reads_regex_literals );
+    ( "re-matches returns Clojure match values",
+      test_re_matches_returns_clojure_match_values );
+    ( "subs accepts guarded dynamic strings",
+      test_subs_accepts_guarded_dynamic_strings );
     ( "datascript schema reads anonymous functions for dynamic contains",
       test_datascript_schema_reads_anonymous_functions_for_dynamic_contains );
     ("ocaml keyword names are munged", test_ocaml_keyword_names_are_munged);
@@ -10931,7 +11799,8 @@ let tests =
     ( "generic OCaml calls reject bad forms",
       test_generic_ocaml_calls_reject_bad_forms );
     ( "parsetree typecheck gate rejects invalid required module alias calls",
-      test_parsetree_typecheck_gate_rejects_invalid_required_module_alias_calls );
+      test_parsetree_typecheck_gate_rejects_invalid_required_module_alias_calls
+    );
     ( "parsetree typecheck gate accepts valid host calls",
       test_parsetree_typecheck_gate_accepts_valid_host_calls );
     ( "parsetree typecheck gate rejects invalid host calls",
@@ -10961,7 +11830,8 @@ let tests =
     ( "OCaml-owned branch type mismatch is delegated to OCaml",
       test_ocaml_owned_branch_type_mismatch_is_delegated_to_ocaml );
     ( "OCaml option and result constructors compile through source backend",
-      test_ocaml_option_and_result_constructors_compile_through_source_backend );
+      test_ocaml_option_and_result_constructors_compile_through_source_backend
+    );
     ( "OCaml option and result constructors reject bad arity",
       test_ocaml_option_and_result_constructors_reject_bad_arity );
     ( "direct OCaml option and result constructors compile",
@@ -10977,7 +11847,8 @@ let tests =
     ( "OCaml type application annotations compile through source backend",
       test_ocaml_type_application_annotations_compile_through_source_backend );
     ( "OCaml type application annotations delegate argument mismatch to OCaml",
-      test_ocaml_type_application_annotations_delegate_argument_mismatch_to_ocaml );
+      test_ocaml_type_application_annotations_delegate_argument_mismatch_to_ocaml
+    );
     ( "OCaml type application annotations reject bad forms",
       test_ocaml_type_application_annotations_reject_bad_forms );
     ( "syntax ergonomics: concise host type annotations compile",
@@ -10990,7 +11861,8 @@ let tests =
       test_ocaml_tuple_values_compile_through_source_backend );
     ( "OCaml tuple values delegate argument mismatch to OCaml",
       test_ocaml_tuple_values_delegate_argument_mismatch_to_ocaml );
-    ( "OCaml tuple values reject bad forms", test_ocaml_tuple_values_reject_bad_forms );
+    ( "OCaml tuple values reject bad forms",
+      test_ocaml_tuple_values_reject_bad_forms );
     ( "syntax convergence: concise tuple values and patterns compile",
       test_concise_tuple_values_and_patterns_compile );
     ( "OCaml float and char literals compile",
@@ -11003,8 +11875,7 @@ let tests =
       test_ocaml_array_primitives_support_polymorphic_helpers );
     ( "OCaml refs support read and assignment",
       test_ocaml_refs_support_read_and_assignment );
-    ( "concise standard type annotations",
-      test_concise_standard_type_annotations );
+    ("concise standard type annotations", test_concise_standard_type_annotations);
     ( "volatile nil uses contextual option reference type",
       test_volatile_nil_uses_contextual_option_reference_type );
     ( "local volatile nil infers value from reset",
@@ -11041,7 +11912,8 @@ let tests =
       test_ocaml_record_values_delegate_qualified_field_typecheck_to_ocaml );
     ( "OCaml record values delegate field typecheck to OCaml",
       test_ocaml_record_values_delegate_field_typecheck_to_ocaml );
-    ( "OCaml record values reject bad forms", test_ocaml_record_values_reject_bad_forms );
+    ( "OCaml record values reject bad forms",
+      test_ocaml_record_values_reject_bad_forms );
     ( "OCaml field delegates opaque record access to OCaml",
       test_ocaml_field_delegates_opaque_record_access_to_ocaml );
     ( "OCaml variants compile through source backend",
@@ -11083,8 +11955,7 @@ let tests =
       test_multi_arity_defn_supports_cross_arity_calls_and_recur );
     ( "multi-arity defn remains callable as a value",
       test_multi_arity_defn_remains_callable_as_a_value );
-    ( "modules export multi-arity defn",
-      test_modules_export_multi_arity_defn );
+    ("modules export multi-arity defn", test_modules_export_multi_arity_defn);
     ( "multi-arity defn rejects invalid declarations",
       test_multi_arity_defn_rejects_invalid_declarations );
     ( "multi-arity defn rejects unsupported calls",
@@ -11120,7 +11991,8 @@ let tests =
     ( "module defs project function-returned structural records",
       test_module_defs_project_function_returned_structural_records );
     ( "unannotated function parameters reject missing structural map fields",
-      test_unannotated_function_parameters_reject_missing_structural_map_fields );
+      test_unannotated_function_parameters_reject_missing_structural_map_fields
+    );
     ( "static protocols dispatch by receiver type",
       test_static_protocols_dispatch_by_receiver_type );
     ( "satisfies? checks static receivers",
@@ -11159,6 +12031,20 @@ let tests =
       test_deftype_mutable_fields_support_set_bang );
     ( "deftype methods support instance call syntax",
       test_deftype_methods_support_instance_call_syntax );
+    ( "defrecord fields infer host records from protocol methods",
+      test_defrecord_fields_infer_host_records_from_protocol_methods );
+    ( "defrecord fields preserve protocol capabilities",
+      test_defrecord_fields_preserve_protocol_capabilities );
+    ( "defrecord protocol methods support forward calls",
+      test_defrecord_protocol_methods_support_forward_calls );
+    ( "defrecord host interfaces support overloaded methods",
+      test_defrecord_host_interfaces_support_overloaded_methods );
+    ( "expression type hints narrow dynamic records",
+      test_expression_type_hints_narrow_dynamic_records );
+    ( "opaque records project safe fields without casts",
+      test_opaque_records_project_safe_fields_without_casts );
+    ( "instance? recognizes namespaced protocol interfaces",
+      test_instance_question_recognizes_namespaced_protocol_interfaces );
     ( "generic collection returns preserve concrete element types",
       test_generic_collection_returns_preserve_concrete_element_types );
     ( "Java exception constructors map to runtime exceptions",
@@ -11167,6 +12053,10 @@ let tests =
       test_java_exception_constructors_support_empty_messages );
     ( "print-method defmethod writes custom record representations",
       test_print_method_defmethod_writes_custom_record_representations );
+    ( "Java Writer annotations work in ordinary functions",
+      test_java_writer_annotations_work_in_ordinary_functions );
+    ( "Clojure Sorted annotations expose dynamic comparators",
+      test_clojure_sorted_annotations_expose_dynamic_comparators );
     ( "defn accepts attribute maps and return hints",
       test_defn_accepts_attribute_maps_and_return_hints );
     ( "compare supports dynamic scalar values",
@@ -11179,10 +12069,11 @@ let tests =
       test_clojure_number_and_comparable_interop );
     ( "Clojure equals interop supports dynamic values",
       test_clojure_equals_interop_supports_dynamic_values );
+    ( "identical? and .equals infer heterogeneous parameters",
+      test_identical_and_equals_infer_heterogeneous_parameters );
     ( "try supports Clojure exception type bindings",
       test_try_supports_clojure_exception_type_bindings );
-    ( "macros can clear form metadata",
-      test_macros_can_clear_form_metadata );
+    ("macros can clear form metadata", test_macros_can_clear_form_metadata);
     ( "macros can apply functions to argument sequences",
       test_macros_can_apply_functions_to_argument_sequences );
     ( "cond contextualizes anonymous function branches",
@@ -11245,14 +12136,16 @@ let tests =
       test_protocol_identity_disambiguates_same_named_methods );
     ("do and multi-form bodies work", test_do_and_multi_form_bodies);
     ("fn empty body returns nil", test_fn_empty_body_returns_nil);
-    ("vectors support mixed element types", test_vectors_support_mixed_element_types);
+    ( "vectors support mixed element types",
+      test_vectors_support_mixed_element_types );
     ("keyword values print as keywords", test_keyword_values_print_as_keywords);
     ("keys return keyword values", test_keys_return_keyword_values);
     ("vals return homogeneous values", test_vals_return_homogeneous_values);
     ("vals rejects heterogeneous values", test_vals_rejects_heterogeneous_values);
     ( "vectors support mixed keyword and string elements",
       test_vectors_support_mixed_keyword_and_string_elements );
-    ("arithmetic rejects non-int arguments", test_arithmetic_rejects_non_int_arguments);
+    ( "arithmetic rejects non-int arguments",
+      test_arithmetic_rejects_non_int_arguments );
     ("arithmetic core arities work", test_arithmetic_core_arities);
     ( "integer division rejects unsupported arities",
       test_integer_division_rejects_unsupported_arities );
@@ -11272,24 +12165,37 @@ let tests =
     ("assoc supports vector indexes", test_assoc_supports_vector_indexes);
     ( "assoc rejects vector value type mismatch",
       test_assoc_rejects_vector_value_type_mismatch );
-    ("assoc rejects vector non-int indexes", test_assoc_rejects_vector_non_int_indexes);
+    ( "assoc rejects vector non-int indexes",
+      test_assoc_rejects_vector_non_int_indexes );
     ("dissoc supports multiple keys", test_dissoc_supports_multiple_keys);
-    ("map merge, update, and select-keys work", test_map_merge_update_and_select_keys);
+    ( "map merge, update, and select-keys work",
+      test_map_merge_update_and_select_keys );
     ( "merge rejects incompatible overlapping fields",
       test_merge_rejects_incompatible_overlapping_fields );
     ("update rejects type changes", test_update_rejects_type_changes);
     ("update supports extra arguments", test_update_supports_extra_arguments);
+    ( "update infers record fields from updater functions",
+      test_update_infers_record_fields_from_updater_functions );
+    ( "update works as a nested map updater",
+      test_update_works_as_a_nested_map_updater );
+    ( "update works as a nested vector updater",
+      test_update_works_as_a_nested_vector_updater );
+    ( "nested update passes all extra arguments",
+      test_nested_update_passes_all_extra_arguments );
     ( "update rejects extra argument type mismatch",
       test_update_rejects_extra_argument_type_mismatch );
     ("update supports vector indexes", test_update_supports_vector_indexes);
     ( "update rejects vector index type mismatch",
       test_update_rejects_vector_index_type_mismatch );
-    ("select-keys rejects unknown fields", test_select_keys_rejects_unknown_fields);
+    ( "select-keys rejects unknown fields",
+      test_select_keys_rejects_unknown_fields );
     ("contains supports vector indexes", test_contains_supports_vector_indexes);
-    ("contains rejects vector non-int indexes", test_contains_rejects_vector_non_int_indexes);
+    ( "contains rejects vector non-int indexes",
+      test_contains_rejects_vector_non_int_indexes );
     ("if supports mixed branch types", test_if_supports_mixed_branch_types);
     ("conditional forms work", test_conditional_forms_work);
-    ("if-not supports mixed branch types", test_if_not_supports_mixed_branch_types);
+    ( "if-not supports mixed branch types",
+      test_if_not_supports_mixed_branch_types );
     ("cond returns nil without else", test_cond_returns_nil_without_else);
     ("cond supports mixed branch types", test_cond_supports_mixed_branch_types);
     ("cond accepts Clojure truthy tests", test_cond_accepts_clojure_truthy_tests);
@@ -11322,10 +12228,8 @@ let tests =
       test_batched_numeric_scalar_core_functions_reject_bad_name_arg );
     ( "batched numeric/scalar core functions infer int params",
       test_batched_numeric_scalar_core_functions_infer_int_params );
-    ( "clojure.string module batch works",
-      test_clojure_string_module_batch_works );
-    ( "clojure.string module refer works",
-      test_clojure_string_module_refer_works );
+    ("clojure.string module batch works", test_clojure_string_module_batch_works);
+    ("clojure.string module refer works", test_clojure_string_module_refer_works);
     ( "clojure.string module rejects bad args",
       test_clojure_string_module_rejects_bad_args );
     ( "clojure.string module rejects unknown refer",
@@ -11341,19 +12245,45 @@ let tests =
     ( "batched predicate/collection core functions reject bad predicates",
       test_batched_predicate_collection_core_functions_reject_bad_predicates );
     ( "batched predicate/collection core functions reject bad run function",
-      test_batched_predicate_collection_core_functions_reject_bad_run_function );
+      test_batched_predicate_collection_core_functions_reject_bad_run_function
+    );
+    ("doseq infers seqable parameters", test_doseq_infers_seqable_parameters);
+    ( "merge accepts dynamic map parameters",
+      test_merge_accepts_dynamic_map_parameters );
+    ( "record arguments fill missing optional fields",
+      test_record_arguments_fill_missing_optional_fields );
+    ( "reify preserves protocols across dynamic fields",
+      test_reify_preserves_protocols_across_dynamic_fields );
+    ( "parameters preserve multiple protocol constraints",
+      test_parameters_preserve_multiple_protocol_constraints );
+    ( "references preserve state across dynamic fields",
+      test_references_preserve_state_across_dynamic_fields );
+    ( "truthy guards preserve dynamic numeric parameters",
+      test_truthy_guards_preserve_dynamic_numeric_parameters );
+    ( "let aliases propagate seqable constraints",
+      test_let_aliases_propagate_seqable_constraints );
+    ( "nested drop-while infers seqable parameters",
+      test_nested_drop_while_infers_seqable_parameters );
+    ( "loop initializers propagate seqable constraints",
+      test_loop_initializers_propagate_seqable_constraints );
     ( "batched predicate/collection core functions accept truthy params",
       test_batched_predicate_collection_core_functions_accept_truthy_params );
     ( "batched identifier/constructor core functions work",
       test_batched_identifier_and_constructor_core_functions_work );
     ( "batched identifier/constructor core functions reject bad symbol args",
-      test_batched_identifier_and_constructor_core_functions_reject_bad_symbol_args );
+      test_batched_identifier_and_constructor_core_functions_reject_bad_symbol_args
+    );
     ( "batched identifier/constructor core functions reject bad keyword args",
-      test_batched_identifier_and_constructor_core_functions_reject_bad_keyword_args );
+      test_batched_identifier_and_constructor_core_functions_reject_bad_keyword_args
+    );
     ( "batched identifier/constructor core functions reject bad namespace args",
-      test_batched_identifier_and_constructor_core_functions_reject_bad_namespace_args );
+      test_batched_identifier_and_constructor_core_functions_reject_bad_namespace_args
+    );
+    ( "namespace accepts guarded dynamic identifiers",
+      test_namespace_accepts_guarded_dynamic_identifiers );
     ( "batched identifier/constructor core functions reject bad list* tail",
-      test_batched_identifier_and_constructor_core_functions_reject_bad_list_star_tail );
+      test_batched_identifier_and_constructor_core_functions_reject_bad_list_star_tail
+    );
     ("batched sequence functions work", test_batched_sequence_functions_work);
     ( "metadata map values constrain function parameters",
       test_metadata_map_values_constrain_function_parameters );
@@ -11460,15 +12390,20 @@ let tests =
       test_loop_and_recur_delegate_ocaml_owned_mismatch_to_ocaml );
     ( "loop and recur reject invalid calls",
       test_loop_and_recur_reject_invalid_calls );
-    ("destructuring works in let and functions", test_destructuring_in_let_and_functions);
+    ( "destructuring works in let and functions",
+      test_destructuring_in_let_and_functions );
     ( "destructuring supports direct keyword bindings",
       test_destructuring_supports_direct_keyword_bindings );
     ( "destructuring supports rest and defaults",
       test_destructuring_supports_rest_and_defaults );
     ( "let destructuring accepts generic seqable values",
       test_let_destructuring_accepts_generic_seqable_values );
+    ( "macro slots preserve dynamic seqable values",
+      test_macro_slots_preserve_dynamic_seqable_values );
     ( "destructuring preserves row polymorphic function calls",
       test_destructuring_preserves_row_polymorphic_function_calls );
+    ( "map destructuring as preserves open map access",
+      test_map_destructuring_as_preserves_open_map_access );
     ( "row polymorphic functions accept different map shapes",
       test_row_polymorphic_functions_accept_different_map_shapes );
     ( "row types bind nested capability parameters",
@@ -11524,11 +12459,12 @@ let tests =
     ("range rejects zero step", test_range_rejects_zero_step);
     ("range rejects non-int arguments", test_range_rejects_non_int_arguments);
     ("take and drop core api works", test_take_and_drop_core_api);
-    ("take and drop reject non-int counts", test_take_and_drop_reject_non_int_counts);
-    ( "take and drop support sets",
-      test_take_and_drop_support_sets );
+    ( "take and drop reject non-int counts",
+      test_take_and_drop_reject_non_int_counts );
+    ("take and drop support sets", test_take_and_drop_support_sets);
     ("reverse core api works", test_reverse_core_api);
-    ("reverse rejects unsupported collections", test_reverse_rejects_unsupported_collections);
+    ( "reverse rejects unsupported collections",
+      test_reverse_rejects_unsupported_collections );
     ("sequence boolean predicates work", test_sequence_boolean_predicates);
     ( "sequence boolean predicates reject non-bool predicates",
       test_sequence_boolean_predicates_reject_non_bool_predicates );
@@ -11537,7 +12473,33 @@ let tests =
     ("into core api works", test_into_core_api);
     ( "into accepts inferred seqable parameters",
       test_into_accepts_inferred_seqable_parameters );
-    ("into rejects element type mismatch", test_into_rejects_element_type_mismatch);
+    ( "Eduction applies map filter and cat transducers",
+      test_eduction_applies_map_filter_and_cat_transducers );
+    ( "filter accepts dynamic callable record fields",
+      test_filter_accepts_dynamic_callable_record_fields );
+    ( "sequence operations accept host optional collections",
+      test_sequence_operations_accept_host_optional_collections );
+    ( "reduce infers seqable record fields",
+      test_reduce_infers_seqable_record_fields );
+    ( "thread macros accept keyword steps",
+      test_thread_macros_accept_keyword_steps );
+    ( "cond thread macros apply selected steps",
+      test_cond_thread_macros_apply_selected_steps );
+    ( "update accepts first-class assoc on dynamic maps",
+      test_update_accepts_first_class_assoc_on_dynamic_maps );
+    ( "assoc infers dynamic maps for variable keys",
+      test_assoc_infers_dynamic_maps_for_variable_keys );
+    ( "assoc accepts dynamic collection boundaries",
+      test_assoc_accepts_dynamic_collection_boundaries );
+    ( "assoc accepts nullable dynamic maps",
+      test_assoc_accepts_nullable_dynamic_maps );
+    ("reduce-kv accepts dynamic maps", test_reduce_kv_accepts_dynamic_maps);
+    ( "set literals accept dynamic elements",
+      test_set_literals_accept_dynamic_elements );
+    ( "contains? infers generic membership for variable keys",
+      test_contains_infers_generic_membership_for_variable_keys );
+    ( "into rejects element type mismatch",
+      test_into_rejects_element_type_mismatch );
     ("typed empty sets work", test_typed_empty_sets);
     ("sets reject nil elements", test_sets_reject_nil_elements);
     ( "set-of rejects types without comparators",
@@ -11551,20 +12513,25 @@ let tests =
       test_empty_lists_infer_type_from_branch_context );
     ("rest is empty-safe", test_rest_is_empty_safe);
     ("lists support mixed element types", test_lists_support_mixed_element_types);
+    ("mixed lists pack optional values", test_mixed_lists_pack_optional_values);
     ("conj rejects list type mismatch", test_conj_rejects_list_type_mismatch);
     ("collection positional helpers work", test_collection_positional_helpers);
     ("subvec core api works", test_subvec_core_api);
     ("subvec rejects non-vector sources", test_subvec_rejects_non_vector_sources);
     ("subvec rejects non-int indexes", test_subvec_rejects_non_int_indexes);
-    ("peek rejects unsupported collections", test_peek_rejects_unsupported_collections);
+    ( "peek rejects unsupported collections",
+      test_peek_rejects_unsupported_collections );
     ("let rejects odd binding forms", test_let_rejects_odd_binding_forms);
     ("map rejects non-function argument", test_map_rejects_non_function_argument);
     ("match expression works", test_match_expression_works);
     ("match supports mixed branch types", test_match_supports_mixed_branch_types);
     ("match rejects bad clause count", test_match_rejects_bad_clause_count);
-    ("match rejects pattern type mismatch", test_match_rejects_pattern_type_mismatch);
-    ("match infers target type from patterns", test_match_infers_target_type_from_patterns);
-    ("match supports OCaml constructor patterns", test_match_supports_ocaml_constructor_patterns);
+    ( "match rejects pattern type mismatch",
+      test_match_rejects_pattern_type_mismatch );
+    ( "match infers target type from patterns",
+      test_match_infers_target_type_from_patterns );
+    ( "match supports OCaml constructor patterns",
+      test_match_supports_ocaml_constructor_patterns );
     ( "compile diagnostics capture OCaml match warnings",
       test_compile_diagnostics_capture_ocaml_match_warnings );
     ( "compile diagnostics are empty for exhaustive matches",
@@ -11637,16 +12604,15 @@ let tests =
       test_workspace_index_records_partial_component_errors );
     ( "workspace diagnostics belong to their source file",
       test_workspace_diagnostics_belong_to_their_source_file );
-    ( "formatter normalizes whitespace",
-      test_formatter_normalizes_whitespace );
-    ( "formatter wraps long nested forms",
-      test_formatter_wraps_long_nested_forms );
+    ("formatter normalizes whitespace", test_formatter_normalizes_whitespace);
+    ("formatter wraps long nested forms", test_formatter_wraps_long_nested_forms);
     ( "formatter preserves comments strings and is idempotent",
       test_formatter_preserves_comments_strings_and_is_idempotent );
     ( "formatter rejects unbalanced delimiters",
       test_formatter_rejects_unbalanced_delimiters );
     ( "match delegates opaque module constructor payload patterns to OCaml",
-      test_match_delegates_opaque_module_constructor_payload_patterns_to_ocaml );
+      test_match_delegates_opaque_module_constructor_payload_patterns_to_ocaml
+    );
     ( "match delegates unknown opaque constructor errors to OCaml",
       test_match_delegates_unknown_opaque_constructor_errors_to_ocaml );
     ( "match supports record alias or and guard patterns",
@@ -11657,20 +12623,19 @@ let tests =
       test_record_patterns_require_record_targets );
     ( "or patterns require the same binders",
       test_or_patterns_require_the_same_binders );
-    ( "match guards must be boolean",
-      test_match_guards_must_be_boolean );
+    ("match guards must be boolean", test_match_guards_must_be_boolean);
     ("try catches OCaml exceptions", test_try_catches_ocaml_exceptions);
     ( "try supports normal results multiple body forms and handlers",
       test_try_supports_normal_results_multiple_body_forms_and_handlers );
     ( "try and raise reject malformed forms",
       test_try_and_raise_reject_malformed_forms );
-    ( "try supports mixed branch types",
-      test_try_supports_mixed_branch_types );
-    ( "raise payload is checked by OCaml",
-      test_raise_payload_is_checked_by_ocaml );
+    ("try supports mixed branch types", test_try_supports_mixed_branch_types);
+    ("raise payload is checked by OCaml", test_raise_payload_is_checked_by_ocaml);
     ("module definitions work", test_module_definitions_work);
-    ("module definitions reject expressions", test_module_definitions_reject_expressions);
-    ("module definitions support type aliases", test_module_definitions_support_type_aliases);
+    ( "module definitions reject expressions",
+      test_module_definitions_reject_expressions );
+    ( "module definitions support type aliases",
+      test_module_definitions_support_type_aliases );
     ( "incremental compilation preserves modules",
       test_incremental_compilation_preserves_modules );
     ("open module exposes values", test_open_module_exposes_values);
@@ -11687,15 +12652,18 @@ let tests =
       test_module_definitions_support_record_sets );
     ( "module definitions support composite sets",
       test_module_definitions_support_composite_sets );
-    ("module definitions support variants", test_module_definitions_support_variants);
+    ( "module definitions support variants",
+      test_module_definitions_support_variants );
     ( "incremental compilation requires prior state",
       test_incremental_compilation_requires_prior_state );
     ("module definitions support open", test_module_definitions_support_open);
-    ("module definitions support include", test_module_definitions_support_include);
+    ( "module definitions support include",
+      test_module_definitions_support_include );
     ( "module definitions support module alias",
       test_module_definitions_support_module_alias );
     ("module alias exposes values", test_module_alias_exposes_values);
-    ( "syntax convergence: slash qualification covers members and constructor patterns",
+    ( "syntax convergence: slash qualification covers members and constructor \
+       patterns",
       test_slash_qualification_covers_members_and_constructor_patterns );
     ( "syntax convergence: lowercase host aliases qualify constructor patterns",
       test_lowercase_host_aliases_qualify_constructor_patterns );
@@ -11789,7 +12757,8 @@ let tests =
       test_parsetree_backend_supports_ocaml_tuple_values );
     ( "parsetree backend supports OCaml record values",
       test_parsetree_backend_supports_ocaml_record_values );
-    ("parsetree backend supports variants", test_parsetree_backend_supports_variants);
+    ( "parsetree backend supports variants",
+      test_parsetree_backend_supports_variants );
     ( "parsetree backend supports payload variants",
       test_parsetree_backend_supports_payload_variants );
     ( "parsetree backend supports OCaml constructor patterns",
@@ -11798,7 +12767,8 @@ let tests =
       test_match_delegates_nested_opaque_constructor_patterns_to_ocaml );
     ( "match delegates generic host payload patterns to OCaml",
       test_match_delegates_generic_host_payload_patterns_to_ocaml );
-    ("parsetree backend supports open module", test_parsetree_backend_supports_open_module);
+    ( "parsetree backend supports open module",
+      test_parsetree_backend_supports_open_module );
     ( "parsetree backend supports include module",
       test_parsetree_backend_supports_include_module );
     ( "parsetree backend supports module alias",
@@ -11894,7 +12864,9 @@ let () =
     match Sys.getenv_opt "LG_TEST_FILTER" with
     | None -> tests
     | Some filter ->
-        List.filter (fun (name, _) -> string_contains_substring name filter) tests
+        List.filter
+          (fun (name, _) -> string_contains_substring name filter)
+          tests
   in
   time_phase "compiler tests" (fun () ->
       List.iter

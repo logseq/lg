@@ -13,31 +13,32 @@ let rec to_seq_expr env collection =
   if Types.is_dynamic collection.ty then
     Ok
       ( collection.ty,
-        apply "Lg_runtime.Runtime_dynamic.to_seq"
-          [ collection.semantic_expr ] )
+        apply "Lg_runtime.Runtime_dynamic.to_seq" [ collection.semantic_expr ]
+      )
   else
   match collection.ty with
   | TNil -> Ok (TUnknown, Semantic_ir.Ident "Seq.empty")
-  | TNullable value_ty ->
+    | TNullable value_ty | TOcaml_app ("option", [ value_ty ]) -> (
       let value_name = "__lg_optional_seqable_value" in
       let value = typed_ir value_ty (Semantic_ir.Ident value_name) in
-      (match to_seq_expr env value with
+        match to_seq_expr env value with
       | Error _ -> Error.error "optional value is not seqable"
       | Ok (element_ty, sequence) ->
           Ok
             ( element_ty,
               Semantic_ir.Match
                 ( collection.semantic_expr,
-                  [ ( Semantic_ir.PConstructor ("None", None),
+                    [
+                      ( Semantic_ir.PConstructor ("None", None),
                       Semantic_ir.Ident "Seq.empty" );
                     ( Semantic_ir.PConstructor
                         ("Some", Some (Semantic_ir.PVar value_name)),
                       sequence );
                   ] ) ))
-  | _ ->
+    | _ -> (
   match Types.next_seq_element collection.ty with
   | Some inner -> Ok (inner, collection.semantic_expr)
-  | None ->
+        | None -> (
   match Types.seqable_constraint_info collection.ty with
   | Some (constraint_kind, inner, _) -> (
       match Semantic_ir.unlocated collection.semantic_expr with
@@ -50,22 +51,27 @@ let rec to_seq_expr env collection =
                 let adapter_name = "__lg_seqable_adapter" in
                 Semantic_ir.Match
                   ( Semantic_ir.Ident (name ^ "__seq_optional"),
-                    [ ( Semantic_ir.PConstructor ("None", None),
+                              [
+                                ( Semantic_ir.PConstructor ("None", None),
                         Semantic_ir.Fun
-                          ([ Semantic_ir.PAny ], Semantic_ir.Ident "Seq.empty") );
+                                    ( [ Semantic_ir.PAny ],
+                                      Semantic_ir.Ident "Seq.empty" ) );
                       ( Semantic_ir.PConstructor
-                          ("Some", Some (Semantic_ir.PVar adapter_name)),
+                                    ( "Some",
+                                      Some (Semantic_ir.PVar adapter_name) ),
                         Semantic_ir.Ident adapter_name );
                     ] )
           in
           Ok
             ( inner,
-              Semantic_ir.Apply
-                (adapter, [ collection.semantic_expr ]) )
+                        Semantic_ir.Apply (adapter, [ collection.semantic_expr ])
+                      )
       | _ ->
           let packed_name = "__lg_seqable_value" in
           let packed = Semantic_ir.Ident packed_name in
-          let value = Semantic_ir.Apply (Semantic_ir.Ident "snd", [ packed ]) in
+                    let value =
+                      Semantic_ir.Apply (Semantic_ir.Ident "snd", [ packed ])
+                    in
           let sequence =
             match constraint_kind with
             | `Required ->
@@ -76,47 +82,66 @@ let rec to_seq_expr env collection =
             | `Optional | `Optional_sequential ->
                 let adapter_name = "__lg_seqable_adapter" in
                 Semantic_ir.Match
-                  ( Semantic_ir.Apply (Semantic_ir.Ident "fst", [ packed ]),
-                    [ ( Semantic_ir.PConstructor ("None", None),
+                            ( Semantic_ir.Apply
+                                (Semantic_ir.Ident "fst", [ packed ]),
+                              [
+                                ( Semantic_ir.PConstructor ("None", None),
                         Semantic_ir.Ident "Seq.empty" );
                       ( Semantic_ir.PConstructor
-                          ("Some", Some (Semantic_ir.PVar adapter_name)),
+                                    ( "Some",
+                                      Some (Semantic_ir.PVar adapter_name) ),
                         Semantic_ir.Apply
-                          (Semantic_ir.Ident adapter_name, [ value ]) );
+                                    (Semantic_ir.Ident adapter_name, [ value ])
+                                );
                     ] )
           in
           Ok
             ( inner,
               Semantic_ir.Let
-                ( [ (Semantic_ir.PVar packed_name, collection.semantic_expr) ],
+                          ( [
+                              ( Semantic_ir.PVar packed_name,
+                                collection.semantic_expr );
+                            ],
                   sequence ) ))
-  | None ->
-  match Core_protocols.find_seqable collection.ty (Compiler_environment.protocols env) with
+            | None -> (
+                match
+                  Core_protocols.find_seqable collection.ty
+                    (Compiler_environment.protocols env)
+                with
   | None ->
       Error.error
-        ("collection value is not seqable: " ^ Types.source_name collection.ty)
+                      ("collection value is not seqable: "
+                      ^ Types.source_name collection.ty)
   | Some implementation -> (
-      match Core_sequence_transform.collection_to_seq_expr collection with
+                    match
+                      Core_sequence_transform.collection_to_seq_expr collection
+                    with
       | Ok sequence -> Ok sequence
       | Error _ -> (
           match implementation.ty with
           | TFn ([ receiver_ty ], TSeq inner)
-            when Types.assignable ~policy:Host_boundary ~expected:receiver_ty
-                   ~actual:collection.ty ->
+                          when Types.assignable ~policy:Host_boundary
+                                 ~expected:receiver_ty ~actual:collection.ty ->
               Ok
                 ( inner,
-                  apply implementation.ocaml_name [ collection.semantic_expr ] )
-          | TFn ([ receiver_ty ], TOcaml_app (("Seq.t" | "Seq"), [ inner ]))
-            when Types.assignable ~policy:Host_boundary ~expected:receiver_ty
-                   ~actual:collection.ty ->
+                                apply implementation.ocaml_name
+                                  [ collection.semantic_expr ] )
+                        | TFn
+                            ( [ receiver_ty ],
+                              TOcaml_app (("Seq.t" | "Seq"), [ inner ]) )
+                          when Types.assignable ~policy:Host_boundary
+                                 ~expected:receiver_ty ~actual:collection.ty ->
               Ok
                 ( inner,
                   apply "Lg_runtime.Runtime_seq.memoize"
-                    [ apply implementation.ocaml_name
-                        [ collection.semantic_expr ] ] )
+                                  [
+                                    apply implementation.ocaml_name
+                                      [ collection.semantic_expr ];
+                                  ] )
           | _ ->
               Error.error
-                "Seqable/-seq implementation must return a typed lazy seq"))
+                              "Seqable/-seq implementation must return a typed \
+                               lazy seq")))))
 
 let accepts_seqable env ty =
   if Types.is_dynamic ty then true
@@ -157,12 +182,11 @@ let second_expr env collection =
   match to_seq_expr env collection with
   | Error _ -> Error.error "second expects a seqable value"
   | Ok (inner, sequence) ->
-      Ok
-        (typed_ir inner
-           (apply "Lg_runtime.Runtime_seq.second" [ sequence ]))
+      Ok (typed_ir inner (apply "Lg_runtime.Runtime_seq.second" [ sequence ]))
 
 let drop_expr env name collection count =
-  if not (Types.equal count.ty TInt) then Error.error (name ^ " count must be int")
+  if not (Types.equal count.ty TInt) then
+    Error.error (name ^ " count must be int")
   else
     match to_seq_expr env collection with
     | Error _ -> Error.error (name ^ " expects a seqable value")
@@ -188,10 +212,12 @@ let seqable_adapter ?element_mapper env argument =
                   let adapter_name = "__lg_seqable_adapter" in
                   Semantic_ir.Match
                     ( Semantic_ir.Ident (name ^ "__seq_optional"),
-                      [ ( Semantic_ir.PConstructor ("None", None),
+                      [
+                        ( Semantic_ir.PConstructor ("None", None),
                           Semantic_ir.Apply
                             ( Semantic_ir.Ident "invalid_arg",
-                              [ Semantic_ir.String "value is not sequential" ] ) );
+                              [ Semantic_ir.String "value is not sequential" ]
+                            ) );
                         ( Semantic_ir.PConstructor
                             ("Some", Some (Semantic_ir.PVar adapter_name)),
                           Semantic_ir.Ident adapter_name );
@@ -200,8 +226,7 @@ let seqable_adapter ?element_mapper env argument =
             Ok
               (Semantic_ir.Fun
                  ( [ Semantic_ir.PVar value_name ],
-                   Semantic_ir.Apply
-                     (adapter, [ value ]) ))
+                   Semantic_ir.Apply (adapter, [ value ]) ))
         | _ ->
             let packed_name = "__lg_seqable_argument" in
             let packed = Semantic_ir.Ident packed_name in
@@ -212,13 +237,13 @@ let seqable_adapter ?element_mapper env argument =
               | `Optional | `Optional_sequential ->
                   let adapter_name = "__lg_seqable_adapter" in
                   Semantic_ir.Match
-                    ( Semantic_ir.Apply
-                        (Semantic_ir.Ident "fst", [ packed ]),
-                      [ ( Semantic_ir.PConstructor ("None", None),
+                    ( Semantic_ir.Apply (Semantic_ir.Ident "fst", [ packed ]),
+                      [
+                        ( Semantic_ir.PConstructor ("None", None),
                           Semantic_ir.Apply
                             ( Semantic_ir.Ident "invalid_arg",
-                              [ Semantic_ir.String
-                                  "value is not sequential" ] ) );
+                              [ Semantic_ir.String "value is not sequential" ]
+                            ) );
                         ( Semantic_ir.PConstructor
                             ("Some", Some (Semantic_ir.PVar adapter_name)),
                           Semantic_ir.Ident adapter_name );
@@ -302,10 +327,9 @@ let reduce_expr env ?(short_circuit = false) fn init collection sequence =
               let accumulator = Semantic_ir.Ident "accumulator" in
               let reducer =
                 Semantic_ir.Fun
-                  ( [ Semantic_ir.PVar "item";
-                      Semantic_ir.PVar "accumulator" ],
-                    Semantic_ir.Apply
-                      (fn.semantic_expr, [ accumulator; item ]) )
+                    ( [ Semantic_ir.PVar "item"; Semantic_ir.PVar "accumulator" ],
+                      Semantic_ir.Apply (fn.semantic_expr, [ accumulator; item ])
+                    )
               in
               apply (set_module ^ ".fold")
                 [ reducer; collection.semantic_expr; init.semantic_expr ])
@@ -320,7 +344,8 @@ let reduce_expr env ?(short_circuit = false) fn init collection sequence =
             [ fn.semantic_expr; init.semantic_expr; collection.semantic_expr ]
       | _ ->
           apply implementation.ocaml_name
-            [ collection.semantic_expr; fn.semantic_expr; init.semantic_expr ])
+              [ collection.semantic_expr; fn.semantic_expr; init.semantic_expr ]
+        )
 
 let count_expr env collection =
   let protocols = Compiler_environment.protocols env in
@@ -335,7 +360,8 @@ let count_expr env collection =
             match Types.set_module_name inner with
             | Ok set_module ->
                 apply (set_module ^ ".cardinal") [ collection.semantic_expr ]
-            | Error _ -> apply implementation.ocaml_name [ collection.semantic_expr ])
+            | Error _ ->
+                apply implementation.ocaml_name [ collection.semantic_expr ])
         | TArray _ | TOcaml_app ("array", [ _ ]) ->
             apply "Array.length" [ collection.semantic_expr ]
         | TString -> apply "String.length" [ collection.semantic_expr ]
@@ -358,8 +384,7 @@ let first_expr env collection =
         | TList _ | TOcaml_app ("list", [ _ ]) ->
             apply "List.hd" [ collection.semantic_expr ]
         | TVector _ ->
-            apply "Rrbvec.nth"
-              [ collection.semantic_expr; Semantic_ir.Int 0 ]
+            apply "Rrbvec.nth" [ collection.semantic_expr; Semantic_ir.Int 0 ]
         | TSet element -> (
             match Types.set_module_name element with
             | Ok set_module ->
@@ -379,7 +404,9 @@ let last_expr env collection =
   match to_seq_expr env collection with
   | Error _ -> Error.error "last expects a seqable value"
   | Ok (inner, sequence) ->
-      let last_index length = Semantic_ir.Infix ("-", length, Semantic_ir.Int 1) in
+      let last_index length =
+        Semantic_ir.Infix ("-", length, Semantic_ir.Int 1)
+      in
       let expression =
         match collection.ty with
         | TList _ | TOcaml_app ("list", [ _ ]) ->
@@ -394,12 +421,16 @@ let last_expr env collection =
             | Error _ -> apply "Lg_runtime.Runtime_seq.last" [ sequence ])
         | TArray _ | TOcaml_app ("array", [ _ ]) ->
             apply "Array.get"
-              [ collection.semantic_expr;
-                last_index (apply "Array.length" [ collection.semantic_expr ]) ]
+              [
+                collection.semantic_expr;
+                last_index (apply "Array.length" [ collection.semantic_expr ]);
+              ]
         | TString ->
             apply "String.get"
-              [ collection.semantic_expr;
-                last_index (apply "String.length" [ collection.semantic_expr ]) ]
+              [
+                collection.semantic_expr;
+                last_index (apply "String.length" [ collection.semantic_expr ]);
+              ]
         | TSeq _ | TOcaml_app (("Seq.t" | "Seq"), [ _ ]) ->
             apply "Lg_runtime.Runtime_seq.last" [ collection.semantic_expr ]
         | _ -> apply "Lg_runtime.Runtime_seq.last" [ sequence ]
@@ -441,15 +472,15 @@ let nth_expr env collection index =
                 not
                   (Types.assignable ~policy:Host_boundary ~expected:TInt
                      ~actual:index_ty)
-              then
-                Error.error "Indexed/-nth index parameter must be int"
+              then Error.error "Indexed/-nth index parameter must be int"
               else
               Ok
                 (typed_ir return_ty
                    (apply implementation.ocaml_name
                       [ collection.semantic_expr; index.semantic_expr ]))
           | _ ->
-              Error.error "Indexed/-nth implementation must return a typed value"))
+              Error.error
+                "Indexed/-nth implementation must return a typed value"))
   | None -> (
       match to_seq_expr env collection with
       | Error _ -> Error.error "nth expects an indexed or seqable value"

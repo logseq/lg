@@ -1,12 +1,13 @@
 open Ast
 open Types
 open Expression_support
-
 module Env = Compiler_environment
 
 type expression_result = (typed_expr, Error.t) result
 type call = string -> Env.t -> Ast.form list -> expression_result
-type named_call = string -> Env.t -> string -> Ast.form list -> expression_result
+
+type named_call =
+  string -> Env.t -> string -> Ast.form list -> expression_result
 
 type t = {
   compile_sort_by : call;
@@ -48,7 +49,7 @@ let truthy_call return_ty fn arguments =
     Semantic_ir.Apply
       (Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.truthy", [ call ])
 
-let create ~compile_expr =
+let create ~compile_expr ~pack_dynamic_value =
   let special_forms : Special_form_elaborator.t =
     Special_form_elaborator.create ~compile_expr
   in
@@ -67,19 +68,18 @@ let create ~compile_expr =
         compile_expr scope function_env
           (FList [ FKeyword keyword; FSymbol item_name ])
         |> Result.map (fun body ->
-               typed_ir (TFn ([ element_ty ], body.ty))
+            typed_ir
+              (TFn ([ element_ty ], body.ty))
                  (Semantic_ir.Fun
                     ([ Semantic_ir.PVar item_name ], body.semantic_expr)))
-    | FList
-        (FSymbol "fn" :: (FVector [ _ ] as params) :: body_forms) ->
+    | FList (FSymbol "fn" :: (FVector [ _ ] as params) :: body_forms) ->
         let lookup_function_ty name =
           match lookup_function scope env name with
           | Ok fn -> Ok fn.ty
           | Error _ as error -> error
         in
-        Function_elaborator.prepare
-          ~param_type_overrides:[ Some element_ty ] ~lookup_function_ty
-          ~compile_body scope env params body_forms
+        Function_elaborator.prepare ~param_type_overrides:[ Some element_ty ]
+          ~lookup_function_ty ~compile_body scope env params body_forms
         |> Result.map Function_elaborator.fn_code
     | FSymbol name -> (
         match lookup_function scope env name with
@@ -93,14 +93,43 @@ let create ~compile_expr =
             compile_expr scope function_env
               (FList [ FSymbol name; FSymbol item_name ])
             |> Result.map (fun body ->
-                   typed_ir (TFn ([ element_ty ], body.ty))
+                typed_ir
+                  (TFn ([ element_ty ], body.ty))
                      (Semantic_ir.Fun
                         ([ Semantic_ir.PVar item_name ], body.semantic_expr))))
     | form -> compile_function_arg scope env form
   in
+  let rec compile_function_arg_for_collections scope env element_tys = function
+    | FSymbol "vector" ->
+        let parameter_names =
+          List.mapi
+            (fun index _ -> "__lg_map_argument_" ^ string_of_int index)
+            element_tys
+        in
+        compile_function_arg_for_collections scope env element_tys
+          (FList
+             [
+               FSymbol "fn";
+               FVector (List.map (fun name -> FSymbol name) parameter_names);
+               FVector (List.map (fun name -> FSymbol name) parameter_names);
+             ])
+    | FList (FSymbol "fn" :: (FVector parameters as params) :: body_forms)
+      when List.length parameters = List.length element_tys ->
+        let lookup_function_ty name =
+          match lookup_function scope env name with
+          | Ok fn -> Ok fn.ty
+          | Error _ as error -> error
+        in
+        Function_elaborator.prepare
+          ~param_type_overrides:(List.map (fun ty -> Some ty) element_tys)
+          ~lookup_function_ty ~compile_body scope env params body_forms
+        |> Result.map Function_elaborator.fn_code
+    | form -> compile_function_arg scope env form
+  in
   let compile_reducer scope env accumulator_ty element_ty = function
     | FList
-        (FSymbol "fn" :: FVector [ FSymbol accumulator; FSymbol element ]
+        (FSymbol "fn"
+        :: FVector [ FSymbol accumulator; FSymbol element ]
         :: body_forms) ->
         let accumulator_binding =
           Types.binding (Names.sanitize_name accumulator) accumulator_ty
@@ -120,16 +149,20 @@ let create ~compile_expr =
                 (Semantic_ir.PVar binding.ocaml_name, record.type_name)
           | _ -> Semantic_ir.PVar binding.ocaml_name
         in
-        compile_body scope function_env "function body requires at least one form"
-          body_forms
+        compile_body scope function_env
+          "function body requires at least one form" body_forms
         |> Result.map (fun body ->
-               typed_ir (TFn ([ accumulator_ty; element_ty ], body.ty))
+            typed_ir
+              (TFn ([ accumulator_ty; element_ty ], body.ty))
                  (Semantic_ir.Fun
-                    ( [ pattern accumulator_binding accumulator_ty;
-                        pattern element_binding element_ty ],
+                 ( [
+                     pattern accumulator_binding accumulator_ty;
+                     pattern element_binding element_ty;
+                   ],
                       body.semantic_expr )))
     | FList
-        (FSymbol "fn" :: (FVector [ _accumulator; _element ] as params)
+        (FSymbol "fn"
+        :: (FVector [ _accumulator; _element ] as params)
         :: body_forms) ->
         let lookup_function_ty name =
           match lookup_function scope env name with
@@ -144,7 +177,8 @@ let create ~compile_expr =
   in
   let compile_kv_reducer scope env accumulator_ty key_ty value_ty = function
     | FList
-        (FSymbol "fn" :: (FVector [ _accumulator; _key; _value ] as params)
+        (FSymbol "fn"
+        :: (FVector [ _accumulator; _key; _value ] as params)
         :: body_forms) ->
         let lookup_function_ty name =
           match lookup_function scope env name with
@@ -158,45 +192,65 @@ let create ~compile_expr =
         |> Result.map Function_elaborator.fn_code
     | form -> compile_function_arg scope env form
   in
-    let rec collection_to_list_expr collection =
-      Core_sequence_transform.collection_to_list_expr collection
-    
+  let rec collection_to_list_expr env collection =
+    match Core_sequence_transform.collection_to_list_expr collection with
+    | Ok _ as result -> result
+    | Error _ ->
+        Collection_capability.to_seq_expr env collection
+        |> Result.map (fun (inner, sequence) ->
+               ( inner,
+                 Semantic_ir.Apply
+                   (Semantic_ir.Ident "List.of_seq", [ sequence ]) ))
     and collection_from_list_expr collection_ty list_expr =
       Core_sequence_transform.collection_from_list_expr collection_ty list_expr
-    
     and comparable_type = function
       | TInt | TString | TSymbol | TKeyword | TBool | TUnknown -> true
       | _ -> false
-    
     and compile_sort_by scope env arg_forms =
       match arg_forms with
-      | fn_form :: collection_form :: [] -> (
-          match (compile_function_arg scope env fn_form, compile_expr scope env collection_form) with
+    | [ fn_form; collection_form ] -> (
+        match
+          ( compile_function_arg scope env fn_form,
+            compile_expr scope env collection_form )
+        with
           | (Error _ as err), _ -> err
           | _, (Error _ as err) -> err
           | Ok fn, Ok collection -> (
-              match (fn.ty, collection_to_list_expr collection) with
+            match (fn.ty, collection_to_list_expr env collection) with
               | TFn ([ param_ty ], key_ty), Ok (inner, list_expr)
                 when Types.equal param_ty inner && comparable_type key_ty ->
                   Ok
                     (typed_ir (TList inner)
                        (apply "List.sort"
-                          [ Semantic_ir.Fun
-                              ( [ Semantic_ir.PVar "left"; Semantic_ir.PVar "right" ],
+                        [
+                          Semantic_ir.Fun
+                            ( [
+                                Semantic_ir.PVar "left"; Semantic_ir.PVar "right";
+                              ],
                                 apply "Stdlib.compare"
-                                  [ Semantic_ir.Apply (fn.semantic_expr, [ Semantic_ir.Ident "left" ]);
-                                    Semantic_ir.Apply (fn.semantic_expr, [ Semantic_ir.Ident "right" ]) ] );
-                            list_expr ]))
-              | TFn ([ param_ty ], _), Ok (inner, _) when not (Types.equal param_ty inner) ->
-                  Error.error "sort-by key function must match collection elements"
-              | TFn _, Ok _ -> Error.error "sort-by key function must return a comparable value"
+                                [
+                                  Semantic_ir.Apply
+                                    ( fn.semantic_expr,
+                                      [ Semantic_ir.Ident "left" ] );
+                                  Semantic_ir.Apply
+                                    ( fn.semantic_expr,
+                                      [ Semantic_ir.Ident "right" ] );
+                                ] );
+                          list_expr;
+                        ]))
+            | TFn ([ param_ty ], _), Ok (inner, _)
+              when not (Types.equal param_ty inner) ->
+                Error.error
+                  "sort-by key function must match collection elements"
+            | TFn _, Ok _ ->
+                Error.error
+                  "sort-by key function must return a comparable value"
               | _, Ok _ -> Error.error "sort-by expects a function"
               | _, Error _ -> Error.error "sort-by expects a collection"))
       | _ -> Error.error "sort-by expects function and collection"
-    
     and compile_mapcat scope env arg_forms =
       match arg_forms with
-      | fn_form :: collection_form :: [] -> (
+    | [ fn_form; collection_form ] -> (
           match compile_expr scope env collection_form with
           | Error _ as error -> error
           | Ok collection -> (
@@ -211,15 +265,15 @@ let create ~compile_expr =
                   with
                   | Error _ as error -> error
                   | Ok ({ ty = TFn ([ param_ty ], return_ty); _ } as fn)
-                    when Types.assignable ~policy:Host_boundary
-                           ~expected:param_ty ~actual:inner ->
+                  when Types.assignable ~policy:Host_boundary ~expected:param_ty
+                         ~actual:inner -> (
                       let item_name = "__lg_mapcat_item" in
                       let result =
                         typed_ir return_ty
                           (Semantic_ir.Apply
                              (fn.semantic_expr, [ Semantic_ir.Ident item_name ]))
                       in
-                      (match Collection_capability.to_seq_expr env result with
+                    match Collection_capability.to_seq_expr env result with
                       | Error _ ->
                           Error.error
                             ("mapcat function must return a collection, got "
@@ -228,7 +282,8 @@ let create ~compile_expr =
                           Ok
                             (typed_ir (TSeq result_inner)
                                (apply "Lg_runtime.Runtime_seq.flat_map"
-                                  [ Semantic_ir.Fun
+                                [
+                                  Semantic_ir.Fun
                                       ( [ Semantic_ir.PVar item_name ],
                                         result_sequence );
                                     sequence;
@@ -238,27 +293,34 @@ let create ~compile_expr =
                         "mapcat function argument type does not match collection"
                   | Ok _ -> Error.error "mapcat expects a function")))
       | _ -> Error.error "mapcat expects function and collection"
-    
     and compile_repeatedly scope env arg_forms =
       match arg_forms with
-      | count_form :: fn_form :: [] -> (
-          match (compile_expr scope env count_form, compile_function_arg scope env fn_form) with
+    | [ count_form; fn_form ] -> (
+        match
+          ( compile_expr scope env count_form,
+            compile_function_arg scope env fn_form )
+        with
           | (Error _ as err), _ -> err
           | _, (Error _ as err) -> err
           | Ok count, Ok fn -> (
-              if not (Types.equal count.ty TInt) then Error.error "repeatedly count must be int"
+            if not (Types.equal count.ty TInt) then
+              Error.error "repeatedly count must be int"
               else
                 match fn.ty with
                 | TFn ([], ret) ->
                     let body =
                       Semantic_ir.If
-                        ( Semantic_ir.Infix ("<=", Semantic_ir.Ident "n", Semantic_ir.Int 0),
+                      ( Semantic_ir.Infix
+                          ("<=", Semantic_ir.Ident "n", Semantic_ir.Int 0),
                           Semantic_ir.Ident "acc",
                           apply "repeatedly"
-                            [ Semantic_ir.Cons
+                          [
+                            Semantic_ir.Cons
                                 ( Semantic_ir.Apply (fn.semantic_expr, []),
                                   Semantic_ir.Ident "acc" );
-                              Semantic_ir.Infix ("-", Semantic_ir.Ident "n", Semantic_ir.Int 1) ] )
+                            Semantic_ir.Infix
+                              ("-", Semantic_ir.Ident "n", Semantic_ir.Int 1);
+                          ] )
                     in
                     Ok
                       (typed_ir (TList ret)
@@ -267,55 +329,81 @@ let create ~compile_expr =
                               [ Semantic_ir.PVar "acc"; Semantic_ir.PVar "n" ],
                               body,
                               [ Semantic_ir.List []; count.semantic_expr ] )))
-                | TFn _ -> Error.error "repeatedly expects a zero-argument function"
+              | TFn _ ->
+                  Error.error "repeatedly expects a zero-argument function"
                 | _ -> Error.error "repeatedly expects a function"))
       | _ -> Error.error "repeatedly expects count and function"
-    
     and compile_reductions scope env arg_forms =
       match arg_forms with
-      | fn_form :: collection_form :: [] -> (
-          match (compile_function_arg scope env fn_form, compile_expr scope env collection_form) with
+    | [ fn_form; collection_form ] -> (
+        match
+          ( compile_function_arg scope env fn_form,
+            compile_expr scope env collection_form )
+        with
           | (Error _ as err), _ -> err
           | _, (Error _ as err) -> err
           | Ok fn, Ok collection -> (
-              match (fn.ty, collection_to_list_expr collection) with
+            match (fn.ty, collection_to_list_expr env collection) with
               | TFn ([ acc_ty; item_ty ], ret), Ok (inner, list_expr)
-                when Types.equal acc_ty inner && Types.equal item_ty inner && Types.equal ret inner ->
+              when Types.equal acc_ty inner && Types.equal item_ty inner
+                   && Types.equal ret inner ->
                   let reductions_body =
                     Semantic_ir.Match
                       ( Semantic_ir.Ident "xs",
-                        [ (Semantic_ir.PList [], apply "List.rev" [ Semantic_ir.Ident "acc" ]);
-                          ( Semantic_ir.PCons (Semantic_ir.PVar "item", Semantic_ir.PVar "tail"),
+                      [
+                        ( Semantic_ir.PList [],
+                          apply "List.rev" [ Semantic_ir.Ident "acc" ] );
+                        ( Semantic_ir.PCons
+                            (Semantic_ir.PVar "item", Semantic_ir.PVar "tail"),
                             Semantic_ir.Let
-                              ( [ ( Semantic_ir.PVar "next",
+                            ( [
+                                ( Semantic_ir.PVar "next",
                                     Semantic_ir.Apply
                                       ( fn.semantic_expr,
-                                        [ Semantic_ir.Ident "current"; Semantic_ir.Ident "item" ] ) ) ],
+                                      [
+                                        Semantic_ir.Ident "current";
+                                        Semantic_ir.Ident "item";
+                                      ] ) );
+                              ],
                                 apply "reductions"
-                                  [ Semantic_ir.Ident "next";
+                                [
+                                  Semantic_ir.Ident "next";
                                     Semantic_ir.Cons
-                                      (Semantic_ir.Ident "next", Semantic_ir.Ident "acc");
-                                    Semantic_ir.Ident "tail" ] ) ) ] )
+                                    ( Semantic_ir.Ident "next",
+                                      Semantic_ir.Ident "acc" );
+                                  Semantic_ir.Ident "tail";
+                                ] ) );
+                      ] )
                   in
                   Ok
                     (typed_ir (TList inner)
                        (Semantic_ir.Match
                           ( list_expr,
-                            [ (Semantic_ir.PList [], Semantic_ir.List []);
-                              ( Semantic_ir.PCons (Semantic_ir.PVar "first", Semantic_ir.PVar "rest"),
+                          [
+                            (Semantic_ir.PList [], Semantic_ir.List []);
+                            ( Semantic_ir.PCons
+                                ( Semantic_ir.PVar "first",
+                                  Semantic_ir.PVar "rest" ),
                                 Semantic_ir.LetRec
                                   ( "reductions",
-                                    [ Semantic_ir.PVar "current";
+                                  [
+                                    Semantic_ir.PVar "current";
                                       Semantic_ir.PVar "acc";
-                                      Semantic_ir.PVar "xs" ],
+                                    Semantic_ir.PVar "xs";
+                                  ],
                                     reductions_body,
-                                    [ Semantic_ir.Ident "first";
-                                      Semantic_ir.List [ Semantic_ir.Ident "first" ];
-                                      Semantic_ir.Ident "rest" ] ) ) ] )))
-              | TFn _, Ok _ -> Error.error "reductions function type does not match collection"
+                                  [
+                                    Semantic_ir.Ident "first";
+                                    Semantic_ir.List
+                                      [ Semantic_ir.Ident "first" ];
+                                    Semantic_ir.Ident "rest";
+                                  ] ) );
+                          ] )))
+            | TFn _, Ok _ ->
+                Error.error "reductions function type does not match collection"
               | _, Ok _ -> Error.error "reductions expects a function"
               | _, Error _ -> Error.error "reductions expects a collection"))
-      | fn_form :: init_form :: collection_form :: [] -> (
+    | [ fn_form; init_form; collection_form ] -> (
           match
             ( compile_function_arg scope env fn_form,
               compile_expr scope env init_form,
@@ -325,70 +413,103 @@ let create ~compile_expr =
           | _, (Error _ as err), _ -> err
           | _, _, (Error _ as err) -> err
           | Ok fn, Ok init, Ok collection -> (
-              match (fn.ty, collection_to_list_expr collection) with
+            match (fn.ty, collection_to_list_expr env collection) with
               | TFn ([ acc_ty; item_ty ], ret), Ok (inner, list_expr)
-                when Types.equal acc_ty init.ty && Types.equal item_ty inner && Types.equal ret init.ty ->
+              when Types.equal acc_ty init.ty && Types.equal item_ty inner
+                   && Types.equal ret init.ty ->
                   let reductions_body =
                     Semantic_ir.Match
                       ( Semantic_ir.Ident "xs",
-                        [ (Semantic_ir.PList [], apply "List.rev" [ Semantic_ir.Ident "acc" ]);
-                          ( Semantic_ir.PCons (Semantic_ir.PVar "item", Semantic_ir.PVar "rest"),
+                      [
+                        ( Semantic_ir.PList [],
+                          apply "List.rev" [ Semantic_ir.Ident "acc" ] );
+                        ( Semantic_ir.PCons
+                            (Semantic_ir.PVar "item", Semantic_ir.PVar "rest"),
                             Semantic_ir.Let
-                              ( [ ( Semantic_ir.PVar "next",
+                            ( [
+                                ( Semantic_ir.PVar "next",
                                     Semantic_ir.Apply
                                       ( fn.semantic_expr,
-                                        [ Semantic_ir.Ident "current"; Semantic_ir.Ident "item" ] ) ) ],
+                                      [
+                                        Semantic_ir.Ident "current";
+                                        Semantic_ir.Ident "item";
+                                      ] ) );
+                              ],
                                 apply "reductions"
-                                  [ Semantic_ir.Ident "next";
+                                [
+                                  Semantic_ir.Ident "next";
                                     Semantic_ir.Cons
-                                      (Semantic_ir.Ident "next", Semantic_ir.Ident "acc");
-                                    Semantic_ir.Ident "rest" ] ) ) ] )
+                                    ( Semantic_ir.Ident "next",
+                                      Semantic_ir.Ident "acc" );
+                                  Semantic_ir.Ident "rest";
+                                ] ) );
+                      ] )
                   in
                   Ok
                     (typed_ir (TList init.ty)
                        (Semantic_ir.LetRec
                           ( "reductions",
-                            [ Semantic_ir.PVar "current";
+                          [
+                            Semantic_ir.PVar "current";
                               Semantic_ir.PVar "acc";
-                              Semantic_ir.PVar "xs" ],
+                            Semantic_ir.PVar "xs";
+                          ],
                             reductions_body,
-                            [ init.semantic_expr;
+                          [
+                            init.semantic_expr;
                               Semantic_ir.List [ init.semantic_expr ];
-                              list_expr ] )))
-              | TFn _, Ok _ -> Error.error "reductions function type does not match init and collection"
+                            list_expr;
+                          ] )))
+            | TFn _, Ok _ ->
+                Error.error
+                  "reductions function type does not match init and collection"
               | _, Ok _ -> Error.error "reductions expects a function"
               | _, Error _ -> Error.error "reductions expects a collection"))
-      | _ -> Error.error "reductions expects function, optional init, and collection"
-    
+    | _ ->
+        Error.error "reductions expects function, optional init, and collection"
     and compile_split_with scope env arg_forms =
       match arg_forms with
-      | fn_form :: collection_form :: [] -> (
-          match (compile_function_arg scope env fn_form, compile_expr scope env collection_form) with
+    | [ fn_form; collection_form ] -> (
+        match
+          ( compile_function_arg scope env fn_form,
+            compile_expr scope env collection_form )
+        with
           | (Error _ as err), _ -> err
           | _, (Error _ as err) -> err
           | Ok fn, Ok collection -> (
-              match (fn.ty, collection_to_list_expr collection) with
+            match (fn.ty, collection_to_list_expr env collection) with
               | TFn ([ param_ty ], return_ty), Ok (inner, list_expr)
-                when Types.equal param_ty inner
-                     && returns_truthy_value return_ty ->
+              when Types.equal param_ty inner && returns_truthy_value return_ty
+              ->
                   let split_body =
                     Semantic_ir.Match
                       ( Semantic_ir.Ident "rest",
-                        [ ( Semantic_ir.PCons (Semantic_ir.PVar "item", Semantic_ir.PVar "tail"),
+                      [
+                        ( Semantic_ir.PCons
+                            (Semantic_ir.PVar "item", Semantic_ir.PVar "tail"),
                             Semantic_ir.If
                               ( truthy_call return_ty fn.semantic_expr
                                   [ Semantic_ir.Ident "item" ],
                                 apply "split"
-                                  [ Semantic_ir.Cons
-                                      (Semantic_ir.Ident "item", Semantic_ir.Ident "prefix");
-                                    Semantic_ir.Ident "tail" ],
+                                [
+                                  Semantic_ir.Cons
+                                    ( Semantic_ir.Ident "item",
+                                      Semantic_ir.Ident "prefix" );
+                                  Semantic_ir.Ident "tail";
+                                ],
                                 Semantic_ir.Tuple
-                                  [ apply "List.rev" [ Semantic_ir.Ident "prefix" ];
-                                    Semantic_ir.Ident "rest" ] ) );
+                                [
+                                  apply "List.rev"
+                                    [ Semantic_ir.Ident "prefix" ];
+                                  Semantic_ir.Ident "rest";
+                                ] ) );
                           ( Semantic_ir.PAny,
                             Semantic_ir.Tuple
-                              [ apply "List.rev" [ Semantic_ir.Ident "prefix" ];
-                                Semantic_ir.Ident "rest" ] ) ] )
+                            [
+                              apply "List.rev" [ Semantic_ir.Ident "prefix" ];
+                              Semantic_ir.Ident "rest";
+                            ] );
+                      ] )
                   in
                   let pair_expr =
                     Semantic_ir.LetRec
@@ -397,188 +518,383 @@ let create ~compile_expr =
                         split_body,
                         [ Semantic_ir.List []; list_expr ] )
                   in
+                let result_collection_ty =
+                  match Types.seqable_constraint_info collection.ty with
+                  | Some _ -> TList inner
+                  | None -> collection.ty
+                in
                   Ok
-                    (typed_ir (TVector collection.ty)
+                  (typed_ir (TVector result_collection_ty)
                        (Semantic_ir.Let
                           ( [ (Semantic_ir.PVar "pair", pair_expr) ],
                             apply "Rrbvec.of_list"
-                              [ Semantic_ir.List
-                                  [ collection_from_list_expr collection.ty
+                            [
+                              Semantic_ir.List
+                                [
+                                  collection_from_list_expr
+                                    result_collection_ty
                                       (apply "fst" [ Semantic_ir.Ident "pair" ]);
-                                    collection_from_list_expr collection.ty
-                                      (apply "snd" [ Semantic_ir.Ident "pair" ]) ] ] )))
-              | TFn _, Ok _ -> Error.error "split-with expects a predicate matching collection elements"
+                                  collection_from_list_expr
+                                    result_collection_ty
+                                    (apply "snd" [ Semantic_ir.Ident "pair" ]);
+                                ];
+                            ] )))
+            | TFn _, Ok _ ->
+                Error.error
+                  "split-with expects a predicate matching collection elements"
               | _, Ok _ -> Error.error "split-with expects a function"
-              | _, Error _ -> Error.error "split-with expects a collection"))
+            | _, Error _ ->
+                Error.error
+                  ("split-with expects a collection, got "
+                 ^ Types.source_name collection.ty)))
       | _ -> Error.error "split-with expects function and collection"
-    
     and compile_partition_by scope env arg_forms =
       match arg_forms with
-      | fn_form :: collection_form :: [] -> (
-          match (compile_function_arg scope env fn_form, compile_expr scope env collection_form) with
+    | [ fn_form; collection_form ] -> (
+        match
+          ( compile_function_arg scope env fn_form,
+            compile_expr scope env collection_form )
+        with
           | (Error _ as err), _ -> err
           | _, (Error _ as err) -> err
           | Ok fn, Ok collection -> (
-              match (fn.ty, collection_to_list_expr collection) with
-              | TFn ([ param_ty ], key_ty), Ok (inner, list_expr) when Types.equal param_ty inner ->
+            match (fn.ty, collection_to_list_expr env collection) with
+            | TFn ([ param_ty ], key_ty), Ok (inner, list_expr)
+              when Types.equal param_ty inner ->
                   ignore key_ty;
                   let finish_call =
-                    apply "finish" [ Semantic_ir.Ident "groups"; Semantic_ir.Ident "current" ]
+                  apply "finish"
+                    [ Semantic_ir.Ident "groups"; Semantic_ir.Ident "current" ]
                   in
                   let start_new_group =
                     Semantic_ir.Let
-                      ( [ ( Semantic_ir.PVar "groups",
+                    ( [
+                        ( Semantic_ir.PVar "groups",
                             Semantic_ir.Match
                               ( Semantic_ir.Ident "current",
-                                [ (Semantic_ir.PList [], Semantic_ir.Ident "groups");
+                              [
+                                ( Semantic_ir.PList [],
+                                  Semantic_ir.Ident "groups" );
                                   ( Semantic_ir.PAny,
                                     Semantic_ir.Cons
-                                      ( apply "List.rev" [ Semantic_ir.Ident "current" ],
-                                        Semantic_ir.Ident "groups" ) ) ] ) ) ],
+                                    ( apply "List.rev"
+                                        [ Semantic_ir.Ident "current" ],
+                                      Semantic_ir.Ident "groups" ) );
+                              ] ) );
+                      ],
                         apply "partition"
-                          [ Semantic_ir.Ident "groups";
+                        [
+                          Semantic_ir.Ident "groups";
                             Semantic_ir.List [ Semantic_ir.Ident "item" ];
-                            Semantic_ir.Constructor ("Some", Some (Semantic_ir.Ident "key"));
-                            Semantic_ir.Ident "rest" ] )
+                          Semantic_ir.Constructor
+                            ("Some", Some (Semantic_ir.Ident "key"));
+                          Semantic_ir.Ident "rest";
+                        ] )
                   in
                   let partition_body =
                     Semantic_ir.Match
                       ( Semantic_ir.Ident "xs",
-                        [ (Semantic_ir.PList [], finish_call);
-                          ( Semantic_ir.PCons (Semantic_ir.PVar "item", Semantic_ir.PVar "rest"),
+                      [
+                        (Semantic_ir.PList [], finish_call);
+                        ( Semantic_ir.PCons
+                            (Semantic_ir.PVar "item", Semantic_ir.PVar "rest"),
                             Semantic_ir.Let
-                              ( [ ( Semantic_ir.PVar "key",
-                                    Semantic_ir.Apply (fn.semantic_expr, [ Semantic_ir.Ident "item" ]) ) ],
+                            ( [
+                                ( Semantic_ir.PVar "key",
+                                  Semantic_ir.Apply
+                                    ( fn.semantic_expr,
+                                      [ Semantic_ir.Ident "item" ] ) );
+                              ],
                                 Semantic_ir.Match
                                   ( Semantic_ir.Ident "current_key",
-                                    [ ( Semantic_ir.PConstructor ("Some", Some (Semantic_ir.PVar "previous")),
+                                  [
+                                    ( Semantic_ir.PConstructor
+                                        ( "Some",
+                                          Some (Semantic_ir.PVar "previous") ),
                                         Semantic_ir.If
                                           ( Semantic_ir.Infix
-                                              ( "=", Semantic_ir.Ident "previous",
+                                            ( "=",
+                                              Semantic_ir.Ident "previous",
                                                 Semantic_ir.Ident "key" ),
                                             apply "partition"
-                                              [ Semantic_ir.Ident "groups";
+                                            [
+                                              Semantic_ir.Ident "groups";
                                                 Semantic_ir.Cons
                                                   ( Semantic_ir.Ident "item",
                                                     Semantic_ir.Ident "current" );
                                                 Semantic_ir.Ident "current_key";
-                                                Semantic_ir.Ident "rest" ],
+                                              Semantic_ir.Ident "rest";
+                                            ],
                                             start_new_group ) );
-                                      (Semantic_ir.PAny, start_new_group) ] ) ) ) ] )
+                                    (Semantic_ir.PAny, start_new_group);
+                                  ] ) ) );
+                      ] )
                   in
                   let finish_body =
                     Semantic_ir.Match
                       ( Semantic_ir.Ident "current",
-                        [ (Semantic_ir.PList [], apply "List.rev" [ Semantic_ir.Ident "groups" ]);
+                      [
+                        ( Semantic_ir.PList [],
+                          apply "List.rev" [ Semantic_ir.Ident "groups" ] );
                           ( Semantic_ir.PAny,
                             apply "List.rev"
-                              [ Semantic_ir.Cons
-                                  ( apply "List.rev" [ Semantic_ir.Ident "current" ],
-                                    Semantic_ir.Ident "groups" ) ] ) ] )
+                            [
+                              Semantic_ir.Cons
+                                ( apply "List.rev"
+                                    [ Semantic_ir.Ident "current" ],
+                                  Semantic_ir.Ident "groups" );
+                            ] );
+                      ] )
                   in
                   Ok
                     (typed_ir (TList (TList inner))
                        (Semantic_ir.LetRecIn
                           ( "finish",
-                            [ Semantic_ir.PVar "groups"; Semantic_ir.PVar "current" ],
+                          [
+                            Semantic_ir.PVar "groups";
+                            Semantic_ir.PVar "current";
+                          ],
                             finish_body,
                             Semantic_ir.LetRec
                               ( "partition",
-                                [ Semantic_ir.PVar "groups";
+                              [
+                                Semantic_ir.PVar "groups";
                                   Semantic_ir.PVar "current";
                                   Semantic_ir.PVar "current_key";
-                                  Semantic_ir.PVar "xs" ],
+                                Semantic_ir.PVar "xs";
+                              ],
                                 partition_body,
-                                [ Semantic_ir.List [];
+                              [
+                                Semantic_ir.List [];
                                   Semantic_ir.List [];
                                   Semantic_ir.Constructor ("None", None);
-                                  list_expr ] ) )))
-              | TFn _, Ok _ -> Error.error "partition-by function type does not match collection"
+                                list_expr;
+                              ] ) )))
+            | TFn _, Ok _ ->
+                Error.error
+                  "partition-by function type does not match collection"
               | _, Ok _ -> Error.error "partition-by expects a function"
               | _, Error _ -> Error.error "partition-by expects a collection"))
       | _ -> Error.error "partition-by expects function and collection"
-    
     and compile_run_bang scope env arg_forms =
       match arg_forms with
-      | fn_form :: collection_form :: [] -> (
+    | [ fn_form; collection_form ] -> (
           match compile_expr scope env collection_form with
           | Error _ as error -> error
           | Ok collection -> (
               match Collection_capability.to_seq_expr env collection with
-              | Error _ -> Error.error "run! expects a collection"
+            | Error _ ->
+                Error.error
+                  ("run! expects a collection, got "
+                  ^ Types.source_name collection.ty)
               | Ok (inner, sequence) -> (
                   match
                     compile_function_arg_for_collection scope env inner fn_form
                   with
                   | Error _ as error -> error
                   | Ok ({ ty = TFn ([ param_ty ], _); _ } as fn)
-                    when Types.assignable ~policy:Host_boundary
-                           ~expected:param_ty ~actual:inner ->
+                  when Types.assignable ~policy:Host_boundary ~expected:param_ty
+                         ~actual:inner ->
                       Ok
                         (typed_ir TUnit
                            (Semantic_ir.Let
-                              ( [ ( Semantic_ir.PUnit,
+                            ( [
+                                ( Semantic_ir.PUnit,
                                     apply "Seq.iter"
-                                      [ Semantic_ir.Fun
+                                    [
+                                      Semantic_ir.Fun
                                           ( [ Semantic_ir.PVar "item" ],
                                             apply "ignore"
-                                              [ Semantic_ir.Apply
+                                            [
+                                              Semantic_ir.Apply
                                                   ( fn.semantic_expr,
-                                                    [ Semantic_ir.Ident
-                                                        "item" ] ) ] );
-                                        sequence ] ) ],
+                                                  [ Semantic_ir.Ident "item" ]
+                                                );
+                                            ] );
+                                      sequence;
+                                    ] );
+                              ],
                                 Semantic_ir.Unit )))
                   | Ok { ty = TFn _; _ } ->
-                      Error.error
-                        "run! function type does not match collection"
+                    Error.error "run! function type does not match collection"
                   | Ok _ -> Error.error "run! expects a function")))
       | _ -> Error.error "run! expects function and collection"
-    
     and compile_map_indexed scope env arg_forms =
       match arg_forms with
-      | fn_form :: collection_form :: [] -> (
-          match (compile_function_arg scope env fn_form, compile_expr scope env collection_form) with
+    | [ fn_form; collection_form ] -> (
+        match
+          ( compile_function_arg scope env fn_form,
+            compile_expr scope env collection_form )
+        with
           | (Error _ as err), _ -> err
           | _, (Error _ as err) -> err
           | Ok fn, Ok collection -> (
-              match (fn.ty, collection_to_list_expr collection) with
-              | TFn ([ TInt; item_ty ], ret), Ok (inner, list_expr) when Types.equal item_ty inner ->
+            match (fn.ty, collection_to_list_expr env collection) with
+            | TFn ([ TInt; item_ty ], ret), Ok (inner, list_expr)
+              when Types.equal item_ty inner ->
                   Ok
                     (typed_ir (TList ret)
                        (apply "List.mapi"
-                          [ Semantic_ir.Fun
-                              ( [ Semantic_ir.PVar "index"; Semantic_ir.PVar "item" ],
+                        [
+                          Semantic_ir.Fun
+                            ( [
+                                Semantic_ir.PVar "index"; Semantic_ir.PVar "item";
+                              ],
                                 Semantic_ir.Apply
                                   ( fn.semantic_expr,
-                                    [ Semantic_ir.Ident "index"; Semantic_ir.Ident "item" ] ) );
-                            list_expr ]))
-              | TFn _, Ok _ -> Error.error "map-indexed function type does not match collection"
+                                  [
+                                    Semantic_ir.Ident "index";
+                                    Semantic_ir.Ident "item";
+                                  ] ) );
+                          list_expr;
+                        ]))
+            | TFn _, Ok _ ->
+                Error.error
+                  "map-indexed function type does not match collection"
               | _, Ok _ -> Error.error "map-indexed expects a function"
               | _, Error _ -> Error.error "map-indexed expects a collection"))
       | _ -> Error.error "map-indexed expects function and collection"
-    
     and compile_filterv scope env arg_forms =
       match arg_forms with
-      | fn_form :: collection_form :: [] -> (
-          match (compile_function_arg scope env fn_form, compile_expr scope env collection_form) with
+    | [ fn_form; collection_form ] -> (
+        match
+          ( compile_function_arg scope env fn_form,
+            compile_expr scope env collection_form )
+        with
           | (Error _ as err), _ -> err
           | _, (Error _ as err) -> err
           | Ok fn, Ok collection -> (
-              match (fn.ty, collection_to_list_expr collection) with
-              | TFn ([ param_ty ], TBool), Ok (inner, list_expr) when Types.equal param_ty inner ->
+            match (fn.ty, collection_to_list_expr env collection) with
+            | TFn ([ param_ty ], TBool), Ok (inner, list_expr)
+              when Types.equal param_ty inner ->
                   Ok
                     (typed_ir (TVector inner)
                        (apply "Rrbvec.of_list"
                           [ apply "List.filter" [ fn.semantic_expr; list_expr ] ]))
               | TFn _, Ok _ ->
-                  Error.error "filterv expects a predicate matching collection elements"
+                Error.error
+                  "filterv expects a predicate matching collection elements"
               | _, Ok _ -> Error.error "filterv expects a function"
               | _, Error _ -> Error.error "filterv expects a collection"))
       | _ -> Error.error "filterv expects function and collection"
-    
+  and compile_multi_map scope env ~vector fn_form collection_forms =
+    let rec compile_collections compiled = function
+      | [] -> Ok (List.rev compiled)
+      | form :: rest -> (
+          match compile_expr scope env form with
+          | Error _ as error -> error
+          | Ok collection -> (
+              match Collection_capability.to_seq_expr env collection with
+              | Error _ ->
+                  Error.error
+                    ((if vector then "mapv" else "map")
+                    ^ " expects seqable collections")
+              | Ok (element_ty, sequence) ->
+                  compile_collections ((element_ty, sequence) :: compiled) rest)
+          )
+    in
+    match compile_collections [] collection_forms with
+    | Error _ as error -> error
+    | Ok collections -> (
+        let element_tys = List.map fst collections in
+        let sequences = List.map snd collections in
+        match
+          compile_function_arg_for_collections scope env element_tys fn_form
+        with
+        | Error _ as error -> error
+        | Ok fn -> (
+            match fn.ty with
+            | TFn (parameter_tys, return_ty)
+              when List.length parameter_tys = List.length element_tys ->
+                let argument_names =
+                  List.mapi
+                    (fun index _ -> "__lg_map_argument_" ^ string_of_int index)
+                    element_tys
+                in
+                let rec prepare_arguments prepared parameter_tys element_tys
+                    names =
+                  match (parameter_tys, element_tys, names) with
+                  | [], [], [] -> Ok (List.rev prepared)
+                  | ( expected :: parameter_tys,
+                      actual :: element_tys,
+                      name :: names ) ->
+                      let argument = typed_ir actual (Semantic_ir.Ident name) in
+                      let prepared_argument =
+                        if Types.is_dynamic expected then
+                          pack_dynamic_value env expected argument
+                        else if
+                          Types.assignable ~policy:Host_boundary ~expected
+                            ~actual
+                          || Types.equal expected TUnknown
+                          || match expected with TVar _ -> true | _ -> false
+                        then Ok argument.semantic_expr
+                        else
+                          Error.error
+                            ((if vector then "mapv" else "map")
+                            ^ " function type does not match collections")
+                      in
+                      Result.bind prepared_argument (fun argument ->
+                          prepare_arguments (argument :: prepared) parameter_tys
+                            element_tys names)
+                  | _ ->
+                      Error.error "internal multi-collection map arity mismatch"
+                in
+                Result.map
+                  (fun arguments ->
+                    let zipped, pattern =
+                      match (sequences, argument_names) with
+                      | ( first_sequence :: rest_sequences,
+                          first_name :: rest_names ) ->
+                          List.fold_left2
+                            (fun (zipped, pattern) sequence name ->
+                              let left_name = "__lg_map_left" in
+                              let right_name = "__lg_map_right" in
+                              ( apply "Lg_runtime.Runtime_seq.map2"
+                                  [
+                                    Semantic_ir.Fun
+                                      ( [
+                                          Semantic_ir.PVar left_name;
+                                          Semantic_ir.PVar right_name;
+                                        ],
+                                        Semantic_ir.Tuple
+                                          [
+                                            Semantic_ir.Ident left_name;
+                                            Semantic_ir.Ident right_name;
+                                          ] );
+                                    zipped;
+                                    sequence;
+                                  ],
+                                Semantic_ir.PTuple
+                                  [ pattern; Semantic_ir.PVar name ] ))
+                            (first_sequence, Semantic_ir.PVar first_name)
+                            rest_sequences rest_names
+                      | _ -> assert false
+                    in
+                    let mapped =
+                      apply "Lg_runtime.Runtime_seq.map"
+                        [
+                          Semantic_ir.Fun
+                            ( [ pattern ],
+                              Semantic_ir.Apply (fn.semantic_expr, arguments) );
+                          zipped;
+                        ]
+                    in
+                    if vector then
+                      typed_ir (TVector return_ty)
+                        (apply "Rrbvec.of_list"
+                           [ apply "List.of_seq" [ mapped ] ])
+                    else typed_ir (TSeq return_ty) mapped)
+                  (prepare_arguments [] parameter_tys element_tys argument_names)
+            | TFn _ ->
+                Error.error
+                  ((if vector then "mapv" else "map")
+                  ^ " function arity does not match collections")
+            | _ ->
+                Error.error
+                  ((if vector then "mapv" else "map") ^ " expects a function")))
     and compile_mapv scope env arg_forms =
       match arg_forms with
-      | fn_form :: collection_form :: [] -> (
+    | [ fn_form; collection_form ] -> (
           match compile_expr scope env collection_form with
           | Error _ as error -> error
           | Ok collection -> (
@@ -590,30 +906,34 @@ let create ~compile_expr =
                   with
                   | Error _ as error -> error
                   | Ok ({ ty = TFn ([ param_ty ], ret); _ } as fn)
-                    when Types.assignable ~policy:Host_boundary
-                           ~expected:param_ty ~actual:inner ->
+                  when Types.assignable ~policy:Host_boundary ~expected:param_ty
+                         ~actual:inner ->
                       Ok
                         (typed_ir (TVector ret)
                            (apply "Rrbvec.of_list"
-                              [ apply "List.of_seq"
-                                  [ apply "Lg_runtime.Runtime_seq.map"
-                                      [ fn.semantic_expr; sequence ] ] ]))
+                            [
+                              apply "List.of_seq"
+                                [
+                                  apply "Lg_runtime.Runtime_seq.map"
+                                    [ fn.semantic_expr; sequence ];
+                                ];
+                            ]))
                   | Ok { ty = TFn _; _ } ->
-                      Error.error
-                        "mapv function type does not match collection"
+                    Error.error "mapv function type does not match collection"
                   | Ok _ -> Error.error "mapv expects a function")))
+    | fn_form :: (_ :: _ :: _ as collection_forms) ->
+        compile_multi_map scope env ~vector:true fn_form collection_forms
       | _ -> Error.error "mapv expects function and collection"
-    
     and compile_reduce_kv scope env arg_forms =
       match arg_forms with
-      | fn_form :: init_form :: collection_form :: [] -> (
+    | [ fn_form; init_form; collection_form ] -> (
           match
             ( compile_expr scope env init_form,
               compile_expr scope env collection_form )
           with
           | (Error _ as error), _ -> error
           | _, (Error _ as error) -> error
-          | Ok init, Ok collection ->
+        | Ok init, Ok collection -> (
               let compile_for key_ty value_ty entries =
                 match
                   compile_kv_reducer scope env init.ty key_ty value_ty fn_form
@@ -633,54 +953,80 @@ let create ~compile_expr =
                         Ok
                           (typed_ir init.ty
                              (apply "List.fold_left"
-                                [ Semantic_ir.Fun
-                                    ( [ Semantic_ir.PVar "accumulator";
+                              [
+                                Semantic_ir.Fun
+                                  ( [
+                                      Semantic_ir.PVar "accumulator";
                                         Semantic_ir.PTuple
-                                          [ Semantic_ir.PVar "key";
-                                            Semantic_ir.PVar "value" ] ],
+                                        [
+                                          Semantic_ir.PVar "key";
+                                          Semantic_ir.PVar "value";
+                                        ];
+                                    ],
                                       Semantic_ir.Apply
                                         ( fn.semantic_expr,
-                                          [ Semantic_ir.Ident "accumulator";
+                                        [
+                                          Semantic_ir.Ident "accumulator";
                                             Semantic_ir.Ident "key";
-                                            Semantic_ir.Ident "value" ] ) );
+                                          Semantic_ir.Ident "value";
+                                        ] ) );
                                   init.semantic_expr;
-                                  entries ]))
+                                entries;
+                              ]))
                     | TFn _ ->
                         Error.error
                           "reduce-kv function type does not match collection"
                     | _ -> Error.error "reduce-kv expects a function")
               in
-              (match collection.ty with
+            match collection.ty with
               | TVector value_ty ->
                   let entries =
                     apply "List.mapi"
-                      [ Semantic_ir.Fun
-                          ( [ Semantic_ir.PVar "index";
-                              Semantic_ir.PVar "value" ],
+                    [
+                      Semantic_ir.Fun
+                        ( [ Semantic_ir.PVar "index"; Semantic_ir.PVar "value" ],
                             Semantic_ir.Tuple
-                              [ Semantic_ir.Ident "index";
-                                Semantic_ir.Ident "value" ] );
-                        apply "Rrbvec.to_list" [ collection.semantic_expr ] ]
+                            [
+                              Semantic_ir.Ident "index";
+                              Semantic_ir.Ident "value";
+                            ] );
+                      apply "Rrbvec.to_list" [ collection.semantic_expr ];
+                    ]
                   in
                   compile_for TInt value_ty entries
               | map_type -> (
                   match Types.dynamic_map_types map_type with
                   | Some (key_ty, value_ty) ->
                       compile_for key_ty value_ty collection.semantic_expr
-                  | None ->
-                      Error.error "reduce-kv expects a vector or map")))
+                | None when Types.is_dynamic map_type ->
+                    let dynamic = Types.dynamic_constraint TUnknown in
+                    compile_for dynamic dynamic
+                      (apply "Lg_runtime.Runtime_dynamic.entries"
+                         [ collection.semantic_expr ])
+                | None -> Error.error "reduce-kv expects a vector or map")))
       | _ -> Error.error "reduce-kv expects function, init, and vector"
-    
     and compile_some scope env arg_forms =
       match arg_forms with
-      | fn_form :: collection_form :: [] -> (
-          match (compile_function_arg scope env fn_form, compile_expr scope env collection_form) with
+    | [ fn_form; collection_form ] -> (
+        match
+          ( compile_function_arg scope env fn_form,
+            compile_expr scope env collection_form )
+        with
           | (Error _ as err), _ -> err
           | _, (Error _ as err) -> err
           | Ok fn, Ok collection -> (
-              match (fn.ty, collection_to_list_expr collection) with
+            match (fn.ty, collection_to_list_expr env collection) with
               | TFn ([ param_ty ], return_ty), Ok (inner, list_expr)
-                when Types.equal param_ty inner ->
+              when Types.assignable ~policy:Host_boundary ~expected:param_ty
+                     ~actual:inner ->
+                let item = typed_ir inner (Semantic_ir.Ident "item") in
+                let item_argument =
+                  if Types.is_dynamic param_ty then
+                    pack_dynamic_value env param_ty item
+                  else Ok item.semantic_expr
+                in
+                Result.map
+                  (fun item_argument ->
                   let result_ty, present_result =
                     match return_ty with
                     | TOcaml_app ("option", [ _ ]) | TOcaml "option" ->
@@ -696,15 +1042,18 @@ let create ~compile_expr =
                   let body =
                     Semantic_ir.Match
                       ( Semantic_ir.Ident "values",
-                        [ ( Semantic_ir.PList [],
+                          [
+                            ( Semantic_ir.PList [],
                             Semantic_ir.Constructor ("None", None) );
                           ( Semantic_ir.PCons
-                              (Semantic_ir.PVar "item", Semantic_ir.PVar "rest"),
+                                ( Semantic_ir.PVar "item",
+                                  Semantic_ir.PVar "rest" ),
                             Semantic_ir.Let
-                              ( [ ( Semantic_ir.PVar "result",
+                                ( [
+                                    ( Semantic_ir.PVar "result",
                                     Semantic_ir.Apply
-                                      ( fn.semantic_expr,
-                                        [ Semantic_ir.Ident "item" ] ) ) ],
+                                        (fn.semantic_expr, [ item_argument ]) );
+                                  ],
                                 Semantic_ir.If
                                   ( truthiness_expression return_ty
                                       (Semantic_ir.Ident "result"),
@@ -712,22 +1061,22 @@ let create ~compile_expr =
                                     recurse ) ) );
                         ] )
                   in
-                  Ok
-                    (typed_ir result_ty
+                    typed_ir result_ty
                        (Semantic_ir.LetRecIn
                           ( "find_truthy",
                             [ Semantic_ir.PVar "values" ],
                             body,
                             Semantic_ir.Apply
                               (Semantic_ir.Ident "find_truthy", [ list_expr ]) )))
-              | TFn _, Ok _ -> Error.error "some function type must match collection elements"
+                  item_argument
+            | TFn _, Ok _ ->
+                Error.error "some function type must match collection elements"
               | _, Ok _ -> Error.error "some expects a function"
               | _, Error _ -> Error.error "some expects a collection"))
       | _ -> Error.error "some expects function and collection"
-    
     and compile_sequence_bool_predicate scope env name arg_forms =
       match arg_forms with
-      | fn_form :: collection_form :: [] -> (
+    | [ fn_form; collection_form ] -> (
           match compile_expr scope env collection_form with
           | Error _ as error -> error
           | Ok collection -> (
@@ -739,8 +1088,8 @@ let create ~compile_expr =
                   with
                   | Error _ as error -> error
                   | Ok ({ ty = TFn ([ param_ty ], TBool); _ } as predicate)
-                    when Types.assignable ~policy:Host_boundary
-                           ~expected:param_ty ~actual:inner ->
+                  when Types.assignable ~policy:Host_boundary ~expected:param_ty
+                         ~actual:inner ->
                       let predicate_expr =
                         constrain_record_function_argument_expr predicate inner
                       in
@@ -751,8 +1100,8 @@ let create ~compile_expr =
                               Semantic_ir.Prefix
                                 ( "not",
                                   Semantic_ir.Apply
-                                    ( predicate_expr,
-                                      [ Semantic_ir.Ident "item" ] ) ) )
+                                  (predicate_expr, [ Semantic_ir.Ident "item" ])
+                              ) )
                         else predicate_expr
                       in
                       let result =
@@ -774,14 +1123,13 @@ let create ~compile_expr =
                         | _ -> "sequence"
                       in
                       Error.error
-                        (name ^ " expects a predicate matching "
-                       ^ collection_name ^ " elements")
+                      (name ^ " expects a predicate matching " ^ collection_name
+                     ^ " elements")
                   | Ok _ -> Error.error (name ^ " expects a function"))))
       | _ -> Error.error (name ^ " expects function and collection")
-    
     and compile_map_call scope env arg_forms =
       match arg_forms with
-      | fn_form :: collection_form :: [] -> (
+    | [ fn_form; collection_form ] -> (
           match compile_expr scope env collection_form with
           | Error _ as err -> err
           | Ok collection -> (
@@ -803,13 +1151,15 @@ let create ~compile_expr =
                            (apply "Lg_runtime.Runtime_seq.map"
                               [ fn.semantic_expr; sequence ]))
                   | Ok { ty = TFn _; _ } ->
-                      Error.error "map function argument type does not match sequence"
+                    Error.error
+                      "map function argument type does not match sequence"
                   | Ok _ -> Error.error "map expects a function")))
+    | fn_form :: (_ :: _ :: _ as collection_forms) ->
+        compile_multi_map scope env ~vector:false fn_form collection_forms
       | _ -> Error.error "map expects function and collection"
-    
     and compile_filter scope env arg_forms =
       match arg_forms with
-      | fn_form :: collection_form :: [] -> (
+    | [ fn_form; collection_form ] -> (
           match compile_expr scope env collection_form with
           | Error _ as err -> err
           | Ok collection -> (
@@ -829,29 +1179,57 @@ let create ~compile_expr =
                             (typed_ir (TSeq inner)
                                (apply "Lg_runtime.Runtime_seq.filter"
                                   [ fn.semantic_expr; sequence ]))
+                    | ty when Types.is_dynamic ty ->
+                        let item_name = "__lg_dynamic_filter_item" in
+                        let item =
+                          typed_ir inner (Semantic_ir.Ident item_name)
+                        in
+                        Result.map
+                          (fun item ->
+                            let predicate =
+                              Semantic_ir.Fun
+                                ( [ Semantic_ir.PVar item_name ],
+                                  apply "Lg_runtime.Runtime_dynamic.truthy"
+                                    [
+                                      apply "Lg_runtime.Runtime_dynamic.call"
+                                        [
+                                          fn.semantic_expr;
+                                          Semantic_ir.List [ item ];
+                                        ];
+                                    ] )
+                            in
+                            typed_ir (TSeq inner)
+                              (apply "Lg_runtime.Runtime_seq.filter"
+                                 [ predicate; sequence ]))
+                          (pack_dynamic_value env ty item)
                       | TFn _ ->
                           Error.error
-                            "filter expects a predicate matching sequence elements"
+                          "filter expects a predicate matching sequence \
+                           elements"
                       | _ -> Error.error "filter expects a function"))))
       | _ -> Error.error "filter expects function and collection"
-    
     and compile_reduce scope env arg_forms =
       match arg_forms with
-      | fn_form :: init_form :: collection_form :: [] -> (
-          match (compile_expr scope env init_form, compile_expr scope env collection_form) with
+    | [ fn_form; init_form; collection_form ] -> (
+        match
+          ( compile_expr scope env init_form,
+            compile_expr scope env collection_form )
+        with
           | (Error _ as err), _ -> err
           | _, (Error _ as err) -> err
           | Ok init, Ok collection -> (
               match Collection_capability.to_seq_expr env collection with
-              | Error _ -> Error.error "reduce expects a seqable value"
+            | Error _ ->
+                Error.error
+                  ("reduce expects a seqable value, got "
+                  ^ Types.source_name collection.ty)
               | Ok (inner, sequence) -> (
                   match compile_reducer scope env init.ty inner fn_form with
                   | Error _ as err -> err
                   | Ok fn -> (
                       match fn.ty with
                       | TFn ([ acc_ty; item_ty ], TNullable reduced_type)
-                        when Types.equal init.ty TNil
-                             && Types.equal acc_ty TNil
+                      when Types.equal init.ty TNil && Types.equal acc_ty TNil
                              && (Types.equal item_ty inner
                                 || Types.equal inner TUnknown
                                 || Types.assignable ~policy:Host_boundary
@@ -859,7 +1237,8 @@ let create ~compile_expr =
                           match Types.reduced_element reduced_type with
                           | None ->
                               Error.error
-                                "nullable reduce result must contain a reduced value"
+                              "nullable reduce result must contain a reduced \
+                               value"
                           | Some result_type ->
                               let accumulator = Semantic_ir.Ident "accumulator" in
                               let item = Semantic_ir.Ident "item" in
@@ -871,19 +1250,24 @@ let create ~compile_expr =
                                      ( [ nullable_result; item_ty ],
                                        Types.reduced nullable_result ))
                                   (Semantic_ir.Fun
-                                     ( [ Semantic_ir.PVar "accumulator";
-                                         Semantic_ir.PVar "item" ],
+                                   ( [
+                                       Semantic_ir.PVar "accumulator";
+                                       Semantic_ir.PVar "item";
+                                     ],
                                        Semantic_ir.Match
                                          ( Semantic_ir.Apply
                                              ( fn.semantic_expr,
                                                [ accumulator; item ] ),
-                                           [ ( Semantic_ir.PConstructor
+                                         [
+                                           ( Semantic_ir.PConstructor
                                                  ("None", None),
                                                Semantic_ir.Apply
                                                  ( Semantic_ir.Ident
                                                      "Lg_runtime.Runtime_reduced.continue",
-                                                   [ Semantic_ir.Constructor
-                                                       ("None", None) ] ) );
+                                                 [
+                                                   Semantic_ir.Constructor
+                                                     ("None", None);
+                                                 ] ) );
                                              ( Semantic_ir.PConstructor
                                                  ( "Some",
                                                    Some
@@ -892,14 +1276,20 @@ let create ~compile_expr =
                                                Semantic_ir.Apply
                                                  ( Semantic_ir.Ident
                                                      "Lg_runtime.Runtime_reduced.reduced",
-                                                   [ Semantic_ir.Constructor
+                                                 [
+                                                   Semantic_ir.Constructor
                                                        ( "Some",
                                                          Some
                                                            (Semantic_ir.Apply
                                                               ( Semantic_ir.Ident
                                                                   "Lg_runtime.Runtime_reduced.unreduced",
-                                                                [ Semantic_ir.Ident
-                                                                    reduced_value ] )) ) ] ) ) ] ) ))
+                                                              [
+                                                                Semantic_ir
+                                                                .Ident
+                                                                  reduced_value;
+                                                              ] )) );
+                                                 ] ) );
+                                         ] ) ))
                               in
                               Ok
                                 (typed_ir nullable_result
@@ -928,12 +1318,13 @@ let create ~compile_expr =
                                 || Types.equal inner TUnknown
                                 || Types.assignable ~policy:Host_boundary
                                      ~expected:item_ty ~actual:inner)
-                             && (match Types.reduced_element ret with
+                           &&
+                           match Types.reduced_element ret with
                                 | Some (TNullable _) -> false
                                 | Some reduced_ty ->
                                     Types.assignable ~policy:Host_boundary
                                       ~expected:init.ty ~actual:reduced_ty
-                                | None -> false) ->
+                           | None -> false ->
                           Ok
                             (typed_ir init.ty
                                (Collection_capability.reduce_expr env
@@ -959,21 +1350,26 @@ let create ~compile_expr =
                                      ( [ nullable_init; item_ty ],
                                        Types.reduced nullable_init ))
                                   (Semantic_ir.Fun
-                                     ( [ Semantic_ir.PVar "accumulator";
-                                         Semantic_ir.PVar "item" ],
+                                   ( [
+                                       Semantic_ir.PVar "accumulator";
+                                       Semantic_ir.PVar "item";
+                                     ],
                                        Semantic_ir.Match
                                          ( accumulator,
-                                           [ ( Semantic_ir.PConstructor
+                                         [
+                                           ( Semantic_ir.PConstructor
                                                  ("None", None),
                                                Semantic_ir.Apply
                                                  ( Semantic_ir.Ident
                                                      "Lg_runtime.Runtime_reduced.reduced",
-                                                   [ Semantic_ir.Constructor
-                                                       ("None", None) ] ) );
+                                                 [
+                                                   Semantic_ir.Constructor
+                                                     ("None", None);
+                                                 ] ) );
                                              ( Semantic_ir.PConstructor
                                                  ( "Some",
-                                                   Some
-                                                     (Semantic_ir.PVar "value") ),
+                                                 Some (Semantic_ir.PVar "value")
+                                               ),
                                                Semantic_ir.Apply
                                                  ( fn.semantic_expr,
                                                    [ value; item ] ) );
@@ -996,12 +1392,28 @@ let create ~compile_expr =
                           | _ -> Error.error "reduced value must match init")
                       | TFn _ ->
                           Error.error
-                            ("reduce function type does not match init and sequence: fn="
-                           ^ Types.source_name fn.ty ^ ", init="
+                          ("reduce function type does not match init and \
+                            sequence: fn=" ^ Types.source_name fn.ty ^ ", init="
                            ^ Types.source_name init.ty ^ ", sequence="
                            ^ Types.source_name inner)
                       | _ -> Error.error "reduce expects a function"))))
       | _ -> Error.error "reduce expects function, init, and collection"
-    
   in
-  { compile_sort_by; compile_mapcat; compile_repeatedly; compile_reductions; compile_split_with; compile_partition_by; compile_run_bang; compile_map_indexed; compile_filterv; compile_mapv; compile_reduce_kv; compile_some; compile_sequence_bool_predicate; compile_map_call; compile_filter; compile_reduce }
+  {
+    compile_sort_by;
+    compile_mapcat;
+    compile_repeatedly;
+    compile_reductions;
+    compile_split_with;
+    compile_partition_by;
+    compile_run_bang;
+    compile_map_indexed;
+    compile_filterv;
+    compile_mapv;
+    compile_reduce_kv;
+    compile_some;
+    compile_sequence_bool_predicate;
+    compile_map_call;
+    compile_filter;
+    compile_reduce;
+  }

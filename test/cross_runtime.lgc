@@ -26,6 +26,9 @@
 
 (def joined (string/join "-" ["a" "b"]))
 
+(def regex-matched
+  (boolean (re-matches #"(?:([^/]+)/)?_([^/]+)" "user/_friend")))
+
 (println
   (str environment ":" (selected-sum 1 2 3 4) ":" lazy-total ":" stopped ":"
-       (contains? values 3) ":" joined))
+       (contains? values 3) ":" joined ":" regex-matched))

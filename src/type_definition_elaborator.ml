@@ -1,42 +1,72 @@
 open Ast
 open Types
 open Lowered
-
 module Env = Compiler_environment
+
 let record_type_key = Resolver.record_type_key
 
 let declare_type scope env name kind =
   Type_registry.declare ~scope name kind (Env.types env)
-  |> Result.map (fun (type_id, types) ->
-         (type_id, Env.with_types types env))
+  |> Result.map (fun (type_id, types) -> (type_id, Env.with_types types env))
 
-let compile_type_alias ?location scope env next_type name type_parameters manifest_form =
+let compile_type_alias ?location scope env next_type name type_parameters
+    manifest_form =
   match manifest_form with
   | FKeyword keyword -> (
-      match Type_annotation.of_keyword_with_parameters type_parameters keyword with
-      | (Error _ as err)
+      match
+        Type_annotation.of_keyword_with_parameters type_parameters keyword
+      with
+      | Error _ as err
         when String.starts_with ~prefix:":ocaml/" keyword
              || String.starts_with ~prefix:":param/" keyword ->
           err
       | Error _ -> Error.error ("unknown type alias target " ^ keyword)
-      | Ok manifest ->
+      | Ok manifest -> (
           let type_name = Names.sanitize_name name in
-          (match declare_type scope env name Alias with
+          match declare_type scope env name Alias with
           | Error _ as err -> err
           | Ok (_type_id, env) ->
               Ok
                 ( scope,
                   env,
                   next_type,
-                  Type_alias { type_name; type_parameters; manifest; location } )))
+                  Type_alias { type_name; type_parameters; manifest; location }
+                )))
   | _ -> Error.error "type-alias expects a type keyword target"
 
-let compile_type_record ?location ?(allow_empty = false) scope env next_type name
-    type_parameters field_forms =
+let compile_type_record_fields ?location ?(allow_empty = false) scope env
+    next_type name type_parameters fields =
+  if fields = [] && not allow_empty then
+    Error.error "type-record expects at least one field"
+  else
+    let type_name = Names.sanitize_name name in
+    match declare_type scope env name Record with
+    | Error _ as err -> err
+    | Ok (type_id, env) ->
+        let record_ty =
+          Types.named_record ~type_id ~nominal:true ~type_name ~type_parameters
+            ~set_module_name:(type_name ^ "_set") fields
+        in
+        let env =
+          Env.add
+            (record_type_key scope name)
+            (Types.binding type_name record_ty)
+            env
+        in
+        Ok
+          ( scope,
+            env,
+            next_type,
+            Type_def { type_name; type_parameters; fields; location } )
+
+let compile_type_record ?location ?(allow_empty = false) scope env next_type
+    name type_parameters field_forms =
   let field_spec = function
-    | FList [ ((FSymbol field_name) as name_form); FKeyword keyword ] -> (
-        match Type_annotation.of_keyword_with_parameters type_parameters keyword with
-        | (Error _ as err)
+    | FList [ (FSymbol field_name as name_form); FKeyword keyword ] -> (
+        match
+          Type_annotation.of_keyword_with_parameters type_parameters keyword
+        with
+        | Error _ as err
           when String.starts_with ~prefix:":ocaml/" keyword
                || String.starts_with ~prefix:":param/" keyword ->
             err
@@ -59,33 +89,17 @@ let compile_type_record ?location ?(allow_empty = false) scope env next_type nam
         | Ok field ->
             if
               List.exists
-                (fun (existing : field) -> existing.ocaml_name = field.ocaml_name)
+                (fun (existing : field) ->
+                  existing.ocaml_name = field.ocaml_name)
                 fields
             then Error.error "duplicate record field name"
             else parse (field :: fields) rest)
   in
   match parse [] field_forms with
   | Error _ as err -> err
-  | Ok [] when not allow_empty ->
-      Error.error "type-record expects at least one field"
   | Ok fields ->
-      let type_name = Names.sanitize_name name in
-      (match declare_type scope env name Record with
-      | Error _ as err -> err
-      | Ok (type_id, env) ->
-          let record_ty =
-            Types.named_record ~type_id ~nominal:true ~type_name ~type_parameters
-              ~set_module_name:(type_name ^ "_set") fields
-          in
-          let env =
-            Env.add (record_type_key scope name)
-              (Types.binding type_name record_ty) env
-          in
-          Ok
-            ( scope,
-              env,
-              next_type,
-              Type_def { type_name; type_parameters; fields; location } ))
+      compile_type_record_fields ?location ~allow_empty scope env next_type name
+        type_parameters fields
 
 let record_type_public_binding module_path name env =
   let key = record_type_key module_path name in
@@ -96,15 +110,16 @@ let record_type_public_binding module_path name env =
 let compile_type_variant ?location scope env next_type name type_parameters
     constructor_forms =
   let constructor_name = function
-    | (FSymbol constructor as form) ->
-        Ok (constructor, Source_context.find form)
+    | FSymbol constructor as form -> Ok (constructor, Source_context.find form)
     | _ -> Error.error "type-variant constructors must be symbols"
   in
   let payload_type = function
     | FKeyword keyword -> (
-        match Type_annotation.of_keyword_with_parameters type_parameters keyword with
+        match
+          Type_annotation.of_keyword_with_parameters type_parameters keyword
+        with
         | Ok ty -> Ok ty
-        | (Error _ as err)
+        | Error _ as err
           when String.starts_with ~prefix:":ocaml/" keyword
                || String.starts_with ~prefix:":param/" keyword ->
             err
@@ -112,9 +127,10 @@ let compile_type_variant ?location scope env next_type name type_parameters
     | _ -> Error.error "type-variant payload types must be keywords"
   in
   let constructor_spec = function
-    | (FSymbol constructor as form) ->
+    | FSymbol constructor as form ->
         Ok
-          { constructor_name = constructor;
+          {
+            constructor_name = constructor;
             payload_types = [];
             location = Source_context.find form;
           }
@@ -145,19 +161,22 @@ let compile_type_variant ?location scope env next_type name type_parameters
                 (fun existing ->
                   existing.constructor_name = constructor.constructor_name)
                 constructors
-            then Error.error ("duplicate variant constructor " ^ constructor.constructor_name)
+            then
+              Error.error
+                ("duplicate variant constructor " ^ constructor.constructor_name)
             else parse (constructor :: constructors) rest)
   in
   match parse [] constructor_forms with
   | Error _ as err -> err
   | Ok [] -> Error.error "type-variant expects at least one constructor"
-  | Ok constructors ->
+  | Ok constructors -> (
       let type_name = Names.sanitize_name name in
       let constructor_bindings =
         let result_type =
           match type_parameters with
           | [] -> TOcaml type_name
-          | parameters -> TOcaml_app (type_name, List.map (fun name -> TVar name) parameters)
+          | parameters ->
+              TOcaml_app (type_name, List.map (fun name -> TVar name) parameters)
         in
         constructors
         |> List.map (fun constructor ->
@@ -165,7 +184,7 @@ let compile_type_variant ?location scope env next_type name type_parameters
                  Types.binding constructor.constructor_name
                    (TFn (constructor.payload_types, result_type)) ))
       in
-      (match declare_type scope env name Variant with
+      match declare_type scope env name Variant with
       | Error _ as err -> err
       | Ok (_type_id, env) ->
           Ok

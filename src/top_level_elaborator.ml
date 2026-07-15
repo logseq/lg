@@ -1,41 +1,75 @@
 open Ast
 open Types
 open Lowered
-
 module Env = Compiler_environment
 
 let compile_expr = Expression_elaborator.compile_expr
 let prepare_fn = Expression_elaborator.prepare_fn
 let prepare_recursive_fn = Expression_elaborator.prepare_recursive_fn
+
 let prepare_inferred_recursive_fn =
   Expression_elaborator.prepare_inferred_recursive_fn
+
 let fn_code = Expression_elaborator.fn_code
 let compile_fn = Expression_elaborator.compile_fn
 let compile_args_for = Expression_elaborator.compile_args_for
 let compile_call = Expression_elaborator.compile_call
 let binding_of_expr = Expression_support.binding_of_expr
 let allocate_anonymous_record = Expression_support.allocate_anonymous_record
+
+let allocate_nested_anonymous_records =
+  Expression_support.allocate_nested_anonymous_records
+
 let row_param_type_names = Expression_support.row_param_type_names
 let row_type_items = Expression_support.row_type_items
 let check_emitted_name_collision = Resolver.check_emitted_name_collision
 let unresolved_contextual_type = Expression_support.unresolved_contextual_type
 let lookup_record_type = Resolver.lookup_record_type
 let record_type_key = Resolver.record_type_key
+
 let inherit_scope_ocaml_value_refers =
   Expression_support.inherit_scope_ocaml_value_refers
 
 let rec form_mentions_symbol name = function
   | FSymbol candidate -> candidate = name
-  | FList forms | FVector forms ->
-      List.exists (form_mentions_symbol name) forms
+  | FList forms | FVector forms -> List.exists (form_mentions_symbol name) forms
   | FMap pairs ->
       List.exists
         (fun (key, value) ->
           form_mentions_symbol name key || form_mentions_symbol name value)
         pairs
-  | FInt _ | FFloat _ | FChar _ | FString _ | FRegex _ | FBool _
-  | FKeyword _ ->
+  | FInt _ | FFloat _ | FChar _ | FString _ | FRegex _ | FBool _ | FKeyword _ ->
       false
+
+let order_protocol_groups groups =
+  let method_names (_, methods) =
+    List.filter_map
+      (function
+        | FList (FSymbol method_name :: _) -> Some method_name | _ -> None)
+      methods
+  in
+  let depends_on (_, methods) provider =
+    method_names provider
+    |> List.exists (fun method_name ->
+        List.exists (form_mentions_symbol method_name) methods)
+  in
+  let rec order ordered remaining =
+    match
+      List.find_opt
+        (fun candidate ->
+          not
+            (List.exists
+               (fun provider ->
+                 provider != candidate && depends_on candidate provider)
+               remaining))
+        remaining
+    with
+    | None -> List.rev_append ordered remaining
+    | Some candidate ->
+        order (candidate :: ordered)
+          (List.filter (fun group -> group != candidate) remaining)
+  in
+  order [] groups
 
 let expression_references_declaration env expression =
   let declared_names =
@@ -69,9 +103,178 @@ let open_module_bindings = Module_environment.open_bindings
 let parse_type_parameters = Type_parameters.parse
 let compile_type_alias = Type_definition_elaborator.compile_type_alias
 let compile_type_record = Type_definition_elaborator.compile_type_record
+
+let compile_type_record_fields =
+  Type_definition_elaborator.compile_type_record_fields
+
 let compile_type_variant = Type_definition_elaborator.compile_type_variant
 
+let rec concrete_defrecord_field_type = function
+  | TUnknown | TVar _ | TRecord _ -> None
+  | ty when Types.is_dynamic ty -> None
+  | ty when Option.is_some (Types.protocol_constraint_info ty) -> None
+  | ty when Option.is_some (Types.seqable_constraint_info ty) -> None
+  | TNullable ty ->
+      Option.map (fun ty -> TNullable ty) (concrete_defrecord_field_type ty)
+  | TOcaml_app (name, arguments) ->
+      let rec concrete arguments =
+        match arguments with
+        | [] -> Some []
+        | argument :: rest ->
+            Option.bind (concrete_defrecord_field_type argument)
+              (fun argument ->
+                Option.map (fun rest -> argument :: rest) (concrete rest))
+      in
+      Option.map
+        (fun arguments -> TOcaml_app (name, arguments))
+        (concrete arguments)
+  | TTuple items ->
+      let rec concrete items =
+        match items with
+        | [] -> Some []
+        | item :: rest ->
+            Option.bind (concrete_defrecord_field_type item) (fun item ->
+                Option.map (fun rest -> item :: rest) (concrete rest))
+      in
+      Option.map (fun items -> TTuple items) (concrete items)
+  | TArray ty ->
+      Option.map (fun ty -> TArray ty) (concrete_defrecord_field_type ty)
+  | TRef ty -> Option.map (fun ty -> TRef ty) (concrete_defrecord_field_type ty)
+  | TList ty ->
+      Option.map (fun ty -> TList ty) (concrete_defrecord_field_type ty)
+  | TVector ty ->
+      Option.map (fun ty -> TVector ty) (concrete_defrecord_field_type ty)
+  | TSet ty -> Option.map (fun ty -> TSet ty) (concrete_defrecord_field_type ty)
+  | TSeq ty -> Option.map (fun ty -> TSeq ty) (concrete_defrecord_field_type ty)
+  | TFn (parameters, return_ty) ->
+      let rec concrete parameters =
+        match parameters with
+        | [] -> Some []
+        | parameter :: rest ->
+            Option.bind (concrete_defrecord_field_type parameter)
+              (fun parameter ->
+                Option.map (fun rest -> parameter :: rest) (concrete rest))
+      in
+      Option.bind (concrete parameters) (fun parameters ->
+          Option.map
+            (fun return_ty -> TFn (parameters, return_ty))
+            (concrete_defrecord_field_type return_ty))
+  | TOverloaded_fn _ -> None
+  | ( TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
+    | TBool | TUnit | TNil | TOcaml _ | TNamed_record _ ) as ty ->
+      Some ty
+
+let rec type_parameters_of_type = function
+  | TVar name -> [ name ]
+  | TNullable ty
+  | TArray ty
+  | TRef ty
+  | TList ty
+  | TVector ty
+  | TSet ty
+  | TSeq ty ->
+      type_parameters_of_type ty
+  | TOcaml_app (_, arguments) | TTuple arguments ->
+      List.concat_map type_parameters_of_type arguments
+  | TFn (parameters, return_ty) ->
+      List.concat_map type_parameters_of_type (return_ty :: parameters)
+  | TOverloaded_fn arities ->
+      arities
+      |> List.concat_map (fun (arity : fn_arity) ->
+          type_parameters_of_type arity.return_ty
+          @ List.concat_map type_parameters_of_type arity.fixed_params
+          @ Option.fold ~none:[] ~some:type_parameters_of_type arity.rest_param)
+  | TRecord fields ->
+      fields
+      |> List.concat_map (fun (field : field) ->
+          type_parameters_of_type field.ty)
+  | TNamed_record record -> record.type_parameters
+  | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
+  | TBool | TUnit | TNil | TUnknown | TOcaml _ ->
+      []
+
+let infer_defrecord_field_types scope env field_names interface_forms =
+  let field_name accessor =
+    List.find_opt (fun name -> accessor = ".-" ^ name) field_names
+  in
+  let rec rewrite_field_access receiver = function
+    | FList [ FSymbol accessor; FSymbol target ]
+      when target = receiver && Option.is_some (field_name accessor) ->
+        FSymbol (Option.get (field_name accessor))
+    | FList forms -> FList (List.map (rewrite_field_access receiver) forms)
+    | FVector forms -> FVector (List.map (rewrite_field_access receiver) forms)
+    | FMap pairs ->
+        FMap
+          (List.map
+             (fun (key, value) ->
+               ( rewrite_field_access receiver key,
+                 rewrite_field_access receiver value ))
+             pairs)
+    | form -> form
+  in
+  let lookup_function_ty = Expression_elaborator.lookup_function_ty scope env in
+  let lookup_protocol_constraint = Protocol.constraint_type scope env in
+  let infer_method field_types = function
+    | FList
+        (_method_name
+        :: FVector (FSymbol receiver :: method_params)
+        :: body_forms) -> (
+        let method_params =
+          method_params
+          |> List.filter_map (function
+            | FSymbol name when not (List.mem name field_names) ->
+                Some (name, TUnknown)
+            | _ -> None)
+        in
+        let params =
+          ((receiver, TUnknown) :: method_params)
+          @ List.map (fun name -> (name, TUnknown)) field_names
+        in
+        let body_forms = List.map (rewrite_field_access receiver) body_forms in
+        match
+          Type_inference.infer_params ~lookup_function_ty
+            ~lookup_protocol_constraint params body_forms
+        with
+        | Error _ -> field_types
+        | Ok inferred ->
+            List.map2
+              (fun name previous ->
+                let inferred =
+                  List.assoc_opt name inferred |> Option.value ~default:TUnknown
+                in
+                match
+                  ( concrete_defrecord_field_type previous,
+                    concrete_defrecord_field_type inferred )
+                with
+                | _, Some (TNamed_record _ as inferred) -> inferred
+                | None, Some inferred -> inferred
+                | Some previous, _ -> previous
+                | None, None -> previous)
+              field_names field_types)
+    | _ -> field_types
+  in
+  interface_forms
+  |> List.fold_left infer_method (List.map (fun _ -> TUnknown) field_names)
+  |> List.map (fun ty ->
+      concrete_defrecord_field_type ty
+      |> Option.value ~default:(Types.dynamic_constraint TUnknown))
+  |> Fun.id
+
 let rec compile scope env next_type = function
+  | FList
+      [
+        FSymbol "do";
+        FList
+          [
+            FSymbol "defrecord";
+            (FSymbol record_name as name_form);
+            (FVector _ as fields);
+          ];
+        FList (FSymbol "extend-type" :: FSymbol receiver_name :: implementations);
+      ]
+    when record_name = receiver_name ->
+      compile scope env next_type
+        (FList (FSymbol "defrecord" :: name_form :: fields :: implementations))
   | FList (FSymbol "do" :: forms) ->
       let items_of = function Group items -> items | item -> [ item ] in
       let rec compile_forms scope env next_type items = function
@@ -86,13 +289,14 @@ let rec compile scope env next_type = function
       in
       compile_forms scope env next_type [] forms
   | FList
-      (FSymbol "defrecord" :: ((FSymbol name) as name_form)
+      (FSymbol "defrecord"
+      :: (FSymbol name as name_form)
       :: FVector raw_fields
       :: interface_forms) ->
       let rec field_names acc = function
         | [] -> Ok (List.rev acc)
-        | FSymbol metadata :: rest
-          when String.starts_with ~prefix:"^" metadata ->
+        | FSymbol metadata :: rest when String.starts_with ~prefix:"^" metadata
+          ->
             field_names acc rest
         | FSymbol field_name :: rest -> field_names (field_name :: acc) rest
         | _ -> Error.error "defrecord fields must be symbols"
@@ -112,32 +316,40 @@ let rec compile scope env next_type = function
             protocol_groups groups (Some (protocol_name, [])) rest
         | (FList _ as method_form) :: rest -> (
             match current with
-            | None ->
-                Error.error "defrecord method requires a protocol name"
+            | None -> Error.error "defrecord method requires a protocol name"
             | Some (protocol_name, methods) ->
                 protocol_groups groups
-                  (Some (protocol_name, method_form :: methods)) rest)
+                  (Some (protocol_name, method_form :: methods))
+                  rest)
         | _ :: _ -> Error.error "invalid defrecord protocol implementation"
       in
       let items_of = function Group items -> items | item -> [ item ] in
       Result.bind (field_names [] raw_fields) (fun fields ->
-          let type_parameters = [] in
-          let field_forms =
-            List.map
-              (fun field_name ->
-                FList [ FSymbol field_name; FKeyword ":dynamic" ])
-              fields
+          let field_types =
+            infer_defrecord_field_types scope env fields interface_forms
+          in
+          let type_parameters =
+            field_types
+            |> List.concat_map type_parameters_of_type
+            |> List.sort_uniq String.compare
+          in
+          let record_fields =
+            List.map2
+              (fun field_name ty -> Types.make_field (":" ^ field_name) ty)
+              fields field_types
           in
           match
-            Type_definition_elaborator.compile_type_record
-              ?location:(Source_context.find name_form) ~allow_empty:true scope
-              env next_type name type_parameters field_forms
+            compile_type_record_fields
+              ?location:(Source_context.find name_form)
+              ~allow_empty:true scope env next_type name type_parameters
+              record_fields
           with
           | Error _ as error -> error
           | Ok (scope, env, next_type, type_item) -> (
               match protocol_groups [] None interface_forms with
               | Error _ as error -> error
               | Ok groups ->
+                  let groups = order_protocol_groups groups in
                   let rec compile_groups env next_type items = function
                     | [] -> Ok (scope, env, next_type, Group items)
                     | (protocol_name, methods) :: rest -> (
@@ -146,50 +358,66 @@ let rec compile scope env next_type = function
                             (function
                               | FList
                                   (FSymbol method_name
-                                  :: (FVector
-                                       (FSymbol receiver_name :: _) as params)
+                                  :: (FVector (FSymbol receiver_name :: _) as
+                                      params)
                                   :: body_forms) ->
                                   let field_bindings =
                                     fields
                                     |> List.concat_map (fun field_name ->
-                                           [ FSymbol field_name;
+                                        [
+                                          FSymbol field_name;
                                              FList
-                                               [ FSymbol (".-" ^ field_name);
+                                            [
+                                              FSymbol (".-" ^ field_name);
                                                  FSymbol receiver_name;
                                                ];
                                            ])
                                   in
                                   FList
-                                    [ FSymbol method_name;
+                                    [
+                                      FSymbol method_name;
                                       params;
                                       FList
-                                        (FSymbol "let"
-                                        :: FVector field_bindings
+                                        (FSymbol "let" :: FVector field_bindings
                                         :: body_forms);
                                     ]
                               | method_form -> method_form)
                             methods
                         in
+                        let implementation_form =
                         match
-                          compile scope env next_type
-                            (FList
+                            Protocol.find_protocol_id scope env protocol_name
+                          with
+                          | Some _ ->
+                              FList
                                (FSymbol "extend-type" :: FSymbol name
-                              :: FSymbol protocol_name :: methods))
+                               :: FSymbol protocol_name :: methods)
+                          | None ->
+                              FList
+                                (FSymbol "deftype-methods" :: FSymbol name
+                               :: FSymbol protocol_name :: methods)
+                        in
+                        match
+                          compile scope env next_type implementation_form
                         with
                         | Error _ as error -> error
                         | Ok (_, env, next_type, item) ->
                             compile_groups env next_type
-                              (items @ items_of item) rest)
+                              (items @ items_of item)
+                              rest)
                   in
                   compile_groups env next_type (items_of type_item) groups))
   | FList
-      (FSymbol "deftype" :: ((FSymbol name) as name_form) :: FVector raw_fields
+      (FSymbol "deftype"
+      :: (FSymbol name as name_form)
+      :: FVector raw_fields
       :: _interface_forms) ->
       let rec field_specs acc metadata mutable_field = function
         | [] -> Ok (List.rev acc)
         | FSymbol ("^:mutable" | "^:unsynchronized-mutable") :: rest ->
             field_specs acc metadata true rest
-        | FSymbol metadata :: rest when String.starts_with ~prefix:"^" metadata ->
+        | FSymbol metadata :: rest when String.starts_with ~prefix:"^" metadata
+          ->
             field_specs acc (Some metadata) mutable_field rest
         | FSymbol field_name :: rest ->
             field_specs
@@ -206,8 +434,7 @@ let rec compile scope env next_type = function
                      let parameter = "field" ^ string_of_int index in
                      let field_type, parameters =
                        match metadata with
-                       | Some ("^int" | "^long" | "^number") ->
-                           ("int", [])
+                    | Some ("^int" | "^long" | "^number") -> ("int", [])
                        | Some ("^boolean" | "^Boolean") -> ("bool", [])
                        | Some ("^double" | "^float") -> ("float", [])
                        | Some "^String" -> ("string", [])
@@ -219,36 +446,44 @@ let rec compile scope env next_type = function
                      in
                      match metadata with
                      | Some ("^int" | "^long" | "^number") ->
-                         (parameters, FList [ FSymbol field_name; FKeyword (":" ^ field_type) ])
+                      ( parameters,
+                        FList
+                          [ FSymbol field_name; FKeyword (":" ^ field_type) ] )
                      | Some ("^boolean" | "^Boolean") ->
-                         (parameters, FList [ FSymbol field_name; FKeyword (":" ^ field_type) ])
+                      ( parameters,
+                        FList
+                          [ FSymbol field_name; FKeyword (":" ^ field_type) ] )
                      | Some ("^double" | "^float") ->
-                         (parameters, FList [ FSymbol field_name; FKeyword (":" ^ field_type) ])
+                      ( parameters,
+                        FList
+                          [ FSymbol field_name; FKeyword (":" ^ field_type) ] )
                      | Some "^String" ->
-                         (parameters, FList [ FSymbol field_name; FKeyword (":" ^ field_type) ])
+                      ( parameters,
+                        FList
+                          [ FSymbol field_name; FKeyword (":" ^ field_type) ] )
                      | Some "^clojure.lang.Associative" ->
                          let key_parameter = parameter ^ "_key" in
                          let value_parameter = parameter ^ "_value" in
                          ( [ key_parameter; value_parameter ],
                            FList
-                             [ FSymbol field_name;
+                          [
+                            FSymbol field_name;
                                FKeyword
-                                 (":Lg_runtime.Runtime_map.t<"
-                                ^ key_parameter ^ ";" ^ value_parameter ^ ">");
+                              (":Lg_runtime.Runtime_map.t<" ^ key_parameter
+                             ^ ";" ^ value_parameter ^ ">");
                              ] )
                      | _ ->
                          ( parameters,
                            FList
-                             [ FSymbol field_name;
-                               FKeyword (":" ^ field_type);
-                             ] ))
+                          [ FSymbol field_name; FKeyword (":" ^ field_type) ] ))
             in
             let type_parameters = List.concat_map fst definitions in
             let field_forms = List.map snd definitions in
-            compile_type_record ?location:(Source_context.find name_form) scope env
-              next_type name type_parameters field_forms)
-  | FList
-      (FSymbol "deftype-methods" :: FSymbol type_name :: interface_forms) -> (
+            compile_type_record
+              ?location:(Source_context.find name_form)
+              scope env next_type name type_parameters field_forms)
+  | FList (FSymbol "deftype-methods" :: FSymbol type_name :: interface_forms)
+    -> (
       match Resolver.lookup_record_type scope env type_name with
       | Error _ as err -> err
       | Ok record ->
@@ -258,15 +493,17 @@ let rec compile scope env next_type = function
             | FSymbol interface_name :: rest ->
                 compile_methods env items (Some interface_name) rest
             | FList
-                (FSymbol method_name :: (FVector params as params_form)
+                (FSymbol method_name
+                :: (FVector params as params_form)
                 :: body_forms)
-              :: rest ->
+              :: rest -> (
                 if current_interface = Some "IPrintWithWriter" then
                   compile_methods env items current_interface rest
                 else
                 let arity = List.length params in
                 let source_name =
-                  Expression_support.deftype_method_name record method_name arity
+                    Expression_support.deftype_method_name record method_name
+                      arity
                 in
                 let ocaml_name = Names.sanitize_name source_name in
                 let receiver_name, params_form =
@@ -292,17 +529,17 @@ let rec compile scope env next_type = function
                       false
                 in
                 let rec rewrite_mutable_assignments = function
-                  | FList
-                      [ FSymbol "set!";
-                        FSymbol field_name;
-                        value_form ] -> (
+                    | FList [ FSymbol "set!"; FSymbol field_name; value_form ]
+                      -> (
                       let keyword = ":" ^ field_name in
                       match Types.find_field keyword record.fields with
                       | Some { ty = TRef _; _ } ->
                           FList
-                            [ FSymbol "reset!";
+                              [
+                                FSymbol "reset!";
                               FList
-                                [ FSymbol "__deftype-field-ref";
+                                  [
+                                    FSymbol "__deftype-field-ref";
                                   FKeyword keyword;
                                   FSymbol receiver_name;
                                 ];
@@ -310,7 +547,8 @@ let rec compile scope env next_type = function
                             ]
                       | _ ->
                           FList
-                            [ FSymbol "set!";
+                              [
+                                FSymbol "set!";
                               FSymbol field_name;
                               rewrite_mutable_assignments value_form;
                             ])
@@ -341,35 +579,38 @@ let rec compile scope env next_type = function
                          let source_name =
                            Names.keyword_source_name field.keyword
                          in
-                         [ FSymbol source_name;
+                        [
+                          FSymbol source_name;
                            FList
-                             [ FSymbol (".-" ^ source_name);
+                            [
+                              FSymbol (".-" ^ source_name);
                                FSymbol receiver_name;
                              ];
                          ])
                 in
                 let body_forms =
-                  [ FList
-                      (FSymbol "let" :: FVector field_bindings :: body_forms)
+                    [
+                      FList
+                        (FSymbol "let" :: FVector field_bindings :: body_forms);
                   ]
                 in
-                (match
+                  match
                    Expression_elaborator.compile_fn
                      ~param_type_overrides:[ Some receiver_ty ] scope env
                      params_form body_forms
                  with
                 | Error _ as err -> err
-                | Ok implementation ->
+                  | Ok implementation -> (
                     let binding = binding_of_expr ocaml_name implementation in
                     let register_protocol env =
                       match current_interface with
                       | Some protocol_name
                         when Option.is_some
-                               (Protocol.find_protocol_id scope env protocol_name)
+                                 (Protocol.find_protocol_id scope env
+                                    protocol_name)
                              && Option.is_some
                                   (Protocol.lookup_protocol_marker scope env
-                                     protocol_name method_name)
-                        -> (
+                                       protocol_name method_name) -> (
                           match
                             Protocol_elaborator.marker scope env protocol_name
                               method_name
@@ -380,15 +621,18 @@ let rec compile scope env next_type = function
                                 method_name receiver_ty marker binding)
                       | _ -> Ok env
                     in
-                    (match register_protocol env with
+                      match register_protocol env with
                     | Error _ as error -> error
                     | Ok env ->
                         let env =
-                          Env.add (Names.scoped_key scope source_name) binding env
+                            Env.add
+                              (Names.scoped_key scope source_name)
+                              binding env
                         in
                         let item =
                           Value_binding
-                            { pattern = Named ocaml_name;
+                              {
+                                pattern = Named ocaml_name;
                               expression = implementation.semantic_expr;
                             }
                         in
@@ -400,11 +644,14 @@ let rec compile scope env next_type = function
           in
           compile_methods env [] None interface_forms)
   | FList
-      (FSymbol "defmethod" :: FSymbol "print-method" :: FSymbol type_name
-      :: ((FVector _) as params_form) :: body_forms) -> (
+      (FSymbol "defmethod"
+      :: FSymbol "print-method"
+      :: FSymbol type_name
+      :: (FVector _ as params_form)
+      :: body_forms) -> (
       match Resolver.lookup_record_type scope env type_name with
       | Error _ as error -> error
-      | Ok record ->
+      | Ok record -> (
             let source_name = Expression_support.print_method_name record in
             let ocaml_name = Names.sanitize_name source_name in
             match
@@ -424,9 +671,10 @@ let rec compile scope env next_type = function
                     env,
                     next_type,
                     Value_binding
-                      { pattern = Named ocaml_name;
+                    {
+                      pattern = Named ocaml_name;
                         expression = implementation.semantic_expr;
-                      } ))
+                    } )))
   | FList (FSymbol "defmethod" :: _) ->
       Error.error "defmethod currently supports print-method"
   | FList (FSymbol "defn-group" :: definitions) ->
@@ -434,13 +682,13 @@ let rec compile scope env next_type = function
         definitions
         |> List.fold_left
              (fun env -> function
-               | FList
-                   (FSymbol ("defn" | "defn-") :: FSymbol name :: _) ->
+               | FList (FSymbol ("defn" | "defn-") :: FSymbol name :: _) ->
                    let key = Names.scoped_key scope name in
                    if Option.is_some (Env.find_opt key env) then env
                    else
                      Env.add key
-                       (Types.binding (Names.ocaml_binding_name scope name)
+                       (Types.binding
+                          (Names.ocaml_binding_name scope name)
                           (TOcaml "__declared_fn"))
                        env
                | _ -> env)
@@ -456,7 +704,8 @@ let rec compile scope env next_type = function
                   (List.rev row_items
                   @ [ Recursive_value_bindings (List.rev bindings) ]) )
         | FList
-            (FSymbol ("defn" | "defn-") :: ((FSymbol name) as name_form)
+            (FSymbol ("defn" | "defn-")
+            :: (FSymbol name as name_form)
             :: params :: body_forms)
           :: rest -> (
             let ocaml_name = Names.ocaml_binding_name scope name in
@@ -489,12 +738,11 @@ let rec compile scope env next_type = function
                 let binding =
                   binding_of_expr ~row_param_types ocaml_name expr
                 in
-                let env =
-                  Env.add (Names.scoped_key scope name) binding env
-                in
+                let env = Env.add (Names.scoped_key scope name) binding env in
                 let rows = row_type_items row_param_types param_tys in
                 let recursive_binding =
-                  { name = ocaml_name;
+                  {
+                    name = ocaml_name;
                     identity =
                       Source_context.find name_form
                       |> Option.map (fun location ->
@@ -504,16 +752,17 @@ let rec compile scope env next_type = function
                 in
                 compile_definitions env
                   (List.rev_append rows row_items)
-                  (recursive_binding :: bindings) rest)
-        | _ :: _ ->
-            Error.error "defn-group only supports function definitions"
+                  (recursive_binding :: bindings)
+                  rest)
+        | _ :: _ -> Error.error "defn-group only supports function definitions"
       in
       compile_definitions env [] [] definitions
   | FList
-      [ FSymbol "defn-signature";
+      [
+        FSymbol "defn-signature";
         FList
-          (FSymbol ("defn" | "defn-") :: FSymbol name :: params
-          :: body_forms) ] ->
+          (FSymbol ("defn" | "defn-") :: FSymbol name :: params :: body_forms);
+      ] -> (
       let ocaml_name = Names.ocaml_binding_name scope name in
       let recursive =
         List.exists (form_mentions_symbol name) body_forms
@@ -528,7 +777,7 @@ let rec compile scope env next_type = function
               body_forms
         | _ -> prepare_fn scope env params body_forms
       in
-      (match prepared with
+      match prepared with
       | Error _ ->
           Ok
             ( scope,
@@ -553,135 +802,170 @@ let rec compile scope env next_type = function
               next_type,
               Comment ("function signature " ^ name) ))
   | FList
-      (FSymbol "module-signature" :: ((FSymbol signature_name) as name_form)
+      (FSymbol "module-signature"
+      :: (FSymbol signature_name as name_form)
       :: item_forms) ->
-      compile_module_signature ?location:(Source_context.find name_form) scope env
-        next_type signature_name item_forms
+      compile_module_signature
+        ?location:(Source_context.find name_form)
+        scope env next_type signature_name item_forms
   | FList (FSymbol "module-signature" :: _) ->
       Error.error "module-signature expects a name and signature items"
-  | FList [ FSymbol "type-alias"; ((FSymbol name) as name_form); manifest_form ] ->
-      compile_type_alias ?location:(Source_context.find name_form) scope env next_type
-        name [] manifest_form
+  | FList [ FSymbol "type-alias"; (FSymbol name as name_form); manifest_form ]
+    ->
+      compile_type_alias
+        ?location:(Source_context.find name_form)
+        scope env next_type name [] manifest_form
   | FList
-      [ FSymbol "type-alias";
-        ((FSymbol name) as name_form);
+      [
+        FSymbol "type-alias";
+        (FSymbol name as name_form);
         FVector parameter_forms;
-        manifest_form ] -> (
+        manifest_form;
+      ] -> (
       match parse_type_parameters (FVector parameter_forms) with
       | Error _ as err -> err
       | Ok type_parameters ->
-          compile_type_alias ?location:(Source_context.find name_form) scope env
-            next_type name type_parameters manifest_form)
+          compile_type_alias
+            ?location:(Source_context.find name_form)
+            scope env next_type name type_parameters manifest_form)
   | FList
-      (FSymbol "type-record" :: ((FSymbol name) as name_form)
+      (FSymbol "type-record"
+      :: (FSymbol name as name_form)
       :: FVector parameter_forms
       :: field_forms) -> (
       match parse_type_parameters (FVector parameter_forms) with
       | Error _ as err -> err
       | Ok type_parameters ->
-          compile_type_record ?location:(Source_context.find name_form) scope env
-            next_type name type_parameters field_forms)
-  | FList
-      (FSymbol "type-record" :: ((FSymbol name) as name_form) :: field_forms) ->
-      compile_type_record ?location:(Source_context.find name_form) scope env next_type
-        name [] field_forms
+          compile_type_record
+            ?location:(Source_context.find name_form)
+            scope env next_type name type_parameters field_forms)
+  | FList (FSymbol "type-record" :: (FSymbol name as name_form) :: field_forms)
+    ->
+      compile_type_record
+        ?location:(Source_context.find name_form)
+        scope env next_type name [] field_forms
   | FList (FSymbol "type-record" :: _) ->
       Error.error "type-record expects a name and fields"
   | FList
-      (FSymbol "type-variant" :: ((FSymbol name) as name_form)
+      (FSymbol "type-variant"
+      :: (FSymbol name as name_form)
       :: FVector parameter_forms
       :: constructor_forms) -> (
       match parse_type_parameters (FVector parameter_forms) with
       | Error _ as err -> err
       | Ok type_parameters ->
-          compile_type_variant ?location:(Source_context.find name_form) scope env
-            next_type name type_parameters constructor_forms)
+          compile_type_variant
+            ?location:(Source_context.find name_form)
+            scope env next_type name type_parameters constructor_forms)
   | FList
-      (FSymbol "type-variant" :: ((FSymbol name) as name_form)
+      (FSymbol "type-variant"
+      :: (FSymbol name as name_form)
       :: constructor_forms) ->
-      compile_type_variant ?location:(Source_context.find name_form) scope env
-        next_type name [] constructor_forms
-  | FList [ FSymbol "open"; ((FSymbol module_path) as module_form) ] ->
+      compile_type_variant
+        ?location:(Source_context.find name_form)
+        scope env next_type name [] constructor_forms
+  | FList [ FSymbol "open"; (FSymbol module_path as module_form) ] ->
       let env = open_module_bindings scope env module_path in
       Ok
         ( scope,
           env,
           next_type,
           Open_module
-            { module_name = Names.module_path_to_ocaml module_path;
-              location = Source_context.find module_form } )
-  | FList [ FSymbol "include"; ((FSymbol module_path) as module_form) ] ->
+            {
+              module_name = Names.module_path_to_ocaml module_path;
+              location = Source_context.find module_form;
+            } )
+  | FList [ FSymbol "include"; (FSymbol module_path as module_form) ] ->
       let env = open_module_bindings scope env module_path in
       Ok
         ( scope,
           env,
           next_type,
           Include_module
-            { module_name = Names.module_path_to_ocaml module_path;
-              location = Source_context.find module_form } )
-  | FList (FSymbol "include" :: _) ->
-      Error.error "include expects one module"
+            {
+              module_name = Names.module_path_to_ocaml module_path;
+              location = Source_context.find module_form;
+            } )
+  | FList (FSymbol "include" :: _) -> Error.error "include expects one module"
   | FList
-      [ FSymbol "module-alias";
-        ((FSymbol alias_name) as alias_form);
-        ((FSymbol target_name) as target_form) ] ->
-      compile_module_alias ?location:(Source_context.find alias_form)
-        ?target_location:(Source_context.find target_form) scope env next_type
-        alias_name target_name
+      [
+        FSymbol "module-alias";
+        (FSymbol alias_name as alias_form);
+        (FSymbol target_name as target_form);
+      ] ->
+      compile_module_alias
+        ?location:(Source_context.find alias_form)
+        ?target_location:(Source_context.find target_form)
+        scope env next_type alias_name target_name
   | FList (FSymbol "module-alias" :: _) ->
       Error.error "module-alias expects alias and target modules"
   | FList
-      (FSymbol "module-functor" :: ((FSymbol functor_name) as name_form)
-      :: parameter_form
-      :: body_forms) ->
-      compile_module_functor ?location:(Source_context.find name_form) scope env
-        next_type functor_name parameter_form body_forms
+      (FSymbol "module-functor"
+      :: (FSymbol functor_name as name_form)
+      :: parameter_form :: body_forms) ->
+      compile_module_functor
+        ?location:(Source_context.find name_form)
+        scope env next_type functor_name parameter_form body_forms
   | FList (FSymbol "module-functor" :: _) ->
       Error.error
         "module-functor expects a name, [parameter signature ...], and body"
   | FList
-      (FSymbol "module-apply" :: ((FSymbol module_name) as name_form)
-      :: ((FSymbol functor_name) as functor_form)
-      :: (_ :: _ as argument_forms)) ->
+      (FSymbol "module-apply"
+      :: (FSymbol module_name as name_form)
+      :: (FSymbol functor_name as functor_form)
+      :: (_ :: _ as argument_forms)) -> (
       let rec parse_arguments acc = function
         | [] -> Ok (List.rev acc)
-        | ((FSymbol name) as form) :: rest ->
+        | (FSymbol name as form) :: rest ->
             parse_arguments
-              ({ module_name = name; location = Source_context.find form } :: acc)
+              ({ module_name = name; location = Source_context.find form }
+              :: acc)
               rest
         | _ ->
             Error.error
-              "module-apply expects result, functor, and one or more argument modules"
+              "module-apply expects result, functor, and one or more argument \
+               modules"
       in
-      (match parse_arguments [] argument_forms with
+      match parse_arguments [] argument_forms with
       | Error _ as err -> err
       | Ok argument_names ->
-          compile_module_apply ?location:(Source_context.find name_form)
-            ?functor_location:(Source_context.find functor_form) scope env next_type
-            module_name functor_name argument_names)
+          compile_module_apply
+            ?location:(Source_context.find name_form)
+            ?functor_location:(Source_context.find functor_form)
+            scope env next_type module_name functor_name argument_names)
   | FList (FSymbol "module-apply" :: _) ->
       Error.error
         "module-apply expects result, functor, and one or more argument modules"
   | FList
-      [ FSymbol ("def" | "defonce"); ((FSymbol name) as name_form); expr_form ] -> (
+      [ FSymbol ("def" | "defonce"); (FSymbol name as name_form); expr_form ]
+    -> (
       match compile_expr scope env expr_form with
       | Error _ as err -> err
       | Ok expr when unresolved_contextual_type expr.ty ->
           Error.error "empty list requires a contextual element type"
-      | Ok expr ->
+      | Ok expr -> (
           let ocaml_name = Names.ocaml_binding_name scope name in
           let env_key = Names.scoped_key scope name in
-          (match check_emitted_name_collision env ~source_key:env_key ~ocaml_name with
+          match
+            check_emitted_name_collision env ~source_key:env_key ~ocaml_name
+          with
           | Error _ as err -> err
-          | Ok () -> (match expr.ty with
+          | Ok () -> (
+              match expr.ty with
           | TRecord fields ->
+                  let nested =
+                    allocate_nested_anonymous_records ~owner:"" env next_type
+                      fields
+                  in
+                  let fields = nested.nested_fields in
               let identity =
                 Source_context.find name_form
                 |> Option.map (fun location ->
                        (Source_node_id.of_location location, location))
               in
               let allocation =
-                allocate_anonymous_record ~owner:"" env next_type fields
+                    allocate_anonymous_record ~owner:"" nested.env
+                      nested.next_type fields
               in
               let record_ty = TNamed_record allocation.record in
               let binding = Types.binding ocaml_name record_ty in
@@ -690,32 +974,62 @@ let rec compile scope env next_type = function
                 let item =
                   match expr.record_values with
                   | Some values ->
+                          let values =
+                            List.map
+                              (fun (field, value) ->
+                                let field =
+                                  find_field field.keyword fields
+                                  |> Option.value ~default:field
+                                in
+                                (field, value))
+                              values
+                          in
                       Record_def
-                        { var_name = ocaml_name;
+                            {
+                              var_name = ocaml_name;
                           identity;
                           type_name = allocation.record.type_name;
-                          set_module_name = allocation.record.set_module_name;
+                              set_module_name =
+                                allocation.record.set_module_name;
                           fields;
-                          values }
+                              values;
+                            }
                   | None ->
                       Projected_record_def
-                        { var_name = ocaml_name;
+                            {
+                              var_name = ocaml_name;
                           identity;
                           type_name = allocation.record.type_name;
-                          set_module_name = allocation.record.set_module_name;
+                              set_module_name =
+                                allocation.record.set_module_name;
                           fields;
-                          source = expr.semantic_expr }
+                              source = expr.semantic_expr;
+                            }
+                    in
+                    let item =
+                      match nested.items with
+                      | [] -> item
+                      | items -> Group (items @ [ item ])
                 in
                 Ok (scope, env, allocation.next_type, item)
               else
-                let expr = Structural_map.as_named_record allocation.record expr in
-                Ok
-                  ( scope,
-                    env,
-                    allocation.next_type,
+                    let expr =
+                      Structural_map.as_named_record allocation.record expr
+                    in
+                    let item =
                     Value_binding
-                      { pattern = located_value_pattern name_form (Named ocaml_name);
-                        expression = expr.semantic_expr } )
+                        {
+                          pattern =
+                            located_value_pattern name_form (Named ocaml_name);
+                          expression = expr.semantic_expr;
+                        }
+                    in
+                    let item =
+                      match nested.items with
+                      | [] -> item
+                      | items -> Group (items @ [ item ])
+                    in
+                    Ok (scope, env, allocation.next_type, item)
           | _ ->
               let binding = binding_of_expr ocaml_name expr in
               Ok
@@ -724,17 +1038,20 @@ let rec compile scope env next_type = function
                   next_type,
                   Value_binding
                     {
-                      pattern = located_value_pattern name_form (Named ocaml_name);
+                          pattern =
+                            located_value_pattern name_form (Named ocaml_name);
                       expression = expr.semantic_expr;
                     } ))))
   | FList
       (FSymbol (("defn" | "defn-") as definition)
-      :: ((FSymbol _) as name_form) :: FMap _attributes :: rest) ->
+      :: (FSymbol _ as name_form)
+      :: FMap _attributes
+      :: rest) ->
       compile scope env next_type
         (FList (FSymbol definition :: name_form :: rest))
   | FList
       (FSymbol (("defn" | "defn-") as definition)
-      :: ((FSymbol _) as name_form)
+      :: (FSymbol _ as name_form)
       :: FList [ FSymbol "__type-hint"; FSymbol annotation; params ]
       :: body_forms) ->
       compile scope env next_type
@@ -743,11 +1060,11 @@ let rec compile scope env next_type = function
           :: body_forms))
   | FList
       (FSymbol (("defn" | "defn-") as definition)
-      :: ((FSymbol name) as name_form) :: FSymbol annotation :: params
-      :: body_forms)
+      :: (FSymbol name as name_form)
+      :: FSymbol annotation
+      :: params :: body_forms)
     when String.starts_with ~prefix:"^" annotation -> (
-      if not (List.exists (form_mentions_symbol name) body_forms)
-      then
+      if not (List.exists (form_mentions_symbol name) body_forms) then
         let body =
           match body_forms with
           | [ body ] -> body
@@ -755,14 +1072,11 @@ let rec compile scope env next_type = function
         in
         compile scope env next_type
           (FList
-             [ FSymbol definition;
+             [
+               FSymbol definition;
                name_form;
                params;
-               FList
-                 [ FSymbol "__type-hint";
-                   FSymbol annotation;
-                   body;
-                 ];
+               FList [ FSymbol "__type-hint"; FSymbol annotation; body ];
              ])
       else
       match Type_annotation.of_param_annotation annotation with
@@ -789,19 +1103,26 @@ let rec compile scope env next_type = function
                   :: FKeyword return_keyword :: body_forms))))
   | FList
       (FSymbol (("defn" | "defn-") as definition)
-      :: ((FSymbol _) as name_form) :: FString _docstring :: forms) ->
+      :: (FSymbol _ as name_form)
+      :: FString _docstring
+      :: forms) ->
       compile scope env next_type
         (FList (FSymbol definition :: name_form :: forms))
   | FList
-      (FSymbol ("defn" | "defn-") :: ((FSymbol name) as name_form)
-      :: ((FList _) as first_clause) :: remaining_clauses) ->
+      (FSymbol ("defn" | "defn-")
+      :: (FSymbol name as name_form)
+      :: (FList _ as first_clause)
+      :: remaining_clauses) -> (
       let ocaml_name = Names.ocaml_binding_name scope name in
       let env_key = Names.scoped_key scope name in
-      (match check_emitted_name_collision env ~source_key:env_key ~ocaml_name with
+      match
+        check_emitted_name_collision env ~source_key:env_key ~ocaml_name
+      with
       | Error _ as err -> err
       | Ok () -> (
           match
-            Expression_elaborator.prepare_multi_arity_fn ~ocaml_name scope env name
+            Expression_elaborator.prepare_multi_arity_fn ~ocaml_name scope env
+              name
               (first_clause :: remaining_clauses)
           with
           | Error _ as err -> err
@@ -810,7 +1131,8 @@ let rec compile scope env next_type = function
                 Expression_elaborator.lower_prepared_multi_arity prepared
               in
               let binding =
-                Types.binding ~overload_targets:targets ocaml_name prepared.expr.ty
+                Types.binding ~overload_targets:targets ocaml_name
+                  prepared.expr.ty
               in
               let value_item =
                 if
@@ -818,14 +1140,18 @@ let rec compile scope env next_type = function
                     prepared.expr.semantic_expr
                 then
                   Deferred_value_binding
-                    { name = ocaml_name;
+                    {
+                      name = ocaml_name;
                       value_type = prepared.expr.ty;
-                      expression = prepared.expr.semantic_expr }
+                      expression = prepared.expr.semantic_expr;
+                    }
                 else
                   Value_binding
-                    { pattern =
+                    {
+                      pattern =
                         located_value_pattern name_form (Named ocaml_name);
-                      expression = prepared.expr.semantic_expr }
+                      expression = prepared.expr.semantic_expr;
+                    }
               in
               Ok
                 ( scope,
@@ -833,32 +1159,34 @@ let rec compile scope env next_type = function
                   next_type,
                   Group
                     (row_items
-                    @ [ Recursive_value_bindings recursive_bindings; value_item ])
-                )))
+                    @ [
+                        Recursive_value_bindings recursive_bindings; value_item;
+                      ]) )))
   | FList
       (FSymbol (("defn" | "defn-") as definition)
-      :: ((FSymbol _name) as name_form)
-      :: ((FVector params) as params_form) :: body_forms)
+      :: (FSymbol _name as name_form)
+      :: (FVector params as params_form)
+      :: body_forms)
     when List.exists (function FSymbol "&" -> true | _ -> false) params ->
       compile scope env next_type
         (FList
-           [ FSymbol definition;
-             name_form;
-             FList (params_form :: body_forms) ])
+           [ FSymbol definition; name_form; FList (params_form :: body_forms) ])
   | FList
-      (FSymbol ("defn" | "defn-") :: ((FSymbol name) as name_form) :: params
+      (FSymbol ("defn" | "defn-")
+      :: (FSymbol name as name_form)
+      :: params
       :: FKeyword return_keyword
       :: body_forms) -> (
       match Type_annotation.of_keyword return_keyword with
       | Error _ as err -> err
-      | Ok return_ty ->
+      | Ok return_ty -> (
           let ocaml_name = Names.ocaml_binding_name scope name in
-          (match
+          match
              prepare_recursive_fn ~ocaml_name scope env name return_ty params
                body_forms
            with
           | Error _ as err -> err
-          | Ok parts ->
+          | Ok parts -> (
               let param_tys =
                 parts.param_bindings
                 |> List.map (fun (_key, (binding : binding)) -> binding.ty)
@@ -866,7 +1194,7 @@ let rec compile scope env next_type = function
               let row_param_types = row_param_type_names ocaml_name param_tys in
               let expr = fn_code ~row_param_type_names:row_param_types parts in
               let env_key = Names.scoped_key scope name in
-              (match
+              match
                  check_emitted_name_collision env ~source_key:env_key ~ocaml_name
                with
               | Error _ as err -> err
@@ -876,16 +1204,18 @@ let rec compile scope env next_type = function
                   in
                   let type_items = row_type_items row_param_types param_tys in
                   let value_item =
-                    if
-                      expression_references_declaration env expr.semantic_expr
+                    if expression_references_declaration env expr.semantic_expr
                     then
                       Deferred_value_binding
-                        { name = ocaml_name;
+                        {
+                          name = ocaml_name;
                           value_type = expr.ty;
-                          expression = expr.semantic_expr }
+                          expression = expr.semantic_expr;
+                        }
                     else
                       Recursive_value_binding
-                        { name = ocaml_name;
+                        {
+                          name = ocaml_name;
                           identity =
                             Source_context.find name_form
                             |> Option.map (fun location ->
@@ -899,19 +1229,20 @@ let rec compile scope env next_type = function
                       next_type,
                       Group (type_items @ [ value_item ]) ))))
   | FList
-      (FSymbol ("defn" | "defn-") :: ((FSymbol name) as name_form) :: params
-      :: body_forms)
-    when
-      List.exists (form_mentions_symbol name) body_forms
+      (FSymbol ("defn" | "defn-")
+      :: (FSymbol name as name_form)
+      :: params :: body_forms)
+    when List.exists (form_mentions_symbol name) body_forms
       || List.exists
            (form_mentions_symbol (Names.scoped_key scope name))
            body_forms -> (
       let ocaml_name = Names.ocaml_binding_name scope name in
       match
-        prepare_inferred_recursive_fn ~ocaml_name scope env name params body_forms
+        prepare_inferred_recursive_fn ~ocaml_name scope env name params
+          body_forms
       with
       | Error _ as err -> err
-      | Ok parts ->
+      | Ok parts -> (
           let param_tys =
             parts.param_bindings
             |> List.map (fun (_key, (binding : binding)) -> binding.ty)
@@ -919,7 +1250,9 @@ let rec compile scope env next_type = function
           let row_param_types = row_param_type_names ocaml_name param_tys in
           let expr = fn_code ~row_param_type_names:row_param_types parts in
           let env_key = Names.scoped_key scope name in
-          (match check_emitted_name_collision env ~source_key:env_key ~ocaml_name with
+          match
+            check_emitted_name_collision env ~source_key:env_key ~ocaml_name
+          with
           | Error _ as err -> err
           | Ok () ->
               let binding = binding_of_expr ~row_param_types ocaml_name expr in
@@ -927,12 +1260,15 @@ let rec compile scope env next_type = function
               let value_item =
                 if expression_references_declaration env expr.semantic_expr then
                   Deferred_value_binding
-                    { name = ocaml_name;
+                    {
+                      name = ocaml_name;
                       value_type = expr.ty;
-                      expression = expr.semantic_expr }
+                      expression = expr.semantic_expr;
+                    }
                 else
                   Recursive_value_binding
-                    { name = ocaml_name;
+                    {
+                      name = ocaml_name;
                       identity =
                         Source_context.find name_form
                         |> Option.map (fun location ->
@@ -946,8 +1282,9 @@ let rec compile scope env next_type = function
                   next_type,
                   Group (type_items @ [ value_item ]) )))
   | FList
-      (FSymbol ("defn" | "defn-") :: ((FSymbol name) as name_form) :: params
-      :: body_forms) -> (
+      (FSymbol ("defn" | "defn-")
+      :: (FSymbol name as name_form)
+      :: params :: body_forms) -> (
       match prepare_fn scope env params body_forms with
       | Error _ as err -> err
       | Ok parts when unresolved_contextual_type parts.body.ty ->
@@ -961,21 +1298,30 @@ let rec compile scope env next_type = function
           let row_param_types = row_param_type_names ocaml_name param_tys in
           let expr = fn_code ~row_param_type_names:row_param_types parts in
           let env_key = Names.scoped_key scope name in
-          match check_emitted_name_collision env ~source_key:env_key ~ocaml_name with
+          match
+            check_emitted_name_collision env ~source_key:env_key ~ocaml_name
+          with
           | Error _ as err -> err
-          | Ok () -> (match expr.ty with
+          | Ok () -> (
+              match expr.ty with
           | TFn _ ->
-              let binding = binding_of_expr ~row_param_types ocaml_name expr in
+                  let binding =
+                    binding_of_expr ~row_param_types ocaml_name expr
+                  in
               let type_items = row_type_items row_param_types param_tys in
               let value_item =
-                if expression_references_declaration env expr.semantic_expr then
+                    if expression_references_declaration env expr.semantic_expr
+                    then
                   Deferred_value_binding
-                    { name = ocaml_name;
+                        {
+                          name = ocaml_name;
                       value_type = expr.ty;
-                      expression = expr.semantic_expr }
+                          expression = expr.semantic_expr;
+                        }
                 else
                   Value_binding
-                    { pattern =
+                        {
+                          pattern =
                         located_value_pattern name_form (Named ocaml_name);
                       expression = expr.semantic_expr;
                     }
@@ -987,19 +1333,19 @@ let rec compile scope env next_type = function
                   Group (type_items @ [ value_item ]) )
           | _ -> Error.error "defn body did not compile to a function")))
   | FList
-      (FSymbol "defprotocol" :: ((FSymbol protocol_name) as name_form)
+      (FSymbol "defprotocol"
+      :: (FSymbol protocol_name as name_form)
       :: method_forms) ->
-      compile_defprotocol ?location:(Source_context.find name_form) scope env next_type
-        protocol_name method_forms
+      compile_defprotocol
+        ?location:(Source_context.find name_form)
+        scope env next_type protocol_name method_forms
   | FList (FSymbol "extend-type" :: receiver_form :: implementations) ->
       let rec groups grouped current = function
         | [] -> (
             match current with
             | None -> Ok (List.rev grouped)
             | Some (protocol_name, methods) ->
-                Ok
-                  (List.rev
-                     ((protocol_name, List.rev methods) :: grouped)))
+                Ok (List.rev ((protocol_name, List.rev methods) :: grouped)))
         | FSymbol protocol_name :: rest ->
             let grouped =
               match current with
@@ -1013,7 +1359,8 @@ let rec compile scope env next_type = function
             | None -> Error.error "extend-type requires a protocol name"
             | Some (protocol_name, methods) ->
                 groups grouped
-                  (Some (protocol_name, method_form :: methods)) rest)
+                  (Some (protocol_name, method_form :: methods))
+                  rest)
         | _ :: _ -> Error.error "invalid extend-type implementation"
       in
       let items_of = function Group items -> items | item -> [ item ] in
@@ -1030,9 +1377,12 @@ let rec compile scope env next_type = function
                     compile_groups env next_type (items @ items_of item) rest)
           in
           compile_groups env next_type [] groups)
-  | FList
-      (FSymbol "extend-protocol" :: FSymbol protocol_name :: implementations) ->
-      let is_receiver = function FSymbol _ | FKeyword _ -> true | _ -> false in
+  | FList (FSymbol "extend-protocol" :: FSymbol protocol_name :: implementations)
+    -> (
+      let is_receiver = function
+        | FSymbol _ | FKeyword _ -> true
+        | _ -> false
+      in
       let rec groups grouped current = function
         | [] -> (
             match current with
@@ -1056,7 +1406,7 @@ let rec compile scope env next_type = function
         | _ :: _ -> Error.error "invalid extend-protocol implementation"
       in
       let items_of = function Group items -> items | item -> [ item ] in
-      (match groups [] None implementations with
+      match groups [] None implementations with
       | Error _ as error -> error
       | Ok groups ->
           let rec compile_groups env next_type items = function
@@ -1074,13 +1424,16 @@ let rec compile scope env next_type = function
           in
           compile_groups env next_type [] groups)
   | FList
-      (FSymbol "module" :: ((FSymbol module_name) as name_form)
-      :: ((FSymbol signature_name) as signature_form)
+      (FSymbol "module"
+      :: (FSymbol module_name as name_form)
+      :: (FSymbol signature_name as signature_form)
       :: forms) -> (
       match
-        compile_module ?location:(Source_context.find name_form) ~signature_name
-          ?signature_location:(Source_context.find signature_form) scope env next_type
-          module_name module_name forms
+        compile_module
+          ?location:(Source_context.find name_form)
+          ~signature_name
+          ?signature_location:(Source_context.find signature_form)
+          scope env next_type module_name module_name forms
       with
       | Error _ as err -> err
       | Ok (scope, module_env, module_bindings, next_type, item) ->
@@ -1092,11 +1445,11 @@ let rec compile scope env next_type = function
             |> Env.add_bindings module_bindings
           in
           Ok (scope, env, next_type, item))
-  | FList
-      (FSymbol "module" :: ((FSymbol module_name) as name_form) :: forms) -> (
+  | FList (FSymbol "module" :: (FSymbol module_name as name_form) :: forms) -> (
       match
-        compile_module ?location:(Source_context.find name_form) scope env next_type
-          module_name module_name forms
+        compile_module
+          ?location:(Source_context.find name_form)
+          scope env next_type module_name module_name forms
       with
       | Error _ as err -> err
       | Ok (scope, module_env, module_bindings, next_type, item) ->
@@ -1119,7 +1472,8 @@ let rec compile scope env next_type = function
               Value_binding
                 { pattern = Unit_pattern; expression = expr.semantic_expr } ))
   | FList [ FSymbol "namespace-scope"; FSymbol namespace_name ] ->
-      Ok (namespace_name, env, next_type, Comment ("namespace " ^ namespace_name))
+      Ok
+        (namespace_name, env, next_type, Comment ("namespace " ^ namespace_name))
   | FList (FSymbol "refer-clojure-exclude" :: names) ->
       let rec parse_names acc = function
         | [] -> Ok (List.rev acc)
@@ -1146,7 +1500,9 @@ let rec compile scope env next_type = function
             match add_classes env package classes with
             | Error _ as err -> err
             | Ok env -> add_entries env rest)
-        | _ -> Error.error ":import expects vectors containing a package and classes"
+        | _ ->
+            Error.error
+              ":import expects vectors containing a package and classes"
       in
       Result.map
         (fun env -> (scope, env, next_type, Comment "host import"))
@@ -1164,7 +1520,9 @@ let rec compile scope env next_type = function
           (scope, env, next_type, Comment ("macro helper " ^ name)))
         (Macro_definition.create ~namespace:scope ~name forms)
   | FList (FSymbol "macro-helper-def" :: FSymbol name :: forms) ->
-      let value = match forms with [] -> FSymbol "nil" | value :: _ -> value in
+      let value =
+        match forms with [] -> FSymbol "nil" | value :: _ -> value
+      in
       let env = Env.add_macro_value ~scope ~name value env in
       Ok (scope, env, next_type, Comment ("macro value " ^ name))
   | FList [ FSymbol ("def" as kind); FSymbol name ] ->
@@ -1192,32 +1550,39 @@ let rec compile scope env next_type = function
   | FList (FSymbol "require" :: entries) -> (
       match Require.parse_entries entries with
       | Error _ as err -> err
-      | Ok specs ->
+      | Ok specs -> (
           let rec apply_specs env = function
             | [] -> Ok env
             | Require.Package _ :: rest -> apply_specs env rest
-            | Require.Load { module_name } :: rest ->
+            | Require.Load { module_name } :: rest -> (
                 let result =
                   if Require.core_namespace module_name then
-                    Ok (Require.add_core_alias_bindings env module_name module_name)
+                    Ok
+                      (Require.add_core_alias_bindings env module_name
+                         module_name)
                   else if String.starts_with ~prefix:"ocaml." module_name then
-                    Ok (Require.add_ocaml_alias_bindings env module_name module_name)
+                    Ok
+                      (Require.add_ocaml_alias_bindings env module_name
+                         module_name)
                   else Require.ensure_namespace env module_name
                 in
-                (match result with
+                match result with
                 | Error _ as err -> err
                 | Ok env -> apply_specs env rest)
-            | Require.Alias { module_name; alias } :: rest ->
+            | Require.Alias { module_name; alias } :: rest -> (
                 if String.starts_with ~prefix:"ocaml." module_name then
                   apply_specs
                     (Require.add_ocaml_alias_bindings env module_name alias)
                     rest
                 else if Require.core_namespace module_name then
-                  let env = Require.add_core_alias_bindings env module_name alias in
+                  let env =
+                    Require.add_core_alias_bindings env module_name alias
+                  in
                   apply_specs
-                    (Env.add_namespace_alias ~scope ~alias ~target:module_name env)
+                    (Env.add_namespace_alias ~scope ~alias ~target:module_name
+                       env)
                     rest
-                else (
+                else
                   match Require.add_lg_alias_bindings env module_name alias with
                   | Error _ as err -> err
                   | Ok env ->
@@ -1226,7 +1591,7 @@ let rec compile scope env next_type = function
                           ~target:module_name env
                       in
                       apply_specs env rest)
-            | Require.Refer { module_name; names } :: rest ->
+            | Require.Refer { module_name; names } :: rest -> (
                 let result =
                   if String.starts_with ~prefix:"ocaml." module_name then
                     Require.add_ocaml_refer_bindings env scope module_name names
@@ -1234,14 +1599,14 @@ let rec compile scope env next_type = function
                     Require.add_clojure_string_refer_bindings env scope names
                   else Require.add_lg_refer_bindings env scope module_name names
                 in
-                (match result with
+                match result with
                 | Error _ as err -> err
                 | Ok env -> apply_specs env rest)
           in
-          (match apply_specs env specs with
+          match apply_specs env specs with
           | Error _ as err -> err
           | Ok env -> Ok (scope, env, next_type, Comment "require")))
-  | (FList (FSymbol "loop" :: _) as form) -> (
+  | FList (FSymbol "loop" :: _) as form -> (
       match compile_expr scope env form with
       | Error _ as err -> err
       | Ok expr ->
@@ -1272,7 +1637,8 @@ let rec compile scope env next_type = function
                       env,
                       next_type,
                       Value_binding
-                        { pattern = Ignore_pattern;
+                        {
+                          pattern = Ignore_pattern;
                           expression = expr.semantic_expr;
                         } )))
       | Some definition -> (
@@ -1284,11 +1650,15 @@ let rec compile scope env next_type = function
       | Error _ as err -> err
       | Ok expr -> (
           match expr.record_values with
-          | Some _ -> Error.error "top-level map literals must be bound with def"
+          | Some _ ->
+              Error.error "top-level map literals must be bound with def"
           | None ->
               Ok
                 ( scope,
                   env,
                   next_type,
                   Value_binding
-                    { pattern = Ignore_pattern; expression = expr.semantic_expr } )))
+                    {
+                      pattern = Ignore_pattern;
+                      expression = expr.semantic_expr;
+                    } )))

@@ -17,4 +17,5 @@
   (dune (>= 3.17))
   (melange (>= 6.0))
   (js_of_ocaml (>= 6.0))
+  re
   yojson))

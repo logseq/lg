@@ -21,7 +21,8 @@ let int_predicate name args build_code =
   match one_arg name args with
   | Error _ as err -> err
   | Ok arg ->
-      if accepts_int arg.ty then Ok (typed_ir TBool (build_code arg.semantic_expr))
+      if accepts_int arg.ty then
+        Ok (typed_ir TBool (build_code arg.semantic_expr))
       else Ok (typed_ir TBool (Semantic_ir.Bool false))
 
 let int_unary name args build_code =
@@ -49,11 +50,8 @@ let compile_boolean name args =
       | _ -> Ok (typed_ir TBool (Semantic_ir.Bool true)))
 
 let apply name args = Semantic_ir.Apply (Semantic_ir.Ident name, args)
-
 let string_length expr = apply "String.length" [ expr ]
-
 let string_get expr index = apply "String.get" [ expr; index ]
-
 let string_sub expr start length = apply "String.sub" [ expr; start; length ]
 
 let string_rindex_opt expr needle =
@@ -61,30 +59,42 @@ let string_rindex_opt expr needle =
 
 let string_concat left right = Semantic_ir.Infix ("^", left, right)
 
-let string_nonempty expr = Semantic_ir.Infix (">", string_length expr, Semantic_ir.Int 0)
+let string_nonempty expr =
+  Semantic_ir.Infix (">", string_length expr, Semantic_ir.Int 0)
 
 let starts_with_colon expr =
-  Semantic_ir.Infix ("=", string_get expr (Semantic_ir.Int 0), Semantic_ir.Char ':')
+  Semantic_ir.Infix
+    ("=", string_get expr (Semantic_ir.Int 0), Semantic_ir.Char ':')
 
 let drop_first_char expr =
   string_sub expr (Semantic_ir.Int 1)
     (Semantic_ir.Infix ("-", string_length expr, Semantic_ir.Int 1))
 
 let string_and left right = Semantic_ir.Infix ("&&", left, right)
-
 let string_eq left right = Semantic_ir.Infix ("=", left, right)
 
 let identifier_body_expr name arg =
-  match arg.ty with
-  | TString | TSymbol | TKeyword | TUnknown ->
+  let normalize expression =
       let value = Semantic_ir.Ident "value" in
-      Ok
-        (Semantic_ir.Let
-           ( [ (Semantic_ir.PVar "value", arg.semantic_expr) ],
+    Semantic_ir.Let
+      ( [ (Semantic_ir.PVar "value", expression) ],
              Semantic_ir.If
                ( string_and (string_nonempty value) (starts_with_colon value),
                  drop_first_char value,
-                 value ) ))
+            value ) )
+  in
+  match arg.ty with
+  | TString | TSymbol | TKeyword | TUnknown -> Ok (normalize arg.semantic_expr)
+  | TNullable TString | TOcaml_app ("option", [ TString ]) ->
+      Ok
+        (Semantic_ir.Match
+           ( arg.semantic_expr,
+             [
+               (Semantic_ir.PConstructor ("None", None), Semantic_ir.String "");
+               ( Semantic_ir.PConstructor
+                   ("Some", Some (Semantic_ir.PVar "value")),
+                 normalize (Semantic_ir.Ident "value") );
+             ] ))
   | _ -> Error.error (name ^ " expects string, keyword, or symbol")
 
 let substring_after_last_slash body =
@@ -92,7 +102,10 @@ let substring_after_last_slash body =
     (Semantic_ir.Infix ("+", Semantic_ir.Ident "index", Semantic_ir.Int 1))
     (Semantic_ir.Infix
        ( "-",
-         Semantic_ir.Infix ("-", string_length (Semantic_ir.Ident body), Semantic_ir.Ident "index"),
+         Semantic_ir.Infix
+           ( "-",
+             string_length (Semantic_ir.Ident body),
+             Semantic_ir.Ident "index" ),
          Semantic_ir.Int 1 ))
 
 let identifier_name_expr arg =
@@ -100,23 +113,27 @@ let identifier_name_expr arg =
     ( [ (Semantic_ir.PVar "body", arg) ],
       Semantic_ir.Match
         ( string_rindex_opt (Semantic_ir.Ident "body") '/',
-          [ (Semantic_ir.PConstructor ("None", None), Semantic_ir.Ident "body");
+          [
+            (Semantic_ir.PConstructor ("None", None), Semantic_ir.Ident "body");
             ( Semantic_ir.PConstructor ("Some", Some (Semantic_ir.PVar "index")),
-              substring_after_last_slash "body" ) ] ) )
+              substring_after_last_slash "body" );
+          ] ) )
 
 let identifier_namespace_expr arg =
   Semantic_ir.Let
     ( [ (Semantic_ir.PVar "body", arg) ],
       Semantic_ir.Match
         ( string_rindex_opt (Semantic_ir.Ident "body") '/',
-          [ ( Semantic_ir.PConstructor ("None", None),
+          [
+            ( Semantic_ir.PConstructor ("None", None),
               Semantic_ir.Constructor ("None", None) );
             ( Semantic_ir.PConstructor ("Some", Some (Semantic_ir.PVar "index")),
               Semantic_ir.Constructor
                 ( "Some",
                   Some
                     (string_sub (Semantic_ir.Ident "body") (Semantic_ir.Int 0)
-                       (Semantic_ir.Ident "index")) ) ) ] ) )
+                       (Semantic_ir.Ident "index")) ) );
+          ] ) )
 
 let keyword_one_arg_expr arg =
   let value = Semantic_ir.Ident "value" in
@@ -129,24 +146,32 @@ let keyword_one_arg_expr arg =
 
 let scoped_keyword_expr namespace name =
   Semantic_ir.Let
-    ( [ (Semantic_ir.PVar "namespace", namespace); (Semantic_ir.PVar "name", name) ],
+    ( [
+        (Semantic_ir.PVar "namespace", namespace);
+        (Semantic_ir.PVar "name", name);
+      ],
       Semantic_ir.If
         ( string_eq (Semantic_ir.Ident "namespace") (Semantic_ir.String ""),
           string_concat (Semantic_ir.String ":") (Semantic_ir.Ident "name"),
           string_concat
             (string_concat
-               (string_concat (Semantic_ir.String ":") (Semantic_ir.Ident "namespace"))
+               (string_concat (Semantic_ir.String ":")
+                  (Semantic_ir.Ident "namespace"))
                (Semantic_ir.String "/"))
             (Semantic_ir.Ident "name") ) )
 
 let namespaced_symbol_expr namespace name =
   Semantic_ir.Let
-    ( [ (Semantic_ir.PVar "namespace", namespace); (Semantic_ir.PVar "name", name) ],
+    ( [
+        (Semantic_ir.PVar "namespace", namespace);
+        (Semantic_ir.PVar "name", name);
+      ],
       Semantic_ir.If
         ( string_eq (Semantic_ir.Ident "namespace") (Semantic_ir.String ""),
           Semantic_ir.Ident "name",
           string_concat
-            (string_concat (Semantic_ir.Ident "namespace") (Semantic_ir.String "/"))
+            (string_concat (Semantic_ir.Ident "namespace")
+               (Semantic_ir.String "/"))
             (Semantic_ir.Ident "name") ) )
 
 let compile_name name args =
@@ -155,12 +180,15 @@ let compile_name name args =
   | Ok arg -> (
       match arg.ty with
       | TString -> Ok (typed_ir TString arg.semantic_expr)
-      | ty when Types.is_dynamic ty ->
+      | ty when Types.is_dynamic ty -> (
           let identifier =
             apply "Lg_runtime.Runtime_dynamic.as_identifier"
               [ arg.semantic_expr ]
           in
-          (match identifier_body_expr name { arg with semantic_expr = identifier; ty = TSymbol } with
+          match
+            identifier_body_expr name
+              { arg with semantic_expr = identifier; ty = TSymbol }
+          with
           | Error _ as error -> error
           | Ok body -> Ok (typed_ir TString (identifier_name_expr body)))
       | TKeyword | TSymbol -> (
@@ -184,9 +212,13 @@ let compile_keyword name args =
           Ok (typed_ir TKeyword (keyword_one_arg_expr arg.semantic_expr))
       | _ -> Error.error "keyword expects keyword, string, or symbol")
   | [ namespace_arg; name_arg ] -> (
-      match (identifier_body_expr name namespace_arg, identifier_body_expr name name_arg) with
+      match
+        ( identifier_body_expr name namespace_arg,
+          identifier_body_expr name name_arg )
+      with
       | Error _, _ | _, Error _ ->
-          Error.error "keyword namespace and name must be string, keyword, or symbol"
+          Error.error
+            "keyword namespace and name must be string, keyword, or symbol"
       | Ok namespace_expr, Ok name_expr ->
           Ok (typed_ir TKeyword (scoped_keyword_expr namespace_expr name_expr)))
   | _ -> Error.error "keyword expects 1 or 2 arguments"
@@ -196,10 +228,23 @@ let compile_namespace name args =
   | Error _ as err -> err
   | Ok arg -> (
       match arg.ty with
+      | ty when Types.is_dynamic ty ->
+          let identifier =
+            apply "Lg_runtime.Runtime_dynamic.as_named_identifier"
+              [ arg.semantic_expr ]
+          in
+          Result.map
+            (fun body ->
+              typed_ir
+                (TOcaml_app ("option", [ TString ]))
+                (identifier_namespace_expr body))
+            (identifier_body_expr name
+               { arg with semantic_expr = identifier; ty = TKeyword })
       | TKeyword | TSymbol | TUnknown ->
           Result.map
             (fun body ->
-              typed_ir (TOcaml_app ("option", [ TString ]))
+              typed_ir
+                (TOcaml_app ("option", [ TString ]))
                 (identifier_namespace_expr body))
             (identifier_body_expr name arg)
       | _ -> Error.error "namespace expects keyword or symbol")
@@ -211,11 +256,17 @@ let compile_symbol name args =
       | Error _ -> Error.error "symbol expects string, keyword, or symbol"
       | Ok expr -> Ok (typed_ir TSymbol expr))
   | [ namespace_arg; name_arg ] -> (
-      match (identifier_body_expr name namespace_arg, identifier_body_expr name name_arg) with
+      match
+        ( identifier_body_expr name namespace_arg,
+          identifier_body_expr name name_arg )
+      with
       | Error _, _ | _, Error _ ->
-          Error.error "symbol namespace and name must be string, keyword, or symbol"
+          Error.error
+            "symbol namespace and name must be string, keyword, or symbol"
       | Ok namespace_expr, Ok name_expr ->
-          Ok (typed_ir TSymbol (namespaced_symbol_expr namespace_expr name_expr)))
+          Ok
+            (typed_ir TSymbol (namespaced_symbol_expr namespace_expr name_expr))
+      )
   | _ -> Error.error "symbol expects 1 or 2 arguments"
 
 let compile name args =
@@ -223,34 +274,75 @@ let compile name args =
   | "integer?" -> (
       match one_arg name args with
       | Error _ as err -> err
-      | Ok arg -> Ok (typed_ir TBool (Semantic_ir.Bool (Types.equal arg.ty TInt))))
-  | "nat-int?" -> int_predicate name args (fun expr -> Semantic_ir.Infix (">=", expr, Semantic_ir.Int 0))
-  | "pos-int?" -> int_predicate name args (fun expr -> Semantic_ir.Infix (">", expr, Semantic_ir.Int 0))
-  | "neg-int?" -> int_predicate name args (fun expr -> Semantic_ir.Infix ("<", expr, Semantic_ir.Int 0))
+      | Ok arg ->
+          Ok (typed_ir TBool (Semantic_ir.Bool (Types.equal arg.ty TInt))))
+  | "nat-int?" ->
+      int_predicate name args (fun expr ->
+          Semantic_ir.Infix (">=", expr, Semantic_ir.Int 0))
+  | "pos-int?" ->
+      int_predicate name args (fun expr ->
+          Semantic_ir.Infix (">", expr, Semantic_ir.Int 0))
+  | "neg-int?" ->
+      int_predicate name args (fun expr ->
+          Semantic_ir.Infix ("<", expr, Semantic_ir.Int 0))
   | "boolean" -> compile_boolean name args
   | "bit-set" ->
-      int_binary name args (fun left right -> typed_ir TInt (Semantic_ir.Infix ("lor", left, Semantic_ir.Infix ("lsl", Semantic_ir.Int 1, right))))
+      int_binary name args (fun left right ->
+          typed_ir TInt
+            (Semantic_ir.Infix
+               ("lor", left, Semantic_ir.Infix ("lsl", Semantic_ir.Int 1, right))))
   | "bit-clear" ->
-      int_binary name args (fun left right -> typed_ir TInt (Semantic_ir.Infix ("land", left, Semantic_ir.Prefix ("lnot", Semantic_ir.Infix ("lsl", Semantic_ir.Int 1, right)))))
+      int_binary name args (fun left right ->
+          typed_ir TInt
+            (Semantic_ir.Infix
+               ( "land",
+                 left,
+                 Semantic_ir.Prefix
+                   ("lnot", Semantic_ir.Infix ("lsl", Semantic_ir.Int 1, right))
+               )))
   | "bit-flip" ->
-      int_binary name args (fun left right -> typed_ir TInt (Semantic_ir.Infix ("lxor", left, Semantic_ir.Infix ("lsl", Semantic_ir.Int 1, right))))
+      int_binary name args (fun left right ->
+          typed_ir TInt
+            (Semantic_ir.Infix
+               ( "lxor",
+                 left,
+                 Semantic_ir.Infix ("lsl", Semantic_ir.Int 1, right) )))
   | "bit-test" ->
-      int_binary name args (fun left right -> typed_ir TBool (Semantic_ir.Infix ("<>", Semantic_ir.Infix ("land", left, Semantic_ir.Infix ("lsl", Semantic_ir.Int 1, right)), Semantic_ir.Int 0)))
+      int_binary name args (fun left right ->
+          typed_ir TBool
+            (Semantic_ir.Infix
+               ( "<>",
+                 Semantic_ir.Infix
+                   ( "land",
+                     left,
+                     Semantic_ir.Infix ("lsl", Semantic_ir.Int 1, right) ),
+                 Semantic_ir.Int 0 )))
   | "bit-shift-right-zero-fill" ->
-      int_binary name args (fun left right -> typed_ir TInt (Semantic_ir.Infix ("lsr", left, right)))
+      int_binary name args (fun left right ->
+          typed_ir TInt (Semantic_ir.Infix ("lsr", left, right)))
   | "unchecked-add" | "unchecked-add-int" ->
-      int_binary name args (fun left right -> typed_ir TInt (Semantic_ir.Infix ("+", left, right)))
+      int_binary name args (fun left right ->
+          typed_ir TInt (Semantic_ir.Infix ("+", left, right)))
   | "unchecked-subtract" | "unchecked-subtract-int" ->
-      int_binary name args (fun left right -> typed_ir TInt (Semantic_ir.Infix ("-", left, right)))
+      int_binary name args (fun left right ->
+          typed_ir TInt (Semantic_ir.Infix ("-", left, right)))
   | "unchecked-multiply" | "unchecked-multiply-int" ->
-      int_binary name args (fun left right -> typed_ir TInt (Semantic_ir.Infix ("*", left, right)))
+      int_binary name args (fun left right ->
+          typed_ir TInt (Semantic_ir.Infix ("*", left, right)))
   | "unchecked-divide-int" ->
-      int_binary name args (fun left right -> typed_ir TInt (Semantic_ir.Infix ("/", left, right)))
+      int_binary name args (fun left right ->
+          typed_ir TInt (Semantic_ir.Infix ("/", left, right)))
   | "unchecked-remainder-int" ->
-      int_binary name args (fun left right -> typed_ir TInt (Semantic_ir.Infix ("mod", left, right)))
-  | "unchecked-inc" | "unchecked-inc-int" -> int_unary name args (fun expr -> Semantic_ir.Infix ("+", expr, Semantic_ir.Int 1))
-  | "unchecked-dec" | "unchecked-dec-int" -> int_unary name args (fun expr -> Semantic_ir.Infix ("-", expr, Semantic_ir.Int 1))
-  | "unchecked-negate" | "unchecked-negate-int" -> int_unary name args (fun expr -> Semantic_ir.Prefix ("~-", expr))
+      int_binary name args (fun left right ->
+          typed_ir TInt (Semantic_ir.Infix ("mod", left, right)))
+  | "unchecked-inc" | "unchecked-inc-int" ->
+      int_unary name args (fun expr ->
+          Semantic_ir.Infix ("+", expr, Semantic_ir.Int 1))
+  | "unchecked-dec" | "unchecked-dec-int" ->
+      int_unary name args (fun expr ->
+          Semantic_ir.Infix ("-", expr, Semantic_ir.Int 1))
+  | "unchecked-negate" | "unchecked-negate-int" ->
+      int_unary name args (fun expr -> Semantic_ir.Prefix ("~-", expr))
   | "name" -> compile_name name args
   | "namespace" -> compile_namespace name args
   | "keyword" -> compile_keyword name args

@@ -26,7 +26,7 @@
 (executable
  (name lgc_native)
  (modules lgc_native)
- (libraries lg.runtime rrbvec))
+ (libraries lg.runtime re rrbvec))
 
 (rule
  (target lgc_melange.ml)
@@ -245,7 +245,7 @@
  (name lgc_jsoo)
  (modes js)
  (modules lgc_jsoo)
- (libraries lg.runtime rrbvec))
+ (libraries lg.runtime re rrbvec))
 
 (rule
  (alias runtest)

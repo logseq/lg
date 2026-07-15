@@ -3,7 +3,6 @@ let is_whitespace = function
   | _ -> false
 
 let blank source = String.trim source = ""
-
 let ends_with source suffix = String.ends_with ~suffix source
 
 let index_of source needle =
@@ -19,7 +18,6 @@ let index_of source needle =
     search 0
 
 let includes source needle = index_of source needle >= 0
-
 let join separator values = String.concat separator (Rrbvec.to_list values)
 
 let last_index_of source needle =
@@ -61,16 +59,23 @@ let replace_first source match_value replacement =
     let rec search index =
       if index + match_len > String.length source then source
       else if String.sub source index match_len = match_value then
-        String.sub source 0 index
-        ^ replacement
+        String.sub source 0 index ^ replacement
         ^ String.sub source (index + match_len)
             (String.length source - index - match_len)
       else search (index + 1)
     in
     search 0
 
+let regex_prefix = "\000lg-regex:"
+
+let regex_pattern expression =
+  if String.starts_with ~prefix:regex_prefix expression then
+    String.sub expression
+      (String.length regex_prefix)
+      (String.length expression - String.length regex_prefix)
+  else invalid_arg "expected an LG regular expression"
+
 let split source separator =
-  let regex_prefix = "\000lg-regex:" in
   let literal_regex pattern =
     let buffer = Buffer.create (String.length pattern) in
     let rec loop index =
@@ -93,11 +98,7 @@ let split source separator =
   in
   let separator =
     if String.starts_with ~prefix:regex_prefix separator then
-      let pattern =
-        String.sub separator (String.length regex_prefix)
-          (String.length separator - String.length regex_prefix)
-      in
-      literal_regex pattern
+      literal_regex (regex_pattern separator)
     else separator
   in
   let separator_len = String.length separator in
@@ -119,8 +120,12 @@ let split_lines source =
     if index >= String.length source then
       List.rev (String.sub source start (String.length source - start) :: acc)
     else if source.[index] = '\n' then
-      let stop = if index > start && source.[index - 1] = '\r' then index - 1 else index in
-      loop (String.sub source start (stop - start) :: acc) (index + 1) (index + 1)
+      let stop =
+        if index > start && source.[index - 1] = '\r' then index - 1 else index
+      in
+      loop
+        (String.sub source start (stop - start) :: acc)
+        (index + 1) (index + 1)
     else loop acc start (index + 1)
   in
   Rrbvec.of_list (if source = "" then [] else loop [] 0 0)
@@ -146,7 +151,8 @@ let trimr source =
 let trim_newline source =
   let rec stop index =
     if index < 0 then -1
-    else match source.[index] with '\n' | '\r' -> stop (index - 1) | _ -> index
+    else
+      match source.[index] with '\n' | '\r' -> stop (index - 1) | _ -> index
   in
   let last = stop (String.length source - 1) in
   if last < 0 then "" else String.sub source 0 (last + 1)
@@ -161,7 +167,6 @@ let reverse source =
   String.of_seq (List.to_seq (List.rev (List.of_seq (String.to_seq source))))
 
 let starts_with source prefix = String.starts_with ~prefix source
-
 let identity source = source
 
 let digit_value = function
@@ -175,7 +180,10 @@ let parse_int_radix source radix =
   let source = String.trim source in
   if source = "" then invalid_arg "cannot parse an empty integer";
   let negative, start =
-    match source.[0] with '-' -> (true, 1) | '+' -> (false, 1) | _ -> (false, 0)
+    match source.[0] with
+    | '-' -> (true, 1)
+    | '+' -> (false, 1)
+    | _ -> (false, 0)
   in
   if start = String.length source then invalid_arg "integer requires digits";
   let rec loop result index =

@@ -20,16 +20,16 @@ type local_binding = {
 
 let source_identity form =
   Source_context.find form
-  |> Option.map (fun location -> (Source_node_id.of_location location, location))
+  |> Option.map (fun location ->
+      (Source_node_id.of_location location, location))
 
 let is_type_annotation name = String.starts_with ~prefix:"^" name
-
 let keyword_for_local name = ":" ^ name
-
 let ignore_name name = name = "_"
 
 let local_binding ?identity source_name ty semantic_expr =
-  { source_name;
+  {
+    source_name;
     ocaml_name = Names.sanitize_name source_name;
     ty;
     semantic_expr = Semantic_ir.annotate ty semantic_expr;
@@ -55,21 +55,31 @@ type sequence_pattern = {
 
 let parse_sequence_pattern forms =
   let rec loop items rest_name as_name = function
-    | [] -> Ok { item_names = List.rev items; rest_name; sequence_as_name = as_name }
-    | FKeyword ":as" :: FSymbol name :: [] ->
+    | [] ->
         Ok
-          { item_names = List.rev items;
+          { item_names = List.rev items; rest_name; sequence_as_name = as_name }
+    | [ FKeyword ":as"; FSymbol name ] ->
+        Ok
+          {
+            item_names = List.rev items;
             rest_name;
-            sequence_as_name = if ignore_name name then as_name else Some name }
-    | FKeyword ":as" :: _ -> Error.error "sequential destructuring :as must be last"
+            sequence_as_name = (if ignore_name name then as_name else Some name);
+          }
+    | FKeyword ":as" :: _ ->
+        Error.error "sequential destructuring :as must be last"
     | FSymbol "&" :: FSymbol name :: rest ->
         if Option.is_some rest_name then
           Error.error "sequential destructuring & can appear only once"
-        else loop items (if ignore_name name then rest_name else Some name) as_name rest
+        else
+          loop items
+            (if ignore_name name then rest_name else Some name)
+            as_name rest
     | FSymbol "&" :: _ ->
         Error.error "sequential destructuring & must be followed by a symbol"
     | FSymbol name :: rest when Option.is_none rest_name ->
-        loop (if ignore_name name then items else name :: items) rest_name as_name rest
+        loop
+          (if ignore_name name then items else name :: items)
+          rest_name as_name rest
     | _ :: _ when Option.is_some rest_name ->
         Error.error "sequential destructuring only supports :as after & rest"
     | _ :: _ -> Error.error "unsupported sequential destructuring form"
@@ -112,7 +122,7 @@ and map_pattern_names pairs =
   |> List.rev
 
 let rec identity_for_name name = function
-  | (FSymbol candidate as form) when candidate = name -> source_identity form
+  | FSymbol candidate as form when candidate = name -> source_identity form
   | FVector forms -> List.find_map (identity_for_name name) forms
   | FMap pairs ->
       List.find_map
@@ -126,40 +136,21 @@ let rec identity_for_name name = function
 let attach_pattern_identities pattern bindings =
   List.map
     (fun binding ->
-      { binding with
-        identity = identity_for_name binding.source_name pattern;
-      })
+      { binding with identity = identity_for_name binding.source_name pattern })
     bindings
 
 let parse_param_specs = function
   | FVector params ->
       let rec loop index acc = function
         | [] -> Ok (List.rev acc)
-        | FSymbol annotation :: ((FSymbol name) as name_form) :: rest
+        | FSymbol annotation :: (FSymbol name as name_form) :: rest
           when is_type_annotation annotation -> (
             match Type_annotation.of_param_annotation annotation with
             | Error _ as err -> err
             | Ok ty ->
                 loop (index + 1)
-                  ({ pattern = FSymbol name;
-                     source_name = name;
-                     ocaml_name = Names.sanitize_name name;
-                     explicit_ty = Some ty;
-                     destructured = false;
-                     identity = source_identity name_form }
-                  :: acc)
-                  rest)
-        | FList
-            [ FSymbol "__type-hint";
-              FSymbol annotation;
-              ((FSymbol name) as name_form);
-            ]
-          :: rest -> (
-            match Type_annotation.of_param_annotation annotation with
-            | Error _ as error -> error
-            | Ok ty ->
-                loop (index + 1)
-                  ({ pattern = FSymbol name;
+                  ({
+                     pattern = FSymbol name;
                      source_name = name;
                      ocaml_name = Names.sanitize_name name;
                      explicit_ty = Some ty;
@@ -168,28 +159,55 @@ let parse_param_specs = function
                    }
                   :: acc)
                   rest)
-        | ((FSymbol name) as name_form) :: rest ->
+        | FList
+            [
+              FSymbol "__type-hint";
+              FSymbol annotation;
+              (FSymbol name as name_form);
+            ]
+          :: rest -> (
+            match Type_annotation.of_param_annotation annotation with
+            | Error _ as error -> error
+            | Ok ty ->
+                loop (index + 1)
+                  ({
+                     pattern = FSymbol name;
+                     source_name = name;
+                     ocaml_name = Names.sanitize_name name;
+                     explicit_ty = Some ty;
+                     destructured = false;
+                     identity = source_identity name_form;
+                   }
+                  :: acc)
+                  rest)
+        | (FSymbol name as name_form) :: rest ->
             loop (index + 1)
-              ({ pattern = FSymbol name;
+              ({
+                 pattern = FSymbol name;
                  source_name = name;
                  ocaml_name = Names.sanitize_name name;
                  explicit_ty = None;
                  destructured = false;
-                 identity = source_identity name_form }
+                 identity = source_identity name_form;
+               }
               :: acc)
               rest
-        | (FVector _ | FMap _) as pattern :: rest ->
+        | ((FVector _ | FMap _) as pattern) :: rest ->
             let source_name = "__destructure" ^ string_of_int index in
             loop (index + 1)
-              ({ pattern;
+              ({
+                 pattern;
                  source_name;
                  ocaml_name = Names.sanitize_name source_name;
                  explicit_ty = None;
                  destructured = true;
-                 identity = source_identity pattern }
+                 identity = source_identity pattern;
+               }
               :: acc)
               rest
-        | _ -> Error.error "function parameters must be symbols or destructuring patterns"
+        | _ ->
+            Error.error
+              "function parameters must be symbols or destructuring patterns"
       in
       loop 0 [] params
   | _ -> Error.error "function parameters must be a vector"
@@ -204,9 +222,11 @@ let parse_map_pattern pairs =
                | FSymbol name when not (ignore_name name) ->
                    Result.map
                      (fun bindings ->
-                       { binding_pattern = FSymbol name;
+                       {
+                         binding_pattern = FSymbol name;
                          keyword = keyword_for_local name;
-                         default_form = None }
+                         default_form = None;
+                       }
                        :: bindings)
                      acc
                | FSymbol _ -> acc
@@ -222,7 +242,8 @@ let parse_map_pattern pairs =
                | FSymbol name, value when not (ignore_name name) ->
                    Result.map (fun defaults -> (name, value) :: defaults) acc
                | FSymbol _, _ -> acc
-               | _ -> Error.error "map destructuring :or defaults must use symbols")
+               | _ ->
+                   Error.error "map destructuring :or defaults must use symbols")
              (Ok [])
     | _ -> Error.error "map destructuring :or expects a map"
   in
@@ -235,21 +256,29 @@ let parse_map_pattern pairs =
            | _ -> field)
   in
   let rec loop fields as_name defaults = function
-    | [] -> Ok { field_bindings = apply_defaults defaults (List.rev fields); as_name }
+    | [] ->
+        Ok
+          {
+            field_bindings = apply_defaults defaults (List.rev fields);
+            as_name;
+          }
     | (FKeyword ":keys", value) :: rest -> (
         match parse_keys value with
         | Error _ as err -> err
-        | Ok key_fields -> loop (List.rev_append key_fields fields) as_name defaults rest)
+        | Ok key_fields ->
+            loop (List.rev_append key_fields fields) as_name defaults rest)
     | (FKeyword ":as", FSymbol name) :: rest ->
-        loop fields (if ignore_name name then as_name else Some name) defaults rest
+        loop fields
+          (if ignore_name name then as_name else Some name)
+          defaults rest
     | (FKeyword ":or", defaults_form) :: rest -> (
         match parse_defaults defaults_form with
         | Error _ as err -> err
-        | Ok parsed_defaults -> loop fields as_name (parsed_defaults @ defaults) rest)
+        | Ok parsed_defaults ->
+            loop fields as_name (parsed_defaults @ defaults) rest)
     | (((FSymbol _ | FVector _ | FMap _) as binding_pattern), FKeyword keyword)
       :: rest ->
-        if binding_pattern = FSymbol "_" then
-          loop fields as_name defaults rest
+        if binding_pattern = FSymbol "_" then loop fields as_name defaults rest
         else
           loop
             ({ binding_pattern; keyword; default_form = None } :: fields)
@@ -273,6 +302,9 @@ let literal_default = function
 let rec infer_map_type pattern lookup_local_ty =
   parse_map_pattern pattern
   |> Result.map (fun parsed ->
+      match parsed.as_name with
+      | Some _ -> Types.dynamic_constraint TUnknown
+      | None ->
          let fields =
            parsed.field_bindings
            |> List.map (fun { binding_pattern; keyword; _ } ->
@@ -319,7 +351,8 @@ let rec bind_map ~env (target : typed_expr) pairs =
             match field_type fields keyword with
             | Error _ -> (
                 match default_form with
-                | None -> Error.error ("cannot destructure missing field " ^ keyword)
+                | None ->
+                    Error.error ("cannot destructure missing field " ^ keyword)
                 | Some form -> (
                     match literal_default form with
                     | Error _ as err -> err
@@ -334,14 +367,15 @@ let rec bind_map ~env (target : typed_expr) pairs =
                 let acc =
                   match parsed.as_name with
                   | None -> acc
-                  | Some name -> local_binding name target.ty target.semantic_expr :: acc
+                  | Some name ->
+                      local_binding name target.ty target.semantic_expr :: acc
                 in
                 Ok (List.rev acc)
             | binding :: rest -> (
                 match bind_field binding with
                 | Error _ as err -> err
-                | Ok bindings ->
-                    bind_fields (List.rev_append bindings acc) rest)
+                | Ok bindings -> bind_fields (List.rev_append bindings acc) rest
+                )
           in
           bind_fields [] parsed.field_bindings)
   | ty when Types.is_dynamic ty -> (
@@ -357,22 +391,24 @@ let rec bind_map ~env (target : typed_expr) pairs =
                       local_binding name target.ty target.semantic_expr :: acc
                 in
                 Ok (List.rev acc)
-            | { binding_pattern; keyword; _ } :: rest ->
+            | { binding_pattern; keyword; _ } :: rest -> (
                 let value =
-                  typed_ir (Types.dynamic_constraint TUnknown)
+                  typed_ir
+                    (Types.dynamic_constraint TUnknown)
                     (Semantic_ir.Apply
                        ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.get",
-                         [ target.semantic_expr;
+                         [
+                           target.semantic_expr;
                            Semantic_ir.Apply
                              ( Semantic_ir.Ident
                                  "Lg_runtime.Runtime_dynamic.keyword",
                                [ Semantic_ir.String keyword ] );
                          ] ))
                 in
-                (match bind_pattern ~env value binding_pattern with
+                match bind_pattern ~env value binding_pattern with
                 | Error _ as error -> error
-                | Ok bindings ->
-                    bind_fields (List.rev_append bindings acc) rest)
+                | Ok bindings -> bind_fields (List.rev_append bindings acc) rest
+                )
           in
           bind_fields [] parsed.field_bindings)
   | _ -> Error.error "map destructuring expects a map"
@@ -381,8 +417,14 @@ and bind_sequence env (target : typed_expr) forms =
   let bind_at inner index name =
     let semantic_expr =
       match target.ty with
-      | TList _ -> Semantic_ir.Apply (Semantic_ir.Ident "List.nth", [ target.semantic_expr; Semantic_ir.Int index ])
-      | TVector _ -> Semantic_ir.Apply (Semantic_ir.Ident "Rrbvec.nth", [ target.semantic_expr; Semantic_ir.Int index ])
+      | TList _ ->
+          Semantic_ir.Apply
+            ( Semantic_ir.Ident "List.nth",
+              [ target.semantic_expr; Semantic_ir.Int index ] )
+      | TVector _ ->
+          Semantic_ir.Apply
+            ( Semantic_ir.Ident "Rrbvec.nth",
+              [ target.semantic_expr; Semantic_ir.Int index ] )
       | _ -> target.semantic_expr
     in
     local_binding name inner semantic_expr
@@ -391,12 +433,17 @@ and bind_sequence env (target : typed_expr) forms =
     let semantic_expr =
       match target.ty with
       | TList _ ->
-          Core_sequence_transform.drop_list_expr (Semantic_ir.Int count) target.semantic_expr
+          Core_sequence_transform.drop_list_expr (Semantic_ir.Int count)
+            target.semantic_expr
       | TVector _ ->
           Semantic_ir.Apply
             ( Semantic_ir.Ident "Rrbvec.of_list",
-              [ Core_sequence_transform.drop_list_expr (Semantic_ir.Int count)
-                  (Semantic_ir.Apply (Semantic_ir.Ident "Rrbvec.to_list", [ target.semantic_expr ])) ] )
+              [
+                Core_sequence_transform.drop_list_expr (Semantic_ir.Int count)
+                  (Semantic_ir.Apply
+                     ( Semantic_ir.Ident "Rrbvec.to_list",
+                       [ target.semantic_expr ] ));
+              ] )
       | _ -> target.semantic_expr
     in
     local_binding name target.ty semantic_expr
@@ -417,15 +464,15 @@ and bind_sequence env (target : typed_expr) forms =
               let patterns =
                 List.mapi
                   (fun element_index _ ->
-                    if element_index = index then
-                      Semantic_ir.PVar ocaml_name
+                    if element_index = index then Semantic_ir.PVar ocaml_name
                     else Semantic_ir.PAny)
                   element_tys
               in
               local_binding name ty
                 (Semantic_ir.Match
                    ( target.semantic_expr,
-                     [ ( Semantic_ir.PTuple patterns,
+                     [
+                       ( Semantic_ir.PTuple patterns,
                          Semantic_ir.Ident ocaml_name );
                      ] ))
             in
@@ -434,7 +481,8 @@ and bind_sequence env (target : typed_expr) forms =
               match pattern.sequence_as_name with
               | None -> bindings
               | Some name ->
-                  bindings @ [ local_binding name target.ty target.semantic_expr ]
+                  bindings
+                  @ [ local_binding name target.ty target.semantic_expr ]
             in
             Ok bindings)
   | TList inner | TVector inner -> (
@@ -451,7 +499,8 @@ and bind_sequence env (target : typed_expr) forms =
           let bindings =
             match pattern.sequence_as_name with
             | None -> bindings
-            | Some name -> bindings @ [ local_binding name target.ty target.semantic_expr ]
+            | Some name ->
+                bindings @ [ local_binding name target.ty target.semantic_expr ]
           in
           Ok bindings)
   | _ -> (
@@ -479,17 +528,18 @@ and bind_sequence env (target : typed_expr) forms =
             | None -> bindings
             | Some name ->
                 bindings
-                @ [ local_binding name (TSeq inner)
+                @ [
+                    local_binding name (TSeq inner)
                       (Semantic_ir.Apply
                          ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.drop",
-                           [ Semantic_ir.Int item_count; sequence ] )) ]
+                           [ Semantic_ir.Int item_count; sequence ] ));
+                  ]
           in
           let bindings =
             match pattern.sequence_as_name with
             | None -> bindings
             | Some name ->
-                bindings
-                @ [ local_binding name target.ty target.semantic_expr ]
+                bindings @ [ local_binding name target.ty target.semantic_expr ]
           in
           Ok bindings)
 

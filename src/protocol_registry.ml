@@ -80,7 +80,9 @@ let declare ?location ?(method_locations = []) protocol_id signatures registry =
               Method_map.add method_id location locations)
             Method_map.empty method_locations
         in
-        let declaration = { protocol_id; location; methods; method_locations } in
+        let declaration =
+          { protocol_id; location; methods; method_locations }
+        in
         Ok
           {
             registry with
@@ -120,11 +122,13 @@ let protocols_for_method ~owner ~method_name registry =
     registry.declarations []
   |> List.rev
 
-let add_implementation ?location protocol_id method_id receiver_id binding registry =
+let add_implementation ?location protocol_id method_id receiver_id binding
+    registry =
   let key = (protocol_id, method_id, receiver_id) in
   if Implementation_map.mem key registry.implementations then
     Error.error
-      ("duplicate protocol implementation " ^ Protocol_id.to_string protocol_id
+      ("duplicate protocol implementation "
+      ^ Protocol_id.to_string protocol_id
      ^ "/" ^ Method_id.name method_id)
   else
     match
@@ -134,10 +138,13 @@ let add_implementation ?location protocol_id method_id receiver_id binding regis
     | Some (existing_protocol, existing_method, _existing_receiver) ->
         Error.error
           ("OCaml protocol implementation name collision: "
-         ^ Protocol_id.to_string existing_protocol ^ "/"
-         ^ Method_id.name existing_method ^ " and "
-         ^ Protocol_id.to_string protocol_id ^ "/" ^ Method_id.name method_id
-         ^ " both emit " ^ binding.ocaml_name)
+          ^ Protocol_id.to_string existing_protocol
+          ^ "/"
+          ^ Method_id.name existing_method
+          ^ " and "
+          ^ Protocol_id.to_string protocol_id
+          ^ "/" ^ Method_id.name method_id ^ " both emit " ^ binding.ocaml_name
+          )
     | None ->
         Ok
           {
@@ -147,7 +154,8 @@ let add_implementation ?location protocol_id method_id receiver_id binding regis
             implementation_locations =
               (match location with
               | Some location ->
-                  Implementation_map.add key location registry.implementation_locations
+                  Implementation_map.add key location
+                    registry.implementation_locations
               | None -> registry.implementation_locations);
             implementation_names =
               Emitted_name_map.add binding.ocaml_name key
@@ -155,7 +163,8 @@ let add_implementation ?location protocol_id method_id receiver_id binding regis
           }
 
 let find_implementation protocol_id method_id receiver_id registry =
-  Implementation_map.find_opt (protocol_id, method_id, receiver_id)
+  Implementation_map.find_opt
+    (protocol_id, method_id, receiver_id)
     registry.implementations
 
 let implementations_for_method protocol_id method_id registry =
@@ -175,7 +184,9 @@ let export_owner ~from_owner ~to_owner ~from_module ~to_module source target =
   let replace_prefix value =
     let prefix = from_module ^ "." in
     if String.starts_with ~prefix value then
-      to_module ^ String.sub value (String.length from_module)
+      to_module
+      ^ String.sub value
+          (String.length from_module)
         (String.length value - String.length from_module)
     else value
   in
@@ -187,9 +198,11 @@ let export_owner ~from_owner ~to_owner ~from_module ~to_module source target =
           let prefix = from_path ^ "." in
           if String.starts_with ~prefix owner_path then
             Some
-              [ to_path
+              [
+                to_path
                 ^ String.sub owner_path (String.length from_path)
-                    (String.length owner_path - String.length from_path) ]
+                    (String.length owner_path - String.length from_path);
+              ]
           else None
     | _ when owner = from_owner -> Some to_owner
     | _ -> None
@@ -224,9 +237,12 @@ let export_owner ~from_owner ~to_owner ~from_module ~to_module source target =
           let methods =
             Method_map.fold
               (fun _ signature methods ->
-                let method_id = remap_method protocol_id signature.method_id in
+                  let method_id =
+                    remap_method protocol_id signature.method_id
+                  in
                 Method_map.add method_id
-                  { method_id;
+                    {
+                      method_id;
                     param_tys =
                       List.map
                         (Types.remap_module_type ~from_path:from_module
@@ -242,15 +258,18 @@ let export_owner ~from_owner ~to_owner ~from_module ~to_module source target =
           let method_locations =
             Method_map.fold
               (fun method_id location locations ->
-                Method_map.add (remap_method protocol_id method_id) location
-                  locations)
+                  Method_map.add
+                    (remap_method protocol_id method_id)
+                    location locations)
               declaration.method_locations Method_map.empty
           in
           Protocol_map.add protocol_id
-            { protocol_id;
+              {
+                protocol_id;
               location = declaration.location;
               methods;
-              method_locations }
+                method_locations;
+              }
             declarations)
       source.declarations target.declarations
   in
@@ -273,8 +292,9 @@ let export_owner ~from_owner ~to_owner ~from_module ~to_module source target =
               protocol_id = Option.map remap_protocol binding.protocol_id;
             }
           in
-          Implementation_map.add (protocol_id, method_id, receiver_id) binding
-            implementations)
+            Implementation_map.add
+              (protocol_id, method_id, receiver_id)
+              binding implementations)
       source.implementations target.implementations
   in
   let implementation_locations =
@@ -296,15 +316,19 @@ let export_owner ~from_owner ~to_owner ~from_module ~to_module source target =
         Emitted_name_map.add binding.Types.ocaml_name key names)
       implementations Emitted_name_map.empty
   in
-  { declarations; implementations; implementation_locations; implementation_names }
+  {
+    declarations;
+    implementations;
+    implementation_locations;
+    implementation_names;
+  }
 
 let qualify_implementations ~owner ~module_name registry =
-  let owner_prefix =
-    Names.sanitize_name (String.concat "/" owner) ^ "_"
-  in
+  let owner_prefix = Names.sanitize_name (String.concat "/" owner) ^ "_" in
   let implementations =
     Implementation_map.fold
-      (fun (protocol_id, method_id, receiver_id) (binding : Types.binding) result ->
+      (fun (protocol_id, method_id, receiver_id) (binding : Types.binding)
+           result ->
         if
           Protocol_id.owner protocol_id = owner
           || String.starts_with ~prefix:owner_prefix binding.ocaml_name
@@ -321,8 +345,13 @@ let qualify_implementations ~owner ~module_name registry =
               ty = Types.qualify_module_type module_name binding.ty;
             }
           in
-          Implementation_map.add (protocol_id, method_id, receiver_id) binding result
-        else Implementation_map.add (protocol_id, method_id, receiver_id) binding result)
+          Implementation_map.add
+            (protocol_id, method_id, receiver_id)
+            binding result
+        else
+          Implementation_map.add
+            (protocol_id, method_id, receiver_id)
+            binding result)
       registry.implementations Implementation_map.empty
   in
   let implementation_names =

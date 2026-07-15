@@ -1,6 +1,5 @@
 open Types
 open Expression_support
-
 module Env = Compiler_environment
 
 let unique_named_records records =
@@ -20,13 +19,14 @@ let rec infer_named_record scope env = function
       TOcaml_app ("option", [ infer_named_record scope env inner ])
   | TOcaml name when String.starts_with ~prefix:"__lg_record:" name ->
       let source_name =
-        String.sub name (String.length "__lg_record:")
+        String.sub name
+          (String.length "__lg_record:")
           (String.length name - String.length "__lg_record:")
       in
       Resolver.lookup_record_type scope env source_name
       |> Result.map (fun record -> TNamed_record record)
       |> Result.value ~default:(TOcaml name)
-  | TRecord fields ->
+  | TRecord fields -> (
       let fields =
         List.map
           (fun (field : field) ->
@@ -48,7 +48,7 @@ let rec infer_named_record scope env = function
           env
         |> unique_named_records
       in
-      (match candidates with [ record ] -> TNamed_record record | _ -> inferred)
+      match candidates with [ record ] -> TNamed_record record | _ -> inferred)
   | inferred -> inferred
 
 let rec pattern_constraint_type = function
@@ -74,13 +74,11 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
     body_forms =
   match Destructure.parse_param_specs params with
   | Error _ as err -> err
-  | Ok specs ->
+  | Ok specs -> (
       let inference_params =
         specs
         |> List.mapi (fun index (spec : Destructure.param_spec) ->
-               let explicit_ty =
-                 Option.value spec.explicit_ty ~default:TUnknown
-               in
+            let explicit_ty = Option.value spec.explicit_ty ~default:TUnknown in
                let param_ty =
                  match List.nth_opt param_type_overrides index with
                  | Some (Some ty) when not (Types.equal ty TUnknown) -> ty
@@ -95,15 +93,13 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                (spec.source_name, param_ty) :: destructured)
         |> List.concat
       in
-      let lookup_protocol_constraint =
-        Protocol.constraint_type scope env
-      in
+      let lookup_protocol_constraint = Protocol.constraint_type scope env in
       match
         Type_inference.infer_params ~lookup_function_ty
           ~lookup_protocol_constraint inference_params body_forms
       with
       | Error _ as err -> err
-      | Ok inferred ->
+      | Ok inferred -> (
           let inferred =
             List.map
                 (fun (name, ty) -> (name, infer_named_record scope env ty))
@@ -126,7 +122,7 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
           in
           match build [] specs with
           | Error _ as err -> err
-          | Ok typed_specs ->
+          | Ok typed_specs -> (
               let typed_specs =
                 typed_specs
                 |> List.mapi (fun index (spec, inferred_ty) ->
@@ -141,13 +137,11 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                          else inferred_ty
                        in
                        match List.nth_opt param_type_overrides index with
-                       | Some (Some TUnknown) | None | Some None ->
-                           (match spec.Destructure.explicit_ty with
-                           | Some ty ->
-                               (spec, infer_named_record scope env ty)
+                    | Some (Some TUnknown) | None | Some None -> (
+                        match spec.Destructure.explicit_ty with
+                        | Some ty -> (spec, infer_named_record scope env ty)
                            | None -> (spec, inferred_ty))
-                       | Some (Some ty) -> (spec, ty)
-                       )
+                    | Some (Some ty) -> (spec, ty))
               in
               let param_bindings =
                 typed_specs
@@ -168,18 +162,21 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
               let destructured_bindings =
                 let rec loop acc = function
                   | [] -> Ok (List.rev acc)
-                  | (spec, target) :: rest ->
+                  | (spec, target) :: rest -> (
                       if not spec.Destructure.destructured then loop acc rest
-                      else (
-                        match Destructure.bind_pattern ~env target spec.pattern with
+                      else
+                        match
+                          Destructure.bind_pattern ~env target spec.pattern
+                        with
                         | Error _ as err -> err
-                        | Ok bindings -> loop (List.rev_append bindings acc) rest)
+                        | Ok bindings ->
+                            loop (List.rev_append bindings acc) rest)
                 in
                 loop [] param_targets
               in
-              (match destructured_bindings with
+              match destructured_bindings with
               | Error _ as err -> err
-              | Ok destructured_bindings ->
+              | Ok destructured_bindings -> (
                   let local_bindings =
                     destructured_bindings
                     |> List.map (fun (binding : Destructure.local_binding) ->
@@ -187,7 +184,8 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                              Types.binding binding.ocaml_name binding.ty ))
                   in
                   let env =
-                    env |> Env.add_bindings param_bindings
+                    env
+                    |> Env.add_bindings param_bindings
                     |> Env.add_bindings local_bindings
                   in
                   let body_forms =
@@ -209,25 +207,27 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                   | Error _ as err -> err
                   | Ok body ->
                       Ok
-                        { param_bindings;
+                        {
+                          param_bindings;
                           param_identities;
                           destructured_bindings;
                           body;
-                        })
+                        }))))
 
 let fn_code ?(row_param_type_names = []) parts =
   let param_names =
     parts.param_bindings |> List.map (fun (_key, binding) -> binding.ocaml_name)
   in
   let param_tys =
-    parts.param_bindings |> List.map (fun (_key, (binding : binding)) -> binding.ty)
+    parts.param_bindings
+    |> List.map (fun (_key, (binding : binding)) -> binding.ty)
   in
   let rec capability_pattern name ty =
     match Types.protocol_constraint_info ty with
     | Some (protocol_id, _, value_ty) ->
         Semantic_ir.PTuple
-          [ Semantic_ir.PVar
-              (Types.protocol_witness_name name protocol_id);
+          [
+            Semantic_ir.PVar (Types.protocol_witness_name name protocol_id);
             capability_pattern name value_ty;
           ]
     | None -> (
@@ -237,7 +237,8 @@ let fn_code ?(row_param_type_names = []) parts =
                || constraint_name = Types.optional_seqable_constraint_name
                || constraint_name = Types.optional_sequential_constraint_name ->
             Semantic_ir.PTuple
-              [ Semantic_ir.PVar
+              [
+                Semantic_ir.PVar
                   (if constraint_name = Types.seqable_constraint_name then
                      name ^ "__seq"
                    else name ^ "__seq_optional");
@@ -260,11 +261,15 @@ let fn_code ?(row_param_type_names = []) parts =
                match List.nth_opt row_param_type_names index with
                | Some (Some type_name) ->
                    Semantic_ir.PConstraint (Semantic_ir.PVar name, type_name)
+            | _ -> (
+                match ty with
+                | TRecord _ -> Semantic_ir.PVar name
                | _ -> (
                    match param_constraint_name ty with
                    | Some type_name ->
-                       Semantic_ir.PConstraint (Semantic_ir.PVar name, type_name)
-                   | None -> Semantic_ir.PVar name)
+                        Semantic_ir.PConstraint
+                          (Semantic_ir.PVar name, type_name)
+                    | None -> Semantic_ir.PVar name))
            in
            match List.nth_opt parts.param_identities index |> Option.join with
            | None -> pattern
@@ -280,8 +285,7 @@ let fn_code ?(row_param_type_names = []) parts =
               (fun (binding : Destructure.local_binding) ->
                 let pattern =
                   if
-                    Option.is_some
-                      (Types.protocol_constraint_info binding.ty)
+                    Option.is_some (Types.protocol_constraint_info binding.ty)
                     || Option.is_some
                          (Types.seqable_constraint_element binding.ty)
                   then capability_pattern binding.ocaml_name binding.ty
@@ -299,7 +303,8 @@ let fn_code ?(row_param_type_names = []) parts =
   in
   let return_param_index =
     match
-      (parts.destructured_bindings, Semantic_ir.unlocated parts.body.semantic_expr)
+      ( parts.destructured_bindings,
+        Semantic_ir.unlocated parts.body.semantic_expr )
     with
     | [], Semantic_ir.Ident returned_name ->
         param_names
@@ -309,7 +314,9 @@ let fn_code ?(row_param_type_names = []) parts =
     | _ -> None
   in
   {
-    (typed_ir (TFn (param_tys, parts.body.ty))
-       (Semantic_ir.Fun (param_patterns, body_expr))) with
+    (typed_ir
+       (TFn (param_tys, parts.body.ty))
+       (Semantic_ir.Fun (param_patterns, body_expr)))
+    with
     return_param_index;
   }

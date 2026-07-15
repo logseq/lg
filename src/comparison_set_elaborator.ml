@@ -1,12 +1,14 @@
 open Ast
 open Types
 open Expression_support
-
 module Env = Compiler_environment
 
 type expression_result = (typed_expr, Error.t) result
 type call = string -> Env.t -> Ast.form list -> expression_result
-type named_call = string -> Env.t -> string -> Ast.form list -> expression_result
+
+type named_call =
+  string -> Env.t -> string -> Ast.form list -> expression_result
+
 type forms = Ast.form list -> expression_result
 
 type t = {
@@ -28,14 +30,15 @@ let compile_args_for compile_expr scope env arg_forms =
   in
   loop [] arg_forms
 
-let create ~compile_expr =
+let create ~compile_expr ~pack_dynamic_value =
   let compile_args_for = compile_args_for compile_expr in
   let compile_function_arg scope env = function
     | FSymbol name -> lookup_function scope env name
     | form -> compile_expr scope env form
   in
   let rec comparable_type = function
-    | TInt | TFloat | TString | TSymbol | TKeyword | TBool | TUnknown | TVar _ ->
+    | TInt | TFloat | TString | TSymbol | TKeyword | TBool | TUnknown | TVar _
+      ->
         true
     | TNullable inner | TOcaml_app ("option", [ inner ]) ->
         comparable_type inner
@@ -52,12 +55,16 @@ let create ~compile_expr =
                  (Semantic_ir.Infix
                     ( "=",
                       apply "List.length"
-                        [ apply "List.sort_uniq"
-                            [ Semantic_ir.Ident "compare";
-                              Semantic_ir.List (List.map (fun arg -> arg.semantic_expr) args) ] ],
+                      [
+                        apply "List.sort_uniq"
+                          [
+                            Semantic_ir.Ident "compare";
+                            Semantic_ir.List
+                              (List.map (fun arg -> arg.semantic_expr) args);
+                          ];
+                      ],
                       Semantic_ir.Int (List.length args) )))
           else Error.error "distinct? arguments must have the same type"
-    
     and compile_compare scope env arg_forms =
       match compile_args_for scope env arg_forms with
       | Error _ as err -> err
@@ -71,26 +78,32 @@ let create ~compile_expr =
           if not (Types.equal left.ty right.ty) then
             Error.error
               ("compare arguments must have the same type: "
-              ^ Types.source_name left.ty ^ " and "
-              ^ Types.source_name right.ty)
+           ^ Types.source_name left.ty ^ " and " ^ Types.source_name right.ty)
           else if not (comparable_type left.ty) then
             Error.error "compare expects comparable arguments"
           else
             Ok
               (typed_ir TInt
-                 (apply "Stdlib.compare" [ left.semantic_expr; right.semantic_expr ]))
+               (apply "Stdlib.compare"
+                  [ left.semantic_expr; right.semantic_expr ]))
       | Ok _ -> Error.error "compare expects 2 arguments"
-    
     and compile_key_extreme scope env name arg_forms =
       match arg_forms with
       | fn_form :: value_forms when value_forms <> [] -> (
-          match (compile_function_arg scope env fn_form, compile_args_for scope env value_forms) with
+        match
+          ( compile_function_arg scope env fn_form,
+            compile_args_for scope env value_forms )
+        with
           | (Error _ as err), _ -> err
           | _, (Error _ as err) -> err
           | Ok fn, Ok values -> (
               let first = List.hd values in
-              if not (List.for_all (fun value -> Types.equal first.ty value.ty) values) then
-                Error.error (name ^ " values must have the same type")
+            if
+              not
+                (List.for_all
+                   (fun value -> Types.equal first.ty value.ty)
+                   values)
+            then Error.error (name ^ " values must have the same type")
               else
                 match fn.ty with
                 | TFn ([ arg_ty ], key_ty)
@@ -104,33 +117,47 @@ let create ~compile_expr =
                       | [] -> first.semantic_expr
                       | _ ->
                           Semantic_ir.Let
-                            ( [ (Semantic_ir.PVar "key_fn", fn.semantic_expr);
+                          ( [
+                              (Semantic_ir.PVar "key_fn", fn.semantic_expr);
                                 ( Semantic_ir.PVar "choose",
                                   Semantic_ir.Fun
-                                    ( [ Semantic_ir.PVar "best"; Semantic_ir.PVar "item" ],
+                                  ( [
+                                      Semantic_ir.PVar "best";
+                                      Semantic_ir.PVar "item";
+                                    ],
                                       Semantic_ir.If
                                         ( Semantic_ir.Infix
                                             ( compare_op,
                                               apply "Stdlib.compare"
-                                                [ Semantic_ir.Apply
+                                              [
+                                                Semantic_ir.Apply
                                                     ( Semantic_ir.Ident "key_fn",
-                                                      [ Semantic_ir.Ident "item" ] );
+                                                    [ Semantic_ir.Ident "item" ]
+                                                  );
                                                   Semantic_ir.Apply
                                                     ( Semantic_ir.Ident "key_fn",
-                                                      [ Semantic_ir.Ident "best" ] ) ],
+                                                    [ Semantic_ir.Ident "best" ]
+                                                  );
+                                              ],
                                               Semantic_ir.Int 0 ),
                                           Semantic_ir.Ident "item",
-                                          Semantic_ir.Ident "best" ) ) ) ],
+                                        Semantic_ir.Ident "best" ) ) );
+                            ],
                               apply "List.fold_left"
-                                [ Semantic_ir.Ident "choose";
+                              [
+                                Semantic_ir.Ident "choose";
                                   first.semantic_expr;
-                                  Semantic_ir.List (List.map (fun value -> value.semantic_expr) rest) ] )
+                                Semantic_ir.List
+                                  (List.map
+                                     (fun value -> value.semantic_expr)
+                                     rest);
+                              ] )
                     in
                     Ok (typed_ir first.ty expr)
-                | TFn _ -> Error.error (name ^ " expects a key function matching values")
+              | TFn _ ->
+                  Error.error (name ^ " expects a key function matching values")
                 | _ -> Error.error (name ^ " expects a function")))
       | _ -> Error.error (name ^ " expects function and values")
-    
     and compile_hash_set scope env arg_forms =
       match arg_forms with
       | [] ->
@@ -142,8 +169,29 @@ let create ~compile_expr =
           | Error _ as err -> err
           | Ok first_expr ->
               let rec loop values = function
+              | [] when Types.is_dynamic first_expr.ty ->
+                  let dynamic = Types.dynamic_constraint TUnknown in
+                  let rec pack packed = function
+                    | [] -> Ok (List.rev packed)
+                    | value :: values ->
+                        Result.bind (pack_dynamic_value env dynamic value)
+                          (fun value -> pack (value :: packed) values)
+                  in
+                  Result.map
+                    (fun values ->
+                      typed_ir dynamic
+                        (Semantic_ir.Apply
+                           ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.set",
+                             [
+                               Semantic_ir.Apply
+                                 ( Semantic_ir.Ident
+                                     "Lg_runtime.Runtime_seq.of_list",
+                                   [ Semantic_ir.List values ] );
+                             ] )))
+                    (pack [] (List.rev values))
                 | [] ->
-                    Result.bind (Types.set_module_name first_expr.ty) (fun set_module ->
+                  Result.bind (Types.set_module_name first_expr.ty)
+                    (fun set_module ->
                            let rec coerce_values acc = function
                              | [] -> Ok (List.rev acc)
                              | value :: rest ->
@@ -162,10 +210,11 @@ let create ~compile_expr =
                     | Ok expr ->
                         if Types.same_shape first_expr.ty expr.ty then
                           loop (expr :: values) rest
-                        else Error.error "hash-set elements must all have the same type")
+                      else
+                        Error.error
+                          "hash-set elements must all have the same type")
               in
               loop [ first_expr ] rest)
-    
     and compile_set_of arg_forms =
       match arg_forms with
       | [ FKeyword keyword ] -> (
@@ -174,9 +223,9 @@ let create ~compile_expr =
           | Ok element_ty ->
               Types.set_module_name element_ty
               |> Result.map (fun set_module ->
-                     typed_ir (TSet element_ty) (Semantic_ir.Ident (set_module ^ ".empty"))))
+                typed_ir (TSet element_ty)
+                  (Semantic_ir.Ident (set_module ^ ".empty"))))
       | _ -> Error.error "set-of expects one type keyword"
-    
     and compile_disj scope env arg_forms =
       match arg_forms with
       | collection_form :: value_forms -> (
@@ -194,17 +243,27 @@ let create ~compile_expr =
                             if Types.same_shape inner value.ty then
                               Result.bind (Types.set_module_name inner)
                                 (fun set_module ->
-                                  Result.bind (coerce_set_element inner value) (fun value ->
+                                Result.bind (coerce_set_element inner value)
+                                  (fun value ->
                                          remove_values
                                            (Semantic_ir.Apply
-                                              ( Semantic_ir.Ident (set_module ^ ".remove"),
+                                         ( Semantic_ir.Ident
+                                             (set_module ^ ".remove"),
                                                 [ value; expression ] ))
                                            rest))
-                            else Error.error "disj value type must match set element type")
+                          else
+                            Error.error
+                              "disj value type must match set element type")
                   in
                   remove_values collection.semantic_expr value_forms
               | _ -> Error.error "disj expects a set"))
       | [] -> Error.error "disj expects a set"
-    
   in
-  { compile_distinct_question; compile_compare; compile_key_extreme; compile_hash_set; compile_set_of; compile_disj }
+  {
+    compile_distinct_question;
+    compile_compare;
+    compile_key_extreme;
+    compile_hash_set;
+    compile_set_of;
+    compile_disj;
+  }

@@ -119,8 +119,8 @@ module Lg_frontend : FRONTEND = struct
 
   let rec normalize_metadata = function
     | Ast.FList
-        (Ast.FSymbol (("def" | "defonce" | "defn" | "defn-") as head)
-        :: forms) ->
+        (Ast.FSymbol (("def" | "defonce" | "defn" | "defn-") as head) :: forms)
+      ->
         Ast.FList
           (Ast.FSymbol head
           :: normalize_metadata_sequence (drop_definition_metadata forms))
@@ -136,12 +136,13 @@ module Lg_frontend : FRONTEND = struct
     | form -> form
 
   and normalize_metadata_sequence = function
-    | Ast.FSymbol metadata :: form :: rest
-      when supported_type_hint metadata ->
+    | Ast.FSymbol metadata :: form :: rest when supported_type_hint metadata ->
         Ast.FList
-          [ Ast.FSymbol "__type-hint";
+          [
+            Ast.FSymbol "__type-hint";
             Ast.FSymbol metadata;
-            normalize_metadata form ]
+            normalize_metadata form;
+          ]
         :: normalize_metadata_sequence rest
     | Ast.FSymbol metadata :: rest when host_type_hint metadata ->
         normalize_metadata_sequence rest
@@ -165,15 +166,14 @@ module Lg_frontend : FRONTEND = struct
 
   let extract_compile_time_helpers located_ast =
     let rec quoted_refs refs = function
-      | Ast.FList
-          [ Ast.FSymbol ("unquote" | "unquote-splicing"); expression ] ->
+      | Ast.FList [ Ast.FSymbol ("unquote" | "unquote-splicing"); expression ]
+        ->
           form_refs refs expression
       | Ast.FList forms | Ast.FVector forms ->
           List.fold_left quoted_refs refs forms
       | Ast.FMap entries ->
           List.fold_left
-            (fun refs (key, value) ->
-              quoted_refs (quoted_refs refs key) value)
+            (fun refs (key, value) -> quoted_refs (quoted_refs refs key) value)
             refs entries
       | _ -> refs
     and form_refs refs = function
@@ -196,7 +196,8 @@ module Lg_frontend : FRONTEND = struct
              match located.Ast.form with
              | Ast.FList
                  (Ast.FSymbol ("def" | "defonce" | "defn" | "defn-")
-                 :: Ast.FSymbol name :: forms) ->
+              :: Ast.FSymbol name
+              :: forms) ->
                  Some (name, forms)
              | _ -> None)
     in
@@ -213,8 +214,7 @@ module Lg_frontend : FRONTEND = struct
       let expanded =
         List.fold_left
           (fun refs (name, forms) ->
-            if String_set.mem name refs then
-              List.fold_left form_refs refs forms
+            if String_set.mem name refs then List.fold_left form_refs refs forms
             else refs)
           refs definitions
       in
@@ -224,8 +224,7 @@ module Lg_frontend : FRONTEND = struct
     List.map
       (fun located ->
         match located.Ast.form with
-        | Ast.FList
-            (Ast.FSymbol ("defn" | "defn-") :: Ast.FSymbol name :: forms)
+        | Ast.FList (Ast.FSymbol ("defn" | "defn-") :: Ast.FSymbol name :: forms)
           when String_set.mem name helper_names ->
             {
               located with
@@ -283,7 +282,8 @@ module Lg_frontend : FRONTEND = struct
                   | Ast.FList entries -> Ast.FVector entries
                   | entry -> entry
                 in
-                let rec parse_clauses require_entries exclusions imports = function
+                let rec parse_clauses require_entries exclusions imports =
+                  function
                   | [] ->
                       Ok
                         ( List.rev require_entries |> List.concat,
@@ -292,29 +292,35 @@ module Lg_frontend : FRONTEND = struct
                   | Ast.FList
                       (Ast.FKeyword (":require" | ":require-macros") :: entries)
                     :: rest ->
-                      parse_clauses (entries :: require_entries) exclusions imports
-                        rest
+                      parse_clauses
+                        (entries :: require_entries)
+                        exclusions imports rest
                   | Ast.FList
-                      [ Ast.FKeyword ":refer-clojure";
+                      [
+                        Ast.FKeyword ":refer-clojure";
                         Ast.FKeyword ":exclude";
-                        Ast.FVector names ]
+                        Ast.FVector names;
+                      ]
                     :: rest ->
-                      parse_clauses require_entries (names :: exclusions) imports
-                        rest
+                      parse_clauses require_entries (names :: exclusions)
+                        imports rest
                   | Ast.FList (Ast.FKeyword ":import" :: entries) :: rest ->
                       parse_clauses require_entries exclusions
-                        (List.map normalize_import entries :: imports) rest
+                        (List.map normalize_import entries :: imports)
+                        rest
                   | _ ->
                       Error.error
-                        "ns supports :require, :require-macros, :refer-clojure :exclude, and :import clauses"
+                        "ns supports :require, :require-macros, :refer-clojure \
+                         :exclude, and :import clauses"
                 in
                 Result.map
                   (fun (require_entries, exclusions, imports) ->
-                    let namespace_form = namespace_scope_form span namespace_name in
+                    let namespace_form =
+                      namespace_scope_form span namespace_name
+                    in
                     let synthetic_form head entries =
                       {
-                        Ast.form =
-                          Ast.FList (Ast.FSymbol head :: entries);
+                        Ast.form = Ast.FList (Ast.FSymbol head :: entries);
                         span;
                         children = [];
                       }
@@ -334,9 +340,10 @@ module Lg_frontend : FRONTEND = struct
                            else synthetic_form "host-import" imports :: forms)
                       |> List.rev
                     in
-                    namespace_form :: clauses @ body)
+                    (namespace_form :: clauses) @ body)
                   (parse_clauses [] [] [] clauses)
-          | _ -> Error.error "ns expects a namespace symbol and optional clauses")
+          | _ ->
+              Error.error "ns expects a namespace symbol and optional clauses")
     | first :: rest ->
         if List.exists is_namespace rest then
           Error.error "ns may only appear once at the start of a file"
@@ -357,28 +364,32 @@ module Lg_frontend : FRONTEND = struct
       match located.Ast.form with
       | Ast.FList
           (Ast.FSymbol ("def" | "defonce" | "defn" | "defn-")
-          :: Ast.FSymbol name :: _) ->
+          :: Ast.FSymbol name
+          :: _) ->
           Some name
       | _ -> None
     in
     let flush output_rev deferred_rev = deferred_rev @ output_rev in
     let rec loop output_rev deferred_rev unresolved = function
       | [] -> List.rev (flush output_rev deferred_rev)
-      | ({ Ast.form =
+      | ({
+           Ast.form =
              Ast.FList
                (Ast.FSymbol "deftype" :: name :: fields :: (_ :: _ as methods));
-           _ } as located)
+           _;
+         } as located)
         :: rest ->
           let type_form =
-            { located with
+            {
+              located with
               Ast.form = Ast.FList [ Ast.FSymbol "deftype"; name; fields ];
             }
           in
           let methods_form =
-            { located with
+            {
+              located with
               Ast.form =
-                Ast.FList
-                  (Ast.FSymbol "deftype-methods" :: name :: methods);
+                Ast.FList (Ast.FSymbol "deftype-methods" :: name :: methods);
             }
           in
           let output_rev = type_form :: output_rev in
@@ -390,7 +401,8 @@ module Lg_frontend : FRONTEND = struct
           let unresolved =
             match definition_name form with
             | None -> unresolved
-            | Some name -> List.filter (fun declared -> declared <> name) unresolved
+            | Some name ->
+                List.filter (fun declared -> declared <> name) unresolved
           in
           let output_rev = form :: output_rev in
           if unresolved = [] && deferred_rev <> [] then
@@ -414,17 +426,18 @@ module Lg_frontend : FRONTEND = struct
       | [] ->
           if definitions_rev = [] then List.rev output_rev
           else List.rev output_rev @ List.rev definitions_rev
-      | ({ Ast.form =
-             Ast.FList
-               (Ast.FSymbol ("defn" | "defn-") :: Ast.FSymbol name :: _);
-           _ } as definition)
+      | ({
+           Ast.form =
+             Ast.FList (Ast.FSymbol ("defn" | "defn-") :: Ast.FSymbol name :: _);
+           _;
+         } as definition)
         :: rest
         when definitions_rev <> [] || List.mem name declared_names ->
           let signature =
-            { definition with
+            {
+              definition with
               Ast.form =
-                Ast.FList
-                  [ Ast.FSymbol "defn-signature"; definition.Ast.form ];
+                Ast.FList [ Ast.FSymbol "defn-signature"; definition.Ast.form ];
             }
           in
           let definitions_rev = definition :: definitions_rev in
@@ -436,7 +449,8 @@ module Lg_frontend : FRONTEND = struct
           if unresolved = [] then
             let definitions = List.rev definitions_rev in
             let group =
-              { definition with
+              {
+                definition with
                 Ast.form =
                   Ast.FList
                     (Ast.FSymbol "defn-group"
@@ -445,7 +459,8 @@ module Lg_frontend : FRONTEND = struct
             in
             loop (group :: signature :: output_rev) [] unresolved rest
           else loop (signature :: output_rev) definitions_rev unresolved rest
-      | form :: rest -> loop (form :: output_rev) definitions_rev unresolved rest
+      | form :: rest ->
+          loop (form :: output_rev) definitions_rev unresolved rest
     in
     loop [] [] declared_names located_ast
 
@@ -504,7 +519,8 @@ module Lg_frontend : FRONTEND = struct
                         let classes =
                           List.filter
                             (function
-                              | Ast.FSymbol class_name -> class_is_used class_name
+                              | Ast.FSymbol class_name ->
+                                  class_is_used class_name
                               | _ -> true)
                             classes
                         in
@@ -518,8 +534,7 @@ module Lg_frontend : FRONTEND = struct
                 Some
                   {
                     located with
-                    Ast.form =
-                      Ast.FList (Ast.FSymbol "host-import" :: entries);
+                    Ast.form = Ast.FList (Ast.FSymbol "host-import" :: entries);
                   }
           | _ -> Some located)
         located_ast
@@ -529,10 +544,11 @@ module Lg_frontend : FRONTEND = struct
         (fun located ->
           match located.Ast.form with
           | Ast.FList
-              [ Ast.FSymbol "set!";
-                Ast.FSymbol
-                  ("*warn-on-reflection*" | "*unchecked-math*");
-                _ ] ->
+              [
+                Ast.FSymbol "set!";
+                Ast.FSymbol ("*warn-on-reflection*" | "*unchecked-math*");
+                _;
+              ] ->
               false
           | _ -> true)
         located_ast
@@ -550,7 +566,7 @@ module Lg_frontend : FRONTEND = struct
           | Ok native_original -> (
               match lower_namespace native_original with
               | Error _ as error -> error
-              | Ok native_located ->
+              | Ok native_located -> (
                   let compile_time_forms =
                     native_located
                     |> List.map normalize_located_metadata
@@ -558,16 +574,16 @@ module Lg_frontend : FRONTEND = struct
                     |> List.filter is_compile_time_form
                     |> List.filter (fun candidate ->
                            not
-                             (List.exists
-                                (same_span candidate)
+                          (List.exists (same_span candidate)
                                 original_located_ast))
                   in
-                  (match located_ast with
-                  | ({ Ast.form =
-                         Ast.FList [ Ast.FSymbol "namespace-scope"; _ ];
-                       _ } as namespace_scope)
+                  match located_ast with
+                  | ({
+                       Ast.form = Ast.FList [ Ast.FSymbol "namespace-scope"; _ ];
+                       _;
+                     } as namespace_scope)
                     :: rest ->
-                      Ok (namespace_scope :: compile_time_forms @ rest)
+                      Ok ((namespace_scope :: compile_time_forms) @ rest)
                   | _ -> Ok (compile_time_forms @ located_ast))))
     in
     match Lexer.tokenize source with
@@ -577,7 +593,8 @@ module Lg_frontend : FRONTEND = struct
         | Error error -> Error (normalize_error_location filename source error)
         | Ok original_located_ast -> (
             match lower_namespace original_located_ast with
-            | Error error -> Error (normalize_error_location filename source error)
+            | Error error ->
+                Error (normalize_error_location filename source error)
             | Ok target_located_ast -> (
                 match
                   add_clj_compile_time_forms tokens original_located_ast
@@ -595,7 +612,9 @@ module Lg_frontend : FRONTEND = struct
                   |> defer_deftype_methods |> group_declared_functions
                 in
                 let rec form_locations acc located =
-                  let location = location filename source located.Ast.span in
+                      let location =
+                        location filename source located.Ast.span
+                      in
                   List.fold_left form_locations
                     ((located.Ast.form, location) :: acc)
                     located.Ast.children
@@ -603,14 +622,17 @@ module Lg_frontend : FRONTEND = struct
                 Ok
                   {
                     target;
-                    ast = List.map (fun located -> located.Ast.form) located_ast;
+                        ast =
+                          List.map (fun located -> located.Ast.form) located_ast;
                     locations =
                       List.map
-                        (fun located -> location filename source located.Ast.span)
+                            (fun located ->
+                              location filename source located.Ast.span)
                         located_ast;
                     form_locations =
                       List.fold_left form_locations
-                        (List.fold_left form_locations [] original_located_ast)
+                            (List.fold_left form_locations []
+                               original_located_ast)
                         located_ast;
                     parsed_as = `Lg;
                   })))
@@ -716,14 +738,13 @@ let required_packages_from_ast ast =
 let prepare_packages target ast =
   match required_packages_from_ast ast with
   | Error _ as err -> err
-  | Ok packages ->
+  | Ok packages -> (
       let packages =
         match target with
         | Target.Melange -> "melange" :: packages
-        | Target.Js_of_ocaml -> "js_of_ocaml" :: packages
-        | Target.Native -> packages
+        | Target.Js_of_ocaml -> "re" :: "js_of_ocaml" :: packages
+        | Target.Native -> "re" :: packages
       in
-      (
       match Ocaml_package.include_dirs packages with
       | Error _ as err -> err
       | Ok include_dirs ->
@@ -749,26 +770,24 @@ let typecheck (parsed : parser_result) =
         Source_context.with_locations parsed.form_locations (fun () ->
             Typecheck.compile_forms_incremental state parsed.ast)
       in
-      match compile initial_state
-      with
+      match compile initial_state with
       | Error _ as err -> err
-      | Ok (first_state, _) ->
+      | Ok (first_state, _) -> (
           let rec declared_names declared = function
             | [] -> List.rev declared
             | Ast.FList (Ast.FSymbol "declare" :: form_names) :: rest ->
                 let declared =
                   List.fold_left
                     (fun declared -> function
-                      | Ast.FSymbol name -> name :: declared
-                      | _ -> declared)
+                      | Ast.FSymbol name -> name :: declared | _ -> declared)
                     declared form_names
                 in
                 declared_names declared rest
             | Ast.FList
-                [ Ast.FSymbol "defn-signature";
+                [
+                  Ast.FSymbol "defn-signature";
                   Ast.FList
-                    (Ast.FSymbol ("defn" | "defn-")
-                    :: Ast.FSymbol name :: _);
+                    (Ast.FSymbol ("defn" | "defn-") :: Ast.FSymbol name :: _);
                 ]
               :: rest ->
                 declared_names (name :: declared) rest
@@ -790,12 +809,13 @@ let typecheck (parsed : parser_result) =
                    String.compare left right)
           in
           let seeded_state =
-            { initial_state with
+            {
+              initial_state with
               env =
-                Compiler_environment.add_bindings declarations
-                  initial_state.env }
+                Compiler_environment.add_bindings declarations initial_state.env;
+            }
           in
-          (match compile seeded_state with
+          match compile seeded_state with
           | Error _ as err -> err
           | Ok (typecheck_state, items) ->
           Ok
@@ -819,17 +839,16 @@ let typecheck_incremental state (parsed : parser_result) =
         Source_context.with_locations parsed.form_locations (fun () ->
             Typecheck.compile_forms_incremental typecheck_state parsed.ast)
       in
-      match compile initial_state
-      with
+      match compile initial_state with
       | Error _ as err -> err
-      | Ok (first_state, _) ->
+      | Ok (first_state, _) -> (
           let rec signature_names names = function
             | [] -> List.rev names
             | Ast.FList
-                [ Ast.FSymbol "defn-signature";
+                [
+                  Ast.FSymbol "defn-signature";
                   Ast.FList
-                    (Ast.FSymbol ("defn" | "defn-")
-                    :: Ast.FSymbol name :: _);
+                    (Ast.FSymbol ("defn" | "defn-") :: Ast.FSymbol name :: _);
                 ]
               :: rest ->
                 signature_names (name :: names) rest
@@ -851,12 +870,13 @@ let typecheck_incremental state (parsed : parser_result) =
                    String.compare left right)
           in
           let seeded_state =
-            { initial_state with
+            {
+              initial_state with
               env =
-                Compiler_environment.add_bindings declarations
-                  initial_state.env }
+                Compiler_environment.add_bindings declarations initial_state.env;
+            }
           in
-          (match compile seeded_state with
+          match compile seeded_state with
           | Error _ as err -> err
           | Ok (typecheck_state, items) ->
           let located_items =
