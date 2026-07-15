@@ -20,9 +20,18 @@ let record_inference_compatible ~allow_expected_dynamic expected_fields
          match find_field expected.keyword actual_fields with
          | None -> false
          | Some actual ->
+             let expected_dynamic_compatible =
+               match Types.dynamic_constraint_info expected.ty with
+               | Some capability when not (Types.equal capability TUnknown) ->
+                   Types.equal capability actual.ty
+                   || Types.row_compatible ~expected:capability
+                        ~actual:actual.ty
+               | Some _ -> allow_expected_dynamic
+               | None -> false
+             in
              Types.is_dynamic actual.ty
              || (match actual.ty with TUnknown | TVar _ -> true | _ -> false)
-             || (allow_expected_dynamic && Types.is_dynamic expected.ty)
+             || expected_dynamic_compatible
              || Types.equal expected.ty actual.ty
              || Types.row_compatible ~expected:expected.ty ~actual:actual.ty)
 
@@ -32,6 +41,13 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
   | TOcaml_app ("option", [ inner ]) ->
       TOcaml_app
         ("option", [ infer_named_record ~allow_dynamic_fields scope env inner ])
+  | ty when Types.is_dynamic ty -> (
+      match Types.dynamic_constraint_info ty with
+      | None -> assert false
+      | Some capability -> (
+          match infer_named_record ~allow_dynamic_fields:true scope env capability with
+          | TNamed_record _ as record -> record
+          | capability -> Types.dynamic_constraint capability))
   | ty when Option.is_some (Types.protocol_constraint_info ty) -> (
       match Types.protocol_constraint_info ty with
       | None -> assert false

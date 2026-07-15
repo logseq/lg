@@ -5750,6 +5750,11 @@ let create ~compile_expr =
     | _ -> Error.error "assoc-in expects target, path, and value"
   and compile_update_in scope env arg_forms =
     match arg_forms with
+    | target_form :: FVector (_ :: _ as keys) :: function_form :: argument_forms
+      ->
+        compile_expr scope env
+          (Core_form_expansion.update_in target_form keys function_form
+             argument_forms)
     | target_form :: path_form :: function_form :: argument_forms -> (
         match
           ( compile_expr scope env target_form,

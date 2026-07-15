@@ -293,12 +293,34 @@ let rec compile scope env next_type = function
       :: (FSymbol name as name_form)
       :: FVector raw_fields
       :: interface_forms) ->
-      let rec field_names acc = function
-        | [] -> Ok (List.rev acc)
+      let resolve_field_hint hint =
+        Result.bind (Type_annotation.of_param_annotation hint) (function
+          | TOcaml type_name
+            when String.starts_with ~prefix:"__lg_record:" type_name ->
+              let source_name =
+                String.sub type_name (String.length "__lg_record:")
+                  (String.length type_name - String.length "__lg_record:")
+              in
+              Resolver.lookup_record_type scope env source_name
+              |> Result.map (fun record -> TNamed_record record)
+          | ty -> Ok ty)
+      in
+      let rec field_specs acc hint = function
+        | [] -> (
+            match hint with
+            | None -> Ok (List.rev acc)
+            | Some _ -> Error.error "defrecord field hint requires a field")
         | FSymbol metadata :: rest when String.starts_with ~prefix:"^" metadata
-          ->
-            field_names acc rest
-        | FSymbol field_name :: rest -> field_names (field_name :: acc) rest
+          -> (
+            match hint with
+            | None -> field_specs acc (Some metadata) rest
+            | Some _ -> Error.error "defrecord field has multiple type hints")
+        | FSymbol field_name :: rest -> (
+            match hint with
+            | None -> field_specs ((field_name, None) :: acc) None rest
+            | Some hint ->
+                Result.bind (resolve_field_hint hint) (fun ty ->
+                    field_specs ((field_name, Some ty) :: acc) None rest))
         | _ -> Error.error "defrecord fields must be symbols"
       in
       let rec protocol_groups groups current = function
@@ -324,9 +346,13 @@ let rec compile scope env next_type = function
         | _ :: _ -> Error.error "invalid defrecord protocol implementation"
       in
       let items_of = function Group items -> items | item -> [ item ] in
-      Result.bind (field_names [] raw_fields) (fun fields ->
+      Result.bind (field_specs [] None raw_fields) (fun field_specs ->
+          let fields = List.map fst field_specs in
           let field_types =
             infer_defrecord_field_types scope env fields interface_forms
+            |> List.map2 (fun (_field_name, explicit_ty) inferred_ty ->
+                   Option.value explicit_ty ~default:inferred_ty)
+                 field_specs
           in
           let type_parameters =
             field_types

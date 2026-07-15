@@ -45,3 +45,11 @@ let assoc_in target keys value =
       ]
   in
   expand 0 target keys
+
+let update_in target keys function_form argument_forms =
+  let rec update_arguments = function
+    | [] -> function_form :: argument_forms
+    | [ key ] -> key :: function_form :: argument_forms
+    | key :: rest -> key :: FSymbol "update" :: update_arguments rest
+  in
+  FList (FSymbol "update" :: target :: update_arguments keys)

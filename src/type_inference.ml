@@ -1304,6 +1304,12 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
           value;
         ] ->
         infer_assoc_in params target keys value
+    | FList
+        (FSymbol ("update-in" | "clojure.core/update-in")
+        :: target :: FVector (_ :: _ as keys) :: function_form
+        :: argument_forms) ->
+        infer_form params
+          (Core_form_expansion.update_in target keys function_form argument_forms)
     | FList (FSymbol ("assoc" | "clojure.core/assoc") :: target :: pairs) ->
         infer_assoc params target pairs
     | FList (FSymbol "conj" :: FSymbol target :: values) -> (

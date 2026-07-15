@@ -1579,7 +1579,8 @@ let create ~compile_expr =
                               ( located_pattern binding.identity
                                   (capability_pattern binding.ocaml_name
                                      binding.ty),
-                                value.semantic_expr )
+                                capability_storage_expression binding.ty
+                                  value.semantic_expr )
                               :: ir_bindings
                           | FSymbol "_", _ ->
                               ( located_form_pattern pattern Semantic_ir.PAny,

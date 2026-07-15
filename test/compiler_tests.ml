@@ -811,6 +811,27 @@ let test_type_relations_are_explicit_and_strict () =
          ~actual:Lg.Types.TInt)
   then failwith "opaque OCaml relationships must be explicitly deferred"
 
+let test_dynamic_record_capabilities_resolve_unique_named_records () =
+  let open Lg.Types in
+  let max_eid = make_field ":max-eid" TInt in
+  let db_ty =
+    named_record ~type_name:"db" ~set_module_name:"Db_set"
+      [ make_field ":root" (TRef TInt); max_eid ]
+  in
+  let env =
+    Lg.Compiler_environment.add "__record//DB" (binding "db" db_ty)
+      Lg.Compiler_environment.empty
+  in
+  let inferred =
+    Lg.Function_elaborator.infer_named_record "" env
+      (dynamic_constraint (TRecord [ max_eid ]))
+  in
+  match inferred with
+  | TNamed_record record when record.type_name = "db" -> ()
+  | _ ->
+      failwith
+        "a unique named record must be recovered from a dynamic row capability"
+
 let test_assignability_reports_the_selected_semantic_rule () =
   let open Lg.Types in
   let name = make_field ":name" TString in
@@ -5456,9 +5477,41 @@ let test_update_preserves_named_records_with_opaque_fields () =
   (item :value))
 (type-record database
   (root :ref<option<tree<int>>>)
-  (max-eid :int))
-(defn advance-max-eid [db ^:int eid]
-  (assoc db :max-eid eid))
+  (max-eid :int)
+  (schema :dynamic))
+(defprotocol IDB
+  (valid-db? [db] :bool))
+(extend-type database IDB
+  (valid-db? [_db] true))
+(defrecord TxReport [^database db-after])
+(def tx0 100)
+(defn new-eid? [db eid]
+  (and (> eid (:max-eid db))
+       (< eid tx0)))
+(defn advance-max-eid [db eid]
+  (cond-> db
+    (new-eid? db eid)
+    (assoc :max-eid eid)))
+(defn update-rschema [db]
+  (assoc db :max-eid 42))
+(defn update-schema [db _datom]
+  db)
+(defn keep-schema [schema]
+  schema)
+(defn checked-db [db valid?]
+  (if valid?
+    (update-in db [:schema] keep-schema)
+    (throw (ex-info "invalid db" {:error :invalid-db}))))
+(defn with-datom [db datom]
+  (satisfies? IDB db)
+  (let [schema? true]
+    (if true
+      (cond-> db
+        true (advance-max-eid datom)
+        schema? (-> (update-schema datom)
+                    (checked-db true)
+                    update-rschema))
+      db)))
 (defn allocate-eid [report eid]
   (let [m report
         k :db-after]
@@ -5466,10 +5519,14 @@ let test_update_preserves_named_records_with_opaque_fields () =
 (def initial-db
   (record database
     (root (volatile! (Some (record tree (item 7)))))
-    (max-eid 1)))
+    (max-eid 1)
+    (schema {})))
+(def initial-report (TxReport. initial-db))
 (def updated
-  (allocate-eid {:db-after initial-db} 42))
-(def db (:db-after updated))
+  (allocate-eid initial-report 42))
+(def updated-db
+  (with-datom (:db-after updated) 42))
+(def db updated-db)
 (println
   [(:max-eid db)
    (match (deref (:root db))
@@ -5484,6 +5541,10 @@ let test_update_preserves_named_records_with_opaque_fields () =
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
+let test_defrecord_field_hints_reject_unknown_record_types () =
+  Lg.Compiler.compile_string {|(defrecord Holder [^Missing value])|}
+  |> expect_error_contains "unknown record type Missing"
 
 let test_assoc_in_updates_nested_maps () =
   let source =
@@ -11740,6 +11801,8 @@ let tests =
     ("subs rejects non-int indexes", test_subs_rejects_non_int_indexes);
     ( "type relations are explicit and strict",
       test_type_relations_are_explicit_and_strict );
+    ( "dynamic record capabilities resolve unique named records",
+      test_dynamic_record_capabilities_resolve_unique_named_records );
     ( "assignability reports the selected semantic rule",
       test_assignability_reports_the_selected_semantic_rule );
     ( "named records use nominal type identity",
@@ -12358,6 +12421,8 @@ let tests =
       test_assoc_packs_values_for_dynamic_record_fields );
     ( "assoc accepts protocol constrained named records",
       test_assoc_accepts_protocol_constrained_named_records );
+    ( "defrecord field hints reject unknown record types",
+      test_defrecord_field_hints_reject_unknown_record_types );
     ( "update preserves named records with opaque fields",
       test_update_preserves_named_records_with_opaque_fields );
     ("assoc-in updates nested maps", test_assoc_in_updates_nested_maps);

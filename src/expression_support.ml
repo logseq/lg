@@ -79,10 +79,23 @@ let plain_dynamic_compatible_type = function
       true
   | ty -> Types.is_dynamic ty
 
+let protocol_value_type ty =
+  let value_ty = Types.constraint_value_type ty in
+  if Types.equal value_ty ty then None else Some value_ty
+
+let protocol_has_value expected ty =
+  match protocol_value_type ty with
+  | Some value_ty -> Types.equal expected value_ty
+  | None -> false
+
 let rec merge_branch_types left right =
   if Types.equal left right then Some left
   else
     match (left, right) with
+    | left, right when protocol_has_value right left ->
+        Some right
+    | left, right when protocol_has_value left right ->
+        Some left
     | left, right when Types.is_dynamic left || Types.is_dynamic right ->
         Some (Types.dynamic_constraint TUnknown)
     | TNil, (TOcaml_app ("option", _) as option_ty)
@@ -235,6 +248,23 @@ let rec pack_plain_dynamic_value value =
 
 let coerce_expression_to_type ?(stored = false) target_ty source_ty expression =
   match (target_ty, source_ty) with
+  | target_ty, source_ty when protocol_has_value target_ty source_ty ->
+      let rec unwrap ty expression =
+        match Types.protocol_constraint_info ty with
+        | None -> expression
+        | Some (_, _, value_ty) ->
+            let expression =
+              if stored then
+                Semantic_ir.Apply (Semantic_ir.Ident "snd", [ expression ])
+              else
+                match Semantic_ir.unlocated expression with
+                | Semantic_ir.Ident _ -> expression
+                | _ ->
+                    Semantic_ir.Apply (Semantic_ir.Ident "snd", [ expression ])
+            in
+            unwrap value_ty expression
+      in
+      unwrap source_ty expression
   | TVector element_ty, source_ty when Types.is_dynamic source_ty ->
       let dynamic name arguments =
         Semantic_ir.Apply
