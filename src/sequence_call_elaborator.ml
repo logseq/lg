@@ -83,6 +83,47 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
           (pack_dynamic_value env expected_ty item)
     | _ -> Ok fn
   in
+  let adapt_reducer_function env actual_item_ty fn =
+    match fn.ty with
+    | TFn ([ accumulator_ty; expected_item_ty ], return_ty)
+      when Types.is_dynamic actual_item_ty
+           && not (Types.is_dynamic expected_item_ty) ->
+        let accumulator_name = "__lg_reduce_accumulator" in
+        let item_name = "__lg_dynamic_reduce_item" in
+        Result.map
+          (fun item ->
+            typed_ir
+              (TFn ([ accumulator_ty; actual_item_ty ], return_ty))
+              (Semantic_ir.Fun
+                 ( [
+                     Semantic_ir.PVar accumulator_name;
+                     Semantic_ir.PVar item_name;
+                   ],
+                   Semantic_ir.Apply
+                     ( fn.semantic_expr,
+                       [ Semantic_ir.Ident accumulator_name; item ] ) )))
+          (dynamic_unpack env expected_item_ty (Semantic_ir.Ident item_name))
+    | TFn ([ accumulator_ty; expected_item_ty ], return_ty)
+      when Types.is_dynamic expected_item_ty
+           && not (Types.is_dynamic actual_item_ty) ->
+        let accumulator_name = "__lg_reduce_accumulator" in
+        let item_name = "__lg_static_reduce_item" in
+        let item = typed_ir actual_item_ty (Semantic_ir.Ident item_name) in
+        Result.map
+          (fun item ->
+            typed_ir
+              (TFn ([ accumulator_ty; actual_item_ty ], return_ty))
+              (Semantic_ir.Fun
+                 ( [
+                     Semantic_ir.PVar accumulator_name;
+                     Semantic_ir.PVar item_name;
+                   ],
+                   Semantic_ir.Apply
+                     ( fn.semantic_expr,
+                       [ Semantic_ir.Ident accumulator_name; item ] ) )))
+          (pack_dynamic_value env expected_item_ty item)
+    | _ -> Ok fn
+  in
   let compile_function_arg_for_collection scope env element_ty = function
     | FKeyword keyword ->
         let item_name = "__lg_keyword_function_item" in
@@ -200,7 +241,9 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
           ~param_type_overrides:[ Some accumulator_ty; Some element_ty ]
           ~lookup_function_ty ~compile_body scope env params body_forms
         |> Result.map Function_elaborator.fn_code
-    | form -> compile_function_arg scope env form
+    | form ->
+        Result.bind (compile_function_arg scope env form)
+          (adapt_reducer_function env element_ty)
   in
   let compile_kv_reducer scope env accumulator_ty key_ty value_ty = function
     | FList

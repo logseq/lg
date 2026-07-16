@@ -110,6 +110,14 @@ let protocol_witness_type method_types =
   List.fold_right (fun method_ty rest -> TTuple [ method_ty; rest ])
     method_types TUnit
 
+let rec protocol_witness_method_types = function
+  | TUnit -> Some []
+  | TTuple [ method_ty; rest ] ->
+      Option.map
+        (fun method_types -> method_ty :: method_types)
+        (protocol_witness_method_types rest)
+  | _ -> None
+
 let protocol_constraint protocol_id method_types value_ty =
   TOcaml_app
     ( protocol_constraint_prefix ^ Protocol_id.to_string protocol_id,
@@ -767,3 +775,43 @@ let instantiate_type ~templates ~actuals ty =
       infer_list_substitutions [] templates actuals
     in
     substitute_type_variables substitutions ty
+
+let instantiate_receiver_method_type receiver_ty method_ty =
+  let rec specialize_return value_ty = function
+    | TSeq (TUnknown | TVar _) -> TSeq value_ty
+    | TOcaml_app (("Seq.t" | "Seq") as name, [ TUnknown | TVar _ ]) ->
+        TOcaml_app (name, [ value_ty ])
+    | TNullable return_ty ->
+        TNullable (specialize_return value_ty return_ty)
+    | TOcaml_app ("option", [ return_ty ]) ->
+        TOcaml_app ("option", [ specialize_return value_ty return_ty ])
+    | return_ty -> return_ty
+  in
+  match method_ty with
+  | TFn (template_receiver :: _, _) ->
+      let receiver_value_ty =
+        match template_receiver with
+        | TNamed_record { type_parameters = [ parameter ]; _ } ->
+            let substitutions =
+              infer_type_substitutions [] ~template:template_receiver
+                ~actual:receiver_ty
+            in
+            (match List.assoc_opt parameter substitutions with
+            | Some TUnknown | None -> None
+            | Some ty -> Some ty)
+        | _ -> None
+      in
+      let method_ty =
+        instantiate_type ~templates:[ template_receiver ]
+          ~actuals:[ receiver_ty ] method_ty
+      in
+      (match (receiver_value_ty, method_ty) with
+      | Some value_ty, TFn (receiver :: parameters, return_ty) ->
+          TFn
+            ( receiver
+              :: List.map
+                   (function TUnknown -> value_ty | ty -> ty)
+                   parameters,
+              specialize_return value_ty return_ty )
+      | _ -> method_ty)
+  | _ -> method_ty

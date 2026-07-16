@@ -1951,12 +1951,47 @@ let test_fnil_wraps_core_conj_with_default_collection () =
     {|
 (def conjv (fnil conj []))
 (def conjs (fnil conj #{}))
-(println (str (= [1] (conjv nil 1)) ":" (= #{1} (conjs nil 1))))
+(deftype Entry [^int value])
+(defn choose [flag] (if flag (Entry. 1) :entry))
+(def one (choose true))
+(def existing (if true [one] nil))
+(def entries (conjv existing (Entry. 2)))
+(defn sum-entry [total ^Entry entry]
+  (+ total (.-value entry)))
+(println
+  (str (= [1] (conjv nil 1)) ":" (= #{1} (conjs nil 1)) ":"
+       (count entries) ":" (reduce sum-entry 0 [one])))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "fnil_wraps_core_conj_with_default_collection" "true:true\n"
-    ocaml_source
+  assert_ocaml_runs "fnil_wraps_core_conj_with_default_collection"
+    "true:true:2:1\n" ocaml_source
+
+let test_dynamic_protocol_witnesses_unpack_common_returns () =
+  let source =
+    {|
+(defprotocol IFlag
+  (-flag [this]))
+(deftype Flagged [^int id]
+  IFlag
+  (-flag [_] true))
+(defn choose-flagged [pick]
+  (if pick (Flagged. 0) :missing))
+(def flagged-items [(choose-flagged true)])
+(defn count-flags [total item]
+  (if (-flag item) (+ total 1) total))
+(def result (reduce count-flags 0 flagged-items))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if
+    not
+      (string_contains_substring ocaml_source
+         "Lg_runtime.Runtime_dynamic.as_bool")
+  then
+    failwith "dynamic protocol witnesses must unpack their common return type";
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_top_level_definitions_accept_clojure_metadata () =
   let source =
@@ -8525,9 +8560,40 @@ let test_dynamic_generic_nominals_are_consumed_inside_existential_scope () =
         comparator (set/comparator sorted-set)]
     (if comparator 1 0)))
 (def int-set
-  (set/from-sequential (fn [left right] (compare left right)) [1 2]))
+  (set/from-sequential (fn [^int left ^int right] (compare left right)) [1 2]))
 (def database (assoc {} :eavt int-set))
-(println (compare-through-map database :eavt))
+(def filtered (filter (fn [_] true) int-set))
+(defrecord Search [items]
+  IReversible
+  (-rseq [search]
+    (let [items (.-items search)
+          comparator (set/comparator items)
+          _ (comparator 1 2)]
+      (rseq items))))
+(defn hold-dynamic [^:dynamic value] value)
+(def packed-search (hold-dynamic (Search. int-set)))
+(defprotocol IndexedSearch
+  (-search [this]))
+(defrecord SearchIndex [items]
+  IndexedSearch
+  (-search [search]
+    (let [items (.-items search)
+          comparator (set/comparator items)
+          _ (comparator 1 2)]
+      (set/slice items 0 10))))
+(defrecord FilteredIndex [index]
+  IndexedSearch
+  (-search [_]
+    (filter (fn [_] true) (-search index))))
+(def packed-index (hold-dynamic (SearchIndex. int-set)))
+(def packed-filtered-index
+  (hold-dynamic (FilteredIndex. (SearchIndex. int-set))))
+(defn has-items [items]
+  (if (empty? items) 0 1))
+(println
+  (str (compare-through-map database :eavt) ":" (+ (first filtered) 40) ":"
+       (+ (first (rseq int-set)) 40) ":"
+       (has-items int-set)))
 |}
   in
   let compile target =
@@ -8546,9 +8612,14 @@ let test_dynamic_generic_nominals_are_consumed_inside_existential_scope () =
     String.concat "\n" (List.rev (output :: outputs))
   in
   let ocaml_source = compile Lg.Target.Native in
+  if
+    string_contains_substring ocaml_source
+      "index: Lg_runtime.Runtime_dynamic.t"
+  then
+    failwith "protocol-backed defrecord fields must retain nominal evidence";
   assert_ocaml_runs
     "dynamic_generic_nominals_are_consumed_inside_existential_scope"
-    "1\n" ocaml_source;
+    "1:41:42:1\n" ocaml_source;
   ignore (compile Lg.Target.Melange)
 
 let test_map_to_record_unpacks_dynamic_named_fields () =
@@ -14421,6 +14492,8 @@ let tests =
       test_map_and_mapv_accept_multiple_collections );
     ( "fnil wraps core conj with default collection",
       test_fnil_wraps_core_conj_with_default_collection );
+    ( "dynamic protocol witnesses unpack common returns",
+      test_dynamic_protocol_witnesses_unpack_common_returns );
     ( "top-level definitions accept Clojure metadata",
       test_top_level_definitions_accept_clojure_metadata );
     ( "user macros expand syntax quote and unquote",

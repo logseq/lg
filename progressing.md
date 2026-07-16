@@ -586,3 +586,41 @@ update the same entry with its root cause, fix, and verification evidence.
   carry relationships; absent evidence preserves the formal parameter.
 - Verification: Both `defrecord inferred generic fields preserve value types`
   and `generic calls unpack dynamic nominal arguments` are green.
+
+## 2026-07-16: Generic protocol receivers lose their concrete sequence element
+
+- Status: Fixed
+- Symptom: A `btset<Datom>` `Seqable` implementation returns `Seq<Datom>`, but
+  the erased function boundary expects `Seq<dynamic>`.
+- Root cause: Generic receiver method types were instantiated only through some
+  protocol lookup paths. Core collection capability lookup kept the declaration
+  type variable, and Seqable adapters and stored dynamic values selected
+  different element representations.
+- Fix: Centralized receiver method instantiation and applied it to core protocol
+  lookup. Seqable adapters now own the element conversion, and erased storage
+  reuses the adapted sequence.
+- Verification: The focused PSS generic nominal test passes on Native and
+  Melange. Full Native `db.cljc` compilation passes the DB `diff-sorted` call.
+
+## 2026-07-16: Dynamic sequence reducers require explicit item adaptation
+
+- Status: Fixed
+- Symptom: `reduce` passes `Runtime_dynamic.t` sequence elements directly to a
+  reducer whose item parameter is a concrete record or protocol constraint.
+- Root cause: Unary sequence functions had a dynamic/static adapter, but reducer
+  functions did not have the corresponding two-argument boundary adapter.
+- Fix: Added reducer item adaptation while preserving the accumulator type.
+  Dynamic protocol witness methods also unpack invocation results using their
+  refined common return type.
+- Verification: Focused record reducer and dynamic protocol return regressions
+  pass. Full Native `db.cljc` advances through `check-value-tempids`.
+
+## 2026-07-16: Deferred return type applies `TxReport` as a generic constructor
+
+- Status: Open
+- Symptom: Full Native compilation now reaches `retry-with-tempid` and emits
+  `datom txreport option`, although `txreport` has no type parameters.
+- Current evidence: The malformed type occurs only in the deferred
+  implementation holder for the forward-declared `retry-with-tempid` return.
+  The next step is to find where adjacent nominal and nullable return evidence
+  is composed in deferred declaration inference.

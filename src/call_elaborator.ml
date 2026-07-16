@@ -434,7 +434,7 @@ and dynamic_unpack_impl env ty expression =
       | ty when Option.is_some (Types.protocol_constraint_info ty) -> (
           match Types.protocol_constraint_info ty with
           | None -> assert false
-          | Some (protocol_id, _method_tys, value_ty) -> (
+          | Some (protocol_id, witness_ty, value_ty) -> (
               match
                 Protocol_registry.find_protocol protocol_id
                   (Compiler_environment.protocols env)
@@ -443,20 +443,55 @@ and dynamic_unpack_impl env ty expression =
                   Error.error
                     ("unknown protocol " ^ Protocol_id.to_string protocol_id)
               | Some declaration -> (
-                  let methods =
+                  let declared_methods =
                     declaration.Protocol_registry.methods
                     |> Protocol_registry.Method_map.bindings
                   in
-                  let compile_method (method_id, signature) =
+                  let method_types =
+                    Types.protocol_witness_method_types witness_ty
+                  in
+                  let methods =
+                    match method_types with
+                    | Some method_types
+                      when List.length method_types
+                           = List.length declared_methods ->
+                        Ok (List.combine declared_methods method_types)
+                    | Some _ | None ->
+                        Error.error "invalid protocol witness type"
+                  in
+                  let compile_method ((method_id, signature), method_ty) =
+                    let param_tys, return_ty =
+                      match method_ty with
+                      | TFn (param_tys, return_ty) ->
+                          (param_tys, return_ty)
+                      | _ ->
+                          ( signature.Protocol_registry.param_tys,
+                            signature.Protocol_registry.return_ty )
+                    in
+                    let return_ty =
+                      match
+                        (signature.Protocol_registry.return_ty, return_ty)
+                      with
+                      | ( (TUnknown | TVar _),
+                          return_ty )
+                        when Types.is_dynamic return_ty
+                             || Types.equal return_ty TUnknown
+                             || (match return_ty with TVar _ -> true | _ -> false)
+                        ->
+                          Protocol.common_method_return env protocol_id
+                            (Method_id.name method_id)
+                          |> Option.value ~default:return_ty
+                      | _ -> return_ty
+                    in
                     let parameter_names =
                       List.mapi
                         (fun index _ ->
                           "__lg_dynamic_protocol_arg_" ^ string_of_int index)
-                        signature.Protocol_registry.param_tys
+                        param_tys
                     in
                     let invocation_parameters =
                       match
-                        (signature.Protocol_registry.param_tys, parameter_names)
+                        (param_tys, parameter_names)
                       with
                       | ( _receiver_ty :: param_tys,
                           _receiver_name :: parameter_names ) ->
@@ -505,8 +540,7 @@ and dynamic_unpack_impl env ty expression =
                                   (fun name -> Semantic_ir.PVar name)
                                   parameter_names,
                                 result ))
-                              (dynamic_unpack env signature.return_ty
-                                 dynamic_result)))
+                              (dynamic_unpack env return_ty dynamic_result)))
                   in
                   let rec compile_methods compiled = function
                     | [] -> Ok (List.rev compiled)
@@ -518,7 +552,7 @@ and dynamic_unpack_impl env ty expression =
                               methods)
                   in
                   match
-                     ( compile_methods [] methods,
+                     ( Result.bind methods (compile_methods []),
                        dynamic_unpack env value_ty expression )
                    with
                   | (Error _ as error), _ -> error
@@ -1401,11 +1435,79 @@ let rec pack_constrained_value env expected argument =
                        ( Semantic_ir.Ident implementation.ocaml_name,
                          arguments ))
                 in
+                let adapt_sequence expected_element actual_element sequence =
+                  if Types.equal expected_element actual_element then
+                    Ok sequence
+                  else
+                    let item_name = "__lg_protocol_return_item" in
+                    let item =
+                      typed_ir actual_element (Semantic_ir.Ident item_name)
+                    in
+                    Result.map
+                      (fun item ->
+                        let item_pattern =
+                          typed_item_pattern item_name actual_element
+                        in
+                        Semantic_ir.Apply
+                          ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.map",
+                            [
+                              Semantic_ir.Fun ([ item_pattern ], item);
+                              sequence;
+                            ] ))
+                      (if Types.is_dynamic expected_element then
+                         pack_dynamic_value env expected_element item
+                       else if Types.is_dynamic actual_element then
+                         dynamic_unpack env expected_element item.semantic_expr
+                       else
+                         Ok
+                           (coerce_expression_to_type expected_element
+                              actual_element item.semantic_expr))
+                in
                 let adapted_result =
                   if Types.equal expected_return actual_return then
                     Ok result.semantic_expr
                   else
                     match (expected_return, actual_return) with
+                    | ( (TNullable expected_inner
+                        | TOcaml_app ("option", [ expected_inner ])),
+                        (TNullable actual_inner
+                        | TOcaml_app ("option", [ actual_inner ])) ) -> (
+                        match
+                          ( Types.next_seq_element expected_inner,
+                            Types.next_seq_element actual_inner )
+                        with
+                        | Some expected_element, Some _ ->
+                            let value_name = "__lg_protocol_return_sequence" in
+                            let value =
+                              typed_ir actual_inner
+                                (Semantic_ir.Ident value_name)
+                            in
+                            Result.bind
+                              (Collection_capability.to_seq_expr env value)
+                              (fun (actual_element, sequence) ->
+                                Result.map
+                                  (fun sequence ->
+                                    Semantic_ir.Match
+                                      ( result.semantic_expr,
+                                        [
+                                          ( Semantic_ir.PConstructor
+                                              ("None", None),
+                                            Semantic_ir.Constructor
+                                              ("None", None) );
+                                          ( Semantic_ir.PConstructor
+                                              ( "Some",
+                                                Some
+                                                  (Semantic_ir.PVar value_name)
+                                              ),
+                                            Semantic_ir.Constructor
+                                              ("Some", Some sequence) );
+                                        ] ))
+                                  (adapt_sequence expected_element
+                                     actual_element sequence))
+                        | _ ->
+                            Ok
+                              (coerce_expression_to_type expected_return
+                                 actual_return result.semantic_expr))
                     | TSeq expected_element, _ -> (
                         match Collection_capability.to_seq_expr env result with
                         | Error _
@@ -1416,37 +1518,9 @@ let rec pack_constrained_value env expected argument =
                               (coerce_expression_to_type expected_return
                                  actual_return result.semantic_expr)
                         | Error _ as error -> error
-                        | Ok (actual_element, sequence)
-                          when Types.equal expected_element actual_element ->
-                            Ok sequence
                         | Ok (actual_element, sequence) ->
-                            let item_name = "__lg_protocol_return_item" in
-                            let item =
-                              typed_ir actual_element
-                                (Semantic_ir.Ident item_name)
-                            in
-                            Result.map
-                              (fun item ->
-                                let item_pattern =
-                                  typed_item_pattern item_name actual_element
-                                in
-                                Semantic_ir.Apply
-                                  ( Semantic_ir.Ident
-                                      "Lg_runtime.Runtime_seq.map",
-                                    [
-                                      Semantic_ir.Fun
-                                        ([ item_pattern ], item);
-                                      sequence;
-                                    ] ))
-                              (if Types.is_dynamic expected_element then
-                                 pack_dynamic_value env expected_element item
-                               else if Types.is_dynamic actual_element then
-                                 dynamic_unpack env expected_element
-                                   item.semantic_expr
-                               else
-                                 Ok
-                                   (coerce_expression_to_type expected_element
-                                      actual_element item.semantic_expr)))
+                            adapt_sequence expected_element actual_element
+                              sequence)
                     | _ when Types.is_dynamic expected_return ->
                         pack_dynamic_value env expected_return result
                     | _ when Types.is_dynamic actual_return ->
@@ -1554,6 +1628,18 @@ let rec pack_constrained_value env expected argument =
           in
           let element_mapper =
             match actual_element with
+            | Some actual_element
+              when Types.is_dynamic expected_element
+                   && not (Types.is_dynamic actual_element) ->
+                let item_name = "__lg_seqable_item" in
+                let item =
+                  typed_ir actual_element (Semantic_ir.Ident item_name)
+                in
+                pack_dynamic_value env expected_element item
+                |> Result.map (fun packed ->
+                       Some
+                         (Semantic_ir.Fun
+                            ([ Semantic_ir.PVar item_name ], packed)))
             | Some actual_element when Types.is_dynamic actual_element ->
                 let item_name = "__lg_seqable_item" in
                 dynamic_unpack env expected_element
@@ -1679,10 +1765,51 @@ let rec pack_constrained_value env expected argument =
                            Semantic_ir.Constructor ("Some", Some adapter))
                             else Ok (Semantic_ir.Constructor ("None", None))
               in
+              let packed_value =
+                if erase_value && name = Types.seqable_constraint_name then
+                  Result.bind
+                    (Collection_capability.seqable_adapter ?element_mapper env
+                       argument)
+                    (fun sequence_adapter ->
+                      let sequence =
+                        Semantic_ir.Apply
+                          (sequence_adapter, [ argument.semantic_expr ])
+                      in
+                      if Types.is_dynamic expected_element then
+                        Ok
+                          (Semantic_ir.Apply
+                             ( Semantic_ir.Ident
+                                 "Lg_runtime.Runtime_dynamic.seq",
+                               [ sequence ] ))
+                      else
+                        let item_name = "__lg_erased_seqable_item" in
+                        let item =
+                          typed_ir expected_element
+                            (Semantic_ir.Ident item_name)
+                        in
+                        Result.map
+                          (fun packed_item ->
+                            Semantic_ir.Apply
+                              ( Semantic_ir.Ident
+                                  "Lg_runtime.Runtime_dynamic.seq",
+                                [
+                                  Semantic_ir.Apply
+                                    ( Semantic_ir.Ident
+                                        "Lg_runtime.Runtime_seq.map",
+                                      [
+                                        Semantic_ir.Fun
+                                          ( [ Semantic_ir.PVar item_name ],
+                                            packed_item );
+                                        sequence;
+                                      ] );
+                                ] ))
+                          (pack_dynamic_value env
+                             (Types.dynamic_constraint TUnknown)
+                             item))
+                else pack_constrained_value env stored_value_ty argument
+              in
                         match
-                          ( adapter,
-                            pack_constrained_value env stored_value_ty argument
-                          )
+                          (adapter, packed_value)
                with
               | (Error _ as error), _ -> error
               | _, (Error _ as error) -> error
@@ -4875,11 +5002,16 @@ let create ~compile_expr =
                 in
                           match default.ty with
                 | TVector element_type ->
+                    let element_type =
+                      match element_type with
+                      | TUnknown -> TVar "fnil_vector_element"
+                      | element_type -> element_type
+                    in
                     let result_type = TVector element_type in
                     Ok
                       (typed_ir
                          (TFn
-                            ( [ TNullable result_type; TUnknown ],
+                            ( [ TNullable result_type; element_type ],
                               result_type ))
                          (Semantic_ir.Fun
                                       ( [

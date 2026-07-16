@@ -241,6 +241,38 @@ let infer_defrecord_field_types scope env field_names interface_forms =
   in
   let lookup_function_ty = Expression_support.lookup_function_ty scope env in
   let lookup_protocol_constraint = Protocol.constraint_type scope env in
+  let rec protocol_ids ty =
+    match Types.protocol_constraint_info ty with
+    | Some (protocol_id, _, value_ty) -> protocol_id :: protocol_ids value_ty
+    | None -> (
+        match Types.dynamic_constraint_info ty with
+        | Some capability -> protocol_ids capability
+        | None -> [])
+  in
+  let resolve_protocol_record ty =
+    match protocol_ids ty with
+    | [] -> ty
+    | protocols ->
+        let candidates =
+          Env.filter_map
+            (fun key (binding : binding) ->
+              if String.starts_with ~prefix:"__record/" key then
+                match binding.ty with
+                | TNamed_record record
+                  when List.for_all
+                         (fun protocol_id ->
+                           Protocol.type_satisfies env protocol_id
+                             (TNamed_record record))
+                         protocols ->
+                    Some record
+                | _ -> None
+              else None)
+            env
+          |> List.sort_uniq (fun left right ->
+                 Type_id.compare left.type_id right.type_id)
+        in
+        (match candidates with [ record ] -> TNamed_record record | _ -> ty)
+  in
   let infer_method field_types = function
     | FList
         (_method_name
@@ -287,6 +319,7 @@ let infer_defrecord_field_types scope env field_names interface_forms =
                 let inferred =
                   Function_elaborator.infer_named_record
                     ~allow_dynamic_fields:true scope env inferred
+                  |> resolve_protocol_record
                 in
                 match
                   ( concrete_defrecord_field_type previous,

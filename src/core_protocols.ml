@@ -374,6 +374,13 @@ let find_seqable receiver_ty registry =
   | Some receiver ->
       Protocol_registry.find_implementation seqable_id seq_method_id receiver
         registry
+      |> Option.map (fun (implementation : binding) ->
+             {
+               implementation with
+               ty =
+                 instantiate_receiver_method_type receiver_ty
+                   implementation.ty;
+             })
 
 let find_reducible receiver_ty registry =
   match Receiver_id.of_type receiver_ty with
@@ -381,6 +388,13 @@ let find_reducible receiver_ty registry =
   | Some receiver ->
       Protocol_registry.find_implementation reducible_id reduce_method_id
         receiver registry
+      |> Option.map (fun (implementation : binding) ->
+             {
+               implementation with
+               ty =
+                 instantiate_receiver_method_type receiver_ty
+                   implementation.ty;
+             })
 
 let find_counted receiver_ty registry =
   match Receiver_id.of_type receiver_ty with
@@ -388,6 +402,13 @@ let find_counted receiver_ty registry =
   | Some receiver ->
       Protocol_registry.find_implementation counted_id count_method_id receiver
         registry
+      |> Option.map (fun (implementation : binding) ->
+             {
+               implementation with
+               ty =
+                 instantiate_receiver_method_type receiver_ty
+                   implementation.ty;
+             })
 
 let find_indexed receiver_ty registry =
   match Receiver_id.of_type receiver_ty with
@@ -395,6 +416,13 @@ let find_indexed receiver_ty registry =
   | Some receiver ->
       Protocol_registry.find_implementation indexed_id nth_method_id receiver
         registry
+      |> Option.map (fun (implementation : binding) ->
+             {
+               implementation with
+               ty =
+                 instantiate_receiver_method_type receiver_ty
+                   implementation.ty;
+             })
 
 let find_emptyable receiver_ty registry =
   match Receiver_id.of_type receiver_ty with
