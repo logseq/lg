@@ -1061,7 +1061,11 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint
               match infer_form params value_form with
               | Error _ as err -> err
               | Ok params -> infer_values params rest)
-          | _ -> Ok params
+          | _pattern :: value_form :: rest -> (
+              match infer_form params value_form with
+              | Error _ as error -> error
+              | Ok params -> infer_values params rest)
+          | [ _ ] -> Ok params
         in
         match infer_values params forms with
         | Error _ as err -> err
@@ -1082,7 +1086,31 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint
                   | _ -> None
                 in
                 match simple_bindings [] forms with
-                | None -> infer_body params body_forms
+                | None ->
+                    let outer_params =
+                      List.filter
+                        (fun (name, _) -> not (List.mem name provisional_names))
+                        inferred_locals
+                    in
+                    let rec propagate params = function
+                      | [] -> Ok params
+                      | pattern :: value :: rest ->
+                          let expected =
+                            Destructure.infer_pattern_type pattern
+                              lookup_inferred_local
+                            |> Result.value ~default:TUnknown
+                          in
+                          let infer_value =
+                            match expected with
+                            | TUnknown | TVar _ -> infer_form params value
+                            | expected -> infer_expected expected params value
+                          in
+                          Result.bind infer_value (fun params ->
+                              propagate params rest)
+                      | [ _ ] -> Ok params
+                    in
+                    Result.bind (infer_values outer_params forms) (fun params ->
+                        propagate params forms)
                 | Some bindings ->
                     let body_forms =
                       List.map (rewrite_simple_aliases bindings) body_forms

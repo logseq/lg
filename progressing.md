@@ -173,14 +173,52 @@ update the same entry with its root cause, fix, and verification evidence.
 
 ## 2026-07-16: `validate-upserts` emits an unconstrained `db_id` field access
 
-- Status: Reproduced; next DataScript blocker
+- Status: Fixed
 - Symptom: Full Native compilation reaches `db.cljc` lines 1284-1313 and OCaml
   rejects an access to the unbound record field `db_id`.
-- Root cause: Pending focused reduction. A nested reduce/destructuring path has
-  lost the nominal record type that owns the source `:db/id` field.
-- Direction: Reduce the field-access flow, add Native/Melange behavior tests,
-  and preserve nominal evidence through the reducer rather than adding an
-  OCaml record-field workaround.
+- Root cause: Mixed `let` bindings whose first value was destructured stopped
+  fallback inference at that first binding. Later bindings therefore could not
+  constrain outer parameters. In addition, constraints learned from the body
+  about a local binding were not propagated back through that binding's value.
+- Fix: Mixed bindings now infer every value, then propagate each inferred local
+  pattern type back into its corresponding value and outer parameter. This is
+  bidirectional `let` inference rather than a record-field special case.
+- Verification: The focused nested `reduce-kv` regression was RED first with
+  an unbound `db_id` field. It now distinguishes present and missing `:db/id`,
+  handles empty/conflicting upserts, runs on Native, and compiles on Melange.
+  The complete compiler suite passes. Full Native DataScript compilation no
+  longer fails in `validate-upserts` and reaches the independent existential
+  `btset` escape below.
+
+## 2026-07-16: Empty dynamic sequence operations throw instead of yielding nil
+
+- Status: Fixed
+- Symptom: After mixed-binding inference was repaired, the exact
+  `validate-upserts` reduction threw `first of empty sequence` for an empty
+  upsert map. Dynamic positional destructuring had the same failure mode for a
+  missing item.
+- Root cause: Generic dynamic `first` used the throwing sequence primitive, and
+  generic dynamic destructuring used the throwing indexed primitive. Clojure
+  semantics require both missing positions to yield nil.
+- Fix: Dynamic `first` and dynamic positional destructuring use optional runtime
+  sequence access and translate `None` to `Runtime_dynamic.nil`. Statically
+  non-nil collection paths retain their existing representation-specific code.
+- Verification: The same Native/Melange regression covers the empty path and
+  the complete compiler suite passes.
+
+## 2026-07-16: Existential `btset` type escapes from `numeric-eid-exists?`
+
+- Status: Reproduced; next DataScript blocker
+- Symptom: Full Native compilation reaches `db.cljc` lines 992-997 and OCaml
+  reports that `$0 btset` cannot be used as `'a btset` because the existential
+  type constructor would escape its scope.
+- Root cause: Pending focused reduction. The `(-seek-datoms db ...)` protocol
+  result carries a nominal `btset` whose hidden address parameter is being
+  generalized or unpacked across a call boundary before `first`/`:e` consumes
+  it.
+- Direction: Add the exact Native/Melange RED case and preserve the existential
+  owner through the typed IR and call boundary; do not erase it or use an OCaml
+  cast.
 
 ## 2026-07-16: Systemic compiler design gaps exposed by the DataScript port
 

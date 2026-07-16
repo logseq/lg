@@ -8698,6 +8698,46 @@ let test_dynamic_reduce_branch_merges_with_nullable_vector_fallback () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_nested_reducers_keep_entity_keyword_lookup_as_map_access () =
+  let source =
+    {|
+(defn entity-id-after-upserts [entity upserts]
+  (let [upsert-ids
+        (reduce-kv
+          (fn [result attribute values-to-entities]
+            (reduce-kv
+              (fn [result value entity-id]
+                (assoc result entity-id [attribute value]))
+              result
+              values-to-entities))
+          {}
+          upserts)
+        upsert-count (count upsert-ids)]
+    (if (<= 2 upsert-count)
+      nil
+      (let [[upsert-id [attribute value]] (first upsert-ids)
+            entity-id (:db/id entity)]
+        (if entity-id true false)))))
+(def present-result
+  (entity-id-after-upserts {:db/id 7} {:name {"Ada" 1}}))
+(def missing-result
+  (entity-id-after-upserts {} {:name {"Ada" 1}}))
+(def empty-result
+  (entity-id-after-upserts {:db/id 9} {}))
+(def conflict-result
+  (entity-id-after-upserts {:db/id 9}
+    {:name {"Ada" 1} :email {"ada@example.com" 2}}))
+(println
+  (str present-result ":" missing-result ":" empty-result ":"
+       (nil? conflict-result)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "nested_reducers_keep_entity_keyword_lookup_as_map_access"
+    "true:false:true:true\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_get_uses_dynamic_lookup_for_dynamic_targets () =
   let source =
     {|
@@ -15130,6 +15170,8 @@ let tests =
       test_conj_is_available_as_a_first_class_core_function );
     ( "dynamic reduce branch merges with nullable vector fallback",
       test_dynamic_reduce_branch_merges_with_nullable_vector_fallback );
+    ( "nested reducers keep entity keyword lookup as map access",
+      test_nested_reducers_keep_entity_keyword_lookup_as_map_access );
     ( "get uses dynamic lookup for dynamic targets",
       test_get_uses_dynamic_lookup_for_dynamic_targets );
     ( "dynamic record keys preserve common generic field types",

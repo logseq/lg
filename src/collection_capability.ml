@@ -394,6 +394,18 @@ let first_expr env collection =
   | Error _ -> Error.error "first expects a seqable value"
   | Ok (inner, sequence) ->
       let expression =
+        if Types.is_dynamic inner then
+          let item_name = "__lg_first_dynamic_item" in
+          Semantic_ir.Match
+            ( apply "Lg_runtime.Runtime_seq.first_opt" [ sequence ],
+              [
+                ( Semantic_ir.PConstructor ("None", None),
+                  Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.nil" );
+                ( Semantic_ir.PConstructor
+                    ("Some", Some (Semantic_ir.PVar item_name)),
+                  Semantic_ir.Ident item_name );
+              ] )
+        else
         match collection.ty with
         | TList _ | TOcaml_app ("list", [ _ ]) ->
             apply "List.hd" [ collection.semantic_expr ]

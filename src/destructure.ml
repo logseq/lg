@@ -553,10 +553,28 @@ and bind_sequence env (target : typed_expr) forms =
       | Ok pattern, Ok (inner, sequence) ->
           let item_count = List.length pattern.item_patterns in
           let sequence_item_at index =
-            typed_ir inner
-              (Semantic_ir.Apply
-                 ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.nth",
-                   [ Semantic_ir.Int index; sequence ] ))
+            let item =
+              Semantic_ir.Apply
+                ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.nth_opt",
+                  [ Semantic_ir.Int index; sequence ] )
+            in
+            let expression =
+              if Types.is_dynamic inner then
+                let item_name = "__lg_destructure_dynamic_item" in
+                Semantic_ir.Match
+                  ( item,
+                    [
+                      ( Semantic_ir.PConstructor ("None", None),
+                        Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.nil" );
+                      ( Semantic_ir.PConstructor
+                          ("Some", Some (Semantic_ir.PVar item_name)),
+                        Semantic_ir.Ident item_name );
+                    ] )
+              else
+                Semantic_ir.Apply
+                  (Semantic_ir.Ident "Option.get", [ item ])
+            in
+            typed_ir inner expression
           in
           Result.map
             (fun bindings ->
