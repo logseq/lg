@@ -738,129 +738,17 @@ let find_record_extension_field fields =
 let record_constructor_fields fields =
   List.filter (fun field -> not (is_record_extension_field field)) fields
 
-type type_substitutions = (string * ty) list
+type type_substitutions = Type_solver.substitutions
 
-let bind_type_variable substitutions name actual =
-  match List.assoc_opt name substitutions with
-  | None -> (name, actual) :: substitutions
-  | Some existing when equal existing actual -> substitutions
-  | Some _ ->
-      (name, TUnknown) :: List.remove_assoc name substitutions
+let infer_type_substitutions substitutions ~template ~actual =
+  Type_solver.infer substitutions ~template ~actual
+  |> Result.value ~default:substitutions
 
-let rec infer_type_substitutions substitutions ~template ~actual =
-  match (template, actual) with
-  | TVar name, actual -> bind_type_variable substitutions name actual
-  | TNullable template, TNullable actual ->
-      infer_type_substitutions substitutions ~template ~actual
-  | TOcaml_app (template_name, template_args),
-    TOcaml_app (actual_name, actual_args)
-    when template_name = actual_name
-         && List.length template_args = List.length actual_args ->
-      infer_list_substitutions substitutions template_args actual_args
-  | TTuple template_args, TTuple actual_args
-    when List.length template_args = List.length actual_args ->
-      infer_list_substitutions substitutions template_args actual_args
-  | (TArray template, TArray actual)
-  | (TRef template, TRef actual)
-  | (TList template, TList actual)
-  | (TVector template, TVector actual)
-  | (TSet template, TSet actual)
-  | (TSeq template, TSeq actual) ->
-      infer_type_substitutions substitutions ~template ~actual
-  | TFn (template_args, template_ret), TFn (actual_args, actual_ret)
-    when List.length template_args = List.length actual_args ->
-      let substitutions =
-        infer_list_substitutions substitutions template_args actual_args
-      in
-      infer_type_substitutions substitutions ~template:template_ret
-        ~actual:actual_ret
-  | TOverloaded_fn templates, TOverloaded_fn actuals
-    when List.length templates = List.length actuals ->
-      List.fold_left2 infer_arity_substitutions substitutions templates actuals
-  | (TRecord template_fields | TNamed_record { fields = template_fields; _ }),
-    (TRecord actual_fields | TNamed_record { fields = actual_fields; _ }) ->
-      List.fold_left
-        (fun substitutions (template_field : field) ->
-          match find_field template_field.keyword actual_fields with
-          | None -> substitutions
-          | Some actual_field ->
-              infer_type_substitutions substitutions
-                ~template:template_field.ty ~actual:actual_field.ty)
-        substitutions template_fields
-  | _ -> substitutions
+let infer_list_substitutions substitutions templates actuals =
+  Type_solver.infer_all substitutions ~templates ~actuals
+  |> Result.value ~default:substitutions
 
-and infer_arity_substitutions substitutions template actual =
-  let substitutions =
-    if List.length template.fixed_params = List.length actual.fixed_params then
-      infer_list_substitutions substitutions template.fixed_params actual.fixed_params
-    else substitutions
-  in
-  let substitutions =
-    match (template.rest_param, actual.rest_param) with
-    | Some template, Some actual ->
-        infer_type_substitutions substitutions ~template ~actual
-    | _ -> substitutions
-  in
-  infer_type_substitutions substitutions ~template:template.return_ty
-    ~actual:actual.return_ty
-
-and infer_list_substitutions substitutions templates actuals =
-  List.fold_left2
-    (fun substitutions template actual ->
-      infer_type_substitutions substitutions ~template ~actual)
-    substitutions templates actuals
-
-let rec substitute_type_variables substitutions = function
-  | TVar name ->
-      List.assoc_opt name substitutions |> Option.value ~default:(TVar name)
-  | TOcaml_app (name, args) ->
-      TOcaml_app (name, List.map (substitute_type_variables substitutions) args)
-  | TNullable inner ->
-      TNullable (substitute_type_variables substitutions inner)
-  | TTuple args -> TTuple (List.map (substitute_type_variables substitutions) args)
-  | TArray inner -> TArray (substitute_type_variables substitutions inner)
-  | TRef inner -> TRef (substitute_type_variables substitutions inner)
-  | TList inner -> TList (substitute_type_variables substitutions inner)
-  | TVector inner -> TVector (substitute_type_variables substitutions inner)
-  | TSet inner -> TSet (substitute_type_variables substitutions inner)
-  | TSeq inner -> TSeq (substitute_type_variables substitutions inner)
-  | TFn (args, ret) ->
-      TFn
-        ( List.map (substitute_type_variables substitutions) args,
-          substitute_type_variables substitutions ret )
-  | TOverloaded_fn arities ->
-      TOverloaded_fn
-        (List.map
-           (fun arity ->
-             { fixed_params =
-                 List.map (substitute_type_variables substitutions)
-                   arity.fixed_params;
-               rest_param =
-                 Option.map (substitute_type_variables substitutions)
-                   arity.rest_param;
-               return_ty =
-                 substitute_type_variables substitutions arity.return_ty })
-           arities)
-  | TRecord fields ->
-      TRecord
-        (List.map
-           (fun (field : field) ->
-             { field with ty = substitute_type_variables substitutions field.ty })
-           fields)
-  | TNamed_record record ->
-      TNamed_record
-        { record with
-          fields =
-            List.map
-              (fun (field : field) ->
-                { field with
-                  ty = substitute_type_variables substitutions field.ty;
-                })
-              record.fields;
-        }
-  | (TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword | TBool | TUnit | TNil
-    | TUnknown | TOcaml _) as ty ->
-      ty
+let substitute_type_variables = Type_solver.apply
 
 let instantiate_type ~templates ~actuals ty =
   if List.length templates <> List.length actuals then ty

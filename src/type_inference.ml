@@ -143,6 +143,18 @@ let constrain_symbol expected_ty params name =
   match List.assoc_opt name params with
   | None -> Ok params
   | Some existing_ty ->
+      let substitutions =
+        Type_solver.unify [] existing_ty expected_ty
+        |> Result.value ~default:[]
+      in
+      let params =
+        List.map
+          (fun (param_name, param_ty) ->
+            (param_name, Type_solver.apply substitutions param_ty))
+          params
+      in
+      let existing_ty = Type_solver.apply substitutions existing_ty in
+      let expected_ty = Type_solver.apply substitutions expected_ty in
       Ok (replace_param name (refine_type existing_ty expected_ty) params)
 
 let rec materialize_dynamic_unknown = function
@@ -213,6 +225,8 @@ let constrain_seqable element_ty params name =
         else if constraint_name = Types.optional_seqable_constraint_name then
           Types.optional_seqable_constraint element_ty value_ty
         else Types.optional_sequential_constraint element_ty value_ty
+    | TNamed_record { type_parameters = [ parameter ]; _ } as record_ty ->
+        Types.substitute_type_variables [ (parameter, element_ty) ] record_ty
     | existing -> (
         match Types.protocol_constraint_info existing with
         | Some (_, _, value_ty) ->
@@ -515,6 +529,17 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint
   in
   let rec infer_expected expected_ty params = function
     | FSymbol name -> constrain_symbol expected_ty params name
+    | FList [ FSymbol "if"; condition; then_form; else_form ] ->
+        Result.bind (infer_truthy params condition) (fun params ->
+            Result.bind (infer_expected expected_ty params then_form)
+              (fun params -> infer_expected expected_ty params else_form))
+    | FList [ FSymbol "if"; condition; then_form ] ->
+        Result.bind (infer_truthy params condition) (fun params ->
+            infer_expected expected_ty params then_form)
+    | FList [ FSymbol "if-not"; condition; then_form; else_form ] ->
+        Result.bind (infer_truthy params condition) (fun params ->
+            Result.bind (infer_expected expected_ty params then_form)
+              (fun params -> infer_expected expected_ty params else_form))
     | FList [ FSymbol "Some"; value ] -> (
         match expected_ty with
         | TNullable value_ty | TOcaml_app ("option", [ value_ty ]) ->
@@ -604,12 +629,27 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint
         | Error _ as error -> error
         | Ok params -> infer_expected TInt params index)
     | FList (FSymbol name :: args) when List.mem_assoc name params -> (
-        let parameter_types = List.map (inferred_form_type params) args in
+        let parameter_types =
+          List.mapi
+            (fun index argument ->
+              match inferred_form_type params argument with
+              | TUnknown ->
+                  fresh_type_variable
+                    ("call_" ^ Names.sanitize_name name ^ "_"
+                   ^ string_of_int index)
+              | ty -> ty)
+            args
+        in
         match
           constrain_symbol (TFn (parameter_types, expected_ty)) params name
         with
         | Error _ as error -> error
-        | Ok params -> infer_all params args)
+        | Ok params ->
+            List.fold_left2
+              (fun result expected argument ->
+                Result.bind result (fun params ->
+                    infer_expected expected params argument))
+              (Ok params) parameter_types args)
     | FList (FSymbol ("+" | "-" | "*" | "/" | "max" | "min") :: args)
       when Types.equal expected_ty TInt || Types.equal expected_ty TFloat ->
         infer_expected_all expected_ty params args
@@ -811,6 +851,46 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint
                       (List.length args - fixed_count)
                       (fun _ -> rest_ty)
             in
+            let substitutions =
+              let inferred_argument_type = function
+                | FList (FSymbol name :: arguments) -> (
+                    match lookup_function_ty name with
+                    | Ok (TFn (parameter_tys, return_ty))
+                      when List.length parameter_tys
+                           = List.length arguments ->
+                        Types.instantiate_type ~templates:parameter_tys
+                          ~actuals:
+                            (List.map (inferred_form_type params) arguments)
+                          return_ty
+                    | Ok (TOverloaded_fn arities) -> (
+                        match select_fn_arity arities (List.length arguments) with
+                        | Some arity ->
+                            Types.instantiate_type
+                              ~templates:arity.fixed_params
+                              ~actuals:
+                                (List.map (inferred_form_type params) arguments)
+                              arity.return_ty
+                        | None -> TUnknown)
+                    | _ -> TUnknown)
+                | form -> inferred_form_type params form
+              in
+              List.fold_left2
+                (fun substitutions expected arg ->
+                  let actual = inferred_argument_type arg in
+                  if
+                    Types.equal actual TUnknown || Types.is_dynamic actual
+                    || match actual with TVar _ -> true | _ -> false
+                  then substitutions
+                  else
+                    Types.infer_type_substitutions substitutions
+                      ~template:expected ~actual)
+                [] expected_tys args
+            in
+            let expected_tys =
+              List.map
+                (Types.substitute_type_variables substitutions)
+                expected_tys
+            in
             List.fold_left2
               (fun acc expected_ty arg ->
                 match acc with
@@ -823,25 +903,32 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint
         match lookup_function_ty name with
         | Ok (TFn ([ param_ty ], _)) -> param_ty
         | _ -> TUnknown)
-    | FList (FSymbol "fn" :: FVector [ FSymbol name ] :: body_forms) -> (
-        match infer_all [ (name, TUnknown) ] body_forms with
-        | Ok inferred ->
-            List.assoc_opt name inferred |> Option.value ~default:TUnknown
-        | Error _ -> TUnknown)
-    | FList (FSymbol "fn" :: FVector [ pattern ] :: body_forms) -> (
-        let dynamic = Types.dynamic_constraint TUnknown in
-        let pattern_params =
-          Destructure.pattern_names pattern
-          |> List.map (fun name -> (name, dynamic))
-        in
-        match infer_all pattern_params body_forms with
-        | Error _ -> TUnknown
-        | Ok inferred ->
-            let lookup name =
-              List.assoc_opt name inferred |> Option.value ~default:dynamic
-            in
-            Destructure.infer_pattern_type pattern lookup
-            |> Result.value ~default:TUnknown)
+    | FList
+        (FSymbol "fn" :: (FVector _ as params_form) :: body_forms) -> (
+        match Destructure.parse_param_specs params_form with
+        | Ok [ (spec : Destructure.param_spec) ] -> (
+            match spec.explicit_ty with
+            | Some ty when not (Types.equal ty TUnknown) -> ty
+            | _ when not spec.destructured -> (
+                match infer_all [ (spec.source_name, TUnknown) ] body_forms with
+                | Ok inferred ->
+                    List.assoc_opt spec.source_name inferred
+                    |> Option.value ~default:TUnknown
+                | Error _ -> TUnknown)
+            | _ ->
+                let dynamic = Types.dynamic_constraint TUnknown in
+                let pattern_params =
+                  Destructure.pattern_names spec.pattern
+                  |> List.map (fun name -> (name, dynamic))
+                in
+                (match infer_all pattern_params body_forms with
+                | Ok inferred ->
+                    Destructure.infer_pattern_type spec.pattern (fun name ->
+                        List.assoc_opt name inferred
+                        |> Option.value ~default:dynamic)
+                    |> Result.value ~default:TUnknown
+                | Error _ -> TUnknown))
+        | Ok _ | Error _ -> TUnknown)
     | _ -> TUnknown
   and inferred_reducer_item params init = function
     | FSymbol name -> (
@@ -1417,10 +1504,25 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint
     | FList [ FSymbol "instance?"; FSymbol _type_name; FSymbol value ] ->
         constrain_symbol (Types.dynamic_constraint TUnknown) params value
     | FList (FSymbol name :: arguments) when List.mem_assoc name params -> (
-        let parameter_tys = List.map (inferred_form_type params) arguments in
+        let parameter_tys =
+          List.mapi
+            (fun index argument ->
+              match inferred_form_type params argument with
+              | TUnknown ->
+                  fresh_type_variable
+                    ("call_" ^ Names.sanitize_name name ^ "_"
+                   ^ string_of_int index)
+              | ty -> ty)
+            arguments
+        in
         match constrain_symbol (TFn (parameter_tys, TUnknown)) params name with
         | Error _ as err -> err
-        | Ok params -> infer_all params arguments)
+        | Ok params ->
+            List.fold_left2
+              (fun result expected argument ->
+                Result.bind result (fun params ->
+                    infer_expected expected params argument))
+              (Ok params) parameter_tys arguments)
     | FList [ FSymbol "deref"; FList [ FKeyword keyword; FSymbol name ] ] ->
         add_record_field_constraint name keyword (TRef TUnknown) params
     | FList
@@ -1465,9 +1567,9 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint
     | FList (FSymbol "merge" :: maps) ->
         infer_expected_all (Types.dynamic_constraint TUnknown) params maps
     | FList
-        (FSymbol "update"
+        (FSymbol ("update" | "clojure.core/update")
         :: target :: key
-        :: FSymbol "update"
+        :: FSymbol ("update" | "clojure.core/update")
         :: nested_arguments) ->
         let nested_value = "__lg_nested_update_value" in
         let params =
@@ -1499,7 +1601,7 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint
             infer_form params
               (FList
                  [
-                   FSymbol "update";
+                   FSymbol "clojure.core/update";
                    target;
                    key;
                    FList
@@ -1507,12 +1609,12 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint
                        FSymbol "fn";
                        FVector [ FSymbol nested_value ];
                        FList
-                         (FSymbol "update" :: FSymbol nested_value
+                         (FSymbol "clojure.core/update" :: FSymbol nested_value
                         :: nested_arguments);
                      ];
                  ]))
     | FList
-        (FSymbol "update"
+        (FSymbol ("update" | "clojure.core/update")
         :: FSymbol target
         :: (FInt _ as index)
         :: FSymbol updater
@@ -1531,7 +1633,7 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint
                       (Ok params) extra_tys extra_arguments))
         | Ok _ | Error _ -> infer_all params extra_arguments)
     | FList
-        (FSymbol "update"
+        (FSymbol ("update" | "clojure.core/update")
         :: FSymbol target
         :: FKeyword keyword
         :: FSymbol updater
@@ -1565,7 +1667,7 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint
                         infer_expected expected params argument))
                   (Ok params) extra_tys extra_arguments))
     | FList
-        (FSymbol "update"
+        (FSymbol ("update" | "clojure.core/update")
         :: FSymbol target
         :: key
         :: updater
@@ -1707,6 +1809,29 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint
               (Types.dynamic_constraint TUnknown)
               params collection
         | _ -> infer_all params arguments)
+    | FList
+        (FSymbol "apply" :: FSymbol "mapv" :: FSymbol "vector"
+        :: fixed_and_rest)
+      when List.length fixed_and_rest >= 2 ->
+        let reversed = List.rev fixed_and_rest in
+        let rest_collection = List.hd reversed in
+        let fixed_collections = List.rev (List.tl reversed) in
+        let element_ty = fresh_type_variable "zip_element" in
+        let infer_collection params = function
+          | FSymbol name -> constrain_symbol (TVector element_ty) params name
+          | form -> infer_form params form
+        in
+        Result.bind
+          (List.fold_left
+             (fun result collection ->
+               Result.bind result (fun params ->
+                   infer_collection params collection))
+             (Ok params) fixed_collections)
+          (fun params ->
+            match rest_collection with
+            | FSymbol name ->
+                constrain_seqable (TVector element_ty) params name
+            | form -> infer_form params form)
     | FList (FSymbol "apply" :: function_form :: arguments) ->
         let is_dynamic_function_type ty =
           Types.is_dynamic ty
@@ -2480,12 +2605,34 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint
                 | collection -> infer_form params collection))
           (Ok params) collections
     | FList (FList [ FKeyword keyword; FSymbol receiver ] :: arguments) -> (
+        let infer_unknown_field () =
+          let parameter_tys =
+            List.mapi
+              (fun index argument ->
+                match inferred_form_type params argument with
+                | TUnknown ->
+                    fresh_type_variable
+                      ("field_call_" ^ Names.sanitize_name receiver ^ "_"
+                     ^ string_of_int index)
+                | ty -> ty)
+              arguments
+          in
+          Result.bind
+            (add_record_field_constraint receiver keyword
+               (TFn (parameter_tys, TUnknown)) params)
+            (fun params ->
+              List.fold_left2
+                (fun result expected argument ->
+                  Result.bind result (fun params ->
+                      infer_expected expected params argument))
+                (Ok params) parameter_tys arguments)
+        in
         match
           match List.assoc_opt receiver params with
           | None -> None
           | Some ty -> Types.record_fields ty
         with
-        | None -> infer_all params arguments
+        | None -> infer_unknown_field ()
         | Some fields -> (
             match Types.find_field keyword fields with
             | Some { ty = TFn (parameter_tys, _); _ }
@@ -2499,7 +2646,7 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint
                   | _ -> assert false
                 in
                 infer_arguments params parameter_tys arguments
-            | _ -> infer_all params arguments))
+            | _ -> infer_unknown_field ()))
     | FList (FSymbol name :: args) -> infer_known_call name params args
     | FVector forms -> infer_all params forms
     | FMap pairs ->

@@ -132,7 +132,9 @@ let rec merge_branch_types left right =
         Some (Types.dynamic_constraint TUnknown)
     | TList TUnknown, TList inner | TList inner, TList TUnknown ->
         Some (TList inner)
-    | TSeq TUnknown, TSeq inner | TSeq inner, TSeq TUnknown -> Some (TSeq inner)
+    | TSeq (TUnknown | TVar _), TSeq inner
+    | TSeq inner, TSeq (TUnknown | TVar _) ->
+        Some (TSeq inner)
     | TVector (TUnknown | TVar _), TVector inner
     | TVector inner, TVector (TUnknown | TVar _) ->
         Some (TVector inner)
@@ -193,6 +195,21 @@ let rec pack_plain_dynamic_value value =
   | TKeyword -> Some (runtime "keyword" [ value.semantic_expr ])
   | TBool -> Some (runtime "bool" [ value.semantic_expr ])
   | TNil -> Some (Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.nil")
+  | TNullable payload_ty | TOcaml_app ("option", [ payload_ty ]) ->
+      let payload_name = "__lg_plain_dynamic_optional_value" in
+      let payload = typed_ir payload_ty (Semantic_ir.Ident payload_name) in
+      Option.map
+        (fun packed_payload ->
+          Semantic_ir.Match
+            ( value.semantic_expr,
+              [
+                ( Semantic_ir.PConstructor ("None", None),
+                  Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.nil" );
+                ( Semantic_ir.PConstructor
+                    ("Some", Some (Semantic_ir.PVar payload_name)),
+                  packed_payload );
+              ] ))
+        (pack_plain_dynamic_value payload)
   | TArray element_ty ->
       let item_name = "__lg_plain_dynamic_array_item" in
       let item = typed_ir element_ty (Semantic_ir.Ident item_name) in

@@ -67,7 +67,14 @@ type compiled_item =
   | Deferred_value_binding of {
       name : string;
       value_type : Types.ty;
+      return_param_index : int option;
       expression : Semantic_ir.t;
+    }
+  | Polymorphic_holder_type of {
+      type_name : string;
+      field_name : string;
+      value_type : Types.ty;
+      type_variables : string list;
     }
   | Comment of string
   | Type_def of {

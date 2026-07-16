@@ -99,6 +99,12 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
       | Some (_, _, value_ty) ->
           Types.protocol_constraint_with_value ty
             (infer_named_record ~allow_dynamic_fields:true scope env value_ty))
+  | TOcaml_app (name, arguments) ->
+      TOcaml_app
+        ( name,
+          List.map
+            (infer_named_record ~allow_dynamic_fields scope env)
+            arguments )
   | TOcaml name when String.starts_with ~prefix:"__lg_record:" name ->
       let source_name =
         String.sub name
@@ -158,7 +164,20 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
             (fun record -> direct_match_count record = best_direct_matches)
             candidates
       in
-      match candidates with [ record ] -> TNamed_record record | _ -> inferred)
+      match candidates with
+      | [ record ] ->
+          let matched_fields =
+            record.fields
+            |> List.filter_map (fun (template : field) ->
+                   match find_field template.keyword fields with
+                   | Some (actual : field)
+                     when not (Types.equal actual.ty TUnknown) ->
+                       Some (template.ty, actual.ty)
+                   | Some _ | None -> None)
+          in
+          let templates, actuals = List.split matched_fields in
+          Types.instantiate_type ~templates ~actuals (TNamed_record record)
+      | _ -> inferred)
   | inferred -> inferred
 
 let rec pattern_constraint_type = function

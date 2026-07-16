@@ -32,9 +32,142 @@ let rec contains_inferred_type = function
   | Types.TNil | Types.TOcaml _ ->
       false
 
-let expand_deferred_binding name value_type expression =
+let deferred_type_variables ty =
+  let rec collect variables = function
+    | Types.TUnknown -> "a" :: variables
+    | Types.TVar name -> name :: variables
+    | Types.TNullable ty | Types.TArray ty | Types.TRef ty | Types.TList ty
+    | Types.TVector ty | Types.TSet ty | Types.TSeq ty ->
+        collect variables ty
+    | Types.TOcaml_app (_, arguments) | Types.TTuple arguments ->
+        List.fold_left collect variables arguments
+    | Types.TFn (parameters, return_ty) ->
+        List.fold_left collect (collect variables return_ty) parameters
+    | Types.TOverloaded_fn arities ->
+        List.fold_left
+          (fun variables (arity : Types.fn_arity) ->
+            let variables = collect variables arity.return_ty in
+            let variables = List.fold_left collect variables arity.fixed_params in
+            Option.fold ~none:variables ~some:(collect variables)
+              arity.rest_param)
+          variables arities
+    | Types.TRecord fields ->
+        List.fold_left
+          (fun variables (field : Types.field) -> collect variables field.ty)
+          variables fields
+    | Types.TNamed_record record ->
+        List.rev_append record.type_parameters variables
+    | Types.TInt | Types.TFloat | Types.TChar | Types.TString | Types.TRegex
+    | Types.TMap_keys | Types.TSymbol | Types.TKeyword | Types.TBool
+    | Types.TUnit | Types.TNil | Types.TOcaml _ ->
+        variables
+  in
+  collect [] ty |> List.sort_uniq String.compare
+
+let freshen_deferred_type ?return_param_index ty =
+  let next = ref 0 in
+  let fresh_variable () =
+    let name = "lg_deferred_" ^ string_of_int !next in
+    incr next;
+    Types.TVar name
+  in
+  let rec freshen = function
+    | Types.TUnknown -> fresh_variable ()
+    | Types.TVar _ as ty -> ty
+    | Types.TNullable ty -> Types.TNullable (freshen ty)
+    | Types.TArray ty -> Types.TArray (freshen ty)
+    | Types.TRef ty -> Types.TRef (freshen ty)
+    | Types.TList ty -> Types.TList (freshen ty)
+    | Types.TVector ty -> Types.TVector (freshen ty)
+    | Types.TSet ty -> Types.TSet (freshen ty)
+    | Types.TSeq ty -> Types.TSeq (freshen ty)
+    | Types.TOcaml_app (_, _) as constraint_ty
+      when Option.is_some (Types.protocol_constraint_info constraint_ty) ->
+        freshen_protocol_constraint constraint_ty
+    | Types.TOcaml_app (name, arguments) ->
+        Types.TOcaml_app (name, List.map freshen arguments)
+    | Types.TTuple items -> Types.TTuple (List.map freshen items)
+    | Types.TFn (parameters, return_ty) ->
+        Types.TFn (List.map freshen parameters, freshen return_ty)
+    | Types.TOverloaded_fn arities ->
+        Types.TOverloaded_fn
+          (List.map
+             (fun (arity : Types.fn_arity) ->
+               ({ fixed_params = List.map freshen arity.fixed_params;
+                  rest_param = Option.map freshen arity.rest_param;
+                  return_ty = freshen arity.return_ty;
+                }
+                 : Types.fn_arity))
+             arities)
+    | Types.TRecord fields ->
+        Types.TRecord
+          (List.map
+             (fun (field : Types.field) ->
+               { field with ty = freshen field.ty })
+             fields)
+    | Types.TNamed_record _ as ty -> ty
+    | (Types.TInt | Types.TFloat | Types.TChar | Types.TString | Types.TRegex
+      | Types.TMap_keys | Types.TSymbol | Types.TKeyword | Types.TBool
+      | Types.TUnit | Types.TNil | Types.TOcaml _) as ty ->
+        ty
+  and freshen_protocol_constraint constraint_ty =
+    let rec methods = function
+      | Types.TUnit -> Some []
+      | Types.TTuple [ method_ty; rest ] ->
+          Option.map (fun rest -> method_ty :: rest) (methods rest)
+      | _ -> None
+    in
+    match Types.protocol_constraint_info constraint_ty with
+    | None -> freshen constraint_ty
+    | Some (protocol_id, witness_ty, value_ty) ->
+        let value_ty = freshen value_ty in
+        (match methods witness_ty with
+        | None ->
+            Types.protocol_constraint protocol_id [] value_ty
+        | Some method_tys ->
+            let method_tys =
+              List.map
+                (function
+                  | Types.TFn (_receiver :: parameters, return_ty) ->
+                      Types.TFn
+                        ( Types.constraint_value_type value_ty
+                          :: List.map freshen parameters,
+                          freshen return_ty )
+                  | method_ty -> freshen method_ty)
+                method_tys
+            in
+            Types.protocol_constraint protocol_id method_tys value_ty)
+  in
+  match ty with
+  | Types.TFn (parameters, return_ty) ->
+      let parameters = List.map freshen parameters in
+      let return_ty =
+        match (return_param_index, return_ty, parameters) with
+        | None, Types.TUnknown, [ parameter ] ->
+            Types.constraint_value_type parameter
+        | Some index, _, _ -> (
+            match List.nth_opt parameters index with
+            | Some parameter -> Types.constraint_value_type parameter
+            | None -> freshen return_ty)
+        | None, _, _ -> freshen return_ty
+      in
+      Types.TFn (parameters, return_ty)
+  | ty -> freshen ty
+
+let expand_deferred_binding name value_type return_param_index expression =
+  let value_type = freshen_deferred_type ?return_param_index value_type in
   let implementation_name = name ^ "__implementation" in
-  let reference_type = Types.TRef (Types.TNullable value_type) in
+  let holder_type_name = implementation_name ^ "_holder" in
+  let holder_field_name = "value" in
+  let holder_type =
+    Lowered.Polymorphic_holder_type
+      { type_name = holder_type_name;
+        field_name = holder_field_name;
+        value_type;
+        type_variables = deferred_type_variables value_type;
+      }
+  in
+  let reference_type = Types.TRef (Types.TOcaml holder_type_name) in
   let reference =
     Lowered.Value_binding
       { pattern = Lowered.Named implementation_name;
@@ -42,7 +175,11 @@ let expand_deferred_binding name value_type expression =
           Semantic_ir.annotate reference_type
             (Semantic_ir.Apply
                ( Semantic_ir.Ident "ref",
-                 [ Semantic_ir.Constructor ("None", None) ] ));
+                 [ Semantic_ir.Record
+                     ( [ ( holder_field_name,
+                           Semantic_ir.Constructor ("None", None) ) ],
+                       Some holder_type_name );
+                 ] ));
       }
   in
   let wrapper =
@@ -65,16 +202,22 @@ let expand_deferred_binding name value_type expression =
         Semantic_ir.Fun
           ( patterns,
             Semantic_ir.Apply
-              ( Semantic_ir.Apply
-                  ( Semantic_ir.Ident "Option.get",
-                    [ Semantic_ir.Prefix
-                        ("!", Semantic_ir.Ident implementation_name) ] ),
+                ( Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Option.get",
+                    [ Semantic_ir.Field
+                        ( Semantic_ir.Prefix
+                            ("!", Semantic_ir.Ident implementation_name),
+                          holder_field_name );
+                    ] ),
                 List.map (fun name -> Semantic_ir.Ident name) names ) )
     | _ ->
         Semantic_ir.Apply
           ( Semantic_ir.Ident "Option.get",
-            [ Semantic_ir.Prefix
-                ("!", Semantic_ir.Ident implementation_name) ] )
+            [ Semantic_ir.Field
+                ( Semantic_ir.Prefix
+                    ("!", Semantic_ir.Ident implementation_name),
+                  holder_field_name );
+            ] )
   in
   let wrapper =
     Lowered.Value_binding
@@ -89,15 +232,19 @@ let expand_deferred_binding name value_type expression =
           Semantic_ir.Infix
             ( ":=",
               Semantic_ir.Ident implementation_name,
-              Semantic_ir.Constructor ("Some", Some expression) );
+              Semantic_ir.Record
+                ( [ ( holder_field_name,
+                      Semantic_ir.Constructor ("Some", Some expression) ) ],
+                  Some holder_type_name ) );
       }
   in
-  ([ reference; wrapper ], [ initialize ])
+  ([ holder_type; reference; wrapper ], [ initialize ])
 
 let rec order_deferred_item = function
-  | Lowered.Deferred_value_binding { name; value_type; expression } ->
+  | Lowered.Deferred_value_binding
+      { name; value_type; return_param_index; expression } ->
       let immediate, deferred =
-        expand_deferred_binding name value_type expression
+        expand_deferred_binding name value_type return_param_index expression
       in
       (Lowered.Group immediate, deferred)
   | Lowered.Group items ->

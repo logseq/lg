@@ -40,6 +40,13 @@ let compatible_array_types left right =
       || Types.assignable ~policy:Host_boundary ~expected:right ~actual:left
   | _ -> false
 
+let typed_item_pattern name = function
+  | TNamed_record record ->
+      Semantic_ir.PConstraint
+        ( Semantic_ir.PVar name,
+          record_type_application record.type_name record.type_parameters )
+  | _ -> Semantic_ir.PVar name
+
 let int_parameter_type = function
   | TInt | TUnknown | TVar _ -> true
   | _ -> false
@@ -692,13 +699,7 @@ and pack_dynamic_payload env expected_dynamic argument =
       pack_nested item
       |> Result.map (fun packed_item ->
              let item_pattern =
-               match element_ty with
-               | TNamed_record record ->
-                   Semantic_ir.PConstraint
-                     ( Semantic_ir.PVar item_name,
-                       record_type_application record.type_name
-                         record.type_parameters )
-               | _ -> Semantic_ir.PVar item_name
+               typed_item_pattern item_name element_ty
              in
              let mapper = Semantic_ir.Fun ([ item_pattern ], packed_item) in
              Semantic_ir.Apply
@@ -1379,10 +1380,19 @@ let rec pack_constrained_value env expected argument =
                     Ok result.semantic_expr
                   else
                     match (expected_return, actual_return) with
-                    | TSeq expected_element, _
-                      when Types.is_dynamic expected_element -> (
+                    | TSeq expected_element, _ -> (
                         match Collection_capability.to_seq_expr env result with
+                        | Error _
+                          when (match actual_return with
+                               | TUnknown | TVar _ -> true
+                               | _ -> false) ->
+                            Ok
+                              (coerce_expression_to_type expected_return
+                                 actual_return result.semantic_expr)
                         | Error _ as error -> error
+                        | Ok (actual_element, sequence)
+                          when Types.equal expected_element actual_element ->
+                            Ok sequence
                         | Ok (actual_element, sequence) ->
                             let item_name = "__lg_protocol_return_item" in
                             let item =
@@ -1391,15 +1401,26 @@ let rec pack_constrained_value env expected argument =
                             in
                             Result.map
                               (fun item ->
+                                let item_pattern =
+                                  typed_item_pattern item_name actual_element
+                                in
                                 Semantic_ir.Apply
                                   ( Semantic_ir.Ident
                                       "Lg_runtime.Runtime_seq.map",
                                     [
                                       Semantic_ir.Fun
-                                        ([ Semantic_ir.PVar item_name ], item);
+                                        ([ item_pattern ], item);
                                       sequence;
                                     ] ))
-                              (pack_dynamic_value env expected_element item))
+                              (if Types.is_dynamic expected_element then
+                                 pack_dynamic_value env expected_element item
+                               else if Types.is_dynamic actual_element then
+                                 dynamic_unpack env expected_element
+                                   item.semantic_expr
+                               else
+                                 Ok
+                                   (coerce_expression_to_type expected_element
+                                      actual_element item.semantic_expr)))
                     | _ when Types.is_dynamic expected_return ->
                         pack_dynamic_value env expected_return result
                     | _ when Types.is_dynamic actual_return ->
@@ -6770,10 +6791,6 @@ let create ~compile_expr =
                      ^ string_of_int (List.length args))
                 | Some (arity_index, arity) -> (
                     let fixed_count = List.length arity.fixed_params in
-                    let row_param_types =
-                      List.nth_opt fn.overload_row_param_types arity_index
-                      |> Option.value ~default:[]
-                    in
                     let rec split_at count acc values =
                       if count = 0 then (List.rev acc, values)
                       else
@@ -6783,12 +6800,96 @@ let create ~compile_expr =
                             split_at (count - 1) (value :: acc) rest
                     in
                     let fixed_args, extra_args = split_at fixed_count [] args in
+                    let add_element_candidate candidates ty =
+                      if
+                        Types.equal ty TUnknown || Types.is_dynamic ty
+                        || match ty with TVar _ -> true | _ -> false
+                      then candidates
+                      else if List.exists (Types.equal ty) candidates then
+                        candidates
+                      else ty :: candidates
+                    in
+                    let element_candidates =
+                      List.fold_left2
+                        (fun candidates expected argument ->
+                          match Types.seqable_constraint_element expected with
+                          | Some (TUnknown | TVar _) -> (
+                              match
+                                Collection_capability.element_type env argument
+                              with
+                              | Some element_ty ->
+                                  add_element_candidate candidates element_ty
+                              | None -> candidates)
+                          | _ -> (
+                              match (expected, argument.ty) with
+                              | (TUnknown | TVar _), TFn (parameters, _) ->
+                                  List.fold_left add_element_candidate candidates
+                                    parameters
+                              | (TUnknown | TVar _), actual ->
+                                  add_element_candidate candidates actual
+                              | _ -> candidates))
+                        [] arity.fixed_params fixed_args
+                    in
+                    let element_ty =
+                      match element_candidates with
+                      | [ element_ty ] -> Some element_ty
+                      | [] | _ :: _ :: _ -> None
+                    in
+                    let specialize_expected expected argument =
+                      match expected with
+                      | TOcaml_app (constraint_name, [ (TUnknown | TVar _); _ ])
+                        when constraint_name = Types.seqable_constraint_name
+                             || constraint_name
+                                = Types.optional_seqable_constraint_name
+                             || constraint_name
+                                = Types.optional_sequential_constraint_name ->
+                          (match element_ty with
+                          | Some element_ty ->
+                              TOcaml_app
+                                (constraint_name, [ element_ty; argument.ty ])
+                          | None -> expected)
+                      | TUnknown | TVar _ -> (
+                          match element_ty with
+                          | Some _ -> argument.ty
+                          | None -> expected)
+                      | expected ->
+                          Types.instantiate_type ~templates:[ expected ]
+                            ~actuals:[ argument.ty ] expected
+                    in
+                    let fixed_param_tys =
+                      List.map2 specialize_expected arity.fixed_params fixed_args
+                    in
+                    let return_ty =
+                      match element_ty with
+                      | Some element_ty ->
+                          let rec specialize = function
+                            | TUnknown | TVar _ -> element_ty
+                            | TNullable ty -> TNullable (specialize ty)
+                            | TArray ty -> TArray (specialize ty)
+                            | TRef ty -> TRef (specialize ty)
+                            | TList ty -> TList (specialize ty)
+                            | TVector ty -> TVector (specialize ty)
+                            | TSet ty -> TSet (specialize ty)
+                            | TSeq ty -> TSeq (specialize ty)
+                            | TOcaml_app (name, arguments) ->
+                                TOcaml_app
+                                  (name, List.map specialize arguments)
+                            | TTuple items -> TTuple (List.map specialize items)
+                            | ty -> ty
+                          in
+                          specialize arity.return_ty
+                      | None -> arity.return_ty
+                    in
+                    let row_param_types =
+                      List.nth_opt fn.overload_row_param_types arity_index
+                      |> Option.value ~default:[]
+                    in
                     let fixed_compatible =
                       List.for_all2
                         (fun expected arg ->
                           Types.assignable ~policy:Host_boundary ~expected
                             ~actual:arg.ty)
-                        arity.fixed_params fixed_args
+                        fixed_param_tys fixed_args
                     in
                     let rest_compatible =
                       match arity.rest_param with
@@ -6865,7 +6966,7 @@ let create ~compile_expr =
                             Error.error "internal overloaded argument mismatch"
                       in
                       match
-                         prepare_arguments 0 [] arity.fixed_params fixed_args
+                         prepare_arguments 0 [] fixed_param_tys fixed_args
                        with
                       | Error _ as error -> error
                       | Ok fixed_arguments -> (
@@ -6906,7 +7007,7 @@ let create ~compile_expr =
                                       arity_index
                               in
                               Ok
-                                (typed_ir arity.return_ty
+                                (typed_ir return_ty
                                    (Semantic_ir.Apply (target, arguments))))))
             | TFn (param_tys, ret)
               when List.length param_tys = List.length args
@@ -6920,11 +7021,42 @@ let create ~compile_expr =
                             | None -> argument_compatible expected arg.ty)
                         param_tys args -> (
                 let actual_tys = List.map (fun argument -> argument.ty) args in
-                let instantiate ty =
-                  Types.instantiate_type ~templates:param_tys
-                    ~actuals:actual_tys ty
+                let dynamic_callable =
+                  List.exists2
+                    (fun expected actual ->
+                      Types.is_dynamic actual
+                      && match expected with
+                         | TFn _ | TOverloaded_fn _ -> true
+                         | _ -> false)
+                    param_tys actual_tys
                 in
-                let param_tys = List.map instantiate param_tys in
+                let substitutions =
+                  List.fold_left2
+                    (fun substitutions template actual ->
+                      if Types.is_dynamic actual then substitutions
+                      else
+                        match
+                          Type_solver.unify substitutions template actual
+                        with
+                        | Ok substitutions -> substitutions
+                        | Error _ when dynamic_callable ->
+                            List.fold_left
+                              (fun substitutions variable ->
+                                Type_solver.force substitutions variable
+                                  (Types.dynamic_constraint TUnknown))
+                              substitutions (Type_solver.variables template)
+                        | Error _ -> substitutions)
+                    [] param_tys actual_tys
+                in
+                let instantiate ty =
+                  Type_solver.apply substitutions ty
+                in
+                let materialize ty =
+                  let ty = instantiate ty in
+                  if dynamic_callable then materialize_protocol_unknown ty
+                  else ty
+                in
+                let param_tys = List.map materialize param_tys in
                 let callback_element_candidates =
                   List.fold_left2
                     (fun candidates expected argument ->
@@ -6982,7 +7114,7 @@ let create ~compile_expr =
                 let param_tys =
                   List.map2 specialize_seqable_element param_tys args
                 in
-                let ret = instantiate ret in
+                let ret = materialize ret in
                 let rec compile_arg_exprs index acc = function
                   | [] -> Ok (List.rev acc)
                   | arg :: rest -> (

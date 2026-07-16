@@ -134,10 +134,23 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
   let special_forms : Special_form_elaborator.t =
     Special_form_elaborator.create ~compile_expr
   in
+  let compile_body = special_forms.compile_body in
   let compile_map = special_forms.compile_map in
   let compile_function_arg scope env = function
     | FSymbol name -> lookup_function scope env name
     | form -> compile_expr scope env form
+  in
+  let compile_function_arg_for_value scope env value_ty = function
+    | FList (FSymbol "fn" :: (FVector _ as params) :: body_forms) ->
+        let lookup_function_ty name =
+          match lookup_function scope env name with
+          | Ok fn -> Ok fn.ty
+          | Error _ as error -> error
+        in
+        Function_elaborator.prepare ~param_type_overrides:[ Some value_ty ]
+          ~lookup_function_ty ~compile_body scope env params body_forms
+        |> Result.map Function_elaborator.fn_code
+    | form -> compile_function_arg scope env form
   in
     let compile_deftype_method scope env record method_name args =
     match
@@ -1492,15 +1505,17 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
     let nested_update_value = "__lg_nested_update_value" in
     let arg_forms =
       match arg_forms with
-      | target :: key :: FSymbol "update" :: nested_args ->
+      | target :: key
+        :: FSymbol ("update" | "clojure.core/update")
+        :: nested_args ->
           let updater =
             FList
               [
                 FSymbol "fn";
                 FVector [ FSymbol nested_update_value ];
                 FList
-                  (FSymbol "update" :: FSymbol nested_update_value
-                 :: nested_args);
+                  (FSymbol "clojure.core/update"
+                  :: FSymbol nested_update_value :: nested_args);
               ]
           in
           [ target; key; updater ]
@@ -1608,20 +1623,36 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
             | Error (error : Error.t) ->
                 Error { error with message = error.message ^ " " ^ context }
           in
+          let target_and_fn =
+            Result.bind
+              (compile_expr scope env target_form
+              |> with_context ("while compiling update target " ^ keyword))
+              (fun target ->
+                let target = unwrap_protocol_value target in
+                let value_ty =
+                  match target.ty with
+                  | TRecord fields | TNamed_record { fields; _ } -> (
+                      match find_field keyword fields with
+                      | Some field -> field.ty
+                      | None -> dynamic)
+                  | target_ty when Types.is_dynamic target_ty -> dynamic
+                  | _ -> TUnknown
+                in
+                Result.map
+                  (fun fn -> (target, fn))
+                  (compile_function_arg_for_value scope env value_ty fn_form
+                  |> with_context
+                       ("while compiling updater for " ^ keyword)))
+          in
           match
-            ( compile_expr scope env target_form
-              |> with_context ("while compiling update target " ^ keyword),
-              compile_function_arg scope env fn_form
-              |> with_context ("while compiling updater for " ^ keyword),
+            ( target_and_fn,
               compile_args_for scope env extra_forms
               |> with_context ("while compiling update arguments for " ^ keyword)
             )
           with
-          | (Error _ as err), _, _ -> err
-          | _, (Error _ as err), _ -> err
-          | _, _, (Error _ as err) -> err
-          | Ok target, Ok fn, Ok extra_args -> (
-            let target = unwrap_protocol_value target in
+          | (Error _ as err), _ -> err
+          | _, (Error _ as err) -> err
+          | Ok (target, fn), Ok extra_args -> (
             let updater_row_type =
               match fn_form with
               | FSymbol name -> (
@@ -1749,18 +1780,28 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                 compile_dynamic target index fn extra_args
               | _ -> Error.error "update expects a map"))
       | target_form :: index_form :: fn_form :: extra_forms -> (
+          let target_and_fn =
+            Result.bind (compile_expr scope env target_form) (fun target ->
+                let target = unwrap_protocol_value target in
+                let value_ty =
+                  match target.ty with
+                  | TVector element_ty -> element_ty
+                  | target_ty when Types.is_dynamic target_ty -> dynamic
+                  | _ -> TUnknown
+                in
+                Result.map
+                  (fun fn -> (target, fn))
+                  (compile_function_arg_for_value scope env value_ty fn_form))
+          in
           match
-            ( compile_expr scope env target_form,
+            ( target_and_fn,
               compile_expr scope env index_form,
-              compile_function_arg scope env fn_form,
               compile_args_for scope env extra_forms )
           with
-          | (Error _ as err), _, _, _ -> err
-          | _, (Error _ as err), _, _ -> err
-          | _, _, (Error _ as err), _ -> err
-          | _, _, _, (Error _ as err) -> err
-          | Ok target, Ok index, Ok fn, Ok extra_args -> (
-              let target = unwrap_protocol_value target in
+          | (Error _ as err), _, _ -> err
+          | _, (Error _ as err), _ -> err
+          | _, _, (Error _ as err) -> err
+          | Ok (target, fn), Ok index, Ok extra_args -> (
               match (target.ty, index.ty) with
               | TVector inner, TInt -> (
                   match fn.ty with

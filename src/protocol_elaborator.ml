@@ -207,7 +207,11 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                                         then
                                           Deferred_value_binding
                                             { name = ocaml_name;
-                                              value_type = expr.ty;
+                                              value_type =
+                                                Protocol.refine_deferred_type
+                                                  env expr.ty;
+                                              return_param_index =
+                                                expr.return_param_index;
                                               expression = expr.semantic_expr;
                                             }
                                         else

@@ -816,6 +816,39 @@ let test_type_relations_are_explicit_and_strict () =
          ~actual:Lg.Types.TInt)
   then failwith "opaque OCaml relationships must be explicitly deferred"
 
+let test_type_solver_preserves_shared_and_independent_variables () =
+  let open Lg.Types in
+  let template =
+    TTuple
+      [
+        TVar "value";
+        TFn ([ TVar "value"; TVar "other" ], TVar "other");
+      ]
+  in
+  let actual = TTuple [ TInt; TFn ([ TInt; TString ], TString) ] in
+  let substitutions =
+    Lg.Type_solver.unify [] template actual
+    |> Result.fold ~ok:Fun.id ~error:(fun _ ->
+           failwith "compatible shared constraints must unify")
+  in
+  if Lg.Type_solver.apply substitutions (TVar "value") <> TInt then
+    failwith "shared variables must resolve through every occurrence";
+  if Lg.Type_solver.apply substitutions (TVar "other") <> TString then
+    failwith "independent variables must retain independent solutions";
+  let preserved =
+    Lg.Type_solver.unify substitutions (TVar "value") TUnknown
+    |> Result.fold ~ok:Fun.id ~error:(fun _ ->
+           failwith "unknown evidence must not conflict")
+  in
+  if Lg.Type_solver.apply preserved (TVar "value") <> TInt then
+    failwith "unknown evidence must not erase a concrete solution";
+  match
+    Lg.Type_solver.unify [] (TVar "recursive")
+      (TVector (TVar "recursive"))
+  with
+  | Error _ -> ()
+  | Ok _ -> failwith "recursive substitutions must fail the occurs check"
+
 let test_dynamic_record_capabilities_resolve_unique_named_records () =
   let open Lg.Types in
   let max_eid = make_field ":max-eid" TInt in
@@ -4431,7 +4464,7 @@ let test_defrecord_fields_infer_host_records_from_protocol_methods () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_defrecord_inferred_generic_fields_use_concrete_dynamic_arguments () =
+let test_defrecord_inferred_generic_fields_preserve_value_types () =
   let source =
     {|
 (type-record box [value]
@@ -4446,13 +4479,18 @@ let test_defrecord_inferred_generic_fields_use_concrete_dynamic_arguments () =
     (box-item box)))
 (defn holder-item [^Holder holder ^:keyword key]
   (:item (get holder key)))
+(def int-holder (Holder. (record box (item 42))))
+(def string-holder (Holder. (record box (item "answer"))))
+(println
+  (str (holder-item int-holder :box) ":"
+       (holder-item string-holder :box)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  if string_contains_substring ocaml_source "type nonrec 'value holder" then
-    failwith "plain defrecord unexpectedly introduced an implicit type parameter";
-  if not (string_contains_substring ocaml_source "type nonrec holder") then
-    failwith "expected plain defrecord to remain non-generic"
+  assert_ocaml_runs "defrecord_inferred_generic_fields_preserve_value_types"
+    "42:answer\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_defrecord_fields_preserve_protocol_capabilities () =
   let source =
@@ -8204,6 +8242,35 @@ let test_dynamic_protocols_instantiate_generic_record_receivers () =
   assert_ocaml_runs "dynamic_protocols_instantiate_generic_record_receivers"
     "ok\n" ocaml_source
 
+let test_dynamic_generic_nominal_arguments_stay_scoped_to_the_call () =
+  let source =
+    {|
+(type-record bucket [value]
+  (root :ref<option<value>>)
+  (compare-values :fn<value;value;int>))
+(defn bucket-comparator [bucket]
+  (:compare-values bucket))
+(defprotocol FindBucket
+  (-find-bucket [catalog ^:keyword key]))
+(defrecord Catalog [^bucket bucket]
+  FindBucket
+  (-find-bucket [catalog ^:keyword key]
+    (let [_typed (bucket-comparator (.-bucket catalog))]
+      (bucket-comparator (get catalog key)))))
+(def int-bucket
+  (record bucket
+    (root (volatile! (Some 1)))
+    (compare-values (fn [left right] (compare left right)))))
+(def catalog (Catalog. int-bucket))
+(println ((-find-bucket catalog :bucket) 2 1))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "dynamic_generic_nominal_arguments_stay_scoped_to_the_call"
+    "1\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_map_to_record_unpacks_dynamic_named_fields () =
   let source =
     {|
@@ -8415,9 +8482,279 @@ let test_deferred_generic_protocol_parameters_compile () =
   (validate-holder holder))
 (defn validate-holder [holder]
   (-holder-value holder))
+(def int-holder (record holder (value 42)))
+(def string-holder (record holder (value "answer")))
+(defn read-int-holder []
+  (read-holder int-holder))
+(defn read-string-holder []
+  (read-holder string-holder))
+(declare identity-later)
+(defn forward-identity [value]
+  (identity-later value))
+(defn identity-later [value]
+  value)
+(defn read-int-identity []
+  (+ (forward-identity 1) 0))
+(defn read-string-identity []
+  (str (forward-identity "a")))
 |}
   in
   ignore (Lg.Compiler.compile_string source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_expected_types_flow_into_conditional_function_parameters () =
+  let source =
+    {|
+(deftype Entry [^int value])
+(declare dynamic-number)
+(defn make-entry [fallback]
+  (Entry.
+    (if true
+      (dynamic-number)
+      fallback)))
+(defn ^:dynamic dynamic-number []
+  1)
+(defn build-entry []
+  (make-entry 42))
+|}
+  in
+  ignore (Lg.Compiler.compile_string source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_nullable_and_generic_sequence_branches_merge () =
+  let source =
+    {|
+(type-record box [value]
+  (item :value))
+(deftype Entry [^int value])
+(defn maybe-items [flag box]
+  (if flag
+    (seq [(Entry. 1)])
+    (filter (fn [_] true) [(:item box)])))
+(def entry-box (record box (item (Entry. 42))))
+(println (.-value ^Entry (first (maybe-items false entry-box))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "nullable_and_generic_sequence_branches_merge" "42\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_annotated_predicates_resolve_record_types_inside_seqable_constraints () =
+  let source =
+    {|
+(deftype Entry [^int value])
+(defn keep-entries [values]
+  (filter (fn [^Entry _entry] true) values))
+(defn first-entry-value []
+  (.-value ^Entry (first (keep-entries [(Entry. 42)]))))
+|}
+  in
+  ignore (Lg.Compiler.compile_string source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_map_accepts_nullable_sequences_returned_by_protocols () =
+  let source =
+    {|
+(defprotocol Values
+  (-values [source]))
+(deftype Entry [^int value])
+(deftype Source [^int value]
+  Values
+  (-values [_]
+    (seq [(Entry. value)])))
+(defn entry-values [source]
+  (map (fn [^Entry entry] (.-value entry)) (-values source)))
+(println (first (entry-values (Source. 42))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "map_accepts_nullable_sequences_returned_by_protocols"
+    "42\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_map_normalizes_mixed_nullable_protocol_sequence_returns () =
+  let source =
+    {|
+(defprotocol Values
+  (-values [source]))
+(deftype Entry [^int value])
+(declare maybe-entry-seq)
+(defrecord OptionalSource [marker ^Entry entry]
+  Values
+  (-values [_]
+    (maybe-entry-seq entry)))
+(deftype SequenceSource [^int value]
+  Values
+  (-values [_]
+    (filter (fn [^Entry _entry] true) [(Entry. value)])))
+(defn maybe-entry-seq [^Entry entry]
+  (if true
+    (Some (filter (fn [^Entry _entry] true) [entry]))
+    None))
+(defn entry-values [source]
+  (map (fn [^Entry entry] (.-value entry)) (-values source)))
+(defn optional-entry-values []
+  (entry-values (OptionalSource. "marker" (Entry. 41))))
+(defn sequence-entry-values []
+  (entry-values (SequenceSource. 42)))
+|}
+  in
+  ignore (Lg.Compiler.compile_string source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_nullable_values_pack_across_dynamic_logical_boundaries () =
+  let source =
+    {|
+(defn ^number maybe-number [found value]
+  (if found value nil))
+(defn ^number strict-number [found value]
+  (or
+    (maybe-number found value)
+    (throw (ex-info "missing" {}))))
+(defn strict-default [found value]
+  (or (maybe-number found value) 7))
+(println
+  (str (+ (strict-number true 42) 0) ":"
+       (+ (strict-default false 42) 0)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "nullable_values_pack_across_dynamic_logical_boundaries"
+    "42:7\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_nullable_cond_branches_pack_into_dynamic_results () =
+  let source =
+    {|
+(defn dynamic-value [^:dynamic value]
+  value)
+(defn choose-value [dynamic? value present?]
+  (cond
+    dynamic? (dynamic-value value)
+    :else (if present? 42 nil)))
+(println
+  (str (choose-value true 41 true) ":"
+       (choose-value false 0 true) ":"
+       (nil? (choose-value false 0 false))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "nullable_cond_branches_pack_into_dynamic_results"
+    "41:42:true\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_update_in_uses_dynamic_callbacks_for_dynamic_record_fields () =
+  let source =
+    {|
+(defmacro update [m k f & more]
+  `(let [m# ~m
+         k# ~k]
+     (assoc m# k# (~f (get m# k#) ~@more))))
+(defrecord Holder [value])
+(defn remove-key [holder ^:dynamic key]
+  (-> holder
+      (assoc-in [:value :a] 1)
+      (update-in [:value] #(dissoc % key))))
+(defn remove-nested-key [holder ^:dynamic key]
+  (update-in holder [:value :nested] #(dissoc % key)))
+(defn remove-dynamic-entry [^:dynamic target ^:dynamic key]
+  (clojure.core/update target key #(dissoc % :a)))
+(def updated (remove-key (Holder. {:a 0 :b 2}) :b))
+(def nested-updated
+  (remove-nested-key
+    (Holder.
+      (hash-map
+        (keyword "nested")
+        (hash-map (keyword "a") 1 (keyword "b") 2)))
+    :b))
+(def direct-updated
+  (remove-dynamic-entry
+    (hash-map
+      (keyword "nested")
+      (hash-map (keyword "a") 1 (keyword "b") 2))
+    (keyword "nested")))
+(println
+  (str (get (.-value updated) :a) ":"
+       (nil? (get (.-value updated) :b)) ":"
+       (nil? (get (get (.-value nested-updated) :nested) :b)) ":"
+       (nil? (get (get direct-updated :nested) :a))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "update_in_uses_dynamic_callbacks_for_dynamic_record_fields"
+    "1:true:true:true\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_dynamic_callable_type_variables_propagate_to_arguments () =
+  let source =
+    {|
+(defn lookup-two [lookup first-key second-key]
+  (lookup first-key)
+  (lookup second-key))
+(defn use-lookup [^:dynamic lookup]
+  (lookup-two lookup 1 (keyword "answer")))
+(def lookup-map
+  (hash-map 1 "one" (keyword "answer") "ok"))
+(def lookup-result (use-lookup lookup-map))
+|}
+  in
+  ignore (Lg.Compiler.compile_string source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_generic_calls_unpack_dynamic_nominal_arguments () =
+  let source =
+    {|
+(deftype Entry [^int value])
+(type-record entry-consumer [value]
+  (consume :fn<value;int>))
+(type-record entry-set [value]
+  (sample :value))
+(defn consume-entry [consumer entry]
+  ((:consume consumer) entry))
+(defn forward-consume [consumer entry]
+  (consume-entry consumer entry))
+(def consumer
+  (record entry-consumer
+    (consume (fn [^Entry entry] (.-value entry)))))
+(def entry-set-value
+  (record entry-set (sample (Entry. 7))))
+(defn compare-entries [^Entry left ^Entry right]
+  (compare (.-value left) (.-value right)))
+(defn remove-generic [set value comparator]
+  (comparator (:sample set) value)
+  set)
+(defn find-entry [^:dynamic values]
+  (first values))
+(defn find-value [values]
+  (if-some [entry (find-entry values)]
+    (forward-consume consumer entry)
+    0))
+(defn remove-found [values]
+  (if-some [entry (find-entry values)]
+    (remove-generic entry-set-value entry compare-entries)
+    entry-set-value))
+(def removed (remove-found [(Entry. 42)]))
+(println
+  (+ (find-value [(Entry. 42)])
+     (.-value ^Entry (:sample removed))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "generic_calls_unpack_dynamic_nominal_arguments"
+    "49\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -13578,6 +13915,8 @@ let tests =
     ("subs rejects non-int indexes", test_subs_rejects_non_int_indexes);
     ( "type relations are explicit and strict",
       test_type_relations_are_explicit_and_strict );
+    ( "type solver preserves shared and independent variables",
+      test_type_solver_preserves_shared_and_independent_variables );
     ( "dynamic record capabilities resolve unique named records",
       test_dynamic_record_capabilities_resolve_unique_named_records );
     ( "assignability reports the selected semantic rule",
@@ -14050,8 +14389,8 @@ let tests =
       test_deftype_methods_support_instance_call_syntax );
     ( "defrecord fields infer host records from protocol methods",
       test_defrecord_fields_infer_host_records_from_protocol_methods );
-    ( "defrecord inferred generic fields use concrete dynamic arguments",
-      test_defrecord_inferred_generic_fields_use_concrete_dynamic_arguments );
+    ( "defrecord inferred generic fields preserve value types",
+      test_defrecord_inferred_generic_fields_preserve_value_types );
     ( "defrecord fields preserve protocol capabilities",
       test_defrecord_fields_preserve_protocol_capabilities );
     ( "defrecord protocol methods support forward calls",
@@ -14478,6 +14817,8 @@ let tests =
       test_dynamic_maps_instantiate_generic_record_function_fields );
     ( "dynamic protocols instantiate generic record receivers",
       test_dynamic_protocols_instantiate_generic_record_receivers );
+    ( "dynamic generic nominal arguments stay scoped to the call",
+      test_dynamic_generic_nominal_arguments_stay_scoped_to_the_call );
     ( "map->record unpacks dynamic named fields",
       test_map_to_record_unpacks_dynamic_named_fields );
     ( "map->record preserves generic fields from map literals",
@@ -14496,6 +14837,26 @@ let tests =
       test_dynamic_record_keys_preserve_common_generic_field_types );
     ( "deferred generic protocol parameters compile",
       test_deferred_generic_protocol_parameters_compile );
+    ( "expected types flow into conditional function parameters",
+      test_expected_types_flow_into_conditional_function_parameters );
+    ( "nullable and generic sequence branches merge",
+      test_nullable_and_generic_sequence_branches_merge );
+    ( "annotated predicates resolve record types inside seqable constraints",
+      test_annotated_predicates_resolve_record_types_inside_seqable_constraints );
+    ( "map accepts nullable sequences returned by protocols",
+      test_map_accepts_nullable_sequences_returned_by_protocols );
+    ( "map normalizes mixed nullable protocol sequence returns",
+      test_map_normalizes_mixed_nullable_protocol_sequence_returns );
+    ( "nullable values pack across dynamic logical boundaries",
+      test_nullable_values_pack_across_dynamic_logical_boundaries );
+    ( "nullable cond branches pack into dynamic results",
+      test_nullable_cond_branches_pack_into_dynamic_results );
+    ( "update-in uses dynamic callbacks for dynamic record fields",
+      test_update_in_uses_dynamic_callbacks_for_dynamic_record_fields );
+    ( "dynamic callable type variables propagate to arguments",
+      test_dynamic_callable_type_variables_propagate_to_arguments );
+    ( "generic calls unpack dynamic nominal arguments",
+      test_generic_calls_unpack_dynamic_nominal_arguments );
     ( "additional sequence helpers reject bad counts",
       test_additional_sequence_helpers_reject_bad_counts );
     ( "some returns first truthy predicate value",

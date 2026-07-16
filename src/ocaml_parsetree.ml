@@ -213,6 +213,20 @@ let record_type_definition type_name parameters fields location =
   in
   Ast_helper.Str.type_ ~loc recursion [ type_declaration ]
 
+let polymorphic_holder_type_definition type_name field_name value_type
+    type_variables =
+  let field_type =
+    type_constructor "option" [ core_type ~type_variables value_type ]
+    |> Ast_helper.Typ.poly ~loc (List.map str type_variables)
+  in
+  let field =
+    Ast_helper.Type.field ~loc (str field_name) field_type
+  in
+  let declaration =
+    Ast_helper.Type.mk ~loc ~kind:(Ptype_record [ field ]) (str type_name)
+  in
+  Ast_helper.Str.type_ ~loc Nonrecursive [ declaration ]
+
 let nominal_tag_extension constructor_name record_type location =
   let declaration_loc = declaration_location location in
   let warning_attribute =
@@ -517,6 +531,11 @@ let rec structure_of_item = function
   | Recursive_value_bindings bindings -> recursive_value_bindings bindings
   | Deferred_value_binding _ ->
       invalid_arg "deferred value binding was not ordered before lowering"
+  | Polymorphic_holder_type
+      { type_name; field_name; value_type; type_variables } ->
+      Ok
+        [ polymorphic_holder_type_definition type_name field_name value_type
+            type_variables ]
   | Comment _ -> Ok []
   | Type_def { type_name; type_parameters; fields; location } ->
       let record_type =

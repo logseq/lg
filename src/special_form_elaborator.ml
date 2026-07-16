@@ -806,14 +806,23 @@ let create ~compile_expr =
                 | expression :: rest ->
                     let value_name = "logical_value" in
                     let raw_value = Semantic_ir.Ident value_name in
-                    let value =
-                      coerce_expression_to_type result_ty expression.ty
-                        raw_value
-                    in
                     let condition =
                       truthiness_expression expression.ty raw_value
                     in
                     let next = lower_expressions rest in
+                    let value =
+                      match (operator, expression.ty) with
+                      | `Or, TNil -> next
+                      | `Or, (TNullable payload_ty
+                             | TOcaml_app ("option", [ payload_ty ])) ->
+                          coerce_expression_to_type result_ty payload_ty
+                            (Semantic_ir.Apply
+                               ( Semantic_ir.Ident "Option.get",
+                                 [ raw_value ] ))
+                      | _ ->
+                          coerce_expression_to_type result_ty expression.ty
+                            raw_value
+                    in
                     let result =
                       match operator with
                       | `And -> Semantic_ir.If (condition, next, value)
@@ -828,14 +837,26 @@ let create ~compile_expr =
               Ok (typed_ir result_ty (lower_expressions expressions))
             in
             let result_ty =
-              match expressions with
+              let last_index = List.length expressions - 1 in
+              expressions
+              |> List.mapi (fun index expression ->
+                     let last = index = last_index in
+                     match (operator, last, expression.ty) with
+                     | ( `Or,
+                         false,
+                         (TNullable payload_ty
+                         | TOcaml_app ("option", [ payload_ty ])) ) ->
+                         Some payload_ty
+                     | _ -> Some expression.ty)
+              |> List.filter_map Fun.id
+              |> function
               | [] -> None
               | first :: rest ->
                   List.fold_left
-                    (fun merged expression ->
-                      Option.bind merged (fun ty ->
-                          merge_branch_types ty expression.ty))
-                    (Some first.ty) rest
+                    (fun merged ty ->
+                      Option.bind merged (fun merged ->
+                          merge_branch_types merged ty))
+                    (Some first) rest
             in
             let rec contains_dynamic = function
               | ty when Types.is_dynamic ty -> true

@@ -196,7 +196,6 @@ let rec type_parameters_of_type = function
   | TSet ty
   | TSeq ty ->
       type_parameters_of_type ty
-  | TOcaml_app (name, [ _ ]) when name = Types.dynamic_constraint_name -> []
   | TOcaml_app (_, arguments) | TTuple arguments ->
       List.concat_map type_parameters_of_type arguments
   | TFn (parameters, return_ty) ->
@@ -215,47 +214,6 @@ let rec type_parameters_of_type = function
   | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
   | TBool | TUnit | TNil | TUnknown | TOcaml _ ->
       []
-
-let rec instantiate_defrecord_field_type = function
-  | TVar _ -> Types.dynamic_constraint TUnknown
-  | TNullable ty -> TNullable (instantiate_defrecord_field_type ty)
-  | TArray ty -> TArray (instantiate_defrecord_field_type ty)
-  | TRef ty -> TRef (instantiate_defrecord_field_type ty)
-  | TList ty -> TList (instantiate_defrecord_field_type ty)
-  | TVector ty -> TVector (instantiate_defrecord_field_type ty)
-  | TSet ty -> TSet (instantiate_defrecord_field_type ty)
-  | TSeq ty -> TSeq (instantiate_defrecord_field_type ty)
-  | TOcaml_app (name, arguments) ->
-      TOcaml_app (name, List.map instantiate_defrecord_field_type arguments)
-  | TTuple items -> TTuple (List.map instantiate_defrecord_field_type items)
-  | TFn (parameters, return_ty) ->
-      TFn
-        ( List.map instantiate_defrecord_field_type parameters,
-          instantiate_defrecord_field_type return_ty )
-  | TOverloaded_fn arities ->
-      TOverloaded_fn
-        (List.map
-           (fun (arity : fn_arity) ->
-             ({ fixed_params =
-                  List.map instantiate_defrecord_field_type arity.fixed_params;
-                rest_param =
-                  Option.map instantiate_defrecord_field_type arity.rest_param;
-                return_ty = instantiate_defrecord_field_type arity.return_ty;
-              }
-               : fn_arity))
-           arities)
-  | TRecord fields ->
-      TRecord
-        (List.map
-           (fun (field : field) ->
-             { field with ty = instantiate_defrecord_field_type field.ty })
-           fields)
-  | TNamed_record ({ type_parameters = _ :: _; _ } as record) ->
-      Types.dynamic_constraint (TNamed_record record)
-  | TNamed_record record -> TNamed_record record
-  | ( TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol
-    | TKeyword | TBool | TUnit | TNil | TUnknown | TOcaml _ ) as ty ->
-      ty
 
 let infer_defrecord_field_types scope env field_names interface_forms =
   let field_name accessor =
@@ -421,7 +379,6 @@ let rec compile scope env next_type = function
             |> List.map2 (fun (_field_name, explicit_ty) inferred_ty ->
                    Option.value explicit_ty ~default:inferred_ty)
                  field_specs
-            |> List.map instantiate_defrecord_field_type
           in
           let type_parameters =
             field_types
@@ -772,7 +729,11 @@ let rec compile scope env next_type = function
                             Deferred_value_binding
                               {
                                 name = ocaml_name;
-                                value_type = implementation.ty;
+                                value_type =
+                                  Protocol.refine_deferred_type env
+                                    implementation.ty;
+                                return_param_index =
+                                  implementation.return_param_index;
                                 expression = implementation.semantic_expr;
                               }
                           else
@@ -1395,7 +1356,9 @@ let rec compile scope env next_type = function
                   Deferred_value_binding
                     {
                       name = ocaml_name;
-                      value_type = prepared.expr.ty;
+                      value_type =
+                        Protocol.refine_deferred_type env prepared.expr.ty;
+                      return_param_index = prepared.expr.return_param_index;
                       expression = prepared.expr.semantic_expr;
                     }
                 else
@@ -1462,7 +1425,9 @@ let rec compile scope env next_type = function
                       Deferred_value_binding
                         {
                           name = ocaml_name;
-                          value_type = expr.ty;
+                          value_type =
+                            Protocol.refine_deferred_type env expr.ty;
+                          return_param_index = expr.return_param_index;
                           expression = expr.semantic_expr;
                         }
                     else
@@ -1512,7 +1477,9 @@ let rec compile scope env next_type = function
                   Deferred_value_binding
                     {
                       name = ocaml_name;
-                      value_type = expr.ty;
+                      value_type =
+                        Protocol.refine_deferred_type env expr.ty;
+                      return_param_index = expr.return_param_index;
                       expression = expr.semantic_expr;
                     }
                 else
@@ -1565,7 +1532,9 @@ let rec compile scope env next_type = function
                   Deferred_value_binding
                         {
                           name = ocaml_name;
-                      value_type = expr.ty;
+                      value_type =
+                        Protocol.refine_deferred_type env expr.ty;
+                          return_param_index = expr.return_param_index;
                           expression = expr.semantic_expr;
                         }
                 else

@@ -415,6 +415,40 @@ let common_method_returns env protocol_id =
       |> List.map (fun (method_id, _) ->
              common_method_return env protocol_id (Method_id.name method_id))
 
+let refine_constraint_method_returns env ty =
+  let rec method_types = function
+    | TUnit -> Some []
+    | TTuple [ method_ty; rest ] ->
+        Option.map (fun rest -> method_ty :: rest) (method_types rest)
+    | _ -> None
+  in
+  match Types.protocol_constraint_info ty with
+  | None -> ty
+  | Some (protocol_id, witness_ty, value_ty) -> (
+      match method_types witness_ty with
+      | None -> ty
+      | Some methods ->
+          let returns = common_method_returns env protocol_id in
+          if List.length methods <> List.length returns then ty
+          else
+            let methods =
+              List.map2
+                (fun method_ty return_ty ->
+                  match (method_ty, return_ty) with
+                  | TFn (params, (TUnknown | TVar _)), Some return_ty ->
+                      TFn (params, return_ty)
+                  | _ -> method_ty)
+                methods returns
+            in
+            Types.protocol_constraint protocol_id methods value_ty)
+
+let refine_deferred_type env = function
+  | TFn (parameters, return_ty) ->
+      TFn
+        ( List.map (refine_constraint_method_returns env) parameters,
+          return_ty )
+  | ty -> ty
+
 let common_method_return_param_index env protocol_id method_name =
   let method_id = method_id protocol_id method_name in
   let indices =
