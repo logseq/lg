@@ -65,6 +65,10 @@ type t =
 let rec unlocated = function
   | Typed (_, expression) -> unlocated expression
   | Located (_, _, expression) -> unlocated expression
+  | PackDynamic { conversion; _ }
+  | UnpackDynamic { conversion; _ }
+  | NullableToSeq { conversion; _ } ->
+      unlocated conversion
   | expression -> expression
 
 let annotate ty = function

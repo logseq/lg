@@ -1506,7 +1506,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
     let arg_forms =
       match arg_forms with
       | target :: key
-        :: FSymbol ("update" | "clojure.core/update")
+        :: (FSymbol ("update" | "clojure.core/update")
+           | FCoreSymbol Core_update)
         :: nested_args ->
           let updater =
             FList
@@ -1514,8 +1515,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                 FSymbol "fn";
                 FVector [ FSymbol nested_update_value ];
                 FList
-                  (FSymbol "clojure.core/update"
-                  :: FSymbol nested_update_value :: nested_args);
+                  (FCoreSymbol Core_update :: FSymbol nested_update_value
+                 :: nested_args);
               ]
           in
           [ target; key; updater ]

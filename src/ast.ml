@@ -31,8 +31,28 @@ type token = {
   span : source_span;
 }
 
+type core_symbol =
+  | Core_assoc
+  | Core_filter
+  | Core_get
+  | Core_map
+  | Core_mapcat
+  | Core_update
+
+let core_symbol_name = function
+  | Core_assoc -> "assoc"
+  | Core_filter -> "filter"
+  | Core_get -> "get"
+  | Core_map -> "map"
+  | Core_mapcat -> "mapcat"
+  | Core_update -> "update"
+
+let core_symbol_qualified_name symbol =
+  "clojure.core/" ^ core_symbol_name symbol
+
 type form =
   | FSymbol of string
+  | FCoreSymbol of core_symbol
   | FKeyword of string
   | FString of string
   | FRegex of string

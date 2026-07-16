@@ -33,18 +33,81 @@ update the same entry with its root cause, fix, and verification evidence.
   constructor, then with plain dynamic packing that emitted only `Apply`. It is
   now green and checks traversal, lowering, central dynamic packing, and
   nullable sequence normalization. The complete compiler suite, `dune build`,
-  and full Native and Melange PSS + DataScript `db.cljc` compilation pass.
+  and full compiler tests pass. Initial full DB verification was incorrectly
+  reported complete before the underlying PTY process returned its exit code;
+  see the follow-up issue below.
 
-## 2026-07-16: Dune lock briefly outlives a yielded build command
+## 2026-07-16: Boundary wrappers changed representation inspection semantics
 
-- Status: External orchestration issue recorded
-- Symptom: Immediately starting the next Dune command after the build tool
-  reported completion twice produced `Another Dune instance is currently
-  running`, although a subsequent process check found no live Dune process.
-- Impact: No source or build artifact failure; retrying after process cleanup
-  completed both Native and Melange verification.
-- Direction: Continue serializing Dune commands and confirm process exit before
-  launching the next long verification. This is outside LG compiler semantics.
+- Status: Fixed
+- Symptom: Full DB typechecking fails in `transact-report`: a normalized
+  `Seq.empty` protocol return is placed where `Runtime_dynamic.t` is expected.
+- Root cause: Several elaborators intentionally call `Semantic_ir.unlocated` to
+  inspect the underlying representation (`Ident`, `Match`, and so on). After
+  adding explicit boundary nodes, `unlocated` stopped at `PackDynamic`,
+  `UnpackDynamic`, or `NullableToSeq`. That changed adapter selection while the
+  actual lowered conversion remained the same, recreating metadata/expression
+  drift.
+- Fix: Treat boundary operations as typed/location wrappers for representation
+  inspection: they remain present in the Semantic IR and its general traversal,
+  but `unlocated` recursively returns their conversion subtree.
+- Verification: The explicit boundary IR regression and complete compiler suite
+  pass. Full DB compilation proceeds through the boundary representation issue
+  and now exposes the independent protocol-signature timing problem below.
+
+## 2026-07-16: PTY completion was mistaken for Dune process completion
+
+- Status: Root cause identified; verification procedure corrected
+- Symptom: The outer wait helper reported completion together with a nested PTY
+  session id. Starting another Dune command then produced `Another Dune instance
+  is currently running`; more importantly, the nested command's final failure
+  could be missed.
+- Root cause: A returned `SESSION_ID` means the nested command still requires
+  polling even when the outer wait cell says it completed.
+- Fix: Poll the nested PTY session until it returns an explicit `exit_code` and
+  check that code before reporting verification success or launching another
+  Dune command.
+
+## 2026-07-16: Internal core expansions still rely on forgeable symbol strings
+
+- Status: Fixed
+- Symptom: `update-in` had to emit the string `clojure.core/update` to avoid a
+  user macro named `update`. This works for that spelling but does not provide a
+  general guarantee for other compiler-generated core calls or values.
+- Root cause: `Ast.form` represented both parsed user symbols and internal core
+  references as `FSymbol string`, so macro expansion and scope lookup could not
+  distinguish their origin.
+- Direction: Add a closed `FCoreSymbol` AST variant that the reader cannot
+  produce. Macro evaluation treats it as opaque, type inference recognizes its
+  fixed core semantics, and final expression elaboration dispatches directly to
+  a qualified core binding without macro or local-name lookup.
+- Verification: The focused structural regression was RED because
+  `FCoreSymbol` did not exist. After the first implementation, the existing
+  nested update regression exposed that an internal core identifier must also
+  work as a higher-order value, not only as a call head. The final regressions
+  cover `update-in`, `assoc-in`, `get-in`, transducer expansion, user macro
+  shadowing, Native runtime, and Melange compilation; the complete compiler
+  suite passes.
+
+## 2026-07-16: Protocol signature changes after an earlier consumer is compiled
+
+- Status: Reproduced; assigned to dependency graph/SCC infrastructure
+- Symptom: Full DB compilation reaches `transact-report`, where an `ISearch`
+  witness normalizes the concrete implementation's nullable `datom Seq.t` to
+  `Seq.t`, while the already-generated `fsearch` body expects the method result
+  as `Runtime_dynamic.t`.
+- Root cause: `fsearch` is compiled while the protocol method return is still
+  unresolved and therefore emits a dynamic `to_seq` boundary. Later protocol
+  implementation evidence refines `-search` to a nullable typed sequence, and
+  downstream witness construction uses that newer signature. Definition order
+  has produced two incompatible views of the same protocol method.
+- Direction: Build the approved dependency graph/SCC pass so protocol
+  declarations, implementations, recursive consumers, and deferred
+  initializers reach a stable signature before final body elaboration. Do not
+  patch this with another local witness-return heuristic.
+- Verification: The accumulated OCaml pinpoints the mismatch at the `ISearch`
+  witness passed from `transact-report` into `with-datom`; focused boundary and
+  hygiene tests remain green.
 
 ## 2026-07-16: Systemic compiler design gaps exposed by the DataScript port
 

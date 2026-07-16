@@ -1356,6 +1356,14 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint
         refine_type inner return_ty
     | _ -> refine_type field_ty return_ty
   and infer_form params = function
+    | FList (FCoreSymbol core_symbol :: arguments) ->
+        let name =
+          match core_symbol with
+          | Core_update -> Ast.core_symbol_qualified_name core_symbol
+          | _ -> Ast.core_symbol_name core_symbol
+        in
+        infer_form params
+          (FList (FSymbol name :: arguments))
     | FList [ FSymbol "__type-hint"; FSymbol annotation; value ] -> (
         match Type_annotation.of_param_annotation annotation with
         | Error _ as error -> error
@@ -1569,7 +1577,8 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint
     | FList
         (FSymbol ("update" | "clojure.core/update")
         :: target :: key
-        :: FSymbol ("update" | "clojure.core/update")
+        :: (FSymbol ("update" | "clojure.core/update")
+           | FCoreSymbol Core_update)
         :: nested_arguments) ->
         let nested_value = "__lg_nested_update_value" in
         let params =
@@ -1601,7 +1610,7 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint
             infer_form params
               (FList
                  [
-                   FSymbol "clojure.core/update";
+                   FCoreSymbol Core_update;
                    target;
                    key;
                    FList
@@ -1609,7 +1618,7 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint
                        FSymbol "fn";
                        FVector [ FSymbol nested_value ];
                        FList
-                         (FSymbol "clojure.core/update" :: FSymbol nested_value
+                         (FCoreSymbol Core_update :: FSymbol nested_value
                         :: nested_arguments);
                      ];
                  ]))
@@ -2674,7 +2683,7 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint
              (Ok params)
     | FList forms -> infer_all params forms
     | FInt _ | FFloat _ | FChar _ | FString _ | FRegex _ | FBool _ | FKeyword _
-    | FSymbol _ ->
+    | FSymbol _ | FCoreSymbol _ ->
         Ok params
   in
   let same_params left right =

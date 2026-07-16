@@ -1816,7 +1816,7 @@ let rec declaration_type_references add references = function
   | FVector forms | FList forms ->
       List.fold_left (declaration_type_references add) references forms
   | FSymbol _ | FBool _ | FInt _ | FFloat _ | FChar _ | FString _ | FRegex _
-  | FMap _ ->
+  | FMap _ | FCoreSymbol _ ->
       references
 
 let add_symbol_references bound name references =
@@ -1944,7 +1944,8 @@ let referenced_symbols source =
           (fun references (key, value) ->
             form_references bound (form_references bound references key) value)
           references entries
-    | FBool _ | FInt _ | FFloat _ | FChar _ | FString _ | FRegex _ | FKeyword _ ->
+    | FBool _ | FInt _ | FFloat _ | FChar _ | FString _ | FRegex _ | FKeyword _
+    | FCoreSymbol _ ->
         references
   in
   match Lexer.tokenize source with

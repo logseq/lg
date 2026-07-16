@@ -6,8 +6,9 @@ let get_in target keys default =
     | key :: rest ->
         let get =
           match (rest, default) with
-          | [], Some default -> FList [ FSymbol "get"; target; key; default ]
-          | _ -> FList [ FSymbol "get"; target; key ]
+          | [], Some default ->
+              FList [ FCoreSymbol Core_get; target; key; default ]
+          | _ -> FList [ FCoreSymbol Core_get; target; key ]
         in
         expand get rest
   in
@@ -27,7 +28,7 @@ let assoc_in target keys value =
       | [] -> value
       | _ ->
           expand (depth + 1)
-            (FList [ FSymbol "get"; FSymbol target_name; FSymbol key_name ])
+            (FList [ FCoreSymbol Core_get; FSymbol target_name; FSymbol key_name ])
             rest
     in
     FList
@@ -37,7 +38,7 @@ let assoc_in target keys value =
           [ FSymbol target_name; target; FSymbol key_name; key ];
         FList
           [
-            FSymbol "assoc";
+            FCoreSymbol Core_assoc;
             FSymbol target_name;
             FSymbol key_name;
             nested_value;
@@ -51,21 +52,21 @@ let update_in target keys function_form argument_forms =
     | [] -> function_form :: argument_forms
     | [ key ] -> key :: function_form :: argument_forms
     | key :: rest ->
-        key :: FSymbol "clojure.core/update" :: update_arguments rest
+        key :: FCoreSymbol Core_update :: update_arguments rest
   in
   FList
-    (FSymbol "clojure.core/update" :: target :: update_arguments keys)
+    (FCoreSymbol Core_update :: target :: update_arguments keys)
 
 let rec apply_transducer collection = function
   | FList [ FSymbol "map"; function_form ] ->
-      Ok (FList [ FSymbol "map"; function_form; collection ])
+      Ok (FList [ FCoreSymbol Core_map; function_form; collection ])
   | FList [ FSymbol "filter"; predicate_form ] ->
-      Ok (FList [ FSymbol "filter"; predicate_form; collection ])
+      Ok (FList [ FCoreSymbol Core_filter; predicate_form; collection ])
   | FSymbol "cat" ->
       Ok
         (FList
            [
-             FSymbol "mapcat";
+             FCoreSymbol Core_mapcat;
              FList
                [ FSymbol "fn"; FVector [ FSymbol "value" ]; FSymbol "value" ];
              collection;

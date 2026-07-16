@@ -895,7 +895,7 @@ let test_typed_ir_preserves_explicit_boundary_operations () =
        (typed_ir TInt (Lg.Semantic_ir.Int 42))
    with
   | Some expression -> (
-      match Lg.Semantic_ir.unlocated expression with
+      match expression with
       | Lg.Semantic_ir.PackDynamic _ -> ()
       | _ -> failwith "dynamic packing must emit an explicit boundary node")
   | None -> failwith "integer packing must be supported");
@@ -904,10 +904,55 @@ let test_typed_ir_preserves_explicit_boundary_operations () =
       (typed_ir (TNullable (TVector TInt)) (Lg.Semantic_ir.Ident "values"))
   with
   | Ok (_, expression) -> (
-      match Lg.Semantic_ir.unlocated expression with
+      match expression with
       | Lg.Semantic_ir.NullableToSeq _ -> ()
       | _ -> failwith "nullable seq conversion must emit a boundary node")
   | Error _ -> failwith "nullable vectors must normalize to sequences"
+
+let test_core_form_expansions_use_hygienic_identifiers () =
+  let open Lg.Ast in
+  let expansion =
+    Lg.Core_form_expansion.update_in (FSymbol "target")
+      [ FKeyword ":outer"; FKeyword ":inner" ]
+      (FSymbol "inc") []
+  in
+  (match expansion with
+  | FList
+      (FCoreSymbol Core_update :: FSymbol "target" :: FKeyword ":outer"
+      :: FCoreSymbol Core_update :: FKeyword ":inner" :: _) ->
+      ()
+  | _ ->
+      failwith
+        "compiler-generated update calls must use unforgeable core identifiers");
+  (match
+     Lg.Core_form_expansion.apply_transducer (FSymbol "values")
+       (FList [ FSymbol "map"; FSymbol "inc" ])
+   with
+  | Ok (FList [ FCoreSymbol Core_map; FSymbol "inc"; FSymbol "values" ]) ->
+      ()
+  | _ -> failwith "transducer expansion must preserve a hygienic core map");
+  let assoc_expansion =
+    Lg.Core_form_expansion.assoc_in (FSymbol "target")
+      [ FKeyword ":outer"; FKeyword ":inner" ]
+      (FInt 42)
+  in
+  let rec contains_core expected = function
+    | FCoreSymbol actual -> actual = expected
+    | FList forms | FVector forms -> List.exists (contains_core expected) forms
+    | FMap pairs ->
+        List.exists
+          (fun (key, value) ->
+            contains_core expected key || contains_core expected value)
+          pairs
+    | FSymbol _ | FKeyword _ | FString _ | FRegex _ | FInt _ | FFloat _
+    | FChar _ | FBool _ ->
+        false
+  in
+  if
+    not
+      (contains_core Core_assoc assoc_expansion
+      && contains_core Core_get assoc_expansion)
+  then failwith "assoc-in must preserve hygienic assoc and get identifiers"
 
 let test_dynamic_record_capabilities_resolve_unique_named_records () =
   let open Lg.Types in
@@ -13979,6 +14024,8 @@ let tests =
       test_type_solver_preserves_shared_and_independent_variables );
     ( "typed IR preserves explicit boundary operations",
       test_typed_ir_preserves_explicit_boundary_operations );
+    ( "core form expansions use hygienic identifiers",
+      test_core_form_expansions_use_hygienic_identifiers );
     ( "dynamic record capabilities resolve unique named records",
       test_dynamic_record_capabilities_resolve_unique_named_records );
     ( "assignability reports the selected semantic rule",

@@ -77,6 +77,8 @@ and compile_expr_unlocated scope (env : Env.t) = function
           match lookup_function scope env name with
           | Ok function_ -> Ok function_
           | Error _ -> Error.error ("unknown symbol " ^ name)))
+  | FCoreSymbol core_symbol ->
+      lookup_function scope env (Ast.core_symbol_qualified_name core_symbol)
   | FVector forms -> compile_vector scope env forms
   | FMap pairs -> compile_map scope env pairs
   | FList (FSymbol "loop" :: bindings :: body_forms) ->
@@ -190,6 +192,8 @@ and compile_expr_unlocated scope (env : Env.t) = function
           match Macro_expander.expand ~compiler_env:env definition args with
           | Error _ as err -> err
           | Ok expanded -> compile_expr scope env expanded))
+  | FList (FCoreSymbol core_symbol :: args) ->
+      compile_call scope env (Ast.core_symbol_qualified_name core_symbol) args
   | FList [] -> Error.error "empty list is not callable"
   | FList (function_form :: arguments) ->
       incr callable_expression_counter;

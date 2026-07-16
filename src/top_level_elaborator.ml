@@ -38,7 +38,8 @@ let rec form_mentions_symbol name = function
         (fun (key, value) ->
           form_mentions_symbol name key || form_mentions_symbol name value)
         pairs
-  | FInt _ | FFloat _ | FChar _ | FString _ | FRegex _ | FBool _ | FKeyword _ ->
+  | FInt _ | FFloat _ | FChar _ | FString _ | FRegex _ | FBool _ | FKeyword _
+  | FCoreSymbol _ ->
       false
 
 let rec form_has_function_recur = function
@@ -53,7 +54,7 @@ let rec form_has_function_recur = function
           form_has_function_recur key || form_has_function_recur value)
         pairs
   | FSymbol _ | FInt _ | FFloat _ | FChar _ | FString _ | FRegex _ | FBool _
-  | FKeyword _ ->
+  | FKeyword _ | FCoreSymbol _ ->
       false
 
 let function_is_recursive scope name body_forms =
@@ -617,7 +618,7 @@ let rec compile scope env next_type = function
                           form_mentions name key || form_mentions name value)
                         pairs
                   | FInt _ | FFloat _ | FChar _ | FString _ | FRegex _
-                  | FBool _ | FKeyword _ ->
+                  | FBool _ | FKeyword _ | FCoreSymbol _ ->
                       false
                 in
                 let rec rewrite_mutable_assignments = function

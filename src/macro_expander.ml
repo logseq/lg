@@ -196,6 +196,7 @@ let lookup_local name locals = List.assoc_opt name locals
 
 let rec eval context = function
   | FSymbol "nil" as form -> Ok (Form form)
+  | FCoreSymbol _ as form -> Ok (Form form)
   | FSymbol name -> (
       match lookup_local name context.locals with
       | Some value -> Ok value
