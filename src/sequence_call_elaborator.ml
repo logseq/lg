@@ -171,7 +171,9 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
           match ty with
           | TNamed_record record ->
               Semantic_ir.PConstraint
-                (Semantic_ir.PVar binding.ocaml_name, record.type_name)
+                ( Semantic_ir.PVar binding.ocaml_name,
+                  Expression_support.record_type_application record.type_name
+                    record.type_parameters )
           | _ -> Semantic_ir.PVar binding.ocaml_name
         in
         compile_body scope function_env

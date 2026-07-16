@@ -41,6 +41,13 @@ let rec stringify_expr_ir ?(pr = false) expr =
             ( [ Semantic_ir.PVar "x" ],
               wrap_expr "\"" (Semantic_ir.Ident "x") "\"" )
     | TBool -> Semantic_ir.Ident "string_of_bool"
+    | ty when Types.is_dynamic ty ->
+        Semantic_ir.Fun
+          ( [ Semantic_ir.PVar "x" ],
+            apply
+              (if pr then "Lg_runtime.Runtime_dynamic.pr_str"
+               else "Lg_runtime.Runtime_dynamic.str")
+              [ Semantic_ir.Ident "x" ] )
     | TUnknown | TVar _ -> Semantic_ir.Fun ([ Semantic_ir.PAny ], Semantic_ir.String "<value>")
     | _ -> Semantic_ir.Fun ([ Semantic_ir.PAny ], Semantic_ir.String "<value>")
   in

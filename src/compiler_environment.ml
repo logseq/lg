@@ -12,6 +12,7 @@ type t = {
   macros : (string * Macro_definition.t) list;
   macro_functions : (string * Macro_definition.t) list;
   macro_values : (string * Ast.form) list;
+  expected_type : Types.ty option;
 }
 
 let empty =
@@ -27,10 +28,13 @@ let empty =
     macros = [];
     macro_functions = [];
     macro_values = [];
+    expected_type = None;
   }
 
 let target env = env.target
 let with_target target env = { env with target }
+let expected_type env = env.expected_type
+let with_expected_type expected_type env = { env with expected_type }
 
 let find_opt name env =
   Symbol_map.find_opt (Symbol_id.of_string name) env.symbols

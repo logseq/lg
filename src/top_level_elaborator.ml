@@ -196,6 +196,7 @@ let rec type_parameters_of_type = function
   | TSet ty
   | TSeq ty ->
       type_parameters_of_type ty
+  | TOcaml_app (name, [ _ ]) when name = Types.dynamic_constraint_name -> []
   | TOcaml_app (_, arguments) | TTuple arguments ->
       List.concat_map type_parameters_of_type arguments
   | TFn (parameters, return_ty) ->
@@ -214,6 +215,47 @@ let rec type_parameters_of_type = function
   | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
   | TBool | TUnit | TNil | TUnknown | TOcaml _ ->
       []
+
+let rec instantiate_defrecord_field_type = function
+  | TVar _ -> Types.dynamic_constraint TUnknown
+  | TNullable ty -> TNullable (instantiate_defrecord_field_type ty)
+  | TArray ty -> TArray (instantiate_defrecord_field_type ty)
+  | TRef ty -> TRef (instantiate_defrecord_field_type ty)
+  | TList ty -> TList (instantiate_defrecord_field_type ty)
+  | TVector ty -> TVector (instantiate_defrecord_field_type ty)
+  | TSet ty -> TSet (instantiate_defrecord_field_type ty)
+  | TSeq ty -> TSeq (instantiate_defrecord_field_type ty)
+  | TOcaml_app (name, arguments) ->
+      TOcaml_app (name, List.map instantiate_defrecord_field_type arguments)
+  | TTuple items -> TTuple (List.map instantiate_defrecord_field_type items)
+  | TFn (parameters, return_ty) ->
+      TFn
+        ( List.map instantiate_defrecord_field_type parameters,
+          instantiate_defrecord_field_type return_ty )
+  | TOverloaded_fn arities ->
+      TOverloaded_fn
+        (List.map
+           (fun (arity : fn_arity) ->
+             ({ fixed_params =
+                  List.map instantiate_defrecord_field_type arity.fixed_params;
+                rest_param =
+                  Option.map instantiate_defrecord_field_type arity.rest_param;
+                return_ty = instantiate_defrecord_field_type arity.return_ty;
+              }
+               : fn_arity))
+           arities)
+  | TRecord fields ->
+      TRecord
+        (List.map
+           (fun (field : field) ->
+             { field with ty = instantiate_defrecord_field_type field.ty })
+           fields)
+  | TNamed_record ({ type_parameters = _ :: _; _ } as record) ->
+      Types.dynamic_constraint (TNamed_record record)
+  | TNamed_record record -> TNamed_record record
+  | ( TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol
+    | TKeyword | TBool | TUnit | TNil | TUnknown | TOcaml _ ) as ty ->
+      ty
 
 let infer_defrecord_field_types scope env field_names interface_forms =
   let field_name accessor =
@@ -234,7 +276,7 @@ let infer_defrecord_field_types scope env field_names interface_forms =
              pairs)
     | form -> form
   in
-  let lookup_function_ty = Expression_elaborator.lookup_function_ty scope env in
+  let lookup_function_ty = Expression_support.lookup_function_ty scope env in
   let lookup_protocol_constraint = Protocol.constraint_type scope env in
   let infer_method field_types = function
     | FList
@@ -253,9 +295,13 @@ let infer_defrecord_field_types scope env field_names interface_forms =
           @ List.map (fun name -> (name, TUnknown)) field_names
         in
         let body_forms = List.map (rewrite_field_access receiver) body_forms in
+        let lookup_dynamic_key_record_type =
+          Expression_support.dynamic_key_record_type env
+        in
         match
           Type_inference.infer_params ~lookup_function_ty
-            ~lookup_protocol_constraint params body_forms
+            ~lookup_protocol_constraint ~lookup_dynamic_key_record_type params
+            body_forms
         with
         | Error _ -> field_types
         | Ok inferred ->
@@ -375,6 +421,7 @@ let rec compile scope env next_type = function
             |> List.map2 (fun (_field_name, explicit_ty) inferred_ty ->
                    Option.value explicit_ty ~default:inferred_ty)
                  field_specs
+            |> List.map instantiate_defrecord_field_type
           in
           let type_parameters =
             field_types

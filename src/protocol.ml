@@ -349,6 +349,41 @@ let lookup_marker_impl env (marker : binding) method_name receiver_ty =
   | None -> None
   | Some protocol_id -> lookup_impl env protocol_id method_name receiver_ty
 
+let rec merge_method_return_types env left right =
+  match (left, right) with
+    | Types.TUnknown, _ | _, Types.TUnknown | Types.TVar _, _
+    | _, Types.TVar _ ->
+        Some (Types.dynamic_constraint Types.TUnknown)
+    | left, right when Types.equal left right -> Some left
+    | left, right when Types.is_dynamic left || Types.is_dynamic right ->
+        Some (Types.dynamic_constraint Types.TUnknown)
+    | Types.TSeq left, Types.TSeq right ->
+        Option.map
+          (fun element -> Types.TSeq element)
+          (merge_method_return_types env left right)
+    | Types.TList left, Types.TList right ->
+        Option.map
+          (fun element -> Types.TList element)
+          (merge_method_return_types env left right)
+    | Types.TVector left, Types.TVector right ->
+        Option.map
+          (fun element -> Types.TVector element)
+          (merge_method_return_types env left right)
+    | Types.TArray left, Types.TArray right ->
+        Option.map
+          (fun element -> Types.TArray element)
+          (merge_method_return_types env left right)
+    | _ -> (
+        match
+          ( Collection_capability.element_type_of_ty env left,
+            Collection_capability.element_type_of_ty env right )
+        with
+        | Some left, Some right ->
+            Option.map
+              (fun element -> Types.TSeq element)
+              (merge_method_return_types env left right)
+        | None, _ | _, None -> None)
+
 let common_method_return env protocol_id method_name =
   let method_id = method_id protocol_id method_name in
   let return_types =
@@ -361,8 +396,24 @@ let common_method_return env protocol_id method_name =
            | _ -> None)
   in
   match return_types with
-  | first :: rest when List.for_all (Types.equal first) rest -> Some first
-  | [] | _ -> None
+  | [] -> None
+  | first :: rest ->
+      List.fold_left
+        (fun merged return_ty ->
+          Option.bind merged (fun merged ->
+              merge_method_return_types env merged return_ty))
+        (Some first) rest
+
+let common_method_returns env protocol_id =
+  match
+    Protocol_registry.find_protocol protocol_id (Env.protocols env)
+  with
+  | None -> []
+  | Some declaration ->
+      declaration.methods
+      |> Protocol_registry.Method_map.bindings
+      |> List.map (fun (method_id, _) ->
+             common_method_return env protocol_id (Method_id.name method_id))
 
 let common_method_return_param_index env protocol_id method_name =
   let method_id = method_id protocol_id method_name in

@@ -1521,6 +1521,50 @@ let create ~compile_expr =
         compile_body scope env "let body requires at least one form" forms)
       scope env bindings body_forms
   and compile_let_with_body compile_let_body scope env bindings body_forms =
+    let rec remaining_binding_names names = function
+      | pattern :: _value :: rest ->
+          remaining_binding_names
+            (List.rev_append (Destructure.pattern_names pattern) names)
+            rest
+      | _ -> List.rev names
+    in
+    let rec remaining_value_forms values = function
+      | _pattern :: value :: rest ->
+          remaining_value_forms (value :: values) rest
+      | _ -> List.rev values
+    in
+    let inferred_binding_type env name rest =
+      let names = name :: remaining_binding_names [] rest in
+      let params =
+        names
+        |> List.sort_uniq String.compare
+        |> List.map (fun name -> (name, TUnknown))
+      in
+      let forms = remaining_value_forms [] rest @ body_forms in
+      let lookup_function_ty = Expression_support.lookup_function_ty scope env in
+      let lookup_protocol_constraint = Protocol.constraint_type scope env in
+      let lookup_dynamic_key_record_type =
+        Expression_support.dynamic_key_record_type env
+      in
+      match
+        Type_inference.infer_params ~lookup_function_ty
+          ~lookup_protocol_constraint ~lookup_dynamic_key_record_type params
+          forms
+      with
+      | Ok inferred ->
+          List.assoc_opt name inferred |> Option.value ~default:TUnknown
+      | Error _ -> TUnknown
+    in
+    let expected_value_env env pattern value_form rest =
+      match (pattern, value_form) with
+      | FSymbol name, FList (FSymbol get_name :: _)
+        when get_name = "get" || get_name = "clojure.core/get" -> (
+          match inferred_binding_type env name rest with
+          | TUnknown | TVar _ -> env
+          | ty when Types.is_dynamic ty -> env
+          | ty -> Env.with_expected_type (Some ty) env)
+      | _ -> env
+    in
     let rec capability_pattern name ty =
       match Types.protocol_constraint_info ty with
       | Some (protocol_id, _, value_ty) ->
@@ -1566,6 +1610,9 @@ let create ~compile_expr =
                         return_param_index = body.return_param_index;
                       })
             | pattern :: value_form :: rest -> (
+                let value_env =
+                  expected_value_env env pattern value_form rest
+                in
                 let value =
                   match (pattern, value_form) with
                   | FSymbol _, FList [ FSymbol "volatile!"; FSymbol "nil" ] ->
@@ -1577,7 +1624,7 @@ let create ~compile_expr =
                            (Semantic_ir.Apply
                               ( Semantic_ir.Ident "Lg_runtime.Runtime_slot.empty",
                                 [ Semantic_ir.Unit ] )))
-                  | _ -> compile_expr scope env value_form
+                  | _ -> compile_expr scope value_env value_form
                 in
                 match value with
                 | Error _ as err -> err

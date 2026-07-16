@@ -4431,6 +4431,29 @@ let test_defrecord_fields_infer_host_records_from_protocol_methods () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_defrecord_inferred_generic_fields_use_concrete_dynamic_arguments () =
+  let source =
+    {|
+(type-record box [value]
+  (item :value))
+(defn box-item [box]
+  (:item box))
+(defprotocol Boxed
+  (read-box [this]))
+(defrecord Holder [box]
+  Boxed
+  (read-box [_]
+    (box-item box)))
+(defn holder-item [^Holder holder ^:keyword key]
+  (:item (get holder key)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "type nonrec 'value holder" then
+    failwith "plain defrecord unexpectedly introduced an implicit type parameter";
+  if not (string_contains_substring ocaml_source "type nonrec holder") then
+    failwith "expected plain defrecord to remain non-generic"
+
 let test_defrecord_fields_preserve_protocol_capabilities () =
   let source =
     {|
@@ -4674,6 +4697,59 @@ let test_java_writer_annotations_work_in_ordinary_functions () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "java_writer_annotations_work_in_ordinary_functions"
     "#person [\"Ada\"] [:ok]\n" ocaml_source
+
+let test_apply_pr_accepts_lazy_sequences () =
+  let source =
+    {|
+(defn write-values [^java.io.Writer writer values]
+  (binding [*out* writer]
+    (apply pr
+      (map
+        (fn [[e a v tx]] [e a v tx])
+        values))))
+(deftype Person [items])
+(defmethod print-method Person [^Person person ^java.io.Writer writer]
+  (.write writer "#person ")
+  (write-values writer (.-items person)))
+(println (pr-str (Person. [[1 :name "Ada" 2]])))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "apply_pr_accepts_lazy_sequences"
+    "#person [1 :name \"Ada\" 2]\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_protocol_methods_merge_concrete_and_dynamic_sequence_returns () =
+  let source =
+    {|
+(defprotocol Items
+  (-items [this]))
+(deftype Item [^int value])
+(deftype StaticSource [^int unused])
+(defrecord DynamicSource [^:dynamic items])
+(extend-type StaticSource Items
+  (-items [_]
+    [(Item. 42)]))
+(extend-type DynamicSource Items
+  (-items [this]
+    (filter (fn [_] true) (:items this))))
+(defn collect-values [source]
+  (map
+    (fn [^Item item] (.-value item))
+    (-items source)))
+(def static-value (StaticSource. 0))
+(def dynamic-value (DynamicSource. [(Item. 7)]))
+(println (pr-str (collect-values static-value)))
+(println (pr-str (collect-values dynamic-value)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "protocol_methods_merge_concrete_and_dynamic_sequence_returns"
+    "(42)\n(7)\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_defn_accepts_attribute_maps_and_return_hints () =
   let source =
@@ -6787,6 +6863,31 @@ let test_parameters_preserve_multiple_protocol_constraints () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_forwarded_parameters_deduplicate_protocol_constraints () =
+  let source =
+    {|
+(defprotocol LeftValue
+  (-left [this]))
+(defprotocol RightValue
+  (-right [this]))
+(defrecord Pair []
+  LeftValue
+  (-left [_] 20)
+  RightValue
+  (-right [_] 22))
+(defn total [value]
+  (+ (-left value) (-right value)))
+(defn forwarded-total [value]
+  (total value))
+(println (forwarded-total (Pair.)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "forwarded_parameters_deduplicate_protocol_constraints"
+    "42\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_references_preserve_state_across_dynamic_fields () =
   let source =
     {|
@@ -8259,6 +8360,67 @@ let test_get_uses_dynamic_lookup_for_dynamic_targets () =
   assert_ocaml_runs "get_uses_dynamic_lookup_for_dynamic_targets" "42\n"
     ocaml_source
 
+let test_dynamic_record_keys_preserve_common_generic_field_types () =
+  let source =
+    {|
+(type-record box [value]
+  (item :value))
+(type-record catalog [value]
+  (left :box<value>)
+  (right :box<value>)
+  (count :int))
+(defprotocol CatalogInfo
+  (-catalog-count [this]))
+(extend-type catalog
+  CatalogInfo
+  (-catalog-count [this] (:count this)))
+(defn box-item [box]
+  (+ (:item box) 0))
+(defn validate-catalog [catalog]
+  (-catalog-count catalog))
+(defn choose-box [catalog ^:keyword key]
+  (let [selected (get catalog key)]
+    (+ (box-item selected) (- (validate-catalog catalog) 2))))
+(def catalog-value
+  (record catalog
+    (left (record box (item 20)))
+    (right (record box (item 22)))
+    (count 2)))
+(println
+  (str (choose-box catalog-value :left) ":"
+       (choose-box catalog-value :right) ":"
+       (try
+         (choose-box catalog-value :count)
+         (catch (Invalid_argument _) -1))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "dynamic_record_keys_preserve_common_generic_field_types"
+    "20:22:-1\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_deferred_generic_protocol_parameters_compile () =
+  let source =
+    {|
+(type-record holder [value]
+  (value :value))
+(defprotocol HolderValue
+  (-holder-value [this]))
+(extend-type holder
+  HolderValue
+  (-holder-value [this] (:value this)))
+(declare validate-holder)
+(defn read-holder [holder]
+  (validate-holder holder))
+(defn validate-holder [holder]
+  (-holder-value holder))
+|}
+  in
+  ignore (Lg.Compiler.compile_string source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_additional_sequence_helpers_reject_bad_counts () =
   Lg.Compiler.compile_string {|(def x (nthnext [1 2] "1"))|}
   |> expect_error "nthnext count must be int"
@@ -8540,7 +8702,11 @@ let test_heterogeneous_destructuring_materializes_dynamic_elements () =
 let test_dynamic_predicates_do_not_erase_concrete_array_elements () =
   let source =
     {|
-(deftype Item [^int id])
+(defprotocol Combine
+  (combine [this other]))
+(deftype Item [^int id]
+  Combine
+  (combine [_ ^Item other] other))
 (defn item? [value] (instance? Item value))
 (defn compare-items [^Item left ^Item right]
   (compare (.-id left) (.-id right)))
@@ -13884,6 +14050,8 @@ let tests =
       test_deftype_methods_support_instance_call_syntax );
     ( "defrecord fields infer host records from protocol methods",
       test_defrecord_fields_infer_host_records_from_protocol_methods );
+    ( "defrecord inferred generic fields use concrete dynamic arguments",
+      test_defrecord_inferred_generic_fields_use_concrete_dynamic_arguments );
     ( "defrecord fields preserve protocol capabilities",
       test_defrecord_fields_preserve_protocol_capabilities );
     ( "defrecord protocol methods support forward calls",
@@ -13908,6 +14076,10 @@ let tests =
       test_print_method_defmethod_writes_custom_record_representations );
     ( "Java Writer annotations work in ordinary functions",
       test_java_writer_annotations_work_in_ordinary_functions );
+    ( "apply pr accepts lazy sequences",
+      test_apply_pr_accepts_lazy_sequences );
+    ( "protocol methods merge concrete and dynamic sequence returns",
+      test_protocol_methods_merge_concrete_and_dynamic_sequence_returns );
     ( "defn accepts attribute maps and return hints",
       test_defn_accepts_attribute_maps_and_return_hints );
     ( "compare supports dynamic scalar values",
@@ -14157,6 +14329,8 @@ let tests =
       test_reify_preserves_protocols_across_dynamic_fields );
     ( "parameters preserve multiple protocol constraints",
       test_parameters_preserve_multiple_protocol_constraints );
+    ( "forwarded parameters deduplicate protocol constraints",
+      test_forwarded_parameters_deduplicate_protocol_constraints );
     ( "references preserve state across dynamic fields",
       test_references_preserve_state_across_dynamic_fields );
     ( "truthy guards preserve dynamic numeric parameters",
@@ -14318,6 +14492,10 @@ let tests =
       test_update_reads_dynamic_reduce_accumulators_dynamically );
     ( "get uses dynamic lookup for dynamic targets",
       test_get_uses_dynamic_lookup_for_dynamic_targets );
+    ( "dynamic record keys preserve common generic field types",
+      test_dynamic_record_keys_preserve_common_generic_field_types );
+    ( "deferred generic protocol parameters compile",
+      test_deferred_generic_protocol_parameters_compile );
     ( "additional sequence helpers reject bad counts",
       test_additional_sequence_helpers_reject_bad_counts );
     ( "some returns first truthy predicate value",

@@ -9,6 +9,22 @@ let replace_param name ty params =
 let has_source_name name expected =
   name = expected || String.ends_with ~suffix:("/" ^ expected) name
 
+let deduplicate_protocol_constraints ty =
+  let rec deduplicate seen ty =
+    match Types.dynamic_constraint_info ty with
+    | Some capability -> Types.dynamic_constraint (deduplicate seen capability)
+    | None -> (
+        match Types.protocol_constraint_info ty with
+        | Some (protocol_id, _, value_ty) ->
+            if List.exists (Protocol_id.equal protocol_id) seen then
+              deduplicate seen value_ty
+            else
+              Types.protocol_constraint_with_value ty
+                (deduplicate (protocol_id :: seen) value_ty)
+        | None -> ty)
+  in
+  deduplicate [] ty
+
 let rec refine_type existing inferred =
   match (existing, inferred) with
   | TUnknown, inferred -> inferred
@@ -374,6 +390,7 @@ let inferred_form_type params = function
               | Some element_ty -> normalize element_ty
               | None -> if Types.is_dynamic ty then ty else TUnknown))
       | None -> TUnknown)
+  | FList (FSymbol ("get" | "clojure.core/get") :: _) -> TUnknown
   | FList (_function :: FSymbol receiver :: _) -> (
       match List.assoc_opt receiver params with
       | Some ty when Types.is_dynamic ty -> ty
@@ -488,8 +505,8 @@ let rec rewrite_simple_aliases aliases = function
            pairs)
   | form -> form
 
-let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
-    body_forms =
+let infer_params ~lookup_function_ty ~lookup_protocol_constraint
+    ~lookup_dynamic_key_record_type params body_forms =
   let next_type_variable = ref 0 in
   let fresh_type_variable prefix =
     let index = !next_type_variable in
@@ -610,6 +627,13 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
         add_record_field_constraint name keyword field_ty params
     | FList [ FSymbol "get"; FSymbol name; FKeyword keyword ] ->
         add_record_field_constraint name keyword expected_ty params
+    | FList [ FSymbol ("get" | "clojure.core/get"); FSymbol target; key ] -> (
+        match lookup_dynamic_key_record_type expected_ty with
+        | Some record_ty ->
+            Result.bind (constrain_symbol record_ty params target) (fun params ->
+                infer_expected TKeyword params key)
+        | None ->
+            infer_form params key)
     | FList [ FSymbol "get"; target; key ] ->
         let target_ty = inferred_form_type params target in
         if match target_ty with TVector _ -> true | _ -> false then
@@ -804,6 +828,20 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
         | Ok inferred ->
             List.assoc_opt name inferred |> Option.value ~default:TUnknown
         | Error _ -> TUnknown)
+    | FList (FSymbol "fn" :: FVector [ pattern ] :: body_forms) -> (
+        let dynamic = Types.dynamic_constraint TUnknown in
+        let pattern_params =
+          Destructure.pattern_names pattern
+          |> List.map (fun name -> (name, dynamic))
+        in
+        match infer_all pattern_params body_forms with
+        | Error _ -> TUnknown
+        | Ok inferred ->
+            let lookup name =
+              List.assoc_opt name inferred |> Option.value ~default:dynamic
+            in
+            Destructure.infer_pattern_type pattern lookup
+            |> Result.value ~default:TUnknown)
     | _ -> TUnknown
   and inferred_reducer_item params init = function
     | FSymbol name -> (
@@ -2501,6 +2539,12 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
   in
   let rec stabilize remaining params =
     Result.bind (infer_all params body_forms) (fun inferred ->
+        let inferred =
+          List.map
+            (fun (name, ty) ->
+              (name, deduplicate_protocol_constraints ty))
+            inferred
+        in
         if remaining = 0 || same_params params inferred then Ok inferred
         else stabilize (remaining - 1) inferred)
   in

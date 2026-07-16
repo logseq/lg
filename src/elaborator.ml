@@ -5,6 +5,33 @@ type state = Compiler_state.t
 
 let empty_state = Compiler_state.empty
 
+let rec contains_inferred_type = function
+  | Types.TUnknown | Types.TVar _ -> true
+  | Types.TNullable ty | Types.TArray ty | Types.TRef ty | Types.TList ty
+  | Types.TVector ty | Types.TSet ty | Types.TSeq ty ->
+      contains_inferred_type ty
+  | Types.TOcaml_app (_, arguments) | Types.TTuple arguments ->
+      List.exists contains_inferred_type arguments
+  | Types.TFn (parameters, return_ty) ->
+      List.exists contains_inferred_type (return_ty :: parameters)
+  | Types.TOverloaded_fn arities ->
+      List.exists
+        (fun (arity : Types.fn_arity) ->
+          List.exists contains_inferred_type arity.fixed_params
+          || (match arity.rest_param with
+             | Some ty -> contains_inferred_type ty
+             | None -> false)
+          || contains_inferred_type arity.return_ty)
+        arities
+  | Types.TRecord fields | Types.TNamed_record { fields; _ } ->
+      List.exists
+        (fun (field : Types.field) -> contains_inferred_type field.ty)
+        fields
+  | Types.TInt | Types.TFloat | Types.TChar | Types.TString | Types.TRegex
+  | Types.TMap_keys | Types.TSymbol | Types.TKeyword | Types.TBool | Types.TUnit
+  | Types.TNil | Types.TOcaml _ ->
+      false
+
 let expand_deferred_binding name value_type expression =
   let implementation_name = name ^ "__implementation" in
   let reference_type = Types.TRef (Types.TNullable value_type) in
@@ -29,9 +56,8 @@ let expand_deferred_binding name value_type expression =
         let patterns =
           List.map2
             (fun name ty ->
-              match ty with
-              | Types.TUnknown | Types.TVar _ -> Semantic_ir.PVar name
-              | ty ->
+              if contains_inferred_type ty then Semantic_ir.PVar name
+              else
                   Semantic_ir.PConstraint
                     (Semantic_ir.PVar name, Types.ocaml_name ty))
             names parameter_types

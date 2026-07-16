@@ -885,6 +885,132 @@ let lookup_function scope env name =
                         ] ) )))
       | _ -> Error.error ("unknown function " ^ name))
 
+let record_constructor_type scope env name =
+  if String.ends_with ~suffix:"." name then
+    let type_name = String.sub name 0 (String.length name - 1) in
+    match Resolver.lookup_record_type scope env type_name with
+    | Ok record ->
+        Some
+          (TFn
+             ( List.map (fun (field : field) -> field.ty) record.fields,
+               TNamed_record record ))
+    | Error _ -> None
+  else None
+
+let map_record_constructor_type scope env name =
+  if String.starts_with ~prefix:"map->" name then
+    let type_name = String.sub name 5 (String.length name - 5) in
+    match Resolver.lookup_record_type scope env type_name with
+    | Ok record ->
+        Some (TFn ([ TRecord record.fields ], TNamed_record record))
+    | Error _ -> None
+  else None
+
+let dynamic_key_record_type env expected_field_ty =
+  let expected_field_ty =
+    match Types.dynamic_constraint_info expected_field_ty with
+    | Some capability when not (Types.equal capability TUnknown) -> capability
+    | Some _ | None -> expected_field_ty
+  in
+  let expected_field_ty = Types.constraint_value_type expected_field_ty in
+  let rec same_outer_shape expected actual =
+    match (expected, actual) with
+    | TNamed_record expected, TNamed_record actual ->
+        Type_id.equal expected.type_id actual.type_id
+    | TNamed_record record, TOcaml_app (name, arguments)
+    | TOcaml_app (name, arguments), TNamed_record record ->
+        (name = record.type_name || name = Type_id.name record.type_id)
+        && List.length arguments = List.length record.type_parameters
+    | TArray expected, TArray actual
+    | TList expected, TList actual
+    | TVector expected, TVector actual
+    | TSet expected, TSet actual
+    | TSeq expected, TSeq actual
+    | TRef expected, TRef actual
+    | TNullable expected, TNullable actual ->
+        same_outer_shape expected actual
+    | TOcaml_app (expected_name, expected_args),
+      TOcaml_app (actual_name, actual_args)
+      when expected_name = actual_name
+           && List.length expected_args = List.length actual_args ->
+        List.for_all2 same_outer_shape expected_args actual_args
+    | TRecord expected, TNamed_record actual ->
+        record_shape expected actual.fields
+    | TNamed_record expected, TRecord actual ->
+        record_shape expected.fields actual
+    | TRecord expected, TRecord actual -> record_shape expected actual
+    | TUnknown, _ | TVar _, _ | _, TUnknown | _, TVar _ -> true
+    | expected, actual -> Types.equal expected actual
+  and record_shape expected actual =
+    List.for_all
+      (fun (expected : field) ->
+        match Types.find_field expected.keyword actual with
+        | Some actual -> same_outer_shape expected.ty actual.ty
+        | None -> false)
+      expected
+  in
+  let compatible_fields (record : named_record) =
+    record.fields
+    |> List.filter (fun (field : field) ->
+           (not (Types.is_record_extension_field field))
+           && same_outer_shape expected_field_ty field.ty)
+  in
+  let records =
+    Env.filter_map
+      (fun _ (binding : binding) ->
+        let record =
+          match binding.ty with
+          | TNamed_record record -> Some record
+          | TFn (_, TNamed_record record) -> Some record
+          | _ -> None
+        in
+        match record with
+        | Some record when List.length (compatible_fields record) >= 2 ->
+            Some record
+        | Some _ | None -> None)
+      env
+    |> List.sort_uniq (fun left right ->
+           Type_id.compare left.type_id right.type_id)
+  in
+  match records with
+  | [ record ] -> Some (TNamed_record record)
+  | [] | _ :: _ :: _ -> None
+
+let lookup_function_ty scope env name =
+  match lookup_function scope env name with
+  | Ok fn -> Ok fn.ty
+  | Error _ -> (
+      match record_constructor_type scope env name with
+      | Some ty -> Ok ty
+      | None -> (
+          match map_record_constructor_type scope env name with
+          | Some ty -> Ok ty
+          | None -> (
+              match Protocol.lookup_marker scope env name with
+              | Some
+                  {
+                    protocol_id = Some protocol_id;
+                    ty = TFn (_ :: rest, return_ty);
+                    _;
+                  } -> (
+                  match
+                    Protocol.constraint_type scope env
+                      (Protocol_id.to_string protocol_id)
+                  with
+                  | Some receiver_ty ->
+                      let rest =
+                        List.map
+                          (function
+                            | TUnknown | TVar _ ->
+                                Types.dynamic_constraint TUnknown
+                            | ty -> ty)
+                          rest
+                      in
+                      Ok (TFn (receiver_ty :: rest, return_ty))
+                  | None -> Error.error ("unknown function " ^ name))
+              | Some marker -> Ok marker.ty
+              | None -> Error.error ("unknown function " ^ name))))
+
 let ocaml_call_target = Resolver.ocaml_call_target
 let resolve_ocaml_call_target = Resolver.resolve_ocaml_call_target
 let resolve_ocaml_constructor_target = Resolver.resolve_ocaml_constructor_target
@@ -1073,7 +1199,11 @@ let coerce_set_element element_ty value =
           in
           project_fields [] expected.fields
           |> Result.map (fun fields ->
-              Semantic_ir.Record (fields, Some expected.type_name))
+              Semantic_ir.Record
+                ( fields,
+                  Some
+                    (record_type_application expected.type_name
+                       expected.type_parameters) ))
       | _ -> Error.error "set value type must match record element type")
   | _ ->
       if Types.equal element_ty value.ty then Ok value.semantic_expr
@@ -1091,7 +1221,11 @@ let constrain_record_function_argument_expr fn element_ty =
   in
   match (Semantic_ir.unlocated fn.semantic_expr, element_ty) with
   | Semantic_ir.Fun ([ pattern ], body), TNamed_record record -> (
-      match constrain_pattern record.type_name pattern with
+      match
+        constrain_pattern
+          (record_type_application record.type_name record.type_parameters)
+          pattern
+      with
       | Some pattern -> Semantic_ir.Fun ([ pattern ], body)
       | None -> fn.semantic_expr)
   | _ -> fn.semantic_expr

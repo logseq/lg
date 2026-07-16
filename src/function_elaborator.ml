@@ -87,11 +87,12 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
       match Types.dynamic_constraint_info ty with
       | None -> assert false
       | Some capability -> (
-          match
+          let capability =
             infer_named_record ~allow_dynamic_fields:true scope env capability
-          with
-          | TNamed_record _ as record -> record
-          | capability -> Types.dynamic_constraint capability))
+          in
+          match Types.constraint_value_type capability with
+          | TNamed_record _ -> capability
+          | _ -> Types.dynamic_constraint capability))
   | ty when Option.is_some (Types.protocol_constraint_info ty) -> (
       match Types.protocol_constraint_info ty with
       | None -> assert false
@@ -272,9 +273,13 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
         |> List.concat
       in
       let lookup_protocol_constraint = Protocol.constraint_type scope env in
+      let lookup_dynamic_key_record_type =
+        Expression_support.dynamic_key_record_type env
+      in
       match
         Type_inference.infer_params ~lookup_function_ty
-          ~lookup_protocol_constraint inference_params body_forms
+          ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
+          inference_params body_forms
       with
       | Error _ as err -> err
       | Ok inferred -> (

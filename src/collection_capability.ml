@@ -161,6 +161,10 @@ let element_type env collection =
   | Ok (inner, _) -> Some inner
   | Error _ -> None
 
+let element_type_of_ty env ty =
+  element_type env
+    (typed_ir ty (Semantic_ir.Ident "__lg_seqable_type_probe"))
+
 let seq_expr env collection =
   match to_seq_expr env collection with
   | Error _ -> Error.error "seq expects a seqable value"

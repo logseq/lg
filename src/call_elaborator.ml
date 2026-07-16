@@ -83,9 +83,39 @@ let rec materialize_protocol_unknown = function
 let supports_structural_dynamic_packing =
   Types.supports_structural_dynamic_packing
 
-let supports_dynamic_field_projection = function
-  | TNamed_record _ -> true
-  | ty -> supports_structural_dynamic_packing ty
+let rec contains_unresolved_type = function
+  | ty when Types.is_dynamic ty -> false
+  | TUnknown | TVar _ -> true
+  | TNullable ty | TArray ty | TRef ty | TList ty | TVector ty | TSet ty
+  | TSeq ty ->
+      contains_unresolved_type ty
+  | TOcaml_app (_, arguments) | TTuple arguments ->
+      List.exists contains_unresolved_type arguments
+  | TFn (parameters, return_ty) ->
+      List.exists contains_unresolved_type (return_ty :: parameters)
+  | TOverloaded_fn arities ->
+      List.exists
+        (fun (arity : fn_arity) ->
+          List.exists contains_unresolved_type
+            (arity.return_ty :: arity.fixed_params)
+          || Option.fold ~none:false ~some:contains_unresolved_type
+               arity.rest_param)
+        arities
+  | TRecord fields | TNamed_record { fields; _ } ->
+      List.exists
+        (fun (field : field) -> contains_unresolved_type field.ty)
+        fields
+  | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
+  | TBool | TUnit | TNil | TOcaml _ ->
+      false
+
+let supports_dynamic_field_projection ty =
+  if Types.is_dynamic ty then true
+  else if contains_unresolved_type ty then false
+  else
+    match ty with
+    | TNamed_record _ -> true
+    | ty -> supports_structural_dynamic_packing ty
 
 let maybe_reduced_callback_payload expected actual =
   match (expected, actual) with
@@ -525,7 +555,10 @@ let rec dynamic_unpack env ty expression =
               Ok (Semantic_ir.Tuple [ adapter; value ]))
       | TNamed_record record ->
           if supports_structural_dynamic_packing ty then
-            unpack_record record.fields (Some record.type_name)
+            unpack_record record.fields
+              (Some
+                 (record_type_application record.type_name
+                    record.type_parameters))
           else
             let value_name = "__lg_nominal_record" in
             let tag_name = Types.nominal_tag_name record in
@@ -547,7 +580,9 @@ let rec dynamic_unpack env ty expression =
                                            (tag_name, None);
                                          Semantic_ir.PConstraint
                                            ( Semantic_ir.PVar value_name,
-                                             Types.ocaml_name ty );
+                                             record_type_application
+                                               record.type_name
+                                               record.type_parameters );
                                        ]) )) ),
                        Semantic_ir.Ident value_name );
                      ( Semantic_ir.PAny,
@@ -660,7 +695,9 @@ and pack_dynamic_payload env expected_dynamic argument =
                match element_ty with
                | TNamed_record record ->
                    Semantic_ir.PConstraint
-                     (Semantic_ir.PVar item_name, record.type_name)
+                     ( Semantic_ir.PVar item_name,
+                       record_type_application record.type_name
+                         record.type_parameters )
                | _ -> Semantic_ir.PVar item_name
              in
              let mapper = Semantic_ir.Fun ([ item_pattern ], packed_item) in
@@ -1108,11 +1145,19 @@ and pack_dynamic_value env expected_dynamic argument =
   match pack_dynamic_payload env expected_dynamic argument with
   | Error _ as error -> error
   | Ok payload ->
+      let satisfied_protocols =
+        match argument.ty with
+        | TNamed_record { type_parameters = _ :: _; _ } -> []
+        | _ -> Protocol.satisfied_protocols env argument.ty
+      in
       let protocol_ids =
-        dynamic_protocol_constraints expected_dynamic
-        @ dynamic_protocol_constraints argument.ty
-        @ Protocol.satisfied_protocols env argument.ty
-        |> List.sort_uniq Protocol_id.compare
+        match Types.dynamic_constraint_info expected_dynamic with
+        | Some (TNamed_record { type_parameters = _ :: _; _ }) -> []
+        | _ ->
+            dynamic_protocol_constraints expected_dynamic
+            @ dynamic_protocol_constraints argument.ty
+            @ satisfied_protocols
+            |> List.sort_uniq Protocol_id.compare
       in
       let rec compile_protocols protocols = function
         | [] -> Ok (List.rev protocols)
@@ -1332,14 +1377,37 @@ let rec pack_constrained_value env expected argument =
                 let adapted_result =
                   if Types.equal expected_return actual_return then
                     Ok result.semantic_expr
-                  else if Types.is_dynamic expected_return then
-                    pack_dynamic_value env expected_return result
-                  else if Types.is_dynamic actual_return then
-                    dynamic_unpack env expected_return result.semantic_expr
                   else
-                    Ok
-                      (coerce_expression_to_type expected_return actual_return
-                         result.semantic_expr)
+                    match (expected_return, actual_return) with
+                    | TSeq expected_element, _
+                      when Types.is_dynamic expected_element -> (
+                        match Collection_capability.to_seq_expr env result with
+                        | Error _ as error -> error
+                        | Ok (actual_element, sequence) ->
+                            let item_name = "__lg_protocol_return_item" in
+                            let item =
+                              typed_ir actual_element
+                                (Semantic_ir.Ident item_name)
+                            in
+                            Result.map
+                              (fun item ->
+                                Semantic_ir.Apply
+                                  ( Semantic_ir.Ident
+                                      "Lg_runtime.Runtime_seq.map",
+                                    [
+                                      Semantic_ir.Fun
+                                        ([ Semantic_ir.PVar item_name ], item);
+                                      sequence;
+                                    ] ))
+                              (pack_dynamic_value env expected_element item))
+                    | _ when Types.is_dynamic expected_return ->
+                        pack_dynamic_value env expected_return result
+                    | _ when Types.is_dynamic actual_return ->
+                        dynamic_unpack env expected_return result.semantic_expr
+                    | _ ->
+                        Ok
+                          (coerce_expression_to_type expected_return
+                             actual_return result.semantic_expr)
                 in
                 Result.map
                   (fun adapted_result ->
@@ -1356,6 +1424,11 @@ let rec pack_constrained_value env expected argument =
         match Types.protocol_constraint_info argument.ty with
         | Some (argument_protocol, _, _)
           when Protocol_id.equal protocol_id argument_protocol ->
+            Ok
+              (protocol_witness_expression protocol_id argument
+              |> Option.value
+                   ~default:(Semantic_ir.Constructor ("None", None)))
+        | _ when has_protocol_constraint protocol_id argument.ty ->
             Ok
               (protocol_witness_expression protocol_id argument
               |> Option.value
@@ -1381,6 +1454,23 @@ let rec pack_constrained_value env expected argument =
                 in
                 Result.bind (witness_method_types witness_ty)
                   (fun method_tys ->
+                    let common_returns =
+                      Protocol.common_method_returns env protocol_id
+                    in
+                    let method_tys =
+                      if List.length method_tys = List.length common_returns then
+                        List.map2
+                          (fun method_ty common_return ->
+                            match (method_ty, common_return) with
+                            | TFn (params, (TUnknown | TVar _)), Some return_ty ->
+                                TFn (params, return_ty)
+                            | TFn (params, return_ty), Some common_return
+                              when Types.is_dynamic return_ty ->
+                                TFn (params, common_return)
+                            | method_ty, _ -> method_ty)
+                          method_tys common_returns
+                      else method_tys
+                    in
                     Result.map
                       (fun methods ->
                         Semantic_ir.Constructor
@@ -6147,7 +6237,9 @@ let create ~compile_expr =
                            ( [ Semantic_ir.PVar item_name ],
                              Semantic_ir.Apply
                                (fn.semantic_expr, [ argument ]) )))
-                    (pack_dynamic_value env parameter_ty item)
+                    (if dynamic_protocol_constraints parameter_ty = [] then
+                       pack_dynamic_payload env parameter_ty item
+                     else pack_dynamic_value env parameter_ty item)
               | _ -> Ok fn
             in
             Result.bind adapted_fn (fun fn ->

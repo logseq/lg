@@ -694,6 +694,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                           Names.keyword_to_ocaml_name keyword )))
               | _ -> Error.error "get expects a map"))
       | [ target_form; index_form ] -> (
+        let expected_type = Env.expected_type env in
+        let env = Env.with_expected_type None env in
         match
           (compile_expr scope env target_form, compile_expr scope env index_form)
         with
@@ -712,9 +714,14 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                 let concrete_fields =
                   record.fields
                   |> List.filter (fun (field : field) ->
+                      let unresolved_dynamic =
+                        match Types.dynamic_constraint_info field.ty with
+                        | Some (TUnknown | TVar _) -> true
+                        | Some _ | None -> false
+                      in
                       (not (Types.is_record_extension_field field))
                       && not
-                        (Types.is_dynamic field.ty
+                        (unresolved_dynamic
                         || Types.equal field.ty TUnknown
                         || Types.equal field.ty TMap_keys
                         || match field.ty with TVar _ -> true | _ -> false))
@@ -737,7 +744,16 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                     [] concrete_fields
                 in
                 let keyed_projection =
-                  match (groups, index.ty) with
+                  let selected_groups =
+                    match expected_type with
+                    | None -> groups
+                    | Some expected ->
+                        groups
+                        |> List.filter (fun (result_ty, _) ->
+                               Types.assignable ~policy:Host_boundary
+                                 ~expected ~actual:result_ty)
+                  in
+                  match (selected_groups, index.ty) with
                   | [ (result_ty, fields) ], TKeyword ->
                       Some (result_ty, fields, index.semantic_expr)
                   | [ (result_ty, fields) ], ty when Types.is_dynamic ty ->
@@ -779,7 +795,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                             [ target; index ]
                   with
                   | Some result -> Ok result
-                    | None -> Error.error "get key must be a keyword"))
+                  | None -> Error.error "get key must be a keyword"))
               | _ -> (
                   match Types.dynamic_map_types target.ty with
                   | Some (key_ty, value_ty)

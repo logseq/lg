@@ -28,61 +28,6 @@ let callable_set_counter = ref 0
 let dynamic_case_counter = ref 0
 let callable_expression_counter = ref 0
 
-let record_constructor_type scope env name =
-  if String.ends_with ~suffix:"." name then
-    let type_name = String.sub name 0 (String.length name - 1) in
-    match Resolver.lookup_record_type scope env type_name with
-    | Ok record ->
-        Some
-          (TFn
-             ( List.map (fun (field : field) -> field.ty) record.fields,
-               TNamed_record record ))
-    | Error _ -> None
-  else None
-
-let map_record_constructor_type scope env name =
-  if String.starts_with ~prefix:"map->" name then
-    let type_name = String.sub name 5 (String.length name - 5) in
-    match Resolver.lookup_record_type scope env type_name with
-    | Ok record ->
-        Some (TFn ([ TRecord record.fields ], TNamed_record record))
-    | Error _ -> None
-  else None
-
-let lookup_function_ty scope env name =
-  match lookup_function scope env name with
-  | Ok fn -> Ok fn.ty
-  | Error _ -> (
-      match record_constructor_type scope env name with
-      | Some ty -> Ok ty
-      | None -> (
-          match map_record_constructor_type scope env name with
-          | Some ty -> Ok ty
-          | None -> (
-          match Protocol.lookup_marker scope env name with
-          | Some
-              {
-                protocol_id = Some protocol_id;
-                ty = TFn (_ :: rest, return_ty);
-                _;
-              } -> (
-              match
-                Protocol.constraint_type scope env
-                  (Protocol_id.to_string protocol_id)
-              with
-              | Some receiver_ty ->
-                  let rest =
-                    List.map
-                      (function
-                        | TUnknown | TVar _ -> Types.dynamic_constraint TUnknown
-                        | ty -> ty)
-                      rest
-                  in
-                  Ok (TFn (receiver_ty :: rest, return_ty))
-              | None -> Error.error ("unknown function " ^ name))
-          | Some marker -> Ok marker.ty
-          | None -> Error.error ("unknown function " ^ name))))
-
 let rec compile_expr scope (env : Env.t) form =
   match compile_expr_unlocated scope env form with
   | Error error ->
@@ -1122,9 +1067,13 @@ and prepare_inferred_recursive_fn ~ocaml_name scope env source_name params
       let lookup_protocol_constraint =
         Protocol.constraint_type scope provisional_env
       in
+      let lookup_dynamic_key_record_type =
+        Expression_support.dynamic_key_record_type provisional_env
+      in
       match
         Type_inference.infer_params ~lookup_function_ty
-          ~lookup_protocol_constraint inference_params body_forms
+          ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
+          inference_params body_forms
       with
       | Error _ as err -> err
       | Ok inferred ->
