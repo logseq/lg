@@ -30,15 +30,21 @@ let rec to_seq_expr env collection =
       | Ok (element_ty, sequence) ->
           Ok
             ( element_ty,
-              Semantic_ir.Match
-                ( collection.semantic_expr,
-                    [
-                      ( Semantic_ir.PConstructor ("None", None),
-                      Semantic_ir.Ident "Seq.empty" );
-                    ( Semantic_ir.PConstructor
-                        ("Some", Some (Semantic_ir.PVar value_name)),
-                      sequence );
-                  ] ) ))
+              Semantic_ir.NullableToSeq
+                {
+                  source_ty = collection.ty;
+                  element_ty;
+                  conversion =
+                    Semantic_ir.Match
+                      ( collection.semantic_expr,
+                        [
+                          ( Semantic_ir.PConstructor ("None", None),
+                            Semantic_ir.Ident "Seq.empty" );
+                          ( Semantic_ir.PConstructor
+                              ("Some", Some (Semantic_ir.PVar value_name)),
+                            sequence );
+                        ] );
+                } ))
     | _ -> (
   match Types.next_seq_element collection.ty with
   | Some inner -> Ok (inner, collection.semantic_expr)

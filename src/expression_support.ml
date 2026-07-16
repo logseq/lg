@@ -180,6 +180,16 @@ let capability_storage_expression ty expression =
   | _ -> expression
 
 let rec pack_plain_dynamic_value value =
+  pack_plain_dynamic_value_impl value
+  |> Option.map (fun conversion ->
+         Semantic_ir.PackDynamic
+           {
+             source_ty = value.ty;
+             target_ty = Types.dynamic_constraint value.ty;
+             conversion;
+           })
+
+and pack_plain_dynamic_value_impl value =
   let runtime name arguments =
     Semantic_ir.Apply
       (Semantic_ir.Ident ("Lg_runtime.Runtime_dynamic." ^ name), arguments)
@@ -333,21 +343,27 @@ let coerce_expression_to_type ?(stored = false) target_ty source_ty expression =
         | TBool -> dynamic "as_bool" [ item ]
         | _ -> item
       in
-      Semantic_ir.Apply
-        ( Semantic_ir.Ident "Rrbvec.of_list",
-          [
+      Semantic_ir.UnpackDynamic
+        {
+          source_ty;
+          target_ty;
+          conversion =
             Semantic_ir.Apply
-              ( Semantic_ir.Ident "List.of_seq",
+              ( Semantic_ir.Ident "Rrbvec.of_list",
                 [
                   Semantic_ir.Apply
-                    ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.map",
+                    ( Semantic_ir.Ident "List.of_seq",
                       [
-                        Semantic_ir.Fun
-                          ([ Semantic_ir.PVar item_name ], unpacked_item);
-                        dynamic "to_seq" [ expression ];
+                        Semantic_ir.Apply
+                          ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.map",
+                            [
+                              Semantic_ir.Fun
+                                ([ Semantic_ir.PVar item_name ], unpacked_item);
+                              dynamic "to_seq" [ expression ];
+                            ] );
                       ] );
                 ] );
-          ] )
+        }
   | target_ty, source_ty
     when Types.is_dynamic target_ty && not (Types.is_dynamic source_ty) ->
       pack_plain_dynamic_value (typed_ir source_ty expression)

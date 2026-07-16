@@ -849,6 +849,66 @@ let test_type_solver_preserves_shared_and_independent_variables () =
   | Error _ -> ()
   | Ok _ -> failwith "recursive substitutions must fail the occurs check"
 
+let test_typed_ir_preserves_explicit_boundary_operations () =
+  let open Lg.Types in
+  let dynamic = dynamic_constraint TUnknown in
+  let conversion =
+    Lg.Semantic_ir.Apply
+      ( Lg.Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.int",
+        [ Lg.Semantic_ir.Int 42 ] )
+  in
+  let packed =
+    Lg.Semantic_ir.PackDynamic
+      { source_ty = TInt; target_ty = dynamic; conversion }
+  in
+  let unpacked =
+    Lg.Semantic_ir.UnpackDynamic
+      { source_ty = dynamic; target_ty = TInt; conversion = Lg.Semantic_ir.Int 42 }
+  in
+  let normalized =
+    Lg.Semantic_ir.NullableToSeq
+      {
+        source_ty = TNullable (TVector TInt);
+        element_ty = TInt;
+        conversion = Lg.Semantic_ir.Ident "normalized";
+      }
+  in
+  if
+    not
+      (Lg.Semantic_ir.exists_identifier
+         (( = ) "Lg_runtime.Runtime_dynamic.int") packed)
+  then failwith "boundary traversal must retain the conversion expression";
+  let annotations = Lg.Semantic_ir.type_annotations packed in
+  if not (List.mem TInt annotations && List.mem dynamic annotations) then
+    failwith "pack boundary must retain source and target type evidence";
+  (match Lg.Semantic_lowering.expression packed with
+  | Lg.Ocaml_ir.Apply _ -> ()
+  | _ -> failwith "pack boundary must lower to its conversion");
+  (match Lg.Semantic_lowering.expression unpacked with
+  | Lg.Ocaml_ir.Int 42 -> ()
+  | _ -> failwith "unpack boundary must lower to its conversion");
+  (match Lg.Semantic_lowering.expression normalized with
+  | Lg.Ocaml_ir.Ident "normalized" -> ()
+  | _ -> failwith "nullable sequence boundary must lower to its conversion");
+  (match
+     Lg.Expression_support.pack_plain_dynamic_value
+       (typed_ir TInt (Lg.Semantic_ir.Int 42))
+   with
+  | Some expression -> (
+      match Lg.Semantic_ir.unlocated expression with
+      | Lg.Semantic_ir.PackDynamic _ -> ()
+      | _ -> failwith "dynamic packing must emit an explicit boundary node")
+  | None -> failwith "integer packing must be supported");
+  match
+    Lg.Collection_capability.to_seq_expr Lg.Compiler_environment.empty
+      (typed_ir (TNullable (TVector TInt)) (Lg.Semantic_ir.Ident "values"))
+  with
+  | Ok (_, expression) -> (
+      match Lg.Semantic_ir.unlocated expression with
+      | Lg.Semantic_ir.NullableToSeq _ -> ()
+      | _ -> failwith "nullable seq conversion must emit a boundary node")
+  | Error _ -> failwith "nullable vectors must normalize to sequences"
+
 let test_dynamic_record_capabilities_resolve_unique_named_records () =
   let open Lg.Types in
   let max_eid = make_field ":max-eid" TInt in
@@ -13917,6 +13977,8 @@ let tests =
       test_type_relations_are_explicit_and_strict );
     ( "type solver preserves shared and independent variables",
       test_type_solver_preserves_shared_and_independent_variables );
+    ( "typed IR preserves explicit boundary operations",
+      test_typed_ir_preserves_explicit_boundary_operations );
     ( "dynamic record capabilities resolve unique named records",
       test_dynamic_record_capabilities_resolve_unique_named_records );
     ( "assignability reports the selected semantic rule",

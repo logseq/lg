@@ -46,6 +46,21 @@ type t =
   | Field of t * string
   | Cons of t * t
   | Record of (string * t) list * string option
+  | PackDynamic of {
+      source_ty : Semantic_type.ty;
+      target_ty : Semantic_type.ty;
+      conversion : t;
+    }
+  | UnpackDynamic of {
+      source_ty : Semantic_type.ty;
+      target_ty : Semantic_type.ty;
+      conversion : t;
+    }
+  | NullableToSeq of {
+      source_ty : Semantic_type.ty;
+      element_ty : Semantic_type.ty;
+      conversion : t;
+    }
 
 let rec unlocated = function
   | Typed (_, expression) -> unlocated expression
@@ -80,11 +95,24 @@ let rec type_annotations expression =
              (fun (_, guard, handler) -> Option.to_list guard @ [ handler ])
              cases
     | Infix (_, left, right) | Cons (left, right) -> [ left; right ]
-    | Prefix (_, value) | Field (value, _) -> [ value ]
+    | Prefix (_, value) | Field (value, _)
+    | PackDynamic { conversion = value; _ }
+    | UnpackDynamic { conversion = value; _ }
+    | NullableToSeq { conversion = value; _ } ->
+        [ value ]
     | Record (fields, _) -> List.map snd fields
     | Int _ | Float _ | String _ | Char _ | Bool _ | Unit | Ident _ -> []
   in
-  let own = match expression with Typed (ty, _) -> [ ty ] | _ -> [] in
+  let own =
+    match expression with
+    | Typed (ty, _) -> [ ty ]
+    | PackDynamic { source_ty; target_ty; _ }
+    | UnpackDynamic { source_ty; target_ty; _ } ->
+        [ source_ty; target_ty ]
+    | NullableToSeq { source_ty; element_ty; _ } ->
+        [ source_ty; Semantic_type.TSeq element_ty ]
+    | _ -> []
+  in
   own @ List.concat_map type_annotations (children expression)
 
 let rec exists_identifier predicate expression =
@@ -113,7 +141,11 @@ let rec exists_identifier predicate expression =
              (fun (_, guard, handler) -> Option.to_list guard @ [ handler ])
              cases
     | Infix (_, left, right) | Cons (left, right) -> [ left; right ]
-    | Prefix (_, value) | Field (value, _) -> [ value ]
+    | Prefix (_, value) | Field (value, _)
+    | PackDynamic { conversion = value; _ }
+    | UnpackDynamic { conversion = value; _ }
+    | NullableToSeq { conversion = value; _ } ->
+        [ value ]
     | Record (fields, _) -> List.map snd fields
     | Int _ | Float _ | String _ | Char _ | Bool _ | Unit | Ident _ -> []
   in

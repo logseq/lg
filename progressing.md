@@ -14,6 +14,38 @@ update the same entry with its root cause, fix, and verification evidence.
   separate style change before applying bulk formatting. Avoid silently using
   machine defaults that could rewrite unrelated user code.
 
+## 2026-07-16: Dynamic and nullable boundaries disappear into ordinary IR
+
+- Status: Fixed
+- Symptom: After elaboration, dynamic packing, dynamic unpacking, and nullable
+  sequence normalization are indistinguishable from ordinary runtime calls and
+  pattern matches. Later compiler phases cannot validate or preserve boundary
+  intent, and LG type metadata can drift from the generated conversion.
+- Root cause: `Semantic_ir.t` has only generic `Apply` and `Match` nodes for
+  these operations. Conversion helpers immediately lower their intent into
+  runtime implementation details.
+- Fix: Added typed `PackDynamic`, `UnpackDynamic`, and `NullableToSeq`
+  operations carrying source/target type evidence and a conversion subtree.
+  Every semantic traversal and the lowering path handles them, and all central
+  conversion helpers now emit the operations. The established conversion
+  algorithms remain unchanged in this stage to limit semantic risk.
+- Verification: A focused IR regression was RED first with an unbound boundary
+  constructor, then with plain dynamic packing that emitted only `Apply`. It is
+  now green and checks traversal, lowering, central dynamic packing, and
+  nullable sequence normalization. The complete compiler suite, `dune build`,
+  and full Native and Melange PSS + DataScript `db.cljc` compilation pass.
+
+## 2026-07-16: Dune lock briefly outlives a yielded build command
+
+- Status: External orchestration issue recorded
+- Symptom: Immediately starting the next Dune command after the build tool
+  reported completion twice produced `Another Dune instance is currently
+  running`, although a subsequent process check found no live Dune process.
+- Impact: No source or build artifact failure; retrying after process cleanup
+  completed both Native and Melange verification.
+- Direction: Continue serializing Dune commands and confirm process exit before
+  launching the next long verification. This is outside LG compiler semantics.
+
 ## 2026-07-16: Systemic compiler design gaps exposed by the DataScript port
 
 - Status: Architectural diagnosis

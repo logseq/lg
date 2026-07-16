@@ -322,6 +322,16 @@ let rec dynamic_protocol_constraints ty =
           | _ -> []))
 
 let rec dynamic_unpack env ty expression =
+  dynamic_unpack_impl env ty expression
+  |> Result.map (fun conversion ->
+         Semantic_ir.UnpackDynamic
+           {
+             source_ty = Types.dynamic_constraint TUnknown;
+             target_ty = ty;
+             conversion;
+           })
+
+and dynamic_unpack_impl env ty expression =
   let scalar_function =
     match ty with
     | TInt | TOcaml "int" -> Some "Lg_runtime.Runtime_dynamic.as_int"
@@ -690,6 +700,16 @@ let rec dynamic_unpack env ty expression =
            ^ " from a dynamic function boundary"))
 
 and pack_dynamic_payload env expected_dynamic argument =
+  pack_dynamic_payload_impl env expected_dynamic argument
+  |> Result.map (fun conversion ->
+         Semantic_ir.PackDynamic
+           {
+             source_ty = argument.ty;
+             target_ty = expected_dynamic;
+             conversion;
+           })
+
+and pack_dynamic_payload_impl env expected_dynamic argument =
   if Types.is_dynamic argument.ty then Ok argument.semantic_expr
   else
     let pack_nested item = pack_dynamic_value env expected_dynamic item in
@@ -1143,7 +1163,7 @@ and pack_dynamic_payload env expected_dynamic argument =
          ^ " through a dynamic function boundary")
 
 and pack_dynamic_value env expected_dynamic argument =
-  match pack_dynamic_payload env expected_dynamic argument with
+  match pack_dynamic_payload_impl env expected_dynamic argument with
   | Error _ as error -> error
   | Ok payload ->
       let satisfied_protocols =
@@ -1267,6 +1287,13 @@ and pack_dynamic_value env expected_dynamic argument =
                Semantic_ir.Apply
               ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.with_protocols",
                    [ payload; Semantic_ir.List protocols ] ))
+      |> Result.map (fun conversion ->
+             Semantic_ir.PackDynamic
+               {
+                 source_ty = argument.ty;
+                 target_ty = expected_dynamic;
+                 conversion;
+               })
 
 let rec pack_constrained_value env expected argument =
   let requires_binding =

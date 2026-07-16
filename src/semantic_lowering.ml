@@ -80,3 +80,7 @@ let rec expression = function
   | Record (fields, type_name) ->
       Record
         (List.map (fun (name, value) -> (name, expression value)) fields, type_name)
+  | PackDynamic { conversion; _ }
+  | UnpackDynamic { conversion; _ }
+  | NullableToSeq { conversion; _ } ->
+      expression conversion
