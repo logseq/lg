@@ -267,6 +267,34 @@ and pack_plain_dynamic_value_impl value =
                       [ mapper; value.semantic_expr ] );
                 ])
         (pack_plain_dynamic_value item)
+  | TOcaml_app ("Lg_runtime.Runtime_map.t", [ key_ty; value_ty ]) ->
+          let key_name = "__lg_plain_dynamic_map_key" in
+          let value_name = "__lg_plain_dynamic_map_value" in
+          let key = typed_ir key_ty (Semantic_ir.Ident key_name) in
+          let map_value = typed_ir value_ty (Semantic_ir.Ident value_name) in
+          (match
+             (pack_plain_dynamic_value key, pack_plain_dynamic_value map_value)
+           with
+          | Some packed_key, Some packed_value ->
+              Some
+                (runtime "map"
+                   [
+                     Semantic_ir.Apply
+                       ( Semantic_ir.Ident "List.map",
+                         [
+                           Semantic_ir.Fun
+                             ( [
+                                 Semantic_ir.PTuple
+                                   [
+                                     Semantic_ir.PVar key_name;
+                                     Semantic_ir.PVar value_name;
+                                   ];
+                               ],
+                               Semantic_ir.Tuple [ packed_key; packed_value ] );
+                           value.semantic_expr;
+                         ] );
+                   ])
+          | None, _ | _, None -> None)
   | TOcaml_app (name, [ element_ty ]) when name = Types.next_seq_type_name ->
       let item_name = "__lg_plain_dynamic_seq_item" in
       let item = typed_ir element_ty (Semantic_ir.Ident item_name) in
@@ -914,6 +942,22 @@ let lookup_function scope env name =
                         [
                           Semantic_ir.Ident "collection";
                           Semantic_ir.Ident "key";
+                          Semantic_ir.Ident "value";
+                        ] ) )))
+      | "conj" ->
+          let dynamic = Types.dynamic_constraint TUnknown in
+          Ok
+            (typed_ir
+               (TFn ([ dynamic; dynamic ], dynamic))
+               (Semantic_ir.Fun
+                  ( [
+                      Semantic_ir.PVar "collection";
+                      Semantic_ir.PVar "value";
+                    ],
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.conj",
+                        [
+                          Semantic_ir.Ident "collection";
                           Semantic_ir.Ident "value";
                         ] ) )))
       | _ -> Error.error ("unknown function " ^ name))

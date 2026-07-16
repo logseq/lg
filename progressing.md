@@ -148,16 +148,39 @@ update the same entry with its root cause, fix, and verification evidence.
 
 ## 2026-07-16: Typed vector-of-optional-maps reaches a dynamic reduce boundary
 
-- Status: Reproduced; next DataScript blocker
+- Status: Fixed
 - Symptom: `resolve-upserts` produces
   `vector<option<map<dynamic,dynamic>>>`, but a downstream reduce boundary
   expects `Runtime_dynamic.t`.
-- Root cause: Pending reduction; the newly stable protocol and dependency types
-  expose a collection-to-dynamic adapter that was previously hidden behind
-  broader unknown metadata.
-- Direction: Add a focused reduction/accumulator regression and route the value
-  through the explicit `PackDynamic` boundary without weakening the graph or
-  protocol ABI.
+- Root cause: The heterogeneous accumulator `[[] {}]` is correctly packed as a
+  dynamic vector. However, `Runtime_dynamic.get` did not support integer vector
+  indexes and always returned nil. The nil branch then evaluated `(conj nil v)`,
+  correctly producing a list, and `Runtime_dynamic.assoc` could not replace a
+  vector slot at all. A separate missing parity feature prevented `conj` from
+  being passed as a first-class updater in focused source.
+- Fix: Added first-class `conj` through the existing dynamic function ABI.
+  Dynamic vectors now implement integer `get`, `get-default`, and `assoc` while
+  preserving vector representation. `PackDynamic` now also converts typed
+  `Runtime_map.t` entries recursively, which lets nullable maps nested inside a
+  vector cross a dynamic branch boundary. No reduce-specific or
+  DataScript-specific path was added.
+- Verification: The focused regression covers resolved, unresolved, mixed, and
+  empty inputs; it runs as six true assertions on Native and compiles on
+  Melange. A second exact regression covers the dynamic reduce result merged
+  with `[entity nil]`; it runs as six true assertions on Native and compiles on
+  Melange. The complete compiler suite passes. Full Native DataScript
+  compilation passes `resolve-upserts` and reaches `validate-upserts`.
+
+## 2026-07-16: `validate-upserts` emits an unconstrained `db_id` field access
+
+- Status: Reproduced; next DataScript blocker
+- Symptom: Full Native compilation reaches `db.cljc` lines 1284-1313 and OCaml
+  rejects an access to the unbound record field `db_id`.
+- Root cause: Pending focused reduction. A nested reduce/destructuring path has
+  lost the nominal record type that owns the source `:db/id` field.
+- Direction: Reduce the field-access flow, add Native/Melange behavior tests,
+  and preserve nominal evidence through the reducer rather than adding an
+  OCaml record-field workaround.
 
 ## 2026-07-16: Systemic compiler design gaps exposed by the DataScript port
 

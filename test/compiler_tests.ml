@@ -8623,6 +8623,81 @@ let test_update_reads_dynamic_reduce_accumulators_dynamically () =
   in
   ignore (Lg.Compiler.compile_string source |> expect_ok)
 
+let test_reduce_updates_heterogeneous_vector_accumulator_slots () =
+  let source =
+    {|
+(defn resolve-value [value]
+  (if (= value 1)
+    (Some 10)
+    None))
+(defn split-values [values]
+  (reduce
+    (fn [acc value]
+      (if-some [resolved (resolve-value value)]
+        (update acc 1 assoc value resolved)
+        (update acc 0 conj value)))
+    [[] {}]
+    values))
+(def mixed (split-values [1 2]))
+(def only-insert (split-values [2]))
+(def empty-result (split-values []))
+(println
+  (str (= [2] (nth mixed 0)) ":"
+       (= {1 10} (nth mixed 1)) ":"
+       (= [2] (nth only-insert 0)) ":"
+       (= {} (nth only-insert 1)) ":"
+       (= [] (nth empty-result 0)) ":"
+       (= {} (nth empty-result 1))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "reduce_updates_heterogeneous_vector_accumulator_slots"
+    "true:true:true:true:true:true\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_conj_is_available_as_a_first_class_core_function () =
+  let source =
+    {|
+(def append conj)
+(println (pr-str (append [1] 2)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "conj_is_available_as_a_first_class_core_function"
+    "[1 2]\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_dynamic_reduce_branch_merges_with_nullable_vector_fallback () =
+  let source =
+    {|
+(defn resolve-result [found entity]
+  (if-some [idents (if found (Some #{:id}) None)]
+    (reduce-kv
+      (fn [[entity' upserts] key value]
+        [(assoc entity' key value) upserts])
+      [{} {}]
+      entity)
+    [entity nil]))
+(def resolved (resolve-result true {:a 1}))
+(def fallback (resolve-result false {:a 1}))
+(def empty-resolved (resolve-result true {}))
+(println
+  (str (= {:a 1} (nth resolved 0)) ":"
+       (= {} (nth resolved 1)) ":"
+       (= {:a 1} (nth fallback 0)) ":"
+       (nil? (nth fallback 1)) ":"
+       (= {} (nth empty-resolved 0)) ":"
+       (= {} (nth empty-resolved 1))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "dynamic_reduce_branch_merges_with_nullable_vector_fallback"
+    "true:true:true:true:true:true\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_get_uses_dynamic_lookup_for_dynamic_targets () =
   let source =
     {|
@@ -15049,6 +15124,12 @@ let tests =
       test_occurrence_type_hints_only_refine_their_branch );
     ( "update reads dynamic reduce accumulators dynamically",
       test_update_reads_dynamic_reduce_accumulators_dynamically );
+    ( "reduce updates heterogeneous vector accumulator slots",
+      test_reduce_updates_heterogeneous_vector_accumulator_slots );
+    ( "conj is available as a first-class core function",
+      test_conj_is_available_as_a_first_class_core_function );
+    ( "dynamic reduce branch merges with nullable vector fallback",
+      test_dynamic_reduce_branch_merges_with_nullable_vector_fallback );
     ( "get uses dynamic lookup for dynamic targets",
       test_get_uses_dynamic_lookup_for_dynamic_targets );
     ( "dynamic record keys preserve common generic field types",

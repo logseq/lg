@@ -268,6 +268,14 @@ let conj collection value =
 let assoc value key replacement =
   match value.payload with
   | Nil -> map [ (key, replacement) ]
+  | Vector ->
+      let values = value |> to_seq |> List.of_seq |> Rrbvec.of_list in
+      let index =
+        match key.payload with
+        | Int index -> index
+        | _ -> invalid_arg "dynamic vector assoc expects an integer index"
+      in
+      vector (Rrbvec.set values index replacement)
   | Map entries ->
       let rec replace acc = function
         | [] -> List.rev ((key, replacement) :: acc)
@@ -305,6 +313,13 @@ let vals value =
       entries |> List.map snd |> Rrbvec.of_list |> vector
   | _ -> invalid_arg "vals expects a map"
 
+let vector_nth_opt value index =
+  if index < 0 then None
+  else
+    match Seq.drop index (to_seq value) () with
+    | Seq.Nil -> None
+    | Seq.Cons (item, _) -> Some item
+
 let get value key =
   match (value.payload, key.payload) with
   | Opaque (_, fields), Keyword keyword -> (
@@ -317,6 +332,7 @@ let get value key =
       with
       | Some (_, value) -> value
       | None -> nil)
+  | Vector, Int index -> vector_nth_opt value index |> Option.value ~default:nil
   | _ -> nil
 
 let get_default value key default =
@@ -331,6 +347,8 @@ let get_default value key default =
       with
       | Some (_, value) -> value
       | None -> default)
+  | Vector, Int index ->
+      vector_nth_opt value index |> Option.value ~default
   | _ -> default
 
 let contains value key =
