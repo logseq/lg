@@ -44,7 +44,7 @@ let typed_item_pattern name = function
   | TNamed_record record ->
       Semantic_ir.PConstraint
         ( Semantic_ir.PVar name,
-          record_type_application record.type_name record.type_parameters )
+          record_type_application record.type_name record.type_arguments )
   | _ -> Semantic_ir.PVar name
 
 let int_parameter_type = function
@@ -575,7 +575,7 @@ and dynamic_unpack_impl env ty expression =
             unpack_record record.fields
               (Some
                  (record_type_application record.type_name
-                    record.type_parameters))
+                    record.type_arguments))
           else
             let value_name = "__lg_nominal_record" in
             let tag_name = Types.nominal_tag_name record in
@@ -597,9 +597,8 @@ and dynamic_unpack_impl env ty expression =
                                            (tag_name, None);
                                          Semantic_ir.PConstraint
                                            ( Semantic_ir.PVar value_name,
-                                             record_type_application
-                                               record.type_name
-                                               record.type_parameters );
+                                             existential_record_type_application
+                                               record );
                                        ]) )) ),
                        Semantic_ir.Ident value_name );
                      ( Semantic_ir.PAny,
@@ -2341,6 +2340,12 @@ let create ~compile_expr =
               (Ok collection) value_forms)
     | _ -> Error.error "conj! expects a transient collection and values"
   and compile_get scope env arg_forms =
+    let dynamic_result_type fallback =
+      match Env.expected_type env with
+      | Some expected when Types.is_dynamic expected -> expected
+      | Some expected -> Types.dynamic_constraint expected
+      | None -> fallback
+    in
     match arg_forms with
     | [ target_form; key_form ] -> (
         match
@@ -2354,7 +2359,7 @@ let create ~compile_expr =
             | Error _ as error -> error
             | Ok key ->
                 Ok
-                  (typed_ir target.ty
+                  (typed_ir (dynamic_result_type target.ty)
                      (Semantic_ir.Apply
                         ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.get",
                           [ target.semantic_expr; key ] ))))
@@ -2378,7 +2383,7 @@ let create ~compile_expr =
             | _, (Error _ as error) -> error
             | Ok key, Ok default ->
                 Ok
-                  (typed_ir target.ty
+                  (typed_ir (dynamic_result_type target.ty)
                      (Semantic_ir.Apply
                         ( Semantic_ir.Ident
                             "Lg_runtime.Runtime_dynamic.get_default",
@@ -3322,7 +3327,7 @@ let create ~compile_expr =
                               Some
                                           (record_type_application
                                              record.type_name
-                                   record.type_parameters) )
+                                             record.type_arguments) )
                     in
                               {
                                 (typed_ir (TNamed_record record) expression) with
@@ -3494,7 +3499,7 @@ let create ~compile_expr =
                         Some
                                             (record_type_application
                                                record.type_name
-                             record.type_parameters) )
+                                               record.type_arguments) )
                 in
                 Ok
                   {
@@ -4495,7 +4500,7 @@ let create ~compile_expr =
                                     values,
                                   Some
                                     (record_type_application record.type_name
-                                       record.type_parameters) )))
+                                       record.type_arguments) )))
                           with
                           record_values =
                             Some
@@ -7058,13 +7063,24 @@ let create ~compile_expr =
                     param_tys actual_tys
                 in
                 let substitutions =
+                  match Env.expected_type env with
+                  | Some expected ->
+                      Type_solver.unify [] ret expected
+                      |> Result.value ~default:[]
+                  | None -> []
+                in
+                let substitutions =
                   List.fold_left2
                     (fun substitutions template actual ->
-                      if Types.is_dynamic actual then substitutions
+                      let evidence =
+                        if Types.is_dynamic actual then
+                          Types.dynamic_constraint_info actual
+                          |> Option.value ~default:TUnknown
+                        else actual
+                      in
+                      if Types.equal evidence TUnknown then substitutions
                       else
-                        match
-                          Type_solver.unify substitutions template actual
-                        with
+                        match Type_solver.unify substitutions template evidence with
                         | Ok substitutions -> substitutions
                         | Error _ when dynamic_callable ->
                             List.fold_left
@@ -7073,7 +7089,7 @@ let create ~compile_expr =
                                   (Types.dynamic_constraint TUnknown))
                               substitutions (Type_solver.variables template)
                         | Error _ -> substitutions)
-                    [] param_tys actual_tys
+                    substitutions param_tys actual_tys
                 in
                 let instantiate ty =
                   Type_solver.apply substitutions ty

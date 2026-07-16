@@ -128,12 +128,7 @@ let rec core_type ?(type_variables = []) = function
   | Types.TNamed_record record ->
       Ast_helper.Typ.constr ~loc
         (lid (longident_of_string record.type_name))
-        (List.map
-           (fun parameter ->
-             if List.mem parameter type_variables then
-               Ast_helper.Typ.var ~loc parameter
-             else Ast_helper.Typ.any ~loc ())
-           record.type_parameters)
+        (List.map (core_type ~type_variables) record.type_arguments)
 
 let record_values_to_parsetree var_name values =
   let rec loop acc = function

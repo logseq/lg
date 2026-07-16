@@ -62,6 +62,63 @@ type t =
       conversion : t;
     }
 
+let rec continue_inside_conversion conversion continue =
+  match conversion with
+  | Located (node_id, location, value) ->
+      Located
+        (node_id, location, continue_inside_conversion value continue)
+  | Typed (_, value) -> continue_inside_conversion value continue
+  | Match (target, cases) ->
+      Match
+        ( target,
+          List.map
+            (fun (pattern, body) -> (pattern, continue body))
+            cases )
+  | value -> continue value
+
+let scoped_application fn arguments =
+  let rec build prefix = function
+    | [] -> None
+    | UnpackDynamic
+        { target_ty = Semantic_type.TNamed_record _; conversion; _ }
+      :: rest ->
+        Some
+          (continue_inside_conversion conversion (fun unpacked ->
+               let arguments = List.rev_append prefix (unpacked :: rest) in
+               match build [] arguments with
+               | Some scoped -> scoped
+               | None -> Apply (fn, arguments)))
+    | argument :: rest -> build (argument :: prefix) rest
+  in
+  build [] arguments
+
+let scoped_let bindings body =
+  let rec scoped_value = function
+    | Located (node_id, location, value) ->
+        Option.map
+          (fun value -> Located (node_id, location, value))
+          (scoped_value value)
+    | Typed (_, value) -> scoped_value value
+    | Apply (fn, arguments) -> scoped_application fn arguments
+    | _ -> None
+  in
+  let rec build prefix = function
+    | [] -> None
+    | (pattern, value) :: rest -> (
+        match scoped_value value with
+        | None -> build ((pattern, value) :: prefix) rest
+        | Some scoped ->
+            let inner =
+              continue_inside_conversion scoped (fun value ->
+                  Let ((pattern, value) :: rest, body))
+            in
+            Some
+              (match List.rev prefix with
+              | [] -> inner
+              | bindings -> Let (bindings, inner)))
+  in
+  build [] bindings
+
 let rec unlocated = function
   | Typed (_, expression) -> unlocated expression
   | Located (_, _, expression) -> unlocated expression

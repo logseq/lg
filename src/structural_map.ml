@@ -35,12 +35,16 @@ let record_expr fields values =
   }
 
 let named_record_expr record values =
+  let argument_name = function
+    | TUnknown | TVar _ -> "_"
+    | argument -> Types.ocaml_name argument
+  in
   let type_name =
-    match record.type_parameters with
+    match record.type_arguments with
     | [] -> record.type_name
-    | [ _ ] -> "_ " ^ record.type_name
-    | parameters ->
-        "(" ^ String.concat ", " (List.map (fun _ -> "_") parameters) ^ ") "
+    | [ argument ] -> argument_name argument ^ " " ^ record.type_name
+    | arguments ->
+        "(" ^ String.concat ", " (List.map argument_name arguments) ^ ") "
         ^ record.type_name
   in
   {

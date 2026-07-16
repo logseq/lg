@@ -43,6 +43,7 @@ let rec apply substitutions ty =
       TNamed_record
         {
           record with
+          type_arguments = List.map apply_ty record.type_arguments;
           fields =
             List.map
               (fun (field : field) -> { field with ty = apply_ty field.ty })
@@ -69,8 +70,11 @@ let rec occurs name ty =
           || Option.fold ~none:false ~some:(occurs name) arity.rest_param
           || occurs name arity.return_ty)
         arities
-  | TRecord fields | TNamed_record { fields; _ } ->
+  | TRecord fields ->
       List.exists (fun (field : field) -> occurs name field.ty) fields
+  | TNamed_record { type_arguments; fields; _ } ->
+      List.exists (occurs name) type_arguments
+      || List.exists (fun (field : field) -> occurs name field.ty) fields
   | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
   | TBool | TUnit | TNil | TUnknown | TOcaml _ ->
       false
@@ -112,8 +116,11 @@ let rec variables ty =
              arity.return_ty :: arity.fixed_params
              @ Option.to_list arity.rest_param)
       |> variables_all
-  | TRecord fields | TNamed_record { fields; _ } ->
+  | TRecord fields ->
       fields |> List.map (fun (field : field) -> field.ty) |> variables_all
+  | TNamed_record { type_arguments; fields; _ } ->
+      variables_all
+        (type_arguments @ List.map (fun (field : field) -> field.ty) fields)
   | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
   | TBool | TUnit | TNil | TUnknown | TOcaml _ ->
       []
@@ -170,6 +177,22 @@ let rec unify substitutions left right =
             Result.bind result (fun substitutions ->
                 unify_arities substitutions left_arity right_arity))
           (Ok substitutions) left_arities right_arities
+    | TNamed_record left_record, TNamed_record right_record
+      when Type_id.equal left_record.type_id right_record.type_id
+           && List.length left_record.type_arguments
+              = List.length right_record.type_arguments ->
+        Result.bind
+          (unify_lists substitutions left_record.type_arguments
+             right_record.type_arguments)
+          (fun substitutions ->
+            let fields =
+              matching_fields left_record.fields right_record.fields
+            in
+            List.fold_left
+              (fun result (left, right) ->
+                Result.bind result (fun substitutions ->
+                    unify substitutions left right))
+              (Ok substitutions) fields)
     | (TRecord left_fields | TNamed_record { fields = left_fields; _ }),
       (TRecord right_fields | TNamed_record { fields = right_fields; _ }) ->
         let fields = matching_fields left_fields right_fields in

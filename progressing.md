@@ -208,17 +208,61 @@ update the same entry with its root cause, fix, and verification evidence.
 
 ## 2026-07-16: Existential `btset` type escapes from `numeric-eid-exists?`
 
-- Status: Reproduced; next DataScript blocker
+- Status: Fixed
 - Symptom: Full Native compilation reaches `db.cljc` lines 992-997 and OCaml
   reports that `$0 btset` cannot be used as `'a btset` because the existential
   type constructor would escape its scope.
-- Root cause: Pending focused reduction. The `(-seek-datoms db ...)` protocol
-  result carries a nominal `btset` whose hidden address parameter is being
-  generalized or unpacked across a call boundary before `first`/`:e` consumes
-  it.
-- Direction: Add the exact Native/Melange RED case and preserve the existential
-  owner through the typed IR and call boundary; do not erase it or use an OCaml
-  cast.
+- Root cause: Nominal `UnpackDynamic` lowered as an ordinary expression. A
+  generic payload therefore escaped its GADT match branch when passed to a
+  function or stored in a `let` binding. The reported source location belonged
+  to the recursive group; the first bad expression was actually the dynamic
+  `btset` consumed in `find-datom`.
+- Fix: Semantic lowering now treats generic nominal unpack as a scoped
+  elimination. Function application and a following `let` consumer are moved
+  inside the unpack branch, so the hidden type never escapes. Concrete generic
+  arguments are tracked separately from declaration parameter names, while a
+  runtime nominal match deliberately retains an existential wildcard; no cast
+  or `Obj.magic` is used.
+- Verification: A PSS-backed Native/Melange regression was RED first with the
+  same `$0 btset` escape and now consumes a comparator within the existential
+  scope. Full Native DataScript compilation passes the escape and the later
+  `Datom`/`$0` mismatch after the defrecord inference fix below.
+
+## 2026-07-16: Defrecord accessor inference shadows its own field evidence
+
+- Status: Fixed
+- Symptom: The generated `DB` record typed only `avet` as a persistent sorted
+  set; `eavt` and `aevt` remained dynamic. Consequently `find-datom` recovered
+  an existential set and could not prove its comparator accepts `Datom`.
+- Root cause: Defrecord field inference rewrote `(.-eavt db)` to `eavt` inside
+  the existing binding `let [eavt (.-eavt db)]`, producing the self-binding
+  `let [eavt eavt]`. The same happened for `aevt`, cutting the constraint path.
+  Structural generic fields were also discarded before nominal resolution, and
+  outer record declarations reused declaration parameter names instead of the
+  instantiated generic arguments.
+- Fix: Accessor evidence uses distinct internal field variables and is unified
+  with direct lexical field evidence after method inference. Structural fields
+  are resolved to nominal records before the concrete-field gate. Named records
+  now carry separate concrete `type_arguments`, and the unified solver,
+  OCaml-type lowering, occurrence check, and variable collection all preserve
+  those arguments.
+- Verification: A RED Native/Melange regression with three structurally
+  inferred generic fields now runs as `-3`. Full DB tracing confirms `eavt`,
+  `aevt`, and `avet` are all inferred as the PSS record, and compilation passes
+  the `find-datom` `Datom` mismatch.
+
+## 2026-07-16: `DB` search implementation returns `Seq<Datom>` to a dynamic ABI
+
+- Status: Reproduced; next DataScript blocker
+- Symptom: Full Native compilation now reaches the `DB` definition at
+  `db.cljc` lines 450-543. Its search implementation returns `datom Seq.t`, but
+  the protocol witness currently expects `Runtime_dynamic.t Seq.t`.
+- Root cause: Pending focused reduction. Record-field inference now exposes the
+  concrete sequence element, revealing that protocol return stabilization kept
+  a dynamic element ABI for a method whose concrete implementation is typed.
+- Direction: Add the exact mixed-implementation Native/Melange regression and
+  make the protocol witness boundary perform the explicit element conversion
+  selected by the stable method ABI.
 
 ## 2026-07-16: Systemic compiler design gaps exposed by the DataScript port
 

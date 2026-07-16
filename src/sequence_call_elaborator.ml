@@ -173,7 +173,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
               Semantic_ir.PConstraint
                 ( Semantic_ir.PVar binding.ocaml_name,
                   Expression_support.record_type_application record.type_name
-                    record.type_parameters )
+                    record.type_arguments )
           | _ -> Semantic_ir.PVar binding.ocaml_name
         in
         compile_body scope function_env

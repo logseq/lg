@@ -720,6 +720,43 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint
                    | Error _ as error -> error
                    | Ok params -> infer_expected expected_ty params value))
              (Ok params)
+    | FList (FSymbol name :: args) -> (
+        let form = FList (FSymbol name :: args) in
+        let infer_call parameter_tys return_ty =
+          if List.length parameter_tys <> List.length args then
+            infer_form params form
+          else
+            match Type_solver.unify [] return_ty expected_ty with
+            | Error _ -> infer_form params form
+            | Ok substitutions ->
+                let parameter_tys =
+                  List.map (Type_solver.apply substitutions) parameter_tys
+                in
+                List.fold_left2
+                  (fun result expected argument ->
+                    Result.bind result (fun params ->
+                        infer_expected expected params argument))
+                  (Ok params) parameter_tys args
+        in
+        match lookup_function_ty name with
+        | Ok (TFn (parameter_tys, return_ty)) ->
+            infer_call parameter_tys return_ty
+        | Ok (TOverloaded_fn arities) -> (
+            match select_fn_arity arities (List.length args) with
+            | None -> infer_form params form
+            | Some arity ->
+                let parameter_tys =
+                  arity.fixed_params
+                  @
+                  match arity.rest_param with
+                  | None -> []
+                  | Some rest_ty ->
+                      List.init
+                        (List.length args - List.length arity.fixed_params)
+                        (fun _ -> rest_ty)
+                in
+                infer_call parameter_tys arity.return_ty)
+        | _ -> infer_form params form)
     | form -> infer_form params form
   and infer_all params forms =
     let rec loop params = function

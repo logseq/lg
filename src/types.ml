@@ -539,12 +539,12 @@ let rec ocaml_name = function
   | TOverloaded_fn arities -> ocaml_name (overloaded_storage_type arities)
   | TRecord _ -> "record"
   | TNamed_record record -> (
-      match record.type_parameters with
+      match record.type_arguments with
       | [] -> record.type_name
-      | [ parameter ] -> "'" ^ parameter ^ " " ^ record.type_name
-      | parameters ->
+      | [ argument ] -> ocaml_name argument ^ " " ^ record.type_name
+      | arguments ->
           "("
-          ^ String.concat ", " (List.map (fun parameter -> "'" ^ parameter) parameters)
+          ^ String.concat ", " (List.map ocaml_name arguments)
           ^ ") " ^ record.type_name)
 
 and overloaded_storage_type = function
@@ -589,7 +589,15 @@ let named_record ?(type_parameters = []) ?type_id ?(nominal = false) ~type_name
     ~set_module_name fields =
   let type_id = Option.value type_id ~default:(type_id_of_name type_name) in
   TNamed_record
-    { type_id; nominal; type_name; type_parameters; set_module_name; fields }
+    {
+      type_id;
+      nominal;
+      type_name;
+      type_parameters;
+      type_arguments = List.map (fun parameter -> TVar parameter) type_parameters;
+      set_module_name;
+      fields;
+    }
 
 let nominal_tag_name (record : named_record) =
   match String.rindex_opt record.type_name '.' with
@@ -646,6 +654,8 @@ let rec qualify_module_type module_path ty =
           nominal = record.nominal;
           type_name;
           type_parameters = record.type_parameters;
+          type_arguments =
+            List.map (qualify_module_type module_path) record.type_arguments;
           set_module_name = qualify_name record.set_module_name;
           fields =
             List.map

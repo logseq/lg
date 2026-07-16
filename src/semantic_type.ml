@@ -39,6 +39,7 @@ and named_record = {
   nominal : bool;
   type_name : string;
   type_parameters : string list;
+  type_arguments : ty list;
   set_module_name : string;
   fields : field list;
 }

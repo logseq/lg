@@ -211,19 +211,23 @@ let rec type_parameters_of_type = function
       fields
       |> List.concat_map (fun (field : field) ->
           type_parameters_of_type field.ty)
-  | TNamed_record record -> record.type_parameters
+  | TNamed_record record ->
+      List.concat_map type_parameters_of_type record.type_arguments
   | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
   | TBool | TUnit | TNil | TUnknown | TOcaml _ ->
       []
 
 let infer_defrecord_field_types scope env field_names interface_forms =
+  let accessor_parameter name =
+    "__lg_record_field_" ^ Names.sanitize_name name
+  in
   let field_name accessor =
     List.find_opt (fun name -> accessor = ".-" ^ name) field_names
   in
   let rec rewrite_field_access receiver = function
     | FList [ FSymbol accessor; FSymbol target ]
       when target = receiver && Option.is_some (field_name accessor) ->
-        FSymbol (Option.get (field_name accessor))
+        FSymbol (accessor_parameter (Option.get (field_name accessor)))
     | FList forms -> FList (List.map (rewrite_field_access receiver) forms)
     | FVector forms -> FVector (List.map (rewrite_field_access receiver) forms)
     | FMap pairs ->
@@ -252,6 +256,9 @@ let infer_defrecord_field_types scope env field_names interface_forms =
         let params =
           ((receiver, TUnknown) :: method_params)
           @ List.map (fun name -> (name, TUnknown)) field_names
+          @ List.map
+              (fun name -> (accessor_parameter name, TUnknown))
+              field_names
         in
         let body_forms = List.map (rewrite_field_access receiver) body_forms in
         let lookup_dynamic_key_record_type =
@@ -263,11 +270,23 @@ let infer_defrecord_field_types scope env field_names interface_forms =
             body_forms
         with
         | Error _ -> field_types
-        | Ok inferred ->
+        | Ok inferred_params ->
             List.map2
               (fun name previous ->
                 let inferred =
-                  List.assoc_opt name inferred |> Option.value ~default:TUnknown
+                  List.assoc_opt name inferred_params
+                  |> Option.value ~default:TUnknown
+                in
+                let accessor_inferred =
+                  List.assoc_opt (accessor_parameter name) inferred_params
+                  |> Option.value ~default:TUnknown
+                in
+                let inferred =
+                  Type_inference.refine_type inferred accessor_inferred
+                in
+                let inferred =
+                  Function_elaborator.infer_named_record
+                    ~allow_dynamic_fields:true scope env inferred
                 in
                 match
                   ( concrete_defrecord_field_type previous,
@@ -280,12 +299,14 @@ let infer_defrecord_field_types scope env field_names interface_forms =
               field_names field_types)
     | _ -> field_types
   in
-  interface_forms
-  |> List.fold_left infer_method (List.map (fun _ -> TUnknown) field_names)
-  |> List.map (fun ty ->
-      concrete_defrecord_field_type ty
-      |> Option.value ~default:(Types.dynamic_constraint TUnknown))
-  |> Fun.id
+  let inferred =
+    interface_forms
+    |> List.fold_left infer_method (List.map (fun _ -> TUnknown) field_names)
+    |> List.map (fun ty ->
+           concrete_defrecord_field_type ty
+           |> Option.value ~default:(Types.dynamic_constraint TUnknown))
+  in
+  inferred
 
 let rec compile scope env next_type = function
   | FList

@@ -4597,6 +4597,34 @@ let test_defrecord_inferred_generic_fields_preserve_value_types () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_defrecord_methods_infer_every_structural_generic_field () =
+  let source =
+    {|
+(type-record box [value]
+  (compare-values :fn<value;value;int>))
+(defn compare-box [box left right]
+  ((:compare-values box) left right))
+(defprotocol Scored
+  (score [this]))
+(defrecord Triple [first second third]
+  Scored
+  (score [_]
+    (+ (compare-box first 1 2)
+       (compare-box second 2 3)
+       (compare-box third 3 4))))
+(defn int-box []
+  (record box
+    (compare-values (fn [left right] (compare left right)))))
+(def triple (Triple. (int-box) (int-box) (int-box)))
+(println (score triple))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "defrecord_methods_infer_every_structural_generic_field"
+    "-3\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_defrecord_fields_preserve_protocol_capabilities () =
   let source =
     {|
@@ -8478,6 +8506,50 @@ let test_dynamic_generic_nominal_arguments_stay_scoped_to_the_call () =
     "1\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_dynamic_generic_nominals_are_consumed_inside_existential_scope () =
+  let pss_sources =
+    [
+      "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
+      "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+      "datascript/me/tonsky/persistent_sorted_set.cljc";
+    ]
+    |> List.map read_file
+  in
+  let consumer_source =
+    {|
+(ns test.existential-consumer
+  (:require [me.tonsky.persistent-sorted-set :as set]))
+(defn compare-through-map [database index]
+  (let [sorted-set (get database index)
+        comparator (set/comparator sorted-set)]
+    (if comparator 1 0)))
+(def int-set
+  (set/from-sequential (fn [left right] (compare left right)) [1 2]))
+(def database (assoc {} :eavt int-set))
+(println (compare-through-map database :eavt))
+|}
+  in
+  let compile target =
+    let state, outputs =
+      List.fold_left
+        (fun (state, outputs) source ->
+          let state, output =
+            Lg.Compiler.compile_chunk ~target state source |> expect_ok
+          in
+          (state, output :: outputs))
+        (Lg.Compiler.empty_state, []) pss_sources
+    in
+    let _, output =
+      Lg.Compiler.compile_chunk ~target state consumer_source |> expect_ok
+    in
+    String.concat "\n" (List.rev (output :: outputs))
+  in
+  let ocaml_source = compile Lg.Target.Native in
+  assert_ocaml_runs
+    "dynamic_generic_nominals_are_consumed_inside_existential_scope"
+    "1\n" ocaml_source;
+  ignore (compile Lg.Target.Melange)
 
 let test_map_to_record_unpacks_dynamic_named_fields () =
   let source =
@@ -14718,6 +14790,8 @@ let tests =
       test_defrecord_fields_infer_host_records_from_protocol_methods );
     ( "defrecord inferred generic fields preserve value types",
       test_defrecord_inferred_generic_fields_preserve_value_types );
+    ( "defrecord methods infer every structural generic field",
+      test_defrecord_methods_infer_every_structural_generic_field );
     ( "defrecord fields preserve protocol capabilities",
       test_defrecord_fields_preserve_protocol_capabilities );
     ( "defrecord protocol methods support forward calls",
@@ -15152,6 +15226,8 @@ let tests =
       test_dynamic_protocols_instantiate_generic_record_receivers );
     ( "dynamic generic nominal arguments stay scoped to the call",
       test_dynamic_generic_nominal_arguments_stay_scoped_to_the_call );
+    ( "dynamic generic nominals are consumed inside existential scope",
+      test_dynamic_generic_nominals_are_consumed_inside_existential_scope );
     ( "map->record unpacks dynamic named fields",
       test_map_to_record_unpacks_dynamic_named_fields );
     ( "map->record preserves generic fields from map literals",

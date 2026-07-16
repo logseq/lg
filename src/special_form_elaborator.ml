@@ -1606,13 +1606,12 @@ let create ~compile_expr =
           List.assoc_opt name inferred |> Option.value ~default:TUnknown
       | Error _ -> TUnknown
     in
-    let expected_value_env env pattern value_form rest =
-      match (pattern, value_form) with
-      | FSymbol name, FList (FSymbol get_name :: _)
-        when get_name = "get" || get_name = "clojure.core/get" -> (
-          match inferred_binding_type env name rest with
+    let expected_value_env env pattern _value_form rest =
+      match pattern with
+      | FSymbol name -> (
+          let inferred = inferred_binding_type env name rest in
+          match inferred with
           | TUnknown | TVar _ -> env
-          | ty when Types.is_dynamic ty -> env
           | ty -> Env.with_expected_type (Some ty) env)
       | _ -> env
     in

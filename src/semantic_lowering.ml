@@ -34,7 +34,10 @@ let rec expression = function
   | Ident name -> Ident name
   | List values -> List (List.map expression values)
   | Array values -> Array (List.map expression values)
-  | Apply (fn, args) -> Apply (expression fn, List.map expression args)
+  | Apply (fn, args) -> (
+      match Semantic_ir.scoped_application fn args with
+      | Some scoped -> expression scoped
+      | None -> Apply (expression fn, List.map expression args))
   | Uncurried_apply (fn, args) ->
       Uncurried_apply (expression fn, List.map expression args)
   | Labelled_apply (fn, args) ->
@@ -44,10 +47,15 @@ let rec expression = function
       If (expression condition, expression then_expr, expression else_expr)
   | Fun (patterns, body) -> Fun (List.map pattern patterns, expression body)
   | Sequence values -> Sequence (List.map expression values)
-  | Let (bindings, body) ->
-      Let
-        ( List.map (fun (pat, value) -> (pattern pat, expression value)) bindings,
-          expression body )
+  | Let (bindings, body) -> (
+      match Semantic_ir.scoped_let bindings body with
+      | Some scoped -> expression scoped
+      | None ->
+          Let
+            ( List.map
+                (fun (pat, value) -> (pattern pat, expression value))
+                bindings,
+              expression body ))
   | LetRec (name, params, body, args) ->
       LetRec
         (name, List.map pattern params, expression body, List.map expression args)

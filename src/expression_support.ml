@@ -619,14 +619,22 @@ let ocaml_builtin_constructor_payloads target_ty constructor_name =
 
 let record_type_key = Resolver.record_type_key
 
-let record_type_application type_name parameters =
-  match parameters with
+let record_type_application type_name arguments =
+  let argument_name = function
+    | TUnknown | TVar _ -> "_"
+    | argument -> Types.ocaml_name argument
+  in
+  match arguments with
   | [] -> type_name
-  | [ _ ] -> "_ " ^ type_name
-  | parameters ->
+  | [ argument ] -> argument_name argument ^ " " ^ type_name
+  | arguments ->
       "("
-      ^ String.concat ", " (List.map (fun _ -> "_") parameters)
+      ^ String.concat ", " (List.map argument_name arguments)
       ^ ") " ^ type_name
+
+let existential_record_type_application (record : named_record) =
+  record_type_application record.type_name
+    (List.map (fun parameter -> TVar parameter) record.type_parameters)
 
 let lookup_record_type = Resolver.lookup_record_type
 
@@ -1280,7 +1288,7 @@ let coerce_set_element element_ty value =
                 ( fields,
                   Some
                     (record_type_application expected.type_name
-                       expected.type_parameters) ))
+                       expected.type_arguments) ))
       | _ -> Error.error "set value type must match record element type")
   | _ ->
       if Types.equal element_ty value.ty then Ok value.semantic_expr
@@ -1300,7 +1308,7 @@ let constrain_record_function_argument_expr fn element_ty =
   | Semantic_ir.Fun ([ pattern ], body), TNamed_record record -> (
       match
         constrain_pattern
-          (record_type_application record.type_name record.type_parameters)
+          (record_type_application record.type_name record.type_arguments)
           pattern
       with
       | Some pattern -> Semantic_ir.Fun ([ pattern ], body)
