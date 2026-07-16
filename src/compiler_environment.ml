@@ -4,6 +4,7 @@ type t = {
   target : Target.t;
   symbols : Types.binding Symbol_map.t;
   protocols : Protocol_registry.t;
+  protocol_evidence : Protocol_registry.t option;
   modules : Module_registry.t;
   types : Type_registry.t;
   anonymous_records : (string * Semantic_type.named_record) list;
@@ -20,6 +21,7 @@ let empty =
     target = Target.default;
     symbols = Symbol_map.empty;
     protocols = Core_protocols.initial_registry;
+    protocol_evidence = None;
     modules = Module_registry.empty;
     types = Type_registry.empty;
     anonymous_records = [];
@@ -73,6 +75,9 @@ let filter_map f env =
 
 let protocols env = env.protocols
 let with_protocols protocols env = { env with protocols }
+let protocol_evidence env = env.protocol_evidence
+let with_protocol_evidence protocol_evidence env =
+  { env with protocol_evidence }
 let modules env = env.modules
 let with_modules modules env = { env with modules }
 let types env = env.types

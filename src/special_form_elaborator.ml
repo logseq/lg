@@ -371,6 +371,36 @@ let create ~compile_expr =
                                      ] )),
                               some_code,
                               none_code ) )))))
+    | Ok option_expr
+      when (match option_expr.ty with
+           | TNullable _ | TNil | TOcaml "option"
+           | TOcaml_app ("option", [ _ ]) | TUnknown | TVar _ ->
+               false
+           | _ -> true) -> (
+        match (compile_some_branch option_expr.ty, compile_none ()) with
+        | (Error _ as error), _ -> error
+        | _, (Error _ as error) -> error
+        | Ok some_expr, Ok none_expr -> (
+            match merge_branch_expressions some_expr none_expr with
+            | None -> Error.error branch_error
+            | Some (result_ty, some_code, none_code) ->
+                let body =
+                  if require_truthy then
+                    Semantic_ir.If
+                      ( truthiness_expression option_expr.ty
+                          (Semantic_ir.Ident payload_name),
+                        some_code,
+                        none_code )
+                  else some_code
+                in
+                Ok
+                  (typed_ir result_ty
+                     (Semantic_ir.Let
+                        ( [
+                            ( Semantic_ir.PVar payload_name,
+                              option_expr.semantic_expr );
+                          ],
+                          body )))))
     | Ok option_expr -> (
         match option_payload_type option_expr.ty with
         | Error _ as err -> err

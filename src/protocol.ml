@@ -386,9 +386,12 @@ let rec merge_method_return_types env left right =
 
 let common_method_return env protocol_id method_name =
   let method_id = method_id protocol_id method_name in
+  let registry =
+    Compiler_environment.protocol_evidence env
+    |> Option.value ~default:(Env.protocols env)
+  in
   let return_types =
-    Protocol_registry.implementations_for_method protocol_id method_id
-      (Env.protocols env)
+    Protocol_registry.implementations_for_method protocol_id method_id registry
     |> List.filter_map (fun (implementation : binding) ->
            match implementation.ty with
            | TFn (_, return_ty) when not (Types.equal return_ty TUnknown) ->
@@ -435,8 +438,8 @@ let refine_constraint_method_returns env ty =
               List.map2
                 (fun method_ty return_ty ->
                   match (method_ty, return_ty) with
-                  | TFn (params, (TUnknown | TVar _)), Some return_ty ->
-                      TFn (params, return_ty)
+                  | TFn (params, (TUnknown | TVar _)), Some _ ->
+                      TFn (params, Types.dynamic_constraint TUnknown)
                   | _ -> method_ty)
                 methods returns
             in
@@ -451,9 +454,13 @@ let refine_deferred_type env = function
 
 let common_method_return_param_index env protocol_id method_name =
   let method_id = method_id protocol_id method_name in
+  let registry =
+    Compiler_environment.protocol_evidence env
+    |> Option.value ~default:(Env.protocols env)
+  in
   let indices =
     Protocol_registry.implementations_for_method protocol_id method_id
-      (Env.protocols env)
+      registry
     |> List.filter_map (fun (implementation : binding) ->
            implementation.return_param_index)
   in

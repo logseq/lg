@@ -651,7 +651,16 @@ let checked_parsetree (typed : typed_result) =
       | Error _ as err -> err
       | Ok diagnostics -> Ok (result, diagnostics))
 
+let stabilize_dependencies (parsed : parser_result) =
+  let order = Dependency_graph.stable_order parsed.ast in
+  {
+    parsed with
+    ast = List.map (List.nth parsed.ast) order;
+    locations = List.map (List.nth parsed.locations) order;
+  }
+
 let typecheck (parsed : parser_result) =
+  let parsed = stabilize_dependencies parsed in
   match prepare_packages parsed.target parsed.ast with
   | Error _ as err -> err
   | Ok _ -> (
@@ -704,7 +713,10 @@ let typecheck (parsed : parser_result) =
             {
               initial_state with
               env =
-                Compiler_environment.add_bindings declarations initial_state.env;
+                initial_state.env
+                |> Compiler_environment.add_bindings declarations
+                |> Compiler_environment.with_protocol_evidence
+                     (Some (Compiler_environment.protocols first_state.env));
             }
           in
           match compile seeded_state with
@@ -719,6 +731,7 @@ let typecheck (parsed : parser_result) =
             }) )
 
 let typecheck_incremental state (parsed : parser_result) =
+  let parsed = stabilize_dependencies parsed in
   match prepare_packages parsed.target parsed.ast with
   | Error _ as err -> err
   | Ok _ -> (
@@ -726,6 +739,13 @@ let typecheck_incremental state (parsed : parser_result) =
         if state.located_items = [] then
           Compiler_state.with_target parsed.target state.typecheck_state
         else state.typecheck_state
+      in
+      let initial_state =
+        {
+          initial_state with
+          env =
+            Compiler_environment.with_protocol_evidence None initial_state.env;
+        }
       in
       let compile typecheck_state =
         Source_context.with_locations parsed.form_locations (fun () ->
@@ -765,7 +785,10 @@ let typecheck_incremental state (parsed : parser_result) =
             {
               initial_state with
               env =
-                Compiler_environment.add_bindings declarations initial_state.env;
+                initial_state.env
+                |> Compiler_environment.add_bindings declarations
+                |> Compiler_environment.with_protocol_evidence
+                     (Some (Compiler_environment.protocols first_state.env));
             }
           in
           match compile seeded_state with

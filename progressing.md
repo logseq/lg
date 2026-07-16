@@ -91,7 +91,7 @@ update the same entry with its root cause, fix, and verification evidence.
 
 ## 2026-07-16: Protocol signature changes after an earlier consumer is compiled
 
-- Status: Reproduced; assigned to dependency graph/SCC infrastructure
+- Status: Fixed
 - Symptom: Full DB compilation reaches `transact-report`, where an `ISearch`
   witness normalizes the concrete implementation's nullable `datom Seq.t` to
   `Seq.t`, while the already-generated `fsearch` body expects the method result
@@ -101,13 +101,63 @@ update the same entry with its root cause, fix, and verification evidence.
   implementation evidence refines `-search` to a nullable typed sequence, and
   downstream witness construction uses that newer signature. Definition order
   has produced two incompatible views of the same protocol method.
-- Direction: Build the approved dependency graph/SCC pass so protocol
-  declarations, implementations, recursive consumers, and deferred
-  initializers reach a stable signature before final body elaboration. Do not
-  patch this with another local witness-return heuristic.
-- Verification: The accumulated OCaml pinpoints the mismatch at the `ISearch`
-  witness passed from `transact-report` into `with-datom`; focused boundary and
-  hygiene tests remain green.
+- Fix: The first elaboration pass now supplies read-only implementation evidence
+  to the second pass, while the live protocol registry is rebuilt normally.
+  Explicitly annotated method returns retain their static ABI. An unannotated
+  method whose later implementations provide concrete evidence is fixed to the
+  dynamic ABI instead of changing an already-compiled consumer from dynamic to
+  a typed representation; implementations pack at the witness boundary.
+- Verification: The focused late-implementation regression runs as `42` on
+  Native and compiles on Melange. Full DB compilation passes the `ISearch`
+  witness mismatch and reaches `resolve-upserts`.
+
+## 2026-07-16: Declared dependency order is not modeled across expanded forms
+
+- Status: Fixed
+- Symptom: A protocol implementation that references a declared helper cannot
+  be called by a top-level value before the helper's later source definition;
+  the implementation is either unavailable during elaboration or initialized
+  after its first use.
+- Root cause: Reader preprocessing splits type declarations, method bodies,
+  `defn-signature`, `declare`, and recursive definition groups. Source order and
+  an end-of-module deferred queue cannot express the resulting dependencies.
+- Fix: Added a dependency graph over top-level providers and references,
+  including macro-like `def*` forms, protocol methods, declarations,
+  constructors, `deftype-methods`, and recursive groups. Tarjan SCCs preserve
+  mutual recursion; the stable condensation order schedules dependencies before
+  consumers while leaving chunks without declarations unchanged. Locations are
+  reordered with their forms.
+- Verification: Focused SCC and first-ready-use regressions pass on Native and
+  Melange. The mixed nullable protocol regression and complete compiler suite
+  remain green.
+
+## 2026-07-16: `if-some` rejects a statically non-nil reference value
+
+- Status: Fixed
+- Symptom: Once protocol signatures stabilize, DataScript's explicitly hinted
+  `fsearch` has static `Datom` type. `if-some` rejects it as “got map” even
+  though Clojure permits `if-some` for any expression and a non-null static
+  reference makes the some branch unconditional.
+- Root cause: Option lowering supported runtime dynamic values and explicit
+  OCaml option storage only; it treated every other static type as invalid.
+- Fix: For a static non-option value, compile both branches for validation and
+  type merging, bind the value once, and select the some branch directly.
+  `if-let` additionally preserves its truthiness guard.
+- Verification: Full DB compilation passes the former `fsearch` option-binding
+  failure and reaches `resolve-upserts`; the complete compiler suite passes.
+
+## 2026-07-16: Typed vector-of-optional-maps reaches a dynamic reduce boundary
+
+- Status: Reproduced; next DataScript blocker
+- Symptom: `resolve-upserts` produces
+  `vector<option<map<dynamic,dynamic>>>`, but a downstream reduce boundary
+  expects `Runtime_dynamic.t`.
+- Root cause: Pending reduction; the newly stable protocol and dependency types
+  expose a collection-to-dynamic adapter that was previously hidden behind
+  broader unknown metadata.
+- Direction: Add a focused reduction/accumulator regression and route the value
+  through the explicit `PackDynamic` boundary without weakening the graph or
+  protocol ABI.
 
 ## 2026-07-16: Systemic compiler design gaps exposed by the DataScript port
 

@@ -8142,6 +8142,109 @@ let test_deftype_methods_flush_after_their_declared_dependencies () =
     "deftype_methods_flush_after_their_declared_dependencies" "2\n"
     ocaml_source
 
+let test_protocol_consumers_use_stable_later_implementation_returns () =
+  let source =
+    {|
+(defprotocol Searchable
+  (-search [data pattern]))
+(defn first-match [data pattern]
+  (first (-search data pattern)))
+(deftype SearchData [values]
+  Searchable
+  (-search [data pattern]
+    (if (seq values)
+      (Some (seq values))
+      None)))
+(defn find-value [data]
+  (first-match data []))
+(println (find-value (SearchData. [42])))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "protocol_consumers_use_stable_later_implementation_returns" "42\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_deferred_initializers_run_before_first_ready_use () =
+  let source =
+    {|
+(declare later-score)
+(defprotocol Scored
+  (-score [value]))
+(deftype Score [^int value]
+  Scored
+  (-score [score]
+    (later-score (.-value score))))
+(def result (-score (Score. 41)))
+(defn later-score [value]
+  (+ value 1))
+(println result)
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "deferred_initializers_run_before_first_ready_use" "42\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_dependency_graph_orders_declared_protocol_dependencies () =
+  let open Lg.Ast in
+  let forms =
+    [
+      FList [ FSymbol "declare"; FSymbol "later-score" ];
+      FList
+        [
+          FSymbol "defprotocol";
+          FSymbol "Scored";
+          FList [ FSymbol "-score"; FVector [ FSymbol "value" ] ];
+        ];
+      FList
+        [
+          FSymbol "deftype";
+          FSymbol "Score";
+          FVector [];
+          FSymbol "Scored";
+          FList
+            [
+              FSymbol "-score";
+              FVector [ FSymbol "score" ];
+              FList [ FSymbol "later-score"; FInt 41 ];
+            ];
+        ];
+      FList
+        [
+          FSymbol "def";
+          FSymbol "result";
+          FList [ FSymbol "-score"; FList [ FSymbol "Score." ] ];
+        ];
+      FList
+        [
+          FSymbol "defn";
+          FSymbol "later-score";
+          FVector [ FSymbol "value" ];
+          FSymbol "value";
+        ];
+    ]
+  in
+  let order = Lg.Dependency_graph.stable_order forms in
+  let position index =
+    List.find_index (( = ) index) order |> Option.value ~default:max_int
+  in
+  if not (position 4 < position 2 && position 2 < position 3) then
+    failwith "declared helper, protocol implementation, and first use are misordered";
+  let components =
+    Lg.Dependency_graph.strongly_connected_components
+      [
+        { Lg.Dependency_graph.name = "left"; dependencies = [ "right" ] };
+        { name = "right"; dependencies = [ "left" ] };
+        { name = "after"; dependencies = [ "left" ] };
+      ]
+  in
+  if not (List.exists (fun names -> List.sort String.compare names = [ "left"; "right" ]) components)
+  then failwith "mutual recursion must form one strongly connected component"
+
 let test_equality_parameter_widens_across_keyword_and_string () =
   let source =
     {|
@@ -14906,6 +15009,12 @@ let tests =
       test_transducer_type_hints_infer_nominal_record_fields );
     ( "deftype methods flush after their declared dependencies",
       test_deftype_methods_flush_after_their_declared_dependencies );
+    ( "protocol consumers use stable later implementation returns",
+      test_protocol_consumers_use_stable_later_implementation_returns );
+    ( "deferred initializers run before first ready use",
+      test_deferred_initializers_run_before_first_ready_use );
+    ( "dependency graph orders declared protocol dependencies",
+      test_dependency_graph_orders_declared_protocol_dependencies );
     ( "equality parameter widens across keyword and string",
       test_equality_parameter_widens_across_keyword_and_string );
     ( "recursive deftype helper widens fallback to dynamic",
