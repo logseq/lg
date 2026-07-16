@@ -853,11 +853,12 @@ let rec compile scope env next_type = function
             with
             | Error _ as error -> error
             | Ok prepared ->
-                let targets, rows, arity_bindings =
+                let targets, overload_row_param_types, rows, arity_bindings =
                   Expression_elaborator.lower_prepared_multi_arity prepared
                 in
                 let binding =
-                  Types.binding ~overload_targets:targets ocaml_name
+                  Types.binding ~overload_targets:targets
+                    ~overload_row_param_types ocaml_name
                     prepared.expr.ty
                 in
                 let env =
@@ -953,11 +954,12 @@ let rec compile scope env next_type = function
               next_type,
               Comment ("deferred function signature " ^ name) )
       | Ok prepared ->
-          let targets, _, _ =
+          let targets, overload_row_param_types, _, _ =
             Expression_elaborator.lower_prepared_multi_arity prepared
           in
           let binding =
-            Types.binding ~overload_targets:targets ocaml_name prepared.expr.ty
+            Types.binding ~overload_targets:targets ~overload_row_param_types
+              ocaml_name prepared.expr.ty
           in
           Ok
             ( scope,
@@ -1329,11 +1331,13 @@ let rec compile scope env next_type = function
           with
           | Error _ as err -> err
           | Ok prepared ->
-              let targets, row_items, recursive_bindings =
+              let targets, overload_row_param_types, row_items,
+                  recursive_bindings =
                 Expression_elaborator.lower_prepared_multi_arity prepared
               in
               let binding =
-                Types.binding ~overload_targets:targets ocaml_name
+                Types.binding ~overload_targets:targets
+                  ~overload_row_param_types ocaml_name
                   prepared.expr.ty
               in
               let value_item =

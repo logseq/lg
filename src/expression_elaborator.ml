@@ -40,6 +40,15 @@ let record_constructor_type scope env name =
     | Error _ -> None
   else None
 
+let map_record_constructor_type scope env name =
+  if String.starts_with ~prefix:"map->" name then
+    let type_name = String.sub name 5 (String.length name - 5) in
+    match Resolver.lookup_record_type scope env type_name with
+    | Ok record ->
+        Some (TFn ([ TRecord record.fields ], TNamed_record record))
+    | Error _ -> None
+  else None
+
 let lookup_function_ty scope env name =
   match lookup_function scope env name with
   | Ok fn -> Ok fn.ty
@@ -47,6 +56,9 @@ let lookup_function_ty scope env name =
       match record_constructor_type scope env name with
       | Some ty -> Ok ty
       | None -> (
+          match map_record_constructor_type scope env name with
+          | Some ty -> Ok ty
+          | None -> (
           match Protocol.lookup_marker scope env name with
           | Some
               {
@@ -69,7 +81,7 @@ let lookup_function_ty scope env name =
                   Ok (TFn (receiver_ty :: rest, return_ty))
               | None -> Error.error ("unknown function " ^ name))
           | Some marker -> Ok marker.ty
-          | None -> Error.error ("unknown function " ^ name)))
+          | None -> Error.error ("unknown function " ^ name))))
 
 let rec compile_expr scope (env : Env.t) form =
   match compile_expr_unlocated scope env form with
@@ -286,15 +298,20 @@ and compile_thread scope env position value steps =
 
 and compile_cond_thread scope env position value clauses =
   let operator = match position with `First -> "->" | `Last -> "->>" in
+  let has_name name expected =
+    name = expected || String.ends_with ~suffix:("/" ^ expected) name
+  in
+  let is_array_conversion = function
+    | FSymbol name | FList [ FSymbol name ] ->
+        has_name name "array-from" || has_name name "into-array"
+    | _ -> false
+  in
   let array_normalization_proves_array current condition step =
-    match (condition, step) with
-    | ( FList
-          [
-            FSymbol "not";
-            FList
-              [ FSymbol ("array?" | "array-value?"); candidate ];
-          ],
-        (FSymbol "array-from" | FList [ FSymbol "array-from" ]) ) ->
+    match condition with
+    | FList
+        [ FSymbol "not"; FList [ FSymbol predicate; candidate ] ]
+      when (has_name predicate "array?" || has_name predicate "array-value?")
+           && is_array_conversion step ->
         candidate = current
     | _ -> false
   in
@@ -1003,6 +1020,9 @@ and prepare_multi_arity_fn ~ocaml_name scope env source_name forms =
 
 and lower_prepared_multi_arity (prepared : prepared_multi_arity_fn) =
   let targets = List.map (fun clause -> clause.target_name) prepared.clauses in
+  let overload_row_param_types =
+    List.map (fun clause -> clause.row_param_types) prepared.clauses
+  in
   let row_items =
     List.concat_map
       (fun clause ->
@@ -1028,7 +1048,7 @@ and lower_prepared_multi_arity (prepared : prepared_multi_arity_fn) =
           : Lowered.recursive_value))
       prepared.clauses
   in
-  (targets, row_items, recursive_bindings)
+  (targets, overload_row_param_types, row_items, recursive_bindings)
 
 and prepare_recursive_fn ~ocaml_name scope env source_name return_ty params
     body_forms =

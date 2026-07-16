@@ -8,6 +8,7 @@ type binding = {
   host_reference : host_reference option;
   return_param_index : int option;
   overload_targets : string list;
+  overload_row_param_types : string option list list;
   forward_declared : bool;
   constant_keyword : string option;
 }
@@ -32,7 +33,8 @@ let typed_ir ty semantic_expr =
   }
 
 let binding ?(row_param_types = []) ?host_reference ?protocol_id
-    ?return_param_index ?(overload_targets = []) ?(forward_declared = false)
+    ?return_param_index ?(overload_targets = [])
+    ?(overload_row_param_types = []) ?(forward_declared = false)
     ?constant_keyword ocaml_name ty =
   {
     ocaml_name;
@@ -42,6 +44,7 @@ let binding ?(row_param_types = []) ?host_reference ?protocol_id
     host_reference;
     return_param_index;
     overload_targets;
+    overload_row_param_types;
     forward_declared;
     constant_keyword;
   }
@@ -72,6 +75,13 @@ let dynamic_constraint_info = function
   | _ -> None
 
 let is_dynamic ty = Option.is_some (dynamic_constraint_info ty)
+
+let weak_type_name = "Lg_runtime.Runtime_weak.t"
+let weak_type value_ty = TOcaml_app (weak_type_name, [ value_ty ])
+
+let weak_element = function
+  | TOcaml_app (name, [ value_ty ]) when name = weak_type_name -> Some value_ty
+  | _ -> None
 
 let rec supports_structural_dynamic_packing = function
   | TInt | TFloat | TChar | TString | TSymbol | TKeyword | TBool | TNil
@@ -302,13 +312,15 @@ let rec row_compatible ~expected ~actual =
              with
              | Some actual_field ->
                  expected_field.ty = TUnknown || actual_field.ty = TUnknown
+                 || is_dynamic expected_field.ty
+                 || is_dynamic actual_field.ty
                  || equal expected_field.ty actual_field.ty
                  || (match (expected_field.ty, actual_field.ty) with
                     | TRef _, TRef _ -> true
                     | _ -> false)
                  || row_compatible ~expected:expected_field.ty
                       ~actual:actual_field.ty
-             | None -> false)
+             | None -> expected_field.keyword = record_extension_keyword)
   | TMap_keys, (TRecord _ | TNamed_record _) -> true
   | _ -> false
 
@@ -432,6 +444,8 @@ let rec source_name = function
           (String.length name - String.length protocol_constraint_prefix)
       in
       "optional-protocol<" ^ protocol_name ^ ";" ^ source_name value_ty ^ ">"
+  | TOcaml_app (name, [ inner ]) when name = weak_type_name ->
+      "weak<" ^ source_name inner ^ ">"
   | TOcaml_app (name, [ inner ]) when name = next_seq_type_name ->
       "seq<" ^ source_name inner ^ ">"
   | TOcaml_app (name, [ inner ]) when name = reduced_type_name ->

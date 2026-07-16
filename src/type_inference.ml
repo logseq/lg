@@ -6,6 +6,9 @@ let replace_param name ty params =
   |> List.map (fun (param_name, param_ty) ->
          if param_name = name then (param_name, ty) else (param_name, param_ty))
 
+let has_source_name name expected =
+  name = expected || String.ends_with ~suffix:("/" ^ expected) name
+
 let rec refine_type existing inferred =
   match (existing, inferred) with
   | TUnknown, inferred -> inferred
@@ -495,6 +498,20 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
   in
   let rec infer_expected expected_ty params = function
     | FSymbol name -> constrain_symbol expected_ty params name
+    | FList [ FSymbol "Some"; value ] -> (
+        match expected_ty with
+        | TNullable value_ty | TOcaml_app ("option", [ value_ty ]) ->
+            infer_expected value_ty params value
+        | _ -> infer_form params value)
+    | FList [ FSymbol "weak-ref"; value ] -> (
+        match Types.weak_element expected_ty with
+        | Some value_ty -> infer_expected value_ty params value
+        | None -> infer_form params value)
+    | FList [ FSymbol "weak-deref"; reference ] -> (
+        match expected_ty with
+        | TNullable value_ty | TOcaml_app ("option", [ value_ty ]) ->
+            infer_expected (Types.weak_type value_ty) params reference
+        | _ -> infer_form params reference)
     | FList (FSymbol let_name :: bindings :: body_forms)
       when let_name = "let" || let_name = "let*"
            || String.ends_with ~suffix:"/let" let_name
@@ -531,9 +548,11 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
             in
             Result.bind infer_target (fun params ->
                 infer_assoc params target pairs))
-    | FList
-        [ FSymbol ("array-from" | "into-array" | "to-array"); collection ]
-      when match expected_ty with TArray _ -> true | _ -> false -> (
+    | FList [ FSymbol name; collection ]
+      when (has_source_name name "array-from"
+           || has_source_name name "into-array"
+           || has_source_name name "to-array")
+           && (match expected_ty with TArray _ -> true | _ -> false) -> (
         let element_ty =
           match expected_ty with TArray element_ty -> element_ty | _ -> assert false
         in
@@ -609,6 +628,23 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
           Result.bind
             (infer_expected (Types.dynamic_map key_ty value_ty) params target)
             (fun params -> infer_expected key_ty params key)
+    | FMap pairs when Option.is_some (Types.record_fields expected_ty) ->
+        let fields =
+          Types.record_fields expected_ty |> Option.value ~default:[]
+        in
+        pairs
+        |> List.fold_left
+             (fun result (key, value) ->
+               Result.bind result (fun params ->
+                   match key with
+                   | FKeyword keyword -> (
+                       match Types.find_field keyword fields with
+                       | Some field -> infer_expected field.ty params value
+                       | None -> infer_form params value)
+                   | key ->
+                       Result.bind (infer_form params key) (fun params ->
+                           infer_form params value)))
+             (Ok params)
     | FMap pairs when Types.is_dynamic expected_ty ->
         pairs
         |> List.fold_left
@@ -1351,6 +1387,16 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
         add_record_field_constraint name keyword (TRef TUnknown) params
     | FList
         [
+          FSymbol ("weak-deref" | "weak-clear!");
+          FList [ FKeyword keyword; FSymbol name ];
+        ] ->
+        add_record_field_constraint name keyword
+          (Types.weak_type TUnknown) params
+    | FList [ FSymbol ("weak-deref" | "weak-clear!"); FSymbol name ] ->
+        constrain_symbol (Types.weak_type TUnknown) params name
+    | FList [ FSymbol "weak-ref"; value ] -> infer_form params value
+    | FList
+        [
           FSymbol ("vreset!" | "reset!");
           FList
             [
@@ -1365,10 +1411,13 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint params
         | None -> infer_form params value)
     | FList
         [ FSymbol "vreset!"; FList [ FKeyword keyword; FSymbol name ]; value ]
-      ->
-        add_record_field_constraint name keyword
-          (TRef (inferred_form_type params value))
-          params
+      -> (
+        match record_ref_field_value_type params name keyword with
+        | Some ty -> infer_expected ty params value
+        | None ->
+            add_record_field_constraint name keyword
+              (TRef (inferred_form_type params value))
+              params)
     | FList [ FSymbol ("nil?" | "some?"); FSymbol value ] ->
         constrain_symbol (TOcaml_app ("option", [ TUnknown ])) params value
     | FList [ FSymbol "count"; FSymbol collection ] ->

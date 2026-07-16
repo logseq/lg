@@ -465,7 +465,8 @@ let rec compile_module ?location ?signature_name ?signature_location
             with
             | Error _ as err -> err
             | Ok prepared ->
-                let local_targets, row_items, recursive_bindings =
+                let local_targets, overload_row_param_types, row_items,
+                    recursive_bindings =
                   Expression_elaborator.lower_prepared_multi_arity prepared
                 in
                 let module_name = Names.module_path_to_ocaml module_path in
@@ -473,7 +474,8 @@ let rec compile_module ?location ?signature_name ?signature_location
                   List.map (fun target -> module_name ^ "." ^ target) local_targets
                 in
                 let local_binding =
-                  Types.binding ~overload_targets:local_targets local_name
+                  Types.binding ~overload_targets:local_targets
+                    ~overload_row_param_types local_name
                     prepared.expr.ty
                 in
                 let public_binding =

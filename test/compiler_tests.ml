@@ -3202,6 +3202,42 @@ let test_ocaml_refs_support_read_and_assignment () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "ocaml_refs_support_read_and_assignment" "42\n" ocaml_source
 
+let test_weak_references_support_typed_cache_values () =
+  let source =
+    {|
+(type-record cached-value (number :int))
+(type-record cache (entry :weak<cached-value>))
+(defn make-cache-entry [value] (weak-ref value))
+(defn read-cache-entry [reference] (weak-deref reference))
+(def value (record cached-value (number 42)))
+(def cache-value (record cache (entry (make-cache-entry value))))
+(println
+  (match (read-cache-entry (:entry cache-value))
+    (Some cached) (:number cached)
+    None 0))
+(weak-clear! (:entry cache-value))
+(println (nil? (read-cache-entry (:entry cache-value))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "weak_references_support_typed_cache_values" "42\ntrue\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source
+    |> expect_ok)
+
+let test_weak_references_reject_invalid_calls () =
+  Lg.Compiler.compile_string {|(weak-ref)|}
+  |> expect_error_contains "weak-ref expects 1 argument";
+  Lg.Compiler.compile_string {|(weak-ref 42)|}
+  |> expect_error_contains "weak-ref expects a heap value";
+  Lg.Compiler.compile_string {|(weak-deref 42)|}
+  |> expect_error_contains "weak-deref expects a weak reference";
+  Lg.Compiler.compile_string {|(weak-clear! 42)|}
+  |> expect_error_contains "weak-clear! expects a weak reference"
+
 let test_concise_standard_type_annotations () =
   let source =
     {|
@@ -3762,6 +3798,25 @@ let test_multi_arity_defn_remains_callable_as_a_value () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "multi_arity_defn_remains_callable_as_a_value" "5:11\n"
     ocaml_source
+
+let test_multi_arity_calls_project_structural_row_arguments () =
+  let source =
+    {|
+(defn choose
+  ([^:int value] value)
+  ([^:int value opts]
+   (if-some [replacement (:replacement opts)]
+     (+ replacement 0)
+     value)))
+(defn forward [^:int value opts]
+  (choose value opts))
+(println (str (forward 1 {:replacement (Some 2)}) ":"
+              (forward 3 {:replacement nil})))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "multi_arity_calls_project_structural_row_arguments"
+    "2:3\n" ocaml_source
 
 let test_modules_export_multi_arity_defn () =
   let source =
@@ -8110,6 +8165,45 @@ let test_cond_thread_arrays_preserve_nominal_elements_for_sorting () =
   assert_ocaml_runs
     "cond_thread_arrays_preserve_nominal_elements_for_sorting" "ok\n"
     ocaml_source
+
+let test_cond_thread_recognizes_namespaced_array_normalization_macros () =
+  let arrays_source =
+    {|
+(ns arrays)
+(defmacro array? [value]
+  `(array-value? ~value))
+(defmacro into-array [values]
+  `(array-from ~values))
+(defmacro asort [values cmp]
+  `(let [values# ~values]
+     (do
+       (asort! ~cmp values#)
+       values#)))
+|}
+  in
+  let app_source =
+    {|
+(ns app
+  (:require [arrays :as arrays]))
+(deftype Entry [^int value])
+(defn compare-entries [^Entry left ^Entry right]
+  (compare (.-value left) (.-value right)))
+(defn normalize [values]
+  (first values)
+  (let [result (cond-> values
+                 (not (arrays/array? values)) (arrays/into-array))]
+    (arrays/asort result compare-entries)
+    result))
+(println "ok")
+|}
+  in
+  let state, arrays_ocaml =
+    Lg.Compiler.compile_chunk Lg.Compiler.empty_state arrays_source |> expect_ok
+  in
+  let _, app_ocaml = Lg.Compiler.compile_chunk state app_source |> expect_ok in
+  assert_ocaml_runs
+    "cond_thread_recognizes_namespaced_array_normalization_macros" "ok\n"
+    (arrays_ocaml ^ "\n" ^ app_ocaml)
 
 let test_occurrence_type_hints_only_refine_their_branch () =
   let source =
@@ -13627,6 +13721,10 @@ let tests =
     ( "OCaml refs support read and assignment",
       test_ocaml_refs_support_read_and_assignment );
     ("concise standard type annotations", test_concise_standard_type_annotations);
+    ( "weak references support typed cache values",
+      test_weak_references_support_typed_cache_values );
+    ( "weak references reject invalid calls",
+      test_weak_references_reject_invalid_calls );
     ( "volatile nil uses contextual option reference type",
       test_volatile_nil_uses_contextual_option_reference_type );
     ( "local volatile nil infers value from reset",
@@ -13706,6 +13804,8 @@ let tests =
       test_multi_arity_defn_supports_cross_arity_calls_and_recur );
     ( "multi-arity defn remains callable as a value",
       test_multi_arity_defn_remains_callable_as_a_value );
+    ( "multi-arity calls project structural row arguments",
+      test_multi_arity_calls_project_structural_row_arguments );
     ("modules export multi-arity defn", test_modules_export_multi_arity_defn);
     ( "multi-arity defn rejects invalid declarations",
       test_multi_arity_defn_rejects_invalid_declarations );
@@ -14210,6 +14310,8 @@ let tests =
       test_map_to_record_preserves_generic_fields_from_map_literals );
     ( "cond-> arrays preserve nominal elements for sorting",
       test_cond_thread_arrays_preserve_nominal_elements_for_sorting );
+    ( "cond-> recognizes namespaced array normalization macros",
+      test_cond_thread_recognizes_namespaced_array_normalization_macros );
     ( "occurrence type hints only refine their branch",
       test_occurrence_type_hints_only_refine_their_branch );
     ( "update reads dynamic reduce accumulators dynamically",

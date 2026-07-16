@@ -1,424 +1,421 @@
 (ns me.tonsky.persistent-sorted-set.test.leaf
   (:require
-    [me.tonsky.persistent-sorted-set.arrays :as arrays]
-    [me.tonsky.persistent-sorted-set.nodes :as nodes]
-    [me.tonsky.persistent-sorted-set.path :as path]
-    [me.tonsky.persistent-sorted-set.set :as pset]
-    [me.tonsky.persistent-sorted-set.traversal :as traversal]))
+   [me.tonsky.persistent-sorted-set.arrays :as arrays]
+   [me.tonsky.persistent-sorted-set :as pss]))
 
 (defn int-compare [left right]
   (compare left right))
 
-(def leaf (nodes/new-leaf (arrays/array 1 3 5)))
+(def leaf (pss/new-leaf (arrays/array 1 3 5)))
 (println
-  (str "lookup:"
-       (= 3 (nodes/node-len leaf)) ":"
-       (= 5 (nodes/node-lim-key leaf)) ":"
-       (= 3 (nodes/node-lookup leaf int-compare 3 nil)) ":"
-       (nil? (nodes/node-lookup leaf int-compare 4 nil))))
+ (str "lookup:"
+      (= 3 (pss/node-len leaf)) ":"
+      (= 5 (pss/node-lim-key leaf)) ":"
+      (= 3 (pss/node-lookup leaf int-compare 3 nil)) ":"
+      (nil? (pss/node-lookup leaf int-compare 4 nil))))
 
-(if-some [inserted-nodes (nodes/node-conj leaf int-compare 4 nil)]
+(if-some [inserted-nodes (pss/node-conj leaf int-compare 4 nil)]
   (let [inserted (arrays/aget inserted-nodes 0)]
     (println
-      (str "insert:"
-           (= 1 (arrays/alength inserted-nodes)) ":"
-           (= 4 (nodes/node-len inserted)) ":"
-           (= 4 (nodes/node-lookup inserted int-compare 4 nil)) ":"
-           (nil? (nodes/node-conj inserted int-compare 4 nil)))))
+     (str "insert:"
+          (= 1 (arrays/alength inserted-nodes)) ":"
+          (= 4 (pss/node-len inserted)) ":"
+          (= 4 (pss/node-lookup inserted int-compare 4 nil)) ":"
+          (nil? (pss/node-conj inserted int-compare 4 nil)))))
   (println "insert:false:false:false:false"))
 
-(def full-leaf (nodes/new-leaf (arrays/into-array (range 0 32))))
-(if-some [split-nodes (nodes/node-conj full-leaf int-compare 40 nil)]
+(def full-leaf (pss/new-leaf (arrays/into-array (range 0 32))))
+(if-some [split-nodes (pss/node-conj full-leaf int-compare 40 nil)]
   (let [split-left (arrays/aget split-nodes 0)
         split-right (arrays/aget split-nodes 1)
-        root (nodes/new-node
-               (arrays/amap (fn [node] (nodes/node-lim-key node)) split-nodes)
-               split-nodes)]
+        root (pss/new-node
+              (arrays/amap (fn [node] (pss/node-lim-key node)) split-nodes)
+              split-nodes)]
     (println
-      (str "split:"
-           (= 2 (arrays/alength split-nodes)) ":"
-           (= 16 (nodes/node-len split-left)) ":"
-           (= 17 (nodes/node-len split-right)) ":"
-           (= 15 (nodes/node-lim-key split-left)) ":"
-           (= 40 (nodes/node-lim-key split-right)) ":"
-           (= 40 (nodes/node-lookup split-right int-compare 40 nil))))
-    (if-some [updated-roots (nodes/node-conj root int-compare 41 nil)]
+     (str "split:"
+          (= 2 (arrays/alength split-nodes)) ":"
+          (= 16 (pss/node-len split-left)) ":"
+          (= 17 (pss/node-len split-right)) ":"
+          (= 15 (pss/node-lim-key split-left)) ":"
+          (= 40 (pss/node-lim-key split-right)) ":"
+          (= 40 (pss/node-lookup split-right int-compare 40 nil))))
+    (if-some [updated-roots (pss/node-conj root int-compare 41 nil)]
       (let [updated-root (arrays/aget updated-roots 0)]
         (println
-          (str "branch:"
-               (= 2 (nodes/node-len root)) ":"
-               (= 1 (nodes/node-lookup root int-compare 1 nil)) ":"
-               (= 40 (nodes/node-lookup root int-compare 40 nil)) ":"
-               (= 41 (nodes/node-lookup updated-root int-compare 41 nil)))))
+         (str "branch:"
+              (= 2 (pss/node-len root)) ":"
+              (= 1 (pss/node-lookup root int-compare 1 nil)) ":"
+              (= 40 (pss/node-lookup root int-compare 40 nil)) ":"
+              (= 41 (pss/node-lookup updated-root int-compare 41 nil)))))
       (println "branch:false:false:false:false")))
   (println "split:false:false:false:false:false:false"))
 
 (def full-children
   (arrays/amap
-    (fn [group]
-      (nodes/new-leaf
-        (arrays/into-array
-          (range (* group 32) (* (inc group) 32)))))
-    (arrays/into-array (range 0 32))))
+   (fn [group]
+     (pss/new-leaf
+      (arrays/into-array
+       (range (* group 32) (* (inc group) 32)))))
+   (arrays/into-array (range 0 32))))
 (def wide-root
-  (nodes/new-node
-    (arrays/amap (fn [node] (nodes/node-lim-key node)) full-children)
-    full-children))
-(if-some [wide-roots (nodes/node-conj wide-root int-compare 2000 nil)]
+  (pss/new-node
+   (arrays/amap (fn [node] (pss/node-lim-key node)) full-children)
+   full-children))
+(if-some [wide-roots (pss/node-conj wide-root int-compare 2000 nil)]
   (let [wide-left (arrays/aget wide-roots 0)
         wide-right (arrays/aget wide-roots 1)]
     (println
-      (str "wide:"
-           (= 2 (arrays/alength wide-roots)) ":"
-           (= 16 (nodes/node-len wide-left)) ":"
-           (= 17 (nodes/node-len wide-right)) ":"
-           (= 0 (nodes/node-lookup wide-left int-compare 0 nil)) ":"
-           (= 2000 (nodes/node-lookup wide-right int-compare 2000 nil)))))
+     (str "wide:"
+          (= 2 (arrays/alength wide-roots)) ":"
+          (= 16 (pss/node-len wide-left)) ":"
+          (= 17 (pss/node-len wide-right)) ":"
+          (= 0 (pss/node-lookup wide-left int-compare 0 nil)) ":"
+          (= 2000 (pss/node-lookup wide-right int-compare 2000 nil)))))
   (println "wide:false:false:false:false:false"))
 
-(def delete-root (nodes/new-leaf (arrays/into-array (range 0 20))))
-(if-some [deleted-root (nodes/node-disj delete-root int-compare 10 true nil nil nil)]
+(def delete-root (pss/new-leaf (arrays/into-array (range 0 20))))
+(if-some [deleted-root (pss/node-disj delete-root int-compare 10 true nil nil nil)]
   (let [result (arrays/aget deleted-root 0)]
     (println
-      (str "delete-root:"
-           (= 1 (arrays/alength deleted-root)) ":"
-           (= 19 (nodes/node-len result)) ":"
-           (nil? (nodes/node-lookup result int-compare 10 nil)) ":"
-           (= 10 (nodes/node-lookup delete-root int-compare 10 nil)) ":"
-           (nil? (nodes/node-disj result int-compare 100 true nil nil nil)))))
+     (str "delete-root:"
+          (= 1 (arrays/alength deleted-root)) ":"
+          (= 19 (pss/node-len result)) ":"
+          (nil? (pss/node-lookup result int-compare 10 nil)) ":"
+          (= 10 (pss/node-lookup delete-root int-compare 10 nil)) ":"
+          (nil? (pss/node-disj result int-compare 100 true nil nil nil)))))
   (println "delete-root:false:false:false:false:false"))
 
-(def merge-left (nodes/new-leaf (arrays/into-array (range 0 16))))
-(def merge-node (nodes/new-leaf (arrays/into-array (range 16 33))))
+(def merge-left (pss/new-leaf (arrays/into-array (range 0 16))))
+(def merge-node (pss/new-leaf (arrays/into-array (range 16 33))))
 (if-some [merged
-          (nodes/node-disj
-            merge-node int-compare 16 false (Some merge-left) nil nil)]
+          (pss/node-disj
+           merge-node int-compare 16 false (Some merge-left) nil nil)]
   (let [result (arrays/aget merged 0)]
     (println
-      (str "delete-merge:"
-           (= 1 (arrays/alength merged)) ":"
-           (= 32 (nodes/node-len result)) ":"
-           (= 0 (nodes/node-lookup result int-compare 0 nil)) ":"
-           (= 32 (nodes/node-lookup result int-compare 32 nil)))))
+     (str "delete-merge:"
+          (= 1 (arrays/alength merged)) ":"
+          (= 32 (pss/node-len result)) ":"
+          (= 0 (pss/node-lookup result int-compare 0 nil)) ":"
+          (= 32 (pss/node-lookup result int-compare 32 nil)))))
   (println "delete-merge:false:false:false:false"))
 
-(def redistribute-left (nodes/new-leaf (arrays/into-array (range 0 17))))
-(def redistribute-node (nodes/new-leaf (arrays/into-array (range 17 34))))
+(def redistribute-left (pss/new-leaf (arrays/into-array (range 0 17))))
+(def redistribute-node (pss/new-leaf (arrays/into-array (range 17 34))))
 (if-some [redistributed
-          (nodes/node-disj
-            redistribute-node
-            int-compare
-            17
-            false
-            (Some redistribute-left)
-            nil
-            nil)]
+          (pss/node-disj
+           redistribute-node
+           int-compare
+           17
+           false
+           (Some redistribute-left)
+           nil
+           nil)]
   (println
-    (str "delete-redistribute:"
-         (= 2 (arrays/alength redistributed)) ":"
-         (= 16 (nodes/node-len (arrays/aget redistributed 0))) ":"
-         (= 17 (nodes/node-len (arrays/aget redistributed 1))) ":"
-         (= 33 (nodes/node-lookup (arrays/aget redistributed 1) int-compare 33 nil))))
+   (str "delete-redistribute:"
+        (= 2 (arrays/alength redistributed)) ":"
+        (= 16 (pss/node-len (arrays/aget redistributed 0))) ":"
+        (= 17 (pss/node-len (arrays/aget redistributed 1))) ":"
+        (= 33 (pss/node-lookup (arrays/aget redistributed 1) int-compare 33 nil))))
   (println "delete-redistribute:false:false:false:false"))
 
-(def merge-right-node (nodes/new-leaf (arrays/into-array (range 0 17))))
-(def merge-right (nodes/new-leaf (arrays/into-array (range 17 33))))
+(def merge-right-node (pss/new-leaf (arrays/into-array (range 0 17))))
+(def merge-right (pss/new-leaf (arrays/into-array (range 17 33))))
 (if-some [merged
-          (nodes/node-disj
-            merge-right-node int-compare 16 false nil (Some merge-right) nil)]
+          (pss/node-disj
+           merge-right-node int-compare 16 false nil (Some merge-right) nil)]
   (let [result (arrays/aget merged 0)]
     (println
-      (str "delete-merge-right:"
-           (= 1 (arrays/alength merged)) ":"
-           (= 32 (nodes/node-len result)) ":"
-           (= 0 (nodes/node-lookup result int-compare 0 nil)) ":"
-           (= 32 (nodes/node-lookup result int-compare 32 nil)))))
+     (str "delete-merge-right:"
+          (= 1 (arrays/alength merged)) ":"
+          (= 32 (pss/node-len result)) ":"
+          (= 0 (pss/node-lookup result int-compare 0 nil)) ":"
+          (= 32 (pss/node-lookup result int-compare 32 nil)))))
   (println "delete-merge-right:false:false:false:false"))
 
-(def redistribute-right-node (nodes/new-leaf (arrays/into-array (range 0 17))))
-(def redistribute-right (nodes/new-leaf (arrays/into-array (range 17 34))))
+(def redistribute-right-node (pss/new-leaf (arrays/into-array (range 0 17))))
+(def redistribute-right (pss/new-leaf (arrays/into-array (range 17 34))))
 (if-some [redistributed
-          (nodes/node-disj
-            redistribute-right-node
-            int-compare
-            16
-            false
-            nil
-            (Some redistribute-right)
-            nil)]
+          (pss/node-disj
+           redistribute-right-node
+           int-compare
+           16
+           false
+           nil
+           (Some redistribute-right)
+           nil)]
   (println
-    (str "delete-redistribute-right:"
-         (= 2 (arrays/alength redistributed)) ":"
-         (= 16 (nodes/node-len (arrays/aget redistributed 0))) ":"
-         (= 17 (nodes/node-len (arrays/aget redistributed 1))) ":"
-         (= 33 (nodes/node-lookup (arrays/aget redistributed 1) int-compare 33 nil))))
+   (str "delete-redistribute-right:"
+        (= 2 (arrays/alength redistributed)) ":"
+        (= 16 (pss/node-len (arrays/aget redistributed 0))) ":"
+        (= 17 (pss/node-len (arrays/aget redistributed 1))) ":"
+        (= 33 (pss/node-lookup (arrays/aget redistributed 1) int-compare 33 nil))))
   (println "delete-redistribute-right:false:false:false:false"))
 
-(def stable-left (nodes/new-leaf (arrays/into-array (range 0 17))))
-(def stable-node (nodes/new-leaf (arrays/into-array (range 17 35))))
-(def stable-right (nodes/new-leaf (arrays/into-array (range 35 52))))
+(def stable-left (pss/new-leaf (arrays/into-array (range 0 17))))
+(def stable-node (pss/new-leaf (arrays/into-array (range 17 35))))
+(def stable-right (pss/new-leaf (arrays/into-array (range 35 52))))
 (if-some [stable
-          (nodes/node-disj
-            stable-node
-            int-compare
-            17
-            false
-            (Some stable-left)
-            (Some stable-right)
-            nil)]
+          (pss/node-disj
+           stable-node
+           int-compare
+           17
+           false
+           (Some stable-left)
+           (Some stable-right)
+           nil)]
   (println
-    (str "delete-stable:"
-         (= 3 (arrays/alength stable)) ":"
-         (= 17 (nodes/node-len (arrays/aget stable 0))) ":"
-         (= 17 (nodes/node-len (arrays/aget stable 1))) ":"
-         (= 17 (nodes/node-len (arrays/aget stable 2)))))
+   (str "delete-stable:"
+        (= 3 (arrays/alength stable)) ":"
+        (= 17 (pss/node-len (arrays/aget stable 0))) ":"
+        (= 17 (pss/node-len (arrays/aget stable 1))) ":"
+        (= 17 (pss/node-len (arrays/aget stable 2)))))
   (println "delete-stable:false:false:false:false"))
 
-(def delete-branch-left (nodes/new-leaf (arrays/into-array (range 0 16))))
-(def delete-branch-right (nodes/new-leaf (arrays/into-array (range 16 32))))
+(def delete-branch-left (pss/new-leaf (arrays/into-array (range 0 16))))
+(def delete-branch-right (pss/new-leaf (arrays/into-array (range 16 32))))
 (def delete-branch
-  (nodes/new-node
-    (arrays/array
-      (nodes/node-lim-key delete-branch-left)
-      (nodes/node-lim-key delete-branch-right))
-    (arrays/array delete-branch-left delete-branch-right)))
+  (pss/new-node
+   (arrays/array
+    (pss/node-lim-key delete-branch-left)
+    (pss/node-lim-key delete-branch-right))
+   (arrays/array delete-branch-left delete-branch-right)))
 (if-some [deleted-branch
-          (nodes/node-disj delete-branch int-compare 20 true nil nil nil)]
+          (pss/node-disj delete-branch int-compare 20 true nil nil nil)]
   (let [result (arrays/aget deleted-branch 0)]
     (println
-      (str "delete-branch:"
-           (= 1 (arrays/alength deleted-branch)) ":"
-           (= 1 (nodes/node-len result)) ":"
-           (= 0 (nodes/node-lookup result int-compare 0 nil)) ":"
-           (= 31 (nodes/node-lookup result int-compare 31 nil)) ":"
-           (nil? (nodes/node-lookup result int-compare 20 nil)))))
+     (str "delete-branch:"
+          (= 1 (arrays/alength deleted-branch)) ":"
+          (= 1 (pss/node-len result)) ":"
+          (= 0 (pss/node-lookup result int-compare 0 nil)) ":"
+          (= 31 (pss/node-lookup result int-compare 31 nil)) ":"
+          (nil? (pss/node-lookup result int-compare 20 nil)))))
   (println "delete-branch:false:false:false:false:false"))
 
-(def traversal-left (nodes/new-leaf (arrays/into-array (range 0 4))))
-(def traversal-middle (nodes/new-leaf (arrays/into-array (range 4 7))))
-(def traversal-right (nodes/new-leaf (arrays/into-array (range 7 12))))
+(def traversal-left (pss/new-leaf (arrays/into-array (range 0 4))))
+(def traversal-middle (pss/new-leaf (arrays/into-array (range 4 7))))
+(def traversal-right (pss/new-leaf (arrays/into-array (range 7 12))))
 (def traversal-root
-  (nodes/new-node
-    (arrays/array 3 6 11)
-    (arrays/array traversal-left traversal-middle traversal-right)))
+  (pss/new-node
+   (arrays/array 3 6 11)
+   (arrays/array traversal-left traversal-middle traversal-right)))
 (def left-last
-  (path/path-set (path/path-set path/empty-path 1 0) 0 3))
+  (pss/path-set (pss/path-set pss/empty-path 1 0) 0 3))
 (def middle-first
-  (path/path-set (path/path-set path/empty-path 1 1) 0 0))
+  (pss/path-set (pss/path-set pss/empty-path 1 1) 0 0))
 (def middle-key
-  (path/path-set (path/path-set path/empty-path 1 1) 0 2))
+  (pss/path-set (pss/path-set pss/empty-path 1 1) 0 2))
 (println
-  (str "traversal:"
-       (= 6 (traversal/node-value-at-path traversal-root middle-key 1 nil)) ":"
-       (= 11
-          (traversal/node-value-at-path
-            traversal-root
-            (traversal/rightmost-path traversal-root path/empty-path 1 nil)
-            1 nil)) ":"
-       (= 4
-          (traversal/node-value-at-path
-            traversal-root
-            (traversal/next-path traversal-root left-last 1 nil)
-            1 nil)) ":"
-       (= 3
-          (traversal/node-value-at-path
-            traversal-root
-            (traversal/prev-path traversal-root middle-first 1 nil)
-            1 nil)) ":"
-       (path/path-eq
-         (path/path-dec path/empty-path)
-         (traversal/prev-path traversal-root path/empty-path 1 nil))))
-(if-some [seek-five (traversal/seek-path traversal-root 5 int-compare 1 nil)]
+ (str "traversal:"
+      (= 6 (pss/node-value-at-path traversal-root middle-key 1 nil)) ":"
+      (= 11
+         (pss/node-value-at-path
+          traversal-root
+          (pss/rightmost-path traversal-root pss/empty-path 1 nil)
+          1 nil)) ":"
+      (= 4
+         (pss/node-value-at-path
+          traversal-root
+          (pss/next-path traversal-root left-last 1 nil)
+          1 nil)) ":"
+      (= 3
+         (pss/node-value-at-path
+          traversal-root
+          (pss/prev-path traversal-root middle-first 1 nil)
+          1 nil)) ":"
+      (pss/path-eq
+       (pss/path-dec pss/empty-path)
+       (pss/prev-path traversal-root pss/empty-path 1 nil))))
+(if-some [seek-five (pss/seek-path traversal-root 5 int-compare 1 nil)]
   (println
-    (str "seek:"
-         (= 5 (traversal/node-value-at-path traversal-root seek-five 1 nil)) ":"
-         (nil? (traversal/seek-path traversal-root 100 int-compare 1 nil)) ":"
-         (= 6
-            (traversal/node-value-at-path
-              traversal-root
-              (traversal/rseek-path traversal-root 5 int-compare 1 nil)
-              1 nil)) ":"
-         (path/path-eq
-           (traversal/next-path
-             traversal-root
-             (traversal/rightmost-path traversal-root path/empty-path 1 nil)
-             1 nil)
-           (traversal/rseek-path traversal-root 100 int-compare 1 nil))))
+   (str "seek:"
+        (= 5 (pss/node-value-at-path traversal-root seek-five 1 nil)) ":"
+        (nil? (pss/seek-path traversal-root 100 int-compare 1 nil)) ":"
+        (= 6
+           (pss/node-value-at-path
+            traversal-root
+            (pss/rseek-path traversal-root 5 int-compare 1 nil)
+            1 nil)) ":"
+        (pss/path-eq
+         (pss/next-path
+          traversal-root
+          (pss/rightmost-path traversal-root pss/empty-path 1 nil)
+          1 nil)
+         (pss/rseek-path traversal-root 100 int-compare 1 nil))))
   (println "seek:false:false:false:false"))
 
-(def traversal-deep-left (nodes/new-leaf (arrays/into-array (range 12 16))))
-(def traversal-deep-middle (nodes/new-leaf (arrays/into-array (range 16 19))))
-(def traversal-deep-right (nodes/new-leaf (arrays/into-array (range 19 24))))
+(def traversal-deep-left (pss/new-leaf (arrays/into-array (range 12 16))))
+(def traversal-deep-middle (pss/new-leaf (arrays/into-array (range 16 19))))
+(def traversal-deep-right (pss/new-leaf (arrays/into-array (range 19 24))))
 (def traversal-deep-branch
-  (nodes/new-node
-    (arrays/array 15 18 23)
-    (arrays/array
-      traversal-deep-left traversal-deep-middle traversal-deep-right)))
+  (pss/new-node
+   (arrays/array 15 18 23)
+   (arrays/array
+    traversal-deep-left traversal-deep-middle traversal-deep-right)))
 (def traversal-deep-root
-  (nodes/new-node
-    (arrays/array 11 23)
-    (arrays/array traversal-root traversal-deep-branch)))
+  (pss/new-node
+   (arrays/array 11 23)
+   (arrays/array traversal-root traversal-deep-branch)))
 (def traversal-eleven
-  (path/path-set
-    (path/path-set (path/path-set path/empty-path 2 0) 1 2)
-    0
-    4))
+  (pss/path-set
+   (pss/path-set (pss/path-set pss/empty-path 2 0) 1 2)
+   0
+   4))
 (def traversal-twelve
-  (path/path-set
-    (path/path-set (path/path-set path/empty-path 2 1) 1 0)
-    0
-    0))
+  (pss/path-set
+   (pss/path-set (pss/path-set pss/empty-path 2 1) 1 0)
+   0
+   0))
 (println
-  (str "traversal-deep:"
-       (= 12
-          (traversal/node-value-at-path
-            traversal-deep-root
-            (traversal/next-path traversal-deep-root traversal-eleven 2 nil)
-            2 nil)) ":"
-       (= 11
-          (traversal/node-value-at-path
-            traversal-deep-root
-            (traversal/prev-path traversal-deep-root traversal-twelve 2 nil)
-            2 nil)) ":"
-       (= 23
-          (traversal/node-value-at-path
-            traversal-deep-root
-            (traversal/rightmost-path traversal-deep-root path/empty-path 2 nil)
-            2 nil)) ":"
-       (if-some [seek-eighteen
-                 (traversal/seek-path
-                   traversal-deep-root 18 int-compare 2 nil)]
-         (= 18
-            (traversal/node-value-at-path
-              traversal-deep-root seek-eighteen 2 nil))
-         false)))
+ (str "traversal-deep:"
+      (= 12
+         (pss/node-value-at-path
+          traversal-deep-root
+          (pss/next-path traversal-deep-root traversal-eleven 2 nil)
+          2 nil)) ":"
+      (= 11
+         (pss/node-value-at-path
+          traversal-deep-root
+          (pss/prev-path traversal-deep-root traversal-twelve 2 nil)
+          2 nil)) ":"
+      (= 23
+         (pss/node-value-at-path
+          traversal-deep-root
+          (pss/rightmost-path traversal-deep-root pss/empty-path 2 nil)
+          2 nil)) ":"
+      (if-some [seek-eighteen
+                (pss/seek-path
+                 traversal-deep-root 18 int-compare 2 nil)]
+        (= 18
+           (pss/node-value-at-path
+            traversal-deep-root seek-eighteen 2 nil))
+        false)))
 
-(def traversal-forward (traversal/node-seq traversal-deep-root 2 nil))
-(def traversal-reverse (traversal/node-rseq traversal-deep-root 2 nil))
+(def traversal-forward (pss/node-seq traversal-deep-root 2 nil))
+(def traversal-reverse (pss/node-rseq traversal-deep-root 2 nil))
 (println
-  (str "sequence:"
-       (= 24 (count traversal-forward)) ":"
-       (= 276 (reduce + 0 traversal-forward)) ":"
-       (= 0 (first traversal-forward)) ":"
-       (= 23 (first traversal-reverse)) ":"
-       (= 0 (last traversal-reverse))))
+ (str "sequence:"
+      (= 24 (count traversal-forward)) ":"
+      (= 276 (reduce + 0 traversal-forward)) ":"
+      (= 0 (first traversal-forward)) ":"
+      (= 23 (first traversal-reverse)) ":"
+      (= 0 (last traversal-reverse))))
 (if-some [range-left
-          (traversal/seek-path traversal-deep-root 5 int-compare 2 nil)]
+          (pss/seek-path traversal-deep-root 5 int-compare 2 nil)]
   (let [range-right
-        (traversal/rseek-path traversal-deep-root 18 int-compare 2 nil)
+        (pss/rseek-path traversal-deep-root 18 int-compare 2 nil)
         values
-        (traversal/node-seq-between
-          traversal-deep-root range-left range-right 2 nil)
+        (pss/node-seq-between
+         traversal-deep-root range-left range-right 2 nil)
         reverse-values
-        (traversal/node-rseq-between
-          traversal-deep-root range-left range-right 2 nil)]
+        (pss/node-rseq-between
+         traversal-deep-root range-left range-right 2 nil)]
     (println
-      (str "sequence-range:"
-           (= 14 (count values)) ":"
-           (= 161 (reduce + 0 values)) ":"
-           (= 5 (first values)) ":"
-           (= 18 (first reverse-values)) ":"
-           (= 5 (last reverse-values)))))
+     (str "sequence-range:"
+          (= 14 (count values)) ":"
+          (= 161 (reduce + 0 values)) ":"
+          (= 5 (first values)) ":"
+          (= 18 (first reverse-values)) ":"
+          (= 5 (last reverse-values)))))
   (println "sequence-range:false:false:false:false:false"))
 
-(def small-set (pset/from-sequential int-compare [5 1 3 3 9 7]))
+(def small-set (pss/from-sequential int-compare [5 1 3 3 9 7]))
 (println
-  (str "set-build:"
-       (= 5 (pset/set-count small-set)) ":"
-       (= 25 (reduce + 0 (pset/set-seq small-set))) ":"
-       (pset/set-contains? small-set 3) ":"
-       (not (pset/set-contains? small-set 4))))
-(def added-set (pset/set-conj small-set 4))
-(def duplicate-set (pset/set-conj added-set 4))
-(def removed-set (pset/set-disj added-set 3))
-(def missing-removed-set (pset/set-disj removed-set 100))
+ (str "set-build:"
+      (= 5 (pss/set-count small-set)) ":"
+      (= 25 (reduce + 0 (pss/set-seq small-set))) ":"
+      (pss/set-contains? small-set 3) ":"
+      (not (pss/set-contains? small-set 4))))
+(def added-set (pss/set-conj small-set 4))
+(def duplicate-set (pss/set-conj added-set 4))
+(def removed-set (pss/set-disj added-set 3))
+(def missing-removed-set (pss/set-disj removed-set 100))
 (println
-  (str "set-persistent:"
-       (= 6 (pset/set-count added-set)) ":"
-       (not (pset/set-contains? small-set 4)) ":"
-       (= 6 (pset/set-count duplicate-set)) ":"
-       (= 5 (pset/set-count removed-set)) ":"
-       (pset/set-contains? added-set 3) ":"
-       (not (pset/set-contains? missing-removed-set 3))))
+ (str "set-persistent:"
+      (= 6 (pss/set-count added-set)) ":"
+      (not (pss/set-contains? small-set 4)) ":"
+      (= 6 (pss/set-count duplicate-set)) ":"
+      (= 5 (pss/set-count removed-set)) ":"
+      (pss/set-contains? added-set 3) ":"
+      (not (pss/set-contains? missing-removed-set 3))))
 
-(def large-set (pset/from-sequential int-compare (range 0 2000)))
-(def large-added (pset/set-conj large-set 3000))
-(def large-removed (pset/set-disj large-set 1000))
+(def large-set (pss/from-sequential int-compare (range 0 2000)))
+(def large-added (pss/set-conj large-set 3000))
+(def large-removed (pss/set-disj large-set 1000))
 (println
-  (str "set-large:"
-       (= 2000 (pset/set-count large-set)) ":"
-       (= 2 (pset/set-shift large-set)) ":"
-       (= 0 (first (pset/set-seq large-set))) ":"
-       (= 1999 (last (pset/set-seq large-set))) ":"
-       (= 3000 (last (pset/set-seq large-added))) ":"
-       (not (pset/set-contains? large-removed 1000)) ":"
-       (= 1999 (pset/set-count large-removed))))
-(if-some [large-slice (pset/set-slice large-set 995 1005)]
-  (if-some [large-rslice (pset/set-rslice large-set 995 1005)]
+ (str "set-large:"
+      (= 2000 (pss/set-count large-set)) ":"
+      (= 2 (pss/set-shift large-set)) ":"
+      (= 0 (first (pss/set-seq large-set))) ":"
+      (= 1999 (last (pss/set-seq large-set))) ":"
+      (= 3000 (last (pss/set-seq large-added))) ":"
+      (not (pss/set-contains? large-removed 1000)) ":"
+      (= 1999 (pss/set-count large-removed))))
+(if-some [large-slice (pss/set-slice large-set 995 1005)]
+  (if-some [large-rslice (pss/set-rslice large-set 995 1005)]
     (println
-      (str "set-slice:"
-           (= 11 (count large-slice)) ":"
-           (= 995 (first large-slice)) ":"
-           (= 1005 (last large-slice)) ":"
-           (= 1999 (first (pset/set-rseq large-set))) ":"
-           (= 0 (last (pset/set-rseq large-set))) ":"
-           (= 1005 (first large-rslice)) ":"
-           (= 995 (last large-rslice))))
+     (str "set-slice:"
+          (= 11 (count large-slice)) ":"
+          (= 995 (first large-slice)) ":"
+          (= 1005 (last large-slice)) ":"
+          (= 1999 (first (pss/set-rseq large-set))) ":"
+          (= 0 (last (pss/set-rseq large-set))) ":"
+          (= 1005 (first large-rslice)) ":"
+          (= 995 (last large-rslice))))
     (println "set-slice:false:false:false:false:false:false:false"))
   (println "set-slice:false:false:false:false:false:false:false"))
 
 (def inserted-set
-  (loop [set (pset/empty-set int-compare)
+  (loop [set (pss/empty-set int-compare)
          value 0]
     (if (= value 1000)
       set
-      (recur (pset/set-conj set value) (inc value)))))
+      (recur (pss/set-conj set value) (inc value)))))
 (println
-  (str "set-insert-stress:"
-       (= 1000 (pset/set-count inserted-set)) ":"
-       (= 2 (pset/set-shift inserted-set)) ":"
-       (= 0 (first (pset/set-seq inserted-set))) ":"
-       (= 999 (last (pset/set-seq inserted-set)))))
+ (str "set-insert-stress:"
+      (= 1000 (pss/set-count inserted-set)) ":"
+      (= 2 (pss/set-shift inserted-set)) ":"
+      (= 0 (first (pss/set-seq inserted-set))) ":"
+      (= 999 (last (pss/set-seq inserted-set)))))
 
 (def trimmed-set
   (loop [set large-set
          value 0]
     (if (= value 1900)
       set
-      (recur (pset/set-disj set value) (inc value)))))
+      (recur (pss/set-disj set value) (inc value)))))
 (def emptied-set
   (loop [set trimmed-set
          value 1900]
     (if (= value 2000)
       set
-      (recur (pset/set-disj set value) (inc value)))))
+      (recur (pss/set-disj set value) (inc value)))))
 (println
-  (str "set-delete-stress:"
-       (= 100 (pset/set-count trimmed-set)) ":"
-       (= 1 (pset/set-shift trimmed-set)) ":"
-       (= 1900 (first (pset/set-seq trimmed-set))) ":"
-       (= 1999 (last (pset/set-seq trimmed-set))) ":"
-       (= 0 (pset/set-count emptied-set)) ":"
-       (= 0 (pset/set-shift emptied-set)) ":"
-       (empty? (pset/set-seq emptied-set))))
+ (str "set-delete-stress:"
+      (= 100 (pss/set-count trimmed-set)) ":"
+      (= 1 (pss/set-shift trimmed-set)) ":"
+      (= 1900 (first (pss/set-seq trimmed-set))) ":"
+      (= 1999 (last (pss/set-seq trimmed-set))) ":"
+      (= 0 (pss/set-count emptied-set)) ":"
+      (= 0 (pss/set-shift emptied-set)) ":"
+      (empty? (pss/set-seq emptied-set))))
 
 (defn consume-iterator [iterator count total]
-  (if-some [next-iterator (traversal/iter-next iterator)]
+  (if-some [next-iterator (pss/iter-next iterator)]
     (consume-iterator
-      next-iterator
-      (inc count)
-      (+ total (traversal/iter-first iterator)))
+     next-iterator
+     (inc count)
+     (+ total (pss/iter-first iterator)))
     (tuple
-      (inc count)
-      (+ total (traversal/iter-first iterator)))))
+     (inc count)
+     (+ total (pss/iter-first iterator)))))
 
-(if-some [iterator (pset/set-iter large-set)]
+(if-some [iterator (pss/set-iter large-set)]
   (let [result (consume-iterator iterator 0 0)]
     (match result
       (tuple count total)
       (println
-        (str "set-iterator:"
-             (= 2000 count) ":"
-             (= 1999000 total) ":"
-             (= 0 (traversal/iter-first iterator))))))
+       (str "set-iterator:"
+            (= 2000 count) ":"
+            (= 1999000 total) ":"
+            (= 0 (pss/iter-first iterator))))))
   (println "set-iterator:false:false:false"))

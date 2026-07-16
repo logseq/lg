@@ -2,4 +2,6 @@
  (name lg_runtime)
  (public_name lg.runtime)
  (modes native byte melange)
+ (preprocess
+  (pps melange.ppx))
  (libraries rrbvec))

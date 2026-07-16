@@ -43,6 +43,8 @@ let validate_ocaml_type_application name args =
   | "tuple", _ -> Error.error "tuple expects at least two type arguments"
   | "option", [ _ ] -> Ok ()
   | "option", _ -> Error.error "option expects one type argument"
+  | "weak", [ _ ] -> Ok ()
+  | "weak", _ -> Error.error "weak expects one type argument"
   | "result", [ _; _ ] -> Ok ()
   | "result", _ -> Error.error "result expects two type arguments"
   | "fn", _ :: _ :: _ -> Ok ()
@@ -77,7 +79,11 @@ let rec parse_ocaml_type source =
                 in
                 Ok (TOcaml (module_path ^ "." ^ type_name))
               else Ok (TOcaml source)
-          | _ -> Ok (TOcaml source))
+          | _ ->
+              Ok
+                (TOcaml
+                   (if String.contains source '.' then source
+                    else Names.sanitize_name source)))
     | Some open_index ->
         let name = String.sub source 0 open_index |> String.trim in
         let inner =
@@ -112,12 +118,21 @@ let rec parse_ocaml_type source =
                       match args with
                       | [ inner ] -> Ok (TRef inner)
                       | _ -> Error.error "ref expects one type argument"
+                    else if name = "weak" then
+                      match args with
+                      | [ inner ] -> Ok (Types.weak_type inner)
+                      | _ -> Error.error "weak expects one type argument"
                     else if name = "fn" then
                       match List.rev args with
                       | return_ty :: reversed_params ->
                           Ok (TFn (List.rev reversed_params, return_ty))
                       | [] -> assert false
-                    else Ok (TOcaml_app (name, args)))
+                    else
+                      Ok
+                        (TOcaml_app
+                           ( (if String.contains name '.' then name
+                              else Names.sanitize_name name),
+                             args )))
 
 let of_keyword = function
   | ":int" -> Ok TInt

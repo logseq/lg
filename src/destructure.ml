@@ -319,19 +319,27 @@ let literal_default = function
 let rec infer_map_type pattern lookup_local_ty =
   parse_map_pattern pattern
   |> Result.map (fun parsed ->
-      match parsed.as_name with
-      | Some _ -> Types.dynamic_constraint TUnknown
-      | None ->
-         let fields =
-           parsed.field_bindings
-           |> List.map (fun { binding_pattern; keyword; _ } ->
-                  let ty =
-                    infer_pattern_type binding_pattern lookup_local_ty
-                    |> Result.value ~default:TUnknown
-                  in
-                  make_field keyword ty)
-         in
-         TRecord fields)
+      let fields =
+        parsed.field_bindings
+        |> List.map (fun { binding_pattern; keyword; _ } ->
+               let ty =
+                 infer_pattern_type binding_pattern lookup_local_ty
+                 |> Result.value ~default:TUnknown
+               in
+               let ty =
+                 match (parsed.as_name, ty) with
+                 | Some _, (TUnknown | TVar _) ->
+                     Types.dynamic_constraint TUnknown
+                 | _ -> ty
+               in
+               make_field keyword ty)
+      in
+      let fields =
+        match parsed.as_name with
+        | None -> fields
+        | Some _ -> fields @ [ Types.make_record_extension_field () ]
+      in
+      TRecord fields)
 
 and infer_sequence_type forms lookup_local_ty =
   match parse_sequence_pattern forms with

@@ -957,8 +957,14 @@ let parameterize_row_fields fields =
                  return_ty = parameterize arity.return_ty })
              arities)
     | TRecord _ -> TVar (fresh_parameter ())
+    | TNamed_record record ->
+        TNamed_record
+          { record with
+            type_parameters =
+              List.map (fun _ -> fresh_parameter ()) record.type_parameters;
+          }
     | (TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol
-      | TKeyword | TBool | TUnit | TNil | TOcaml _ | TNamed_record _) as ty ->
+      | TKeyword | TBool | TUnit | TNil | TOcaml _) as ty ->
         ty
   and parameterize_field (field : field) =
     { field with ty = parameterize field.ty }
@@ -1001,7 +1007,31 @@ let row_type_items row_type_names param_tys =
     row_type_names param_tys
   |> List.filter_map Fun.id
 
+let row_call_type_name type_name =
+  let length = String.length type_name in
+  let buffer = Buffer.create length in
+  let is_type_variable_char = function
+    | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' -> true
+    | _ -> false
+  in
+  let rec copy index =
+    if index < length then
+      if type_name.[index] = '\'' then (
+        Buffer.add_char buffer '_';
+        skip_variable (index + 1))
+      else (
+        Buffer.add_char buffer type_name.[index];
+        copy (index + 1))
+  and skip_variable index =
+    if index < length && is_type_variable_char type_name.[index] then
+      skip_variable (index + 1)
+    else copy index
+  in
+  copy 0;
+  Buffer.contents buffer
+
 let row_project_expr type_name fields arg =
+  let type_name = row_call_type_name type_name in
   let source = "__row_source" in
   Semantic_ir.Let
     ( [ (Semantic_ir.PVar source, arg.semantic_expr) ],

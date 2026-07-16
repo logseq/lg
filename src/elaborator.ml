@@ -26,8 +26,18 @@ let expand_deferred_binding name value_type expression =
             (fun index _ -> "__lg_deferred_argument_" ^ string_of_int index)
             parameter_types
         in
+        let patterns =
+          List.map2
+            (fun name ty ->
+              match ty with
+              | Types.TUnknown | Types.TVar _ -> Semantic_ir.PVar name
+              | ty ->
+                  Semantic_ir.PConstraint
+                    (Semantic_ir.PVar name, Types.ocaml_name ty))
+            names parameter_types
+        in
         Semantic_ir.Fun
-          ( List.map (fun name -> Semantic_ir.PVar name) names,
+          ( patterns,
             Semantic_ir.Apply
               ( Semantic_ir.Apply
                   ( Semantic_ir.Ident "Option.get",

@@ -9,6 +9,7 @@ delete-removed:true:true:true
 store-attaches:true:true:true
 delete:true:true:true
 empty:true:true:true:true:true
+weak-cache:true:true:true:true
 partition:true:true:true:true:true
 store:true:true:true
 restore-lazy:true:true
@@ -20,3 +21,4 @@ delete-removed:true:true:true
 store-attaches:true:true:true
 delete:true:true:true
 empty:true:true:true:true:true
+weak-cache:true:true:true:true

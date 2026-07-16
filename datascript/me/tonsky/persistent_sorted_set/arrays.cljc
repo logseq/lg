@@ -29,18 +29,18 @@
           (if (< idx# length#)
             (do
               (unsafe-aset
-                ~target
-                (+ idx# ~target-start)
-                (unsafe-aget ~source (+ idx# ~source-start)))
+               ~target
+               (+ idx# ~target-start)
+               (unsafe-aget ~source (+ idx# ~source-start)))
               (recur (inc idx#)))
             nil)))
      :default
      `(Array.blit
-        ~source
-        ~source-start
-        ~target
-        ~target-start
-        (- ~source-end ~source-start))))
+       ~source
+       ~source-start
+       ~target
+       ~target-start
+       (- ~source-end ~source-start))))
 
 (defmacro aclone [values]
   `(Array.copy ~values))
