@@ -866,6 +866,26 @@ let create ~compile_expr =
                   ^ String.concat ", " (List.map Types.source_name branch_types)
                   )))
   and compile_logical scope env operator forms =
+    let forms =
+      match operator with
+      | `Or -> forms
+      | `And ->
+          let rec narrow_later conditions = function
+            | [] -> []
+            | form :: rest ->
+                let narrowed =
+                  match conditions with
+                  | [] -> form
+                  | _ ->
+                      narrow_symbol_predicates scope env
+                        (FList
+                           (FSymbol "and" :: List.rev conditions))
+                        form
+                in
+                narrowed :: narrow_later (form :: conditions) rest
+          in
+          narrow_later [] forms
+    in
     match forms with
     | [] -> (
         match operator with

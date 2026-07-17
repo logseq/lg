@@ -617,6 +617,29 @@ let infer_params ?(explicitly_dynamic_params = []) ~lookup_function_ty
             List.assoc_opt name inferred |> Option.value ~default:base_ty ))
       base
   in
+  let rec guarded_protocol_receivers = function
+    | FList
+        [ FSymbol "satisfies?"; FSymbol _protocol_name; FSymbol receiver ] ->
+        [ receiver ]
+    | FList (FSymbol ("and" | "or" | "not") :: forms) ->
+        List.concat_map guarded_protocol_receivers forms
+    | _ -> []
+  in
+  let restore_guarded_protocol_receivers base inferred condition =
+    let guarded = guarded_protocol_receivers condition in
+    List.map
+      (fun (name, base_ty) ->
+        if List.mem name guarded then (name, base_ty)
+        else
+          ( name,
+            List.assoc_opt name inferred |> Option.value ~default:base_ty ))
+      base
+  in
+  let restore_branch_evidence base inferred previous_hints condition =
+    restore_branch_hints base inferred previous_hints
+    |> fun inferred ->
+    restore_guarded_protocol_receivers base inferred condition
+  in
   let fresh_type_variable prefix =
     let index = !next_type_variable in
     incr next_type_variable;
@@ -633,7 +656,8 @@ let infer_params ?(explicitly_dynamic_params = []) ~lookup_function_ty
               (fun inferred ->
                 Result.map
                   (fun inferred ->
-                    restore_branch_hints params inferred previous_hints)
+                    restore_branch_evidence params inferred previous_hints
+                      condition)
                   (with_branch (fun () ->
                        infer_expected expected_ty inferred else_form))))
     | FList [ FSymbol "if"; condition; then_form ] ->
@@ -641,7 +665,8 @@ let infer_params ?(explicitly_dynamic_params = []) ~lookup_function_ty
             let previous_hints = !branch_hint_symbols in
             Result.map
               (fun inferred ->
-                restore_branch_hints params inferred previous_hints)
+                restore_branch_evidence params inferred previous_hints
+                  condition)
               (with_branch (fun () ->
                    infer_expected expected_ty params then_form)))
     | FList [ FSymbol "if-not"; condition; then_form; else_form ] ->
@@ -653,7 +678,8 @@ let infer_params ?(explicitly_dynamic_params = []) ~lookup_function_ty
               (fun inferred ->
                 Result.map
                   (fun inferred ->
-                    restore_branch_hints params inferred previous_hints)
+                    restore_branch_evidence params inferred previous_hints
+                      condition)
                   (with_branch (fun () ->
                        infer_expected expected_ty inferred else_form))))
     | FList [ FSymbol "Some"; value ] -> (
@@ -1680,22 +1706,6 @@ let infer_params ?(explicitly_dynamic_params = []) ~lookup_function_ty
         constrain_symbol (Types.dynamic_constraint TUnknown) params value
     | FList
         [
-          FSymbol "if-let";
-          FVector [ _binding; FList (FSymbol function_name :: arguments) ];
-          then_form;
-          else_form;
-        ]
-      when List.mem_assoc function_name params -> (
-        let parameter_types = List.map (inferred_form_type params) arguments in
-        match
-           constrain_symbol
-             (TFn (parameter_types, TNullable TUnknown))
-             params function_name
-         with
-        | Error _ as error -> error
-        | Ok params -> infer_all params (arguments @ [ then_form; else_form ]))
-    | FList
-        [
           FSymbol ("every?" | "not-any?" | "not-every?");
           FSymbol predicate;
           FSymbol collection;
@@ -2002,7 +2012,10 @@ let infer_params ?(explicitly_dynamic_params = []) ~lookup_function_ty
       -> (
         match lookup_protocol_constraint protocol_name with
         | None -> Error.error ("unknown protocol " ^ protocol_name)
-        | Some constraint_ty -> constrain_symbol constraint_ty params receiver)
+        | Some constraint_ty ->
+            constrain_symbol
+              (Types.guarded_protocol_constraint constraint_ty)
+              params receiver)
     | FList
         [ FSymbol "asort!"; FSymbol comparator; FSymbol array ] ->
         let comparator_ty =
@@ -2442,7 +2455,8 @@ let infer_params ?(explicitly_dynamic_params = []) ~lookup_function_ty
             | Ok inferred ->
                 Result.map
                   (fun inferred ->
-                    restore_branch_hints params inferred previous_hints)
+                    restore_branch_evidence params inferred previous_hints
+                      condition)
                   (with_branch (fun () -> infer_form inferred else_form))))
     | FList [ FSymbol "if"; condition; then_form ] -> (
         match infer_truthy params condition with
@@ -2451,7 +2465,8 @@ let infer_params ?(explicitly_dynamic_params = []) ~lookup_function_ty
             let previous_hints = !branch_hint_symbols in
             Result.map
               (fun inferred ->
-                restore_branch_hints params inferred previous_hints)
+                restore_branch_evidence params inferred previous_hints
+                  condition)
               (with_branch (fun () -> infer_form params then_form)))
     | FList [ FSymbol "if-not"; condition; then_form; else_form ] -> (
         match infer_truthy params condition with
@@ -2464,7 +2479,8 @@ let infer_params ?(explicitly_dynamic_params = []) ~lookup_function_ty
             | Ok inferred ->
                 Result.map
                   (fun inferred ->
-                    restore_branch_hints params inferred previous_hints)
+                    restore_branch_evidence params inferred previous_hints
+                      condition)
                   (with_branch (fun () -> infer_form inferred else_form))))
     | FList (FSymbol "when" :: condition :: body_forms) -> (
         match infer_truthy params condition with

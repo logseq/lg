@@ -257,7 +257,19 @@ let infer_defrecord_field_types scope env field_names interface_forms =
         | Some capability -> protocol_ids capability
         | None -> [])
   in
+  let rec has_guarded_protocol_constraint ty =
+    if Types.is_guarded_protocol_constraint ty then true
+    else
+      match Types.protocol_constraint_info ty with
+      | Some (_, _, value_ty) -> has_guarded_protocol_constraint value_ty
+      | None -> (
+          match Types.dynamic_constraint_info ty with
+          | Some capability -> has_guarded_protocol_constraint capability
+          | None -> false)
+  in
   let resolve_protocol_record ty =
+    if has_guarded_protocol_constraint ty then ty
+    else
     match protocol_ids ty with
     | [] -> ty
     | protocols ->

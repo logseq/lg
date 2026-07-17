@@ -9003,6 +9003,126 @@ let test_symbol_predicate_narrows_dynamic_value_in_then_branch () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_protocol_record_reconstruction_keeps_field_type_open () =
+  let source =
+    {|
+(defprotocol ITraversable
+  (-postwalk [_ f]))
+
+(defn postwalk [form f]
+  (if (satisfies? ITraversable form)
+    (f (-postwalk form f))
+    (f form)))
+
+(defrecord Placeholder []
+  ITraversable
+  (-postwalk [_ _f]
+    (Placeholder.)))
+
+(defrecord Variable [symbol]
+  ITraversable
+  (-postwalk [_ f]
+    (Variable. (postwalk symbol f))))
+
+(defn parse-placeholder [form]
+  (when (= '_ form)
+    (Placeholder.)))
+
+(defn parse-variable [form]
+  (when (symbol? form)
+    (Variable. form)))
+
+(def variable (parse-variable 'name))
+(println
+  (str (some? (parse-placeholder '_)) ":"
+       (match variable (Some value) (:symbol value) None "missing") ":"
+       (nil? (parse-variable 42))))
+|}
+  in
+  let native_source =
+    Lg.Compiler.compile_string ~target:Lg.Target.Native source |> expect_ok
+  in
+  assert_ocaml_runs "protocol_record_reconstruction_keeps_field_type_open"
+    "true:name:true\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_symbol_predicate_narrows_later_and_operands () =
+  let source =
+    {|
+(defn marker? [value]
+  (= '% value))
+
+(defn plain-symbol? [value]
+  (and (symbol? value)
+       (not (marker? value))))
+
+(println (str (plain-symbol? 'name) ":" (plain-symbol? 42)))
+|}
+  in
+  let native_source =
+    Lg.Compiler.compile_string ~target:Lg.Target.Native source |> expect_ok
+  in
+  assert_ocaml_runs "symbol_predicate_narrows_later_and_operands"
+    "true:false\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_nested_sequential_branch_destructuring_preserves_dynamic_values () =
+  let source =
+    {|
+(defn split-sequential [form]
+  (if (sequential? form)
+    (let [[required rest]
+          (if (sequential? (first form))
+            [(first form) (next form)]
+            [nil form])]
+      [required rest])
+    [nil nil]))
+
+(println (count (split-sequential [1 2])))
+|}
+  in
+  let native_source =
+    Lg.Compiler.compile_string ~target:Lg.Target.Native source |> expect_ok
+  in
+  assert_ocaml_runs
+    "nested_sequential_branch_destructuring_preserves_dynamic_values"
+    "2\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_if_let_callback_accepts_optional_and_required_results () =
+  let source =
+    {|
+(defn parse-seq [parse-element forms]
+  (reduce
+    (fn [parsed form]
+      (if-let [value (parse-element form)]
+        (conj parsed value)
+        (reduced nil)))
+    [] forms))
+
+(defn parse-optional [value]
+  (when (pos? value) value))
+
+(defn parse-required [value]
+  (inc value))
+
+(println
+  (str (count (parse-seq parse-optional [1 2])) ":"
+       (count (parse-seq parse-required [1 2])) ":"
+       (nil? (parse-seq parse-optional [1 0]))))
+|}
+  in
+  let native_source =
+    Lg.Compiler.compile_string ~target:Lg.Target.Native source |> expect_ok
+  in
+  assert_ocaml_runs "if_let_callback_accepts_optional_and_required_results"
+    "2:2:true\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_equality_parameter_widens_across_keyword_and_string () =
   let source =
     {|
@@ -16118,6 +16238,14 @@ let tests =
       test_nested_keyword_lookup_preserves_nullable_map_evidence );
     ( "symbol predicate narrows dynamic value in then branch",
       test_symbol_predicate_narrows_dynamic_value_in_then_branch );
+    ( "protocol record reconstruction keeps field type open",
+      test_protocol_record_reconstruction_keeps_field_type_open );
+    ( "symbol predicate narrows later and operands",
+      test_symbol_predicate_narrows_later_and_operands );
+    ( "nested sequential branch destructuring preserves dynamic values",
+      test_nested_sequential_branch_destructuring_preserves_dynamic_values );
+    ( "if-let callback accepts optional and required results",
+      test_if_let_callback_accepts_optional_and_required_results );
     ( "equality parameter widens across keyword and string",
       test_equality_parameter_widens_across_keyword_and_string );
     ( "recursive deftype helper widens fallback to dynamic",

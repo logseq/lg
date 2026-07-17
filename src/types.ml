@@ -105,6 +105,23 @@ let rec supports_structural_dynamic_packing = function
       false
 
 let protocol_constraint_prefix = "__lg_protocol_constraint:"
+let guarded_protocol_constraint_prefix = "__lg_guarded_protocol_constraint:"
+
+let protocol_constraint_id name =
+  let prefix =
+    if String.starts_with ~prefix:protocol_constraint_prefix name then
+      Some protocol_constraint_prefix
+    else if
+      String.starts_with ~prefix:guarded_protocol_constraint_prefix name
+    then Some guarded_protocol_constraint_prefix
+    else None
+  in
+  Option.map
+    (fun prefix ->
+      String.sub name (String.length prefix)
+        (String.length name - String.length prefix)
+      |> Protocol_id.of_string)
+    prefix
 
 let protocol_witness_type method_types =
   List.fold_right (fun method_ty rest -> TTuple [ method_ty; rest ])
@@ -123,20 +140,34 @@ let protocol_constraint protocol_id method_types value_ty =
     ( protocol_constraint_prefix ^ Protocol_id.to_string protocol_id,
       [ protocol_witness_type method_types; value_ty ] )
 
+let guarded_protocol_constraint constraint_ty =
+  match constraint_ty with
+  | TOcaml_app (name, arguments) -> (
+      match protocol_constraint_id name with
+      | Some protocol_id ->
+          TOcaml_app
+            ( guarded_protocol_constraint_prefix
+              ^ Protocol_id.to_string protocol_id,
+              arguments )
+      | None -> constraint_ty)
+  | _ -> constraint_ty
+
+let is_guarded_protocol_constraint = function
+  | TOcaml_app (name, _) ->
+      String.starts_with ~prefix:guarded_protocol_constraint_prefix name
+  | _ -> false
+
 let protocol_constraint_info = function
-  | TOcaml_app (name, [ witness_ty; value_ty ])
-    when String.starts_with ~prefix:protocol_constraint_prefix name ->
-      let id_text =
-        String.sub name (String.length protocol_constraint_prefix)
-          (String.length name - String.length protocol_constraint_prefix)
-      in
-      Some (Protocol_id.of_string id_text, witness_ty, value_ty)
+  | TOcaml_app (name, [ witness_ty; value_ty ]) ->
+      Option.map
+        (fun protocol_id -> (protocol_id, witness_ty, value_ty))
+        (protocol_constraint_id name)
   | _ -> None
 
 let protocol_constraint_with_value constraint_ty value_ty =
   match constraint_ty with
   | TOcaml_app (name, [ witness_ty; _ ])
-    when String.starts_with ~prefix:protocol_constraint_prefix name ->
+    when Option.is_some (protocol_constraint_id name) ->
       TOcaml_app (name, [ witness_ty; value_ty ])
   | ty -> ty
 
@@ -446,10 +477,9 @@ let rec source_name = function
   | TOcaml_app (name, [ capability ]) when name = dynamic_constraint_name ->
       "dynamic<" ^ source_name capability ^ ">"
   | TOcaml_app (name, [ _witness_ty; value_ty ])
-    when String.starts_with ~prefix:protocol_constraint_prefix name ->
+    when Option.is_some (protocol_constraint_id name) ->
       let protocol_name =
-        String.sub name (String.length protocol_constraint_prefix)
-          (String.length name - String.length protocol_constraint_prefix)
+        protocol_constraint_id name |> Option.get |> Protocol_id.to_string
       in
       "optional-protocol<" ^ protocol_name ^ ";" ^ source_name value_ty ^ ">"
   | TOcaml_app (name, [ inner ]) when name = weak_type_name ->
@@ -519,7 +549,7 @@ let rec ocaml_name = function
       "((" ^ ocaml_name (constraint_value_type container) ^ " -> "
       ^ ocaml_name inner ^ " Seq.t) option * " ^ ocaml_name container ^ ")"
   | TOcaml_app (name, [ witness_ty; value_ty ])
-    when String.starts_with ~prefix:protocol_constraint_prefix name ->
+    when Option.is_some (protocol_constraint_id name) ->
       "(" ^ ocaml_name witness_ty ^ " option * " ^ ocaml_name value_ty ^ ")"
   | TOcaml_app (name, [ inner ]) when name = next_seq_type_name ->
       ocaml_name inner ^ " Seq.t"

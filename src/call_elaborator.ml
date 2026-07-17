@@ -2085,11 +2085,14 @@ let adapt_reduced_callback arg =
       | None -> arg.semantic_expr)
   | _ -> arg.semantic_expr
 
-let adapt_nullable_dynamic_callback env expected arg =
+let adapt_nullable_callback env expected arg =
   match (expected, arg.ty) with
-  | TFn (expected_params, TNullable _), TFn (actual_params, actual_return)
-    when expects_dynamic_value actual_return
-         && callback_parameters_compatible expected_params actual_params ->
+  | ( TFn (expected_params, TNullable expected_return),
+      TFn (actual_params, actual_return) )
+    when callback_parameters_compatible expected_params actual_params
+         && (expects_dynamic_value actual_return
+            || Types.assignable ~policy:Host_boundary
+                 ~expected:expected_return ~actual:actual_return) ->
       let parameter_names =
         List.mapi
           (fun index _ -> "__lg_nullable_callback_arg_" ^ string_of_int index)
@@ -2113,6 +2116,21 @@ let adapt_nullable_dynamic_callback env expected arg =
         (fun arguments ->
           let result_name = "__lg_nullable_callback_result" in
           let result = Semantic_ir.Ident result_name in
+          let result_expression =
+            if expects_dynamic_value actual_return then
+              Semantic_ir.If
+                ( Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.is_nil",
+                      [ result ] ),
+                  Semantic_ir.Constructor ("None", None),
+                  Semantic_ir.Constructor ("Some", Some result) )
+            else
+              Semantic_ir.Constructor
+                ( "Some",
+                  Some
+                    (coerce_expression_to_type expected_return actual_return
+                       result) )
+          in
           Semantic_ir.Fun
             ( List.map (fun name -> Semantic_ir.PVar name) parameter_names,
               Semantic_ir.Let
@@ -2120,12 +2138,7 @@ let adapt_nullable_dynamic_callback env expected arg =
                     ( Semantic_ir.PVar result_name,
                       Semantic_ir.Apply (arg.semantic_expr, arguments) );
                   ],
-                  Semantic_ir.If
-                    ( Semantic_ir.Apply
-                        ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.is_nil",
-                          [ result ] ),
-                      Semantic_ir.Constructor ("None", None),
-                      Semantic_ir.Constructor ("Some", Some result) ) ) ))
+                  result_expression ) ))
         (adapt_parameters [] expected_params actual_params parameter_names)
   | _ -> Ok arg.semantic_expr
 
@@ -7155,10 +7168,8 @@ let create ~compile_expr =
                                  || callback_parameters_need_adapter
                                       expected_params actual_params) ->
                               adapt_dynamic_callback env expected argument
-                          | TFn (_, TNullable _), TFn (_, actual_return)
-                            when expects_dynamic_value actual_return ->
-                              adapt_nullable_dynamic_callback env expected
-                                argument
+                          | TFn (_, TNullable _), TFn (_, _) ->
+                              adapt_nullable_callback env expected argument
                           | _ -> Ok argument.semantic_expr
                       in
                       let rec prepare_arguments index prepared expected arguments =
@@ -7398,10 +7409,9 @@ let create ~compile_expr =
                                                  expected_params actual_params)
                                     ->
                                       adapt_dynamic_callback env expected_ty arg
-                                  | TFn (_, TNullable _), TFn (_, actual_return)
-                                      when expects_dynamic_value actual_return ->
-                                        adapt_nullable_dynamic_callback env
-                                          expected_ty arg
+                                  | TFn (_, TNullable _), TFn (_, _) ->
+                                      adapt_nullable_callback env expected_ty
+                                        arg
                                   | _ -> (
                                         if
                                           expects_dynamic_value expected_ty

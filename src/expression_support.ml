@@ -213,6 +213,11 @@ and pack_plain_dynamic_value_impl value =
   | TKeyword -> Some (runtime "keyword" [ value.semantic_expr ])
   | TBool -> Some (runtime "bool" [ value.semantic_expr ])
   | TNil -> Some (Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.nil")
+  | ty
+    when Option.is_some (Types.protocol_constraint_info ty)
+         || Option.is_some (Types.seqable_constraint_info ty) ->
+      pack_plain_dynamic_value_impl
+        { value with ty = Types.constraint_value_type ty }
   | TNullable payload_ty | TOcaml_app ("option", [ payload_ty ]) ->
       let payload_name = "__lg_plain_dynamic_optional_value" in
       let payload = typed_ir payload_ty (Semantic_ir.Ident payload_name) in

@@ -1031,16 +1031,90 @@ update the same entry with its root cause, fix, and verification evidence.
   Melange. Predicate regressions, the complete compiler suite, and `dune build`
   pass. The real Native parser chain advances through line 127 to line 102.
 
-## 2026-07-17: `Variable.` constructor expects `placeholder`
+## 2026-07-17: Guarded protocol evidence specializes `Variable.symbol`
 
-- Status: Open; next DataScript blocker
+- Status: Fixed
 - Symptom: Full Native parser compilation reaches `parse-variable` line 102;
   the guarded `form` is a native symbol/string, but the generated `Variable.`
-  constructor is typed as accepting `placeholder`.
-- Current evidence: `Placeholder` and `Variable` are adjacent macro-generated
-  parser records. Inspect constructor registration and deferred macro record
-  evidence for cross-record contamination; do not weaken `Variable.symbol` to
-  dynamic or coerce a string to `placeholder`.
+  constructor expects `placeholder`.
+- Root cause: `postwalk` accepts any value and uses `satisfies? ITraversable`
+  before optional protocol dispatch. Field inference represented this guarded
+  evidence with the same internal constraint as a required protocol call. Since
+  `Placeholder` was temporarily the only registered implementation, record
+  specialization incorrectly fixed every value forwarded through `postwalk` to
+  `Placeholder`, including `Variable.symbol`.
+- Fix: Distinguish guarded protocol evidence from required protocol evidence
+  while retaining the same `(witness option * value)` runtime representation.
+  Evidence introduced by `satisfies?` remains local to guarded control-flow and
+  cannot specialize an open record field. Direct protocol calls still retain
+  nominal evidence and may specialize a field to its unique implementation.
+- Verification: The focused `Placeholder`/`Variable` reconstruction regression
+  produces `true:name:true` on Native and compiles on Melange. Existing generic
+  `satisfies?` dispatch tests pass, and the PSS existential regression confirms
+  that required protocol fields do not degrade to `Runtime_dynamic.t`. The real
+  parser chain advances beyond line 102.
+
+## 2026-07-17: `and` loses successful `symbol?` evidence
+
+- Status: Fixed
+- Symptom: `parse-plain-symbol` checks `(symbol? form)` first, but later `and`
+  operands still pass `Runtime_dynamic.t` to parser helpers expecting the native
+  symbol/string representation.
+- Root cause: Logical operands were compiled independently in the original
+  environment even though `and` evaluates left-to-right and evaluates a later
+  operand only after every earlier operand is truthy.
+- Fix: Compile later `and` operands with the accumulated positive predicate
+  evidence from earlier operands. Do not propagate evidence through `or`, where
+  reaching a later operand proves the earlier operand false.
+- Verification: A focused regression was RED with the same dynamic-to-string
+  OCaml error and now returns `true:false` on Native and compiles on Melange.
+  The real parser chain advances beyond `parse-plain-symbol`.
+
+## 2026-07-17: Stored optional-sequential values cannot be packed dynamically
+
+- Status: Fixed
+- Symptom: `parse-rule-vars` builds `[nil form]` in a nested sequential branch.
+  Generated OCaml leaves it as `'a option Rrbvec.t` in a branch whose peer is a
+  `Runtime_dynamic.t` vector.
+- Root cause: Collection storage intentionally erases protocol and seqable
+  adapters, but dynamic packing recursively inspected the full capability type.
+  It found no packer for `optional-sequential<...>`, returned no conversion, and
+  silently reused the unboxed vector expression.
+- Fix: When packing a stored protocol or seqable capability, recurse using its
+  stored value type. Adapter and witness storage remains unchanged elsewhere.
+- Verification: The focused nested branch/destructuring regression was RED with
+  the same `Rrbvec.t` versus `Runtime_dynamic.t` error and now returns `2` on
+  Native and compiles on Melange. The real parser chain advances to the
+  `parse-seq` callback at line 153.
+
+## 2026-07-17: Required parser callback is rejected as nullable
+
+- Status: Fixed
+- Symptom: `parse-seq` uses `if-let` on its callback result. It accepts both
+  optional parsers such as `parse-variable` and guaranteed parsers such as
+  `parse-var-required`, but the latter has type `dynamic -> variable` where the
+  higher-order parameter expects `dynamic -> variable option`.
+- Root cause: The first attempted dynamic return boundary accepted both shapes
+  but erased the callback result's nominal type, later producing
+  `Runtime_dynamic.t Seq.t` where `variable Seq.t` was required.
+- Fix: Keep the inferred nullable result and adapt a compatible non-nullable
+  callback with a thin `fun args -> Some (callback args)` wrapper. Dynamic
+  callbacks retain their runtime nil check. This preserves the callback result
+  type and avoids a dynamic result boundary.
+- Verification: A focused regression covers optional success, optional failure,
+  and guaranteed callback results on Native and Melange. The PSS protocol
+  regressions remain static. The real parser chain preserves `Variable` through
+  `parse-rule-vars` and advances to `Pull.` at line 314.
+
+## 2026-07-17: `Pull.` constructor expects `aggregate`
+
+- Status: Open; next DataScript blocker
+- Symptom: Full Native parser compilation reaches line 314. `src*` has type
+  `variable option`, but the generated `Pull.` constructor expects an
+  `aggregate` field at that position.
+- Current evidence: The error occurs after the `and` truthiness guard over
+  `src*`, `var*`, and `pattern*`. Inspect option-binding refinement and adjacent
+  parser record field inference; do not coerce or erase these parser records.
 
 ## 2026-07-17: Full parser-chain compilation repeats large typechecks
 
@@ -1048,7 +1122,10 @@ update the same entry with its root cause, fix, and verification evidence.
 - Symptom: A full Native PSS + DataScript parser dependency compile takes
   several minutes even though focused regressions finish in seconds.
 - Current evidence: `db.cljc` needs three LG inference passes for forward ABI
-  stabilization, and every chunk typechecks the accumulated OCaml structure.
-  The work is single-threaded and repeats more of the dependency chain as the
-  structure grows. Optimize this only after correctness is stable, using a
-  compiler benchmark; do not reduce validation coverage or widen types.
+  stabilization, and `--compile-files` typechecks the full accumulated OCaml
+  structure after every input chunk. The work is single-threaded and repeats
+  more of the dependency chain as the structure grows. Observed warm focused
+  compiles take about 7 seconds, the compiler suite about 75 seconds, `dune
+  build` about 69 seconds, and a cold full parser chain more than 2 minutes.
+  Optimize this only after correctness is stable, using a compiler benchmark;
+  do not reduce validation coverage or widen types.
