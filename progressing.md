@@ -1234,14 +1234,70 @@ update the same entry with its root cause, fix, and verification evidence.
 
 ## 2026-07-17: Full parser-chain compilation repeats large typechecks
 
-- Status: Open; compiler performance
+- Status: Resolved for the current nine-file benchmark; monitor scaling
 - Symptom: A full Native PSS + DataScript parser dependency compile takes
   several minutes even though focused regressions finish in seconds.
-- Current evidence: `db.cljc` needs three LG inference passes for forward ABI
-  stabilization, and `--compile-files` typechecks the full accumulated OCaml
-  structure after every input chunk. The work is single-threaded and repeats
-  more of the dependency chain as the structure grows. Observed warm focused
-  compiles take about 7 seconds, the compiler suite about 75 seconds, `dune
-  build` about 69 seconds, and a cold full parser chain more than 2 minutes.
-  Optimize this only after correctness is stable, using a compiler benchmark;
-  do not reduce validation coverage or widen types.
+- Root causes: `--compile-files` typechecked the complete accumulated OCaml
+  structure after every input chunk; LG replayed typechecks when the first pass
+  produced no forward-declaration evidence, and replayed protocol-only files
+  even though dependency ordering had already made implementations available;
+  `Type_solver.apply` recursively copied complete type trees even with no
+  applicable substitutions; source locations rescanned from byte zero for
+  every span; and persistent protocol registries and qualified IDs used
+  expensive structural/polymorphic comparisons. After removing those costs,
+  type inference still eagerly inferred every simple `let` body once to gather
+  provisional destructuring evidence that symbol bindings never consume. It
+  then inferred the same body again after rewriting aliases, including aliases
+  that resolve to a local parameter. On `transact-tx-data-impl`, this produced
+  about 10.3 million association lookups and 56.6 million linear association
+  comparisons. In addition, inferred recursive functions always prepared their
+  bodies twice, even when the first body contained no dynamic self-call bridge
+  requiring return-type specialization.
+- Fix: Incremental compiler state now retains the OCaml `Env.t` and checks only
+  each new structure against that environment. Stabilization returns its first
+  result when declaration ABIs are unchanged; protocol registry growth alone no
+  longer replays an entire declaration-free file. For mutually recursive
+  functions, the first pass captures their ABI, intermediate evidence passes
+  replace those bodies with declarations, and the final pass compiles the real
+  bodies again. The final full result is checked against the stabilized ABI and
+  falls back to full fixed-point passes if it changes; refinement therefore
+  does not repeatedly infer a large unchanged function body while still
+  treating the full compile as authoritative.
+  Empty or unrelated substitutions preserve type-tree identity, source
+  locations use a precomputed line-start index, qualified IDs use explicit
+  string comparisons, and protocol method lookup has a dedicated index. The
+  CLI also caches portable LG prefix state; it never serializes compiler-libs
+  `Env.t`, and rebuilds that environment in the current process before the
+  first cache miss. Provisional `let` body inference is now lazy and forced only
+  for destructuring paths that need it. Alias-driven reinference excludes
+  aliases whose resolved target is a local parameter while preserving global
+  function and keyword aliases. Recursive function preparation retains the
+  first body unless it contains a `Runtime_dynamic` bridge; dynamic recursive
+  collection results still receive the second, return-specialized preparation.
+  Finally, sequence element field access now remains a structural row instead
+  of guessing the most recently compatible nominal record. Function parameters
+  declare nested sequence-row types, and call adapters project nominal elements
+  into those rows. This removes the parser's `rulebranch Seq.t` versus `t3
+  Seq.t` host-type failure without erasing either side to dynamic.
+- Verification: The real Native parser chain now compiles all nine files
+  successfully. With LG's compile cache disabled, three complete cold runs take
+  3.41, 2.76, and 2.71 seconds (2.76-second median), down from the previous
+  11.33-second run that still failed at parser lines 665-672 and from the
+  same-session throttled 22.32-second failure sample. A successful detailed
+  profile takes 2.75 seconds: the PSS stabilization pass falls from 2.14 to
+  1.52 seconds,
+  `node-conj` from 0.59 to 0.26 seconds, and each full
+  `transact-tx-data-impl` pass from roughly 3.7 seconds to 0.02-0.03 seconds.
+  The complete compiler suite and default `dune build` pass. Focused
+  regressions protect linear simple-let inference, global aliases,
+  destructuring evidence, recursive collection specialization, and the static
+  PSS recursive path. For comparison,
+  `datascript-ocaml` builds all installable Native, js_of_ocaml, and Melange
+  artifacts from a fresh cache-disabled build directory in a median 3.24
+  seconds (2.97/3.24/3.73); its measured OCaml source set is 52,656 code lines,
+  while the nine-file LG chain is 3,529 Clojure code lines. LG's 2.76-second
+  number includes its frontend and generated-OCaml host typecheck but emits an
+  `.ml` file, whereas the `datascript-ocaml` number builds installable artifacts;
+  they are useful same-machine latency references, not identical workloads.
+  LG's own complete OCaml `@install` build from a fresh cache-disabled build
+  directory takes 4.76 seconds in the current checkout.

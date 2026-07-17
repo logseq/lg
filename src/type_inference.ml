@@ -1,10 +1,31 @@
 open Ast
 open Types
 
+let rec string_assoc_opt name = function
+  | [] -> None
+  | (candidate, value) :: rest ->
+      if String.equal name candidate then Some value
+      else string_assoc_opt name rest
+
+let string_mem_assoc name entries =
+  Option.is_some (string_assoc_opt name entries)
+
+let rec string_remove_assoc name = function
+  | [] -> []
+  | ((candidate, _) as entry) :: rest ->
+      if String.equal name candidate then rest
+      else entry :: string_remove_assoc name rest
+
+let rec string_mem name = function
+  | [] -> false
+  | candidate :: _ when String.equal name candidate -> true
+  | _ :: rest -> string_mem name rest
+
 let replace_param name ty params =
   params
   |> List.map (fun (param_name, param_ty) ->
-         if param_name = name then (param_name, ty) else (param_name, param_ty))
+         if String.equal param_name name then (param_name, ty)
+         else (param_name, param_ty))
 
 let has_source_name name expected =
   name = expected || String.ends_with ~suffix:("/" ^ expected) name
@@ -140,7 +161,7 @@ let same_refinable_wrapper left right =
   | _ -> false
 
 let constrain_symbol expected_ty params name =
-  match List.assoc_opt name params with
+  match string_assoc_opt name params with
   | None -> Ok params
   | Some existing_ty ->
       let substitutions =
@@ -186,7 +207,7 @@ let rec stored_value_type ty =
   | None -> ty
 
 let record_field_type params receiver keyword =
-  match List.assoc_opt receiver params with
+  match string_assoc_opt receiver params with
   | None -> None
   | Some receiver_ty -> (
       match Types.record_fields receiver_ty with
@@ -210,7 +231,7 @@ let rec assoc_root_symbol = function
   | _ -> None
 
 let constrain_comparable_symbol params name =
-  match List.assoc_opt name params with
+  match string_assoc_opt name params with
   | Some (TNullable _ | TOcaml_app ("option", [ _ ])) ->
       Ok (replace_param name (Types.dynamic_constraint TUnknown) params)
   | _ -> Ok params
@@ -241,7 +262,7 @@ let constrain_seqable element_ty params name =
               (add_constraint value_ty)
         | None -> existing)
   in
-  match List.assoc_opt name params with
+  match string_assoc_opt name params with
   | None -> Ok params
   | Some existing -> Ok (replace_param name (add_constraint existing) params)
 
@@ -274,7 +295,7 @@ let constrain_optional_seqable ?(sequential = false) element_ty params name =
               (add_constraint value_ty)
         | None -> existing)
   in
-  match List.assoc_opt name params with
+  match string_assoc_opt name params with
   | None -> Ok params
   | Some existing -> Ok (replace_param name (add_constraint existing) params)
 
@@ -387,7 +408,7 @@ let add_record_field_constraint name keyword field_ty params =
         | Some field -> (
             let constrained_parameters =
               Type_solver.variables field.ty
-              |> List.filter (fun name -> List.mem name record.type_parameters)
+              |> List.filter (fun name -> string_mem name record.type_parameters)
             in
             let inferred_ty = stored_value_type field_ty in
             match (constrained_parameters, inferred_ty) with
@@ -423,7 +444,7 @@ let add_record_field_constraint name keyword field_ty params =
               (add_constraint value_ty)
         | None -> Ok ty)
   in
-  match List.assoc_opt name params with
+  match string_assoc_opt name params with
   | None -> Ok params
   | Some existing_ty ->
       Result.map
@@ -433,7 +454,7 @@ let add_record_field_constraint name keyword field_ty params =
 let rec numeric_form_type params = function
   | FInt _ -> TInt
   | FFloat _ -> TFloat
-  | FSymbol name -> List.assoc_opt name params |> Option.value ~default:TUnknown
+  | FSymbol name -> string_assoc_opt name params |> Option.value ~default:TUnknown
   | FList (FSymbol ("+" | "-" | "*" | "/" | "max" | "min") :: args) ->
       let types = List.map (numeric_form_type params) args in
       if List.exists (Types.equal TFloat) types then TFloat
@@ -454,7 +475,7 @@ let inferred_form_type params = function
         FSymbol _;
       ] ->
       TSymbol
-  | FSymbol name -> List.assoc_opt name params |> Option.value ~default:TUnknown
+  | FSymbol name -> string_assoc_opt name params |> Option.value ~default:TUnknown
   | FList [ FSymbol field_access; FSymbol receiver ]
     when String.starts_with ~prefix:".-" field_access ->
       let keyword =
@@ -469,7 +490,7 @@ let inferred_form_type params = function
         | TUnknown | TVar _ -> Types.dynamic_constraint TUnknown
         | ty -> ty
       in
-      match List.assoc_opt receiver params with
+      match string_assoc_opt receiver params with
       | Some ty -> (
           match Types.seqable_constraint_element ty with
           | Some element_ty -> normalize element_ty
@@ -480,7 +501,7 @@ let inferred_form_type params = function
       | None -> TUnknown)
   | FList (FSymbol ("get" | "clojure.core/get") :: _) -> TUnknown
   | FList (_function :: FSymbol receiver :: _) -> (
-      match List.assoc_opt receiver params with
+      match string_assoc_opt receiver params with
       | Some ty when Types.is_dynamic ty -> ty
       | _ -> TUnknown)
   | FList [ FSymbol "not"; _ ] -> TBool
@@ -550,9 +571,9 @@ let constrain_maybe_reduced_callbacks params forms =
 
 let rec rewrite_simple_aliases aliases = function
   | FSymbol name as form -> (
-      match List.assoc_opt name aliases with
+      match string_assoc_opt name aliases with
       | Some ((FSymbol _ | FKeyword _) as alias) ->
-          rewrite_simple_aliases (List.remove_assoc name aliases) alias
+          rewrite_simple_aliases (string_remove_assoc name aliases) alias
       | _ -> form)
   | FList (FSymbol binding_form :: FVector bindings :: body_forms)
     when binding_form = "let" || binding_form = "let*"
@@ -562,7 +583,7 @@ let rec rewrite_simple_aliases aliases = function
       let rec rewrite_bindings aliases rewritten = function
         | FSymbol name :: value :: rest ->
             let value = rewrite_simple_aliases aliases value in
-            rewrite_bindings (List.remove_assoc name aliases)
+            rewrite_bindings (string_remove_assoc name aliases)
               (value :: FSymbol name :: rewritten)
               rest
         | rest -> (aliases, List.rev_append rewritten rest)
@@ -575,7 +596,7 @@ let rec rewrite_simple_aliases aliases = function
       let aliases =
         List.fold_left
           (fun aliases -> function
-            | FSymbol name -> List.remove_assoc name aliases
+            | FSymbol name -> string_remove_assoc name aliases
             | _ -> aliases)
           aliases parameters
       in
@@ -613,15 +634,15 @@ let infer_params ?(explicitly_dynamic_params = [])
   let restore_branch_hints base inferred previous_hints =
     let new_hints =
       List.filter
-        (fun name -> not (List.mem name previous_hints))
+        (fun name -> not (string_mem name previous_hints))
         !branch_hint_symbols
     in
     List.map
       (fun (name, base_ty) ->
-        if List.mem name new_hints then (name, base_ty)
+        if string_mem name new_hints then (name, base_ty)
         else
           ( name,
-            List.assoc_opt name inferred |> Option.value ~default:base_ty ))
+            string_assoc_opt name inferred |> Option.value ~default:base_ty ))
       base
   in
   let rec guarded_protocol_receivers = function
@@ -636,10 +657,10 @@ let infer_params ?(explicitly_dynamic_params = [])
     let guarded = guarded_protocol_receivers condition in
     List.map
       (fun (name, base_ty) ->
-        if List.mem name guarded then (name, base_ty)
+        if string_mem name guarded then (name, base_ty)
         else
           ( name,
-            List.assoc_opt name inferred |> Option.value ~default:base_ty ))
+            string_assoc_opt name inferred |> Option.value ~default:base_ty ))
       base
   in
   let restore_branch_evidence base inferred previous_hints condition =
@@ -724,7 +745,7 @@ let infer_params ?(explicitly_dynamic_params = [])
             let preserved =
               List.filter
                 (fun (field : field) ->
-                  not (List.mem field.keyword assigned))
+                  not (string_mem field.keyword assigned))
                 expected_fields
             in
             let infer_target =
@@ -779,7 +800,7 @@ let infer_params ?(explicitly_dynamic_params = [])
         match constrain_symbol (TArray expected_ty) params array with
         | Error _ as error -> error
         | Ok params -> infer_expected TInt params index)
-    | FList (FSymbol name :: args) when List.mem_assoc name params -> (
+    | FList (FSymbol name :: args) when string_mem_assoc name params -> (
         let parameter_types =
           List.mapi
             (fun index argument ->
@@ -806,6 +827,23 @@ let infer_params ?(explicitly_dynamic_params = [])
         infer_expected_all expected_ty params args
     | FList [ FKeyword keyword; FSymbol name ] ->
         add_record_field_constraint name keyword expected_ty params
+    | FList
+        [
+          FKeyword keyword;
+          (FList
+            [
+              FSymbol ("first" | "second" | "last");
+              FSymbol _collection;
+            ] as target);
+        ] ->
+        let target_ty = TRecord [ make_field keyword expected_ty ] in
+        infer_expected target_ty params target
+    | FList
+        [
+          FSymbol ("first" | "second" | "last");
+          FSymbol collection;
+        ] ->
+        constrain_seqable expected_ty params collection
     | FList [ FSymbol field_access; FSymbol name ]
       when String.starts_with ~prefix:".-" field_access ->
         let keyword =
@@ -823,10 +861,10 @@ let infer_params ?(explicitly_dynamic_params = [])
         match record_ty with
         | Some record_ty ->
             let constrain_target =
-              match List.assoc_opt target params with
+              match string_assoc_opt target params with
               | Some inferred_ty
                 when Types.is_dynamic inferred_ty
-                     && not (List.mem target explicitly_dynamic_params) ->
+                     && not (string_mem target explicitly_dynamic_params) ->
                   let capability =
                     Types.dynamic_constraint_info inferred_ty
                     |> Option.value ~default:TUnknown
@@ -951,7 +989,7 @@ let infer_params ?(explicitly_dynamic_params = [])
           (Ok params) conditions
     | FSymbol name ->
         constrain_symbol (Types.dynamic_constraint TUnknown) params name
-    | FList (FSymbol name :: args) when List.mem_assoc name params ->
+    | FList (FSymbol name :: args) when string_mem_assoc name params ->
         let parameter_types = List.map (inferred_form_type params) args in
         constrain_symbol (TFn (parameter_types, TBool)) params name
     | FList [ FKeyword keyword; FSymbol name ] ->
@@ -1116,7 +1154,7 @@ let infer_params ?(explicitly_dynamic_params = [])
             | _ when not spec.destructured -> (
                 match infer_all [ (spec.source_name, TUnknown) ] body_forms with
                 | Ok inferred ->
-                    List.assoc_opt spec.source_name inferred
+                    string_assoc_opt spec.source_name inferred
                     |> Option.value ~default:TUnknown
                 | Error _ -> TUnknown)
             | _ ->
@@ -1128,7 +1166,7 @@ let infer_params ?(explicitly_dynamic_params = [])
                 (match infer_all pattern_params body_forms with
                 | Ok inferred ->
                     Destructure.infer_pattern_type spec.pattern (fun name ->
-                        List.assoc_opt name inferred
+                        string_assoc_opt name inferred
                         |> Option.value ~default:dynamic)
                     |> Result.value ~default:TUnknown
                 | Error _ -> TUnknown))
@@ -1150,7 +1188,7 @@ let infer_params ?(explicitly_dynamic_params = [])
             body_forms
          with
         | Ok inferred ->
-            List.assoc_opt item inferred |> Option.value ~default:TUnknown
+            string_assoc_opt item inferred |> Option.value ~default:TUnknown
         | Error _ -> TUnknown)
     | _ -> TUnknown
   and inferred_kv_reducer_types params init = function
@@ -1172,9 +1210,9 @@ let infer_params ?(explicitly_dynamic_params = [])
         in
         match infer_all reducer_params body_forms with
         | Ok inferred ->
-            ( List.assoc_opt key inferred
+            ( string_assoc_opt key inferred
               |> Option.value ~default:TUnknown,
-              List.assoc_opt value inferred
+              string_assoc_opt value inferred
               |> Option.value ~default:TUnknown )
         | Error _ -> (TUnknown, TUnknown))
     | _ -> (TUnknown, TUnknown)
@@ -1208,20 +1246,21 @@ let infer_params ?(explicitly_dynamic_params = [])
         let provisional_params =
           List.map (fun name -> (name, TUnknown)) provisional_names
           @ List.filter
-              (fun (name, _) -> not (List.mem name provisional_names))
+              (fun (name, _) -> not (string_mem name provisional_names))
               params
         in
         let inferred_locals =
-          infer_body provisional_params body_forms
-          |> Result.value ~default:provisional_params
+          lazy
+            (infer_body provisional_params body_forms
+            |> Result.value ~default:provisional_params)
         in
         let lookup_inferred_local name =
-          List.assoc_opt name inferred_locals
+          string_assoc_opt name (Lazy.force inferred_locals)
           |> Option.value ~default:TUnknown
         in
         let rec infer_slot_writes params = function
           | FList [ FSymbol ("vreset!" | "reset!"); FSymbol slot; value ]
-            when List.mem slot slots ->
+            when string_mem slot slots ->
               infer_expected (Types.dynamic_constraint TUnknown) params value
           | FList forms | FVector forms ->
               List.fold_left
@@ -1291,9 +1330,11 @@ let infer_params ?(explicitly_dynamic_params = [])
                 in
                 match simple_bindings [] forms with
                 | None ->
+                    let inferred_locals = Lazy.force inferred_locals in
                     let outer_params =
                       List.filter
-                        (fun (name, _) -> not (List.mem name provisional_names))
+                        (fun (name, _) ->
+                          not (string_mem name provisional_names))
                         inferred_locals
                     in
                     let rec propagate params = function
@@ -1322,7 +1363,7 @@ let infer_params ?(explicitly_dynamic_params = [])
                     let local_names = List.map fst bindings in
                     let outer_params =
                       List.filter
-                        (fun (name, _) -> not (List.mem name local_names))
+                        (fun (name, _) -> not (string_mem name local_names))
                         params
                     in
                     let rec initial_locals locals = function
@@ -1352,7 +1393,7 @@ let infer_params ?(explicitly_dynamic_params = [])
                           | [] -> Ok params
                           | (name, value) :: rest ->
                               let expected =
-                                List.assoc_opt name params
+                                string_assoc_opt name params
                                 |> Option.value ~default:TUnknown
                               in
                               (match expected with
@@ -1366,7 +1407,7 @@ let infer_params ?(explicitly_dynamic_params = [])
                           (fun inferred ->
                             List.filter
                               (fun (name, _) ->
-                                not (List.mem name local_names))
+                                not (string_mem name local_names))
                               inferred)
                           (propagate inferred (List.rev bindings)))))))
     | _ -> infer_all params body_forms
@@ -1387,7 +1428,7 @@ let infer_params ?(explicitly_dynamic_params = [])
                         | Ok ty -> ty
                         | Error _ -> (
                             match inferred_form_type params value_form with
-                            | TUnknown when List.mem_assoc value_name params ->
+                            | TUnknown when string_mem_assoc value_name params ->
                                 fresh_type_variable
                                   ("assoc_" ^ Names.sanitize_name value_name)
                             | ty -> ty))
@@ -1395,7 +1436,7 @@ let infer_params ?(explicitly_dynamic_params = [])
                   in
                   let params =
                     match value_form with
-                    | FSymbol value_name when List.mem_assoc value_name params
+                    | FSymbol value_name when string_mem_assoc value_name params
                       ->
                         constrain_symbol field_ty params value_name
                     | _ -> Ok params
@@ -1417,7 +1458,7 @@ let infer_params ?(explicitly_dynamic_params = [])
       | FSymbol _name, (FKeyword _ :: _ | []) -> infer_form params target
       | FSymbol name, key_form :: value_form :: _ -> (
           match
-            Option.bind (List.assoc_opt name params) Types.dynamic_map_types
+            Option.bind (string_assoc_opt name params) Types.dynamic_map_types
           with
           | Some _ ->
               let concrete_or_dynamic form =
@@ -1492,18 +1533,18 @@ let infer_params ?(explicitly_dynamic_params = [])
         | TNullable inner | TOcaml_app ("option", [ inner ]) -> inner
         | _ -> TVar ("option_" ^ Names.sanitize_name binding)
       in
-      let shadowed = List.assoc_opt binding params in
+      let shadowed = string_assoc_opt binding params in
       let branch_params =
-        (binding, initial_payload_ty) :: List.remove_assoc binding params
+        (binding, initial_payload_ty) :: string_remove_assoc binding params
       in
       match infer_form branch_params result with
       | Error _ as error -> error
       | Ok branch_params -> (
           let payload_ty =
-            List.assoc_opt binding branch_params
+            string_assoc_opt binding branch_params
             |> Option.value ~default:initial_payload_ty
           in
-          let params = List.remove_assoc binding branch_params in
+          let params = string_remove_assoc binding branch_params in
           let params =
             match shadowed with
             | None -> params
@@ -1562,7 +1603,7 @@ let infer_params ?(explicitly_dynamic_params = [])
           || List.exists
                (function
                  | FSymbol name -> (
-                     match List.assoc_opt name params with
+                     match string_assoc_opt name params with
                      | Some (TUnknown | TVar _) -> true
                      | _ -> false)
                  | _ -> false)
@@ -1623,7 +1664,7 @@ let infer_params ?(explicitly_dynamic_params = [])
             | value -> infer_expected hinted_ty params value)
         | Ok _hinted_ty ->
             (match value with
-            | FSymbol name when not (List.mem name !branch_hint_symbols) ->
+            | FSymbol name when not (string_mem name !branch_hint_symbols) ->
                 branch_hint_symbols := name :: !branch_hint_symbols
             | _ -> ());
             infer_form params value)
@@ -1647,18 +1688,18 @@ let infer_params ?(explicitly_dynamic_params = [])
           | TNullable inner | TOcaml_app ("option", [ inner ]) -> inner
           | _ -> TVar ("option_" ^ Names.sanitize_name binding)
         in
-        let shadowed = List.assoc_opt binding params in
+        let shadowed = string_assoc_opt binding params in
         let branch_params =
-          (binding, initial_payload_ty) :: List.remove_assoc binding params
+          (binding, initial_payload_ty) :: string_remove_assoc binding params
         in
         match infer_form branch_params then_form with
         | Error _ as error -> error
         | Ok branch_params ->
             let payload_ty =
-              List.assoc_opt binding branch_params
+              string_assoc_opt binding branch_params
               |> Option.value ~default:initial_payload_ty
             in
-            let params = List.remove_assoc binding branch_params in
+            let params = string_remove_assoc binding branch_params in
             let params =
               match shadowed with
               | None -> params
@@ -1681,18 +1722,18 @@ let infer_params ?(explicitly_dynamic_params = [])
           | TNullable inner | TOcaml_app ("option", [ inner ]) -> inner
           | _ -> TVar ("option_" ^ Names.sanitize_name binding)
         in
-        let shadowed = List.assoc_opt binding params in
+        let shadowed = string_assoc_opt binding params in
         let branch_params =
-          (binding, initial_payload_ty) :: List.remove_assoc binding params
+          (binding, initial_payload_ty) :: string_remove_assoc binding params
         in
         match infer_all branch_params body_forms with
         | Error _ as error -> error
         | Ok branch_params ->
             let payload_ty =
-              List.assoc_opt binding branch_params
+              string_assoc_opt binding branch_params
               |> Option.value ~default:initial_payload_ty
             in
-            let params = List.remove_assoc binding branch_params in
+            let params = string_remove_assoc binding branch_params in
             let params =
               match shadowed with
               | None -> params
@@ -1719,7 +1760,7 @@ let infer_params ?(explicitly_dynamic_params = [])
         ] ->
         let predicate_type =
           if
-            List.mem predicate
+            string_mem predicate
               [
                 "symbol?";
                 "keyword?";
@@ -1803,7 +1844,7 @@ let infer_params ?(explicitly_dynamic_params = [])
         add_record_field_constraint name keyword TUnknown params
     | FList [ FSymbol "instance?"; FSymbol _type_name; FSymbol value ] ->
         constrain_symbol (Types.dynamic_constraint TUnknown) params value
-    | FList (FSymbol name :: arguments) when List.mem_assoc name params -> (
+    | FList (FSymbol name :: arguments) when string_mem_assoc name params -> (
         let parameter_tys =
           List.mapi
             (fun index argument ->
@@ -1974,7 +2015,7 @@ let infer_params ?(explicitly_dynamic_params = [])
         :: updater
         :: extra_arguments) ->
         let target_ty, key_ty =
-          match List.assoc_opt target params with
+          match string_assoc_opt target params with
           | Some (TVector _ as ty) -> (ty, TInt)
           | _ ->
               let dynamic = Types.dynamic_constraint TUnknown in
@@ -1986,7 +2027,7 @@ let infer_params ?(explicitly_dynamic_params = [])
     | FList [ FSymbol "get"; FSymbol target; key ]
       when match key with FKeyword _ -> false | _ -> true -> (
         match
-          List.assoc_opt target params
+          string_assoc_opt target params
           |> Option.map Types.constraint_value_type
         with
         | Some (TNamed_record _) -> infer_expected TKeyword params key
@@ -2026,7 +2067,7 @@ let infer_params ?(explicitly_dynamic_params = [])
     | FList
         [ FSymbol "asort!"; FSymbol comparator; FSymbol array ] ->
         let comparator_ty =
-          match List.assoc_opt comparator params with
+          match string_assoc_opt comparator params with
           | Some ty -> Some ty
           | None -> Result.to_option (lookup_function_ty comparator)
         in
@@ -2041,7 +2082,7 @@ let infer_params ?(explicitly_dynamic_params = [])
         in
         Result.bind (constrain_symbol (TArray element_ty) params array)
           (fun params ->
-            if List.mem_assoc comparator params then
+            if string_mem_assoc comparator params then
               constrain_symbol (TFn ([ element_ty; element_ty ], TInt)) params
                 comparator
             else Ok params)
@@ -2150,7 +2191,7 @@ let infer_params ?(explicitly_dynamic_params = [])
         let dynamic_function =
           match function_form with
           | FSymbol name -> (
-              match List.assoc_opt name params with
+              match string_assoc_opt name params with
               | Some ty -> is_dynamic_function_type ty
               | None -> (
                   match lookup_function_ty name with
@@ -2197,7 +2238,7 @@ let infer_params ?(explicitly_dynamic_params = [])
               let function_ty =
                 match function_form with
                 | FSymbol name -> (
-                    match List.assoc_opt name params with
+                    match string_assoc_opt name params with
                     | Some ty -> ty
                     | None ->
                         lookup_function_ty name
@@ -2345,7 +2386,7 @@ let infer_params ?(explicitly_dynamic_params = [])
             List.exists
               (function
                 | FSymbol name -> (
-                    match List.assoc_opt name params with
+                    match string_assoc_opt name params with
                     | Some (TUnknown | TVar _) -> true
                     | Some _ | None -> false)
                 | _ -> false)
@@ -2358,7 +2399,7 @@ let infer_params ?(explicitly_dynamic_params = [])
           | _ :: _ :: _
             when List.exists
                    (function
-                     | FSymbol name -> List.mem_assoc name params
+                     | FSymbol name -> string_mem_assoc name params
                      | _ -> false)
                    args ->
               Types.dynamic_constraint TUnknown
@@ -2378,6 +2419,14 @@ let infer_params ?(explicitly_dynamic_params = [])
           (TRecord
              [ make_field nested_keyword (Types.dynamic_constraint TUnknown) ])
           params
+    | FList
+        [
+          FKeyword keyword;
+          FList
+            [ FSymbol ("first" | "second" | "last"); FSymbol collection ];
+        ] ->
+        constrain_seqable (TRecord [ make_field keyword TUnknown ]) params
+          collection
     | FList [ FKeyword keyword; FSymbol name ] ->
         add_record_field_constraint name keyword TUnknown params
     | FList [ FSymbol "contains?"; FSymbol name; (FKeyword _ as key) ] -> (
@@ -2732,7 +2781,7 @@ let infer_params ?(explicitly_dynamic_params = [])
                         (fun result (local, _) arg ->
                           Result.bind result (fun params ->
                               let expected =
-                                List.assoc_opt local params
+                                string_assoc_opt local params
                                 |> Option.value ~default:TUnknown
                               in
                               Result.bind
@@ -2778,10 +2827,10 @@ let infer_params ?(explicitly_dynamic_params = [])
                   original_names
                   |> List.map (fun name ->
                          ( name,
-                           List.assoc_opt name inferred
+                           string_assoc_opt name inferred
                            |> Option.value
                                 ~default:
-                                  (List.assoc_opt name params
+                                  (string_assoc_opt name params
                                   |> Option.value ~default:TUnknown) ))
                 in
                 bindings
@@ -2790,9 +2839,9 @@ let infer_params ?(explicitly_dynamic_params = [])
                        match (result, value) with
                        | (Error _ as error), _ -> error
                        | Ok params, FSymbol source
-                         when List.mem_assoc source params ->
+                         when string_mem_assoc source params ->
                            let local_ty =
-                             List.assoc_opt local inferred
+                             string_assoc_opt local inferred
                              |> Option.value ~default:TUnknown
                            in
                            constrain_symbol local_ty params source
@@ -2821,15 +2870,26 @@ let infer_params ?(explicitly_dynamic_params = [])
               | FVector forms -> parse_aliases [] forms
               | _ -> []
             in
+            let body_aliases =
+              List.filter
+                (fun (name, _) ->
+                  match
+                    rewrite_simple_aliases aliases (FSymbol name)
+                  with
+                  | FSymbol source -> not (string_mem_assoc source params)
+                  | FKeyword _ -> true
+                  | _ -> false)
+                aliases
+            in
             let rewritten_body_forms =
-              List.map (rewrite_simple_aliases aliases) body_forms
+              List.map (rewrite_simple_aliases body_aliases) body_forms
             in
             let rec infer_alias_constraints params = function
               | FList
                   (FSymbol apply_name :: FSymbol function_name :: arguments)
                 when apply_name = "apply"
                      || String.ends_with ~suffix:"/apply" apply_name -> (
-                  match List.assoc_opt function_name aliases with
+                  match string_assoc_opt function_name aliases with
                   | Some function_form ->
                       infer_form params
                         (FList
@@ -2838,7 +2898,7 @@ let infer_params ?(explicitly_dynamic_params = [])
               | FList [ FSymbol reduce_name; reducer; init; FSymbol collection ]
                 when reduce_name = "reduce"
                      || String.ends_with ~suffix:"/reduce" reduce_name -> (
-                  match List.assoc_opt collection aliases with
+                  match string_assoc_opt collection aliases with
                   | Some value ->
                       infer_form params
                         (FList [ FSymbol reduce_name; reducer; init; value ])
@@ -2898,12 +2958,12 @@ let infer_params ?(explicitly_dynamic_params = [])
             let local_names = List.map fst local_bindings in
             let shadowed =
               params
-              |> List.filter (fun (name, _) -> List.mem name local_names)
+              |> List.filter (fun (name, _) -> string_mem name local_names)
             in
             let local_params =
               local_bindings
               @ List.filter
-                  (fun (name, _) -> not (List.mem name local_names))
+                  (fun (name, _) -> not (string_mem name local_names))
                   params
             in
             let rec infer_local remaining local_params =
@@ -2925,7 +2985,7 @@ let infer_params ?(explicitly_dynamic_params = [])
               (fun inferred ->
                 shadowed
                 @ List.filter
-                    (fun (name, _) -> not (List.mem name local_names))
+                    (fun (name, _) -> not (string_mem name local_names))
                     inferred)
               (infer_local 3 local_params))
     | FList
@@ -2972,7 +3032,7 @@ let infer_params ?(explicitly_dynamic_params = [])
                 (Ok params) parameter_tys arguments)
         in
         match
-          match List.assoc_opt receiver params with
+          match string_assoc_opt receiver params with
           | None -> None
           | Some ty -> Types.record_fields ty
         with

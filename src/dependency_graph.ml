@@ -117,23 +117,23 @@ let has_declarations forms =
       | _ -> false)
     forms
 
-let stable_order forms =
-  if not (has_declarations forms) then List.mapi (fun index _ -> index) forms
-  else
-    let indexed = List.mapi (fun index form -> (index, form)) forms in
-    let providers =
+let indexed_forms forms = List.mapi (fun index form -> (index, form)) forms
+
+let provider_indices indexed =
+  List.fold_left
+    (fun providers (index, form) ->
       List.fold_left
-        (fun providers (index, form) ->
-          List.fold_left
-            (fun providers name ->
-              let existing =
-                String_map.find_opt name providers |> Option.value ~default:[]
-              in
-              String_map.add name (index :: existing) providers)
-            providers (provided_names form))
-        String_map.empty indexed
-    in
-    let dependencies index form =
+        (fun providers name ->
+          let existing =
+            String_map.find_opt name providers |> Option.value ~default:[]
+          in
+          String_map.add name (index :: existing) providers)
+        providers (provided_names form))
+    String_map.empty indexed
+
+let form_dependencies ?(ignore_declarations = false) providers index = function
+  | FList (FSymbol "declare" :: _) when ignore_declarations -> []
+  | form ->
       symbols form
       |> List.concat_map (fun name ->
              let candidates =
@@ -154,18 +154,49 @@ let stable_order forms =
                candidates)
       |> List.filter (fun dependency -> dependency <> index)
       |> List.sort_uniq Int.compare
+
+let dependency_components ?(ignore_declarations = false) forms =
+  let indexed = indexed_forms forms in
+  let providers = provider_indices indexed in
+  let components =
+    indexed
+    |> List.map (fun (index, form) ->
+           {
+             name = string_of_int index;
+             dependencies =
+               form_dependencies ~ignore_declarations providers index form
+               |> List.map string_of_int;
+           })
+    |> strongly_connected_components
+  in
+  (providers, components)
+
+let recursive_group_supported forms indices =
+  List.for_all
+    (fun index ->
+      match List.nth forms index with
+      | FList (FSymbol ("defn" | "defn-") :: _) -> true
+      | _ -> false)
+    indices
+
+let recursive_groups forms =
+  if not (has_declarations forms) then []
+  else
+    let _, components =
+      dependency_components ~ignore_declarations:true forms
     in
-    let graph =
-      List.map
-        (fun (index, form) ->
-          {
-            name = string_of_int index;
-            dependencies =
-              List.map string_of_int (dependencies index form);
-          })
-        indexed
-    in
-    let components = strongly_connected_components graph in
+    components
+    |> List.map (List.map int_of_string)
+    |> List.filter (function
+         | _ :: _ :: _ as indices -> recursive_group_supported forms indices
+         | _ -> false)
+    |> List.map (List.sort Int.compare)
+
+let stable_order forms =
+  if not (has_declarations forms) then List.mapi (fun index _ -> index) forms
+  else
+    let providers, components = dependency_components forms in
+    let dependencies index form = form_dependencies providers index form in
     let component_of = Hashtbl.create (List.length forms) in
     List.iteri
       (fun component members ->

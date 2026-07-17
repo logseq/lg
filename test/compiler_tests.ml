@@ -881,6 +881,44 @@ let test_type_solver_preserves_shared_and_independent_variables () =
   | Error _ -> ()
   | Ok _ -> failwith "recursive substitutions must fail the occurs check"
 
+let test_empty_type_substitutions_preserve_type_identity () =
+  let open Lg.Types in
+  let ty =
+    TFn ([ TRecord [ make_field ":name" TString ] ], TSeq (TVector TString))
+  in
+  if not (Lg.Type_solver.apply [] ty == ty) then
+    failwith "empty substitutions must not copy an unchanged type tree"
+
+let test_unrelated_type_substitutions_preserve_type_identity () =
+  let open Lg.Types in
+  let ty =
+    TFn ([ TRecord [ make_field ":name" TString ] ], TSeq (TVector TString))
+  in
+  if not (Lg.Type_solver.apply [ ("other", TInt) ] ty == ty) then
+    failwith "unrelated substitutions must not copy an unchanged type tree"
+
+let test_frontend_location_index_avoids_quadratic_scans () =
+  let form_count = 5_000 in
+  let source =
+    List.init form_count (fun index ->
+        Printf.sprintf "(def value%d %d)" index index)
+    |> String.concat "\n"
+  in
+  let started_at = Sys.time () in
+  let parsed =
+    Lg.Toolchain.Lg_frontend.implementation ~filename:"large.cljc" source
+    |> expect_ok
+  in
+  let elapsed = Sys.time () -. started_at in
+  let last_location = List.nth parsed.locations (form_count - 1) in
+  if last_location.loc_start.pos_lnum <> form_count then
+    failwith "the indexed location must preserve the final source line";
+  if elapsed > 1.0 then
+    failwith
+      (Printf.sprintf
+         "frontend location construction took %.2fs; expected at most 1.00s"
+         elapsed)
+
 let test_refresh_named_record_realigns_forward_declared_records () =
   let open Lg.Types in
   let fields = [ make_field ":db-before" TUnknown ] in
@@ -8877,6 +8915,37 @@ let test_dependency_graph_keeps_declarations_before_macro_consumers () =
     failwith
       "namespace and declare must be available before macro-generated consumers"
 
+let test_stabilization_ast_skips_mutual_function_bodies () =
+  let open Lg.Ast in
+  let forms =
+    [
+      FList [ FSymbol "declare"; FSymbol "left"; FSymbol "right" ];
+      FList
+        [
+          FSymbol "defn";
+          FSymbol "left";
+          FVector [];
+          FList [ FSymbol "right" ];
+        ];
+      FList
+        [
+          FSymbol "defn";
+          FSymbol "right";
+          FVector [];
+          FList [ FSymbol "left" ];
+        ];
+      FList [ FSymbol "defn"; FSymbol "independent"; FVector []; FInt 42 ];
+    ]
+  in
+  let evidence = Lg.Toolchain.stabilization_ast forms in
+  match evidence with
+  | [ _; FList (FSymbol "declare" :: names); FList [ FSymbol "declare" ]; last ] ->
+      if names <> [ FSymbol "left"; FSymbol "right" ] then
+        failwith "the evidence pass must retain both recursive declarations";
+      if last != List.nth forms 3 then
+        failwith "the evidence pass must preserve independent forms"
+  | _ -> failwith "mutual function bodies must be omitted from evidence passes"
+
 let test_declarations_do_not_merge_independent_functions () =
   let source =
     {|
@@ -8915,7 +8984,23 @@ let test_typecheck_stabilizes_forward_declaration_abi () =
   let ast =
     [
       Lg.Ast.FList
-        [ Lg.Ast.FSymbol "declare"; Lg.Ast.FSymbol "restore" ];
+        [
+          Lg.Ast.FSymbol "declare";
+          Lg.Ast.FSymbol "restore";
+          Lg.Ast.FSymbol "helper";
+        ];
+      Lg.Ast.FList
+        [
+          Lg.Ast.FSymbol "def";
+          Lg.Ast.FSymbol "restore";
+          Lg.Ast.FList [ Lg.Ast.FSymbol "helper" ];
+        ];
+      Lg.Ast.FList
+        [
+          Lg.Ast.FSymbol "def";
+          Lg.Ast.FSymbol "helper";
+          Lg.Ast.FList [ Lg.Ast.FSymbol "restore" ];
+        ];
     ]
   in
   let state, _ =
@@ -8933,6 +9018,209 @@ let test_typecheck_stabilizes_forward_declaration_abi () =
   in
   if List.length binding.row_param_types <> 41 then
     failwith "the stabilized declaration ABI must be retained"
+
+let test_typecheck_validates_full_compile_after_evidence_stabilizes () =
+  let full_passes = ref 0 in
+  let evidence_passes = ref 0 in
+  let compile_with_row_arity passes row_arity (state : Lg.Compiler_state.t) =
+    incr passes;
+    let row_parameters =
+      List.init row_arity (fun index -> Some ("'a" ^ string_of_int index))
+    in
+    let binding =
+      Lg.Types.binding ~row_param_types:row_parameters "restore"
+        (Lg.Types.TFn ([ Lg.Types.TInt ], Lg.Types.TInt))
+    in
+    let env = Lg.Compiler_environment.add "restore" binding state.env in
+    Ok ({ state with env }, [])
+  in
+  let compile state =
+    let row_arity = if !full_passes = 0 then 29 else 53 in
+    compile_with_row_arity full_passes row_arity state
+  in
+  let compile_evidence state =
+    compile_with_row_arity evidence_passes 41 state
+  in
+  let ast =
+    [
+      Lg.Ast.FList
+        [ Lg.Ast.FSymbol "declare"; Lg.Ast.FSymbol "restore" ];
+    ]
+  in
+  let state, _ =
+    Lg.Toolchain.stabilize_typecheck ~compile_evidence ~compile
+      ~initial_state:Lg.Compiler_state.empty ast
+    |> expect_ok
+  in
+  if !full_passes <> 3 then
+    failwith
+      ("the final full compile should stabilize its own ABI, got "
+      ^ string_of_int !full_passes
+      ^ " full passes");
+  let binding =
+    Lg.Compiler_environment.find_opt "restore" state.env
+    |> Option.get
+  in
+  if List.length binding.row_param_types <> 53 then
+    failwith "the final full compile ABI must be retained"
+
+let test_nested_simple_let_inference_visits_body_linearly () =
+  let known_lookups = ref 0 in
+  let lookup_function_ty name =
+    if String.equal name "known" then (
+      incr known_lookups;
+      Ok (Lg.Types.TFn ([ Lg.Types.TInt ], Lg.Types.TInt))
+    ) else Lg.Error.error ("unknown function " ^ name)
+  in
+  let rec nested_let depth value =
+    if depth = 0 then
+      Lg.Ast.FList [ Lg.Ast.FSymbol "known"; value ]
+    else
+      let local = "value" ^ string_of_int depth in
+      Lg.Ast.FList
+        [
+          Lg.Ast.FSymbol "let";
+          Lg.Ast.FVector [ Lg.Ast.FSymbol local; value ];
+          nested_let (depth - 1) (Lg.Ast.FSymbol local);
+        ]
+  in
+  ignore
+    (Lg.Type_inference.infer_params ~lookup_function_ty
+       ~lookup_protocol_constraint:(fun _ -> None)
+       ~lookup_dynamic_key_record_type:(fun _ -> None)
+       ~resolve_named_record:Fun.id
+       [ ("input", Lg.Types.TInt) ]
+       [ nested_let 6 (Lg.Ast.FSymbol "input") ]
+    |> expect_ok);
+  if !known_lookups > 16 then
+    failwith
+      ("nested simple lets should visit the body linearly, got "
+      ^ string_of_int !known_lookups
+      ^ " known-function lookups")
+
+let test_global_function_alias_keeps_contextual_inference () =
+  let lookup_function_ty name =
+    if String.equal name "known" then
+      Ok (Lg.Types.TFn ([ Lg.Types.TInt ], Lg.Types.TInt))
+    else Lg.Error.error ("unknown function " ^ name)
+  in
+  let body =
+    Lg.Ast.FList
+      [
+        Lg.Ast.FSymbol "let";
+        Lg.Ast.FVector
+          [ Lg.Ast.FSymbol "f"; Lg.Ast.FSymbol "known" ];
+        Lg.Ast.FList
+          [ Lg.Ast.FSymbol "f"; Lg.Ast.FSymbol "input" ];
+      ]
+  in
+  let inferred =
+    Lg.Type_inference.infer_params ~lookup_function_ty
+      ~lookup_protocol_constraint:(fun _ -> None)
+      ~lookup_dynamic_key_record_type:(fun _ -> None)
+      ~resolve_named_record:Fun.id
+      [ ("input", Lg.Types.TUnknown) ] [ body ]
+    |> expect_ok
+  in
+  match List.assoc_opt "input" inferred with
+  | Some Lg.Types.TInt -> ()
+  | Some ty ->
+      failwith
+        ("global function alias should infer int, got "
+        ^ Lg.Types.source_name ty)
+  | None -> failwith "global function alias lost the input parameter"
+
+let test_destructured_let_keeps_provisional_body_inference () =
+  let source =
+    {|
+(defn first-plus-one [items]
+  (let [[item] items]
+    (+ item 1)))
+
+(print (first-plus-one [41]))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "destructured_let_keeps_provisional_body_inference" "42"
+    ocaml_source
+
+let test_recursive_collection_result_specializes_self_calls () =
+  let source =
+    {|
+(defn expand-values [values]
+  (map
+    (fn [value]
+      (if (sequential? value)
+        (first (expand-values value))
+        value))
+    values))
+
+(print "ok")
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "recursive_collection_result_specializes_self_calls" "ok"
+    ocaml_source
+
+let test_grouped_records_preserve_constructor_type () =
+  let source =
+    {|
+(defrecord Branch [vars clauses])
+(defrecord Rule [rule-name branches])
+(defrecord Parsed [source-name vars clauses])
+
+(defn parse-branch [form]
+  (Parsed. (first form) [] []))
+
+(defn validate-branches [name branches]
+  (:vars (first branches)))
+
+(defn parse-rules [forms]
+  (vec
+    (for [[name branches] (group-by :source-name (map parse-branch forms))
+          :let [branches (mapv #(Branch. (:vars %) (:clauses %)) branches)]]
+      (do
+        (validate-branches name branches)
+        (Rule. name branches)))))
+
+(print "ok")
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "grouped_records_preserve_constructor_type" "ok"
+    ocaml_source
+
+let test_typecheck_skips_replay_without_new_stabilization_evidence () =
+  let passes = ref 0 in
+  let protocol_id =
+    Lg.Protocol_id.create ~owner:[] ~name:"CompileOnce"
+  in
+  let compile (state : Lg.Compiler_state.t) =
+    incr passes;
+    let protocols =
+      Lg.Protocol_registry.declare protocol_id []
+        (Lg.Compiler_environment.protocols state.env)
+      |> expect_ok
+    in
+    let env =
+      Lg.Compiler_environment.with_protocols protocols state.env
+    in
+    Ok ({ state with env }, [])
+  in
+  let ast =
+    [
+      Lg.Ast.FList
+        [ Lg.Ast.FSymbol "def"; Lg.Ast.FSymbol "answer"; Lg.Ast.FInt 42 ];
+    ]
+  in
+  ignore
+    (Lg.Toolchain.stabilize_typecheck ~compile
+       ~initial_state:Lg.Compiler_state.empty ast
+    |> expect_ok);
+  if !passes <> 1 then
+    failwith
+      ("a form without forward declarations must compile once, got "
+      ^ string_of_int !passes)
 
 let test_recursive_declared_nullable_sequence_supports_not_empty () =
   let source =
@@ -9188,6 +9476,93 @@ let test_parser_rule_map_allocates_anonymous_return_record () =
   assert_ocaml_runs
     "parser_rule_map_allocates_anonymous_return_record" "query\n"
     native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_rule_vars_projection_preserves_nominal_argument_type () =
+  let source =
+    {|
+(defrecord RuleVars [required free])
+(defrecord RuleBranch [vars clauses])
+
+(defn parse-rule []
+  {:name :rule
+   :vars (RuleVars. [1] [2 3])
+   :clauses [1]})
+
+(defn rule-vars-arity [rule-vars]
+  [(count (:required rule-vars)) (count (:free rule-vars))])
+
+(defn validate-arity [branches]
+  (let [vars0 (:vars (first branches))
+        vars1 (:vars (second branches))
+        vars2 (:vars (last branches))
+        arity0 (rule-vars-arity vars0)
+        _arity1 (rule-vars-arity vars1)
+        _arity2 (rule-vars-arity vars2)]
+    arity0))
+
+(defn parse-rules []
+  (let [branches
+        (mapv #(RuleBranch. (:vars %) (:clauses %))
+          [(parse-rule) (parse-rule) (parse-rule)])]
+    (validate-arity branches)))
+
+(println
+  (first (parse-rules)))
+|}
+  in
+  let native_source =
+    Lg.Compiler.compile_string ~target:Lg.Target.Native source |> expect_ok
+  in
+  assert_ocaml_runs "rule_vars_projection_preserves_nominal_argument_type" "1\n"
+    native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_for_let_shadowing_replaces_nominal_collection_type () =
+  let source =
+    {|
+(defrecord RuleVars [required free])
+(defrecord RuleBranch [vars clauses])
+(defrecord Rule [name branches])
+(defrecord PlainSymbol [symbol])
+
+(defn parse-rule []
+  {:name (PlainSymbol. "rule")
+   :vars (RuleVars. [1] [2 3])
+   :clauses [1]})
+
+(defn rule-vars-arity [rule-vars]
+  [(count (:required rule-vars)) (count (:free rule-vars))])
+
+(defn validate-arity [name branches]
+  (let [vars0 (:vars (first branches))
+        arity0 (rule-vars-arity vars0)]
+    (doseq [branch (next branches)
+            :let [vars (:vars branch)]]
+      (when (not= arity0 (rule-vars-arity vars))
+        (println (:symbol name))))))
+
+(defn parse-rules []
+  (vec
+    (for [[name branches]
+          (group-by :name
+            [(parse-rule) (parse-rule) (parse-rule)])
+          :let [branches
+                (mapv #(RuleBranch. (:vars %) (:clauses %)) branches)]]
+      (do
+        (validate-arity name branches)
+        (Rule. name branches)))))
+
+(println (:symbol (:name (first (parse-rules)))))
+|}
+  in
+  let native_source =
+    Lg.Compiler.compile_string ~target:Lg.Target.Native source |> expect_ok
+  in
+  assert_ocaml_runs "for_let_shadowing_replaces_nominal_collection_type"
+    "rule\n" native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -9691,6 +10066,24 @@ let test_dynamic_generic_nominals_are_consumed_inside_existential_scope () =
     String.concat "\n" (List.rev (output :: outputs))
   in
   let ocaml_source = compile Lg.Target.Native in
+  let node_conj_start =
+    expect_substring_index ocaml_source
+      "let rec ((me_tonsky_persistent_sorted_set_node_conj)"
+  in
+  let node_disj_start =
+    expect_substring_index ocaml_source
+      "let rec ((me_tonsky_persistent_sorted_set_node_disj)"
+  in
+  let node_conj_source =
+    String.sub ocaml_source node_conj_start
+      (node_disj_start - node_conj_start)
+  in
+  if
+    string_contains_substring node_conj_source
+      "Lg_runtime.Runtime_dynamic"
+  then
+    failwith
+      "node-conj should not require dynamic recursive-call specialization";
   if
     string_contains_substring ocaml_source
       "index: Lg_runtime.Runtime_dynamic.t"
@@ -14810,6 +15203,68 @@ let test_incremental_compile_chunk_runs_ocaml_typecheck_gate () =
 |}
   |> expect_error_contains "string"
 
+let test_incremental_compile_chunk_typechecks_each_chunk_once () =
+  let warning_source =
+    {|
+(type-variant status Active Inactive)
+(defn describe [^:status status]
+  (match status
+    Active "active"))
+|}
+  in
+  let state, first =
+    Lg.Compiler.compile_chunk_with_filename_and_diagnostics
+      ~filename:"first_chunk.cljc" Lg.Compiler.empty_state warning_source
+    |> expect_ok
+  in
+  if List.length first.diagnostics <> 1 then
+    failwith "the first chunk must report its non-exhaustive match warning";
+  let _state, second =
+    Lg.Compiler.compile_chunk_with_filename_and_diagnostics
+      ~filename:"second_chunk.cljc" state "(def answer 42)"
+    |> expect_ok
+  in
+  if second.diagnostics <> [] then
+    failwith
+      "an incremental compile must not typecheck and report earlier chunks again"
+
+let test_incremental_compile_chunk_checks_new_code_against_prior_ocaml_env () =
+  let state, _ =
+    Lg.Compiler.compile_chunk Lg.Compiler.empty_state
+      {|
+(type-record user (name :string))
+(def user (record user (name "Ada")))
+|}
+    |> expect_ok
+  in
+  Lg.Compiler.compile_chunk state
+    {|
+(def invalid-age (Stdlib.abs (:name user)))
+|}
+  |> expect_error_contains "string"
+
+let test_portable_compiler_state_rebuilds_ocaml_environment () =
+  let state, (first : Lg.Compiler.compilation) =
+    Lg.Compiler.compile_chunk_with_filename_and_diagnostics
+      ~filename:"first_chunk.cljc" Lg.Compiler.empty_state
+      {|
+(type-record user (name :string))
+(def user (record user (name "Ada")))
+|}
+    |> expect_ok
+  in
+  let state = Lg.Compiler.cacheable_state state in
+  let encoded = Marshal.to_string state [] in
+  let restored : Lg.Compiler.state = Marshal.from_string encoded 0 in
+  let restored =
+    Lg.Compiler.restore_ocaml_environment ~packages:[] restored
+      [ first.ocaml_source ]
+    |> expect_ok
+  in
+  ignore
+    (Lg.Compiler.compile_chunk restored {|(println (:name user))|}
+    |> expect_ok)
+
 let test_parsetree_backend_prints_runnable_ocaml () =
   let source =
     {|
@@ -15564,6 +16019,12 @@ let tests =
       test_type_relations_are_explicit_and_strict );
     ( "type solver preserves shared and independent variables",
       test_type_solver_preserves_shared_and_independent_variables );
+    ( "empty type substitutions preserve type identity",
+      test_empty_type_substitutions_preserve_type_identity );
+    ( "unrelated type substitutions preserve type identity",
+      test_unrelated_type_substitutions_preserve_type_identity );
+    ( "frontend location index avoids quadratic scans",
+      test_frontend_location_index_avoids_quadratic_scans );
     ( "refresh named record realigns forward declared records",
       test_refresh_named_record_realigns_forward_declared_records );
     ( "freshen deferred dynamic dispatch stays monomorphic",
@@ -16494,10 +16955,26 @@ let tests =
       test_dependency_graph_orders_declared_protocol_dependencies );
     ( "dependency graph keeps declarations before macro consumers",
       test_dependency_graph_keeps_declarations_before_macro_consumers );
+    ( "stabilization ast skips mutual function bodies",
+      test_stabilization_ast_skips_mutual_function_bodies );
     ( "declarations do not merge independent functions",
       test_declarations_do_not_merge_independent_functions );
     ( "typecheck stabilizes forward declaration ABI",
       test_typecheck_stabilizes_forward_declaration_abi );
+    ( "typecheck validates full compile after evidence stabilizes",
+      test_typecheck_validates_full_compile_after_evidence_stabilizes );
+    ( "nested simple let inference visits body linearly",
+      test_nested_simple_let_inference_visits_body_linearly );
+    ( "global function alias keeps contextual inference",
+      test_global_function_alias_keeps_contextual_inference );
+    ( "destructured let keeps provisional body inference",
+      test_destructured_let_keeps_provisional_body_inference );
+    ( "recursive collection result specializes self calls",
+      test_recursive_collection_result_specializes_self_calls );
+    ( "grouped records preserve constructor type",
+      test_grouped_records_preserve_constructor_type );
+    ( "typecheck skips replay without new stabilization evidence",
+      test_typecheck_skips_replay_without_new_stabilization_evidence );
     ( "recursive declared nullable sequence supports not-empty",
       test_recursive_declared_nullable_sequence_supports_not_empty );
     ( "nested keyword lookup preserves nullable map evidence",
@@ -16510,6 +16987,10 @@ let tests =
       test_parser_alternatives_preserve_open_argument_type );
     ( "parser rule map allocates anonymous return record",
       test_parser_rule_map_allocates_anonymous_return_record );
+    ( "rule vars projection preserves nominal argument type",
+      test_rule_vars_projection_preserves_nominal_argument_type );
+    ( "for let shadowing replaces nominal collection type",
+      test_for_let_shadowing_replaces_nominal_collection_type );
     ( "symbol predicate narrows later and operands",
       test_symbol_predicate_narrows_later_and_operands );
     ( "nested sequential branch destructuring preserves dynamic values",
@@ -17004,6 +17485,12 @@ let tests =
       test_incremental_compilation_preserves_protocols );
     ( "incremental compile_chunk runs OCaml typecheck gate",
       test_incremental_compile_chunk_runs_ocaml_typecheck_gate );
+    ( "incremental compile_chunk typechecks each chunk once",
+      test_incremental_compile_chunk_typechecks_each_chunk_once );
+    ( "incremental compile_chunk checks new code against prior OCaml env",
+      test_incremental_compile_chunk_checks_new_code_against_prior_ocaml_env );
+    ( "portable compiler state rebuilds OCaml environment",
+      test_portable_compiler_state_rebuilds_ocaml_environment );
     ( "incremental compilation preserves module aliases",
       test_incremental_compilation_preserves_module_aliases );
     ( "parsetree backend prints runnable ocaml",

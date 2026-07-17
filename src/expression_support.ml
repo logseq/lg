@@ -1290,10 +1290,20 @@ let parameterize_row_fields fields =
   let fields = List.map parameterize_field fields in
   (fields, List.rev !parameters)
 
+let row_param_fields = function
+  | TRecord fields -> Some fields
+  | TOcaml_app (constraint_name, [ TRecord fields; _ ])
+    when constraint_name = Types.seqable_constraint_name
+         || constraint_name = Types.optional_seqable_constraint_name
+         || constraint_name = Types.optional_sequential_constraint_name ->
+      Some fields
+  | _ -> None
+
 let row_param_type_names prefix param_tys =
   param_tys
-  |> List.mapi (fun index -> function
-       | TRecord fields ->
+  |> List.mapi (fun index param_ty ->
+       match row_param_fields param_ty with
+       | Some fields ->
            let type_name = prefix ^ "_row" ^ string_of_int index in
            let _, parameters = parameterize_row_fields fields in
            let parameters = List.map (fun name -> "'" ^ name) parameters in
@@ -1304,13 +1314,13 @@ let row_param_type_names prefix param_tys =
           | parameters -> "(" ^ String.concat ", " parameters ^ ") " ^ type_name
            in
            Some applied_name
-       | _ -> None)
+       | None -> None)
 
 let row_type_items row_type_names param_tys =
   List.map2
     (fun row_type_name param_ty ->
-      match (row_type_name, param_ty) with
-      | Some applied_name, TRecord fields ->
+      match (row_type_name, row_param_fields param_ty) with
+      | Some applied_name, Some fields ->
           let type_name =
             match String.rindex_opt applied_name ' ' with
             | None -> applied_name

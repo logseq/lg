@@ -22,6 +22,77 @@ let write_output output_path contents =
         ~finally:(fun () -> close_out_noerr oc)
         (fun () -> output_string oc contents)
 
+type cached_prefix = {
+  state : Lg.Compiler.state;
+  source_packages : string list;
+  compilation : Lg.Compiler.compilation;
+}
+
+let compile_cache_enabled () =
+  Sys.getenv_opt "LG_DISABLE_COMPILE_CACHE" <> Some "1"
+
+let compile_cache_min_seconds () =
+  match Sys.getenv_opt "LG_COMPILE_CACHE_MIN_SECONDS" with
+  | Some value -> Option.value (float_of_string_opt value) ~default:0.25
+  | None -> 0.25
+
+let rec ensure_directory path =
+  if Sys.file_exists path then ()
+  else (
+    ensure_directory (Filename.dirname path);
+    Unix.mkdir path 0o755)
+
+let compile_cache_directory () =
+  match Sys.getenv_opt "LG_CACHE_DIR" with
+  | Some path -> Filename.concat path "compile-files"
+  | None ->
+      Filename.concat (Sys.getcwd ()) "_build/.lg-cache/compile-files"
+
+let compiler_cache_identity () =
+  Digest.string
+    (Sys.ocaml_version ^ "\000" ^ Digest.to_hex (Digest.file Sys.executable_name))
+  |> Digest.to_hex
+
+let next_prefix_key ~target previous_key input_path source =
+  Digest.string
+    (String.concat "\000"
+       [ previous_key; Lg.Target.to_string target; input_path; source ])
+  |> Digest.to_hex
+
+let cache_path key =
+  Filename.concat (compile_cache_directory ()) (key ^ ".marshal")
+
+let read_cached_prefix key =
+  if not (compile_cache_enabled ()) then None
+  else
+    let path = cache_path key in
+    if not (Sys.file_exists path) then None
+    else
+      try
+        let input = open_in_bin path in
+        Fun.protect
+          ~finally:(fun () -> close_in_noerr input)
+          (fun () -> Some (Marshal.from_channel input : cached_prefix))
+      with _ -> None
+
+let write_cached_prefix key cached =
+  if compile_cache_enabled () then
+    try
+      let directory = compile_cache_directory () in
+      ensure_directory directory;
+      let path = cache_path key in
+      let temporary = Filename.temp_file ~temp_dir:directory "prefix-" ".tmp" in
+      let output = open_out_bin temporary in
+      Fun.protect
+        ~finally:(fun () -> close_out_noerr output)
+        (fun () -> Marshal.to_channel output cached []);
+      Sys.rename temporary path
+    with _ -> ()
+
+let report_cache_hit input_path =
+  if Sys.getenv_opt "LG_COMPILE_CACHE_DEBUG" = Some "1" then
+    Printf.eprintf "lg: compile cache hit: %s\n%!" input_path
+
 type mode =
   | Compile of { input_path : string; output_path : string option }
   | Interface of { input_path : string; output_path : string option }
@@ -145,7 +216,8 @@ let run_ocaml_source packages ocaml_source =
       exit code
 
 let compile_files target input_paths =
-  let rec loop state packages outputs diagnostics = function
+  let rec loop prefix_key state needs_ocaml_restore packages outputs diagnostics =
+    function
     | [] ->
         Ok
           ( List.sort_uniq String.compare packages,
@@ -153,22 +225,58 @@ let compile_files target input_paths =
             List.concat (List.rev diagnostics) )
     | input_path :: rest -> (
         let source = read_file input_path in
+        let prefix_key =
+          next_prefix_key ~target prefix_key input_path source
+        in
         match Lg.Compiler.required_ocaml_packages ~target source with
         | Error _ as err -> err
         | Ok source_packages -> (
-            match
-              Lg.Compiler.compile_chunk_with_filename_and_diagnostics ~target
-                ~filename:input_path state source
-            with
-            | Error _ as err -> err
-            | Ok (state, compilation) ->
-                loop state
-                  (List.rev_append source_packages packages)
-                  (compilation.ocaml_source :: outputs)
-                  (compilation.diagnostics :: diagnostics)
-                  rest))
+            match read_cached_prefix prefix_key with
+            | Some cached ->
+                report_cache_hit input_path;
+                loop prefix_key cached.state true
+                  (List.rev_append cached.source_packages packages)
+                  (cached.compilation.ocaml_source :: outputs)
+                  (cached.compilation.diagnostics :: diagnostics)
+                  rest
+            | None ->
+                let restored_state =
+                  if needs_ocaml_restore then
+                    Lg.Compiler.restore_ocaml_environment ~target
+                      ~packages:(List.sort_uniq String.compare packages)
+                      state (List.rev outputs)
+                  else Ok state
+                in
+                (match restored_state with
+                | Error _ as err -> err
+                | Ok state -> (
+                    if Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" then
+                      Printf.eprintf "lg: compiling %s\n%!" input_path;
+                    let started_at = Sys.time () in
+                    match
+                      Lg.Compiler.compile_chunk_with_filename_and_diagnostics
+                        ~target ~filename:input_path state source
+                    with
+                    | Error _ as err -> err
+                    | Ok (state, compilation) ->
+                        if
+                          Sys.time () -. started_at
+                          >= compile_cache_min_seconds ()
+                        then
+                          write_cached_prefix prefix_key
+                            {
+                              state = Lg.Compiler.cacheable_state state;
+                              source_packages;
+                              compilation;
+                            };
+                        loop prefix_key state false
+                          (List.rev_append source_packages packages)
+                          (compilation.ocaml_source :: outputs)
+                          (compilation.diagnostics :: diagnostics)
+                          rest))))
   in
-  loop Lg.Compiler.empty_state [] [] [] input_paths
+  loop (compiler_cache_identity ()) Lg.Compiler.empty_state false [] [] []
+    input_paths
 
 let compile_file target input_path =
   let source = read_file input_path in

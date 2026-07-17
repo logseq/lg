@@ -1318,7 +1318,7 @@ and pack_dynamic_value env expected_dynamic argument =
                  conversion;
                })
 
-let rec pack_constrained_value env expected argument =
+let rec pack_constrained_value ?row_type_name env expected argument =
   let requires_binding =
     match
       (argument.record_values, Semantic_ir.unlocated argument.semantic_expr)
@@ -1337,7 +1337,7 @@ let rec pack_constrained_value env expected argument =
           Semantic_ir.annotate argument.ty (Semantic_ir.Ident argument_name);
         }
       in
-      pack_constrained_value env expected bound_argument
+      pack_constrained_value ?row_type_name env expected bound_argument
       |> Result.map (fun packed ->
              Semantic_ir.Let
                ([ (Semantic_ir.PVar argument_name, bound_expression) ], packed))
@@ -1605,8 +1605,20 @@ let rec pack_constrained_value env expected argument =
                       else value_ty
           in
           let element_mapper =
-            match actual_element with
-            | Some actual_element
+            match (actual_element, row_type_name, expected_element) with
+            | Some actual_element, Some type_name, TRecord fields
+              when Types.assignable ~policy:Structural
+                     ~expected:expected_element ~actual:actual_element ->
+                let item_name = "__lg_seqable_row_item" in
+                let item =
+                  typed_ir actual_element (Semantic_ir.Ident item_name)
+                in
+                Ok
+                  (Some
+                     (Semantic_ir.Fun
+                        ( [ typed_item_pattern item_name actual_element ],
+                          row_project_expr type_name fields item )))
+            | Some actual_element, _, _
               when Types.is_dynamic expected_element
                    && not (Types.is_dynamic actual_element) ->
                 let item_name = "__lg_seqable_item" in
@@ -1618,7 +1630,7 @@ let rec pack_constrained_value env expected argument =
                        Some
                          (Semantic_ir.Fun
                             ([ Semantic_ir.PVar item_name ], packed)))
-            | Some actual_element when Types.is_dynamic actual_element ->
+            | Some actual_element, _, _ when Types.is_dynamic actual_element ->
                 let item_name = "__lg_seqable_item" in
                 dynamic_unpack env expected_element
                   (Semantic_ir.Ident item_name)
@@ -1626,7 +1638,7 @@ let rec pack_constrained_value env expected argument =
                        Some
                          (Semantic_ir.Fun
                             ([ Semantic_ir.PVar item_name ], unpacked)))
-            | Some actual_element
+            | Some actual_element, _, _
               when has_capability_constraint expected_element ->
                 let item_name = "__lg_seqable_item" in
                 let item =
@@ -7148,7 +7160,8 @@ let create ~compile_expr =
                         | Some type_name, TRecord fields ->
                             typed_row_argument env type_name fields argument
                         | _ when has_capability_constraint expected ->
-                          pack_constrained_value env expected argument
+                          pack_constrained_value ?row_type_name env expected
+                            argument
                         | _ when expects_optional_dynamic_value expected ->
                           Ok
                             (coerce_expression_to_type expected argument.ty
@@ -7361,16 +7374,19 @@ let create ~compile_expr =
                   | [] -> Ok (List.rev acc)
                   | arg :: rest -> (
                       let expected_ty = List.nth param_tys index in
+                      let row_type_name =
+                        List.nth_opt fn.row_param_types index |> Option.join
+                      in
                       if has_capability_constraint expected_ty then
-                        match pack_constrained_value env expected_ty arg with
+                        match
+                          pack_constrained_value ?row_type_name env expected_ty
+                            arg
+                        with
                           | Error _ as err -> err
                           | Ok expression ->
                               compile_arg_exprs (index + 1) (expression :: acc)
                                 rest
                       else
-                          let row_type_name =
-                            List.nth_opt fn.row_param_types index |> Option.join
-                          in
                           let expression =
                             match (row_type_name, expected_ty) with
                             | Some type_name, TRecord fields

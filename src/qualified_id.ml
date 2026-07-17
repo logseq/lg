@@ -29,7 +29,22 @@ module Make () : S = struct
         create ~owner:[ owner ] ~name
   let owner id = id.owner
   let name id = id.name
-  let compare = Stdlib.compare
+
+  let rec compare_owner left right =
+    match (left, right) with
+    | [], [] -> 0
+    | [], _ -> -1
+    | _, [] -> 1
+    | left_part :: left_rest, right_part :: right_rest -> (
+        match String.compare left_part right_part with
+        | 0 -> compare_owner left_rest right_rest
+        | result -> result)
+
+  let compare left right =
+    match compare_owner left.owner right.owner with
+    | 0 -> String.compare left.name right.name
+    | result -> result
+
   let equal left right = compare left right = 0
 
   let to_string id =

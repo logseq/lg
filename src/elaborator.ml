@@ -393,6 +393,7 @@ let remove_resolved_names names form =
   List.filter (fun name -> not (List.mem name resolved)) names
 
 let compile_forms_incremental (state : Compiler_state.t) forms =
+  let report_timings = Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" in
   let finish scope env next_type items =
     let items =
       items
@@ -414,7 +415,17 @@ let compile_forms_incremental (state : Compiler_state.t) forms =
             | Some error -> Error error
             | None -> Error.error "declared forms made no compilation progress")
       | (index, form) :: rest -> (
-        match compile_top_level scope env next_type form with
+        let started_at = if report_timings then Sys.time () else 0.0 in
+        let compiled = compile_top_level scope env next_type form in
+        let elapsed = if report_timings then Sys.time () -. started_at else 0.0 in
+        if report_timings && elapsed >= 0.01 then (
+          let names = Dependency_graph.provided_names form in
+          Printf.eprintf "lg: form %d%s: %.3fs\n%!" index
+            (match names with
+            | [] -> ""
+            | _ -> " (" ^ String.concat ", " names ^ ")")
+            elapsed);
+        match compiled with
         | Error error ->
             let error =
               Error.with_location_if_missing (Source_context.find form) error

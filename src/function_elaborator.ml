@@ -99,6 +99,26 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
       | Some (_, _, value_ty) ->
           Types.protocol_constraint_with_value ty
             (infer_named_record ~allow_dynamic_fields:true scope env value_ty))
+  | TOcaml_app (name, [ TRecord fields; container ])
+    when name = Types.seqable_constraint_name
+         || name = Types.optional_seqable_constraint_name
+         || name = Types.optional_sequential_constraint_name ->
+      let fields =
+        List.map
+          (fun (field : field) ->
+            {
+              field with
+              ty =
+                infer_named_record ~allow_dynamic_fields scope env field.ty;
+            })
+          fields
+      in
+      TOcaml_app
+        ( name,
+          [
+            TRecord fields;
+            infer_named_record ~allow_dynamic_fields scope env container;
+          ] )
   | TOcaml_app (name, arguments) ->
       TOcaml_app
         ( name,
@@ -209,6 +229,31 @@ let rec pattern_constraint_type = function
                 { field with ty = pattern_constraint_type field.ty })
               record.fields;
         }
+  | ty -> ty
+
+let rec apply_row_constraint_type row_type_name = function
+  | TRecord _ -> TOcaml row_type_name
+  | TOcaml_app (name, [ TRecord _; container ])
+    when name = Types.seqable_constraint_name
+         || name = Types.optional_seqable_constraint_name
+         || name = Types.optional_sequential_constraint_name ->
+      TOcaml_app (name, [ TOcaml row_type_name; container ])
+  | TNullable ty -> TNullable (apply_row_constraint_type row_type_name ty)
+  | TOcaml_app (name, arguments) ->
+      TOcaml_app
+        (name, List.map (apply_row_constraint_type row_type_name) arguments)
+  | TTuple items ->
+      TTuple (List.map (apply_row_constraint_type row_type_name) items)
+  | TArray ty -> TArray (apply_row_constraint_type row_type_name ty)
+  | TRef ty -> TRef (apply_row_constraint_type row_type_name ty)
+  | TList ty -> TList (apply_row_constraint_type row_type_name ty)
+  | TVector ty -> TVector (apply_row_constraint_type row_type_name ty)
+  | TSet ty -> TSet (apply_row_constraint_type row_type_name ty)
+  | TSeq ty -> TSeq (apply_row_constraint_type row_type_name ty)
+  | TFn (parameters, return_type) ->
+      TFn
+        ( List.map (apply_row_constraint_type row_type_name) parameters,
+          apply_row_constraint_type row_type_name return_type )
   | ty -> ty
 
 let rec replace_post_result result_name = function
@@ -489,17 +534,25 @@ let fn_code ?(row_param_type_names = []) parts =
   let param_patterns =
     List.map2 (fun name ty -> (name, ty)) param_names param_tys
     |> List.mapi (fun index (name, ty) ->
+           let row_type_name =
+             List.nth_opt row_param_type_names index |> Option.join
+           in
            let pattern =
              if
                Option.is_some (Types.protocol_constraint_info ty)
                || Option.is_some (Types.seqable_constraint_element ty)
              then
+               let pattern_ty =
+                 match row_type_name with
+                 | Some type_name -> apply_row_constraint_type type_name ty
+                 | None -> ty
+               in
                Semantic_ir.PConstraint
                  ( capability_pattern name ty,
-                   Types.ocaml_name (pattern_constraint_type ty) )
+                   Types.ocaml_name (pattern_constraint_type pattern_ty) )
              else
-               match List.nth_opt row_param_type_names index with
-               | Some (Some type_name) ->
+               match row_type_name with
+               | Some type_name ->
                    Semantic_ir.PConstraint (Semantic_ir.PVar name, type_name)
             | _ -> (
                 match ty with

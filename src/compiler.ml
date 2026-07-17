@@ -19,6 +19,11 @@ type compilation = Toolchain.compilation = {
 type state = Toolchain.state
 
 let empty_state = Toolchain.empty_state
+let cacheable_state = Toolchain.cacheable_state
+
+let restore_ocaml_environment ?(target = Target.default) ~packages state
+    sources =
+  Toolchain.restore_ocaml_environment ~target ~packages state sources
 
 let compile_string ?(target = Target.default) source =
   Toolchain.implementation ~target source

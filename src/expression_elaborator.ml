@@ -1137,7 +1137,17 @@ and prepare_inferred_recursive_fn ~ocaml_name scope env source_name params
                 env params body_forms
             in
             Result.bind (prepare TUnknown) (fun provisional ->
-                if Types.equal provisional.body.ty TUnknown then Ok provisional
+                let requires_specialized_self_calls =
+                  Semantic_ir.exists_identifier
+                    (fun name ->
+                      String.starts_with
+                        ~prefix:"Lg_runtime.Runtime_dynamic" name)
+                    provisional.body.semantic_expr
+                in
+                if
+                  Types.equal provisional.body.ty TUnknown
+                  || not requires_specialized_self_calls
+                then Ok provisional
                 else prepare provisional.body.ty)
           in
           if

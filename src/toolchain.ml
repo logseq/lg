@@ -39,6 +39,7 @@ type language_analysis = {
 type state = {
   typecheck_state : Typecheck.state;
   located_items : (Location.t * Lowered.compiled_item) list;
+  ocaml_env : Env.t option;
 }
 
 module String_set = Set.Make (String)
@@ -52,28 +53,38 @@ module type FRONTEND = sig
 end
 
 module Lg_frontend : FRONTEND = struct
-  let position filename source offset =
-    let rec loop index line line_start =
-      if index >= offset then
-        {
-          Lexing.pos_fname = filename;
-          pos_lnum = line;
-          pos_bol = line_start;
-          pos_cnum = offset;
-        }
-      else if source.[index] = '\n' then loop (index + 1) (line + 1) (index + 1)
-      else loop (index + 1) line line_start
-    in
-    loop 0 1 0
+  let line_starts source =
+    let starts = ref [ 0 ] in
+    String.iteri
+      (fun index char ->
+        if char = '\n' then starts := (index + 1) :: !starts)
+      source;
+    Array.of_list (List.rev !starts)
 
-  let location filename source (span : Ast.source_span) =
+  let position filename line_starts offset =
+    let rec search low high =
+      if low > high then high
+      else
+        let middle = low + ((high - low) / 2) in
+        if line_starts.(middle) <= offset then search (middle + 1) high
+        else search low (middle - 1)
+    in
+    let line_index = search 0 (Array.length line_starts - 1) in
     {
-      Location.loc_start = position filename source span.start_offset;
-      loc_end = position filename source span.end_offset;
+      Lexing.pos_fname = filename;
+      pos_lnum = line_index + 1;
+      pos_bol = line_starts.(line_index);
+      pos_cnum = offset;
+    }
+
+  let location filename line_starts (span : Ast.source_span) =
+    {
+      Location.loc_start = position filename line_starts span.start_offset;
+      loc_end = position filename line_starts span.end_offset;
       loc_ghost = false;
     }
 
-  let normalize_error_location filename source (error : Error.t) =
+  let normalize_error_location filename line_starts (error : Error.t) =
     match error.location with
     | None -> error
     | Some location ->
@@ -84,9 +95,11 @@ module Lg_frontend : FRONTEND = struct
               {
                 location with
                 loc_start =
-                  position filename source location.loc_start.Lexing.pos_cnum;
+                  position filename line_starts
+                    location.loc_start.Lexing.pos_cnum;
                 loc_end =
-                  position filename source location.loc_end.Lexing.pos_cnum;
+                  position filename line_starts
+                    location.loc_end.Lexing.pos_cnum;
               };
         }
 
@@ -351,6 +364,7 @@ module Lg_frontend : FRONTEND = struct
 
   let implementation ?(target = Target.default) ?(filename = "<string>") source
       =
+    let line_starts = line_starts source in
     let is_compile_time_form located =
       match located.Ast.form with
       | Ast.FList
@@ -416,17 +430,18 @@ module Lg_frontend : FRONTEND = struct
     | Error _ as err -> err
     | Ok tokens -> (
         match Parser.parse_located ~target tokens with
-        | Error error -> Error (normalize_error_location filename source error)
+        | Error error ->
+            Error (normalize_error_location filename line_starts error)
         | Ok original_located_ast -> (
             match lower_namespace original_located_ast with
             | Error error ->
-                Error (normalize_error_location filename source error)
+                Error (normalize_error_location filename line_starts error)
             | Ok target_located_ast -> (
                 match
                   add_clj_compile_time_forms tokens target_located_ast
                 with
                 | Error error ->
-                    Error (normalize_error_location filename source error)
+                    Error (normalize_error_location filename line_starts error)
                 | Ok located_ast ->
                 let located_ast =
                   located_ast
@@ -437,7 +452,7 @@ module Lg_frontend : FRONTEND = struct
                 in
                 let rec form_locations acc located =
                       let location =
-                        location filename source located.Ast.span
+                        location filename line_starts located.Ast.span
                       in
                   List.fold_left form_locations
                     ((located.Ast.form, location) :: acc)
@@ -451,7 +466,7 @@ module Lg_frontend : FRONTEND = struct
                     locations =
                       List.map
                             (fun located ->
-                              location filename source located.Ast.span)
+                              location filename line_starts located.Ast.span)
                         located_ast;
                     form_locations =
                       List.fold_left form_locations
@@ -506,7 +521,7 @@ module Ocaml_typechecker = struct
         initial_env_cache := Some (include_dirs, env);
         env
 
-  let analyze structure =
+  let analyze ?compiler_env structure =
     let diagnostics = ref [] in
     let previous_warning_reporter = !Location.warning_reporter in
     let capture_warning location warning =
@@ -528,7 +543,7 @@ module Ocaml_typechecker = struct
             Location.warning_reporter := previous_warning_reporter)
           (fun () ->
             Location.warning_reporter := capture_warning;
-            let env = initial_env () in
+            let env = Option.value compiler_env ~default:(initial_env ()) in
             let typed_structure, _signature, _signature_names, _shape, env =
               Typemod.type_structure env structure
             in
@@ -546,7 +561,43 @@ module Ocaml_typechecker = struct
 end
 
 let empty_state =
-  { typecheck_state = Typecheck.empty_state; located_items = [] }
+  {
+    typecheck_state = Typecheck.empty_state;
+    located_items = [];
+    ocaml_env = None;
+  }
+
+let cacheable_state state = { state with ocaml_env = None }
+
+let restore_ocaml_environment ?(target = Target.default) ~packages state
+    sources =
+  let packages =
+    match target with
+    | Target.Melange -> "melange" :: packages
+    | Target.Js_of_ocaml -> "re" :: "js_of_ocaml" :: packages
+    | Target.Native -> "re" :: packages
+  in
+  match Ocaml_package.include_dirs packages with
+  | Error _ as error -> error
+  | Ok include_dirs ->
+      Ocaml_signature.add_include_dirs include_dirs;
+      let rec restore compiler_env index = function
+        | [] -> Ok { state with ocaml_env = compiler_env }
+        | source :: rest -> (
+            try
+              let lexbuf = Lexing.from_string source in
+              Location.init lexbuf (Printf.sprintf "<cached:%d>" index);
+              let structure = Parse.implementation lexbuf in
+              match Ocaml_typechecker.analyze ?compiler_env structure with
+              | Error _ as error -> error
+              | Ok analysis ->
+                  restore (Some analysis.compiler_env) (index + 1) rest
+            with exn ->
+              Error.error
+                ("failed to restore cached OCaml environment: "
+               ^ Ocaml_typechecker.exception_message exn))
+      in
+      restore None 0 sources
 
 let required_packages_from_ast ast =
   let rec loop packages = function
@@ -623,7 +674,38 @@ let declaration_bindings ast env =
          (key, { binding with forward_declared = true }))
   |> List.sort_uniq (fun (left, _) (right, _) -> String.compare left right)
 
-let stabilize_typecheck ~compile ~(initial_state : Compiler_state.t) ast =
+let stabilization_ast ast =
+  let recursive_groups = Dependency_graph.recursive_groups ast in
+  List.mapi
+    (fun index form ->
+      match
+        List.find_opt (List.exists (( = ) index)) recursive_groups
+      with
+      | None -> form
+      | Some (first :: _ as indices) when index = first ->
+          let names =
+            indices
+            |> List.concat_map (fun member ->
+                   List.nth ast member |> Dependency_graph.provided_names)
+            |> List.sort_uniq String.compare
+            |> List.map (fun name -> Ast.FSymbol name)
+          in
+          Ast.FList (Ast.FSymbol "declare" :: names)
+      | Some (_ :: _) -> Ast.FList [ Ast.FSymbol "declare" ]
+      | Some [] -> assert false)
+    ast
+
+let stabilize_typecheck ?compile_evidence ~compile
+    ~(initial_state : Compiler_state.t) ast =
+  let report_timings = Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" in
+  let compile_pass compiler pass state =
+    let started_at = if report_timings then Sys.time () else 0.0 in
+    let result = compiler state in
+    if report_timings then
+      Printf.eprintf "lg: typecheck stabilization pass %d: %.3fs\n%!" pass
+        (Sys.time () -. started_at);
+    result
+  in
   let binding_abi_equal (left : Types.binding) (right : Types.binding) =
     Types.source_name left.ty = Types.source_name right.ty
     && left.row_param_types = right.row_param_types
@@ -640,21 +722,75 @@ let stabilize_typecheck ~compile ~(initial_state : Compiler_state.t) ast =
         && binding_abi_equal left_binding right_binding)
       left right
   in
-  let rec continue remaining declarations protocol_evidence =
+  let report_changed_declarations previous next =
+    if report_timings then
+      let previous_by_name name =
+        List.find_opt (fun (candidate, _) -> String.equal name candidate) previous
+        |> Option.map snd
+      in
+      next
+      |> List.filter_map (fun (name, binding) ->
+             match previous_by_name name with
+             | Some previous_binding
+               when binding_abi_equal previous_binding binding ->
+                 None
+             | None -> Some name
+             | Some previous_binding ->
+                 let changes =
+                   []
+                   |> (fun changes ->
+                        if
+                          String.equal (Types.source_name previous_binding.ty)
+                            (Types.source_name binding.ty)
+                        then changes
+                        else "type" :: changes)
+                   |> (fun changes ->
+                        if previous_binding.row_param_types = binding.row_param_types
+                        then changes
+                        else "rows" :: changes)
+                   |> (fun changes ->
+                        if
+                          previous_binding.overload_row_param_types
+                          = binding.overload_row_param_types
+                        then changes
+                        else "overload-rows" :: changes)
+                   |> (fun changes ->
+                        if previous_binding.overload_targets = binding.overload_targets
+                        then changes
+                        else "overloads" :: changes)
+                   |> (fun changes ->
+                        if
+                          previous_binding.return_param_index
+                          = binding.return_param_index
+                        then changes
+                        else "return-param" :: changes)
+                 in
+                 Some (name ^ "[" ^ String.concat "," (List.rev changes) ^ "]"))
+      |> function
+      | [] -> ()
+      | names ->
+          Printf.eprintf "lg: changed declaration ABI: %s\n%!"
+            (String.concat ", " names)
+  in
+  let evidence_compile = Option.value compile_evidence ~default:compile in
+  let seeded_state declarations protocol_evidence =
+    {
+      initial_state with
+      env =
+        initial_state.env
+        |> Compiler_environment.add_bindings declarations
+        |> Compiler_environment.with_protocol_evidence
+             (Some protocol_evidence);
+    }
+  in
+  let rec continue_full remaining pass declarations protocol_evidence =
     if remaining = 0 then
       Error.error "type evidence did not stabilize after 16 passes"
     else
-      let seeded_state =
-        {
-          initial_state with
-          env =
-            initial_state.env
-            |> Compiler_environment.add_bindings declarations
-            |> Compiler_environment.with_protocol_evidence
-                 (Some protocol_evidence);
-        }
-      in
-      match compile seeded_state with
+      match
+        compile_pass compile pass
+          (seeded_state declarations protocol_evidence)
+      with
       | Error _ as error -> error
       | Ok ((next_state : Compiler_state.t), items) ->
           let next_declarations = declaration_bindings ast next_state.env in
@@ -663,14 +799,74 @@ let stabilize_typecheck ~compile ~(initial_state : Compiler_state.t) ast =
           in
           if declarations_abi_equal next_declarations declarations then
             Ok (next_state, items)
-          else
-            continue (remaining - 1) next_declarations next_protocols
+          else (
+            report_changed_declarations declarations next_declarations;
+            continue_full (remaining - 1) (pass + 1) next_declarations
+              next_protocols
+          )
+  and finish remaining pass declarations protocol_evidence evidence_result =
+    match compile_evidence with
+    | None -> Ok evidence_result
+    | Some _ ->
+        if remaining = 0 then
+          Error.error "type evidence did not stabilize after 16 passes"
+        else
+          match
+            compile_pass compile pass
+              (seeded_state declarations protocol_evidence)
+          with
+          | Error _ as error -> error
+          | Ok ((next_state : Compiler_state.t), items) ->
+              let next_declarations =
+                declaration_bindings ast next_state.env
+              in
+              let next_protocols =
+                Compiler_environment.protocols next_state.env
+              in
+              if declarations_abi_equal next_declarations declarations then
+                Ok (next_state, items)
+              else (
+                report_changed_declarations declarations next_declarations;
+                continue_full (remaining - 1) (pass + 1)
+                  next_declarations next_protocols
+              )
   in
-  match compile initial_state with
+  let rec continue remaining pass declarations protocol_evidence =
+    if remaining = 0 then
+      Error.error "type evidence did not stabilize after 16 passes"
+    else
+      match
+        compile_pass evidence_compile pass
+          (seeded_state declarations protocol_evidence)
+      with
+      | Error _ as error -> error
+      | Ok ((next_state : Compiler_state.t), items) ->
+          let next_declarations = declaration_bindings ast next_state.env in
+          let next_protocols =
+            Compiler_environment.protocols next_state.env
+          in
+          if declarations_abi_equal next_declarations declarations then
+            finish (remaining - 1) (pass + 1) next_declarations
+              next_protocols (next_state, items)
+          else (
+            report_changed_declarations declarations next_declarations;
+            continue (remaining - 1) (pass + 1) next_declarations
+              next_protocols
+          )
+  in
+  match compile_pass compile 1 initial_state with
   | Error _ as error -> error
-  | Ok ((first_state : Compiler_state.t), _) ->
-      continue 15 (declaration_bindings ast first_state.env)
-        (Compiler_environment.protocols first_state.env)
+  | Ok (((first_state : Compiler_state.t), _) as first_result) ->
+      let initial_declarations =
+        declaration_bindings ast initial_state.env
+      in
+      let first_declarations = declaration_bindings ast first_state.env in
+      let first_protocols = Compiler_environment.protocols first_state.env in
+      if declarations_abi_equal first_declarations initial_declarations then
+        finish 15 2 first_declarations first_protocols first_result
+      else (
+        report_changed_declarations initial_declarations first_declarations;
+        continue 15 2 first_declarations first_protocols)
 
 let typecheck (parsed : parser_result) =
   let parsed = stabilize_dependencies parsed in
@@ -684,7 +880,18 @@ let typecheck (parsed : parser_result) =
         Source_context.with_locations parsed.form_locations (fun () ->
             Typecheck.compile_forms_incremental state parsed.ast)
       in
-      match stabilize_typecheck ~compile ~initial_state parsed.ast with
+      let evidence_ast = stabilization_ast parsed.ast in
+      let compile_evidence =
+        if List.for_all2 ( == ) evidence_ast parsed.ast then None
+        else
+          Some
+            (fun state ->
+              Source_context.with_locations parsed.form_locations (fun () ->
+                  Typecheck.compile_forms_incremental state evidence_ast))
+      in
+      match
+        stabilize_typecheck ?compile_evidence ~compile ~initial_state parsed.ast
+      with
       | Error _ as err -> err
       | Ok (typecheck_state, items) ->
           Ok
@@ -716,13 +923,27 @@ let typecheck_incremental state (parsed : parser_result) =
         Source_context.with_locations parsed.form_locations (fun () ->
             Typecheck.compile_forms_incremental typecheck_state parsed.ast)
       in
-      match stabilize_typecheck ~compile ~initial_state parsed.ast with
+      let evidence_ast = stabilization_ast parsed.ast in
+      let compile_evidence =
+        if List.for_all2 ( == ) evidence_ast parsed.ast then None
+        else
+          Some
+            (fun typecheck_state ->
+              Source_context.with_locations parsed.form_locations (fun () ->
+                  Typecheck.compile_forms_incremental typecheck_state
+                    evidence_ast))
+      in
+      match
+        stabilize_typecheck ?compile_evidence ~compile ~initial_state parsed.ast
+      with
       | Error _ as err -> err
       | Ok (typecheck_state, items) ->
           let located_items =
             state.located_items @ List.combine parsed.locations items
           in
-          let state = { typecheck_state; located_items } in
+          let state =
+            { state with typecheck_state; located_items }
+          in
           Ok
             ( state,
               {
@@ -909,19 +1130,22 @@ let compile_chunk_with_diagnostics ?(target = Target.default)
           match Ocaml_parsetree_backend.implementation typed with
           | Error _ as err -> err
           | Ok result -> (
-              match Lowering.structure_of_located_items state.located_items with
+              match
+                Ocaml_typechecker.analyze ?compiler_env:state.ocaml_env
+                  result.structure
+              with
               | Error _ as err -> err
-              | Ok accumulated_structure -> (
-                  match Ocaml_typechecker.structure accumulated_structure with
-                  | Error _ as err -> err
-                  | Ok diagnostics ->
-                      Ok
-                        ( state,
-                          {
-                            ocaml_source =
-                              Ocaml_parsetree_backend.print result.structure;
-                            diagnostics;
-                          } )))))
+              | Ok analysis ->
+                  let state =
+                    { state with ocaml_env = Some analysis.compiler_env }
+                  in
+                  Ok
+                    ( state,
+                      {
+                        ocaml_source =
+                          Ocaml_parsetree_backend.print result.structure;
+                        diagnostics = analysis.diagnostics;
+                      } ))))
 
 let compile_chunk ?(target = Target.default) ?(filename = "<string>") state
     source =
@@ -940,9 +1164,13 @@ let compile_chunk_parsetree ?(target = Target.default) ?(filename = "<string>")
           match Ocaml_parsetree_backend.implementation typed with
           | Error _ as err -> err
           | Ok result -> (
-              match Lowering.structure_of_located_items state.located_items with
+              match
+                Ocaml_typechecker.analyze ?compiler_env:state.ocaml_env
+                  result.structure
+              with
               | Error _ as err -> err
-              | Ok accumulated_structure -> (
-                  match Ocaml_typechecker.structure accumulated_structure with
-                  | Error _ as err -> err
-                  | Ok _diagnostics -> Ok (state, result.structure)))))
+              | Ok analysis ->
+                  let state =
+                    { state with ocaml_env = Some analysis.compiler_env }
+                  in
+                  Ok (state, result.structure))))

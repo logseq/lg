@@ -9,6 +9,18 @@ let validate_unique_keywords pairs =
   in
   loop [] pairs
 
+let record_type_application record =
+  let argument_name = function
+    | TUnknown | TVar _ -> "_"
+    | argument -> Types.ocaml_name argument
+  in
+  match record.type_arguments with
+  | [] -> record.type_name
+  | [ argument ] -> argument_name argument ^ " " ^ record.type_name
+  | arguments ->
+      "(" ^ String.concat ", " (List.map argument_name arguments) ^ ") "
+      ^ record.type_name
+
 let field_expr target field =
   match target.record_values with
   | Some values -> (
@@ -19,7 +31,20 @@ let field_expr target field =
       with
       | Some (_, expression) -> expression
       | None -> Semantic_ir.Field (target.semantic_expr, field.ocaml_name))
-  | None -> Semantic_ir.Field (target.semantic_expr, field.ocaml_name)
+  | None -> (
+      match target.ty with
+      | TNamed_record record ->
+          let target_name = "__lg_record_field_target" in
+          Semantic_ir.Let
+            ( [
+                ( Semantic_ir.PConstraint
+                    ( Semantic_ir.PVar target_name,
+                      record_type_application record ),
+                  target.semantic_expr );
+              ],
+              Semantic_ir.Field
+                (Semantic_ir.Ident target_name, field.ocaml_name) )
+      | _ -> Semantic_ir.Field (target.semantic_expr, field.ocaml_name))
 
 let values_for target fields =
   List.map (fun (field : field) -> (field, field_expr target field)) fields
@@ -35,18 +60,6 @@ let record_expr fields values =
   }
 
 let named_record_expr record values =
-  let argument_name = function
-    | TUnknown | TVar _ -> "_"
-    | argument -> Types.ocaml_name argument
-  in
-  let type_name =
-    match record.type_arguments with
-    | [] -> record.type_name
-    | [ argument ] -> argument_name argument ^ " " ^ record.type_name
-    | arguments ->
-        "(" ^ String.concat ", " (List.map argument_name arguments) ^ ") "
-        ^ record.type_name
-  in
   {
     ty = TNamed_record record;
     semantic_expr = Semantic_ir.annotate (TNamed_record record)
@@ -54,7 +67,7 @@ let named_record_expr record values =
         ( List.map
             (fun ((field : field), value) -> (field.ocaml_name, value))
             values,
-          Some type_name ));
+          Some (record_type_application record) ));
     record_values = Some values;
     return_param_index = None;
   }

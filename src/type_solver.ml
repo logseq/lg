@@ -7,51 +7,113 @@ type conflict = {
   right : ty;
 }
 
-let rec apply substitutions ty =
-  let apply_ty = apply substitutions in
-  match ty with
-  | TVar name -> (
-      match List.assoc_opt name substitutions with
-      | None -> ty
-      | Some replacement -> apply substitutions replacement)
-  | TNullable inner -> TNullable (apply_ty inner)
-  | TOcaml_app (name, arguments) ->
-      TOcaml_app (name, List.map apply_ty arguments)
-  | TTuple items -> TTuple (List.map apply_ty items)
-  | TArray inner -> TArray (apply_ty inner)
-  | TRef inner -> TRef (apply_ty inner)
-  | TList inner -> TList (apply_ty inner)
-  | TVector inner -> TVector (apply_ty inner)
-  | TSet inner -> TSet (apply_ty inner)
-  | TSeq inner -> TSeq (apply_ty inner)
+let rec string_assoc_opt name = function
+  | [] -> None
+  | (candidate, value) :: rest ->
+      if String.equal name candidate then Some value
+      else string_assoc_opt name rest
+
+let string_mem_assoc name substitutions =
+  Option.is_some (string_assoc_opt name substitutions)
+
+let rec string_remove_assoc name = function
+  | [] -> []
+  | ((candidate, _) as entry) :: rest ->
+      if String.equal name candidate then rest
+      else entry :: string_remove_assoc name rest
+
+let rec string_mem name = function
+  | [] -> false
+  | candidate :: _ when String.equal name candidate -> true
+  | _ :: rest -> string_mem name rest
+
+let rec has_applicable_substitution substitutions = function
+  | TVar name -> string_mem_assoc name substitutions
+  | TNullable inner | TArray inner | TRef inner | TList inner | TVector inner
+  | TSet inner | TSeq inner ->
+      has_applicable_substitution substitutions inner
+  | TOcaml_app (_, arguments) | TTuple arguments ->
+      List.exists (has_applicable_substitution substitutions) arguments
   | TFn (parameters, return_ty) ->
-      TFn (List.map apply_ty parameters, apply_ty return_ty)
+      List.exists (has_applicable_substitution substitutions) parameters
+      || has_applicable_substitution substitutions return_ty
   | TOverloaded_fn arities ->
-      TOverloaded_fn
-        (List.map
-           (fun arity ->
-             {
-               fixed_params = List.map apply_ty arity.fixed_params;
-               rest_param = Option.map apply_ty arity.rest_param;
-               return_ty = apply_ty arity.return_ty;
-             })
-           arities)
+      List.exists
+        (fun arity ->
+          List.exists
+            (has_applicable_substitution substitutions)
+            arity.fixed_params
+          || Option.fold ~none:false
+               ~some:(has_applicable_substitution substitutions)
+               arity.rest_param
+          || has_applicable_substitution substitutions arity.return_ty)
+        arities
   | TRecord fields ->
-      TRecord
-        (List.map (fun (field : field) -> { field with ty = apply_ty field.ty }) fields)
-  | TNamed_record record ->
-      TNamed_record
-        {
-          record with
-          type_arguments = List.map apply_ty record.type_arguments;
-          fields =
-            List.map
-              (fun (field : field) -> { field with ty = apply_ty field.ty })
-              record.fields;
-        }
-  | ( TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol
-    | TKeyword | TBool | TUnit | TNil | TUnknown | TOcaml _ ) as concrete ->
-      concrete
+      List.exists
+        (fun (field : field) ->
+          has_applicable_substitution substitutions field.ty)
+        fields
+  | TNamed_record { type_arguments; fields; _ } ->
+      List.exists (has_applicable_substitution substitutions) type_arguments
+      || List.exists
+           (fun (field : field) ->
+             has_applicable_substitution substitutions field.ty)
+           fields
+  | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
+  | TBool | TUnit | TNil | TUnknown | TOcaml _ ->
+      false
+
+let rec apply substitutions ty =
+  match substitutions with
+  | [] -> ty
+  | _ when not (has_applicable_substitution substitutions ty) -> ty
+  | _ ->
+      let apply_ty = apply substitutions in
+      match ty with
+      | TVar name -> (
+          match string_assoc_opt name substitutions with
+          | None -> ty
+          | Some replacement -> apply substitutions replacement)
+      | TNullable inner -> TNullable (apply_ty inner)
+      | TOcaml_app (name, arguments) ->
+          TOcaml_app (name, List.map apply_ty arguments)
+      | TTuple items -> TTuple (List.map apply_ty items)
+      | TArray inner -> TArray (apply_ty inner)
+      | TRef inner -> TRef (apply_ty inner)
+      | TList inner -> TList (apply_ty inner)
+      | TVector inner -> TVector (apply_ty inner)
+      | TSet inner -> TSet (apply_ty inner)
+      | TSeq inner -> TSeq (apply_ty inner)
+      | TFn (parameters, return_ty) ->
+          TFn (List.map apply_ty parameters, apply_ty return_ty)
+      | TOverloaded_fn arities ->
+          TOverloaded_fn
+            (List.map
+               (fun arity ->
+                 {
+                   fixed_params = List.map apply_ty arity.fixed_params;
+                   rest_param = Option.map apply_ty arity.rest_param;
+                   return_ty = apply_ty arity.return_ty;
+                 })
+               arities)
+      | TRecord fields ->
+          TRecord
+            (List.map
+               (fun (field : field) -> { field with ty = apply_ty field.ty })
+               fields)
+      | TNamed_record record ->
+          TNamed_record
+            {
+              record with
+              type_arguments = List.map apply_ty record.type_arguments;
+              fields =
+                List.map
+                  (fun (field : field) -> { field with ty = apply_ty field.ty })
+                  record.fields;
+            }
+      | ( TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol
+        | TKeyword | TBool | TUnit | TNil | TUnknown | TOcaml _ ) as concrete ->
+          concrete
 
 let rec occurs name ty =
   match ty with
@@ -88,7 +150,7 @@ let bind substitutions name ty =
     let replacement = [ (name, ty) ] in
     Ok
       ((name, ty)
-      :: List.remove_assoc name
+      :: string_remove_assoc name
            (List.map
               (fun (variable, existing) ->
                 (variable, apply replacement existing))
@@ -97,7 +159,7 @@ let bind substitutions name ty =
 let rec variables ty =
   let union left right =
     List.fold_left
-      (fun names name -> if List.mem name names then names else name :: names)
+      (fun names name -> if string_mem name names then names else name :: names)
       left right
   in
   let variables_all types =
@@ -128,7 +190,7 @@ let rec variables ty =
 let force substitutions name ty =
   let replacement = [ (name, ty) ] in
   (name, ty)
-  :: List.remove_assoc name
+  :: string_remove_assoc name
        (List.map
           (fun (variable, existing) ->
             (variable, apply replacement existing))
@@ -145,9 +207,23 @@ let matching_fields left right =
 let rec unify substitutions left right =
   let left = apply substitutions left in
   let right = apply substitutions right in
-  if left = right then Ok substitutions
+  if left == right then Ok substitutions
   else
     match (left, right) with
+    | TInt, TInt
+    | TFloat, TFloat
+    | TChar, TChar
+    | TString, TString
+    | TRegex, TRegex
+    | TMap_keys, TMap_keys
+    | TSymbol, TSymbol
+    | TKeyword, TKeyword
+    | TBool, TBool
+    | TUnit, TUnit
+    | TNil, TNil ->
+        Ok substitutions
+    | TOcaml left_name, TOcaml right_name when String.equal left_name right_name ->
+        Ok substitutions
     | TUnknown, _ | _, TUnknown -> Ok substitutions
     | TVar name, ty | ty, TVar name -> bind substitutions name ty
     | TNullable left, TNullable right

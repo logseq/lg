@@ -1,4 +1,4 @@
 (executable
  (name lg_cli)
  (public_name lg)
- (libraries lg rrbvec yojson))
+ (libraries lg rrbvec yojson unix))
