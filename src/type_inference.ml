@@ -372,6 +372,11 @@ let add_record_field_constraint name keyword field_ty params =
             match Type_solver.unify [] field.ty inferred_ty with
             | Ok substitutions ->
                 Ok (Type_solver.apply substitutions record_ty)
+            | Error _
+              when (match field.ty with TNamed_record _ -> true | _ -> false)
+                   && Types.row_compatible ~expected:field.ty
+                        ~actual:inferred_ty ->
+                Ok record_ty
             | Error _ ->
                 Error.error
                   ("cannot infer " ^ keyword ^ " as "

@@ -887,11 +887,49 @@ update the same entry with its root cause, fix, and verification evidence.
 
 ## 2026-07-17: `transact-tx-data` loses `datom btset` evidence
 
-- Status: Open; next DataScript blocker
+- Status: Fixed
 - Symptom: Full Native parser dependency compilation reaches `db.cljc` lines
   1700-1707 and passes an existential `$0 btset` where `datom btset` is
   required.
-- Current evidence: This occurs after `assoc-auto-tempids` feeds
-  `transact-tx-data-impl`. The storage/PSS value type is still nominally a
-  `btset`, but its element parameter is hidden. The fix must preserve the
-  concrete `datom` argument; widening either side to `dynamic` is not allowed.
+- Root cause: `DB/-empty` passes a heterogeneous map literal to `restore-db`.
+  Because optional fields make the map dynamic, row argument elaboration read
+  every field back through `Runtime_dynamic.get`. The nominal PSS tag proves
+  only `btset`, not its erased element argument, so unpacking cannot safely
+  recover `datom btset`.
+- Fix: When a dynamic map literal is passed to a known row parameter, adapt its
+  retained `record_values` directly. Only absent or genuinely dynamic fields
+  use runtime lookup and unpacking. This preserves static generic evidence
+  without making nominal unpacking unsound. When later structural evidence is
+  weaker than an existing named-record field, keep the named evidence. A named
+  actual such as `btset<value>` may specialize its unresolved argument to the
+  concrete expected `btset<datom>`; different concrete arguments still fail
+  unification and remain statically rejected.
+- Verification: A focused regression fails without the fix because
+  `btset<datom>` becomes `Runtime_dynamic.t`, and passes on Native and Melange
+  with the fix. A second regression covers nested `TxReport -> DB -> btset`
+  evidence, and the existing distinct `option/ref` wrapper regression remains
+  green. The real Native parser chain no longer reports `$0 btset` and advances
+  to a deferred function-field generalization error.
+
+## 2026-07-17: Deferred function field is declared too polymorphic
+
+- Status: Open; next DataScript blocker
+- Symptom: Full Native parser dependency compilation still reports the source
+  range for `transact-tx-data`, but the new OCaml error says an assigned
+  protocol/function field is less general than its declaration. The value
+  shares type variables between its protocol receiver and sequence adapter,
+  while the generated field quantifies those variables independently.
+- Current evidence: This is an OCaml generalization/ABI issue after the static
+  `datom btset` row fix. It must be reduced independently; routing the field
+  through `dynamic` would hide the relation and is not acceptable.
+
+## 2026-07-17: Full parser-chain compilation repeats large typechecks
+
+- Status: Open; compiler performance
+- Symptom: A full Native PSS + DataScript parser dependency compile takes
+  several minutes even though focused regressions finish in seconds.
+- Current evidence: `db.cljc` needs three LG inference passes for forward ABI
+  stabilization, and every chunk typechecks the accumulated OCaml structure.
+  The work is single-threaded and repeats more of the dependency chain as the
+  structure grows. Optimize this only after correctness is stable, using a
+  compiler benchmark; do not reduce validation coverage or widen types.

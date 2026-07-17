@@ -10264,6 +10264,69 @@ let test_row_types_bind_named_record_parameters () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_named_record_constraints_keep_stronger_nested_evidence () =
+  let source =
+    {|
+(type-record datom
+  (e :int))
+(type-record btset [value]
+  (item :value))
+(defrecord DB [^btset eavt])
+(defrecord TxReport [^DB db-before])
+(type-record datom-holder
+  (eavt :btset<datom>))
+(defn require-datom-set [set]
+  (record datom-holder (eavt set)))
+(defn inspect-db [^DB database]
+  (:eavt database))
+(defn transact [^TxReport report]
+  (inspect-db (:db-before report))
+  (require-datom-set (:eavt (:db-before report))))
+(def datom-value (record datom (e 42)))
+(def datom-set (record btset (item datom-value)))
+(def database (DB. datom-set))
+(def report (TxReport. database))
+(def holder (transact report))
+(println (:e (:item (:eavt holder))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "named_record_constraints_keep_stronger_nested_evidence"
+    "42\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_dynamic_map_row_preserves_static_generic_field () =
+  let source =
+    {|
+(type-record datom
+  (e :int))
+(type-record btset [value]
+  (item :value)
+  (slot :ref<value>))
+(type-record datom-holder
+  (eavt :btset<datom>))
+(defrecord Database [^btset eavt])
+(defn restore [{:keys [eavt marker]}]
+  (record datom-holder (eavt eavt)))
+(defn rebuild [^Database db]
+  (restore {:eavt (:eavt db), :marker nil}))
+(def datom-value (record datom (e 42)))
+(def datom-set
+  (record btset
+    (item datom-value)
+    (slot (volatile! datom-value))))
+(def db (Database. datom-set))
+(def holder (rebuild db))
+(println (:e (:item (:eavt holder))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "dynamic_map_row_preserves_static_generic_field" "42\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_destructuring_rejects_missing_map_fields () =
   let source =
     {|
@@ -15998,6 +16061,10 @@ let tests =
       test_row_types_bind_nested_capability_parameters );
     ( "row types bind named record parameters",
       test_row_types_bind_named_record_parameters );
+    ( "named record constraints keep stronger nested evidence",
+      test_named_record_constraints_keep_stronger_nested_evidence );
+    ( "dynamic map rows preserve static generic fields",
+      test_dynamic_map_row_preserves_static_generic_field );
     ( "destructuring rejects missing map fields",
       test_destructuring_rejects_missing_map_fields );
     ( "let destructuring supports nested sequences",

@@ -1799,6 +1799,45 @@ let rec pack_constrained_value env expected argument =
 
 let reduced_callback_state = "__lg_reduced_callback_value"
 
+let same_concrete_type left right =
+  let same_arguments left right =
+    List.length left = List.length right && List.for_all2 Types.equal left right
+  in
+  let named_application_matches record name arguments =
+    (name = record.type_name || name = Type_id.name record.type_id)
+    && same_arguments record.type_arguments arguments
+  in
+  match (left, right) with
+  | TNamed_record left, TNamed_record right ->
+      Type_id.equal left.type_id right.type_id
+      && same_arguments left.type_arguments right.type_arguments
+  | TNamed_record record, TOcaml_app (name, arguments)
+  | TOcaml_app (name, arguments), TNamed_record record ->
+      named_application_matches record name arguments
+  | _ -> Types.equal left right
+
+let named_record_can_specialize expected actual =
+  let arguments_can_specialize expected actual =
+    List.length expected = List.length actual
+    && List.for_all2
+         (fun expected actual ->
+           Result.is_ok (Type_solver.unify [] actual expected))
+         expected actual
+  in
+  match (expected, actual) with
+  | TNamed_record expected, TNamed_record actual ->
+      Type_id.equal expected.type_id actual.type_id
+      && arguments_can_specialize expected.type_arguments actual.type_arguments
+  | _ -> false
+
+let preserve_static_row_field expected actual =
+  same_concrete_type expected actual
+  || named_record_can_specialize expected actual
+  ||
+  match (expected, actual) with
+  | (TUnknown | TVar _), TNamed_record _ -> true
+  | _ -> false
+
 let dynamic_row_argument env type_name fields argument =
   let type_name = row_call_type_name type_name in
   let empty_dynamic_map =
@@ -1817,17 +1856,33 @@ let dynamic_row_argument env type_name fields argument =
           ((field.ocaml_name, Semantic_ir.Constructor ("None", None)) :: values)
           rest
     | (field : field) :: rest -> (
-        let dynamic_value =
-          Semantic_ir.Apply
-            ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.get",
-              [
-                argument.semantic_expr;
-                Semantic_ir.Apply
-                  ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.keyword",
-                    [ Semantic_ir.String field.keyword ] );
-              ] )
+        let static_value =
+          Option.bind argument.record_values (fun values ->
+              List.find_opt
+                (fun ((actual : field), _) ->
+                  actual.keyword = field.keyword)
+                values)
         in
-        match dynamic_unpack env field.ty dynamic_value with
+        let value =
+          match static_value with
+          | Some (actual, expression)
+            when preserve_static_row_field field.ty actual.ty ->
+              Ok expression
+          | Some _ | None ->
+              let dynamic_value =
+                Semantic_ir.Apply
+                  ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.get",
+                    [
+                      argument.semantic_expr;
+                      Semantic_ir.Apply
+                        ( Semantic_ir.Ident
+                            "Lg_runtime.Runtime_dynamic.keyword",
+                          [ Semantic_ir.String field.keyword ] );
+                    ] )
+              in
+              dynamic_unpack env field.ty dynamic_value
+        in
+        match value with
         | Error _ as error -> error
         | Ok value -> build ((field.ocaml_name, value) :: values) rest)
   in
