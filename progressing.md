@@ -653,13 +653,19 @@ update the same entry with its root cause, fix, and verification evidence.
 
 ## 2026-07-17: `restore-db` emits an unbound record type variable
 
-- Status: Open
+- Status: Fixed
 - Symptom: Full Native compilation now fails at `db.cljc` lines 769-781 with
   `The type variable 'value is unbound in this type declaration`.
-- Current evidence: The failure is attached to `restore-db`, which destructures
-  a map and returns `^DB` through `map->DB`. The next step is to inspect the
-  generated declaration and identify which DB field retains the orphaned
-  `value` parameter.
+- Root cause: The generated `restore-db` row declared fresh parameters for its
+  structural fields, but named-record parameterization changed only the record's
+  declaration parameter names. Its concrete type arguments and fields retained
+  the original `value`, producing `avet : 'value btset` without binding
+  `'value` in the row declaration.
+- Fix: Row parameterization now uses one variable map recursively across a
+  named record's declaration parameters, concrete arguments, and fields.
+- Verification: A focused generic named-record row regression reproduced the
+  same OCaml error, then passed on Native and Melange. Full Native PSS +
+  DataScript compilation passes `restore-db` and reaches `transact-report`.
 
 ## 2026-07-17: Erased sequence storage reuses protocol callback elements
 
@@ -705,3 +711,14 @@ update the same entry with its root cause, fix, and verification evidence.
 - Verification: The occurrence-hint, unconditional-record-hint, dynamic-set,
   and nullable-compare regressions pass. The complete compiler suite and
   `dune build` pass.
+
+## 2026-07-17: `transact-report` crosses a dynamic sequence ABI
+
+- Status: Open; next DataScript blocker
+- Symptom: Full Native compilation now reaches `db.cljc` lines 1222-1235 and
+  passes `datom Seq.t` where the selected boundary requires
+  `Runtime_dynamic.t Seq.t`.
+- Current evidence: The failure is attached to `transact-report`, whose update
+  path appends a concrete `Datom` to the report's `:tx-data` collection. The
+  next step is a focused reduction of that update boundary and an explicit
+  sequence element adapter selected from the stable ABI.

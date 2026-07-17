@@ -1183,9 +1183,12 @@ let parameterize_row_fields fields =
     | TRecord _ -> TVar (fresh_parameter ())
     | TNamed_record record ->
         TNamed_record
-          { record with
+          {
+            record with
             type_parameters =
-              List.map (fun _ -> fresh_parameter ()) record.type_parameters;
+              List.map named_parameter record.type_parameters;
+            type_arguments = List.map parameterize record.type_arguments;
+            fields = List.map parameterize_field record.fields;
           }
     | (TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol
       | TKeyword | TBool | TUnit | TNil | TOcaml _) as ty ->

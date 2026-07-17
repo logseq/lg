@@ -9872,6 +9872,23 @@ let test_row_types_bind_nested_capability_parameters () =
   assert_ocaml_runs "row_types_bind_nested_capability_parameters" "ok\n"
     ocaml_source
 
+let test_row_types_bind_named_record_parameters () =
+  let source =
+    {|
+(type-record box [value]
+  (item :value))
+(defn boxed-item [{:keys [box]}]
+  (.-item box))
+(def value (record box (item 42)))
+(println (boxed-item {:box value}))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "row_types_bind_named_record_parameters" "42\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_destructuring_rejects_missing_map_fields () =
   let source =
     {|
@@ -15580,6 +15597,8 @@ let tests =
       test_row_polymorphic_functions_accept_different_map_shapes );
     ( "row types bind nested capability parameters",
       test_row_types_bind_nested_capability_parameters );
+    ( "row types bind named record parameters",
+      test_row_types_bind_named_record_parameters );
     ( "destructuring rejects missing map fields",
       test_destructuring_rejects_missing_map_fields );
     ( "let destructuring supports nested sequences",
