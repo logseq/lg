@@ -1009,14 +1009,38 @@ update the same entry with its root cause, fix, and verification evidence.
 
 ## 2026-07-17: `symbol?` guard does not narrow `parse-plain-symbol`
 
-- Status: Open; next DataScript blocker
+- Status: Fixed
 - Symptom: Full Native parser compilation reaches `parse-plain-symbol` line 127
   and passes `Runtime_dynamic.t` to `PlainSymbol.`, whose field expects a
   string/symbol representation.
-- Current evidence: The value is guarded by `(symbol? form)` inside `and`, but
-  the constructor argument still carries the pre-guard dynamic type. Preserve
-  predicate narrowing through the conjunction and function body; do not change
-  `PlainSymbol` to store dynamic.
+- Root cause: `symbol?` correctly kept the public parser parameter dynamic, but
+  no branch-local value represented the successful runtime type test. The true
+  branch therefore reused the packed dynamic value directly at a constructor
+  expecting the native symbol/string representation.
+- Fix: Reuse the existing checked dynamic-narrowing operation to create a
+  shadowing symbol binding only in true branches proven by `symbol?`, including
+  predicates inside `and`. `if-not` applies the evidence to its else branch.
+  Narrowing is emitted only when the binding's underlying storage is dynamic;
+  a statically known string guard remains unchanged and can evaluate false
+  without an invalid unpack. Function parameter ABI and false branches remain
+  dynamic/open.
+- Verification: The focused regression was RED with the same
+  `Runtime_dynamic.t` versus `string` OCaml error. It now constructs a typed
+  symbol record, returns nil for an integer, and leaves a statically known
+  string guard false, producing `name:true:true` on Native and compiling on
+  Melange. Predicate regressions, the complete compiler suite, and `dune build`
+  pass. The real Native parser chain advances through line 127 to line 102.
+
+## 2026-07-17: `Variable.` constructor expects `placeholder`
+
+- Status: Open; next DataScript blocker
+- Symptom: Full Native parser compilation reaches `parse-variable` line 102;
+  the guarded `form` is a native symbol/string, but the generated `Variable.`
+  constructor is typed as accepting `placeholder`.
+- Current evidence: `Placeholder` and `Variable` are adjacent macro-generated
+  parser records. Inspect constructor registration and deferred macro record
+  evidence for cross-record contamination; do not weaken `Variable.symbol` to
+  dynamic or coerce a string to `placeholder`.
 
 ## 2026-07-17: Full parser-chain compilation repeats large typechecks
 

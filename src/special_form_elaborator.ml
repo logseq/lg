@@ -65,6 +65,46 @@ let located_pattern identity pattern =
 let located_form_pattern form pattern =
   located_pattern (Destructure.source_identity form) pattern
 
+let symbol_predicate_narrowings condition =
+  let has_source_name name expected =
+    name = expected || String.ends_with ~suffix:("/" ^ expected) name
+  in
+  let rec collect narrowed = function
+    | FList (FSymbol name :: conditions) when has_source_name name "and" ->
+        List.fold_left collect narrowed conditions
+    | FList [ FSymbol predicate; FSymbol name ]
+      when has_source_name predicate "symbol?" ->
+        if List.mem name narrowed then narrowed else name :: narrowed
+    | _ -> narrowed
+  in
+  collect [] condition |> List.rev
+
+let narrow_symbol_predicates scope env condition body =
+  symbol_predicate_narrowings condition
+  |> fun names ->
+  let names =
+    List.filter
+      (fun name ->
+        match Resolver.lookup_binding scope env name with
+        | Ok (binding : Types.binding) ->
+            Types.constraint_value_type binding.ty |> Types.is_dynamic
+        | Error _ -> false)
+      names
+  in
+  List.fold_right
+    (fun name body ->
+      let narrowed =
+        FList
+          [
+            FSymbol "__lg_dynamic-narrow";
+            FList [ FSymbol "quote"; FSymbol "__lg_symbol_type" ];
+            FSymbol name;
+          ]
+      in
+      FList
+        [ FSymbol "let"; FVector [ FSymbol name; narrowed ]; body ])
+    names body
+
 let create ~compile_expr =
   let compile_args_for = compile_args_for compile_expr in
   let rec compile_vector scope env forms =
@@ -504,6 +544,7 @@ let create ~compile_expr =
                 compile_bindings env bindings))
     | _ -> Error.error "let-some bindings must be a vector"
   and compile_if scope env condition then_form else_form =
+    let then_form = narrow_symbol_predicates scope env condition then_form in
     let compile_tuple_branch expected_types = function
       | FVector forms when List.length expected_types = List.length forms ->
           let rec compile values expected_types forms =
@@ -668,6 +709,7 @@ let create ~compile_expr =
                           ^ describe_type else_expr.ty))))
         )
   and compile_if_not scope env condition then_form else_form =
+    let else_form = narrow_symbol_predicates scope env condition else_form in
     match
       ( compile_expr scope env condition,
         compile_expr scope env then_form,
@@ -691,6 +733,16 @@ let create ~compile_expr =
                         else_code )))
             | None -> Error.error "if-not branches must have same type"))
   and compile_when scope env condition body_forms =
+    let body_forms =
+      match body_forms with
+      | [] -> []
+      | [ body ] -> [ narrow_symbol_predicates scope env condition body ]
+      | forms ->
+          [
+            narrow_symbol_predicates scope env condition
+              (FList (FSymbol "do" :: forms));
+          ]
+    in
     match
       ( compile_expr scope env condition,
         compile_body scope env "when body requires at least one form" body_forms

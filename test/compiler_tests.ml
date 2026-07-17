@@ -8972,6 +8972,37 @@ let test_nested_keyword_lookup_preserves_nullable_map_evidence () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_symbol_predicate_narrows_dynamic_value_in_then_branch () =
+  let source =
+    {|
+(type-record plain-symbol
+  (symbol :symbol))
+
+(defn parse-plain-symbol [form]
+  (when (and (symbol? form)
+             (not (= form 'reserved)))
+    (record plain-symbol (symbol form))))
+
+(defn static-string-guard []
+  (let [form "text"]
+    (when (symbol? form)
+      1)))
+
+(def parsed (parse-plain-symbol 'name))
+(println
+  (str (match parsed (Some value) (:symbol value) None "missing") ":"
+       (nil? (parse-plain-symbol 42)) ":"
+       (nil? (static-string-guard))))
+|}
+  in
+  let native_source =
+    Lg.Compiler.compile_string ~target:Lg.Target.Native source |> expect_ok
+  in
+  assert_ocaml_runs "symbol_predicate_narrows_dynamic_value_in_then_branch"
+    "name:true:true\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_equality_parameter_widens_across_keyword_and_string () =
   let source =
     {|
@@ -16085,6 +16116,8 @@ let tests =
       test_recursive_declared_nullable_sequence_supports_not_empty );
     ( "nested keyword lookup preserves nullable map evidence",
       test_nested_keyword_lookup_preserves_nullable_map_evidence );
+    ( "symbol predicate narrows dynamic value in then branch",
+      test_symbol_predicate_narrows_dynamic_value_in_then_branch );
     ( "equality parameter widens across keyword and string",
       test_equality_parameter_widens_across_keyword_and_string );
     ( "recursive deftype helper widens fallback to dynamic",
