@@ -8945,6 +8945,33 @@ let test_recursive_declared_nullable_sequence_supports_not_empty () =
     "2:0:0\n" native_source;
   ignore (compile Lg.Target.Melange)
 
+let test_nested_keyword_lookup_preserves_nullable_map_evidence () =
+  let source =
+    {|
+(defrecord ReturnMap [type symbols])
+(defrecord Query [qreturn-map])
+
+(defn validate-return-map [query]
+  (when-some [return-map (:qreturn-map query)]
+    (:type return-map))
+  (when-some [return-symbols (:symbols (:qreturn-map query))]
+    (count return-symbols))
+  true)
+
+(println
+  (str (validate-return-map (Query. nil)) ":"
+       (validate-return-map
+         (Query. (ReturnMap. :keys [:name])))))
+|}
+  in
+  let native_source =
+    Lg.Compiler.compile_string ~target:Lg.Target.Native source |> expect_ok
+  in
+  assert_ocaml_runs "nested_keyword_lookup_preserves_nullable_map_evidence"
+    "true:true\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_equality_parameter_widens_across_keyword_and_string () =
   let source =
     {|
@@ -16056,6 +16083,8 @@ let tests =
       test_typecheck_stabilizes_forward_declaration_abi );
     ( "recursive declared nullable sequence supports not-empty",
       test_recursive_declared_nullable_sequence_supports_not_empty );
+    ( "nested keyword lookup preserves nullable map evidence",
+      test_nested_keyword_lookup_preserves_nullable_map_evidence );
     ( "equality parameter widens across keyword and string",
       test_equality_parameter_widens_across_keyword_and_string );
     ( "recursive deftype helper widens fallback to dynamic",

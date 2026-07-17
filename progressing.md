@@ -982,13 +982,41 @@ update the same entry with its root cause, fix, and verification evidence.
 
 ## 2026-07-17: Nullable `:qreturn-map` is constrained as a plain map
 
-- Status: Open; next DataScript blocker
+- Status: Fixed
 - Symptom: Full Native parser dependency compilation reaches parser lines
   701-765 and reports `cannot infer :qreturn-map as map because it is already
   nullable<map>`.
-- Current evidence: This appears only after the declared nullable sequence
-  cycle is repaired. Reduce the query-return-map destructuring and preserve its
-  nullable map evidence instead of widening it to dynamic or discarding nil.
+- Root cause: The first `when-some` correctly inferred `:qreturn-map` as a
+  nullable row. A later nested keyword lookup requested another row for the
+  same field. Record-field inference could merge nullable rows only when both
+  sides already had identical wrappers, so a plain nested row conflicted with
+  the stronger existing nullable evidence. The named-record specialization path
+  had the same issue when comparing a concrete record such as `DB` with a
+  nullable structural row.
+- Fix: Merge nested structural rows while retaining the existing field's
+  nullability: an existing plain map remains plain and an existing nullable map
+  remains nullable. When a named record already satisfies the requested inner
+  row, preserve the named record and its generic arguments; compare against the
+  inner row rather than discarding the record because the access result may be
+  nil. Nested keyword inference itself remains non-nullable by default, so
+  ordinary threaded record access is not weakened.
+- Verification: The focused regression was RED with the exact upstream error
+  and now runs nil and populated `Query`/`ReturnMap` paths as `true:true` on
+  Native and compiles on Melange. All existing nested-record regressions,
+  including stronger `DB`/`btset<datom>` evidence and threaded access, pass.
+  The complete compiler suite and `dune build` pass. The real Native parser
+  chain advances beyond lines 701-765 to an OCaml type error at line 127.
+
+## 2026-07-17: `symbol?` guard does not narrow `parse-plain-symbol`
+
+- Status: Open; next DataScript blocker
+- Symptom: Full Native parser compilation reaches `parse-plain-symbol` line 127
+  and passes `Runtime_dynamic.t` to `PlainSymbol.`, whose field expects a
+  string/symbol representation.
+- Current evidence: The value is guarded by `(symbol? form)` inside `and`, but
+  the constructor argument still carries the pre-guard dynamic type. Preserve
+  predicate narrowing through the conjunction and function body; do not change
+  `PlainSymbol` to store dynamic.
 
 ## 2026-07-17: Full parser-chain compilation repeats large typechecks
 

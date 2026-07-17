@@ -279,6 +279,29 @@ let constrain_optional_seqable ?(sequential = false) element_ty params name =
   | Some existing -> Ok (replace_param name (add_constraint existing) params)
 
 let add_record_field_constraint name keyword field_ty params =
+  let merge_nested_fields fields inferred_fields =
+    let merge_nested fields (inferred : field) =
+      match find_field inferred.keyword fields with
+      | None -> Ok (inferred :: fields)
+      | Some existing when Types.equal existing.ty inferred.ty -> Ok fields
+      | Some existing when Types.equal existing.ty TUnknown ->
+          Ok
+            (inferred
+            :: List.filter
+                 (fun field -> field.keyword <> inferred.keyword)
+                 fields)
+      | Some _ when Types.equal inferred.ty TUnknown -> Ok fields
+      | Some existing ->
+          Error.error
+            ("cannot infer " ^ inferred.keyword ^ " as "
+           ^ Types.source_name inferred.ty ^ " because it is already "
+            ^ Types.source_name existing.ty)
+    in
+    List.fold_left
+      (fun result inferred ->
+        Result.bind result (fun fields -> merge_nested fields inferred))
+      (Ok fields) inferred_fields
+  in
   let merge_fields fields =
     match find_field keyword fields with
     | None -> Ok (make_field keyword field_ty :: fields)
@@ -301,37 +324,39 @@ let add_record_field_constraint name keyword field_ty params =
         | TRef _, TRef TUnknown -> Ok fields
         | ( TNullable (TRecord existing_fields),
             TNullable (TRecord inferred_fields) ) ->
-            let merge_nested fields (inferred : field) =
-              match find_field inferred.keyword fields with
-              | None -> Ok (inferred :: fields)
-              | Some existing when Types.equal existing.ty inferred.ty ->
-                  Ok fields
-              | Some existing when Types.equal existing.ty TUnknown ->
-                  Ok
-                    (inferred
-                    :: List.filter
-                         (fun field -> field.keyword <> inferred.keyword)
-                         fields)
-              | Some _ when Types.equal inferred.ty TUnknown -> Ok fields
-              | Some existing ->
-                  Error.error
-                    ("cannot infer " ^ inferred.keyword ^ " as "
-                    ^ Types.source_name inferred.ty
-                    ^ " because it is already "
-                   ^ Types.source_name existing.ty)
-            in
             Result.bind
-              (List.fold_left
-                 (fun result inferred ->
-                   Result.bind result (fun fields ->
-                       merge_nested fields inferred))
-                 (Ok existing_fields) inferred_fields)
+              (merge_nested_fields existing_fields inferred_fields)
               (fun nested_fields ->
                 Ok
                   (make_field keyword (TNullable (TRecord nested_fields))
                   :: List.filter
                        (fun candidate -> candidate.keyword <> keyword)
                        fields))
+        | TRecord existing_fields, TNullable (TRecord inferred_fields) ->
+            Result.map
+              (fun nested_fields ->
+                make_field keyword (TRecord nested_fields)
+                :: List.filter
+                     (fun candidate -> candidate.keyword <> keyword)
+                     fields)
+              (merge_nested_fields existing_fields inferred_fields)
+        | TNullable (TRecord existing_fields), TRecord inferred_fields ->
+            Result.map
+              (fun nested_fields ->
+                make_field keyword (TNullable (TRecord nested_fields))
+                :: List.filter
+                     (fun candidate -> candidate.keyword <> keyword)
+                     fields)
+              (merge_nested_fields existing_fields inferred_fields)
+        | TNamed_record _ as existing, TNullable (TRecord inferred_fields)
+          when Types.row_compatible ~expected:(TRecord inferred_fields)
+                 ~actual:existing ->
+            Ok fields
+        | ( TNullable (TNamed_record _ as existing),
+            (TRecord inferred_fields | TNullable (TRecord inferred_fields)) )
+          when Types.row_compatible ~expected:(TRecord inferred_fields)
+                 ~actual:existing ->
+            Ok fields
         | existing, inferred
           when Types.is_dynamic existing || Types.is_dynamic inferred
                || Option.is_some (Types.protocol_constraint_info existing)
@@ -375,7 +400,10 @@ let add_record_field_constraint name keyword field_ty params =
             | Error _
               when (match field.ty with TNamed_record _ -> true | _ -> false)
                    && Types.row_compatible ~expected:field.ty
-                        ~actual:inferred_ty ->
+                        ~actual:
+                          (match inferred_ty with
+                          | TNullable ty -> ty
+                          | ty -> ty) ->
                 Ok record_ty
             | Error _ ->
                 Error.error
