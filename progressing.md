@@ -1108,13 +1108,37 @@ update the same entry with its root cause, fix, and verification evidence.
 
 ## 2026-07-17: `Pull.` constructor expects `aggregate`
 
-- Status: Open; next DataScript blocker
+- Status: Fixed
 - Symptom: Full Native parser compilation reaches line 314. `src*` has type
   `variable option`, but the generated `Pull.` constructor expects an
   `aggregate` field at that position.
-- Current evidence: The error occurs after the `and` truthiness guard over
-  `src*`, `var*`, and `pattern*`. Inspect option-binding refinement and adjacent
-  parser record field inference; do not coerce or erase these parser records.
+- Root cause: Dependency stabilization had already discovered the
+  `IFindVars/Variable` implementation from `extend-protocol`, but the current
+  replay pass had not reached that form when it inferred `Pull.variable`.
+  `Protocol.type_satisfies` consulted only the partially replayed current
+  registry, so the inline `Aggregate` implementation looked uniquely valid and
+  permanently specialized the field to `Aggregate`.
+- Fix: Protocol satisfaction checks both the current pass registry and the
+  complete protocol evidence retained from the previous stabilization pass.
+  This affects inference visibility only; runtime dispatch and representations
+  are unchanged.
+- Verification: A direct registry regression was RED when the current registry
+  had only a declaration and stabilized evidence held the implementation. It is
+  now GREEN. A focused `Variable`/`Aggregate`/`Pull` reconstruction regression
+  runs on Native and compiles on Melange. The real parser chain advances beyond
+  line 314 to `parse-with` at lines 383-387.
+
+## 2026-07-17: Raising `or` branch emits dynamic nil in `parse-with`
+
+- Status: Open; next DataScript blocker
+- Symptom: `parse-with` returns `(parse-seq parse-variable form)` or calls
+  `util/raise`. The generated raising branch has expression type
+  `Runtime_dynamic.t` via `Runtime_dynamic.nil`, while the successful branch
+  expects an option.
+- Current evidence: `util/raise` never returns, so its branch should behave as a
+  bottom expression and adopt the peer branch type rather than contributing a
+  dynamic nil value. Inspect deferred exception return inference and logical
+  branch merging; do not make `parse-with` dynamic.
 
 ## 2026-07-17: Full parser-chain compilation repeats large typechecks
 

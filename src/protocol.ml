@@ -105,18 +105,25 @@ let receiver_id = function
 let registry_receiver_id = Receiver_id.of_type
 
 let type_satisfies env protocol_id receiver_ty =
-  match
-    ( Protocol_registry.find_protocol protocol_id (Env.protocols env),
-      registry_receiver_id receiver_ty )
-  with
-  | Some declaration, Some receiver_id ->
-      Protocol_registry.Method_map.for_all
-        (fun method_id _ ->
-          Option.is_some
-            (Protocol_registry.find_implementation protocol_id method_id
-               receiver_id (Env.protocols env)))
-        declaration.methods
-  | None, _ | _, None -> false
+  let satisfies registry =
+    match
+      ( Protocol_registry.find_protocol protocol_id registry,
+        registry_receiver_id receiver_ty )
+    with
+    | Some declaration, Some receiver_id ->
+        Protocol_registry.Method_map.for_all
+          (fun method_id _ ->
+            Option.is_some
+              (Protocol_registry.find_implementation protocol_id method_id
+                 receiver_id registry))
+          declaration.methods
+    | None, _ | _, None -> false
+  in
+  satisfies (Env.protocols env)
+  ||
+  match Env.protocol_evidence env with
+  | Some evidence -> satisfies evidence
+  | None -> false
 
 let satisfied_protocols env receiver_ty =
   Protocol_registry.declarations (Env.protocols env)

@@ -1329,6 +1329,40 @@ let test_typed_protocol_and_module_registries () =
     <> Some [ ("value", binding) ]
   then failwith "typed functor result lookup failed"
 
+let test_protocol_satisfaction_uses_stabilized_evidence () =
+  let protocol = Lg.Protocol_id.create ~owner:[ "Domain" ] ~name:"Visible" in
+  let method_id =
+    Lg.Method_id.create ~owner:[ "Domain"; "Visible" ] ~name:"visible"
+  in
+  let signature : Lg.Protocol_registry.method_signature =
+    {
+      method_id;
+      param_tys = [ Lg.Types.TUnknown ];
+      return_ty = Lg.Types.TBool;
+    }
+  in
+  let current =
+    Lg.Protocol_registry.declare protocol [ signature ]
+      Lg.Protocol_registry.empty
+    |> expect_ok
+  in
+  let implementation =
+    Lg.Types.binding "visible_int"
+      (Lg.Types.TFn ([ Lg.Types.TInt ], Lg.Types.TBool))
+  in
+  let evidence =
+    Lg.Protocol_registry.add_implementation protocol method_id
+      Lg.Protocol_registry.Int_receiver implementation current
+    |> expect_ok
+  in
+  let env =
+    Lg.Compiler_environment.empty
+    |> Lg.Compiler_environment.with_protocols current
+    |> Lg.Compiler_environment.with_protocol_evidence (Some evidence)
+  in
+  if not (Lg.Protocol.type_satisfies env protocol Lg.Types.TInt) then
+    failwith "protocol satisfaction must use stabilized implementation evidence"
+
 let test_protocol_elaboration_populates_typed_registry () =
   let state =
     typecheck_state {|
@@ -9123,6 +9157,66 @@ let test_if_let_callback_accepts_optional_and_required_results () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_external_protocol_implementation_prevents_field_misspecialization () =
+  let source =
+    {|
+(defprotocol IFindVars
+  (-find-vars [this]))
+
+(defprotocol ITraversable
+  (-postwalk [this f]))
+
+(defn postwalk [form f]
+  (if (satisfies? ITraversable form)
+    (f (-postwalk form f))
+    (f form)))
+
+(defrecord Variable [symbol]
+  ITraversable
+  (-postwalk [_ f]
+    (Variable. (postwalk symbol f))))
+
+(extend-protocol IFindVars
+  Variable
+  (-find-vars [this] [(:symbol this)]))
+
+(defrecord Aggregate [args]
+  ITraversable
+  (-postwalk [_ f]
+    (Aggregate. (postwalk args f)))
+  IFindVars
+  (-find-vars [_] (-find-vars (last args))))
+
+(defrecord Pull [variable]
+  ITraversable
+  (-postwalk [_ f]
+    (Pull. (postwalk variable f)))
+  IFindVars
+  (-find-vars [_] (-find-vars variable)))
+
+(defn parse-variable [value]
+  (when (instance? Variable value) value))
+
+(def parsed (parse-variable (Variable. "name")))
+(def pull
+  (if (and parsed)
+    (Pull. parsed)
+    nil))
+(println
+  (if-some [value pull]
+    (first (-find-vars value))
+    "missing"))
+|}
+  in
+  let native_source =
+    Lg.Compiler.compile_string ~target:Lg.Target.Native source |> expect_ok
+  in
+  assert_ocaml_runs
+    "external_protocol_implementation_prevents_field_misspecialization"
+    "name\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_equality_parameter_widens_across_keyword_and_string () =
   let source =
     {|
@@ -15328,6 +15422,8 @@ let tests =
       test_compiler_identities_are_stable_and_distinct );
     ( "typed protocol and module registries",
       test_typed_protocol_and_module_registries );
+    ( "protocol satisfaction uses stabilized evidence",
+      test_protocol_satisfaction_uses_stabilized_evidence );
     ( "protocol elaboration populates typed registry",
       test_protocol_elaboration_populates_typed_registry );
     ( "protocol implementation populates typed registry",
@@ -16246,6 +16342,8 @@ let tests =
       test_nested_sequential_branch_destructuring_preserves_dynamic_values );
     ( "if-let callback accepts optional and required results",
       test_if_let_callback_accepts_optional_and_required_results );
+    ( "external protocol implementation prevents field misspecialization",
+      test_external_protocol_implementation_prevents_field_misspecialization );
     ( "equality parameter widens across keyword and string",
       test_equality_parameter_widens_across_keyword_and_string );
     ( "recursive deftype helper widens fallback to dynamic",
