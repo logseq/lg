@@ -309,8 +309,16 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
         Expression_support.dynamic_key_record_type env
       in
       let resolve_named_record = infer_named_record scope env in
+      let explicitly_dynamic_params =
+        specs
+        |> List.filter_map (fun (spec : Destructure.param_spec) ->
+               match spec.explicit_ty with
+               | Some ty when Types.is_dynamic ty -> Some spec.source_name
+               | Some _ | None -> None)
+      in
       match
-        Type_inference.infer_params ~lookup_function_ty
+        Type_inference.infer_params ~explicitly_dynamic_params
+          ~lookup_function_ty
           ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
           ~resolve_named_record
           inference_params body_forms

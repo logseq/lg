@@ -1,6 +1,7 @@
 open Types
 open Lowered
 module Env = Compiler_environment
+module String_map = Map.Make (String)
 
 let rec truthiness_expression ty expression =
   match ty with
@@ -1011,7 +1012,74 @@ let dynamic_key_record_type env expected_field_ty =
     | Some _ | None -> expected_field_ty
   in
   let expected_field_ty = Types.constraint_value_type expected_field_ty in
+  let registered_records =
+    Type_registry.bindings (Env.types env)
+    |> List.filter_map
+         (fun (_, (declaration : Type_registry.declaration)) ->
+           match declaration.kind with
+           | Type_registry.Record ->
+               let scope =
+                 Type_id.owner declaration.type_id |> String.concat "."
+               in
+               let key =
+                 Resolver.record_type_key scope
+                   (Type_id.name declaration.type_id)
+               in
+               (match Env.find_opt key env with
+               | Some { ty = TNamed_record record; _ } -> Some record
+               | Some _ | None -> None)
+           | Type_registry.Alias | Type_registry.Variant -> None)
+  in
+  let named_records =
+    if registered_records <> [] then registered_records
+    else
+      Env.filter_map
+        (fun key (binding : binding) ->
+          if String.starts_with ~prefix:"__record/" key then
+            match binding.ty with
+            | TNamed_record record -> Some record
+            | _ -> None
+          else None)
+        env
+  in
+  let record_index =
+    let add name record index =
+      String_map.update name
+        (fun records -> Some (record :: Option.value ~default:[] records))
+        index
+    in
+    List.fold_left
+      (fun index record ->
+        let index = add record.type_name record index in
+        let id_name = Type_id.name record.type_id in
+        if id_name = record.type_name then index else add id_name record index)
+      String_map.empty named_records
+  in
+  let resolve_named_application = function
+    | TOcaml_app (name, arguments) as ty ->
+        let records =
+          String_map.find_opt name record_index
+          |> Option.value ~default:[]
+          |> List.filter_map (fun record ->
+                 if
+                   List.length record.type_parameters = List.length arguments
+                 then
+                  let substitutions =
+                    List.combine record.type_parameters arguments
+                    |> List.filter (fun (parameter, argument) ->
+                           argument <> TVar parameter)
+                  in
+                  Some
+                    (Types.substitute_type_variables substitutions
+                       (TNamed_record record))
+                 else None)
+        in
+        (match records with [ record ] -> record | [] | _ :: _ :: _ -> ty)
+    | ty -> ty
+  in
   let rec same_outer_shape expected actual =
+    let expected = resolve_named_application expected in
+    let actual = resolve_named_application actual in
     match (expected, actual) with
     | TNamed_record expected, TNamed_record actual ->
         Type_id.equal expected.type_id actual.type_id
@@ -1057,17 +1125,20 @@ let dynamic_key_record_type env expected_field_ty =
     match compatible_fields record with
     | [] -> None
     | (first : field) :: rest -> (
+        let first_ty = resolve_named_application first.ty in
         let substitutions =
           rest
           |> List.fold_left
                (fun substitutions (field : field) ->
                  Result.bind substitutions (fun substitutions ->
-                     Type_solver.unify substitutions first.ty field.ty))
+                     Type_solver.unify substitutions first_ty
+                       (resolve_named_application field.ty)))
                (Ok [])
         in
         let substitutions =
           Result.bind substitutions (fun substitutions ->
-              Type_solver.unify substitutions first.ty expected_field_ty)
+              Type_solver.unify substitutions first_ty
+                (resolve_named_application expected_field_ty))
         in
         match substitutions with
         | Ok substitutions -> (
@@ -1077,19 +1148,11 @@ let dynamic_key_record_type env expected_field_ty =
         | Error _ -> None)
   in
   let records =
-    Env.filter_map
-      (fun _ (binding : binding) ->
-        let record =
-          match binding.ty with
-          | TNamed_record record -> Some record
-          | TFn (_, TNamed_record record) -> Some record
-          | _ -> None
-        in
-        match record with
-        | Some record when List.length (compatible_fields record) >= 2 ->
-            specialize_record record
-        | Some _ | None -> None)
-      env
+    named_records
+    |> List.filter_map (fun record ->
+           if List.length (compatible_fields record) >= 2 then
+             specialize_record record
+           else None)
       |> List.sort_uniq (fun left right ->
            Type_id.compare left.type_id right.type_id)
     in

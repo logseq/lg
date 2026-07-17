@@ -1081,8 +1081,16 @@ and prepare_inferred_recursive_fn ~ocaml_name scope env source_name params
       let resolve_named_record =
         Function_elaborator.infer_named_record scope provisional_env
       in
+      let explicitly_dynamic_params =
+        specs
+        |> List.filter_map (fun (spec : Destructure.param_spec) ->
+               match spec.explicit_ty with
+               | Some ty when Types.is_dynamic ty -> Some spec.source_name
+               | Some _ | None -> None)
+      in
       match
-        Type_inference.infer_params ~lookup_function_ty
+        Type_inference.infer_params ~explicitly_dynamic_params
+          ~lookup_function_ty
           ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
           ~resolve_named_record
           inference_params body_forms

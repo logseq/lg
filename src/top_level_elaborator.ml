@@ -100,10 +100,12 @@ let expression_references_declaration env expression =
     Env.filter_map
       (fun _ (binding : binding) ->
         match binding.ty with
-        | TOcaml "__declared_fn" -> Some binding.ocaml_name
-        | _ when binding.forward_declared -> Some binding.ocaml_name
+        | TOcaml "__declared_fn" -> Some [ binding.ocaml_name ]
+        | _ when binding.forward_declared ->
+            Some (binding.ocaml_name :: binding.overload_targets)
         | _ -> None)
       env
+    |> List.concat
   in
   Semantic_ir.exists_identifier
     (fun name -> List.mem name declared_names)

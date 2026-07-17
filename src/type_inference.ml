@@ -552,8 +552,9 @@ let rec rewrite_simple_aliases aliases = function
            pairs)
   | form -> form
 
-let infer_params ~lookup_function_ty ~lookup_protocol_constraint
-    ~lookup_dynamic_key_record_type ~resolve_named_record params body_forms =
+let infer_params ?(explicitly_dynamic_params = []) ~lookup_function_ty
+    ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
+    ~resolve_named_record params body_forms =
   let next_type_variable = ref 0 in
   let branch_depth = ref 0 in
   let branch_hint_symbols = ref [] in
@@ -748,9 +749,25 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint
     | FList [ FSymbol "get"; FSymbol name; FKeyword keyword ] ->
         add_record_field_constraint name keyword expected_ty params
     | FList [ FSymbol ("get" | "clojure.core/get"); FSymbol target; key ] -> (
-        match lookup_dynamic_key_record_type expected_ty with
+        let record_ty = lookup_dynamic_key_record_type expected_ty in
+        match record_ty with
         | Some record_ty ->
-            Result.bind (constrain_symbol record_ty params target) (fun params ->
+            let constrain_target =
+              match List.assoc_opt target params with
+              | Some inferred_ty
+                when Types.is_dynamic inferred_ty
+                     && not (List.mem target explicitly_dynamic_params) ->
+                  let capability =
+                    Types.dynamic_constraint_info inferred_ty
+                    |> Option.value ~default:TUnknown
+                  in
+                  Ok
+                    (replace_param target
+                       (refine_type capability record_ty)
+                       params)
+              | Some _ | None -> constrain_symbol record_ty params target
+            in
+            Result.bind constrain_target (fun params ->
                 infer_expected TKeyword params key)
         | None ->
             infer_form params key)
@@ -1914,10 +1931,16 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint
                 infer_all params (updater :: extra_arguments)))
     | FList [ FSymbol "get"; FSymbol target; key ]
       when match key with FKeyword _ -> false | _ -> true -> (
-        let dynamic = Types.dynamic_constraint TUnknown in
-        match constrain_symbol dynamic params target with
-        | Error _ as error -> error
-        | Ok params -> infer_expected dynamic params key)
+        match
+          List.assoc_opt target params
+          |> Option.map Types.constraint_value_type
+        with
+        | Some (TNamed_record _) -> infer_expected TKeyword params key
+        | _ ->
+            let dynamic = Types.dynamic_constraint TUnknown in
+            match constrain_symbol dynamic params target with
+            | Error _ as error -> error
+            | Ok params -> infer_expected dynamic params key)
     | FList [ FSymbol ("aget" | "unsafe-aget"); FSymbol array; index ] -> (
         match constrain_symbol (TArray TUnknown) params array with
         | Error _ as error -> error

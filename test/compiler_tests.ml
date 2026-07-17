@@ -4731,6 +4731,32 @@ let test_quoted_symbols_do_not_create_recursive_dependencies () =
       [ quoted_name ]
   then failwith "quoted symbols are data, not recursive calls"
 
+let test_forward_declaration_detection_includes_overload_targets () =
+  let binding =
+    Lg.Types.binding ~forward_declared:true
+      ~overload_targets:[ "item_at__arity_2_0" ] "item_at"
+      (Lg.Types.TOverloaded_fn
+         [
+           {
+             fixed_params = [ Lg.Types.TInt ];
+             rest_param = None;
+             return_ty = Lg.Types.TInt;
+           };
+         ])
+  in
+  let env =
+    Lg.Compiler_environment.add "item-at" binding
+      Lg.Compiler_environment.empty
+  in
+  let expression =
+    Lg.Semantic_ir.Apply
+      (Lg.Semantic_ir.Ident "item_at__arity_2_0", [ Lg.Semantic_ir.Int 0 ])
+  in
+  if
+    not
+      (Lg.Top_level_elaborator.expression_references_declaration env expression)
+  then failwith "overload targets must retain forward declaration evidence"
+
 let test_incremental_declarations_refresh_protocol_method_returns () =
   let source =
     {|
@@ -5176,6 +5202,42 @@ let test_apply_pr_accepts_lazy_sequences () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_apply_pr_accepts_refined_protocol_sequences () =
+  let source =
+    {|
+(defprotocol Items
+  (-items [source]))
+(defprotocol Schema
+  (-schema [source]))
+(deftype Item [^int value])
+(defn print-items [source, ^java.io.Writer writer]
+  (binding [*out* writer]
+    (pr (-schema source))
+    (apply pr
+      (map (fn [^Item item] [(.-value item)])
+        (-items source)))))
+(deftype DirectSource [^int unused]
+  Items
+  (-items [_] (Some (seq [(Item. 42)])))
+  Schema
+  (-schema [_] {}))
+(deftype FilteredSource [source]
+  Items
+  (-items [_]
+    (filter (fn [^Item item] (pos? (.-value item)))
+      (-items source)))
+  Schema
+  (-schema [_] (-schema source)))
+(defn print-direct [^DirectSource source, ^java.io.Writer writer]
+  (print-items source writer))
+(defn print-filtered [^FilteredSource source, ^java.io.Writer writer]
+  (print-items source writer))
+|}
+  in
+  ignore (Lg.Compiler.compile_string source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_protocol_methods_merge_concrete_and_dynamic_sequence_returns () =
   let source =
     {|
@@ -5260,6 +5322,22 @@ let test_recursive_protocol_sequence_returns_remain_concrete () =
     ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_protocol_witness_results_unpack_concrete_sequence_returns () =
+  let open Lg.Types in
+  let result =
+    Lg.Call_elaborator.adapt_protocol_witness_result
+      Lg.Compiler_environment.empty ~expected:(TSeq TInt)
+      ~actual:(dynamic_constraint TUnknown)
+      (Lg.Semantic_ir.Ident "raw_protocol_result")
+    |> expect_ok
+  in
+  if
+    not
+      (Lg.Semantic_ir.exists_identifier
+         (fun name -> name = "Lg_runtime.Runtime_dynamic.to_seq")
+         result.semantic_expr)
+  then failwith "concrete protocol sequence return was not unpacked"
 
 let test_defn_accepts_attribute_maps_and_return_hints () =
   let source =
@@ -9251,6 +9329,26 @@ let test_dynamic_record_keys_preserve_common_generic_field_types () =
          (catch (Invalid_argument _) -1))))
 |}
   in
+  let state = typecheck_state source in
+  (match Lg.Compiler_environment.find_opt "choose-box" state.env with
+  | Some { ty = Lg.Types.TFn (receiver_ty :: _, _); _ } ->
+      if Lg.Types.is_dynamic receiver_ty then
+        failwith
+          ("a dynamic record key must not erase concrete record and protocol evidence: "
+          ^ Lg.Types.source_name receiver_ty);
+      (match Lg.Types.constraint_value_type receiver_ty with
+      | Lg.Types.TNamed_record
+          { type_name = "catalog"; type_arguments = [ Lg.Types.TInt ]; _ } ->
+          ()
+      | value_ty ->
+          failwith
+            ("expected catalog<int> evidence, got "
+            ^ Lg.Types.source_name value_ty))
+  | Some binding ->
+      failwith
+        ("expected choose-box to be a function, got "
+        ^ Lg.Types.source_name binding.ty)
+  | None -> failwith "missing choose-box binding");
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "dynamic_record_keys_preserve_common_generic_field_types"
     "20:22:-1\n" ocaml_source;
@@ -15208,6 +15306,8 @@ let tests =
       test_forward_declared_functions_refresh_nominal_returns );
     ( "quoted symbols do not create recursive dependencies",
       test_quoted_symbols_do_not_create_recursive_dependencies );
+    ( "forward declaration detection includes overload targets",
+      test_forward_declaration_detection_includes_overload_targets );
     ( "incremental declarations refresh protocol method returns",
       test_incremental_declarations_refresh_protocol_method_returns );
     ( "deftype fields accept Clojure primitive hints",
@@ -15250,10 +15350,14 @@ let tests =
       test_java_writer_annotations_work_in_ordinary_functions );
     ( "apply pr accepts lazy sequences",
       test_apply_pr_accepts_lazy_sequences );
+    ( "apply pr accepts refined protocol sequences",
+      test_apply_pr_accepts_refined_protocol_sequences );
     ( "protocol methods merge concrete and dynamic sequence returns",
       test_protocol_methods_merge_concrete_and_dynamic_sequence_returns );
     ( "recursive protocol sequence returns remain concrete",
       test_recursive_protocol_sequence_returns_remain_concrete );
+    ( "protocol witness results unpack concrete sequence returns",
+      test_protocol_witness_results_unpack_concrete_sequence_returns );
     ( "defn accepts attribute maps and return hints",
       test_defn_accepts_attribute_maps_and_return_hints );
     ( "compare supports dynamic scalar values",

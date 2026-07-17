@@ -468,21 +468,7 @@ and dynamic_unpack_impl env ty expression =
                           ( signature.Protocol_registry.param_tys,
                             signature.Protocol_registry.return_ty )
                     in
-                    let return_ty =
-                      match
-                        (signature.Protocol_registry.return_ty, return_ty)
-                      with
-                      | ( (TUnknown | TVar _),
-                          return_ty )
-                        when Types.is_dynamic return_ty
-                             || Types.equal return_ty TUnknown
-                             || (match return_ty with TVar _ -> true | _ -> false)
-                        ->
-                          Protocol.common_method_return env protocol_id
-                            (Method_id.name method_id)
-                          |> Option.value ~default:return_ty
-                      | _ -> return_ty
-                    in
+                    let return_ty = materialize_protocol_unknown return_ty in
                     let parameter_names =
                       List.mapi
                         (fun index _ ->
@@ -1366,6 +1352,8 @@ let rec pack_constrained_value env expected argument =
   | Some _ -> pack_dynamic_value env expected argument
         | None -> (
   match Types.protocol_constraint_info expected with
+  | Some _ when Types.is_dynamic argument.ty ->
+      dynamic_unpack env expected argument.semantic_expr
   | Some (protocol_id, witness_ty, value_ty) ->
       let rec witness_method_types = function
         | TUnit -> Ok []
@@ -1575,22 +1563,8 @@ let rec pack_constrained_value env expected argument =
                 in
                 Result.bind (witness_method_types witness_ty)
                   (fun method_tys ->
-                    let common_returns =
-                      Protocol.common_method_returns env protocol_id
-                    in
                     let method_tys =
-                      if List.length method_tys = List.length common_returns then
-                        List.map2
-                          (fun method_ty common_return ->
-                            match (method_ty, common_return) with
-                            | TFn (params, (TUnknown | TVar _)), Some return_ty ->
-                                TFn (params, return_ty)
-                            | TFn (params, return_ty), Some common_return
-                              when Types.is_dynamic return_ty ->
-                                TFn (params, common_return)
-                            | method_ty, _ -> method_ty)
-                          method_tys common_returns
-                      else method_tys
+                      List.map materialize_protocol_unknown method_tys
                     in
                     Result.map
                       (fun methods ->
@@ -1896,6 +1870,11 @@ let rec adapt_value_to_type env expected actual =
     | _ ->
         Ok
           (coerce_expression_to_type expected actual.ty actual.semantic_expr)
+
+let adapt_protocol_witness_result env ~expected ~actual expression =
+  let actual = materialize_protocol_unknown actual in
+  adapt_value_to_type env expected (typed_ir actual expression)
+  |> Result.map (fun expression -> typed_ir expected expression)
 
 let adapt_record_values_to_map env key_ty value_ty values =
   let rec build map = function
@@ -7746,6 +7725,24 @@ let create ~compile_expr =
                                     | TFn (_, return_ty) -> return_ty
                                     | _ -> TUnknown
                                   in
+                                  let witness_return_ty =
+                                    match
+                                      Types.protocol_constraint_info receiver_ty
+                                    with
+                                    | Some (_, witness_ty, _) ->
+                                        Option.bind
+                                          (Types.protocol_witness_method_types
+                                             witness_ty)
+                                          (fun methods ->
+                                            Option.bind
+                                              (List.nth_opt methods position)
+                                              (function
+                                                | TFn (_, return_ty) ->
+                                                    Some return_ty
+                                                | _ -> None))
+                                        |> Option.value ~default:return_ty
+                                    | None -> return_ty
+                                  in
                                   let param_tys =
                                     match marker.ty with
                                     | TFn (param_tys, _) -> param_tys
@@ -7786,32 +7783,33 @@ let create ~compile_expr =
                                     (prepare_arguments []
                                        (List.tl param_tys) (List.tl args))
                                     (fun arguments ->
-                                      Ok
-                                        (typed_ir return_ty
-                                           (Semantic_ir.Match
-                                              ( witness,
-                                                [
-                                                  ( Semantic_ir.PConstructor
-                                                      ("None", None),
-                                                    Semantic_ir.Apply
-                                                      ( Semantic_ir.Ident
-                                                          "invalid_arg",
-                                                        [
-                                                          Semantic_ir.String
-                                                            ("missing protocol \
-                                                              implementation for "
-                                                           ^ name);
-                                                        ] ) );
-                                                  ( Semantic_ir.PConstructor
-                                                      ( "Some",
-                                                        Some
-                                                          (Semantic_ir.PVar
-                                                             methods_name) ),
-                                                    Semantic_ir.Apply
-                                                      ( method_expr,
-                                                        receiver_argument
-                                                        :: arguments ) );
-                                                ] )))))
+                                      adapt_protocol_witness_result env
+                                        ~expected:return_ty
+                                        ~actual:witness_return_ty
+                                        (Semantic_ir.Match
+                                           ( witness,
+                                             [
+                                               ( Semantic_ir.PConstructor
+                                                   ("None", None),
+                                                 Semantic_ir.Apply
+                                                   ( Semantic_ir.Ident
+                                                       "invalid_arg",
+                                                     [
+                                                       Semantic_ir.String
+                                                         ("missing protocol \
+                                                           implementation for "
+                                                        ^ name);
+                                                     ] ) );
+                                               ( Semantic_ir.PConstructor
+                                                   ( "Some",
+                                                     Some
+                                                       (Semantic_ir.PVar
+                                                          methods_name) ),
+                                                 Semantic_ir.Apply
+                                                   ( method_expr,
+                                                     receiver_argument
+                                                     :: arguments ) );
+                                             ] ))))
                           | _ ->
                               Error.error
                                 ("no protocol implementation for " ^ name

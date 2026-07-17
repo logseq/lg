@@ -4,6 +4,17 @@ This file records concrete problems encountered while porting Persistent Sorted
 Set and DataScript to LG. Add an entry when a problem is first observed, then
 update the same entry with its root cause, fix, and verification evidence.
 
+## Porting principles
+
+- Prefer static evidence. Record types, protocol constraints, sequence element
+  types, and other concrete capabilities must compose instead of being erased
+  to `dynamic` by a temporary inference fallback.
+- Use `dynamic` only for genuinely open runtime boundaries or explicit source
+  annotations. Once a concrete type becomes known, adapt at that boundary and
+  keep the rest of the program statically typed.
+- Never use `Obj.magic` to bridge a missing type relationship. Extend the type
+  evidence or the boundary adapter instead.
+
 ## 2026-07-16: Dune formatting alias has no project configuration
 
 - Status: Recorded; no source-format mutation performed
@@ -737,11 +748,86 @@ update the same entry with its root cause, fix, and verification evidence.
 
 ## 2026-07-17: `nth-datom` is emitted after an earlier call site
 
-- Status: Open; next DataScript blocker
+- Status: Fixed
 - Symptom: Full Native compilation reaches `db.cljc` lines 83-115, where the
   generated code references `datascript_db_nth_datom__arity_2_0` before that
   value is bound.
-- Current evidence: This is an OCaml value-ordering failure, separate from the
-  fixed `Datom Seq` type evidence issue. The next reduction should inspect the
-  stabilized definition dependency order and the generated recursive group for
-  `nth-datom` without changing upstream DataScript source.
+- Root cause: Calls to a declared multi-arity function lower directly to an
+  arity target such as `nth_datom__arity_2_0`, but deferred expression detection
+  compared identifiers only with the binding's dispatcher name. The method was
+  therefore emitted before the target existed.
+- Fix: Treat every overload target on a forward-declared binding as declared
+  evidence alongside its dispatcher.
+- Verification: The focused overload-target regression fails before the fix
+  and passes afterward. The full parser dependency chain no longer reports the
+  unbound `nth-datom` target and advances to the sequence issue below.
+
+## 2026-07-17: `entid` loses sequence evidence
+
+- Status: Fixed
+- Symptom: The full `datascript.parser` dependency build reaches `db.cljc`
+  lines 951-987 and passes `Runtime_dynamic.t` where OCaml expects
+  `unit -> 'a Seq.node`.
+- Root cause: A protocol-constrained receiver retained a dynamic method-return
+  ABI, while the call node was labeled with the later concrete common return
+  without unpacking the witness result.
+- Fix: Read the actual return type from the receiver's witness method and adapt
+  that result to the concrete expected return at the call boundary.
+- Verification: A focused dynamic-witness-to-concrete-sequence regression
+  passes, and the full Native parser dependency chain advances beyond `entid`.
+
+## 2026-07-17: Witness construction rewrites a deferred dynamic ABI
+
+- Status: Fixed
+- Symptom: After `entid` was repaired, calls to `pr-db` passed a witness whose
+  `-datoms` method returned `Seq.t`, while the previously emitted `pr-db`
+  parameter required `Runtime_dynamic.t`.
+- Root cause: Witness construction replaced unresolved method returns with the
+  registry's later common return. This changed the caller ABI without changing
+  the already-emitted function. Leaving the type as `TUnknown` was also wrong,
+  because deferred emission had already materialized that unknown as dynamic.
+- Fix: Preserve the binding's witness ABI and materialize only its unresolved
+  positions as dynamic before adapting concrete implementations.
+- Verification: The focused function-before-implementations `apply pr`
+  regression fails with `Seq.empty` versus dynamic before the fix and passes on
+  Native and Melange afterward. Full Native compilation advances beyond
+  `pr-db` to `check-value-tempids`.
+
+## 2026-07-17: A dynamic key erases generic record and protocol evidence
+
+- Status: Fixed
+- Symptom: `choose-box` inferred its `catalog<int>` parameter as
+  `dynamic<optional-protocol<CatalogInfo;any>>`. Dynamic packing then projected
+  only the concrete `count` field and lost generic `left` and `right` fields,
+  causing `Runtime_dynamic.as_int` to fail at runtime.
+- Root cause: General `get` inference installed a provisional dynamic type
+  before contextual inference ran. Later record evidence stayed trapped inside
+  that wrapper. In addition, the field type `box<value>` remained an unresolved
+  type application, so structural `box<int>` evidence could not specialize it.
+- Fix: Track explicit dynamic parameters separately from inference fallbacks.
+  Contextual record evidence can replace only the inferred wrapper while
+  retaining protocol constraints. Resolve named record applications through the
+  type registry before matching shared fields, and discard identity type
+  substitutions such as `value -> value` to avoid recursive substitution.
+- Verification: The regression now asserts that `choose-box` retains a
+  protocol-constrained `catalog<int>` parameter and runs correctly on Native
+  and Melange. Explicit dynamic `get`, dynamic protocol witnesses, the complete
+  compiler suite, and `dune build` all pass.
+
+## 2026-07-17: `check-value-tempids` passes bool to a dynamic boundary
+
+- Status: Open; next DataScript blocker
+- Symptom: Full Native parser dependency compilation reaches `db.cljc` lines
+  1435-1448 and reports `bool` where `Runtime_dynamic.t` is expected.
+- Current evidence: The failing form reduces transient tempid maps using a
+  callback that branches on `datom-added`. It is independent of the repaired
+  protocol sequence witness ABI and still needs a focused reduction.
+
+## 2026-07-17: `util/raise` is not expanded in part of `db.cljc`
+
+- Status: Open
+- Symptom: The parser dependency build also reports `unknown function
+  util/raise` for `validate-schema` at `db.cljc` lines 655-700.
+- Current evidence: `raise` is an upstream macro from `datascript.util`, and the
+  parser behavior tests do not exercise this path. The compiler must preserve
+  its cross-namespace macro alias instead of falling back to a dynamic call.
