@@ -913,15 +913,34 @@ update the same entry with its root cause, fix, and verification evidence.
 
 ## 2026-07-17: Deferred function field is declared too polymorphic
 
-- Status: Open; next DataScript blocker
+- Status: Fixed
 - Symptom: Full Native parser dependency compilation still reports the source
   range for `transact-tx-data`, but the new OCaml error says an assigned
   protocol/function field is less general than its declaration. The value
   shares type variables between its protocol receiver and sequence adapter,
   while the generated field quantifies those variables independently.
-- Current evidence: This is an OCaml generalization/ABI issue after the static
-  `datom btset` row fix. It must be reduced independently; routing the field
-  through `dynamic` would hide the relation and is not acceptable.
+- Root cause: The failing holder belongs to `resolve-tuple-refs`. Deferred type
+  freshening turned an unknown seqable item into a universally quantified OCaml
+  variable, but its generated runtime adapter returns
+  `Runtime_dynamic.t Seq.t`. The container may remain generic; the item crossing
+  this boundary may not claim unsupported polymorphism.
+- Fix: For required, optional, and optional-sequential constraints, keep an
+  unknown deferred item as `dynamic` while freshening the container normally.
+  Concrete item evidence is unchanged.
+- Verification: A focused white-box regression covers all three seqable
+  constraint forms and proves the item/container distinction. Related deferred
+  tests pass, and the real Native parser chain now compiles all of `db.cljc` and
+  reaches `parser.cljc`.
+
+## 2026-07-17: `collect-vars-acc` is unresolved in `parser.cljc`
+
+- Status: Open; next DataScript blocker
+- Symptom: Full Native parser dependency compilation reaches
+  `test/datascript/upstream/parser.cljc` line 88 and reports `unknown function
+  datascript.parser/collect-vars-acc`.
+- Current evidence: The failure occurs only after all PSS and `db.cljc` forms
+  compile. Reduce the upstream definition/declaration order and preserve its
+  static recursive binding; do not add a dynamic fallback.
 
 ## 2026-07-17: Full parser-chain compilation repeats large typechecks
 

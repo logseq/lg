@@ -81,6 +81,16 @@ let freshen_deferred_type ?return_param_index ty =
     | Types.TVector ty -> Types.TVector (freshen ty)
     | Types.TSet ty -> Types.TSet (freshen ty)
     | Types.TSeq ty -> Types.TSeq (freshen ty)
+    | Types.TOcaml_app (name, [ element_ty; value_ty ])
+      when name = Types.seqable_constraint_name
+           || name = Types.optional_seqable_constraint_name
+           || name = Types.optional_sequential_constraint_name ->
+        let element_ty =
+          if Types.equal element_ty Types.TUnknown then
+            Types.dynamic_constraint Types.TUnknown
+          else freshen element_ty
+        in
+        Types.TOcaml_app (name, [ element_ty; freshen value_ty ])
     | Types.TOcaml_app (_, _) as constraint_ty
       when Option.is_some (Types.protocol_constraint_info constraint_ty) ->
         freshen_protocol_constraint constraint_ty

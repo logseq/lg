@@ -947,6 +947,30 @@ let test_freshen_deferred_dynamic_dispatch_stays_monomorphic () =
       | None -> failwith "expected a protocol constraint")
   | _ -> failwith "expected a deferred function type"
 
+let test_freshen_deferred_seqable_items_stay_dynamic () =
+  let open Lg.Types in
+  let constraints =
+    [
+      seqable_constraint TUnknown;
+      optional_seqable_constraint TUnknown TUnknown;
+      optional_sequential_constraint TUnknown TUnknown;
+    ]
+  in
+  List.iter
+    (fun constraint_ty ->
+      match Lg.Elaborator.freshen_deferred_type (TFn ([ constraint_ty ], TInt)) with
+      | TFn ([ refreshed ], TInt) -> (
+          match seqable_constraint_info refreshed with
+          | Some (_, element_ty, TVar _) when is_dynamic element_ty -> ()
+          | Some (_, element_ty, value_ty) ->
+              failwith
+                ("deferred seqable items must stay dynamic while the container "
+               ^ "remains generic, got: " ^ source_name element_ty ^ " / "
+                ^ source_name value_ty)
+          | None -> failwith "expected a seqable constraint")
+      | _ -> failwith "expected a deferred function type")
+    constraints
+
 let test_deferred_forward_calls_keep_nominal_receiver_evidence () =
   let source =
     {|
@@ -15013,6 +15037,8 @@ let tests =
       test_refresh_named_record_realigns_forward_declared_records );
     ( "freshen deferred dynamic dispatch stays monomorphic",
       test_freshen_deferred_dynamic_dispatch_stays_monomorphic );
+    ( "freshen deferred seqable items stay dynamic",
+      test_freshen_deferred_seqable_items_stay_dynamic );
     ( "deferred forward calls keep nominal receiver evidence",
       test_deferred_forward_calls_keep_nominal_receiver_evidence );
     ( "deferred named record fields receive body constraints",
