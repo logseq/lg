@@ -1597,10 +1597,13 @@ let create ~compile_expr =
       let lookup_dynamic_key_record_type =
         Expression_support.dynamic_key_record_type env
       in
+      let resolve_named_record =
+        Function_elaborator.infer_named_record scope env
+      in
       match
         Type_inference.infer_params ~lookup_function_ty
-          ~lookup_protocol_constraint ~lookup_dynamic_key_record_type params
-          forms
+          ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
+          ~resolve_named_record params forms
       with
       | Ok inferred ->
           List.assoc_opt name inferred |> Option.value ~default:TUnknown

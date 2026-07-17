@@ -197,6 +197,18 @@ let rec pattern_constraint_type = function
       TFn
         ( List.map pattern_constraint_type parameters,
           pattern_constraint_type return_type )
+  | TNamed_record record ->
+      TNamed_record
+        {
+          record with
+          type_arguments =
+            List.map pattern_constraint_type record.type_arguments;
+          fields =
+            List.map
+              (fun (field : field) ->
+                { field with ty = pattern_constraint_type field.ty })
+              record.fields;
+        }
   | ty -> ty
 
 let rec replace_post_result result_name = function
@@ -276,7 +288,8 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
         |> List.mapi (fun index (spec : Destructure.param_spec) ->
             let param_ty =
               match spec.explicit_ty with
-              | Some ty when not (Types.equal ty TUnknown) -> ty
+              | Some ty when not (Types.equal ty TUnknown) ->
+                  infer_named_record scope env ty
               | _ -> (
                   match List.nth_opt param_type_overrides index with
                   | Some (Some ty) when not (Types.equal ty TUnknown) -> ty
@@ -295,9 +308,11 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
       let lookup_dynamic_key_record_type =
         Expression_support.dynamic_key_record_type env
       in
+      let resolve_named_record = infer_named_record scope env in
       match
         Type_inference.infer_params ~lookup_function_ty
           ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
+          ~resolve_named_record
           inference_params body_forms
       with
       | Error _ as err -> err
@@ -340,7 +355,17 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                        in
                        match spec.Destructure.explicit_ty with
                        | Some ty when not (Types.equal ty TUnknown) ->
-                           (spec, infer_named_record scope env ty)
+                           let explicit_ty = infer_named_record scope env ty in
+                           let ty =
+                             match (explicit_ty, inferred_ty) with
+                             | ( TNamed_record explicit,
+                                 TNamed_record inferred )
+                               when Type_id.equal explicit.type_id
+                                      inferred.type_id ->
+                                 inferred_ty
+                             | _ -> explicit_ty
+                           in
+                           (spec, ty)
                        | _ -> (
                            match List.nth_opt param_type_overrides index with
                            | Some (Some ty) ->

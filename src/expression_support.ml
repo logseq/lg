@@ -89,8 +89,15 @@ let protocol_has_value expected ty =
   | None -> false
 
 let rec merge_branch_types left right =
-  if Types.equal left right then Some left
-  else
+  match (left, right) with
+  | TNamed_record left_record, TNamed_record right_record
+    when Type_id.equal left_record.type_id right_record.type_id
+         && left_record.type_arguments <> right_record.type_arguments -> (
+      match Type_solver.unify [] left right with
+      | Ok substitutions -> Some (Type_solver.apply substitutions left)
+      | Error _ -> None)
+  | left, right when Types.equal left right -> Some left
+  | left, right ->
     match (left, right) with
     | left, right when protocol_has_value right left ->
         Some right
@@ -670,8 +677,14 @@ let lookup_print_method scope env record =
   lookup_binding scope env (print_method_name record)
 
 let binding_of_expr ?(row_param_types = []) ocaml_name expr =
-  Types.binding ~row_param_types ?return_param_index:expr.return_param_index
-    ocaml_name expr.ty
+  let binding =
+    Types.binding ~row_param_types ?return_param_index:expr.return_param_index
+      ocaml_name expr.ty
+  in
+  {
+    binding with
+    ty = Types.align_deferred_param_types binding.ty expr.semantic_expr;
+  }
 
 type anonymous_record_allocation = {
   record : named_record;

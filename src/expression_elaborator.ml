@@ -1045,7 +1045,8 @@ and prepare_inferred_recursive_fn ~ocaml_name scope env source_name params
       let param_tys =
         List.map
           (fun (spec : Destructure.param_spec) ->
-            Option.value spec.explicit_ty ~default:TUnknown)
+            Option.value spec.explicit_ty ~default:TUnknown
+            |> Function_elaborator.infer_named_record scope env)
           specs
       in
       let self_binding = Types.binding ocaml_name (TFn (param_tys, TUnknown)) in
@@ -1056,7 +1057,10 @@ and prepare_inferred_recursive_fn ~ocaml_name scope env source_name params
         specs
         |> List.fold_left
              (fun params (spec : Destructure.param_spec) ->
-               let ty = Option.value spec.explicit_ty ~default:TUnknown in
+               let ty =
+                 Option.value spec.explicit_ty ~default:TUnknown
+                 |> Function_elaborator.infer_named_record scope env
+               in
                let params = (spec.source_name, ty) :: params in
                if spec.destructured then
                  Destructure.pattern_names spec.pattern
@@ -1074,9 +1078,13 @@ and prepare_inferred_recursive_fn ~ocaml_name scope env source_name params
       let lookup_dynamic_key_record_type =
         Expression_support.dynamic_key_record_type provisional_env
       in
+      let resolve_named_record =
+        Function_elaborator.infer_named_record scope provisional_env
+      in
       match
         Type_inference.infer_params ~lookup_function_ty
           ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
+          ~resolve_named_record
           inference_params body_forms
       with
       | Error _ as err -> err

@@ -117,10 +117,65 @@ let freshen_deferred_type ?return_param_index ty =
           Option.map (fun rest -> method_ty :: rest) (methods rest)
       | _ -> None
     in
+    let rec dynamic_unknowns = function
+      | Types.TUnknown -> Types.dynamic_constraint Types.TUnknown
+      | Types.TVar _ as ty -> ty
+      | Types.TNullable ty -> Types.TNullable (dynamic_unknowns ty)
+      | Types.TArray ty -> Types.TArray (dynamic_unknowns ty)
+      | Types.TRef ty -> Types.TRef (dynamic_unknowns ty)
+      | Types.TList ty -> Types.TList (dynamic_unknowns ty)
+      | Types.TVector ty -> Types.TVector (dynamic_unknowns ty)
+      | Types.TSet ty -> Types.TSet (dynamic_unknowns ty)
+      | Types.TSeq ty -> Types.TSeq (dynamic_unknowns ty)
+      | Types.TOcaml_app (name, arguments) ->
+          Types.TOcaml_app (name, List.map dynamic_unknowns arguments)
+      | Types.TTuple items -> Types.TTuple (List.map dynamic_unknowns items)
+      | Types.TFn (parameters, return_ty) ->
+          Types.TFn
+            (List.map dynamic_unknowns parameters, dynamic_unknowns return_ty)
+      | Types.TOverloaded_fn arities ->
+          Types.TOverloaded_fn
+            (List.map
+               (fun (arity : Types.fn_arity) ->
+                 ({ fixed_params = List.map dynamic_unknowns arity.fixed_params;
+                    rest_param = Option.map dynamic_unknowns arity.rest_param;
+                    return_ty = dynamic_unknowns arity.return_ty;
+                  }
+                   : Types.fn_arity))
+               arities)
+      | Types.TRecord fields ->
+          Types.TRecord
+            (List.map
+               (fun (field : Types.field) ->
+                 { field with ty = dynamic_unknowns field.ty })
+               fields)
+      | (Types.TNamed_record _ | Types.TInt | Types.TFloat | Types.TChar
+      | Types.TString | Types.TRegex | Types.TMap_keys | Types.TSymbol
+      | Types.TKeyword | Types.TBool | Types.TUnit | Types.TNil | Types.TOcaml _
+        ) as ty ->
+          ty
+    in
     match Types.protocol_constraint_info constraint_ty with
     | None -> freshen constraint_ty
     | Some (protocol_id, witness_ty, value_ty) ->
-        let value_ty = freshen value_ty in
+        (* A witness whose receivers are already dynamic dispatches
+           monomorphically in the implementation; freshening its container to a
+           rigid variable would claim a polymorphism the generated code does
+           not have. *)
+        let dynamic_dispatch =
+          match methods witness_ty with
+          | Some method_tys ->
+              List.exists
+                (function
+                  | Types.TFn (receiver :: _, _) -> Types.is_dynamic receiver
+                  | _ -> false)
+                method_tys
+          | None -> false
+        in
+        let value_ty =
+          if dynamic_dispatch then dynamic_unknowns value_ty
+          else freshen value_ty
+        in
         (match methods witness_ty with
         | None ->
             Types.protocol_constraint protocol_id [] value_ty
@@ -129,10 +184,14 @@ let freshen_deferred_type ?return_param_index ty =
               List.map
                 (function
                   | Types.TFn (_receiver :: parameters, return_ty) ->
+                      (* Untyped protocol method positions dispatch through
+                         the dynamic witness ABI in the implementation;
+                         rigid variables would claim polymorphism the
+                         generated code does not have. *)
                       Types.TFn
                         ( Types.constraint_value_type value_ty
-                          :: List.map freshen parameters,
-                          freshen return_ty )
+                          :: List.map dynamic_unknowns parameters,
+                          dynamic_unknowns return_ty )
                   | method_ty -> freshen method_ty)
                 method_tys
             in
@@ -155,6 +214,7 @@ let freshen_deferred_type ?return_param_index ty =
   | ty -> freshen ty
 
 let expand_deferred_binding name value_type return_param_index expression =
+  let value_type = Types.align_deferred_param_types value_type expression in
   let value_type = freshen_deferred_type ?return_param_index value_type in
   let implementation_name = name ^ "__implementation" in
   let holder_type_name = implementation_name ^ "_holder" in

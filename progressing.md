@@ -617,10 +617,91 @@ update the same entry with its root cause, fix, and verification evidence.
 
 ## 2026-07-16: Deferred return type applies `TxReport` as a generic constructor
 
-- Status: Open
+- Status: Fixed
 - Symptom: Full Native compilation now reaches `retry-with-tempid` and emits
   `datom txreport option`, although `txreport` has no type parameters.
-- Current evidence: The malformed type occurs only in the deferred
-  implementation holder for the forward-declared `retry-with-tempid` return.
-  The next step is to find where adjacent nominal and nullable return evidence
-  is composed in deferred declaration inference.
+- Root cause: Forward-declared record bindings retained the stale generic shape
+  inferred before the nominal type declaration was available.
+- Fix: Refresh forward-declared bindings when their named record declaration is
+  emitted and preserve the refreshed type through deferred binding emission.
+- Verification: Full Native compilation no longer emits `datom txreport
+  option` and advances through the later DB declarations.
+
+## 2026-07-17: Declared functions form an oversized recursive group
+
+- Status: Fixed
+- Symptom: `validate-indexed` has a polymorphic deferred holder, but its
+  implementation becomes monomorphic to `DB`; after removing that blocker,
+  `assoc-lru` similarly exposes a holder that is more general than its dynamic
+  map implementation.
+- Root cause: A `declare` followed by split `deftype` methods grouped every
+  intervening function into one OCaml `let rec`. `deftype-methods` was also
+  misclassified as providing the record type, creating false dependency cycles.
+  Separately, explicit nominal hints were resolved only after parameter
+  inference, named-record field constraints were ignored, map `assoc` erased its
+  key/value shape, and all accumulated substitutions were discarded after one
+  unrelated field conflict.
+- Fix: Let the dependency graph order individual definitions, classify
+  `deftype-methods` only as protocol method providers, resolve explicit record
+  hints before inference, propagate map key/value constraints through nominal
+  fields, preserve inferred nominal type arguments, and accumulate independent
+  substitutions incrementally.
+- Verification: Focused declaration ordering, deferred protocol receiver,
+  deferred initializer, type solver, and upstream `lru.cljc` regressions pass.
+  Full Native PSS + DataScript compilation advances past both LRU and
+  `validate-indexed`.
+
+## 2026-07-17: `restore-db` emits an unbound record type variable
+
+- Status: Open
+- Symptom: Full Native compilation now fails at `db.cljc` lines 769-781 with
+  `The type variable 'value is unbound in this type declaration`.
+- Current evidence: The failure is attached to `restore-db`, which destructures
+  a map and returns `^DB` through `map->DB`. The next step is to inspect the
+  generated declaration and identify which DB field retains the orphaned
+  `value` parameter.
+
+## 2026-07-17: Erased sequence storage reuses protocol callback elements
+
+- Status: Fixed
+- Symptom: A sequence of nominal values adapted for a generic protocol callback
+  is passed to `Runtime_dynamic.seq` as `(witness, value)` tuples instead of
+  dynamic values.
+- Root cause: The callback adapter and erased dynamic storage reused the same
+  mapped sequence even though they have different element ABIs.
+- Fix: Keep the witness-bearing callback adapter separate. Build erased storage
+  from the original sequence and pack each underlying element to dynamic.
+- Verification: `generic protocol witness flows through sequence callbacks`
+  runs successfully again.
+
+## 2026-07-17: Forward generic record patterns bind declaration variables
+
+- Status: Fixed
+- Symptom: A forward-declared generic record used as a function parameter
+  emitted a pattern annotation containing declaration variables such as
+  `'value`, which were not bound by the surrounding function type.
+- Root cause: Function pattern constraints replaced top-level TVars with `_`
+  but did not recurse through named-record fields and concrete type arguments.
+- Fix: Pattern constraint normalization now recursively replaces unresolved
+  variables throughout named records while retaining their nominal identity.
+- Verification: The focused forward-declared record regression passes, the
+  complete compiler suite passes, and no cast or `Obj.magic` is used.
+
+## 2026-07-17: Occurrence type hints escape conditional branches
+
+- Status: Fixed
+- Symptom: Inferring `^Wrapped value` inside one `if` branch changed the whole
+  function parameter to `Wrapped`, rejecting the valid fallback call with the
+  base value. Treating every unknown hinted value as dynamic fixed that case
+  but broke unconditional hints and their call ABI.
+- Root cause: Type hints supplied useful nominal evidence to fixed-point
+  parameter inference, but the inference loop did not distinguish an
+  unconditional hint from branch-local occurrence evidence. Branch hint state
+  also had to be reset on every stabilization pass.
+- Fix: Unconditional hints still resolve nominal parameters. Conditional
+  inference records only symbols refined by occurrence hints and restores
+  their pre-branch types afterward; all unrelated `if` inference remains
+  unchanged.
+- Verification: The occurrence-hint, unconditional-record-hint, dynamic-set,
+  and nullable-compare regressions pass. The complete compiler suite and
+  `dune build` pass.

@@ -738,9 +738,54 @@ let rec remap_module_type ~from_path ~to_path ty =
               record.fields;
         }
 
+let rec refresh_named_record (fresh : named_record) ty =
+  let refresh = refresh_named_record fresh in
+  match ty with
+  | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
+  | TBool | TUnit | TNil | TUnknown | TVar _ | TOcaml _ ->
+      ty
+  | TNullable inner -> TNullable (refresh inner)
+  | TOcaml_app (name, args) -> TOcaml_app (name, List.map refresh args)
+  | TTuple args -> TTuple (List.map refresh args)
+  | TArray inner -> TArray (refresh inner)
+  | TRef inner -> TRef (refresh inner)
+  | TList inner -> TList (refresh inner)
+  | TVector inner -> TVector (refresh inner)
+  | TSet inner -> TSet (refresh inner)
+  | TSeq inner -> TSeq (refresh inner)
+  | TFn (args, ret) -> TFn (List.map refresh args, refresh ret)
+  | TOverloaded_fn arities ->
+      TOverloaded_fn
+        (List.map
+           (fun arity ->
+             {
+               fixed_params = List.map refresh arity.fixed_params;
+               rest_param = Option.map refresh arity.rest_param;
+               return_ty = refresh arity.return_ty;
+             })
+           arities)
+  | TRecord fields ->
+      TRecord
+        (List.map
+           (fun (field : field) -> { field with ty = refresh field.ty })
+           fields)
+  | TNamed_record record when Type_id.equal record.type_id fresh.type_id ->
+      if List.length record.type_arguments = List.length fresh.type_arguments
+      then TNamed_record { fresh with type_arguments = record.type_arguments }
+      else TNamed_record fresh
+  | TNamed_record record ->
+      TNamed_record
+        {
+          record with
+          type_arguments = List.map refresh record.type_arguments;
+          fields =
+            List.map
+              (fun (field : field) -> { field with ty = refresh field.ty })
+              record.fields;
+        }
+
 let find_field keyword fields =
   List.find_opt (fun field -> field.keyword = keyword) fields
-
 let make_field ?location keyword ty =
   { keyword; ocaml_name = Names.keyword_to_ocaml_name keyword; ty; location }
 
@@ -773,6 +818,17 @@ let instantiate_type ~templates ~actuals ty =
   else
     let substitutions =
       infer_list_substitutions [] templates actuals
+    in
+    substitute_type_variables substitutions ty
+
+let instantiate_type_fields ~templates ~actuals ty =
+  if List.length templates <> List.length actuals then ty
+  else
+    let substitutions =
+      List.fold_left2
+        (fun substitutions template actual ->
+          infer_type_substitutions substitutions ~template ~actual)
+        [] templates actuals
     in
     substitute_type_variables substitutions ty
 
@@ -815,3 +871,174 @@ let instantiate_receiver_method_type receiver_ty method_ty =
               specialize_return value_ty return_ty )
       | _ -> method_ty)
   | _ -> method_ty
+let rec idents_in_conversion names = function
+  | Semantic_ir.Ident name -> name :: names
+  | Semantic_ir.Typed (_, value) | Semantic_ir.Located (_, _, value) ->
+      idents_in_conversion names value
+  | Semantic_ir.Constructor (_, value) ->
+      Option.fold ~none:names ~some:(idents_in_conversion names) value
+  | Semantic_ir.Tuple values
+  | Semantic_ir.List values
+  | Semantic_ir.Array values
+  | Semantic_ir.Sequence values ->
+      List.fold_left idents_in_conversion names values
+  | Semantic_ir.Apply (fn, args) | Semantic_ir.Uncurried_apply (fn, args) ->
+      List.fold_left idents_in_conversion (idents_in_conversion names fn) args
+  | Semantic_ir.Labelled_apply (fn, args) ->
+      List.fold_left
+        (fun names (_, value) -> idents_in_conversion names value)
+        (idents_in_conversion names fn) args
+  | Semantic_ir.If (condition, then_expr, else_expr) ->
+      List.fold_left idents_in_conversion names
+        [ condition; then_expr; else_expr ]
+  | Semantic_ir.Fun (_, body) -> idents_in_conversion names body
+  | Semantic_ir.Let (bindings, body) ->
+      List.fold_left
+        (fun names (_, value) -> idents_in_conversion names value)
+        (idents_in_conversion names body) bindings
+  | Semantic_ir.LetRec (_, _, body, args) ->
+      List.fold_left idents_in_conversion (idents_in_conversion names body) args
+  | Semantic_ir.LetRecIn (_, _, body, next) ->
+      idents_in_conversion (idents_in_conversion names body) next
+  | Semantic_ir.Match (target, cases) ->
+      List.fold_left
+        (fun names (_, value) -> idents_in_conversion names value)
+        (idents_in_conversion names target)
+        cases
+  | Semantic_ir.Match_guarded (target, cases) ->
+      List.fold_left
+        (fun names (_, _, value) -> idents_in_conversion names value)
+        (idents_in_conversion names target)
+        cases
+  | Semantic_ir.Try (body, cases) ->
+      List.fold_left
+        (fun names (_, _, handler) -> idents_in_conversion names handler)
+        (idents_in_conversion names body) cases
+  | Semantic_ir.Infix (_, left, right) | Semantic_ir.Cons (left, right) ->
+      idents_in_conversion (idents_in_conversion names left) right
+  | Semantic_ir.Prefix (_, value) | Semantic_ir.Field (value, _) ->
+      idents_in_conversion names value
+  | Semantic_ir.PackDynamic { conversion; _ }
+  | Semantic_ir.UnpackDynamic { conversion; _ }
+  | Semantic_ir.NullableToSeq { conversion; _ } ->
+      idents_in_conversion names conversion
+  | Semantic_ir.Record (fields, _) ->
+      List.fold_left
+        (fun names (_, value) -> idents_in_conversion names value)
+        names fields
+  | Semantic_ir.Int _ | Semantic_ir.Float _ | Semantic_ir.String _
+  | Semantic_ir.Char _ | Semantic_ir.Bool _ | Semantic_ir.Unit ->
+      names
+
+let rec dynamic_pinned_idents names = function
+  | Semantic_ir.PackDynamic { conversion; _ } ->
+      let names = idents_in_conversion names conversion in
+      dynamic_pinned_idents names conversion
+  | Semantic_ir.Typed (_, value) | Semantic_ir.Located (_, _, value) ->
+      dynamic_pinned_idents names value
+  | Semantic_ir.Constructor (_, value) ->
+      Option.fold ~none:names ~some:(dynamic_pinned_idents names) value
+  | Semantic_ir.Tuple values
+  | Semantic_ir.List values
+  | Semantic_ir.Array values
+  | Semantic_ir.Sequence values ->
+      List.fold_left dynamic_pinned_idents names values
+  | Semantic_ir.Apply (fn, args) | Semantic_ir.Uncurried_apply (fn, args) ->
+      List.fold_left dynamic_pinned_idents
+        (dynamic_pinned_idents names fn)
+        args
+  | Semantic_ir.Labelled_apply (fn, args) ->
+      List.fold_left
+        (fun names (_, value) -> dynamic_pinned_idents names value)
+        (dynamic_pinned_idents names fn)
+        args
+  | Semantic_ir.If (condition, then_expr, else_expr) ->
+      List.fold_left dynamic_pinned_idents names
+        [ condition; then_expr; else_expr ]
+  | Semantic_ir.Fun (_, body) -> dynamic_pinned_idents names body
+  | Semantic_ir.Let (bindings, body) ->
+      List.fold_left
+        (fun names (_, value) -> dynamic_pinned_idents names value)
+        (dynamic_pinned_idents names body)
+        bindings
+  | Semantic_ir.LetRec (_, _, body, args) ->
+      List.fold_left dynamic_pinned_idents
+        (dynamic_pinned_idents names body)
+        args
+  | Semantic_ir.LetRecIn (_, _, body, next) ->
+      dynamic_pinned_idents (dynamic_pinned_idents names body) next
+  | Semantic_ir.Match (target, cases) ->
+      List.fold_left
+        (fun names (_, value) -> dynamic_pinned_idents names value)
+        (dynamic_pinned_idents names target)
+        cases
+  | Semantic_ir.Match_guarded (target, cases) ->
+      List.fold_left
+        (fun names (_, _, value) -> dynamic_pinned_idents names value)
+        (dynamic_pinned_idents names target)
+        cases
+  | Semantic_ir.Try (body, cases) ->
+      List.fold_left
+        (fun names (_, _, handler) -> dynamic_pinned_idents names handler)
+        (dynamic_pinned_idents names body)
+        cases
+  | Semantic_ir.Infix (_, left, right) | Semantic_ir.Cons (left, right) ->
+      dynamic_pinned_idents (dynamic_pinned_idents names left) right
+  | Semantic_ir.Prefix (_, value) | Semantic_ir.Field (value, _) ->
+      dynamic_pinned_idents names value
+  | Semantic_ir.UnpackDynamic { conversion; _ }
+  | Semantic_ir.NullableToSeq { conversion; _ } ->
+      dynamic_pinned_idents names conversion
+  | Semantic_ir.Record (fields, _) ->
+      List.fold_left
+        (fun names (_, value) -> dynamic_pinned_idents names value)
+        names fields
+  | Semantic_ir.Int _ | Semantic_ir.Float _ | Semantic_ir.String _
+  | Semantic_ir.Char _ | Semantic_ir.Bool _ | Semantic_ir.Unit
+  | Semantic_ir.Ident _ ->
+      names
+
+let rec pattern_name = function
+  | Semantic_ir.PVar name -> Some name
+  | Semantic_ir.PConstraint (pattern, _) -> pattern_name pattern
+  | Semantic_ir.PLocated (_, _, pattern) -> pattern_name pattern
+  | Semantic_ir.PAlias (pattern, name) -> (
+      match pattern_name pattern with Some _ as name -> name | None -> Some name)
+  | Semantic_ir.PTuple patterns -> (
+      match List.rev patterns with
+      | pattern :: _ -> pattern_name pattern
+      | [] -> None)
+  | Semantic_ir.PAny | Semantic_ir.PUnit | Semantic_ir.PInt _
+  | Semantic_ir.PString _ | Semantic_ir.PBool _ | Semantic_ir.PConstructor _
+  | Semantic_ir.PList _ | Semantic_ir.PCons _ | Semantic_ir.PRecord _
+  | Semantic_ir.POr _ ->
+      None
+
+let fn_param_names expression =
+  let rec strip expression =
+    match expression with
+    | Semantic_ir.Typed (_, value) | Semantic_ir.Located (_, _, value) ->
+        strip value
+    | Semantic_ir.Fun (patterns, _) ->
+        List.map pattern_name patterns
+    | _ -> []
+  in
+  strip expression
+
+let align_deferred_param_types value_type expression =
+  let pinned = dynamic_pinned_idents [] expression in
+  match (pinned, value_type) with
+  | [], _ | _, TFn ([], _) -> value_type
+  | pinned, TFn (parameters, return_ty) ->
+      let names = fn_param_names expression in
+      TFn
+        ( List.mapi
+            (fun index ty ->
+              match (List.nth_opt names index, ty) with
+              | Some (Some name), (TUnknown | TVar _)
+                when List.mem name pinned ->
+                  dynamic_constraint TUnknown
+              | _ -> ty)
+            parameters,
+          return_ty )
+  | _, value_type -> value_type

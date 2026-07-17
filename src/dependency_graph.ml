@@ -100,12 +100,12 @@ let rec provided_names = function
       (FSymbol ("def" | "defonce" | "defn" | "defn-") :: FSymbol name :: _)
     ->
       [ name ]
-  | FList (FSymbol definition :: FSymbol name :: _ as forms)
-    when String.starts_with ~prefix:"def" definition ->
-      name :: method_names (FList forms)
   | FList
       (FSymbol ("extend-type" | "deftype-methods") :: _ as forms) ->
       method_names (FList forms)
+  | FList (FSymbol definition :: FSymbol name :: _ as forms)
+    when String.starts_with ~prefix:"def" definition ->
+      name :: method_names (FList forms)
   | _ -> []
 
 let has_declarations forms =

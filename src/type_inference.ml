@@ -185,16 +185,21 @@ let rec stored_value_type ty =
   | Some (_, _, value_ty) -> stored_value_type value_ty
   | None -> ty
 
-let record_ref_field_value_type params receiver keyword =
+let record_field_type params receiver keyword =
   match List.assoc_opt receiver params with
   | None -> None
   | Some receiver_ty -> (
       match Types.record_fields receiver_ty with
       | None -> None
-      | Some fields -> (
-          match Types.find_field keyword fields with
-          | Some { ty = TRef value_ty; _ } -> Some value_ty
-          | Some _ | None -> None))
+      | Some fields ->
+          Option.map
+            (fun (field : field) -> field.ty)
+            (Types.find_field keyword fields))
+
+let record_ref_field_value_type params receiver keyword =
+  match record_field_type params receiver keyword with
+  | Some (TRef value_ty) -> Some value_ty
+  | Some _ | None -> None
 
 let rec assoc_root_symbol = function
   | FSymbol name -> Some name
@@ -349,6 +354,27 @@ let add_record_field_constraint name keyword field_ty params =
     | TUnknown | TVar _ -> Ok (TRecord [ make_field keyword field_ty ])
     | TRecord fields ->
         Result.map (fun fields -> TRecord fields) (merge_fields fields)
+    | TNamed_record record as record_ty -> (
+        match Types.find_field keyword record.fields with
+        | None -> Ok record_ty
+        | Some field -> (
+            let constrained_parameters =
+              Type_solver.variables field.ty
+              |> List.filter (fun name -> List.mem name record.type_parameters)
+            in
+            let inferred_ty = stored_value_type field_ty in
+            match (constrained_parameters, inferred_ty) with
+            | [], _ -> Ok record_ty
+            | _, (TUnknown | TVar _) -> Ok record_ty
+            | _, inferred_ty -> (
+            match Type_solver.unify [] field.ty inferred_ty with
+            | Ok substitutions ->
+                Ok (Type_solver.apply substitutions record_ty)
+            | Error _ ->
+                Error.error
+                  ("cannot infer " ^ keyword ^ " as "
+                 ^ Types.source_name inferred_ty ^ " because it is already "
+                 ^ Types.source_name field.ty))))
     | ty when Types.is_dynamic ty ->
         let capability =
           Types.dynamic_constraint_info ty |> Option.value ~default:TUnknown
@@ -388,6 +414,13 @@ let inferred_form_type params = function
   | FBool _ -> TBool
   | FKeyword _ -> TKeyword
   | FSymbol name -> List.assoc_opt name params |> Option.value ~default:TUnknown
+  | FList [ FSymbol field_access; FSymbol receiver ]
+    when String.starts_with ~prefix:".-" field_access ->
+      let keyword =
+        ":" ^ String.sub field_access 2 (String.length field_access - 2)
+      in
+      record_field_type params receiver keyword
+      |> Option.value ~default:TUnknown
   | FList (FSymbol ("+" | "-" | "*" | "/" | "max" | "min") :: _) as form ->
       numeric_form_type params form
   | FList [ FSymbol ("first" | "second" | "last"); FSymbol receiver ] -> (
@@ -520,8 +553,34 @@ let rec rewrite_simple_aliases aliases = function
   | form -> form
 
 let infer_params ~lookup_function_ty ~lookup_protocol_constraint
-    ~lookup_dynamic_key_record_type params body_forms =
+    ~lookup_dynamic_key_record_type ~resolve_named_record params body_forms =
   let next_type_variable = ref 0 in
+  let branch_depth = ref 0 in
+  let branch_hint_symbols = ref [] in
+  let with_branch inference =
+    incr branch_depth;
+    match inference () with
+    | result ->
+        decr branch_depth;
+        result
+    | exception exn ->
+        decr branch_depth;
+        raise exn
+  in
+  let restore_branch_hints base inferred previous_hints =
+    let new_hints =
+      List.filter
+        (fun name -> not (List.mem name previous_hints))
+        !branch_hint_symbols
+    in
+    List.map
+      (fun (name, base_ty) ->
+        if List.mem name new_hints then (name, base_ty)
+        else
+          ( name,
+            List.assoc_opt name inferred |> Option.value ~default:base_ty ))
+      base
+  in
   let fresh_type_variable prefix =
     let index = !next_type_variable in
     incr next_type_variable;
@@ -531,15 +590,36 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint
     | FSymbol name -> constrain_symbol expected_ty params name
     | FList [ FSymbol "if"; condition; then_form; else_form ] ->
         Result.bind (infer_truthy params condition) (fun params ->
-            Result.bind (infer_expected expected_ty params then_form)
-              (fun params -> infer_expected expected_ty params else_form))
+            let previous_hints = !branch_hint_symbols in
+            Result.bind
+              (with_branch (fun () ->
+                   infer_expected expected_ty params then_form))
+              (fun inferred ->
+                Result.map
+                  (fun inferred ->
+                    restore_branch_hints params inferred previous_hints)
+                  (with_branch (fun () ->
+                       infer_expected expected_ty inferred else_form))))
     | FList [ FSymbol "if"; condition; then_form ] ->
         Result.bind (infer_truthy params condition) (fun params ->
-            infer_expected expected_ty params then_form)
+            let previous_hints = !branch_hint_symbols in
+            Result.map
+              (fun inferred ->
+                restore_branch_hints params inferred previous_hints)
+              (with_branch (fun () ->
+                   infer_expected expected_ty params then_form)))
     | FList [ FSymbol "if-not"; condition; then_form; else_form ] ->
         Result.bind (infer_truthy params condition) (fun params ->
-            Result.bind (infer_expected expected_ty params then_form)
-              (fun params -> infer_expected expected_ty params else_form))
+            let previous_hints = !branch_hint_symbols in
+            Result.bind
+              (with_branch (fun () ->
+                   infer_expected expected_ty params then_form))
+              (fun inferred ->
+                Result.map
+                  (fun inferred ->
+                    restore_branch_hints params inferred previous_hints)
+                  (with_branch (fun () ->
+                       infer_expected expected_ty inferred else_form))))
     | FList [ FSymbol "Some"; value ] -> (
         match expected_ty with
         | TNullable value_ty | TOcaml_app ("option", [ value_ty ]) ->
@@ -1248,6 +1328,23 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint
     let infer_target =
       match (target, pairs) with
       | FSymbol _name, (FKeyword _ :: _ | []) -> infer_form params target
+      | FSymbol name, key_form :: value_form :: _ -> (
+          match
+            Option.bind (List.assoc_opt name params) Types.dynamic_map_types
+          with
+          | Some _ ->
+              let concrete_or_dynamic form =
+                match inferred_form_type params form with
+                | TUnknown | TVar _ -> Types.dynamic_constraint TUnknown
+                | ty -> ty
+              in
+              constrain_symbol
+                (Types.dynamic_map
+                   (concrete_or_dynamic key_form)
+                   (concrete_or_dynamic value_form))
+                params name
+          | None ->
+              constrain_symbol (Types.dynamic_constraint TUnknown) params name)
       | FSymbol name, _ ->
           constrain_symbol (Types.dynamic_constraint TUnknown) params name
       | _ -> infer_form params target
@@ -1432,7 +1529,17 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint
     | FList [ FSymbol "__type-hint"; FSymbol annotation; value ] -> (
         match Type_annotation.of_param_annotation annotation with
         | Error _ as error -> error
-        | Ok _hinted_ty -> infer_form params value)
+        | Ok hinted_ty when !branch_depth = 0 ->
+            let hinted_ty = resolve_named_record hinted_ty in
+            (match value with
+            | FSymbol name -> constrain_symbol hinted_ty params name
+            | value -> infer_expected hinted_ty params value)
+        | Ok _hinted_ty ->
+            (match value with
+            | FSymbol name when not (List.mem name !branch_hint_symbols) ->
+                branch_hint_symbols := name :: !branch_hint_symbols
+            | _ -> ());
+            infer_form params value)
     | FList (FSymbol "record" :: _record_type :: field_forms) ->
         let values =
           List.filter_map
@@ -1478,6 +1585,36 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint
             in
             Result.bind infer_option (fun params -> infer_form params else_form)
         )
+    | FList
+        (FSymbol ("when-some" | "when-let")
+        :: FVector [ FSymbol binding; option_form ]
+        :: body_forms) -> (
+        let initial_payload_ty =
+          match inferred_form_type params option_form with
+          | TNullable inner | TOcaml_app ("option", [ inner ]) -> inner
+          | _ -> TVar ("option_" ^ Names.sanitize_name binding)
+        in
+        let shadowed = List.assoc_opt binding params in
+        let branch_params =
+          (binding, initial_payload_ty) :: List.remove_assoc binding params
+        in
+        match infer_all branch_params body_forms with
+        | Error _ as error -> error
+        | Ok branch_params ->
+            let payload_ty =
+              List.assoc_opt binding branch_params
+              |> Option.value ~default:initial_payload_ty
+            in
+            let params = List.remove_assoc binding branch_params in
+            let params =
+              match shadowed with
+              | None -> params
+              | Some ty -> (binding, ty) :: params
+            in
+            (match payload_ty with
+            | TUnknown -> infer_form params option_form
+            | payload_ty ->
+                infer_expected (TNullable payload_ty) params option_form))
     | FList [ FSymbol "with-meta"; FSymbol value; metadata ] -> (
         match
           constrain_symbol (Types.dynamic_constraint TUnknown) params value
@@ -1567,6 +1704,25 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint
           params [ left; right ]
     | FList [ FSymbol "int"; FSymbol value ] ->
         constrain_symbol (Types.dynamic_constraint TUnknown) params value
+    | FList
+        (FSymbol (".valAt" | ".containsKey" | ".entryAt")
+        :: FList [ FSymbol field_access; FSymbol receiver ]
+        :: key_form :: remaining)
+      when String.starts_with ~prefix:".-" field_access ->
+        let keyword =
+          ":"
+          ^ String.sub field_access 2 (String.length field_access - 2)
+        in
+        let key_ty =
+          match inferred_form_type params key_form with
+          | TUnknown | TVar _ -> Types.dynamic_constraint TUnknown
+          | ty -> ty
+        in
+        Result.bind
+          (add_record_field_constraint receiver keyword
+             (Types.dynamic_map key_ty TUnknown)
+             params)
+          (fun params -> infer_all params (key_form :: remaining))
     | FList [ FSymbol field_access; FSymbol name ]
       when String.starts_with ~prefix:".-" field_access ->
         let keyword =
@@ -2216,21 +2372,38 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint
     | FList [ FSymbol "if"; condition; then_form; else_form ] -> (
         match infer_truthy params condition with
         | Error _ as err -> err
-        | Ok params -> (
-            match infer_form params then_form with
+        | Ok params ->
+            let previous_hints = !branch_hint_symbols in
+            (
+            match with_branch (fun () -> infer_form params then_form) with
             | Error _ as err -> err
-            | Ok params -> infer_form params else_form))
+            | Ok inferred ->
+                Result.map
+                  (fun inferred ->
+                    restore_branch_hints params inferred previous_hints)
+                  (with_branch (fun () -> infer_form inferred else_form))))
     | FList [ FSymbol "if"; condition; then_form ] -> (
         match infer_truthy params condition with
         | Error _ as err -> err
-        | Ok params -> infer_form params then_form)
+        | Ok params ->
+            let previous_hints = !branch_hint_symbols in
+            Result.map
+              (fun inferred ->
+                restore_branch_hints params inferred previous_hints)
+              (with_branch (fun () -> infer_form params then_form)))
     | FList [ FSymbol "if-not"; condition; then_form; else_form ] -> (
         match infer_truthy params condition with
         | Error _ as err -> err
-        | Ok params -> (
-            match infer_form params then_form with
+        | Ok params ->
+            let previous_hints = !branch_hint_symbols in
+            (
+            match with_branch (fun () -> infer_form params then_form) with
             | Error _ as err -> err
-            | Ok params -> infer_form params else_form))
+            | Ok inferred ->
+                Result.map
+                  (fun inferred ->
+                    restore_branch_hints params inferred previous_hints)
+                  (with_branch (fun () -> infer_form inferred else_form))))
     | FList (FSymbol "when" :: condition :: body_forms) -> (
         match infer_truthy params condition with
         | Error _ as err -> err
@@ -2759,6 +2932,7 @@ let infer_params ~lookup_function_ty ~lookup_protocol_constraint
          left right
   in
   let rec stabilize remaining params =
+    branch_hint_symbols := [];
     Result.bind (infer_all params body_forms) (fun inferred ->
         let inferred =
           List.map

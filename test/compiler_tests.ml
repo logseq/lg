@@ -623,6 +623,27 @@ let test_if_some_and_when_some_bind_option_payloads () =
   assert_ocaml_runs "if_some_and_when_some_bind_option_payloads" "9\n8:0\n"
     ocaml_source
 
+let test_when_some_binding_constraints_reach_dynamic_calls () =
+  let source =
+    {|
+(defn ^boolean check? [attr]
+  (= (hash attr) 42))
+
+(defn validate [c0]
+  (when-some [attr c0]
+    (when-not (check? attr)
+      (str "Attribute " (pr-str attr) " should be marked"))))
+
+(println (validate (identity "x")))
+(println (validate nil))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "when_some_binding_constraints_reach_dynamic_calls"
+    "Attribute \"x\" should be marked\nnil\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_nil_predicates_evaluate_arguments_once () =
   let source =
     {|
@@ -848,6 +869,134 @@ let test_type_solver_preserves_shared_and_independent_variables () =
   with
   | Error _ -> ()
   | Ok _ -> failwith "recursive substitutions must fail the occurs check"
+
+let test_refresh_named_record_realigns_forward_declared_records () =
+  let open Lg.Types in
+  let fields = [ make_field ":db-before" TUnknown ] in
+  let fresh =
+    named_record ~type_name:"txreport" ~set_module_name:"txreport_set" fields
+  in
+  let stale =
+    named_record ~type_parameters:[ "value" ] ~type_name:"txreport"
+      ~set_module_name:"txreport_set" fields
+  in
+  (match fresh with
+  | TNamed_record fresh_record -> (
+      let refreshed =
+        refresh_named_record fresh_record (TFn ([ stale ], TNullable stale))
+      in
+      let expected = TFn ([ fresh ], TNullable fresh) in
+      if refreshed <> expected then
+        failwith
+          ("forward-declared record arguments must realign to the emitted \
+            declaration: " ^ source_name refreshed);
+      let generic =
+        named_record ~type_parameters:[ "value" ] ~type_name:"btset"
+          ~set_module_name:"btset_set" fields
+      in
+      match generic with
+      | TNamed_record generic_record ->
+          let instantiated =
+            TNamed_record { generic_record with type_arguments = [ TInt ] }
+          in
+          let refreshed = refresh_named_record generic_record instantiated in
+          if refreshed <> instantiated then
+            failwith
+              "matching argument counts must keep the more specific \
+               instantiation";
+          let refreshed = refresh_named_record generic_record stale in
+          if refreshed <> stale then
+            failwith "unrelated record shapes must be left alone"
+      | _ -> failwith "expected a named record")
+  | _ -> failwith "expected a named record")
+
+let test_freshen_deferred_dynamic_dispatch_stays_monomorphic () =
+  let open Lg.Types in
+  let dynamic = dynamic_constraint TUnknown in
+  let protocol_id = Lg.Protocol_id.of_string "test/dynamic-dispatch" in
+  let dynamic_method = TFn ([ dynamic; dynamic ], dynamic) in
+  let dynamic_constraint_ty =
+    protocol_constraint protocol_id [ dynamic_method ] TUnknown
+  in
+  (match
+     Lg.Elaborator.freshen_deferred_type (TFn ([ dynamic_constraint_ty ], TInt))
+   with
+  | TFn ([ refreshed ], TInt) -> (
+      match protocol_constraint_info refreshed with
+      | Some (_, _, value_ty) ->
+          if not (equal value_ty dynamic) then
+            failwith
+              ("dynamic dispatch must keep the container monomorphic dynamic, \
+                got: " ^ source_name value_ty)
+      | None -> failwith "expected a protocol constraint")
+  | _ -> failwith "expected a deferred function type");
+  let generic_method = TFn ([ TUnknown ], TUnknown) in
+  let generic_constraint_ty =
+    protocol_constraint protocol_id [ generic_method ] TUnknown
+  in
+  match
+    Lg.Elaborator.freshen_deferred_type (TFn ([ generic_constraint_ty ], TInt))
+  with
+  | TFn ([ refreshed ], TInt) -> (
+      match protocol_constraint_info refreshed with
+      | Some (_, _, TVar _) -> ()
+      | Some (_, _, value_ty) ->
+          failwith
+            ("generic receivers must keep freshened polymorphism, got: "
+            ^ source_name value_ty)
+      | None -> failwith "expected a protocol constraint")
+  | _ -> failwith "expected a deferred function type"
+
+let test_deferred_forward_calls_keep_nominal_receiver_evidence () =
+  let source =
+    {|
+(declare indexed?)
+
+(defprotocol IIndexAccess
+  (-datoms [db index c0 c1 c2 c3]))
+
+(defn validate-indexed [db index c0 c1 c2 c3]
+  (when (= index :avet)
+    (when-some [attr c0]
+      (when-not (indexed? db attr)
+        (str "Attribute " attr " should be indexed")))))
+
+(defprotocol IDB
+  (-schema [db])
+  (-attrs-by [db property]))
+
+(defrecord DB [attrs]
+  IDB
+  (-schema [db] (.-attrs db))
+  (-attrs-by [db property] (.-attrs db))
+
+  IIndexAccess
+  (-datoms [db index c0 c1 c2 c3]
+    (validate-indexed db index c0 c1 c2 c3)))
+
+(defn concrete-indexed? [^DB db]
+  (indexed? db :name))
+
+(defn ^boolean indexed? [db attr]
+  (contains? (-attrs-by db :db/index) attr))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_compiles "deferred_forward_calls_keep_nominal_receiver_evidence"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_deferred_named_record_fields_receive_body_constraints () =
+  let source =
+    read_file
+      (Filename.concat (repo_root ()) "test/datascript/upstream/lru.cljc")
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_compiles
+    "deferred_named_record_fields_receive_body_constraints" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_typed_ir_preserves_explicit_boundary_operations () =
   let open Lg.Types in
@@ -8308,6 +8457,26 @@ let test_dependency_graph_orders_declared_protocol_dependencies () =
   if not (List.exists (fun names -> List.sort String.compare names = [ "left"; "right" ]) components)
   then failwith "mutual recursion must form one strongly connected component"
 
+let test_declarations_do_not_merge_independent_functions () =
+  let source =
+    {|
+(declare later)
+(defprotocol Value
+  (-value [item]))
+(deftype Box [value]
+  Value
+  (-value [item] (.-value item)))
+(defn independent [value]
+  value)
+(defn later [value]
+  value)
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "and ((independent)[" then
+    failwith
+      "declare must not merge independent functions into one recursive group"
+
 let test_equality_parameter_widens_across_keyword_and_string () =
   let source =
     {|
@@ -14353,6 +14522,8 @@ let tests =
       test_nil_predicates_and_truthiness_use_options );
     ( "if-some and when-some bind option payloads",
       test_if_some_and_when_some_bind_option_payloads );
+    ( "when-some binding constraints reach dynamic calls",
+      test_when_some_binding_constraints_reach_dynamic_calls );
     ( "nil predicates evaluate arguments once",
       test_nil_predicates_evaluate_arguments_once );
     ( "control flow lifts nilable branches",
@@ -14383,6 +14554,14 @@ let tests =
       test_type_relations_are_explicit_and_strict );
     ( "type solver preserves shared and independent variables",
       test_type_solver_preserves_shared_and_independent_variables );
+    ( "refresh named record realigns forward declared records",
+      test_refresh_named_record_realigns_forward_declared_records );
+    ( "freshen deferred dynamic dispatch stays monomorphic",
+      test_freshen_deferred_dynamic_dispatch_stays_monomorphic );
+    ( "deferred forward calls keep nominal receiver evidence",
+      test_deferred_forward_calls_keep_nominal_receiver_evidence );
+    ( "deferred named record fields receive body constraints",
+      test_deferred_named_record_fields_receive_body_constraints );
     ( "typed IR preserves explicit boundary operations",
       test_typed_ir_preserves_explicit_boundary_operations );
     ( "core form expansions use hygienic identifiers",
@@ -15277,6 +15456,8 @@ let tests =
       test_deferred_initializers_run_before_first_ready_use );
     ( "dependency graph orders declared protocol dependencies",
       test_dependency_graph_orders_declared_protocol_dependencies );
+    ( "declarations do not merge independent functions",
+      test_declarations_do_not_merge_independent_functions );
     ( "equality parameter widens across keyword and string",
       test_equality_parameter_widens_across_keyword_and_string );
     ( "recursive deftype helper widens fallback to dynamic",

@@ -111,6 +111,11 @@ let expression_references_declaration env expression =
 let compile_defprotocol = Protocol_elaborator.compile_defprotocol
 let compile_extend_type = Protocol_elaborator.compile_extend_type
 
+let deferred_value_type env (expr : Types.typed_expr) =
+  Types.align_deferred_param_types
+    (Protocol.refine_deferred_type env expr.ty)
+    expr.semantic_expr
+
 let located_value_pattern form pattern =
   match Source_context.find form with
   | None -> pattern
@@ -296,10 +301,13 @@ let infer_defrecord_field_types scope env field_names interface_forms =
         let lookup_dynamic_key_record_type =
           Expression_support.dynamic_key_record_type env
         in
+        let resolve_named_record =
+          Function_elaborator.infer_named_record scope env
+        in
         match
           Type_inference.infer_params ~lookup_function_ty
-            ~lookup_protocol_constraint ~lookup_dynamic_key_record_type params
-            body_forms
+            ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
+            ~resolve_named_record params body_forms
         with
         | Error _ -> field_types
         | Ok inferred_params ->
@@ -1403,26 +1411,28 @@ let rec compile scope env next_type = function
                   ~overload_row_param_types ocaml_name
                   prepared.expr.ty
               in
-              let value_item =
+              let binding, value_item =
                 if
                   expression_references_declaration env
                     prepared.expr.semantic_expr
                 then
-                  Deferred_value_binding
-                    {
-                      name = ocaml_name;
-                      value_type =
-                        Protocol.refine_deferred_type env prepared.expr.ty;
-                      return_param_index = prepared.expr.return_param_index;
-                      expression = prepared.expr.semantic_expr;
-                    }
+                  let value_type = deferred_value_type env prepared.expr in
+                  ( { binding with ty = value_type },
+                    Deferred_value_binding
+                      {
+                        name = ocaml_name;
+                        value_type;
+                        return_param_index = prepared.expr.return_param_index;
+                        expression = prepared.expr.semantic_expr;
+                      } )
                 else
-                  Value_binding
-                    {
-                      pattern =
-                        located_value_pattern name_form (Named ocaml_name);
-                      expression = prepared.expr.semantic_expr;
-                    }
+                  ( binding,
+                    Value_binding
+                      {
+                        pattern =
+                          located_value_pattern name_form (Named ocaml_name);
+                        expression = prepared.expr.semantic_expr;
+                      } )
               in
               Ok
                 ( scope,
@@ -1474,27 +1484,29 @@ let rec compile scope env next_type = function
                     binding_of_expr ~row_param_types ocaml_name expr
                   in
                   let type_items = row_type_items row_param_types param_tys in
-                  let value_item =
+                  let binding, value_item =
                     if expression_references_declaration env expr.semantic_expr
                     then
-                      Deferred_value_binding
-                        {
-                          name = ocaml_name;
-                          value_type =
-                            Protocol.refine_deferred_type env expr.ty;
-                          return_param_index = expr.return_param_index;
-                          expression = expr.semantic_expr;
-                        }
+                      let value_type = deferred_value_type env expr in
+                      ( { binding with ty = value_type },
+                        Deferred_value_binding
+                          {
+                            name = ocaml_name;
+                            value_type;
+                            return_param_index = expr.return_param_index;
+                            expression = expr.semantic_expr;
+                          } )
                     else
-                      Recursive_value_binding
-                        {
-                          name = ocaml_name;
-                          identity =
-                            Source_context.find name_form
-                            |> Option.map (fun location ->
-                                   (Source_node_id.of_location location, location));
-                          expression = expr.semantic_expr;
-                        }
+                      ( binding,
+                        Recursive_value_binding
+                          {
+                            name = ocaml_name;
+                            identity =
+                              Source_context.find name_form
+                              |> Option.map (fun location ->
+                                     (Source_node_id.of_location location, location));
+                            expression = expr.semantic_expr;
+                          } )
                   in
                   Ok
                     ( scope,
@@ -1527,26 +1539,28 @@ let rec compile scope env next_type = function
           | Ok () ->
               let binding = binding_of_expr ~row_param_types ocaml_name expr in
               let type_items = row_type_items row_param_types param_tys in
-              let value_item =
+              let binding, value_item =
                 if expression_references_declaration env expr.semantic_expr then
-                  Deferred_value_binding
-                    {
-                      name = ocaml_name;
-                      value_type =
-                        Protocol.refine_deferred_type env expr.ty;
-                      return_param_index = expr.return_param_index;
-                      expression = expr.semantic_expr;
-                    }
+                  let value_type = deferred_value_type env expr in
+                  ( { binding with ty = value_type },
+                    Deferred_value_binding
+                      {
+                        name = ocaml_name;
+                        value_type;
+                        return_param_index = expr.return_param_index;
+                        expression = expr.semantic_expr;
+                      } )
                 else
-                  Recursive_value_binding
-                    {
-                      name = ocaml_name;
-                      identity =
-                        Source_context.find name_form
-                        |> Option.map (fun location ->
-                               (Source_node_id.of_location location, location));
-                      expression = expr.semantic_expr;
-                    }
+                  ( binding,
+                    Recursive_value_binding
+                      {
+                        name = ocaml_name;
+                        identity =
+                          Source_context.find name_form
+                          |> Option.map (fun location ->
+                                 (Source_node_id.of_location location, location));
+                        expression = expr.semantic_expr;
+                      } )
               in
               Ok
                 ( scope,
@@ -1576,35 +1590,37 @@ let rec compile scope env next_type = function
           | Error _ as err -> err
           | Ok () -> (
               match expr.ty with
-          | TFn _ ->
+              | TFn _ ->
                   let binding =
                     binding_of_expr ~row_param_types ocaml_name expr
                   in
-              let type_items = row_type_items row_param_types param_tys in
-              let value_item =
+                  let type_items = row_type_items row_param_types param_tys in
+                  let binding, value_item =
                     if expression_references_declaration env expr.semantic_expr
                     then
-                  Deferred_value_binding
-                        {
-                          name = ocaml_name;
-                      value_type =
-                        Protocol.refine_deferred_type env expr.ty;
-                          return_param_index = expr.return_param_index;
-                          expression = expr.semantic_expr;
-                        }
-                else
-                  Value_binding
-                        {
-                          pattern =
-                        located_value_pattern name_form (Named ocaml_name);
-                      expression = expr.semantic_expr;
-                    }
-              in
-              Ok
-                ( scope,
-                  Env.add env_key binding env,
-                  next_type,
-                  Group (type_items @ [ value_item ]) )
+                      let value_type = deferred_value_type env expr in
+                      ( { binding with ty = value_type },
+                        Deferred_value_binding
+                          {
+                            name = ocaml_name;
+                            value_type;
+                            return_param_index = expr.return_param_index;
+                            expression = expr.semantic_expr;
+                          } )
+                    else
+                      ( binding,
+                        Value_binding
+                          {
+                            pattern =
+                              located_value_pattern name_form (Named ocaml_name);
+                            expression = expr.semantic_expr;
+                          } )
+                  in
+                  Ok
+                    ( scope,
+                      Env.add env_key binding env,
+                      next_type,
+                      Group (type_items @ [ value_item ]) )
           | _ -> Error.error "defn body did not compile to a function")))
   | FList
       (FSymbol "defprotocol"

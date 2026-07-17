@@ -53,6 +53,22 @@ let compile_type_record_fields ?location ?(allow_empty = false) scope env
             (Types.binding type_name record_ty)
             env
         in
+        let env =
+          match record_ty with
+          | TNamed_record record ->
+              Env.fold
+                (fun key (binding : Types.binding) env ->
+                  if binding.forward_declared then
+                    Env.add key
+                      {
+                        binding with
+                        ty = Types.refresh_named_record record binding.ty;
+                      }
+                      env
+                  else env)
+                env env
+          | _ -> env
+        in
         Ok
           ( scope,
             env,

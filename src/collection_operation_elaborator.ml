@@ -67,11 +67,19 @@ let rec dynamicize_unknown = function
 let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
   let compile_args_for = compile_args_for compile_expr in
   let pack_dynamic_scalar value =
+    let wrap conversion =
+      Semantic_ir.PackDynamic
+        {
+          source_ty = value.ty;
+          target_ty = Types.dynamic_constraint value.ty;
+          conversion;
+        }
+    in
     if
       Types.is_dynamic value.ty
       || Types.equal value.ty TUnknown
       || match value.ty with TVar _ -> true | _ -> false
-    then Ok value.semantic_expr
+    then Ok (wrap value.semantic_expr)
     else
       let constructor =
         match value.ty with
@@ -87,9 +95,10 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
       match constructor with
       | Some constructor ->
           Ok
-            (Semantic_ir.Apply
-               ( Semantic_ir.Ident ("Lg_runtime.Runtime_dynamic." ^ constructor),
-                 [ value.semantic_expr ] ))
+            (wrap
+               (Semantic_ir.Apply
+                  ( Semantic_ir.Ident ("Lg_runtime.Runtime_dynamic." ^ constructor),
+                    [ value.semantic_expr ] )))
       | None -> Error.error "value cannot cross a dynamic boundary"
   in
   let inferred_field_type env keyword =

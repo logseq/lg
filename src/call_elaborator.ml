@@ -1768,23 +1768,23 @@ let rec pack_constrained_value env expected argument =
               let packed_value =
                 if erase_value && name = Types.seqable_constraint_name then
                   Result.bind
-                    (Collection_capability.seqable_adapter ?element_mapper env
-                       argument)
+                    (Collection_capability.seqable_adapter env argument)
                     (fun sequence_adapter ->
                       let sequence =
                         Semantic_ir.Apply
                           (sequence_adapter, [ argument.semantic_expr ])
                       in
-                      if Types.is_dynamic expected_element then
+                      match actual_element with
+                      | Some actual_element when Types.is_dynamic actual_element ->
                         Ok
                           (Semantic_ir.Apply
                              ( Semantic_ir.Ident
                                  "Lg_runtime.Runtime_dynamic.seq",
                                [ sequence ] ))
-                      else
+                      | Some actual_element ->
                         let item_name = "__lg_erased_seqable_item" in
                         let item =
-                          typed_ir expected_element
+                          typed_ir actual_element
                             (Semantic_ir.Ident item_name)
                         in
                         Result.map
@@ -1805,7 +1805,13 @@ let rec pack_constrained_value env expected argument =
                                 ] ))
                           (pack_dynamic_value env
                              (Types.dynamic_constraint TUnknown)
-                             item))
+                             item)
+                      | None ->
+                          Ok
+                            (Semantic_ir.Apply
+                               ( Semantic_ir.Ident
+                                   "Lg_runtime.Runtime_dynamic.seq",
+                                 [ sequence ] )))
                 else pack_constrained_value env stored_value_ty argument
               in
                         match
@@ -3511,7 +3517,7 @@ let create ~compile_expr =
                   | _ -> false
                 in
                 let instantiated =
-                  Types.instantiate_type
+                  Types.instantiate_type_fields
                     ~templates:
                                     (List.map
                                        (fun (field : field) -> field.ty)
@@ -4601,7 +4607,7 @@ let create ~compile_expr =
                     else
                       let instantiated_record =
                         match
-                          Types.instantiate_type
+                          Types.instantiate_type_fields
                             ~templates:
                               (List.map
                                            (fun ((field : field), _) ->
@@ -7431,7 +7437,7 @@ let create ~compile_expr =
                   match (fn.return_param_index, ret) with
                   | Some index, ret
                     when Types.equal ret TUnknown || Types.is_dynamic ret
-                             || match ret with TVar _ -> true | _ -> false -> (
+                         || match ret with TVar _ -> true | _ -> false -> (
                       match List.nth_opt args index with
                       | Some arg -> arg.ty
                       | None -> ret)
