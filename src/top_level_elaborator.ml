@@ -32,6 +32,7 @@ let inherit_scope_ocaml_value_refers =
 
 let rec form_mentions_symbol name = function
   | FSymbol candidate -> candidate = name
+  | FList (FSymbol ("quote" | "clojure.core/quote") :: _) -> false
   | FList forms | FVector forms -> List.exists (form_mentions_symbol name) forms
   | FMap pairs ->
       List.exists

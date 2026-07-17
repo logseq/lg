@@ -167,6 +167,16 @@ let find_implementation protocol_id method_id receiver_id registry =
     (protocol_id, method_id, receiver_id)
     registry.implementations
 
+let replace_implementation protocol_id method_id receiver_id binding registry =
+  let key = (protocol_id, method_id, receiver_id) in
+  if Implementation_map.mem key registry.implementations then
+    {
+      registry with
+      implementations =
+        Implementation_map.add key binding registry.implementations;
+    }
+  else registry
+
 let implementations_for_method protocol_id method_id registry =
   Implementation_map.fold
     (fun (candidate_protocol, candidate_method, _) implementation matches ->

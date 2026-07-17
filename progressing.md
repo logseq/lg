@@ -714,15 +714,34 @@ update the same entry with its root cause, fix, and verification evidence.
 
 ## 2026-07-17: `transact-report` crosses a dynamic sequence ABI
 
-- Status: Open; next DataScript blocker
+- Status: Fixed
 - Symptom: Full Native compilation now reaches `db.cljc` lines 1222-1235 and
   passes `datom Seq.t` where the selected boundary requires
   `Runtime_dynamic.t Seq.t`.
-- Current evidence: The `:tx-data` update itself correctly lowers to
-  `Runtime_dynamic.conj`. The failure occurs earlier while passing `db` to
-  `with-datom`: the inferred `IIndexAccess` witness exposes a concrete
-  `Datom Seq` implementation to a `dynamic Seq` method ABI, but its generated
-  adapter maps the items with identity. A non-generic mixed protocol receiver
-  already adapts correctly, so the next reduction must retain the unresolved
-  generic receiver argument and specialize the actual witness return before
-  selecting the element packer.
+- Root cause: Incremental compilation's second pass seeded only
+  `defn-signature` declarations, not ordinary `declare` forms. Even after the
+  final declared bindings were seeded, protocol evidence still retained the
+  first pass's unresolved method implementations, so their common return type
+  remained dynamic instead of the concrete `Datom Seq`.
+- Fix: Share declaration collection between full and incremental typechecking,
+  seed ordinary declarations with their final first-pass bindings, and replace
+  matching protocol evidence as second-pass implementations are recompiled.
+  Dynamic record lookup now also specializes shared generic fields from their
+  concrete field evidence instead of erasing them. Quoted symbols are excluded
+  from recursive dependency analysis.
+- Verification: Focused declaration, protocol return, record specialization,
+  and quoted-symbol regressions pass. The complete compiler suite and
+  `dune build` pass. Full Native PSS + DataScript compilation no longer fails
+  in `transact-report` and advances to the independent `nth-datom` binding
+  issue below. No per-Datom dynamic packing or `Obj.magic` was introduced.
+
+## 2026-07-17: `nth-datom` is emitted after an earlier call site
+
+- Status: Open; next DataScript blocker
+- Symptom: Full Native compilation reaches `db.cljc` lines 83-115, where the
+  generated code references `datascript_db_nth_datom__arity_2_0` before that
+  value is bound.
+- Current evidence: This is an OCaml value-ordering failure, separate from the
+  fixed `Datom Seq` type evidence issue. The next reduction should inspect the
+  stabilized definition dependency order and the generated recursive group for
+  `nth-datom` without changing upstream DataScript source.

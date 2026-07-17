@@ -1124,6 +1124,36 @@ let test_dynamic_record_capabilities_resolve_unique_named_records () =
       failwith
         "a unique named record must be recovered from a dynamic row capability"
 
+let test_dynamic_record_lookup_specializes_shared_generic_fields () =
+  let open Lg.Types in
+  let sorted value_ty = TOcaml_app ("sorted", [ value_ty ]) in
+  let datom_ty = TOcaml "datom" in
+  let db_ty =
+    named_record ~type_parameters:[ "value" ] ~type_name:"db"
+      ~set_module_name:"Db_set"
+      [
+        make_field ":eavt" (sorted datom_ty);
+        make_field ":aevt" (sorted datom_ty);
+        make_field ":avet" (sorted (TVar "value"));
+      ]
+  in
+  let env =
+    Lg.Compiler_environment.add "__record//DB" (binding "db" db_ty)
+      Lg.Compiler_environment.empty
+  in
+  [ TVar "selected"; TUnknown ]
+  |> List.iter (fun selected_ty ->
+         match
+           Lg.Expression_support.dynamic_key_record_type env
+             (sorted selected_ty)
+         with
+         | Some (TNamed_record { type_arguments = [ value_ty ]; _ })
+           when equal value_ty datom_ty ->
+             ()
+         | _ ->
+             failwith
+               "dynamic record lookup must retain the shared concrete field type")
+
 let test_assignability_reports_the_selected_semantic_rule () =
   let open Lg.Types in
   let name = make_field ":name" TString in
@@ -4665,6 +4695,77 @@ let test_forward_declared_deftype_fields_keep_nominal_receiver () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_forward_declared_functions_refresh_nominal_returns () =
+  let source =
+    {|
+(deftype Datom [^int value])
+(declare resolve-datom components->pattern)
+(defn make-datom ^Datom []
+  (Datom. 42))
+(defn resolve-datom []
+  (let [_ (list 'resolve-datom)]
+    (make-datom)))
+(defn components->pattern []
+  (resolve-datom))
+|}
+  in
+  let state = typecheck_state source in
+  [ "resolve-datom"; "components->pattern" ]
+  |> List.iter (fun name ->
+         match Lg.Compiler_environment.find_opt name state.env with
+         | Some { ty = Lg.Types.TFn (_, Lg.Types.TNamed_record record); _ }
+           when record.type_name = "datom" ->
+             ()
+         | Some binding ->
+             failwith
+               (name ^ " retained " ^ Lg.Types.source_name binding.ty)
+         | None -> failwith ("missing definition for " ^ name))
+
+let test_quoted_symbols_do_not_create_recursive_dependencies () =
+  let quoted_name =
+    Lg.Ast.FList
+      [ Lg.Ast.FSymbol "quote"; Lg.Ast.FSymbol "resolve-datom" ]
+  in
+  if
+    Lg.Top_level_elaborator.function_is_recursive "" "resolve-datom"
+      [ quoted_name ]
+  then failwith "quoted symbols are data, not recursive calls"
+
+let test_incremental_declarations_refresh_protocol_method_returns () =
+  let source =
+    {|
+(deftype Item [^int value])
+(declare make-item)
+(defprotocol Items
+  (-items [source]))
+(deftype Source [^int unused]
+  Items
+  (-items [_]
+    [(make-item)]))
+(defn source-item [source]
+  (first (-items source)))
+(defn make-item ^Item []
+  (let [_ (source-item (Source. 0))]
+    (Item. 42)))
+|}
+  in
+  let state, _ =
+    Lg.Compiler.compile_chunk Lg.Compiler.empty_state source |> expect_ok
+  in
+  let env = state.typecheck_state.env in
+  match Lg.Protocol.find_protocol_id "" env "Items" with
+  | None -> failwith "missing Items protocol"
+  | Some protocol_id -> (
+      match Lg.Protocol.common_method_return env protocol_id "-items" with
+      | Some (Lg.Types.TVector (Lg.Types.TNamed_record record))
+        when record.type_name = "item" ->
+          ()
+      | Some return_ty ->
+          failwith
+            ("incremental protocol return remained "
+           ^ Lg.Types.source_name return_ty)
+      | None -> failwith "missing Items protocol implementation return")
+
 let test_deftype_fields_accept_clojure_primitive_hints () =
   let source =
     {|
@@ -5103,6 +5204,60 @@ let test_protocol_methods_merge_concrete_and_dynamic_sequence_returns () =
   assert_ocaml_runs
     "protocol_methods_merge_concrete_and_dynamic_sequence_returns"
     "(42)\n(7)\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_recursive_protocol_sequence_returns_remain_concrete () =
+  let source =
+    {|
+(type-record sorted [value]
+  (values :array<value>)
+  (cmp :fn<value;value;int>))
+(deftype Item [^int value])
+(defn set-comparator [set]
+  (:cmp set))
+(defn set-slice-with [set from to cmp]
+  (let [cmp (:cmp set)]
+    (Some
+      (filter
+        (fn [item]
+          (and (<= (cmp from item) 0)
+               (<= (cmp item to) 0)))
+        (array-seq (:values set))))))
+(defn slice
+  ([set from to]
+   (slice set from to (set-comparator set)))
+  ([set from to cmp]
+   (set-slice-with set from to cmp)))
+(defprotocol IIndex
+  (-items [db]))
+(defrecord DB [^sorted index]
+  IIndex
+  (-items [_]
+    (slice index (Item. 0) (Item. 10))))
+(defrecord FilteredDB [db pred]
+  IIndex
+  (-items [_]
+    (filter pred (-items db))))
+(defn validate-items [source]
+  (not-empty (-items source)))
+(defn touch-db [^DB db]
+  (validate-items db)
+  nil)
+(def db
+  (DB.
+    (record sorted
+      (values (array (Item. 1) (Item. 2)))
+      (cmp (fn [left right]
+             (compare (.-value left) (.-value right)))))))
+(touch-db db)
+(println "ok")
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "recursive_protocol_sequence_returns_remain_concrete" "ok\n"
+    ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -14585,6 +14740,8 @@ let tests =
       test_core_form_expansions_use_hygienic_identifiers );
     ( "dynamic record capabilities resolve unique named records",
       test_dynamic_record_capabilities_resolve_unique_named_records );
+    ( "dynamic record lookup specializes shared generic fields",
+      test_dynamic_record_lookup_specializes_shared_generic_fields );
     ( "assignability reports the selected semantic rule",
       test_assignability_reports_the_selected_semantic_rule );
     ( "named records use nominal type identity",
@@ -15047,6 +15204,12 @@ let tests =
       test_loop_nil_initial_value_accepts_nullable_function_returns );
     ( "forward declared deftype fields keep nominal receiver",
       test_forward_declared_deftype_fields_keep_nominal_receiver );
+    ( "forward declared functions refresh nominal returns",
+      test_forward_declared_functions_refresh_nominal_returns );
+    ( "quoted symbols do not create recursive dependencies",
+      test_quoted_symbols_do_not_create_recursive_dependencies );
+    ( "incremental declarations refresh protocol method returns",
+      test_incremental_declarations_refresh_protocol_method_returns );
     ( "deftype fields accept Clojure primitive hints",
       test_deftype_fields_accept_clojure_primitive_hints );
     ( "deftype unhinted fields preserve dynamic values",
@@ -15089,6 +15252,8 @@ let tests =
       test_apply_pr_accepts_lazy_sequences );
     ( "protocol methods merge concrete and dynamic sequence returns",
       test_protocol_methods_merge_concrete_and_dynamic_sequence_returns );
+    ( "recursive protocol sequence returns remain concrete",
+      test_recursive_protocol_sequence_returns_remain_concrete );
     ( "defn accepts attribute maps and return hints",
       test_defn_accepts_attribute_maps_and_return_hints );
     ( "compare supports dynamic scalar values",

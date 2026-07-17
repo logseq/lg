@@ -591,6 +591,38 @@ let stabilize_dependencies (parsed : parser_result) =
     locations = List.map (List.nth parsed.locations) order;
   }
 
+let declaration_bindings ast env =
+  let rec declared_names declared = function
+    | [] -> List.rev declared
+    | Ast.FList (Ast.FSymbol "declare" :: form_names) :: rest ->
+        let declared =
+          List.fold_left
+            (fun declared -> function
+              | Ast.FSymbol name -> name :: declared | _ -> declared)
+            declared form_names
+        in
+        declared_names declared rest
+    | Ast.FList
+        [
+          Ast.FSymbol "defn-signature";
+          Ast.FList
+            (Ast.FSymbol ("defn" | "defn-") :: Ast.FSymbol name :: _);
+        ]
+      :: rest ->
+        declared_names (name :: declared) rest
+    | _ :: rest -> declared_names declared rest
+  in
+  let final_bindings = Compiler_environment.to_bindings env in
+  declared_names [] ast
+  |> List.concat_map (fun name ->
+         let suffix = "/" ^ name in
+         final_bindings
+         |> List.filter (fun (key, _) ->
+                key = name || String.ends_with ~suffix key))
+  |> List.map (fun (key, (binding : Types.binding)) ->
+         (key, { binding with forward_declared = true }))
+  |> List.sort_uniq (fun (left, _) (right, _) -> String.compare left right)
+
 let typecheck (parsed : parser_result) =
   let parsed = stabilize_dependencies parsed in
   match prepare_packages parsed.target parsed.ast with
@@ -606,40 +638,8 @@ let typecheck (parsed : parser_result) =
       match compile initial_state with
       | Error _ as err -> err
       | Ok (first_state, _) -> (
-          let rec declared_names declared = function
-            | [] -> List.rev declared
-            | Ast.FList (Ast.FSymbol "declare" :: form_names) :: rest ->
-                let declared =
-                  List.fold_left
-                    (fun declared -> function
-                      | Ast.FSymbol name -> name :: declared | _ -> declared)
-                    declared form_names
-                in
-                declared_names declared rest
-            | Ast.FList
-                [
-                  Ast.FSymbol "defn-signature";
-                  Ast.FList
-                    (Ast.FSymbol ("defn" | "defn-") :: Ast.FSymbol name :: _);
-                ]
-              :: rest ->
-                declared_names (name :: declared) rest
-            | _ :: rest -> declared_names declared rest
-          in
           let declarations =
-            let final_bindings =
-              Compiler_environment.to_bindings first_state.env
-            in
-            declared_names [] parsed.ast
-            |> List.concat_map (fun name ->
-                   let suffix = "/" ^ name in
-                   final_bindings
-                   |> List.filter (fun (key, _) ->
-                          key = name || String.ends_with ~suffix key))
-            |> List.map (fun (key, (binding : Types.binding)) ->
-                   (key, { binding with forward_declared = true }))
-            |> List.sort_uniq (fun (left, _) (right, _) ->
-                   String.compare left right)
+            declaration_bindings parsed.ast first_state.env
           in
           let seeded_state =
             {
@@ -686,32 +686,8 @@ let typecheck_incremental state (parsed : parser_result) =
       match compile initial_state with
       | Error _ as err -> err
       | Ok (first_state, _) -> (
-          let rec signature_names names = function
-            | [] -> List.rev names
-            | Ast.FList
-                [
-                  Ast.FSymbol "defn-signature";
-                  Ast.FList
-                    (Ast.FSymbol ("defn" | "defn-") :: Ast.FSymbol name :: _);
-                ]
-              :: rest ->
-                signature_names (name :: names) rest
-            | _ :: rest -> signature_names names rest
-          in
-          let final_bindings =
-            Compiler_environment.to_bindings first_state.env
-          in
           let declarations =
-            signature_names [] parsed.ast
-            |> List.concat_map (fun name ->
-                   let suffix = "/" ^ name in
-                   final_bindings
-                   |> List.filter (fun (key, _) ->
-                          key = name || String.ends_with ~suffix key))
-            |> List.map (fun (key, (binding : Types.binding)) ->
-                   (key, { binding with forward_declared = true }))
-            |> List.sort_uniq (fun (left, _) (right, _) ->
-                   String.compare left right)
+            declaration_bindings parsed.ast first_state.env
           in
           let seeded_state =
             {

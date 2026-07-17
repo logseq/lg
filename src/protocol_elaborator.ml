@@ -66,7 +66,15 @@ let add_implementation ?location env method_name receiver_ty marker binding =
            receiver_id binding (Env.protocols env)
        with
       | Error _ as err -> err
-      | Ok protocols -> Ok (Env.with_protocols protocols env))
+      | Ok protocols ->
+          let env = Env.with_protocols protocols env in
+          let protocol_evidence =
+            Env.protocol_evidence env
+            |> Option.map
+                 (Protocol_registry.replace_implementation protocol_id
+                    method_id receiver_id binding)
+          in
+          Ok (Env.with_protocol_evidence protocol_evidence env))
 
 let compile_defprotocol ?location scope env next_type protocol_name method_forms =
   match define ?location scope env protocol_name method_forms with

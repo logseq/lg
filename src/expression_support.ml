@@ -1053,6 +1053,29 @@ let dynamic_key_record_type env expected_field_ty =
            (not (Types.is_record_extension_field field))
            && same_outer_shape expected_field_ty field.ty)
   in
+  let specialize_record (record : named_record) =
+    match compatible_fields record with
+    | [] -> None
+    | (first : field) :: rest -> (
+        let substitutions =
+          rest
+          |> List.fold_left
+               (fun substitutions (field : field) ->
+                 Result.bind substitutions (fun substitutions ->
+                     Type_solver.unify substitutions first.ty field.ty))
+               (Ok [])
+        in
+        let substitutions =
+          Result.bind substitutions (fun substitutions ->
+              Type_solver.unify substitutions first.ty expected_field_ty)
+        in
+        match substitutions with
+        | Ok substitutions -> (
+            match Type_solver.apply substitutions (TNamed_record record) with
+            | TNamed_record record -> Some record
+            | _ -> None)
+        | Error _ -> None)
+  in
   let records =
     Env.filter_map
       (fun _ (binding : binding) ->
@@ -1064,14 +1087,14 @@ let dynamic_key_record_type env expected_field_ty =
         in
         match record with
         | Some record when List.length (compatible_fields record) >= 2 ->
-            Some record
+            specialize_record record
         | Some _ | None -> None)
       env
-    |> List.sort_uniq (fun left right ->
+      |> List.sort_uniq (fun left right ->
            Type_id.compare left.type_id right.type_id)
-  in
-  match records with
-  | [ record ] -> Some (TNamed_record record)
+    in
+    match records with
+    | [ record ] -> Some (TNamed_record record)
   | [] | _ :: _ :: _ -> None
 
 let lookup_function_ty scope env name =
