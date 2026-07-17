@@ -718,7 +718,11 @@ update the same entry with its root cause, fix, and verification evidence.
 - Symptom: Full Native compilation now reaches `db.cljc` lines 1222-1235 and
   passes `datom Seq.t` where the selected boundary requires
   `Runtime_dynamic.t Seq.t`.
-- Current evidence: The failure is attached to `transact-report`, whose update
-  path appends a concrete `Datom` to the report's `:tx-data` collection. The
-  next step is a focused reduction of that update boundary and an explicit
-  sequence element adapter selected from the stable ABI.
+- Current evidence: The `:tx-data` update itself correctly lowers to
+  `Runtime_dynamic.conj`. The failure occurs earlier while passing `db` to
+  `with-datom`: the inferred `IIndexAccess` witness exposes a concrete
+  `Datom Seq` implementation to a `dynamic Seq` method ABI, but its generated
+  adapter maps the items with identity. A non-generic mixed protocol receiver
+  already adapts correctly, so the next reduction must retain the unresolved
+  generic receiver argument and specialize the actual witness return before
+  selecting the element packer.
