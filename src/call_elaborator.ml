@@ -303,7 +303,11 @@ let constrained_argument_value argument =
 
 let is_sequential_type = function
   | TList _ | TVector _ | TSeq _ -> true
-  | ty -> Option.is_some (Types.next_seq_element ty)
+  | ty -> (
+      match Types.seqable_constraint_info ty with
+      | Some (`Optional_sequential, _, _) -> true
+      | Some ((`Required | `Optional), _, _) | None ->
+          Option.is_some (Types.next_seq_element ty))
 
 let rec dynamic_protocol_constraints ty =
   match Types.dynamic_constraint_info ty with

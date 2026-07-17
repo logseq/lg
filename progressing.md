@@ -953,12 +953,42 @@ update the same entry with its root cause, fix, and verification evidence.
 
 ## 2026-07-17: `not-empty` loses seqable evidence in `parser.cljc`
 
-- Status: Open; next DataScript blocker
+- Status: Fixed
 - Symptom: Full Native parser dependency compilation reaches parser lines
   545-552 and reports `not-empty expects a seqable value`.
-- Current evidence: This is after declaration ordering is fixed. Reduce the
-  concrete upstream form and retain its collection evidence rather than making
-  `not-empty` accept arbitrary dynamic values.
+- Root cause: `parse-and`, `parse-clauses`, and `parse-clause` form a dependency
+  cycle behind `declare`. Top-level incremental elaboration stopped at the
+  first consumer whose forward return type was still `any`, so it never reached
+  the later definition that could supply nullable sequence evidence. Once the
+  consumer was retried, two boundary defects became visible: deferred seqable
+  values erased to `Runtime_dynamic.t` were incorrectly freshened as universally
+  polymorphic containers, and an `optional-sequential` capability was not
+  recognized as sequential when forwarded to another constrained parameter.
+- Fix: Top-level elaboration now defers only failures rooted in unresolved
+  declarations and their dependent provider closure, compiles definitions that
+  can add evidence, then retries while preserving source item order. If a round
+  makes no progress, the original located error is returned. Unknown element
+  and value types at an explicitly erased deferred seqable boundary remain
+  monomorphic dynamic; concrete value types are unchanged. Forwarded
+  `optional-sequential` evidence now reuses its adapter instead of becoming
+  `None`. `not-empty` itself remains strict and does not accept arbitrary
+  `any`.
+- Verification: The focused regression was RED with the same
+  `not-empty expects a seqable value` error. It covers non-empty, empty, and nil
+  parser paths across separate provider/consumer chunks, runs as `2:0:0` on
+  Native, and compiles on Melange. Declaration-order and forward-ABI tests, the
+  complete compiler suite, and `dune build` pass. The real Native PSS +
+  DataScript parser chain advances through lines 545-552 to lines 701-765.
+
+## 2026-07-17: Nullable `:qreturn-map` is constrained as a plain map
+
+- Status: Open; next DataScript blocker
+- Symptom: Full Native parser dependency compilation reaches parser lines
+  701-765 and reports `cannot infer :qreturn-map as map because it is already
+  nullable<map>`.
+- Current evidence: This appears only after the declared nullable sequence
+  cycle is repaired. Reduce the query-return-map destructuring and preserve its
+  nullable map evidence instead of widening it to dynamic or discarding nil.
 
 ## 2026-07-17: Full parser-chain compilation repeats large typechecks
 

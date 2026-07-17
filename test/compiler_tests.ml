@@ -947,7 +947,7 @@ let test_freshen_deferred_dynamic_dispatch_stays_monomorphic () =
       | None -> failwith "expected a protocol constraint")
   | _ -> failwith "expected a deferred function type"
 
-let test_freshen_deferred_seqable_items_stay_dynamic () =
+let test_freshen_deferred_erased_seqable_values_stay_dynamic () =
   let open Lg.Types in
   let constraints =
     [
@@ -961,11 +961,12 @@ let test_freshen_deferred_seqable_items_stay_dynamic () =
       match Lg.Elaborator.freshen_deferred_type (TFn ([ constraint_ty ], TInt)) with
       | TFn ([ refreshed ], TInt) -> (
           match seqable_constraint_info refreshed with
-          | Some (_, element_ty, TVar _) when is_dynamic element_ty -> ()
+          | Some (_, element_ty, value_ty)
+            when is_dynamic element_ty && is_dynamic value_ty -> ()
           | Some (_, element_ty, value_ty) ->
               failwith
-                ("deferred seqable items must stay dynamic while the container "
-               ^ "remains generic, got: " ^ source_name element_ty ^ " / "
+                ("deferred erased seqable items and values must stay dynamic, "
+               ^ "got: " ^ source_name element_ty ^ " / "
                 ^ source_name value_ty)
           | None -> failwith "expected a seqable constraint")
       | _ -> failwith "expected a deferred function type")
@@ -8888,6 +8889,62 @@ let test_typecheck_stabilizes_forward_declaration_abi () =
   if List.length binding.row_param_types <> 41 then
     failwith "the stabilized declaration ABI must be retained"
 
+let test_recursive_declared_nullable_sequence_supports_not_empty () =
+  let source =
+    {|
+(declare parse-node parse-nodes)
+
+(defn parse-seq [parse-element forms]
+  (when (sequential? forms)
+    (reduce
+      (fn [parsed form]
+        (if-let [parsed-form (parse-element form)]
+          (conj parsed parsed-form)
+          (reduced nil)))
+      [] forms)))
+
+(defn parse-group [forms]
+  (let [parsed (parse-nodes forms)]
+    (if (not-empty parsed)
+      (count parsed)
+      0)))
+
+(defn parse-node [form]
+  (cond
+    (nil? form) nil
+    (sequential? form) (parse-group form)
+    :else form))
+
+(defn parse-nodes [forms]
+  (parse-seq parse-node forms))
+
+|}
+  in
+  let consumer =
+    {|
+(println
+  (str (parse-group [1 2]) ":"
+       (parse-group []) ":"
+       (parse-group [nil])))
+|}
+  in
+  let compile target =
+    let state, provider =
+      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state source
+      |> expect_ok
+    in
+    let _, consumer =
+      Lg.Compiler.compile_chunk ~target state consumer |> expect_ok
+    in
+    provider ^ "\n" ^ consumer
+  in
+  let native_source =
+    compile Lg.Target.Native
+  in
+  assert_ocaml_runs "recursive_declared_nullable_sequence_supports_not_empty"
+    "2:0:0\n" native_source;
+  ignore (compile Lg.Target.Melange)
+
 let test_equality_parameter_widens_across_keyword_and_string () =
   let source =
     {|
@@ -15069,8 +15126,8 @@ let tests =
       test_refresh_named_record_realigns_forward_declared_records );
     ( "freshen deferred dynamic dispatch stays monomorphic",
       test_freshen_deferred_dynamic_dispatch_stays_monomorphic );
-    ( "freshen deferred seqable items stay dynamic",
-      test_freshen_deferred_seqable_items_stay_dynamic );
+    ( "freshen deferred erased seqable values stay dynamic",
+      test_freshen_deferred_erased_seqable_values_stay_dynamic );
     ( "deferred forward calls keep nominal receiver evidence",
       test_deferred_forward_calls_keep_nominal_receiver_evidence );
     ( "deferred named record fields receive body constraints",
@@ -15997,6 +16054,8 @@ let tests =
       test_declarations_do_not_merge_independent_functions );
     ( "typecheck stabilizes forward declaration ABI",
       test_typecheck_stabilizes_forward_declaration_abi );
+    ( "recursive declared nullable sequence supports not-empty",
+      test_recursive_declared_nullable_sequence_supports_not_empty );
     ( "equality parameter widens across keyword and string",
       test_equality_parameter_widens_across_keyword_and_string );
     ( "recursive deftype helper widens fallback to dynamic",

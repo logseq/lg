@@ -90,7 +90,12 @@ let freshen_deferred_type ?return_param_index ty =
             Types.dynamic_constraint Types.TUnknown
           else freshen element_ty
         in
-        Types.TOcaml_app (name, [ element_ty; freshen value_ty ])
+        let value_ty =
+          if Types.equal value_ty Types.TUnknown then
+            Types.dynamic_constraint Types.TUnknown
+          else freshen value_ty
+        in
+        Types.TOcaml_app (name, [ element_ty; value_ty ])
     | Types.TOcaml_app (_, _) as constraint_ty
       when Option.is_some (Types.protocol_constraint_info constraint_ty) ->
         freshen_protocol_constraint constraint_ty
@@ -339,18 +344,110 @@ let append_deferred items deferred =
   | item :: rest, deferred ->
       List.rev (Lowered.Group (item :: deferred) :: rest)
 
+let rec form_references_unresolved_declaration scope env = function
+  | Ast.FSymbol name -> (
+      match Resolver.lookup_binding scope env name with
+      | Ok (binding : Types.binding) ->
+          Types.equal binding.ty (Types.TOcaml "__declared_fn")
+          || (binding.forward_declared && contains_inferred_type binding.ty)
+      | Error _ -> false)
+  | Ast.FList (Ast.FSymbol ("quote" | "clojure.core/quote") :: _) -> false
+  | Ast.FList forms | Ast.FVector forms ->
+      List.exists (form_references_unresolved_declaration scope env) forms
+  | Ast.FMap pairs ->
+      List.exists
+        (fun (key, value) ->
+          form_references_unresolved_declaration scope env key
+          || form_references_unresolved_declaration scope env value)
+        pairs
+  | Ast.FCoreSymbol _ | Ast.FKeyword _ | Ast.FString _ | Ast.FRegex _
+  | Ast.FInt _ | Ast.FFloat _ | Ast.FChar _ | Ast.FBool _ ->
+      false
+
+let rec form_references_names names = function
+  | Ast.FSymbol name ->
+      List.exists
+        (fun provider ->
+          name = provider || String.ends_with ~suffix:("/" ^ provider) name)
+        names
+  | Ast.FList (Ast.FSymbol ("quote" | "clojure.core/quote") :: _) -> false
+  | Ast.FList forms | Ast.FVector forms ->
+      List.exists (form_references_names names) forms
+  | Ast.FMap pairs ->
+      List.exists
+        (fun (key, value) ->
+          form_references_names names key || form_references_names names value)
+        pairs
+  | Ast.FCoreSymbol _ | Ast.FKeyword _ | Ast.FString _ | Ast.FRegex _
+  | Ast.FInt _ | Ast.FFloat _ | Ast.FChar _ | Ast.FBool _ ->
+      false
+
+let add_unresolved_names names form =
+  List.fold_left
+    (fun names name ->
+      if List.mem name names then names else name :: names)
+    names (Dependency_graph.provided_names form)
+
+let remove_resolved_names names form =
+  let resolved = Dependency_graph.provided_names form in
+  List.filter (fun name -> not (List.mem name resolved)) names
+
 let compile_forms_incremental (state : Compiler_state.t) forms =
-  let rec loop scope env next_type items = function
-    | [] -> Ok (scope, env, next_type, List.rev items)
-    | form :: rest -> (
+  let finish scope env next_type items =
+    let items =
+      items
+      |> List.sort (fun (left, _) (right, _) -> Int.compare left right)
+      |> List.map snd
+    in
+    Ok (scope, env, next_type, items)
+  in
+  let rec compile_pending scope env next_type items unresolved_names pending =
+    let rec loop scope env next_type items unresolved_names deferred first_error
+        made_progress = function
+      | [] ->
+          if deferred = [] then finish scope env next_type items
+          else if made_progress then
+            compile_pending scope env next_type items unresolved_names
+              (List.rev deferred)
+          else (
+            match first_error with
+            | Some error -> Error error
+            | None -> Error.error "declared forms made no compilation progress")
+      | (index, form) :: rest -> (
         match compile_top_level scope env next_type form with
         | Error error ->
-            Error
-              (Error.with_location_if_missing (Source_context.find form) error)
+            let error =
+              Error.with_location_if_missing (Source_context.find form) error
+            in
+            let can_defer =
+              form_references_unresolved_declaration scope env form
+              || form_references_names unresolved_names form
+            in
+            if can_defer then
+              let first_error =
+                match first_error with
+                | Some _ -> first_error
+                | None -> Some error
+              in
+              let unresolved_names =
+                add_unresolved_names unresolved_names form
+              in
+              loop scope env next_type items unresolved_names
+                ((index, form) :: deferred) first_error made_progress rest
+            else Error error
         | Ok (scope, env, next_type, item) ->
-            loop scope env next_type (item :: items) rest)
+            let unresolved_names =
+              remove_resolved_names unresolved_names form
+            in
+            loop scope env next_type ((index, item) :: items) unresolved_names
+              deferred first_error true rest)
+    in
+    loop scope env next_type items unresolved_names [] None false pending
   in
-  match loop state.scope state.env state.next_type [] forms with
+  let indexed_forms = List.mapi (fun index form -> (index, form)) forms in
+  match
+    compile_pending state.scope state.env state.next_type [] [] indexed_forms
+  with
   | Error _ as err -> err
   | Ok (scope, env, next_type, new_items) ->
       let immediate, deferred = order_deferred_items new_items in
