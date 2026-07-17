@@ -8799,6 +8799,38 @@ let test_dependency_graph_orders_declared_protocol_dependencies () =
   if not (List.exists (fun names -> List.sort String.compare names = [ "left"; "right" ]) components)
   then failwith "mutual recursion must form one strongly connected component"
 
+let test_dependency_graph_keeps_declarations_before_macro_consumers () =
+  let open Lg.Ast in
+  let forms =
+    [
+      FList [ FSymbol "namespace-scope"; FSymbol "example.core" ];
+      FList [ FSymbol "declare"; FSymbol "later"; FSymbol "build" ];
+      FList [ FSymbol "deftrecord"; FSymbol "Variable"; FVector [] ];
+      FList
+        [
+          FSymbol "defn";
+          FSymbol "build";
+          FVector [];
+          FList
+            [ FSymbol "later"; FList [ FSymbol "Variable." ] ];
+        ];
+      FList
+        [
+          FSymbol "defn";
+          FSymbol "later";
+          FVector [ FSymbol "value" ];
+          FList [ FSymbol "build" ];
+        ];
+    ]
+  in
+  let order = Lg.Dependency_graph.stable_order forms in
+  let position index =
+    List.find_index (( = ) index) order |> Option.value ~default:max_int
+  in
+  if not (position 0 < position 1 && position 1 < position 2) then
+    failwith
+      "namespace and declare must be available before macro-generated consumers"
+
 let test_declarations_do_not_merge_independent_functions () =
   let source =
     {|
@@ -15959,6 +15991,8 @@ let tests =
       test_deferred_initializers_run_before_first_ready_use );
     ( "dependency graph orders declared protocol dependencies",
       test_dependency_graph_orders_declared_protocol_dependencies );
+    ( "dependency graph keeps declarations before macro consumers",
+      test_dependency_graph_keeps_declarations_before_macro_consumers );
     ( "declarations do not merge independent functions",
       test_declarations_do_not_merge_independent_functions );
     ( "typecheck stabilizes forward declaration ABI",

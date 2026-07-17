@@ -216,6 +216,21 @@ let stable_order forms =
               (Int_set.remove component remaining)
               (List.rev_append members ordered)
     in
-    release Int_set.empty
-      (List.init (List.length components) Fun.id |> Int_set.of_list)
-      []
+    let order =
+      release Int_set.empty
+        (List.init (List.length components) Fun.id |> Int_set.of_list)
+        []
+    in
+    let is_namespace index =
+      match List.nth forms index with
+      | FList (FSymbol ("ns" | "namespace-scope") :: _) -> true
+      | _ -> false
+    in
+    let is_declaration index =
+      match List.nth forms index with
+      | FList (FSymbol "declare" :: _) -> true
+      | _ -> false
+    in
+    let namespaces, order = List.partition is_namespace order in
+    let declarations, order = List.partition is_declaration order in
+    namespaces @ declarations @ order

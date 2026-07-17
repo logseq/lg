@@ -934,13 +934,31 @@ update the same entry with its root cause, fix, and verification evidence.
 
 ## 2026-07-17: `collect-vars-acc` is unresolved in `parser.cljc`
 
-- Status: Open; next DataScript blocker
+- Status: Fixed
 - Symptom: Full Native parser dependency compilation reaches
   `test/datascript/upstream/parser.cljc` line 88 and reports `unknown function
   datascript.parser/collect-vars-acc`.
-- Current evidence: The failure occurs only after all PSS and `db.cljc` forms
-  compile. Reduce the upstream definition/declaration order and preserve its
-  static recursive binding; do not add a dynamic fallback.
+- Root cause: Dependency stabilization treated the symbols inside `declare` as
+  ordinary dependencies. The declaration joined a large SCC which depended on
+  macro-generated records, so `Variable` moved to position 13 while the
+  declaration moved to 78 and the definition to 85.
+- Fix: Preserve the existing dependency graph and definition order, but pin
+  synthetic `namespace-scope` forms first and pure `declare` forms immediately
+  after them. This keeps compile-time declarations visible without separating
+  or reordering their actual definitions.
+- Verification: A focused dependency graph regression recreates the SCC and
+  proves `namespace-scope < declare < macro consumer`. Existing dependency tests
+  pass. The real Native chain still compiles LRU and DB, resolves
+  `collect-vars-acc`, and advances to parser lines 545-552.
+
+## 2026-07-17: `not-empty` loses seqable evidence in `parser.cljc`
+
+- Status: Open; next DataScript blocker
+- Symptom: Full Native parser dependency compilation reaches parser lines
+  545-552 and reports `not-empty expects a seqable value`.
+- Current evidence: This is after declaration ordering is fixed. Reduce the
+  concrete upstream form and retain its collection evidence rather than making
+  `not-empty` accept arbitrary dynamic values.
 
 ## 2026-07-17: Full parser-chain compilation repeats large typechecks
 
