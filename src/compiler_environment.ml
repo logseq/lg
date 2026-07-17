@@ -11,6 +11,7 @@ type t = {
   namespace_aliases : (string * string) list;
   core_exclusions : (string * string) list;
   macros : (string * Macro_definition.t) list;
+  inline_macros : (string * Macro_definition.t) list;
   macro_functions : (string * Macro_definition.t) list;
   macro_values : (string * Ast.form) list;
   expected_type : Types.ty option;
@@ -28,6 +29,7 @@ let empty =
     namespace_aliases = [];
     core_exclusions = [];
     macros = [];
+    inline_macros = [];
     macro_functions = [];
     macro_values = [];
     expected_type = None;
@@ -124,6 +126,41 @@ let namespace_macros namespace env =
            in
            Some (name, definition)
          else None)
+
+let add_inline_macro ~scope ~name definition env =
+  let key = Names.scoped_key scope name in
+  {
+    env with
+    inline_macros =
+      (key, definition) :: List.remove_assoc key env.inline_macros;
+  }
+
+let add_inline_macro_alias ~alias definition env =
+  {
+    env with
+    inline_macros =
+      (alias, definition) :: List.remove_assoc alias env.inline_macros;
+  }
+
+let find_inline_macro ~scope name env =
+  match List.assoc_opt (Names.scoped_key scope name) env.inline_macros with
+  | Some _ as definition -> definition
+  | None -> List.assoc_opt name env.inline_macros
+
+let namespace_inline_macros namespace env =
+  let prefix = namespace ^ "/" in
+  env.inline_macros
+  |> List.filter_map (fun (key, definition) ->
+         if String.starts_with ~prefix key then
+           let name =
+             String.sub key (String.length prefix)
+               (String.length key - String.length prefix)
+           in
+           Some (name, definition)
+         else None)
+
+let inline_macros env = env.inline_macros
+let with_inline_macros inline_macros env = { env with inline_macros }
 
 let add_macro_function ~scope ~name definition env =
   let key = Names.scoped_key scope name in

@@ -831,3 +831,48 @@ update the same entry with its root cause, fix, and verification evidence.
 - Current evidence: `raise` is an upstream macro from `datascript.util`, and the
   parser behavior tests do not exercise this path. The compiler must preserve
   its cross-namespace macro alias instead of falling back to a dynamic call.
+
+## 2026-07-17: Prefer static evidence over `dynamic`
+
+- Status: Project invariant
+- Rule: Preserve or infer concrete types whenever the source provides evidence.
+  Use `dynamic` only for genuinely open values or explicit dynamic annotations;
+  never use it to hide namespace resolution, macro expansion, or type inference
+  defects.
+- Practical gate: Focused regressions must exercise Native and Melange, and
+  compiler changes must not route a statically expandable call through a
+  dynamic runtime wrapper.
+
+## 2026-07-17: DataScript inline `assoc` and `update`
+
+- Status: Fixed
+- Symptom: The exact upstream `datascript.inline` module was missing. After it
+  was restored one-to-one, `clojure.lang.RT/assoc` was unknown and referred
+  `update` calls degraded to its dynamic runtime fallback. `allocate-eid` then
+  failed with incompatible arguments or a dynamic callback ABI.
+- Root cause: `defn` attribute maps were accepted but `:inline` metadata was
+  discarded. Namespace aliases therefore preserved only the runtime binding,
+  not the compile-time inline definition.
+- Fix: Keep inline definitions separately from ordinary macros, propagate them
+  through namespace aliases and `:refer`, and expand calls in both the defining
+  and consuming namespaces. Compile an inline function's own runtime fallback
+  with inherited inline definitions temporarily disabled, then restore them;
+  this prevents definition bootstrapping from changing the fallback ABI.
+  Treat `clojure.lang.RT/assoc` as a compile-time compatibility spelling of core
+  `assoc`; it emits no Java import or `clojure.lang` runtime dependency.
+- Verification: The exact upstream `inline.clj` bytes are mirrored as
+  `test/datascript/upstream/inline.cljc`. Focused tests prove same-namespace
+  expansion, cross-namespace `:refer`, nested `cond->`/`->` updates, passing
+  `update` as an updater, Native execution, Melange generation, and absence of
+  calls to the dynamic update wrapper. The complete compiler suite passes.
+
+## 2026-07-17: `restore-db` row type arity diverges
+
+- Status: Open; next DataScript blocker
+- Symptom: Full Native PSS + DataScript parser compilation now reaches Storage
+  restore and emits `datascript_db_restore_db_row0` with 41 declared type
+  parameters but applies it with 29 arguments.
+- Current evidence: The inline/update blocker is no longer reported. The new
+  mismatch is in generated static row bookkeeping for `restore-db`; replacing
+  the missing parameters with `dynamic` would violate the static-evidence
+  invariant and is not an acceptable fix.

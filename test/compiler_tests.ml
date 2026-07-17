@@ -1924,6 +1924,62 @@ let test_namespace_rejects_import_clause () =
 |}
   |> expect_error "lg namespaces do not support :import"
 
+let test_referred_update_supports_threaded_nested_calls () =
+  let provider_source =
+    read_file
+      (Filename.concat (repo_root ()) "test/datascript/upstream/inline.cljc")
+  in
+  let consumer_source =
+    {|
+(ns compat.app
+  (:require [datascript.inline :refer [update]])
+  (:refer-clojure :exclude [update]))
+(deftype DB [max-eid])
+(defn advance-max-eid [^DB db eid]
+  (assoc db :max-eid eid))
+(defn add-value [values value]
+  (conj values value))
+(defn allocate-eid
+  ([report eid]
+   (update report :db-after advance-max-eid eid))
+  ([report e eid]
+   (cond-> report
+     true
+     (->
+       (update :tempids assoc e eid)
+       (update :reverse-tempids update eid add-value e))
+
+     true
+     (update :db-after advance-max-eid eid))))
+(def initial
+  {:db-after (DB. 0)
+   :tempids {}
+   :reverse-tempids {}})
+(def updated (allocate-eid initial "temp" 1))
+(let [db-after ^DB (:db-after updated)]
+  (println
+    (str (.-max-eid db-after) ":"
+         (get (:tempids updated) "temp") ":"
+         (count (get (:reverse-tempids updated) 1)))))
+|}
+  in
+  let compile target =
+    let state, provider_ocaml =
+      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state provider_source
+      |> expect_ok
+    in
+    let _, consumer_ocaml =
+      Lg.Compiler.compile_chunk ~target state consumer_source |> expect_ok
+    in
+    (provider_ocaml ^ "\n" ^ consumer_ocaml, consumer_ocaml)
+  in
+  let ocaml_source, consumer_ocaml = compile Lg.Target.Native in
+  if string_contains_substring consumer_ocaml "datascript_inline_update__" then
+    failwith "inline update calls must not use the runtime wrapper";
+  assert_ocaml_runs "referred_update_supports_threaded_nested_calls"
+    "1:1:1\n" ocaml_source;
+  ignore (compile Lg.Target.Melange)
+
 let test_namespace_ignores_clojure_compiler_directives () =
   let source =
     {|
@@ -5353,6 +5409,22 @@ let test_defn_accepts_attribute_maps_and_return_hints () =
   assert_ocaml_runs "defn_accepts_attribute_maps_and_return_hints" "42\n"
     ocaml_source
 
+let test_inline_attribute_expands_same_namespace_calls () =
+  let source =
+    {|
+(defn answer
+  {:inline (fn [] 42)}
+  []
+  0)
+(println (answer))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "inline_attribute_expands_same_namespace_calls" "42\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_compare_supports_dynamic_scalar_values () =
   let source =
     {|
@@ -6161,6 +6233,19 @@ let test_assoc_supports_vector_indexes () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "assoc_supports_vector_indexes" "[10 2 30]\n" ocaml_source
+
+let test_clojure_rt_assoc_matches_core_assoc () =
+  let source =
+    {|
+(def updated-map (clojure.lang.RT/assoc {:a 1} :b 2))
+(def updated-vector (clojure.lang.RT/assoc [10 20 30] 1 42))
+(println (str (get updated-map :b) ":" (nth updated-vector 1)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "clojure_rt_assoc_matches_core_assoc" "2:42\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_assoc_rejects_vector_value_type_mismatch () =
   Lg.Compiler.compile_string {|(def x (assoc [1 2] 0 "one"))|}
@@ -14921,6 +15006,8 @@ let tests =
       test_namespace_refer_clojure_exclude_hides_core_binding );
     ( "namespace rejects import clauses",
       test_namespace_rejects_import_clause );
+    ( "referred update supports threaded nested calls",
+      test_referred_update_supports_threaded_nested_calls );
     ( "namespace ignores Clojure compiler directives",
       test_namespace_ignores_clojure_compiler_directives );
     ( "System currentTimeMillis compiles for native",
@@ -15360,6 +15447,8 @@ let tests =
       test_protocol_witness_results_unpack_concrete_sequence_returns );
     ( "defn accepts attribute maps and return hints",
       test_defn_accepts_attribute_maps_and_return_hints );
+    ( "inline attributes expand same namespace calls",
+      test_inline_attribute_expands_same_namespace_calls );
     ( "compare supports dynamic scalar values",
       test_compare_supports_dynamic_scalar_values );
     ( "class and identical? support dynamic values",
@@ -15470,6 +15559,8 @@ let tests =
     ("assoc supports multiple pairs", test_assoc_supports_multiple_pairs);
     ("assoc rejects odd key value pairs", test_assoc_rejects_odd_key_value_pairs);
     ("assoc supports vector indexes", test_assoc_supports_vector_indexes);
+    ( "clojure RT assoc matches core assoc",
+      test_clojure_rt_assoc_matches_core_assoc );
     ( "assoc rejects vector value type mismatch",
       test_assoc_rejects_vector_value_type_mismatch );
     ( "assoc rejects vector non-int indexes",

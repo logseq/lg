@@ -1033,11 +1033,15 @@ and syntax_quote context form =
         let name =
           if String.contains name '/' then name
           else
-            match
-              Env.find_macro ~scope:context.namespace name context.compiler_env
-            with
-            | Some _ -> context.namespace ^ "/" ^ name
-            | None -> name
+            let is_macro =
+              Option.is_some
+                (Env.find_macro ~scope:context.namespace name
+                   context.compiler_env)
+              || Option.is_some
+                   (Env.find_inline_macro ~scope:context.namespace name
+                      context.compiler_env)
+            in
+            if is_macro then context.namespace ^ "/" ^ name else name
         in
         Ok (Form (FSymbol name))
     | form -> Ok (Form form)
@@ -1130,10 +1134,16 @@ let rec expand_all ~scope ~compiler_env = function
       | Some definition ->
           Result.bind (expand ~compiler_env definition args) (fun expanded ->
               expand_all ~scope ~compiler_env expanded)
-      | None ->
-          Result.map
-            (fun forms -> FList forms)
-            (expand_all_forms ~scope ~compiler_env (FSymbol name :: args)))
+      | None -> (
+          match Env.find_inline_macro ~scope name compiler_env with
+          | Some definition ->
+              Result.bind (expand ~compiler_env definition args)
+                (fun expanded -> expand_all ~scope ~compiler_env expanded)
+          | None ->
+              Result.map
+                (fun forms -> FList forms)
+                (expand_all_forms ~scope ~compiler_env
+                   (FSymbol name :: args))))
   | FList forms ->
       Result.map
         (fun forms -> FList forms)

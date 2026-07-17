@@ -96,7 +96,8 @@ let ensure_namespace env module_name =
 let add_lg_alias_bindings env module_name alias =
   let bindings = namespace_bindings env module_name in
   let macros = Env.namespace_macros module_name env in
-  if bindings = [] && macros = [] then
+  let inline_macros = Env.namespace_inline_macros module_name env in
+  if bindings = [] && macros = [] && inline_macros = [] then
     Error.error ("cannot require unknown namespace " ^ module_name)
   else
       let env =
@@ -111,6 +112,13 @@ let add_lg_alias_bindings env module_name alias =
       |> List.fold_left
            (fun env (name, definition) ->
              Env.add_macro_alias ~alias:(alias ^ "/" ^ name) definition env)
+           env
+      |> fun env ->
+      inline_macros
+      |> List.fold_left
+           (fun env (name, definition) ->
+             Env.add_inline_macro_alias ~alias:(alias ^ "/" ^ name)
+               definition env)
            env
       |> fun env -> Ok env
 
@@ -128,7 +136,20 @@ let add_lg_refer_bindings env scope module_name names =
                 Error.error
                   ("cannot refer unknown symbol " ^ module_name ^ "/" ^ name))
         | Some binding ->
-            loop (Env.add (Names.scoped_key scope name) binding env) rest)
+            let env = Env.add (Names.scoped_key scope name) binding env in
+            let env =
+              let alias = Names.scoped_key scope name in
+              let env =
+                match Env.find_macro ~scope:module_name name env with
+                | None -> env
+                | Some definition -> Env.add_macro_alias ~alias definition env
+              in
+              match Env.find_inline_macro ~scope:module_name name env with
+              | None -> env
+              | Some definition ->
+                  Env.add_inline_macro_alias ~alias definition env
+            in
+            loop env rest)
   in
   loop env names
 

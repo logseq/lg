@@ -203,7 +203,9 @@ let record_ref_field_value_type params receiver keyword =
 
 let rec assoc_root_symbol = function
   | FSymbol name -> Some name
-  | FList (FSymbol ("assoc" | "clojure.core/assoc") :: target :: _) ->
+  | FList
+      (FSymbol ("assoc" | "clojure.core/assoc" | "clojure.lang.RT/assoc")
+      :: target :: _) ->
       assoc_root_symbol target
   | _ -> None
 
@@ -640,7 +642,9 @@ let infer_params ?(explicitly_dynamic_params = []) ~lookup_function_ty
            || String.ends_with ~suffix:"/let" let_name
            || String.ends_with ~suffix:"/let*" let_name ->
         infer_let ~expected_body:expected_ty params bindings body_forms
-    | FList (FSymbol ("assoc" | "clojure.core/assoc") :: target :: pairs) -> (
+    | FList
+        (FSymbol ("assoc" | "clojure.core/assoc" | "clojure.lang.RT/assoc")
+        :: target :: pairs) -> (
         match Types.record_fields expected_ty with
         | None -> infer_assoc params target pairs
         | Some expected_fields ->
@@ -2346,7 +2350,9 @@ let infer_params ?(explicitly_dynamic_params = []) ~lookup_function_ty
         :: argument_forms) ->
         infer_form params
           (Core_form_expansion.update_in target keys function_form argument_forms)
-    | FList (FSymbol ("assoc" | "clojure.core/assoc") :: target :: pairs) ->
+    | FList
+        (FSymbol ("assoc" | "clojure.core/assoc" | "clojure.lang.RT/assoc")
+        :: target :: pairs) ->
         infer_assoc params target pairs
     | FList [ FSymbol ("transient" | "persistent!"); collection ] ->
         infer_expected (Types.dynamic_constraint TUnknown) params collection

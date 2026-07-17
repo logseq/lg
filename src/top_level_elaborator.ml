@@ -1322,11 +1322,33 @@ let rec compile scope env next_type = function
                     } ))))
   | FList
       (FSymbol (("defn" | "defn-") as definition)
-      :: (FSymbol _ as name_form)
-      :: FMap _attributes
+      :: (FSymbol name as name_form)
+      :: FMap attributes
       :: rest) ->
-      compile scope env next_type
-        (FList (FSymbol definition :: name_form :: rest))
+      let inline_definition =
+        attributes
+        |> List.find_map (function
+             | FKeyword ":inline", FList (FSymbol "fn" :: forms) ->
+                 Some
+                   (Macro_definition.create ~namespace:scope ~name forms)
+             | _ -> None)
+      in
+      let inherited_inline_macros = Env.inline_macros env in
+      let runtime_env = Env.with_inline_macros [] env in
+      Result.bind
+        (compile scope runtime_env next_type
+           (FList (FSymbol definition :: name_form :: rest)))
+        (fun (scope, env, next_type, item) ->
+          let env = Env.with_inline_macros inherited_inline_macros env in
+          match inline_definition with
+          | None -> Ok (scope, env, next_type, item)
+          | Some (Error _ as error) -> error
+          | Some (Ok inline_definition) ->
+              Ok
+                ( scope,
+                  Env.add_inline_macro ~scope ~name inline_definition env,
+                  next_type,
+                  item ))
   | FList
       (FSymbol (("defn" | "defn-") as definition)
       :: (FSymbol _ as name_form)

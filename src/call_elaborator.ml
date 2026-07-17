@@ -5934,7 +5934,8 @@ let create ~compile_expr =
     | "get" -> compile_get scope env arg_forms
     | "get-in" -> compile_get_in scope env arg_forms
     | "find" -> compile_find scope env arg_forms
-    | "assoc" | "-assoc" -> compile_assoc scope env arg_forms
+    | "assoc" | "-assoc" | "clojure.lang.RT/assoc" ->
+        compile_assoc scope env arg_forms
     | "assoc-in" -> compile_assoc_in scope env arg_forms
     | "assoc!" -> compile_assoc_bang scope env arg_forms
     | "dissoc!" -> compile_dissoc_bang scope env arg_forms
