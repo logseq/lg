@@ -868,11 +868,30 @@ update the same entry with its root cause, fix, and verification evidence.
 
 ## 2026-07-17: `restore-db` row type arity diverges
 
-- Status: Open; next DataScript blocker
+- Status: Fixed
 - Symptom: Full Native PSS + DataScript parser compilation now reaches Storage
   restore and emits `datascript_db_restore_db_row0` with 41 declared type
   parameters but applies it with 29 arguments.
-- Current evidence: The inline/update blocker is no longer reported. The new
-  mismatch is in generated static row bookkeeping for `restore-db`; replacing
-  the missing parameters with `dynamic` would violate the static-evidence
-  invariant and is not an acceptable fix.
+- Root cause: Typechecking always ran exactly two passes. The first pass inferred
+  a 29-parameter forward declaration without final protocol evidence. The
+  second pass compiled earlier `restore-db` call sites against that stale ABI,
+  then inferred the definition's final 41-parameter row type.
+- Fix: Iterate typechecking until forward-declaration ABI shapes stabilize.
+  Compare the actual boundary evidence—source type shape, row parameters,
+  overload rows and targets, and return parameter index—rather than nominal
+  identities inside the protocol registry. Stable modules still take two
+  passes; `db.cljc` takes one additional pass for 29 -> 41 -> 41.
+- Verification: A focused test simulates that exact transition and proves the
+  third pass retains the 41-parameter ABI. The real Native parser dependency
+  chain no longer reports 41/29 and advances to `transact-tx-data`.
+
+## 2026-07-17: `transact-tx-data` loses `datom btset` evidence
+
+- Status: Open; next DataScript blocker
+- Symptom: Full Native parser dependency compilation reaches `db.cljc` lines
+  1700-1707 and passes an existential `$0 btset` where `datom btset` is
+  required.
+- Current evidence: This occurs after `assoc-auto-tempids` feeds
+  `transact-tx-data-impl`. The storage/PSS value type is still nominally a
+  `btset`, but its element parameter is hidden. The fix must preserve the
+  concrete `datom` argument; widening either side to `dynamic` is not allowed.

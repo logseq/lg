@@ -623,6 +623,55 @@ let declaration_bindings ast env =
          (key, { binding with forward_declared = true }))
   |> List.sort_uniq (fun (left, _) (right, _) -> String.compare left right)
 
+let stabilize_typecheck ~compile ~(initial_state : Compiler_state.t) ast =
+  let binding_abi_equal (left : Types.binding) (right : Types.binding) =
+    Types.source_name left.ty = Types.source_name right.ty
+    && left.row_param_types = right.row_param_types
+    && left.overload_row_param_types = right.overload_row_param_types
+    && left.overload_targets = right.overload_targets
+    && left.return_param_index = right.return_param_index
+  in
+  let declarations_abi_equal left right =
+    List.length left = List.length right
+    &&
+    List.for_all2
+      (fun (left_name, left_binding) (right_name, right_binding) ->
+        left_name = right_name
+        && binding_abi_equal left_binding right_binding)
+      left right
+  in
+  let rec continue remaining declarations protocol_evidence =
+    if remaining = 0 then
+      Error.error "type evidence did not stabilize after 16 passes"
+    else
+      let seeded_state =
+        {
+          initial_state with
+          env =
+            initial_state.env
+            |> Compiler_environment.add_bindings declarations
+            |> Compiler_environment.with_protocol_evidence
+                 (Some protocol_evidence);
+        }
+      in
+      match compile seeded_state with
+      | Error _ as error -> error
+      | Ok ((next_state : Compiler_state.t), items) ->
+          let next_declarations = declaration_bindings ast next_state.env in
+          let next_protocols =
+            Compiler_environment.protocols next_state.env
+          in
+          if declarations_abi_equal next_declarations declarations then
+            Ok (next_state, items)
+          else
+            continue (remaining - 1) next_declarations next_protocols
+  in
+  match compile initial_state with
+  | Error _ as error -> error
+  | Ok ((first_state : Compiler_state.t), _) ->
+      continue 15 (declaration_bindings ast first_state.env)
+        (Compiler_environment.protocols first_state.env)
+
 let typecheck (parsed : parser_result) =
   let parsed = stabilize_dependencies parsed in
   match prepare_packages parsed.target parsed.ast with
@@ -635,32 +684,16 @@ let typecheck (parsed : parser_result) =
         Source_context.with_locations parsed.form_locations (fun () ->
             Typecheck.compile_forms_incremental state parsed.ast)
       in
-      match compile initial_state with
+      match stabilize_typecheck ~compile ~initial_state parsed.ast with
       | Error _ as err -> err
-      | Ok (first_state, _) -> (
-          let declarations =
-            declaration_bindings parsed.ast first_state.env
-          in
-          let seeded_state =
-            {
-              initial_state with
-              env =
-                initial_state.env
-                |> Compiler_environment.add_bindings declarations
-                |> Compiler_environment.with_protocol_evidence
-                     (Some (Compiler_environment.protocols first_state.env));
-            }
-          in
-          match compile seeded_state with
-          | Error _ as err -> err
-          | Ok (typecheck_state, items) ->
+      | Ok (typecheck_state, items) ->
           Ok
             {
               ast = parsed.ast;
               items;
               locations = parsed.locations;
               typecheck_state;
-            }) )
+            } )
 
 let typecheck_incremental state (parsed : parser_result) =
   let parsed = stabilize_dependencies parsed in
@@ -683,25 +716,9 @@ let typecheck_incremental state (parsed : parser_result) =
         Source_context.with_locations parsed.form_locations (fun () ->
             Typecheck.compile_forms_incremental typecheck_state parsed.ast)
       in
-      match compile initial_state with
+      match stabilize_typecheck ~compile ~initial_state parsed.ast with
       | Error _ as err -> err
-      | Ok (first_state, _) -> (
-          let declarations =
-            declaration_bindings parsed.ast first_state.env
-          in
-          let seeded_state =
-            {
-              initial_state with
-              env =
-                initial_state.env
-                |> Compiler_environment.add_bindings declarations
-                |> Compiler_environment.with_protocol_evidence
-                     (Some (Compiler_environment.protocols first_state.env));
-            }
-          in
-          match compile seeded_state with
-          | Error _ as err -> err
-          | Ok (typecheck_state, items) ->
+      | Ok (typecheck_state, items) ->
           let located_items =
             state.located_items @ List.combine parsed.locations items
           in
@@ -713,7 +730,7 @@ let typecheck_incremental state (parsed : parser_result) =
                 items;
                 locations = parsed.locations;
                 typecheck_state;
-              } )))
+              } ))
 
 let required_ocaml_packages ?(target = Target.default) source =
   match Lg_frontend.implementation ~target source with

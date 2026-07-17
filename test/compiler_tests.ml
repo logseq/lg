@@ -8795,6 +8795,43 @@ let test_declarations_do_not_merge_independent_functions () =
     failwith
       "declare must not merge independent functions into one recursive group"
 
+let test_typecheck_stabilizes_forward_declaration_abi () =
+  let passes = ref 0 in
+  let compile (state : Lg.Compiler_state.t) =
+    incr passes;
+    let row_arity = if !passes = 1 then 29 else 41 in
+    let row_parameters =
+      List.init row_arity (fun index -> Some ("'a" ^ string_of_int index))
+    in
+    let binding =
+      Lg.Types.binding ~row_param_types:row_parameters "restore"
+        (Lg.Types.TFn ([ Lg.Types.TInt ], Lg.Types.TInt))
+    in
+    let env = Lg.Compiler_environment.add "restore" binding state.env in
+    Ok ({ state with env }, [])
+  in
+  let ast =
+    [
+      Lg.Ast.FList
+        [ Lg.Ast.FSymbol "declare"; Lg.Ast.FSymbol "restore" ];
+    ]
+  in
+  let state, _ =
+    Lg.Toolchain.stabilize_typecheck ~compile
+      ~initial_state:Lg.Compiler_state.empty ast
+    |> expect_ok
+  in
+  if !passes <> 3 then
+    failwith
+      ("forward declaration ABI should stabilize in three passes, got "
+      ^ string_of_int !passes);
+  let binding =
+    Lg.Compiler_environment.find_opt "restore" state.env
+    |> Option.get
+  in
+  if List.length binding.row_param_types <> 41 then
+    failwith "the stabilized declaration ABI must be retained"
+
 let test_equality_parameter_widens_across_keyword_and_string () =
   let source =
     {|
@@ -15835,6 +15872,8 @@ let tests =
       test_dependency_graph_orders_declared_protocol_dependencies );
     ( "declarations do not merge independent functions",
       test_declarations_do_not_merge_independent_functions );
+    ( "typecheck stabilizes forward declaration ABI",
+      test_typecheck_stabilizes_forward_declaration_abi );
     ( "equality parameter widens across keyword and string",
       test_equality_parameter_widens_across_keyword_and_string );
     ( "recursive deftype helper widens fallback to dynamic",
