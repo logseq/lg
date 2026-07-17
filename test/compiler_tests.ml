@@ -27,18 +27,29 @@ let string_contains_substring text expected =
   expected_len = 0 || loop 0
 
 let count_generated_anonymous_record_types source =
-  let prefix = "type nonrec t" in
+  let anonymous_type_name line =
+    let words =
+      line |> String.split_on_char ' '
+      |> List.filter (fun word -> word <> "")
+    in
+    let rec before_equals previous = function
+      | "=" :: _ -> previous
+      | word :: rest -> before_equals (Some word) rest
+      | [] -> None
+    in
+    match words with
+    | "type" :: "nonrec" :: rest -> before_equals None rest
+    | _ -> None
+  in
   source |> String.split_on_char '\n'
   |> List.fold_left
        (fun count line ->
-         if
-           String.starts_with ~prefix line
-           && String.length line > String.length prefix
-           &&
-           let suffix = line.[String.length prefix] in
-           suffix >= '0' && suffix <= '9'
-         then count + 1
-         else count)
+         match anonymous_type_name line with
+         | Some name
+           when String.length name > 1 && name.[0] = 't'
+                && name.[1] >= '0' && name.[1] <= '9' ->
+             count + 1
+         | Some _ | None -> count)
        0
 
 let substring_index text expected =
@@ -9121,6 +9132,65 @@ let test_parser_alternatives_preserve_open_argument_type () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_parser_rule_map_allocates_anonymous_return_record () =
+  let source =
+    {|
+(defrecord PlainSymbol [symbol])
+(defrecord RuleVars [required free])
+(defrecord Rule [name branches])
+
+(defn parse-plain-symbol [form]
+  (when (symbol? form)
+    (PlainSymbol. form)))
+
+(defn parse-rule-vars [forms]
+  (RuleVars. [] []))
+
+(defn ^:dynamic parse-clauses [_forms]
+  [1])
+
+(defn parse-seq [parse-element forms]
+  (reduce
+    (fn [parsed form]
+      (if-let [value (parse-element form)]
+        (conj parsed value)
+        (reduced nil)))
+    []
+    forms))
+
+(defn parse-rule [form]
+  (let [name (first form)
+        vars (second form)
+        clauses (nth form 2)
+        name* (or (parse-plain-symbol name)
+                  (throw (ex-info "missing name" {})))
+        vars* (parse-rule-vars vars)
+        clauses* (parse-clauses clauses)]
+    {:name name*
+     :vars vars*
+     :clauses clauses*}))
+
+(println
+  (:symbol
+    (:name
+      (parse-rule ['query ['?x] [['?x :name "Ada"]]]))))
+|}
+  in
+  let native_source =
+    Lg.Compiler.compile_string ~target:Lg.Target.Native source |> expect_ok
+  in
+  let anonymous_types = count_generated_anonymous_record_types native_source in
+  if anonymous_types <> 1 then
+    failwith
+      (Printf.sprintf
+         "function return maps must allocate one anonymous record type, got %d"
+         anonymous_types);
+  assert_ocaml_runs
+    "parser_rule_map_allocates_anonymous_return_record" "query\n"
+    native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_symbol_predicate_narrows_later_and_operands () =
   let source =
     {|
@@ -16438,6 +16508,8 @@ let tests =
       test_protocol_record_reconstruction_keeps_field_type_open );
     ( "parser alternatives preserve open argument type",
       test_parser_alternatives_preserve_open_argument_type );
+    ( "parser rule map allocates anonymous return record",
+      test_parser_rule_map_allocates_anonymous_return_record );
     ( "symbol predicate narrows later and operands",
       test_symbol_predicate_narrows_later_and_operands );
     ( "nested sequential branch destructuring preserves dynamic values",

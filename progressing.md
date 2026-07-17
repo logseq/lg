@@ -1188,13 +1188,39 @@ update the same entry with its root cause, fix, and verification evidence.
 
 ## 2026-07-17: Parser rule map does not pack a named-record value
 
-- Status: Open; next DataScript blocker
+- Status: Fixed
 - Symptom: The heterogeneous map returned by `parse-rule` fails at line 647.
   Its `PlainSymbol` value has static type `plainsymbol`, while the generated map
   value slot expects `Runtime_dynamic.t`.
-- Current evidence: The map contains `:name`, `:vars`, and `:clauses` values of
-  different nominal/collection types. Inspect heterogeneous map value
-  materialization and preserve the named-record type until the map boundary.
+- Root cause: The keyword map was correctly inferred as a structural record,
+  but top-level function returns did not allocate an anonymous OCaml record type
+  for `TRecord`. The unannotated record literal reused the nearby `Rule.name`
+  label, whose field type is dynamic, and OCaml selected the wrong record type.
+- Fix: A top-level function returning a structural record now allocates and
+  reuses an anonymous named record, emits nested and outer type declarations,
+  and annotates the returned record literal with that type. Allocation requires
+  at least one static field and rejects unresolved type variables. An all-dynamic
+  or generic shape remains available to contextual inference; a mixed static and
+  dynamic record can use its static field as shape evidence. No field is widened
+  to dynamic.
+- Verification: A focused collision regression with `PlainSymbol`, `RuleVars`,
+  and `Rule` is RED with an unbound/misresolved record field before the fix and
+  GREEN after it on Native and Melange. It also asserts that exactly one
+  anonymous return record type is emitted. Existing updater, threaded-record,
+  and propagated-function-parameter regressions remain GREEN. The complete
+  compiler suite and `dune build` pass, and the real parser chain advances from
+  line 647 to line 657.
+
+## 2026-07-17: RuleVars projection is passed to a dynamic function ABI
+
+- Status: Open; next DataScript blocker
+- Symptom: `validate-arity` fails at parser line 657 when static `RuleVars`
+  value `vars0` is passed to `rule-vars-arity`, whose current generated argument
+  expects `Runtime_dynamic.t`.
+- Current evidence: `vars0` comes from `(:vars (first branches))` after the
+  parse-rule return record is now correctly allocated. Inspect how row
+  projections and the `rule-vars-arity` parameter ABI are stabilized; keep the
+  projected nominal value static rather than widening the surrounding logic.
 
 ## 2026-07-17: Compiler test filtering uses an environment variable
 

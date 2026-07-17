@@ -20,6 +20,82 @@ let allocate_anonymous_record = Expression_support.allocate_anonymous_record
 let allocate_nested_anonymous_records =
   Expression_support.allocate_nested_anonymous_records
 
+let rec unresolved_anonymous_return_type = function
+  | ty when Types.is_dynamic ty -> false
+  | TUnknown | TVar _ -> true
+  | TNullable ty | TArray ty | TRef ty | TList ty | TVector ty | TSet ty
+  | TSeq ty ->
+      unresolved_anonymous_return_type ty
+  | TOcaml_app (_, arguments) | TTuple arguments ->
+      List.exists unresolved_anonymous_return_type arguments
+  | TFn (parameters, return_ty) ->
+      List.exists unresolved_anonymous_return_type (return_ty :: parameters)
+  | TOverloaded_fn arities ->
+      List.exists
+        (fun (arity : fn_arity) ->
+          List.exists unresolved_anonymous_return_type
+            (arity.return_ty :: arity.fixed_params)
+          || Option.fold ~none:false ~some:unresolved_anonymous_return_type
+               arity.rest_param)
+        arities
+  | TRecord fields ->
+      List.exists
+        (fun (field : field) -> unresolved_anonymous_return_type field.ty)
+        fields
+  | TNamed_record record ->
+      List.exists unresolved_anonymous_return_type record.type_arguments
+  | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
+  | TBool | TUnit | TNil | TOcaml _ ->
+      false
+
+let allocate_function_return_record env next_type
+    (parts : Expression_support.compiled_fn_parts) =
+  match parts.body.ty with
+  | TRecord fields
+    when not
+           (List.exists
+              (fun (field : field) ->
+                unresolved_anonymous_return_type field.ty)
+              fields)
+         && List.exists
+              (fun (field : field) -> not (Types.is_dynamic field.ty))
+              fields ->
+      let nested =
+        allocate_nested_anonymous_records ~owner:"" env next_type fields
+      in
+      let allocation =
+        allocate_anonymous_record ~owner:"" nested.env nested.next_type
+          nested.nested_fields
+      in
+      let allocation_unresolved =
+        List.exists
+          (fun (field : field) ->
+            unresolved_anonymous_return_type field.ty)
+          allocation.record.fields
+      in
+      if allocation_unresolved then (env, next_type, [], parts)
+      else
+        let items =
+          if allocation.fresh then
+            nested.items
+            @ [
+                Type_def
+                  {
+                    type_name = allocation.record.type_name;
+                    type_parameters = allocation.record.type_parameters;
+                    fields = allocation.record.fields;
+                    location = None;
+                  };
+              ]
+          else nested.items
+        in
+        let body = Structural_map.as_named_record allocation.record parts.body in
+        ( allocation.env,
+          allocation.next_type,
+          items,
+          { parts with body } )
+  | _ -> (env, next_type, [], parts)
+
 let row_param_type_names = Expression_support.row_param_type_names
 let row_type_items = Expression_support.row_type_items
 let check_emitted_name_collision = Resolver.check_emitted_name_collision
@@ -984,6 +1060,9 @@ let rec compile scope env next_type = function
             match prepared with
             | Error _ as err -> err
             | Ok parts ->
+                let env, next_type, return_type_items, parts =
+                  allocate_function_return_record env next_type parts
+                in
                 let param_tys =
                   parts.param_bindings
                   |> List.map (fun (_key, (binding : binding)) -> binding.ty)
@@ -998,7 +1077,9 @@ let rec compile scope env next_type = function
                   binding_of_expr ~row_param_types ocaml_name expr
                 in
                 let env = Env.add (Names.scoped_key scope name) binding env in
-                let rows = row_type_items row_param_types param_tys in
+                let rows =
+                  return_type_items @ row_type_items row_param_types param_tys
+                in
                 let recursive_binding =
                   {
                     name = ocaml_name;
@@ -1619,6 +1700,9 @@ let rec compile scope env next_type = function
       | Ok parts when unresolved_contextual_type parts.body.ty ->
           Error.error "empty list requires a contextual element type"
       | Ok parts -> (
+          let env, next_type, return_type_items, parts =
+            allocate_function_return_record env next_type parts
+          in
           let ocaml_name = Names.ocaml_binding_name scope name in
           let param_tys =
             parts.param_bindings
@@ -1637,7 +1721,10 @@ let rec compile scope env next_type = function
                   let binding =
                     binding_of_expr ~row_param_types ocaml_name expr
                   in
-                  let type_items = row_type_items row_param_types param_tys in
+                  let type_items =
+                    return_type_items
+                    @ row_type_items row_param_types param_tys
+                  in
                   let binding, value_item =
                     if expression_references_declaration env expr.semantic_expr
                     then
