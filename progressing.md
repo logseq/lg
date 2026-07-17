@@ -1128,17 +1128,83 @@ update the same entry with its root cause, fix, and verification evidence.
   runs on Native and compiles on Melange. The real parser chain advances beyond
   line 314 to `parse-with` at lines 383-387.
 
-## 2026-07-17: Raising `or` branch emits dynamic nil in `parse-with`
+## 2026-07-17: Nullable callback adaptation lost the option representation
+
+- Status: Fixed
+- Symptom: `parse-with` failed at lines 383-387 because `parse-seq` expected an
+  optional callback result, but the generated callback returned
+  `Runtime_dynamic.nil` for `None`.
+- Root cause: When callback parameters also needed capability adaptation, the
+  general dynamic callback adapter matched before the nullable callback
+  adapter. It packed the callback return into `Runtime_dynamic.t`, even though
+  the surrounding call retained an option return type.
+- Fix: Nullable callback adaptation now runs first and also adapts exact,
+  dynamic, and capability-constrained parameters. It wraps required callback
+  results in `Some` and preserves already optional results without changing
+  their representation.
+- Verification: The focused callback regression covers required, optional, and
+  protocol-record results on Native and Melange. A separate raising `or` test
+  confirms that `util/raise` was not the cause. The real parser chain advances
+  beyond lines 383-387.
+
+## 2026-07-17: Quoted-symbol equality specialized an open parser argument
+
+- Status: Fixed
+- Symptom: `parse-pattern-el` failed at line 428 because its dynamic `form`
+  argument was passed to `parse-placeholder`, whose generated OCaml argument
+  had been specialized to `string`.
+- Root cause: Type inference did not identify `(quote symbol)` as `TSymbol`.
+  Equality therefore treated both sides as unresolved and unified them, while
+  OCaml later inferred the quoted comparison operand as `string`. LG and OCaml
+  disagreed about the function boundary.
+- Fix: Quoted symbols now contribute `TSymbol` evidence. At a top-level `defn`
+  boundary, a single concrete type compared with an unresolved parameter makes
+  that open equality parameter dynamic so the emitted ABI remains stable.
+  Anonymous functions stay contextually typed. Equality between two unresolved
+  parameters still shares a type variable, preserving later call-site inference
+  such as PSS `option<int64>` address comparisons.
+- Verification: A focused parser-alternative regression is RED before the fix
+  and GREEN after it on Native and Melange. The PSS dynamic-generic regression
+  remains GREEN, and the real parser chain advances from line 428 to line 647.
+
+## 2026-07-17: Top-level equality widening leaked into contextual callbacks
+
+- Status: Fixed
+- Symptom: `dune build` failed in `datascript/util_test.cljc` when the anonymous
+  predicate `#(= % :a)` made `util/removem` expect a dynamic map key, while its
+  map argument still used keyword keys.
+- Root cause: The first equality fix treated top-level named functions and
+  contextually typed anonymous functions identically. Anonymous callback
+  parameters were materialized as dynamic before the consuming collection
+  operation could provide their element type.
+- Fix: Open equality parameters are materialized only when preparing a stable
+  top-level function ABI. Anonymous functions retain their equality type
+  variable and receive the callback parameter type from the call context.
+- Verification: A focused `removem`-shaped regression is RED before the context
+  distinction and GREEN after it on Native and Melange. The parser-alternative
+  regression remains GREEN. The complete compiler suite and `dune build` are
+  GREEN, and the real parser chain still reaches the independent line 647 map
+  blocker.
+
+## 2026-07-17: Parser rule map does not pack a named-record value
 
 - Status: Open; next DataScript blocker
-- Symptom: `parse-with` returns `(parse-seq parse-variable form)` or calls
-  `util/raise`. The generated raising branch has expression type
-  `Runtime_dynamic.t` via `Runtime_dynamic.nil`, while the successful branch
-  expects an option.
-- Current evidence: `util/raise` never returns, so its branch should behave as a
-  bottom expression and adopt the peer branch type rather than contributing a
-  dynamic nil value. Inspect deferred exception return inference and logical
-  branch merging; do not make `parse-with` dynamic.
+- Symptom: The heterogeneous map returned by `parse-rule` fails at line 647.
+  Its `PlainSymbol` value has static type `plainsymbol`, while the generated map
+  value slot expects `Runtime_dynamic.t`.
+- Current evidence: The map contains `:name`, `:vars`, and `:clauses` values of
+  different nominal/collection types. Inspect heterogeneous map value
+  materialization and preserve the named-record type until the map boundary.
+
+## 2026-07-17: Compiler test filtering uses an environment variable
+
+- Status: Resolved; test workflow
+- Symptom: Commands using `--filter` still ran the complete compiler test suite
+  because `compiler_tests.exe` ignores command-line filters.
+- Fix: Focused runs use
+  `LG_TEST_FILTER='<test name>' dune exec test/compiler_tests.exe`. Exact focused
+  regressions now complete in roughly one to five seconds, except tests that
+  intentionally compile the full PSS source.
 
 ## 2026-07-17: Full parser-chain compilation repeats large typechecks
 

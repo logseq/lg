@@ -667,8 +667,9 @@ and compile_loop scope env bindings body_forms =
 and compile_let scope env bindings body_forms =
   (Lazy.force context).special_forms.compile_let scope env bindings body_forms
 
-and prepare_fn ?(param_type_overrides = []) ?variadic_rest_index ?recur_target
-    scope env params body_forms =
+and prepare_fn ?(param_type_overrides = []) ?variadic_rest_index
+    ?(materialize_open_equality = false) ?recur_target scope env params
+    body_forms =
   let lookup_function_ty = lookup_function_ty scope env in
   let compile_function_body =
     match recur_target with
@@ -680,8 +681,8 @@ and prepare_fn ?(param_type_overrides = []) ?variadic_rest_index ?recur_target
   in
   let prepare param_type_overrides =
     Function_elaborator.prepare ~param_type_overrides ?variadic_rest_index
-      ?compile_function_body ~lookup_function_ty ~compile_body scope env params
-      body_forms
+      ~materialize_open_equality ?compile_function_body ~lookup_function_ty
+      ~compile_body scope env params body_forms
   in
   Result.bind (prepare param_type_overrides) (fun parts ->
       let record_values = Option.value parts.body.record_values ~default:[] in
@@ -926,7 +927,7 @@ and prepare_multi_arity_fn ~ocaml_name scope env source_name forms =
                 params
             in
             match
-               prepare_fn ~param_type_overrides
+               prepare_fn ~param_type_overrides ~materialize_open_equality:true
                  ?variadic_rest_index:clause.rest_index ~recur_target:target_name
                  scope clause_env clause.params clause.body_forms
              with
@@ -1096,6 +1097,7 @@ and prepare_inferred_recursive_fn ~ocaml_name scope env source_name params
       in
       match
         Type_inference.infer_params ~explicitly_dynamic_params
+          ~materialize_open_equality:true
           ~lookup_function_ty
           ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
           ~resolve_named_record
@@ -1131,7 +1133,8 @@ and prepare_inferred_recursive_fn ~ocaml_name scope env source_name params
                 |> Env.add ocaml_name self_binding
               in
               prepare_fn ~param_type_overrides:overrides
-                ~recur_target:ocaml_name scope env params body_forms
+                ~materialize_open_equality:true ~recur_target:ocaml_name scope
+                env params body_forms
             in
             Result.bind (prepare TUnknown) (fun provisional ->
                 if Types.equal provisional.body.ty TUnknown then Ok provisional

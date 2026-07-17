@@ -2104,7 +2104,18 @@ let adapt_nullable_callback env expected arg =
         | expected_ty :: expected, actual_ty :: actual, name :: names ->
             let value = typed_ir expected_ty (Semantic_ir.Ident name) in
             let adapted =
-              if has_capability_constraint actual_ty then
+              if Types.equal expected_ty actual_ty then Ok value.semantic_expr
+              else if
+                Types.is_dynamic expected_ty
+                && not (expects_dynamic_value actual_ty)
+              then dynamic_unpack env actual_ty value.semantic_expr
+              else if
+                expects_dynamic_value actual_ty
+                && has_capability_constraint expected_ty
+              then
+                Ok
+                  (constrained_value_expression expected_ty value.semantic_expr)
+              else if has_capability_constraint actual_ty then
                 pack_constrained_value env actual_ty value
               else Ok value.semantic_expr
             in
@@ -7159,6 +7170,8 @@ let create ~compile_expr =
                           | TFn (_, TBool), TFn (_, actual_return)
                             when expects_dynamic_value actual_return ->
                               Ok (adapt_truthy_callback expected argument)
+                          | TFn (_, TNullable _), TFn (_, _) ->
+                              adapt_nullable_callback env expected argument
                           | ( TFn (expected_params, expected_return),
                               TFn (actual_params, actual_return) )
                             when (Types.is_dynamic expected_return
@@ -7168,8 +7181,6 @@ let create ~compile_expr =
                                  || callback_parameters_need_adapter
                                       expected_params actual_params) ->
                               adapt_dynamic_callback env expected argument
-                          | TFn (_, TNullable _), TFn (_, _) ->
-                              adapt_nullable_callback env expected argument
                           | _ -> Ok argument.semantic_expr
                       in
                       let rec prepare_arguments index prepared expected arguments =
@@ -7398,6 +7409,9 @@ let create ~compile_expr =
                                     | TFn (_, TBool), TFn (_, actual_return)
                                       when expects_dynamic_value actual_return ->
                                       Ok (adapt_truthy_callback expected_ty arg)
+                                  | TFn (_, TNullable _), TFn (_, _) ->
+                                      adapt_nullable_callback env expected_ty
+                                        arg
                                   | ( TFn (expected_params, expected_return),
                                       TFn (actual_params, actual_return) )
                                       when (Types.is_dynamic expected_return
@@ -7409,9 +7423,6 @@ let create ~compile_expr =
                                                  expected_params actual_params)
                                     ->
                                       adapt_dynamic_callback env expected_ty arg
-                                  | TFn (_, TNullable _), TFn (_, _) ->
-                                      adapt_nullable_callback env expected_ty
-                                        arg
                                   | _ -> (
                                         if
                                           expects_dynamic_value expected_ty

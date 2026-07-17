@@ -9081,6 +9081,46 @@ let test_protocol_record_reconstruction_keeps_field_type_open () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_parser_alternatives_preserve_open_argument_type () =
+  let source =
+    {|
+(defrecord Placeholder [])
+(defrecord Variable [symbol])
+(defrecord Constant [value])
+
+(defn parse-placeholder [form]
+  (when (= '_ form)
+    (Placeholder.)))
+
+(defn parse-variable [form]
+  (when (and (symbol? form)
+             (= (first (name form)) \?))
+    (Variable. form)))
+
+(defn parse-constant [form]
+  (when-not (and (symbol? form)
+                 (= (first (name form)) \?))
+    (Constant. form)))
+
+(defn parse-pattern-element [form]
+  (or (parse-placeholder form)
+      (parse-variable form)
+      (parse-constant form)))
+
+(println
+  (str (some? (parse-pattern-element '_)) ":"
+       (some? (parse-pattern-element '?name)) ":"
+       (some? (parse-pattern-element 42))))
+|}
+  in
+  let native_source =
+    Lg.Compiler.compile_string ~target:Lg.Target.Native source |> expect_ok
+  in
+  assert_ocaml_runs "parser_alternatives_preserve_open_argument_type"
+    "true:true:true\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_symbol_predicate_narrows_later_and_operands () =
   let source =
     {|
@@ -9143,17 +9183,29 @@ let test_if_let_callback_accepts_optional_and_required_results () =
 (defn parse-required [value]
   (inc value))
 
+(defprotocol Tagged
+  (tagged-value [value]))
+
+(defrecord Parsed [value]
+  Tagged
+  (tagged-value [_] value))
+
+(defn parse-record [value]
+  (when (pos? value)
+    (Parsed. value)))
+
 (println
   (str (count (parse-seq parse-optional [1 2])) ":"
        (count (parse-seq parse-required [1 2])) ":"
-       (nil? (parse-seq parse-optional [1 0]))))
+       (nil? (parse-seq parse-optional [1 0])) ":"
+       (count (parse-seq parse-record [1 2]))))
 |}
   in
   let native_source =
     Lg.Compiler.compile_string ~target:Lg.Target.Native source |> expect_ok
   in
   assert_ocaml_runs "if_let_callback_accepts_optional_and_required_results"
-    "2:2:true\n" native_source;
+    "2:2:true:2\n" native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -9217,6 +9269,28 @@ let test_external_protocol_implementation_prevents_field_misspecialization () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_logical_or_with_throw_preserves_peer_type () =
+  let source =
+    {|
+(defn parse-values [present]
+  (when present [1 2]))
+
+(defn require-values [present]
+  (or
+    (parse-values present)
+    (throw (ex-info "missing values" {}))))
+
+(println (count (require-values true)))
+|}
+  in
+  let native_source =
+    Lg.Compiler.compile_string ~target:Lg.Target.Native source |> expect_ok
+  in
+  assert_ocaml_runs "logical_or_with_throw_preserves_peer_type" "2\n"
+    native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_equality_parameter_widens_across_keyword_and_string () =
   let source =
     {|
@@ -9232,6 +9306,32 @@ let test_equality_parameter_widens_across_keyword_and_string () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "equality_parameter_widens_across_keyword_and_string"
     "true:true:false\n" ocaml_source
+
+let test_contextual_equality_callback_preserves_map_key_type () =
+  let source =
+    {|
+(defn remove-map-entries [key-pred values]
+  (persistent!
+    (reduce-kv
+      (fn [result key value]
+        (if (key-pred key)
+          result
+          (assoc! result key value)))
+      (transient (empty values))
+      values)))
+
+(println
+  (= {:b 2}
+     (remove-map-entries #(= % :a) {:a 1 :b 2})))
+|}
+  in
+  let native_source =
+    Lg.Compiler.compile_string ~target:Lg.Target.Native source |> expect_ok
+  in
+  assert_ocaml_runs "contextual_equality_callback_preserves_map_key_type"
+    "true\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_recursive_deftype_helper_widens_fallback_to_dynamic () =
   let source =
@@ -16336,6 +16436,8 @@ let tests =
       test_symbol_predicate_narrows_dynamic_value_in_then_branch );
     ( "protocol record reconstruction keeps field type open",
       test_protocol_record_reconstruction_keeps_field_type_open );
+    ( "parser alternatives preserve open argument type",
+      test_parser_alternatives_preserve_open_argument_type );
     ( "symbol predicate narrows later and operands",
       test_symbol_predicate_narrows_later_and_operands );
     ( "nested sequential branch destructuring preserves dynamic values",
@@ -16344,8 +16446,12 @@ let tests =
       test_if_let_callback_accepts_optional_and_required_results );
     ( "external protocol implementation prevents field misspecialization",
       test_external_protocol_implementation_prevents_field_misspecialization );
+    ( "logical or with throw preserves peer type",
+      test_logical_or_with_throw_preserves_peer_type );
     ( "equality parameter widens across keyword and string",
       test_equality_parameter_widens_across_keyword_and_string );
+    ( "contextual equality callback preserves map key type",
+      test_contextual_equality_callback_preserves_map_key_type );
     ( "recursive deftype helper widens fallback to dynamic",
       test_recursive_deftype_helper_widens_fallback_to_dynamic );
     ( "vector preserves nullable collection elements",

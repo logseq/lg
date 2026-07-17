@@ -274,8 +274,8 @@ let normalize_prepost_body = function
   | body_forms -> body_forms
 
 let prepare ?(param_type_overrides = []) ?variadic_rest_index
-    ?compile_function_body ~lookup_function_ty ~compile_body scope env params
-    body_forms =
+    ?(materialize_open_equality = false) ?compile_function_body
+    ~lookup_function_ty ~compile_body scope env params body_forms =
   match Macro_expander.expand_all_forms ~scope ~compiler_env:env body_forms with
   | Error _ as error -> error
   | Ok body_forms ->
@@ -318,6 +318,7 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
       in
       match
         Type_inference.infer_params ~explicitly_dynamic_params
+          ~materialize_open_equality
           ~lookup_function_ty
           ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
           ~resolve_named_record

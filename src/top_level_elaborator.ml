@@ -977,7 +977,9 @@ let rec compile scope env next_type = function
               | true, FVector _ ->
                   prepare_inferred_recursive_fn ~ocaml_name scope env name
                     params body_forms
-              | _ -> prepare_fn scope env params body_forms
+              | _ ->
+                  prepare_fn ~materialize_open_equality:true scope env params
+                    body_forms
             in
             match prepared with
             | Error _ as err -> err
@@ -1065,7 +1067,9 @@ let rec compile scope env next_type = function
         | true, FVector _ ->
             prepare_inferred_recursive_fn ~ocaml_name scope env name params
               body_forms
-        | _ -> prepare_fn scope env params body_forms
+        | _ ->
+            prepare_fn ~materialize_open_equality:true scope env params
+              body_forms
       in
       match prepared with
       | Error _ ->
@@ -1608,7 +1612,9 @@ let rec compile scope env next_type = function
       (FSymbol ("defn" | "defn-")
       :: (FSymbol name as name_form)
       :: params :: body_forms) -> (
-      match prepare_fn scope env params body_forms with
+      match
+        prepare_fn ~materialize_open_equality:true scope env params body_forms
+      with
       | Error _ as err -> err
       | Ok parts when unresolved_contextual_type parts.body.ty ->
           Error.error "empty list requires a contextual element type"

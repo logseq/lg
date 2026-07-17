@@ -448,6 +448,12 @@ let inferred_form_type params = function
   | FString _ -> TString
   | FBool _ -> TBool
   | FKeyword _ -> TKeyword
+  | FList
+      [
+        FSymbol ("quote" | "clojure.core/quote");
+        FSymbol _;
+      ] ->
+      TSymbol
   | FSymbol name -> List.assoc_opt name params |> Option.value ~default:TUnknown
   | FList [ FSymbol field_access; FSymbol receiver ]
     when String.starts_with ~prefix:".-" field_access ->
@@ -587,7 +593,8 @@ let rec rewrite_simple_aliases aliases = function
            pairs)
   | form -> form
 
-let infer_params ?(explicitly_dynamic_params = []) ~lookup_function_ty
+let infer_params ?(explicitly_dynamic_params = [])
+    ?(materialize_open_equality = false) ~lookup_function_ty
     ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
     ~resolve_named_record params body_forms =
   let next_type_variable = ref 0 in
@@ -2334,7 +2341,19 @@ let infer_params ?(explicitly_dynamic_params = []) ~lookup_function_ty
                    else ty :: unique)
                  []
           in
+          let has_unresolved_symbol =
+            List.exists
+              (function
+                | FSymbol name -> (
+                    match List.assoc_opt name params with
+                    | Some (TUnknown | TVar _) -> true
+                    | Some _ | None -> false)
+                | _ -> false)
+              args
+          in
           match concrete with
+          | [ _ ] when materialize_open_equality && has_unresolved_symbol ->
+              Types.dynamic_constraint TUnknown
           | [ ty ] -> ty
           | _ :: _ :: _
             when List.exists
