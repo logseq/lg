@@ -44,6 +44,10 @@ let create ~compile_expr ~pack_dynamic_value =
         comparable_type inner
     | _ -> false
   in
+  let nullable_inner = function
+    | TNullable inner | TOcaml_app ("option", [ inner ]) -> Some inner
+    | _ -> None
+  in
     let compile_distinct_question scope env arg_forms =
       match compile_args_for scope env arg_forms with
       | Error _ as err -> err
@@ -81,17 +85,36 @@ let create ~compile_expr ~pack_dynamic_value =
                        [ left; right ]))
                 (pack_dynamic_value env dynamic_ty right))
       | Ok [ left; right ] ->
-          if not (Types.equal left.ty right.ty) then
+          let comparable =
+            match (nullable_inner left.ty, nullable_inner right.ty) with
+            | Some left_inner, None when Types.equal left_inner right.ty ->
+                Some
+                  ( left.semantic_expr,
+                    Semantic_ir.Constructor
+                      ("Some", Some right.semantic_expr),
+                    left_inner )
+            | None, Some right_inner when Types.equal left.ty right_inner ->
+                Some
+                  ( Semantic_ir.Constructor
+                      ("Some", Some left.semantic_expr),
+                    right.semantic_expr,
+                    right_inner )
+            | _ when Types.equal left.ty right.ty ->
+                Some (left.semantic_expr, right.semantic_expr, left.ty)
+            | _ -> None
+          in
+          (match comparable with
+          | None ->
             Error.error
               ("compare arguments must have the same type: "
            ^ Types.source_name left.ty ^ " and " ^ Types.source_name right.ty)
-          else if not (comparable_type left.ty) then
+          | Some (_, _, ty) when not (comparable_type ty) ->
             Error.error "compare expects comparable arguments"
-          else
+          | Some (left, right, _) ->
             Ok
               (typed_ir TInt
                (apply "Stdlib.compare"
-                  [ left.semantic_expr; right.semantic_expr ]))
+                  [ left; right ])))
       | Ok _ -> Error.error "compare expects 2 arguments"
     and compile_key_extreme scope env name arg_forms =
       match arg_forms with

@@ -358,7 +358,7 @@ let rec infer_map_type pattern lookup_local_ty =
   |> Result.map (fun parsed ->
       let fields =
         parsed.field_bindings
-        |> List.map (fun { binding_pattern; keyword; _ } ->
+        |> List.map (fun { binding_pattern; keyword; default_form } ->
                let ty =
                  infer_pattern_type binding_pattern lookup_local_ty
                  |> Result.value ~default:TUnknown
@@ -368,6 +368,11 @@ let rec infer_map_type pattern lookup_local_ty =
                  | Some _, (TUnknown | TVar _) ->
                      Types.dynamic_constraint TUnknown
                  | _ -> ty
+               in
+               let ty =
+                 match default_form with
+                 | Some _ -> TNullable ty
+                 | None -> ty
                in
                make_field keyword ty)
       in
@@ -408,7 +413,41 @@ and infer_pattern_type pattern lookup_local_ty =
   | FVector forms -> infer_sequence_type forms lookup_local_ty
   | _ -> Error.error "unsupported destructuring pattern"
 
-let rec bind_map ~env (target : typed_expr) pairs =
+let compile_default_value compile_default expected form =
+  match compile_default with
+  | Some compile -> compile expected form
+  | None -> literal_default form
+
+let apply_default compile_default default_form (value : typed_expr) =
+  match (default_form, value.ty) with
+  | Some form, (TNullable payload_ty | TOcaml_app ("option", [ payload_ty ])) ->
+      Result.bind
+        (compile_default_value compile_default payload_ty form)
+        (fun default ->
+          let result_ty =
+            Types.instantiate_type ~templates:[ payload_ty ]
+              ~actuals:[ default.ty ] payload_ty
+          in
+          if
+            not
+              (Types.assignable ~policy:Host_boundary ~expected:payload_ty
+                 ~actual:default.ty)
+          then Error.error "map destructuring default has incompatible type"
+          else
+            Ok
+              (typed_ir result_ty
+                 (Semantic_ir.Match
+                    ( value.semantic_expr,
+                      [
+                        ( Semantic_ir.PConstructor
+                            ("Some", Some (Semantic_ir.PVar "default_value")),
+                          Semantic_ir.Ident "default_value" );
+                        ( Semantic_ir.PConstructor ("None", None),
+                          default.semantic_expr );
+                      ] ))))
+  | _ -> Ok value
+
+let rec bind_map ?compile_default ~env (target : typed_expr) pairs =
   match target.ty with
   | TNullable ((TRecord fields | TNamed_record { fields; _ }) as map_ty) -> (
       match parse_map_pattern pairs with
@@ -423,7 +462,8 @@ let rec bind_map ~env (target : typed_expr) pairs =
                 | Some form -> (
                     match literal_default form with
                     | Error _ as err -> err
-                    | Ok value -> bind_pattern ~env value binding_pattern))
+                    | Ok value ->
+                        bind_pattern ?compile_default ~env value binding_pattern))
             | Ok field ->
                 let payload_name = "__lg_nullable_destructure_map" in
                 let payload =
@@ -456,7 +496,9 @@ let rec bind_map ~env (target : typed_expr) pairs =
                              some_value );
                          ] ))
                 in
-                bind_pattern ~env value binding_pattern
+                Result.bind (apply_default compile_default default_form value)
+                  (fun value ->
+                    bind_pattern ?compile_default ~env value binding_pattern)
           in
           let rec bind_fields acc = function
             | [] ->
@@ -487,11 +529,15 @@ let rec bind_map ~env (target : typed_expr) pairs =
                 | Some form -> (
                     match literal_default form with
                     | Error _ as err -> err
-                    | Ok value -> bind_pattern ~env value binding_pattern))
+                    | Ok value ->
+                        bind_pattern ?compile_default ~env value binding_pattern))
             | Ok field ->
-                bind_pattern ~env
-                  (typed_ir field.ty (Structural_map.field_expr target field))
-                  binding_pattern
+                let value =
+                  typed_ir field.ty (Structural_map.field_expr target field)
+                in
+                Result.bind (apply_default compile_default default_form value)
+                  (fun value ->
+                    bind_pattern ?compile_default ~env value binding_pattern)
           in
           let rec bind_fields acc = function
             | [] ->
@@ -536,7 +582,9 @@ let rec bind_map ~env (target : typed_expr) pairs =
                                [ Semantic_ir.String keyword ] );
                          ] ))
                 in
-                match bind_pattern ~env value binding_pattern with
+                match
+                  bind_pattern ?compile_default ~env value binding_pattern
+                with
                 | Error _ as error -> error
                 | Ok bindings -> bind_fields (List.rev_append bindings acc) rest
                 )
@@ -544,7 +592,7 @@ let rec bind_map ~env (target : typed_expr) pairs =
           bind_fields [] parsed.field_bindings)
   | _ -> Error.error "map destructuring expects a map"
 
-and bind_sequence env (target : typed_expr) forms =
+and bind_sequence ?compile_default env (target : typed_expr) forms =
   let item_at inner index =
     let semantic_expr =
       match target.ty with
@@ -563,7 +611,7 @@ and bind_sequence env (target : typed_expr) forms =
   let rec bind_items item_at index acc = function
     | [] -> Ok (List.rev acc)
     | pattern :: rest -> (
-        match bind_pattern ~env (item_at index) pattern with
+        match bind_pattern ?compile_default ~env (item_at index) pattern with
         | Error _ as error -> error
         | Ok bindings ->
             bind_items item_at (index + 1) (List.rev_append bindings acc) rest)
@@ -701,16 +749,16 @@ and bind_sequence env (target : typed_expr) forms =
                   @ [ local_binding name target.ty target.semantic_expr ])
             (bind_items sequence_item_at 0 [] pattern.item_patterns))
 
-and bind_pattern ~env (target : typed_expr) pattern =
+and bind_pattern ?compile_default ~env (target : typed_expr) pattern =
   let bindings =
     match pattern with
   | FSymbol name ->
       if ignore_name name then Ok []
       else Ok [ local_binding name target.ty target.semantic_expr ]
   | FList [ FSymbol "__type-hint"; FSymbol _; pattern ] ->
-      bind_pattern ~env target pattern
-  | FMap pairs -> bind_map ~env target pairs
-  | FVector forms -> bind_sequence env target forms
+      bind_pattern ?compile_default ~env target pattern
+  | FMap pairs -> bind_map ?compile_default ~env target pairs
+  | FVector forms -> bind_sequence ?compile_default env target forms
   | _ -> Error.error "unsupported destructuring pattern"
   in
   Result.map (attach_pattern_identities pattern) bindings

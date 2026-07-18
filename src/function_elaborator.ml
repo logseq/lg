@@ -45,6 +45,11 @@ let record_inference_compatible env ~allow_expected_dynamic expected_fields
                | Some _ -> allow_expected_dynamic
                | None -> false
              in
+             let open_type_compatible =
+               match Type_solver.unify [] expected.ty actual.ty with
+               | Ok _ -> true
+               | Error _ -> false
+             in
              let expected_protocol_compatible =
                match Types.protocol_constraint_info expected.ty with
                | Some (protocol_id, _, _) ->
@@ -59,6 +64,7 @@ let record_inference_compatible env ~allow_expected_dynamic expected_fields
              || (match actual.ty with TUnknown | TVar _ -> true | _ -> false)
              || (match expected.ty with TUnknown | TVar _ -> true | _ -> false)
              || expected_dynamic_compatible
+             || open_type_compatible
              || expected_protocol_compatible
              || expected_seqable_compatible
              || Types.equal expected.ty actual.ty
@@ -256,6 +262,35 @@ let rec contains_open_type = function
   | TBool | TUnit | TNil | TOcaml _ ->
       false
 
+let shared_parameter_variables inferred =
+  inferred
+  |> List.fold_left
+       (fun counts (_name, ty) ->
+         Type_solver.variables ty
+         |> List.fold_left
+              (fun counts variable ->
+                let count = List.assoc_opt variable counts |> Option.value ~default:0 in
+                (variable, count + 1) :: List.remove_assoc variable counts)
+              counts)
+       []
+  |> List.filter_map (fun (variable, count) ->
+         if count > 1 then Some variable else None)
+
+let reconcile_shared_parameter_variables original resolved =
+  let shared = shared_parameter_variables original in
+  let substitutions =
+    List.fold_left2
+      (fun substitutions (_name, template) (_name, actual) ->
+        match Type_solver.unify substitutions template actual with
+        | Ok substitutions -> substitutions
+        | Error _ -> substitutions)
+      [] original resolved
+    |> List.filter (fun (variable, _ty) -> List.mem variable shared)
+  in
+  List.map
+    (fun (name, ty) -> (name, Type_solver.apply substitutions ty))
+    resolved
+
 let rec apply_row_constraint_type row_type_name = function
   | TRecord _ -> TOcaml row_type_name
   | TOcaml_app (name, [ TRecord _; container ])
@@ -345,7 +380,7 @@ let normalize_prepost_body = function
 
 let prepare ?(param_type_overrides = []) ?variadic_rest_index
     ?(materialize_open_equality = false) ?(refine_open_overrides = false)
-    ?compile_function_body
+    ?compile_function_body ?compile_default
     ~lookup_function_ty ~compile_body scope env params body_forms =
   match Macro_expander.expand_all_forms ~scope ~compiler_env:env body_forms with
   | Error _ as error -> error
@@ -429,10 +464,13 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                   TOcaml_app ("option", [ infer_structural_fields fields ])
               | ty -> infer_named_record scope env ty
           in
-          let inferred =
+          let resolved_inferred =
             List.map
                 (fun (name, ty) -> (name, infer_parameter_type name ty))
               inferred
+          in
+          let inferred =
+            reconcile_shared_parameter_variables inferred resolved_inferred
           in
           let lookup_inferred name =
             inferred |> List.assoc_opt name |> Option.value ~default:TUnknown
@@ -535,7 +573,8 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                       if not spec.Destructure.destructured then loop acc rest
                       else
                         match
-                          Destructure.bind_pattern ~env target spec.pattern
+                          Destructure.bind_pattern ?compile_default ~env target
+                            spec.pattern
                         with
                         | Error _ as err -> err
                         | Ok bindings ->

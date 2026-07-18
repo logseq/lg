@@ -100,6 +100,10 @@ let tokenize source =
       | '@' -> loop (i + 1) (token Deref i (i + 1) :: tokens)
       | '#' when i + 1 < String.length source && source.[i + 1] = '_' ->
           loop (i + 2) (token (Symbol "#_") i (i + 2) :: tokens)
+      | '#' when i + 1 < String.length source && source.[i + 1] = '\'' ->
+          let value, next = read_atom source (i + 2) in
+          if value = "" then Error.error "var quote expects a symbol"
+          else loop next (token (Symbol value) i next :: tokens)
       | '#' when i + 1 < String.length source && source.[i + 1] = '(' ->
           loop (i + 2) (token Anon_lparen i (i + 2) :: tokens)
       | ')' -> loop (i + 1) (token Rparen i (i + 1) :: tokens)
@@ -127,6 +131,7 @@ let tokenize source =
             | "true", _ -> Ok (Bool true)
             | "false", _ -> Ok (Bool false)
             | "nil", _ -> Ok (Symbol atom)
+            | ("##Inf" | "##-Inf" | "##NaN"), _ -> Ok (Float atom)
             | _, Some value -> Ok (Int value)
             | _ -> (
                 match char_of_atom atom with

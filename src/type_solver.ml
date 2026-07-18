@@ -234,6 +234,9 @@ let rec unify substitutions left right =
     | TSet left, TSet right
     | TSeq left, TSeq right ->
         unify substitutions left right
+    | TNullable left, TOcaml_app ("option", [ right ])
+    | TOcaml_app ("option", [ left ]), TNullable right ->
+        unify substitutions left right
     | TOcaml_app (left_name, left_args), TOcaml_app (right_name, right_args)
       when left_name = right_name && List.length left_args = List.length right_args
       ->

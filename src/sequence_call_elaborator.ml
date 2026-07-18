@@ -85,8 +85,14 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
             (Types.binding ocaml_name (TFn (parameter_tys, TUnknown)))
             env
     in
+    let compile_default expected form =
+      compile_expr scope
+        (Env.with_expected_type (Some expected) function_env)
+        form
+    in
     Function_elaborator.prepare ~refine_open_overrides ~param_type_overrides
-      ~lookup_function_ty ~compile_body scope function_env params body_forms
+      ~compile_default ~lookup_function_ty ~compile_body scope function_env params
+      body_forms
     |> Result.map Function_elaborator.fn_code
     |> fun result ->
     Result.bind result (fun function_ ->
@@ -1020,37 +1026,25 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
     and compile_map_indexed scope env arg_forms =
       match arg_forms with
     | [ fn_form; collection_form ] -> (
-        match
-          ( compile_function_arg scope env fn_form,
-            compile_expr scope env collection_form )
-        with
-          | (Error _ as err), _ -> err
-          | _, (Error _ as err) -> err
-          | Ok fn, Ok collection -> (
-            match (fn.ty, collection_to_list_expr env collection) with
-            | TFn ([ TInt; item_ty ], ret), Ok (inner, list_expr)
-              when Types.equal item_ty inner ->
-                  Ok
-                    (typed_ir (TList ret)
-                       (apply "List.mapi"
-                        [
-                          Semantic_ir.Fun
-                            ( [
-                                Semantic_ir.PVar "index"; Semantic_ir.PVar "item";
-                              ],
-                                Semantic_ir.Apply
-                                  ( fn.semantic_expr,
-                                  [
-                                    Semantic_ir.Ident "index";
-                                    Semantic_ir.Ident "item";
-                                  ] ) );
-                          list_expr;
-                        ]))
-            | TFn _, Ok _ ->
-                Error.error
-                  "map-indexed function type does not match collection"
-              | _, Ok _ -> Error.error "map-indexed expects a function"
-              | _, Error _ -> Error.error "map-indexed expects a collection"))
+        match compile_expr scope env collection_form with
+        | Error _ as error -> error
+        | Ok collection -> (
+            match Collection_capability.to_seq_expr env collection with
+            | Error _ -> Error.error "map-indexed expects a collection"
+            | Ok (inner, sequence) -> (
+                match compile_function_arg scope env fn_form with
+                | Error _ as error -> error
+                | Ok { ty = TFn ([ TInt; item_ty ], ret); semantic_expr; _ }
+                  when Types.assignable ~policy:Host_boundary ~expected:item_ty
+                         ~actual:inner ->
+                    Ok
+                      (typed_ir (TSeq ret)
+                         (apply "Lg_runtime.Runtime_seq.mapi"
+                            [ semantic_expr; sequence ]))
+                | Ok { ty = TFn _; _ } ->
+                    Error.error
+                      "map-indexed function type does not match collection"
+                | Ok _ -> Error.error "map-indexed expects a function")))
       | _ -> Error.error "map-indexed expects function and collection"
     and compile_filterv scope env arg_forms =
       match arg_forms with
@@ -1203,39 +1197,26 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                     compile_function_arg_for_collection scope env inner fn_form
                   with
                   | Error _ as error -> error
-                  | Ok ({ ty = TFn ([ param_ty ], ret); _ } as fn)
-                  when Types.assignable ~policy:Host_boundary ~expected:param_ty
-                         ~actual:inner ->
-                      let mapper =
-                        if Types.is_dynamic param_ty
-                           && not (Types.is_dynamic inner)
-                        then
-                          let item_name = "__lg_mapv_dynamic_item" in
-                          let item = typed_ir inner (Semantic_ir.Ident item_name) in
-                          Result.map
-                            (fun packed_item ->
-                              Semantic_ir.Fun
-                                ( [ Semantic_ir.PVar item_name ],
-                                  Semantic_ir.Apply
-                                    (fn.semantic_expr, [ packed_item ]) ))
-                            (pack_dynamic_value env param_ty item)
-                        else Ok fn.semantic_expr
-                      in
-                      Result.map
-                        (fun mapper ->
-                          typed_ir (TVector ret)
-                            (apply "Rrbvec.of_list"
-                               [
-                                 apply "List.of_seq"
-                                   [
-                                     apply "Lg_runtime.Runtime_seq.map"
-                                       [ mapper; sequence ];
-                                   ];
-                               ]))
-                        mapper
-                  | Ok { ty = TFn _; _ } ->
-                    Error.error "mapv function type does not match collection"
-                  | Ok _ -> Error.error "mapv expects a function")))
+                  | Ok fn ->
+                      Result.bind (adapt_unary_function env inner fn) (fun fn ->
+                          match fn.ty with
+                          | TFn ([ param_ty ], ret)
+                            when Types.assignable ~policy:Host_boundary
+                                   ~expected:param_ty ~actual:inner ->
+                              Ok
+                                (typed_ir (TVector ret)
+                                   (apply "Rrbvec.of_list"
+                                      [
+                                        apply "List.of_seq"
+                                          [
+                                            apply "Lg_runtime.Runtime_seq.map"
+                                              [ fn.semantic_expr; sequence ];
+                                          ];
+                                      ]))
+                          | TFn _ ->
+                              Error.error
+                                "mapv function type does not match collection"
+                          | _ -> Error.error "mapv expects a function"))))
     | fn_form :: (_ :: _ :: _ as collection_forms) ->
         compile_multi_map scope env ~vector:true fn_form collection_forms
       | _ -> Error.error "mapv expects function and collection"

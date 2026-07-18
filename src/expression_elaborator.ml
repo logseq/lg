@@ -47,6 +47,11 @@ let rec compile_expr scope (env : Env.t) form =
 
 and compile_expr_unlocated scope (env : Env.t) = function
   | FInt value -> Ok (typed_ir TInt (Semantic_ir.Int value))
+  | FFloat "##Inf" ->
+      Ok (typed_ir TFloat (Semantic_ir.Ident "Float.infinity"))
+  | FFloat "##-Inf" ->
+      Ok (typed_ir TFloat (Semantic_ir.Ident "Float.neg_infinity"))
+  | FFloat "##NaN" -> Ok (typed_ir TFloat (Semantic_ir.Ident "Float.nan"))
   | FFloat value -> Ok (typed_ir TFloat (Semantic_ir.Float value))
   | FChar value -> Ok (typed_ir TChar (Semantic_ir.Char value))
   | FString value -> Ok (typed_ir TString (Semantic_ir.String value))
@@ -755,9 +760,54 @@ and prepare_fn ?(param_type_overrides = []) ?variadic_rest_index
             compile_loop_tail_body scope body_env target_name param_tys forms)
   in
   let prepare param_type_overrides =
+    let compile_default expected form =
+      let adapt actual =
+        Result.map
+          (fun semantic_expr -> typed_ir expected semantic_expr)
+          (Call_elaborator.adapt_value_to_type env expected actual)
+      in
+      match (expected, form) with
+      | TFn (parameter_tys, return_ty), FSymbol function_name ->
+          let parameter_names =
+            List.mapi
+              (fun index _ -> "__lg_default_arg_" ^ string_of_int index)
+              parameter_tys
+          in
+          let function_env =
+            List.fold_left2
+              (fun function_env name ty ->
+                Env.add (Names.scoped_key scope name) (Types.binding name ty)
+                  function_env)
+              env parameter_names parameter_tys
+          in
+          let call =
+            FList
+              (FSymbol function_name
+              :: List.map (fun name -> FSymbol name) parameter_names)
+          in
+          Result.bind (compile_expr scope function_env call) (fun body ->
+              let return_ty =
+                Types.instantiate_type ~templates:[ return_ty ]
+                  ~actuals:[ body.ty ] return_ty
+              in
+              let function_ty = TFn (parameter_tys, return_ty) in
+              Result.map
+                (fun body ->
+                  typed_ir function_ty
+                    (Semantic_ir.Fun
+                       ( List.map
+                           (fun name -> Semantic_ir.PVar name)
+                           parameter_names,
+                         body )))
+                (Call_elaborator.adapt_value_to_type env return_ty body))
+      | _ ->
+          Result.bind
+            (compile_expr scope (Env.with_expected_type (Some expected) env) form)
+            adapt
+    in
     Function_elaborator.prepare ~param_type_overrides ?variadic_rest_index
       ~materialize_open_equality ?compile_function_body ~lookup_function_ty
-      ~compile_body scope env params body_forms
+      ~compile_default ~compile_body scope env params body_forms
   in
   Result.bind (prepare param_type_overrides) (fun parts ->
       let record_values = Option.value parts.body.record_values ~default:[] in
@@ -1339,6 +1389,19 @@ and fn_code ?(row_param_type_names = []) parts =
   Function_elaborator.fn_code ~row_param_type_names parts
 
 and compile_fn ?(param_type_overrides = []) scope env params body_forms =
+  let expected_type = Env.expected_type env in
+  let param_type_overrides =
+    if param_type_overrides <> [] then param_type_overrides
+    else
+      match (expected_type, Destructure.parse_param_specs params) with
+      | Some (TFn (parameter_tys, _)), Ok specs
+        when List.length parameter_tys = List.length specs ->
+          List.map
+            (function TUnknown | TVar _ -> None | ty -> Some ty)
+            parameter_tys
+      | _ -> []
+  in
+  let env = Env.with_expected_type None env in
   match prepare_fn ~param_type_overrides scope env params body_forms with
   | Error _ as err -> err
   | Ok parts when unresolved_contextual_type parts.body.ty ->

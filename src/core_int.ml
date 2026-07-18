@@ -1,16 +1,28 @@
 open Types
 
-let accepts_int ty =
-  Types.assignable ~policy:Host_boundary ~expected:TInt ~actual:ty
+let rec accepts_int ty =
+  match ty with
+  | TNullable inner | TOcaml_app ("option", [ inner ]) -> accepts_int inner
+  | ty -> Types.assignable ~policy:Host_boundary ~expected:TInt ~actual:ty
 
 let int value = Semantic_ir.Int value
 
-let int_expression arg =
-  if Types.is_dynamic arg.ty then
-    Semantic_ir.Apply
-      ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.as_int",
-        [ arg.semantic_expr ] )
-  else arg.semantic_expr
+let rec int_expression arg =
+  match arg.ty with
+  | TNullable inner | TOcaml_app ("option", [ inner ]) ->
+      int_expression
+        {
+          arg with
+          ty = inner;
+          semantic_expr =
+            Semantic_ir.Apply
+              (Semantic_ir.Ident "Option.get", [ arg.semantic_expr ]);
+        }
+  | ty when Types.is_dynamic ty ->
+      Semantic_ir.Apply
+        ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.as_int",
+          [ arg.semantic_expr ] )
+  | _ -> arg.semantic_expr
 
 let fold_infix operator first rest =
   List.fold_left

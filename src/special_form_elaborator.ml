@@ -1140,6 +1140,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
         | [ _ ] -> Error.error "cond requires test/expression pairs"
         | [ FKeyword ":else"; else_form ] -> Ok (List.rev acc, else_form)
         | FKeyword ":else" :: _ -> Error.error "cond :else must be last"
+        | FBool true :: value_form :: _ -> Ok (List.rev acc, value_form)
         | test_form :: value_form :: rest ->
             loop ((test_form, value_form) :: acc) rest
       in
@@ -2477,7 +2478,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
           List.assoc_opt name inferred |> Option.value ~default:TUnknown
       | Error _ -> TUnknown
     in
-    let expected_value_env env pattern _value_form rest =
+    let expected_value_env env pattern rest =
       match pattern with
       | FSymbol name -> (
           let inferred = inferred_binding_type env name rest in
@@ -2532,7 +2533,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
                       })
             | pattern :: value_form :: rest -> (
                 let value_env =
-                  expected_value_env env pattern value_form rest
+                  expected_value_env env pattern rest
                 in
                 let value =
                   match (pattern, value_form) with

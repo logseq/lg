@@ -552,7 +552,11 @@ let coerce_expression_to_type ?(stored = false) target_ty source_ty expression =
                 ] );
           }
   | target_ty, (TNullable source_ty | TOcaml_app ("option", [ source_ty ]))
-    when (match target_ty with TRecord _ | TNamed_record _ -> true | _ -> false)
+    when (match target_ty with
+         | TRecord _ | TNamed_record _ | TArray _
+         | TOcaml_app ("array", [ _ ]) ->
+             true
+         | _ -> false)
          && Types.assignable ~policy:Host_boundary ~expected:target_ty
               ~actual:source_ty ->
       Semantic_ir.Apply (Semantic_ir.Ident "Option.get", [ expression ])

@@ -45,6 +45,12 @@ let vector_count vector =
   ensure_active vector.active;
   List.length vector.reversed
 
+let vector_nth vector index =
+  ensure_active vector.active;
+  let reversed_index = List.length vector.reversed - index - 1 in
+  if reversed_index < 0 then invalid_arg "nth index out of bounds"
+  else List.nth vector.reversed reversed_index
+
 let vector_add vector value =
   ensure_active vector.active;
   vector.reversed <- value :: vector.reversed;

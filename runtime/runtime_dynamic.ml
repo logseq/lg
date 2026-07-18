@@ -58,6 +58,17 @@ let with_nominal tag payload value =
 let with_assoc value associative = { value with associative = Some associative }
 
 let nominal value = value.nominal
+
+let unpack_nominal expected_tag value =
+  let constructor_id tag =
+    Obj.Extension_constructor.(id (of_val tag))
+  in
+  match value.nominal with
+  | Some (Nominal (actual_tag, payload))
+    when constructor_id actual_tag = constructor_id expected_tag ->
+      Some (Obj.repr payload)
+  | Some _ | None -> None
+
 let nil = make Nil
 let int value = make (Int value)
 let float value = make (Float value)
@@ -197,6 +208,18 @@ let rec equal left right =
 let equal_arguments = function
   | [] | [ _ ] -> true
   | first :: rest -> List.for_all (equal first) rest
+
+let numeric_equal left right =
+  match (left.payload, right.payload) with
+  | Int left, Int right -> left = right
+  | Float left, Float right -> left = right
+  | Int left, Float right -> float_of_int left = right
+  | Float left, Int right -> left = float_of_int right
+  | _ -> false
+
+let numeric_equal_arguments = function
+  | [] | [ _ ] -> true
+  | first :: rest -> List.for_all (numeric_equal first) rest
 
 let equality_function = function_ (fun arguments -> bool (equal_arguments arguments))
 
@@ -553,6 +576,16 @@ let contains value key =
 let entries value =
   match value.payload with
   | Map entries -> entries
+  | _ -> invalid_arg "dynamic value is not a map"
+
+let map_without_keys value keys =
+  match value.payload with
+  | Map entries ->
+      entries
+      |> List.filter (fun (key, _) ->
+             not (List.exists (equal key) keys))
+      |> map
+  | Nil -> map []
   | _ -> invalid_arg "dynamic value is not a map"
 
 let empty value =

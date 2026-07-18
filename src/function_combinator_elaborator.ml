@@ -32,14 +32,28 @@ let compile_args_for compile_expr scope env arg_forms =
 
 let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
   let compile_args_for = compile_args_for compile_expr in
+  let rec require_callable_value expression =
+    match expression.ty with
+    | TNullable inner | TOcaml_app ("option", [ inner ]) ->
+        require_callable_value
+          {
+            expression with
+            ty = inner;
+            semantic_expr =
+              apply "Option.get" [ expression.semantic_expr ];
+          }
+    | _ -> expression
+  in
   let collection_to_list_expr env collection =
     Collection_capability.to_seq_expr env collection
     |> Result.map (fun (element_type, sequence) ->
         (element_type, apply "List.of_seq" [ sequence ]))
   in
   let compile_function_arg scope env = function
-    | FSymbol name -> lookup_function scope env name
-    | form -> compile_expr scope env form
+    | FSymbol name ->
+        lookup_function scope env name |> Result.map require_callable_value
+    | form ->
+        compile_expr scope env form |> Result.map require_callable_value
   in
   let rec overloaded_projection expression index =
     if index = 0 then apply "fst" [ expression ]

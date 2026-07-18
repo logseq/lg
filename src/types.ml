@@ -887,7 +887,59 @@ let instantiate_type_fields ~templates ~actuals ty =
           infer_type_substitutions substitutions ~template ~actual)
         [] templates actuals
     in
-    substitute_type_variables substitutions ty
+    let instantiated = substitute_type_variables substitutions ty in
+    let rec refine_open_type template actual =
+      match (template, actual) with
+      | (TUnknown | TVar _), actual -> actual
+      | TNullable template, TNullable actual ->
+          TNullable (refine_open_type template actual)
+      | TNullable template, TOcaml_app ("option", [ actual ]) ->
+          TNullable (refine_open_type template actual)
+      | TOcaml_app ("option", [ template ]), TNullable actual
+      | TOcaml_app ("option", [ template ]),
+        TOcaml_app ("option", [ actual ]) ->
+          TOcaml_app ("option", [ refine_open_type template actual ])
+      | TArray template, TArray actual ->
+          TArray (refine_open_type template actual)
+      | TRef template, TRef actual -> TRef (refine_open_type template actual)
+      | TList template, TList actual ->
+          TList (refine_open_type template actual)
+      | TVector template, TVector actual ->
+          TVector (refine_open_type template actual)
+      | TSet template, TSet actual -> TSet (refine_open_type template actual)
+      | TSeq template, TSeq actual -> TSeq (refine_open_type template actual)
+      | TOcaml_app (name, templates), TOcaml_app (actual_name, actuals)
+        when name = actual_name && List.length templates = List.length actuals ->
+          TOcaml_app (name, List.map2 refine_open_type templates actuals)
+      | template, _ -> template
+    in
+    match instantiated with
+    | TNamed_record record ->
+        let rec refine_fields refined templates actuals = function
+          | [] -> List.rev refined
+          | field :: fields when is_record_extension_field field ->
+              refine_fields (field :: refined) templates actuals fields
+          | (field : field) :: fields -> (
+              match (templates, actuals) with
+              | template :: templates, actual :: actuals ->
+                  let template = substitute_type_variables substitutions template in
+                  let actual = substitute_type_variables substitutions actual in
+                  let field =
+                    {
+                      field with
+                      ty = refine_open_type template actual;
+                    }
+                  in
+                  refine_fields (field :: refined) templates actuals fields
+              | [], [] -> List.rev_append refined (field :: fields)
+              | _ -> List.rev_append refined (field :: fields))
+        in
+        TNamed_record
+          {
+            record with
+            fields = refine_fields [] templates actuals record.fields;
+          }
+    | ty -> ty
 
 let instantiate_receiver_method_type receiver_ty method_ty =
   let rec specialize_return value_ty = function
