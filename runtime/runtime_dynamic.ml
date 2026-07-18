@@ -470,6 +470,21 @@ let dissoc value key =
            entries)
   | _ -> invalid_arg "dynamic value is not associative"
 
+let select_keys value keys =
+  match value.payload with
+  | Map entries ->
+      Seq.fold_left
+        (fun selected key ->
+          match
+            List.find_opt
+              (fun (existing_key, _) -> equal key existing_key)
+              entries
+          with
+          | Some (_, selected_value) -> assoc selected key selected_value
+          | None -> selected)
+        (map []) keys
+  | _ -> invalid_arg "select-keys expects a map"
+
 let vals value =
   match value.payload with
   | Map entries ->

@@ -511,6 +511,35 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   (pack_dynamic_value env inner value)
           | TVector _ ->
               Error.error "conj value type must match vector element type"
+            | TSet (TUnknown | TVar _) when Types.is_dynamic value.ty -> (
+                match pack_plain_dynamic_value collection with
+                | Some collection ->
+                    Ok
+                      (typed_ir (Types.dynamic_constraint TUnknown)
+                         (Semantic_ir.Apply
+                            ( Semantic_ir.Ident
+                                "Lg_runtime.Runtime_dynamic.conj",
+                              [ collection; value.semantic_expr ] )))
+                | None ->
+                    Error.error
+                      "cannot materialize unresolved set at dynamic boundary")
+            | TSet (TUnknown | TVar _) ->
+                let value_ty = value.ty in
+                Result.bind (Types.set_module_name value_ty) (fun set_module ->
+                    Result.map
+                      (fun value ->
+                        typed_ir (TSet value_ty)
+                          (Semantic_ir.Apply
+                             ( Semantic_ir.Ident (set_module ^ ".of_list"),
+                               [
+                                 Semantic_ir.Cons
+                                   ( value,
+                                     Semantic_ir.Apply
+                                       ( Semantic_ir.Ident
+                                           "Lg_runtime.Runtime_poly_set.elements",
+                                         [ collection.semantic_expr ] ) );
+                               ] )))
+                      (coerce_set_element value_ty value))
             | TSet inner when Types.same_shape inner value.ty ->
                 Result.bind (Types.set_module_name inner) (fun set_module ->
                        coerce_set_element inner value
@@ -2258,25 +2287,89 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
           "update expects collection, key/index, function, and optional \
            arguments"
     and compile_select_keys scope env arg_forms =
+      let parse_keywords key_forms =
+        let rec parse acc = function
+          | [] -> Ok (List.rev acc)
+          | FKeyword keyword :: rest -> parse (keyword :: acc) rest
+          | _ -> Error.error "select-keys expects a vector of keywords"
+        in
+        parse [] key_forms
+      in
+      let adapt_key_sequence key_ty actual_ty sequence =
+        if Types.is_dynamic key_ty && Types.is_dynamic actual_ty then
+          Ok sequence
+        else if Types.is_dynamic key_ty then
+          let item_name = "__lg_select_keys_item" in
+          let item = typed_ir actual_ty (Semantic_ir.Ident item_name) in
+          Result.map
+            (fun item ->
+              apply "Lg_runtime.Runtime_seq.map"
+                [ Semantic_ir.Fun ([ Semantic_ir.PVar item_name ], item); sequence ])
+            (pack_dynamic_value env key_ty item)
+        else if Types.is_dynamic actual_ty then
+          let item_name = "__lg_select_keys_dynamic_item" in
+          Result.map
+            (fun item ->
+              apply "Lg_runtime.Runtime_seq.map"
+                [ Semantic_ir.Fun ([ Semantic_ir.PVar item_name ], item); sequence ])
+            (dynamic_unpack env key_ty (Semantic_ir.Ident item_name))
+        else if Result.is_ok (Type_solver.unify [] key_ty actual_ty) then
+          Ok sequence
+        else Error.error "select-keys key type must match map key type"
+      in
       match arg_forms with
-      | [ target_form; FVector key_forms ] -> (
-          let rec parse_keywords acc = function
-            | [] -> Ok (List.rev acc)
-            | FKeyword keyword :: rest -> parse_keywords (keyword :: acc) rest
-            | _ -> Error.error "select-keys expects a vector of keywords"
-          in
-        match
-          (compile_expr scope env target_form, parse_keywords [] key_forms)
-        with
-          | (Error _ as err), _ -> err
-          | _, (Error _ as err) -> err
-          | Ok target, Ok keywords -> (
-              match target.ty with
-              | TRecord fields | TNamed_record { fields; _ } ->
-                  Structural_map.select_keys target fields keywords
-              | _ -> Error.error "select-keys expects a map"))
-      | [ _; _ ] -> Error.error "select-keys expects a vector of keywords"
-      | _ -> Error.error "select-keys expects map and key vector"
+      | [ target_form; keys_form ] -> (
+          match compile_expr scope env target_form with
+          | Error _ as error -> error
+          | Ok target -> (
+              match (target.ty, keys_form) with
+              | (TRecord fields | TNamed_record { fields; _ }), FVector key_forms
+                ->
+                  Result.bind (parse_keywords key_forms) (fun keywords ->
+                      Structural_map.select_keys target fields keywords)
+              | (TRecord _ | TNamed_record _), _ ->
+                  Error.error "select-keys expects a vector of keywords"
+              | target_ty, _ -> (
+                  match Types.dynamic_map_types target_ty with
+                  | None when Types.is_dynamic target_ty -> (
+                      match compile_expr scope env keys_form with
+                      | Error _ as error -> error
+                      | Ok keys -> (
+                          match Collection_capability.to_seq_expr env keys with
+                          | Error _ ->
+                              Error.error
+                                "select-keys expects a Seqable key collection"
+                          | Ok (actual_ty, sequence) ->
+                              Result.map
+                                (fun sequence ->
+                                  typed_ir target_ty
+                                    (apply
+                                       "Lg_runtime.Runtime_dynamic.select_keys"
+                                       [ target.semantic_expr; sequence ]))
+                                (adapt_key_sequence
+                                   (Types.dynamic_constraint TUnknown)
+                                   actual_ty sequence)))
+                  | None -> Error.error "select-keys expects a map"
+                  | Some (key_ty, _value_ty) -> (
+                      match compile_expr scope env keys_form with
+                      | Error _ as error -> error
+                      | Ok keys -> (
+                          match Collection_capability.to_seq_expr env keys with
+                          | Error _ ->
+                              Error.error
+                                "select-keys expects a Seqable key collection"
+                          | Ok (actual_ty, sequence) ->
+                              Result.map
+                                (fun sequence ->
+                                  typed_ir target_ty
+                                    (apply
+                                       (if Types.is_dynamic key_ty then
+                                          "Lg_runtime.Runtime_map.select_keys_dynamic"
+                                        else
+                                          "Lg_runtime.Runtime_map.select_keys")
+                                       [ target.semantic_expr; sequence ]))
+                                (adapt_key_sequence key_ty actual_ty sequence))))))
+      | _ -> Error.error "select-keys expects map and key collection"
     and compile_contains scope env arg_forms =
       let compile_dynamic_set_contains target element_ty candidate =
         let scalar_conversion =

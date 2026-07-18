@@ -13571,6 +13571,110 @@ let test_concat_specializes_unknown_elements_from_static_prefix () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_conditional_conj_specializes_empty_sets_from_guarded_values () =
+  let source =
+    {|
+(defn selected-symbols [pattern]
+  (let [[entity _ _ tx] pattern]
+    (cond-> #{}
+      (symbol? entity) (conj entity)
+      (symbol? tx) (conj tx))))
+(def both (selected-symbols ['?e :attr 1 '?tx]))
+(def one (selected-symbols ['?e :attr 1 99]))
+(def none (selected-symbols [10 :attr 1 99]))
+(println
+  (str (count both) ":" (contains? both '?e) ":" (contains? both '?tx)))
+(println
+  (str (count one) ":" (contains? one '?e) ":" (contains? one '?tx)))
+(println (count none))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "conditional_conj_specializes_empty_sets_from_guarded_values"
+    "2:true:true\n1:true:false\n0\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_conditional_conj_localizes_dynamic_sets_for_custom_guards () =
+  let source =
+    {|
+(defn free-var? [value] (symbol? value))
+(defn selected-vars [pattern]
+  (let [[entity _ _ tx] pattern]
+    (cond-> #{}
+      (free-var? entity) (conj entity)
+      (free-var? tx) (conj tx))))
+(def both (selected-vars ['?e :attr 1 '?tx]))
+(def one (selected-vars ['?e :attr 1 99]))
+(def none (selected-vars [10 :attr 1 99]))
+(println
+  (str (count both) ":" (contains? both '?e) ":" (contains? both '?tx)))
+(println
+  (str (count one) ":" (contains? one '?e) ":" (contains? one '?tx)))
+(println (count none))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "conditional_conj_localizes_dynamic_sets_for_custom_guards"
+    "2:true:true\n1:true:false\n0\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_select_keys_accepts_runtime_seqable_key_collections () =
+  let source =
+    {|
+(def attrs (zipmap ['?e '?a '?v] [1 2 3]))
+(def selected (select-keys attrs #{'?v '?missing '?e}))
+(def listed (select-keys attrs (list '?a '?missing)))
+(def empty-selection (select-keys attrs #{}))
+(def dynamic-selection (select-keys {'?e 1 '?a 2} (list '?a '?missing)))
+(println
+  (str (count selected) ":" (get selected '?e) ":" (get selected '?v)
+       ":" (contains? selected '?a)))
+(println (str (count listed) ":" (get listed '?a)))
+(println (count empty-selection))
+(println (str (count dynamic-selection) ":" (get dynamic-selection '?a)))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "select_keys_accepts_runtime_seqable_key_collections"
+    "2:1:3:false\n1:2\n0\n1:2\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  Lg.Compiler.compile_string
+    {|(def bad (select-keys (zipmap ['?e] [1]) [1]))|}
+  |> expect_error_contains "select-keys"
+
+let test_select_keys_infers_generic_runtime_map_record_fields () =
+  let source =
+    {|
+(defn select-attrs [item keys]
+  (select-keys (:attrs item) keys))
+(defn limit-item [item keys]
+  (when-some [selected (not-empty (select-keys (:attrs item) keys))]
+    (assoc item :attrs selected)))
+(def item {:attrs (zipmap ['?e '?a] [1 2])})
+(def selected (select-attrs item #{'?a '?missing}))
+(def empty-selection (select-attrs item #{}))
+(def limited (limit-item item #{'?a}))
+(def absent (limit-item item #{}))
+(println
+  (str (count selected) ":" (get selected '?a) ":"
+       (contains? selected '?e)))
+(println (count empty-selection))
+(println
+  (str (if-some [present limited] (get (:attrs present) '?a) 0)
+       ":" (nil? absent)))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "select_keys_infers_generic_runtime_map_record_fields"
+    "1:2:false\n0\n2:true\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_clojure_truthiness_in_conditions () =
   let source =
     {|
@@ -20445,6 +20549,14 @@ let tests =
       test_remove_specializes_nested_predicate_type_variables );
     ( "concat specializes unknown elements from static prefix",
       test_concat_specializes_unknown_elements_from_static_prefix );
+    ( "conditional conj specializes empty sets from guarded values",
+      test_conditional_conj_specializes_empty_sets_from_guarded_values );
+    ( "conditional conj localizes dynamic sets for custom guards",
+      test_conditional_conj_localizes_dynamic_sets_for_custom_guards );
+    ( "select-keys accepts runtime Seqable key collections",
+      test_select_keys_accepts_runtime_seqable_key_collections );
+    ( "select-keys infers generic runtime map record fields",
+      test_select_keys_infers_generic_runtime_map_record_fields );
     ( "Clojure truthiness works in conditions",
       test_clojure_truthiness_in_conditions );
     ( "and/or return values and short-circuit",

@@ -199,6 +199,8 @@ let rec merge_branch_types left right =
         Option.map (fun inner -> TList inner) (merge_branch_types left right)
     | TVector left, TVector right ->
         Option.map (fun inner -> TVector inner) (merge_branch_types left right)
+    | TSet left, TSet right ->
+        Option.map (fun inner -> TSet inner) (merge_branch_types left right)
     | TSeq left, TSeq right ->
         Option.map (fun inner -> TSeq inner) (merge_branch_types left right)
     | (TList _ | TVector _ | TSeq _), (TList _ | TVector _ | TSeq _) ->
@@ -360,6 +362,32 @@ and pack_plain_dynamic_value_impl value =
                       [ mapper; value.semantic_expr ] );
                 ])
         (pack_plain_dynamic_value item)
+  | TSet element_ty -> (
+      match Types.set_module_name element_ty with
+      | Error _ -> None
+      | Ok set_module ->
+          let item_name = "__lg_plain_dynamic_set_item" in
+          let item = typed_ir element_ty (Semantic_ir.Ident item_name) in
+          Option.map
+            (fun packed_item ->
+              runtime "set"
+                [
+                  Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.map",
+                      [
+                        Semantic_ir.Fun
+                          ([ Semantic_ir.PVar item_name ], packed_item);
+                        Semantic_ir.Apply
+                          ( Semantic_ir.Ident
+                              "Lg_runtime.Runtime_seq.of_list",
+                            [
+                              Semantic_ir.Apply
+                                ( Semantic_ir.Ident (set_module ^ ".elements"),
+                                  [ value.semantic_expr ] );
+                            ] );
+                      ] );
+                ])
+            (pack_plain_dynamic_value item))
   | TOcaml_app ("Lg_runtime.Runtime_map.t", [ key_ty; value_ty ]) ->
           let key_name = "__lg_plain_dynamic_map_key" in
           let value_name = "__lg_plain_dynamic_map_value" in
@@ -471,6 +499,18 @@ let coerce_expression_to_type ?(stored = false) target_ty source_ty expression =
             [ Semantic_ir.Fun ([ Semantic_ir.PVar item_name ], packed); sequence ] )
       else if Types.same_shape target_inner source_inner then sequence
       else sequence
+  | TSet target_inner, TSet (TUnknown | TVar _) -> (
+      match Types.set_module_name target_inner with
+      | Ok set_module ->
+          Semantic_ir.Apply
+            ( Semantic_ir.Ident (set_module ^ ".of_list"),
+              [
+                Semantic_ir.Apply
+                  ( Semantic_ir.Ident
+                      "Lg_runtime.Runtime_poly_set.elements",
+                    [ expression ] );
+              ] )
+      | Error _ -> expression)
   | TVector element_ty, source_ty when Types.is_dynamic source_ty ->
       let dynamic name arguments =
         Semantic_ir.Apply

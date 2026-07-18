@@ -356,13 +356,13 @@ let add_record_field_constraint name keyword field_ty params =
     | Some field when Types.equal field.ty field_ty -> Ok fields
     | Some field -> (
         match (field.ty, field_ty) with
-        | TUnknown, field_ty ->
+        | (TUnknown | TVar _), field_ty ->
             Ok
               (make_field keyword field_ty
               :: List.filter
                    (fun candidate -> candidate.keyword <> keyword)
                    fields)
-        | _, TUnknown -> Ok fields
+        | _, (TUnknown | TVar _) -> Ok fields
         | TRef TUnknown, TRef value_ty ->
             Ok
               (make_field keyword (TRef value_ty)
@@ -2606,6 +2606,23 @@ let infer_params ?(explicitly_dynamic_params = [])
               |> Option.value ~default:(fresh_type_variable "equality")
         in
         infer_expected_all expected_ty params args
+    | FList
+        [
+          FSymbol "select-keys";
+          FList [ FKeyword keyword; FSymbol record ];
+          FSymbol keys;
+        ] ->
+        let key_ty = fresh_type_variable "select_keys_key" in
+        let value_ty = fresh_type_variable "select_keys_value" in
+        Result.bind (constrain_seqable key_ty params keys) (fun params ->
+            add_record_field_constraint record keyword
+              (Types.dynamic_map key_ty value_ty)
+              params)
+    | FList [ FSymbol "select-keys"; FSymbol target; FSymbol keys ] ->
+        let key_ty = fresh_type_variable "select_keys_key" in
+        let value_ty = fresh_type_variable "select_keys_value" in
+        Result.bind (constrain_seqable key_ty params keys) (fun params ->
+            constrain_symbol (Types.dynamic_map key_ty value_ty) params target)
     | FList
         [ FKeyword nested_keyword; FList [ FKeyword keyword; FSymbol name ] ] ->
         add_record_field_constraint name keyword

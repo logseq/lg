@@ -67,6 +67,19 @@ let find_dynamic map key =
     (fun (existing_key, _) -> Runtime_dynamic.compare key existing_key = 0)
     map
 
+let select_keys_by find assoc map keys =
+  Seq.fold_left
+    (fun selected key ->
+      match find map key with
+      | Some (existing_key, value) -> assoc selected existing_key value
+      | None -> selected)
+    empty keys
+
+let select_keys map keys = select_keys_by find assoc map keys
+
+let select_keys_dynamic map keys =
+  select_keys_by find_dynamic assoc_dynamic map keys
+
 let count = List.length
 
 let first_exn = function
