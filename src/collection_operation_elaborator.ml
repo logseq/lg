@@ -64,6 +64,20 @@ let rec dynamicize_unknown = function
       TFn (List.map dynamicize_unknown parameters, dynamicize_unknown return_ty)
   | ty -> ty
 
+let runtime_map_operation key_ty operation =
+  "Lg_runtime.Runtime_map." ^ operation
+  ^
+  if
+    Types.is_dynamic key_ty || Types.equal key_ty TUnknown
+    || match key_ty with TVar _ -> true | _ -> false
+  then "_dynamic"
+  else ""
+
+let runtime_map_key_type declared actual =
+  if Types.is_dynamic declared || Types.is_dynamic actual then
+    Types.dynamic_constraint TUnknown
+  else declared
+
 let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
   let compile_args_for = compile_args_for compile_expr in
   let pack_dynamic_scalar value =
@@ -818,7 +832,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   in
                   Ok
                     (typed_ir (TNullable value_ty)
-                       (apply "Lg_runtime.Runtime_map.get_option"
+                       (apply (runtime_map_operation key_ty "get_option")
                         [ target.semantic_expr; key ]))
               | ty when is_ocaml_owned_type ty ->
                   Ok
@@ -996,7 +1010,10 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                       Result.map
                         (fun key ->
                           typed_ir (TNullable value_ty)
-                            (apply "Lg_runtime.Runtime_map.get_option"
+                            (apply
+                               (runtime_map_operation
+                                  (runtime_map_key_type key_ty index.ty)
+                                  "get_option")
                                [ target.semantic_expr; key ]))
                         key
                   | None
@@ -1056,17 +1073,17 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                       | None -> Ok default))
               | _ -> (
                   match Types.dynamic_map_types target.ty with
-                | Some (_key_ty, value_ty) when default_form = FSymbol "nil" ->
+                  | Some (key_ty, value_ty) when default_form = FSymbol "nil" ->
                       Ok
                         (typed_ir (TNullable value_ty)
-                           (apply "Lg_runtime.Runtime_map.get_option"
+                           (apply (runtime_map_operation key_ty "get_option")
                             [ target.semantic_expr; Semantic_ir.String keyword ]))
-                  | Some (_key_ty, value_ty)
+                  | Some (key_ty, value_ty)
                   when Types.assignable ~policy:Host_boundary ~expected:value_ty
                          ~actual:default.ty ->
                       Ok
                         (typed_ir value_ty
-                           (apply "Lg_runtime.Runtime_map.get_default"
+                           (apply (runtime_map_operation key_ty "get_default")
                             [
                               target.semantic_expr;
                                 Semantic_ir.String keyword;
@@ -1122,7 +1139,10 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                               ~expected:key_ty ~actual:index.ty ->
                       Ok
                         (typed_ir (TNullable value_ty)
-                           (apply "Lg_runtime.Runtime_map.get_option"
+                           (apply
+                              (runtime_map_operation
+                                 (runtime_map_key_type key_ty index.ty)
+                                 "get_option")
                               [ target.semantic_expr; index.semantic_expr ]))
                   | Some (key_ty, value_ty)
                     when Types.assignable ~policy:Host_boundary ~expected:key_ty
@@ -1131,7 +1151,10 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                               ~expected:value_ty ~actual:default.ty ->
                       Ok
                         (typed_ir value_ty
-                           (apply "Lg_runtime.Runtime_map.get_default"
+                           (apply
+                              (runtime_map_operation
+                                 (runtime_map_key_type key_ty index.ty)
+                                 "get_default")
                             [
                               target.semantic_expr;
                                 index.semantic_expr;
@@ -1170,7 +1193,10 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
               Ok
                 (typed_ir
                    (TOcaml_app ("option", [ TTuple [ key_ty; value_ty ] ]))
-                   (apply "Lg_runtime.Runtime_map.find"
+                   (apply
+                      (runtime_map_operation
+                         (runtime_map_key_type key_ty key.ty)
+                         "find")
                       [ target.semantic_expr; key.semantic_expr ]))
           | None
             when Types.equal target.ty TUnknown
@@ -1473,7 +1499,10 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                         let expression =
                           List.fold_left
                             (fun map (key, value) ->
-                              apply "Lg_runtime.Runtime_map.assoc"
+                              apply
+                                (runtime_map_operation
+                                   (runtime_map_key_type key_ty key.ty)
+                                   "assoc")
                                 [ map; key.semantic_expr; value.semantic_expr ])
                             map pairs
                         in
@@ -1514,10 +1543,14 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                       | Error _ as err -> err
                       | Ok [] -> assert false
                       | Ok ((first_key, first_value) :: _ as pairs) ->
-                          let expression =
-                            List.fold_left
+                      let key_ty, _ = Option.get (Types.dynamic_map_types target_ty) in
+                      let expression =
+                          List.fold_left
                               (fun map (key, value) ->
-                                apply "Lg_runtime.Runtime_map.assoc"
+                                apply
+                                  (runtime_map_operation
+                                     (runtime_map_key_type key_ty key.ty)
+                                     "assoc")
                                   [ map; key.semantic_expr; value.semantic_expr ])
                               target.semantic_expr pairs
                           in
@@ -1575,12 +1608,19 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                 when Option.is_some (Types.dynamic_map_types target_ty)
                      || Types.equal target_ty TUnknown
                    || match target_ty with TVar _ -> true | _ -> false ->
+                  let key_ty, _ =
+                    Option.value (Types.dynamic_map_types target_ty)
+                      ~default:(TUnknown, TUnknown)
+                  in
                   Result.map
                     (fun keys ->
                       typed_ir target.ty
                         (List.fold_left
                            (fun map key ->
-                             apply "Lg_runtime.Runtime_map.dissoc"
+                             apply
+                               (runtime_map_operation
+                                  (runtime_map_key_type key_ty key.ty)
+                                  "dissoc")
                                [ map; key.semantic_expr ])
                            target.semantic_expr keys))
                     (compile_args_for scope env key_forms)
@@ -2112,7 +2152,10 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                 Ok
                   (typed_ir TBool
                      (Semantic_ir.Apply
-                        ( Semantic_ir.Ident "Lg_runtime.Runtime_map.mem",
+                        ( Semantic_ir.Ident
+                            (runtime_map_operation
+                               (runtime_map_key_type key_ty value.ty)
+                               "mem"),
                           [ target.semantic_expr; value.semantic_expr ] )))
             | None
               when Types.equal target_ty TUnknown

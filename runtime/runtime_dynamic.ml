@@ -10,6 +10,7 @@ type t = {
   metadata : t option;
   type_name : string option;
   nominal : nominal option;
+  associative : (t -> t -> t) option;
 }
 
 and payload =
@@ -38,12 +39,23 @@ let protocol id methods = { id; methods }
 
 let make ?sequence ?(sequential = false) ?(protocols = []) ?metadata ?type_name
     payload =
-  { payload; sequence; sequential; protocols; metadata; type_name; nominal = None }
+  {
+    payload;
+    sequence;
+    sequential;
+    protocols;
+    metadata;
+    type_name;
+    nominal = None;
+    associative = None;
+  }
 
 let with_protocols value protocols = { value with protocols }
 let with_metadata value metadata = { value with metadata = Some metadata }
 let with_nominal tag payload value =
   { value with nominal = Some (Nominal (tag, payload)) }
+
+let with_assoc value associative = { value with associative = Some associative }
 
 let nominal value = value.nominal
 let nil = make Nil
@@ -186,7 +198,32 @@ let equality_function = function_ (fun arguments -> bool (equal_arguments argume
 let inequality_function =
   function_ (fun arguments -> bool (not (equal_arguments arguments)))
 
-let rec compare left right =
+let payload_rank = function
+  | Nil -> 0
+  | Int _ | Float _ -> 1
+  | Char _ -> 2
+  | String _ -> 3
+  | Symbol _ -> 4
+  | Keyword _ -> 5
+  | Bool _ -> 6
+  | Array _ -> 7
+  | List | Vector | Seq -> 8
+  | Set _ -> 9
+  | Map _ -> 10
+  | Function _ -> 11
+  | Reference _ -> 12
+  | Opaque _ -> 13
+
+let rec compare_sequences left right =
+  match (Seq.uncons left, Seq.uncons right) with
+  | None, None -> 0
+  | None, Some _ -> -1
+  | Some _, None -> 1
+  | Some (left, left_rest), Some (right, right_rest) ->
+      let result = compare left right in
+      if result = 0 then compare_sequences left_rest right_rest else result
+
+and compare left right =
   match (left.payload, right.payload) with
   | Nil, Nil -> 0
   | Nil, _ -> -1
@@ -211,7 +248,11 @@ let rec compare left right =
           if result = 0 then compare_at (index + 1) else result
       in
       compare_at 0
-  | _ -> invalid_arg "dynamic values are not comparable"
+  | (List | Vector | Seq), (List | Vector | Seq) ->
+      compare_sequences (to_seq left) (to_seq right)
+  | _ ->
+      let rank = Int.compare (payload_rank left.payload) (payload_rank right.payload) in
+      if rank <> 0 then rank else invalid_arg "dynamic values are not comparable"
 
 let unary_function name fn =
   function_ (function
@@ -380,6 +421,9 @@ let conj collection value =
   | _ -> invalid_arg "dynamic conj expects a collection"
 
 let assoc value key replacement =
+  match value.associative with
+  | Some associative -> associative key replacement
+  | None -> (
   match value.payload with
   | Nil -> map [ (key, replacement) ]
   | Vector ->
@@ -398,7 +442,7 @@ let assoc value key replacement =
         | entry :: rest -> replace (entry :: acc) rest
       in
       map (replace [] entries)
-  | _ -> invalid_arg "dynamic value is not associative"
+  | _ -> invalid_arg "dynamic value is not associative")
 
 let merge values =
   let merge_one result value =

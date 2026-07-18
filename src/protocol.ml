@@ -220,6 +220,41 @@ let witness_methods env protocol_id receiver_ty =
         (Protocol_registry.Method_map.bindings declaration.methods)
   | None, _ | _, None -> None
 
+let witness_implemented_methods env protocol_id receiver_ty =
+  match
+    ( Protocol_registry.find_protocol protocol_id (Env.protocols env),
+      registry_receiver_id receiver_ty )
+  with
+  | Some (declaration : Protocol_registry.declaration), Some receiver_id ->
+      let methods =
+        declaration.methods
+        |> Protocol_registry.Method_map.bindings
+        |> List.filter_map (fun (method_id, signature) ->
+               Protocol_registry.find_implementation protocol_id method_id
+                 receiver_id (Env.protocols env)
+               |> Option.map (fun implementation ->
+                      ( Method_id.name method_id,
+                        implementation
+                        |> instantiate_receiver_binding receiver_ty
+                        |> apply_method_signature signature )))
+      in
+      if methods = [] then None else Some methods
+  | None, _ | _, None -> None
+
+let implemented_protocols env receiver_ty =
+  Protocol_registry.declarations (Env.protocols env)
+  |> List.filter_map (fun (protocol_id, _) ->
+         let compiler_protocol =
+           List.mem (Protocol_id.name protocol_id)
+             [ "Seqable"; "Reducible"; "Counted"; "Indexed"; "Emptyable" ]
+         in
+         if
+           (not compiler_protocol)
+           && Option.is_some
+                (witness_implemented_methods env protocol_id receiver_ty)
+         then Some protocol_id
+         else None)
+
 let lookup_marker scope env method_name =
   let registry = Env.protocols env in
   let marker_for protocol_id method_name =

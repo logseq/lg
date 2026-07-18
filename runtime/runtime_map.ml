@@ -2,35 +2,58 @@ type ('key, 'value) t = ('key * 'value) list
 
 let empty = []
 
-let assoc map key value =
+let assoc_by compare map key value =
   let rec insert acc = function
     | [] -> List.rev ((key, value) :: acc)
     | ((existing_key, _) as entry) :: rest ->
-        let comparison = Stdlib.compare key existing_key in
+        let comparison = compare key existing_key in
         if comparison = 0 then List.rev_append acc ((key, value) :: rest)
         else if comparison < 0 then List.rev_append acc ((key, value) :: entry :: rest)
         else insert (entry :: acc) rest
   in
   insert [] map
 
-let dissoc map key =
-  List.filter (fun (existing_key, _) -> Stdlib.compare key existing_key <> 0) map
+let assoc map key value = assoc_by Stdlib.compare map key value
+let assoc_dynamic map key value = assoc_by Runtime_dynamic.compare map key value
 
-let get_option map key =
+let dissoc_by compare map key =
+  List.filter (fun (existing_key, _) -> compare key existing_key <> 0) map
+
+let dissoc map key = dissoc_by Stdlib.compare map key
+let dissoc_dynamic map key = dissoc_by Runtime_dynamic.compare map key
+
+let get_option_by compare map key =
   map
-  |> List.find_opt (fun (existing_key, _) -> Stdlib.compare key existing_key = 0)
+  |> List.find_opt (fun (existing_key, _) -> compare key existing_key = 0)
   |> Option.map snd
+
+let get_option map key = get_option_by Stdlib.compare map key
+
+let get_option_dynamic map key =
+  get_option_by Runtime_dynamic.compare map key
 
 let get_default map key default =
   match get_option map key with Some value -> value | None -> default
 
+let get_default_dynamic map key default =
+  match get_option_dynamic map key with Some value -> value | None -> default
+
 let get_option_default map key default =
   match get_option map key with Some value -> Some value | None -> default
 
+let get_option_default_dynamic map key default =
+  match get_option_dynamic map key with Some value -> Some value | None -> default
+
 let mem map key = Option.is_some (get_option map key)
+let mem_dynamic map key = Option.is_some (get_option_dynamic map key)
 
 let find map key =
   List.find_opt (fun (existing_key, _) -> Stdlib.compare key existing_key = 0) map
+
+let find_dynamic map key =
+  List.find_opt
+    (fun (existing_key, _) -> Runtime_dynamic.compare key existing_key = 0)
+    map
 
 let count = List.length
 

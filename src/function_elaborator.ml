@@ -397,9 +397,41 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
       with
       | Error _ as err -> err
       | Ok inferred -> (
+          let destructured_sources =
+            specs
+            |> List.filter_map (fun (spec : Destructure.param_spec) ->
+                   if spec.destructured then Some spec.source_name else None)
+          in
+          let infer_structural_fields fields =
+            TRecord
+              (List.map
+                 (fun (field : field) ->
+                   {
+                     field with
+                     ty = infer_named_record scope env field.ty;
+                   })
+                 fields)
+          in
+          let infer_parameter_type name ty =
+            if List.mem name destructured_sources then
+              match ty with
+              | TRecord fields -> infer_structural_fields fields
+              | TNullable (TRecord fields) ->
+                  TNullable (infer_structural_fields fields)
+              | TOcaml_app ("option", [ TRecord fields ]) ->
+                  TOcaml_app ("option", [ infer_structural_fields fields ])
+              | ty -> infer_named_record scope env ty
+            else
+              match ty with
+              | TNullable (TRecord fields) ->
+                  TNullable (infer_structural_fields fields)
+              | TOcaml_app ("option", [ TRecord fields ]) ->
+                  TOcaml_app ("option", [ infer_structural_fields fields ])
+              | ty -> infer_named_record scope env ty
+          in
           let inferred =
             List.map
-                (fun (name, ty) -> (name, infer_named_record scope env ty))
+                (fun (name, ty) -> (name, infer_parameter_type name ty))
               inferred
           in
           let lookup_inferred name =

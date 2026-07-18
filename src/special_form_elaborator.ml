@@ -277,6 +277,9 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
         map_vector source_inner
           (adapt_vector_element env target_inner source_inner)
           branch.semantic_expr
+    | target, source
+      when Types.is_dynamic target && not (Types.is_dynamic source) ->
+        pack_dynamic_value env target branch
     | _ ->
         Ok
           (if Types.equal branch.ty TUnknown then branch.semantic_expr
@@ -284,14 +287,15 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
              coerce_expression_to_type result_ty branch.ty
                branch.semantic_expr)
   in
-  let rec contains_vector_result = function
+  let rec requires_branch_adaptation = function
+    | ty when Types.is_dynamic ty -> true
     | TVector _ -> true
     | TNullable inner | TOcaml_app ("option", [ inner ]) ->
-        contains_vector_result inner
+        requires_branch_adaptation inner
     | _ -> false
   in
   let adapt_merged_branches env result_ty left left_code right right_code =
-    if contains_vector_result result_ty then
+    if requires_branch_adaptation result_ty then
       match
         ( adapt_branch_expression env result_ty left,
           adapt_branch_expression env result_ty right )
@@ -941,7 +945,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
         | Error _ as err -> err
             | Ok condition_code -> (
             match merge_branch_expressions then_expr else_expr with
-            | Some (result_ty, _, _) when contains_vector_result result_ty -> (
+            | Some (result_ty, _, _)
+              when requires_branch_adaptation result_ty -> (
                 match
                   ( adapt_branch_expression env result_ty then_expr,
                     adapt_branch_expression env result_ty else_expr )

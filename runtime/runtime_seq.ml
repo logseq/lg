@@ -132,6 +132,12 @@ let last sequence =
   | Seq.Nil -> invalid_arg "last of empty sequence"
   | Seq.Cons (value, rest) -> Seq.fold_left (fun _ value -> value) value rest
 
+let last_opt sequence =
+  match sequence () with
+  | Seq.Nil -> None
+  | Seq.Cons (value, rest) ->
+      Some (Seq.fold_left (fun _ value -> value) value rest)
+
 let is_empty sequence =
   match sequence () with Seq.Nil -> true | Seq.Cons _ -> false
 

@@ -466,35 +466,57 @@ let last_expr env collection =
       let last_index length =
         Semantic_ir.Infix ("-", length, Semantic_ir.Int 1)
       in
-      let expression =
-        match collection.ty with
-        | TList _ | TOcaml_app ("list", [ _ ]) ->
-            apply "List.hd" [ apply "List.rev" [ collection.semantic_expr ] ]
-        | TVector _ ->
-            apply "Option.get"
-              [ apply "Rrbvec.peek_back" [ collection.semantic_expr ] ]
-        | TSet element -> (
-            match Types.set_module_name element with
-            | Ok set_module ->
-                apply (set_module ^ ".max_elt") [ collection.semantic_expr ]
-            | Error _ -> apply "Lg_runtime.Runtime_seq.last" [ sequence ])
-        | TArray _ | TOcaml_app ("array", [ _ ]) ->
-            apply "Array.get"
-              [
-                collection.semantic_expr;
-                last_index (apply "Array.length" [ collection.semantic_expr ]);
-              ]
-        | TString ->
-            apply "String.get"
-              [
-                collection.semantic_expr;
-                last_index (apply "String.length" [ collection.semantic_expr ]);
-              ]
-        | TSeq _ | TOcaml_app (("Seq.t" | "Seq"), [ _ ]) ->
-            apply "Lg_runtime.Runtime_seq.last" [ collection.semantic_expr ]
-        | _ -> apply "Lg_runtime.Runtime_seq.last" [ sequence ]
-      in
-      Ok (typed_ir inner expression)
+      if Types.is_dynamic inner then
+        let item_name = "__lg_last_dynamic_item" in
+        Ok
+          (typed_ir inner
+             (Semantic_ir.Match
+                ( apply "Lg_runtime.Runtime_seq.last_opt" [ sequence ],
+                  [
+                    ( Semantic_ir.PConstructor ("None", None),
+                      Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.nil" );
+                    ( Semantic_ir.PConstructor
+                        ("Some", Some (Semantic_ir.PVar item_name)),
+                      Semantic_ir.Ident item_name );
+                  ] )))
+      else
+        let optional expression =
+          Semantic_ir.Constructor ("Some", Some expression)
+        in
+        let expression =
+          match collection.ty with
+          | TList _ | TOcaml_app ("list", [ _ ]) ->
+              apply "Lg_runtime.Runtime_seq.last_opt" [ sequence ]
+          | TVector _ -> apply "Rrbvec.peek_back" [ collection.semantic_expr ]
+          | TSet element -> (
+              match Types.set_module_name element with
+              | Ok set_module ->
+                  apply (set_module ^ ".max_elt_opt")
+                    [ collection.semantic_expr ]
+              | Error _ ->
+                  apply "Lg_runtime.Runtime_seq.last_opt" [ sequence ])
+          | TArray _ | TOcaml_app ("array", [ _ ]) ->
+              let length = apply "Array.length" [ collection.semantic_expr ] in
+              Semantic_ir.If
+                ( Semantic_ir.Infix ("=", length, Semantic_ir.Int 0),
+                  Semantic_ir.Constructor ("None", None),
+                  optional
+                    (apply "Array.get"
+                       [ collection.semantic_expr; last_index length ]) )
+          | TString ->
+              let length = apply "String.length" [ collection.semantic_expr ] in
+              Semantic_ir.If
+                ( Semantic_ir.Infix ("=", length, Semantic_ir.Int 0),
+                  Semantic_ir.Constructor ("None", None),
+                  optional
+                    (apply "String.get"
+                       [ collection.semantic_expr; last_index length ]) )
+          | TSeq _ | TOcaml_app (("Seq.t" | "Seq"), [ _ ]) ->
+              apply "Lg_runtime.Runtime_seq.last_opt"
+                [ collection.semantic_expr ]
+          | _ -> apply "Lg_runtime.Runtime_seq.last_opt" [ sequence ]
+        in
+        Ok (typed_ir (TNullable inner) expression)
 
 let nth_expr env collection index =
   let protocols = Compiler_environment.protocols env in

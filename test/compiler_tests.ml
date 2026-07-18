@@ -2681,6 +2681,102 @@ let test_forward_declared_functions_work_as_collection_callbacks () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_conditional_records_pack_opaque_fields_at_dynamic_boundary () =
+  let source =
+    {|
+(declare attrs-frame)
+(defrecord ResultFrame [value])
+(defrecord AttrsFrame [^:transient-map acc value])
+(defn ref-frame [flag]
+  (if flag
+    (ResultFrame. 1)
+    (attrs-frame 2)))
+(defn attrs-frame [value]
+  (AttrsFrame. (transient {}) value))
+(println
+  (str (instance? ResultFrame (ref-frame true)) ":"
+       (instance? AttrsFrame (ref-frame false))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "conditional_records_pack_opaque_fields_at_dynamic_boundary"
+    "true:true\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_dynamic_nominal_records_preserve_nested_nominal_fields () =
+  let source =
+    {|
+(defrecord Inner [^:transient-map data])
+(defrecord Outer [^Inner inner])
+(defn nested-is-inner? [^:dynamic value]
+  (instance? Inner (:inner value)))
+(println (nested-is-inner? (Outer. (Inner. (transient {})))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "dynamic_nominal_records_preserve_nested_nominal_fields"
+    "true\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_dynamic_vector_literal_packs_anonymous_record_elements_directly () =
+  let source =
+    {|
+(defn accept [^:dynamic value] (count value))
+(println (accept [{:_friend [:db/id]}]))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "dynamic_vector_literal_packs_anonymous_record_elements_directly" "1\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_equality_packs_vectors_with_nested_dynamic_elements () =
+  let source =
+    {|
+(def actual (mapv :name [{:name "Ivan"} {}]))
+(println (= ["Ivan" nil] actual))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "equality_packs_vectors_with_nested_dynamic_elements"
+    "true\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_destructured_row_parameter_stays_structural () =
+  let source =
+    {|
+(defrecord Context [db visitor])
+(defn read-visitor
+  ([] (read-visitor nil))
+  ([{:keys [visitor]}] visitor))
+(defn pass-opts [opts] (read-visitor opts))
+|}
+  in
+  let state = typecheck_state source in
+  (match Lg.Compiler_environment.find_opt "pass-opts" state.env with
+  | Some
+      {
+        ty =
+          Lg.Types.TFn
+            ([ Lg.Types.TNullable (Lg.Types.TRecord fields) ], _);
+        _;
+      }
+    when Option.is_some (Lg.Types.find_field ":visitor" fields) ->
+      ()
+  | Some binding ->
+      failwith
+        ("destructured row became " ^ Lg.Types.source_name binding.ty)
+  | None -> failwith "missing pass-opts binding");
+  ignore (Lg.Compiler.compile_string source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_forward_declared_multi_arity_functions_initialize_lazily () =
   let source =
     {|
@@ -6073,6 +6169,154 @@ let test_recursive_protocol_frame_stacks_preserve_dispatch_witnesses () =
     ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_dynamic_values_preserve_partial_protocol_implementations () =
+  let source =
+    {|
+(defprotocol IFrame
+  (-merge [this result])
+  (-run [this]))
+(defrecord RunFrame []
+  IFrame
+  (-run [_] 42))
+(defn run-dynamic [^:dynamic frame]
+  (-run frame))
+(println (run-dynamic (RunFrame.)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "dynamic_values_preserve_partial_protocol_implementations"
+    "42\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_dynamic_protocol_results_preserve_dispatch_witnesses () =
+  let source =
+    {|
+(defprotocol IFrame
+  (-next [this] :dynamic)
+  (-value [this]))
+(defrecord Frame [^int value]
+  IFrame
+  (-next [_] (Frame. (inc value)))
+  (-value [_] value))
+(defn next-dynamic [^:dynamic frame]
+  (-next frame))
+(defn value-dynamic [^:dynamic frame]
+  (-value frame))
+(println (value-dynamic (next-dynamic (Frame. 41))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "dynamic_protocol_results_preserve_dispatch_witnesses"
+    "42\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_dynamic_record_assoc_preserves_updated_nominal_value () =
+  let source =
+    {|
+(defrecord PullAttr [name default])
+(defn add-default [^:dynamic attr]
+  (assoc attr :default "fallback"))
+(defn read-default [^PullAttr attr]
+  (:default attr))
+(println (read-default (add-default (PullAttr. :missing nil))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "dynamic_record_assoc_preserves_updated_nominal_value"
+    "fallback\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_dynamic_boundaries_preserve_next_nil_semantics () =
+  let source =
+    {|
+(defn nil-dynamic? [^:dynamic value]
+  (nil? value))
+(defn tail [values]
+  (next values))
+(defn nullable-dynamic-loop [flag]
+  (loop [current (if flag nil (if true (list 1) [1]))]
+    (if flag
+      (nil? current)
+      (recur current))))
+(println (nil-dynamic? (next [1])))
+(println (nil-dynamic? (next [1 2])))
+(println (nil-dynamic? (tail [1])))
+(println (nil-dynamic? (tail (list 1))))
+(println
+  (loop [remaining (if true (list 1) [1])
+         step 0]
+    (if (= step 1)
+      (nil? remaining)
+      (recur (next remaining) 1))))
+(println (nullable-dynamic-loop true))
+(println
+  (loop [remaining (if true (seq []) nil)
+         step 0]
+    (if (= step 1)
+      (nil? remaining)
+      (recur (tail remaining) 1))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "dynamic_boundaries_preserve_next_nil_semantics"
+    "true\nfalse\ntrue\ntrue\ntrue\ntrue\ntrue\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_typed_maps_compare_dynamic_vector_keys_structurally () =
+  let source =
+    {|
+(deftype Cache [^clojure.lang.Associative entries])
+(defn put-entry [^Cache cache key value]
+  (Cache. (assoc (.-entries cache) key value)))
+(defn get-entry [^Cache cache key]
+  (get (.-entries cache) key))
+(def first-key (if true [:name :tags] (list :name)))
+(def second-key (if true [[:missing :default "fallback"]] (list :missing)))
+(def cache
+  (put-entry (put-entry (Cache. {}) first-key 1) second-key 2))
+(println (get-entry cache first-key))
+(println (get-entry cache second-key))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "typed_maps_compare_dynamic_vector_keys_structurally"
+    "1\n2\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_direct_val_at_uses_dynamic_map_comparator () =
+  let source =
+    {|
+(deftype Cache [^clojure.lang.Associative entries]
+  clojure.lang.ILookup
+  (valAt [_ key] (.valAt entries key))
+  (valAt [_ key not-found] (.valAt entries key not-found)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if
+    not
+      (string_contains_substring ocaml_source
+         "Lg_runtime.Runtime_map.get_option_dynamic")
+  then failwith "direct valAt should use the dynamic map comparator";
+  if
+    not
+      (string_contains_substring ocaml_source
+         "Lg_runtime.Runtime_map.get_option_default_dynamic")
+  then failwith "direct valAt with a default should use the dynamic map comparator";
+  let melange_source =
+    Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if
+    not
+      (string_contains_substring melange_source
+         "Lg_runtime.Runtime_map.get_option_dynamic")
+  then failwith "Melange direct valAt should use the dynamic map comparator"
 
 let test_recursive_protocol_vectors_materialize_optional_unknown_elements () =
   let source =
@@ -9763,6 +10007,22 @@ let test_additional_sequence_helpers_work () =
   assert_ocaml_runs "additional_sequence_helpers_work"
     "(2 3 4):(3 4):(4):1:[3 4]:(2):1:5:[4 3 2 1]:true:true:(1 3 6 10)\n"
     ocaml_source
+
+let test_last_returns_nil_for_empty_collections () =
+  let source =
+    {|
+(println (nil? (last (list))))
+(println (nil? (last [])))
+(println (nil? (last (seq []))))
+(println (last (list 1 2 3)))
+(println (last [4 5 6]))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "last_returns_nil_for_empty_collections"
+    "true\ntrue\ntrue\n3\n6\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_rseq_dispatches_to_reversible_protocol () =
   let source =
@@ -18047,6 +18307,16 @@ let tests =
       test_map_vector_preserves_heterogeneous_vectors );
     ( "forward-declared functions work as collection callbacks",
       test_forward_declared_functions_work_as_collection_callbacks );
+    ( "conditional records pack opaque fields at dynamic boundary",
+      test_conditional_records_pack_opaque_fields_at_dynamic_boundary );
+    ( "dynamic nominal records preserve nested nominal fields",
+      test_dynamic_nominal_records_preserve_nested_nominal_fields );
+    ( "dynamic vector literals pack anonymous record elements directly",
+      test_dynamic_vector_literal_packs_anonymous_record_elements_directly );
+    ( "equality packs vectors with nested dynamic elements",
+      test_equality_packs_vectors_with_nested_dynamic_elements );
+    ( "destructured row parameters stay structural",
+      test_destructured_row_parameter_stays_structural );
     ( "forward-declared multi-arity functions initialize lazily",
       test_forward_declared_multi_arity_functions_initialize_lazily );
     ( "fnil wraps core conj with default collection",
@@ -18480,6 +18750,18 @@ let tests =
       test_recursive_protocol_vectors_keep_static_protocol_elements );
     ( "recursive protocol frame stacks preserve dispatch witnesses",
       test_recursive_protocol_frame_stacks_preserve_dispatch_witnesses );
+    ( "dynamic values preserve partial protocol implementations",
+      test_dynamic_values_preserve_partial_protocol_implementations );
+    ( "dynamic protocol results preserve dispatch witnesses",
+      test_dynamic_protocol_results_preserve_dispatch_witnesses );
+    ( "dynamic record assoc preserves updated nominal value",
+      test_dynamic_record_assoc_preserves_updated_nominal_value );
+    ( "dynamic boundaries preserve next nil semantics",
+      test_dynamic_boundaries_preserve_next_nil_semantics );
+    ( "typed maps compare dynamic vector keys structurally",
+      test_typed_maps_compare_dynamic_vector_keys_structurally );
+    ( "direct valAt uses dynamic map comparator",
+      test_direct_val_at_uses_dynamic_map_comparator );
     ( "recursive protocol vectors materialize optional unknown elements",
       test_recursive_protocol_vectors_materialize_optional_unknown_elements );
     ( "loop protocol vectors widen heterogeneous elements locally",
@@ -18900,6 +19182,8 @@ let tests =
     ( "interleave requires two collections",
       test_interleave_requires_two_collections );
     ("additional sequence helpers work", test_additional_sequence_helpers_work);
+    ( "last returns nil for empty collections",
+      test_last_returns_nil_for_empty_collections );
     ( "rseq dispatches to reversible protocol",
       test_rseq_dispatches_to_reversible_protocol );
     ( "deftype protocol methods support multiple arities",

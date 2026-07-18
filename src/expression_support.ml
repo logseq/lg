@@ -223,6 +223,29 @@ and pack_plain_dynamic_value_impl value =
          || Option.is_some (Types.seqable_constraint_info ty) ->
       pack_plain_dynamic_value_impl
         { value with ty = Types.constraint_value_type ty }
+  | TOcaml_app (name, [ element_ty ]) when name = Types.next_seq_type_name ->
+      let sequence_name = "__lg_plain_dynamic_next_sequence" in
+      let item_name = "__lg_plain_dynamic_next_item" in
+      let item = typed_ir element_ty (Semantic_ir.Ident item_name) in
+      Option.map
+        (fun packed_item ->
+          let sequence = Semantic_ir.Ident sequence_name in
+          Semantic_ir.Let
+            ( [ (Semantic_ir.PVar sequence_name, value.semantic_expr) ],
+              Semantic_ir.If
+                ( Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.is_empty",
+                      [ sequence ] ),
+                  Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.nil",
+                  runtime "seq"
+                    [ Semantic_ir.Apply
+                        ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.map",
+                          [ Semantic_ir.Fun
+                              ([ Semantic_ir.PVar item_name ], packed_item);
+                            sequence;
+                          ] );
+                    ] ) ))
+        (pack_plain_dynamic_value item)
   | TNullable payload_ty | TOcaml_app ("option", [ payload_ty ]) ->
       let payload_name = "__lg_plain_dynamic_optional_value" in
       let payload = typed_ir payload_ty (Semantic_ir.Ident payload_name) in
@@ -441,6 +464,10 @@ let coerce_expression_to_type ?(stored = false) target_ty source_ty expression =
          && Types.assignable ~policy:Host_boundary ~expected:target_ty
               ~actual:source_ty ->
       Semantic_ir.Apply (Semantic_ir.Ident "Option.get", [ expression ])
+  | ( (TNullable target | TOcaml_app ("option", [ target ])),
+      (TNullable source | TOcaml_app ("option", [ source ])) )
+    when Types.is_dynamic target && Types.is_dynamic source ->
+      expression
   | target_ty, source_ty
     when Types.is_dynamic target_ty && not (Types.is_dynamic source_ty) ->
       pack_plain_dynamic_value (typed_ir source_ty expression)
@@ -460,8 +487,27 @@ let coerce_expression_to_type ?(stored = false) target_ty source_ty expression =
               Semantic_ir.Constructor ("None", None) );
             ( Semantic_ir.PConstructor
                 ("Some", Some (Semantic_ir.PVar value_name)),
-              Semantic_ir.Constructor ("Some", Some packed) );
+                  Semantic_ir.Constructor ("Some", Some packed) );
           ] )
+  | ( (TNullable target | TOcaml_app ("option", [ target ])),
+      TOcaml_app (name, [ _ ]) )
+    when name = Types.next_seq_type_name ->
+      let sequence_name = "__lg_nullable_next_sequence" in
+      let sequence = Semantic_ir.Ident sequence_name in
+      let present =
+        if Types.is_dynamic target then
+          pack_plain_dynamic_value (typed_ir source_ty sequence)
+          |> Option.value ~default:sequence
+        else sequence
+      in
+      Semantic_ir.Let
+        ( [ (Semantic_ir.PVar sequence_name, expression) ],
+          Semantic_ir.If
+            ( Semantic_ir.Apply
+                ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.is_empty",
+                  [ sequence ] ),
+              Semantic_ir.Constructor ("None", None),
+              Semantic_ir.Constructor ("Some", Some present) ) )
   | TNullable target, source
     when Types.is_dynamic target
          && (not (Types.is_dynamic source))
