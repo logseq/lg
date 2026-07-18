@@ -225,9 +225,14 @@ let sort collection =
     match collection_to_list_expr collection with
     | Error _ -> Error.error "sort expects a list, vector, or set"
     | Ok (inner, list_expr) ->
+        let comparator =
+          if Types.is_dynamic inner then
+            Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.compare"
+          else Semantic_ir.Ident "compare"
+        in
         Ok
           (typed_ir (TList inner)
-             (apply "List.sort" [ Semantic_ir.Ident "compare"; list_expr ]))
+             (apply "List.sort" [ comparator; list_expr ]))
 
 let concat collections =
   let rec loop element_ty exprs = function
@@ -447,7 +452,12 @@ let partition name size collection =
         Ok (typed_ir (TList (TList inner)) expr)
 
 let butlast collection =
-  match collection_to_list_expr collection with
+  if Types.is_dynamic collection.ty then
+    Ok
+      (typed_ir collection.ty
+         (apply "Lg_runtime.Runtime_dynamic.butlast"
+            [ collection.semantic_expr ]))
+  else match collection_to_list_expr collection with
   | Error _ -> Error.error "butlast expects a collection"
   | Ok (_inner, list_expr) ->
       let body =

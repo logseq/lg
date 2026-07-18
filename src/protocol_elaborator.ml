@@ -52,19 +52,27 @@ let add_implementation ?location env method_name receiver_ty marker binding =
        ^ source_name receiver_ty)
   | Some protocol_id, Some receiver_id ->
       let method_id = Protocol.method_id protocol_id method_name in
-      if
-        Option.is_some
-          (Protocol_registry.find_implementation protocol_id method_id
-             receiver_id (Env.protocols env))
-      then
-        Error.error
-          ("duplicate implementation of " ^ Protocol_id.name protocol_id ^ "/"
-         ^ method_name ^ " for " ^ source_name receiver_ty)
-      else
-        (match
-         Protocol_registry.add_implementation ?location protocol_id method_id
-           receiver_id binding (Env.protocols env)
-       with
+      let existing =
+        Protocol_registry.find_implementation protocol_id method_id receiver_id
+          (Env.protocols env)
+      in
+      let protocols =
+        match existing with
+        | Some existing
+          when existing.forward_declared
+               && existing.ocaml_name = binding.ocaml_name ->
+            Ok
+              (Protocol_registry.replace_implementation protocol_id method_id
+                 receiver_id binding (Env.protocols env))
+        | Some _ ->
+            Error.error
+              ("duplicate implementation of " ^ Protocol_id.name protocol_id
+             ^ "/" ^ method_name ^ " for " ^ source_name receiver_ty)
+        | None ->
+            Protocol_registry.add_implementation ?location protocol_id
+              method_id receiver_id binding (Env.protocols env)
+      in
+      (match protocols with
       | Error _ as err -> err
       | Ok protocols ->
           let env = Env.with_protocols protocols env in
@@ -126,7 +134,7 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
             else [ FList (FSymbol "let" :: FVector bindings :: body_forms) ]
         | _ -> body_forms
       in
-      let compile_method env = function
+      let compile_method implementation_names env = function
         | FList (((FSymbol method_name) as name_form) :: params :: body_forms) -> (
             match marker scope env protocol_name method_name with
             | Error _ as err -> err
@@ -222,6 +230,17 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                                                 expr.return_param_index;
                                               expression = expr.semantic_expr;
                                             }
+                                        else if
+                                          Semantic_ir.exists_identifier
+                                            (fun name ->
+                                              List.mem name implementation_names)
+                                            expr.semantic_expr
+                                        then
+                                          Recursive_value_binding
+                                            { name = ocaml_name;
+                                              identity = None;
+                                              expression = expr.semantic_expr;
+                                            }
                                         else
                                           Value_binding
                                             { pattern = Named ocaml_name;
@@ -234,16 +253,82 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                         | _ -> Error.error "protocol method did not compile to a function"))))
         | _ -> Error.error "extend-type methods must be (method-name [params] body)"
       in
-      let rec loop env items = function
+      let rec loop implementation_names env items = function
         | [] ->
+            let ordinary, recursive =
+              List.rev items
+              |> List.fold_left
+                   (fun (ordinary, recursive) -> function
+                     | Recursive_value_binding
+                         { name; identity; expression } ->
+                         ( ordinary,
+                           ({ name; identity; expression } : recursive_value)
+                           :: recursive )
+                     | item -> (item :: ordinary, recursive))
+                   ([], [])
+            in
+            let items =
+              List.rev ordinary
+              @
+              match List.rev recursive with
+              | [] -> []
+              | bindings -> [ Recursive_value_bindings bindings ]
+            in
             Ok
               ( scope,
                 env,
                 next_type,
-                Group (List.rev items) )
+                Group items )
         | method_form :: rest -> (
-            match compile_method env method_form with
+            match compile_method implementation_names env method_form with
             | Error _ as err -> err
-            | Ok (env, item) -> loop env (item :: items) rest)
+            | Ok (env, item) ->
+                loop implementation_names env (item :: items) rest)
       in
-      loop env [] method_forms
+      let rec predeclare_exact env evidence_env names = function
+        | [] -> Ok (env, List.sort_uniq String.compare names)
+        | FList (FSymbol method_name :: _params :: _) :: rest -> (
+            match marker scope env protocol_name method_name with
+            | Error _ as error -> error
+            | Ok marker -> (
+                match
+                  ( marker.protocol_id,
+                    Protocol.registry_receiver_id receiver_ty )
+                with
+                | Some protocol_id, Some receiver_id ->
+                    let method_id =
+                      Protocol.method_id protocol_id method_name
+                    in
+                    (match
+                       Protocol_registry.find_implementation protocol_id
+                         method_id receiver_id (Env.protocols evidence_env)
+                     with
+                    | None ->
+                        Error.error
+                          ("missing inferred protocol implementation for "
+                         ^ method_name)
+                    | Some binding ->
+                        let binding =
+                          { binding with forward_declared = true }
+                        in
+                        (match
+                           add_implementation env method_name receiver_ty marker
+                             binding
+                         with
+                        | Error _ as error -> error
+                        | Ok env ->
+                            predeclare_exact env evidence_env
+                              (binding.ocaml_name :: names) rest))
+                | None, _ | _, None ->
+                    Error.error
+                      ("protocol implementations do not support receiver type "
+                     ^ source_name receiver_ty)))
+        | _ :: _ ->
+            Error.error "extend-type methods must be (method-name [params] body)"
+      in
+      Result.bind (loop [] env [] method_forms)
+        (fun (_, evidence_env, _, _) ->
+          Result.bind
+            (predeclare_exact env evidence_env [] method_forms)
+            (fun (env, implementation_names) ->
+              loop implementation_names env [] method_forms))

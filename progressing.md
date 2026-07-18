@@ -1301,3 +1301,70 @@ update the same entry with its root cause, fix, and verification evidence.
   they are useful same-machine latency references, not identical workloads.
   LG's own complete OCaml `@install` build from a fresh cache-disabled build
   directory takes 4.76 seconds in the current checkout.
+
+## 2026-07-18: Current DataScript chain fails on Melange-only macro ordering
+
+- Status: Fixed
+- Symptom: The current nine-file DataScript chain compiled on Native but the
+  Melange target stopped in `db.cljc`: first `util/raise` was treated as an
+  unknown function, then ordinary `datom-tx` protocol evidence was unavailable,
+  and finally recursive `entid` could not pass its protocol-constrained DB
+  parameter together with an `array-seq` value.
+- Root cause: Clojure-side compile-time forms extracted from `.cljc` files were
+  included in dependency analysis as if their syntax templates were runtime
+  dependencies. This delayed the namespace `require` that creates the
+  `util/raise` macro alias. The dependency graph also recognized only dash-led
+  protocol method names, so DataScript's ordinary `datom-tx` implementation
+  could move behind a consumer. Treating every ordinary host method as a
+  provider was too broad and disturbed the Native LRU path. Finally, function
+  parameters with protocol capabilities are destructured into witness and value
+  bindings; `recur` forwarded only the value identifier instead of rebuilding
+  the unchanged capability storage.
+- Fix: Compile-time macro definitions no longer claim runtime body dependencies.
+  Ordinary method names are providers only when a `defprotocol` in the same
+  compilation unit declares them; Java-style host methods remain outside this
+  model. Recursive calls rebuild protocol/sequence capability storage for an
+  unchanged constrained identifier after applying the normal argument coercion.
+  Consequently the DB parameter stays statically protocol-constrained, while
+  `array-seq` is packed only at the already-dynamic entity-id boundary.
+- Verification: RED regressions cover macro/require ordering, non-dash protocol
+  method ordering, and a two-parameter recursive function combining a static
+  protocol receiver with dynamic array/sequence input. All are GREEN. A real
+  integration regression compiles the complete current arrays, PSS, inline,
+  util, LRU, schema, DB, and parser source chain for both Native and Melange in
+  one process.
+
+## 2026-07-18: Portable DataScript Entity compiles and runs without Java
+
+- Status: Fixed for the current Entity dependency slice
+- Symptom: Adding `datascript.impl.entity` stopped first on the conditional
+  `clojure.core`/`cljs.core` alias, then on keyword lookup under
+  `:refer-clojure :exclude [get]`, empty-set reducers, keyword `partition-by`,
+  and finally the Java/CLJS-specific `Entity` host interfaces.
+- Root cause: Core namespace aliases were not canonicalized to static core
+  calls. Compiler-generated keyword lookup incorrectly respected a source-level
+  exclusion of `get`. Empty set reducers kept an unresolved accumulator ABI,
+  so values either failed to enter a set or widened the whole reducer.
+  `partition-by` compiled its callback before learning the collection element
+  type, qualified record hints were discarded during metadata normalization,
+  and bare non-generic deftypes did not emit their generated set comparator.
+- Fix: Core aliases now dispatch through the normal static core elaborators,
+  and keyword invocation explicitly targets `clojure.core/get`. Open empty-set
+  reducer accumulators refine to a generated static set when their element has
+  a comparator; only nullable or heterogeneous elements cross a dynamic set
+  boundary. `partition-by` now derives callback types from its collection and
+  propagates keyword/typed callback element constraints. Qualified record hints
+  survive normalization, and non-generic named record types emit an uppercase
+  comparator module. The new portable `Entity` uses the same LG core protocols
+  on Native and Melange, with no Java interfaces, JS object fallback methods,
+  or `goog/exportSymbol`. Datom and Entity collections stay nominal/static;
+  dynamic values remain limited to heterogeneous database attributes and the
+  Entity cache map value boundary.
+- Verification: Focused RED/GREEN regressions cover core aliases, excluded
+  `get` versus keyword lookup, static and dynamic empty-set reducers,
+  `partition-by` keyword row inference, and typed forward-declared callbacks.
+  The integration chain now includes Entity and compiles all ten files for both
+  Native and Melange. A Native behavior test builds a real DB with `init-db` and
+  verifies Entity id/attribute lookup plus touched `Counted` behavior; its
+  consumer also compiles for Melange. The complete compiler suite and default
+  `dune build` pass.

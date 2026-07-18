@@ -483,6 +483,9 @@ let inferred_form_type params = function
       in
       record_field_type params receiver keyword
       |> Option.value ~default:TUnknown
+  | FList [ FKeyword keyword; FSymbol receiver ] ->
+      record_field_type params receiver keyword
+      |> Option.value ~default:TUnknown
   | FList (FSymbol ("+" | "-" | "*" | "/" | "max" | "min") :: _) as form ->
       numeric_form_type params form
   | FList [ FSymbol ("first" | "second" | "last"); FSymbol receiver ] -> (
@@ -498,6 +501,16 @@ let inferred_form_type params = function
               match Types.next_seq_element ty with
               | Some element_ty -> normalize element_ty
               | None -> if Types.is_dynamic ty then ty else TUnknown))
+      | None -> TUnknown)
+  | FList [ FSymbol "next"; FSymbol receiver ] -> (
+      match string_assoc_opt receiver params with
+      | Some receiver_ty -> (
+          match Types.seqable_constraint_element receiver_ty with
+          | Some element_ty -> TSeq element_ty
+          | None -> (
+              match Types.next_seq_element receiver_ty with
+              | Some element_ty -> TSeq element_ty
+              | None -> TUnknown))
       | None -> TUnknown)
   | FList (FSymbol ("get" | "clojure.core/get") :: _) -> TUnknown
   | FList (_function :: FSymbol receiver :: _) -> (
@@ -1424,14 +1437,16 @@ let infer_params ?(explicitly_dynamic_params = [])
                   let field_ty =
                     match value_form with
                     | FSymbol value_name -> (
-                        match lookup_function_ty value_name with
-                        | Ok ty -> ty
-                        | Error _ -> (
-                            match inferred_form_type params value_form with
-                            | TUnknown when string_mem_assoc value_name params ->
-                                fresh_type_variable
-                                  ("assoc_" ^ Names.sanitize_name value_name)
-                            | ty -> ty))
+                        match string_assoc_opt value_name params with
+                        | Some TUnknown ->
+                            fresh_type_variable
+                              ("assoc_" ^ Names.sanitize_name value_name)
+                        | Some (TVar _ as ty) -> ty
+                        | Some ty -> ty
+                        | None -> (
+                            match lookup_function_ty value_name with
+                            | Ok ty -> ty
+                            | Error _ -> inferred_form_type params value_form))
                     | _ -> inferred_form_type params value_form
                   in
                   let params =
@@ -2299,6 +2314,21 @@ let infer_params ?(explicitly_dynamic_params = [])
         match constrain_seqable element_ty params collection with
         | Error _ as error -> error
         | Ok params -> infer_form params reducer)
+    | FList [ FSymbol "sort"; FSymbol collection ] ->
+        constrain_seqable (Types.dynamic_constraint TUnknown) params collection
+    | FList [ FSymbol "sort"; _comparator; FSymbol collection ] ->
+        constrain_seqable (Types.dynamic_constraint TUnknown) params collection
+    | FList [ FSymbol ("rand-nth" | "shuffle"); FSymbol collection ] ->
+        constrain_seqable (Types.dynamic_constraint TUnknown) params collection
+    | FList [ FSymbol ("distinct" | "dedupe"); FSymbol collection ] ->
+        constrain_seqable (Types.dynamic_constraint TUnknown) params collection
+    | FList [ FSymbol "repeatedly"; FSymbol count; function_form ] ->
+        Result.bind (infer_expected TInt params (FSymbol count)) (fun params ->
+            infer_form params function_form)
+    | FList
+        [ FSymbol ("take" | "drop"); FSymbol count; collection_form ] ->
+        Result.bind (infer_expected TInt params (FSymbol count)) (fun params ->
+            infer_form params collection_form)
     | FList
         [
           FSymbol "reduce";
@@ -2471,10 +2501,27 @@ let infer_params ?(explicitly_dynamic_params = [])
     | FList [ FSymbol ("transient" | "persistent!"); collection ] ->
         infer_expected (Types.dynamic_constraint TUnknown) params collection
     | FList (FSymbol "conj" :: target :: values) -> (
+        let inferred_value_type value =
+          match inferred_form_type params value with
+          | (TUnknown | TVar _) as unresolved -> (
+              match value with
+              | FList (FSymbol name :: arguments) -> (
+                  match lookup_function_ty name with
+                  | Ok (TFn (parameters, return_ty))
+                    when List.length parameters = List.length arguments ->
+                      return_ty
+                  | Ok (TOverloaded_fn arities) -> (
+                      match select_fn_arity arities (List.length arguments) with
+                      | Some arity -> arity.return_ty
+                      | None -> unresolved)
+                  | Ok _ | Error _ -> unresolved)
+              | _ -> unresolved)
+          | ty -> ty
+        in
         let element_ty =
           values
           |> List.find_map (fun value ->
-                 match inferred_form_type params value with
+                 match inferred_value_type value with
                  | TUnknown -> None
                  | ty -> Some (stored_value_type ty))
           |> Option.value ~default:TUnknown
@@ -2482,7 +2529,13 @@ let infer_params ?(explicitly_dynamic_params = [])
         let collection_ty =
           match inferred_form_type params target with
           | TList _ -> TList element_ty
-          | TSet _ -> TSet element_ty
+          | TSeq _ -> TSeq element_ty
+          | TOcaml_app (name, [ _ ]) when name = Types.next_seq_type_name ->
+              TSeq element_ty
+          | TSet _ -> (
+              match Types.set_module_name element_ty with
+              | Ok _ -> TSet element_ty
+              | Error _ -> Types.dynamic_constraint (TSet TUnknown))
           | TVector _ -> TVector element_ty
           | _ -> TVector element_ty
         in
@@ -2656,12 +2709,22 @@ let infer_params ?(explicitly_dynamic_params = [])
     | FList
         [
           FSymbol "partition-by";
-          FList (FSymbol "fn" :: _fn_params :: body_forms);
-          collection;
-        ] -> (
-        match infer_all params body_forms with
-        | Error _ as err -> err
-        | Ok params -> infer_collection params collection)
+          FKeyword keyword;
+          FSymbol collection;
+        ] ->
+        constrain_seqable
+          (TRecord
+             [ make_field keyword (Types.dynamic_constraint TUnknown) ])
+          params collection
+    | FList
+        [
+          FSymbol "partition-by";
+          (FList (FSymbol "fn" :: _) as function_form);
+          FSymbol collection;
+        ] ->
+        constrain_seqable
+          (inferred_unary_function_param params function_form)
+          params collection
     | FList [ FSymbol ("butlast" | "dorun" | "doall"); collection ] ->
         infer_collection params collection
     | FList

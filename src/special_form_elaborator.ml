@@ -1431,7 +1431,8 @@ let create ~compile_expr =
                         List.map2
                           (fun expected_ty arg ->
                             coerce_expression_to_type expected_ty arg.ty
-                              arg.semantic_expr)
+                              arg.semantic_expr
+                            |> capability_storage_expression expected_ty)
                           param_tys args )))
   and compile_loop_tail scope env loop_name param_tys = function
     | FList (FSymbol "recur" :: arg_forms) ->

@@ -361,7 +361,24 @@ let reduce_expr env ?(short_circuit = false) fn init collection sequence =
               [ collection.semantic_expr; fn.semantic_expr; init.semantic_expr ]
         )
 
-let count_expr env collection =
+let rec count_expr env collection =
+  match collection.ty with
+  | TNullable inner | TOcaml_app ("option", [ inner ]) ->
+      let value_name = "__lg_counted_value" in
+      let value = typed_ir inner (Semantic_ir.Ident value_name) in
+      Result.map
+        (fun present ->
+          Semantic_ir.Match
+            ( collection.semantic_expr,
+              [
+                ( Semantic_ir.PConstructor ("None", None),
+                  Semantic_ir.Int 0 );
+                ( Semantic_ir.PConstructor
+                    ("Some", Some (Semantic_ir.PVar value_name)),
+                  present );
+              ] ))
+        (count_expr env value)
+  | _ ->
   let protocols = Compiler_environment.protocols env in
   match Core_protocols.find_counted collection.ty protocols with
   | Some implementation ->

@@ -1,6 +1,7 @@
 open Ast
 
 module String_map = Map.Make (String)
+module String_set = Set.Make (String)
 module Int_set = Set.Make (Int)
 
 type node = {
@@ -71,6 +72,11 @@ let rec symbols form =
   | FKeyword _ | FString _ | FRegex _ | FInt _ | FFloat _ | FChar _ | FBool _ ->
       []
 
+let direct_method_names forms =
+  List.filter_map
+    (function FList (FSymbol name :: _) -> Some name | _ -> None)
+    forms
+
 let method_names form =
   let rec collect names = function
     | FList (FSymbol name :: rest) when String.starts_with ~prefix:"-" name ->
@@ -92,9 +98,10 @@ let rec provided_names = function
       List.filter_map (function FSymbol name -> Some name | _ -> None) names
   | FList (FSymbol "recursive-definition-group" :: definitions) ->
       List.concat_map provided_names definitions
+  | FList (FSymbol "defprotocol" :: FSymbol name :: method_forms) ->
+      name :: direct_method_names method_forms
   | FList
-      (FSymbol ("deftype" | "defrecord" | "defprotocol")
-      :: FSymbol name :: _ as forms) ->
+      (FSymbol ("deftype" | "defrecord") :: FSymbol name :: _ as forms) ->
       name :: method_names (FList forms)
   | FList
       (FSymbol ("def" | "defonce" | "defn" | "defn-") :: FSymbol name :: _)
@@ -102,6 +109,8 @@ let rec provided_names = function
       [ name ]
   | FList
       (FSymbol ("extend-type" | "deftype-methods") :: _ as forms) ->
+      method_names (FList forms)
+  | FList (FSymbol "extend-protocol" :: _ as forms) ->
       method_names (FList forms)
   | FList (FSymbol definition :: FSymbol name :: _ as forms)
     when String.starts_with ~prefix:"def" definition ->
@@ -120,6 +129,30 @@ let has_declarations forms =
 let indexed_forms forms = List.mapi (fun index form -> (index, form)) forms
 
 let provider_indices indexed =
+  let protocol_methods =
+    List.fold_left
+      (fun methods (_, form) ->
+        match form with
+        | FList (FSymbol "defprotocol" :: _name :: method_forms) ->
+            direct_method_names method_forms
+            |> List.fold_left
+                 (fun methods name -> String_set.add name methods)
+                 methods
+        | _ -> methods)
+      String_set.empty indexed
+  in
+  let implementation_method_names = function
+    | FList
+        (FSymbol ("deftype" | "defrecord") :: _ :: _
+        :: implementations)
+    | FList
+        (FSymbol ("extend-type" | "deftype-methods") :: _
+        :: implementations)
+    | FList (FSymbol "extend-protocol" :: _ :: implementations) ->
+        direct_method_names implementations
+        |> List.filter (fun name -> String_set.mem name protocol_methods)
+    | _ -> []
+  in
   List.fold_left
     (fun providers (index, form) ->
       List.fold_left
@@ -128,11 +161,16 @@ let provider_indices indexed =
             String_map.find_opt name providers |> Option.value ~default:[]
           in
           String_map.add name (index :: existing) providers)
-        providers (provided_names form))
+        providers
+        (provided_names form @ implementation_method_names form))
     String_map.empty indexed
 
 let form_dependencies ?(ignore_declarations = false) providers index = function
   | FList (FSymbol "declare" :: _) when ignore_declarations -> []
+  | FList
+      (FSymbol ("defmacro" | "macro-helper-defn" | "macro-helper-def") :: _)
+    ->
+      []
   | form ->
       symbols form
       |> List.concat_map (fun name ->

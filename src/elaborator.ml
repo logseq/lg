@@ -257,6 +257,23 @@ let expand_deferred_binding name value_type return_param_index expression =
                  ] ));
       }
   in
+  let implementation () =
+    Semantic_ir.Apply
+      ( Semantic_ir.Ident "Option.get",
+        [ Semantic_ir.Field
+            ( Semantic_ir.Prefix ("!", Semantic_ir.Ident implementation_name),
+              holder_field_name );
+        ] )
+  in
+  let parameter_patterns names parameter_types =
+    List.map2
+      (fun name ty ->
+        if contains_inferred_type ty then Semantic_ir.PVar name
+        else
+          Semantic_ir.PConstraint
+            (Semantic_ir.PVar name, Types.ocaml_name ty))
+      names parameter_types
+  in
   let wrapper =
     match value_type with
     | Types.TFn (parameter_types, _) ->
@@ -265,34 +282,52 @@ let expand_deferred_binding name value_type return_param_index expression =
             (fun index _ -> "__lg_deferred_argument_" ^ string_of_int index)
             parameter_types
         in
-        let patterns =
-          List.map2
-            (fun name ty ->
-              if contains_inferred_type ty then Semantic_ir.PVar name
-              else
-                  Semantic_ir.PConstraint
-                    (Semantic_ir.PVar name, Types.ocaml_name ty))
-            names parameter_types
-        in
+        let patterns = parameter_patterns names parameter_types in
         Semantic_ir.Fun
           ( patterns,
             Semantic_ir.Apply
-                ( Semantic_ir.Apply
-                    ( Semantic_ir.Ident "Option.get",
-                    [ Semantic_ir.Field
-                        ( Semantic_ir.Prefix
-                            ("!", Semantic_ir.Ident implementation_name),
-                          holder_field_name );
-                    ] ),
+                ( implementation (),
                 List.map (fun name -> Semantic_ir.Ident name) names ) )
+    | Types.TOverloaded_fn arities ->
+        let projection index =
+          let rec descend expression remaining =
+            if remaining = 0 then
+              Semantic_ir.Apply (Semantic_ir.Ident "fst", [ expression ])
+            else
+              descend
+                (Semantic_ir.Apply (Semantic_ir.Ident "snd", [ expression ]))
+                (remaining - 1)
+          in
+          descend (implementation ()) index
+        in
+        let arity_wrapper index (arity : Types.fn_arity) =
+          let parameter_types =
+            arity.fixed_params
+            @ Option.fold ~none:[] ~some:(fun rest_ty -> [ Types.TSeq rest_ty ])
+                arity.rest_param
+          in
+          let names =
+            List.mapi
+              (fun parameter_index _ ->
+                "__lg_deferred_argument_" ^ string_of_int index ^ "_"
+                ^ string_of_int parameter_index)
+              parameter_types
+          in
+          Semantic_ir.Fun
+            ( parameter_patterns names parameter_types,
+              Semantic_ir.Apply
+                ( projection index,
+                  List.map (fun name -> Semantic_ir.Ident name) names ) )
+        in
+        let rec storage index = function
+          | [] -> Semantic_ir.Unit
+          | arity :: rest ->
+              Semantic_ir.Tuple
+                [ arity_wrapper index arity; storage (index + 1) rest ]
+        in
+        storage 0 arities
     | _ ->
-        Semantic_ir.Apply
-          ( Semantic_ir.Ident "Option.get",
-            [ Semantic_ir.Field
-                ( Semantic_ir.Prefix
-                    ("!", Semantic_ir.Ident implementation_name),
-                  holder_field_name );
-            ] )
+        implementation ()
   in
   let wrapper =
     Lowered.Value_binding
@@ -315,34 +350,88 @@ let expand_deferred_binding name value_type return_param_index expression =
   in
   ([ holder_type; reference; wrapper ], [ initialize ])
 
-let rec order_deferred_item = function
+let rec value_pattern_name = function
+  | Lowered.Named name -> Some name
+  | Lowered.Located_value (_, _, pattern) -> value_pattern_name pattern
+  | Lowered.Unit_pattern | Lowered.Ignore_pattern -> None
+
+let rec provided_value_names = function
+  | Lowered.Value_binding { pattern; _ } ->
+      Option.fold ~none:[] ~some:(fun name -> [ name ])
+        (value_pattern_name pattern)
+  | Lowered.Recursive_value_binding { name; _ }
+  | Lowered.Deferred_value_binding { name; _ } ->
+      [ name ]
+  | Lowered.Recursive_value_bindings bindings ->
+      List.map (fun (binding : Lowered.recursive_value) -> binding.name) bindings
+  | Lowered.Record_def { var_name; _ }
+  | Lowered.Projected_record_def { var_name; _ } ->
+      [ var_name ]
+  | Lowered.Group items -> List.concat_map provided_value_names items
+  | Lowered.Polymorphic_holder_type _ | Lowered.Comment _
+  | Lowered.Type_def _ | Lowered.Type_alias _ | Lowered.Type_variant _
+  | Lowered.Module_def _ | Lowered.Module_alias _ | Lowered.Module_functor _
+  | Lowered.Module_apply _ | Lowered.Module_signature _
+  | Lowered.Open_module _ | Lowered.Include_module _ ->
+      []
+
+let rec expand_deferred_item = function
   | Lowered.Deferred_value_binding
       { name; value_type; return_param_index; expression } ->
       let immediate, deferred =
         expand_deferred_binding name value_type return_param_index expression
       in
-      (Lowered.Group immediate, deferred)
+      ( Lowered.Group immediate,
+        List.map (fun initialize -> (expression, initialize)) deferred )
   | Lowered.Group items ->
-      let immediate, deferred = order_deferred_items items in
+      let immediate, deferred = expand_deferred_items items in
       (Lowered.Group immediate, deferred)
   | item -> (item, [])
 
-and order_deferred_items items =
+and expand_deferred_items items =
   List.fold_left
     (fun (immediate, deferred) item ->
-      let item_immediate, item_deferred = order_deferred_item item in
+      let item_immediate, item_deferred = expand_deferred_item item in
       (item_immediate :: immediate, deferred @ item_deferred))
     ([], []) items
   |> fun (immediate, deferred) -> (List.rev immediate, deferred)
 
-let append_deferred items deferred =
-  match (List.rev items, deferred) with
-  | _, [] -> items
-  | [], _ -> [ Lowered.Group deferred ]
-  | Lowered.Group items :: rest, deferred ->
-      List.rev (Lowered.Group (items @ deferred) :: rest)
-  | item :: rest, deferred ->
-      List.rev (Lowered.Group (item :: deferred) :: rest)
+let order_deferred_items items =
+  let providers = List.map provided_value_names items in
+  let scheduled = Array.make (List.length items) [] in
+  let immediate =
+    List.mapi
+      (fun index item ->
+        let immediate, deferred = expand_deferred_item item in
+        List.iter
+          (fun (expression, initialize) ->
+            let target =
+              providers
+              |> List.mapi (fun provider_index names ->
+                     if
+                       List.exists
+                         (fun name ->
+                           Semantic_ir.exists_identifier
+                             (String.equal name)
+                             expression)
+                         names
+                     then provider_index
+                     else index)
+              |> List.fold_left max index
+            in
+            scheduled.(target) <- scheduled.(target) @ [ initialize ])
+          deferred;
+        immediate)
+      items
+  in
+  immediate
+  |> List.mapi (fun index item ->
+         match scheduled.(index) with
+         | [] -> item
+         | initializers -> (
+             match item with
+             | Lowered.Group items -> Lowered.Group (items @ initializers)
+             | item -> Lowered.Group (item :: initializers)))
 
 let rec form_references_unresolved_declaration scope env = function
   | Ast.FSymbol name -> (
@@ -461,8 +550,7 @@ let compile_forms_incremental (state : Compiler_state.t) forms =
   with
   | Error _ as err -> err
   | Ok (scope, env, next_type, new_items) ->
-      let immediate, deferred = order_deferred_items new_items in
-      let new_items = append_deferred immediate deferred in
+      let new_items = order_deferred_items new_items in
       let next_state =
         {
           Compiler_state.scope;

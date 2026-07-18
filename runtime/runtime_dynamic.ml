@@ -158,7 +158,7 @@ let rec equal left right =
   | Keyword left, Keyword right -> left = right
   | Bool left, Bool right -> left = right
   | Array left, Array right -> left == right
-  | List, List | Vector, Vector | Seq, Seq ->
+  | (List | Vector | Seq), (List | Vector | Seq) ->
       Seq.equal equal (to_seq left) (to_seq right)
   | Set left, Set right ->
       List.length left = List.length right
@@ -176,6 +176,15 @@ let rec equal left right =
   | Reference _, Reference _ -> false
   | Function _, Function _ -> false
   | _ -> false
+
+let equal_arguments = function
+  | [] | [ _ ] -> true
+  | first :: rest -> List.for_all (equal first) rest
+
+let equality_function = function_ (fun arguments -> bool (equal_arguments arguments))
+
+let inequality_function =
+  function_ (fun arguments -> bool (not (equal_arguments arguments)))
 
 let rec compare left right =
   match (left.payload, right.payload) with
@@ -203,6 +212,110 @@ let rec compare left right =
       in
       compare_at 0
   | _ -> invalid_arg "dynamic values are not comparable"
+
+let unary_function name fn =
+  function_ (function
+    | [ value ] -> fn value
+    | _ -> invalid_arg (name ^ " expects one argument"))
+
+let binary_function name fn =
+  function_ (function
+    | [ left; right ] -> fn left right
+    | _ -> invalid_arg (name ^ " expects two arguments"))
+
+let int_quot left right = left / right
+let int_rem left right = left mod right
+
+let int_binary_function name fn =
+  binary_function name (fun left right ->
+      match (left.payload, right.payload) with
+      | Int left, Int right -> int (fn left right)
+      | _ -> invalid_arg (name ^ " expects integer arguments"))
+
+let quot_function = int_binary_function "quot" int_quot
+let rem_function = int_binary_function "rem" int_rem
+
+let clojure_mod left right =
+  let remainder = left mod right in
+  if remainder = 0 || (remainder > 0) = (right > 0) then remainder
+  else remainder + right
+
+let mod_function = int_binary_function "mod" clojure_mod
+
+let int_inc = Int.succ
+let int_dec = Int.pred
+let int_max = Stdlib.max
+let int_min = Stdlib.min
+let int_zero value = value = 0
+let int_positive value = value > 0
+let int_negative value = value < 0
+let int_even value = value mod 2 = 0
+let int_odd value = value mod 2 <> 0
+let int_compare = Int.compare
+
+let numeric_unary_function name int_fn float_fn =
+  unary_function name (fun value ->
+      match value.payload with
+      | Int value -> int (int_fn value)
+      | Float value -> float (float_fn value)
+      | _ -> invalid_arg (name ^ " expects a numeric argument"))
+
+let inc_function = numeric_unary_function "inc" int_inc (fun value -> value +. 1.)
+let dec_function = numeric_unary_function "dec" int_dec (fun value -> value -. 1.)
+
+let numeric_predicate_function name int_predicate float_predicate =
+  unary_function name (fun value ->
+      match value.payload with
+      | Int value -> bool (int_predicate value)
+      | Float value -> bool (float_predicate value)
+      | _ -> invalid_arg (name ^ " expects a numeric argument"))
+
+let zero_function =
+  numeric_predicate_function "zero?" int_zero (( = ) 0.)
+
+let positive_function =
+  numeric_predicate_function "pos?" int_positive (fun value -> value > 0.)
+
+let negative_function =
+  numeric_predicate_function "neg?" int_negative (fun value -> value < 0.)
+
+let integer_predicate_function name predicate =
+  unary_function name (fun value ->
+      match value.payload with
+      | Int value -> bool (predicate value)
+      | _ -> invalid_arg (name ^ " expects an integer argument"))
+
+let even_function = integer_predicate_function "even?" int_even
+let odd_function = integer_predicate_function "odd?" int_odd
+let compare_function = binary_function "compare" (fun left right -> int (compare left right))
+
+let extremum_function name select =
+  function_ (function
+    | [] -> invalid_arg (name ^ " expects at least one argument")
+    | first :: rest -> List.fold_left select first rest)
+
+let max_function =
+  extremum_function "max" (fun left right ->
+      if compare left right >= 0 then left else right)
+
+let min_function =
+  extremum_function "min" (fun left right ->
+      if compare left right <= 0 then left else right)
+
+let rand_function =
+  function_ (function
+    | [] -> float (Runtime_random.rand 1.)
+    | [ { payload = Int bound; _ } ] ->
+        float (Runtime_random.rand (float_of_int bound))
+    | [ { payload = Float bound; _ } ] -> float (Runtime_random.rand bound)
+    | [ _ ] -> invalid_arg "rand expects a numeric bound"
+    | _ -> invalid_arg "rand expects zero or one argument")
+
+let rand_int_function =
+  unary_function "rand-int" (fun value ->
+      match value.payload with
+      | Int bound -> int (Runtime_random.rand_int bound)
+      | _ -> invalid_arg "rand-int expects an integer bound")
 
 let sort collection =
   collection |> to_seq |> List.of_seq |> List.sort compare |> list
@@ -374,6 +487,13 @@ let empty value =
   | Map _ -> map []
   | _ -> invalid_arg "dynamic value is not a collection"
 
+let butlast value =
+  let rec drop_last acc = function
+    | [] | [ _ ] -> List.rev acc
+    | item :: rest -> drop_last (item :: acc) rest
+  in
+  list (drop_last [] (List.of_seq (to_seq value)))
+
 let pair value =
   match List.of_seq (to_seq value) with
   | [ key; value ] -> (key, value)
@@ -460,6 +580,337 @@ let call value arguments =
           List.find_opt (equal candidate) values |> Option.value ~default:nil
       | _ -> invalid_arg "dynamic set expects one argument")
   | _ -> invalid_arg "dynamic value is not callable"
+
+let predicate_function name predicate =
+  unary_function name (fun value -> bool (predicate value))
+
+let is_true value =
+  match value.payload with Bool true -> true | _ -> false
+
+let is_false value =
+  match value.payload with Bool false -> true | _ -> false
+
+let is_some value = not (is_nil value)
+let not_value value = not (truthy value)
+let true_function = predicate_function "true?" is_true
+let false_function = predicate_function "false?" is_false
+let nil_function = predicate_function "nil?" is_nil
+let some_function = predicate_function "some?" is_some
+let bool_not value = not value
+let not_function = predicate_function "not" not_value
+
+let identical left right =
+  left == right
+  ||
+  match (left.payload, right.payload) with
+  | (Nil | Int _ | Float _ | Char _ | String _ | Symbol _ | Keyword _ | Bool _),
+    (Nil | Int _ | Float _ | Char _ | String _ | Symbol _ | Keyword _ | Bool _) ->
+      equal left right
+  | _ -> false
+
+let identical_function =
+  binary_function "identical?" (fun left right -> bool (identical left right))
+
+let identity_value value = value
+let identity_function = unary_function "identity" identity_value
+
+let complement_value predicate =
+  function_ (fun arguments -> bool (not (truthy (call predicate arguments))))
+
+let complement_function = unary_function "complement" complement_value
+
+let strip_keyword_prefix value =
+  if String.starts_with ~prefix:":" value then
+    String.sub value 1 (String.length value - 1)
+  else value
+
+let identifier_value = function
+  | { payload = String value | Symbol value | Keyword value; _ } -> value
+  | _ -> invalid_arg "expected string, symbol, or keyword"
+
+let named_identifier_value = function
+  | { payload = Symbol value | Keyword value; _ } -> value
+  | _ -> invalid_arg "expected symbol or keyword"
+
+let keyword_value value =
+  match value.payload with
+  | Keyword _ -> value
+  | _ -> keyword (":" ^ strip_keyword_prefix (identifier_value value))
+
+let keyword_function =
+  function_ (function
+    | [ value ] -> keyword_value value
+    | [ namespace; name ] ->
+        keyword
+          (":" ^ strip_keyword_prefix (identifier_value namespace) ^ "/"
+         ^ strip_keyword_prefix (identifier_value name))
+    | _ -> invalid_arg "keyword expects one or two arguments")
+
+let identifier_name value =
+  let identifier = strip_keyword_prefix (identifier_value value) in
+  match String.rindex_opt identifier '/' with
+  | Some index ->
+      String.sub identifier (index + 1) (String.length identifier - index - 1)
+  | None -> identifier
+
+let identifier_namespace value =
+  let identifier = strip_keyword_prefix (named_identifier_value value) in
+  match String.rindex_opt identifier '/' with
+  | Some index -> string (String.sub identifier 0 index)
+  | None -> nil
+
+let name_value value = string (identifier_name value)
+let name_function = unary_function "name" name_value
+let namespace_function = unary_function "namespace" identifier_namespace
+let meta_function = unary_function "meta" metadata
+let type_function = unary_function "type" class_
+
+let vector_function =
+  function_ (fun arguments -> vector (Rrbvec.of_list arguments))
+
+let list_function = function_ list
+
+let set_function =
+  unary_function "set" (fun value -> set (to_seq value))
+
+let map_from_arguments name arguments =
+  let rec pairs entries = function
+    | [] -> map (List.rev entries)
+    | key :: value :: rest -> pairs ((key, value) :: entries) rest
+    | [ _ ] -> invalid_arg (name ^ " expects an even number of arguments")
+  in
+  pairs [] arguments
+
+let hash_map_function =
+  function_ (map_from_arguments "hash-map")
+
+let array_map_function =
+  function_ (map_from_arguments "array-map")
+
+let count_value value =
+  match value.payload with
+  | Nil -> 0
+  | Array values -> Array.length values
+  | Set values -> List.length values
+  | Map entries -> List.length entries
+  | _ -> Seq.length (to_seq value)
+
+let count_function =
+  unary_function "count" (fun value -> int (count_value value))
+
+let range_sequence start stop step =
+  if step = 0 then invalid_arg "range step must not be zero";
+  Seq.unfold
+    (fun current ->
+      if (step > 0 && current >= stop) || (step < 0 && current <= stop) then
+        None
+      else Some (int current, current + step))
+    start
+
+let range_function =
+  function_ (function
+    | [ { payload = Int stop; _ } ] -> seq (range_sequence 0 stop 1)
+    | [ { payload = Int start; _ }; { payload = Int stop; _ } ] ->
+        seq (range_sequence start stop 1)
+    | [ { payload = Int start; _ }; { payload = Int stop; _ };
+        { payload = Int step; _ } ] ->
+        seq (range_sequence start stop step)
+    | [ _ ] | [ _; _ ] | [ _; _; _ ] ->
+        invalid_arg "range expects integer arguments"
+    | _ -> invalid_arg "range expects one to three arguments")
+
+let not_empty_function =
+  unary_function "not-empty" (fun value ->
+      if Seq.is_empty (to_seq value) then nil else value)
+
+let empty_predicate_function =
+  predicate_function "empty?" (fun value ->
+      match value.payload with Nil -> true | _ -> Seq.is_empty (to_seq value))
+
+let contains_function =
+  binary_function "contains?" (fun value key -> bool (contains value key))
+
+let str_value value = str value
+
+let str_function =
+  function_ (fun arguments ->
+      string (String.concat "" (List.map str arguments)))
+
+let subs_function =
+  function_ (function
+    | [ source; start ] ->
+        let source =
+          match source.payload with
+          | String value -> value
+          | _ -> invalid_arg "subs expects a string"
+        in
+        let start =
+          match start.payload with
+          | Int value -> value
+          | _ -> invalid_arg "subs expects integer indexes"
+        in
+        string (String.sub source start (String.length source - start))
+    | [ source; start; stop ] ->
+        let source =
+          match source.payload with
+          | String value -> value
+          | _ -> invalid_arg "subs expects a string"
+        in
+        let integer = function
+          | { payload = Int value; _ } -> value
+          | _ -> invalid_arg "subs expects integer indexes"
+        in
+        let start = integer start in
+        let stop = integer stop in
+        string (String.sub source start (stop - start))
+    | _ -> invalid_arg "subs expects two or three arguments")
+
+let get_function =
+  function_ (function
+    | [ value; key ] -> get value key
+    | [ value; key; default ] -> get_default value key default
+    | _ -> invalid_arg "get expects two or three arguments")
+
+let joined_string ~pr arguments =
+  arguments |> List.map (to_string ~pr) |> String.concat " "
+
+let pr_str_function =
+  function_ (fun arguments -> string (joined_string ~pr:true arguments))
+
+let print_str_function =
+  function_ (fun arguments -> string (joined_string ~pr:false arguments))
+
+let println_str_function =
+  function_ (fun arguments ->
+      string (joined_string ~pr:false arguments ^ "\n"))
+
+let prn_str_function =
+  function_ (fun arguments ->
+      string (joined_string ~pr:true arguments ^ "\n"))
+
+let escape_function =
+  binary_function "clojure.string/escape" (fun source replacements ->
+      let source =
+        match source.payload with
+        | String source -> source
+        | _ -> invalid_arg "clojure.string/escape expects a string"
+      in
+      let buffer = Buffer.create (String.length source) in
+      String.iter
+        (fun character ->
+          let replacement = get replacements (char character) in
+          if is_nil replacement then Buffer.add_char buffer character
+          else Buffer.add_string buffer (str replacement))
+        source;
+      string (Buffer.contents buffer))
+
+let dynamic_string_value = function
+  | { payload = String value; _ } -> value
+  | _ -> invalid_arg "expected a string"
+
+let dynamic_string_unary name fn =
+  unary_function name (fun value -> string (fn (dynamic_string_value value)))
+
+let dynamic_string_predicate name fn =
+  unary_function name (fun value -> bool (fn (dynamic_string_value value)))
+
+let dynamic_string_binary name fn =
+  binary_function name (fun left right ->
+      string (fn (dynamic_string_value left) (dynamic_string_value right)))
+
+let dynamic_string_binary_predicate name fn =
+  binary_function name (fun left right ->
+      bool (fn (dynamic_string_value left) (dynamic_string_value right)))
+
+let string_blank_function =
+  dynamic_string_predicate "clojure.string/blank?" Runtime_string.blank
+
+let string_includes_function =
+  dynamic_string_binary_predicate "clojure.string/includes?"
+    Runtime_string.includes
+
+let string_starts_with_function =
+  dynamic_string_binary_predicate "clojure.string/starts-with?"
+    Runtime_string.starts_with
+
+let string_ends_with_function =
+  dynamic_string_binary_predicate "clojure.string/ends-with?"
+    Runtime_string.ends_with
+
+let string_lower_case_function =
+  dynamic_string_unary "clojure.string/lower-case" String.lowercase_ascii
+
+let string_upper_case_function =
+  dynamic_string_unary "clojure.string/upper-case" String.uppercase_ascii
+
+let string_capitalize_function =
+  dynamic_string_unary "clojure.string/capitalize" Runtime_string.capitalize
+
+let string_join_function =
+  function_ (function
+    | [ values ] ->
+        values |> to_seq |> List.of_seq
+        |> List.map dynamic_string_value |> String.concat "" |> string
+    | [ separator; values ] ->
+        values |> to_seq |> List.of_seq
+        |> List.map dynamic_string_value
+        |> String.concat (dynamic_string_value separator)
+        |> string
+    | _ -> invalid_arg "clojure.string/join expects one or two arguments")
+
+let string_index_of_function =
+  binary_function "clojure.string/index-of" (fun source needle ->
+      int
+        (Runtime_string.index_of (dynamic_string_value source)
+           (dynamic_string_value needle)))
+
+let string_last_index_of_function =
+  binary_function "clojure.string/last-index-of" (fun source needle ->
+      int
+        (Runtime_string.last_index_of (dynamic_string_value source)
+           (dynamic_string_value needle)))
+
+let dynamic_string_ternary name fn =
+  function_ (function
+    | [ first; second; third ] ->
+        string
+          (fn (dynamic_string_value first) (dynamic_string_value second)
+             (dynamic_string_value third))
+    | _ -> invalid_arg (name ^ " expects three arguments"))
+
+let string_replace_function =
+  dynamic_string_ternary "clojure.string/replace" Runtime_string.replace
+
+let string_replace_first_function =
+  dynamic_string_ternary "clojure.string/replace-first"
+    Runtime_string.replace_first
+
+let string_reverse_function =
+  dynamic_string_unary "clojure.string/reverse" Runtime_string.reverse
+
+let string_split_function =
+  binary_function "clojure.string/split" (fun source separator ->
+      Runtime_string.split (dynamic_string_value source)
+        (dynamic_string_value separator)
+      |> Rrbvec.map string |> vector)
+
+let string_split_lines_function =
+  unary_function "clojure.string/split-lines" (fun source ->
+      Runtime_string.split_lines (dynamic_string_value source)
+      |> Rrbvec.map string |> vector)
+
+let string_trim_function =
+  dynamic_string_unary "clojure.string/trim" String.trim
+
+let string_trim_newline_function =
+  dynamic_string_unary "clojure.string/trim-newline"
+    Runtime_string.trim_newline
+
+let string_triml_function =
+  dynamic_string_unary "clojure.string/triml" Runtime_string.triml
+
+let string_trimr_function =
+  dynamic_string_unary "clojure.string/trimr" Runtime_string.trimr
 
 let deref value =
   match value.payload with

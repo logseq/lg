@@ -392,7 +392,41 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
       | Ok (collection :: values) when values <> [] ->
           let add_value collection value =
             let value = unwrap_protocol_value value in
+            let widen_sequence inner sequence =
+              let dynamic = Types.dynamic_constraint TUnknown in
+              let item_name = "__lg_dynamic_conj_sequence_item" in
+              let item = typed_ir inner (Semantic_ir.Ident item_name) in
+              Result.bind (pack_dynamic_value env dynamic value) (fun value ->
+                  Result.map
+                    (fun item ->
+                      typed_ir (TSeq dynamic)
+                        (Semantic_ir.Apply
+                           ( Semantic_ir.Ident "Seq.cons",
+                             [
+                               value;
+                               Semantic_ir.Apply
+                                 ( Semantic_ir.Ident
+                                     "Lg_runtime.Runtime_seq.map",
+                                   [
+                                     Semantic_ir.Fun
+                                       ([ Semantic_ir.PVar item_name ], item);
+                                     sequence;
+                                   ] );
+                             ] )))
+                    (pack_dynamic_value env dynamic item))
+            in
             match collection.ty with
+            | ty when Types.is_dynamic ty ->
+                Result.map
+                  (fun value ->
+                    typed_ir collection.ty
+                      (Semantic_ir.Apply
+                         ( Semantic_ir.Ident
+                             "Lg_runtime.Runtime_dynamic.conj",
+                           [ collection.semantic_expr; value ] )))
+                  (pack_dynamic_value env
+                     (Types.dynamic_constraint TUnknown)
+                     value)
             | TList (TUnknown | TVar _) ->
                 Ok
                   (typed_ir (TList value.ty)
@@ -409,8 +443,34 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   (typed_ir collection.ty
                      (Semantic_ir.Cons
                         (value.semantic_expr, collection.semantic_expr)))
-          | TList _ ->
+            | TList _ ->
               Error.error "conj value type must match list element type"
+            | TSeq (TUnknown | TVar _) ->
+                Ok
+                  (typed_ir (TSeq value.ty)
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident "Seq.cons",
+                          [ value.semantic_expr; collection.semantic_expr ] )))
+            | TSeq inner when Types.same_shape inner value.ty ->
+                let value = coerce_expression_to_type inner value.ty value.semantic_expr in
+                Ok
+                  (typed_ir collection.ty
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident "Seq.cons",
+                          [ value; collection.semantic_expr ] )))
+            | TSeq inner -> widen_sequence inner collection.semantic_expr
+            | TOcaml_app (name, [ inner ])
+              when name = Types.next_seq_type_name ->
+                if Types.same_shape inner value.ty then
+                  let value =
+                    coerce_expression_to_type inner value.ty value.semantic_expr
+                  in
+                  Ok
+                    (typed_ir (TSeq inner)
+                       (Semantic_ir.Apply
+                          ( Semantic_ir.Ident "Seq.cons",
+                            [ value; collection.semantic_expr ] )))
+                else widen_sequence inner collection.semantic_expr
             | TVector (TUnknown | TVar _) ->
                 Ok
                   (typed_ir (TVector value.ty)
@@ -441,7 +501,10 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                                    ( Semantic_ir.Ident (set_module ^ ".add"),
                                      [ value; collection.semantic_expr ] ))))
             | TSet _ -> Error.error "conj value type must match set element type"
-            | _ -> Error.error "conj expects a list, vector, or set"
+            | _ ->
+                Error.error
+                  ("conj expects a list, vector, set, or sequence, got "
+                 ^ Types.source_name collection.ty)
           in
           values
           |> List.fold_left
@@ -562,26 +625,60 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                         let record =
                           typed_ir record_ty (Semantic_ir.Ident record_name)
                         in
+                        let protocol_lookup =
+                          match record_ty with
+                          | TNamed_record ({ nominal = true; _ } as named) ->
+                              let key =
+                                typed_ir TKeyword (Semantic_ir.String keyword)
+                              in
+                              (match
+                                 compile_deftype_method scope env named "valAt"
+                                   [ record; key ]
+                               with
+                              | Some _ as result -> result
+                              | None ->
+                                  compile_deftype_method scope env named
+                                    "-lookup" [ record; key ])
+                          | _ -> None
+                        in
                         match
-                          Structural_map.extension_get record fields keyword
+                          ( Structural_map.extension_get record fields keyword,
+                            protocol_lookup )
                         with
-                        | None -> Error.error ("unknown field " ^ keyword)
-                        | Some lookup ->
+                        | None, None -> Error.error ("unknown field " ^ keyword)
+                        | Some lookup, _ | None, Some lookup ->
+                            let result_ty, missing, present =
+                              if Types.is_dynamic lookup.ty then
+                                ( lookup.ty,
+                                  Semantic_ir.Ident
+                                    "Lg_runtime.Runtime_dynamic.nil",
+                                  lookup.semantic_expr )
+                              else
+                                match lookup.ty with
+                                | TNullable _ | TOcaml_app ("option", [ _ ]) ->
+                                    ( lookup.ty,
+                                      Semantic_ir.Constructor ("None", None),
+                                      lookup.semantic_expr )
+                                | ty ->
+                                    ( TNullable ty,
+                                      Semantic_ir.Constructor ("None", None),
+                                      Semantic_ir.Constructor
+                                        ("Some", Some lookup.semantic_expr) )
+                            in
                             Ok
-                              (typed_ir lookup.ty
+                              (typed_ir result_ty
                                  (Semantic_ir.Match
                                     ( target.semantic_expr,
                                       [
                                         ( Semantic_ir.PConstructor
                                             ("None", None),
-                                          Semantic_ir.Ident
-                                            "Lg_runtime.Runtime_dynamic.nil" );
+                                          missing );
                                         ( Semantic_ir.PConstructor
                                             ( "Some",
                                               Some
                                                 (Semantic_ir.PVar record_name)
                                             ),
-                                          lookup.semantic_expr );
+                                          present );
                                       ] ))))
                     | Some field ->
                       let record_name = "__lg_optional_record" in
@@ -732,6 +829,57 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                      (apply "Rrbvec.nth"
                         [ target.semantic_expr; index.semantic_expr ]))
               | TVector _, _ -> Error.error "get vector index must be int"
+              | ( (TNullable (TNamed_record record)
+                  | TOcaml_app ("option", [ TNamed_record record ])),
+                  _ ) ->
+                  let value_name = "__lg_optional_lookup_value" in
+                  let value =
+                    typed_ir (TNamed_record record)
+                      (Semantic_ir.Ident value_name)
+                  in
+                  let lookup =
+                    match
+                      compile_deftype_method scope env record "valAt"
+                        [ value; index ]
+                    with
+                    | Some _ as result -> result
+                    | None ->
+                        compile_deftype_method scope env record "-lookup"
+                          [ value; index ]
+                  in
+                  (match lookup with
+                  | None -> Error.error "get key must be a keyword"
+                  | Some lookup ->
+                      let result_ty, missing, present =
+                        if Types.is_dynamic lookup.ty then
+                          ( lookup.ty,
+                            Semantic_ir.Ident
+                              "Lg_runtime.Runtime_dynamic.nil",
+                            lookup.semantic_expr )
+                        else
+                          match lookup.ty with
+                          | TNullable _ | TOcaml_app ("option", [ _ ]) ->
+                              ( lookup.ty,
+                                Semantic_ir.Constructor ("None", None),
+                                lookup.semantic_expr )
+                          | ty ->
+                              ( TNullable ty,
+                                Semantic_ir.Constructor ("None", None),
+                                Semantic_ir.Constructor
+                                  ("Some", Some lookup.semantic_expr) )
+                      in
+                      Ok
+                        (typed_ir result_ty
+                           (Semantic_ir.Match
+                              ( target.semantic_expr,
+                                [
+                                  ( Semantic_ir.PConstructor ("None", None),
+                                    missing );
+                                  ( Semantic_ir.PConstructor
+                                      ( "Some",
+                                        Some (Semantic_ir.PVar value_name) ),
+                                    present );
+                                ] ))))
               | TNamed_record record, _ -> (
                 let concrete_fields =
                   record.fields

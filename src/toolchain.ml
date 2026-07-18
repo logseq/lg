@@ -120,8 +120,19 @@ module Lg_frontend : FRONTEND = struct
     if not (host_type_hint name) then false
     else
       let type_name = String.sub name 1 (String.length name - 1) in
+      let qualified_record_hint =
+        match String.rindex_opt type_name '/' with
+        | Some separator when separator < String.length type_name - 1 ->
+            let local_name =
+              String.sub type_name (separator + 1)
+                (String.length type_name - separator - 1)
+            in
+            Char.uppercase_ascii local_name.[0] = local_name.[0]
+        | Some _ | None -> false
+      in
       Option.is_some (Host_interop.type_annotation type_name)
       || type_name = "clojure.lang.Associative"
+      || qualified_record_hint
       || (not (String.contains type_name '.'))
          && not (String.contains type_name '/')
 

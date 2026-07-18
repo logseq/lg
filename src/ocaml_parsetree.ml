@@ -535,7 +535,7 @@ let rec structure_of_item = function
   | Type_def { type_name; type_parameters; fields; location } ->
       let record_type =
         Types.named_record ~nominal:true ~type_name ~type_parameters
-          ~set_module_name:(type_name ^ "_set") fields
+          ~set_module_name:("Set_" ^ type_name) fields
       in
       let constructor_name =
         match record_type with
@@ -545,14 +545,19 @@ let rec structure_of_item = function
       let type_definition =
         record_type_definition type_name type_parameters fields location
       in
+      let set_definition =
+        set_module_definition ("Set_" ^ type_name) record_type
+      in
+      let definitions =
+        if type_parameters = [] then [ type_definition; set_definition ]
+        else [ type_definition ]
+      in
       if Types.supports_structural_dynamic_packing record_type then
-        Ok [ type_definition ]
+        Ok definitions
       else
         Ok
-          [
-            type_definition;
-            nominal_tag_extension constructor_name record_type location;
-          ]
+          (definitions
+          @ [ nominal_tag_extension constructor_name record_type location ])
   | Type_alias { type_name; type_parameters; manifest; location } ->
       Ok [ type_alias_definition type_name type_parameters manifest location ]
   | Type_variant { type_name; type_parameters; constructors; location } ->

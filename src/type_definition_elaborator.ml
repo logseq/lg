@@ -45,7 +45,7 @@ let compile_type_record_fields ?location ?(allow_empty = false) scope env
     | Ok (type_id, env) ->
         let record_ty =
           Types.named_record ~type_id ~nominal:true ~type_name ~type_parameters
-            ~set_module_name:(type_name ^ "_set") fields
+            ~set_module_name:("Set_" ^ type_name) fields
         in
         let env =
           Env.add

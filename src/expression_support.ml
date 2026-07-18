@@ -146,6 +146,8 @@ let rec merge_branch_types left right =
     | TVector (TUnknown | TVar _), TVector inner
     | TVector inner, TVector (TUnknown | TVar _) ->
         Some (TVector inner)
+    | (TList _ | TVector _ | TSeq _), (TList _ | TVector _ | TSeq _) ->
+        Some (Types.dynamic_constraint TUnknown)
     | TVar _, TVar _ -> Some left
     | TVar _, ty | ty, TVar _ -> Some ty
     | TUnknown, ty | ty, TUnknown -> Some ty
@@ -837,12 +839,284 @@ let allocate_nested_anonymous_records ~owner env next_type fields =
 
 let check_emitted_name_collision = Resolver.check_emitted_name_collision
 
+let dynamic_callable name argument_names body =
+  let arguments_name =
+    "__lg_" ^ Names.sanitize_name name ^ "_arguments"
+  in
+  Semantic_ir.Apply
+    ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.function_",
+      [
+        Semantic_ir.Fun
+          ( [ Semantic_ir.PVar arguments_name ],
+            Semantic_ir.Match
+              ( Semantic_ir.Ident arguments_name,
+                [
+                  ( Semantic_ir.PList
+                      (List.map (fun name -> Semantic_ir.PVar name) argument_names),
+                    body );
+                  ( Semantic_ir.PAny,
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident "invalid_arg",
+                        [ Semantic_ir.String (name ^ " called with wrong arity") ] ) );
+                ] ) );
+      ] )
+
+let regex_captures target regex_name groups_name =
+  match target with
+  | Target.Melange ->
+      Semantic_ir.Apply
+        ( Semantic_ir.Ident "List.map",
+          [
+            Semantic_ir.Ident "Js.Nullable.toOption";
+            Semantic_ir.Apply
+              ( Semantic_ir.Ident "Array.to_list",
+                [
+                  Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Js.Re.captures",
+                      [ Semantic_ir.Ident groups_name ] );
+                ] );
+          ] )
+  | Target.Native | Target.Js_of_ocaml ->
+      let index_name = "__lg_regex_group_index" in
+      Semantic_ir.Apply
+        ( Semantic_ir.Ident "List.init",
+          [
+            Semantic_ir.Apply
+              ( Semantic_ir.Ident "Re.group_count",
+                [ Semantic_ir.Ident regex_name ] );
+            Semantic_ir.Fun
+              ( [ Semantic_ir.PVar index_name ],
+                Semantic_ir.Apply
+                  ( Semantic_ir.Ident "Re.Group.get_opt",
+                    [
+                      Semantic_ir.Ident groups_name;
+                      Semantic_ir.Ident index_name;
+                    ] ) );
+          ] )
+
+let dynamic_regex_match target ~whole expression source =
+  let regex_name = "__lg_dynamic_regex" in
+  let groups_name = "__lg_dynamic_regex_groups" in
+  let pattern =
+    Semantic_ir.Apply
+      ( Semantic_ir.Ident "Lg_runtime.Runtime_string.regex_pattern",
+        [ expression ] )
+  in
+  let regex, execution =
+    match target with
+    | Target.Melange ->
+        let pattern =
+          if whole then
+            Codegen.concat_expr
+              [ Semantic_ir.String "^(?:"; pattern; Semantic_ir.String ")$" ]
+          else pattern
+        in
+        ( Semantic_ir.Apply
+            (Semantic_ir.Ident "Js.Re.fromString", [ pattern ]),
+          Semantic_ir.Labelled_apply
+            ( Semantic_ir.Ident "Js.Re.exec",
+              [
+                (Some "str", source);
+                (None, Semantic_ir.Ident regex_name);
+              ] ) )
+    | Target.Native | Target.Js_of_ocaml ->
+        let regex_expression =
+          Semantic_ir.Apply (Semantic_ir.Ident "Re.Perl.re", [ pattern ])
+        in
+        let regex_expression =
+          if whole then
+            Semantic_ir.Apply
+              (Semantic_ir.Ident "Re.whole_string", [ regex_expression ])
+          else regex_expression
+        in
+        ( Semantic_ir.Apply
+            (Semantic_ir.Ident "Re.compile", [ regex_expression ]),
+          Semantic_ir.Apply
+            ( Semantic_ir.Ident "Re.exec_opt",
+              [ Semantic_ir.Ident regex_name; source ] ) )
+  in
+  let match_value =
+    Semantic_ir.Apply
+      ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.regex_match",
+        [
+          Semantic_ir.Constructor
+            ( "Some",
+              Some (regex_captures target regex_name groups_name) );
+        ] )
+  in
+  let no_match =
+    Semantic_ir.Apply
+      ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.regex_match",
+        [ Semantic_ir.Constructor ("None", None) ] )
+  in
+  Semantic_ir.Let
+    ( [ (Semantic_ir.PVar regex_name, regex) ],
+      Semantic_ir.Match
+        ( execution,
+          [
+            (Semantic_ir.PConstructor ("None", None), no_match);
+            ( Semantic_ir.PConstructor
+                ("Some", Some (Semantic_ir.PVar groups_name)),
+              match_value );
+          ] ) )
+
+let dynamic_regex_sequence target expression source =
+  let regex_name = "__lg_dynamic_regex" in
+  let groups_name = "__lg_dynamic_regex_groups" in
+  let pattern =
+    Semantic_ir.Apply
+      ( Semantic_ir.Ident "Lg_runtime.Runtime_string.regex_pattern",
+        [ expression ] )
+  in
+  match target with
+  | Target.Native | Target.Js_of_ocaml ->
+      let regex =
+        Semantic_ir.Apply
+          ( Semantic_ir.Ident "Re.compile",
+            [ Semantic_ir.Apply (Semantic_ir.Ident "Re.Perl.re", [ pattern ]) ] )
+      in
+      let matches =
+        Semantic_ir.Apply
+          ( Semantic_ir.Ident "List.map",
+            [
+              Semantic_ir.Fun
+                ( [ Semantic_ir.PVar groups_name ],
+                  Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.regex_match",
+                      [
+                        Semantic_ir.Constructor
+                          ( "Some",
+                            Some
+                              (regex_captures target regex_name groups_name) );
+                      ] ) );
+              Semantic_ir.Apply
+                ( Semantic_ir.Ident "Re.all",
+                  [ Semantic_ir.Ident regex_name; source ] );
+            ] )
+      in
+      Semantic_ir.Let
+        ( [ (Semantic_ir.PVar regex_name, regex) ],
+          Semantic_ir.Apply
+            ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.seq",
+              [
+                Semantic_ir.Apply
+                  (Semantic_ir.Ident "List.to_seq", [ matches ]);
+              ] ) )
+  | Target.Melange ->
+      let loop_name = "__lg_dynamic_regex_collect" in
+      let acc_name = "__lg_dynamic_regex_acc" in
+      let regex =
+        Semantic_ir.Labelled_apply
+          ( Semantic_ir.Ident "Js.Re.fromStringWithFlags",
+            [ (None, pattern); (Some "flags", Semantic_ir.String "g") ] )
+      in
+      let execution =
+        Semantic_ir.Labelled_apply
+          ( Semantic_ir.Ident "Js.Re.exec",
+            [ (Some "str", source); (None, Semantic_ir.Ident regex_name) ] )
+      in
+      let match_value =
+        Semantic_ir.Apply
+          ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.regex_match",
+            [
+              Semantic_ir.Constructor
+                ( "Some",
+                  Some (regex_captures target regex_name groups_name) );
+            ] )
+      in
+      let collected =
+        Semantic_ir.LetRecIn
+          ( loop_name,
+            [ Semantic_ir.PVar acc_name ],
+            Semantic_ir.Match
+              ( execution,
+                [
+                  ( Semantic_ir.PConstructor ("None", None),
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident "List.rev",
+                        [ Semantic_ir.Ident acc_name ] ) );
+                  ( Semantic_ir.PConstructor
+                      ("Some", Some (Semantic_ir.PVar groups_name)),
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident loop_name,
+                        [
+                          Semantic_ir.Cons
+                            (match_value, Semantic_ir.Ident acc_name);
+                        ] ) );
+                ] ),
+            Semantic_ir.Apply
+              (Semantic_ir.Ident loop_name, [ Semantic_ir.List [] ]) )
+      in
+      Semantic_ir.Let
+        ( [ (Semantic_ir.PVar regex_name, regex) ],
+          Semantic_ir.Apply
+            ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.seq",
+              [
+                Semantic_ir.Apply
+                  (Semantic_ir.Ident "List.to_seq", [ collected ]);
+              ] ) )
+
+let lookup_regex_function env name =
+  let target = Env.target env in
+  let dynamic_string argument =
+    Semantic_ir.Apply
+      ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.as_string",
+        [ Semantic_ir.Ident argument ] )
+  in
+  match name with
+  | "re-pattern" ->
+      let pattern_name = "__lg_regex_pattern" in
+      Some
+        (dynamic_callable name [ pattern_name ]
+           (Semantic_ir.Apply
+              ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.string",
+                [
+                  Codegen.concat_expr
+                    [
+                      Semantic_ir.String "\000lg-regex:";
+                      dynamic_string pattern_name;
+                    ];
+                ] )))
+  | "re-matches" | "re-find" ->
+      let expression_name = "__lg_regex_expression" in
+      let source_name = "__lg_regex_source" in
+      Some
+        (dynamic_callable name [ expression_name; source_name ]
+           (dynamic_regex_match target ~whole:(name = "re-matches")
+              (dynamic_string expression_name) (dynamic_string source_name)))
+  | "re-seq" ->
+      let expression_name = "__lg_regex_expression" in
+      let source_name = "__lg_regex_source" in
+      Some
+        (dynamic_callable name [ expression_name; source_name ]
+           (dynamic_regex_sequence target (dynamic_string expression_name)
+              (dynamic_string source_name)))
+  | _ -> None
+
 let lookup_function scope env name =
+  let dynamic = Types.dynamic_constraint TUnknown in
+  let dynamic_function runtime_name =
+    typed_ir
+      (Types.dynamic_constraint TUnknown)
+      (Semantic_ir.Ident ("Lg_runtime.Runtime_dynamic." ^ runtime_name))
+  in
+  let static_function parameter_tys return_ty runtime_name =
+    typed_ir
+      (TFn (parameter_tys, return_ty))
+      (Semantic_ir.Ident ("Lg_runtime.Runtime_dynamic." ^ runtime_name))
+  in
   match lookup_binding scope env name with
   | Ok binding ->
       Ok (typed_ir binding.ty (Semantic_ir.Ident binding.ocaml_name))
   | Error _ -> (
       match name with
+      | "=" | "==" ->
+          Ok (dynamic_function "equality_function")
+      | "not=" | "!=" ->
+          Ok (dynamic_function "inequality_function")
+      | "quot" -> Ok (static_function [ TInt; TInt ] TInt "int_quot")
+      | "rem" -> Ok (static_function [ TInt; TInt ] TInt "int_rem")
+      | "mod" -> Ok (static_function [ TInt; TInt ] TInt "clojure_mod")
       | "+" ->
           Ok
             (typed_ir
@@ -876,42 +1150,73 @@ let lookup_function scope env name =
                     Semantic_ir.Infix
                       ("/", Semantic_ir.Ident "a", Semantic_ir.Ident "b") )))
       | "inc" ->
-          Ok
-            (typed_ir
-               (TFn ([ TInt ], TInt))
-               (Semantic_ir.Fun
-                  ( [ Semantic_ir.PVar "x" ],
-                    Semantic_ir.Infix
-                      ("+", Semantic_ir.Ident "x", Semantic_ir.Int 1) )))
+          Ok (static_function [ TInt ] TInt "int_inc")
       | "dec" ->
+          Ok (static_function [ TInt ] TInt "int_dec")
+      | "max" -> Ok (static_function [ TInt; TInt ] TInt "int_max")
+      | "min" -> Ok (static_function [ TInt; TInt ] TInt "int_min")
+      | "zero?" -> Ok (static_function [ TInt ] TBool "int_zero")
+      | "pos?" -> Ok (static_function [ TInt ] TBool "int_positive")
+      | "neg?" -> Ok (static_function [ TInt ] TBool "int_negative")
+      | "even?" -> Ok (static_function [ TInt ] TBool "int_even")
+      | "odd?" -> Ok (static_function [ TInt ] TBool "int_odd")
+      | "compare" ->
+          Ok (static_function [ dynamic; dynamic ] TInt "compare")
+      | "rand" -> Ok (dynamic_function "rand_function")
+      | "rand-int" ->
           Ok
             (typed_ir
                (TFn ([ TInt ], TInt))
-               (Semantic_ir.Fun
-                  ( [ Semantic_ir.PVar "x" ],
-                    Semantic_ir.Infix
-                      ("-", Semantic_ir.Ident "x", Semantic_ir.Int 1) )))
-      | ("max" | "min") as name ->
-          let comparison = if name = "max" then ">=" else "<=" in
+               (Semantic_ir.Ident "Lg_runtime.Runtime_random.rand_int"))
+      | "true?" -> Ok (static_function [ dynamic ] TBool "is_true")
+      | "false?" -> Ok (static_function [ dynamic ] TBool "is_false")
+      | "nil?" -> Ok (static_function [ dynamic ] TBool "is_nil")
+      | "some?" -> Ok (static_function [ dynamic ] TBool "is_some")
+      | "complement" ->
           Ok
-            (typed_ir
-               (TFn ([ TInt; TInt ], TInt))
-               (Semantic_ir.Fun
-                  ( [ Semantic_ir.PVar "a"; Semantic_ir.PVar "b" ],
-                    Semantic_ir.If
-                      ( Semantic_ir.Infix
-                          ( comparison,
-                            Semantic_ir.Ident "a",
-                            Semantic_ir.Ident "b" ),
-                        Semantic_ir.Ident "a",
-                        Semantic_ir.Ident "b" ) )))
+            (static_function [ dynamic ] dynamic "complement_value")
+      | "identical?" ->
+          Ok
+            (static_function [ dynamic; dynamic ] TBool "identical")
+      | "identity" ->
+          Ok (static_function [ dynamic ] dynamic "identity_value")
+      | "keyword" ->
+          Ok (static_function [ dynamic ] dynamic "keyword_value")
+      | "meta" -> Ok (static_function [ dynamic ] dynamic "metadata")
+      | "name" -> Ok (static_function [ dynamic ] dynamic "name_value")
+      | "namespace" ->
+          Ok
+            (static_function [ dynamic ] dynamic "identifier_namespace")
+      | "type" -> Ok (static_function [ dynamic ] dynamic "class_")
+      | "vector" -> Ok (dynamic_function "vector_function")
+      | "list" -> Ok (dynamic_function "list_function")
+      | "set" -> Ok (dynamic_function "set_function")
+      | "hash-map" -> Ok (dynamic_function "hash_map_function")
+      | "array-map" -> Ok (dynamic_function "array_map_function")
+      | "count" -> Ok (dynamic_function "count_function")
+      | "range" -> Ok (dynamic_function "range_function")
+      | "not-empty" -> Ok (dynamic_function "not_empty_function")
+      | "empty?" -> Ok (dynamic_function "empty_predicate_function")
+      | "contains?" -> Ok (dynamic_function "contains_function")
+      | "str" -> Ok (static_function [ dynamic ] TString "str_value")
+      | "subs" -> Ok (dynamic_function "subs_function")
+      | "get" -> Ok (dynamic_function "get_function")
+      | "pr-str" -> Ok (dynamic_function "pr_str_function")
+      | "print-str" -> Ok (dynamic_function "print_str_function")
+      | "println-str" -> Ok (dynamic_function "println_str_function")
+      | "prn-str" -> Ok (dynamic_function "prn_str_function")
+      | "str/escape" | "clojure.string/escape" ->
+          Ok (dynamic_function "escape_function")
+      | "number?" -> Ok (static_function [ dynamic ] TBool "is_number")
+      | "integer?" -> Ok (static_function [ dynamic ] TBool "is_int")
+      | "string?" -> Ok (static_function [ dynamic ] TBool "is_string")
+      | "boolean?" -> Ok (static_function [ dynamic ] TBool "is_bool")
+      | "keyword?" -> Ok (static_function [ dynamic ] TBool "is_keyword")
       | "not" ->
           Ok
             (typed_ir
-               (TFn ([ TBool ], TBool))
-               (Semantic_ir.Fun
-                  ( [ Semantic_ir.PVar "x" ],
-                    Semantic_ir.Prefix ("not", Semantic_ir.Ident "x") )))
+               (TFn ([ dynamic ], TBool))
+               (Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.not_value"))
       | "transient" ->
           let dynamic = Types.dynamic_constraint TUnknown in
           Ok
@@ -987,7 +1292,11 @@ let lookup_function scope env name =
                           Semantic_ir.Ident "collection";
                           Semantic_ir.Ident "value";
                         ] ) )))
-      | _ -> Error.error ("unknown function " ^ name))
+      | _ -> (
+          match lookup_regex_function env name with
+          | Some expression ->
+              Ok (typed_ir (Types.dynamic_constraint TUnknown) expression)
+          | None -> Error.error ("unknown function " ^ name)))
 
 let record_constructor_type scope env name =
   if String.ends_with ~suffix:"." name then

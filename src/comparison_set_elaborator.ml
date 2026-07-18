@@ -69,11 +69,17 @@ let create ~compile_expr ~pack_dynamic_value =
       match compile_args_for scope env arg_forms with
       | Error _ as err -> err
       | Ok [ left; right ]
-        when Types.is_dynamic left.ty && Types.is_dynamic right.ty ->
-          Ok
-            (typed_ir TInt
-               (apply "Lg_runtime.Runtime_dynamic.compare"
-                  [ left.semantic_expr; right.semantic_expr ]))
+        when Types.is_dynamic left.ty || Types.is_dynamic right.ty ->
+          let dynamic_ty =
+            if Types.is_dynamic left.ty then left.ty else right.ty
+          in
+          Result.bind (pack_dynamic_value env dynamic_ty left) (fun left ->
+              Result.map
+                (fun right ->
+                  typed_ir TInt
+                    (apply "Lg_runtime.Runtime_dynamic.compare"
+                       [ left; right ]))
+                (pack_dynamic_value env dynamic_ty right))
       | Ok [ left; right ] ->
           if not (Types.equal left.ty right.ty) then
             Error.error

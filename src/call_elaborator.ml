@@ -733,6 +733,81 @@ and pack_dynamic_payload env expected_dynamic argument =
            })
 
 and pack_dynamic_payload_impl env expected_dynamic argument =
+  let dynamic_core_function_adapter expression =
+    match Semantic_ir.unlocated expression with
+    | Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.int_quot" ->
+        Some "quot_function"
+    | Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.int_rem" ->
+        Some "rem_function"
+    | Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.clojure_mod" ->
+        Some "mod_function"
+    | Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.int_inc" ->
+        Some "inc_function"
+    | Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.int_dec" ->
+        Some "dec_function"
+    | Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.int_max" ->
+        Some "max_function"
+    | Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.int_min" ->
+        Some "min_function"
+    | Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.int_zero" ->
+        Some "zero_function"
+    | Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.int_positive" ->
+        Some "positive_function"
+    | Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.int_negative" ->
+        Some "negative_function"
+    | Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.int_even" ->
+        Some "even_function"
+    | Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.int_odd" ->
+        Some "odd_function"
+    | Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.int_compare" ->
+        Some "compare_function"
+    | Semantic_ir.Ident "Lg_runtime.Runtime_random.rand_int" ->
+        Some "rand_int_function"
+    | Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.bool_not" ->
+        Some "not_function"
+    | Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.keyword_value" ->
+        Some "keyword_function"
+    | Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.str_value" ->
+        Some "str_function"
+    | Semantic_ir.Ident "Lg_runtime.Runtime_string.blank" ->
+        Some "string_blank_function"
+    | Semantic_ir.Ident "Lg_runtime.Runtime_string.includes" ->
+        Some "string_includes_function"
+    | Semantic_ir.Ident "Lg_runtime.Runtime_string.starts_with" ->
+        Some "string_starts_with_function"
+    | Semantic_ir.Ident "Lg_runtime.Runtime_string.ends_with" ->
+        Some "string_ends_with_function"
+    | Semantic_ir.Ident "String.lowercase_ascii" ->
+        Some "string_lower_case_function"
+    | Semantic_ir.Ident "String.uppercase_ascii" ->
+        Some "string_upper_case_function"
+    | Semantic_ir.Ident "Lg_runtime.Runtime_string.capitalize" ->
+        Some "string_capitalize_function"
+    | Semantic_ir.Ident "Lg_runtime.Runtime_string.join" ->
+        Some "string_join_function"
+    | Semantic_ir.Ident "Lg_runtime.Runtime_string.index_of" ->
+        Some "string_index_of_function"
+    | Semantic_ir.Ident "Lg_runtime.Runtime_string.last_index_of" ->
+        Some "string_last_index_of_function"
+    | Semantic_ir.Ident "Lg_runtime.Runtime_string.replace" ->
+        Some "string_replace_function"
+    | Semantic_ir.Ident "Lg_runtime.Runtime_string.replace_first" ->
+        Some "string_replace_first_function"
+    | Semantic_ir.Ident "Lg_runtime.Runtime_string.reverse" ->
+        Some "string_reverse_function"
+    | Semantic_ir.Ident "Lg_runtime.Runtime_string.split" ->
+        Some "string_split_function"
+    | Semantic_ir.Ident "Lg_runtime.Runtime_string.split_lines" ->
+        Some "string_split_lines_function"
+    | Semantic_ir.Ident "String.trim" -> Some "string_trim_function"
+    | Semantic_ir.Ident "Lg_runtime.Runtime_string.trim_newline" ->
+        Some "string_trim_newline_function"
+    | Semantic_ir.Ident "Lg_runtime.Runtime_string.triml" ->
+        Some "string_triml_function"
+    | Semantic_ir.Ident "Lg_runtime.Runtime_string.trimr" ->
+        Some "string_trimr_function"
+    | _ -> None
+  in
   if Types.is_dynamic argument.ty then Ok argument.semantic_expr
   else
     let pack_nested item = pack_dynamic_value env expected_dynamic item in
@@ -939,7 +1014,13 @@ and pack_dynamic_payload_impl env expected_dynamic argument =
                      ( [ (Semantic_ir.PVar packed_name, argument.semantic_expr) ],
                        expression ))))
     | TUnknown | TVar _ -> Ok argument.semantic_expr
-    | TFn (parameter_tys, return_ty) ->
+    | TFn (parameter_tys, return_ty) -> (
+      match dynamic_core_function_adapter argument.semantic_expr with
+      | Some runtime_name ->
+          Ok
+            (Semantic_ir.Ident
+               ("Lg_runtime.Runtime_dynamic." ^ runtime_name))
+      | None ->
         let argument_names =
           List.mapi
             (fun index _ -> "__lg_dynamic_argument_" ^ string_of_int index)
@@ -985,7 +1066,127 @@ and pack_dynamic_payload_impl env expected_dynamic argument =
                       in
                       Semantic_ir.Apply
                   ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.function_",
-                          [ function_ ] )))
+                          [ function_ ] ))))
+    | TOverloaded_fn arities ->
+        let arguments_name = "__lg_dynamic_overloaded_arguments" in
+        let projection index =
+          let rec descend expression remaining =
+            if remaining = 0 then
+              Semantic_ir.Apply (Semantic_ir.Ident "fst", [ expression ])
+            else
+              descend
+                (Semantic_ir.Apply (Semantic_ir.Ident "snd", [ expression ]))
+                (remaining - 1)
+          in
+          descend argument.semantic_expr index
+        in
+        let indexed = List.mapi (fun index arity -> (index, arity)) arities in
+        let indexed =
+          List.filter
+            (fun (_, (arity : fn_arity)) -> Option.is_none arity.rest_param)
+            indexed
+          @ List.filter
+              (fun (_, (arity : fn_arity)) -> Option.is_some arity.rest_param)
+              indexed
+        in
+        let compile_arity (index, (arity : fn_arity)) =
+          let fixed_names =
+            List.mapi
+              (fun parameter_index _ ->
+                "__lg_dynamic_overloaded_argument_"
+                ^ string_of_int index ^ "_" ^ string_of_int parameter_index)
+              arity.fixed_params
+          in
+          let rec unpack_fixed unpacked tys names =
+            match (tys, names) with
+            | [], [] -> Ok (List.rev unpacked)
+            | ty :: tys, name :: names ->
+                Result.bind
+                  (dynamic_unpack env ty (Semantic_ir.Ident name))
+                  (fun value -> unpack_fixed (value :: unpacked) tys names)
+            | _ -> Error.error "dynamic overloaded function arity mismatch"
+          in
+          Result.bind
+            (unpack_fixed [] arity.fixed_params fixed_names)
+            (fun fixed_arguments ->
+              let rest_name =
+                "__lg_dynamic_overloaded_rest_" ^ string_of_int index
+              in
+              let rest_argument =
+                match arity.rest_param with
+                | None -> Ok None
+                | Some rest_ty ->
+                    let item_name =
+                      "__lg_dynamic_overloaded_rest_item_"
+                      ^ string_of_int index
+                    in
+                    Result.map
+                      (fun unpacked_item ->
+                        Some
+                          (Semantic_ir.Apply
+                             ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.map",
+                               [
+                                 Semantic_ir.Fun
+                                   ([ Semantic_ir.PVar item_name ], unpacked_item);
+                                 Semantic_ir.Apply
+                                   ( Semantic_ir.Ident "List.to_seq",
+                                     [ Semantic_ir.Ident rest_name ] );
+                               ] )))
+                      (dynamic_unpack env rest_ty (Semantic_ir.Ident item_name))
+              in
+              Result.bind rest_argument (fun rest_argument ->
+                let call_arguments =
+                  fixed_arguments
+                  @ Option.fold ~none:[] ~some:(fun rest -> [ rest ])
+                      rest_argument
+                in
+                let result =
+                  typed_ir arity.return_ty
+                    (Semantic_ir.Apply (projection index, call_arguments))
+                in
+                Result.map
+                  (fun packed_result ->
+                    let fixed_patterns =
+                      List.map (fun name -> Semantic_ir.PVar name) fixed_names
+                    in
+                    let pattern =
+                      match arity.rest_param with
+                      | None -> Semantic_ir.PList fixed_patterns
+                      | Some _ ->
+                          List.fold_right
+                            (fun pattern rest -> Semantic_ir.PCons (pattern, rest))
+                            fixed_patterns (Semantic_ir.PVar rest_name)
+                    in
+                    (pattern, packed_result))
+                  (pack_dynamic_payload env expected_dynamic result)))
+        in
+        let rec compile_cases compiled = function
+          | [] -> Ok (List.rev compiled)
+          | arity :: rest ->
+              Result.bind (compile_arity arity) (fun case ->
+                  compile_cases (case :: compiled) rest)
+        in
+        Result.map
+          (fun cases ->
+            Semantic_ir.Apply
+              ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.function_",
+                [
+                  Semantic_ir.Fun
+                    ( [ Semantic_ir.PVar arguments_name ],
+                      Semantic_ir.Match
+                        ( Semantic_ir.Ident arguments_name,
+                          cases
+                          @ [
+                              ( Semantic_ir.PAny,
+                                Semantic_ir.Apply
+                                  ( Semantic_ir.Ident "invalid_arg",
+                                    [
+                                      Semantic_ir.String
+                                        "wrong dynamic overloaded function argument count";
+                                    ] ) );
+                            ] ) );
+                ] ))
+          (compile_cases [] indexed)
     | TTuple item_tys ->
         let item_names =
           List.mapi
@@ -2170,6 +2371,9 @@ let callback_parameters_need_adapter expected actual =
     (fun expected_ty actual_ty ->
       (Types.is_dynamic expected_ty && not (expects_dynamic_value actual_ty))
       ||
+      (Types.is_dynamic actual_ty
+      && not (expects_dynamic_value expected_ty))
+      ||
       (expects_dynamic_value actual_ty
       && has_capability_constraint expected_ty))
     expected actual
@@ -2196,6 +2400,10 @@ let adapt_dynamic_callback env expected arg =
                 Types.is_dynamic expected_ty
                 && not (expects_dynamic_value actual_ty)
               then dynamic_unpack env actual_ty value.semantic_expr
+              else if
+                Types.is_dynamic actual_ty
+                && not (expects_dynamic_value expected_ty)
+              then pack_dynamic_value env actual_ty value
               else if
                 expects_dynamic_value actual_ty
                 && has_capability_constraint expected_ty
@@ -2874,6 +3082,14 @@ let create ~compile_expr =
                   ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.zip_vectors",
                     [ collections ] )))
   and compile_call scope env name arg_forms =
+    let name =
+      match String.split_on_char '/' name with
+      | [ alias; member ] -> (
+          match Env.resolve_namespace_alias ~scope alias env with
+          | Some ("clojure.core" | "cljs.core") -> "clojure.core/" ^ member
+          | Some _ | None -> name)
+      | _ -> name
+    in
     let member_name =
       match String.rindex_opt name '/' with
       | None -> name
@@ -3157,12 +3373,8 @@ let create ~compile_expr =
                             (Protocol_id.to_string protocol_id);
                         ] )
                   else
-                              match
-                                Types.protocol_constraint_info receiver.ty
-                              with
-                  | Some (receiver_protocol, _, _)
-                                when Protocol_id.equal protocol_id
-                                       receiver_protocol -> (
+                              if has_protocol_constraint protocol_id receiver.ty
+                              then
                       match
                                     protocol_witness_expression protocol_id
                                       receiver
@@ -3178,8 +3390,8 @@ let create ~compile_expr =
                                     ("Some", Some Semantic_ir.PAny),
                                   Semantic_ir.Bool true );
                               ] )
-                      | None -> Semantic_ir.Bool false)
-                  | _ ->
+                      | None -> Semantic_ir.Bool false
+                              else
                       Semantic_ir.Sequence
                                     [
                                       receiver.semantic_expr;
@@ -4760,6 +4972,67 @@ let create ~compile_expr =
                       [ semantic_expr ] )))
         | Ok [ _ ] -> Error.error "rand-int expects an int"
         | Ok _ -> Error.error "rand-int expects 1 argument")
+    | "rand" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [] ->
+            Ok
+              (typed_ir TFloat
+                 (Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Lg_runtime.Runtime_random.rand",
+                      [ Semantic_ir.Float "1." ] )))
+        | Ok [ { ty = TInt; semantic_expr; _ } ] ->
+            Ok
+              (typed_ir TFloat
+                 (Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Lg_runtime.Runtime_random.rand",
+                      [ Semantic_ir.Apply
+                          (Semantic_ir.Ident "float_of_int", [ semantic_expr ]);
+                      ] )))
+        | Ok [ { ty = TFloat; semantic_expr; _ } ] ->
+            Ok
+              (typed_ir TFloat
+                 (Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Lg_runtime.Runtime_random.rand",
+                      [ semantic_expr ] )))
+        | Ok [ _ ] -> Error.error "rand expects a numeric bound"
+        | Ok _ -> Error.error "rand expects zero or one argument")
+    | ("rand-nth" | "shuffle") as random_operation -> (
+        match arg_forms with
+        | [ collection_form ] -> (
+            match compile_expr scope env collection_form with
+            | Error _ as error -> error
+            | Ok collection -> (
+                match Collection_capability.to_seq_expr env collection with
+                | Error _ ->
+                    Error.error
+                      (random_operation ^ " expects a seqable collection")
+                | Ok (inner, sequence) ->
+                    let values =
+                      Semantic_ir.Apply
+                        ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.to_list",
+                          [ sequence ] )
+                    in
+                    if random_operation = "rand-nth" then
+                      Ok
+                        (typed_ir inner
+                           (Semantic_ir.Apply
+                              ( Semantic_ir.Ident
+                                  "Lg_runtime.Runtime_random.rand_nth",
+                                [ values ] )))
+                    else
+                      Ok
+                        (typed_ir (TVector inner)
+                           (Semantic_ir.Apply
+                              ( Semantic_ir.Ident "Rrbvec.of_list",
+                                [
+                                  Semantic_ir.Apply
+                                    ( Semantic_ir.Ident
+                                        "Lg_runtime.Runtime_random.shuffle",
+                                      [ values ] );
+                                ] )))))
+        | _ ->
+            Error.error (random_operation ^ " expects one argument"))
     | "int" | "long" -> (
         match compile_args () with
         | Error _ as err -> err
@@ -6476,6 +6749,77 @@ let create ~compile_expr =
         Error.error (name ^ " size must be positive")
     | "take-nth", FInt count :: _ when count <= 0 ->
         Error.error "take-nth n must be positive"
+    | "sort", [ comparator_form; collection_form ] -> (
+        match compile_expr scope env collection_form with
+        | Error _ as error -> error
+        | Ok collection -> (
+            match Collection_capability.to_seq_expr env collection with
+            | Error _ -> Error.error "sort expects a seqable value"
+            | Ok (inner, sequence) -> (
+                match compile_function_arg scope env comparator_form with
+                | Error _ as error -> error
+                | Ok
+                    ({ ty = TFn ([ left_ty; right_ty ], TInt); _ } as comparator)
+                  when Types.assignable ~policy:Host_boundary ~expected:left_ty
+                         ~actual:inner
+                       && Types.assignable ~policy:Host_boundary
+                            ~expected:right_ty ~actual:inner ->
+                    let comparator_expression =
+                      if
+                        Types.is_dynamic left_ty && Types.is_dynamic right_ty
+                        && not (Types.is_dynamic inner)
+                      then
+                        let left_name = "__lg_sort_left" in
+                        let right_name = "__lg_sort_right" in
+                        let left = typed_ir inner (Semantic_ir.Ident left_name) in
+                        let right = typed_ir inner (Semantic_ir.Ident right_name) in
+                        Result.bind (pack_dynamic_value env left_ty left)
+                          (fun left ->
+                            Result.map
+                              (fun right ->
+                                Semantic_ir.Fun
+                                  ( [
+                                      Semantic_ir.PVar left_name;
+                                      Semantic_ir.PVar right_name;
+                                    ],
+                                    Semantic_ir.Apply
+                                      ( comparator.semantic_expr,
+                                        [ left; right ] ) ))
+                              (pack_dynamic_value env right_ty right))
+                      else Ok comparator.semantic_expr
+                    in
+                    Result.map
+                      (fun comparator_expression ->
+                        typed_ir (TList inner)
+                          (Semantic_ir.Apply
+                             ( Semantic_ir.Ident "List.sort",
+                               [
+                                 comparator_expression;
+                                 Semantic_ir.Apply
+                                   ( Semantic_ir.Ident
+                                       "Lg_runtime.Runtime_seq.to_list",
+                                     [ sequence ] );
+                               ] )))
+                      comparator_expression
+                | Ok _ -> Error.error "sort expects a comparator function")))
+    | "sort", [ collection_form ] -> (
+        match compile_expr scope env collection_form with
+        | Error _ as error -> error
+        | Ok collection -> (
+            match Core_sequence_transform.compile "sort" [ collection ] with
+            | Ok _ as result -> result
+            | Error _ -> (
+                match Collection_capability.to_seq_expr env collection with
+                | Error _ -> Error.error "sort expects a seqable value"
+                | Ok (inner, sequence) ->
+                    Core_sequence_transform.compile "sort"
+                      [
+                        typed_ir (TList inner)
+                          (Semantic_ir.Apply
+                             ( Semantic_ir.Ident
+                                 "Lg_runtime.Runtime_seq.to_list",
+                               [ sequence ] ));
+                      ] )))
     | ("remove" | "take-while" | "drop-while"), [ fn_form; collection_form ]
       -> (
         match

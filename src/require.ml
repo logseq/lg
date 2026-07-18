@@ -50,7 +50,9 @@ let add_core_alias_bindings env module_name alias =
   |> fun bindings -> Env.add_bindings bindings env
 
 let core_namespace = function
-  | "clojure.data" | "clojure.set" | "clojure.string" | "clojure.walk" -> true
+  | "clojure.core" | "cljs.core" | "clojure.data" | "clojure.set"
+  | "clojure.string" | "clojure.walk" ->
+      true
   | _ -> false
 
 let add_clojure_string_refer_bindings env scope names =

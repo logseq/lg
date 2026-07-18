@@ -718,8 +718,93 @@ let rec compile scope env next_type = function
       | Error _ as err -> err
       | Ok record ->
           let receiver_ty = TNamed_record record in
+          let rec predeclare_methods env names current_interface = function
+            | [] -> Ok (env, List.sort_uniq String.compare names)
+            | FSymbol interface_name :: rest ->
+                predeclare_methods env names (Some interface_name) rest
+            | FList (FSymbol method_name :: arities) :: rest
+              when arities <> []
+                   && List.for_all
+                        (function
+                          | FList (FVector _ :: _) -> true
+                          | _ -> false)
+                        arities ->
+                let methods =
+                  List.map
+                    (function
+                      | FList ((FVector _ as params) :: body_forms) ->
+                          FList (FSymbol method_name :: params :: body_forms)
+                      | _ -> assert false)
+                    arities
+                in
+                predeclare_methods env names current_interface (methods @ rest)
+            | FList
+                (FSymbol method_name :: FVector params :: _body_forms)
+              :: rest -> (
+                match current_interface with
+                | Some "IPrintWithWriter" ->
+                    predeclare_methods env names current_interface rest
+                | Some protocol_name -> (
+                    match
+                      ( Protocol.find_protocol_id scope env protocol_name,
+                        Protocol.lookup_protocol_marker scope env protocol_name
+                          method_name )
+                    with
+                    | Some _, Some marker ->
+                        let arity = List.length params in
+                        let source_name =
+                          Expression_support.deftype_method_name record
+                            method_name arity
+                        in
+                        let ocaml_name = Names.sanitize_name source_name in
+                        let method_ty =
+                          Types.instantiate_receiver_method_type receiver_ty
+                            marker.ty
+                        in
+                        let binding =
+                          Types.binding ~forward_declared:true ocaml_name
+                            method_ty
+                        in
+                        (match
+                           Protocol_elaborator.add_implementation env method_name
+                             receiver_ty marker binding
+                         with
+                        | Error _ as error -> error
+                        | Ok env ->
+                            predeclare_methods env (ocaml_name :: names)
+                              current_interface rest)
+                    | None, _ | _, None ->
+                        predeclare_methods env names current_interface rest)
+                | None ->
+                    predeclare_methods env names current_interface rest)
+            | _ :: rest ->
+                predeclare_methods env names current_interface rest
+          in
+          Result.bind
+            (predeclare_methods env [] None interface_forms)
+            (fun (env, implementation_names) ->
           let rec compile_methods env items current_interface = function
-            | [] -> Ok (scope, env, next_type, Group (List.rev items))
+            | [] ->
+                let ordinary, recursive =
+                  List.rev items
+                  |> List.fold_left
+                       (fun (ordinary, recursive) -> function
+                         | Recursive_value_binding
+                             { name; identity; expression } ->
+                             ( ordinary,
+                               ({ name; identity; expression } : recursive_value)
+                               :: recursive )
+                         | item -> (item :: ordinary, recursive))
+                       ([], [])
+                in
+                let items =
+                  List.rev ordinary
+                  @
+                  match List.rev recursive with
+                  | [] -> []
+                  | bindings -> [ Recursive_value_bindings bindings ]
+                in
+                Ok (scope, env, next_type, Group items)
             | FSymbol interface_name :: rest ->
                 compile_methods env items (Some interface_name) rest
             | FList (FSymbol method_name :: arities) :: rest
@@ -890,6 +975,17 @@ let rec compile scope env next_type = function
                                   implementation.return_param_index;
                                 expression = implementation.semantic_expr;
                               }
+                          else if
+                            Semantic_ir.exists_identifier
+                              (fun name -> List.mem name implementation_names)
+                              implementation.semantic_expr
+                          then
+                            Recursive_value_binding
+                              {
+                                name = ocaml_name;
+                                identity = None;
+                                expression = implementation.semantic_expr;
+                              }
                           else
                             Value_binding
                               {
@@ -903,7 +999,7 @@ let rec compile scope env next_type = function
                 Error.error
                   "deftype methods must be (method-name [params] body...)"
           in
-          compile_methods env [] None interface_forms)
+          compile_methods env [] None interface_forms))
   | FList
       (FSymbol "defmethod"
       :: FSymbol "print-method"
@@ -974,6 +1070,10 @@ let rec compile scope env next_type = function
               collect
                 ({ name; identity = None; expression } :: bindings)
                 rest
+          | Recursive_value_binding { name; identity; expression } :: rest ->
+              collect ({ name; identity; expression } :: bindings) rest
+          | Recursive_value_bindings recursive :: rest ->
+              collect (List.rev_append recursive bindings) rest
           | _ :: _ ->
               Error.error
                 "recursive deftype methods must compile to named functions"

@@ -231,6 +231,31 @@ let rec pattern_constraint_type = function
         }
   | ty -> ty
 
+let rec contains_open_type = function
+  | TUnknown | TVar _ -> true
+  | TNullable ty | TArray ty | TRef ty | TList ty | TVector ty | TSet ty
+  | TSeq ty ->
+      contains_open_type ty
+  | TOcaml_app (_, arguments) | TTuple arguments ->
+      List.exists contains_open_type arguments
+  | TFn (parameters, return_ty) ->
+      List.exists contains_open_type parameters || contains_open_type return_ty
+  | TOverloaded_fn arities ->
+      List.exists
+        (fun arity ->
+          List.exists contains_open_type arity.fixed_params
+          || (match arity.rest_param with
+             | Some ty -> contains_open_type ty
+             | None -> false)
+          || contains_open_type arity.return_ty)
+        arities
+  | TRecord fields ->
+      List.exists (fun (field : field) -> contains_open_type field.ty) fields
+  | TNamed_record record -> List.exists contains_open_type record.type_arguments
+  | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
+  | TBool | TUnit | TNil | TOcaml _ ->
+      false
+
 let rec apply_row_constraint_type row_type_name = function
   | TRecord _ -> TOcaml row_type_name
   | TOcaml_app (name, [ TRecord _; container ])
@@ -319,7 +344,8 @@ let normalize_prepost_body = function
   | body_forms -> body_forms
 
 let prepare ?(param_type_overrides = []) ?variadic_rest_index
-    ?(materialize_open_equality = false) ?compile_function_body
+    ?(materialize_open_equality = false) ?(refine_open_overrides = false)
+    ?compile_function_body
     ~lookup_function_ty ~compile_body scope env params body_forms =
   match Macro_expander.expand_all_forms ~scope ~compiler_env:env body_forms with
   | Error _ as error -> error
@@ -425,7 +451,12 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                            | Some (Some ty) ->
                                if Types.equal ty TUnknown then
                                  (spec, inferred_ty)
-                               else (spec, ty)
+                               else if
+                                 refine_open_overrides && contains_open_type ty
+                               then
+                                 (spec, Type_inference.refine_type ty inferred_ty)
+                               else
+                                 (spec, ty)
                            | None | Some None -> (spec, inferred_ty)))
               in
               let param_bindings =
