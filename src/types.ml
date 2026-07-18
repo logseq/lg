@@ -632,6 +632,8 @@ and set_module_name = function
   | TVector (TString | TSymbol | TKeyword) ->
       Ok "Lg_runtime.Core_set.String_vector_set"
   | TVector TBool -> Ok "Lg_runtime.Core_set.Bool_vector_set"
+  | TVector inner when is_dynamic inner ->
+      Ok "Lg_runtime.Core_set.Dynamic_vector_set"
   | TVector (TVector TInt) -> Ok "Lg_runtime.Core_set.Int_vector_vector_set"
   | TNamed_record record -> Ok record.set_module_name
   | ty -> Error.error ("sets require a generated comparator for " ^ source_name ty)

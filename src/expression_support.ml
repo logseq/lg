@@ -125,6 +125,11 @@ let rec merge_branch_types left right =
         Option.map
           (fun merged -> TOcaml_app ("option", [ merged ]))
           (merge_branch_types left right)
+    | TNullable left, TOcaml_app ("option", [ right ])
+    | TOcaml_app ("option", [ left ]), TNullable right ->
+        Option.map
+          (fun merged -> TNullable merged)
+          (merge_branch_types left right)
     | TNullable inner, ty | ty, TNullable inner ->
         Option.map
           (fun merged -> TNullable merged)
@@ -138,14 +143,12 @@ let rec merge_branch_types left right =
       when plain_dynamic_compatible_type left
            && plain_dynamic_compatible_type right ->
         Some (Types.dynamic_constraint TUnknown)
-    | TList TUnknown, TList inner | TList inner, TList TUnknown ->
-        Some (TList inner)
-    | TSeq (TUnknown | TVar _), TSeq inner
-    | TSeq inner, TSeq (TUnknown | TVar _) ->
-        Some (TSeq inner)
-    | TVector (TUnknown | TVar _), TVector inner
-    | TVector inner, TVector (TUnknown | TVar _) ->
-        Some (TVector inner)
+    | TList left, TList right ->
+        Option.map (fun inner -> TList inner) (merge_branch_types left right)
+    | TVector left, TVector right ->
+        Option.map (fun inner -> TVector inner) (merge_branch_types left right)
+    | TSeq left, TSeq right ->
+        Option.map (fun inner -> TSeq inner) (merge_branch_types left right)
     | (TList _ | TVector _ | TSeq _), (TList _ | TVector _ | TSeq _) ->
         Some (Types.dynamic_constraint TUnknown)
     | TVar _, TVar _ -> Some left
@@ -432,7 +435,12 @@ let coerce_expression_to_type ?(stored = false) target_ty source_ty expression =
                             ] );
                       ] );
                 ] );
-        }
+          }
+  | target_ty, (TNullable source_ty | TOcaml_app ("option", [ source_ty ]))
+    when (match target_ty with TRecord _ | TNamed_record _ -> true | _ -> false)
+         && Types.assignable ~policy:Host_boundary ~expected:target_ty
+              ~actual:source_ty ->
+      Semantic_ir.Apply (Semantic_ir.Ident "Option.get", [ expression ])
   | target_ty, source_ty
     when Types.is_dynamic target_ty && not (Types.is_dynamic source_ty) ->
       pack_plain_dynamic_value (typed_ir source_ty expression)

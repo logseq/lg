@@ -1115,8 +1115,13 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                                 ~expected:actual_value ~actual:value_ty
                            && Types.assignable ~policy:Host_boundary
                                 ~expected:init.ty ~actual:result ->
+                        let result_ty =
+                          match (init.ty, result) with
+                          | TVector (TUnknown | TVar _), TVector _ -> result
+                          | _ -> init.ty
+                        in
                         Ok
-                          (typed_ir init.ty
+                          (typed_ir result_ty
                              (apply "List.fold_left"
                               [
                                 Semantic_ir.Fun

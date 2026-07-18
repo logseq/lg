@@ -6074,6 +6074,222 @@ let test_recursive_protocol_frame_stacks_preserve_dispatch_witnesses () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_recursive_protocol_vectors_materialize_optional_unknown_elements () =
+  let source =
+    {|
+(declare next-frame)
+(defprotocol IFrame
+  (-run [this]))
+(defrecord ResultFrame [^int value]
+  IFrame
+  (-run [_] []))
+(defrecord PairFrame [^int value ^:transient-vector acc]
+  IFrame
+  (-run [this]
+    [this (next-frame value)]))
+(defn next-frame [value]
+  (if true (ResultFrame. value) nil))
+(println (count (-run (PairFrame. 7 (transient [])))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "recursive_protocol_vectors_materialize_optional_unknown_elements"
+    "2\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_loop_protocol_vectors_widen_heterogeneous_elements_locally () =
+  let source =
+    {|
+(declare next-frame)
+(defprotocol IFrame
+  (-run [this]))
+(defrecord ResultFrame [^int value]
+  IFrame
+  (-run [_] []))
+(defrecord LoopFrame [^int value]
+  IFrame
+  (-run [this]
+    (loop [step value]
+      (cond
+        (= step 0) [(ResultFrame. value)]
+        (= step 1) [this (next-frame value)]
+        :else (recur 0)))))
+(defn next-frame [value]
+  (if true (ResultFrame. value) nil))
+(println (count (-run (LoopFrame. 0))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "loop_protocol_vectors_widen_heterogeneous_elements_locally" "1\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_cond_protocol_vectors_widen_heterogeneous_elements_locally () =
+  let source =
+    {|
+(declare next-frame)
+(defprotocol IFrame
+  (-run [this]))
+(defrecord ResultFrame [^int value]
+  IFrame
+  (-run [_] []))
+(defrecord CondFrame [^int value]
+  IFrame
+  (-run [this]
+    (cond
+      (= value 0) [(ResultFrame. value)]
+      :else [this (next-frame value)])))
+(defn next-frame [value]
+  (if true (ResultFrame. value) nil))
+(println (count (-run (CondFrame. 0))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "cond_protocol_vectors_widen_heterogeneous_elements_locally" "1\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_if_nullable_protocol_vectors_widen_elements_locally () =
+  let source =
+    {|
+(declare next-frame)
+(defprotocol IFrame
+  (-run [this]))
+(defrecord ResultFrame [^int value])
+(defrecord IfFrame [^int value]
+  IFrame
+  (-run [this]
+    (if (= value 0)
+      [(ResultFrame. value)]
+      (if (= value 1)
+        [this (next-frame value)]
+        nil))))
+(defn next-frame [value]
+  (if true (ResultFrame. value) nil))
+(defn frame-count [frame]
+  (if-some [frames (-run frame)]
+    (count frames)
+    0))
+(println (frame-count (IfFrame. 0)))
+(println (frame-count (IfFrame. 2)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "if_nullable_protocol_vectors_widen_elements_locally"
+    "1\n0\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_cond_nullable_protocol_vectors_widen_elements_locally () =
+  let source =
+    {|
+(declare next-frame)
+(defprotocol IFrame
+  (-run [this]))
+(defrecord ResultFrame [^int value])
+(defrecord CondFrame [^int value]
+  IFrame
+  (-run [this]
+    (cond
+      (= value 0) [(ResultFrame. value)]
+      (= value 1) [this (next-frame value)]
+      :else nil)))
+(defn next-frame [value]
+  (if true (ResultFrame. value) nil))
+(defn frame-count [frame]
+  (if-some [frames (-run frame)]
+    (count frames)
+    0))
+(println (frame-count (CondFrame. 0)))
+(println (frame-count (CondFrame. 2)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "cond_nullable_protocol_vectors_widen_elements_locally"
+    "1\n0\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_if_some_packs_optional_record_elements_into_dynamic_vectors () =
+  let source =
+    {|
+(defrecord Answer [^int value])
+(defn choose [found]
+  (if-some [value (if found (Some 1) None)]
+    [1 "two"]
+    [(Answer. 42) nil]))
+(println (count (choose true)))
+(println (count (choose false)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "if_some_packs_optional_record_elements_into_dynamic_vectors" "2\n2\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_conditional_vectors_store_seqable_capabilities () =
+  let source =
+    {|
+(defn pair [form]
+  (if (sequential? form)
+    [(first form) (next form)]
+    [nil form]))
+(println (count (pair [1 2])))
+(println (count (pair 42)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "conditional_vectors_store_seqable_capabilities" "2\n2\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_nullable_sequence_branches_do_not_gain_nested_options () =
+  let source =
+    {|
+(defrecord Holder [value])
+(defn choose [flag]
+  (if flag
+    (Some (list 1))
+    (if :else (list 2) nil)))
+(def holder (Holder. (choose true)))
+(println (some? (.-value ^Holder holder)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "nullable_sequence_branches_do_not_gain_nested_options"
+    "true\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_branch_local_record_hints_materialize_protocol_parameters () =
+  let source =
+    {|
+(defprotocol Runner
+  (-run [frame context]))
+(defrecord Context [^int value])
+(defrecord Frame []
+  Runner
+  (-run [_ context]
+    (if true (.-value ^Context context) nil)))
+(println (-run (Frame.) (Context. 42)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "branch_local_record_hints_materialize_protocol_parameters" "42\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_protocol_witness_results_unpack_concrete_sequence_returns () =
   let open Lg.Types in
   let result =
@@ -8444,6 +8660,104 @@ let test_loop_parameters_widen_for_nullable_generic_recur_values () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "loop_parameters_widen_for_nullable_generic_recur_values"
     "true\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_loop_recur_unpacks_dynamic_protocol_results_to_static_records () =
+  let source =
+    {|
+(defprotocol ICache
+  (-get [cache key default-fn]))
+(defprotocol Runner
+  (-run [frame cache]))
+(defrecord Item [^int value])
+(defrecord Frame [^Item initial]
+  Runner
+  (-run [_ cache]
+    (loop [item initial
+           attempt 0]
+      (if (= attempt 0)
+        (recur (-get cache :item #(Item. 7)) 1)
+        (.-value ^Item item)))))
+(defrecord Cache []
+  ICache
+  (-get [_ key default-fn]
+    (do key (default-fn))))
+(println (-run (Frame. (Item. 1)) (Cache.)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "loop_recur_unpacks_dynamic_protocol_results_to_static_records" "7\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_loop_recur_analysis_respects_nested_let_shadowing () =
+  let source =
+    {|
+(defn remaining-count [values]
+  (loop [remaining values
+         result 0]
+    (if (seq remaining)
+      (let [next-values (next remaining)]
+        (let [next-values next-values]
+          (recur next-values (inc result))))
+      result)))
+(println (remaining-count [1 2 3]))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "loop_recur_analysis_respects_nested_let_shadowing" "3\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_generic_loop_sequences_remain_specializable_at_static_call_sites () =
+  let source =
+    {|
+(deftype Entry [value])
+(defn same-items? [left right]
+  (loop [xs (seq left)
+         ys (seq right)]
+    (cond
+      (nil? xs) (nil? ys)
+      (= (first xs) (first ys)) (recur (next xs) (next ys))
+      :else false)))
+(def entries (seq (list (Entry. 1))))
+(println (same-items? entries entries))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "generic_loop_sequences_remain_specializable_at_static_call_sites" "true\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_str_keeps_heterogeneous_record_fields_dynamic () =
+  let source =
+    {|
+(defprotocol IRender
+  (-render [this])
+  (-produce [this]))
+(defrecord Box [value]
+  IRender
+  (-render [_] (str value)))
+(defrecord Producer []
+  IRender
+  (-render [_] "producer")
+  (-produce [_] [(Box. (when true [1 2])) (Box. :ready)]))
+(def boxes (-produce (Producer.)))
+(println
+  (str (-render (first boxes))
+       ":"
+       (-render (second boxes))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "str_keeps_heterogeneous_record_fields_dynamic"
+    "[1 2]::ready\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -11047,6 +11361,65 @@ let test_dynamic_generic_nominals_are_consumed_inside_existential_scope () =
     "1:41:42:1\n" ocaml_source;
   ignore (compile Lg.Target.Melange)
 
+let test_overloaded_generic_bounds_specialize_dynamic_nominal_arguments () =
+  let pss_sources =
+    [
+      "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
+      "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+      "datascript/me/tonsky/persistent_sorted_set.cljc";
+    ]
+    |> List.map read_file
+  in
+  let consumer_source =
+    {|
+(ns test.dynamic-slice
+  (:require [me.tonsky.persistent-sorted-set :as set]))
+(defrecord Datom [^int e])
+(defrecord Database [^set/btset avet])
+(defn compare-datoms [^Datom left ^Datom right]
+  (compare (.-e left) (.-e right)))
+(defn hold-dynamic [^:dynamic value] value)
+(defn slice-database [^:dynamic database]
+  (set/slice
+    (.-avet ^Database database)
+    (Datom. 1)
+    (Datom. 3)))
+(def datoms
+  (set/from-sequential
+    compare-datoms
+    [(Datom. 1) (Datom. 2) (Datom. 3)]))
+(def sliced
+  (set/slice
+    (hold-dynamic datoms)
+    (Datom. 1)
+    (Datom. 3)))
+(def database (hold-dynamic (Database. datoms)))
+(def sliced-from-database
+  (slice-database database))
+(println (str (count sliced) ":" (count sliced-from-database)))
+|}
+  in
+  let compile target =
+    let state, outputs =
+      List.fold_left
+        (fun (state, outputs) source ->
+          let state, output =
+            Lg.Compiler.compile_chunk ~target state source |> expect_ok
+          in
+          (state, output :: outputs))
+        (Lg.Compiler.empty_state, []) pss_sources
+    in
+    let _, output =
+      Lg.Compiler.compile_chunk ~target state consumer_source |> expect_ok
+    in
+    String.concat "\n" (List.rev (output :: outputs))
+  in
+  let ocaml_source = compile Lg.Target.Native in
+  assert_ocaml_runs
+    "overloaded_generic_bounds_specialize_dynamic_nominal_arguments" "3:3\n"
+    ocaml_source;
+  ignore (compile Lg.Target.Melange)
+
 let test_map_to_record_unpacks_dynamic_named_fields () =
   let source =
     {|
@@ -12556,6 +12929,55 @@ let test_value_type_hints_preserve_nullable_record_values () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_defrecord_field_hints_preserve_inferred_nullability () =
+  let source =
+    {|
+(defrecord Item [value])
+(defrecord Cursor [^Item current remaining]
+  Object
+  (toString [_]
+    (str (nil? current))))
+(defn advance [^Cursor cursor]
+  (Cursor. (first (.-remaining cursor))
+           (next (.-remaining cursor))))
+(def advanced (advance (Cursor. (Item. 1) (list))))
+(println (nil? (.-current advanced)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "defrecord_field_hints_preserve_inferred_nullability"
+    "true\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_defrecord_self_constructors_preserve_hinted_field_nullability () =
+  let source =
+    {|
+(defprotocol Step
+  (-current-value [cursor])
+  (-advance [cursor]))
+(defrecord Item [value])
+(defn item-value [^Item item]
+  (.-value item))
+(defn first-seq [xs]
+  (first xs))
+(defrecord Cursor [^Item current remaining]
+  Step
+  (-current-value [_]
+    (item-value current))
+  (-advance [_]
+    (Cursor. (first-seq remaining) (next remaining))))
+(def advanced (-advance (Cursor. (Item. 1) (list))))
+(println (nil? (.-current advanced)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "defrecord_self_constructors_preserve_hinted_field_nullability"
+    "true\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_explicit_type_hints_narrow_nullable_field_receivers () =
   let source =
     {|
@@ -13557,6 +13979,60 @@ let test_set_literals_accept_dynamic_elements () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "set_literals_accept_dynamic_elements" "true\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_sets_support_vectors_with_dynamic_elements () =
+  let source =
+    {|
+(defrecord Holder [value])
+(defn operation [holder]
+  [:db.fn/retractEntity (.-value ^Holder holder)])
+(def holder (Holder. 42))
+(def operations (hash-set (operation holder) (operation holder)))
+(println
+  (str (count operations) ":"
+       (contains? operations [:db.fn/retractEntity (.-value ^Holder holder)])))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "sets_support_vectors_with_dynamic_elements" "1:true\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_cons_and_conj_pack_static_values_into_dynamic_vectors () =
+  let source =
+    {|
+(def values [1 "two"])
+(println (pr-str (cons :zero values)))
+(println (pr-str (conj values :three)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "cons_and_conj_pack_static_values_into_dynamic_vectors"
+    "(:zero 1 \"two\")\n[1 \"two\" :three]\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_concat_packs_nested_dynamic_vectors_at_element_boundary () =
+  let source =
+    {|
+(defrecord Holder [entries])
+(defn flush-values [holder]
+  (reduce-kv
+    (fn [entities key value]
+      (conj entities [key value]))
+    []
+    (.-entries ^Holder holder)))
+(def combined
+  (concat (flush-values (Holder. {:answer 42})) [1 "two"]))
+(println (count combined))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "concat_packs_nested_dynamic_vectors_at_element_boundary"
+    "3\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -18004,6 +18480,24 @@ let tests =
       test_recursive_protocol_vectors_keep_static_protocol_elements );
     ( "recursive protocol frame stacks preserve dispatch witnesses",
       test_recursive_protocol_frame_stacks_preserve_dispatch_witnesses );
+    ( "recursive protocol vectors materialize optional unknown elements",
+      test_recursive_protocol_vectors_materialize_optional_unknown_elements );
+    ( "loop protocol vectors widen heterogeneous elements locally",
+      test_loop_protocol_vectors_widen_heterogeneous_elements_locally );
+    ( "cond protocol vectors widen heterogeneous elements locally",
+      test_cond_protocol_vectors_widen_heterogeneous_elements_locally );
+    ( "if nullable protocol vectors widen elements locally",
+      test_if_nullable_protocol_vectors_widen_elements_locally );
+    ( "cond nullable protocol vectors widen elements locally",
+      test_cond_nullable_protocol_vectors_widen_elements_locally );
+    ( "if-some packs optional record elements into dynamic vectors",
+      test_if_some_packs_optional_record_elements_into_dynamic_vectors );
+    ( "conditional vectors store seqable capabilities",
+      test_conditional_vectors_store_seqable_capabilities );
+    ( "nullable sequence branches do not gain nested options",
+      test_nullable_sequence_branches_do_not_gain_nested_options );
+    ( "branch-local record hints materialize protocol parameters",
+      test_branch_local_record_hints_materialize_protocol_parameters );
     ( "protocol witness results unpack concrete sequence returns",
       test_protocol_witness_results_unpack_concrete_sequence_returns );
     ( "defn accepts attribute maps and return hints",
@@ -18281,6 +18775,14 @@ let tests =
       test_or_nil_guard_narrows_hinted_dynamic_sequence_elements );
     ( "loop parameters widen for nullable generic recur values",
       test_loop_parameters_widen_for_nullable_generic_recur_values );
+    ( "loop recur unpacks dynamic protocol results to static records",
+      test_loop_recur_unpacks_dynamic_protocol_results_to_static_records );
+    ( "loop recur analysis respects nested let shadowing",
+      test_loop_recur_analysis_respects_nested_let_shadowing );
+    ( "generic loop sequences remain specializable at static call sites",
+      test_generic_loop_sequences_remain_specializable_at_static_call_sites );
+    ( "str keeps heterogeneous record fields dynamic",
+      test_str_keeps_heterogeneous_record_fields_dynamic );
     ( "callable set parameters remain sets for conj",
       test_callable_set_parameters_remain_sets_for_conj );
     ( "let aliases propagate seqable constraints",
@@ -18496,6 +18998,8 @@ let tests =
       test_dynamic_generic_nominal_arguments_stay_scoped_to_the_call );
     ( "dynamic generic nominals are consumed inside existential scope",
       test_dynamic_generic_nominals_are_consumed_inside_existential_scope );
+    ( "overloaded generic bounds specialize dynamic nominal arguments",
+      test_overloaded_generic_bounds_specialize_dynamic_nominal_arguments );
     ( "map->record unpacks dynamic named fields",
       test_map_to_record_unpacks_dynamic_named_fields );
     ( "map->record preserves generic fields from map literals",
@@ -18634,6 +19138,10 @@ let tests =
       test_let_bindings_support_value_type_hints );
     ( "value type hints preserve nullable record values",
       test_value_type_hints_preserve_nullable_record_values );
+    ( "defrecord field hints preserve inferred nullability",
+      test_defrecord_field_hints_preserve_inferred_nullability );
+    ( "defrecord self constructors preserve hinted field nullability",
+      test_defrecord_self_constructors_preserve_hinted_field_nullability );
     ( "explicit type hints narrow nullable field receivers",
       test_explicit_type_hints_narrow_nullable_field_receivers );
     ( "nested record fields preserve outer record inference",
@@ -18755,6 +19263,12 @@ let tests =
       test_reduce_preserves_refined_vector_element_types );
     ( "set literals accept dynamic elements",
       test_set_literals_accept_dynamic_elements );
+    ( "sets support vectors with dynamic elements",
+      test_sets_support_vectors_with_dynamic_elements );
+    ( "cons and conj pack static values into dynamic vectors",
+      test_cons_and_conj_pack_static_values_into_dynamic_vectors );
+    ( "concat packs nested dynamic vectors at element boundary",
+      test_concat_packs_nested_dynamic_vectors_at_element_boundary );
     ( "contains? infers generic membership for variable keys",
       test_contains_infers_generic_membership_for_variable_keys );
     ( "into rejects element type mismatch",

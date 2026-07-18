@@ -221,6 +221,15 @@ let rec concrete_defrecord_field_type = function
   | ty when Types.is_dynamic ty -> None
   | ty when Option.is_some (Types.protocol_constraint_info ty) -> None
   | ty when Option.is_some (Types.seqable_constraint_info ty) -> None
+  | TNullable ((TUnknown | TVar _) as _inner) ->
+      Some (TNullable (Types.dynamic_constraint TUnknown))
+  | TNullable inner when Types.is_dynamic inner -> Some (TNullable inner)
+  | TOcaml_app ("option", [ (TUnknown | TVar _) ]) ->
+      Some
+        (TOcaml_app
+           ("option", [ Types.dynamic_constraint TUnknown ]))
+  | TOcaml_app ("option", [ inner ]) when Types.is_dynamic inner ->
+      Some (TOcaml_app ("option", [ inner ]))
   | TNullable ty ->
       Option.map (fun ty -> TNullable ty) (concrete_defrecord_field_type ty)
   | TOcaml_app (name, arguments) ->
@@ -271,6 +280,31 @@ let rec concrete_defrecord_field_type = function
     | TBool | TUnit | TNil | TOcaml _ | TNamed_record _ ) as ty ->
       Some ty
 
+let nullable_payload = function
+  | TNullable ty | TOcaml_app ("option", [ ty ]) -> Some ty
+  | _ -> None
+
+let merge_defrecord_field_types previous inferred =
+  let merge_payload previous inferred =
+    match
+      ( concrete_defrecord_field_type previous,
+        concrete_defrecord_field_type inferred )
+    with
+    | _, Some (TNamed_record _ as inferred) -> inferred
+    | None, Some inferred -> inferred
+    | Some previous, _ -> previous
+    | None, None -> previous
+  in
+  match (nullable_payload previous, nullable_payload inferred) with
+  | Some previous, Some inferred ->
+      Types.normalize_nullable
+        (TNullable (merge_payload previous inferred))
+  | Some payload, None ->
+      Types.normalize_nullable (TNullable (merge_payload payload inferred))
+  | None, Some payload ->
+      Types.normalize_nullable (TNullable (merge_payload previous payload))
+  | None, None -> merge_payload previous inferred
+
 let rec type_parameters_of_type = function
   | TVar name -> [ name ]
   | TNullable ty
@@ -301,7 +335,7 @@ let rec type_parameters_of_type = function
   | TBool | TUnit | TNil | TUnknown | TOcaml _ ->
       []
 
-let infer_defrecord_field_types scope env field_names interface_forms =
+let infer_defrecord_field_types scope env record_name field_names interface_forms =
   let accessor_parameter name =
     "__lg_record_field_" ^ Names.sanitize_name name
   in
@@ -395,15 +429,42 @@ let infer_defrecord_field_types scope env field_names interface_forms =
         let resolve_named_record =
           Function_elaborator.infer_named_record scope env
         in
+        let nullable_constructor_fields =
+          Array.make (List.length field_names) false
+        in
+        let form_has_nullable_return = function
+          | FList (FSymbol function_name :: arguments) -> (
+              match lookup_function_ty function_name with
+              | Ok (TFn (parameters, return_ty))
+                when List.length parameters = List.length arguments ->
+                  Option.is_some (nullable_payload return_ty)
+              | _ -> false)
+          | _ -> false
+        in
+        let observe_call name argument_forms argument_tys =
+          let constructor_name = record_name ^ "." in
+          if
+            (name = constructor_name
+            || String.ends_with ~suffix:("/" ^ constructor_name) name)
+            && List.length argument_tys = List.length field_names
+          then
+            List.combine argument_forms argument_tys
+            |> List.iteri (fun index (form, ty) ->
+                if
+                  Types.equal ty TNil
+                  || Option.is_some (nullable_payload ty)
+                  || form_has_nullable_return form
+                then nullable_constructor_fields.(index) <- true)
+        in
         match
           Type_inference.infer_params ~lookup_function_ty
             ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
-            ~resolve_named_record params body_forms
+            ~resolve_named_record ~observe_call params body_forms
         with
         | Error _ -> field_types
         | Ok inferred_params ->
-            List.map2
-              (fun name previous ->
+            List.combine field_names field_types
+            |> List.mapi (fun index (name, previous) ->
                 let inferred =
                   List.assoc_opt name inferred_params
                   |> Option.value ~default:TUnknown
@@ -420,15 +481,14 @@ let infer_defrecord_field_types scope env field_names interface_forms =
                     ~allow_dynamic_fields:true scope env inferred
                   |> resolve_protocol_record
                 in
-                match
-                  ( concrete_defrecord_field_type previous,
-                    concrete_defrecord_field_type inferred )
-                with
-                | _, Some (TNamed_record _ as inferred) -> inferred
-                | None, Some inferred -> inferred
-                | Some previous, _ -> previous
-                | None, None -> previous)
-              field_names field_types)
+                let merged =
+                  merge_defrecord_field_types previous inferred
+                in
+                if
+                  nullable_constructor_fields.(index)
+                  && Option.is_none (nullable_payload merged)
+                then TNullable merged
+                else merged))
     | _ -> field_types
   in
   let inferred =
@@ -529,9 +589,29 @@ let rec compile scope env next_type = function
       Result.bind (field_specs [] None raw_fields) (fun field_specs ->
           let fields = List.map fst field_specs in
           let field_types =
-            infer_defrecord_field_types scope env fields interface_forms
+            infer_defrecord_field_types scope env name fields interface_forms
             |> List.map2 (fun (_field_name, explicit_ty) inferred_ty ->
-                   Option.value explicit_ty ~default:inferred_ty)
+                   match (explicit_ty, inferred_ty) with
+                   | ( Some explicit_ty,
+                       (TNullable inferred_inner
+                       | TOcaml_app ("option", [ inferred_inner ])) )
+                     when not
+                            (match explicit_ty with
+                            | TNullable _
+                            | TOcaml_app ("option", [ _ ]) ->
+                                true
+                            | _ -> false)
+                          && (Types.equal inferred_inner TUnknown
+                             || (match inferred_inner with
+                                | TVar _ -> true
+                                | _ -> false)
+                             || Types.is_dynamic inferred_inner
+                             || Types.assignable ~policy:Host_boundary
+                                  ~expected:explicit_ty
+                                  ~actual:inferred_inner) ->
+                       TNullable explicit_ty
+                   | Some explicit_ty, _ -> explicit_ty
+                   | None, _ -> inferred_ty)
                  field_specs
           in
           let type_parameters =

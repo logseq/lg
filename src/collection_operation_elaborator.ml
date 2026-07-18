@@ -438,12 +438,12 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   (typed_ir collection.ty
                    (Semantic_ir.Cons
                       (value.semantic_expr, collection.semantic_expr)))
-          | TList inner when Types.is_dynamic inner && Types.is_dynamic value.ty
-            ->
-                Ok
-                  (typed_ir collection.ty
-                     (Semantic_ir.Cons
-                        (value.semantic_expr, collection.semantic_expr)))
+          | TList inner when Types.is_dynamic inner ->
+              Result.map
+                (fun value ->
+                  typed_ir collection.ty
+                    (Semantic_ir.Cons (value, collection.semantic_expr)))
+                (pack_dynamic_value env inner value)
             | TList _ ->
               Error.error "conj value type must match list element type"
             | TSeq (TUnknown | TVar _) ->
@@ -484,13 +484,14 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                      (Semantic_ir.Apply
                         ( Semantic_ir.Ident "Rrbvec.push_back",
                           [ collection.semantic_expr; value.semantic_expr ] )))
-            | TVector inner
-              when Types.is_dynamic inner && Types.is_dynamic value.ty ->
-                Ok
-                  (typed_ir collection.ty
-                     (Semantic_ir.Apply
-                        ( Semantic_ir.Ident "Rrbvec.push_back",
-                          [ collection.semantic_expr; value.semantic_expr ] )))
+            | TVector inner when Types.is_dynamic inner ->
+                Result.map
+                  (fun value ->
+                    typed_ir collection.ty
+                      (Semantic_ir.Apply
+                         ( Semantic_ir.Ident "Rrbvec.push_back",
+                           [ collection.semantic_expr; value ] )))
+                  (pack_dynamic_value env inner value)
           | TVector _ ->
               Error.error "conj value type must match vector element type"
             | TSet inner when Types.same_shape inner value.ty ->
@@ -520,6 +521,13 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
       | Error _ as err -> err
       | Ok [ value; collection ] -> (
           match Collection_capability.to_seq_expr env collection with
+          | Ok (inner, sequence) when Types.is_dynamic inner ->
+              Result.map
+                (fun value ->
+                  typed_ir (TSeq inner)
+                    (Semantic_ir.Apply
+                       ( Semantic_ir.Ident "Seq.cons", [ value; sequence ] )))
+                (pack_dynamic_value env inner value)
           | Ok (inner, sequence) when Types.same_shape inner value.ty ->
               Ok
                 (typed_ir (TSeq inner)

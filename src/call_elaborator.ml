@@ -92,6 +92,55 @@ let rec materialize_protocol_unknown = function
 let supports_structural_dynamic_packing =
   Types.supports_structural_dynamic_packing
 
+let rec concrete_nominal_type_argument = function
+  | TUnknown | TVar _ -> false
+  | ty when Types.is_dynamic ty -> false
+  | TNullable ty | TArray ty | TRef ty | TList ty | TVector ty | TSet ty
+  | TSeq ty ->
+      concrete_nominal_type_argument ty
+  | TOcaml_app (_, arguments) | TTuple arguments ->
+      List.for_all concrete_nominal_type_argument arguments
+  | TFn (parameters, return_ty) ->
+      List.for_all concrete_nominal_type_argument (return_ty :: parameters)
+  | TOverloaded_fn arities ->
+      List.for_all
+        (fun (arity : fn_arity) ->
+          List.for_all concrete_nominal_type_argument
+            (arity.return_ty :: arity.fixed_params)
+          && Option.fold ~none:true ~some:concrete_nominal_type_argument
+               arity.rest_param)
+        arities
+  | TNamed_record record ->
+      List.for_all concrete_nominal_type_argument record.type_arguments
+  | TRecord _ -> false
+  | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
+  | TBool | TUnit | TNil | TOcaml _ ->
+      true
+
+let concrete_nominal_record (record : named_record) =
+  List.for_all concrete_nominal_type_argument record.type_arguments
+
+let cast_nominal_payload expression =
+  Semantic_ir.Apply (Semantic_ir.Ident "Obj.magic", [ expression ])
+
+let specialize_dynamic_nominal_unpack expected expression =
+  match (expected, expression) with
+  | ( TNamed_record expected_record,
+      Semantic_ir.UnpackDynamic
+        ({ target_ty = TNamed_record actual_record; conversion; _ } as unpack) )
+    when concrete_nominal_record expected_record
+         && Type_id.equal expected_record.type_id actual_record.type_id ->
+      Some
+        (Semantic_ir.UnpackDynamic
+           {
+             unpack with
+             target_ty = expected;
+             conversion =
+               Semantic_ir.continue_inside_conversion conversion
+                 cast_nominal_payload;
+           })
+  | _ -> None
+
 let rec contains_unresolved_type = function
   | ty when Types.is_dynamic ty -> false
   | TUnknown | TVar _ -> true
@@ -143,6 +192,10 @@ let is_optional_type = function
   | TNullable _ | TOcaml_app ("option", [ _ ]) -> true
   | _ -> false
 
+let optional_payload = function
+  | TNullable ty | TOcaml_app ("option", [ ty ]) -> Some ty
+  | _ -> None
+
 let rec argument_compatible expected actual =
   if Types.is_dynamic expected then true
   else if Option.is_some (Types.protocol_constraint_info expected) then true
@@ -153,6 +206,12 @@ let rec argument_compatible expected actual =
     | _ -> Option.is_some (Types.seqable_constraint_info actual)
   else
     match (expected, actual) with
+    | expected, (TNullable actual | TOcaml_app ("option", [ actual ]))
+      when (match expected with
+           | TRecord _ | TNamed_record _ -> true
+           | _ -> false)
+           && argument_compatible expected actual ->
+        true
     | TNamed_record _, TRecord _
       when Types.assignable ~policy:Host_boundary ~expected ~actual ->
         true
@@ -603,6 +662,11 @@ and dynamic_unpack_impl env ty expression =
           else
             let value_name = "__lg_nominal_record" in
             let tag_name = Types.nominal_tag_name record in
+            let value =
+              if concrete_nominal_record record then
+                cast_nominal_payload (Semantic_ir.Ident value_name)
+              else Semantic_ir.Ident value_name
+            in
             Ok
               (Semantic_ir.Match
                  ( Semantic_ir.Apply
@@ -624,7 +688,7 @@ and dynamic_unpack_impl env ty expression =
                                              existential_record_type_application
                                                record );
                                        ]) )) ),
-                       Semantic_ir.Ident value_name );
+                       value );
                      ( Semantic_ir.PAny,
                        Semantic_ir.Apply
                          ( Semantic_ir.Ident "invalid_arg",
@@ -2169,9 +2233,26 @@ let rec adapt_value_to_type env expected actual =
   else if Types.is_dynamic actual.ty then
     dynamic_unpack env expected actual.semantic_expr
   else
-    match
-      (Types.dynamic_map_types expected, Types.dynamic_map_types actual.ty)
-    with
+    match (optional_payload expected, optional_payload actual.ty) with
+    | Some expected_inner, Some actual_inner ->
+        let value_name = "__lg_adapt_optional_value" in
+        let value = typed_ir actual_inner (Semantic_ir.Ident value_name) in
+        Result.map
+          (fun value ->
+            Semantic_ir.Match
+              ( actual.semantic_expr,
+                [
+                  ( Semantic_ir.PConstructor ("None", None),
+                    Semantic_ir.Constructor ("None", None) );
+                  ( Semantic_ir.PConstructor
+                      ("Some", Some (Semantic_ir.PVar value_name)),
+                    Semantic_ir.Constructor ("Some", Some value) );
+                ] ))
+          (adapt_value_to_type env expected_inner value)
+    | _ -> (
+      match
+        (Types.dynamic_map_types expected, Types.dynamic_map_types actual.ty)
+      with
     | Some (expected_key, expected_value), Some (actual_key, actual_value) ->
         let key_name = "__lg_adapt_map_key" in
         let value_name = "__lg_adapt_map_value" in
@@ -2197,7 +2278,7 @@ let rec adapt_value_to_type env expected actual =
               (adapt_value_to_type env expected_value value))
     | _ ->
         Ok
-          (coerce_expression_to_type expected actual.ty actual.semantic_expr)
+          (coerce_expression_to_type expected actual.ty actual.semantic_expr))
 
 let adapt_protocol_witness_result env ~expected ~actual expression =
   let actual = materialize_protocol_unknown actual in
@@ -4067,7 +4148,9 @@ let create ~compile_expr =
                               Ok
                                 (Semantic_ir.Ident
                                    "Lg_runtime.Runtime_map.empty")
-                                          | _ -> Ok arg.semantic_expr)
+                                          | _ ->
+                                              adapt_value_to_type env field.ty
+                                                arg)
                       in
                                     match packed with
                       | Error _ as error -> error
@@ -4180,14 +4263,8 @@ let create ~compile_expr =
                 }
             in
             let target =
-              let explicitly_hinted =
-                match arg_forms with
-                | [ FList [ FSymbol "__type-hint"; FSymbol _; _ ] ] -> true
-                | _ -> false
-              in
-              match (explicitly_hinted, target.ty) with
-              | ( true,
-                  (TNullable inner | TOcaml_app ("option", [ inner ])) ) ->
+              match target.ty with
+              | TNullable inner | TOcaml_app ("option", [ inner ]) ->
                   typed_ir inner
                     (Semantic_ir.Apply
                        ( Semantic_ir.Ident "Option.get",
@@ -7750,6 +7827,16 @@ let create ~compile_expr =
                           match element_ty with
                           | Some _ -> argument.ty
                           | None -> expected)
+                      | TNamed_record
+                          ({ type_arguments = [ (TUnknown | TVar _) ]; _ } as
+                          record) -> (
+                          match element_ty with
+                          | Some element_ty ->
+                              TNamed_record
+                                { record with type_arguments = [ element_ty ] }
+                          | None ->
+                              Types.instantiate_type ~templates:[ expected ]
+                                ~actuals:[ argument.ty ] expected)
                       | expected ->
                           Types.instantiate_type ~templates:[ expected ]
                             ~actuals:[ argument.ty ] expected
@@ -7831,10 +7918,16 @@ let create ~compile_expr =
                            |> List.filter_map Fun.id))
                     else
                       let prepare_argument index expected argument =
-                        let row_type_name =
-                          List.nth_opt row_param_types index |> Option.join
-                        in
-                        match (row_type_name, expected) with
+                        match
+                          specialize_dynamic_nominal_unpack expected
+                            argument.semantic_expr
+                        with
+                        | Some expression -> Ok expression
+                        | None ->
+                          let row_type_name =
+                            List.nth_opt row_param_types index |> Option.join
+                          in
+                          match (row_type_name, expected) with
                         | Some type_name, TNullable (TRecord fields) ->
                             typed_nullable_row_argument env type_name fields
                               argument
@@ -7846,6 +7939,13 @@ let create ~compile_expr =
                         | _ when has_capability_constraint expected ->
                           pack_constrained_value ?row_type_name env expected
                             argument
+                        | _
+                          when match argument.ty with
+                               | TNullable actual
+                               | TOcaml_app ("option", [ actual ]) ->
+                                   argument_compatible expected actual
+                               | _ -> false ->
+                            adapt_value_to_type env expected argument
                         | _ when expects_optional_dynamic_value expected ->
                           Ok
                             (coerce_expression_to_type expected argument.ty
@@ -8094,6 +8194,13 @@ let create ~compile_expr =
                                 dynamic_row_argument env type_name fields arg
                             | Some type_name, TRecord fields ->
                                 typed_row_argument env type_name fields arg
+                            | _
+                              when match arg.ty with
+                                   | TNullable actual
+                                   | TOcaml_app ("option", [ actual ]) ->
+                                       argument_compatible expected_ty actual
+                                   | _ -> false ->
+                                adapt_value_to_type env expected_ty arg
                             | _, TNamed_record record
                               when Types.is_dynamic arg.ty
                                  ||
