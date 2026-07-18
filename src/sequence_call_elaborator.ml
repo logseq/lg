@@ -24,6 +24,7 @@ type t = {
   compile_some : call;
   compile_sequence_bool_predicate : named_call;
   compile_map_call : call;
+  compile_keep : call;
   compile_filter : call;
   compile_reduce : call;
 }
@@ -1590,6 +1591,78 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                            elements"
                       | _ -> Error.error "filter expects a function"))))
       | _ -> Error.error "filter expects function and collection"
+    and compile_keep scope env arg_forms =
+      match arg_forms with
+      | [ fn_form; collection_form ] -> (
+          match compile_expr scope env collection_form with
+          | Error _ as error -> error
+          | Ok collection -> (
+              match Collection_capability.to_seq_expr env collection with
+              | Error _ -> Error.error "keep expects a Seqable value"
+              | Ok (inner, sequence) -> (
+                  match
+                    compile_function_arg_for_collection scope env inner fn_form
+                  with
+                  | Error _ as error -> error
+                  | Ok ({ ty = TFn ([ parameter_ty ], return_ty); _ } as fn)
+                    when Types.assignable ~policy:Host_boundary
+                           ~expected:parameter_ty ~actual:inner ->
+                      Result.map
+                        (fun fn ->
+                          match return_ty with
+                          | TNullable result_ty
+                          | TOcaml_app ("option", [ result_ty ]) ->
+                              typed_ir (TSeq result_ty)
+                                (apply "Lg_runtime.Runtime_seq.filter_map"
+                                   [ fn.semantic_expr; sequence ])
+                          | TNil ->
+                              typed_ir (TSeq TUnknown)
+                                (apply "Lg_runtime.Runtime_seq.filter_map"
+                                   [ fn.semantic_expr; sequence ])
+                          | return_ty when Types.is_dynamic return_ty ->
+                              let item_name = "__lg_keep_item" in
+                              let result_name = "__lg_keep_result" in
+                              typed_ir (TSeq return_ty)
+                                (apply "Lg_runtime.Runtime_seq.filter_map"
+                                   [
+                                     Semantic_ir.Fun
+                                       ( [ Semantic_ir.PVar item_name ],
+                                         Semantic_ir.Let
+                                           ( [
+                                               ( Semantic_ir.PVar result_name,
+                                                 Semantic_ir.Apply
+                                                   ( fn.semantic_expr,
+                                                     [
+                                                       Semantic_ir.Ident
+                                                         item_name;
+                                                     ] ) );
+                                             ],
+                                             Semantic_ir.If
+                                               ( apply
+                                                   "Lg_runtime.Runtime_dynamic.is_nil"
+                                                   [
+                                                     Semantic_ir.Ident
+                                                       result_name;
+                                                   ],
+                                                 Semantic_ir.Constructor
+                                                   ("None", None),
+                                                 Semantic_ir.Constructor
+                                                   ( "Some",
+                                                     Some
+                                                       (Semantic_ir.Ident
+                                                          result_name) ) ) ) );
+                                     sequence;
+                                   ])
+                          | result_ty ->
+                              typed_ir (TSeq result_ty)
+                                (apply "Lg_runtime.Runtime_seq.map"
+                                   [ fn.semantic_expr; sequence ]))
+                        (adapt_unary_function env inner fn)
+                  | Ok { ty = TFn _; _ } ->
+                      Error.error
+                        "keep function argument type does not match sequence"
+                  | Ok _ -> Error.error "keep expects a function")))
+      | _ -> Error.error "keep expects function and collection"
     and compile_reduce scope env arg_forms =
       match arg_forms with
       | [ fn_form; collection_form ] -> (
@@ -1972,6 +2045,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
     compile_some;
     compile_sequence_bool_predicate;
     compile_map_call;
+    compile_keep;
     compile_filter;
     compile_reduce;
   }

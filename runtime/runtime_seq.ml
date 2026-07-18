@@ -22,6 +22,7 @@ let rec for_all predicate sequence =
   | Seq.Cons (value, rest) -> predicate value && for_all predicate rest
 
 let map fn sequence = sequence |> Seq.map fn |> memoize
+let filter_map fn sequence = sequence |> Seq.filter_map fn |> memoize
 
 let rec map2 fn left right =
   memoize (fun () ->

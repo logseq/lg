@@ -2430,7 +2430,7 @@ let infer_params ?(explicitly_dynamic_params = [])
               in
               constrain_seqable element_ty params collection
           | _ -> infer_all params arguments)
-    | FList [ FSymbol ("map" | "mapv"); fn; FSymbol collection ] ->
+    | FList [ FSymbol ("map" | "mapv" | "keep"); fn; FSymbol collection ] ->
         let element_ty = inferred_unary_function_param params fn in
         constrain_seqable element_ty params collection
     | FList (FSymbol ("map" | "mapv") :: fn :: collection_forms)

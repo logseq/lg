@@ -2982,6 +2982,7 @@ let create ~compile_expr =
     sequence.compile_sequence_bool_predicate
   in
   let compile_map_call = sequence.compile_map_call in
+  let compile_keep = sequence.compile_keep in
   let compile_filter = sequence.compile_filter in
   let compile_reduce = sequence.compile_reduce in
   let compile_apply = functions.compile_apply in
@@ -7230,6 +7231,7 @@ let create ~compile_expr =
     | "every?" | "not-any?" | "not-every?" ->
         compile_sequence_bool_predicate scope env name arg_forms
     | "map" -> compile_map_call scope env arg_forms
+    | "keep" -> compile_keep scope env arg_forms
     | "filter" -> compile_filter scope env arg_forms
     | "distinct" -> compile_distinct scope env arg_forms
     | "remove" | "take-while" | "drop-while" | "dedupe" | "sort" ->

@@ -13675,6 +13675,33 @@ let test_select_keys_infers_generic_runtime_map_record_fields () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_keep_drops_only_nil_across_generic_seqables () =
+  let source =
+    {|
+(def calls (atom 0))
+(defn keep-even [values]
+  (keep
+    (fn [value]
+      (do
+        (reset! calls (+ (deref calls) 1))
+        (if (even? value) value nil)))
+    values))
+(def kept (keep-even [1 2 3 4]))
+(println (pr-str (vec kept)))
+(println (deref calls))
+(println
+  (pr-str
+    (vec (keep (fn [value] (if (= value 1) false nil)) [1 2]))))
+(println (pr-str (vec (keep inc [1 2]))))
+(println (empty? (keep inc [])))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "keep_drops_only_nil_across_generic_seqables"
+    "[2 4]\n4\n[false]\n[2 3]\ntrue\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_clojure_truthiness_in_conditions () =
   let source =
     {|
@@ -20557,6 +20584,8 @@ let tests =
       test_select_keys_accepts_runtime_seqable_key_collections );
     ( "select-keys infers generic runtime map record fields",
       test_select_keys_infers_generic_runtime_map_record_fields );
+    ( "keep drops only nil across generic Seqables",
+      test_keep_drops_only_nil_across_generic_seqables );
     ( "Clojure truthiness works in conditions",
       test_clojure_truthiness_in_conditions );
     ( "and/or return values and short-circuit",
