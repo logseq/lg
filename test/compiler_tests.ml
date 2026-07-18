@@ -167,14 +167,31 @@ let time_phase label fn =
     Printf.eprintf "%s: %.3fs\n%!" label (Unix.gettimeofday () -. started);
   result
 
-let test_directory =
-  lazy
-    (let name = "lg-tests-" ^ string_of_int (Unix.getpid ()) in
-     let dir = Filename.concat (Filename.get_temp_dir_name ()) name in
-     if not (Sys.file_exists dir) then Unix.mkdir dir 0o755;
-     dir)
+let test_directory = lazy (Filename.temp_dir "lg-tests-" "")
 
 let test_dir () = Lazy.force test_directory
+
+let test_test_directory_avoids_existing_pid_directory () =
+  let legacy_dir =
+    Filename.concat (Filename.get_temp_dir_name ())
+      ("lg-tests-" ^ string_of_int (Unix.getpid ()))
+  in
+  let created = not (Sys.file_exists legacy_dir) in
+  if created then Unix.mkdir legacy_dir 0o755;
+  let sentinel = Filename.concat legacy_dir "stale-build-artifact" in
+  Fun.protect
+    ~finally:(fun () ->
+      if Sys.file_exists sentinel then Sys.remove sentinel;
+      if created && Sys.file_exists legacy_dir then Unix.rmdir legacy_dir)
+    (fun () ->
+      write_file sentinel "stale";
+      let actual = test_dir () in
+      if actual = legacy_dir then
+        failwith "compiler tests must not reuse an existing PID directory";
+      if not (Sys.file_exists actual && Sys.is_directory actual) then
+        failwith "compiler test directory must be created before use";
+      if Sys.file_exists (Filename.concat actual "stale-build-artifact") then
+        failwith "compiler test directory must not contain stale artifacts")
 
 let compile_only_command dir ml_path =
   Printf.sprintf "cd %s && ocamlc -I %s -I %s -I %s -I %s -I %s -I %s -c %s"
@@ -18073,6 +18090,8 @@ let test_compile_chunk_prints_parsetree_backend_output () =
 
 let tests =
   [
+    ( "compiler test directory avoids existing PID directory",
+      test_test_directory_avoids_existing_pid_directory );
     ( "records, assoc, and dissoc generate typed OCaml",
       test_records_assoc_and_dissoc );
     ( "assoc rejects changing an existing field type",
