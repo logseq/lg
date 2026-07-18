@@ -367,6 +367,7 @@ let conj collection value =
   match collection.payload with
   | Nil -> list [ value ]
   | List -> list (value :: List.of_seq (to_seq collection))
+  | Seq -> seq (Seq.cons value (to_seq collection))
   | Vector ->
       let values = collection |> to_seq |> List.of_seq |> Rrbvec.of_list in
       vector (Rrbvec.push_back values value)

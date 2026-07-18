@@ -51,7 +51,8 @@ let truthy_call return_ty fn arguments =
 
 let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
   let special_forms : Special_form_elaborator.t =
-    Special_form_elaborator.create ~compile_expr
+    Special_form_elaborator.create ~compile_expr ~dynamic_unpack
+      ~pack_dynamic_value
   in
   let compile_body = special_forms.compile_body in
   let compile_function_arg scope env = function
@@ -122,6 +123,46 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                      ( fn.semantic_expr,
                        [ Semantic_ir.Ident accumulator_name; item ] ) )))
           (pack_dynamic_value env expected_item_ty item)
+    | _ -> Ok fn
+  in
+  let adapt_reducer_return env actual_accumulator_ty fn =
+    match fn.ty with
+    | TFn ([ expected_accumulator_ty; item_ty ], return_ty)
+      when Types.is_dynamic return_ty
+           && not (Types.is_dynamic actual_accumulator_ty) ->
+        let accumulator_name = "__lg_static_reduce_accumulator" in
+        let item_name = "__lg_reduce_item" in
+        let accumulator =
+          typed_ir actual_accumulator_ty
+            (Semantic_ir.Ident accumulator_name)
+        in
+        let accumulator =
+          if Types.is_dynamic expected_accumulator_ty then
+            pack_dynamic_value env expected_accumulator_ty accumulator
+          else if
+            Types.assignable ~policy:Host_boundary
+              ~expected:expected_accumulator_ty
+              ~actual:actual_accumulator_ty
+          then Ok accumulator.semantic_expr
+          else Error.error "reducer accumulator type does not match init"
+        in
+        Result.bind accumulator (fun accumulator ->
+            let call =
+              Semantic_ir.Apply
+                ( fn.semantic_expr,
+                  [ accumulator; Semantic_ir.Ident item_name ] )
+            in
+            Result.map
+              (fun result ->
+                typed_ir
+                  (TFn
+                     ( [ actual_accumulator_ty; item_ty ],
+                       actual_accumulator_ty ))
+                  (Semantic_ir.Fun
+                     ( [ Semantic_ir.PVar accumulator_name;
+                         Semantic_ir.PVar item_name ],
+                       result )))
+              (dynamic_unpack env actual_accumulator_ty call))
     | _ -> Ok fn
   in
   let compile_function_arg_for_collection scope env element_ty = function
@@ -255,7 +296,9 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
         |> Result.map Function_elaborator.fn_code
     | form ->
         Result.bind (compile_function_arg scope env form)
-          (adapt_reducer_function env element_ty)
+          (fun fn ->
+            Result.bind (adapt_reducer_function env element_ty fn)
+              (adapt_reducer_return env accumulator_ty))
   in
   let compile_kv_reducer scope env accumulator_ty key_ty value_ty = function
     | FList

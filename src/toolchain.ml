@@ -152,11 +152,17 @@ module Lg_frontend : FRONTEND = struct
     | Ast.FVector forms ->
         Ast.FVector (normalize_vector_metadata_sequence forms)
     | Ast.FMap entries ->
-        Ast.FMap
-          (List.map
-             (fun (key, value) ->
-               (normalize_metadata key, normalize_metadata value))
-             entries)
+        let forms =
+          entries
+          |> List.concat_map (fun (key, value) -> [ key; value ])
+          |> normalize_metadata_sequence
+        in
+        let rec pairs acc = function
+          | key :: value :: rest -> pairs ((key, value) :: acc) rest
+          | [] -> List.rev acc
+          | [ _ ] -> assert false
+        in
+        Ast.FMap (pairs [] forms)
     | form -> form
 
   and normalize_metadata_sequence = function

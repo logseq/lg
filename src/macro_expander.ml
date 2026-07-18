@@ -24,6 +24,9 @@ type context = { compiler_env : Env.t; namespace : string; locals : locals }
 let gensym_counter = ref 0
 let nil = Form (FSymbol "nil")
 
+let core_form_name name expected =
+  name = expected || String.ends_with ~suffix:("/" ^ expected) name
+
 let form_of_value = function
   | Form form -> Ok form
   | Closure _ | Macro_function _ | Builtin _ | Juxt _ | Volatile _ | Recur _ ->
@@ -290,7 +293,9 @@ let rec eval context = function
       eval_loop context bindings body
   | FList (FSymbol "recur" :: arguments) ->
       Result.map (fun values -> Recur values) (eval_forms context arguments)
-  | FList (FSymbol (("->" | "->>") as operator) :: initial :: steps) ->
+  | FList (FSymbol operator :: initial :: steps)
+    when core_form_name operator "->" || core_form_name operator "->>" ->
+      let operator = if core_form_name operator "->" then "->" else "->>" in
       let threaded =
         List.fold_left
           (fun value step ->
@@ -1122,8 +1127,9 @@ let thread_form position value steps =
 let rec expand_all ~scope ~compiler_env = function
   | FList (FSymbol ("quote" | "syntax-quote") :: _ as forms) ->
       Ok (FList forms)
-  | FList (FSymbol ("->" | "->>") as operator :: value :: steps) ->
-      let position = if operator = FSymbol "->" then `First else `Last in
+  | FList (FSymbol operator :: value :: steps)
+    when core_form_name operator "->" || core_form_name operator "->>" ->
+      let position = if core_form_name operator "->" then `First else `Last in
       expand_all ~scope ~compiler_env (thread_form position value steps)
   | FList
       (FSymbol ("cond->" | "cond->>" | "some->" | "some->>") :: _ as forms)

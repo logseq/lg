@@ -29,6 +29,12 @@ let ignore_name name = name = "_"
 
 let normalize_binding_type_hints forms =
   let rec normalize normalized = function
+    | FList [ FSymbol "__type-hint"; FSymbol annotation; pattern ]
+      :: value :: rest ->
+        normalize
+          (FList [ FSymbol "__type-hint"; FSymbol annotation; value ]
+          :: pattern :: normalized)
+          rest
     | pattern :: FSymbol annotation :: value :: rest
       when is_type_annotation annotation ->
         normalize
@@ -111,6 +117,8 @@ let parse_sequence_pattern forms =
 
 let rec pattern_names = function
   | FSymbol name -> if ignore_name name then [] else [ name ]
+  | FList [ FSymbol "__type-hint"; FSymbol _; pattern ] ->
+      pattern_names pattern
   | FVector forms -> sequence_pattern_names forms
   | FMap pairs -> map_pattern_names pairs
   | _ -> []
@@ -138,6 +146,8 @@ and map_pattern_names pairs =
          | FKeyword ":keys", value -> add_keys acc value
          | FKeyword ":as", FSymbol name -> add_name acc name
          | FSymbol name, FKeyword _ -> add_name acc name
+         | (FList [ FSymbol "__type-hint"; FSymbol _; pattern ]), FKeyword _ ->
+             List.rev_append (pattern_names pattern) acc
          | ((FVector _ | FMap _) as pattern), FKeyword _ ->
              List.rev_append (pattern_names pattern) acc
          | _ -> acc)
@@ -146,6 +156,8 @@ and map_pattern_names pairs =
 
 let rec identity_for_name name = function
   | FSymbol candidate as form when candidate = name -> source_identity form
+  | FList [ FSymbol "__type-hint"; FSymbol _; pattern ] ->
+      identity_for_name name pattern
   | FVector forms -> List.find_map (identity_for_name name) forms
   | FMap pairs ->
       List.find_map
@@ -299,7 +311,9 @@ let parse_map_pattern pairs =
         | Error _ as err -> err
         | Ok parsed_defaults ->
             loop fields as_name (parsed_defaults @ defaults) rest)
-    | (((FSymbol _ | FVector _ | FMap _) as binding_pattern), FKeyword keyword)
+    | ( ((FSymbol _ | FVector _ | FMap _
+         | FList [ FSymbol "__type-hint"; FSymbol _; _ ]) as binding_pattern),
+        FKeyword keyword )
       :: rest ->
         if binding_pattern = FSymbol "_" then loop fields as_name defaults rest
         else
@@ -371,6 +385,8 @@ and infer_sequence_type forms lookup_local_ty =
 and infer_pattern_type pattern lookup_local_ty =
   match pattern with
   | FSymbol name -> Ok (lookup_local_ty name)
+  | FList [ FSymbol "__type-hint"; FSymbol annotation; _ ] ->
+      Type_annotation.of_param_annotation annotation
   | FMap pairs -> infer_map_type pairs lookup_local_ty
   | FVector forms -> infer_sequence_type forms lookup_local_ty
   | _ -> Error.error "unsupported destructuring pattern"
@@ -674,6 +690,8 @@ and bind_pattern ~env (target : typed_expr) pattern =
   | FSymbol name ->
       if ignore_name name then Ok []
       else Ok [ local_binding name target.ty target.semantic_expr ]
+  | FList [ FSymbol "__type-hint"; FSymbol _; pattern ] ->
+      bind_pattern ~env target pattern
   | FMap pairs -> bind_map ~env target pairs
   | FVector forms -> bind_sequence env target forms
   | _ -> Error.error "unsupported destructuring pattern"

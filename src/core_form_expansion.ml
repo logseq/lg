@@ -62,6 +62,9 @@ let rec apply_transducer collection = function
       Ok (FList [ FCoreSymbol Core_map; function_form; collection ])
   | FList [ FSymbol "filter"; predicate_form ] ->
       Ok (FList [ FCoreSymbol Core_filter; predicate_form; collection ])
+  | FList [ FSymbol ("take-while" as name); predicate_form ]
+  | FList [ FSymbol ("drop-while" as name); predicate_form ] ->
+      Ok (FList [ FSymbol name; predicate_form; collection ])
   | FSymbol "cat" ->
       Ok
         (FList

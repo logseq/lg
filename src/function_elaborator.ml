@@ -424,6 +424,27 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                 typed_specs
                 |> List.mapi (fun index (spec, inferred_ty) ->
                        let inferred_ty =
+                         match inferred_ty with
+                         | TRecord fields ->
+                             TRecord
+                               (List.map
+                                  (fun (field : field) ->
+                                    {
+                                      field with
+                                      ty = infer_named_record scope env field.ty;
+                                    })
+                                  fields)
+                         | ty -> ty
+                       in
+                       let inferred_ty =
+                         match inferred_ty with
+                         | TNullable inner
+                         | TOcaml_app ("option", [ inner ])
+                           when Types.is_dynamic inner ->
+                             inner
+                         | ty -> ty
+                       in
+                       let inferred_ty =
                          if Some index = variadic_rest_index then
                            match Types.seqable_constraint_element inferred_ty with
                            | Some element_ty -> TSeq element_ty
@@ -538,6 +559,41 @@ let fn_code ?(row_param_type_names = []) parts =
     parts.param_bindings
     |> List.map (fun (_key, (binding : binding)) -> binding.ty)
   in
+  let sequence_first_arguments =
+    match Semantic_ir.unlocated parts.body.semantic_expr with
+    | Semantic_ir.Apply
+        (Semantic_ir.Ident "Lg_runtime.Runtime_seq.first", arguments) ->
+        Some arguments
+    | _ -> None
+  in
+  let param_tys, return_ty, body_semantic_expr =
+    match (parts.body.ty, sequence_first_arguments) with
+    | TUnknown, Some arguments ->
+        let rec tie index reversed = function
+          | [] -> None
+          | TOcaml_app (name, [ TUnknown; value_ty ]) :: rest
+            when name = Types.seqable_constraint_name
+                 || name = Types.optional_seqable_constraint_name
+                 || name = Types.optional_sequential_constraint_name ->
+              let element_ty = TVar ("sequence_element_" ^ string_of_int index) in
+              Some
+                ( List.rev_append reversed
+                    (TOcaml_app (name, [ element_ty; value_ty ]) :: rest),
+                  element_ty )
+          | ty :: rest -> tie (index + 1) (ty :: reversed) rest
+        in
+        (match tie 0 [] param_tys with
+        | Some (param_tys, element_ty) ->
+            let return_ty = TNullable element_ty in
+            ( param_tys,
+              return_ty,
+              Semantic_ir.annotate return_ty
+                (Semantic_ir.Apply
+                   ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.first_opt",
+                     arguments )) )
+        | None -> (param_tys, parts.body.ty, parts.body.semantic_expr))
+    | return_ty, _ -> (param_tys, return_ty, parts.body.semantic_expr)
+  in
   let rec capability_pattern name ty =
     match Types.protocol_constraint_info ty with
     | Some (protocol_id, _, value_ty) ->
@@ -605,7 +661,7 @@ let fn_code ?(row_param_type_names = []) parts =
   in
   let body_expr =
     match parts.destructured_bindings with
-    | [] -> parts.body.semantic_expr
+    | [] -> body_semantic_expr
     | bindings ->
         Semantic_ir.Let
           ( List.map
@@ -626,7 +682,7 @@ let fn_code ?(row_param_type_names = []) parts =
                 in
                 (pattern, binding.semantic_expr))
               bindings,
-            parts.body.semantic_expr )
+            body_semantic_expr )
   in
   let return_param_index =
     match
@@ -642,7 +698,7 @@ let fn_code ?(row_param_type_names = []) parts =
   in
   {
     (typed_ir
-       (TFn (param_tys, parts.body.ty))
+       (TFn (param_tys, return_ty))
        (Semantic_ir.Fun (param_patterns, body_expr)))
     with
     return_param_index;

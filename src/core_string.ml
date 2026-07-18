@@ -13,7 +13,8 @@ let bindings =
     binding "ends-with?" (runtime "ends_with") (fn [ TString; TString ] TBool);
     binding "includes?" (runtime "includes") (fn [ TString; TString ] TBool);
     binding "index-of" (runtime "index_of") (fn [ TString; TString ] TInt);
-    binding "join" (runtime "join") (fn [ TString; TVector TString ] TString);
+    binding "join" (runtime "join")
+      (fn [ TString; Types.seqable_constraint TString ] TString);
     binding "last-index-of" (runtime "last_index_of") (fn [ TString; TString ] TInt);
     binding "lower-case" "String.lowercase_ascii" (fn [ TString ] TString);
     binding "re-quote-replacement" (runtime "identity") (fn [ TString ] TString);

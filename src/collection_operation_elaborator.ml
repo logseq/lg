@@ -141,7 +141,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
     { value with ty; semantic_expr }
   in
   let special_forms : Special_form_elaborator.t =
-    Special_form_elaborator.create ~compile_expr
+    Special_form_elaborator.create ~compile_expr ~dynamic_unpack
+      ~pack_dynamic_value
   in
   let compile_body = special_forms.compile_body in
   let compile_map = special_forms.compile_map in

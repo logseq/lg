@@ -91,21 +91,101 @@ let narrow_symbol_predicates scope env condition body =
         | Error _ -> false)
       names
   in
+  let body =
+    List.fold_right
+      (fun name body ->
+        let narrowed =
+          FList
+            [
+              FSymbol "__lg_dynamic-narrow";
+              FList [ FSymbol "quote"; FSymbol "__lg_symbol_type" ];
+              FSymbol name;
+            ]
+        in
+        FList
+          [ FSymbol "let"; FVector [ FSymbol name; narrowed ]; body ])
+      names body
+  in
+  let rec truthy_symbols = function
+    | FSymbol name -> [ name ]
+    | FList [ FSymbol predicate; FSymbol name ]
+      when predicate = "some?"
+           || String.ends_with ~suffix:"/some?" predicate ->
+        [ name ]
+    | FList (FSymbol name :: forms)
+      when name = "and" || String.ends_with ~suffix:"/and" name ->
+        List.concat_map truthy_symbols forms
+    | _ -> []
+  in
+  let nullable_names =
+    truthy_symbols condition
+    |> List.sort_uniq String.compare
+    |> List.filter (fun name ->
+           match Resolver.lookup_binding scope env name with
+           | Ok (binding : Types.binding) -> (
+               match Types.constraint_value_type binding.ty with
+               | TNullable _ | TOcaml_app ("option", [ _ ]) -> true
+               | _ -> false)
+           | Error _ -> false)
+  in
   List.fold_right
     (fun name body ->
-      let narrowed =
-        FList
-          [
-            FSymbol "__lg_dynamic-narrow";
-            FList [ FSymbol "quote"; FSymbol "__lg_symbol_type" ];
-            FSymbol name;
-          ]
-      in
       FList
-        [ FSymbol "let"; FVector [ FSymbol name; narrowed ]; body ])
-    names body
+        [
+          FSymbol "let";
+          FVector
+            [
+              FSymbol name;
+              FList [ FSymbol "__lg_nullable-value"; FSymbol name ];
+            ];
+          body;
+        ])
+    nullable_names body
 
-let create ~compile_expr =
+let rec false_nil_predicate_names = function
+  | FList [ FSymbol predicate; FSymbol name ]
+    when predicate = "nil?"
+         || String.ends_with ~suffix:"/nil?" predicate ->
+      [ name ]
+  | FList (FSymbol name :: conditions)
+    when name = "or" || String.ends_with ~suffix:"/or" name ->
+      List.concat_map false_nil_predicate_names conditions
+  | _ -> []
+
+let narrow_non_nil_name scope env name body =
+  match Resolver.lookup_binding scope env name with
+  | Ok (binding : Types.binding) -> (
+      match Types.constraint_value_type binding.ty with
+      | TNullable _ | TOcaml_app ("option", [ _ ]) ->
+          FList
+            [
+              FSymbol "let";
+              FVector
+                [
+                  FSymbol name;
+                  FList [ FSymbol "__lg_nullable-value"; FSymbol name ];
+                ];
+              body;
+            ]
+      | _ -> body)
+  | Error _ -> body
+
+let narrow_false_nil_predicates scope env condition body =
+  let names =
+    match condition with
+    | FSymbol alias -> (
+        match Resolver.lookup_binding scope env alias with
+        | Ok (binding : Types.binding) -> binding.false_non_nil_names
+        | Error _ -> [])
+    | condition -> false_nil_predicate_names condition
+  in
+  names
+  |> List.sort_uniq String.compare
+  |> List.fold_left
+       (fun body name -> narrow_non_nil_name scope env name body)
+       body
+
+let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
   let compile_args_for = compile_args_for compile_expr in
   let rec compile_vector scope env forms =
     match forms with
@@ -545,6 +625,9 @@ let create ~compile_expr =
     | _ -> Error.error "let-some bindings must be a vector"
   and compile_if scope env condition then_form else_form =
     let then_form = narrow_symbol_predicates scope env condition then_form in
+    let else_form =
+      narrow_false_nil_predicates scope env condition else_form
+    in
     let compile_tuple_branch expected_types = function
       | FVector forms when List.length expected_types = List.length forms ->
           let rec compile values expected_types forms =
@@ -868,7 +951,19 @@ let create ~compile_expr =
   and compile_logical scope env operator forms =
     let forms =
       match operator with
-      | `Or -> forms
+      | `Or ->
+          let rec narrow_later conditions = function
+            | [] -> []
+            | form :: rest ->
+                let narrowed =
+                  List.fold_left
+                    (fun body condition ->
+                      narrow_false_nil_predicates scope env condition body)
+                    form conditions
+                in
+                narrowed :: narrow_later (form :: conditions) rest
+          in
+          narrow_later [] forms
       | `And ->
           let rec narrow_later conditions = function
             | [] -> []
@@ -1418,8 +1513,49 @@ let create ~compile_expr =
                    ^ Types.source_name arg.ty)
             | _ -> Error.error "internal error: recur argument validation"
           in
-          validate 1 param_tys args
-          |> Result.map (fun () ->
+          let adapt_argument expected_ty (arg : typed_expr) =
+            match (expected_ty, arg.ty) with
+            | ( (TNullable expected_inner
+                | TOcaml_app ("option", [ expected_inner ])),
+                (TNullable actual_inner
+                | TOcaml_app ("option", [ actual_inner ])) )
+              when Types.is_dynamic actual_inner
+                   && not (Types.is_dynamic expected_inner) ->
+                let payload_name = "__lg_recur_optional_payload" in
+                Result.map
+                  (fun payload ->
+                    Semantic_ir.Match
+                      ( arg.semantic_expr,
+                        [
+                          ( Semantic_ir.PConstructor ("None", None),
+                            Semantic_ir.Constructor ("None", None) );
+                          ( Semantic_ir.PConstructor
+                              ("Some", Some (Semantic_ir.PVar payload_name)),
+                            Semantic_ir.Constructor ("Some", Some payload) );
+                        ] ))
+                  (dynamic_unpack env expected_inner
+                     (Semantic_ir.Ident payload_name))
+            | _ ->
+                Ok
+                  (coerce_expression_to_type expected_ty arg.ty
+                     arg.semantic_expr)
+          in
+          Result.bind (validate 1 param_tys args) (fun () ->
+                 let rec adapt adapted expected args =
+                   match (expected, args) with
+                   | [], [] -> Ok (List.rev adapted)
+                   | expected_ty :: expected, arg :: args ->
+                       Result.bind (adapt_argument expected_ty arg)
+                         (fun expression ->
+                           adapt
+                             (capability_storage_expression expected_ty
+                                expression
+                             :: adapted)
+                             expected args)
+                   | _ -> Error.error "internal error: recur adaptation"
+                 in
+                 adapt [] param_tys args)
+          |> Result.map (fun arguments ->
                  let return_ty =
                    match Env.find_opt loop_name env with
                    | Some { ty = TFn (_, return_ty); _ } -> return_ty
@@ -1428,16 +1564,17 @@ let create ~compile_expr =
                  typed_ir return_ty
                    (Semantic_ir.Apply
                       ( Semantic_ir.Ident loop_name,
-                        List.map2
-                          (fun expected_ty arg ->
-                            coerce_expression_to_type expected_ty arg.ty
-                              arg.semantic_expr
-                            |> capability_storage_expression expected_ty)
-                          param_tys args )))
+                        arguments )))
   and compile_loop_tail scope env loop_name param_tys = function
     | FList (FSymbol "recur" :: arg_forms) ->
         compile_recur scope env loop_name param_tys arg_forms
     | FList [ FSymbol "if"; condition_form; then_form; else_form ] -> (
+        let then_form =
+          narrow_symbol_predicates scope env condition_form then_form
+        in
+        let else_form =
+          narrow_false_nil_predicates scope env condition_form else_form
+        in
         match
           ( compile_expr scope env condition_form,
             compile_loop_tail scope env loop_name param_tys then_form,
@@ -1603,6 +1740,235 @@ let create ~compile_expr =
           match compile_bindings [] [] [] [] forms with
           | Error _ as err -> err
           | Ok (names, identities, values, param_tys) -> (
+              let inferred_param_tys =
+                let local_tys = List.combine names param_tys in
+                let rec collect_aliases aliases = function
+                  | FList
+                      (FSymbol ("let" | "let*") :: FVector bindings
+                      :: body_forms) ->
+                      let rec binding_aliases aliases = function
+                        | FSymbol name :: value :: rest ->
+                            binding_aliases ((name, value) :: aliases) rest
+                        | _ :: _ :: rest -> binding_aliases aliases rest
+                        | _ -> aliases
+                      in
+                      List.fold_left collect_aliases
+                        (binding_aliases aliases bindings)
+                        body_forms
+                  | FList forms | FVector forms ->
+                      List.fold_left collect_aliases aliases forms
+                  | FMap pairs ->
+                      List.fold_left
+                        (fun aliases (key, value) ->
+                          collect_aliases
+                            (collect_aliases aliases key)
+                            value)
+                        aliases pairs
+                  | _ -> aliases
+                in
+                let aliases =
+                  List.fold_left collect_aliases [] body_forms
+                in
+                let rec form_type = function
+                  | FSymbol name -> (
+                      match List.assoc_opt name local_tys with
+                      | Some ty -> ty
+                      | None -> (
+                          match List.assoc_opt name aliases with
+                          | Some value -> form_type value
+                          | None -> (
+                              match Resolver.lookup_binding scope env name with
+                              | Ok (binding : Types.binding) -> binding.ty
+                              | Error _ -> TUnknown)))
+                  | FList (FSymbol name :: _reducer :: init :: _)
+                    when name = "reduce"
+                         || String.ends_with ~suffix:"/reduce" name ->
+                      form_type init
+                  | FList (FSymbol name :: arguments) -> (
+                      match Resolver.lookup_binding scope env name with
+                      | Ok { ty = TFn (parameter_tys, return_ty); _ }
+                        when List.length parameter_tys
+                             = List.length arguments ->
+                          Types.instantiate_type ~templates:parameter_tys
+                            ~actuals:(List.map form_type arguments)
+                            return_ty
+                      | Ok { ty = TOverloaded_fn arities; _ } -> (
+                          match
+                            List.find_opt
+                              (fun arity ->
+                                List.length arity.fixed_params
+                                = List.length arguments)
+                              arities
+                          with
+                          | Some arity ->
+                              Types.instantiate_type
+                                ~templates:arity.fixed_params
+                                ~actuals:(List.map form_type arguments)
+                                arity.return_ty
+                          | None -> TUnknown)
+                      | Ok _ | Error _ -> TUnknown)
+                  | FList _ | FVector _ | FMap _ | FCoreSymbol _
+                  | FKeyword _ | FString _ | FRegex _ | FInt _ | FFloat _
+                  | FChar _ | FBool _ ->
+                      TUnknown
+                in
+                let rec recur_arguments = function
+                  | FList (FSymbol "recur" :: arguments) -> [ arguments ]
+                  | FList (FSymbol ("loop" | "fn") :: _) -> []
+                  | FList forms | FVector forms ->
+                      List.concat_map recur_arguments forms
+                  | FMap pairs ->
+                      List.concat_map
+                        (fun (key, value) ->
+                          recur_arguments key @ recur_arguments value)
+                        pairs
+                  | _ -> []
+                in
+                let recurs = List.concat_map recur_arguments body_forms in
+                List.mapi
+                  (fun index fallback ->
+                    let recur_types =
+                      List.filter_map
+                        (fun arguments ->
+                          Option.map form_type
+                            (List.nth_opt arguments index))
+                        recurs
+                    in
+                    let sequence_element = function
+                      | TList inner | TVector inner | TSeq inner -> Some inner
+                      | TOcaml_app (name, [ inner ])
+                        when name = Types.next_seq_type_name ->
+                          Some inner
+                      | _ -> None
+                    in
+                    let merge_sequence_inner current_inner actual_inner =
+                      match actual_inner with
+                      | TUnknown | TVar _ ->
+                          Types.dynamic_constraint current_inner
+                      | _ -> (
+                          match
+                            merge_branch_types current_inner actual_inner
+                          with
+                          | Some inner -> inner
+                          | None -> Types.dynamic_constraint TUnknown)
+                    in
+                    let widen_container current actual =
+                      match (current, actual) with
+                      | ( (TList current_inner | TVector current_inner),
+                          TSeq actual_inner )
+                      | ( TSeq current_inner,
+                          (TList actual_inner | TVector actual_inner) ) ->
+                          let inner =
+                            merge_sequence_inner current_inner actual_inner
+                          in
+                          TSeq inner
+                      | ( (TList current_inner | TVector current_inner),
+                          TOcaml_app (name, [ actual_inner ]) )
+                        when name = Types.next_seq_type_name ->
+                          let inner =
+                            merge_sequence_inner current_inner actual_inner
+                          in
+                          TSeq inner
+                      | TSeq current_inner, TSeq actual_inner ->
+                          TSeq
+                            (merge_sequence_inner current_inner actual_inner)
+                      | current, actual
+                        when Option.is_some (sequence_element current)
+                             && (match actual with
+                                | TUnknown | TVar _ -> true
+                                | _ -> false) ->
+                          current
+                      | current, _ -> current
+                    in
+                    let fallback =
+                      List.fold_left widen_container fallback recur_types
+                    in
+                    let becomes_nullable =
+                      List.exists
+                        (function
+                          | TNullable _ | TOcaml_app ("option", [ _ ]) -> true
+                          | _ -> false)
+                        recur_types
+                    in
+                    if
+                      becomes_nullable
+                      && not
+                           (match fallback with
+                           | TNullable _ | TOcaml_app ("option", [ _ ]) -> true
+                           | _ -> false)
+                    then TNullable fallback
+                    else fallback)
+                  param_tys
+              in
+              let param_tys =
+                let rec contains_protocol ty =
+                  Option.is_some (Types.protocol_constraint_info ty)
+                  ||
+                  match Types.dynamic_constraint_info ty with
+                  | Some capability -> contains_protocol capability
+                  | None -> (
+                      match ty with
+                      | TNullable inner | TArray inner | TRef inner
+                      | TList inner | TVector inner | TSet inner | TSeq inner
+                      | TOcaml_app (_, [ inner ]) ->
+                          contains_protocol inner
+                      | TOcaml_app (_, arguments) | TTuple arguments ->
+                          List.exists contains_protocol arguments
+                      | TFn (parameters, return_ty) ->
+                          List.exists contains_protocol
+                            (return_ty :: parameters)
+                      | TOverloaded_fn arities ->
+                          List.exists
+                            (fun arity ->
+                              List.exists contains_protocol
+                                (arity.return_ty :: arity.fixed_params))
+                            arities
+                      | TRecord fields | TNamed_record { fields; _ } ->
+                          List.exists
+                            (fun (field : field) ->
+                              contains_protocol field.ty)
+                            fields
+                      | TInt | TFloat | TChar | TString | TRegex | TMap_keys
+                      | TSymbol | TKeyword | TBool | TUnit | TNil | TUnknown
+                      | TVar _ | TOcaml _ ->
+                          false)
+                in
+                let lookup_function_ty =
+                  Expression_support.lookup_function_ty scope env
+                in
+                let lookup_protocol_constraint =
+                  Protocol.constraint_type scope env
+                in
+                let lookup_dynamic_key_record_type =
+                  Expression_support.dynamic_key_record_type env
+                in
+                let resolve_named_record =
+                  Function_elaborator.infer_named_record scope env
+                in
+                match
+                  Type_inference.infer_params ~lookup_function_ty
+                    ~lookup_protocol_constraint
+                    ~lookup_dynamic_key_record_type ~resolve_named_record
+                    (List.combine names inferred_param_tys)
+                    body_forms
+                with
+                | Error _ -> inferred_param_tys
+                | Ok inferred ->
+                    List.map2
+                      (fun name fallback ->
+                        match List.assoc_opt name inferred with
+                        | Some ty when contains_protocol ty -> ty
+                        | Some _ | None -> fallback)
+                      names inferred_param_tys
+              in
+              let param_tys =
+                List.map
+                  (function
+                    | TSeq (TUnknown | TVar _) ->
+                        TSeq (Types.dynamic_constraint TUnknown)
+                    | ty -> ty)
+                  param_tys
+              in
               let loop_name = "loop__" in
               let loop_env =
                 List.fold_left2
@@ -1619,6 +1985,59 @@ let create ~compile_expr =
                with
               | Error _ as err -> err
               | Ok body ->
+                  let adapt_initial param_ty (value : typed_expr) =
+                    match (param_ty, value.ty) with
+                    | ( TSeq target_inner,
+                        (TList source_inner | TVector source_inner) )
+                      when Types.is_dynamic target_inner
+                           && not (Types.is_dynamic source_inner) ->
+                        let item_name = "__lg_loop_initial_item" in
+                        let item =
+                          typed_ir source_inner
+                            (Semantic_ir.Ident item_name)
+                        in
+                        Result.map
+                          (fun packed ->
+                            let sequence =
+                              match value.ty with
+                              | TList _ ->
+                                  Semantic_ir.Apply
+                                    ( Semantic_ir.Ident
+                                        "Lg_runtime.Runtime_seq.of_list",
+                                      [ value.semantic_expr ] )
+                              | TVector _ ->
+                                  Semantic_ir.Apply
+                                    ( Semantic_ir.Ident
+                                        "Lg_runtime.Runtime_seq.of_vector",
+                                      [ value.semantic_expr ] )
+                              | _ -> assert false
+                            in
+                            Semantic_ir.Apply
+                              ( Semantic_ir.Ident
+                                  "Lg_runtime.Runtime_seq.map",
+                                [
+                                  Semantic_ir.Fun
+                                    ([ Semantic_ir.PVar item_name ], packed);
+                                  sequence;
+                                ] ))
+                          (pack_dynamic_value env target_inner item)
+                    | _ ->
+                        Ok
+                          (coerce_expression_to_type param_ty value.ty
+                             value.semantic_expr
+                          |> capability_storage_expression param_ty)
+                  in
+                  let rec adapt_initials adapted param_tys values =
+                    match (param_tys, values) with
+                    | [], [] -> Ok (List.rev adapted)
+                    | param_ty :: param_tys, value :: values ->
+                        Result.bind (adapt_initial param_ty value)
+                          (fun value ->
+                            adapt_initials (value :: adapted) param_tys values)
+                    | _ -> Error.error "internal error: loop initial values"
+                  in
+                  Result.bind (adapt_initials [] param_tys values)
+                    (fun initial_values ->
                   let params =
                     List.map2
                       (fun name identity ->
@@ -1632,8 +2051,8 @@ let create ~compile_expr =
                           ( loop_name,
                             params,
                             body.semantic_expr,
-                            List.map (fun value -> value.semantic_expr) values
-                          )))))
+                            initial_values
+                          ))))))
     | _ -> Error.error "loop bindings must be a vector"
   and compile_let_tail scope env loop_name param_tys bindings body_forms =
     compile_let_with_body
@@ -1767,11 +2186,14 @@ let create ~compile_expr =
                                 | FKeyword keyword -> Some keyword
                                 | _ -> None
                               in
+                              let false_non_nil_names =
+                                false_nil_predicate_names value_form
+                              in
                               [
                                 ( Names.scoped_key scope name,
                                   Types.binding
                                     ?return_param_index:value.return_param_index
-                                    ?constant_keyword
+                                    ?constant_keyword ~false_non_nil_names
                                     binding.ocaml_name binding.ty );
                               ]
                           | _ ->

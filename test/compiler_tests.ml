@@ -1663,6 +1663,8 @@ let test_compiler_phases_have_explicit_boundaries () =
           let operations =
             Lg.Special_form_elaborator.create
               ~compile_expr:Lg.Expression_elaborator.compile_expr
+              ~dynamic_unpack:Lg.Call_elaborator.dynamic_unpack
+              ~pack_dynamic_value:Lg.Call_elaborator.pack_dynamic_value
           in
         operations.compile_if "" Lg.Compiler_environment.empty
           (Lg.Ast.FBool true) (Lg.Ast.FInt 1) (Lg.Ast.FInt 2)
@@ -2209,24 +2211,26 @@ let compile_current_datascript target extra_sources =
   let _, reversed_outputs =
     List.fold_left
       (fun (state, outputs) (filename, source) ->
-        let started = Unix.gettimeofday () in
-        if Sys.getenv_opt "LG_TEST_TRACE" = Some "1" then
-          Printf.eprintf "COMPILE: %s %s\n%!" (Lg.Target.to_string target)
-            filename;
         let state, output =
           match
             Lg.Compiler.compile_chunk_with_filename ~target ~filename state source
           with
           | Ok compiled -> compiled
           | Error (error : Lg.Compiler.compile_error) ->
+              let location =
+                match error.location with
+                | None -> ""
+                | Some location ->
+                    Printf.sprintf " at %s:%d:%d"
+                      location.Location.loc_start.Lexing.pos_fname
+                      location.Location.loc_start.Lexing.pos_lnum
+                      (location.Location.loc_start.Lexing.pos_cnum
+                      - location.Location.loc_start.Lexing.pos_bol)
+              in
               failwith
-                (Printf.sprintf "failed to compile %s for %s: %s" filename
-                   (Lg.Target.to_string target) error.message)
+                (Printf.sprintf "failed to compile %s for %s%s: %s" filename
+                   (Lg.Target.to_string target) location error.message)
         in
-        if Sys.getenv_opt "LG_TEST_TRACE" = Some "1" then
-          Printf.eprintf "COMPILED: %s %s %.3fs\n%!"
-            (Lg.Target.to_string target) filename
-            (Unix.gettimeofday () -. started);
         (state, output :: outputs))
       (Lg.Compiler.empty_state, [])
       (current_datascript_sources () @ extra_sources)
@@ -2484,6 +2488,22 @@ let test_count_supports_transient_collections () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "count_supports_transient_collections" "2:2:2\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_persistent_transient_map_is_seqable () =
+  let source =
+    {|
+(def empty-map (persistent! (transient {})))
+(def present-map (persistent! (assoc! (transient {}) :answer 42)))
+(println
+  (str (nil? (not-empty empty-map)) ":"
+       (some? (not-empty present-map))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "persistent_transient_map_is_seqable" "true:true\n"
     ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
@@ -4713,6 +4733,25 @@ let test_multi_arity_defn_accepts_nil_for_destructured_options () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_nullable_destructured_options_flow_through_forwarding_functions () =
+  let source =
+    {|
+(defn parse-options
+  ([^:int value] (parse-options value nil))
+  ([^:int value {:keys [visitor]}]
+   (if-some [visitor visitor] (visitor value) value)))
+(defn forward-options [^:int value options]
+  (parse-options value options))
+(println (parse-options 1 nil))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "nullable_destructured_options_flow_through_forwarding_functions"
+    "1\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_multi_arity_defn_remains_callable_as_a_value () =
   let source =
     {|
@@ -5972,6 +6011,65 @@ let test_recursive_protocol_sequence_returns_remain_concrete () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs
     "recursive_protocol_sequence_returns_remain_concrete" "ok\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_recursive_protocol_vectors_keep_static_protocol_elements () =
+  let source =
+    {|
+(defprotocol IFrame
+  (-run [this]))
+(defrecord ResultFrame [^int value]
+  IFrame
+  (-run [this]
+    [(ResultFrame. value)]))
+(defrecord PairFrame [^int value]
+  IFrame
+  (-run [this]
+    [(ResultFrame. value) (PairFrame. value)]))
+(defn run-frame [frame]
+  (-run frame))
+(println (count (run-frame (PairFrame. 7))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "recursive_protocol_vectors_keep_static_protocol_elements" "2\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_recursive_protocol_frame_stacks_preserve_dispatch_witnesses () =
+  let source =
+    {|
+(defprotocol IFrame
+  (-run [this]))
+(defrecord ResultFrame [^int value]
+  IFrame
+  (-run [_] []))
+(defrecord PairFrame [^int value]
+  IFrame
+  (-run [_] [(ResultFrame. value)]))
+(defn first-seq [values] (first values))
+(defn next-seq [values] (next values))
+(defn conj-seq [values value]
+  (if-some [values values]
+    (conj values value)
+    (list value)))
+(defn run-stack []
+  (loop [stack (list (PairFrame. 7))]
+    (let [frame (first-seq stack)
+          stack' (next-seq stack)]
+      (if (not (instance? ResultFrame frame))
+        (recur (reduce conj-seq stack' (-run frame)))
+        (.-value ^ResultFrame frame)))))
+(println (run-stack))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "recursive_protocol_frame_stacks_preserve_dispatch_witnesses" "7\n"
     ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
@@ -7869,6 +7967,19 @@ let test_clojure_string_module_batch_works () =
      true:true:true:true:2:4:[\"a\" \"b\" \"c\"]:[\"a\" \"b\"]\n"
     ocaml_source
 
+let test_clojure_string_join_accepts_lazy_sequences () =
+  let source =
+    {|
+(require [clojure.string :as str])
+(println (str/join "-" (map str [1 2 3])))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "clojure_string_join_accepts_lazy_sequences" "1-2-3\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_clojure_string_module_refer_works () =
   let source =
     {|
@@ -8234,6 +8345,125 @@ let test_truthy_guards_preserve_dynamic_numeric_parameters () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_and_truthy_guard_narrows_nullable_ints () =
+  let source =
+    {|
+(defn positive-result [flag]
+  (let [value (when flag 1)]
+    (and value (pos? value))))
+(println
+  (str (if (positive-result true) "yes" "no") ":"
+       (if (positive-result false) "yes" "no")))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "and_truthy_guard_narrows_nullable_ints" "yes:no\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_or_nil_guard_narrows_nullable_records () =
+  let source =
+    {|
+(defrecord Datom [a])
+(defn maybe-datom [present?]
+  (if present? (Datom. :name) nil))
+(defn matching-or-missing? [datom]
+  (or (nil? datom) (= (.-a datom) :name)))
+(println
+  (str (matching-or-missing? (maybe-datom false)) ":"
+       (matching-or-missing? (maybe-datom true))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "or_nil_guard_narrows_nullable_records" "true:true\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_some_guard_narrows_nullable_records () =
+  let source =
+    {|
+(deftype Datom [a])
+(defn maybe-datom [present?]
+  (if present? (Datom. :name) nil))
+(defn named? [datom]
+  (and (some? datom) (= (.-a datom) :name)))
+(println (str (named? (maybe-datom false)) ":"
+              (named? (maybe-datom true))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "some_guard_narrows_nullable_records" "false:true\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_or_nil_guard_narrows_hinted_dynamic_sequence_elements () =
+  let source =
+    {|
+(deftype Datom [a])
+(defprotocol IFrame (-run [this]))
+(defn first-seq [values] (first values))
+(defrecord Holder [datoms]
+  IFrame
+  (-run [_]
+    (loop [remaining datoms]
+      (let [^Datom datom (first-seq remaining)
+            datom-ahead? (or (nil? datom) false)]
+        (if datom-ahead?
+          true
+          (some? (.-a datom)))))))
+(println (-run (Holder. (list (Datom. :name)))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "or_nil_guard_narrows_hinted_dynamic_sequence_elements"
+    "true\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_loop_parameters_widen_for_nullable_generic_recur_values () =
+  let source =
+    {|
+(deftype Datom [a])
+(defn first-seq [values] (first values))
+(defn next-seq [values] (next values))
+(defrecord Holder [datoms])
+(defn last-datom-present? [^Holder holder]
+  (loop [current (Datom. :initial)
+         remaining (.-datoms holder)]
+    (if (seq remaining)
+      (recur (first-seq remaining) (next-seq remaining))
+      (if (nil? current)
+        false
+        (some? (.-a current))))))
+(println (last-datom-present? (Holder. (list (Datom. :name)))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "loop_parameters_widen_for_nullable_generic_recur_values"
+    "true\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_callable_set_parameters_remain_sets_for_conj () =
+  let source =
+    {|
+(defn add-unseen [seen id]
+  (if (seen id)
+    seen
+    (conj seen id)))
+(def once (add-unseen #{} 1))
+(println (str (count once) ":" (count (add-unseen once 1))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "callable_set_parameters_remain_sets_for_conj" "1:1\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_let_aliases_propagate_seqable_constraints () =
   let source =
     {|
@@ -8400,6 +8630,24 @@ let test_batched_sequence_functions_work () =
      2}:(\"x\" \"x\" \"x\"):(7 7 7):(1 0 2 0 3):(1 3 2 4):2:1:3:3:1:(0 1 3 \
      6):[1 2 1]:(10 21):[1 3]:[2 3]:31:2:true\n"
     ocaml_source
+
+let test_thread_last_inferred_functions_pass_collections_to_take_while () =
+  let source =
+    {|
+(defmacro small-thread [values]
+  `(clojure.core/->> ~values
+     (take-while (fn [value] (< value 3)))))
+(defn small-values [values]
+  (small-thread values))
+(println (pr-str (small-values [1 2 3 1])))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "thread_last_inferred_functions_pass_collections_to_take_while"
+    "(1 2)\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_sort_accepts_dynamic_collections () =
   let source =
@@ -12292,6 +12540,37 @@ let test_let_bindings_support_value_type_hints () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
+let test_value_type_hints_preserve_nullable_record_values () =
+  let source =
+    {|
+(defrecord Datom [value])
+(defn maybe-datom [pick]
+  (if pick (Datom. 42) nil))
+(let [^Datom datom (maybe-datom false)]
+  (println (nil? datom)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "value_type_hints_preserve_nullable_record_values"
+    "true\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_explicit_type_hints_narrow_nullable_field_receivers () =
+  let source =
+    {|
+(deftype Datom [^int value])
+(defn maybe-datom [pick]
+  (if pick (Datom. 42) nil))
+(println (.-value ^Datom (maybe-datom true)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "explicit_type_hints_narrow_nullable_field_receivers"
+    "42\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_nested_record_fields_preserve_outer_record_inference () =
   let source =
     {|
@@ -12342,6 +12621,24 @@ let test_threaded_keyword_access_preserves_nested_record_inference () =
 let test_destructuring_rejects_unsupported_let_sources () =
   Lg.Compiler.compile_string {|(def x (let [{:keys [name]} [1 2]] name))|}
   |> expect_error "map destructuring expects a map"
+
+let test_map_destructuring_supports_typed_direct_keyword_bindings () =
+  let source =
+    {|
+(defrecord Context [value])
+(defrecord Pattern [name])
+(defn describe [{^Context context :context ^Pattern pattern :pattern}]
+  (str (.-value context) ":" (.-name pattern)))
+(println
+  (describe {:context (Context. 42)
+             :pattern (Pattern. "all")}))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "map_destructuring_supports_typed_direct_keyword_bindings"
+    "42:all\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_destructuring_rejects_bad_rest_binding () =
   Lg.Compiler.compile_string {|(def x (let [[head &] [1 2]] head))|}
@@ -12925,6 +13222,23 @@ let test_eduction_applies_map_filter_and_cat_transducers () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "eduction_applies_map_filter_and_cat_transducers"
     "[2 3 4]:[2 3]:[1 2 3 4]:9\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_take_while_transducers_compile_and_truncate_sequences () =
+  let source =
+    {|
+(def xf (take-while (fn [value] (< value 3))))
+(def values
+  (into []
+    (take-while (fn [value] (< value 3)))
+    [1 2 3 1]))
+(println (str (boolean xf) ":" (pr-str values)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "take_while_transducers_compile_and_truncate_sequences"
+    "true:[1 2]\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -17234,6 +17548,8 @@ let tests =
       test_transient_collection_operations_preserve_values );
     ( "count supports transient collections",
       test_count_supports_transient_collections );
+    ( "persistent transient map is seqable",
+      test_persistent_transient_map_is_seqable );
     ( "dynamic transient vector accepts static values",
       test_dynamic_transient_vector_accepts_static_values );
     ( "dynamic transient map accepts static entries",
@@ -17548,6 +17864,8 @@ let tests =
       test_multi_arity_defn_supports_cross_arity_calls_and_recur );
     ( "multi-arity defn accepts nil for destructured options",
       test_multi_arity_defn_accepts_nil_for_destructured_options );
+    ( "nullable destructured options flow through forwarding functions",
+      test_nullable_destructured_options_flow_through_forwarding_functions );
     ( "multi-arity defn remains callable as a value",
       test_multi_arity_defn_remains_callable_as_a_value );
     ( "multi-arity calls project structural row arguments",
@@ -17682,6 +18000,10 @@ let tests =
       test_protocol_methods_merge_concrete_and_dynamic_sequence_returns );
     ( "recursive protocol sequence returns remain concrete",
       test_recursive_protocol_sequence_returns_remain_concrete );
+    ( "recursive protocol vectors keep static protocol elements",
+      test_recursive_protocol_vectors_keep_static_protocol_elements );
+    ( "recursive protocol frame stacks preserve dispatch witnesses",
+      test_recursive_protocol_frame_stacks_preserve_dispatch_witnesses );
     ( "protocol witness results unpack concrete sequence returns",
       test_protocol_witness_results_unpack_concrete_sequence_returns );
     ( "defn accepts attribute maps and return hints",
@@ -17909,6 +18231,8 @@ let tests =
     ( "batched numeric/scalar core functions infer int params",
       test_batched_numeric_scalar_core_functions_infer_int_params );
     ("clojure.string module batch works", test_clojure_string_module_batch_works);
+    ( "clojure.string join accepts lazy sequences",
+      test_clojure_string_join_accepts_lazy_sequences );
     ("clojure.string module refer works", test_clojure_string_module_refer_works);
     ( "clojure.string module rejects bad args",
       test_clojure_string_module_rejects_bad_args );
@@ -17947,6 +18271,18 @@ let tests =
       test_references_preserve_state_across_dynamic_fields );
     ( "truthy guards preserve dynamic numeric parameters",
       test_truthy_guards_preserve_dynamic_numeric_parameters );
+    ( "and truthy guard narrows nullable ints",
+      test_and_truthy_guard_narrows_nullable_ints );
+    ( "or nil guard narrows nullable records",
+      test_or_nil_guard_narrows_nullable_records );
+    ( "some guard narrows nullable records",
+      test_some_guard_narrows_nullable_records );
+    ( "or nil guard narrows hinted dynamic sequence elements",
+      test_or_nil_guard_narrows_hinted_dynamic_sequence_elements );
+    ( "loop parameters widen for nullable generic recur values",
+      test_loop_parameters_widen_for_nullable_generic_recur_values );
+    ( "callable set parameters remain sets for conj",
+      test_callable_set_parameters_remain_sets_for_conj );
     ( "let aliases propagate seqable constraints",
       test_let_aliases_propagate_seqable_constraints );
     ( "nested drop-while infers seqable parameters",
@@ -17972,6 +18308,8 @@ let tests =
       test_batched_identifier_and_constructor_core_functions_reject_bad_list_star_tail
     );
     ("batched sequence functions work", test_batched_sequence_functions_work);
+    ( "thread-last inferred functions pass collections to take-while",
+      test_thread_last_inferred_functions_pass_collections_to_take_while );
     ("sort accepts dynamic collections", test_sort_accepts_dynamic_collections);
     ( "metadata map values constrain function parameters",
       test_metadata_map_values_constrain_function_parameters );
@@ -18276,6 +18614,8 @@ let tests =
       test_destructuring_preserves_row_polymorphic_function_calls );
     ( "map destructuring as preserves open map access",
       test_map_destructuring_as_preserves_open_map_access );
+    ( "map destructuring supports typed direct keyword bindings",
+      test_map_destructuring_supports_typed_direct_keyword_bindings );
     ( "row polymorphic functions accept different map shapes",
       test_row_polymorphic_functions_accept_different_map_shapes );
     ( "row types bind nested capability parameters",
@@ -18292,6 +18632,10 @@ let tests =
       test_let_destructuring_supports_nested_sequences );
     ( "let bindings support value type hints",
       test_let_bindings_support_value_type_hints );
+    ( "value type hints preserve nullable record values",
+      test_value_type_hints_preserve_nullable_record_values );
+    ( "explicit type hints narrow nullable field receivers",
+      test_explicit_type_hints_narrow_nullable_field_receivers );
     ( "nested record fields preserve outer record inference",
       test_nested_record_fields_preserve_outer_record_inference );
     ( "threaded keyword access preserves nested record inference",
@@ -18375,6 +18719,8 @@ let tests =
       test_into_accepts_inferred_seqable_parameters );
     ( "Eduction applies map filter and cat transducers",
       test_eduction_applies_map_filter_and_cat_transducers );
+    ( "take-while transducers compile and truncate sequences",
+      test_take_while_transducers_compile_and_truncate_sequences );
     ( "into applies composed transducers",
       test_into_applies_composed_transducers );
     ( "into transducers build dynamic sets",
@@ -18791,8 +19137,6 @@ let () =
   time_phase "compiler tests" (fun () ->
       List.iter
         (fun (name, run) ->
-          if Sys.getenv_opt "LG_TEST_TRACE" = Some "1" then
-            Printf.eprintf "RUN: %s\n%!" name;
           try run ()
           with exn ->
             Printf.eprintf "FAILED: %s\n%s\n%s\n" name (Printexc.to_string exn)

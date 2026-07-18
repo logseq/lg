@@ -11,6 +11,7 @@ type binding = {
   overload_row_param_types : string option list list;
   forward_declared : bool;
   constant_keyword : string option;
+  false_non_nil_names : string list;
 }
 
 and host_reference =
@@ -35,7 +36,7 @@ let typed_ir ty semantic_expr =
 let binding ?(row_param_types = []) ?host_reference ?protocol_id
     ?return_param_index ?(overload_targets = [])
     ?(overload_row_param_types = []) ?(forward_declared = false)
-    ?constant_keyword ocaml_name ty =
+    ?constant_keyword ?(false_non_nil_names = []) ocaml_name ty =
   {
     ocaml_name;
     ty;
@@ -47,6 +48,7 @@ let binding ?(row_param_types = []) ?host_reference ?protocol_id
     overload_row_param_types;
     forward_declared;
     constant_keyword;
+    false_non_nil_names;
   }
 
 let seqable_constraint_name = "__lg_seqable_constraint"
@@ -75,6 +77,16 @@ let dynamic_constraint_info = function
   | _ -> None
 
 let is_dynamic ty = Option.is_some (dynamic_constraint_info ty)
+
+let normalize_nullable ty =
+  let rec payload = function
+    | TNullable inner | TOcaml_app ("option", [ inner ]) -> payload inner
+    | inner -> inner
+  in
+  match ty with
+  | TNullable inner | TOcaml_app ("option", [ inner ]) ->
+      TNullable (payload inner)
+  | ty -> ty
 
 let weak_type_name = "Lg_runtime.Runtime_weak.t"
 let weak_type value_ty = TOcaml_app (weak_type_name, [ value_ty ])

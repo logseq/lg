@@ -33,6 +33,22 @@ let rec map2 fn left right =
 let flat_map fn sequence = sequence |> Seq.flat_map fn |> memoize
 let filter predicate sequence = sequence |> Seq.filter predicate |> memoize
 
+let rec take_while predicate sequence =
+  memoize (fun () ->
+      match sequence () with
+      | Seq.Nil -> Seq.Nil
+      | Seq.Cons (value, rest) ->
+          if predicate value then Seq.Cons (value, take_while predicate rest)
+          else Seq.Nil)
+
+let rec drop_while predicate sequence =
+  memoize (fun () ->
+      match sequence () with
+      | Seq.Nil -> Seq.Nil
+      | Seq.Cons (value, rest) ->
+          if predicate value then (drop_while predicate rest) ()
+          else Seq.Cons (value, rest))
+
 let distinct equal sequence =
   let rec loop seen sequence =
     memoize (fun () ->

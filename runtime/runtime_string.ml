@@ -18,7 +18,8 @@ let index_of source needle =
     search 0
 
 let includes source needle = index_of source needle >= 0
-let join separator values = String.concat separator (Rrbvec.to_list values)
+let join separator (to_seq, values) =
+  String.concat separator (List.of_seq (to_seq values))
 
 let last_index_of source needle =
   let needle_len = String.length needle in

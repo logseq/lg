@@ -99,7 +99,10 @@ and refine_nonmatching_type existing inferred =
             (refine_type existing value_ty)
       | None -> existing)
   | TNullable existing, TNullable inferred ->
-      TNullable (refine_type existing inferred)
+      Types.normalize_nullable (TNullable (refine_type existing inferred))
+  | (TNullable existing | TOcaml_app ("option", [ existing ])), inferred
+    when Option.is_some (Types.protocol_constraint_info inferred) ->
+      Types.normalize_nullable (TNullable (refine_type existing inferred))
   | ( TOcaml_app (existing_name, existing_args),
       TOcaml_app (inferred_name, inferred_args) )
     when existing_name = inferred_name
@@ -112,6 +115,9 @@ and refine_nonmatching_type existing inferred =
   | TVector existing, TVector inferred ->
       TVector (refine_type existing inferred)
   | TSet existing, TSet inferred -> TSet (refine_type existing inferred)
+  | TFn ([ predicate_arg ], TBool), TSet element
+  | TSet element, TFn ([ predicate_arg ], TBool) ->
+      TSet (refine_type element predicate_arg)
   | TSeq existing, TSeq inferred -> TSeq (refine_type existing inferred)
   | TRecord existing, TRecord inferred ->
       TRecord (merge_record_fields existing inferred)
@@ -400,6 +406,12 @@ let add_record_field_constraint name keyword field_ty params =
   in
   let rec add_constraint = function
     | TUnknown | TVar _ -> Ok (TRecord [ make_field keyword field_ty ])
+    | TNullable inner ->
+        Result.map (fun inner -> TNullable inner) (add_constraint inner)
+    | TOcaml_app ("option", [ inner ]) ->
+        Result.map
+          (fun inner -> TOcaml_app ("option", [ inner ]))
+          (add_constraint inner)
     | TRecord fields ->
         Result.map (fun fields -> TRecord fields) (merge_fields fields)
     | TNamed_record record as record_ty -> (
@@ -944,7 +956,21 @@ let infer_params ?(explicitly_dynamic_params = [])
           if List.length parameter_tys <> List.length args then
             infer_form params form
           else
-            match Type_solver.unify [] return_ty expected_ty with
+            let return_ty_for_unification =
+              match (return_ty, expected_ty) with
+              | ( (TNullable payload_ty
+                  | TOcaml_app ("option", [ payload_ty ])),
+                  expected_ty )
+                when not
+                       (match expected_ty with
+                       | TNullable _ | TOcaml_app ("option", [ _ ]) -> true
+                       | _ -> false) ->
+                  payload_ty
+              | return_ty, _ -> return_ty
+            in
+            match
+              Type_solver.unify [] return_ty_for_unification expected_ty
+            with
             | Error _ -> infer_form params form
             | Ok substitutions ->
                 let parameter_tys =
@@ -2536,8 +2562,10 @@ let infer_params ?(explicitly_dynamic_params = [])
               match Types.set_module_name element_ty with
               | Ok _ -> TSet element_ty
               | Error _ -> Types.dynamic_constraint (TSet TUnknown))
+          | TFn ([ predicate_arg ], TBool) ->
+              TSet (refine_type element_ty predicate_arg)
           | TVector _ -> TVector element_ty
-          | _ -> TVector element_ty
+          | _ -> Types.dynamic_constraint TUnknown
         in
         match infer_expected collection_ty params target with
         | Error _ as error -> error

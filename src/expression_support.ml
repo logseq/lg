@@ -367,6 +367,32 @@ let coerce_expression_to_type ?(stored = false) target_ty source_ty expression =
             unwrap value_ty expression
       in
       unwrap source_ty expression
+  | TSeq target_inner, (TList source_inner | TVector source_inner) ->
+      let sequence =
+        match source_ty with
+        | TList _ ->
+            Semantic_ir.Apply
+              ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.of_list",
+                [ expression ] )
+        | TVector _ ->
+            Semantic_ir.Apply
+              ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.of_vector",
+                [ expression ] )
+        | _ -> assert false
+      in
+      if Types.is_dynamic target_inner && not (Types.is_dynamic source_inner)
+      then
+        let item_name = "__lg_coerce_dynamic_seq_item" in
+        let item = typed_ir source_inner (Semantic_ir.Ident item_name) in
+        let packed =
+          pack_plain_dynamic_value item
+          |> Option.value ~default:item.semantic_expr
+        in
+        Semantic_ir.Apply
+          ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.map",
+            [ Semantic_ir.Fun ([ Semantic_ir.PVar item_name ], packed); sequence ] )
+      else if Types.same_shape target_inner source_inner then sequence
+      else sequence
   | TVector element_ty, source_ty when Types.is_dynamic source_ty ->
       let dynamic name arguments =
         Semantic_ir.Apply

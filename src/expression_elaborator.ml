@@ -87,9 +87,11 @@ and compile_expr_unlocated scope (env : Env.t) = function
       Error.error "recur is only valid in a loop tail position"
   | FList (FSymbol "let" :: bindings :: body_forms) ->
       compile_let scope env bindings body_forms
-  | FList (FSymbol "->" :: value :: steps) ->
+  | FList (FSymbol ("->" | "clojure.core/->" | "cljs.core/->") :: value :: steps) ->
       compile_thread scope env `First value steps
-  | FList (FSymbol "->>" :: value :: steps) ->
+  | FList
+      (FSymbol ("->>" | "clojure.core/->>" | "cljs.core/->>") :: value :: steps)
+    ->
       compile_thread scope env `Last value steps
   | FList (FSymbol "cond->" :: value :: clauses) ->
       compile_cond_thread scope env `First value clauses
@@ -191,9 +193,9 @@ and compile_expr_unlocated scope (env : Env.t) = function
       | None -> (
           match Env.find_inline_macro ~scope name env with
           | Some definition -> (
-              match Macro_expander.expand ~compiler_env:env definition args with
-              | Error _ as err -> err
-              | Ok expanded -> compile_expr scope env expanded)
+          match Macro_expander.expand ~compiler_env:env definition args with
+          | Error _ as err -> err
+          | Ok expanded -> compile_expr scope env expanded)
           | None -> compile_call scope env name args)
       | Some definition -> (
           match Macro_expander.expand ~compiler_env:env definition args with
