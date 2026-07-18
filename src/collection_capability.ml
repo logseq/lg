@@ -378,6 +378,18 @@ let rec count_expr env collection =
                   present );
               ] ))
         (count_expr env value)
+  | TOcaml_app ("Lg_runtime.Runtime_transient.vector", [ _ ]) ->
+      Ok
+        (apply "Lg_runtime.Runtime_transient.vector_count"
+           [ collection.semantic_expr ])
+  | TOcaml_app ("Lg_runtime.Runtime_transient.map", [ _; _ ]) ->
+      Ok
+        (apply "Lg_runtime.Runtime_transient.map_count"
+           [ collection.semantic_expr ])
+  | TOcaml_app ("Lg_runtime.Runtime_transient.set", [ _ ]) ->
+      Ok
+        (apply "Lg_runtime.Runtime_transient.set_count"
+           [ collection.semantic_expr ])
   | _ ->
   let protocols = Compiler_environment.protocols env in
   match Core_protocols.find_counted collection.ty protocols with

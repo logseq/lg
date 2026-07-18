@@ -1021,6 +1021,20 @@ let test_freshen_deferred_erased_seqable_values_stay_dynamic () =
       | _ -> failwith "expected a deferred function type")
     constraints
 
+let test_unresolved_type_scan_stops_at_nominal_records () =
+  let open Lg.Types in
+  let fields = [ make_field ":next" TUnknown ] in
+  let nominal =
+    named_record ~type_name:"node" ~set_module_name:"node_set" fields
+  in
+  if Lg.Call_elaborator.contains_unresolved_type nominal then
+    failwith "nominal record fields must not be expanded during boundary scans";
+  if
+    not
+      (Lg.Call_elaborator.contains_unresolved_type
+         (TRecord fields))
+  then failwith "structural record fields must retain unresolved type evidence"
+
 let test_deferred_forward_calls_keep_nominal_receiver_evidence () =
   let source =
     {|
@@ -2195,10 +2209,24 @@ let compile_current_datascript target extra_sources =
   let _, reversed_outputs =
     List.fold_left
       (fun (state, outputs) (filename, source) ->
+        let started = Unix.gettimeofday () in
+        if Sys.getenv_opt "LG_TEST_TRACE" = Some "1" then
+          Printf.eprintf "COMPILE: %s %s\n%!" (Lg.Target.to_string target)
+            filename;
         let state, output =
-          Lg.Compiler.compile_chunk_with_filename ~target ~filename state source
-          |> expect_ok
+          match
+            Lg.Compiler.compile_chunk_with_filename ~target ~filename state source
+          with
+          | Ok compiled -> compiled
+          | Error (error : Lg.Compiler.compile_error) ->
+              failwith
+                (Printf.sprintf "failed to compile %s for %s: %s" filename
+                   (Lg.Target.to_string target) error.message)
         in
+        if Sys.getenv_opt "LG_TEST_TRACE" = Some "1" then
+          Printf.eprintf "COMPILED: %s %s %.3fs\n%!"
+            (Lg.Target.to_string target) filename
+            (Unix.gettimeofday () -. started);
         (state, output :: outputs))
       (Lg.Compiler.empty_state, [])
       (current_datascript_sources () @ extra_sources)
@@ -2236,6 +2264,72 @@ let test_current_datascript_entity_behaves_on_native () =
   ignore
     (compile_current_datascript Lg.Target.Melange
        [ ("test/datascript/entity_behavior.cljc", source) ])
+
+let test_current_datascript_pull_parser_compiles_for_native_and_melange () =
+  let path = "test/datascript/upstream/pull_parser.cljc" in
+  let source = read_file (Filename.concat (repo_root ()) path) in
+  ignore (compile_current_datascript Lg.Target.Native [ (path, source) ]);
+  ignore (compile_current_datascript Lg.Target.Melange [ (path, source) ])
+
+let current_datascript_pull_sources () =
+  [
+    "test/datascript/upstream/pull_parser.cljc";
+    "test/datascript/upstream/pull_api.cljc";
+  ]
+  |> List.map (fun path -> (path, read_file (Filename.concat (repo_root ()) path)))
+
+let test_current_datascript_pull_api_compiles_for_native_and_melange () =
+  let sources = current_datascript_pull_sources () in
+  ignore (compile_current_datascript Lg.Target.Native sources);
+  ignore (compile_current_datascript Lg.Target.Melange sources)
+
+let test_current_datascript_pull_api_behaves_on_native () =
+  let source =
+    {|
+(ns app.pull-api-behavior
+  (:require [datascript.db :as db]
+            [datascript.pull-api :as pull]))
+
+(def database
+  (db/init-db
+    [(db/datom 1 :name "Ivan")
+     (db/datom 1 :tags :a)
+     (db/datom 1 :tags :b)
+     (db/datom 1 :friend 2)
+     (db/datom 2 :name "Oleg")
+     (db/datom 3 :friend 2)]
+    {:tags {:db/cardinality :db.cardinality/many}
+     :friend {:db/valueType :db.type/ref
+              :db/cardinality :db.cardinality/one}}
+    {}))
+
+(def direct (pull/pull database [:name :tags] 1))
+(def defaulted (pull/pull database [[:missing :default "fallback"]] 1))
+(def reverse-result (pull/pull database [{:_friend [:db/id]}] 2))
+(def wildcard-result (pull/pull database [:*] 1))
+(def many-result (pull/pull-many database [:name] [1 2 999]))
+
+(println (= "Ivan" (:name direct)))
+(println (= #{:a :b} (set (:tags direct))))
+(println (= "fallback" (:missing defaulted)))
+(println (= #{1 3} (set (map :db/id (:_friend reverse-result)))))
+(println (and (= "Ivan" (:name wildcard-result))
+              (= 2 (:db/id (:friend wildcard-result)))))
+(println (and (= ["Ivan" "Oleg" nil] (mapv :name many-result))
+              (nil? (pull/pull database [:name] 999))))
+|}
+  in
+  let native_source =
+    compile_current_datascript Lg.Target.Native
+      (current_datascript_pull_sources ()
+      @ [ ("test/datascript/pull_api_behavior.cljc", source) ])
+  in
+  assert_ocaml_runs "current_datascript_pull_api_behaves_on_native"
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\n" native_source;
+  ignore
+    (compile_current_datascript Lg.Target.Melange
+       (current_datascript_pull_sources ()
+       @ [ ("test/datascript/pull_api_behavior.cljc", source) ]))
 
 let test_namespace_ignores_clojure_compiler_directives () =
   let source =
@@ -2376,6 +2470,97 @@ let test_transient_collection_operations_preserve_values () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
+let test_count_supports_transient_collections () =
+  let source =
+    {|
+(def vector-values (conj! (transient []) 1 2))
+(def map-values (assoc! (transient {}) :a 1 :b 2))
+(def set-values (conj! (transient (hash-set)) :a :b))
+(println
+  (str (count vector-values) ":"
+       (count map-values) ":"
+       (count set-values)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "count_supports_transient_collections" "2:2:2\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_dynamic_transient_vector_accepts_static_values () =
+  let source =
+    {|
+(defrecord Frame [^:transient-vector acc])
+(defn add-value [^Frame frame]
+  (Frame. (conj! (.-acc frame) 42)))
+(def values
+  (persistent! (.-acc (add-value (Frame. (transient []))))))
+(println (pr-str values))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "dynamic_transient_vector_accepts_static_values" "[42]\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_dynamic_transient_map_accepts_static_entries () =
+  let source =
+    {|
+(defrecord Frame [^:transient-map acc])
+(defn add-entry [^Frame frame]
+  (Frame. (assoc! (.-acc frame) :answer 42)))
+(def values
+  (persistent! (.-acc (add-entry (Frame. (transient {}))))))
+(println (get values :answer))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "dynamic_transient_map_accepts_static_entries" "42\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_defrecord_preserves_transient_vector_shape () =
+  let source =
+    {|
+(defprotocol Collector
+  (-add [collector value]))
+(defrecord CollectorFrame [^:transient-vector acc]
+  Collector
+  (-add [_ ^:dynamic value]
+    (CollectorFrame. (conj! acc value))))
+(def frame (CollectorFrame. (transient [])))
+(def values (persistent! (.-acc (-add frame 1))))
+(println (pr-str values))
+  |}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "defrecord_preserves_transient_vector_shape" "[1]\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_defrecord_preserves_transient_map_shape () =
+  let source =
+    {|
+(defprotocol Collector
+  (-add [collector key value]))
+(defrecord CollectorFrame [^:transient-map acc]
+  Collector
+  (-add [_ ^:dynamic key ^:dynamic value]
+    (CollectorFrame. (assoc! acc key value))))
+(def frame (CollectorFrame. (transient {})))
+(def values (persistent! (.-acc (-add frame :answer 42))))
+(println (get values :answer))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "defrecord_preserves_transient_map_shape" "42\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_transient_operations_are_first_class_functions () =
   let source =
     {|
@@ -2435,6 +2620,23 @@ let test_map_and_mapv_accept_multiple_collections () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "map_and_mapv_accept_multiple_collections"
     "[11 22]:(9 18)\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_map_vector_preserves_heterogeneous_vectors () =
+  let source =
+    {|
+(defn index-of [pred xs]
+  (some (fn [[value index]] (when (pred value) index))
+        (map vector xs (range))))
+(if-some [index (index-of (fn [value] (= value :name)) [:other :name])]
+  (println (+ index 1))
+  (println -1))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "map_vector_preserves_heterogeneous_vectors" "2\n"
+    ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -4491,6 +4693,26 @@ let test_multi_arity_defn_supports_cross_arity_calls_and_recur () =
   assert_ocaml_runs "multi_arity_defn_supports_cross_arity_calls_and_recur"
     "true:true:true:false\n" ocaml_source
 
+let test_multi_arity_defn_accepts_nil_for_destructured_options () =
+  let source =
+    {|
+(defn parse-options
+  ([^:int value] (parse-options value nil))
+  ([^:int value {:keys [visitor]}]
+   (if-some [visitor visitor]
+     (visitor value)
+     value)))
+(println
+  (str (parse-options 1) ":"
+       (parse-options 2 {:visitor (fn [^:int value] (+ value 1))})))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "multi_arity_defn_accepts_nil_for_destructured_options"
+    "1:3\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_multi_arity_defn_remains_callable_as_a_value () =
   let source =
     {|
@@ -5066,6 +5288,25 @@ let test_loop_nil_initial_value_can_become_optional () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "loop_nil_initial_value_can_become_optional" "ok\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_loop_bindings_accept_prefix_type_hints () =
+  let source =
+    {|
+(deftype LoopBox [value])
+(def result
+  (loop [remaining 2
+         ^LoopBox box (LoopBox. 0)]
+    (if (zero? remaining)
+      box
+      (recur (dec remaining) (LoopBox. (+ (.-value box) 1))))))
+(println (.-value result))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "loop_bindings_accept_prefix_type_hints" "2\n"
     ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
@@ -6571,12 +6812,17 @@ let test_get_dispatches_nullable_deftype_lookup_with_dynamic_keys () =
   (when present (LookupBox. 42)))
 (defn missing? [present key]
   (nil? (get (maybe-box present) key)))
-(println (str (missing? true :value) ":" (missing? false :value)))
+(println
+  (str (missing? true :value) ":"
+       (missing? true :missing) ":"
+       (missing? false :value) ":"
+       (missing? true "value")))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs
-    "get_dispatches_nullable_deftype_lookup_with_dynamic_keys" "false:true\n"
+    "get_dispatches_nullable_deftype_lookup_with_dynamic_keys"
+    "false:true:true:true\n"
     ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
@@ -9146,6 +9392,29 @@ let test_deferred_initializers_run_before_first_ready_use () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "deferred_initializers_run_before_first_ready_use" "42\n"
     ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_declared_record_constructors_follow_record_dependencies () =
+  let source =
+    {|
+(declare ->LaterFrame)
+(defprotocol Frame
+  (-run [frame]))
+(defrecord EarlierFrame []
+  Frame
+  (-run [_]
+    (->LaterFrame 42)))
+(defrecord LaterFrame [value]
+  Frame
+  (-run [frame]
+    frame))
+(println (:value (-run (EarlierFrame.))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "declared_record_constructors_follow_record_dependencies"
+    "42\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -12145,6 +12414,93 @@ let test_common_higher_order_helpers () =
      11]:15:10:true:false:-1:1:4:1\n"
     ocaml_source
 
+let test_sort_by_adapts_static_key_function_to_dynamic_elements () =
+  let source =
+    {|
+(defrecord SortAttr [name])
+(defn sort-attrs [^:dynamic attrs]
+  (sort-by (fn [^SortAttr attr] (:name attr)) attrs))
+(def sorted
+  (sort-attrs [(SortAttr. :b) (SortAttr. :a)]))
+(println (:name (first sorted)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "sort_by_adapts_static_key_function_to_dynamic_elements" ":a\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_sort_by_preserves_named_record_lists () =
+  let source =
+    {|
+(defrecord SortedAttr [name])
+(defrecord SortedPattern [attrs first-attr last-attr reverse-attrs wildcard?])
+(def default-attr (SortedAttr. :id))
+(def default-pattern
+  (map->SortedPattern {:attrs (list default-attr)}))
+(defn finish-pattern [^SortedPattern result]
+  (let [attrs (.-attrs result)
+        key-fn (fn [^SortedAttr attr] (.-name attr))
+        attrs (if (.-wildcard? result)
+                (conj attrs default-attr)
+                attrs)
+        attrs (list* (sort-by key-fn attrs))
+        datom-attrs (remove (fn [^SortedAttr attr] (= :other (.-name attr))) attrs)]
+    (map->SortedPattern
+      {:attrs attrs
+       :first-attr (first datom-attrs)
+       :last-attr (last datom-attrs)
+       :reverse-attrs (list* (sort-by key-fn (.-reverse-attrs result)))
+       :wildcard? (.-wildcard? result)})))
+(def result
+  (finish-pattern
+    (map->SortedPattern
+      {:attrs []
+       :reverse-attrs []
+       :wildcard? true})))
+(println (.-name ^SortedAttr (first (.-attrs result))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "sort_by_preserves_named_record_lists" ":id\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_remove_adapts_static_predicate_to_dynamic_elements () =
+  let source =
+    {|
+(defrecord RemoveAttr [name])
+(defn remove-a [^:dynamic attrs]
+  (remove (fn [^RemoveAttr attr] (#{:a} (:name attr))) attrs))
+(println
+  (count
+    (remove-a [(RemoveAttr. :a) (RemoveAttr. :b)])))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "remove_adapts_static_predicate_to_dynamic_elements" "1\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_some_adapts_static_predicate_to_dynamic_elements () =
+  let source =
+    {|
+(defrecord SomeAttr [name])
+(defn find-a [^:dynamic attrs]
+  (some (fn [^SomeAttr attr] (#{:a} (:name attr))) attrs))
+(println
+  (some? (find-a [(SomeAttr. :b) (SomeAttr. :a)])))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "some_adapts_static_predicate_to_dynamic_elements" "true\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_common_higher_order_helpers_reject_bad_mapcat_result () =
   Lg.Compiler.compile_string {|(def x (mapcat (fn [x] (inc x)) [1 2]))|}
   |> expect_error "mapcat function must return a collection, got int"
@@ -12981,17 +13337,22 @@ let test_empty_lists_infer_type_from_branch_context () =
   (match enabled
     true (list 42)
     false (list)))
+(defn literal-values [^:bool enabled]
+  (if enabled (list 42) ()))
 (println
   (str (count (values true)) ":" (count (values false)) ":"
-       (count (matched-values true)) ":" (count (matched-values false))))
+       (count (matched-values true)) ":" (count (matched-values false)) ":"
+       (count (literal-values true)) ":" (count (literal-values false))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "empty_lists_infer_type_from_branch_context" "1:0:1:0\n"
+  assert_ocaml_runs "empty_lists_infer_type_from_branch_context" "1:0:1:0:1:0\n"
     ocaml_source;
   Lg.Compiler.compile_string {|(def values (list))|}
   |> expect_error "empty list requires a contextual element type";
   Lg.Compiler.compile_string {|(defn values [] (list))|}
+  |> expect_error "empty list requires a contextual element type";
+  Lg.Compiler.compile_string {|(def values ())|}
   |> expect_error "empty list requires a contextual element type"
 
 let test_rest_is_empty_safe () =
@@ -16300,11 +16661,18 @@ let test_parsetree_backend_builds_native_defn_items () =
     |> expect_ok
   in
   match structure with
-  | [ type_item; value_item ] -> (
-      match (type_item.pstr_desc, value_item.pstr_desc) with
-      | Pstr_type _, Pstr_value _ -> ()
-      | _ -> failwith "expected row type and function value structure items")
-  | _ -> failwith "expected row type and function value structure items"
+  | [ type_item; set_module_item; value_item ] -> (
+      match
+        (type_item.pstr_desc, set_module_item.pstr_desc, value_item.pstr_desc)
+      with
+      | Pstr_type _, Pstr_module _, Pstr_value _ -> ()
+      | _ ->
+          failwith
+            "expected row type, comparator module, and function value structure items"
+      )
+  | _ ->
+      failwith
+        "expected row type, comparator module, and function value structure items"
 
 let test_parsetree_backend_builds_native_protocol_items () =
   let structure =
@@ -16738,6 +17106,8 @@ let tests =
       test_freshen_deferred_dynamic_dispatch_stays_monomorphic );
     ( "freshen deferred erased seqable values stay dynamic",
       test_freshen_deferred_erased_seqable_values_stay_dynamic );
+    ( "unresolved type scan stops at nominal records",
+      test_unresolved_type_scan_stops_at_nominal_records );
     ( "deferred forward calls keep nominal receiver evidence",
       test_deferred_forward_calls_keep_nominal_receiver_evidence );
     ( "deferred named record fields receive body constraints",
@@ -16845,6 +17215,12 @@ let tests =
       test_current_datascript_chain_compiles_for_native_and_melange );
     ( "current DataScript Entity behaves on Native",
       test_current_datascript_entity_behaves_on_native );
+    ( "current DataScript pull parser compiles for Native and Melange",
+      test_current_datascript_pull_parser_compiles_for_native_and_melange );
+    ( "current DataScript pull API compiles for Native and Melange",
+      test_current_datascript_pull_api_compiles_for_native_and_melange );
+    ( "current DataScript pull API behaves on Native",
+      test_current_datascript_pull_api_behaves_on_native );
     ( "namespace ignores Clojure compiler directives",
       test_namespace_ignores_clojure_compiler_directives );
     ( "System currentTimeMillis compiles for native",
@@ -16856,6 +17232,16 @@ let tests =
     ( "CLJS writer functions compile", test_cljs_writer_functions_compile );
     ( "transient collection operations preserve values",
       test_transient_collection_operations_preserve_values );
+    ( "count supports transient collections",
+      test_count_supports_transient_collections );
+    ( "dynamic transient vector accepts static values",
+      test_dynamic_transient_vector_accepts_static_values );
+    ( "dynamic transient map accepts static entries",
+      test_dynamic_transient_map_accepts_static_entries );
+    ( "defrecord preserves transient vector shape",
+      test_defrecord_preserves_transient_vector_shape );
+    ( "defrecord preserves transient map shape",
+      test_defrecord_preserves_transient_map_shape );
     ( "transient operations are first-class functions",
       test_transient_operations_are_first_class_functions );
     ("assert accepts optional message", test_assert_accepts_optional_message);
@@ -16865,6 +17251,8 @@ let tests =
       test_mapv_vector_zips_multiple_collections );
     ( "map and mapv accept multiple collections",
       test_map_and_mapv_accept_multiple_collections );
+    ( "map vector preserves heterogeneous vectors",
+      test_map_vector_preserves_heterogeneous_vectors );
     ( "forward-declared functions work as collection callbacks",
       test_forward_declared_functions_work_as_collection_callbacks );
     ( "forward-declared multi-arity functions initialize lazily",
@@ -17158,6 +17546,8 @@ let tests =
       test_multi_arity_defn_dispatches_variadic_fallback );
     ( "multi-arity defn supports cross-arity calls and recur",
       test_multi_arity_defn_supports_cross_arity_calls_and_recur );
+    ( "multi-arity defn accepts nil for destructured options",
+      test_multi_arity_defn_accepts_nil_for_destructured_options );
     ( "multi-arity defn remains callable as a value",
       test_multi_arity_defn_remains_callable_as_a_value );
     ( "multi-arity calls project structural row arguments",
@@ -17232,6 +17622,8 @@ let tests =
       test_dynamic_arrays_recover_generic_elements );
     ( "loop nil initial value can become optional",
       test_loop_nil_initial_value_can_become_optional );
+    ( "loop bindings accept prefix type hints",
+      test_loop_bindings_accept_prefix_type_hints );
     ( "loop nil initial value accepts nullable function returns",
       test_loop_nil_initial_value_accepts_nullable_function_returns );
     ( "forward declared deftype fields keep nominal receiver",
@@ -17684,6 +18076,8 @@ let tests =
       test_protocol_consumers_use_stable_later_implementation_returns );
     ( "deferred initializers run before first ready use",
       test_deferred_initializers_run_before_first_ready_use );
+    ( "declared record constructors follow record dependencies",
+      test_declared_record_constructors_follow_record_dependencies );
     ( "dependency graph orders declared protocol dependencies",
       test_dependency_graph_orders_declared_protocol_dependencies );
     ( "dependency graph orders non-dash protocol methods before consumers",
@@ -17911,6 +18305,14 @@ let tests =
     ("sequence core api works on vectors", test_sequence_core_api_on_vectors);
     ("function helpers work", test_function_helpers);
     ("common higher-order helpers work", test_common_higher_order_helpers);
+    ( "sort-by adapts static key function to dynamic elements",
+      test_sort_by_adapts_static_key_function_to_dynamic_elements );
+    ( "sort-by preserves named record lists",
+      test_sort_by_preserves_named_record_lists );
+    ( "remove adapts static predicate to dynamic elements",
+      test_remove_adapts_static_predicate_to_dynamic_elements );
+    ( "some adapts static predicate to dynamic elements",
+      test_some_adapts_static_predicate_to_dynamic_elements );
     ( "common higher-order helpers reject bad mapcat result",
       test_common_higher_order_helpers_reject_bad_mapcat_result );
     ( "common higher-order helpers reject bad predicates",
@@ -18389,6 +18791,8 @@ let () =
   time_phase "compiler tests" (fun () ->
       List.iter
         (fun (name, run) ->
+          if Sys.getenv_opt "LG_TEST_TRACE" = Some "1" then
+            Printf.eprintf "RUN: %s\n%!" name;
           try run ()
           with exn ->
             Printf.eprintf "FAILED: %s\n%s\n%s\n" name (Printexc.to_string exn)

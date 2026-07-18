@@ -584,7 +584,9 @@ let fn_code ?(row_param_type_names = []) parts =
              else
                match row_type_name with
                | Some type_name ->
-                   Semantic_ir.PConstraint (Semantic_ir.PVar name, type_name)
+                   Semantic_ir.PConstraint
+                     ( Semantic_ir.PVar name,
+                       Types.ocaml_name (apply_row_constraint_type type_name ty) )
             | _ -> (
                 match ty with
                 | TRecord _ -> Semantic_ir.PVar name

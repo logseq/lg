@@ -72,6 +72,39 @@ let rec symbols form =
   | FKeyword _ | FString _ | FRegex _ | FInt _ | FFloat _ | FChar _ | FBool _ ->
       []
 
+let dependency_symbols = function
+  | FList (FSymbol "declare" :: names) ->
+      List.filter_map
+        (function
+          | FSymbol name
+            when not (String.starts_with ~prefix:"->" name)
+                 && not (String.starts_with ~prefix:"map->" name) ->
+              Some name
+          | _ -> None)
+        names
+  | FList (FSymbol "defprotocol" :: _name :: method_forms) ->
+      let rec type_hints = function
+        | FSymbol name when String.starts_with ~prefix:"^" name -> [ name ]
+        | FList forms | FVector forms -> List.concat_map type_hints forms
+        | FMap pairs ->
+            List.concat_map
+              (fun (key, value) -> type_hints key @ type_hints value)
+              pairs
+        | FSymbol _ | FCoreSymbol _ | FKeyword _ | FString _ | FRegex _
+        | FInt _ | FFloat _ | FChar _ | FBool _ ->
+            []
+      in
+      List.concat_map type_hints method_forms
+  | FList
+      (FSymbol ("deftype" | "defrecord") :: _name :: fields
+      :: implementations) ->
+      let implementation_symbols = function
+        | FList (_method_name :: body) -> List.concat_map symbols body
+        | form -> symbols form
+      in
+      symbols fields @ List.concat_map implementation_symbols implementations
+  | form -> symbols form
+
 let direct_method_names forms =
   List.filter_map
     (function FList (FSymbol name :: _) -> Some name | _ -> None)
@@ -79,7 +112,9 @@ let direct_method_names forms =
 
 let method_names form =
   let rec collect names = function
-    | FList (FSymbol name :: rest) when String.starts_with ~prefix:"-" name ->
+    | FList (FSymbol name :: rest)
+      when String.starts_with ~prefix:"-" name
+           && not (String.starts_with ~prefix:"->" name) ->
         List.fold_left collect (name :: names) rest
     | FList forms | FVector forms -> List.fold_left collect names forms
     | FMap pairs ->
@@ -102,7 +137,7 @@ let rec provided_names = function
       name :: direct_method_names method_forms
   | FList
       (FSymbol ("deftype" | "defrecord") :: FSymbol name :: _ as forms) ->
-      name :: method_names (FList forms)
+      name :: ("->" ^ name) :: ("map->" ^ name) :: method_names (FList forms)
   | FList
       (FSymbol ("def" | "defonce" | "defn" | "defn-") :: FSymbol name :: _)
     ->
@@ -165,14 +200,39 @@ let provider_indices indexed =
         (provided_names form @ implementation_method_names form))
     String_map.empty indexed
 
-let form_dependencies ?(ignore_declarations = false) providers index = function
+let declaration_provider_indices indexed =
+  List.fold_left
+    (fun providers (index, form) ->
+      match form with
+      | FList (FSymbol "declare" :: names) ->
+          List.fold_left
+            (fun providers -> function
+              | FSymbol name ->
+                  let existing =
+                    String_map.find_opt name providers
+                    |> Option.value ~default:[]
+                  in
+                  String_map.add name (index :: existing) providers
+              | _ -> providers)
+            providers names
+      | _ -> providers)
+    String_map.empty indexed
+
+let form_dependencies ?(ignore_declarations = false) providers
+    declaration_providers index form =
+  let prefer_declarations =
+    match form with
+    | FList (FSymbol ("deftype" | "defrecord") :: _) -> true
+    | _ -> false
+  in
+  match form with
   | FList (FSymbol "declare" :: _) when ignore_declarations -> []
   | FList
       (FSymbol ("defmacro" | "macro-helper-defn" | "macro-helper-def") :: _)
     ->
       []
   | form ->
-      symbols form
+      dependency_symbols form
       |> List.concat_map (fun name ->
              let candidates =
                let candidates = [ name ] in
@@ -185,10 +245,22 @@ let form_dependencies ?(ignore_declarations = false) providers index = function
                  String.sub name 1 (String.length name - 1) :: candidates
                else candidates
              in
-             List.concat_map
-               (fun candidate ->
-                 String_map.find_opt candidate providers
-                 |> Option.value ~default:[])
+              List.concat_map
+                (fun candidate ->
+                  let all =
+                    String_map.find_opt candidate providers
+                    |> Option.value ~default:[]
+                  in
+                  if
+                    prefer_declarations
+                    && not (String.starts_with ~prefix:"->" candidate)
+                    && not (String.starts_with ~prefix:"map->" candidate)
+                    && not (String.ends_with ~suffix:"." candidate)
+                  then
+                    match String_map.find_opt candidate declaration_providers with
+                    | Some declarations -> declarations
+                    | None -> all
+                  else all)
                candidates)
       |> List.filter (fun dependency -> dependency <> index)
       |> List.sort_uniq Int.compare
@@ -196,13 +268,15 @@ let form_dependencies ?(ignore_declarations = false) providers index = function
 let dependency_components ?(ignore_declarations = false) forms =
   let indexed = indexed_forms forms in
   let providers = provider_indices indexed in
+  let declaration_providers = declaration_provider_indices indexed in
   let components =
     indexed
     |> List.map (fun (index, form) ->
            {
              name = string_of_int index;
              dependencies =
-               form_dependencies ~ignore_declarations providers index form
+               form_dependencies ~ignore_declarations providers
+                 declaration_providers index form
                |> List.map string_of_int;
            })
     |> strongly_connected_components
@@ -234,7 +308,12 @@ let stable_order forms =
   if not (has_declarations forms) then List.mapi (fun index _ -> index) forms
   else
     let providers, components = dependency_components forms in
-    let dependencies index form = form_dependencies providers index form in
+    let declaration_providers =
+      declaration_provider_indices (indexed_forms forms)
+    in
+    let dependencies index form =
+      form_dependencies providers declaration_providers index form
+    in
     let component_of = Hashtbl.create (List.length forms) in
     List.iteri
       (fun component members ->

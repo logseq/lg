@@ -780,7 +780,7 @@
     :pull-attrs    (lru/cache 100)
     :hash          (atom 0)}))
 
-(defn with-schema [db schema]
+(defn with-schema [^DB db schema]
   {:pre [(db? db) (or (nil? schema) (map? schema))]}
   (assoc db
          :schema        schema

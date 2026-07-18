@@ -289,27 +289,30 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
       | TInt | TString | TSymbol | TKeyword | TBool | TUnknown -> true
       | _ -> false
     and compile_sort_by scope env arg_forms =
-      match arg_forms with
-    | [ fn_form; collection_form ] -> (
-        match
-          ( compile_function_arg scope env fn_form,
-            compile_expr scope env collection_form )
-        with
-          | (Error _ as err), _ -> err
-          | _, (Error _ as err) -> err
-          | Ok fn, Ok collection -> (
-            match (fn.ty, collection_to_list_expr env collection) with
-              | TFn ([ param_ty ], key_ty), Ok (inner, list_expr)
-                when Types.equal param_ty inner && comparable_type key_ty ->
-                  Ok
-                    (typed_ir (TList inner)
-                       (apply "List.sort"
+      let sort fn inner list_expr =
+        match fn.ty with
+        | TFn ([ param_ty ], key_ty) when Types.equal param_ty inner -> (
+            let compare =
+              if Types.is_dynamic key_ty then
+                Some "Lg_runtime.Runtime_dynamic.compare"
+              else if comparable_type key_ty then Some "Stdlib.compare"
+              else None
+            in
+            match compare with
+            | None ->
+                Error.error
+                  "sort-by key function must return a comparable value"
+            | Some compare ->
+                Ok
+                  (typed_ir (TList inner)
+                     (apply "List.sort"
                         [
                           Semantic_ir.Fun
                             ( [
-                                Semantic_ir.PVar "left"; Semantic_ir.PVar "right";
+                                Semantic_ir.PVar "left";
+                                Semantic_ir.PVar "right";
                               ],
-                                apply "Stdlib.compare"
+                              apply compare
                                 [
                                   Semantic_ir.Apply
                                     ( fn.semantic_expr,
@@ -319,16 +322,28 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                                       [ Semantic_ir.Ident "right" ] );
                                 ] );
                           list_expr;
-                        ]))
-            | TFn ([ param_ty ], _), Ok (inner, _)
-              when not (Types.equal param_ty inner) ->
-                Error.error
-                  "sort-by key function must match collection elements"
-            | TFn _, Ok _ ->
-                Error.error
-                  "sort-by key function must return a comparable value"
-              | _, Ok _ -> Error.error "sort-by expects a function"
-              | _, Error _ -> Error.error "sort-by expects a collection"))
+                        ])))
+        | TFn ([ param_ty ], _) when not (Types.equal param_ty inner) ->
+            Error.error "sort-by key function must match collection elements"
+        | TFn _ ->
+            Error.error
+              "sort-by key function must return a comparable value"
+        | _ -> Error.error "sort-by expects a function"
+      in
+      match arg_forms with
+      | [ fn_form; collection_form ] -> (
+          match
+            ( compile_function_arg scope env fn_form,
+              compile_expr scope env collection_form )
+          with
+          | (Error _ as err), _ -> err
+          | _, (Error _ as err) -> err
+          | Ok fn, Ok collection -> (
+              match collection_to_list_expr env collection with
+              | Error _ -> Error.error "sort-by expects a collection"
+              | Ok (inner, list_expr) ->
+                  Result.bind (adapt_unary_function env inner fn) (fun fn ->
+                      sort fn inner list_expr)))
       | _ -> Error.error "sort-by expects function and collection"
     and compile_mapcat scope env arg_forms =
       match arg_forms with
@@ -1115,15 +1130,20 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
     and compile_some scope env arg_forms =
       match arg_forms with
     | [ fn_form; collection_form ] -> (
-        match
-          ( compile_function_arg scope env fn_form,
-            compile_expr scope env collection_form )
-        with
-          | (Error _ as err), _ -> err
-          | _, (Error _ as err) -> err
-          | Ok fn, Ok collection -> (
-            match (fn.ty, collection_to_list_expr env collection) with
-              | TFn ([ param_ty ], return_ty), Ok (inner, list_expr)
+        match compile_expr scope env collection_form with
+        | Error _ as err -> err
+        | Ok collection -> (
+            match collection_to_list_expr env collection with
+            | Error _ -> Error.error "some expects a collection"
+            | Ok (inner, list_expr) -> (
+                match
+                  compile_function_arg_for_collection scope env inner fn_form
+                with
+                | Error _ as err -> err
+                | Ok fn ->
+                    Result.bind (adapt_unary_function env inner fn) (fun fn ->
+                    match fn.ty with
+                    | TFn ([ param_ty ], return_ty)
               when Types.assignable ~policy:Host_boundary ~expected:param_ty
                      ~actual:inner ->
                 let item = typed_ir inner (Semantic_ir.Ident "item") in
@@ -1136,7 +1156,9 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   (fun item_argument ->
                   let result_ty, present_result =
                     match return_ty with
-                    | TOcaml_app ("option", [ _ ]) | TOcaml "option" ->
+                    | TNullable _
+                    | TOcaml_app ("option", [ _ ])
+                    | TOcaml "option" ->
                         (return_ty, Semantic_ir.Ident "result")
                     | _ ->
                         ( TOcaml_app ("option", [ return_ty ]),
@@ -1176,10 +1198,10 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                             Semantic_ir.Apply
                               (Semantic_ir.Ident "find_truthy", [ list_expr ]) )))
                   item_argument
-            | TFn _, Ok _ ->
-                Error.error "some function type must match collection elements"
-              | _, Ok _ -> Error.error "some expects a function"
-              | _, Error _ -> Error.error "some expects a collection"))
+                    | TFn _ ->
+                        Error.error
+                          "some function type must match collection elements"
+                    | _ -> Error.error "some expects a function"))))
       | _ -> Error.error "some expects function and collection"
     and compile_sequence_bool_predicate scope env name arg_forms =
       match arg_forms with

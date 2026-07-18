@@ -920,18 +920,27 @@ let rec compile scope env next_type = function
                          ])
                 in
                 let body_forms =
-                    [
-                      FList
-                        (FSymbol "let" :: FVector field_bindings :: body_forms);
+                  [
+                    FList
+                      (FSymbol "let" :: FVector field_bindings :: body_forms);
                   ]
                 in
-                  match
-                   Expression_elaborator.compile_fn
-                     ~param_type_overrides:[ Some receiver_ty ] scope env
-                     params_form body_forms
-                 with
+                let param_type_overrides =
+                  match (current_interface, method_name, params) with
+                  | Some "ILookup", "-lookup", _receiver :: arguments ->
+                      Some receiver_ty
+                      :: List.map
+                           (fun _ ->
+                             Some (Types.dynamic_constraint TUnknown))
+                           arguments
+                  | _ -> [ Some receiver_ty ]
+                in
+                match
+                  Expression_elaborator.compile_fn ~param_type_overrides scope
+                    env params_form body_forms
+                with
                 | Error _ as err -> err
-                  | Ok implementation -> (
+                | Ok implementation -> (
                     let binding = binding_of_expr ocaml_name implementation in
                     let register_protocol env =
                       match current_interface with

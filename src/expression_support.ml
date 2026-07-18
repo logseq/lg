@@ -1599,8 +1599,9 @@ let parameterize_row_fields fields =
   let fields = List.map parameterize_field fields in
   (fields, List.rev !parameters)
 
-let row_param_fields = function
+let row_param_fields ?(allow_nullable = false) = function
   | TRecord fields -> Some fields
+  | TNullable (TRecord fields) when allow_nullable -> Some fields
   | TOcaml_app (constraint_name, [ TRecord fields; _ ])
     when constraint_name = Types.seqable_constraint_name
          || constraint_name = Types.optional_seqable_constraint_name
@@ -1608,10 +1609,13 @@ let row_param_fields = function
       Some fields
   | _ -> None
 
-let row_param_type_names prefix param_tys =
+let row_param_type_names ?(nullable_row_indices = []) prefix param_tys =
   param_tys
   |> List.mapi (fun index param_ty ->
-       match row_param_fields param_ty with
+       match
+         row_param_fields ~allow_nullable:(List.mem index nullable_row_indices)
+           param_ty
+       with
        | Some fields ->
            let type_name = prefix ^ "_row" ^ string_of_int index in
            let _, parameters = parameterize_row_fields fields in
@@ -1628,7 +1632,7 @@ let row_param_type_names prefix param_tys =
 let row_type_items row_type_names param_tys =
   List.map2
     (fun row_type_name param_ty ->
-      match (row_type_name, row_param_fields param_ty) with
+      match (row_type_name, row_param_fields ~allow_nullable:true param_ty) with
       | Some applied_name, Some fields ->
           let type_name =
             match String.rindex_opt applied_name ' ' with

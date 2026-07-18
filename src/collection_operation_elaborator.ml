@@ -800,11 +800,17 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                        (Semantic_ir.Field
                         ( target.semantic_expr,
                           Names.keyword_to_ocaml_name keyword )))
-              | TOcaml_app ("Lg_runtime.Runtime_map.t", [ _key_ty; value_ty ]) ->
+              | TOcaml_app ("Lg_runtime.Runtime_map.t", [ key_ty; value_ty ]) ->
+                  let key =
+                    if Types.is_dynamic key_ty then
+                      apply "Lg_runtime.Runtime_dynamic.keyword"
+                        [ Semantic_ir.String keyword ]
+                    else Semantic_ir.String keyword
+                  in
                   Ok
                     (typed_ir (TNullable value_ty)
                        (apply "Lg_runtime.Runtime_map.get_option"
-                        [ target.semantic_expr; Semantic_ir.String keyword ]))
+                        [ target.semantic_expr; key ]))
               | ty when is_ocaml_owned_type ty ->
                   Ok
                     (typed_ir TUnknown

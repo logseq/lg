@@ -144,6 +144,19 @@ let of_keyword = function
   | ":bool" -> Ok TBool
   | ":unit" -> Ok TUnit
   | ":dynamic" -> Ok (Types.dynamic_constraint TUnknown)
+  | ":transient-vector" ->
+      Ok
+        (TOcaml_app
+           ( "Lg_runtime.Runtime_transient.vector",
+             [ Types.dynamic_constraint TUnknown ] ))
+  | ":transient-map" ->
+      Ok
+        (TOcaml_app
+           ( "Lg_runtime.Runtime_transient.map",
+             [
+               Types.dynamic_constraint TUnknown;
+               Types.dynamic_constraint TUnknown;
+             ] ))
   | ":nil" -> Error.error "nil is not a valid type annotation"
   | keyword when String.starts_with ~prefix:":ocaml/" keyword ->
       Error.error "the :ocaml/ type prefix is not supported"

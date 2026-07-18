@@ -41,6 +41,10 @@ let vector_empty () = { reversed = []; active = true }
 
 let vector_of_list values = { reversed = List.rev values; active = true }
 
+let vector_count vector =
+  ensure_active vector.active;
+  List.length vector.reversed
+
 let vector_add vector value =
   ensure_active vector.active;
   vector.reversed <- value :: vector.reversed;
@@ -77,6 +81,10 @@ let map_of_list entries =
   let map = map_empty () in
   List.iter (fun (key, value) -> Hashtbl.replace map.entries key value) entries;
   map
+
+let map_count map =
+  ensure_active map.active;
+  Hashtbl.length map.entries
 
 let map_assoc map key value =
   ensure_active map.active;

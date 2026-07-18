@@ -83,26 +83,36 @@ let weak_element = function
   | TOcaml_app (name, [ value_ty ]) when name = weak_type_name -> Some value_ty
   | _ -> None
 
-let rec supports_structural_dynamic_packing = function
-  | TInt | TFloat | TChar | TString | TSymbol | TKeyword | TBool | TNil
-  | TUnknown | TVar _ ->
-      true
-  | ty when is_dynamic ty -> true
-  | TNullable ty | TArray ty | TList ty | TVector ty | TSet ty | TSeq ty ->
-      supports_structural_dynamic_packing ty
-  | TOcaml_app (("option" | "list" | "array" | "Seq.t" | "Seq"), [ ty ]) ->
-      supports_structural_dynamic_packing ty
-  | TOcaml_app ("Lg_runtime.Runtime_reify.t", [ _ ]) -> true
-  | TTuple items -> List.for_all supports_structural_dynamic_packing items
-  | TFn (parameters, return_ty) ->
-      List.for_all supports_structural_dynamic_packing (return_ty :: parameters)
-  | TRecord fields | TNamed_record { fields; _ } ->
-      List.for_all
-        (fun (field : field) -> supports_structural_dynamic_packing field.ty)
-        fields
-  | TRef _ | TOverloaded_fn _ | TRegex | TMap_keys | TUnit | TOcaml _
-  | TOcaml_app _ ->
-      false
+let supports_structural_dynamic_packing ty =
+  let rec supports visited = function
+    | TInt | TFloat | TChar | TString | TSymbol | TKeyword | TBool | TNil
+    | TUnknown | TVar _ ->
+        true
+    | ty when is_dynamic ty -> true
+    | TNullable ty | TArray ty | TList ty | TVector ty | TSet ty | TSeq ty ->
+        supports visited ty
+    | TOcaml_app (("option" | "list" | "array" | "Seq.t" | "Seq"), [ ty ]) ->
+        supports visited ty
+    | TOcaml_app ("Lg_runtime.Runtime_reify.t", [ _ ]) -> true
+    | TTuple items -> List.for_all (supports visited) items
+    | TFn (parameters, return_ty) ->
+        List.for_all (supports visited) (return_ty :: parameters)
+    | TRecord fields ->
+        List.for_all
+          (fun (field : field) -> supports visited field.ty)
+          fields
+    | TNamed_record record ->
+        if List.exists (Type_id.equal record.type_id) visited then false
+        else
+          let visited = record.type_id :: visited in
+          List.for_all
+            (fun (field : field) -> supports visited field.ty)
+            record.fields
+    | TRef _ | TOverloaded_fn _ | TRegex | TMap_keys | TUnit | TOcaml _
+    | TOcaml_app _ ->
+        false
+  in
+  supports [] ty
 
 let protocol_constraint_prefix = "__lg_protocol_constraint:"
 let guarded_protocol_constraint_prefix = "__lg_guarded_protocol_constraint:"

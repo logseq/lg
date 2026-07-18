@@ -201,7 +201,7 @@ and compile_expr_unlocated scope (env : Env.t) = function
           | Ok expanded -> compile_expr scope env expanded))
   | FList (FCoreSymbol core_symbol :: args) ->
       compile_call scope env (Ast.core_symbol_qualified_name core_symbol) args
-  | FList [] -> Error.error "empty list is not callable"
+  | FList [] -> compile_call scope env "list" []
   | FList (function_form :: arguments) ->
       incr callable_expression_counter;
       let function_name =
@@ -884,6 +884,76 @@ and prepare_multi_arity_fn ~ocaml_name scope env source_name forms =
                   | _ -> arity)
                 parsed_clauses arities
             in
+            let arity_index_for_count count =
+              let rec find index = function
+                | [] -> None
+                | (arity : fn_arity) :: rest -> (
+                    match arity.rest_param with
+                    | None when List.length arity.fixed_params = count ->
+                        Some index
+                    | Some _ when List.length arity.fixed_params <= count ->
+                        Some index
+                    | None | Some _ -> find (index + 1) rest)
+              in
+              find 0 arities
+            in
+            let rec nullable_self_call_parameters acc = function
+              | FList (FSymbol name :: arguments)
+                when name = source_name
+                     || name = Names.scoped_key scope source_name ->
+                  let acc =
+                    match arity_index_for_count (List.length arguments) with
+                    | None -> acc
+                    | Some arity_index ->
+                        let rec collect parameter_index acc = function
+                          | [] -> acc
+                          | FSymbol "nil" :: rest ->
+                              collect (parameter_index + 1)
+                                ((arity_index, parameter_index) :: acc)
+                                rest
+                          | _ :: rest ->
+                              collect (parameter_index + 1) acc rest
+                        in
+                        collect 0 acc arguments
+                  in
+                  List.fold_left nullable_self_call_parameters acc arguments
+              | FList forms | FVector forms ->
+                  List.fold_left nullable_self_call_parameters acc forms
+              | FMap pairs ->
+                  List.fold_left
+                    (fun acc (key, value) ->
+                      nullable_self_call_parameters
+                        (nullable_self_call_parameters acc key)
+                        value)
+                    acc pairs
+              | _ -> acc
+            in
+            let nullable_parameters =
+              List.fold_left
+                (fun acc (clause : multi_arity_clause) ->
+                  List.fold_left nullable_self_call_parameters acc
+                    clause.body_forms)
+                [] parsed_clauses
+            in
+            let arities =
+              List.mapi
+                (fun arity_index (arity : fn_arity) ->
+                  let fixed_params =
+                    List.mapi
+                      (fun parameter_index ty ->
+                        if
+                          List.mem (arity_index, parameter_index)
+                            nullable_parameters
+                        then
+                          match ty with
+                          | TNullable _ -> ty
+                          | ty -> TNullable ty
+                        else ty)
+                      arity.fixed_params
+                  in
+                  { arity with fixed_params })
+                arities
+            in
             if not final_pass then
               compile true [] arities parsed_clauses all_targets
             else
@@ -908,6 +978,7 @@ and prepare_multi_arity_fn ~ocaml_name scope env source_name forms =
               let params =
                 match clause.params with FVector params -> params | _ -> []
               in
+              let current_arity = List.nth arities (List.length compiled) in
               List.mapi
                 (fun index param ->
                   match clause.rest_index with
@@ -918,13 +989,16 @@ and prepare_multi_arity_fn ~ocaml_name scope env source_name forms =
                       | Some TUnknown | None -> None
                       | Some element_ty -> Some (TSeq element_ty))
                   | _ -> (
-                      match param with
-                      | FSymbol name
-                        when index >= minimum_fixed_count
-                             && List.exists (form_conjoins name)
-                                  clause.body_forms ->
-                          Some (Types.dynamic_constraint TUnknown)
-                      | _ -> None))
+                      match List.nth_opt current_arity.fixed_params index with
+                      | Some (TNullable _ as ty) -> Some ty
+                      | _ -> (
+                          match param with
+                          | FSymbol name
+                            when index >= minimum_fixed_count
+                                 && List.exists (form_conjoins name)
+                                      clause.body_forms ->
+                              Some (Types.dynamic_constraint TUnknown)
+                          | _ -> None)))
                 params
             in
             match
@@ -965,8 +1039,19 @@ and prepare_multi_arity_fn ~ocaml_name scope env source_name forms =
                       if index = current_index then arity else current)
                     arities
                 in
+                let nullable_row_indices =
+                  match Destructure.parse_param_specs clause.params with
+                  | Error _ -> []
+                  | Ok specs ->
+                      specs
+                      |> List.mapi (fun index spec ->
+                           if spec.Destructure.destructured then Some index
+                           else None)
+                      |> List.filter_map Fun.id
+                in
                 let row_param_types =
-                  row_param_type_names target_name param_tys
+                  row_param_type_names ~nullable_row_indices target_name
+                    param_tys
                 in
                 compile final_pass
                   ({ target_name; parts; row_param_types } :: compiled)

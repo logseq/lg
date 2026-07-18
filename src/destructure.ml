@@ -35,6 +35,12 @@ let normalize_binding_type_hints forms =
           (FList [ FSymbol "__type-hint"; FSymbol annotation; value ]
           :: pattern :: normalized)
           rest
+    | FSymbol annotation :: pattern :: value :: rest
+      when is_type_annotation annotation ->
+        normalize
+          (FList [ FSymbol "__type-hint"; FSymbol annotation; value ]
+          :: pattern :: normalized)
+          rest
     | pattern :: value :: rest ->
         normalize (value :: pattern :: normalized) rest
     | remaining -> List.rev_append normalized remaining
@@ -371,6 +377,70 @@ and infer_pattern_type pattern lookup_local_ty =
 
 let rec bind_map ~env (target : typed_expr) pairs =
   match target.ty with
+  | TNullable ((TRecord fields | TNamed_record { fields; _ }) as map_ty) -> (
+      match parse_map_pattern pairs with
+      | Error _ as err -> err
+      | Ok parsed ->
+          let bind_field { binding_pattern; keyword; default_form } =
+            match field_type fields keyword with
+            | Error _ -> (
+                match default_form with
+                | None ->
+                    Error.error ("cannot destructure missing field " ^ keyword)
+                | Some form -> (
+                    match literal_default form with
+                    | Error _ as err -> err
+                    | Ok value -> bind_pattern ~env value binding_pattern))
+            | Ok field ->
+                let payload_name = "__lg_nullable_destructure_map" in
+                let payload =
+                  typed_ir map_ty (Semantic_ir.Ident payload_name)
+                in
+                let projected = Structural_map.field_expr payload field in
+                let ty, some_value, none_value =
+                  match field.ty with
+                  | ty when Types.is_dynamic ty ->
+                      ( ty,
+                        projected,
+                        Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.nil" )
+                  | TNullable _ | TOcaml_app ("option", [ _ ]) ->
+                      ( field.ty,
+                        projected,
+                        Semantic_ir.Constructor ("None", None) )
+                  | ty ->
+                      ( TNullable ty,
+                        Semantic_ir.Constructor ("Some", Some projected),
+                        Semantic_ir.Constructor ("None", None) )
+                in
+                let value =
+                  typed_ir ty
+                    (Semantic_ir.Match
+                       ( target.semantic_expr,
+                         [
+                           (Semantic_ir.PConstructor ("None", None), none_value);
+                           ( Semantic_ir.PConstructor
+                               ("Some", Some (Semantic_ir.PVar payload_name)),
+                             some_value );
+                         ] ))
+                in
+                bind_pattern ~env value binding_pattern
+          in
+          let rec bind_fields acc = function
+            | [] ->
+                let acc =
+                  match parsed.as_name with
+                  | None -> acc
+                  | Some name ->
+                      local_binding name target.ty target.semantic_expr :: acc
+                in
+                Ok (List.rev acc)
+            | binding :: rest -> (
+                match bind_field binding with
+                | Error _ as err -> err
+                | Ok bindings ->
+                    bind_fields (List.rev_append bindings acc) rest)
+          in
+          bind_fields [] parsed.field_bindings)
   | TRecord fields | TNamed_record { fields; _ } -> (
       match parse_map_pattern pairs with
       | Error _ as err -> err
