@@ -4,8 +4,11 @@
 (defmacro empty-array []
   `(Array.of_list (list)))
 
-(defmacro make-array [size initial]
-  `(Array.make ~size ~initial))
+(defmacro make-array
+  ([size]
+   `(clojure.core/make-array ~size))
+  ([size initial]
+   `(Array.make ~size ~initial)))
 
 (defmacro into-array [values]
   `(array-from ~values))

@@ -1501,6 +1501,39 @@ let rec compile scope env next_type = function
       Error.error
         "module-apply expects result, functor, and one or more argument modules"
   | FList
+      [
+        FSymbol ("def" | "defonce");
+        FSymbol "^:dynamic";
+        (FSymbol name as name_form);
+        expr_form;
+      ] -> (
+      let dynamic = Types.dynamic_constraint TUnknown in
+      match
+        compile_expr scope env
+          (FList [ FSymbol "__pack-dynamic"; expr_form ])
+      with
+      | Error _ as error -> error
+      | Ok expr ->
+          let ocaml_name = Names.ocaml_binding_name scope name in
+          let env_key = Names.scoped_key scope name in
+          Result.map
+            (fun () ->
+              let binding =
+                Types.binding ~dynamic_var:true ocaml_name (TRef dynamic)
+              in
+              ( scope,
+                Env.add env_key binding env,
+                next_type,
+                Value_binding
+                  {
+                    pattern =
+                      located_value_pattern name_form (Named ocaml_name);
+                    expression =
+                      Semantic_ir.Apply
+                        (Semantic_ir.Ident "ref", [ expr.semantic_expr ]);
+                  } ))
+            (check_emitted_name_collision env ~source_key:env_key ~ocaml_name))
+  | FList
       [ FSymbol ("def" | "defonce"); (FSymbol name as name_form); expr_form ]
     -> (
       match compile_expr scope env expr_form with

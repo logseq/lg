@@ -427,6 +427,10 @@ let add_record_field_constraint name keyword field_ty params =
   in
   let rec add_constraint = function
     | TUnknown | TVar _ -> Ok (TRecord [ make_field keyword field_ty ])
+    | TMap_keys ->
+        Ok
+          (Types.dynamic_map TKeyword
+             (Types.dynamic_constraint TUnknown))
     | TNullable inner ->
         Result.map (fun inner -> TNullable inner) (add_constraint inner)
     | TOcaml_app ("option", [ inner ]) ->
@@ -649,6 +653,20 @@ let rec rewrite_simple_aliases aliases = function
       FList
         (FSymbol "fn" :: FVector parameters
         :: List.map (rewrite_simple_aliases aliases) body_forms)
+  | FList
+      (FSymbol "fn" :: FSymbol function_name :: FVector parameters
+      :: body_forms) ->
+      let aliases = string_remove_assoc function_name aliases in
+      let aliases =
+        List.fold_left
+          (fun aliases -> function
+            | FSymbol name -> string_remove_assoc name aliases
+            | _ -> aliases)
+          aliases parameters
+      in
+      FList
+        (FSymbol "fn" :: FSymbol function_name :: FVector parameters
+        :: List.map (rewrite_simple_aliases aliases) body_forms)
   | FList forms -> FList (List.map (rewrite_simple_aliases aliases) forms)
   | FVector forms -> FVector (List.map (rewrite_simple_aliases aliases) forms)
   | FMap pairs ->
@@ -702,12 +720,41 @@ let infer_params ?(explicitly_dynamic_params = [])
   in
   let restore_guarded_protocol_receivers base inferred condition =
     let guarded = guarded_protocol_receivers condition in
+    let rec optionalize_seqable = function
+      | TOcaml_app (name, [ element_ty; value_ty ])
+        when name = Types.seqable_constraint_name ->
+          Types.optional_seqable_constraint element_ty value_ty
+      | ty -> (
+          match Types.protocol_constraint_info ty with
+          | Some (_, _, value_ty) ->
+              Types.protocol_constraint_with_value ty
+                (optionalize_seqable value_ty)
+          | None -> ty)
+    in
     List.map
       (fun (name, base_ty) ->
-        if string_mem name guarded then (name, base_ty)
+        let inferred_ty =
+          string_assoc_opt name inferred |> Option.value ~default:base_ty
+        in
+        if not (string_mem name guarded) then (name, inferred_ty)
         else
-          ( name,
-            string_assoc_opt name inferred |> Option.value ~default:base_ty ))
+          let restored_ty =
+            match Types.protocol_constraint_info base_ty with
+            | None -> base_ty
+            | Some (base_protocol, _, base_value_ty) ->
+                let inferred_value_ty =
+                  match Types.protocol_constraint_info inferred_ty with
+                  | Some (inferred_protocol, _, inferred_value_ty)
+                    when Protocol_id.equal base_protocol inferred_protocol ->
+                      inferred_value_ty
+                  | Some _ -> base_value_ty
+                  | None -> inferred_ty
+                in
+                Types.protocol_constraint_with_value base_ty
+                  (refine_type base_value_ty inferred_value_ty
+                  |> optionalize_seqable)
+          in
+          (name, restored_ty))
       base
   in
   let restore_branch_evidence base inferred previous_hints condition =
@@ -847,6 +894,33 @@ let infer_params ?(explicitly_dynamic_params = [])
         match constrain_symbol (TArray expected_ty) params array with
         | Error _ as error -> error
         | Ok params -> infer_expected TInt params index)
+    | FList [ FSymbol operation; FSymbol collection ]
+      when has_source_name operation "vec" ->
+        let element_ty =
+          match expected_ty with
+          | TVector inner -> inner
+          | _ -> Types.dynamic_constraint TUnknown
+        in
+        constrain_seqable element_ty params collection
+    | FList [ FSymbol operation; keys; values ]
+      when has_source_name operation "zipmap" ->
+        let key_ty, value_ty =
+          Option.value (Types.dynamic_map_types expected_ty)
+            ~default:
+              ( Types.dynamic_constraint TUnknown,
+                Types.dynamic_constraint TUnknown )
+        in
+        let constrain_collection element_ty params = function
+          | FSymbol name -> constrain_seqable element_ty params name
+          | form -> infer_form params form
+        in
+        Result.bind (constrain_collection key_ty params keys) (fun params ->
+            constrain_collection value_ty params values)
+    | FList [ FSymbol operation; FSymbol name ]
+      when string_mem_assoc name params
+           && (has_source_name operation "keys"
+              || has_source_name operation "vals") ->
+        constrain_symbol (Types.dynamic_constraint TUnknown) params name
     | FList (FSymbol name :: args) when string_mem_assoc name params -> (
         let parameter_types =
           List.mapi
@@ -903,6 +977,16 @@ let infer_params ?(explicitly_dynamic_params = [])
         add_record_field_constraint name keyword field_ty params
     | FList [ FSymbol "get"; FSymbol name; FKeyword keyword ] ->
         add_record_field_constraint name keyword expected_ty params
+    | FList
+        [
+          FSymbol ("get" | "clojure.core/get");
+          target;
+          key;
+          default;
+        ] ->
+        Result.bind (infer_form params target) (fun params ->
+            Result.bind (infer_form params key) (fun params ->
+                infer_expected expected_ty params default))
     | FList [ FSymbol ("get" | "clojure.core/get"); FSymbol target; key ] -> (
         let record_ty = lookup_dynamic_key_record_type expected_ty in
         match record_ty with
@@ -1813,6 +1897,11 @@ let infer_params ?(explicitly_dynamic_params = [])
         | Error _ as error -> error
         | Ok params ->
             infer_expected (Types.dynamic_constraint TUnknown) params metadata)
+    | FList (FSymbol ("and" | "or") :: conditions) ->
+        List.fold_left
+          (fun result condition ->
+            Result.bind result (fun params -> infer_truthy params condition))
+          (Ok params) conditions
     | FList [ FSymbol "meta"; FSymbol value ] ->
         constrain_symbol (Types.dynamic_constraint TUnknown) params value
     | FList
@@ -1898,6 +1987,12 @@ let infer_params ?(explicitly_dynamic_params = [])
              (Types.dynamic_map key_ty TUnknown)
              params)
           (fun params -> infer_all params (key_form :: remaining))
+    | FList
+        (FSymbol (".valAt" | ".containsKey" | ".entryAt")
+        :: FSymbol target :: arguments) ->
+        Result.bind
+          (constrain_symbol (Types.dynamic_constraint TUnknown) params target)
+          (fun params -> infer_all params arguments)
     | FList [ FSymbol field_access; FSymbol name ]
       when String.starts_with ~prefix:".-" field_access ->
         let keyword =
@@ -1907,6 +2002,20 @@ let infer_params ?(explicitly_dynamic_params = [])
         add_record_field_constraint name keyword TUnknown params
     | FList [ FSymbol "instance?"; FSymbol _type_name; FSymbol value ] ->
         constrain_symbol (Types.dynamic_constraint TUnknown) params value
+    | FList [ FSymbol operation; FSymbol name ]
+      when string_mem_assoc name params
+           && (has_source_name operation "keys"
+              || has_source_name operation "vals") ->
+        constrain_symbol (Types.dynamic_constraint TUnknown) params name
+    | FList [ FSymbol operation; keys; values ]
+      when has_source_name operation "zipmap" ->
+        let dynamic = Types.dynamic_constraint TUnknown in
+        let constrain_collection params = function
+          | FSymbol name -> constrain_seqable dynamic params name
+          | form -> infer_form params form
+        in
+        Result.bind (constrain_collection params keys) (fun params ->
+            constrain_collection params values)
     | FList (FSymbol name :: arguments) when string_mem_assoc name params -> (
         let parameter_tys =
           List.mapi
@@ -2165,6 +2274,9 @@ let infer_params ?(explicitly_dynamic_params = [])
                return_ty ))
           params fn
     | FList
+        [ FSymbol "vec"; FSymbol collection ] ->
+        constrain_seqable (Types.dynamic_constraint TUnknown) params collection
+    | FList
         [
           FSymbol
             ("first" | "second" | "last" | "seq" | "rest" | "next" | "empty?");
@@ -2339,7 +2451,8 @@ let infer_params ?(explicitly_dynamic_params = [])
         | Ok params -> constrain_collections params collection_forms)
     | FList
         [
-          FSymbol ("filter" | "remove" | "take-while" | "drop-while");
+          FSymbol
+            ("filter" | "remove" | "take-while" | "drop-while" | "some");
           fn;
           FSymbol collection;
         ] ->
@@ -2347,7 +2460,9 @@ let infer_params ?(explicitly_dynamic_params = [])
         let element_ty =
           if Types.is_dynamic element_ty then TUnknown else element_ty
         in
-        constrain_seqable element_ty params collection
+        Result.bind
+          (constrain_seqable element_ty params collection)
+          (fun params -> infer_form params fn)
     | FList
         [
           FSymbol ("map" | "mapv");
@@ -2778,7 +2893,7 @@ let infer_params ?(explicitly_dynamic_params = [])
         constrain_seqable
           (inferred_unary_function_param params function_form)
           params collection
-    | FList [ FSymbol ("butlast" | "dorun" | "doall"); collection ] ->
+    | FList [ FSymbol ("set" | "butlast" | "dorun" | "doall"); collection ] ->
         infer_collection params collection
     | FList
         [
@@ -3053,6 +3168,10 @@ let infer_params ?(explicitly_dynamic_params = [])
                         infer_alias_constraints params form))
                   (Ok params)
                   (binding_values @ rewritten_body_forms)))
+    | FList
+        (FSymbol "fn" :: FSymbol _function_name
+        :: (FVector _ as fn_params) :: body_forms) ->
+        infer_form params (FList (FSymbol "fn" :: fn_params :: body_forms))
     | FList (FSymbol "fn" :: (FVector _ as fn_params) :: body_forms) -> (
         match Destructure.parse_param_specs fn_params with
         | Error _ -> infer_all params body_forms

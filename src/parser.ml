@@ -262,6 +262,31 @@ and select_reader_conditional target reader_span close_span forms =
       end_offset = close_span.end_offset;
     }
   in
+  let metadata_annotation metadata =
+    match metadata.form with
+    | FMap entries -> (
+        match List.assoc_opt (FKeyword ":tag") entries with
+        | Some (FString tag | FSymbol tag | FKeyword tag) ->
+            Some (located (FSymbol ("^" ^ tag)) metadata.span)
+        | Some _ | None -> None)
+    | _ -> None
+  in
+  let branch_value value rest =
+    match (value.form, rest) with
+    | FSymbol "^", metadata :: actual :: rest ->
+        let forms =
+          match metadata_annotation metadata with
+          | Some annotation -> [ annotation; actual ]
+          | None -> [ actual ]
+        in
+        Ok (forms, rest)
+    | FSymbol metadata, actual :: rest
+      when String.starts_with ~prefix:"^" metadata ->
+        Ok ([ value; actual ], rest)
+    | FSymbol "^", _ ->
+        error_at value.span "reader conditional metadata expects a form"
+    | _ -> Ok ([ value ], rest)
+  in
   let rec collect seen branches = function
     | [] -> Ok (List.rev branches)
     | [ _ ] ->
@@ -273,12 +298,49 @@ and select_reader_conditional target reader_span close_span forms =
             error_at feature.span
               ("duplicate reader conditional feature " ^ name)
         | FKeyword name ->
-            collect (name :: seen) ((name, value) :: branches) rest
+            Result.bind (branch_value value rest) (fun (value, rest) ->
+                collect (name :: seen) ((name, value) :: branches) rest)
         | _ ->
             error_at feature.span "reader conditional feature must be a keyword"
         )
   in
   Result.bind (collect [] [] forms) (fun branches ->
+      let selected_form = function
+        | [ { form = FList (FKeyword ":import" :: entries); _ } ] ->
+            let host_namespace namespace_name =
+              namespace_name = "clojure.lang"
+              || String.starts_with ~prefix:"java." namespace_name
+              || String.starts_with ~prefix:"javax." namespace_name
+            in
+            let portable_entry = function
+              | FVector (FSymbol namespace_name :: names)
+                when names <> [] && not (host_namespace namespace_name) ->
+                  Some
+                    (FVector
+                       [
+                         FSymbol namespace_name;
+                         FKeyword ":refer";
+                         FVector names;
+                       ])
+              | _ -> None
+            in
+            let portable_entries = List.filter_map portable_entry entries in
+            if portable_entries = [] then
+              Ok (located (FSymbol omitted_reader_form) conditional_span)
+            else
+              Ok
+                (located
+                   (FList (FKeyword ":require" :: portable_entries))
+                   conditional_span)
+        | [ selected ] -> Ok selected
+        | selected ->
+            Ok
+              (located ~children:selected
+                 (FList
+                    (FSymbol spliced_reader_form
+                    :: List.map (fun form -> form.form) selected))
+                 conditional_span)
+      in
       let selected_features = Target.reader_features target in
       let selected =
         List.find_map
@@ -286,10 +348,10 @@ and select_reader_conditional target reader_span close_span forms =
           selected_features
       in
       match selected with
-      | Some selected -> Ok selected
+      | Some selected -> selected_form selected
       | None -> (
           match List.assoc_opt ":default" branches with
-          | Some selected -> Ok selected
+          | Some selected -> selected_form selected
           | None -> Ok (located (FSymbol omitted_reader_form) conditional_span)))
 
 let parse_located ?(target = Target.default) tokens =

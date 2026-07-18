@@ -120,6 +120,11 @@ and to_seq value =
   | _, Some sequence -> sequence ()
   | _, None -> invalid_arg "dynamic value is not seqable"
 
+let first_value value =
+  match (to_seq value) () with Seq.Nil -> nil | Seq.Cons (first, _) -> first
+
+let ffirst_value value = first_value (first_value value)
+
 let str value = to_string ~pr:false value
 let pr_str value = to_string ~pr:true value
 
@@ -470,6 +475,17 @@ let vals value =
   | Map entries ->
       entries |> List.map snd |> Rrbvec.of_list |> vector
   | _ -> invalid_arg "vals expects a map"
+
+let keys value =
+  match value.payload with
+  | Map entries ->
+      entries |> List.map fst |> Rrbvec.of_list |> vector
+  | _ -> invalid_arg "keys expects a map"
+
+let array_get value index =
+  match value.payload with
+  | Array values -> Array.get values index
+  | _ -> invalid_arg "aget expects an array"
 
 let vector_nth_opt value index =
   if index < 0 then None

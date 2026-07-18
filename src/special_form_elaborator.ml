@@ -6,6 +6,8 @@ module Env = Compiler_environment
 type expression_result = (typed_expr, Error.t) result
 type type_result = (ty, Error.t) result
 
+let loop_counter = ref 0
+
 type t = {
   compile_vector : string -> Env.t -> Ast.form list -> expression_result;
   compile_map :
@@ -277,6 +279,65 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
         map_vector source_inner
           (adapt_vector_element env target_inner source_inner)
           branch.semantic_expr
+    | ( TFn (target_params, target_return),
+        TFn (source_params, source_return) )
+      when List.length target_params = List.length source_params
+           && not (Types.equal result_ty branch.ty) ->
+        let function_name = "__lg_branch_function" in
+        let argument_names =
+          List.mapi
+            (fun index _ -> "__lg_branch_argument_" ^ string_of_int index)
+            target_params
+        in
+        let rec adapt_arguments adapted target source names =
+          match (target, source, names) with
+          | [], [], [] -> Ok (List.rev adapted)
+          | target_ty :: target_rest,
+            source_ty :: source_rest,
+            name :: name_rest ->
+              let argument = typed_ir target_ty (Semantic_ir.Ident name) in
+              let adapted_argument =
+                if Types.equal target_ty source_ty then
+                  Ok argument.semantic_expr
+                else if Types.is_dynamic source_ty then
+                  pack_dynamic_value env source_ty argument
+                else if Types.is_dynamic target_ty then
+                  dynamic_unpack env source_ty argument.semantic_expr
+                else if
+                  Types.assignable ~policy:Host_boundary ~expected:source_ty
+                    ~actual:target_ty
+                then
+                  Ok
+                    (coerce_expression_to_type source_ty target_ty
+                       argument.semantic_expr)
+                else Error.error "cannot adapt function branch parameter"
+              in
+              Result.bind adapted_argument (fun argument ->
+                  adapt_arguments (argument :: adapted) target_rest source_rest
+                    name_rest)
+          | _ -> Error.error "cannot adapt function branch arity"
+        in
+        Result.bind
+          (adapt_arguments [] target_params source_params argument_names)
+          (fun arguments ->
+            let result =
+              typed_ir source_return
+                (Semantic_ir.Apply
+                   (Semantic_ir.Ident function_name, arguments))
+            in
+            Result.map
+              (fun result ->
+                Semantic_ir.Let
+                  ( [
+                      ( Semantic_ir.PVar function_name,
+                        branch.semantic_expr );
+                    ],
+                    Semantic_ir.Fun
+                      ( List.map
+                          (fun name -> Semantic_ir.PVar name)
+                          argument_names,
+                        result ) ))
+              (adapt_branch_expression env target_return result))
     | target, source
       when Types.is_dynamic target && not (Types.is_dynamic source) ->
         pack_dynamic_value env target branch
@@ -289,6 +350,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
   in
   let rec requires_branch_adaptation = function
     | ty when Types.is_dynamic ty -> true
+    | TFn _ -> true
     | TVector _ -> true
     | TNullable inner | TOcaml_app ("option", [ inner ]) ->
         requires_branch_adaptation inner
@@ -1911,6 +1973,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
                  (Semantic_ir.Sequence
                     [ expression.semantic_expr; body.semantic_expr ])))
   and compile_loop scope env bindings body_forms =
+    incr loop_counter;
+    let loop_name = "__lg_loop_" ^ string_of_int !loop_counter in
     match bindings with
     | FVector forms -> (
         let forms = Destructure.normalize_binding_type_hints forms in
@@ -2255,7 +2319,6 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
                         | Some _ | None -> fallback)
                       names inferred_param_tys
               in
-              let loop_name = "loop__" in
               let loop_env =
                 List.fold_left2
                   (fun env name ty ->

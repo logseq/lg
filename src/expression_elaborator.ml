@@ -27,6 +27,7 @@ let condp_counter = ref 0
 let callable_set_counter = ref 0
 let dynamic_case_counter = ref 0
 let callable_expression_counter = ref 0
+let dotimes_counter = ref 0
 
 let rec compile_expr scope (env : Env.t) form =
   match compile_expr_unlocated scope env form with
@@ -66,6 +67,10 @@ and compile_expr_unlocated scope (env : Env.t) = function
       | Some { ty = TFn ([], return_ty); ocaml_name; _ }
         when is_constructor_name name ->
           Ok (typed_ir return_ty (Semantic_ir.Constructor (ocaml_name, None)))
+      | Some { ty = TRef value_ty; ocaml_name; dynamic_var = true; _ } ->
+          Ok
+            (typed_ir value_ty
+               (Semantic_ir.Prefix ("!", Semantic_ir.Ident ocaml_name)))
       | Some binding ->
           Ok (typed_ir binding.ty (Semantic_ir.Ident binding.ocaml_name))
       | None when name = "None" ->
@@ -81,6 +86,48 @@ and compile_expr_unlocated scope (env : Env.t) = function
       lookup_function scope env (Ast.core_symbol_qualified_name core_symbol)
   | FVector forms -> compile_vector scope env forms
   | FMap pairs -> compile_map scope env pairs
+  | FList
+      (FSymbol ("dotimes" | "clojure.core/dotimes" | "cljs.core/dotimes")
+      :: FVector [ FSymbol index_name; limit ] :: body_forms) ->
+      incr dotimes_counter;
+      let limit_name =
+        "__lg_dotimes_limit_" ^ string_of_int !dotimes_counter
+      in
+      let loop_index_name =
+        if index_name = "_" then
+          "__lg_dotimes_index_" ^ string_of_int !dotimes_counter
+        else index_name
+      in
+      let next_index = FList [ FSymbol "inc"; FSymbol loop_index_name ] in
+      let recur = FList [ FSymbol "recur"; next_index ] in
+      let body = FList (FSymbol "do" :: body_forms @ [ recur ]) in
+      compile_expr scope env
+        (FList
+           [
+             FSymbol "let";
+             FVector [ FSymbol limit_name; limit ];
+             FList
+               [
+                 FSymbol "loop";
+                 FVector [ FSymbol loop_index_name; FInt 0 ];
+                 FList
+                   [
+                     FSymbol "if";
+                     FList
+                       [
+                         FSymbol "<";
+                         FSymbol loop_index_name;
+                         FSymbol limit_name;
+                       ];
+                     body;
+                     FSymbol "nil";
+                   ];
+               ];
+           ])
+  | FList
+      (FSymbol ("dotimes" | "clojure.core/dotimes" | "cljs.core/dotimes")
+      :: _) ->
+      Error.error "dotimes expects [name count] and optional body forms"
   | FList (FSymbol "loop" :: bindings :: body_forms) ->
       compile_loop scope env bindings body_forms
   | FList (FSymbol "recur" :: _) ->
@@ -117,10 +164,16 @@ and compile_expr_unlocated scope (env : Env.t) = function
       compile_let_some scope env bindings then_form else_form
   | FList (FSymbol "let-some" :: _) ->
       Error.error "let-some requires bindings, then, and else"
+  | FList
+      (FSymbol "fn" :: FSymbol name :: (FVector _ as params) :: body_forms) ->
+      compile_named_fn scope env name params body_forms
   | FList (FSymbol "fn" :: params :: body_forms) ->
       compile_fn scope env params body_forms
   | FList (FSymbol "new" :: FSymbol type_name :: args) ->
       compile_call scope env (type_name ^ ".") args
+  | FList
+      [ FSymbol ".isArray"; FList [ FSymbol ".getClass"; value ] ] ->
+      compile_expr scope env (FList [ FSymbol "array-value?"; value ])
   | FList [ FSymbol "quote"; value ] -> compile_quoted scope env value
   | FList (FSymbol "quote" :: _) -> Error.error "quote expects one form"
   | FList (FSymbol "do" :: body_forms) ->
@@ -527,6 +580,22 @@ and compile_doseq scope env bindings body_forms =
   | _ -> Error.error "doseq bindings must be a vector"
 
 and compile_for scope env bindings body =
+  let erased_seqable_parameter = function
+    | FSymbol name -> (
+        match Env.find_opt (Names.scoped_key scope name) env with
+        | Some binding -> (
+            match Types.seqable_constraint_info binding.ty with
+            | Some (_, (TUnknown | TVar _), (TUnknown | TVar _)) -> true
+            | Some _ | None -> false)
+        | None -> false)
+    | _ -> false
+  in
+  let mapper_parameters pattern collection =
+    match pattern with
+    | (FVector _ | FMap _) when erased_seqable_parameter collection ->
+        FVector [ FSymbol "^:dynamic"; pattern ]
+    | _ -> FVector [ pattern ]
+  in
   let rec produces_sequence = function
     | [] -> false
     | FKeyword ":when" :: _ -> true
@@ -552,7 +621,10 @@ and compile_for scope env bindings body =
     | ((FSymbol _ | FVector _ | FMap _) as pattern) :: collection :: rest ->
         Result.map
           (fun body ->
-            let mapper = FList [ FSymbol "fn"; FVector [ pattern ]; body ] in
+            let mapper =
+              FList
+                [ FSymbol "fn"; mapper_parameters pattern collection; body ]
+            in
             let function_name =
               if produces_sequence rest then "mapcat" else "map"
             in
@@ -1272,6 +1344,41 @@ and compile_fn ?(param_type_overrides = []) scope env params body_forms =
   | Ok parts when unresolved_contextual_type parts.body.ty ->
       Error.error "empty list requires a contextual element type"
   | Ok parts -> Ok (fn_code parts)
+
+and compile_named_fn scope env name params body_forms =
+  match Destructure.parse_param_specs params with
+  | Error _ as error -> error
+  | Ok specs ->
+      let parameter_tys =
+        List.map
+          (fun (spec : Destructure.param_spec) ->
+            Option.value spec.explicit_ty ~default:TUnknown)
+          specs
+      in
+      let ocaml_name =
+        "__lg_named_fn_" ^ Names.sanitize_name name
+      in
+      let self_binding =
+        Types.binding ocaml_name (TFn (parameter_tys, TUnknown))
+      in
+      let body_env =
+        Env.add (Names.scoped_key scope name) self_binding env
+      in
+      Result.bind (compile_fn scope body_env params body_forms) (fun function_ ->
+          match Semantic_ir.unlocated function_.semantic_expr with
+          | Semantic_ir.Fun (patterns, body) ->
+              Ok
+                {
+                  function_ with
+                  semantic_expr =
+                    Semantic_ir.annotate function_.ty
+                      (Semantic_ir.LetRecIn
+                         ( ocaml_name,
+                           patterns,
+                           body,
+                           Semantic_ir.Ident ocaml_name ));
+                }
+          | _ -> Error.error "named fn requires a function body")
 
 and compile_call scope env name arg_forms =
   (Lazy.force context).calls.compile_call scope env name arg_forms

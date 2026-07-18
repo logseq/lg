@@ -2096,6 +2096,235 @@ let test_namespace_rejects_import_clause () =
 |}
   |> expect_error "lg namespaces do not support :import"
 
+let test_namespace_ignores_reader_conditional_import_clause () =
+  let source =
+    {|
+(ns app.portable
+  #?(:clj (:import [java.lang Object])))
+(println 42)
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "namespace_ignores_reader_conditional_import_clause" "42\n"
+    native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_reader_conditional_import_refers_lg_record_types () =
+  let provider =
+    {|
+(ns app.parser-types)
+(defrecord BindIgnore [])
+|}
+  in
+  let consumer =
+    {|
+(ns app.query-types
+  (:require
+    [app.parser-types :as parser
+     #?@(:cljs [:refer [BindIgnore]])])
+  #?(:clj
+     (:import
+       [java.lang Object]
+       [app.parser-types BindIgnore])))
+
+(defprotocol BindingKind
+  (binding-kind [binding]))
+(extend-protocol BindingKind
+  BindIgnore
+  (binding-kind [_] :ignore))
+|}
+  in
+  let compile target =
+    let state, _ =
+      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state provider
+      |> expect_ok
+    in
+    ignore (Lg.Compiler.compile_chunk ~target state consumer |> expect_ok)
+  in
+  compile Lg.Target.Native;
+  compile Lg.Target.Melange
+
+let test_dynamic_vars_bind_and_restore_portably () =
+  let source =
+    {|
+(def ^:dynamic *selected* nil)
+(defn selected? [value]
+  (contains? *selected* value))
+
+(println (selected? :a))
+(println
+  (binding [*selected* #{:a}]
+    (selected? :a)))
+(println
+  (binding [*selected* #{:a}]
+    (and
+      (selected? :a)
+      (binding [*selected* #{:b}]
+        (and (selected? :b) (not (selected? :a))))
+      (selected? :a))))
+(try
+  (binding [*selected* #{:a}]
+    (throw (ex-info "stop" {})))
+  (catch _ false))
+(println (selected? :a))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "dynamic_vars_bind_and_restore_portably"
+    "false\ntrue\ntrue\nfalse\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_named_fn_is_locally_recursive () =
+  let source =
+    {|
+(def countdown
+  (fn countdown [value]
+    (if (zero? value)
+      0
+      (countdown (dec value)))))
+(println (= 0 (countdown 5)))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "named_fn_is_locally_recursive" "true\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  Lg.Compiler.compile_string
+    {|
+(def value (fn private-name [x] x))
+(def leaked private-name)
+|}
+  |> expect_error "unknown symbol private-name"
+
+let test_if_joins_static_and_dynamic_function_parameters () =
+  let source =
+    {|
+(defrecord Box [value])
+(defn choose-reader [dynamic?]
+  (if dynamic?
+    (fn dynamic-reader [^:dynamic value] value)
+    (fn box-reader [^Box value] (:value value))))
+(def read-box (choose-reader false))
+(def read-dynamic (choose-reader true))
+(println (= 42 (read-box (Box. 42))))
+(println (= :answer (read-dynamic :answer)))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "if_joins_static_and_dynamic_function_parameters"
+    "true\ntrue\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_jvm_lookup_hints_do_not_narrow_dynamic_values () =
+  let source =
+    {|
+(ns app.lookup-hint
+  (:require [#?(:cljs cljs.reader :clj clojure.edn) :as edn]))
+(defn lookup-value [lookup key]
+  (.valAt ^ILookup lookup key))
+(println (= 42 (lookup-value (edn/read-string "{:answer 42}") :answer)))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "jvm_lookup_hints_do_not_narrow_dynamic_values" "true\n"
+    native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_object_marker_builds_dynamic_arrays_without_java () =
+  let source =
+    {|
+(def values (into-array Object [1 2]))
+(aset values 1 "two")
+(println (= 1 (aget values 0)))
+(println (= "two" (aget values 1)))
+(def empty-values (make-array Object 2))
+(println
+  (and
+    (nil? (aget empty-values 0))
+    (nil? (aget empty-values 1))))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "object_marker_builds_dynamic_arrays_without_java"
+    "true\ntrue\ntrue\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_lazily_persistent_vector_create_owning_is_portable () =
+  let source =
+    {|
+(def values (into-array Object [1 "two"]))
+(def result (LazilyPersistentVector/createOwning values))
+(println (= [1 "two"] result))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "lazily_persistent_vector_create_owning_is_portable"
+    "true\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_clojure_edn_read_string_behaves_on_native_and_melange () =
+  let source =
+    {|
+(ns app.edn
+  (:require [#?(:cljs cljs.reader :clj clojure.edn) :as edn]))
+
+(println
+  (= [nil true false -12 3.5 :kw 'symbol "text"]
+     (edn/read-string "[nil true false -12 3.5 :kw symbol \"text\"]")))
+(def nested
+  (edn/read-string
+    "{:rules [(rule [?e :name ?name])] :flags #{true nil}}"))
+(println
+  (and
+    (= [(list 'rule ['?e :name '?name])] (:rules nested))
+    (= 2 (count (:flags nested)))
+    (contains? (:flags nested) true)
+    (contains? (:flags nested) nil)))
+(println
+  (= {:a 1 :b [2 3]}
+     (edn/read-string "{:a 1, ; ignored
+                       :b [2 3]}")))
+(println (= "hello world" (edn/read-string "\"hello world\"")))
+(println (= "line\nnext" (edn/read-string "\"line\\nnext\"")))
+(println (nil? (edn/read-string "")))
+(println (= 1 (edn/read-string "1 2")))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "clojure_edn_read_string_behaves_on_native_and_melange"
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_clojure_edn_read_string_rejects_invalid_collections () =
+  let source =
+    {|
+(ns app.invalid-edn
+  (:require [#?(:cljs cljs.reader :clj clojure.edn) :as edn]))
+
+(defn invalid-edn? [source]
+  (try
+    (edn/read-string source)
+    false
+    (catch _ true)))
+
+(println (invalid-edn? "{:a}"))
+(println (invalid-edn? "{:a 1 :a 2}"))
+(println (invalid-edn? "#{1 1}"))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "clojure_edn_read_string_rejects_invalid_collections"
+    "true\ntrue\ntrue\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_referred_update_supports_threaded_nested_calls () =
   let provider_source =
     read_file
@@ -2258,6 +2487,34 @@ let test_current_datascript_chain_compiles_for_native_and_melange () =
   ignore (compile_current_datascript Lg.Target.Native []);
   ignore (compile_current_datascript Lg.Target.Melange [])
 
+let test_datascript_make_array_one_arity_behaves_on_native_and_melange () =
+  let source =
+    {|
+(ns app.dynamic-array
+  (:require [me.tonsky.persistent-sorted-set.arrays :as arrays]))
+
+(def values (arrays/make-array 3))
+(def empty-values (arrays/make-array 0))
+(println
+  (str
+    (nil? (arrays/aget values 0)) ":"
+    (= 0 (arrays/alength empty-values))))
+(arrays/aset values 0 42)
+(arrays/aset values 1 "answer")
+(println
+  (str
+    (= 42 (arrays/aget values 0)) ":"
+    (= "answer" (arrays/aget values 1)) ":"
+    (nil? (arrays/aget values 2))))
+|}
+  in
+  let sources = [ ("test/datascript/dynamic_array.cljc", source) ] in
+  let native_source = compile_current_datascript Lg.Target.Native sources in
+  assert_ocaml_runs
+    "datascript_make_array_one_arity_behaves_on_native_and_melange"
+    "true:true\ntrue:true:true\n" native_source;
+  ignore (compile_current_datascript Lg.Target.Melange sources)
+
 let test_current_datascript_entity_behaves_on_native () =
   let source =
     {|
@@ -2351,6 +2608,48 @@ let test_current_datascript_pull_api_behaves_on_native () =
     (compile_current_datascript Lg.Target.Melange
        (current_datascript_pull_sources ()
        @ [ ("test/datascript/pull_api_behavior.cljc", source) ]))
+
+let current_datascript_query_sources () =
+  let path = "test/datascript/upstream/query.cljc" in
+  current_datascript_pull_sources ()
+  @ [ (path, read_file (Filename.concat (repo_root ()) path)) ]
+
+let test_current_datascript_query_compiles_for_native_and_melange () =
+  let sources = current_datascript_query_sources () in
+  ignore (compile_current_datascript Lg.Target.Native sources);
+  ignore (compile_current_datascript Lg.Target.Melange sources)
+
+let test_current_datascript_query_behaves_on_native () =
+  let source =
+    {|
+(ns app.query-behavior
+  (:require [datascript.db :as db]
+            [datascript.query :as query]))
+
+(def database
+  (db/init-db
+    [(db/datom 1 :name "Ivan")
+     (db/datom 1 :age 19)
+     (db/datom 2 :name "Oleg")]
+    {}
+    {}))
+
+(println
+  (= #{[1 "Ivan"] [2 "Oleg"]}
+     (query/q
+       '[:find ?e ?name
+         :where [?e :name ?name]]
+       database)))
+|}
+  in
+  let sources =
+    current_datascript_query_sources ()
+    @ [ ("test/datascript/query_behavior.cljc", source) ]
+  in
+  let native_source = compile_current_datascript Lg.Target.Native sources in
+  assert_ocaml_runs "current_datascript_query_behaves_on_native" "true\n"
+    native_source;
+  ignore (compile_current_datascript Lg.Target.Melange sources)
 
 let test_namespace_ignores_clojure_compiler_directives () =
   let source =
@@ -2491,6 +2790,82 @@ let test_transient_collection_operations_preserve_values () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
+let test_get_supports_static_and_dynamic_transient_maps () =
+  let source =
+    {|
+(ns app.transient-get
+  (:require [#?(:cljs cljs.reader :clj clojure.edn) :as edn]))
+
+(def static-values (assoc! (transient {}) "answer" 42))
+(println
+  (str (get static-values "answer") ":"
+       (get static-values "missing" 9) ":"
+       (nil? (get static-values "missing"))))
+
+(def dynamic-values
+  (assoc! (transient {}) (edn/read-string "[1 2]") "found"))
+(println (get dynamic-values (edn/read-string "[1 2]") "missing"))
+
+(defn group-by* [f init coll]
+  (persistent!
+    (reduce
+      (fn [ret x]
+        (let [k (f x)]
+          (assoc! ret k (conj (get ret k init) x))))
+      (transient {}) coll)))
+(def groups
+  (group-by* (fn [entry] entry) []
+             [(edn/read-string "[1 2]")
+              (edn/read-string "[1 2]")
+              (edn/read-string "[3 4]")]))
+(println
+  (str (count (get groups (edn/read-string "[1 2]") [])) ":"
+       (count (get groups (edn/read-string "[3 4]") []))))
+
+(def expired (assoc! (transient {}) "answer" 42))
+(persistent! expired)
+(println
+  (try
+    (get expired "answer")
+    "active"
+    (catch (Invalid_argument _) "inactive")))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "get_supports_static_and_dynamic_transient_maps"
+    "42:9:true\nfound\n2:1\ninactive\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_named_reducers_receive_contextual_accumulator_types () =
+  let source =
+    {|
+(def kept-keys
+  (persistent!
+    (reduce-kv
+      (fn keeper [acc key _]
+        (conj! acc key))
+      (transient [])
+      (zipmap ["a" "b"] [1 2]))))
+(def flattened
+  (persistent!
+    (reduce
+      (fn outer [acc values]
+        (reduce
+          (fn inner [acc value]
+            (conj! acc value))
+          acc values))
+      (transient [])
+      [[1 2] [3]])))
+(println (str (count kept-keys) ":" (pr-str flattened)))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "named_reducers_receive_contextual_accumulator_types"
+    "2:[1 2 3]\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_count_supports_transient_collections () =
   let source =
     {|
@@ -2506,6 +2881,109 @@ let test_count_supports_transient_collections () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "count_supports_transient_collections" "2:2:2\n"
     ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_reader_conditional_accepts_metadata_branch_values () =
+  let source =
+    {|
+(defn keep
+  [#?(:cljs value
+      :clj ^{:tag "[[Ljava.lang.Object;"} value)]
+  value)
+(println (keep 42))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "reader_conditional_accepts_metadata_branch_values" "42\n"
+    native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_metadata_map_prefixes_compile_without_java_types () =
+  let source =
+    {|
+(def ^{:dynamic true :doc "Portable dynamic value"} *value* 41)
+(defn add-hinted
+  [value ^{:tag "[[Ljava.lang.Object;"} hinted]
+  (+ value hinted))
+(println (add-hinted *value* 1))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "metadata_map_prefixes_compile_without_java_types" "42\n"
+    native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_java_is_array_idiom_lowers_to_portable_array_predicate () =
+  let source =
+    {|
+(defn host-array? [^:dynamic value]
+  (.isArray (.getClass ^Object value)))
+(println (host-array? (make-array 1)))
+(println (host-array? [1]))
+(println (host-array? "value"))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "java_is_array_idiom_lowers_to_portable_array_predicate"
+    "true\nfalse\nfalse\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_dotimes_evaluates_bounds_once_and_returns_nil () =
+  let source =
+    {|
+(def evaluations (atom 0))
+(def runs (atom 0))
+(def values (make-array 3))
+(defn limit []
+  (swap! evaluations inc)
+  3)
+(def result
+  (dotimes [index (limit)]
+    (aset values index index)))
+(dotimes [_ 0]
+  (swap! runs inc))
+(dotimes [_ -2]
+  (swap! runs inc))
+(println
+  (str
+    (= 0 (aget values 0)) ":"
+    (= 1 (aget values 1)) ":"
+    (= 2 (aget values 2)) ":"
+    (= 1 @evaluations) ":"
+    (= 0 @runs) ":"
+    (nil? result)))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "dotimes_evaluates_bounds_once_and_returns_nil"
+    "true:true:true:true:true:true\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_aget_supports_dynamic_arrays_with_inferred_indexes () =
+  let source =
+    {|
+(ns app.dynamic-aget
+  (:require [#?(:cljs cljs.reader :clj clojure.edn) :as edn]))
+
+(defn pick [values indexes]
+  (if (.isArray (.getClass ^Object values))
+    (aget values (unsafe-aget indexes 0))
+    nil))
+(def values (make-array 2))
+(def indexes (array-from [1]))
+(aset values (first (edn/read-string "[0]")) "zero")
+(aset values 1 "one")
+(println (pick values indexes))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "aget_supports_dynamic_arrays_with_inferred_indexes" "one\n"
+    native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -4231,6 +4709,88 @@ let test_ocaml_array_primitives_support_polymorphic_helpers () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "ocaml_array_primitives_support_polymorphic_helpers"
     "3:7:2:5:3\n" ocaml_source
+
+let test_to_array_is_first_class_for_dynamic_seqable_values () =
+  let source =
+    {|
+(ns app.first-class-to-array
+  (:require [#?(:cljs cljs.reader :clj clojure.edn) :as edn]))
+
+(defn rows->arrays [rows]
+  (let [data (filter (fn [row] (some? row)) rows)]
+    (mapv to-array data)))
+(def arrays (rows->arrays (edn/read-string "[[1 2] [3]]")))
+(println (pr-str (mapv (fn [values] (alength values)) arrays)))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "to_array_is_first_class_for_dynamic_seqable_values"
+    "[2 1]\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_optional_protocol_values_can_flow_to_seqable_else_branches () =
+  let source =
+    {|
+(defprotocol Searchable
+  (search-count [source]))
+(deftype IndexedSource [value])
+(extend-type IndexedSource
+  Searchable
+  (search-count [_] 7))
+
+(defn seq-count [values]
+  (count (filter (fn [_] true) values)))
+(defn source-count [source]
+  (if (satisfies? Searchable source)
+    (search-count source)
+    (seq-count source)))
+
+(println (+ 0 (source-count (IndexedSource. 0))))
+(println (+ 0 (source-count [1 2 3])))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "optional_protocol_values_can_flow_to_seqable_else_branches" "7\n3\n"
+    native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_nested_protocol_witnesses_keep_concrete_receiver_storage () =
+  let source =
+    {|
+(defprotocol Searchable
+  (-search [db pattern]))
+(defprotocol IndexAccess
+  (-datoms [db index]))
+(defprotocol Database
+  (-attrs [db property]))
+
+(type-record db (value :int))
+(extend-type db
+  Searchable
+  (-search [db pattern] (+ (:value db) pattern))
+  IndexAccess
+  (-datoms [db index] (+ (:value db) index))
+  Database
+  (-attrs [db property] (+ (:value db) property)))
+
+(defn resolve-value [db value]
+  (+ (-search db value)
+     (-datoms db value)
+     (-attrs db value)))
+
+(def value (record db (value 1)))
+(println (resolve-value value 2))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "nested_protocol_witnesses_keep_concrete_receiver_storage" "9\n"
+    native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_ocaml_refs_support_read_and_assignment () =
   let source =
@@ -6804,6 +7364,28 @@ let test_static_sets_accept_dynamic_lookup_values () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
+let test_contains_static_sets_handles_dynamic_candidates () =
+  let source =
+    {|
+(def symbols #{'or 'and})
+(def keywords #{:or :and})
+(defn symbol-member? [^:dynamic value]
+  (contains? symbols value))
+(defn keyword-member? [^:dynamic value]
+  (contains? keywords value))
+(println
+  (str (symbol-member? 'or) ":"
+       (symbol-member? :or) ":"
+       (keyword-member? :and) ":"
+       (keyword-member? 'and)))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "contains_static_sets_handles_dynamic_candidates"
+    "true:false:true:false\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_generic_protocol_witness_compiles_for_javascript_targets () =
   let source =
     {|
@@ -7242,6 +7824,88 @@ let test_keys_return_keyword_values () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "keys_return_keyword_values" "[:name :age]\n" ocaml_source
+
+let test_keys_support_generic_and_dynamic_maps () =
+  let source =
+    {|
+(ns app.keys
+  (:require [#?(:cljs cljs.reader :clj clojure.edn) :as edn]))
+
+(defn key-set [m]
+  (set (keys m)))
+(defn same-keys? [a b]
+  (and
+    (= (count a) (count b))
+    (every? #(contains? b %) (keys a))
+    (every? #(contains? a %) (keys b))))
+(defn pairwise-equal? [left right]
+  (every?
+    (fn [[left-value right-value]]
+      (= left-value right-value))
+    (map vector left right)))
+(defn looks-like? [pattern form]
+  (cond
+    (= '_ pattern)
+    true
+    (= '[*] pattern)
+    (sequential? form)
+    (symbol? pattern)
+    (= form pattern)
+    (sequential? pattern)
+    (if (= (last pattern) '*)
+      (and
+        (sequential? form)
+        (every?
+          (fn [[pattern-el form-el]]
+            (looks-like? pattern-el form-el))
+          (map vector (butlast pattern) form)))
+      (and
+        (sequential? form)
+        (= (count form) (count pattern))
+        (every?
+          (fn [[pattern-el form-el]]
+            (looks-like? pattern-el form-el))
+          (map vector pattern form))))
+    :else
+    (pattern form)))
+
+(def generic-keys
+  (key-set (hash-map 'e 0 'v 1)))
+(def dynamic-keys
+  (keys (edn/read-string "{:a 1 :b 2}")))
+
+(println
+  (and
+    (= 2 (count generic-keys))
+    (every? #(or (= 'e %) (= 'v %)) generic-keys)))
+(println
+  (and
+    (= 2 (count dynamic-keys))
+    (= :a (first dynamic-keys))
+    (= :b (second dynamic-keys))))
+(println (empty? (keys (hash-map))))
+(println
+  (same-keys?
+    (hash-map 'e 0 'v 1)
+    (hash-map 'e 9 'v 2)))
+(println
+  (not
+    (same-keys?
+      (hash-map 'e 0 'v 1)
+      (hash-map 'e 9))))
+(println (pairwise-equal? [1 2] [1 2]))
+(println (not (pairwise-equal? [1 2] [1 3])))
+(println (looks-like? '[*] [1 2]))
+(println (looks-like? '[a b] '[a b]))
+(println (not (looks-like? '[a b] '[a c])))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "keys_support_generic_and_dynamic_maps"
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n"
+    native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_vals_return_homogeneous_values () =
   let source =
@@ -8667,6 +9331,152 @@ let test_doseq_prefers_reducible_over_seqable () =
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source
     |> expect_ok)
 
+let test_vals_support_generic_dynamic_and_empty_maps () =
+  let source =
+    {|
+(ns app.vals
+  (:require [#?(:cljs cljs.reader :clj clojure.edn) :as edn]))
+
+(defn max-value [values]
+  (reduce max (vals values)))
+(defn lookup-plus-max [values key]
+  (+ (values key) (reduce max (vals values))))
+(def dynamic-values
+  (vals (edn/read-string "{:a 1 :b 2}")))
+
+(println (= 3 (max-value (hash-map 'a 1 'b 3))))
+(println (= 4 (lookup-plus-max (hash-map 'a 1 'b 3) 'a)))
+(println
+  (and
+    (= 2 (count dynamic-values))
+    (= 1 (first dynamic-values))
+    (= 2 (second dynamic-values))))
+(println (empty? (vals (hash-map))))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "vals_support_generic_dynamic_and_empty_maps"
+    "true\ntrue\ntrue\ntrue\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_zipmap_stops_at_shortest_and_preserves_dynamic_boundaries () =
+  let source =
+    {|
+(ns app.zipmap
+  (:require [#?(:cljs cljs.reader :clj clojure.edn) :as edn]))
+
+(defn build-index [keys values]
+  (zipmap keys values))
+
+(println (= {:a 1 :b 2} (zipmap [:a :b :c] [1 2])))
+(println (= {:a 1} (zipmap [:a] [1 2])))
+(println (= {:a 2} (zipmap [:a :a] [1 2])))
+(println (= {:a 0 :b 1} (zipmap [:a :b] (range))))
+(println (empty? (zipmap [] [])))
+(println (= {'x 10 'y 20} (build-index ['x 'y] [10 20])))
+(def dynamic-result
+  (zipmap
+    (edn/read-string "[:a :b]")
+    (edn/read-string "[1 \"two\"]")))
+(println
+  (and
+    (= 1 (:a dynamic-result))
+    (= "two" (:b dynamic-result))))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "zipmap_stops_at_shortest_and_preserves_dynamic_boundaries"
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_map_accepts_callable_map_values () =
+  let source =
+    {|
+(ns app.callable-map
+  (:require [#?(:cljs cljs.reader :clj clojure.edn) :as edn]))
+
+(defrecord Relation [attrs])
+(def relation (Relation. {:x 0 :y 1}))
+(def evaluations (atom 0))
+(defn relation-attrs []
+  (do
+    (swap! evaluations inc)
+    (:attrs relation)))
+
+(println (= [1 0] (vec (map (:attrs relation) [:y :x]))))
+(println (= [0 1] (vec (map (relation-attrs) [:x :y]))))
+(println (= 1 (deref evaluations)))
+(def dynamic-attrs (edn/read-string "{:x 10 :y 20}"))
+(println (= [20 10] (vec (map dynamic-attrs [:y :x]))))
+(println (= 20 (dynamic-attrs :y)))
+(def zipped-attrs (zipmap [:x :y] [30 40]))
+(println (= 30 (zipped-attrs :x)))
+(println (= :missing (zipped-attrs :z :missing)))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "map_accepts_callable_map_values"
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_ffirst_is_first_class_and_empty_safe () =
+  let source =
+    {|
+(def rules
+  [[['rule-a] :first]
+   [['rule-b] :second]
+   [['rule-a] :third]])
+(def grouped (group-by ffirst rules))
+(println (= 2 (count (get grouped 'rule-a))))
+(println (= 1 (count (get grouped 'rule-b))))
+(println
+  (= [nil nil nil 1]
+     (mapv ffirst [nil [] [[]] [[1 2]]])))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "ffirst_is_first_class_and_empty_safe"
+    "true\ntrue\ntrue\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_vec_realizes_for_over_dynamic_map_entries () =
+  let source =
+    {|
+(ns app.vec-for
+  (:require [#?(:cljs cljs.reader :clj clojure.edn) :as edn]))
+
+(defn remap-indexes [left right]
+  (vec
+    (for [[symbol right-index] right]
+      [right-index (left symbol)])))
+(defn realize-values [values]
+  (vec values))
+(defn transient-realize-values [values]
+  (persistent! (transient (vec values))))
+(println
+  (= [[0 1] [1 0]]
+     (remap-indexes
+       (hash-map 'x 0 'y 1)
+       (hash-map 'y 0 'x 1))))
+(println (= "[1 2]" (pr-str (realize-values (edn/read-string "[1 2]")))))
+(println (empty? (realize-values (edn/read-string "[]"))))
+(println
+  (= "[1 2]"
+     (pr-str (transient-realize-values (edn/read-string "[1 2]")))))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "vec_realizes_for_over_dynamic_map_entries"
+    "true\ntrue\ntrue\ntrue\n"
+    native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_for_supports_when_clauses () =
   let source =
     {|
@@ -9036,6 +9846,39 @@ let test_callable_set_parameters_remain_sets_for_conj () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "callable_set_parameters_remain_sets_for_conj" "1:1\n"
     ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_computed_sets_are_first_class_predicates () =
+  let source =
+    {|
+(def blocked (set [2 4]))
+(defn remove-dynamic [^:dynamic blocked]
+  (remove blocked [1 2 3 4]))
+(println (pr-str (vec (remove blocked [1 2 3 4]))))
+(println (empty? (remove (set [1 2]) [1 2])))
+(println (pr-str (vec (remove-dynamic blocked))))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "computed_sets_are_first_class_predicates"
+    "[1 3]\ntrue\n[1 3]\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_resolve_returns_nil_without_runtime_var_reflection () =
+  let source =
+    {|
+(defn resolve-value [sym]
+  (when-some [var (resolve sym)]
+    (deref var)))
+(println (nil? (resolve 'missing/value)))
+(println (nil? (resolve-value 'missing/value)))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "resolve_returns_nil_without_runtime_var_reflection"
+    "true\ntrue\n" native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -9436,6 +10279,30 @@ let test_reduce_accepts_all_builtin_seqable_types () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "reduce_accepts_all_builtin_seqable_types"
     "3\n3\n3\n3\nab\n9\n" ocaml_source
+
+let test_two_arity_reduce_uses_first_or_zero_arity_identity () =
+  let source =
+    {|
+(defn sum
+  ([] 10)
+  ([left right] (+ left right)))
+(defn stop-sum
+  ([] 0)
+  ([acc value]
+   (if (= value 3)
+     (reduced acc)
+     (+ acc value))))
+(println (reduce max [1 3 2]))
+(println (reduce sum [5]))
+(println (reduce sum []))
+(println (reduce stop-sum [0 1 2 3 100]))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "two_arity_reduce_uses_first_or_zero_arity_identity"
+    "3\n5\n10\n3\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_reduce_refines_empty_set_accumulators_without_widening_static_sets () =
   let source =
@@ -12596,6 +13463,114 @@ let test_some_returns_first_truthy_predicate_value () =
   assert_ocaml_runs "some_returns_first_truthy_predicate_value" "value-3:true\n"
     ocaml_source
 
+let test_some_infers_generic_seqable_parameters () =
+  let source =
+    {|
+(defn find-wanted [attrs]
+  (some
+    (fn [attr]
+      (when (= attr :wanted) attr))
+    attrs))
+(println (str (find-wanted [:other :wanted]) ":"
+              (nil? (find-wanted (list :other))) ":"
+              (nil? (find-wanted []))))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "some_infers_generic_seqable_parameters"
+    ":wanted:true:true\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_map_key_evidence_preserves_generic_map_values () =
+  let source =
+    {|
+(def schema-keys #{:db/ident :db/cardinality})
+(defn schema-entity? [entity]
+  (some (fn [key] (contains? entity key)) schema-keys))
+(defn schema? [entity]
+  (and (:db/ident entity) (:db/cardinality entity)))
+(defn read-cardinality [entity]
+  (when (and (schema-entity? entity)
+             (contains? entity :db/ident)
+             (schema? entity))
+    (:db/cardinality entity)))
+(defn read-value [entity]
+  (when (contains? entity :value)
+    (:value entity)))
+
+(println
+  (str (read-cardinality {:db/ident :name :db/cardinality :one}) ":"
+       (nil? (read-cardinality {:other :value})) ":"
+       (read-value {:value 42}) ":"
+       (nil? (read-value {:other 42}))))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "map_key_evidence_preserves_generic_map_values"
+    ":one:true:42:true\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_filter_accepts_nullable_truthy_predicate_results () =
+  let source =
+    {|
+(defn retain-allowed [values]
+  (filter
+    (fn [value]
+      (some (fn [candidate] (= candidate value)) [2 3]))
+    values))
+
+(println (pr-str (vec (retain-allowed [1 2 3 4]))))
+(println (empty? (retain-allowed [])))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "filter_accepts_nullable_truthy_predicate_results"
+    "[2 3]\ntrue\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_remove_specializes_nested_predicate_type_variables () =
+  let source =
+    {|
+(defn remove-pairs [xs ys]
+  (let [pairs (->> (map vector xs ys)
+                   (remove (fn [[x y]] (= x y))))]
+    [(map first pairs) (map second pairs)]))
+(let [[left right] (remove-pairs [1 2 3] [0 2 4])]
+  (println (str (reduce + 0 left) ":" (reduce + 0 right))))
+(let [[left right] (remove-pairs [1 2] [1 2])]
+  (println (str (empty? left) ":" (empty? right))))
+(let [[left right] (remove-pairs [] [])]
+  (println (str (count left) ":" (count right))))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "remove_specializes_nested_predicate_type_variables"
+    "4:4\ntrue:true\n0:0\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_concat_specializes_unknown_elements_from_static_prefix () =
+  let source =
+    {|
+(defn rule-guard [[_ & call-args] [_ & prev-args]]
+  (concat ['-differ?] call-args prev-args))
+(println
+  (reduce
+    (fn [result item] (str result ":" (name item)))
+    ""
+    (rule-guard ['ignored '?x] ['ignored '?y])))
+(println (count (rule-guard ['ignored] ['ignored])))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "concat_specializes_unknown_elements_from_static_prefix"
+    ":-differ?:?x:?y\n1\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_clojure_truthiness_in_conditions () =
   let source =
     {|
@@ -12679,6 +13654,27 @@ let test_loop_and_recur_are_tail_recursive () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "loop_and_recur_are_tail_recursive" "15\n" ocaml_source
+
+let test_nested_loops_keep_recur_return_types_scoped () =
+  let source =
+    {|
+(def reader
+  (loop [outer 0]
+    (if (< outer 2)
+      (recur (inc outer))
+      (fn [value]
+        (loop [inner 0]
+          (if (< inner 2)
+            (recur (inc inner))
+            [value]))))))
+(println (+ 0 (first (reader 42))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "nested_loops_keep_recur_return_types_scoped" "42\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_loop_recur_remains_tail_through_let_and_cond () =
   let source =
@@ -18276,12 +19272,43 @@ let tests =
       test_namespace_refer_clojure_exclude_hides_core_binding );
     ( "namespace rejects import clauses",
       test_namespace_rejects_import_clause );
+    ( "namespace ignores reader conditional import clauses",
+      test_namespace_ignores_reader_conditional_import_clause );
+    ( "reader conditional import refers LG record types",
+      test_reader_conditional_import_refers_lg_record_types );
+    ( "dynamic vars bind and restore portably",
+      test_dynamic_vars_bind_and_restore_portably );
+    ("named fn is locally recursive", test_named_fn_is_locally_recursive);
+    ( "if joins static and dynamic function parameters",
+      test_if_joins_static_and_dynamic_function_parameters );
+    ( "JVM lookup hints do not narrow dynamic values",
+      test_jvm_lookup_hints_do_not_narrow_dynamic_values );
+    ( "Object marker builds dynamic arrays without Java",
+      test_object_marker_builds_dynamic_arrays_without_java );
+    ( "LazilyPersistentVector createOwning is portable",
+      test_lazily_persistent_vector_create_owning_is_portable );
+    ( "clojure.edn read-string behaves on Native and Melange",
+      test_clojure_edn_read_string_behaves_on_native_and_melange );
+    ( "clojure.edn read-string rejects invalid collections",
+      test_clojure_edn_read_string_rejects_invalid_collections );
     ( "referred update supports threaded nested calls",
       test_referred_update_supports_threaded_nested_calls );
     ( "clj reader conditional macros survive deferred Melange bodies",
       test_clj_reader_conditional_macros_survive_deferred_melange_bodies );
+    ( "reader conditional accepts metadata branch values",
+      test_reader_conditional_accepts_metadata_branch_values );
+    ( "metadata map prefixes compile without Java types",
+      test_metadata_map_prefixes_compile_without_java_types );
+    ( "Java isArray idiom lowers to portable array predicate",
+      test_java_is_array_idiom_lowers_to_portable_array_predicate );
+    ( "dotimes evaluates bounds once and returns nil",
+      test_dotimes_evaluates_bounds_once_and_returns_nil );
+    ( "aget supports dynamic arrays with inferred indexes",
+      test_aget_supports_dynamic_arrays_with_inferred_indexes );
     ( "current DataScript chain compiles for Native and Melange",
       test_current_datascript_chain_compiles_for_native_and_melange );
+    ( "DataScript make-array one arity behaves on Native and Melange",
+      test_datascript_make_array_one_arity_behaves_on_native_and_melange );
     ( "current DataScript Entity behaves on Native",
       test_current_datascript_entity_behaves_on_native );
     ( "current DataScript pull parser compiles for Native and Melange",
@@ -18290,6 +19317,10 @@ let tests =
       test_current_datascript_pull_api_compiles_for_native_and_melange );
     ( "current DataScript pull API behaves on Native",
       test_current_datascript_pull_api_behaves_on_native );
+    ( "current DataScript query compiles for Native and Melange",
+      test_current_datascript_query_compiles_for_native_and_melange );
+    ( "current DataScript query behaves on Native",
+      test_current_datascript_query_behaves_on_native );
     ( "namespace ignores Clojure compiler directives",
       test_namespace_ignores_clojure_compiler_directives );
     ( "System currentTimeMillis compiles for native",
@@ -18301,6 +19332,10 @@ let tests =
     ( "CLJS writer functions compile", test_cljs_writer_functions_compile );
     ( "transient collection operations preserve values",
       test_transient_collection_operations_preserve_values );
+    ( "get supports static and dynamic transient maps",
+      test_get_supports_static_and_dynamic_transient_maps );
+    ( "named reducers receive contextual accumulator types",
+      test_named_reducers_receive_contextual_accumulator_types );
     ( "count supports transient collections",
       test_count_supports_transient_collections );
     ( "persistent transient map is seqable",
@@ -18543,6 +19578,12 @@ let tests =
       test_ocaml_arrays_support_construction_read_and_mutation );
     ( "OCaml array primitives support polymorphic helpers",
       test_ocaml_array_primitives_support_polymorphic_helpers );
+    ( "to-array is first-class for dynamic seqable values",
+      test_to_array_is_first_class_for_dynamic_seqable_values );
+    ( "optional protocol values can flow to seqable else branches",
+      test_optional_protocol_values_can_flow_to_seqable_else_branches );
+    ( "nested protocol witnesses keep concrete receiver storage",
+      test_nested_protocol_witnesses_keep_concrete_receiver_storage );
     ( "OCaml refs support read and assignment",
       test_ocaml_refs_support_read_and_assignment );
     ("concise standard type annotations", test_concise_standard_type_annotations);
@@ -18834,6 +19875,8 @@ let tests =
       test_set_literals_are_callable_as_membership_lookup );
     ( "static sets accept dynamic lookup values",
       test_static_sets_accept_dynamic_lookup_values );
+    ( "contains? static sets handles dynamic candidates",
+      test_contains_static_sets_handles_dynamic_candidates );
     ( "generic protocol witness compiles for JavaScript targets",
       test_generic_protocol_witness_compiles_for_javascript_targets );
     ( "built-in IComparable supports dynamic dispatch",
@@ -18890,8 +19933,19 @@ let tests =
       test_vectors_support_mixed_element_types );
     ("keyword values print as keywords", test_keyword_values_print_as_keywords);
     ("keys return keyword values", test_keys_return_keyword_values);
+    ( "keys support generic and dynamic maps",
+      test_keys_support_generic_and_dynamic_maps );
     ("vals return homogeneous values", test_vals_return_homogeneous_values);
     ("vals accept dynamic maps", test_vals_accept_dynamic_maps);
+    ( "vals support generic dynamic and empty maps",
+      test_vals_support_generic_dynamic_and_empty_maps );
+    ( "zipmap stops at shortest and preserves dynamic boundaries",
+      test_zipmap_stops_at_shortest_and_preserves_dynamic_boundaries );
+    ("map accepts callable map values", test_map_accepts_callable_map_values);
+    ( "ffirst is first class and empty safe",
+      test_ffirst_is_first_class_and_empty_safe );
+    ( "vec realizes for over dynamic map entries",
+      test_vec_realizes_for_over_dynamic_map_entries );
     ("vals rejects heterogeneous values", test_vals_rejects_heterogeneous_values);
     ( "vectors support mixed keyword and string elements",
       test_vectors_support_mixed_keyword_and_string_elements );
@@ -19086,6 +20140,10 @@ let tests =
       test_str_keeps_heterogeneous_record_fields_dynamic );
     ( "callable set parameters remain sets for conj",
       test_callable_set_parameters_remain_sets_for_conj );
+    ( "computed sets are first-class predicates",
+      test_computed_sets_are_first_class_predicates );
+    ( "resolve returns nil without runtime Var reflection",
+      test_resolve_returns_nil_without_runtime_var_reflection );
     ( "let aliases propagate seqable constraints",
       test_let_aliases_propagate_seqable_constraints );
     ( "nested drop-while infers seqable parameters",
@@ -19135,6 +20193,8 @@ let tests =
       test_ocaml_uncurried_call_emits_melange_direct_application );
     ( "reduce accepts all builtin seqable types",
       test_reduce_accepts_all_builtin_seqable_types );
+    ( "two-arity reduce uses first or zero-arity identity",
+      test_two_arity_reduce_uses_first_or_zero_arity_identity );
     ( "reduce refines empty set accumulators without widening static sets",
       test_reduce_refines_empty_set_accumulators_without_widening_static_sets );
     ("reduce realizes lazy seq once", test_reduce_realizes_lazy_seq_once);
@@ -19375,6 +20435,16 @@ let tests =
       test_additional_sequence_helpers_reject_bad_counts );
     ( "some returns first truthy predicate value",
       test_some_returns_first_truthy_predicate_value );
+    ( "some infers generic Seqable parameters",
+      test_some_infers_generic_seqable_parameters );
+    ( "map key evidence preserves generic map values",
+      test_map_key_evidence_preserves_generic_map_values );
+    ( "filter accepts nullable truthy predicate results",
+      test_filter_accepts_nullable_truthy_predicate_results );
+    ( "remove specializes nested predicate type variables",
+      test_remove_specializes_nested_predicate_type_variables );
+    ( "concat specializes unknown elements from static prefix",
+      test_concat_specializes_unknown_elements_from_static_prefix );
     ( "Clojure truthiness works in conditions",
       test_clojure_truthiness_in_conditions );
     ( "and/or return values and short-circuit",
@@ -19385,6 +20455,8 @@ let tests =
       test_additional_sequence_helpers_reject_bad_reductions_arity );
     ("let, defn, and fn values work", test_let_defn_and_fn_values);
     ("loop and recur are tail-recursive", test_loop_and_recur_are_tail_recursive);
+    ( "nested loops keep recur return types scoped",
+      test_nested_loops_keep_recur_return_types_scoped );
     ( "loop/recur remains tail through let and cond",
       test_loop_recur_remains_tail_through_let_and_cond );
     ( "loop/recur remains tail through macros",

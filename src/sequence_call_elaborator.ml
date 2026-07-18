@@ -55,9 +55,60 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
       ~pack_dynamic_value
   in
   let compile_body = special_forms.compile_body in
-  let compile_function_arg scope env = function
-    | FSymbol name -> lookup_function scope env name
-    | form -> compile_expr scope env form
+  let compile_function_arg scope env form =
+    let compiled =
+      match form with
+      | FSymbol name -> lookup_function scope env name
+      | form -> compile_expr scope env form
+    in
+    Result.bind compiled adapt_set_callable
+  in
+  let compile_contextual_fn scope env ?name ?(refine_open_overrides = false)
+      ~param_type_overrides params body_forms =
+    let lookup_function_ty name =
+      match lookup_function scope env name with
+      | Ok fn -> Ok fn.ty
+      | Error _ as error -> error
+    in
+    let function_env =
+      match name with
+      | None -> env
+      | Some name ->
+          let parameter_tys =
+            List.map
+              (Option.value ~default:TUnknown)
+              param_type_overrides
+          in
+          let ocaml_name = "__lg_named_fn_" ^ Names.sanitize_name name in
+          Env.add (Names.scoped_key scope name)
+            (Types.binding ocaml_name (TFn (parameter_tys, TUnknown)))
+            env
+    in
+    Function_elaborator.prepare ~refine_open_overrides ~param_type_overrides
+      ~lookup_function_ty ~compile_body scope function_env params body_forms
+    |> Result.map Function_elaborator.fn_code
+    |> fun result ->
+    Result.bind result (fun function_ ->
+           match name with
+           | None -> Ok function_
+           | Some name -> (
+               match Semantic_ir.unlocated function_.semantic_expr with
+               | Semantic_ir.Fun (patterns, body) ->
+                   let ocaml_name =
+                     "__lg_named_fn_" ^ Names.sanitize_name name
+                   in
+                   Ok
+                     {
+                       function_ with
+                       semantic_expr =
+                         Semantic_ir.annotate function_.ty
+                           (Semantic_ir.LetRecIn
+                              ( ocaml_name,
+                                patterns,
+                                body,
+                                Semantic_ir.Ident ocaml_name ));
+                     }
+               | _ -> Error.error "named fn requires a function body"))
   in
   let adapt_unary_function env actual_ty fn =
     match fn.ty with
@@ -127,6 +178,33 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
   in
   let adapt_reducer_return env actual_accumulator_ty fn =
     match fn.ty with
+    | TFn ([ _expected_accumulator_ty; item_ty ], return_ty)
+      when Types.is_dynamic actual_accumulator_ty
+           && not (Types.is_dynamic return_ty)
+           && Option.is_none (Types.reduced_element return_ty) ->
+        let accumulator_name = "__lg_dynamic_reduce_accumulator" in
+        let item_name = "__lg_dynamic_reduce_return_item" in
+        let result =
+          typed_ir return_ty
+            (Semantic_ir.Apply
+               ( fn.semantic_expr,
+                 [
+                   Semantic_ir.Ident accumulator_name;
+                   Semantic_ir.Ident item_name;
+                 ] ))
+        in
+        Result.map
+          (fun result ->
+            typed_ir
+              (TFn
+                 ([ actual_accumulator_ty; item_ty ], actual_accumulator_ty))
+              (Semantic_ir.Fun
+                 ( [
+                     Semantic_ir.PVar accumulator_name;
+                     Semantic_ir.PVar item_name;
+                   ],
+                   result )))
+          (pack_dynamic_value env actual_accumulator_ty result)
     | TFn ([ expected_accumulator_ty; item_ty ], return_ty)
       when Types.is_dynamic return_ty
            && not (Types.is_dynamic actual_accumulator_ty) ->
@@ -165,6 +243,12 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
               (dynamic_unpack env actual_accumulator_ty call))
     | _ -> Ok fn
   in
+  let is_callable_map_type ty =
+    Option.is_some (Types.dynamic_map_types ty)
+    || match ty with
+       | TRecord _ | TNamed_record _ -> true
+       | _ -> false
+  in
   let compile_function_arg_for_collection scope env element_ty = function
     | FKeyword keyword ->
         let item_name = "__lg_keyword_function_item" in
@@ -180,14 +264,13 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                  (Semantic_ir.Fun
                     ([ Semantic_ir.PVar item_name ], body.semantic_expr)))
     | FList (FSymbol "fn" :: (FVector [ _ ] as params) :: body_forms) ->
-        let lookup_function_ty name =
-          match lookup_function scope env name with
-          | Ok fn -> Ok fn.ty
-          | Error _ as error -> error
-        in
-        Function_elaborator.prepare ~param_type_overrides:[ Some element_ty ]
-          ~lookup_function_ty ~compile_body scope env params body_forms
-        |> Result.map Function_elaborator.fn_code
+        compile_contextual_fn scope env
+          ~param_type_overrides:[ Some element_ty ] params body_forms
+    | FList
+        (FSymbol "fn" :: FSymbol name :: (FVector [ _ ] as params)
+        :: body_forms) ->
+        compile_contextual_fn scope env ~name
+          ~param_type_overrides:[ Some element_ty ] params body_forms
     | FSymbol name -> (
         let compile_deferred_call () =
           let item_name = "__lg_protocol_function_item" in
@@ -206,9 +289,39 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
         match lookup_function scope env name with
         | Ok { ty = TOcaml "__declared_fn" | TUnknown | TVar _; _ } ->
             compile_deferred_call ()
+        | Ok function_ when is_callable_map_type function_.ty ->
+            compile_deferred_call ()
         | Ok function_ -> Ok function_
         | Error _ -> compile_deferred_call ())
-    | form -> compile_function_arg scope env form
+    | form ->
+        Result.bind (compile_function_arg scope env form) (fun callable ->
+            let callable_map = is_callable_map_type callable.ty in
+            if not callable_map then Ok callable
+            else
+              let callable_name = "__lg_map_callable" in
+              let item_name = "__lg_map_callable_item" in
+              let callable_binding = Types.binding callable_name callable.ty in
+              let item_binding = Types.binding item_name element_ty in
+              let function_env =
+                env
+                |> Env.add (Names.scoped_key scope callable_name)
+                     callable_binding
+                |> Env.add (Names.scoped_key scope item_name) item_binding
+              in
+              Result.map
+                (fun body ->
+                  typed_ir (TFn ([ element_ty ], body.ty))
+                    (Semantic_ir.Let
+                       ( [
+                           ( Semantic_ir.PVar callable_name,
+                             callable.semantic_expr );
+                         ],
+                         Semantic_ir.Fun
+                           ( [ Semantic_ir.PVar item_name ],
+                             body.semantic_expr ) )))
+                (compile_expr scope function_env
+                   (FList
+                      [ FSymbol callable_name; FSymbol item_name ])))
   in
   let rec compile_function_arg_for_collections scope env element_tys = function
     | FSymbol "vector" ->
@@ -226,15 +339,16 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
              ])
     | FList (FSymbol "fn" :: (FVector parameters as params) :: body_forms)
       when List.length parameters = List.length element_tys ->
-        let lookup_function_ty name =
-          match lookup_function scope env name with
-          | Ok fn -> Ok fn.ty
-          | Error _ as error -> error
-        in
-        Function_elaborator.prepare
+        compile_contextual_fn scope env
           ~param_type_overrides:(List.map (fun ty -> Some ty) element_tys)
-          ~lookup_function_ty ~compile_body scope env params body_forms
-        |> Result.map Function_elaborator.fn_code
+          params body_forms
+    | FList
+        (FSymbol "fn" :: FSymbol name :: (FVector parameters as params)
+        :: body_forms)
+      when List.length parameters = List.length element_tys ->
+        compile_contextual_fn scope env ~name
+          ~param_type_overrides:(List.map (fun ty -> Some ty) element_tys)
+          params body_forms
     | form -> compile_function_arg scope env form
   in
   let compile_reducer scope env accumulator_ty element_ty = function
@@ -281,19 +395,52 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
         (FSymbol "fn"
         :: (FVector [ _accumulator; _element ] as params)
         :: body_forms) ->
-        let lookup_function_ty name =
-          match lookup_function scope env name with
-          | Ok fn -> Ok fn.ty
-          | Error _ as error -> error
-        in
-        Function_elaborator.prepare
+        compile_contextual_fn scope env
           ~refine_open_overrides:
             (match accumulator_ty with
             | TSet (TUnknown | TVar _) -> true
             | _ -> false)
           ~param_type_overrides:[ Some accumulator_ty; Some element_ty ]
-          ~lookup_function_ty ~compile_body scope env params body_forms
-        |> Result.map Function_elaborator.fn_code
+          params body_forms
+    | FList
+        (FSymbol "fn" :: FSymbol name
+        :: (FVector [ _accumulator; _element ] as params)
+        :: body_forms) ->
+        compile_contextual_fn scope env ~name
+          ~refine_open_overrides:
+            (match accumulator_ty with
+            | TSet (TUnknown | TVar _) -> true
+            | _ -> false)
+          ~param_type_overrides:[ Some accumulator_ty; Some element_ty ]
+          params body_forms
+    | FSymbol name ->
+        let accumulator_name = "__lg_symbol_reduce_accumulator" in
+        let item_name = "__lg_symbol_reduce_item" in
+        let function_env =
+          env
+          |> Env.add (Names.scoped_key scope accumulator_name)
+               (Types.binding accumulator_name accumulator_ty)
+          |> Env.add (Names.scoped_key scope item_name)
+               (Types.binding item_name element_ty)
+        in
+        compile_expr scope function_env
+          (FList
+             [
+               FSymbol name;
+               FSymbol accumulator_name;
+               FSymbol item_name;
+             ])
+        |> Result.map (fun body ->
+               typed_ir
+                 (TFn ([ accumulator_ty; element_ty ], body.ty))
+                 (Semantic_ir.Fun
+                    ( [
+                        Semantic_ir.PVar accumulator_name;
+                        Semantic_ir.PVar item_name;
+                      ],
+                      body.semantic_expr )))
+        |> fun result ->
+        Result.bind result (adapt_reducer_return env accumulator_ty)
     | form ->
         Result.bind (compile_function_arg scope env form)
           (fun fn ->
@@ -305,16 +452,18 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
         (FSymbol "fn"
         :: (FVector [ _accumulator; _key; _value ] as params)
         :: body_forms) ->
-        let lookup_function_ty name =
-          match lookup_function scope env name with
-          | Ok fn -> Ok fn.ty
-          | Error _ as error -> error
-        in
-        Function_elaborator.prepare
+        compile_contextual_fn scope env
           ~param_type_overrides:
             [ Some accumulator_ty; Some key_ty; Some value_ty ]
-          ~lookup_function_ty ~compile_body scope env params body_forms
-        |> Result.map Function_elaborator.fn_code
+          params body_forms
+    | FList
+        (FSymbol "fn" :: FSymbol name
+        :: (FVector [ _accumulator; _key; _value ] as params)
+        :: body_forms) ->
+        compile_contextual_fn scope env ~name
+          ~param_type_overrides:
+            [ Some accumulator_ty; Some key_ty; Some value_ty ]
+          params body_forms
     | form -> compile_function_arg scope env form
   in
   let rec collection_to_list_expr env collection =
@@ -1264,11 +1413,20 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                     compile_function_arg_for_collection scope env inner fn_form
                   with
                   | Error _ as error -> error
-                  | Ok ({ ty = TFn ([ param_ty ], TBool); _ } as predicate)
+                  | Ok ({ ty = TFn ([ param_ty ], return_ty); _ } as predicate)
                   when Types.assignable ~policy:Host_boundary ~expected:param_ty
                          ~actual:inner ->
                       let predicate_expr =
                         constrain_record_function_argument_expr predicate inner
+                      in
+                      let predicate_expr =
+                        if Types.equal return_ty TBool then predicate_expr
+                        else
+                          Semantic_ir.Fun
+                            ( [ Semantic_ir.PVar "item" ],
+                              truthiness_expression return_ty
+                                (Semantic_ir.Apply
+                                   (predicate_expr, [ Semantic_ir.Ident "item" ])) )
                       in
                       let predicate_expr =
                         if name = "not-any?" then
@@ -1332,7 +1490,36 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   | Ok { ty = TFn _; _ } ->
                     Error.error
                       "map function argument type does not match sequence"
-                  | Ok _ -> Error.error "map expects a function")))
+                  | Ok fn when Types.is_dynamic fn.ty ->
+                      let dynamic = Types.dynamic_constraint TUnknown in
+                      let callable_name = "__lg_dynamic_map_callable" in
+                      let item_name = "__lg_dynamic_map_callable_item" in
+                      let item = typed_ir inner (Semantic_ir.Ident item_name) in
+                      Result.map
+                        (fun item ->
+                          typed_ir (TSeq dynamic)
+                            (Semantic_ir.Let
+                               ( [
+                                   ( Semantic_ir.PVar callable_name,
+                                     fn.semantic_expr );
+                                 ],
+                                 apply "Lg_runtime.Runtime_seq.map"
+                                   [
+                                     Semantic_ir.Fun
+                                       ( [ Semantic_ir.PVar item_name ],
+                                         apply
+                                           "Lg_runtime.Runtime_dynamic.call"
+                                           [
+                                             Semantic_ir.Ident callable_name;
+                                             Semantic_ir.List [ item ];
+                                           ] );
+                                     sequence;
+                                   ] )))
+                        (pack_dynamic_value env dynamic item)
+                  | Ok fn ->
+                      Error.error
+                        ("map expects a function, got "
+                        ^ Types.source_name fn.ty))))
     | fn_form :: (_ :: _ :: _ as collection_forms) ->
         compile_multi_map scope env ~vector:false fn_form collection_forms
       | _ -> Error.error "map expects function and collection"
@@ -1351,14 +1538,28 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   | Error _ as err -> err
                   | Ok fn -> (
                       match fn.ty with
-                      | TFn ([ param_ty ], TBool)
+                      | TFn ([ param_ty ], return_ty)
                         when Types.assignable ~policy:Host_boundary
                                ~expected:param_ty ~actual:inner ->
                           Result.map
                             (fun fn ->
+                              let predicate =
+                                if Types.equal return_ty TBool then
+                                  fn.semantic_expr
+                                else
+                                  let item_name = "__lg_filter_item" in
+                                  Semantic_ir.Fun
+                                    ( [ Semantic_ir.PVar item_name ],
+                                      truthiness_expression return_ty
+                                        (Semantic_ir.Apply
+                                           ( fn.semantic_expr,
+                                             [
+                                               Semantic_ir.Ident item_name;
+                                             ] )) )
+                              in
                               typed_ir (TSeq inner)
                                 (apply "Lg_runtime.Runtime_seq.filter"
-                                   [ fn.semantic_expr; sequence ]))
+                                   [ predicate; sequence ]))
                             (adapt_unary_function env inner fn)
                     | ty when Types.is_dynamic ty ->
                         let item_name = "__lg_dynamic_filter_item" in
@@ -1391,7 +1592,96 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
       | _ -> Error.error "filter expects function and collection"
     and compile_reduce scope env arg_forms =
       match arg_forms with
-    | [ fn_form; init_form; collection_form ] -> (
+      | [ fn_form; collection_form ] -> (
+          match compile_expr scope env collection_form with
+          | Error _ as error -> error
+          | Ok collection -> (
+              match Collection_capability.to_seq_expr env collection with
+              | Error _ ->
+                  Error.error
+                    ("reduce expects a seqable value, got "
+                   ^ Types.source_name collection.ty)
+              | Ok (inner, sequence) -> (
+                  match compile_reducer scope env inner inner fn_form with
+                  | Error _ as error -> error
+                  | Ok fn -> (
+                      let reduction =
+                        match fn.ty with
+                        | TFn ([ accumulator_ty; item_ty ], return_ty)
+                          when Types.assignable ~policy:Host_boundary
+                                 ~expected:accumulator_ty ~actual:inner
+                               && Types.assignable ~policy:Host_boundary
+                                    ~expected:item_ty ~actual:inner
+                               && Types.assignable ~policy:Host_boundary
+                                    ~expected:inner ~actual:return_ty ->
+                            Ok
+                              (apply "Lg_runtime.Runtime_seq.fold_left"
+                                 [
+                                   fn.semantic_expr;
+                                   Semantic_ir.Ident "__lg_reduce_first";
+                                   Semantic_ir.Ident "__lg_reduce_rest";
+                                 ])
+                        | TFn ([ accumulator_ty; item_ty ], return_ty)
+                          when Types.assignable ~policy:Host_boundary
+                                 ~expected:accumulator_ty ~actual:inner
+                               && Types.assignable ~policy:Host_boundary
+                                    ~expected:item_ty ~actual:inner -> (
+                            match Types.reduced_element return_ty with
+                            | Some reduced_ty
+                              when Types.assignable ~policy:Host_boundary
+                                     ~expected:inner ~actual:reduced_ty ->
+                                Ok
+                                  (apply "Lg_runtime.Runtime_reduced.fold_seq"
+                                     [
+                                       fn.semantic_expr;
+                                       Semantic_ir.Ident "__lg_reduce_first";
+                                       Semantic_ir.Ident "__lg_reduce_rest";
+                                     ])
+                            | _ ->
+                                Error.error
+                                  "two-arity reduce function must preserve the sequence element type")
+                        | TFn _ ->
+                            Error.error
+                              "two-arity reduce expects a binary reducer"
+                        | _ -> Error.error "reduce expects a function"
+                      in
+                      Result.map
+                        (fun reduction ->
+                          let empty_result =
+                            match
+                              compile_expr scope env (FList [ fn_form ])
+                            with
+                            | Ok result
+                              when Types.assignable ~policy:Host_boundary
+                                     ~expected:inner ~actual:result.ty ->
+                                result.semantic_expr
+                            | Ok _ | Error _ ->
+                                apply "invalid_arg"
+                                  [
+                                    Semantic_ir.String
+                                      "reduce of empty collection with no identity";
+                                  ]
+                          in
+                          typed_ir inner
+                            (Semantic_ir.Match
+                               ( apply "Seq.uncons" [ sequence ],
+                                 [
+                                   ( Semantic_ir.PConstructor ("None", None),
+                                     empty_result );
+                                   ( Semantic_ir.PConstructor
+                                       ( "Some",
+                                         Some
+                                           (Semantic_ir.PTuple
+                                              [
+                                                Semantic_ir.PVar
+                                                  "__lg_reduce_first";
+                                                Semantic_ir.PVar
+                                                  "__lg_reduce_rest";
+                                              ]) ),
+                                     reduction );
+                                 ] )) )
+                        reduction))))
+      | [ fn_form; init_form; collection_form ] -> (
         match
           ( compile_expr scope env init_form,
             compile_expr scope env collection_form )

@@ -16,6 +16,18 @@ let assoc_by compare map key value =
 let assoc map key value = assoc_by Stdlib.compare map key value
 let assoc_dynamic map key value = assoc_by Runtime_dynamic.compare map key value
 
+let zipmap_by assoc keys values =
+  let rec build map keys values =
+    match (keys (), values ()) with
+    | Seq.Cons (key, remaining_keys), Seq.Cons (value, remaining_values) ->
+        build (assoc map key value) remaining_keys remaining_values
+    | Seq.Nil, _ | _, Seq.Nil -> map
+  in
+  build empty keys values
+
+let zipmap keys values = zipmap_by assoc keys values
+let zipmap_dynamic keys values = zipmap_by assoc_dynamic keys values
+
 let dissoc_by compare map key =
   List.filter (fun (existing_key, _) -> compare key existing_key <> 0) map
 

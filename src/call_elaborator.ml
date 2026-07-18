@@ -1820,6 +1820,24 @@ and pack_dynamic_value_conversion ?(packing_context = []) env expected_dynamic
                    [ payload; Semantic_ir.List protocols ] ))
       
 
+let rec constrained_storage_type expected actual =
+  match Types.dynamic_constraint_info expected with
+  | Some _ -> expected
+  | None -> (
+      match Types.protocol_constraint_info expected with
+      | Some (_, _, value_ty) -> constrained_storage_type value_ty actual
+      | None -> (
+          match expected with
+          | TOcaml_app (name, [ _element_ty; value_ty ])
+            when name = Types.seqable_constraint_name
+                 || name = Types.optional_seqable_constraint_name
+                 || name = Types.optional_sequential_constraint_name -> (
+              match value_ty with
+              | TUnknown | TVar _ -> Types.dynamic_constraint TUnknown
+              | _ -> constrained_storage_type value_ty actual)
+          | TUnknown | TVar _ -> Types.constraint_value_type actual
+          | _ -> Types.constraint_value_type actual))
+
 let rec pack_constrained_value ?row_type_name env expected argument =
   let requires_binding =
     match
@@ -1848,16 +1866,19 @@ let rec pack_constrained_value ?row_type_name env expected argument =
              Semantic_ir.Let
                ([ (Semantic_ir.PVar argument_name, bound_expression) ], packed))
   else
-  match
-    ( Types.seqable_constraint_info expected,
-      Types.seqable_constraint_info argument.ty )
-  with
-  | Some (_, expected_element, _), Some (_, actual_element, _)
-      when (not (has_capability_constraint expected_element))
+  match (expected, argument.ty) with
+  | ( TOcaml_app (expected_name, [ expected_element; _ ]),
+      TOcaml_app (actual_name, [ actual_element; _ ]) )
+    when expected_name = actual_name
+         && (expected_name = Types.seqable_constraint_name
+            || expected_name = Types.optional_seqable_constraint_name
+            || expected_name = Types.optional_sequential_constraint_name)
+         &&
+         (not (has_capability_constraint expected_element))
          && Types.assignable ~policy:Host_boundary ~expected:expected_element
-           ~actual:actual_element ->
+              ~actual:actual_element ->
       Ok (constrained_argument_expression argument)
-    | _ -> (
+  | _ -> (
   match Types.dynamic_constraint_info expected with
   | Some _ -> pack_dynamic_value env expected argument
         | None -> (
@@ -1878,11 +1899,19 @@ let rec pack_constrained_value ?row_type_name env expected argument =
         | ( TFn (expected_params, expected_return),
             TFn (actual_params, actual_return) )
           when List.length expected_params = List.length actual_params ->
+            let stored_receiver_ty =
+              constrained_storage_type value_ty argument.ty
+            in
             let expected_params =
               match (expected_params, actual_params) with
               | _expected_receiver :: expected_rest,
                 actual_receiver :: _actual_rest ->
-                  actual_receiver :: expected_rest
+                  let receiver_ty =
+                    match stored_receiver_ty with
+                    | TUnknown | TVar _ -> actual_receiver
+                    | ty -> ty
+                  in
+                  receiver_ty :: expected_rest
               | [], [] -> []
               | _ -> expected_params
             in
@@ -2094,17 +2123,21 @@ let rec pack_constrained_value ?row_type_name env expected argument =
           let actual_element =
             Collection_capability.element_type env argument
           in
+          let erase_value =
+            match value_ty with
+            | TUnknown | TVar _ -> true
+            | _ -> false
+          in
           let expected_element =
             match expected_element with
             | TUnknown | TVar _ ->
-                Option.value actual_element
-                  ~default:(Types.dynamic_constraint TUnknown)
+                if
+                  erase_value && name <> Types.seqable_constraint_name
+                then Types.dynamic_constraint TUnknown
+                else
+                  Option.value actual_element
+                    ~default:(Types.dynamic_constraint TUnknown)
             | ty -> ty
-          in
-          let erase_value =
-                      match value_ty with
-                      | TUnknown | TVar _ -> true
-                      | _ -> false
           in
           let stored_value_ty =
                       if erase_value then Types.dynamic_constraint TUnknown
@@ -2178,9 +2211,12 @@ let rec pack_constrained_value ?row_type_name env expected argument =
                 if erase_value then
                   let can_adapt =
                     name = Types.seqable_constraint_name
-                    || name = Types.optional_seqable_constraint_name
                     || Types.is_dynamic argument.ty
-                    || is_sequential_type argument.ty
+                    ||
+                    if name = Types.optional_sequential_constraint_name then
+                      is_sequential_type argument.ty
+                    else
+                      Collection_capability.accepts_seqable env argument.ty
                   in
                   if can_adapt then
                     captured_adapter ()
@@ -2512,6 +2548,61 @@ let rec row_argument_compatible expected_fields actual_ty =
 
 let typed_row_argument env type_name expected_fields argument =
   let type_name = row_call_type_name type_name in
+  let runtime_map_row () =
+    match Types.dynamic_map_types argument.ty with
+    | Some (key_ty, value_ty) when Types.is_dynamic value_ty ->
+        let key_ty =
+          match key_ty with
+          | TUnknown | TVar _ -> Types.dynamic_constraint TUnknown
+          | ty -> ty
+        in
+        let rec build fields = function
+          | [] -> Ok (List.rev fields)
+          | (field : field) :: rest ->
+              if Types.is_record_extension_field field then
+                Error.error
+                  "cannot project a runtime map into an open row"
+              else
+                let key =
+                  typed_ir TKeyword (Semantic_ir.String field.keyword)
+                in
+                let key =
+                  if Types.is_dynamic key_ty then
+                    pack_dynamic_value env key_ty key
+                  else Ok key.semantic_expr
+                in
+                Result.bind key (fun key ->
+                    let operation =
+                      runtime_map_lookup_operation key_ty key_ty "get_default"
+                    in
+                    let value =
+                      typed_ir value_ty
+                        (Semantic_ir.Apply
+                           ( Semantic_ir.Ident operation,
+                             [
+                               argument.semantic_expr;
+                               key;
+                               Semantic_ir.Ident
+                                 "Lg_runtime.Runtime_dynamic.nil";
+                             ] ))
+                    in
+                    let value =
+                      if has_capability_constraint field.ty then
+                        pack_constrained_value env field.ty value
+                      else adapt_value_to_type env field.ty value
+                    in
+                    Result.bind value (fun value ->
+                        build ((field.ocaml_name, value) :: fields) rest))
+        in
+        Result.map
+          (fun fields -> Semantic_ir.Record (fields, Some type_name))
+          (build [] expected_fields)
+        |> Option.some
+    | _ -> None
+  in
+  match runtime_map_row () with
+  | Some result -> result
+  | None ->
   let actual_fields =
     match argument.ty with
     | TRecord fields | TNamed_record { fields; _ } -> Some fields
@@ -2874,6 +2965,7 @@ let create ~compile_expr =
   let compile_contains = collection.compile_contains in
   let compile_keys = collection.compile_keys in
   let compile_vals = collection.compile_vals in
+  let compile_zipmap = collection.compile_zipmap in
   let compile_sort_by = sequence.compile_sort_by in
   let compile_mapcat = sequence.compile_mapcat in
   let compile_repeatedly = sequence.compile_repeatedly in
@@ -3054,14 +3146,18 @@ let create ~compile_expr =
             | map_type -> (
                 match Types.dynamic_map_types map_type with
                 | Some (key_type, value_type) ->
+                    let constructor =
+                      if Types.is_dynamic key_type then
+                        "Lg_runtime.Runtime_transient.map_of_list_dynamic"
+                      else "Lg_runtime.Runtime_transient.map_of_list"
+                    in
                     Ok
                       (typed_ir
                          (TOcaml_app
                             ( "Lg_runtime.Runtime_transient.map",
                               [ key_type; value_type ] ))
                          (Semantic_ir.Apply
-                            ( Semantic_ir.Ident
-                                "Lg_runtime.Runtime_transient.map_of_list",
+                            ( Semantic_ir.Ident constructor,
                               [ collection.semantic_expr ] )))
                 | None -> Error.error "transient expects a set, vector, or map")
             ))
@@ -3288,11 +3384,19 @@ let create ~compile_expr =
                           ( "Lg_runtime.Runtime_transient.map",
                             [ key_type; value_type ] ) ->
                           let key_type =
-                            if Types.equal key_type TUnknown then key.ty
+                            if Types.equal key_type TUnknown then
+                              match key.ty with
+                              | TUnknown | TVar _ ->
+                                  Types.dynamic_constraint TUnknown
+                              | ty -> ty
                             else key_type
                           in
                           let value_type =
-                            if Types.equal value_type TUnknown then value.ty
+                            if Types.equal value_type TUnknown then
+                              match value.ty with
+                              | TUnknown | TVar _ ->
+                                  Types.dynamic_constraint TUnknown
+                              | ty -> ty
                             else value_type
                           in
                           let adapt expected actual =
@@ -3316,14 +3420,18 @@ let create ~compile_expr =
                               ^ ", got " ^ Types.source_name key.ty ^ " and "
                              ^ Types.source_name value.ty)
                           | Ok key, Ok value ->
+                            let assoc =
+                              if Types.is_dynamic key_type then
+                                "Lg_runtime.Runtime_transient.map_assoc_dynamic"
+                              else "Lg_runtime.Runtime_transient.map_assoc"
+                            in
                             add_pairs
                               (typed_ir
                                  (TOcaml_app
                                     ( "Lg_runtime.Runtime_transient.map",
                                       [ key_type; value_type ] ))
                                  (Semantic_ir.Apply
-                                    ( Semantic_ir.Ident
-                                        "Lg_runtime.Runtime_transient.map_assoc",
+                                    ( Semantic_ir.Ident assoc,
                                       [
                                         collection.semantic_expr;
                                         key;
@@ -3394,24 +3502,36 @@ let create ~compile_expr =
             match collection.ty with
             | TOcaml_app
                 ( "Lg_runtime.Runtime_transient.map",
-                  [ key_type; value_type ] )
-              when Types.equal key_type TUnknown
-                   || Types.same_shape key_type key.ty ->
+                  [ key_type; value_type ] ) ->
                 let key_type =
                   if Types.equal key_type TUnknown then key.ty else key_type
                 in
-                Ok
-                  (typed_ir
-                     (TOcaml_app
-                        ( "Lg_runtime.Runtime_transient.map",
-                          [ key_type; value_type ] ))
-                     (Semantic_ir.Apply
-                        ( Semantic_ir.Ident
-                            "Lg_runtime.Runtime_transient.map_dissoc",
-                          [ collection.semantic_expr; key.semantic_expr ] )))
-            | TOcaml_app ("Lg_runtime.Runtime_transient.map", _) ->
-                Error.error
-                  "dissoc! key type must match the transient map key type"
+                let key =
+                  if
+                    Types.is_dynamic key_type
+                    && not (Types.is_dynamic key.ty)
+                  then pack_dynamic_value env key_type key
+                  else if Types.same_shape key_type key.ty then
+                    Ok key.semantic_expr
+                  else
+                    Error.error
+                      "dissoc! key type must match the transient map key type"
+                in
+                Result.map
+                  (fun key ->
+                    let dissoc =
+                      if Types.is_dynamic key_type then
+                        "Lg_runtime.Runtime_transient.map_dissoc_dynamic"
+                      else "Lg_runtime.Runtime_transient.map_dissoc"
+                    in
+                    typed_ir
+                      (TOcaml_app
+                         ( "Lg_runtime.Runtime_transient.map",
+                           [ key_type; value_type ] ))
+                      (Semantic_ir.Apply
+                         ( Semantic_ir.Ident dissoc,
+                           [ collection.semantic_expr; key ] )))
+                  key
             | _ ->
                 Error.error
                   ("dissoc! expects a transient map, got "
@@ -3440,12 +3560,16 @@ let create ~compile_expr =
             | TOcaml_app
                 ("Lg_runtime.Runtime_transient.map", [ key_type; value_type ])
               ->
+                let persistent =
+                  if Types.is_dynamic key_type then
+                    "Lg_runtime.Runtime_transient.map_persistent_dynamic"
+                  else "Lg_runtime.Runtime_transient.map_persistent"
+                in
                 Ok
                   (typed_ir
                      (Types.dynamic_map key_type value_type)
                      (Semantic_ir.Apply
-                        ( Semantic_ir.Ident
-                            "Lg_runtime.Runtime_transient.map_persistent",
+                        ( Semantic_ir.Ident persistent,
                           [ collection.semantic_expr ] )))
             | TOcaml_app ("Lg_runtime.Runtime_transient.set", [ element_type ])
               ->
@@ -3635,6 +3759,17 @@ let create ~compile_expr =
     in
     match name with
     | "clojure.lang.MapEntry" -> compile_vector scope env arg_forms
+    | ( "LazilyPersistentVector/createOwning"
+      | "clojure.lang.LazilyPersistentVector/createOwning" ) -> (
+        match compile_args () with
+        | Error _ as error -> error
+        | Ok [ { ty = TArray element_ty; semantic_expr; _ } ] ->
+            Ok
+              (typed_ir (TVector element_ty)
+                 (apply "Rrbvec.of_list"
+                    [ apply "Array.to_list" [ semantic_expr ] ]))
+        | Ok [ _ ] -> Error.error "createOwning expects an array"
+        | Ok _ -> Error.error "createOwning expects 1 argument")
     | "." -> (
         match arg_forms with
                   | [
@@ -3688,7 +3823,55 @@ let create ~compile_expr =
                     })
                   (compile_expr scope body_env body_form)
             | Ok _ -> Error.error "binding *out* expects a writer")
-                  | _ -> Error.error "binding currently supports [*out* writer]"
+        | FVector bindings :: body_forms ->
+            let rec compile_bindings compiled = function
+              | [] -> Ok (List.rev compiled)
+              | FSymbol name :: value_form :: rest -> (
+                  match Env.find_opt (Names.scoped_key scope name) env with
+                  | Some
+                      {
+                        ty = TRef value_ty;
+                        ocaml_name;
+                        dynamic_var = true;
+                        _;
+                      } ->
+                      Result.bind (compile_expr scope env value_form)
+                        (fun value ->
+                          Result.bind
+                            (pack_dynamic_value env value_ty value)
+                            (fun value ->
+                              compile_bindings
+                                ((ocaml_name, value) :: compiled)
+                                rest))
+                  | Some _ ->
+                      Error.error
+                        ("binding expects a dynamic var, got " ^ name)
+                  | None -> Error.error ("unknown dynamic var " ^ name))
+              | _ -> Error.error "binding expects symbol/value pairs"
+            in
+            let body_form =
+              match body_forms with
+              | [] -> FSymbol "nil"
+              | [ body ] -> body
+              | body_forms -> FList (FSymbol "do" :: body_forms)
+            in
+            Result.bind (compile_bindings [] bindings) (fun bindings ->
+                Result.map
+                  (fun body ->
+                    let expression =
+                      List.fold_right
+                        (fun (ocaml_name, value) body ->
+                          apply "Lg_runtime.Runtime_dynamic_var.bind"
+                            [
+                              Semantic_ir.Ident ocaml_name;
+                              value;
+                              Semantic_ir.Fun ([], body);
+                            ])
+                        bindings body.semantic_expr
+                    in
+                    typed_ir body.ty expression)
+                  (compile_expr scope env body_form))
+        | _ -> Error.error "binding expects a binding vector and body"
                   )
     | "js/parseInt" -> (
         match compile_args () with
@@ -3931,6 +4114,15 @@ let create ~compile_expr =
                                     value.semantic_expr;
                   }))
         | _ -> Error.error "type hint expects metadata and a value")
+    | "__pack-dynamic" -> (
+        match compile_args () with
+        | Error _ as error -> error
+        | Ok [ value ] ->
+            let dynamic = Types.dynamic_constraint TUnknown in
+            Result.map
+              (fun value -> typed_ir dynamic value)
+              (pack_dynamic_value env dynamic value)
+        | Ok _ -> Error.error "dynamic packing expects 1 argument")
     | ".toString" -> (
         match compile_args () with
         | Ok [ value; radix ]
@@ -4958,6 +5150,35 @@ let create ~compile_expr =
                            ^ " expects a sequence function and compatible array"
                             ))
         | Ok _ -> Error.error (name ^ " expects 2 arguments"))
+    | "make-array" -> (
+        match arg_forms with
+        | [ FSymbol "Object"; size_form ] -> (
+            match compile_expr scope env size_form with
+            | Error _ as error -> error
+            | Ok size when Types.equal size.ty TInt ->
+                let element_ty = Types.dynamic_constraint TUnknown in
+                Ok
+                  (typed_ir (TArray element_ty)
+                     (apply "Array.make"
+                        [
+                          size.semantic_expr;
+                          Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.nil";
+                        ]))
+            | Ok _ -> Error.error "make-array size must be int")
+        | _ -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [ size ] when Types.equal size.ty TInt ->
+            let element_ty = Types.dynamic_constraint TUnknown in
+            Ok
+              (typed_ir (TArray element_ty)
+                 (apply "Array.make"
+                    [
+                      size.semantic_expr;
+                      Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.nil";
+                    ]))
+        | Ok [ _ ] -> Error.error "make-array size must be int"
+        | Ok _ -> Error.error "make-array expects a size") )
     | "array" | "array-values" -> (
         match compile_args () with
         | Error _ as err -> err
@@ -5038,6 +5259,31 @@ let create ~compile_expr =
         | Ok [ array; index ] -> compile_array_seq array index
         | Ok _ -> Error.error "array-seq expects 1 or 2 arguments")
               | ("into-array" | "to-array" | "array-from") as name -> (
+        match arg_forms with
+        | [ FSymbol "Object"; collection_form ] -> (
+            match compile_expr scope env collection_form with
+            | Error _ as error -> error
+            | Ok collection -> (
+                match Collection_capability.to_seq_expr env collection with
+                | Error _ -> Error.error (name ^ " expects a seqable value")
+                | Ok (element_ty, sequence) ->
+                    let dynamic = Types.dynamic_constraint TUnknown in
+                    let item_name = "__lg_dynamic_array_item" in
+                    let item = typed_ir element_ty (Semantic_ir.Ident item_name) in
+                    Result.map
+                      (fun item ->
+                        typed_ir (TArray dynamic)
+                          (apply "Array.of_seq"
+                             [
+                               apply "Lg_runtime.Runtime_seq.map"
+                                 [
+                                   Semantic_ir.Fun
+                                     ([ Semantic_ir.PVar item_name ], item);
+                                   sequence;
+                                 ];
+                             ]))
+                      (pack_dynamic_value env dynamic item)))
+        | _ -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok [ ({ ty = TArray _; semantic_expr; _ } as array) ] ->
@@ -5056,31 +5302,78 @@ let create ~compile_expr =
                 Ok
                   (typed_ir (TArray element_ty)
                      (apply "Array.of_seq" [ sequence ])))
-        | Ok _ -> Error.error (name ^ " expects 1 argument"))
+        | Ok _ -> Error.error (name ^ " expects a collection")) )
     | ("aget" | "unsafe-aget") as name -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok [ array; index ] -> (
-            match array_element_type array.ty with
-            | Some element_ty ->
-                if int_parameter_type index.ty then
-                  Ok
-                    (typed_ir element_ty
-                       (apply
-                          (if name = "aget" then "Array.get"
-                           else "Array.unsafe_get")
-                          [ array.semantic_expr; index.semantic_expr ]))
-                else Error.error "OCaml array index must be int"
-            | None -> Error.error (name ^ " expects an OCaml array"))
+            let compile_index index =
+              if Types.equal index.ty TInt then Ok index.semantic_expr
+              else if Types.is_dynamic index.ty then
+                Ok
+                  (apply "Lg_runtime.Runtime_dynamic.as_int"
+                     [ index.semantic_expr ])
+              else if
+                Types.equal index.ty TUnknown
+                || match index.ty with TVar _ -> true | _ -> false
+              then Ok index.semantic_expr
+              else Error.error "OCaml array index must be int"
+            in
+            let dynamic_target = Types.is_dynamic array.ty in
+            if dynamic_target then
+              let dynamic = Types.dynamic_constraint TUnknown in
+              Result.bind (pack_dynamic_value env dynamic array) (fun array ->
+                  Result.map
+                    (fun index ->
+                      typed_ir dynamic
+                        (apply "Lg_runtime.Runtime_dynamic.array_get"
+                           [ array; index ]))
+                    (compile_index index))
+            else
+              match array_element_type array.ty with
+              | Some element_ty ->
+                Result.map
+                  (fun index ->
+                    typed_ir element_ty
+                      (apply
+                         (if name = "aget" then "Array.get"
+                          else "Array.unsafe_get")
+                         [ array.semantic_expr; index ]))
+                  (compile_index index)
+              | None -> Error.error (name ^ " expects an OCaml array"))
         | Ok _ -> Error.error (name ^ " expects 2 arguments"))
     | ("aset" | "unsafe-aset") as name -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok [ array; index; value ] -> (
+            let index =
+              if Types.equal index.ty TInt then Ok index.semantic_expr
+              else if Types.is_dynamic index.ty then
+                Ok
+                  (apply "Lg_runtime.Runtime_dynamic.as_int"
+                     [ index.semantic_expr ])
+              else if
+                Types.equal index.ty TUnknown
+                || match index.ty with TVar _ -> true | _ -> false
+              then Ok index.semantic_expr
+              else Error.error "OCaml array index must be int"
+            in
+            Result.bind index (fun index ->
             match array_element_type array.ty with
             | Some element_ty ->
-                if not (int_parameter_type index.ty) then
-                  Error.error "OCaml array index must be int"
+                if Types.is_dynamic element_ty then
+                  Result.map
+                    (fun value ->
+                      typed_ir TUnit
+                        (apply
+                           (if name = "aset" then "Array.set"
+                            else "Array.unsafe_set")
+                           [
+                             array.semantic_expr;
+                             index;
+                             value;
+                           ]))
+                    (pack_dynamic_value env element_ty value)
                 else if
                   not
                               (Types.assignable ~policy:Host_boundary
@@ -5096,10 +5389,10 @@ let create ~compile_expr =
                            else "Array.unsafe_set")
                                     [
                                       array.semantic_expr;
-                                      index.semantic_expr;
+                                      index;
                                       value.semantic_expr;
                                     ]))
-            | None -> Error.error (name ^ " expects an OCaml array"))
+            | None -> Error.error (name ^ " expects an OCaml array")))
         | Ok _ -> Error.error (name ^ " expects 3 arguments"))
     | "alength" -> (
         match compile_args () with
@@ -6345,6 +6638,28 @@ let create ~compile_expr =
         match compile_args () with
         | Error _ as err -> err
         | Ok args -> Core_scalar.compile name args)
+    | "resolve" -> (
+        match compile_args () with
+        | Error _ as error -> error
+        | Ok [ symbol ]
+          when Types.equal symbol.ty TSymbol || Types.is_dynamic symbol.ty ->
+            let evaluated =
+              if Types.is_dynamic symbol.ty then
+                Semantic_ir.Apply
+                  ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.as_symbol",
+                    [ symbol.semantic_expr ] )
+              else symbol.semantic_expr
+            in
+            Ok
+              (typed_ir
+                 (TNullable (TRef (Types.dynamic_constraint TUnknown)))
+                 (Semantic_ir.Sequence
+                    [
+                      evaluated;
+                      Semantic_ir.Constructor ("None", None);
+                    ]))
+        | Ok [ _ ] -> Error.error "resolve expects a symbol"
+        | Ok _ -> Error.error "resolve expects 1 argument")
     | "sequential?" -> (
         match compile_args () with
         | Error _ as error -> error
@@ -6858,6 +7173,7 @@ let create ~compile_expr =
     | "contains?" -> compile_contains scope env arg_forms
     | "keys" -> compile_keys scope env arg_forms
     | "vals" -> compile_vals scope env arg_forms
+    | "zipmap" -> compile_zipmap scope env arg_forms
     | "transient" -> compile_transient scope env arg_forms
     | "persistent!" -> compile_persistent_bang scope env arg_forms
               | "hash-map" | "array-map" | "sorted-map" ->
@@ -7074,15 +7390,34 @@ let create ~compile_expr =
         | Error _ as error -> error
         | Ok [] -> assert false
         | Ok ((first_ty, _) :: _ as sequences) ->
-            if List.for_all (fun (ty, _) -> Types.equal first_ty ty) sequences
-            then
+            let merge_element_types left right =
+              match Type_solver.unify [] left right with
+              | Error _ -> None
+              | Ok substitutions ->
+                  Some
+                    (Type_inference.refine_type
+                       (Type_solver.apply substitutions left)
+                       (Type_solver.apply substitutions right))
+            in
+            let common_type =
+              sequences
+              |> List.tl
+              |> List.fold_left
+                   (fun common (ty, _) ->
+                     Option.bind common (fun common ->
+                         merge_element_types common ty))
+                   (Some first_ty)
+            in
+            match common_type with
+            | Some common_type ->
               Ok
-                (typed_ir (TSeq first_ty)
+                (typed_ir (TSeq common_type)
                    (Semantic_ir.Apply
                       ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.concat",
                         [ Semantic_ir.List (List.map snd sequences) ] )))
-            else if List.exists (fun (ty, _) -> Types.is_dynamic ty) sequences
-            then
+            | None
+              when List.exists (fun (ty, _) -> Types.is_dynamic ty) sequences
+              ->
               let dynamic_ty = Types.dynamic_constraint TUnknown in
               let rec pack_sequences index packed = function
                 | [] -> Ok (List.rev packed)
@@ -7112,7 +7447,7 @@ let create ~compile_expr =
                        ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.concat",
                          [ Semantic_ir.List sequences ] )))
                 (pack_sequences 0 [] sequences)
-            else Error.error "concat element types must match")
+            | None -> Error.error "concat element types must match")
   and compile_metadata_call scope env name arg_forms =
     let dynamic_ty = Types.dynamic_constraint TUnknown in
     match (name, arg_forms) with
@@ -7445,6 +7780,29 @@ let create ~compile_expr =
                                (fn.semantic_expr, [ argument ]) )))
                     (dynamic_unpack env parameter_ty
                        (Semantic_ir.Ident item_name))
+              | callable_ty, Some element_ty
+                when Types.is_dynamic callable_ty ->
+                  let callable_name = "__lg_dynamic_predicate" in
+                  let item_name = "__lg_dynamic_predicate_item" in
+                  let item = typed_ir element_ty (Semantic_ir.Ident item_name) in
+                  Result.map
+                    (fun item ->
+                      typed_ir (TFn ([ element_ty ], callable_ty))
+                        (Semantic_ir.Let
+                           ( [
+                               ( Semantic_ir.PVar callable_name,
+                                 fn.semantic_expr );
+                             ],
+                             Semantic_ir.Fun
+                               ( [ Semantic_ir.PVar item_name ],
+                                 Semantic_ir.Apply
+                                   ( Semantic_ir.Ident
+                                       "Lg_runtime.Runtime_dynamic.call",
+                                     [
+                                       Semantic_ir.Ident callable_name;
+                                       Semantic_ir.List [ item ];
+                                     ] ) ) )))
+                    (pack_dynamic_value env callable_ty item)
               | _ -> Ok fn
             in
             Result.bind adapted_fn (fun fn ->
@@ -7488,9 +7846,32 @@ let create ~compile_expr =
   and compile_vec scope env arg_forms =
     match compile_args_for scope env arg_forms with
     | Error _ as error -> error
+    | Ok [ collection ]
+      when Types.equal collection.ty TUnknown
+           || match collection.ty with TVar _ -> true | _ -> false ->
+        let dynamic = Types.dynamic_constraint TUnknown in
+        Result.map
+          (fun collection ->
+            typed_ir (TVector dynamic)
+              (Semantic_ir.Apply
+                 ( Semantic_ir.Ident "Rrbvec.of_list",
+                   [
+                     Semantic_ir.Apply
+                       ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.to_list",
+                         [
+                           Semantic_ir.Apply
+                             ( Semantic_ir.Ident
+                                 "Lg_runtime.Runtime_dynamic.to_seq",
+                               [ collection ] );
+                         ] );
+                   ] )))
+          (pack_dynamic_value env dynamic collection)
     | Ok [ collection ] -> (
         match Collection_capability.to_seq_expr env collection with
-        | Error _ -> Error.error "vec expects a list, vector, or set"
+        | Error _ ->
+            Error.error
+              ("vec expects a seqable value, got "
+             ^ Types.source_name collection.ty)
         | Ok (inner, sequence) ->
             Ok
               (typed_ir (TVector inner)
@@ -7556,7 +7937,13 @@ let create ~compile_expr =
                                   sequence;
                                 ] );
                           ] ))))
-        | Ok _ -> Core_sequence_transform.compile "set" [ collection ])
+        | Ok (inner, sequence) ->
+            Core_sequence_transform.compile "set"
+              [
+                typed_ir (TList inner)
+                  (Semantic_ir.Apply
+                     (Semantic_ir.Ident "List.of_seq", [ sequence ]));
+              ])
     | Ok _ -> Error.error "set expects 1 arguments"
   and compile_cons scope env arg_forms =
     match compile_args_for scope env arg_forms with
@@ -7696,20 +8083,36 @@ let create ~compile_expr =
                     let key_name = "__lg_group_by_key" in
                     let key = typed_ir key_ty (Semantic_ir.Ident key_name) in
                     let dynamic_ty = Types.dynamic_constraint TUnknown in
+                    let adapted_key_function =
+                      if Types.is_dynamic parameter_ty
+                         && not (Types.is_dynamic inner)
+                      then
+                        Result.map
+                          (fun packed_item ->
+                            Semantic_ir.Fun
+                              ( [ Semantic_ir.PVar item_name ],
+                                Semantic_ir.Apply
+                                  ( key_function.semantic_expr,
+                                    [ packed_item ] ) ))
+                          (pack_dynamic_value env parameter_ty item)
+                      else Ok key_function.semantic_expr
+                    in
                     match
-                       ( pack_dynamic_value env dynamic_ty key,
+                       ( adapted_key_function,
+                         pack_dynamic_value env dynamic_ty key,
                          pack_dynamic_value env dynamic_ty item )
                      with
-                    | (Error _ as error), _ -> error
-                    | _, (Error _ as error) -> error
-                    | Ok packed_key, Ok packed_item ->
+                    | (Error _ as error), _, _ -> error
+                    | _, (Error _ as error), _ -> error
+                    | _, _, (Error _ as error) -> error
+                    | Ok adapted_key_function, Ok packed_key, Ok packed_item ->
                         Ok
                           (typed_ir dynamic_ty
                              (Semantic_ir.Apply
                                 ( Semantic_ir.Ident
                                     "Lg_runtime.Runtime_dynamic.group_by",
                                   [
-                                    key_function.semantic_expr;
+                                    adapted_key_function;
                                     Semantic_ir.Fun
                                       ([ Semantic_ir.PVar key_name ], packed_key);
                                     Semantic_ir.Fun
@@ -7850,9 +8253,13 @@ let create ~compile_expr =
                     typed_ir TString (substring source start (Some stop)))
                   (prepare TInt stop "subs indexes must be int")))
     | Ok _ -> Error.error "subs expects string, start, and optional end"
-  and compile_function_arg scope env = function
-    | FSymbol name -> lookup_function scope env name
-    | form -> compile_expr scope env form
+  and compile_function_arg scope env form =
+    let compiled =
+      match form with
+      | FSymbol name -> lookup_function scope env name
+      | form -> compile_expr scope env form
+    in
+    Result.bind compiled adapt_set_callable
   and overloaded_projection expression index =
     let rec descend expression remaining =
       if remaining = 0 then
@@ -8692,6 +9099,13 @@ let create ~compile_expr =
                              Semantic_ir.List arguments;
                            ] )))
                   (pack_arguments [] args)
+            | ty when Option.is_some (Types.dynamic_map_types ty) -> (
+                match args with
+                | [ _ ] | [ _; _ ] ->
+                    compile_static_get scope env (FSymbol name :: arg_forms)
+                | _ ->
+                    Error.error
+                      (name ^ " expects a key and optional default"))
             | TSet element_ty -> (
                 match args with
                 | [ arg ]

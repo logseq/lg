@@ -56,6 +56,7 @@ let collection_from_list_expr collection_ty list_expr =
   match collection_ty with
   | TList _ -> list_expr
   | TVector _ -> apply "Rrbvec.of_list" [ list_expr ]
+  | TSeq _ -> apply "Lg_runtime.Runtime_seq.of_list" [ list_expr ]
   | TSet inner -> (
       match Types.set_module_name inner with
       | Ok set_module -> apply (set_module ^ ".of_list") [ list_expr ]
@@ -102,7 +103,8 @@ let drop_list_expr count source =
 
 let remove fn collection =
   match (fn.ty, collection_to_list_expr collection) with
-  | TFn ([ param_ty ], TBool), Ok (inner, list_expr) when Types.equal param_ty inner ->
+  | TFn ([ param_ty ], TBool), Ok (inner, list_expr)
+    when Result.is_ok (Type_solver.unify [] param_ty inner) ->
       let filtered =
         apply "List.filter"
           [ Semantic_ir.Fun

@@ -3,6 +3,31 @@ open Lowered
 module Env = Compiler_environment
 module String_map = Map.Make (String)
 
+let adapt_set_callable callable =
+  match callable.ty with
+  | TSet element_ty ->
+      Result.map
+        (fun set_module ->
+          let set_name = "__lg_callable_set" in
+          let item_name = "__lg_callable_set_item" in
+          let item = Semantic_ir.Ident item_name in
+          let present =
+            Semantic_ir.Apply
+              ( Semantic_ir.Ident (set_module ^ ".mem"),
+                [ item; Semantic_ir.Ident set_name ] )
+          in
+          typed_ir (TFn ([ element_ty ], TNullable element_ty))
+            (Semantic_ir.Let
+               ( [ (Semantic_ir.PVar set_name, callable.semantic_expr) ],
+                 Semantic_ir.Fun
+                   ( [ Semantic_ir.PVar item_name ],
+                     Semantic_ir.If
+                       ( present,
+                         Semantic_ir.Constructor ("Some", Some item),
+                         Semantic_ir.Constructor ("None", None) ) ) )))
+        (Types.set_module_name element_ty)
+  | _ -> Ok callable
+
 let rec truthiness_expression ty expression =
   match ty with
   | ty when Types.is_dynamic ty ->
@@ -139,6 +164,33 @@ let rec merge_branch_types left right =
         Option.map
           (fun merged -> TOcaml_app ("option", [ merged ]))
           (merge_branch_types inner ty)
+    | TFn (left_params, left_return), TFn (right_params, right_return)
+      when List.length left_params = List.length right_params ->
+        let merge_parameter left right =
+          if Types.equal left right then Some left
+          else if
+            Types.is_dynamic left || Types.is_dynamic right
+            || (plain_dynamic_compatible_type left
+               && plain_dynamic_compatible_type right)
+          then Some (Types.dynamic_constraint TUnknown)
+          else
+            match (left, right) with
+            | TUnknown, ty | ty, TUnknown | TVar _, ty | ty, TVar _ -> Some ty
+            | _ -> None
+        in
+        let rec merge_parameters merged left right =
+          match (left, right) with
+          | [], [] -> Some (List.rev merged)
+          | left :: left_rest, right :: right_rest ->
+              Option.bind (merge_parameter left right) (fun parameter ->
+                  merge_parameters (parameter :: merged) left_rest right_rest)
+          | _ -> None
+        in
+        Option.bind (merge_parameters [] left_params right_params)
+          (fun parameters ->
+            Option.map
+              (fun return_ty -> TFn (parameters, return_ty))
+              (merge_branch_types left_return right_return))
     | left, right
       when plain_dynamic_compatible_type left
            && plain_dynamic_compatible_type right ->
@@ -1267,6 +1319,13 @@ let lookup_function scope env name =
       | "namespace" ->
           Ok
             (static_function [ dynamic ] dynamic "identifier_namespace")
+      | "resolve" ->
+          Ok
+            (typed_ir
+               (TFn ([ TSymbol ], TNullable (TRef dynamic)))
+               (Semantic_ir.Fun
+                  ( [ Semantic_ir.PAny ],
+                    Semantic_ir.Constructor ("None", None) )))
       | "type" -> Ok (static_function [ dynamic ] dynamic "class_")
       | "vector" -> Ok (dynamic_function "vector_function")
       | "list" -> Ok (dynamic_function "list_function")
@@ -1274,6 +1333,22 @@ let lookup_function scope env name =
       | "hash-map" -> Ok (dynamic_function "hash_map_function")
       | "array-map" -> Ok (dynamic_function "array_map_function")
       | "count" -> Ok (dynamic_function "count_function")
+      | "ffirst" -> Ok (static_function [ dynamic ] dynamic "ffirst_value")
+      | "to-array" | "into-array" | "array-from" ->
+          let collection = "__lg_array_collection" in
+          Ok
+            (typed_ir
+               (TFn ([ dynamic ], TArray dynamic))
+               (Semantic_ir.Fun
+                  ( [ Semantic_ir.PVar collection ],
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident "Array.of_seq",
+                        [
+                          Semantic_ir.Apply
+                            ( Semantic_ir.Ident
+                                "Lg_runtime.Runtime_dynamic.to_seq",
+                              [ Semantic_ir.Ident collection ] );
+                        ] ) )))
       | "range" -> Ok (dynamic_function "range_function")
       | "not-empty" -> Ok (dynamic_function "not_empty_function")
       | "empty?" -> Ok (dynamic_function "empty_predicate_function")

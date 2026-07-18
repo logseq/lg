@@ -28,6 +28,7 @@ type t = {
   compile_contains : call;
   compile_keys : call;
   compile_vals : call;
+  compile_zipmap : call;
 }
 
 let compile_args_for compile_expr scope env arg_forms =
@@ -113,6 +114,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                (Semantic_ir.Apply
                   ( Semantic_ir.Ident ("Lg_runtime.Runtime_dynamic." ^ constructor),
                     [ value.semantic_expr ] )))
+      | None when Types.equal value.ty TNil ->
+          Ok (wrap (Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.nil"))
       | None -> Error.error "value cannot cross a dynamic boundary"
   in
   let inferred_field_type env keyword =
@@ -627,6 +630,165 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                           ] ))))
       | Ok _ -> Error.error "nth expects 2 or 3 arguments"
     and compile_get scope env arg_forms =
+      let unresolved = function TUnknown | TVar _ -> true | _ -> false in
+      let adapt_transient_value expected (actual : typed_expr) =
+        if unresolved expected then Ok actual.semantic_expr
+        else if Types.is_dynamic expected && not (Types.is_dynamic actual.ty)
+        then pack_dynamic_value env expected actual
+        else if Types.is_dynamic actual.ty && not (Types.is_dynamic expected)
+        then dynamic_unpack env expected actual.semantic_expr
+        else if
+          Types.assignable ~policy:Host_boundary ~expected ~actual:actual.ty
+          || Types.defer_to_ocaml ~expected ~actual:actual.ty
+        then
+          Ok
+            (coerce_expression_to_type expected actual.ty actual.semantic_expr)
+        else
+          Error.error
+            ("get value type " ^ source_name actual.ty ^ " is not compatible with "
+           ^ source_name expected)
+      in
+      let compile_heterogeneous_default get_option target key value_ty default =
+        let dynamic = Types.dynamic_constraint TUnknown in
+        let value_name = "__lg_get_present_value" in
+        let present = typed_ir value_ty (Semantic_ir.Ident value_name) in
+        Result.bind (pack_dynamic_value env dynamic present) (fun present ->
+            Result.map
+              (fun missing ->
+                typed_ir dynamic
+                  (Semantic_ir.Match
+                     ( apply get_option [ target; key ],
+                       [
+                         ( Semantic_ir.PConstructor
+                             ("Some", Some (Semantic_ir.PVar value_name)),
+                           present );
+                         (Semantic_ir.PConstructor ("None", None), missing);
+                       ] )))
+              (pack_dynamic_value env dynamic default))
+      in
+      let compile_transient_get target key default =
+        match target.ty with
+        | TOcaml_app
+            ("Lg_runtime.Runtime_transient.map", [ declared_key_ty; value_ty ]) ->
+            let key_ty =
+              if unresolved declared_key_ty then
+                if unresolved key.ty then Types.dynamic_constraint TUnknown
+                else key.ty
+              else declared_key_ty
+            in
+            Result.bind (adapt_transient_value key_ty key) (fun key ->
+                let operation name =
+                  "Lg_runtime.Runtime_transient." ^ name
+                  ^ if Types.is_dynamic key_ty then "_dynamic" else ""
+                in
+                let result_value_ty =
+                  if unresolved value_ty then
+                    match default with
+                    | Some (default, _) when not (unresolved default.ty) ->
+                        default.ty
+                    | None | Some _ -> Types.dynamic_constraint TUnknown
+                  else value_ty
+                in
+                match default with
+                | None when Types.is_dynamic result_value_ty ->
+                    Ok
+                      (typed_ir result_value_ty
+                         (apply (operation "map_get_default")
+                            [
+                              target.semantic_expr;
+                              key;
+                              Semantic_ir.Ident
+                                "Lg_runtime.Runtime_dynamic.nil";
+                            ]))
+                | None ->
+                    Ok
+                      (typed_ir (TNullable result_value_ty)
+                         (apply (operation "map_get_option")
+                            [ target.semantic_expr; key ]))
+                | Some (default, default_is_nil) ->
+                    let result_ty = result_value_ty in
+                    if default_is_nil && not (Types.is_dynamic result_ty) then
+                      Ok
+                        (typed_ir (TNullable result_ty)
+                           (apply (operation "map_get_option")
+                              [ target.semantic_expr; key ]))
+                    else if
+                      not
+                        (Types.assignable ~policy:Host_boundary
+                           ~expected:result_ty ~actual:default.ty)
+                    then
+                      compile_heterogeneous_default
+                        (operation "map_get_option") target.semantic_expr key
+                        result_ty default
+                    else
+                      Result.map
+                        (fun default ->
+                          typed_ir result_ty
+                            (apply (operation "map_get_default")
+                               [ target.semantic_expr; key; default ]))
+                        (adapt_transient_value result_ty default))
+        | _ -> Error.error "get expects a transient map"
+      in
+      let compile_runtime_map_get target key default =
+        match Types.dynamic_map_types target.ty with
+        | None -> Error.error "get expects a map"
+        | Some (declared_key_ty, value_ty) ->
+            let key_ty =
+              if unresolved declared_key_ty then
+                if unresolved key.ty then Types.dynamic_constraint TUnknown
+                else key.ty
+              else declared_key_ty
+            in
+            Result.bind (adapt_transient_value key_ty key) (fun key ->
+                let operation name = runtime_map_operation key_ty name in
+                let result_value_ty =
+                  if unresolved value_ty then
+                    match default with
+                    | Some (default, _) when not (unresolved default.ty) ->
+                        default.ty
+                    | None | Some _ -> Types.dynamic_constraint TUnknown
+                  else value_ty
+                in
+                match default with
+                | None when Types.is_dynamic result_value_ty ->
+                    Ok
+                      (typed_ir result_value_ty
+                         (apply (operation "get_default")
+                            [
+                              target.semantic_expr;
+                              key;
+                              Semantic_ir.Ident
+                                "Lg_runtime.Runtime_dynamic.nil";
+                            ]))
+                | None ->
+                    Ok
+                      (typed_ir (TNullable result_value_ty)
+                         (apply (operation "get_option")
+                            [ target.semantic_expr; key ]))
+                | Some (default, default_is_nil) ->
+                    if
+                      default_is_nil
+                      && not (Types.is_dynamic result_value_ty)
+                    then
+                      Ok
+                        (typed_ir (TNullable result_value_ty)
+                           (apply (operation "get_option")
+                              [ target.semantic_expr; key ]))
+                    else if
+                      not
+                        (Types.assignable ~policy:Host_boundary
+                           ~expected:result_value_ty ~actual:default.ty)
+                    then
+                      compile_heterogeneous_default (operation "get_option")
+                        target.semantic_expr key result_value_ty default
+                    else
+                      Result.map
+                        (fun default ->
+                          typed_ir result_value_ty
+                            (apply (operation "get_default")
+                               [ target.semantic_expr; key; default ]))
+                        (adapt_transient_value result_value_ty default))
+      in
       let arg_forms =
         match arg_forms with
         | [ target; key ] -> [ target; resolve_keyword_alias scope env key ]
@@ -823,17 +985,13 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                        (Semantic_ir.Field
                         ( target.semantic_expr,
                           Names.keyword_to_ocaml_name keyword )))
-              | TOcaml_app ("Lg_runtime.Runtime_map.t", [ key_ty; value_ty ]) ->
-                  let key =
-                    if Types.is_dynamic key_ty then
-                      apply "Lg_runtime.Runtime_dynamic.keyword"
-                        [ Semantic_ir.String keyword ]
-                    else Semantic_ir.String keyword
-                  in
-                  Ok
-                    (typed_ir (TNullable value_ty)
-                       (apply (runtime_map_operation key_ty "get_option")
-                        [ target.semantic_expr; key ]))
+              | TOcaml_app ("Lg_runtime.Runtime_map.t", [ _; _ ]) ->
+                  compile_runtime_map_get target
+                    (typed_ir TKeyword (Semantic_ir.String keyword)) None
+              | TOcaml_app
+                  ("Lg_runtime.Runtime_transient.map", [ _; _ ]) ->
+                  compile_transient_get target
+                    (typed_ir TKeyword (Semantic_ir.String keyword)) None
               | ty when is_ocaml_owned_type ty ->
                   Ok
                     (typed_ir TUnknown
@@ -995,7 +1153,14 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   with
                   | Some result -> Ok result
                   | None -> Error.error "get key must be a keyword"))
+              | TOcaml_app ("Lg_runtime.Runtime_map.t", [ _; _ ]), _ ->
+                  compile_runtime_map_get target index None
               | _ -> (
+                  match target.ty with
+                  | TOcaml_app
+                      ("Lg_runtime.Runtime_transient.map", [ _; _ ]) ->
+                      compile_transient_get target index None
+                  | _ -> (
                   match Types.dynamic_map_types target.ty with
                   | Some (key_ty, value_ty)
                     when Types.assignable ~policy:Host_boundary ~expected:key_ty
@@ -1026,7 +1191,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   | _ ->
                       Error.error
                         ("get key type " ^ source_name index.ty
-                       ^ " is not supported for " ^ source_name target.ty))))
+                       ^ " is not supported for " ^ source_name target.ty)))))
       | [ target_form; FKeyword keyword; default_form ] -> (
           match
           ( compile_expr scope env target_form,
@@ -1071,6 +1236,15 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                        with
                       | Some result -> Ok result
                       | None -> Ok default))
+              | TOcaml_app
+                  ("Lg_runtime.Runtime_transient.map", [ _; _ ]) ->
+                  compile_transient_get target
+                    (typed_ir TKeyword (Semantic_ir.String keyword))
+                    (Some (default, default_form = FSymbol "nil"))
+              | TOcaml_app ("Lg_runtime.Runtime_map.t", [ _; _ ]) ->
+                  compile_runtime_map_get target
+                    (typed_ir TKeyword (Semantic_ir.String keyword))
+                    (Some (default, default_form = FSymbol "nil"))
               | _ -> (
                   match Types.dynamic_map_types target.ty with
                   | Some (key_ty, value_ty) when default_form = FSymbol "nil" ->
@@ -1131,7 +1305,16 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   with
                   | Some result -> Ok result
                   | None -> Error.error "get key must be a keyword")
+              | TOcaml_app ("Lg_runtime.Runtime_map.t", [ _; _ ]), _ ->
+                  compile_runtime_map_get target index
+                    (Some (default, default_form = FSymbol "nil"))
               | _ -> (
+                  match target.ty with
+                  | TOcaml_app
+                      ("Lg_runtime.Runtime_transient.map", [ _; _ ]) ->
+                      compile_transient_get target index
+                        (Some (default, default_form = FSymbol "nil"))
+                  | _ -> (
                   match Types.dynamic_map_types target.ty with
                   | Some (key_ty, value_ty)
                     when default_form = FSymbol "nil"
@@ -1180,7 +1363,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   | _ ->
                       Error.error
                         ("get key type " ^ source_name index.ty
-                       ^ " is not supported for " ^ source_name target.ty))))
+                       ^ " is not supported for " ^ source_name target.ty)))))
       | _ -> Error.error "get expects 2 or 3 arguments"
     and compile_find scope env arg_forms =
       match compile_args_for scope env arg_forms with
@@ -2095,6 +2278,60 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
       | [ _; _ ] -> Error.error "select-keys expects a vector of keywords"
       | _ -> Error.error "select-keys expects map and key vector"
     and compile_contains scope env arg_forms =
+      let compile_dynamic_set_contains target element_ty candidate =
+        let scalar_conversion =
+          match element_ty with
+          | TInt -> Some ("is_int", "as_int")
+          | TFloat -> Some ("is_float", "as_float")
+          | TString -> Some ("is_string", "as_string")
+          | TSymbol -> Some ("is_symbol", "as_symbol")
+          | TKeyword -> Some ("is_keyword", "as_keyword")
+          | TBool -> Some ("is_bool", "as_bool")
+          | _ -> None
+        in
+        match scalar_conversion with
+        | Some (predicate, conversion) ->
+            Result.map
+              (fun set_module ->
+                let set_name = "__lg_static_set" in
+                let candidate_name = "__lg_dynamic_set_candidate" in
+                let candidate_value = Semantic_ir.Ident candidate_name in
+                typed_ir TBool
+                  (Semantic_ir.Let
+                     ( [
+                         ( Semantic_ir.PVar set_name,
+                           target.semantic_expr );
+                         ( Semantic_ir.PVar candidate_name,
+                           candidate.semantic_expr );
+                       ],
+                       Semantic_ir.If
+                         ( Semantic_ir.Apply
+                             ( Semantic_ir.Ident
+                                 ("Lg_runtime.Runtime_dynamic." ^ predicate),
+                               [ candidate_value ] ),
+                           Semantic_ir.Apply
+                             ( Semantic_ir.Ident (set_module ^ ".mem"),
+                               [
+                                 Semantic_ir.Apply
+                                   ( Semantic_ir.Ident
+                                       ("Lg_runtime.Runtime_dynamic."
+                                      ^ conversion),
+                                     [ candidate_value ] );
+                                 Semantic_ir.Ident set_name;
+                               ] ),
+                           Semantic_ir.Bool false ) )))
+              (Types.set_module_name element_ty)
+        | None ->
+            let dynamic = Types.dynamic_constraint TUnknown in
+            Result.map
+              (fun target ->
+                typed_ir TBool
+                  (Semantic_ir.Apply
+                     ( Semantic_ir.Ident
+                         "Lg_runtime.Runtime_dynamic.contains",
+                       [ target; candidate.semantic_expr ] )))
+              (pack_dynamic_value env dynamic target)
+      in
       let compile_collection_contains target value =
         match (target.ty, value.ty) with
       | TOcaml_app ("Lg_runtime.Runtime_transient.set", [ element_type ]), _
@@ -2108,6 +2345,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
         | TOcaml_app ("Lg_runtime.Runtime_transient.set", _), _ ->
             Error.error
               "contains? value type must match transient set element type"
+        | TSet inner, _ when Types.is_dynamic value.ty ->
+            compile_dynamic_set_contains target inner value
         | TSet inner, _ when Types.same_shape inner value.ty ->
             Result.bind (Types.set_module_name inner) (fun set_module ->
                    coerce_set_element inner value
@@ -2200,7 +2439,40 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
       match compile_args_for scope env arg_forms with
       | Error _ as err -> err
       | Ok [ target ] -> (
+          let map_keys key_type expression =
+            typed_ir (TVector key_type)
+              (Semantic_ir.Apply
+                 ( Semantic_ir.Ident "Rrbvec.of_list",
+                   [
+                     Semantic_ir.Apply
+                       ( Semantic_ir.Ident "List.map",
+                         [ Semantic_ir.Ident "fst"; expression ] );
+                   ] ))
+          in
           match target.ty with
+          | target_ty when Types.is_dynamic target_ty ->
+              Ok
+                (typed_ir target_ty
+                   (Semantic_ir.Apply
+                      ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.keys",
+                        [ target.semantic_expr ] )))
+          | target_ty -> (
+              match Types.dynamic_map_types target_ty with
+              | Some (key_type, _) ->
+                  Ok (map_keys key_type target.semantic_expr)
+              | None
+                when Types.equal target_ty TUnknown
+                     || match target_ty with TVar _ -> true | _ -> false ->
+                  let dynamic = Types.dynamic_constraint TUnknown in
+                  Result.map
+                    (fun target ->
+                      typed_ir dynamic
+                        (Semantic_ir.Apply
+                           ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.keys",
+                             [ target ] )))
+                    (pack_dynamic_value env dynamic target)
+              | None -> (
+                  match target_ty with
           | TRecord fields | TNamed_record { fields; _ } ->
               let visible_fields = Types.record_constructor_fields fields in
               let declared_keys =
@@ -2231,7 +2503,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                    (Semantic_ir.Apply
                       ( Semantic_ir.Ident "Rrbvec.of_list",
                         [ keys ] )))
-          | _ -> Error.error "keys expects a map")
+                  | _ -> Error.error "keys expects a map")))
       | Ok _ -> Error.error "keys expects 1 arguments"
     and compile_vals scope env arg_forms =
       match compile_args_for scope env arg_forms with
@@ -2243,6 +2515,18 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                  (Semantic_ir.Apply
                     ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.vals",
                       [ target.semantic_expr ] )))
+          else if
+            Types.equal target.ty TUnknown
+            || match target.ty with TVar _ -> true | _ -> false
+          then
+            let dynamic = Types.dynamic_constraint TUnknown in
+            Result.map
+              (fun target ->
+                typed_ir dynamic
+                  (Semantic_ir.Apply
+                     ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.vals",
+                       [ target ] )))
+              (pack_dynamic_value env dynamic target)
           else (
             match Types.dynamic_map_types target.ty with
             | Some (_key_type, value_type) ->
@@ -2283,8 +2567,28 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                     else
                       Error.error
                         "vals requires all map values to have the same type"
-                | _ -> Error.error "vals expects a map"))
+                | _ ->
+                    Error.error
+                      ("vals expects a map, got " ^ Types.source_name target.ty)))
       | Ok _ -> Error.error "vals expects 1 arguments"
+    and compile_zipmap scope env arg_forms =
+      match compile_args_for scope env arg_forms with
+      | Error _ as error -> error
+      | Ok [ keys; values ] -> (
+          match
+            ( Collection_capability.to_seq_expr env keys,
+              Collection_capability.to_seq_expr env values )
+          with
+          | (Error _ as error), _ -> error
+          | _, (Error _ as error) -> error
+          | Ok (key_ty, key_sequence), Ok (value_ty, value_sequence) ->
+              Ok
+                (typed_ir (Types.dynamic_map key_ty value_ty)
+                   (Semantic_ir.Apply
+                      ( Semantic_ir.Ident
+                          (runtime_map_operation key_ty "zipmap"),
+                        [ key_sequence; value_sequence ] ))))
+      | Ok _ -> Error.error "zipmap expects 2 arguments"
   in
   {
     compile_list;
@@ -2307,4 +2611,5 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
     compile_contains;
     compile_keys;
     compile_vals;
+    compile_zipmap;
   }

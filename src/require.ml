@@ -40,6 +40,7 @@ let ocaml_module_path module_name =
 
 let core_bindings = function
   | "clojure.data" -> Core_data.bindings
+  | "clojure.edn" | "cljs.reader" -> Core_edn.bindings
   | "clojure.string" -> Core_string.bindings
   | "clojure.walk" -> Core_walk.bindings
   | _ -> []
@@ -51,7 +52,7 @@ let add_core_alias_bindings env module_name alias =
 
 let core_namespace = function
   | "clojure.core" | "cljs.core" | "clojure.data" | "clojure.set"
-  | "clojure.string" | "clojure.walk" ->
+  | "clojure.edn" | "cljs.reader" | "clojure.string" | "clojure.walk" ->
       true
   | _ -> false
 
@@ -127,31 +128,42 @@ let add_lg_alias_bindings env module_name alias =
 let add_lg_refer_bindings env scope module_name names =
   let rec loop env = function
     | [] -> Ok env
-    | name :: rest -> (
-        match Env.find_opt (module_name ^ "/" ^ name) env with
-        | None -> (
-            match Env.find_macro ~scope:module_name name env with
+    | name :: rest ->
+        let value = Env.find_opt (module_name ^ "/" ^ name) env in
+        let record =
+          Env.find_opt (Resolver.record_type_key module_name name) env
+        in
+        let macro = Env.find_macro ~scope:module_name name env in
+        let inline_macro = Env.find_inline_macro ~scope:module_name name env in
+        if
+          Option.is_none value && Option.is_none record
+          && Option.is_none macro && Option.is_none inline_macro
+        then
+          Error.error
+            ("cannot refer unknown symbol " ^ module_name ^ "/" ^ name)
+        else
+          let alias = Names.scoped_key scope name in
+          let env =
+            match value with None -> env | Some binding -> Env.add alias binding env
+          in
+          let env =
+            match record with
+            | None -> env
+            | Some binding ->
+                Env.add (Resolver.record_type_key scope name) binding env
+          in
+          let env =
+            match macro with
+            | None -> env
+            | Some definition -> Env.add_macro_alias ~alias definition env
+          in
+          let env =
+            match inline_macro with
+            | None -> env
             | Some definition ->
-                let alias = Names.scoped_key scope name in
-                loop (Env.add_macro_alias ~alias definition env) rest
-            | None ->
-                Error.error
-                  ("cannot refer unknown symbol " ^ module_name ^ "/" ^ name))
-        | Some binding ->
-            let env = Env.add (Names.scoped_key scope name) binding env in
-            let env =
-              let alias = Names.scoped_key scope name in
-              let env =
-                match Env.find_macro ~scope:module_name name env with
-                | None -> env
-                | Some definition -> Env.add_macro_alias ~alias definition env
-              in
-              match Env.find_inline_macro ~scope:module_name name env with
-              | None -> env
-              | Some definition ->
-                  Env.add_inline_macro_alias ~alias definition env
-            in
-            loop env rest)
+                Env.add_inline_macro_alias ~alias definition env
+          in
+          loop env rest
   in
   loop env names
 

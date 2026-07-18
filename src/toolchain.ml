@@ -118,6 +118,10 @@ module Lg_frontend : FRONTEND = struct
 
   let supported_type_hint name =
     if not (host_type_hint name) then false
+    else if
+      List.mem name
+        [ "^Object"; "^objects"; "^ILookup"; "^LazilyPersistentVector" ]
+    then false
     else
       let type_name = String.sub name 1 (String.length name - 1) in
       let qualified_record_hint =
@@ -136,14 +140,46 @@ module Lg_frontend : FRONTEND = struct
       || (not (String.contains type_name '.'))
          && not (String.contains type_name '/')
 
+  let metadata_map_annotations entries =
+    entries
+    |> List.filter_map (function
+         | Ast.FKeyword ":tag", (Ast.FString tag | Ast.FSymbol tag) ->
+             Some (Ast.FSymbol ("^" ^ tag))
+         | Ast.FKeyword ":tag", Ast.FKeyword tag ->
+             Some (Ast.FSymbol ("^" ^ tag))
+         | Ast.FKeyword ":dynamic", Ast.FBool true ->
+             Some (Ast.FSymbol "^:dynamic")
+         | _ -> None)
+
   let rec drop_definition_metadata = function
+    | Ast.FSymbol "^" :: Ast.FMap _ :: rest ->
+        drop_definition_metadata rest
     | Ast.FSymbol metadata :: rest when metadata_symbol metadata ->
         drop_definition_metadata rest
     | forms -> forms
 
+  let dynamic_definition_forms forms =
+    match forms with
+    | Ast.FSymbol "^" :: Ast.FMap entries :: rest
+      when List.mem (Ast.FKeyword ":dynamic", Ast.FBool true) entries ->
+        Ast.FSymbol "^:dynamic" :: drop_definition_metadata rest
+    | Ast.FSymbol "^:dynamic" :: rest ->
+        Ast.FSymbol "^:dynamic" :: drop_definition_metadata rest
+    | forms -> drop_definition_metadata forms
+
   let rec normalize_metadata = function
     | Ast.FList
-        (Ast.FSymbol (("def" | "defonce" | "defn" | "defn-") as head) :: forms)
+        (Ast.FSymbol (("def" | "defonce") as head) :: forms) ->
+        let forms = dynamic_definition_forms forms in
+        let forms =
+          match forms with
+          | Ast.FSymbol "^:dynamic" :: rest ->
+              Ast.FSymbol "^:dynamic" :: normalize_metadata_sequence rest
+          | forms -> normalize_metadata_sequence forms
+        in
+        Ast.FList (Ast.FSymbol head :: forms)
+    | Ast.FList
+        (Ast.FSymbol (("defn" | "defn-") as head) :: forms)
       ->
         Ast.FList
           (Ast.FSymbol head
@@ -166,6 +202,9 @@ module Lg_frontend : FRONTEND = struct
     | form -> form
 
   and normalize_metadata_sequence = function
+    | Ast.FSymbol "^" :: Ast.FMap entries :: form :: rest ->
+        normalize_metadata_sequence
+          (metadata_map_annotations entries @ (form :: rest))
     | Ast.FSymbol metadata :: form :: rest when supported_type_hint metadata ->
         Ast.FList
           [
@@ -183,6 +222,9 @@ module Lg_frontend : FRONTEND = struct
     | [] -> []
 
   and normalize_vector_metadata_sequence = function
+    | Ast.FSymbol "^" :: Ast.FMap entries :: form :: rest ->
+        normalize_vector_metadata_sequence
+          (metadata_map_annotations entries @ (form :: rest))
     | Ast.FSymbol metadata :: rest when supported_type_hint metadata ->
         Ast.FSymbol metadata :: normalize_vector_metadata_sequence rest
     | Ast.FSymbol metadata :: rest when host_type_hint metadata ->

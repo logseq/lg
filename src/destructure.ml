@@ -178,6 +178,23 @@ let parse_param_specs = function
   | FVector params ->
       let rec loop index acc = function
         | [] -> Ok (List.rev acc)
+        | FSymbol annotation :: ((FVector _ | FMap _) as pattern) :: rest
+          when is_type_annotation annotation -> (
+            match Type_annotation.of_param_annotation annotation with
+            | Error _ as error -> error
+            | Ok ty ->
+                let source_name = "__destructure" ^ string_of_int index in
+                loop (index + 1)
+                  ({
+                     pattern;
+                     source_name;
+                     ocaml_name = Names.sanitize_name source_name;
+                     explicit_ty = Some ty;
+                     destructured = true;
+                     identity = source_identity pattern;
+                   }
+                  :: acc)
+                  rest)
         | FSymbol annotation :: (FSymbol name as name_form) :: rest
           when is_type_annotation annotation -> (
             match Type_annotation.of_param_annotation annotation with

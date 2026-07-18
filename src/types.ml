@@ -12,6 +12,7 @@ type binding = {
   forward_declared : bool;
   constant_keyword : string option;
   false_non_nil_names : string list;
+  dynamic_var : bool;
 }
 
 and host_reference =
@@ -36,7 +37,8 @@ let typed_ir ty semantic_expr =
 let binding ?(row_param_types = []) ?host_reference ?protocol_id
     ?return_param_index ?(overload_targets = [])
     ?(overload_row_param_types = []) ?(forward_declared = false)
-    ?constant_keyword ?(false_non_nil_names = []) ocaml_name ty =
+    ?constant_keyword ?(false_non_nil_names = []) ?(dynamic_var = false)
+    ocaml_name ty =
   {
     ocaml_name;
     ty;
@@ -49,6 +51,7 @@ let binding ?(row_param_types = []) ?host_reference ?protocol_id
     forward_declared;
     constant_keyword;
     false_non_nil_names;
+    dynamic_var;
   }
 
 let seqable_constraint_name = "__lg_seqable_constraint"

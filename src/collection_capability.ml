@@ -13,8 +13,9 @@ let identifier_holds_packed_constraint name =
 
 let rec to_seq_expr env collection =
   if Types.is_dynamic collection.ty then
+    let element_ty = Types.dynamic_constraint TUnknown in
     Ok
-      ( collection.ty,
+      ( element_ty,
         apply "Lg_runtime.Runtime_dynamic.to_seq" [ collection.semantic_expr ]
       )
   else
@@ -54,7 +55,11 @@ let rec to_seq_expr env collection =
   | Some inner -> Ok (inner, collection.semantic_expr)
         | None -> (
   match Types.seqable_constraint_info collection.ty with
-  | Some (constraint_kind, inner, _) -> (
+  | Some (constraint_kind, declared_inner, value_ty) -> (
+      let inner =
+        if Types.is_dynamic value_ty then Types.dynamic_constraint TUnknown
+        else declared_inner
+      in
       match Semantic_ir.unlocated collection.semantic_expr with
       | Semantic_ir.Ident name
         when not (identifier_holds_packed_constraint name) ->
