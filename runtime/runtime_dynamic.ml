@@ -147,7 +147,15 @@ let vector values =
     ~sequence:(fun () -> values |> Rrbvec.to_list |> List.to_seq)
     Vector
 
+let vec_value value =
+  vector (Rrbvec.of_list (List.of_seq (to_seq value)))
+
 let array values = make ~sequence:(fun () -> Array.to_seq values) (Array values)
+
+let array_copy value =
+  match value.payload with
+  | Array values -> array (Array.copy values)
+  | _ -> invalid_arg "aclone expects an array"
 
 let regex_match = function
   | None -> nil
@@ -525,12 +533,31 @@ let array_get value index =
   | Array values -> Array.get values index
   | _ -> invalid_arg "aget expects an array"
 
+let array_set array index value =
+  match array.payload with
+  | Array values -> Array.set values index value
+  | _ -> invalid_arg "aset expects an array"
+
+let array_unsafe_set array index value =
+  match array.payload with
+  | Array values -> Array.unsafe_set values index value
+  | _ -> invalid_arg "unsafe-aset expects an array"
+
 let vector_nth_opt value index =
   if index < 0 then None
   else
     match Seq.drop index (to_seq value) () with
     | Seq.Nil -> None
     | Seq.Cons (item, _) -> Some item
+
+let subvec_value value start stop =
+  let values = List.of_seq (to_seq value) in
+  let length = List.length values in
+  if start < 0 || stop < start || stop > length then
+    invalid_arg "subvec indexes are out of bounds"
+  else
+    values |> List.to_seq |> Seq.drop start |> Seq.take (stop - start)
+    |> List.of_seq |> Rrbvec.of_list |> vector
 
 let get value key =
   match (value.payload, key.payload) with
@@ -590,10 +617,13 @@ let map_without_keys value keys =
 
 let empty value =
   match value.payload with
+  | Nil -> nil
   | List -> list []
   | Vector -> vector Rrbvec.empty
   | Seq -> seq Seq.empty
+  | Set _ -> set Seq.empty
   | Map _ -> map []
+  | String _ -> string ""
   | _ -> invalid_arg "dynamic value is not a collection"
 
 let butlast value =
@@ -832,9 +862,11 @@ let not_empty_function =
   unary_function "not-empty" (fun value ->
       if Seq.is_empty (to_seq value) then nil else value)
 
+let empty_predicate_value value =
+  match value.payload with Nil -> true | _ -> Seq.is_empty (to_seq value)
+
 let empty_predicate_function =
-  predicate_function "empty?" (fun value ->
-      match value.payload with Nil -> true | _ -> Seq.is_empty (to_seq value))
+  predicate_function "empty?" empty_predicate_value
 
 let contains_function =
   binary_function "contains?" (fun value key -> bool (contains value key))

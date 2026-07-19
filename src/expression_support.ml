@@ -125,6 +125,18 @@ let rec merge_branch_types left right =
   | left, right when Types.equal left right -> Some left
   | left, right ->
     match (left, right) with
+    | TRecord _, (TNamed_record _ as named)
+      when Types.row_compatible ~expected:left ~actual:named ->
+        Some named
+    | (TNamed_record _ as named), TRecord _
+      when Types.row_compatible ~expected:right ~actual:named ->
+        Some named
+    | (TRecord _ as structural), TNamed_record _
+      when Types.row_compatible ~expected:structural ~actual:right ->
+        Some structural
+    | TNamed_record _, (TRecord _ as structural)
+      when Types.row_compatible ~expected:structural ~actual:left ->
+        Some structural
     | left, right when protocol_has_value right left ->
         Some right
     | left, right when protocol_has_value left right ->
@@ -167,16 +179,12 @@ let rec merge_branch_types left right =
     | TFn (left_params, left_return), TFn (right_params, right_return)
       when List.length left_params = List.length right_params ->
         let merge_parameter left right =
-          if Types.equal left right then Some left
-          else if
-            Types.is_dynamic left || Types.is_dynamic right
-            || (plain_dynamic_compatible_type left
-               && plain_dynamic_compatible_type right)
-          then Some (Types.dynamic_constraint TUnknown)
-          else
-            match (left, right) with
-            | TUnknown, ty | ty, TUnknown | TVar _, ty | ty, TVar _ -> Some ty
-            | _ -> None
+          match (left, right) with
+          | TArray (TUnknown | TVar _), (TUnknown | TVar _)
+          | (TUnknown | TVar _), TArray (TUnknown | TVar _) ->
+              Some (TArray (Types.dynamic_constraint TUnknown))
+          | _ when Types.equal left right -> Some left
+          | _ -> merge_branch_types left right
         in
         let rec merge_parameters merged left right =
           match (left, right) with
@@ -203,6 +211,13 @@ let rec merge_branch_types left right =
         Option.map (fun inner -> TSet inner) (merge_branch_types left right)
     | TSeq left, TSeq right ->
         Option.map (fun inner -> TSeq inner) (merge_branch_types left right)
+    | TArray left, TArray right ->
+        let merged_element =
+          match (left, right) with
+          | (TUnknown | TVar _), ty | ty, (TUnknown | TVar _) -> Some ty
+          | _ -> merge_branch_types left right
+        in
+        Option.map (fun inner -> TArray inner) merged_element
     | (TList _ | TVector _ | TSeq _), (TList _ | TVector _ | TSeq _) ->
         Some (Types.dynamic_constraint TUnknown)
     | TVar _, TVar _ -> Some left
@@ -511,6 +526,17 @@ let coerce_expression_to_type ?(stored = false) target_ty source_ty expression =
                     [ expression ] );
               ] )
       | Error _ -> expression)
+  | TSet (TUnknown | TVar _), TSet source_inner -> (
+      match Types.set_module_name source_inner with
+      | Ok set_module ->
+          Semantic_ir.Apply
+            ( Semantic_ir.Ident "Lg_runtime.Runtime_poly_set.of_list",
+              [
+                Semantic_ir.Apply
+                  ( Semantic_ir.Ident (set_module ^ ".elements"),
+                    [ expression ] );
+              ] )
+      | Error _ -> expression)
   | TVector element_ty, source_ty when Types.is_dynamic source_ty ->
       let dynamic name arguments =
         Semantic_ir.Apply
@@ -564,6 +590,24 @@ let coerce_expression_to_type ?(stored = false) target_ty source_ty expression =
       (TNullable source | TOcaml_app ("option", [ source ])) )
     when Types.is_dynamic target && Types.is_dynamic source ->
       expression
+  | target_ty,
+    (TNullable source_ty | TOcaml_app ("option", [ source_ty ]))
+    when Types.is_dynamic target_ty && Types.is_dynamic source_ty ->
+      let value_name = "__lg_optional_dynamic_value" in
+      Semantic_ir.Match
+        ( expression,
+          [
+            ( Semantic_ir.PConstructor ("None", None),
+              Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.nil" );
+            ( Semantic_ir.PConstructor
+                ("Some", Some (Semantic_ir.PVar value_name)),
+              Semantic_ir.Ident value_name );
+          ] )
+  | (TNullable target_ty | TOcaml_app ("option", [ target_ty ])), source_ty
+    when (Types.is_dynamic target_ty
+         || match target_ty with TUnknown | TVar _ -> true | _ -> false)
+         && Types.is_dynamic source_ty ->
+      Semantic_ir.Constructor ("Some", Some expression)
   | target_ty, source_ty
     when Types.is_dynamic target_ty && not (Types.is_dynamic source_ty) ->
       pack_plain_dynamic_value (typed_ir source_ty expression)
@@ -1348,6 +1392,7 @@ let lookup_function scope env name =
       | "false?" -> Ok (static_function [ dynamic ] TBool "is_false")
       | "nil?" -> Ok (static_function [ dynamic ] TBool "is_nil")
       | "some?" -> Ok (static_function [ dynamic ] TBool "is_some")
+      | "symbol?" -> Ok (static_function [ dynamic ] TBool "is_symbol")
       | "complement" ->
           Ok
             (static_function [ dynamic ] dynamic "complement_value")
@@ -1371,6 +1416,7 @@ let lookup_function scope env name =
                   ( [ Semantic_ir.PAny ],
                     Semantic_ir.Constructor ("None", None) )))
       | "type" -> Ok (static_function [ dynamic ] dynamic "class_")
+      | "vec" -> Ok (static_function [ dynamic ] dynamic "vec_value")
       | "vector" -> Ok (dynamic_function "vector_function")
       | "list" -> Ok (dynamic_function "list_function")
       | "set" -> Ok (dynamic_function "set_function")
@@ -1395,7 +1441,8 @@ let lookup_function scope env name =
                         ] ) )))
       | "range" -> Ok (dynamic_function "range_function")
       | "not-empty" -> Ok (dynamic_function "not_empty_function")
-      | "empty?" -> Ok (dynamic_function "empty_predicate_function")
+      | "empty?" ->
+          Ok (static_function [ dynamic ] TBool "empty_predicate_value")
       | "contains?" -> Ok (dynamic_function "contains_function")
       | "str" -> Ok (static_function [ dynamic ] TString "str_value")
       | "subs" -> Ok (dynamic_function "subs_function")

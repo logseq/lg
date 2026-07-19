@@ -754,6 +754,94 @@ let stabilization_ast ast =
       | Some [] -> assert false)
     ast
 
+let recursive_definition_ast ast =
+  let definition_forms = function
+    | Ast.FList
+        (Ast.FSymbol ("defn" | "defn-") :: Ast.FSymbol _
+        :: Ast.FString _docstring :: forms) ->
+        Some forms
+    | Ast.FList
+        (Ast.FSymbol ("defn" | "defn-") :: Ast.FSymbol _ :: forms) ->
+        Some forms
+    | _ -> None
+  in
+  let plain_definition form =
+    match definition_forms form with
+    | Some (Ast.FVector _ :: _) -> true
+    | Some (Ast.FList (Ast.FVector _ :: _) :: clauses) ->
+        List.for_all
+          (function Ast.FList (Ast.FVector _ :: _) -> true | _ -> false)
+          clauses
+    | Some _ | None -> false
+  in
+  let multi_arity_definition = function
+    | form -> (
+        match definition_forms form with
+        | Some (Ast.FList (Ast.FVector _ :: _) :: _) -> true
+        | Some _ | None -> false)
+  in
+  let recursive_groups =
+    Dependency_graph.recursive_groups ast
+    |> List.filter_map (fun indices ->
+           let multi_indices =
+             List.filter
+               (fun index -> multi_arity_definition (List.nth ast index))
+               indices
+           in
+           let references left right =
+             let provided =
+               Dependency_graph.provided_names (List.nth ast right)
+             in
+             let symbols =
+               Dependency_graph.dependency_symbols (List.nth ast left)
+             in
+             List.exists (fun name -> List.mem name symbols) provided
+           in
+           let selected =
+             indices
+             |> List.filter (fun index ->
+                    List.mem index multi_indices
+                    || List.exists
+                         (fun multi ->
+                           references multi index && references index multi)
+                         multi_indices)
+           in
+           if
+             List.length selected >= 2
+             && List.for_all
+                  (fun index -> plain_definition (List.nth ast index))
+                  selected
+           then
+             Some
+               (List.stable_sort
+                  (fun left right ->
+                    Bool.compare
+                      (multi_arity_definition (List.nth ast left))
+                      (multi_arity_definition (List.nth ast right)))
+                  selected)
+           else None)
+  in
+  let normalize_definition = function
+    | Ast.FList
+        (Ast.FSymbol (("defn" | "defn-") as definition)
+        :: (Ast.FSymbol _ as name) :: Ast.FString _docstring :: forms) ->
+        Ast.FList (Ast.FSymbol definition :: name :: forms)
+    | form -> form
+  in
+  List.mapi
+    (fun index form ->
+      match List.find_opt (List.exists (( = ) index)) recursive_groups with
+      | None -> form
+      | Some (first :: _ as indices) when index = first ->
+          Ast.FList
+            (Ast.FSymbol "recursive-definition-group"
+            :: List.map
+                 (fun member -> normalize_definition (List.nth ast member))
+                 indices)
+      | Some (_ :: _) -> Ast.FList [ Ast.FSymbol "declare" ]
+      | Some [] -> assert false)
+    ast
+
 let stabilize_typecheck ?compile_evidence ~compile
     ~(initial_state : Compiler_state.t) ast =
   let report_timings = Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" in
@@ -935,9 +1023,10 @@ let typecheck (parsed : parser_result) =
       let initial_state =
         Compiler_state.with_target parsed.target Typecheck.empty_state
       in
+      let compilation_ast = recursive_definition_ast parsed.ast in
       let compile state =
         Source_context.with_locations parsed.form_locations (fun () ->
-            Typecheck.compile_forms_incremental state parsed.ast)
+            Typecheck.compile_forms_incremental state compilation_ast)
       in
       let evidence_ast = stabilization_ast parsed.ast in
       let compile_evidence =
@@ -978,9 +1067,10 @@ let typecheck_incremental state (parsed : parser_result) =
             Compiler_environment.with_protocol_evidence None initial_state.env;
         }
       in
+      let compilation_ast = recursive_definition_ast parsed.ast in
       let compile typecheck_state =
         Source_context.with_locations parsed.form_locations (fun () ->
-            Typecheck.compile_forms_incremental typecheck_state parsed.ast)
+            Typecheck.compile_forms_incremental typecheck_state compilation_ast)
       in
       let evidence_ast = stabilization_ast parsed.ast in
       let compile_evidence =

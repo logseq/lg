@@ -30,7 +30,7 @@ let compile_args_for compile_expr scope env arg_forms =
   in
   loop [] arg_forms
 
-let create ~compile_expr ~pack_dynamic_value =
+let create ~compile_expr ~pack_dynamic_value ~capability_value =
   let compile_args_for = compile_args_for compile_expr in
   let compile_function_arg scope env = function
     | FSymbol name -> lookup_function scope env name
@@ -73,7 +73,10 @@ let create ~compile_expr ~pack_dynamic_value =
       match compile_args_for scope env arg_forms with
       | Error _ as err -> err
       | Ok [ left; right ]
-        when Types.is_dynamic left.ty || Types.is_dynamic right.ty ->
+        when Types.is_dynamic (capability_value left).ty
+             || Types.is_dynamic (capability_value right).ty ->
+          let left = capability_value left in
+          let right = capability_value right in
           let dynamic_ty =
             if Types.is_dynamic left.ty then left.ty else right.ty
           in

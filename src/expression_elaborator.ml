@@ -748,16 +748,23 @@ and compile_let scope env bindings body_forms =
   (Lazy.force context).special_forms.compile_let scope env bindings body_forms
 
 and prepare_fn ?(param_type_overrides = []) ?variadic_rest_index
-    ?(materialize_open_equality = false) ?recur_target scope env params
-    body_forms =
+    ?(materialize_open_equality = false) ?recur_target ?expected_return_ty scope
+    env params body_forms =
   let lookup_function_ty = lookup_function_ty scope env in
+  let with_expected_return env =
+    Env.with_expected_type expected_return_ty env
+  in
   let compile_function_body =
     match recur_target with
     | None -> None
     | Some target_name ->
         Some
           (fun body_env param_tys forms ->
-            compile_loop_tail_body scope body_env target_name param_tys forms)
+            compile_loop_tail_body scope (with_expected_return body_env)
+              target_name param_tys forms)
+  in
+  let compile_body scope body_env empty_error forms =
+    compile_body scope (with_expected_return body_env) empty_error forms
   in
   let prepare param_type_overrides =
     let compile_default expected form =
@@ -954,7 +961,8 @@ and multi_arity_value targets =
   | target :: rest ->
       Semantic_ir.Tuple [ Semantic_ir.Ident target; multi_arity_value rest ]
 
-and prepare_multi_arity_fn ~ocaml_name scope env source_name forms =
+and prepare_multi_arity_fn ?(infer_state_return = false) ~ocaml_name scope env
+    source_name forms =
   match parse_multi_arity_clauses source_name forms with
   | Error _ as err -> err
   | Ok parsed_clauses ->
@@ -983,7 +991,48 @@ and prepare_multi_arity_fn ~ocaml_name scope env source_name forms =
               pairs
         | _ -> false
       in
-      let rec compile final_pass compiled arities clauses remaining_targets =
+      let compatible_state_type expected actual =
+        Types.assignable ~policy:Host_boundary ~expected ~actual
+        && Types.assignable ~policy:Host_boundary ~expected:actual
+             ~actual:expected
+      in
+      let clause_state_return_ty (clause : multi_arity_clause) arity =
+        match
+          ( Destructure.parse_param_specs clause.params,
+            arity.fixed_params )
+        with
+        | Ok (first_spec :: _), ((TRecord _ | TNamed_record _) as first_ty) :: _ ->
+            let rec calls_state_transformer = function
+              | FList (FSymbol name :: FSymbol argument :: _)
+                when argument = first_spec.source_name -> (
+                  match lookup_function_ty scope env name with
+                  | Ok (TFn (parameter_ty :: _, return_ty)) ->
+                      compatible_state_type first_ty parameter_ty
+                      && compatible_state_type first_ty return_ty
+                  | Ok _ | Error _ -> false)
+              | FList forms | FVector forms ->
+                  List.exists calls_state_transformer forms
+              | FMap pairs ->
+                  List.exists
+                    (fun (key, value) ->
+                      calls_state_transformer key
+                      || calls_state_transformer value)
+                    pairs
+              | _ -> false
+            in
+            if List.exists calls_state_transformer clause.body_forms then
+              Some first_ty
+            else None
+        | (Ok _ | Error _), _ -> None
+      in
+      let arity_equal left right =
+        List.length left.fixed_params = List.length right.fixed_params
+        && List.for_all2 Types.equal left.fixed_params right.fixed_params
+        && Option.equal Types.equal left.rest_param right.rest_param
+        && Types.equal left.return_ty right.return_ty
+      in
+      let rec compile pass state_return_ty starting_arities compiled arities
+          clauses remaining_targets =
         match (clauses, remaining_targets) with
         | [], [] ->
             let clauses = List.rev compiled in
@@ -1078,8 +1127,29 @@ and prepare_multi_arity_fn ~ocaml_name scope env source_name forms =
                   { arity with fixed_params })
                 arities
             in
-            if not final_pass then
-              compile true [] arities parsed_clauses all_targets
+            if pass = 0 then
+              let state_return_ty =
+                if infer_state_return then
+                  List.map2 clause_state_return_ty parsed_clauses arities
+                  |> List.find_map Fun.id
+                else None
+              in
+              let arities =
+                match state_return_ty with
+                | None -> arities
+                | Some return_ty ->
+                    List.map
+                      (fun arity -> { arity with return_ty })
+                      arities
+              in
+              compile 1 state_return_ty arities [] arities parsed_clauses
+                all_targets
+            else if
+              pass < 4
+              && not (List.for_all2 arity_equal starting_arities arities)
+            then
+              compile (pass + 1) state_return_ty arities [] arities
+                parsed_clauses all_targets
             else
               let ty = TOverloaded_fn arities in
               Ok
@@ -1125,13 +1195,31 @@ and prepare_multi_arity_fn ~ocaml_name scope env source_name forms =
                           | _ -> None)))
                 params
             in
+            let expected_return_ty =
+              if pass > 0 then state_return_ty else None
+            in
             match
-               prepare_fn ~param_type_overrides ~materialize_open_equality:true
-                 ?variadic_rest_index:clause.rest_index ~recur_target:target_name
-                 scope clause_env clause.params clause.body_forms
-             with
+              prepare_fn ~param_type_overrides ~materialize_open_equality:true
+                ?variadic_rest_index:clause.rest_index ~recur_target:target_name
+                ?expected_return_ty scope clause_env clause.params
+                clause.body_forms
+            with
             | Error _ as err -> err
-            | Ok parts ->
+            | Ok prepared_parts ->
+                let prepared_parts =
+                  match expected_return_ty with
+                  | None -> Ok prepared_parts
+                  | Some return_ty ->
+                      Result.map
+                        (fun semantic_expr ->
+                          {
+                            prepared_parts with
+                            body = typed_ir return_ty semantic_expr;
+                          })
+                        (Call_elaborator.adapt_value_to_type clause_env return_ty
+                           prepared_parts.body)
+                in
+                Result.bind prepared_parts (fun parts ->
                 let param_tys =
                   List.map
                     (fun (_key, (binding : binding)) -> binding.ty)
@@ -1177,12 +1265,12 @@ and prepare_multi_arity_fn ~ocaml_name scope env source_name forms =
                   row_param_type_names ~nullable_row_indices target_name
                     param_tys
                 in
-                compile final_pass
+                compile pass state_return_ty starting_arities
                   ({ target_name; parts; row_param_types } :: compiled)
-                  arities rest rest_targets)
+                  arities rest rest_targets))
         | _ -> Error.error "internal error: multi-arity clause targets"
       in
-      compile false [] initial_arities parsed_clauses targets
+      compile 0 None initial_arities [] initial_arities parsed_clauses targets
 
 and lower_prepared_multi_arity (prepared : prepared_multi_arity_fn) =
   let targets = List.map (fun clause -> clause.target_name) prepared.clauses in
@@ -1221,8 +1309,20 @@ and prepare_recursive_fn ~ocaml_name scope env source_name return_ty params
   match Destructure.parse_param_specs params with
   | Error _ as err -> err
   | Ok specs -> (
+      let declared_param_tys =
+        match Env.find_opt (Names.scoped_key scope source_name) env with
+        | Some { ty = TFn (param_tys, _); _ }
+          when List.length param_tys = List.length specs ->
+            Some param_tys
+        | Some _ | None -> None
+      in
       let explicit_param_tys =
-        List.map (fun (spec : Destructure.param_spec) -> spec.explicit_ty) specs
+        List.mapi
+          (fun index (spec : Destructure.param_spec) ->
+            match spec.explicit_ty with
+            | Some _ as explicit -> explicit
+            | None -> Option.bind declared_param_tys (fun tys -> List.nth_opt tys index))
+          specs
       in
       if List.exists Option.is_none explicit_param_tys then
         Error.error "recursive defn parameters require type annotations"
@@ -1238,6 +1338,7 @@ and prepare_recursive_fn ~ocaml_name scope env source_name return_ty params
         match
           prepare_fn
             ~param_type_overrides:(List.map Option.some param_tys)
+            ~expected_return_ty:return_ty
             scope env params body_forms
         with
         | Error _ as err -> err
@@ -1245,7 +1346,11 @@ and prepare_recursive_fn ~ocaml_name scope env source_name return_ty params
             if
               Types.assignable ~policy:Host_boundary ~expected:return_ty
                 ~actual:parts.body.ty
-            then Ok parts
+            then
+              Result.map
+                (fun semantic_expr ->
+                  { parts with body = typed_ir return_ty semantic_expr })
+                (Call_elaborator.adapt_value_to_type env return_ty parts.body)
             else
               Error.error
                 ("recursive defn " ^ source_name ^ " must return "
@@ -1326,15 +1431,63 @@ and prepare_inferred_recursive_fn ~ocaml_name scope env source_name params
           let dynamic_param_tys =
             List.map
               (fun ty ->
-                if
-                  Option.is_some (Types.protocol_constraint_info ty)
-                  && Option.is_some (Types.seqable_constraint_info ty)
-                then Types.dynamic_constraint ty
-                else ty)
+                match ty with
+                | TOcaml_app
+                    ( name,
+                      [ element_ty; (TUnknown | TVar _) ] )
+                  when (name = Types.seqable_constraint_name
+                       || name = Types.optional_seqable_constraint_name
+                       || name = Types.optional_sequential_constraint_name)
+                       && Types.is_dynamic element_ty ->
+                    TOcaml_app
+                      ( name,
+                        [
+                          element_ty;
+                          Types.dynamic_constraint TUnknown;
+                        ] )
+                | ty
+                  when Option.is_some (Types.protocol_constraint_info ty)
+                       && Option.is_some (Types.seqable_constraint_info ty) ->
+                    Types.dynamic_constraint ty
+                | ty -> ty)
               inferred_param_tys
           in
           let prepare_recursive_parts self_param_tys overrides =
-            let prepare return_ty =
+            let rec direct_tail_symbols = function
+              | FSymbol name -> [ name ]
+              | FList [ FSymbol "if"; _test; then_form; else_form ] ->
+                  direct_tail_symbols then_form @ direct_tail_symbols else_form
+              | FList (FSymbol ("do" | "let" | "binding") :: forms) -> (
+                  match List.rev forms with
+                  | tail :: _ -> direct_tail_symbols tail
+                  | [] -> [])
+              | _ -> []
+            in
+            let tail_symbols =
+              match List.rev body_forms with
+              | tail :: _ -> direct_tail_symbols tail
+              | [] -> []
+            in
+            let return_seed =
+              List.combine specs self_param_tys
+              |> List.find_map
+                   (fun ((spec : Destructure.param_spec), ty) ->
+                     match ty with
+                     | (TRecord _ | TNamed_record _)
+                       when List.mem spec.source_name tail_symbols ->
+                         Some
+                           (Function_elaborator.infer_named_record
+                              ~allow_dynamic_fields:true scope env ty)
+                     | _ -> None)
+            in
+            let return_seed_index =
+              List.combine specs self_param_tys
+              |> List.find_index
+                   (fun ((spec : Destructure.param_spec), ty) ->
+                     (match ty with TRecord _ | TNamed_record _ -> true | _ -> false)
+                     && List.mem spec.source_name tail_symbols)
+            in
+            let prepare ?(constrain_return = false) return_ty =
               let self_binding =
                 Types.binding ocaml_name (TFn (self_param_tys, return_ty))
               in
@@ -1342,11 +1495,52 @@ and prepare_inferred_recursive_fn ~ocaml_name scope env source_name params
                 Env.add (Names.scoped_key scope source_name) self_binding env
                 |> Env.add ocaml_name self_binding
               in
-              prepare_fn ~param_type_overrides:overrides
-                ~materialize_open_equality:true ~recur_target:ocaml_name scope
-                env params body_forms
+              let expected_return_ty =
+                if constrain_return then Some return_ty else None
+              in
+              Result.bind
+                (prepare_fn ~param_type_overrides:overrides
+                   ~materialize_open_equality:true ~recur_target:ocaml_name
+                   ?expected_return_ty scope env params body_forms)
+                (fun parts ->
+                  if not constrain_return then Ok parts
+                  else
+                    Result.map
+                      (fun semantic_expr ->
+                        { parts with body = typed_ir return_ty semantic_expr })
+                      (Call_elaborator.adapt_value_to_type env return_ty
+                         parts.body))
             in
-            Result.bind (prepare TUnknown) (fun provisional ->
+            let return_var = TVar ("recursive_return_" ^ ocaml_name) in
+            let initial_return_ty =
+              Option.value return_seed ~default:return_var
+            in
+            let provisional =
+              match
+                prepare initial_return_ty
+              with
+              | Ok _ as result -> result
+              | Error _ when Option.is_some return_seed -> prepare return_var
+              | Error error -> Error error
+            in
+            let provisional =
+              match provisional with
+              | Ok _ as result -> result
+              | Error _ -> prepare TUnknown
+            in
+            let provisional =
+              Result.bind provisional (fun parts ->
+                  match return_seed_index with
+                  | None -> Ok parts
+                  | Some index -> (
+                      match List.nth_opt parts.param_bindings index with
+                      | Some (_, { ty = (TRecord _ | TNamed_record _) as ty; _ }) -> (
+                          match prepare ~constrain_return:true ty with
+                          | Ok _ as refined -> refined
+                          | Error _ -> Ok parts)
+                      | Some _ | None -> Ok parts))
+            in
+            Result.bind provisional (fun provisional ->
                 let requires_specialized_self_calls =
                   Semantic_ir.exists_identifier
                     (fun name ->
@@ -1355,6 +1549,10 @@ and prepare_inferred_recursive_fn ~ocaml_name scope env source_name params
                     provisional.body.semantic_expr
                 in
                 if
+                  Option.fold ~none:false
+                    ~some:(Types.equal provisional.body.ty)
+                    return_seed
+                  ||
                   Types.equal provisional.body.ty TUnknown
                   || not requires_specialized_self_calls
                 then Ok provisional

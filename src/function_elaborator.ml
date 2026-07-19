@@ -206,9 +206,43 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
       | _ -> inferred)
   | inferred -> inferred
 
-let rec pattern_constraint_type = function
+let rec protocol_witness_constraint_type receiver_ty = function
+  | TUnknown | TVar _ -> Types.dynamic_constraint TUnknown
+  | TNullable ty -> TNullable (protocol_witness_constraint_type receiver_ty ty)
+  | TOcaml_app (name, arguments) ->
+      TOcaml_app
+        (name, List.map (protocol_witness_constraint_type receiver_ty) arguments)
+  | TTuple items ->
+      TTuple (List.map (protocol_witness_constraint_type receiver_ty) items)
+  | TArray ty -> TArray (protocol_witness_constraint_type receiver_ty ty)
+  | TRef ty -> TRef (protocol_witness_constraint_type receiver_ty ty)
+  | TList ty -> TList (protocol_witness_constraint_type receiver_ty ty)
+  | TVector ty -> TVector (protocol_witness_constraint_type receiver_ty ty)
+  | TSet ty -> TSet (protocol_witness_constraint_type receiver_ty ty)
+  | TSeq ty -> TSeq (protocol_witness_constraint_type receiver_ty ty)
+  | TFn (parameters, return_type) ->
+      let parameters =
+        match parameters with
+        | _receiver :: rest ->
+            pattern_constraint_type (Types.constraint_value_type receiver_ty)
+            :: List.map (protocol_witness_constraint_type receiver_ty) rest
+        | [] -> []
+      in
+      TFn
+        (parameters, protocol_witness_constraint_type receiver_ty return_type)
+  | ty -> ty
+
+and pattern_constraint_type = function
   | TUnknown | TVar _ -> TOcaml "_"
   | TNullable ty -> TNullable (pattern_constraint_type ty)
+  | TOcaml_app (name, [ witness_ty; value_ty ])
+    when Option.is_some (Types.protocol_constraint_id name) ->
+      TOcaml_app
+        ( name,
+          [
+            protocol_witness_constraint_type value_ty witness_ty;
+            pattern_constraint_type value_ty;
+          ] )
   | TOcaml_app (name, arguments) ->
       TOcaml_app (name, List.map pattern_constraint_type arguments)
   | TTuple items -> TTuple (List.map pattern_constraint_type items)
@@ -432,6 +466,41 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
       with
       | Error _ as err -> err
       | Ok inferred -> (
+          let rec matches_parameter_as_option name = function
+            | Ast.FList
+                (Ast.FSymbol "match" :: Ast.FSymbol target :: clauses)
+              when String.equal name target ->
+                List.exists
+                  (function
+                    | Ast.FList (Ast.FSymbol "Some" :: _)
+                    | Ast.FSymbol "None" ->
+                        true
+                    | _ -> false)
+                  clauses
+            | Ast.FList (Ast.FSymbol "fn" :: _) -> false
+            | Ast.FList forms | Ast.FVector forms ->
+                List.exists (matches_parameter_as_option name) forms
+            | Ast.FMap pairs ->
+                List.exists
+                  (fun (key, value) ->
+                    matches_parameter_as_option name key
+                    || matches_parameter_as_option name value)
+                  pairs
+            | Ast.FInt _ | Ast.FFloat _ | Ast.FChar _ | Ast.FString _
+            | Ast.FRegex _ | Ast.FBool _ | Ast.FKeyword _ | Ast.FSymbol _
+            | Ast.FCoreSymbol _ ->
+                false
+          in
+          let option_matched_parameters =
+            specs
+            |> List.filter_map (fun (spec : Destructure.param_spec) ->
+                   if
+                     List.exists
+                       (matches_parameter_as_option spec.source_name)
+                       body_forms
+                   then Some spec.source_name
+                   else None)
+          in
           let destructured_sources =
             specs
             |> List.filter_map (fun (spec : Destructure.param_spec) ->
@@ -492,7 +561,7 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
           | Ok typed_specs -> (
               let typed_specs =
                 typed_specs
-                |> List.mapi (fun index (spec, inferred_ty) ->
+                |> List.mapi (fun index ((spec : Destructure.param_spec), inferred_ty) ->
                        let inferred_ty =
                          match inferred_ty with
                          | TRecord fields ->
@@ -510,7 +579,10 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                          match inferred_ty with
                          | TNullable inner
                          | TOcaml_app ("option", [ inner ])
-                           when Types.is_dynamic inner ->
+                           when Types.is_dynamic inner
+                                && not
+                                     (List.mem spec.source_name
+                                        option_matched_parameters) ->
                              inner
                          | ty -> ty
                        in
@@ -543,7 +615,28 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                                if Types.equal ty TUnknown then
                                  (spec, inferred_ty)
                                else if
-                                 refine_open_overrides && contains_open_type ty
+                                 (refine_open_overrides
+                                 && contains_open_type ty)
+                                 || (Option.is_some
+                                       (Types.seqable_constraint_info ty)
+                                    && match inferred_ty with
+                                       | TOcaml_app
+                                           ( "Lg_runtime.Runtime_transient.map",
+                                             [ _; _ ] ) ->
+                                           true
+                                       | inferred
+                                         when Types.is_dynamic inferred -> (
+                                           match
+                                             Types.dynamic_constraint_info
+                                               inferred
+                                           with
+                                           | Some
+                                               (TOcaml_app
+                                                  ( "Lg_runtime.Runtime_transient.map",
+                                                    [ _; _ ] )) ->
+                                               true
+                                           | Some _ | None -> false)
+                                       | _ -> false)
                                then
                                  (spec, Type_inference.refine_type ty inferred_ty)
                                else

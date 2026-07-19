@@ -593,6 +593,23 @@ let rec bind_map ?compile_default ~env (target : typed_expr) pairs =
   | _ -> Error.error "map destructuring expects a map"
 
 and bind_sequence ?compile_default env (target : typed_expr) forms =
+  let rec erased_sequence_storage ty =
+    if Types.is_dynamic ty then true
+    else
+      match Types.seqable_constraint_info ty with
+      | Some (_, _, (TUnknown | TVar _)) -> true
+      | Some (_, _, value_ty) -> Types.is_dynamic value_ty
+      | None -> (
+          match Types.protocol_constraint_info ty with
+          | Some (_, _, value_ty) -> erased_sequence_storage value_ty
+          | None -> false)
+  in
+  let rec materialize_erased_element = function
+    | TUnknown | TVar _ -> Types.dynamic_constraint TUnknown
+    | TList inner -> TList (materialize_erased_element inner)
+    | TVector inner -> TVector (materialize_erased_element inner)
+    | ty -> ty
+  in
   let item_at inner index =
     let semantic_expr =
       match target.ty with
@@ -702,6 +719,11 @@ and bind_sequence ?compile_default env (target : typed_expr) forms =
             ("sequential destructuring expects a seqable value, got "
            ^ Types.source_name target.ty)
       | Ok pattern, Ok (inner, sequence) ->
+          let inner =
+            if erased_sequence_storage target.ty then
+              materialize_erased_element inner
+            else inner
+          in
           let item_count = List.length pattern.item_patterns in
           let sequence_item_at index =
             let item =

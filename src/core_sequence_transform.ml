@@ -671,13 +671,25 @@ let into_cat target source =
   | Ok (TList element_type, outer) ->
       into target
         (typed_ir (TList element_type) (apply "List.concat" [ outer ]))
-  | Ok (TUnknown, outer) ->
+  | Ok (inner, outer)
+    when Types.is_dynamic inner
+         || match inner with TUnknown | TVar _ -> true | _ -> false ->
       let flattened =
         apply "List.concat"
           [ apply "List.map"
-              [ Semantic_ir.Ident "Rrbvec.to_list"; outer ] ]
+              [
+                Semantic_ir.Fun
+                  ( [ Semantic_ir.PVar "__lg_cat_item" ],
+                    apply "List.of_seq"
+                      [
+                        apply "Lg_runtime.Runtime_dynamic.to_seq"
+                          [ Semantic_ir.Ident "__lg_cat_item" ];
+                      ] );
+                outer;
+              ] ]
       in
-      into target (typed_ir (TList TUnknown) flattened)
+      into target
+        (typed_ir (TList (Types.dynamic_constraint TUnknown)) flattened)
   | Ok _ ->
       Error.error "into cat source elements must be collections"
 

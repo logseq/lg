@@ -187,7 +187,8 @@ let narrow_false_nil_predicates scope env condition body =
        (fun body name -> narrow_non_nil_name scope env name body)
        body
 
-let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
+let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
+    ~pack_constrained_value ~argument_compatible =
   let compile_args_for = compile_args_for compile_expr in
   let map_vector source_inner body expression =
     let item_name = "__lg_branch_vector_item" in
@@ -202,8 +203,33 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
             ] ))
       (body item)
   in
+  let map_array source_inner body expression =
+    let item_name = "__lg_branch_array_item" in
+    let item = typed_ir source_inner (Semantic_ir.Ident item_name) in
+    Result.map
+      (fun body ->
+        Semantic_ir.Apply
+          ( Semantic_ir.Ident "Array.map",
+            [
+              Semantic_ir.Fun ([ Semantic_ir.PVar item_name ], body);
+              expression;
+            ] ))
+      (body item)
+  in
   let adapt_vector_element env target source item =
     match (target, source) with
+    | TNamed_record record, TRecord _
+      when Types.row_compatible ~expected:target ~actual:source ->
+        Ok (Structural_map.as_named_record record item).semantic_expr
+    | TNamed_record _, TRecord _
+      when Types.row_compatible ~expected:source ~actual:target ->
+        Ok item.semantic_expr
+    | TRecord fields, TNamed_record _
+      when Types.row_compatible ~expected:target ~actual:source ->
+        Ok
+          (Structural_map.record_expr fields
+             (Structural_map.values_for item fields))
+            .semantic_expr
     | ( (TNullable dynamic_inner
         | TOcaml_app ("option", [ dynamic_inner ])),
         (TNullable source_inner | TOcaml_app ("option", [ source_inner ])) )
@@ -252,6 +278,15 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
         | TOcaml_app ("option", [ source_inner ])) )
       when not (Types.equal target_inner source_inner) ->
         let payload_name = "__lg_branch_optional_payload" in
+        let source_inner =
+          match source_inner with
+          | TUnknown | TVar _
+            when (match target_inner with
+                 | TUnknown | TVar _ -> false
+                 | _ -> true) ->
+              Types.dynamic_constraint TUnknown
+          | source_inner -> source_inner
+        in
         let payload = typed_ir source_inner (Semantic_ir.Ident payload_name) in
         Result.map
           (fun adapted ->
@@ -269,14 +304,18 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
         | TOcaml_app ("option", [ target_inner ])),
         source_ty )
       when Option.is_none (optional_payload source_ty)
-           && not (Types.equal source_ty TNil)
-           && (match source_ty with TUnknown | TVar _ -> false | _ -> true) ->
+           && not (Types.equal source_ty TNil) ->
         Result.map
           (fun adapted -> Semantic_ir.Constructor ("Some", Some adapted))
           (adapt_branch_expression env target_inner branch)
     | TVector target_inner, TVector source_inner
       when not (Types.equal target_inner source_inner) ->
         map_vector source_inner
+          (adapt_vector_element env target_inner source_inner)
+          branch.semantic_expr
+    | TArray target_inner, TArray source_inner
+      when not (Types.equal target_inner source_inner) ->
+        map_array source_inner
           (adapt_vector_element env target_inner source_inner)
           branch.semantic_expr
     | ( TFn (target_params, target_return),
@@ -341,6 +380,11 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
     | target, source
       when Types.is_dynamic target && not (Types.is_dynamic source) ->
         pack_dynamic_value env target branch
+    | target, source
+      when Types.is_dynamic source
+           && not (Types.is_dynamic target)
+           && (match target with TUnknown | TVar _ -> false | _ -> true) ->
+        dynamic_unpack env target branch.semantic_expr
     | _ ->
         Ok
           (if Types.equal branch.ty TUnknown then branch.semantic_expr
@@ -352,6 +396,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
     | ty when Types.is_dynamic ty -> true
     | TFn _ -> true
     | TVector _ -> true
+    | TArray _ -> true
     | TNullable inner | TOcaml_app ("option", [ inner ]) ->
         requires_branch_adaptation inner
     | _ -> false
@@ -781,7 +826,12 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
             | _, (Error _ as err) -> err
             | Ok some_expr, Ok none_expr -> (
                 match merge_branch_expressions some_expr none_expr with
-                | None -> Error.error branch_error
+                | None ->
+                    Error.error
+                      (branch_error ^ ": " ^ Types.source_name some_expr.ty
+                     ^ " (" ^ Types.ocaml_name some_expr.ty ^ ") and "
+                     ^ Types.source_name none_expr.ty ^ " ("
+                     ^ Types.ocaml_name none_expr.ty ^ ")")
                 | Some (result_ty, some_code, none_code) -> (
                     match
                       adapt_merged_branches env result_ty some_expr some_code
@@ -1007,6 +1057,28 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
         | Error _ as err -> err
             | Ok condition_code -> (
             match merge_branch_expressions then_expr else_expr with
+            | Some ((TFn _ as result_ty), _, _) -> (
+                let branch_env =
+                  Env.with_expected_type (Some result_ty) env
+                in
+                match
+                  ( compile_expr scope branch_env then_form,
+                    compile_expr scope branch_env else_form )
+                with
+                | (Error _ as error), _ -> error
+                | _, (Error _ as error) -> error
+                | Ok then_expr, Ok else_expr -> (
+                    match
+                      ( adapt_branch_expression env result_ty then_expr,
+                        adapt_branch_expression env result_ty else_expr )
+                    with
+                    | (Error _ as error), _ -> error
+                    | _, (Error _ as error) -> error
+                    | Ok then_code, Ok else_code ->
+                        Ok
+                          (typed_ir result_ty
+                             (Semantic_ir.If
+                                (condition_code, then_code, else_code)))))
             | Some (result_ty, _, _)
               when requires_branch_adaptation result_ty -> (
                 match
@@ -1773,8 +1845,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
             | [], [] -> Ok ()
             | expected_ty :: expected, arg :: actual ->
                 if
-                  Types.assignable ~policy:Host_boundary ~expected:expected_ty
-                       ~actual:arg.ty
+                  argument_compatible expected_ty arg.ty
                   || Types.defer_to_ocaml ~expected:expected_ty ~actual:arg.ty
                 then validate (index + 1) expected actual
                 else
@@ -1785,6 +1856,12 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
             | _ -> Error.error "internal error: recur argument validation"
           in
           let adapt_argument expected_ty (arg : typed_expr) =
+            if
+              Types.is_dynamic expected_ty
+              || Option.is_some (Types.protocol_constraint_info expected_ty)
+              || Option.is_some (Types.seqable_constraint_info expected_ty)
+            then pack_constrained_value env expected_ty arg
+            else
             match (expected_ty, arg.ty) with
             | ( (TNullable expected_inner
                 | TOcaml_app ("option", [ expected_inner ])),
@@ -1837,11 +1914,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
                    | expected_ty :: expected, arg :: args ->
                        Result.bind (adapt_argument expected_ty arg)
                          (fun expression ->
-                           adapt
-                             (capability_storage_expression expected_ty
-                                expression
-                             :: adapted)
-                             expected args)
+                           adapt (expression :: adapted) expected args)
                    | _ -> Error.error "internal error: recur adaptation"
                  in
                  adapt [] param_tys args)
@@ -1934,6 +2007,38 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
         compile_loop_tail_body scope env loop_name param_tys body_forms
     | FList (FSymbol "let" :: bindings :: body_forms) ->
         compile_let_tail scope env loop_name param_tys bindings body_forms
+    | FList (FSymbol "condp" :: predicate :: target :: clauses) ->
+        let target_name = loop_name ^ "__condp_target" in
+        let rec expand = function
+          | [] ->
+              Ok
+                (FList
+                   [ FSymbol "throw";
+                     FList
+                       [ FSymbol "ex-info";
+                         FString "No matching clause in condp";
+                         FMap [];
+                       ];
+                   ])
+          | [ default ] -> Ok default
+          | test :: expression :: rest ->
+              Result.map
+                (fun otherwise ->
+                  FList
+                    [ FSymbol "if";
+                      FList [ predicate; test; FSymbol target_name ];
+                      expression;
+                      otherwise;
+                    ])
+                (expand rest)
+        in
+        Result.bind (expand clauses) (fun body ->
+            compile_loop_tail scope env loop_name param_tys
+              (FList
+                 [ FSymbol "let";
+                   FVector [ FSymbol target_name; target ];
+                   body;
+                 ]))
     | FList (FSymbol "cond" :: clauses) ->
         let rec expand = function
           | [] -> Ok (FSymbol "nil")
@@ -2377,6 +2482,9 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
                     match
                       (sequence_element_type param_ty, sequence_value value)
                     with
+                    | Some target_inner, Some (source_inner, sequence)
+                      when Types.equal target_inner source_inner ->
+                        Ok sequence
                     | ( Some target_inner,
                         Some (source_inner, sequence) )
                       when Types.is_dynamic target_inner
@@ -2453,12 +2561,14 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
           remaining_value_forms (value :: values) rest
       | _ -> List.rev values
     in
-    let inferred_binding_type env name rest =
+    let inferred_binding_type env name value_form rest =
       let names = name :: remaining_binding_names [] rest in
+      let initial_ty = Type_inference.inferred_form_type [] value_form in
       let params =
         names
         |> List.sort_uniq String.compare
-        |> List.map (fun name -> (name, TUnknown))
+        |> List.map (fun candidate ->
+               (candidate, if String.equal candidate name then initial_ty else TUnknown))
       in
       let forms = remaining_value_forms [] rest @ body_forms in
       let lookup_function_ty = Expression_support.lookup_function_ty scope env in
@@ -2478,10 +2588,10 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
           List.assoc_opt name inferred |> Option.value ~default:TUnknown
       | Error _ -> TUnknown
     in
-    let expected_value_env env pattern rest =
+    let expected_value_env env pattern value_form rest =
       match pattern with
       | FSymbol name -> (
-          let inferred = inferred_binding_type env name rest in
+          let inferred = inferred_binding_type env name value_form rest in
           match inferred with
           | TUnknown | TVar _ -> env
           | ty -> Env.with_expected_type (Some ty) env)
@@ -2533,7 +2643,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
                       })
             | pattern :: value_form :: rest -> (
                 let value_env =
-                  expected_value_env env pattern rest
+                  expected_value_env env pattern value_form rest
                 in
                 let value =
                   match (pattern, value_form) with

@@ -96,6 +96,45 @@ let protocol_receiver_type scope env = function
       |> Result.map (fun record -> TNamed_record record)
   | _ -> Error.error "extend-type receiver must be a type keyword or record type"
 
+let predeclare_implementations_from_evidence scope env receiver_form
+    protocol_name method_forms =
+  match
+    ( Protocol.find_protocol_id scope env protocol_name,
+      Env.protocol_evidence env )
+  with
+  | None, _ | _, None -> Ok env
+  | Some _, Some evidence ->
+      Result.bind (protocol_receiver_type scope env receiver_form)
+        (fun receiver_ty ->
+          let rec predeclare env = function
+            | [] -> Ok env
+            | FList (FSymbol method_name :: _params :: _) :: rest ->
+                Result.bind (marker scope env protocol_name method_name)
+                  (fun marker ->
+                    match
+                      ( marker.protocol_id,
+                        Protocol.registry_receiver_id receiver_ty )
+                    with
+                    | Some protocol_id, Some receiver_id ->
+                        let method_id =
+                          Protocol.method_id protocol_id method_name
+                        in
+                        (match
+                           Protocol_registry.find_implementation protocol_id
+                             method_id receiver_id evidence
+                         with
+                        | None -> predeclare env rest
+                        | Some binding ->
+                            Result.bind
+                              (add_implementation env method_name receiver_ty
+                                 marker
+                                 { binding with forward_declared = true })
+                              (fun env -> predeclare env rest))
+                    | None, _ | _, None -> predeclare env rest)
+            | _ :: rest -> predeclare env rest
+          in
+          predeclare env method_forms)
+
 let compile_extend_type scope env next_type receiver_form protocol_name method_forms =
   match protocol_receiver_type scope env receiver_form with
   | Error _ as err -> err

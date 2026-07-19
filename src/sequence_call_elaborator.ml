@@ -54,6 +54,10 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
   let special_forms : Special_form_elaborator.t =
     Special_form_elaborator.create ~compile_expr ~dynamic_unpack
       ~pack_dynamic_value
+      ~pack_constrained_value:(fun _env _expected argument ->
+        Ok argument.semantic_expr)
+      ~argument_compatible:(fun expected actual ->
+        Types.assignable ~policy:Host_boundary ~expected ~actual)
   in
   let compile_body = special_forms.compile_body in
   let compile_function_arg scope env form =
@@ -293,12 +297,15 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                    (Semantic_ir.Fun
                       ([ Semantic_ir.PVar item_name ], body.semantic_expr)))
         in
-        match lookup_function scope env name with
+        let function_ = lookup_function scope env name in
+        match function_ with
         | Ok { ty = TOcaml "__declared_fn" | TUnknown | TVar _; _ } ->
+            compile_deferred_call ()
+        | Ok function_ when Types.is_dynamic function_.ty ->
             compile_deferred_call ()
         | Ok function_ when is_callable_map_type function_.ty ->
             compile_deferred_call ()
-        | Ok function_ -> Ok function_
+        | Ok function_ -> adapt_set_callable function_
         | Error _ -> compile_deferred_call ())
     | form ->
         Result.bind (compile_function_arg scope env form) (fun callable ->
@@ -423,6 +430,33 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
     | FSymbol name ->
         let accumulator_name = "__lg_symbol_reduce_accumulator" in
         let item_name = "__lg_symbol_reduce_item" in
+        let rec capability_pattern name ty =
+          match Types.protocol_constraint_info ty with
+          | Some (protocol_id, _, value_ty) ->
+              Semantic_ir.PTuple
+                [
+                  Semantic_ir.PVar
+                    (Types.protocol_witness_name name protocol_id);
+                  capability_pattern name value_ty;
+                ]
+          | None -> (
+              match ty with
+              | TOcaml_app (constraint_name, [ _element_ty; value_ty ])
+                when constraint_name = Types.seqable_constraint_name
+                     || constraint_name
+                        = Types.optional_seqable_constraint_name
+                     || constraint_name
+                        = Types.optional_sequential_constraint_name ->
+                  Semantic_ir.PTuple
+                    [
+                      Semantic_ir.PVar
+                        (if constraint_name = Types.seqable_constraint_name then
+                           name ^ "__seq"
+                         else name ^ "__seq_optional");
+                      capability_pattern name value_ty;
+                    ]
+              | _ -> Semantic_ir.PVar name)
+        in
         let function_env =
           env
           |> Env.add (Names.scoped_key scope accumulator_name)
@@ -442,8 +476,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                  (TFn ([ accumulator_ty; element_ty ], body.ty))
                  (Semantic_ir.Fun
                     ( [
-                        Semantic_ir.PVar accumulator_name;
-                        Semantic_ir.PVar item_name;
+                        capability_pattern accumulator_name accumulator_ty;
+                        capability_pattern item_name element_ty;
                       ],
                       body.semantic_expr )))
         |> fun result ->
@@ -766,17 +800,28 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
     and compile_split_with scope env arg_forms =
       match arg_forms with
     | [ fn_form; collection_form ] -> (
-        match
-          ( compile_function_arg scope env fn_form,
-            compile_expr scope env collection_form )
-        with
-          | (Error _ as err), _ -> err
-          | _, (Error _ as err) -> err
-          | Ok fn, Ok collection -> (
-            match (fn.ty, collection_to_list_expr env collection) with
-              | TFn ([ param_ty ], return_ty), Ok (inner, list_expr)
-              when Types.equal param_ty inner && returns_truthy_value return_ty
-              ->
+        match compile_expr scope env collection_form with
+        | Error _ as error -> error
+        | Ok collection -> (
+            match collection_to_list_expr env collection with
+            | Error _ ->
+                Error.error
+                  ("split-with expects a collection, got "
+                 ^ Types.source_name collection.ty)
+            | Ok (inner, list_expr) -> (
+                match
+                  compile_function_arg_for_collection scope env inner fn_form
+                with
+                | Error _ as error -> error
+                | Ok fn -> (
+                    match adapt_unary_function env inner fn with
+                    | Error _ as error -> error
+                    | Ok fn -> (
+                        match fn.ty with
+                        | TFn ([ param_ty ], return_ty)
+                          when Types.assignable ~policy:Host_boundary
+                                 ~expected:param_ty ~actual:inner
+                               && returns_truthy_value return_ty ->
                   let split_body =
                     Semantic_ir.Match
                       ( Semantic_ir.Ident "rest",
@@ -817,6 +862,12 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                 let result_collection_ty =
                   match Types.seqable_constraint_info collection.ty with
                   | Some _ -> TList inner
+                  | None
+                    when Types.is_dynamic collection.ty
+                         || (match collection.ty with
+                            | TUnknown | TVar _ -> true
+                            | _ -> false) ->
+                      TList inner
                   | None -> collection.ty
                 in
                   Ok
@@ -835,14 +886,11 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                                     (apply "snd" [ Semantic_ir.Ident "pair" ]);
                                 ];
                             ] )))
-            | TFn _, Ok _ ->
-                Error.error
-                  "split-with expects a predicate matching collection elements"
-              | _, Ok _ -> Error.error "split-with expects a function"
-            | _, Error _ ->
-                Error.error
-                  ("split-with expects a collection, got "
-                 ^ Types.source_name collection.ty)))
+                        | TFn _ ->
+                            Error.error
+                              "split-with expects a predicate matching collection elements"
+                        | _ ->
+                            Error.error "split-with expects a function")))))
       | _ -> Error.error "split-with expects function and collection"
     and compile_partition_by scope env arg_forms =
       match arg_forms with
@@ -1049,25 +1097,35 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
     and compile_filterv scope env arg_forms =
       match arg_forms with
     | [ fn_form; collection_form ] -> (
-        match
-          ( compile_function_arg scope env fn_form,
-            compile_expr scope env collection_form )
-        with
-          | (Error _ as err), _ -> err
-          | _, (Error _ as err) -> err
-          | Ok fn, Ok collection -> (
-            match (fn.ty, collection_to_list_expr env collection) with
-            | TFn ([ param_ty ], TBool), Ok (inner, list_expr)
-              when Types.equal param_ty inner ->
-                  Ok
-                    (typed_ir (TVector inner)
-                       (apply "Rrbvec.of_list"
-                          [ apply "List.filter" [ fn.semantic_expr; list_expr ] ]))
-              | TFn _, Ok _ ->
-                Error.error
-                  "filterv expects a predicate matching collection elements"
-              | _, Ok _ -> Error.error "filterv expects a function"
-              | _, Error _ -> Error.error "filterv expects a collection"))
+        match compile_expr scope env collection_form with
+        | Error _ as error -> error
+        | Ok collection -> (
+            match collection_to_list_expr env collection with
+            | Error _ -> Error.error "filterv expects a collection"
+            | Ok (inner, list_expr) -> (
+                match
+                  compile_function_arg_for_collection scope env inner fn_form
+                with
+                | Error _ as error -> error
+                | Ok fn -> (
+                    match adapt_unary_function env inner fn with
+                    | Error _ as error -> error
+                    | Ok
+                        {
+                          ty = TFn ([ param_ty ], TBool);
+                          semantic_expr;
+                          _;
+                        }
+                      when Types.assignable ~policy:Host_boundary
+                             ~expected:param_ty ~actual:inner ->
+                        Ok
+                          (typed_ir (TVector inner)
+                             (apply "Rrbvec.of_list"
+                                [ apply "List.filter" [ semantic_expr; list_expr ] ]))
+                    | Ok { ty = TFn _; _ } ->
+                        Error.error
+                          "filterv expects a predicate matching collection elements"
+                    | Ok _ -> Error.error "filterv expects a function"))))
       | _ -> Error.error "filterv expects function and collection"
   and compile_multi_map scope env ~vector fn_form collection_forms =
     let rec compile_collections compiled = function
@@ -1080,7 +1138,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
               | Error _ ->
                   Error.error
                     ((if vector then "mapv" else "map")
-                    ^ " expects seqable collections")
+                    ^ " expects seqable collections, got "
+                    ^ Types.source_name collection.ty)
               | Ok (element_ty, sequence) ->
                   compile_collections ((element_ty, sequence) :: compiled) rest)
           )
@@ -1656,23 +1715,67 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                     ("reduce expects a seqable value, got "
                    ^ Types.source_name collection.ty)
               | Ok (inner, sequence) -> (
-                  match compile_reducer scope env inner inner fn_form with
-                  | Error _ as error -> error
-                  | Ok fn -> (
+                  let accumulator_ty =
+                    match fn_form with
+                    | FSymbol name -> (
+                        match Resolver.lookup_binding scope env name with
+                        | Ok { ty = TFn ([ acc_ty; _item_ty ], return_ty); _ }
+                          when Types.is_dynamic inner
+                               && not (Types.is_dynamic acc_ty)
+                               && Types.equal acc_ty return_ty ->
+                            acc_ty
+                        | Ok { ty = TOverloaded_fn arities; _ }
+                          when Types.is_dynamic inner -> (
+                            match
+                              List.find_opt
+                                (fun arity ->
+                                  List.length arity.fixed_params = 2)
+                                arities
+                            with
+                            | Some
+                                {
+                                  fixed_params = acc_ty :: _;
+                                  return_ty;
+                                  _;
+                                }
+                              when not (Types.is_dynamic acc_ty)
+                                   && Types.equal acc_ty return_ty ->
+                                acc_ty
+                            | Some _ | None -> inner)
+                        | Ok _ | Error _ -> inner)
+                    | _ -> inner
+                  in
+                  let first =
+                    if
+                      Types.is_dynamic inner
+                      && not (Types.is_dynamic accumulator_ty)
+                    then
+                      dynamic_unpack env accumulator_ty
+                        (Semantic_ir.Ident "__lg_reduce_first")
+                    else Ok (Semantic_ir.Ident "__lg_reduce_first")
+                  in
+                  match
+                    ( first,
+                      compile_reducer scope env accumulator_ty inner fn_form )
+                  with
+                  | (Error _ as error), _ | _, (Error _ as error) -> error
+                  | Ok first, Ok fn -> (
                       let reduction =
                         match fn.ty with
-                        | TFn ([ accumulator_ty; item_ty ], return_ty)
+                        | TFn ([ fn_accumulator_ty; item_ty ], return_ty)
                           when Types.assignable ~policy:Host_boundary
-                                 ~expected:accumulator_ty ~actual:inner
+                                 ~expected:fn_accumulator_ty
+                                 ~actual:accumulator_ty
                                && Types.assignable ~policy:Host_boundary
                                     ~expected:item_ty ~actual:inner
                                && Types.assignable ~policy:Host_boundary
-                                    ~expected:inner ~actual:return_ty ->
+                                    ~expected:fn_accumulator_ty
+                                    ~actual:return_ty ->
                             Ok
                               (apply "Lg_runtime.Runtime_seq.fold_left"
                                  [
                                    fn.semantic_expr;
-                                   Semantic_ir.Ident "__lg_reduce_first";
+                                   first;
                                    Semantic_ir.Ident "__lg_reduce_rest";
                                  ])
                         | TFn ([ accumulator_ty; item_ty ], return_ty)
@@ -1707,7 +1810,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                             with
                             | Ok result
                               when Types.assignable ~policy:Host_boundary
-                                     ~expected:inner ~actual:result.ty ->
+                                     ~expected:accumulator_ty ~actual:result.ty ->
                                 result.semantic_expr
                             | Ok _ | Error _ ->
                                 apply "invalid_arg"
@@ -1716,7 +1819,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                                       "reduce of empty collection with no identity";
                                   ]
                           in
-                          typed_ir inner
+                          typed_ir accumulator_ty
                             (Semantic_ir.Match
                                ( apply "Seq.uncons" [ sequence ],
                                  [

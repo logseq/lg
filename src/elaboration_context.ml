@@ -8,6 +8,8 @@ let create ~compile_expr =
     special_forms =
       Special_form_elaborator.create ~compile_expr
         ~dynamic_unpack:Call_elaborator.dynamic_unpack
-        ~pack_dynamic_value:Call_elaborator.pack_dynamic_value;
+        ~pack_dynamic_value:Call_elaborator.pack_dynamic_value
+        ~pack_constrained_value:Call_elaborator.pack_constrained_value
+        ~argument_compatible:Call_elaborator.argument_compatible;
     calls = Call_elaborator.create ~compile_expr;
   }

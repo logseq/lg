@@ -27,93 +27,107 @@ let rec string_mem name = function
   | candidate :: _ when String.equal name candidate -> true
   | _ :: rest -> string_mem name rest
 
-let rec has_applicable_substitution substitutions = function
-  | TVar name -> string_mem_assoc name substitutions
-  | TNullable inner | TArray inner | TRef inner | TList inner | TVector inner
-  | TSet inner | TSeq inner ->
-      has_applicable_substitution substitutions inner
-  | TOcaml_app (_, arguments) | TTuple arguments ->
-      List.exists (has_applicable_substitution substitutions) arguments
-  | TFn (parameters, return_ty) ->
-      List.exists (has_applicable_substitution substitutions) parameters
-      || has_applicable_substitution substitutions return_ty
-  | TOverloaded_fn arities ->
-      List.exists
-        (fun arity ->
-          List.exists
-            (has_applicable_substitution substitutions)
-            arity.fixed_params
-          || Option.fold ~none:false
-               ~some:(has_applicable_substitution substitutions)
-               arity.rest_param
-          || has_applicable_substitution substitutions arity.return_ty)
-        arities
-  | TRecord fields ->
-      List.exists
-        (fun (field : field) ->
-          has_applicable_substitution substitutions field.ty)
-        fields
-  | TNamed_record { type_arguments; fields; _ } ->
-      List.exists (has_applicable_substitution substitutions) type_arguments
-      || List.exists
-           (fun (field : field) ->
-             has_applicable_substitution substitutions field.ty)
-           fields
-  | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
-  | TBool | TUnit | TNil | TUnknown | TOcaml _ ->
-      false
+module Type_identity_table = Hashtbl.Make (struct
+  type t = ty
 
-let rec apply substitutions ty =
+  let equal left right = left == right
+  let hash = Hashtbl.hash
+end)
+
+let rec map_preserving_identity map = function
+  | [] as values -> values
+  | head :: tail as values ->
+      let mapped_head = map head in
+      let mapped_tail = map_preserving_identity map tail in
+      if mapped_head == head && mapped_tail == tail then values
+      else mapped_head :: mapped_tail
+
+let apply substitutions ty =
   match substitutions with
   | [] -> ty
-  | _ when not (has_applicable_substitution substitutions ty) -> ty
   | _ ->
-      let apply_ty = apply substitutions in
-      match ty with
-      | TVar name -> (
-          match string_assoc_opt name substitutions with
-          | None -> ty
-          | Some replacement -> apply substitutions replacement)
-      | TNullable inner -> TNullable (apply_ty inner)
-      | TOcaml_app (name, arguments) ->
-          TOcaml_app (name, List.map apply_ty arguments)
-      | TTuple items -> TTuple (List.map apply_ty items)
-      | TArray inner -> TArray (apply_ty inner)
-      | TRef inner -> TRef (apply_ty inner)
-      | TList inner -> TList (apply_ty inner)
-      | TVector inner -> TVector (apply_ty inner)
-      | TSet inner -> TSet (apply_ty inner)
-      | TSeq inner -> TSeq (apply_ty inner)
-      | TFn (parameters, return_ty) ->
-          TFn (List.map apply_ty parameters, apply_ty return_ty)
-      | TOverloaded_fn arities ->
-          TOverloaded_fn
-            (List.map
-               (fun arity ->
-                 {
-                   fixed_params = List.map apply_ty arity.fixed_params;
-                   rest_param = Option.map apply_ty arity.rest_param;
-                   return_ty = apply_ty arity.return_ty;
-                 })
-               arities)
-      | TRecord fields ->
-          TRecord
-            (List.map
-               (fun (field : field) -> { field with ty = apply_ty field.ty })
-               fields)
-      | TNamed_record record ->
-          TNamed_record
-            {
-              record with
-              type_arguments = List.map apply_ty record.type_arguments;
-              fields =
-                List.map
-                  (fun (field : field) -> { field with ty = apply_ty field.ty })
-                  record.fields;
-            }
-      | ( TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol
-        | TKeyword | TBool | TUnit | TNil | TUnknown | TOcaml _ ) as concrete ->
-          concrete
+      let cache = Type_identity_table.create 32 in
+      let rec apply_ty ty =
+        match Type_identity_table.find_opt cache ty with
+        | Some mapped -> mapped
+        | None ->
+            let mapped = apply_uncached ty in
+            Type_identity_table.add cache ty mapped;
+            mapped
+      and apply_uncached ty =
+        let apply_inner build inner =
+          let mapped = apply_ty inner in
+          if mapped == inner then ty else build mapped
+        in
+        let apply_field (field : field) =
+          let field_ty = apply_ty field.ty in
+          if field_ty == field.ty then field else { field with ty = field_ty }
+        in
+        match ty with
+        | TVar name -> (
+            match string_assoc_opt name substitutions with
+            | None -> ty
+            | Some replacement -> apply_ty replacement)
+        | TNullable inner -> apply_inner (fun inner -> TNullable inner) inner
+        | TOcaml_app (name, arguments) ->
+            let mapped = map_preserving_identity apply_ty arguments in
+            if mapped == arguments then ty else TOcaml_app (name, mapped)
+        | TTuple items ->
+            let mapped = map_preserving_identity apply_ty items in
+            if mapped == items then ty else TTuple mapped
+        | TArray inner -> apply_inner (fun inner -> TArray inner) inner
+        | TRef inner -> apply_inner (fun inner -> TRef inner) inner
+        | TList inner -> apply_inner (fun inner -> TList inner) inner
+        | TVector inner -> apply_inner (fun inner -> TVector inner) inner
+        | TSet inner -> apply_inner (fun inner -> TSet inner) inner
+        | TSeq inner -> apply_inner (fun inner -> TSeq inner) inner
+        | TFn (parameters, return_ty) ->
+            let mapped_parameters =
+              map_preserving_identity apply_ty parameters
+            in
+            let mapped_return = apply_ty return_ty in
+            if mapped_parameters == parameters && mapped_return == return_ty then
+              ty
+            else TFn (mapped_parameters, mapped_return)
+        | TOverloaded_fn arities ->
+            let apply_optional = function
+              | None as value -> value
+              | Some inner as value ->
+                  let mapped = apply_ty inner in
+                  if mapped == inner then value else Some mapped
+            in
+            let apply_arity arity =
+              let fixed_params =
+                map_preserving_identity apply_ty arity.fixed_params
+              in
+              let rest_param = apply_optional arity.rest_param in
+              let return_ty = apply_ty arity.return_ty in
+              if
+                fixed_params == arity.fixed_params
+                && rest_param == arity.rest_param
+                && return_ty == arity.return_ty
+              then arity
+              else { fixed_params; rest_param; return_ty }
+            in
+            let mapped = map_preserving_identity apply_arity arities in
+            if mapped == arities then ty else TOverloaded_fn mapped
+        | TRecord fields ->
+            let mapped = map_preserving_identity apply_field fields in
+            if mapped == fields then ty else TRecord mapped
+        | TNamed_record record ->
+            let type_arguments =
+              map_preserving_identity apply_ty record.type_arguments
+            in
+            let fields = map_preserving_identity apply_field record.fields in
+            if
+              type_arguments == record.type_arguments && fields == record.fields
+            then ty
+            else TNamed_record { record with type_arguments; fields }
+        | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol
+        | TKeyword | TBool | TUnit | TNil | TUnknown | TOcaml _ ->
+            ty
+      in
+      apply_ty ty
 
 let rec occurs name ty =
   match ty with

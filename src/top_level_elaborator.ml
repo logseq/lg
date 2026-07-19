@@ -190,6 +190,76 @@ let expression_references_declaration env expression =
 let compile_defprotocol = Protocol_elaborator.compile_defprotocol
 let compile_extend_type = Protocol_elaborator.compile_extend_type
 
+let predeclare_protocol_groups scope env receiver_form groups =
+  let rec protocol_constraints constraints ty =
+    match Types.protocol_constraint_info ty with
+    | Some (protocol_id, _witness_ty, value_ty) ->
+        protocol_constraints (protocol_id :: constraints) value_ty
+    | None -> (
+        match ty with
+        | TNullable inner | TArray inner | TRef inner | TList inner
+        | TVector inner | TSet inner | TSeq inner ->
+            protocol_constraints constraints inner
+        | TOcaml_app (_, arguments) | TTuple arguments ->
+            List.fold_left protocol_constraints constraints arguments
+        | TFn (parameters, return_ty) ->
+            List.fold_left protocol_constraints constraints
+              (return_ty :: parameters)
+        | TOverloaded_fn arities ->
+            List.fold_left
+              (fun constraints (arity : fn_arity) ->
+                let types =
+                  arity.return_ty :: arity.fixed_params
+                  @ Option.to_list arity.rest_param
+                in
+                List.fold_left protocol_constraints constraints types)
+              constraints arities
+        | TRecord _ | TNamed_record _ -> constraints
+        | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol
+        | TKeyword | TBool | TUnit | TNil | TUnknown | TVar _ | TOcaml _ ->
+            constraints)
+  in
+  let required_protocols =
+    groups
+    |> List.fold_left
+         (fun protocols (consumer_name, methods) ->
+           let consumer_id =
+             Protocol.find_protocol_id scope env consumer_name
+           in
+           methods
+           |> List.concat_map Dependency_graph.symbols
+           |> List.fold_left
+                (fun protocols name ->
+                  match Resolver.lookup_binding scope env name with
+                  | Ok (binding : binding) when binding.forward_declared ->
+                      protocol_constraints [] binding.ty
+                      |> List.fold_left
+                           (fun protocols required_id ->
+                             if
+                               match consumer_id with
+                               | Some consumer_id ->
+                                   Protocol_id.equal required_id consumer_id
+                               | None -> false
+                             then protocols
+                             else required_id :: protocols)
+                           protocols
+                  | Ok _ | Error _ -> protocols)
+                protocols)
+         []
+    |> List.sort_uniq Protocol_id.compare
+  in
+  List.fold_left
+    (fun result (protocol_name, methods) ->
+      Result.bind result (fun env ->
+          match Protocol.find_protocol_id scope env protocol_name with
+          | Some protocol_id
+            when List.exists (Protocol_id.equal protocol_id)
+                   required_protocols ->
+              Protocol_elaborator.predeclare_implementations_from_evidence
+                scope env receiver_form protocol_name methods
+          | Some _ | None -> Ok env))
+    (Ok env) groups
+
 let deferred_value_type env (expr : Types.typed_expr) =
   Types.align_deferred_param_types
     (Protocol.refine_deferred_type env expr.ty)
@@ -637,6 +707,7 @@ let rec compile scope env next_type = function
               | Error _ as error -> error
               | Ok groups ->
                   let groups = order_protocol_groups groups in
+                  let receiver_form = FSymbol name in
                   let rec compile_groups env next_type items = function
                     | [] -> Ok (scope, env, next_type, Group items)
                     | (protocol_name, methods) :: rest -> (
@@ -716,7 +787,10 @@ let rec compile scope env next_type = function
                               (items @ items_of item)
                               rest)
                   in
-                  compile_groups env next_type (items_of type_item) groups))
+                  Result.bind
+                    (predeclare_protocol_groups scope env receiver_form groups)
+                    (fun env ->
+                      compile_groups env next_type (items_of type_item) groups)))
   | FList
       (FSymbol "deftype"
       :: (FSymbol name as name_form)
@@ -1200,7 +1274,8 @@ let rec compile scope env next_type = function
             let ocaml_name = Names.ocaml_binding_name scope name in
             match
               Expression_elaborator.prepare_multi_arity_fn ~ocaml_name scope env
-                name (first_clause :: remaining_clauses)
+                ~infer_state_return:true name
+                (first_clause :: remaining_clauses)
             with
             | Error _ as error -> error
             | Ok prepared ->
@@ -1237,9 +1312,21 @@ let rec compile scope env next_type = function
           :: rest -> (
             let ocaml_name = Names.ocaml_binding_name scope name in
             let recursive = function_is_recursive scope name body_forms in
+            let declared_return_ty =
+              match Env.find_opt (Names.scoped_key scope name) env with
+              | Some { ty = TFn (_, return_ty); _ }
+                when not (Types.equal return_ty TUnknown)
+                     && not (Types.is_dynamic return_ty)
+                     && (match return_ty with TVar _ -> false | _ -> true) ->
+                  Some return_ty
+              | Some _ | None -> None
+            in
             let prepared =
-              match (recursive, params) with
-              | true, FVector _ ->
+              match (recursive, params, declared_return_ty) with
+              | true, FVector _, Some return_ty ->
+                  prepare_recursive_fn ~ocaml_name scope env name return_ty
+                    params body_forms
+              | true, FVector _, None ->
                   prepare_inferred_recursive_fn ~ocaml_name scope env name
                     params body_forms
               | _ ->
@@ -2007,6 +2094,9 @@ let rec compile scope env next_type = function
       in
       let items_of = function Group items -> items | item -> [ item ] in
       Result.bind (groups [] None implementations) (fun groups ->
+          Result.bind
+            (predeclare_protocol_groups scope env receiver_form groups)
+            (fun env ->
           let rec compile_groups env next_type items = function
             | [] -> Ok (scope, env, next_type, Group items)
             | (protocol_name, methods) :: rest -> (
@@ -2018,7 +2108,7 @@ let rec compile scope env next_type = function
                 | Ok (_, env, next_type, item) ->
                     compile_groups env next_type (items @ items_of item) rest)
           in
-          compile_groups env next_type [] groups)
+          compile_groups env next_type [] groups))
   | FList (FSymbol "extend-protocol" :: FSymbol protocol_name :: implementations)
     -> (
       let is_receiver = function
@@ -2103,7 +2193,7 @@ let rec compile scope env next_type = function
             |> Env.add_bindings module_bindings
           in
           Ok (scope, env, next_type, item))
-  | FList (FSymbol (("print" | "println") as name) :: args) -> (
+  | FList (FSymbol (("print" | "println" | "prn") as name) :: args) -> (
       match compile_call scope env name args with
       | Error _ as err -> err
       | Ok expr ->

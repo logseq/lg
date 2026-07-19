@@ -4,6 +4,7 @@ let apply name args = Semantic_ir.Apply (Semantic_ir.Ident name, args)
 
 let identifier_holds_packed_constraint name =
   String.starts_with ~prefix:"__lg_constrained_argument" name
+  || String.starts_with ~prefix:"__lg_erased_seqable_item" name
   || String.starts_with ~prefix:"__lg_dynamic_optional_value" name
   || String.starts_with ~prefix:"__lg_optional_seqable_value" name
   || String.starts_with ~prefix:"__lg_dynamic_callback_arg_" name
@@ -57,8 +58,10 @@ let rec to_seq_expr env collection =
   match Types.seqable_constraint_info collection.ty with
   | Some (constraint_kind, declared_inner, value_ty) -> (
       let inner =
-        if Types.is_dynamic value_ty then Types.dynamic_constraint TUnknown
-        else declared_inner
+        match declared_inner with
+        | TUnknown | TVar _ when Types.is_dynamic value_ty ->
+            Types.dynamic_constraint TUnknown
+        | _ -> declared_inner
       in
       match Semantic_ir.unlocated collection.semantic_expr with
       | Semantic_ir.Ident name
@@ -278,6 +281,13 @@ let seqable_adapter ?element_mapper env argument =
                    Semantic_ir.Fun
                      ( [ Semantic_ir.PVar value_name ],
                        Semantic_ir.Apply (adapter, [ value ]) ) )))
+    | None
+      when Types.equal argument.ty TUnknown
+           || match argument.ty with TVar _ -> true | _ -> false ->
+        Ok
+          (Semantic_ir.Fun
+             ( [ Semantic_ir.PVar value_name ],
+               apply "Lg_runtime.Runtime_dynamic.to_seq" [ value ] ))
     | None ->
         let parameter = typed_ir argument.ty value in
         to_seq_expr env parameter

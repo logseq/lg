@@ -52,6 +52,18 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
   let compile_function_arg scope env = function
     | FSymbol name ->
         lookup_function scope env name |> Result.map require_callable_value
+    | FKeyword keyword ->
+        let dynamic = Types.dynamic_constraint TUnknown in
+        let target_name = "__lg_keyword_function_target" in
+        Ok
+          (typed_ir (TFn ([ dynamic ], dynamic))
+             (Semantic_ir.Fun
+                ( [ Semantic_ir.PVar target_name ],
+                  apply "Lg_runtime.Runtime_dynamic.get"
+                    [ Semantic_ir.Ident target_name;
+                      apply "Lg_runtime.Runtime_dynamic.keyword"
+                        [ Semantic_ir.String keyword ];
+                    ] )))
     | form ->
         compile_expr scope env form |> Result.map require_callable_value
   in
