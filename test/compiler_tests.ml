@@ -2949,7 +2949,9 @@ let current_datascript_serialize_sources () =
   ]
 
 let test_current_datascript_serialize_compiles_for_native_and_melange () =
-  let sources = current_datascript_serialize_sources () in
+  let sources =
+    current_datascript_query_sources () @ current_datascript_serialize_sources ()
+  in
   ignore (compile_current_datascript Lg.Target.Native sources);
   ignore (compile_current_datascript Lg.Target.Melange sources)
 

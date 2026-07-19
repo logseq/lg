@@ -10183,6 +10183,7 @@ let create ~compile_expr =
                 let sequence_storage_follows_adapter =
                   match storage_ret_template with
                   | TSeq (TUnknown | TVar _)
+                  | TVector (TUnknown | TVar _)
                   | TNullable (TUnknown | TVar _) ->
                       List.exists
                         (fun parameter_ty ->
