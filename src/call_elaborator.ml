@@ -9810,6 +9810,11 @@ let create ~compile_expr =
                       || has_capability_constraint parameter_ty)
                     param_tys
                 in
+                let runtime_dynamic_call =
+                  List.exists
+                    (fun argument -> Types.is_dynamic argument.ty)
+                    args
+                in
                 let ret = materialize ret in
                 let ret =
                   match (ret, Env.expected_type env) with
@@ -10133,6 +10138,7 @@ let create ~compile_expr =
                   if sequence_storage_follows_adapter then ret
                   else if
                     erased_storage_call
+                    && runtime_dynamic_call
                     && Option.is_none fn.return_param_index
                   then
                     Type_inference.materialize_dynamic_unknown

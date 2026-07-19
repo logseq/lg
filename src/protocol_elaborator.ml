@@ -98,9 +98,16 @@ let protocol_receiver_type scope env = function
 
 let protocol_parameter_overrides receiver_ty = function
   | TFn (parameter_tys, _) ->
+      let infer_generic_parameters =
+        match receiver_ty with
+        | TNamed_record { type_parameters = _ :: _; fields; _ } ->
+            Option.is_none (Types.find_record_extension_field fields)
+        | _ -> false
+      in
       List.mapi
         (fun index ty ->
           if index = 0 then Some receiver_ty
+          else if infer_generic_parameters then None
           else
             Some
               (match ty with

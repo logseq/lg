@@ -13605,13 +13605,18 @@ let test_dynamic_protocols_instantiate_generic_record_receivers () =
 (defn make-ordering [comparator]
   (record ordering (compare-values comparator)))
 (def entry-ordering (make-ordering compare-entries))
-(def opts (assoc {} :ordering entry-ordering))
-(println "ok")
+(def string-ordering (make-ordering compare))
+(println
+  (str
+    (compare-values-with entry-ordering (Entry. 1) (Entry. 2)) ":"
+    (compare-values-with string-ordering "a" "b")))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "dynamic_protocols_instantiate_generic_record_receivers"
-    "ok\n" ocaml_source
+    "-1:-1\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_dynamic_generic_nominal_arguments_stay_scoped_to_the_call () =
   let source =
@@ -15936,6 +15941,76 @@ let test_cross_module_fnil_update_packs_nominal_vectors () =
   let native_source = compile Lg.Target.Native in
   assert_ocaml_runs "cross_module_fnil_update_packs_nominal_vectors"
     "0:1:1:1:2:2:true:true\n" native_source;
+  ignore (compile Lg.Target.Melange)
+
+let test_cross_module_fnil_conj_preserves_vector_element_type () =
+  let util_source =
+    {|
+(ns test.util)
+(def conjv (fnil conj []))
+|}
+  in
+  let app_source =
+    {|
+(ns test.app
+  (:require [test.util :as util]))
+(println (= [1] (util/conjv nil 1)))
+|}
+  in
+  let compile target =
+    let state, util_ocaml =
+      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state util_source
+      |> expect_ok
+    in
+    let _, app_ocaml =
+      Lg.Compiler.compile_chunk ~target state app_source |> expect_ok
+    in
+    util_ocaml ^ "\n" ^ app_ocaml
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs "cross_module_fnil_conj_preserves_vector_element_type"
+    "true\n" native_source;
+  ignore (compile Lg.Target.Melange)
+
+let test_cross_module_seqable_callback_preserves_vector_element_type () =
+  let util_source =
+    {|
+(ns test.util)
+(defn distinct-by [f coll]
+  (->>
+    (reduce
+      (fn [[seen res :as acc] el]
+        (let [key (f el)]
+          (if (contains? seen key)
+            acc
+            [(conj! seen key) (conj! res el)])))
+      [(transient #{}) (transient [])]
+      coll)
+    second
+    persistent!))
+|}
+  in
+  let app_source =
+    {|
+(ns test.app
+  (:require [test.util :as util]))
+(println (= [1 2 3] (util/distinct-by #(mod % 3) [1 4 2 5 3 6])))
+|}
+  in
+  let compile target =
+    let state, util_ocaml =
+      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state util_source
+      |> expect_ok
+    in
+    let _, app_ocaml =
+      Lg.Compiler.compile_chunk ~target state app_source |> expect_ok
+    in
+    util_ocaml ^ "\n" ^ app_ocaml
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs
+    "cross_module_seqable_callback_preserves_vector_element_type" "true\n"
+    native_source;
   ignore (compile Lg.Target.Melange)
 
 let test_threaded_keyword_access_preserves_nested_record_inference () =
@@ -22390,6 +22465,10 @@ let tests =
       test_nested_record_fields_preserve_outer_record_inference );
     ( "cross module fnil update packs nominal vectors",
       test_cross_module_fnil_update_packs_nominal_vectors );
+    ( "cross module fnil conj preserves vector element type",
+      test_cross_module_fnil_conj_preserves_vector_element_type );
+    ( "cross module seqable callback preserves vector element type",
+      test_cross_module_seqable_callback_preserves_vector_element_type );
     ( "threaded keyword access preserves nested record inference",
       test_threaded_keyword_access_preserves_nested_record_inference );
     ( "destructuring rejects unsupported let sources",
