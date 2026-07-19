@@ -607,15 +607,25 @@ let subvec_value value start stop =
     values |> List.to_seq |> Seq.drop start |> Seq.take (stop - start)
     |> List.of_seq |> Rrbvec.of_list |> vector
 
+let nominal_field_name = function
+  | Keyword keyword -> Some keyword
+  | String field ->
+      Some
+        (if String.starts_with ~prefix:":" field then field else ":" ^ field)
+  | _ -> None
+
 let get value key =
   match (value.payload, key.payload) with
   | Record (_, fields, extensions), Keyword keyword -> (
       match List.assoc_opt keyword fields with
       | Some project -> project ()
       | None -> List.assoc_opt keyword extensions |> Option.value ~default:nil)
-  | Opaque (_, fields), Keyword keyword -> (
-      match List.assoc_opt keyword fields with
-      | Some project -> project ()
+  | Opaque (_, fields), key -> (
+      match nominal_field_name key with
+      | Some field -> (
+          match List.assoc_opt field fields with
+          | Some project -> project ()
+          | None -> nil)
       | None -> nil)
   | Map entries, _ -> (
       match
@@ -633,9 +643,12 @@ let get_default value key default =
       | Some project -> project ()
       | None ->
           List.assoc_opt keyword extensions |> Option.value ~default)
-  | Opaque (_, fields), Keyword keyword -> (
-      match List.assoc_opt keyword fields with
-      | Some project -> project ()
+  | Opaque (_, fields), key -> (
+      match nominal_field_name key with
+      | Some field -> (
+          match List.assoc_opt field fields with
+          | Some project -> project ()
+          | None -> default)
       | None -> default)
   | Map entries, _ -> (
       match
@@ -651,7 +664,10 @@ let contains value key =
   match (value.payload, key.payload) with
   | Record (_, fields, extensions), Keyword keyword ->
       List.mem_assoc keyword fields || List.mem_assoc keyword extensions
-  | Opaque (_, fields), Keyword keyword -> List.mem_assoc keyword fields
+  | Opaque (_, fields), key -> (
+      match nominal_field_name key with
+      | Some field -> List.mem_assoc field fields
+      | None -> false)
   | Map entries, _ ->
       List.exists (fun (entry_key, _) -> equal key entry_key) entries
   | Set values, _ -> List.exists (equal key) values
