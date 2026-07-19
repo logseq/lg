@@ -139,15 +139,11 @@ let lg_runtime_build_dir () =
   Filename.concat (repo_root ()) "_build/default/runtime"
 
 let lg_byte_cmi_dir () = Filename.concat (lg_build_dir ()) ".lg.objs/byte"
-let lg_cma () = Filename.concat (lg_build_dir ()) "lg.cma"
-
 let lg_runtime_byte_cmi_dir () =
   Filename.concat (lg_runtime_build_dir ()) ".lg_runtime.objs/byte"
 
-let lg_runtime_cma () =
-  Filename.concat (lg_runtime_build_dir ()) "lg_runtime.cma"
-
-let rrbvec_cma () = Filename.concat (rrbvec_build_dir ()) "rrbvec.cma"
+let compiler_test_runner () =
+  Filename.concat (repo_root ()) "_build/default/test/compiler_test_runner.bc"
 
 type compile_job = { name : string; ocaml_source : string }
 
@@ -194,44 +190,9 @@ let test_test_directory_avoids_existing_pid_directory () =
         failwith "compiler test directory must not contain stale artifacts")
 
 let compile_only_command dir ml_path =
-  Printf.sprintf "cd %s && ocamlc -I %s -I %s -I %s -I %s -I %s -I %s -c %s"
-    (Filename.quote dir)
-    (Filename.quote (rrbvec_build_dir ()))
-    (Filename.quote (rrbvec_cmi_dir ()))
-    (Filename.quote (lg_build_dir ()))
-    (Filename.quote (lg_byte_cmi_dir ()))
-    (Filename.quote (lg_runtime_build_dir ()))
-    (Filename.quote (lg_runtime_byte_cmi_dir ()))
-    (Filename.quote (Filename.basename ml_path))
-
-let compile_and_run_command dir ml_path exe_path output_path =
-  let compile_cmd =
-    Printf.sprintf
-      "cd %s && ocamlfind ocamlc -package re,unix -linkpkg -I %s -I %s -I %s -I %s \
-       -I %s -I %s -o %s %s %s %s %s"
-      (Filename.quote dir)
-      (Filename.quote (rrbvec_build_dir ()))
-      (Filename.quote (rrbvec_cmi_dir ()))
-      (Filename.quote (lg_build_dir ()))
-      (Filename.quote (lg_byte_cmi_dir ()))
-      (Filename.quote (lg_runtime_build_dir ()))
-      (Filename.quote (lg_runtime_byte_cmi_dir ()))
-      (Filename.quote (Filename.basename exe_path))
-      (Filename.quote (rrbvec_cma ()))
-      (Filename.quote (lg_runtime_cma ()))
-      (Filename.quote (lg_cma ()))
-      (Filename.quote (Filename.basename ml_path))
-  in
-  let run_cmd =
-    Printf.sprintf "%s > %s" (Filename.quote exe_path)
-      (Filename.quote output_path)
-  in
-  (compile_cmd, run_cmd)
-
-let interpret_and_run_command dir ml_path output_path =
   Printf.sprintf
-    "cd %s && lg_re_dir=$(ocamlfind query re) && ocaml -I \"$lg_re_dir\" -I %s \
-     -I %s -I %s -I %s -I %s -I %s unix.cma re.cma %s %s %s %s > %s"
+    "cd %s && ocamlfind ocamlc -package re,unix -w -26 -I %s -I %s -I %s -I %s \
+     -I %s -I %s -c %s"
     (Filename.quote dir)
     (Filename.quote (rrbvec_build_dir ()))
     (Filename.quote (rrbvec_cmi_dir ()))
@@ -239,10 +200,17 @@ let interpret_and_run_command dir ml_path output_path =
     (Filename.quote (lg_byte_cmi_dir ()))
     (Filename.quote (lg_runtime_build_dir ()))
     (Filename.quote (lg_runtime_byte_cmi_dir ()))
-    (Filename.quote (rrbvec_cma ()))
-    (Filename.quote (lg_runtime_cma ()))
-    (Filename.quote (lg_cma ()))
     (Filename.quote (Filename.basename ml_path))
+
+let run_compiled_module_command dir cmo_paths output_path =
+  Printf.sprintf
+    "cd %s && %s %s > %s"
+    (Filename.quote dir)
+    (Filename.quote (compiler_test_runner ()))
+    (String.concat " "
+       (List.map
+          (fun path -> Filename.quote (Filename.basename path))
+          cmo_paths))
     (Filename.quote output_path)
 
 let compile_job_immediately (job : compile_job) =
@@ -263,30 +231,6 @@ let read_file path =
     (fun () ->
       let length = in_channel_length ic in
       really_input_string ic length)
-
-let run_job_immediately (job : run_job) =
-  let dir = test_dir () in
-  let ml_path = Filename.concat dir (job.name ^ ".ml") in
-  let exe_path = Filename.concat dir job.name in
-  let output_path = Filename.concat dir (job.name ^ ".out") in
-  write_file ml_path job.ocaml_source;
-  let compile_cmd, run_cmd =
-    compile_and_run_command dir ml_path exe_path output_path
-  in
-  match Sys.command compile_cmd with
-  | code when code <> 0 ->
-      failwith
-        (Printf.sprintf "generated OCaml did not compile, exit code %d:\n%s"
-           code job.ocaml_source)
-  | _ -> (
-      match Sys.command run_cmd with
-      | code when code <> 0 ->
-          failwith
-            (Printf.sprintf "generated executable failed, exit code %d:\n%s"
-               code job.ocaml_source)
-      | _ ->
-          let actual = read_file output_path in
-          assert_equal_string job.expected_output actual)
 
 let wrapped_module index source =
   Printf.sprintf "module Case_%04d = struct\n%s\nend\n" index source
@@ -322,39 +266,86 @@ let wrapped_run_module index (job : run_job) =
     (wrapped_module index job.ocaml_source)
     (run_marker "END" index)
 
+let chunks_of count values =
+  let rec take remaining taken values =
+    if remaining = 0 then (List.rev taken, values)
+    else
+      match values with
+      | [] -> (List.rev taken, [])
+      | value :: rest -> take (remaining - 1) (value :: taken) rest
+  in
+  let rec chunks accumulated values =
+    match values with
+    | [] -> List.rev accumulated
+    | _ ->
+        let chunk, rest = take count [] values in
+        chunks (chunk :: accumulated) rest
+  in
+  chunks [] values
+
+let compile_commands_in_parallel commands =
+  flush_all ();
+  let pids =
+    List.map
+      (fun command ->
+        match Unix.fork () with
+        | 0 -> exit (Sys.command command)
+        | pid -> pid)
+      commands
+  in
+  List.for_all
+    (fun pid ->
+      match snd (Unix.waitpid [] pid) with
+      | Unix.WEXITED 0 -> true
+      | Unix.WEXITED _ | Unix.WSIGNALED _ | Unix.WSTOPPED _ -> false)
+    pids
+
 let flush_run_jobs (jobs : run_job list) =
   match jobs with
   | [] -> ()
   | _ -> (
       let dir = test_dir () in
-      let ml_path = Filename.concat dir "run_batch.ml" in
       let output_path = Filename.concat dir "run_batch.out" in
-      let source = jobs |> List.mapi wrapped_run_module |> String.concat "\n" in
+      let batches = chunks_of 24 jobs in
+      let batch_files =
+        batches
+        |> List.mapi (fun batch_index jobs ->
+               let basename = Printf.sprintf "run_batch_%03d" batch_index in
+               let ml_path = Filename.concat dir (basename ^ ".ml") in
+               let cmo_path = Filename.concat dir (basename ^ ".cmo") in
+               let source =
+                 jobs |> List.mapi wrapped_run_module |> String.concat "\n"
+               in
+               write_file ml_path source;
+               (cmo_path, compile_only_command dir ml_path))
+      in
       let expected =
-        jobs
-        |> List.mapi (fun index job ->
-               run_marker "BEGIN" index ^ job.expected_output
-               ^ run_marker "END" index)
+        batches
+        |> List.concat_map (fun jobs ->
+               jobs
+               |> List.mapi (fun index job ->
+                      ignore job.name;
+                      run_marker "BEGIN" index ^ job.expected_output
+                      ^ run_marker "END" index))
         |> String.concat ""
       in
-      write_file ml_path source;
-      let run_cmd = interpret_and_run_command dir ml_path output_path in
-      let fallback message =
-        List.iter run_job_immediately jobs;
-        failwith message
+      let cmo_paths = List.map fst batch_files in
+      let compile_commands = List.map snd batch_files in
+      let run_cmd =
+        run_compiled_module_command dir cmo_paths output_path
       in
+      if not (compile_commands_in_parallel compile_commands) then
+        failwith "batched generated OCaml failed"
+      else
       match Sys.command run_cmd with
-          | code when code <> 0 ->
-              fallback
-                (Printf.sprintf
-                   "batched generated OCaml failed with exit code %d, but \
-                    isolated cases passed"
-                   code)
-          | _ ->
-              let actual = read_file output_path in
-              if actual <> expected then
-                fallback
-                  "batched generated output differed, but isolated cases passed")
+      | code when code <> 0 ->
+          failwith
+            (Printf.sprintf "batched generated module failed with exit code %d"
+               code)
+      | _ -> (
+          let actual = read_file output_path in
+          if actual <> expected then
+            failwith "batched generated output differed"))
 
 let assert_ocaml_compiles name ocaml_source =
   pending_compile_jobs := { name; ocaml_source } :: !pending_compile_jobs
@@ -23181,6 +23172,7 @@ let unsupported_java_tests =
   ]
 
 let run_tests tests =
+  let failed = ref false in
   time_phase "compiler tests" (fun () ->
       List.iter
         (fun (name, run) ->
@@ -23192,11 +23184,12 @@ let run_tests tests =
               Sys.getenv_opt "LG_TEST_TIMING" = Some "1" && elapsed >= 0.05
             then Printf.eprintf "test %s: %.3fs\n%!" name elapsed
           with exn ->
+            failed := true;
             Printf.eprintf "FAILED: %s\n%s\n%s\n" name (Printexc.to_string exn)
-              (Printexc.get_backtrace ());
-            exit 1)
+              (Printexc.get_backtrace ()))
         tests);
-  flush_ocaml_jobs ()
+  flush_ocaml_jobs ();
+  if !failed then exit 1
 
 let shard_tests index count tests =
   tests

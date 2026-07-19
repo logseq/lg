@@ -1,6 +1,16 @@
+(executable
+ (name compiler_test_runner)
+ (modules compiler_test_runner)
+ (modes byte)
+ (libraries dynlink lg unix re rrbvec))
+
 (test
  (name compiler_tests)
- (deps ../src/lg.cma ../runtime/lg_runtime.cma ../vendor/rrbvec/rrbvec.cma)
+ (deps
+  compiler_test_runner.bc
+  ../src/lg.cma
+  ../runtime/lg_runtime.cma
+  ../vendor/rrbvec/rrbvec.cma)
  (libraries lg unix rrbvec))
 
 (test
