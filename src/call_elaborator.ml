@@ -1626,6 +1626,28 @@ and pack_dynamic_payload_impl ?(packing_context = []) env expected_dynamic
                         fields))
         in
         Result.bind (pack_fields [] record.fields) (fun fields ->
+            let extension_field =
+              Types.find_record_extension_field record.fields
+            in
+            let dynamic_payload =
+              match extension_field with
+              | None ->
+                  Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.opaque",
+                      [
+                        Semantic_ir.String record.type_name;
+                        Semantic_ir.List fields;
+                      ] )
+              | Some extension_field ->
+                  Semantic_ir.Apply
+                    ( Semantic_ir.Ident
+                        "Lg_runtime.Runtime_dynamic.lazy_record",
+                      [
+                        Semantic_ir.String record.type_name;
+                        Semantic_ir.List fields;
+                        record_field_expression extension_field;
+                      ] )
+            in
             let dynamic_record =
               Semantic_ir.Apply
                 ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.with_nominal",
@@ -1633,15 +1655,10 @@ and pack_dynamic_payload_impl ?(packing_context = []) env expected_dynamic
                     Semantic_ir.Constructor
                       (Types.nominal_tag_name record, None);
                     argument.semantic_expr;
-                    Semantic_ir.Apply
-                      ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.opaque",
-                        [
-                          Semantic_ir.String record.type_name;
-                          Semantic_ir.List fields;
-                        ] );
+                    dynamic_payload;
                   ] )
             in
-            match Types.find_record_extension_field record.fields with
+            match extension_field with
             | None -> Ok dynamic_record
             | Some extension_field ->
                 Result.bind
@@ -1922,7 +1939,27 @@ and pack_dynamic_value_conversion ?(packing_context = []) env expected_dynamic
                Semantic_ir.Apply
               ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.with_protocols",
                    [ payload; Semantic_ir.List protocols ] ))
-      
+
+let compile_protocol_extension_registration env protocol_id receiver_ty =
+  match receiver_ty with
+  | TNamed_record record ->
+      let receiver_name = "__lg_protocol_extension_receiver" in
+      let dynamic_receiver = Semantic_ir.Ident receiver_name in
+      Result.bind (dynamic_unpack env receiver_ty dynamic_receiver)
+        (fun receiver ->
+          Result.map
+            (fun packed ->
+              Semantic_ir.Apply
+                ( Semantic_ir.Ident
+                    "Lg_runtime.Runtime_dynamic.register_protocol_extension",
+                  [
+                    Semantic_ir.String record.type_name;
+                    Semantic_ir.String (Protocol_id.to_string protocol_id);
+                    Semantic_ir.Fun ([ Semantic_ir.PVar receiver_name ], packed);
+                  ] ))
+            (pack_dynamic_value env (Types.dynamic_constraint TUnknown)
+               (typed_ir receiver_ty receiver)))
+  | _ -> Error.error "protocol extension registration expects a named record"
 
 let rec constrained_storage_type expected actual =
   match Types.dynamic_constraint_info expected with
@@ -7161,6 +7198,7 @@ let create ~compile_expr =
               && List.exists
                    (fun arg ->
                      Types.is_dynamic arg.ty
+                     || contains_dynamic_type arg.ty
                      || uses_dynamic_value_storage arg.ty)
                    args
             in

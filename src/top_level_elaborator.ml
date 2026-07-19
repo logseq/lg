@@ -698,8 +698,9 @@ let rec compile scope env next_type = function
           match
             compile_type_record_fields
               ?location:(Source_context.find name_form)
-              ~allow_empty:true scope env next_type name type_parameters
-              record_fields
+              ~allow_empty:true
+              ~emitted_name:(Names.ocaml_binding_name scope name)
+              scope env next_type name type_parameters record_fields
           with
           | Error _ as error -> error
           | Ok (scope, env, next_type, type_item) -> (
@@ -771,7 +772,7 @@ let rec compile scope env next_type = function
                           with
                           | Some _ ->
                               FList
-                               (FSymbol "extend-type" :: FSymbol name
+                               (FSymbol "extend-type-no-register" :: FSymbol name
                                :: FSymbol protocol_name :: methods)
                           | None ->
                               FList
@@ -2068,7 +2069,9 @@ let rec compile scope env next_type = function
       compile_defprotocol
         ?location:(Source_context.find name_form)
         scope env next_type protocol_name method_forms
-  | FList (FSymbol "extend-type" :: receiver_form :: implementations) ->
+  | FList
+      (FSymbol ("extend-type" | "extend-type-no-register" as extension_kind)
+      :: receiver_form :: implementations) ->
       let rec groups grouped current = function
         | [] -> (
             match current with
@@ -2097,8 +2100,42 @@ let rec compile scope env next_type = function
           Result.bind
             (predeclare_protocol_groups scope env receiver_form groups)
             (fun env ->
+          let compile_registrations env =
+            match (extension_kind, receiver_form) with
+            | "extend-type-no-register", _ -> Ok []
+            | _, FSymbol receiver_name -> (
+                match Resolver.lookup_record_type scope env receiver_name with
+                | Error _ | Ok { type_parameters = _ :: _; _ } -> Ok []
+                | Ok record ->
+                    let rec compile compiled = function
+                      | [] -> Ok (List.rev compiled)
+                      | (protocol_name, _) :: rest -> (
+                          match
+                            Protocol.find_protocol_id scope env protocol_name
+                          with
+                          | None -> compile compiled rest
+                          | Some protocol_id -> (
+                              match
+                                Call_elaborator.compile_protocol_extension_registration
+                                  env protocol_id (TNamed_record record)
+                              with
+                              | Error _ as error -> error
+                              | Ok expression ->
+                                  compile
+                                    (Value_binding
+                                       { pattern = Unit_pattern; expression }
+                                    :: compiled)
+                                    rest))
+                    in
+                    compile [] groups)
+            | _, _ -> Ok []
+          in
           let rec compile_groups env next_type items = function
-            | [] -> Ok (scope, env, next_type, Group items)
+            | [] ->
+                Result.map
+                  (fun registrations ->
+                    (scope, env, next_type, Group (items @ registrations)))
+                  (compile_registrations env)
             | (protocol_name, methods) :: rest -> (
                 match
                   compile_extend_type scope env next_type receiver_form

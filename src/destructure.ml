@@ -612,12 +612,36 @@ and bind_sequence ?compile_default env (target : typed_expr) forms =
   in
   let item_at inner index =
     let semantic_expr =
-      match target.ty with
-      | TList _ ->
+      match (target.ty, Types.is_dynamic inner) with
+      | TList _, true ->
+          Semantic_ir.Match
+            ( Semantic_ir.Apply
+                ( Semantic_ir.Ident "List.nth_opt",
+                  [ target.semantic_expr; Semantic_ir.Int index ] ),
+              [
+                ( Semantic_ir.PConstructor ("None", None),
+                  Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.nil" );
+                ( Semantic_ir.PConstructor
+                    ("Some", Some (Semantic_ir.PVar "__lg_destructure_item")),
+                  Semantic_ir.Ident "__lg_destructure_item" );
+              ] )
+      | TVector _, true ->
+          Semantic_ir.Match
+            ( Semantic_ir.Apply
+                ( Semantic_ir.Ident "Rrbvec.nth_opt",
+                  [ target.semantic_expr; Semantic_ir.Int index ] ),
+              [
+                ( Semantic_ir.PConstructor ("None", None),
+                  Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.nil" );
+                ( Semantic_ir.PConstructor
+                    ("Some", Some (Semantic_ir.PVar "__lg_destructure_item")),
+                  Semantic_ir.Ident "__lg_destructure_item" );
+              ] )
+      | TList _, false ->
           Semantic_ir.Apply
             ( Semantic_ir.Ident "List.nth",
               [ target.semantic_expr; Semantic_ir.Int index ] )
-      | TVector _ ->
+      | TVector _, false ->
           Semantic_ir.Apply
             ( Semantic_ir.Ident "Rrbvec.nth",
               [ target.semantic_expr; Semantic_ir.Int index ] )

@@ -2871,6 +2871,38 @@ let test_current_datascript_query_compiles_for_native_and_melange () =
   ignore (compile_current_datascript Lg.Target.Native sources);
   ignore (compile_current_datascript Lg.Target.Melange sources)
 
+let test_current_datascript_parser_collects_pattern_variables () =
+  let source =
+    {|
+(ns app.parser-behavior
+  (:require [clojure.set :as set]
+            [datascript.parser :as parser]))
+
+(def query-map
+  (parser/query->map
+    '[:find ?e ?name :where [?e :name ?name]]))
+(def find-vars
+  (set (parser/collect-vars-distinct
+         (parser/parse-find (:find query-map)))))
+(def where-vars
+  (set (parser/collect-vars-distinct
+         (parser/parse-where (:where query-map)))))
+(def first-pattern (first (parser/parse-where (:where query-map))))
+
+(println (empty? (set/difference find-vars where-vars)))
+(println (instance? parser/Pattern first-pattern))
+(println (some? (parser/explicit-input first-pattern)))
+(println (count (parser/collect parser/explicit-input [first-pattern])))
+(println (count (parser/default-in (parser/parse-where (:where query-map)))))
+|}
+  in
+  let sources =
+    [ ("test/datascript/parser_behavior.cljc", source) ]
+  in
+  let native_source = compile_current_datascript Lg.Target.Native sources in
+  assert_ocaml_runs "current_datascript_parser_collects_pattern_variables"
+    "true\ntrue\ntrue\n1\n1\n" native_source
+
 let test_current_datascript_query_behaves_on_native () =
   let source =
     {|
@@ -9964,6 +9996,18 @@ let test_batched_core_functions_work () =
     "true:true:true:true:true:true:false:5:-2:3:1:4:1:7:4:-1:8:4:true:false:true:false:true:false:true:false:true:false:true:false\n"
     ocaml_source
 
+let test_seqable_predicate_checks_dynamic_values_at_runtime () =
+  let source =
+    {|
+(defn seqable-value? [^:dynamic value]
+  (seqable? value))
+(println (str (seqable-value? [1 2]) ":" (seqable-value? 1)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "seqable_predicate_checks_dynamic_values_at_runtime"
+    "true:false\n" ocaml_source
+
 let test_batched_core_functions_reject_non_int_arguments () =
   Lg.Compiler.compile_string {|(def x (zero? "0"))|}
   |> expect_error "expected int arguments for zero?"
@@ -15662,6 +15706,19 @@ let test_let_destructuring_supports_nested_sequences () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
+let test_dynamic_vector_destructuring_uses_nil_for_missing_items () =
+  let source =
+    {|
+(let [[first second missing] [1 "two"]]
+  (println (str first ":" second ":" (nil? missing))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "dynamic_vector_destructuring_uses_nil_for_missing_items"
+    "1:two:true\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_let_bindings_support_value_type_hints () =
   let source =
     {|
@@ -21040,6 +21097,8 @@ let tests =
       test_current_datascript_pull_api_behaves_on_native );
     ( "current DataScript query compiles for Native and Melange",
       test_current_datascript_query_compiles_for_native_and_melange );
+    ( "current DataScript parser collects pattern variables",
+      test_current_datascript_parser_collects_pattern_variables );
     ( "current DataScript query behaves on Native",
       test_current_datascript_query_behaves_on_native );
     ( "current DataScript serialize compiles for Native and Melange",
@@ -21827,6 +21886,8 @@ let tests =
     ( "conditional forms accept truthy params",
       test_conditional_forms_accept_truthy_params );
     ("batched core functions work", test_batched_core_functions_work);
+    ( "seqable predicate checks dynamic values at runtime",
+      test_seqable_predicate_checks_dynamic_values_at_runtime );
     ( "batched core functions reject non-int arguments",
       test_batched_core_functions_reject_non_int_arguments );
     ( "batched core functions reject bad arities",
@@ -22313,6 +22374,8 @@ let tests =
       test_destructuring_rejects_missing_map_fields );
     ( "let destructuring supports nested sequences",
       test_let_destructuring_supports_nested_sequences );
+    ( "dynamic vector destructuring uses nil for missing items",
+      test_dynamic_vector_destructuring_uses_nil_for_missing_items );
     ( "let bindings support value type hints",
       test_let_bindings_support_value_type_hints );
     ( "value type hints preserve nullable record values",

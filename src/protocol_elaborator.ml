@@ -96,6 +96,19 @@ let protocol_receiver_type scope env = function
       |> Result.map (fun record -> TNamed_record record)
   | _ -> Error.error "extend-type receiver must be a type keyword or record type"
 
+let protocol_parameter_overrides receiver_ty = function
+  | TFn (parameter_tys, _) ->
+      List.mapi
+        (fun index ty ->
+          if index = 0 then Some receiver_ty
+          else
+            Some
+              (match ty with
+              | TUnknown | TVar _ -> Types.dynamic_constraint TUnknown
+              | ty -> ty))
+        parameter_tys
+  | _ -> [ Some receiver_ty ]
+
 let predeclare_implementations_from_evidence scope env receiver_form
     protocol_name method_forms =
   match
@@ -182,7 +195,9 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                 | Error _ as err -> err
                 | Ok params -> (
                     let body_forms = bind_record_fields params body_forms in
-                    let param_type_overrides = [ Some receiver_ty ] in
+                    let param_type_overrides =
+                      protocol_parameter_overrides receiver_ty marker.ty
+                    in
                     match
                       Expression_elaborator.compile_fn ~param_type_overrides scope env params body_forms
                     with

@@ -196,7 +196,16 @@ let compile name args =
         (function TVector _ | TRecord _ | TNamed_record _ -> true | _ -> false)
         args
   | "indexed?" -> compile_type_predicate name (function TVector _ -> true | _ -> false) args
-  | "seqable?" | "counted?" ->
+  | "seqable?" ->
+      compile_runtime_type_predicate name
+        "Lg_runtime.Runtime_dynamic.is_seqable"
+        (function
+          | TString | TList _ | TVector _ | TSet _ | TRecord _
+          | TNamed_record _ ->
+              true
+          | _ -> false)
+        args
+  | "counted?" ->
       compile_type_predicate name
         (function
           | TString | TList _ | TVector _ | TSet _ | TRecord _ | TNamed_record _ -> true

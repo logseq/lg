@@ -34,12 +34,14 @@ let compile_type_alias ?location scope env next_type name type_parameters
                 )))
   | _ -> Error.error "type-alias expects a type keyword target"
 
-let compile_type_record_fields ?location ?(allow_empty = false) scope env
-    next_type name type_parameters fields =
+let compile_type_record_fields ?location ?(allow_empty = false) ?emitted_name
+    scope env next_type name type_parameters fields =
   if fields = [] && not allow_empty then
     Error.error "type-record expects at least one field"
   else
-    let type_name = Names.sanitize_name name in
+    let type_name =
+      Option.value emitted_name ~default:(Names.sanitize_name name)
+    in
     match declare_type scope env name Record with
     | Error _ as err -> err
     | Ok (type_id, env) ->

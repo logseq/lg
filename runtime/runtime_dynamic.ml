@@ -30,12 +30,31 @@ and payload =
   | Set of t list
   | Map of (t * t) list
   | Reference of dynamic_reference
+  | Record of string * (string * (unit -> t)) list * (string * t) list
   | Opaque of string * (string * (unit -> t)) list
 
 and dynamic_reference = { get : unit -> t; set : t -> t }
 and protocol = { id : string; methods : (string * (t list -> t)) list }
 
 let protocol id methods = { id; methods }
+
+let protocol_extensions : ((string * string), t -> t) Hashtbl.t =
+  Hashtbl.create 32
+
+let register_protocol_extension type_name protocol_id repack =
+  Hashtbl.replace protocol_extensions (type_name, protocol_id) repack
+
+let has_protocol_extension value protocol_id =
+  match value.type_name with
+  | None -> false
+  | Some type_name -> Hashtbl.mem protocol_extensions (type_name, protocol_id)
+
+let protocol_extension value protocol_id =
+  match value.type_name with
+  | None -> None
+  | Some type_name ->
+      Hashtbl.find_opt protocol_extensions (type_name, protocol_id)
+      |> Option.map (fun repack -> repack value)
 
 let make ?sequence ?(sequential = false) ?(protocols = []) ?metadata ?type_name
     payload =
@@ -123,7 +142,7 @@ let rec to_string ~pr value =
         |> String.concat ", "
       in
       "{" ^ entries ^ "}"
-  | Opaque (name, _) -> "<" ^ name ^ ">"
+  | Record (name, _, _) | Opaque (name, _) -> "<" ^ name ^ ">"
 
 and to_seq value =
   match (value.payload, value.sequence) with
@@ -183,6 +202,17 @@ let record type_name entries =
       |> Seq.map (fun (key, value) -> vector (Rrbvec.of_list [ key; value ])))
     (Map entries)
 
+let lazy_record type_name fields extension_fields =
+  let entries () =
+    List.map (fun (key, project) -> (keyword key, project ())) fields
+    @ List.map (fun (key, value) -> (keyword key, value)) extension_fields
+  in
+  make ~type_name
+    ~sequence:(fun () ->
+      entries () |> List.to_seq
+      |> Seq.map (fun (key, value) -> vector (Rrbvec.of_list [ key; value ])))
+    (Record (type_name, fields, extension_fields))
+
 let rec equal left right =
   match (left.payload, right.payload) with
   | Nil, Nil -> true
@@ -206,6 +236,22 @@ let rec equal left right =
              List.exists
                (fun (other_key, other_value) ->
                  equal key other_key && equal value other_value)
+               right)
+           left
+  | Record (left_name, left_fields, left_extensions),
+    Record (right_name, right_fields, right_extensions) ->
+      let entries fields extensions =
+        List.map (fun (key, project) -> (key, project ())) fields @ extensions
+      in
+      let left = entries left_fields left_extensions in
+      let right = entries right_fields right_extensions in
+      String.equal left_name right_name
+      && List.length left = List.length right
+      && List.for_all
+           (fun (key, value) ->
+             List.exists
+               (fun (other_key, other_value) ->
+                 String.equal key other_key && equal value other_value)
                right)
            left
   | Opaque _, Opaque _ -> false
@@ -245,7 +291,7 @@ let payload_rank = function
   | Array _ -> 7
   | List | Vector | Seq -> 8
   | Set _ -> 9
-  | Map _ -> 10
+  | Map _ | Record _ -> 10
   | Function _ -> 11
   | Reference _ -> 12
   | Opaque _ -> 13
@@ -416,6 +462,7 @@ let class_ value =
     | Seq -> Some "clojure.lang.ISeq"
     | Set _ -> Some "clojure.lang.PersistentHashSet"
     | Map _ -> Some "clojure.lang.PersistentArrayMap"
+    | Record (name, _, _) -> Some name
     | Opaque (name, _) -> Some name
   in
   match name with None -> nil | Some name -> string name
@@ -425,7 +472,8 @@ let is_comparable value =
   | Nil | Int _ | Float _ | Char _ | String _ | Symbol _ | Keyword _ | Bool _
   | Array _ ->
       true
-  | Function _ | Reference _ | List | Vector | Seq | Set _ | Map _ | Opaque _ ->
+  | Function _ | Reference _ | List | Vector | Seq | Set _ | Map _ | Record _
+  | Opaque _ ->
       false
 
 let set sequence =
@@ -561,6 +609,10 @@ let subvec_value value start stop =
 
 let get value key =
   match (value.payload, key.payload) with
+  | Record (_, fields, extensions), Keyword keyword -> (
+      match List.assoc_opt keyword fields with
+      | Some project -> project ()
+      | None -> List.assoc_opt keyword extensions |> Option.value ~default:nil)
   | Opaque (_, fields), Keyword keyword -> (
       match List.assoc_opt keyword fields with
       | Some project -> project ()
@@ -576,6 +628,11 @@ let get value key =
 
 let get_default value key default =
   match (value.payload, key.payload) with
+  | Record (_, fields, extensions), Keyword keyword -> (
+      match List.assoc_opt keyword fields with
+      | Some project -> project ()
+      | None ->
+          List.assoc_opt keyword extensions |> Option.value ~default)
   | Opaque (_, fields), Keyword keyword -> (
       match List.assoc_opt keyword fields with
       | Some project -> project ()
@@ -592,6 +649,8 @@ let get_default value key default =
 
 let contains value key =
   match (value.payload, key.payload) with
+  | Record (_, fields, extensions), Keyword keyword ->
+      List.mem_assoc keyword fields || List.mem_assoc keyword extensions
   | Opaque (_, fields), Keyword keyword -> List.mem_assoc keyword fields
   | Map entries, _ ->
       List.exists (fun (entry_key, _) -> equal key entry_key) entries
@@ -603,6 +662,9 @@ let contains value key =
 let entries value =
   match value.payload with
   | Map entries -> entries
+  | Record (_, fields, extensions) ->
+      List.map (fun (key, project) -> (keyword key, project ())) fields
+      @ List.map (fun (key, value) -> (keyword key, value)) extensions
   | _ -> invalid_arg "dynamic value is not a map"
 
 let map_without_keys value keys =
@@ -697,18 +759,19 @@ let is_array value = match value.payload with Array _ -> true | _ -> false
 let is_list value = match value.payload with List -> true | _ -> false
 let is_vector value = match value.payload with Vector -> true | _ -> false
 let is_seq value = match value.payload with List | Seq -> true | _ -> false
-let is_map value = match value.payload with Map _ -> true | _ -> false
+let is_map value =
+  match value.payload with Map _ | Record _ -> true | _ -> false
 let is_set value = match value.payload with Set _ -> true | _ -> false
 let is_coll value =
   match value.payload with
-  | List | Vector | Seq | Set _ | Map _ -> true
+  | List | Vector | Seq | Set _ | Map _ | Record _ -> true
   | _ -> false
 let is_instance value type_name = value.type_name = Some type_name
 
 let call value arguments =
   match value.payload with
   | Function function_ -> function_ arguments
-  | Map _ -> (
+  | Map _ | Record _ -> (
       match arguments with
       | [ key ] -> get value key
       | [ key; default ] -> get_default value key default
@@ -1086,6 +1149,24 @@ let rec hash value =
       |> Seq.map (fun (key, value) ->
           [ hash key; hash value ] |> List.to_seq |> Runtime_hash.hash_ordered)
       |> Runtime_hash.hash_unordered
+  | Record (name, fields, extensions) ->
+      let field_hashes =
+        List.map
+          (fun (key, project) ->
+            [ Runtime_hash.hash_keyword key; hash (project ()) ]
+            |> List.to_seq |> Runtime_hash.hash_ordered)
+          fields
+      in
+      let extension_hashes =
+        List.map
+          (fun (key, value) ->
+            [ Runtime_hash.hash_keyword key; hash value ]
+            |> List.to_seq |> Runtime_hash.hash_ordered)
+          extensions
+      in
+      Runtime_hash.hash_combine (Runtime_hash.hash_string name)
+        (Runtime_hash.hash_unordered
+           (List.to_seq (field_hashes @ extension_hashes)))
   | Function _ -> 0
   | Reference _ -> 0
   | Opaque (name, _) -> Runtime_hash.hash_string name
@@ -1110,11 +1191,21 @@ let group_by key_fn pack_key pack_item sequence =
 
 let has_protocol value protocol_id =
   List.exists (fun protocol -> protocol.id = protocol_id) value.protocols
+  || has_protocol_extension value protocol_id
 
 let invoke value protocol_id method_name arguments =
-  match
-    List.find_opt (fun protocol -> protocol.id = protocol_id) value.protocols
-  with
+  let protocol =
+    match
+      List.find_opt (fun protocol -> protocol.id = protocol_id) value.protocols
+    with
+    | Some _ as protocol -> protocol
+    | None ->
+        Option.bind (protocol_extension value protocol_id) (fun extended ->
+            List.find_opt
+              (fun protocol -> protocol.id = protocol_id)
+              extended.protocols)
+  in
+  match protocol with
   | None -> invalid_arg ("missing protocol " ^ protocol_id)
   | Some protocol -> (
       match List.assoc_opt method_name protocol.methods with
