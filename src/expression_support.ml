@@ -1447,6 +1447,10 @@ let lookup_function scope env name =
       | "str" -> Ok (static_function [ dynamic ] TString "str_value")
       | "subs" -> Ok (dynamic_function "subs_function")
       | "get" -> Ok (dynamic_function "get_function")
+      | "update" | "clojure.core/update" | "cljs.core/update" ->
+          Ok (dynamic_function "update_function")
+      | "dissoc" | "clojure.core/dissoc" | "cljs.core/dissoc" ->
+          Ok (dynamic_function "dissoc_function")
       | "pr-str" -> Ok (dynamic_function "pr_str_function")
       | "print-str" -> Ok (dynamic_function "print_str_function")
       | "println-str" -> Ok (dynamic_function "println_str_function")
@@ -1556,14 +1560,27 @@ let record_constructor_type scope env name =
     | Error _ -> None
   else None
 
-let map_record_constructor_type scope env name =
-  if String.starts_with ~prefix:"map->" name then
-    let type_name = String.sub name 5 (String.length name - 5) in
-    match Resolver.lookup_record_type scope env type_name with
-    | Ok record ->
-        Some (TFn ([ TRecord record.fields ], TNamed_record record))
-    | Error _ -> None
+let map_record_constructor_type_name name =
+  let owner, basename =
+    match String.rindex_opt name '/' with
+    | None -> ("", name)
+    | Some index ->
+        ( String.sub name 0 (index + 1),
+          String.sub name (index + 1) (String.length name - index - 1) )
+  in
+  if String.starts_with ~prefix:"map->" basename then
+    Some
+      (owner ^ String.sub basename 5 (String.length basename - 5))
   else None
+
+let map_record_constructor_type scope env name =
+  match map_record_constructor_type_name name with
+  | Some type_name -> (
+      match Resolver.lookup_record_type scope env type_name with
+      | Ok record ->
+          Some (TFn ([ TRecord record.fields ], TNamed_record record))
+      | Error _ -> None)
+  | None -> None
 
 let dynamic_key_record_type env expected_field_ty =
   let expected_field_ty =

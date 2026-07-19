@@ -253,6 +253,18 @@ let same_refinable_wrapper left right =
 let constrain_symbol expected_ty params name =
   match string_assoc_opt name params with
   | None -> Ok params
+  | Some (TFn (parameter_tys, return_ty))
+    when (match expected_ty with TFn _ -> true | _ -> false)
+         &&
+         (List.exists
+            (function
+              | TVar name -> String.starts_with ~prefix:"let_fn_" name
+              | _ -> false)
+            parameter_tys
+         || match return_ty with
+            | TVar name -> String.starts_with ~prefix:"let_fn_" name
+            | _ -> false) ->
+      Ok params
   | Some existing_ty ->
       let substitutions =
         Type_solver.unify [] existing_ty expected_ty
@@ -925,8 +937,14 @@ let infer_params ?(explicitly_dynamic_params = [])
                   in
                   let destructured =
                     if spec.destructured then
+                      let item_ty =
+                        match parameter_ty with
+                        | TVector item_ty when Types.is_dynamic item_ty ->
+                            item_ty
+                        | _ -> TUnknown
+                      in
                       Destructure.pattern_names spec.pattern
-                      |> List.map (fun name -> (name, TUnknown))
+                      |> List.map (fun name -> (name, item_ty))
                     else []
                   in
                   (spec.source_name, parameter_ty) :: destructured)
@@ -2724,6 +2742,25 @@ let infer_params ?(explicitly_dynamic_params = [])
         in
         Result.bind (constrain_symbol reference_ty params reference)
           (fun params -> infer_expected element_ty params value)
+    | FList
+        (FSymbol ("swap!" | "vswap!") :: reference :: update_fn
+       :: arguments) ->
+        Result.bind (infer_form params reference) (fun params ->
+            Result.bind (infer_form params update_fn) (fun params ->
+                let expected = inferred_form_type params reference in
+                let update_ty = inferred_form_type params update_fn in
+                let expected_argument =
+                  match (expected, update_ty) with
+                  | TRef _, TFn _ -> TUnknown
+                  | _ -> Types.dynamic_constraint TUnknown
+                in
+                List.fold_left
+                  (fun result argument ->
+                    Result.bind result (fun params ->
+                        if Types.equal expected_argument TUnknown then
+                          infer_form params argument
+                        else infer_expected expected_argument params argument))
+                  (Ok params) arguments))
     | FList [ FSymbol "dissoc!"; FSymbol collection; key ] ->
         let key_ty =
           match inferred_form_type params key with
@@ -2950,6 +2987,12 @@ let infer_params ?(explicitly_dynamic_params = [])
         | Some (TNamed_record _) -> infer_expected TKeyword params key
         | _ ->
             let dynamic = Types.dynamic_constraint TUnknown in
+            let params =
+              match string_assoc_opt target params with
+              | Some ty when Option.is_some (Types.seqable_constraint_info ty) ->
+                  replace_param target dynamic params
+              | Some _ | None -> params
+            in
             match constrain_symbol dynamic params target with
             | Error _ as error -> error
             | Ok params -> infer_expected dynamic params key)
@@ -3372,7 +3415,7 @@ let infer_params ?(explicitly_dynamic_params = [])
                       (Types.dynamic_constraint TUnknown)
                       params name
                 | Some _ | None -> infer_form params fn)
-            | _ -> infer_form params fn)
+            | _ -> infer_expected (TFn ([ element_ty ], TUnknown)) params fn)
     | FList [ FSymbol "reduce"; reducer; init; collection ] -> (
         let declared_accumulator_ty, declared_element_ty =
           match reducer with
@@ -3637,6 +3680,15 @@ let infer_params ?(explicitly_dynamic_params = [])
         :: argument_forms) ->
         infer_form params
           (Core_form_expansion.update_in target keys function_form argument_forms)
+    | FList
+        (FSymbol ("dissoc" | "clojure.core/dissoc" | "cljs.core/dissoc")
+        :: target :: keys) ->
+        (match inferred_form_type params target with
+        | TUnknown | TVar _ ->
+            let dynamic = Types.dynamic_constraint TUnknown in
+            Result.bind (infer_expected dynamic params target) (fun params ->
+                infer_expected_all dynamic params keys)
+        | _ -> infer_all params (target :: keys))
     | FList
         (FSymbol ("assoc" | "clojure.core/assoc" | "clojure.lang.RT/assoc")
         :: target :: pairs) ->

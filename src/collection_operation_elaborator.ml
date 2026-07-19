@@ -75,7 +75,11 @@ let runtime_map_operation key_ty operation =
   else ""
 
 let runtime_map_key_type declared actual =
-  if Types.is_dynamic declared || Types.is_dynamic actual then
+  if
+    Types.is_dynamic declared || Types.is_dynamic actual
+    || Types.equal declared TUnknown
+    || match declared with TVar _ -> true | _ -> false
+  then
     Types.dynamic_constraint TUnknown
   else declared
 
@@ -182,6 +186,23 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
     in
     let ty, semantic_expr = unwrap value.ty value.semantic_expr in
     { value with ty; semantic_expr }
+  in
+  let dynamic_constraint_value value =
+    let rec unwrap ty expression =
+      match Types.protocol_constraint_info ty with
+      | Some (_, _, value_ty) ->
+          unwrap value_ty
+            (Semantic_ir.Apply (Semantic_ir.Ident "snd", [ expression ]))
+      | None -> (
+          match Types.seqable_constraint_info ty with
+          | Some (_, _, value_ty) ->
+              unwrap value_ty
+                (Semantic_ir.Apply (Semantic_ir.Ident "snd", [ expression ]))
+          | None -> expression)
+    in
+    match Semantic_ir.unlocated value.semantic_expr with
+    | Semantic_ir.Ident _ -> value.semantic_expr
+    | _ -> unwrap value.ty value.semantic_expr
   in
   let special_forms : Special_form_elaborator.t =
     Special_form_elaborator.create ~compile_expr ~dynamic_unpack
@@ -1356,6 +1377,16 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                         (typed_ir (TNullable TUnknown)
                            (apply "Lg_runtime.Runtime_map.get_option"
                               [ target.semantic_expr; index.semantic_expr ]))
+                  | None
+                    when Types.is_dynamic
+                           (Types.constraint_value_type target.ty) ->
+                      let dynamic = Types.dynamic_constraint TUnknown in
+                      Result.map
+                        (fun key ->
+                          typed_ir dynamic
+                            (apply "Lg_runtime.Runtime_dynamic.get"
+                               [ dynamic_constraint_value target; key ]))
+                        (pack_dynamic_value env dynamic index)
                   | _ ->
                       Error.error
                         ("get key type " ^ source_name index.ty
@@ -1996,26 +2027,44 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   Result.bind (parse_keywords [] key_forms)
                     (dissoc_keywords target)
               | target_ty
-                when Option.is_some (Types.dynamic_map_types target_ty)
-                     || Types.equal target_ty TUnknown
-                   || match target_ty with TVar _ -> true | _ -> false ->
+                when Option.is_some (Types.dynamic_map_types target_ty) ->
                   let key_ty, _ =
-                    Option.value (Types.dynamic_map_types target_ty)
-                      ~default:(TUnknown, TUnknown)
+                    Option.get (Types.dynamic_map_types target_ty)
                   in
-                  Result.map
-                    (fun keys ->
-                      typed_ir target.ty
-                        (List.fold_left
-                           (fun map key ->
-                             apply
-                               (runtime_map_operation
-                                  (runtime_map_key_type key_ty key.ty)
-                                  "dissoc")
-                               [ map; key.semantic_expr ])
-                           target.semantic_expr keys))
-                    (compile_args_for scope env key_forms)
-              | target_ty when Types.is_dynamic target_ty ->
+                  Result.bind (compile_args_for scope env key_forms) (fun keys ->
+                    let rec prepare_keys prepared = function
+                      | [] -> Ok (List.rev prepared)
+                      | key :: rest ->
+                          let expected_ty =
+                            runtime_map_key_type key_ty key.ty
+                          in
+                          let key =
+                            if Types.is_dynamic expected_ty then
+                              Result.map
+                                (fun semantic_expr ->
+                                  { key with ty = expected_ty; semantic_expr })
+                                (pack_dynamic_value env expected_ty key)
+                            else Ok key
+                          in
+                          Result.bind key (fun key ->
+                              prepare_keys (key :: prepared) rest)
+                    in
+                    Result.map
+                      (fun keys ->
+                        typed_ir target.ty
+                          (List.fold_left
+                             (fun map key ->
+                               apply
+                                 (runtime_map_operation
+                                    (runtime_map_key_type key_ty key.ty)
+                                    "dissoc")
+                                 [ map; key.semantic_expr ])
+                             target.semantic_expr keys))
+                      (prepare_keys [] keys))
+              | target_ty
+                when Types.is_dynamic target_ty
+                     || Types.equal target_ty TUnknown
+                     || match target_ty with TVar _ -> true | _ -> false ->
                 Result.bind (compile_args_for scope env key_forms) (fun keys ->
                       let rec pack packed = function
                         | [] -> Ok (List.rev packed)
@@ -2026,7 +2075,11 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                       in
                       Result.map
                         (fun keys ->
-                          typed_ir target.ty
+                          let result_ty =
+                            if Types.is_dynamic target.ty then target.ty
+                            else Types.dynamic_constraint TUnknown
+                          in
+                          typed_ir result_ty
                             (List.fold_left
                                (fun map key ->
                                  apply "Lg_runtime.Runtime_dynamic.dissoc"

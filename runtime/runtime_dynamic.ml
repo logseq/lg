@@ -549,6 +549,11 @@ let dissoc value key =
            entries)
   | _ -> invalid_arg "dynamic value is not associative"
 
+let dissoc_function =
+  function_ (function
+    | target :: keys -> List.fold_left dissoc target keys
+    | [] -> invalid_arg "dissoc expects a collection")
+
 let select_keys value keys =
   match value.payload with
   | Map entries ->
@@ -1312,6 +1317,17 @@ let rec update_in target path update_fn arguments =
         | _ -> target
       in
       assoc target key updated
+
+let update target key update_fn arguments =
+  assoc target key (invoke_function update_fn (get target key :: arguments))
+
+let update_function =
+  function_ (function
+    | target :: key :: update_fn :: arguments ->
+        update target key update_fn arguments
+    | _ ->
+        invalid_arg
+          "update expects collection, key, function, and optional arguments")
 
 let as_int value =
   match value.payload with

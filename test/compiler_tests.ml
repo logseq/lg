@@ -2705,8 +2705,8 @@ let current_datascript_sources () =
     ]
     |> List.map (fun path -> (path, read_file (Filename.concat (repo_root ()) path)))
 
-let compile_current_datascript target extra_sources =
-  let _, reversed_outputs =
+let compile_datascript_sources target initial_state sources =
+  let state, reversed_outputs =
     List.fold_left
       (fun (state, outputs) (filename, source) ->
         let state, output =
@@ -2730,14 +2730,64 @@ let compile_current_datascript target extra_sources =
                    (Lg.Target.to_string target) location error.message)
         in
         (state, output :: outputs))
-      (Lg.Compiler.empty_state, [])
-      (current_datascript_sources () @ extra_sources)
+      (initial_state, []) sources
   in
-  String.concat "\n" (List.rev reversed_outputs)
+  (state, List.rev reversed_outputs)
+
+let native_datascript_baseline =
+  lazy
+    (compile_datascript_sources Lg.Target.Native Lg.Compiler.empty_state
+       (current_datascript_sources ()))
+
+let melange_datascript_baseline =
+  lazy
+    (compile_datascript_sources Lg.Target.Melange Lg.Compiler.empty_state
+       (current_datascript_sources ()))
+
+let current_datascript_baseline target =
+  match target with
+  | Lg.Target.Native -> Lazy.force native_datascript_baseline
+  | Lg.Target.Melange -> Lazy.force melange_datascript_baseline
+  | Lg.Target.Js_of_ocaml ->
+      compile_datascript_sources target Lg.Compiler.empty_state
+        (current_datascript_sources ())
+
+let extend_datascript_baseline target (baseline_state, baseline_outputs) sources =
+  let state, outputs =
+    compile_datascript_sources target baseline_state sources
+  in
+  (state, baseline_outputs @ outputs)
+
+let compile_from_datascript_baseline target
+    (baseline_state, baseline_outputs) extra_sources =
+  let _, extra_outputs =
+    compile_datascript_sources target baseline_state extra_sources
+  in
+  String.concat "\n" (baseline_outputs @ extra_outputs)
+
+type datascript_behavior = {
+  filename : string;
+  source : string;
+  expected_output : string;
+}
+
+let pending_datascript_behaviors = ref []
+
+let register_datascript_behavior filename source expected_output =
+  pending_datascript_behaviors :=
+    { filename; source; expected_output } :: !pending_datascript_behaviors
+
+let datascript_baseline_for target native melange sources =
+  match target with
+  | Lg.Target.Native -> Lazy.force native
+  | Lg.Target.Melange -> Lazy.force melange
+  | Lg.Target.Js_of_ocaml ->
+      extend_datascript_baseline target
+        (current_datascript_baseline target) sources
 
 let test_current_datascript_chain_compiles_for_native_and_melange () =
-  ignore (compile_current_datascript Lg.Target.Native []);
-  ignore (compile_current_datascript Lg.Target.Melange [])
+  ignore (current_datascript_baseline Lg.Target.Native);
+  ignore (current_datascript_baseline Lg.Target.Melange)
 
 let test_datascript_make_array_one_arity_behaves_on_native_and_melange () =
   let source =
@@ -2760,12 +2810,8 @@ let test_datascript_make_array_one_arity_behaves_on_native_and_melange () =
     (nil? (arrays/aget values 2))))
 |}
   in
-  let sources = [ ("test/datascript/dynamic_array.cljc", source) ] in
-  let native_source = compile_current_datascript Lg.Target.Native sources in
-  assert_ocaml_runs
-    "datascript_make_array_one_arity_behaves_on_native_and_melange"
-    "true:true\ntrue:true:true\n" native_source;
-  ignore (compile_current_datascript Lg.Target.Melange sources)
+  register_datascript_behavior "test/datascript/dynamic_array.cljc" source
+    "true:true\ntrue:true:true\n"
 
 let test_current_datascript_entity_behaves_on_native () =
   let source =
@@ -2785,33 +2831,61 @@ let test_current_datascript_entity_behaves_on_native () =
          (count person))))
 |}
   in
-  let native_source =
-    compile_current_datascript Lg.Target.Native
-      [ ("test/datascript/entity_behavior.cljc", source) ]
-  in
-  assert_ocaml_runs "current_datascript_entity_behaves_on_native"
-    "1:Ivan:19:2\n" native_source;
-  ignore
-    (compile_current_datascript Lg.Target.Melange
-       [ ("test/datascript/entity_behavior.cljc", source) ])
+  register_datascript_behavior "test/datascript/entity_behavior.cljc" source
+    "1:Ivan:19:2\n"
 
-let test_current_datascript_pull_parser_compiles_for_native_and_melange () =
+let current_datascript_pull_parser_sources () =
   let path = "test/datascript/upstream/pull_parser.cljc" in
-  let source = read_file (Filename.concat (repo_root ()) path) in
-  ignore (compile_current_datascript Lg.Target.Native [ (path, source) ]);
-  ignore (compile_current_datascript Lg.Target.Melange [ (path, source) ])
+  [ (path, read_file (Filename.concat (repo_root ()) path)) ]
+
+let current_datascript_pull_api_sources () =
+  let path = "test/datascript/upstream/pull_api.cljc" in
+  [ (path, read_file (Filename.concat (repo_root ()) path)) ]
 
 let current_datascript_pull_sources () =
-  [
-    "test/datascript/upstream/pull_parser.cljc";
-    "test/datascript/upstream/pull_api.cljc";
-  ]
-  |> List.map (fun path -> (path, read_file (Filename.concat (repo_root ()) path)))
+  current_datascript_pull_parser_sources ()
+  @ current_datascript_pull_api_sources ()
+
+let native_datascript_pull_parser_baseline =
+  lazy
+    (extend_datascript_baseline Lg.Target.Native
+       (current_datascript_baseline Lg.Target.Native)
+       (current_datascript_pull_parser_sources ()))
+
+let melange_datascript_pull_parser_baseline =
+  lazy
+    (extend_datascript_baseline Lg.Target.Melange
+       (current_datascript_baseline Lg.Target.Melange)
+       (current_datascript_pull_parser_sources ()))
+
+let datascript_pull_parser_baseline target =
+  datascript_baseline_for target native_datascript_pull_parser_baseline
+    melange_datascript_pull_parser_baseline
+    (current_datascript_pull_parser_sources ())
+
+let native_datascript_pull_baseline =
+  lazy
+    (extend_datascript_baseline Lg.Target.Native
+       (datascript_pull_parser_baseline Lg.Target.Native)
+       (current_datascript_pull_api_sources ()))
+
+let melange_datascript_pull_baseline =
+  lazy
+    (extend_datascript_baseline Lg.Target.Melange
+       (datascript_pull_parser_baseline Lg.Target.Melange)
+       (current_datascript_pull_api_sources ()))
+
+let datascript_pull_baseline target =
+  datascript_baseline_for target native_datascript_pull_baseline
+    melange_datascript_pull_baseline (current_datascript_pull_sources ())
+
+let test_current_datascript_pull_parser_compiles_for_native_and_melange () =
+  ignore (datascript_pull_parser_baseline Lg.Target.Native);
+  ignore (datascript_pull_parser_baseline Lg.Target.Melange)
 
 let test_current_datascript_pull_api_compiles_for_native_and_melange () =
-  let sources = current_datascript_pull_sources () in
-  ignore (compile_current_datascript Lg.Target.Native sources);
-  ignore (compile_current_datascript Lg.Target.Melange sources)
+  ignore (datascript_pull_baseline Lg.Target.Native);
+  ignore (datascript_pull_baseline Lg.Target.Melange)
 
 let test_current_datascript_pull_api_behaves_on_native () =
   let source =
@@ -2849,27 +2923,35 @@ let test_current_datascript_pull_api_behaves_on_native () =
               (nil? (pull/pull database [:name] 999))))
 |}
   in
-  let native_source =
-    compile_current_datascript Lg.Target.Native
-      (current_datascript_pull_sources ()
-      @ [ ("test/datascript/pull_api_behavior.cljc", source) ])
-  in
-  assert_ocaml_runs "current_datascript_pull_api_behaves_on_native"
-    "true\ntrue\ntrue\ntrue\ntrue\ntrue\n" native_source;
-  ignore
-    (compile_current_datascript Lg.Target.Melange
-       (current_datascript_pull_sources ()
-       @ [ ("test/datascript/pull_api_behavior.cljc", source) ]))
+  register_datascript_behavior "test/datascript/pull_api_behavior.cljc" source
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\n"
+
+let current_datascript_query_only_sources () =
+  let path = "test/datascript/upstream/query.cljc" in
+  [ (path, read_file (Filename.concat (repo_root ()) path)) ]
 
 let current_datascript_query_sources () =
-  let path = "test/datascript/upstream/query.cljc" in
-  current_datascript_pull_sources ()
-  @ [ (path, read_file (Filename.concat (repo_root ()) path)) ]
+  current_datascript_pull_sources () @ current_datascript_query_only_sources ()
+
+let native_datascript_query_baseline =
+  lazy
+    (extend_datascript_baseline Lg.Target.Native
+       (datascript_pull_baseline Lg.Target.Native)
+       (current_datascript_query_only_sources ()))
+
+let melange_datascript_query_baseline =
+  lazy
+    (extend_datascript_baseline Lg.Target.Melange
+       (datascript_pull_baseline Lg.Target.Melange)
+       (current_datascript_query_only_sources ()))
+
+let datascript_query_baseline target =
+  datascript_baseline_for target native_datascript_query_baseline
+    melange_datascript_query_baseline (current_datascript_query_sources ())
 
 let test_current_datascript_query_compiles_for_native_and_melange () =
-  let sources = current_datascript_query_sources () in
-  ignore (compile_current_datascript Lg.Target.Native sources);
-  ignore (compile_current_datascript Lg.Target.Melange sources)
+  ignore (datascript_query_baseline Lg.Target.Native);
+  ignore (datascript_query_baseline Lg.Target.Melange)
 
 let test_current_datascript_parser_collects_pattern_variables () =
   let source =
@@ -2896,12 +2978,8 @@ let test_current_datascript_parser_collects_pattern_variables () =
 (println (count (parser/default-in (parser/parse-where (:where query-map)))))
 |}
   in
-  let sources =
-    [ ("test/datascript/parser_behavior.cljc", source) ]
-  in
-  let native_source = compile_current_datascript Lg.Target.Native sources in
-  assert_ocaml_runs "current_datascript_parser_collects_pattern_variables"
-    "true\ntrue\ntrue\n1\n1\n" native_source
+  register_datascript_behavior "test/datascript/parser_behavior.cljc" source
+    "true\ntrue\ntrue\n1\n1\n"
 
 let test_current_datascript_query_behaves_on_native () =
   let source =
@@ -2926,14 +3004,8 @@ let test_current_datascript_query_behaves_on_native () =
        database)))
 |}
   in
-  let sources =
-    current_datascript_query_sources ()
-    @ [ ("test/datascript/query_behavior.cljc", source) ]
-  in
-  let native_source = compile_current_datascript Lg.Target.Native sources in
-  assert_ocaml_runs "current_datascript_query_behaves_on_native" "true\n"
-    native_source;
-  ignore (compile_current_datascript Lg.Target.Melange sources)
+  register_datascript_behavior "test/datascript/query_behavior.cljc" source
+    "true\n"
 
 let current_datascript_serialize_sources () =
   let storage_source =
@@ -2948,12 +3020,26 @@ let current_datascript_serialize_sources () =
     (path, read_file (Filename.concat (repo_root ()) path));
   ]
 
+let native_datascript_serialize_baseline =
+  lazy
+    (extend_datascript_baseline Lg.Target.Native
+       (datascript_query_baseline Lg.Target.Native)
+       (current_datascript_serialize_sources ()))
+
+let melange_datascript_serialize_baseline =
+  lazy
+    (extend_datascript_baseline Lg.Target.Melange
+       (datascript_query_baseline Lg.Target.Melange)
+       (current_datascript_serialize_sources ()))
+
+let datascript_serialize_baseline target =
+  datascript_baseline_for target native_datascript_serialize_baseline
+    melange_datascript_serialize_baseline
+    (current_datascript_query_sources () @ current_datascript_serialize_sources ())
+
 let test_current_datascript_serialize_compiles_for_native_and_melange () =
-  let sources =
-    current_datascript_query_sources () @ current_datascript_serialize_sources ()
-  in
-  ignore (compile_current_datascript Lg.Target.Native sources);
-  ignore (compile_current_datascript Lg.Target.Melange sources)
+  ignore (datascript_serialize_baseline Lg.Target.Native);
+  ignore (datascript_serialize_baseline Lg.Target.Melange)
 
 let test_current_datascript_serialize_roundtrips_on_native () =
   let source =
@@ -2978,14 +3064,81 @@ let test_current_datascript_serialize_roundtrips_on_native () =
 (println (= 4 (count (:eavt restored))))
 |}
   in
-  let sources =
-    current_datascript_serialize_sources ()
-    @ [ ("test/datascript/serialize_behavior.cljc", source) ]
+  let behaviors = List.rev !pending_datascript_behaviors in
+  pending_datascript_behaviors := [];
+  let behavior_sources =
+    List.map
+      (fun behavior -> (behavior.filename, behavior.source))
+      behaviors
   in
-  let native_source = compile_current_datascript Lg.Target.Native sources in
+  let expected_output =
+    behaviors
+    |> List.map (fun behavior -> behavior.expected_output)
+    |> String.concat ""
+  in
+  let native_behaviors =
+    compile_from_datascript_baseline Lg.Target.Native
+      (datascript_query_baseline Lg.Target.Native) behavior_sources
+  in
+  assert_ocaml_runs "current_datascript_behaviors_on_native" expected_output
+    native_behaviors;
+  ignore
+    (compile_from_datascript_baseline Lg.Target.Melange
+       (datascript_query_baseline Lg.Target.Melange) behavior_sources);
+  let serialize_source =
+    ("test/datascript/serialize_behavior.cljc", source)
+  in
+  let native_serialize =
+    compile_from_datascript_baseline Lg.Target.Native
+      (current_datascript_baseline Lg.Target.Native)
+      (current_datascript_serialize_sources () @ [ serialize_source ])
+  in
   assert_ocaml_runs "current_datascript_serialize_roundtrips_on_native"
-    "true\ntrue\n" native_source;
-  ignore (compile_current_datascript Lg.Target.Melange sources)
+    "true\ntrue\n" native_serialize;
+  ignore
+    (compile_from_datascript_baseline Lg.Target.Melange
+       (current_datascript_baseline Lg.Target.Melange)
+       (current_datascript_serialize_sources () @ [ serialize_source ]))
+
+let current_datascript_conn_sources () =
+  let storage_source =
+    {|
+(ns datascript.storage)
+(defn storage [_db] nil)
+(defn store [_db] nil)
+(defn maybe-adapt-storage [opts] opts)
+(defn restore-impl [_storage _opts] [nil []])
+(defn db-with-tail [db _tail] db)
+(defn store-impl! [_db _adapter _force?] nil)
+(defn storage-adapter [_db] nil)
+(defn store-tail [_db _tail] nil)
+|}
+  in
+  let path = "test/datascript/upstream/conn.cljc" in
+  [
+    ("test/datascript/upstream/storage_conn_stub.cljc", storage_source);
+    (path, read_file (Filename.concat (repo_root ()) path));
+  ]
+
+let native_datascript_conn_baseline =
+  lazy
+    (extend_datascript_baseline Lg.Target.Native
+       (current_datascript_baseline Lg.Target.Native)
+       (current_datascript_conn_sources ()))
+
+let melange_datascript_conn_baseline =
+  lazy
+    (extend_datascript_baseline Lg.Target.Melange
+       (current_datascript_baseline Lg.Target.Melange)
+       (current_datascript_conn_sources ()))
+
+let datascript_conn_baseline target =
+  datascript_baseline_for target native_datascript_conn_baseline
+    melange_datascript_conn_baseline (current_datascript_conn_sources ())
+
+let test_current_datascript_conn_compiles_for_native_and_melange () =
+  ignore (datascript_conn_baseline Lg.Target.Native);
+  ignore (datascript_conn_baseline Lg.Target.Melange)
 
 let test_namespace_ignores_clojure_compiler_directives () =
   let source =
@@ -21206,6 +21359,8 @@ let tests =
       test_current_datascript_serialize_compiles_for_native_and_melange );
     ( "current DataScript serialize roundtrips on Native",
       test_current_datascript_serialize_roundtrips_on_native );
+    ( "current DataScript conn compiles for Native and Melange",
+      test_current_datascript_conn_compiles_for_native_and_melange );
     ( "namespace ignores Clojure compiler directives",
       test_namespace_ignores_clojure_compiler_directives );
     ( "System currentTimeMillis compiles for native",
@@ -22993,23 +23148,118 @@ let tests =
       test_compile_chunk_prints_parsetree_backend_output );
   ]
 
-let () =
-  Printexc.record_backtrace true;
-  let tests =
-    match Sys.getenv_opt "LG_TEST_FILTER" with
-    | None -> tests
-    | Some filter ->
-        List.filter
-          (fun (name, _) -> string_contains_substring name filter)
-          tests
-  in
+let datascript_integration_tests =
+  [
+    "current DataScript chain compiles for Native and Melange";
+    "DataScript make-array one arity behaves on Native and Melange";
+    "current DataScript Entity behaves on Native";
+    "current DataScript pull parser compiles for Native and Melange";
+    "current DataScript pull API compiles for Native and Melange";
+    "current DataScript pull API behaves on Native";
+    "current DataScript query compiles for Native and Melange";
+    "current DataScript parser collects pattern variables";
+    "current DataScript query behaves on Native";
+    "current DataScript serialize compiles for Native and Melange";
+    "current DataScript serialize roundtrips on Native";
+    "current DataScript conn compiles for Native and Melange";
+  ]
+
+let unsupported_java_tests =
+  [
+    "Java exception constructors map to runtime exceptions";
+    "Java exception constructors support empty messages";
+    "print-method defmethod writes custom record representations";
+    "Java Writer annotations work in ordinary functions";
+    "apply pr accepts lazy sequences";
+    "apply pr accepts refined protocol sequences";
+    "class and identical? support dynamic values";
+  ]
+
+let run_tests tests =
   time_phase "compiler tests" (fun () ->
       List.iter
         (fun (name, run) ->
-          try run ()
+          let started = Unix.gettimeofday () in
+          try
+            run ();
+            let elapsed = Unix.gettimeofday () -. started in
+            if
+              Sys.getenv_opt "LG_TEST_TIMING" = Some "1" && elapsed >= 0.05
+            then Printf.eprintf "test %s: %.3fs\n%!" name elapsed
           with exn ->
             Printf.eprintf "FAILED: %s\n%s\n%s\n" name (Printexc.to_string exn)
               (Printexc.get_backtrace ());
             exit 1)
         tests);
   flush_ocaml_jobs ()
+
+let shard_tests index count tests =
+  tests
+  |> List.mapi (fun test_index test -> (test_index, test))
+  |> List.filter_map (fun (test_index, test) ->
+         if test_index mod count = index then Some test else None)
+
+let run_tests_in_workers worker_count tests =
+  flush_all ();
+  let pids =
+    List.init worker_count (fun index ->
+        match Unix.fork () with
+        | 0 ->
+            run_tests (shard_tests index worker_count tests);
+            exit 0
+        | pid -> pid)
+  in
+  let failed =
+    List.fold_left
+      (fun failed pid ->
+        match snd (Unix.waitpid [] pid) with
+        | Unix.WEXITED 0 -> failed
+        | Unix.WEXITED _ | Unix.WSIGNALED _ | Unix.WSTOPPED _ -> true)
+      false pids
+  in
+  if failed then exit 1
+
+let () =
+  Printexc.record_backtrace true;
+  let rec command_line_filter index =
+    if index >= Array.length Sys.argv then None
+    else
+      match Sys.argv.(index) with
+      | "--filter" when index + 1 < Array.length Sys.argv ->
+          Some Sys.argv.(index + 1)
+      | argument when String.starts_with ~prefix:"--filter=" argument ->
+          Some (String.sub argument 9 (String.length argument - 9))
+      | _ -> command_line_filter (index + 1)
+  in
+  let selected_filter =
+    match command_line_filter 1 with
+    | Some _ as filter -> filter
+    | None -> Sys.getenv_opt "LG_TEST_FILTER"
+  in
+  let include_integration =
+    Array.exists (( = ) "--include-integration") Sys.argv
+    || Sys.getenv_opt "LG_INCLUDE_INTEGRATION" = Some "1"
+  in
+  let tests =
+    match selected_filter with
+    | None when include_integration -> tests
+    | None ->
+        List.filter
+          (fun (name, _) ->
+            not
+              (List.mem name datascript_integration_tests
+              || List.mem name unsupported_java_tests))
+          tests
+    | Some filter ->
+        List.filter
+          (fun (name, _) -> string_contains_substring name filter)
+          tests
+  in
+  let worker_count =
+    match Sys.getenv_opt "LG_TEST_WORKERS" with
+    | Some value -> Option.value (int_of_string_opt value) ~default:1
+    | None -> min 8 (Domain.recommended_domain_count ())
+  in
+  if Option.is_none selected_filter && not include_integration && worker_count > 1
+  then run_tests_in_workers worker_count tests
+  else run_tests tests

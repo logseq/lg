@@ -288,6 +288,16 @@ let rec argument_compatible expected actual =
         | None -> false)
     | _ -> false
 
+let named_argument_compatible expected actual =
+  argument_compatible expected actual
+  ||
+  ((match expected with
+   | TInt | TFloat | TChar | TString | TBool | TKeyword | TSymbol -> true
+   | _ -> false)
+  && Option.is_none (optional_payload expected)
+  && Option.fold ~none:false ~some:(argument_compatible expected)
+       (optional_payload actual))
+
 let rec witness_storage = function
   | [] -> Semantic_ir.Unit
   | method_expr :: rest ->
@@ -2743,6 +2753,45 @@ let dynamic_row_argument env type_name fields argument =
     (fun fields -> Semantic_ir.Record (fields, Some type_name))
     (build [] fields)
 
+let unwrap_optional_argument expected argument =
+  match optional_payload argument.ty with
+  | None -> Ok argument.semantic_expr
+  | Some actual_inner ->
+      Ok
+        (coerce_expression_to_type expected actual_inner
+           (Semantic_ir.Apply
+              (Semantic_ir.Ident "Option.get", [ argument.semantic_expr ])))
+
+let pack_optional_dynamic_argument env expected argument =
+  match optional_payload expected with
+  | None -> Error.error "expected an optional dynamic argument"
+  | Some expected_inner -> (
+      match argument.ty with
+      | TNil -> Ok (Semantic_ir.Constructor ("None", None))
+      | actual when Types.is_dynamic actual ->
+          Ok (Semantic_ir.Constructor ("Some", Some argument.semantic_expr))
+      | TNullable actual | TOcaml_app ("option", [ actual ]) ->
+          if Types.is_dynamic actual then Ok argument.semantic_expr
+          else
+            let value_name = "__lg_optional_dynamic_argument" in
+            let value = typed_ir actual (Semantic_ir.Ident value_name) in
+            Result.map
+              (fun packed ->
+                Semantic_ir.Match
+                  ( argument.semantic_expr,
+                    [
+                      ( Semantic_ir.PConstructor ("None", None),
+                        Semantic_ir.Constructor ("None", None) );
+                      ( Semantic_ir.PConstructor
+                          ("Some", Some (Semantic_ir.PVar value_name)),
+                        Semantic_ir.Constructor ("Some", Some packed) );
+                    ] ))
+              (pack_dynamic_value env expected_inner value)
+      | _ ->
+          Result.map
+            (fun packed -> Semantic_ir.Constructor ("Some", Some packed))
+            (pack_dynamic_value env expected_inner argument))
+
 let rec adapt_value_to_type env expected actual =
   if Types.equal expected actual.ty then Ok actual.semantic_expr
   else if Types.is_dynamic expected then pack_dynamic_value env expected actual
@@ -2905,13 +2954,24 @@ let compile_record_iequiv_pair scope env left right =
   | _ -> Ok None
 
 let compile_equality scope env name args =
+  let compile_pair left right =
+    match Core_compare.compile "=" [ left; right ] with
+    | Error error
+      when name = "not=" && String.starts_with ~prefix:"=" error.message ->
+        Error
+          {
+            error with
+            message = "not=" ^ String.sub error.message 1 (String.length error.message - 1);
+          }
+    | result -> result
+  in
   let rec pairs expressions = function
     | left :: ((right :: _) as rest) ->
         Result.bind (compile_record_iequiv_pair scope env left right)
           (function
             | Some expression -> pairs (expression :: expressions) rest
             | None ->
-                Result.bind (Core_compare.compile "=" [ left; right ])
+                Result.bind (compile_pair left right)
                   (fun expression ->
                     pairs (expression.semantic_expr :: expressions) rest))
     | _ -> Ok (List.rev expressions)
@@ -5003,10 +5063,9 @@ let create ~compile_expr =
         | Ok _ -> Error.error ".getTime expects a JavaScript Date"
         | Error _ as error -> error)
     | map_constructor
-                when String.starts_with ~prefix:"map->" map_constructor -> (
+      when Option.is_some (map_record_constructor_type_name map_constructor) -> (
         let type_name =
-                    String.sub map_constructor 5
-                      (String.length map_constructor - 5)
+          Option.get (map_record_constructor_type_name map_constructor)
         in
                   match Resolver.lookup_record_type scope env type_name with
         | Error _ as error -> error
@@ -9514,7 +9573,7 @@ let create ~compile_expr =
                           match expected with
                           | TNullable (TRecord fields) ->
                               row_argument_compatible fields arg.ty
-                          | _ -> argument_compatible expected arg.ty)
+                          | _ -> named_argument_compatible expected arg.ty)
                         fixed_param_tys fixed_args
                     in
                     let rest_compatible =
@@ -9522,7 +9581,8 @@ let create ~compile_expr =
                       | None -> extra_args = []
                       | Some expected ->
                           List.for_all
-                            (fun arg -> argument_compatible expected arg.ty)
+                            (fun arg ->
+                              named_argument_compatible expected arg.ty)
                             extra_args
                     in
                     if not (fixed_compatible && rest_compatible) then
@@ -9546,7 +9606,8 @@ let create ~compile_expr =
                                    match expected with
                                    | TNullable (TRecord fields) ->
                                        row_argument_compatible fields arg.ty
-                                   | _ -> argument_compatible expected arg.ty)
+                                   | _ ->
+                                       named_argument_compatible expected arg.ty)
                                  fixed_param_tys fixed_args)
                            |> List.filter_map Fun.id))
                     else
@@ -9573,16 +9634,19 @@ let create ~compile_expr =
                           pack_constrained_value ?row_type_name env expected
                             argument
                         | _
-                          when match argument.ty with
+                          when Option.is_none (optional_payload expected)
+                               && not (expects_dynamic_value expected)
+                               && not (expects_optional_dynamic_value expected)
+                               && not (has_capability_constraint expected)
+                               &&
+                               (match argument.ty with
                                | TNullable actual
                                | TOcaml_app ("option", [ actual ]) ->
                                    argument_compatible expected actual
-                               | _ -> false ->
-                            adapt_value_to_type env expected argument
+                               | _ -> false) ->
+                            unwrap_optional_argument expected argument
                         | _ when expects_optional_dynamic_value expected ->
-                          Ok
-                            (coerce_expression_to_type expected argument.ty
-                               argument.semantic_expr)
+                          pack_optional_dynamic_argument env expected argument
                         | _ when
                           Types.is_dynamic expected
                           && not (Types.is_dynamic argument.ty)
@@ -9976,9 +10040,7 @@ let create ~compile_expr =
                                 dynamic_unpack env (TNamed_record record)
                                   arg.semantic_expr
                           | _ when expects_optional_dynamic_value expected_ty ->
-                              Ok
-                                (coerce_expression_to_type expected_ty arg.ty
-                                   arg.semantic_expr)
+                              pack_optional_dynamic_argument env expected_ty arg
                             | _
                               when Types.is_dynamic expected_ty
                                    && not (Types.is_dynamic arg.ty) ->
@@ -10183,7 +10245,6 @@ let create ~compile_expr =
                 let sequence_storage_follows_adapter =
                   match storage_ret_template with
                   | TSeq (TUnknown | TVar _)
-                  | TVector (TUnknown | TVar _)
                   | TNullable (TUnknown | TVar _) ->
                       List.exists
                         (fun parameter_ty ->
@@ -10373,6 +10434,14 @@ let create ~compile_expr =
                 | receiver :: rest -> (
                     match receiver.ty with
                     | TNullable inner | TOcaml_app ("option", [ inner ]) ->
+                        let optional_statically_satisfies =
+                          match marker.protocol_id with
+                          | Some protocol_id ->
+                              Protocol.type_satisfies env protocol_id receiver.ty
+                          | None -> false
+                        in
+                        if optional_statically_satisfies then args
+                        else
                         let statically_satisfies =
                           Option.is_some
                             (Types.protocol_constraint_info inner)

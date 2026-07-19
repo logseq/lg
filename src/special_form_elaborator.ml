@@ -1847,6 +1847,11 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                 if
                   argument_compatible expected_ty arg.ty
                   || Types.defer_to_ocaml ~expected:expected_ty ~actual:arg.ty
+                  ||
+                  (Option.is_none (optional_payload expected_ty)
+                  && Option.fold ~none:false
+                       ~some:(argument_compatible expected_ty)
+                       (optional_payload arg.ty))
                 then validate (index + 1) expected actual
                 else
                   Error.error
@@ -1863,6 +1868,15 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
             then pack_constrained_value env expected_ty arg
             else
             match (expected_ty, arg.ty) with
+            | expected, actual
+              when Option.is_none (optional_payload expected)
+                   && Option.fold ~none:false
+                        ~some:(argument_compatible expected)
+                        (optional_payload actual) ->
+                Ok
+                  (Semantic_ir.Apply
+                     ( Semantic_ir.Ident "Option.get",
+                       [ arg.semantic_expr ] ))
             | ( (TNullable expected_inner
                 | TOcaml_app ("option", [ expected_inner ])),
                 actual )
@@ -2563,7 +2577,21 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     in
     let inferred_binding_type env name value_form rest =
       let names = name :: remaining_binding_names [] rest in
-      let initial_ty = Type_inference.inferred_form_type [] value_form in
+      let initial_ty =
+        match value_form with
+        | FList
+            [
+              FSymbol "fn";
+              FVector [ FSymbol parameter ];
+              FSymbol result;
+            ]
+          when parameter = result ->
+            let variable =
+              TVar ("let_fn_" ^ Names.sanitize_name name ^ "_identity")
+            in
+            TFn ([ variable ], variable)
+        | _ -> Type_inference.inferred_form_type [] value_form
+      in
       let params =
         names
         |> List.sort_uniq String.compare

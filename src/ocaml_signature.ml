@@ -55,6 +55,21 @@ type constructor_signature = {
   result_type : Types.ty;
 }
 
+module Lookup_key = struct
+  type t = string list * string
+
+  let equal = ( = )
+  let hash = Hashtbl.hash
+end
+
+module Lookup_cache = Hashtbl.Make (Lookup_key)
+
+let value_signature_cache =
+  Domain.DLS.new_key (fun () -> Lookup_cache.create 64)
+
+let constructor_signature_cache =
+  Domain.DLS.new_key (fun () -> Lookup_cache.create 32)
+
 let rec of_compiler_type =
   let open Lg_compiler_support.Ocaml_value in
   function
@@ -110,24 +125,42 @@ let rec signature_of_compiler_type =
       { parameters = []; return_type = of_compiler_type compiler_type }
 
 let value_signature name =
-  match
-    Lg_compiler_support.Ocaml_value.lookup ~include_dirs:(include_dirs ()) name
-  with
-  | Error message -> Error.error message
-  | Ok compiler_type -> Ok (signature_of_compiler_type compiler_type)
+  let include_dirs = include_dirs () in
+  let cache = Domain.DLS.get value_signature_cache in
+  let key = (include_dirs, name) in
+  match Lookup_cache.find_opt cache key with
+  | Some signature -> signature
+  | None ->
+      let signature =
+        match Lg_compiler_support.Ocaml_value.lookup ~include_dirs name with
+        | Error message -> Error.error message
+        | Ok compiler_type -> Ok (signature_of_compiler_type compiler_type)
+      in
+      Lookup_cache.add cache key signature;
+      signature
 
 let constructor_signature name =
-  match
-    Lg_compiler_support.Ocaml_value.lookup_constructor
-      ~include_dirs:(include_dirs ()) name
-  with
-  | Error message -> Error.error message
-  | Ok constructor ->
-      Ok
-        {
-          payload_types = List.map of_compiler_type constructor.arguments;
-          result_type = of_compiler_type constructor.result;
-        }
+  let include_dirs = include_dirs () in
+  let cache = Domain.DLS.get constructor_signature_cache in
+  let key = (include_dirs, name) in
+  match Lookup_cache.find_opt cache key with
+  | Some signature -> signature
+  | None ->
+      let signature =
+        match
+          Lg_compiler_support.Ocaml_value.lookup_constructor ~include_dirs name
+        with
+        | Error message -> Error.error message
+        | Ok constructor ->
+            Ok
+              {
+                payload_types =
+                  List.map of_compiler_type constructor.arguments;
+                result_type = of_compiler_type constructor.result;
+              }
+      in
+      Lookup_cache.add cache key signature;
+      signature
 
 let parameter_label_name = function
   | Positional -> None
