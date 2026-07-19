@@ -385,7 +385,10 @@
           result
           (recur
            (inc idx)
-           (f result (arrays/aget keys idx))))))
+           #?(:melange
+              (uncurried-call f result (arrays/aget keys idx))
+              :default
+              (f result (arrays/aget keys idx)))))))
     (loop [idx 0
            result initial]
       (if (= idx (node-child-count node))

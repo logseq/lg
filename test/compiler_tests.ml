@@ -5274,12 +5274,13 @@ let test_ocaml_refs_support_read_and_assignment () =
   let source =
     {|
 (def cell (atom 40))
-(reset! cell (+ (deref cell) 2))
-(println (deref cell))
+(def reset-result (reset! cell (+ (deref cell) 2)))
+(println (str reset-result ":" (deref cell)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "ocaml_refs_support_read_and_assignment" "42\n" ocaml_source
+  assert_ocaml_runs "ocaml_refs_support_read_and_assignment" "42:42\n"
+    ocaml_source
 
 let test_weak_references_support_typed_cache_values () =
   let source =
@@ -8313,8 +8314,14 @@ let test_melange_array_dot_map_uses_static_array_map () =
   assert_ocaml_runs "melange_array_dot_map_uses_static_array_map"
     "true\n1\ntrue\n"
     native_source;
-  ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+  let melange_source =
+    Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if
+    not
+      (string_contains_substring melange_source
+         "Lg_runtime.Runtime_array_melange.map")
+  then failwith "expected Melange array maps to use the native JS array map"
 
 let test_callable_expressions_are_evaluated_once () =
   let source =
@@ -13764,6 +13771,9 @@ let test_dynamic_generic_nominals_are_consumed_inside_existential_scope () =
   then
     failwith
       "node-conj should not require dynamic recursive-call specialization";
+  if string_contains_substring node_conj_source "__lg_adapt_collection_item"
+  then
+    failwith "node-conj should not map arrays for representation-only coercions";
   if
     string_contains_substring ocaml_source
       "index: Lg_runtime.Runtime_dynamic.t"
@@ -13772,7 +13782,21 @@ let test_dynamic_generic_nominals_are_consumed_inside_existential_scope () =
   assert_ocaml_runs
     "dynamic_generic_nominals_are_consumed_inside_existential_scope"
     "1:41:42:1:1:true:1:true\n" ocaml_source;
-  ignore (compile Lg.Target.Melange)
+  let melange_source = compile Lg.Target.Melange in
+  let node_fold_start =
+    expect_substring_index melange_source
+      "let rec ((me_tonsky_persistent_sorted_set_node_fold)"
+  in
+  let delete_address_start =
+    expect_substring_index melange_source
+      "let ((me_tonsky_persistent_sorted_set_delete_address)"
+  in
+  let node_fold_source =
+    String.sub melange_source node_fold_start
+      (delete_address_start - node_fold_start)
+  in
+  if not (string_contains_substring node_fold_source "Obj.magic") then
+    failwith "node-fold should call fixed-arity callbacks directly on Melange"
 
 let test_overloaded_generic_bounds_specialize_dynamic_nominal_arguments () =
   let pss_sources =

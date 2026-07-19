@@ -427,20 +427,13 @@ and to_parsetree ~context = function
                 Ast_helper.Attr.mk (str "u") (PStr [])
                 :: function_type.ptyp_attributes }
           in
-          let coerce =
-            Ast_helper.Val.mk ~loc ~prim:[ "%identity" ] (str "coerce")
-              (Ast_helper.Typ.arrow ~loc Asttypes.Nolabel function_type
-                 uncurried_type)
-          in
-          let direct_module =
-            Ast_helper.Mod.structure ~loc
-              [ Ast_helper.Str.primitive ~loc coerce ]
-          in
           let fn =
-            Ast_helper.Exp.apply ~loc
-              (Ast_helper.Exp.ident ~loc
-                 (lid (longident_of_string "Lg_direct.coerce")))
-              [ (Asttypes.Nolabel, fn) ]
+            Ast_helper.Exp.constraint_ ~loc
+              (Ast_helper.Exp.apply ~loc
+                 (Ast_helper.Exp.ident ~loc
+                    (lid (longident_of_string "Obj.magic")))
+                 [ (Asttypes.Nolabel, fn) ])
+              uncurried_type
           in
           let application =
             Ast_helper.Exp.apply ~loc fn
@@ -451,9 +444,7 @@ and to_parsetree ~context = function
             { application with
               pexp_attributes = attribute :: application.pexp_attributes }
           in
-          Ok
-            (Ast_helper.Exp.letmodule ~loc (Location.mkloc (Some "Lg_direct") loc)
-               direct_module application))
+          Ok application)
   | Labelled_apply (fn, args) -> (
       let rec arguments_to_parsetree acc = function
         | [] -> Ok (List.rev acc)

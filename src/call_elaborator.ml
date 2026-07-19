@@ -2614,6 +2614,38 @@ let same_concrete_type left right =
       named_application_matches record name arguments
   | _ -> Types.equal left right
 
+let rec same_runtime_representation left right =
+  if Types.equal left right then true
+  else if
+    uses_dynamic_value_storage left || uses_dynamic_value_storage right
+  then false
+  else
+    match (left, right) with
+    | (TUnknown | TVar _), _ | _, (TUnknown | TVar _) -> true
+    | TNullable left, TNullable right
+    | TArray left, TArray right
+    | TRef left, TRef right
+    | TList left, TList right
+    | TVector left, TVector right
+    | TSet left, TSet right
+    | TSeq left, TSeq right ->
+        same_runtime_representation left right
+    | TOcaml_app (left_name, left_arguments),
+      TOcaml_app (right_name, right_arguments) ->
+        String.equal left_name right_name
+        && List.length left_arguments = List.length right_arguments
+        && List.for_all2 same_runtime_representation left_arguments
+             right_arguments
+    | TTuple left, TTuple right ->
+        List.length left = List.length right
+        && List.for_all2 same_runtime_representation left right
+    | TNamed_record left, TNamed_record right ->
+        Type_id.equal left.type_id right.type_id
+        && List.length left.type_arguments = List.length right.type_arguments
+        && List.for_all2 same_runtime_representation left.type_arguments
+             right.type_arguments
+    | _ -> false
+
 let named_record_can_specialize expected actual =
   let arguments_can_specialize expected actual =
     List.length expected = List.length actual
@@ -2716,6 +2748,8 @@ let rec adapt_value_to_type env expected actual =
   else if Types.is_dynamic expected then pack_dynamic_value env expected actual
   else if Types.is_dynamic actual.ty then
     dynamic_unpack env expected actual.semantic_expr
+  else if same_runtime_representation expected actual.ty then
+    Ok actual.semantic_expr
   else if
     Option.is_none (optional_payload expected)
     && Option.fold ~none:false ~some:Types.is_dynamic
@@ -6205,9 +6239,16 @@ let create ~compile_expr =
                       Types.dynamic_constraint TUnknown
                   | ty -> ty
                 in
+                let map, arguments =
+                  match Env.target env with
+                  | Target.Melange ->
+                      ("Lg_runtime.Runtime_array_melange.map", [ array; fn ])
+                  | Target.Native | Target.Js_of_ocaml ->
+                      ("Array.map", [ fn; array ])
+                in
                 Ok
                   (typed_ir (TArray return_ty)
-                     (apply "Array.map" [ fn; array ]))
+                     (apply map arguments))
                     | Ok _ ->
                         Error.error
                           "amap expects a unary function and compatible array"))
@@ -6996,16 +7037,25 @@ let create ~compile_expr =
             | TRef referenced_ty
               when Types.assignable ~policy:Host_boundary
                      ~expected:referenced_ty ~actual:value.ty ->
+                let reference_name = "__lg_reset_reference" in
+                let value_name = "__lg_reset_value" in
                 Ok
                   (typed_ir value.ty
-                     (Semantic_ir.Sequence
-                                  [
-                                    Semantic_ir.Infix
-                                      ( ":=",
-                                        reference.semantic_expr,
-                                        value.semantic_expr );
-                                    value.semantic_expr;
-                        ]))
+                     (Semantic_ir.Let
+                        ( [
+                            ( Semantic_ir.PVar reference_name,
+                              reference.semantic_expr );
+                            ( Semantic_ir.PVar value_name,
+                              value.semantic_expr );
+                          ],
+                          Semantic_ir.Sequence
+                            [
+                              Semantic_ir.Infix
+                                ( ":=",
+                                  Semantic_ir.Ident reference_name,
+                                  Semantic_ir.Ident value_name );
+                              Semantic_ir.Ident value_name;
+                            ] )))
             | TRef _ ->
                           Error.error
                             (reset_name ^ " value must match referenced type")
@@ -8073,6 +8123,12 @@ let create ~compile_expr =
     | Error _ as err -> err
     | Ok arguments -> (
         let function_name = resolve_ocaml_call_target scope env function_name in
+        let function_name, arguments =
+          match (Env.target env, function_name, arguments) with
+          | Target.Melange, "Array.map", [ fn; array ] ->
+              ("Lg_runtime.Runtime_array_melange.map", [ array; fn ])
+          | _ -> (function_name, arguments)
+        in
         match Ocaml_signature.value_signature function_name with
         | Error _ as err -> err
         | Ok signature -> (
