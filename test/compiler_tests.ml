@@ -228,6 +228,23 @@ let compile_and_run_command dir ml_path exe_path output_path =
   in
   (compile_cmd, run_cmd)
 
+let interpret_and_run_command dir ml_path output_path =
+  Printf.sprintf
+    "cd %s && lg_re_dir=$(ocamlfind query re) && ocaml -I \"$lg_re_dir\" -I %s \
+     -I %s -I %s -I %s -I %s -I %s unix.cma re.cma %s %s %s %s > %s"
+    (Filename.quote dir)
+    (Filename.quote (rrbvec_build_dir ()))
+    (Filename.quote (rrbvec_cmi_dir ()))
+    (Filename.quote (lg_build_dir ()))
+    (Filename.quote (lg_byte_cmi_dir ()))
+    (Filename.quote (lg_runtime_build_dir ()))
+    (Filename.quote (lg_runtime_byte_cmi_dir ()))
+    (Filename.quote (rrbvec_cma ()))
+    (Filename.quote (lg_runtime_cma ()))
+    (Filename.quote (lg_cma ()))
+    (Filename.quote (Filename.basename ml_path))
+    (Filename.quote output_path)
+
 let compile_job_immediately (job : compile_job) =
   let dir = test_dir () in
   let ml_path = Filename.concat dir (job.name ^ ".ml") in
@@ -311,7 +328,6 @@ let flush_run_jobs (jobs : run_job list) =
   | _ -> (
       let dir = test_dir () in
       let ml_path = Filename.concat dir "run_batch.ml" in
-      let exe_path = Filename.concat dir "run_batch" in
       let output_path = Filename.concat dir "run_batch.out" in
       let source = jobs |> List.mapi wrapped_run_module |> String.concat "\n" in
       let expected =
@@ -322,34 +338,23 @@ let flush_run_jobs (jobs : run_job list) =
         |> String.concat ""
       in
       write_file ml_path source;
-      let compile_cmd, run_cmd =
-        compile_and_run_command dir ml_path exe_path output_path
-      in
+      let run_cmd = interpret_and_run_command dir ml_path output_path in
       let fallback message =
         List.iter run_job_immediately jobs;
         failwith message
       in
-      match Sys.command compile_cmd with
-      | code when code <> 0 ->
-          fallback
-            (Printf.sprintf
-               "batched generated OCaml failed with exit code %d, but isolated \
-                cases passed"
-               code)
-      | _ -> (
-          match Sys.command run_cmd with
+      match Sys.command run_cmd with
           | code when code <> 0 ->
               fallback
                 (Printf.sprintf
-                   "batched generated executable failed with exit code %d, but \
+                   "batched generated OCaml failed with exit code %d, but \
                     isolated cases passed"
                    code)
           | _ ->
               let actual = read_file output_path in
               if actual <> expected then
                 fallback
-                  "batched generated output differed, but isolated cases passed"
-          ))
+                  "batched generated output differed, but isolated cases passed")
 
 let assert_ocaml_compiles name ocaml_source =
   pending_compile_jobs := { name; ocaml_source } :: !pending_compile_jobs
