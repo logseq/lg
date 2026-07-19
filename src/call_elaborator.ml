@@ -9868,7 +9868,8 @@ let create ~compile_expr =
                 in
                 let runtime_dynamic_call =
                   List.exists
-                    (fun argument -> Types.is_dynamic argument.ty)
+                    (fun argument ->
+                      uses_dynamic_value_storage argument.ty)
                     args
                 in
                 let ret = materialize ret in
