@@ -1418,6 +1418,7 @@
   datascript/upstream_tests/datascript/test/entity.cljc
   datascript/upstream_tests/datascript/test/explode.cljc
   datascript/upstream_tests/datascript/test/index.cljc
+  datascript/upstream_tests/datascript/test/issues.cljc
   ../test_runner/clojure/run.cljc
   ../test_runner/runtime/lg_test_runtime.cma
   ../test_runner/alcotest/lg_test_alcotest.cma
@@ -1463,6 +1464,7 @@
    %{dep:datascript/upstream_tests/datascript/test/entity.cljc}
    %{dep:datascript/upstream_tests/datascript/test/explode.cljc}
    %{dep:datascript/upstream_tests/datascript/test/index.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/issues.cljc}
    %{dep:../test_runner/clojure/run.cljc}
    -o
    %{target})))
@@ -1512,6 +1514,7 @@
   datascript/upstream_tests/datascript/test/entity.cljc
   datascript/upstream_tests/datascript/test/explode.cljc
   datascript/upstream_tests/datascript/test/index.cljc
+  datascript/upstream_tests/datascript/test/issues.cljc
   ../test_runner/clojure/run.cljc
   ../test_runner/runtime/lg_test_runtime.cma
   ../bin/lg_cli.exe)
@@ -1556,6 +1559,7 @@
    %{dep:datascript/upstream_tests/datascript/test/entity.cljc}
    %{dep:datascript/upstream_tests/datascript/test/explode.cljc}
    %{dep:datascript/upstream_tests/datascript/test/index.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/issues.cljc}
    %{dep:../test_runner/clojure/run.cljc}
    -o
    %{target})))

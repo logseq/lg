@@ -872,15 +872,21 @@ let map_without_keys value keys =
   | _ -> invalid_arg "dynamic value is not a map"
 
 let empty value =
-  match value.payload with
-  | Nil -> nil
-  | List -> list []
-  | Vector -> vector Rrbvec.empty
-  | Seq -> seq Seq.empty
-  | Set _ -> set Seq.empty
-  | Map _ -> map []
-  | String _ -> string ""
-  | _ -> invalid_arg "dynamic value is not a collection"
+  let emptied =
+    match value.payload with
+    | Nil -> nil
+    | List -> list []
+    | Vector -> vector Rrbvec.empty
+    | Seq -> seq Seq.empty
+    | Set _ -> set Seq.empty
+    | Map _ -> map []
+    | String _ -> string ""
+    | _ -> (
+        match find_protocol_method value "Emptyable" "-empty" with
+        | Some method_ -> method_ []
+        | None -> invalid_arg "dynamic value is not a collection")
+  in
+  { emptied with metadata = value.metadata }
 
 let butlast value =
   let rec drop_last acc = function

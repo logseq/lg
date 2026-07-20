@@ -7,6 +7,7 @@ type expression_result = (typed_expr, Error.t) result
 type type_result = (ty, Error.t) result
 
 let loop_counter = ref 0
+let destructuring_value_counter = ref 0
 
 type t = {
   compile_vector : string -> Env.t -> Ast.form list -> expression_result;
@@ -2770,7 +2771,37 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                 match value with
                 | Error _ as err -> err
                 | Ok value -> (
-                    match Destructure.bind_pattern ~env value pattern with
+                    let destructured_value, value_binding =
+                      match pattern with
+                      | FSymbol _ -> (value, None)
+                      | _ ->
+                          incr destructuring_value_counter;
+                          let value_name =
+                            "__lg_destructuring_value_"
+                            ^ string_of_int !destructuring_value_counter
+                          in
+                          let value_pattern, value_expression =
+                            if
+                              Option.is_some
+                                (Types.protocol_constraint_info value.ty)
+                              || Option.is_some
+                                   (Types.seqable_constraint_element value.ty)
+                            then
+                              ( capability_pattern value_name value.ty,
+                                capability_storage_expression value.ty
+                                  value.semantic_expr )
+                            else
+                              ( Semantic_ir.PVar value_name,
+                                value.semantic_expr )
+                          in
+                          ( { value with
+                              semantic_expr = Semantic_ir.Ident value_name;
+                            },
+                            Some (value_pattern, value_expression) )
+                    in
+                    match
+                      Destructure.bind_pattern ~env destructured_value pattern
+                    with
                     | Error _ as err -> err
                     | Ok bindings ->
                         let env_bindings =
@@ -2818,6 +2849,11 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                 value.semantic_expr )
                               :: ir_bindings
                           | _ ->
+                              let ir_bindings =
+                                match value_binding with
+                                | None -> ir_bindings
+                                | Some binding -> binding :: ir_bindings
+                              in
                               bindings
                               |> List.fold_left
                                    (fun acc

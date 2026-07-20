@@ -1,6 +1,13 @@
 open Types
 open Expression_support
 
+let nullable_equality_counter = ref 0
+
+let fresh_nullable_equality_name () =
+  incr nullable_equality_counter;
+  "__lg_nullable_equality_value_"
+  ^ string_of_int !nullable_equality_counter
+
 let rec equality_expr left right =
   match (left.ty, right.ty) with
   | TNullable _, TNil ->
@@ -14,13 +21,14 @@ let rec equality_expr left right =
   | TNullable inner, right_ty
     when Types.assignable ~policy:Host_boundary ~expected:inner
            ~actual:right_ty ->
+      let nullable_value = fresh_nullable_equality_name () in
       Semantic_ir.Match
         ( left.semantic_expr,
           [ (Semantic_ir.PConstructor ("None", None), Semantic_ir.Bool false);
             ( Semantic_ir.PConstructor
-                ("Some", Some (Semantic_ir.PVar "nullable_value")),
+                ("Some", Some (Semantic_ir.PVar nullable_value)),
               equality_expr
-                (typed_ir inner (Semantic_ir.Ident "nullable_value"))
+                (typed_ir inner (Semantic_ir.Ident nullable_value))
                 right );
           ] )
   | left_ty, TNullable inner

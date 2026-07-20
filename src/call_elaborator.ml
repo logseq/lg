@@ -1996,8 +1996,8 @@ and pack_dynamic_payload_impl ?(packing_context = []) env expected_dynamic
           ^ Types.source_name argument.ty
          ^ " through a dynamic function boundary")
 
-and pack_dynamic_value ?(packing_context = []) ?protocol_ids env
-    expected_dynamic argument =
+and pack_dynamic_value ?(packing_context = []) ?protocol_ids
+    ?(extra_protocol_ids = []) env expected_dynamic argument =
   let annotate conversion =
     Semantic_ir.PackDynamic
       {
@@ -2029,7 +2029,7 @@ and pack_dynamic_value ?(packing_context = []) ?protocol_ids env
             typed_ir argument.ty (Semantic_ir.Ident argument_name)
           in
           pack_dynamic_value_conversion
-            ?protocol_ids
+            ?protocol_ids ~extra_protocol_ids
             ~packing_context:((record.type_id, packer_name) :: packing_context)
             env expected_dynamic parameter
           |> Result.map (fun body ->
@@ -2056,12 +2056,12 @@ and pack_dynamic_value ?(packing_context = []) ?protocol_ids env
                           ],
                           call ))))
   | _ ->
-      pack_dynamic_value_conversion ~packing_context ?protocol_ids env
-        expected_dynamic argument
+      pack_dynamic_value_conversion ~packing_context ?protocol_ids
+        ~extra_protocol_ids env expected_dynamic argument
       |> Result.map annotate
 
-and pack_dynamic_value_conversion ?(packing_context = []) ?protocol_ids env
-    expected_dynamic argument =
+and pack_dynamic_value_conversion ?(packing_context = []) ?protocol_ids
+    ?(extra_protocol_ids = []) env expected_dynamic argument =
   match
     pack_dynamic_payload_impl ~packing_context env expected_dynamic argument
   with
@@ -2191,7 +2191,7 @@ and pack_dynamic_value_conversion ?(packing_context = []) ?protocol_ids env
         | _ -> Protocol.implemented_protocols env argument.ty
       in
       let protocol_ids =
-        match protocol_ids with
+        (match protocol_ids with
         | Some protocol_ids -> protocol_ids
         | None -> (
             match Types.dynamic_constraint_info expected_dynamic with
@@ -2201,7 +2201,9 @@ and pack_dynamic_value_conversion ?(packing_context = []) ?protocol_ids env
                 @ dynamic_protocol_constraints argument.ty
                 @ satisfied_protocols
                 @ implemented_protocols
-                |> List.sort_uniq Protocol_id.compare)
+                |> List.sort_uniq Protocol_id.compare))
+        @ extra_protocol_ids
+        |> List.sort_uniq Protocol_id.compare
       in
       let rec compile_protocols protocols = function
         | [] -> Ok (List.rev protocols)
@@ -5440,6 +5442,34 @@ let create ~compile_expr =
                         (FList
                            (FSymbol ("." ^ method_name) :: target :: method_args))
         | _ -> Error.error ". expects a target and method")
+    | "with-out-str" ->
+        let writer_name = "__lg_with_out_str_writer" in
+        let body_form =
+          match arg_forms with
+          | [] -> FSymbol "nil"
+          | [ body ] -> body
+          | body_forms -> FList (FSymbol "do" :: body_forms)
+        in
+        let writer_ty = TOcaml "Buffer.t" in
+        let body_env =
+          Env.add
+            (Names.scoped_key scope "*out*")
+            (Types.binding writer_name writer_ty)
+            env
+        in
+        Result.map
+          (fun body ->
+            typed_ir TString
+              (Semantic_ir.Let
+                 ( [ ( Semantic_ir.PVar writer_name,
+                       apply "Buffer.create" [ Semantic_ir.Int 64 ] );
+                   ],
+                   Semantic_ir.Sequence
+                     [ body.semantic_expr;
+                       apply "Buffer.contents"
+                         [ Semantic_ir.Ident writer_name ];
+                     ] )))
+          (compile_expr scope body_env body_form)
     | "binding" -> (
         match arg_forms with
         | FVector [ FSymbol "*out*"; writer_form ] :: body_forms -> (
@@ -9335,6 +9365,27 @@ let create ~compile_expr =
                   | Ok _ ->
                       Error.error
                         (regex_operation ^ " expects a regex and string"))
+    | "clojure.pprint/pprint" -> (
+        match compile_args () with
+        | Error _ as error -> error
+        | Ok [ arg ] -> (
+            match lookup_binding scope env "*out*" with
+            | Error _ ->
+                Error.error "clojure.pprint/pprint requires a bound *out* writer"
+            | Ok writer ->
+                Ok
+                  (typed_ir TUnit
+                     (Semantic_ir.Sequence
+                        [ apply "Lg_runtime.Runtime_print.write"
+                            [ Semantic_ir.Ident writer.ocaml_name;
+                              stringify_value scope env ~pr:true arg;
+                            ];
+                          apply "Lg_runtime.Runtime_print.write"
+                            [ Semantic_ir.Ident writer.ocaml_name;
+                              Semantic_ir.String "\n";
+                            ];
+                        ])))
+        | Ok _ -> Error.error "clojure.pprint/pprint expects 1 argument")
     | "pr" -> (
         match compile_args () with
         | Error _ as error -> error
@@ -9894,7 +9945,15 @@ let create ~compile_expr =
         | _, (Error _ as error) -> error
         | Ok value, Ok metadata -> (
             match
-              ( pack_dynamic_value env dynamic_ty value,
+              ( pack_dynamic_value
+                  ~extra_protocol_ids:
+                    (match
+                       Core_protocols.find_emptyable value.ty
+                         (Compiler_environment.protocols env)
+                     with
+                    | Some _ -> [ Core_protocols.emptyable_id ]
+                    | None -> [])
+                  env dynamic_ty value,
                 pack_dynamic_value env dynamic_ty metadata )
             with
             | (Error _ as error), _ -> error
