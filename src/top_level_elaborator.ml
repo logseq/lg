@@ -1202,13 +1202,17 @@ let rec compile scope env next_type = function
                 let body_forms =
                   List.map rewrite_mutable_assignments body_forms
                 in
+                let parameter_names =
+                  Destructure.pattern_names params_form
+                in
                 let field_bindings =
                   record.fields
                   |> List.filter (fun (field : field) ->
                          let source_name =
                            Names.keyword_source_name field.keyword
                          in
-                         List.exists (form_mentions source_name) body_forms)
+                         (not (List.mem source_name parameter_names))
+                         && List.exists (form_mentions source_name) body_forms)
                   |> List.concat_map (fun (field : field) ->
                          let source_name =
                            Names.keyword_source_name field.keyword

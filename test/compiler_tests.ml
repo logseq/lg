@@ -5638,6 +5638,24 @@ let test_ocaml_refs_support_read_and_assignment () =
   assert_ocaml_runs "ocaml_refs_support_read_and_assignment" "42:42\n"
     ocaml_source
 
+let test_custom_ideref_dispatches_nominal_return_values () =
+  let source =
+    {|
+(type-record box (value :int))
+(extend-type box IDeref
+  (-deref [box] (:value box)))
+(defn ^box make-box []
+  (record box (value 42)))
+(def value (make-box))
+(println @value)
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "custom_ideref_dispatches_nominal_return_values" "42\n"
+    native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_weak_references_support_typed_cache_values () =
   let source =
     {|
@@ -5749,6 +5767,22 @@ let test_local_volatile_nil_infers_value_from_reset () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "local_volatile_nil_infers_value_from_reset" "5\n"
     ocaml_source
+
+let test_atom_nil_infers_nullable_record_from_map_destructuring () =
+  let source =
+    {|
+(type-record report (value :int))
+(let [slot (atom nil)
+      _ (reset! slot (record report (value 42)))]
+  (let [{:keys [value]} @slot]
+    (println (= 42 value))))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "atom_nil_infers_nullable_record_from_map_destructuring"
+    "true\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_ocaml_arrays_reject_invalid_operations () =
   Lg.Compiler.compile_string {|(def values (array 1 "two"))|}
@@ -9890,6 +9924,49 @@ let test_get_dispatches_nullable_deftype_lookup_with_default () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "get_dispatches_nullable_deftype_lookup_with_default"
     "42:7:7\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_dynamic_deftype_lookup_and_assoc_dispatch () =
+  let source =
+    {|
+(deftype LookupBox [value]
+  ILookup
+  (-lookup
+    ([_ key] (if (= key :computed) value nil))
+    ([_ key not-found] (if (= key :computed) value not-found)))
+  IAssociative
+  (-assoc [_ key replacement]
+    (if (= key :computed)
+      (LookupBox. replacement)
+      (throw (IllegalArgumentException. "unknown key")))))
+(defrecord Envelope [^:dynamic item])
+(def box (:item (Envelope. (LookupBox. 42))))
+(println (str (get box :computed) ":" (get box :missing 7)))
+(println (get (assoc box :computed 9) :computed))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "dynamic_deftype_lookup_and_assoc_dispatch" "42:7\n9\n"
+    native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_deftype_method_parameters_shadow_fields () =
+  let source =
+    {|
+(deftype Box [value]
+  IAssociative
+  (-assoc [_ key value]
+    (if (= key :value)
+      (Box. value)
+      (throw (IllegalArgumentException. "unknown key")))))
+(println (.-value (assoc (Box. 1) :value 2)))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "deftype_method_parameters_shadow_fields" "2\n"
+    native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -22534,6 +22611,8 @@ let tests =
       test_nested_protocol_witnesses_keep_concrete_receiver_storage );
     ( "OCaml refs support read and assignment",
       test_ocaml_refs_support_read_and_assignment );
+    ( "custom IDeref dispatches nominal return values",
+      test_custom_ideref_dispatches_nominal_return_values );
     ("concise standard type annotations", test_concise_standard_type_annotations);
     ( "collection type application annotations preserve nested elements",
       test_collection_type_application_annotations_preserve_nested_elements );
@@ -22549,6 +22628,8 @@ let tests =
       test_volatile_nil_uses_contextual_option_reference_type );
     ( "local volatile nil infers value from reset",
       test_local_volatile_nil_infers_value_from_reset );
+    ( "atom nil infers nullable record from map destructuring",
+      test_atom_nil_infers_nullable_record_from_map_destructuring );
     ( "OCaml arrays reject invalid operations",
       test_ocaml_arrays_reject_invalid_operations );
     ( "dynamic aget supports array indexes and nominal fields",
@@ -22986,6 +23067,10 @@ let tests =
       test_get_dispatches_nullable_deftype_lookup_with_dynamic_keys );
     ( "get dispatches nullable deftype lookup with default",
       test_get_dispatches_nullable_deftype_lookup_with_default );
+    ( "dynamic deftype lookup and assoc dispatch",
+      test_dynamic_deftype_lookup_and_assoc_dispatch );
+    ( "deftype method parameters shadow fields",
+      test_deftype_method_parameters_shadow_fields );
     ( "get rejects vector default type mismatch",
       test_get_rejects_vector_default_type_mismatch );
     ("assoc supports multiple pairs", test_assoc_supports_multiple_pairs);

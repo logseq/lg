@@ -359,8 +359,8 @@
     (match (restore address)
       (Some child)
       (do
-        (arrays/aset children idx (Some child))
-        (arrays/aset weak-children idx nil)
+        (arrays/aset children idx nil)
+        (arrays/aset weak-children idx (Some (weak-ref child)))
         child)
       None
       (Stdlib.failwith "persistent sorted set storage returned no child"))))
@@ -376,8 +376,6 @@
         (match (weak-deref reference)
           (Some child)
           (do
-            (arrays/aset children idx (Some child))
-            (arrays/aset weak-children idx nil)
             (match storage
               (Some storage-value)
               (match (arrays/aget addresses idx)
@@ -713,24 +711,23 @@
     (loop [idx 0]
       (if (< idx (arrays/alength children))
         (do
-          (if-some [child (arrays/aget children idx)]
-            (do
-              (when (or
-                     (nil? (arrays/aget addresses idx))
-                     (deref (:_dirty child)))
-                (let [child-address (node-store child storage)]
-                  (arrays/aset addresses idx (Some child-address)))))
-            (if-some [reference (arrays/aget weak-children idx)]
-              (if-some [child (weak-deref reference)]
-                (do
-                  (arrays/aset children idx (Some child))
-                  (arrays/aset weak-children idx nil)
-                  (when (or
-                         (nil? (arrays/aget addresses idx))
-                         (deref (:_dirty child)))
-                    (let [child-address (node-store child storage)]
-                      (arrays/aset addresses idx (Some child-address)))))
-                nil)
+           (if-some [child (arrays/aget children idx)]
+             (do
+               (when (or
+                      (nil? (arrays/aget addresses idx))
+                      (deref (:_dirty child)))
+                 (let [child-address (node-store child storage)]
+                   (arrays/aset addresses idx (Some child-address))))
+               (arrays/aset weak-children idx (Some (weak-ref child)))
+               (arrays/aset children idx nil))
+             (if-some [reference (arrays/aget weak-children idx)]
+               (if-some [child (weak-deref reference)]
+                 (when (or
+                        (nil? (arrays/aget addresses idx))
+                        (deref (:_dirty child)))
+                   (let [child-address (node-store child storage)]
+                     (arrays/aset addresses idx (Some child-address))))
+                 nil)
               nil))
           (recur (inc idx)))
         nil))
@@ -775,8 +772,8 @@
         (match (restore address)
           (Some root)
           (do
-            (vreset! (:root set) (Some root))
-            (vreset! (:_weak-root set) nil)
+            (vreset! (:root set) nil)
+            (vreset! (:_weak-root set) (Some (weak-ref root)))
             root)
           None
           (Stdlib.failwith "persistent sorted set storage returned no root")))
@@ -790,10 +787,7 @@
     root
     (if-some [reference (deref (:_weak-root set))]
       (if-some [root (weak-deref reference)]
-        (do
-          (vreset! (:root set) (Some root))
-          (vreset! (:_weak-root set) nil)
-          root)
+        root
         (restore-root set))
       (restore-root set))))
 
@@ -1316,8 +1310,8 @@
           None (Stdlib.failwith "persistent sorted set storage is unavailable"))
         address (node-store root storage-value)]
     (vreset! (:_address set) (Some address))
-    (vreset! (:_weak-root set) nil)
-    (vreset! (:root set) (Some root))
+    (vreset! (:_weak-root set) (Some (weak-ref root)))
+    (vreset! (:root set) nil)
     address))
 
 (extend-type btset Seqable

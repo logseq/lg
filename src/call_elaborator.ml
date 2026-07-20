@@ -1074,6 +1074,56 @@ and pack_dynamic_payload_impl ?(packing_context = []) env expected_dynamic
               |> Option.value ~default:(Structural_map.field_expr argument field)
           | _ -> Structural_map.field_expr argument field)
     in
+    let add_dynamic_lookup record dynamic_record =
+      let lookup =
+        match lookup_deftype_method "" env record "valAt" 3 with
+        | Ok binding -> Some binding
+        | Error _ -> (
+            match lookup_deftype_method "" env record "-lookup" 3 with
+            | Ok binding -> Some binding
+            | Error _ -> None)
+      in
+      match lookup with
+      | Some ({ ty = TFn ([ _; key_ty; default_ty ], return_ty); _ } as binding)
+        ->
+          let key_name = "__lg_dynamic_lookup_key" in
+          let default_name = "__lg_dynamic_lookup_default" in
+          let adapt expected name =
+            let expression = Semantic_ir.Ident name in
+            if
+              Types.is_dynamic expected || Types.equal expected TUnknown
+              || match expected with TVar _ -> true | _ -> false
+            then Ok expression
+            else dynamic_unpack env expected expression
+          in
+          Result.bind (adapt key_ty key_name) (fun key ->
+              Result.bind (adapt default_ty default_name) (fun default ->
+                  let result =
+                    typed_ir return_ty
+                      (Semantic_ir.Apply
+                         ( Semantic_ir.Ident binding.ocaml_name,
+                           [ argument.semantic_expr; key; default ] ))
+                  in
+                  Result.map
+                    (fun result ->
+                      Semantic_ir.Apply
+                        ( Semantic_ir.Ident
+                            "Lg_runtime.Runtime_dynamic.with_lookup",
+                          [
+                            dynamic_record;
+                            Semantic_ir.Fun
+                              ( [
+                                  Semantic_ir.PVar key_name;
+                                  Semantic_ir.PVar default_name;
+                                ],
+                                result );
+                          ] ))
+                    (if Types.is_dynamic return_ty then Ok result.semantic_expr
+                     else
+                       pack_dynamic_value ~packing_context env expected_dynamic
+                         result)))
+      | Some _ | None -> Ok dynamic_record
+    in
     let pack_collection element_ty wrapper map =
       let item_name = "__lg_dynamic_item" in
       let item = typed_ir element_ty (Semantic_ir.Ident item_name) in
@@ -1747,40 +1797,14 @@ and pack_dynamic_payload_impl ?(packing_context = []) env expected_dynamic
                   ] )
             in
             match extension_field with
-            | None -> Ok dynamic_record
+            | None -> add_dynamic_lookup record dynamic_record
             | Some extension_field ->
                 Result.bind
                   (pack_assoc_cases []
                      (Types.record_constructor_fields record.fields))
                   (fun cases ->
                     let extension_keyword = "__lg_dynamic_record_keyword" in
-                    Result.map
-                      (fun extension_updated ->
-                        Semantic_ir.Apply
-                          ( Semantic_ir.Ident
-                              "Lg_runtime.Runtime_dynamic.with_assoc",
-                            [
-                              dynamic_record;
-                              Semantic_ir.Fun
-                                ( [
-                                    Semantic_ir.PVar
-                                      "__lg_dynamic_record_key";
-                                    Semantic_ir.PVar replacement_name;
-                                  ],
-                                  Semantic_ir.Match
-                                    ( Semantic_ir.Apply
-                                        ( Semantic_ir.Ident
-                                            "Lg_runtime.Runtime_dynamic.as_keyword",
-                                          [
-                                            Semantic_ir.Ident
-                                              "__lg_dynamic_record_key";
-                                          ] ),
-                                      cases
-                                      @ [
-                                          ( Semantic_ir.PVar extension_keyword,
-                                            extension_updated );
-                                        ] ) );
-                            ] ))
+                    Result.bind
                       (pack_rebuilt_record (fun candidate ->
                            if
                              candidate.keyword = extension_field.keyword
@@ -1794,7 +1818,36 @@ and pack_dynamic_payload_impl ?(packing_context = []) env expected_dynamic
                                       Semantic_ir.Ident extension_keyword;
                                       replacement;
                                     ] ))
-                           else None))))
+                           else None))
+                      (fun extension_updated ->
+                        add_dynamic_lookup record
+                          (Semantic_ir.Apply
+                             ( Semantic_ir.Ident
+                                 "Lg_runtime.Runtime_dynamic.with_assoc",
+                               [
+                                 dynamic_record;
+                                 Semantic_ir.Fun
+                                   ( [
+                                       Semantic_ir.PVar
+                                         "__lg_dynamic_record_key";
+                                       Semantic_ir.PVar replacement_name;
+                                     ],
+                                     Semantic_ir.Match
+                                       ( Semantic_ir.Apply
+                                           ( Semantic_ir.Ident
+                                               "Lg_runtime.Runtime_dynamic.as_keyword",
+                                             [
+                                               Semantic_ir.Ident
+                                                 "__lg_dynamic_record_key";
+                                             ] ),
+                                         cases
+                                         @ [
+                                             ( Semantic_ir.PVar
+                                                 extension_keyword,
+                                               extension_updated );
+                                           ] ) );
+                               ] )))
+                      ))
     | TRecord fields | TNamed_record { fields; _ } ->
         let rec pack_fields packed = function
           | [] -> Ok (List.rev packed)
@@ -1822,20 +1875,21 @@ and pack_dynamic_payload_impl ?(packing_context = []) env expected_dynamic
                   in
                   pack_fields (Semantic_ir.Tuple [ key; value ] :: packed) rest)
         in
-        pack_fields [] fields
-        |> Result.map (fun fields ->
+        Result.bind (pack_fields [] fields) (fun fields ->
                match argument.ty with
                | TNamed_record record ->
-                   Semantic_ir.Apply
-                     ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.record",
-                    [
-                      Semantic_ir.String record.type_name;
-                         Semantic_ir.List fields;
-                       ] )
+                   add_dynamic_lookup record
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.record",
+                          [
+                            Semantic_ir.String record.type_name;
+                            Semantic_ir.List fields;
+                          ] ))
                | _ ->
-                   Semantic_ir.Apply
-                     ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.map",
-                       [ Semantic_ir.List fields ] ))
+                   Ok
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.map",
+                          [ Semantic_ir.List fields ] )))
     | _ ->
         Error.error
           ("cannot pass "
@@ -2163,6 +2217,17 @@ let rec pack_constrained_value ?row_type_name env expected argument =
                ([ (Semantic_ir.PVar argument_name, bound_expression) ], packed))
   else
   match (expected, argument.ty) with
+  | ( expected,
+      (TNullable actual_ty | TOcaml_app ("option", [ actual_ty ])) )
+    when Option.is_some (Types.protocol_constraint_info expected)
+         &&
+         let actual_value_ty = Types.constraint_value_type actual_ty in
+         argument_compatible expected actual_value_ty ->
+      let actual_value_ty = Types.constraint_value_type actual_ty in
+      pack_constrained_value ?row_type_name env expected
+        (typed_ir actual_value_ty
+           (Semantic_ir.Apply
+              (Semantic_ir.Ident "Option.get", [ argument.semantic_expr ])))
   | ( expected,
       (TNullable actual_ty | TOcaml_app ("option", [ actual_ty ])) )
     when (match Types.seqable_constraint_info expected with
@@ -3001,6 +3066,18 @@ let rec adapt_value_to_type env expected actual =
   else if Types.is_dynamic expected then pack_dynamic_value env expected actual
   else if Types.is_dynamic actual.ty then
     dynamic_unpack env expected actual.semantic_expr
+  else if
+    Option.is_some (optional_payload expected)
+    && Option.is_none (optional_payload actual.ty)
+  then
+    match optional_payload expected with
+    | Some _ when Types.equal actual.ty TNil ->
+        Ok (Semantic_ir.Constructor ("None", None))
+    | Some expected_inner ->
+        Result.map
+          (fun value -> Semantic_ir.Constructor ("Some", Some value))
+          (adapt_value_to_type env expected_inner actual)
+    | None -> assert false
   else if same_runtime_representation expected actual.ty then
     Ok actual.semantic_expr
   else if
@@ -6819,6 +6896,13 @@ let create ~compile_expr =
               match (arg_forms, Env.expected_type env) with
               | [ FVector [] ], Some (TRef (TVector _ as expected_ty)) ->
                   expected_ty
+              | [ FSymbol "nil" ],
+                Some
+                  (TRef
+                    ((TNullable _ | TOcaml_app ("option", [ _ ])) as expected_ty))
+                ->
+                  expected_ty
+              | [ FSymbol "nil" ], _ -> TNullable TUnknown
               | _ -> value.ty
             in
             Ok
@@ -7559,9 +7643,36 @@ let create ~compile_expr =
                   (typed_ir TUnknown
                      (Semantic_ir.Prefix ("!", reference.semantic_expr)))
             | ty ->
-                Error.error
-                            ("deref expects a reference, got "
-                           ^ Types.source_name ty))
+                (match
+                   Protocol.lookup_protocol_marker scope env "IDeref" "-deref"
+                 with
+                | Some marker -> (
+                    match
+                      Protocol.lookup_marker_impl env marker "-deref" ty
+                    with
+                    | Some
+                        {
+                          ty = TFn ([ parameter_ty ], return_ty);
+                          ocaml_name;
+                          _;
+                        } ->
+                        Result.map
+                          (fun receiver ->
+                            typed_ir return_ty
+                              (Semantic_ir.Apply
+                                 ( Semantic_ir.Ident ocaml_name,
+                                   [ receiver ] )))
+                          (adapt_value_to_type env parameter_ty reference)
+                    | Some _ ->
+                        Error.error "IDeref/-deref has an invalid signature"
+                    | None ->
+                        Error.error
+                          ("deref expects a reference, got "
+                          ^ Types.source_name ty))
+                | None ->
+                    Error.error
+                      ("deref expects a reference, got "
+                      ^ Types.source_name ty)))
         | Ok _ -> Error.error "deref expects 1 argument")
     | ("reset!" | "vreset!") as reset_name -> (
         match compile_args () with
@@ -7590,31 +7701,42 @@ let create ~compile_expr =
                                        "Lg_runtime.Runtime_slot.set",
                                      [ reference.semantic_expr; stored ] )))
                             stored
-            | TRef referenced_ty
-              when Types.assignable ~policy:Host_boundary
-                     ~expected:referenced_ty ~actual:value.ty ->
+            | TRef referenced_ty ->
                 let reference_name = "__lg_reset_reference" in
                 let value_name = "__lg_reset_value" in
-                Ok
-                  (typed_ir value.ty
-                     (Semantic_ir.Let
-                        ( [
-                            ( Semantic_ir.PVar reference_name,
-                              reference.semantic_expr );
-                            ( Semantic_ir.PVar value_name,
-                              value.semantic_expr );
-                          ],
-                          Semantic_ir.Sequence
-                            [
-                              Semantic_ir.Infix
-                                ( ":=",
-                                  Semantic_ir.Ident reference_name,
-                                  Semantic_ir.Ident value_name );
-                              Semantic_ir.Ident value_name;
-                            ] )))
-            | TRef _ ->
-                          Error.error
-                            (reset_name ^ " value must match referenced type")
+                let stored_value =
+                  typed_ir value.ty (Semantic_ir.Ident value_name)
+                in
+                (match
+                   if
+                     Types.assignable ~policy:Host_boundary
+                       ~expected:referenced_ty ~actual:value.ty
+                   then adapt_value_to_type env referenced_ty stored_value
+                   else
+                     Error.error
+                       (reset_name ^ " value must match referenced type")
+                 with
+                | Error _ ->
+                    Error.error
+                      (reset_name ^ " value must match referenced type")
+                | Ok stored ->
+                    Ok
+                      (typed_ir value.ty
+                         (Semantic_ir.Let
+                            ( [
+                                ( Semantic_ir.PVar reference_name,
+                                  reference.semantic_expr );
+                                ( Semantic_ir.PVar value_name,
+                                  value.semantic_expr );
+                              ],
+                              Semantic_ir.Sequence
+                                [
+                                  Semantic_ir.Infix
+                                    ( ":=",
+                                      Semantic_ir.Ident reference_name,
+                                      stored );
+                                  Semantic_ir.Ident value_name;
+                                ] ))))
                       | reference_ty when Types.is_dynamic reference_ty ->
                           let dynamic = Types.dynamic_constraint TUnknown in
                           Result.map

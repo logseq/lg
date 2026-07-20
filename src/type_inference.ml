@@ -158,6 +158,8 @@ and refine_nonmatching_type existing inferred =
   | (TNullable existing | TOcaml_app ("option", [ existing ])), inferred
     when Option.is_some (Types.protocol_constraint_info inferred) ->
       Types.normalize_nullable (TNullable (refine_type existing inferred))
+  | TNullable existing, inferred ->
+      Types.normalize_nullable (TNullable (refine_type existing inferred))
   | ( TOcaml_app (existing_name, existing_args),
       TOcaml_app (inferred_name, inferred_args) )
     when existing_name = inferred_name
@@ -685,6 +687,8 @@ let rec inferred_form_type params = function
       TSymbol
   | FList [ FSymbol ("atom" | "volatile!"); FVector [] ] ->
       TRef (TVector TUnknown)
+  | FList [ FSymbol ("atom" | "volatile!"); FSymbol "nil" ] ->
+      TRef (TNullable TUnknown)
   | FList [ FSymbol "deref"; FSymbol reference ] -> (
       match string_assoc_opt reference params with
       | Some (TRef value_ty) -> value_ty
@@ -1155,6 +1159,8 @@ let infer_params ?(explicitly_dynamic_params = [])
         | TNullable value_ty | TOcaml_app ("option", [ value_ty ]) ->
             infer_expected (Types.weak_type value_ty) params reference
         | _ -> infer_form params reference)
+    | FList [ FSymbol "deref"; FSymbol reference ] ->
+        constrain_symbol (TRef expected_ty) params reference
     | FList (FSymbol let_name :: bindings :: body_forms)
       when let_name = "let" || let_name = "let*"
            || String.ends_with ~suffix:"/let" let_name
@@ -2133,6 +2139,17 @@ let infer_params ?(explicitly_dynamic_params = [])
               with
               | Error _ as error -> error
               | Ok params -> infer_values params rest)
+          | (FMap _ as pattern)
+            :: (FList [ FSymbol "deref"; FSymbol _ ] as source)
+            :: rest -> (
+              let map_ty =
+                Destructure.infer_pattern_type pattern lookup_inferred_local
+                |> Result.value
+                     ~default:(Types.dynamic_constraint TUnknown)
+              in
+              match infer_expected (TNullable map_ty) params source with
+              | Error _ as error -> error
+              | Ok params -> infer_values params rest)
           | FSymbol _name :: value_form :: rest -> (
               match infer_form params value_form with
               | Error _ as err -> err
@@ -2800,6 +2817,22 @@ let infer_params ?(explicitly_dynamic_params = [])
     | FList [ FSymbol ("weak-deref" | "weak-clear!"); FSymbol name ] ->
         constrain_symbol (Types.weak_type TUnknown) params name
     | FList [ FSymbol "weak-ref"; value ] -> infer_form params value
+    | FList
+        [ FSymbol ("reset!" | "vreset!"); FSymbol reference; value ] ->
+        let value_ty = inferred_form_type params value in
+        let referenced_ty =
+          match string_assoc_opt reference params with
+          | Some (TRef (TNullable _)) -> TNullable value_ty
+          | Some (TRef (TOcaml_app ("option", [ _ ]))) ->
+              TOcaml_app ("option", [ value_ty ])
+          | Some _ | None -> value_ty
+        in
+        Result.bind
+          (constrain_symbol (TRef referenced_ty) params reference)
+          (fun params ->
+            match value_ty with
+            | TUnknown | TVar _ -> infer_form params value
+            | value_ty -> infer_expected value_ty params value)
     | FList
         [
           FSymbol ("swap!" | "vswap!");

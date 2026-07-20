@@ -24,6 +24,7 @@ let transient_collection_id =
 let transient_set_id = Protocol_id.create ~owner:[] ~name:"ITransientSet"
 let equiv_id = Protocol_id.create ~owner:[] ~name:"IEquiv"
 let hash_id = Protocol_id.create ~owner:[] ~name:"IHash"
+let deref_id = Protocol_id.create ~owner:[] ~name:"IDeref"
 let comparable_id = Protocol_id.create ~owner:[] ~name:"IComparable"
 let object_id = Protocol_id.create ~owner:[] ~name:"Object"
 let clojure_hash_id = Protocol_id.create ~owner:[] ~name:"clojure.lang.IHashEq"
@@ -208,6 +209,18 @@ let declare_collection_lifecycle_protocols registry =
        ]
   |> add_or_fail
 
+let declare_deref registry =
+  Protocol_registry.declare deref_id
+    [
+      {
+        Protocol_registry.method_id = method_id deref_id "-deref";
+        param_tys = [ TUnknown ];
+        return_ty = TUnknown;
+      };
+    ]
+    registry
+  |> add_or_fail
+
 let declare_data_protocols registry =
   let dynamic = Types.dynamic_constraint TUnknown in
   registry
@@ -386,7 +399,7 @@ let initial_registry =
        "Lg.Core_protocols.nth_host_list"
   |> add_indexed (Receiver_id.Host_receiver "array")
        "Lg.Core_protocols.nth_host_array"
-  |> declare_emptyable |> declare_collection_lifecycle_protocols
+  |> declare_emptyable |> declare_collection_lifecycle_protocols |> declare_deref
   |> declare_clojure_host_protocols |> declare_data_protocols
 
 let find_seqable receiver_ty registry =

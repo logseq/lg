@@ -449,7 +449,9 @@ let apply_default compile_default default_form (value : typed_expr) =
 
 let rec bind_map ?compile_default ~env (target : typed_expr) pairs =
   match target.ty with
-  | TNullable ((TRecord fields | TNamed_record { fields; _ }) as map_ty) -> (
+  | (TNullable map_ty | TOcaml_app ("option", [ map_ty ]))
+    when Option.is_some (Types.record_fields map_ty) -> (
+      let fields = Types.record_fields map_ty |> Option.get in
       match parse_map_pattern pairs with
       | Error _ as err -> err
       | Ok parsed ->

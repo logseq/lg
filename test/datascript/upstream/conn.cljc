@@ -47,6 +47,10 @@
 (defn ^datascript.db/DB current-db [^Conn conn]
   (state-db @(:state-ref conn)))
 
+(extend-type Conn
+  IDeref
+  (-deref [conn] (current-db conn)))
+
 (defn- state-with-db [^conn-state state ^datascript.db/DB database]
   (record conn-state
           (db database)
@@ -127,7 +131,7 @@
     (db/db? database)
     true))
 
-(defn conn-from-db [database]
+(defn ^Conn conn-from-db [^datascript.db/DB database]
   {:pre [(db/db? database)]}
   (if-some [database-storage (storage/storage database)]
     (do
@@ -135,7 +139,7 @@
       (make-conn database [] (Some database)))
     (make-conn database [] nil)))
 
-(defn conn-from-datoms
+(defn ^Conn conn-from-datoms
   ([datoms]
    (conn-from-db (db/init-db datoms nil {})))
   ([datoms schema]
@@ -144,7 +148,7 @@
    (conn-from-db
      (db/init-db datoms schema (storage/maybe-adapt-storage opts)))))
 
-(defn create-conn
+(defn ^Conn create-conn
   ([]
    (conn-from-db (db/empty-db nil {})))
   ([schema]
@@ -204,7 +208,7 @@
       (store-after-transact! conn report)
       report)))
 
-(defn run-callbacks [^Conn conn report]
+(defn run-callbacks [^Conn conn ^datascript.db/TxReport report]
   (let [state @(:state-ref conn)]
     (doseq [[_ callback] (state-listeners state)]
       (callback report))))
@@ -262,9 +266,9 @@
     database))
 
 (defn listen!
-  ([^Conn conn callback]
+  ([^Conn conn ^:fn<datascript.db/TxReport;dynamic> callback]
    (listen! conn (rand) callback))
-  ([^Conn conn key callback]
+  ([^Conn conn key ^:fn<datascript.db/TxReport;dynamic> callback]
    {:pre [(conn? conn)]}
    (let [state-atom (:state-ref conn)
          state @state-atom

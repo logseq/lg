@@ -12,6 +12,7 @@ type t = {
   type_name : string option;
   nominal : nominal option;
   associative : (t -> t -> t) option;
+  lookup : (t -> t -> t) option;
 }
 
 and payload =
@@ -68,6 +69,7 @@ let make ?sequence ?(sequential = false) ?(protocols = []) ?metadata ?type_name
     type_name;
     nominal = None;
     associative = None;
+    lookup = None;
   }
 
 let with_protocols value protocols = { value with protocols }
@@ -76,6 +78,7 @@ let with_nominal tag payload value =
   { value with nominal = Some (Nominal (tag, payload)) }
 
 let with_assoc value associative = { value with associative = Some associative }
+let with_lookup value lookup = { value with lookup = Some lookup }
 let with_sequence value sequence = { value with sequence = Some sequence }
 
 let nominal value = value.nominal
@@ -733,6 +736,9 @@ let nominal_field_name = function
   | _ -> None
 
 let get value key =
+  match value.lookup with
+  | Some lookup -> lookup key nil
+  | None -> (
   match (value.payload, key.payload) with
   | Record (_, fields, extensions), key -> (
       match nominal_field_name key with
@@ -755,7 +761,7 @@ let get value key =
       | Some (_, value) -> value
       | None -> nil)
   | Vector, Int index -> vector_nth_opt value index |> Option.value ~default:nil
-  | _ -> nil
+  | _ -> nil)
 
 let indexed_get value index =
   match (value.payload, index.payload) with
@@ -763,6 +769,9 @@ let indexed_get value index =
   | _ -> get value index
 
 let get_default value key default =
+  match value.lookup with
+  | Some lookup -> lookup key default
+  | None -> (
   match (value.payload, key.payload) with
   | Record (_, fields, extensions), key -> (
       match nominal_field_name key with
@@ -786,7 +795,7 @@ let get_default value key default =
       | None -> default)
   | Vector, Int index ->
       vector_nth_opt value index |> Option.value ~default
-  | _ -> default
+  | _ -> default)
 
 let contains value key =
   match (value.payload, key.payload) with
