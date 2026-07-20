@@ -25,14 +25,15 @@ let hash_int32 value =
   if value = 0l then 0
   else fmix (mix_h1 0l (mix_k1 value)) 4 |> Int32.to_int
 
-let hash_int value =
-  if value = 0 then 0
+let hash_int64 value =
+  if value = 0L then 0
   else
-    let value = Int64.of_int value in
     let low = Int64.to_int32 value in
     let high = Int64.shift_right_logical value 32 |> Int64.to_int32 in
     let hash = mix_h1 0l (mix_k1 low) in
     fmix (mix_h1 hash (mix_k1 high)) 8 |> Int32.to_int
+
+let hash_int value = hash_int64 (Int64.of_int value)
 
 let java_string_hash value =
   String.fold_left

@@ -35,7 +35,7 @@ let compile_type_alias ?location scope env next_type name type_parameters
   | _ -> Error.error "type-alias expects a type keyword target"
 
 let compile_type_record_fields ?location ?(allow_empty = false) ?emitted_name
-    scope env next_type name type_parameters fields =
+    ?(nominal = true) scope env next_type name type_parameters fields =
   if fields = [] && not allow_empty then
     Error.error "type-record expects at least one field"
   else
@@ -46,7 +46,7 @@ let compile_type_record_fields ?location ?(allow_empty = false) ?emitted_name
     | Error _ as err -> err
     | Ok (type_id, env) ->
         let record_ty =
-          Types.named_record ~type_id ~nominal:true ~type_name ~type_parameters
+          Types.named_record ~type_id ~nominal ~type_name ~type_parameters
             ~set_module_name:("Set_" ^ type_name) fields
         in
         let env =
@@ -75,10 +75,12 @@ let compile_type_record_fields ?location ?(allow_empty = false) ?emitted_name
           ( scope,
             env,
             next_type,
-            Type_def { type_name; type_parameters; fields; location } )
+            Type_def
+              { type_name; type_parameters; fields; nominal; location }
+          )
 
-let compile_type_record ?location ?(allow_empty = false) scope env next_type
-    name type_parameters field_forms =
+let compile_type_record ?location ?(allow_empty = false) ?(nominal = true)
+    scope env next_type name type_parameters field_forms =
   let field_spec = function
     | FList [ (FSymbol field_name as name_form); FKeyword keyword ] -> (
         match
@@ -117,8 +119,8 @@ let compile_type_record ?location ?(allow_empty = false) scope env next_type
   match parse [] field_forms with
   | Error _ as err -> err
   | Ok fields ->
-      compile_type_record_fields ?location ~allow_empty scope env next_type name
-        type_parameters fields
+      compile_type_record_fields ?location ~allow_empty ~nominal scope env
+        next_type name type_parameters fields
 
 let record_type_public_binding module_path name env =
   let key = record_type_key module_path name in

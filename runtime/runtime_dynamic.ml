@@ -13,11 +13,12 @@ type t = {
   nominal : nominal option;
   associative : (t -> t -> t) option;
   lookup : (t -> t -> t) option;
+  printer : (unit -> string) option;
 }
 
 and payload =
   | Nil
-  | Int of int
+  | Int of int64
   | Float of float
   | Char of char
   | String of string
@@ -43,8 +44,27 @@ let protocol id methods = { id; methods }
 let protocol_extensions : ((string * string), t -> t) Hashtbl.t =
   Hashtbl.create 32
 
+let lookup_extensions : (string, t -> t -> t -> t) Hashtbl.t =
+  Hashtbl.create 32
+
+let printer_extensions : (string, t -> string) Hashtbl.t = Hashtbl.create 32
+
 let register_protocol_extension type_name protocol_id repack =
   Hashtbl.replace protocol_extensions (type_name, protocol_id) repack
+
+let register_lookup_extension type_name lookup =
+  Hashtbl.replace lookup_extensions type_name lookup
+
+let register_printer_extension type_name printer =
+  Hashtbl.replace printer_extensions type_name printer
+
+let lookup_extension value =
+  Option.bind value.type_name (fun type_name ->
+      Hashtbl.find_opt lookup_extensions type_name)
+
+let printer_extension value =
+  Option.bind value.type_name (fun type_name ->
+      Hashtbl.find_opt printer_extensions type_name)
 
 let has_protocol_extension value protocol_id =
   match value.type_name with
@@ -70,6 +90,7 @@ let make ?sequence ?(sequential = false) ?(protocols = []) ?metadata ?type_name
     nominal = None;
     associative = None;
     lookup = None;
+    printer = None;
   }
 
 let with_protocols value protocols = { value with protocols }
@@ -80,6 +101,7 @@ let with_nominal tag payload value =
 let with_assoc value associative = { value with associative = Some associative }
 let with_lookup value lookup = { value with lookup = Some lookup }
 let with_sequence value sequence = { value with sequence = Some sequence }
+let with_printer value printer = { value with printer = Some printer }
 
 let nominal value = value.nominal
 
@@ -165,12 +187,21 @@ let narrow_like (type expected_type) (expected : expected_type) value :
 let metadata value = Option.value value.metadata ~default:nil
 
 let rec to_string ~pr value =
+  match (pr, value.printer) with
+  | true, Some printer -> printer ()
+  | true, None -> (
+      match printer_extension value with
+      | Some printer -> printer value
+      | None -> to_string_payload ~pr value)
+  | _ -> to_string_payload ~pr value
+
+and to_string_payload ~pr value =
   let join values =
     values |> List.map (to_string ~pr:true) |> String.concat " "
   in
   match value.payload with
   | Nil -> "nil"
-  | Int value -> string_of_int value
+  | Int value -> Int64.to_string value
   | Float value -> string_of_float value
   | Char value -> String.make 1 value
   | String value -> if pr then Printf.sprintf "%S" value else value
@@ -285,8 +316,26 @@ let find_protocol_method value protocol_id method_name =
   Option.bind (find_protocol value protocol_id) (fun protocol ->
       List.assoc_opt method_name protocol.methods)
 
+let nominal_identity_equal left right =
+  match (left.nominal, right.nominal) with
+  | Some (Nominal (left_tag, left_payload)),
+    Some (Nominal (right_tag, right_payload)) ->
+      Obj.repr left_tag = Obj.repr right_tag
+      && Obj.repr left_payload == Obj.repr right_payload
+  | (Some _ | None), (Some _ | None) -> false
+
+let same_nominal_type left right =
+  match left.nominal with
+  | None -> true
+  | Some (Nominal (left_tag, _)) -> (
+      match right.nominal with
+      | Some (Nominal (right_tag, _)) ->
+          Obj.repr left_tag = Obj.repr right_tag
+      | None -> false)
+
 let rec equal left right =
   match find_protocol_method left "IEquiv" "-equiv" with
+  | Some _ when not (same_nominal_type left right) -> false
   | Some equiv -> (
       match (equiv [ right ]).payload with
       | Bool result -> result
@@ -332,7 +381,7 @@ let rec equal left right =
                  String.equal key other_key && equal value other_value)
                right)
            left
-  | Opaque _, Opaque _ -> false
+  | Opaque _, Opaque _ -> nominal_identity_equal left right
   | Reference _, Reference _ -> false
   | Function _, Function _ -> false
   | _ -> false)
@@ -345,8 +394,8 @@ let numeric_equal left right =
   match (left.payload, right.payload) with
   | Int left, Int right -> left = right
   | Float left, Float right -> left = right
-  | Int left, Float right -> float_of_int left = right
-  | Float left, Int right -> left = float_of_int right
+  | Int left, Float right -> Int64.to_float left = right
+  | Float left, Int right -> left = Int64.to_float right
   | _ -> false
 
 let numeric_equal_arguments = function
@@ -408,8 +457,8 @@ and compare left right =
   | _, Nil -> 1
   | Int left, Int right -> Stdlib.compare left right
   | Float left, Float right -> Stdlib.compare left right
-  | Int left, Float right -> Stdlib.compare (float_of_int left) right
-  | Float left, Int right -> Stdlib.compare left (float_of_int right)
+  | Int left, Float right -> Stdlib.compare (Int64.to_float left) right
+  | Float left, Int right -> Stdlib.compare left (Int64.to_float right)
   | Char left, Char right -> Stdlib.compare left right
   | String left, String right
   | Symbol left, Symbol right
@@ -451,6 +500,8 @@ and compare left right =
       let rank = Int.compare (payload_rank left.payload) (payload_rank right.payload) in
       if rank <> 0 then rank else invalid_arg "dynamic values are not comparable"
 
+let compare_int64 left right = Int64.of_int (compare left right)
+
 let unary_function name fn =
   function_ (function
     | [ value ] -> fn value
@@ -461,8 +512,8 @@ let binary_function name fn =
     | [ left; right ] -> fn left right
     | _ -> invalid_arg (name ^ " expects two arguments"))
 
-let int_quot left right = left / right
-let int_rem left right = left mod right
+let int_quot = Int64.div
+let int_rem = Int64.rem
 
 let int_binary_function name fn =
   binary_function name (fun left right ->
@@ -474,22 +525,22 @@ let quot_function = int_binary_function "quot" int_quot
 let rem_function = int_binary_function "rem" int_rem
 
 let clojure_mod left right =
-  let remainder = left mod right in
-  if remainder = 0 || (remainder > 0) = (right > 0) then remainder
-  else remainder + right
+  let remainder = Int64.rem left right in
+  if remainder = 0L || (remainder > 0L) = (right > 0L) then remainder
+  else Int64.add remainder right
 
 let mod_function = int_binary_function "mod" clojure_mod
 
-let int_inc = Int.succ
-let int_dec = Int.pred
+let int_inc = Int64.succ
+let int_dec = Int64.pred
 let int_max = Stdlib.max
 let int_min = Stdlib.min
-let int_zero value = value = 0
-let int_positive value = value > 0
-let int_negative value = value < 0
-let int_even value = value mod 2 = 0
-let int_odd value = value mod 2 <> 0
-let int_compare = Int.compare
+let int_zero value = value = 0L
+let int_positive value = value > 0L
+let int_negative value = value < 0L
+let int_even value = Int64.rem value 2L = 0L
+let int_odd value = Int64.rem value 2L <> 0L
+let int_compare = Int64.compare
 
 let numeric_unary_function name int_fn float_fn =
   unary_function name (fun value ->
@@ -525,7 +576,8 @@ let integer_predicate_function name predicate =
 
 let even_function = integer_predicate_function "even?" int_even
 let odd_function = integer_predicate_function "odd?" int_odd
-let compare_function = binary_function "compare" (fun left right -> int (compare left right))
+let compare_function =
+  binary_function "compare" (fun left right -> int (Int64.of_int (compare left right)))
 
 let extremum_function name select =
   function_ (function
@@ -544,7 +596,7 @@ let rand_function =
   function_ (function
     | [] -> float (Runtime_random.rand 1.)
     | [ { payload = Int bound; _ } ] ->
-        float (Runtime_random.rand (float_of_int bound))
+        float (Runtime_random.rand (Int64.to_float bound))
     | [ { payload = Float bound; _ } ] -> float (Runtime_random.rand bound)
     | [ _ ] -> invalid_arg "rand expects a numeric bound"
     | _ -> invalid_arg "rand expects zero or one argument")
@@ -552,7 +604,8 @@ let rand_function =
 let rand_int_function =
   unary_function "rand-int" (fun value ->
       match value.payload with
-      | Int bound -> int (Runtime_random.rand_int bound)
+      | Int bound ->
+          int (Int64.of_int (Runtime_random.rand_int (Int64.to_int bound)))
       | _ -> invalid_arg "rand-int expects an integer bound")
 
 let sort collection =
@@ -623,25 +676,25 @@ let assoc value key replacement =
   match value.associative with
   | Some associative -> associative key replacement
   | None -> (
-  match value.payload with
-  | Nil -> map [ (key, replacement) ]
-  | Vector ->
-      let values = value |> to_seq |> List.of_seq |> Rrbvec.of_list in
-      let index =
-        match key.payload with
-        | Int index -> index
-        | _ -> invalid_arg "dynamic vector assoc expects an integer index"
-      in
-      vector (Rrbvec.set values index replacement)
-  | Map entries ->
-      let rec replace acc = function
-        | [] -> List.rev ((key, replacement) :: acc)
-        | (existing_key, _) :: rest when equal key existing_key ->
-            List.rev_append acc ((key, replacement) :: rest)
-        | entry :: rest -> replace (entry :: acc) rest
-      in
-      map (replace [] entries)
-  | _ -> invalid_arg "dynamic value is not associative")
+      match value.payload with
+      | Nil -> map [ (key, replacement) ]
+      | Vector ->
+          let values = value |> to_seq |> List.of_seq |> Rrbvec.of_list in
+          let index =
+            match key.payload with
+            | Int index -> Int64.to_int index
+            | _ -> invalid_arg "dynamic vector assoc expects an integer index"
+          in
+          vector (Rrbvec.set values index replacement)
+      | Map entries ->
+          let rec replace acc = function
+            | [] -> List.rev ((key, replacement) :: acc)
+            | (existing_key, _) :: rest when equal key existing_key ->
+                List.rev_append acc ((key, replacement) :: rest)
+            | entry :: rest -> replace (entry :: acc) rest
+          in
+          map (replace [] entries)
+      | _ -> invalid_arg "dynamic value is not associative")
 
 let merge values =
   let merge_one result value =
@@ -735,67 +788,51 @@ let nominal_field_name = function
         (if String.starts_with ~prefix:":" field then field else ":" ^ field)
   | _ -> None
 
-let get value key =
-  match value.lookup with
-  | Some lookup -> lookup key nil
-  | None -> (
+let payload_get value key =
   match (value.payload, key.payload) with
   | Record (_, fields, extensions), key -> (
       match nominal_field_name key with
       | Some field -> (
           match List.assoc_opt field fields with
-          | Some project -> project ()
-          | None -> List.assoc_opt field extensions |> Option.value ~default:nil)
-      | None -> nil)
+          | Some project -> Some (project ())
+          | None -> List.assoc_opt field extensions)
+      | None -> None)
   | Opaque (_, fields), key -> (
       match nominal_field_name key with
-      | Some field -> (
-          match List.assoc_opt field fields with
-          | Some project -> project ()
-          | None -> nil)
-      | None -> nil)
-  | Map entries, _ -> (
-      match
-        List.find_opt (fun (entry_key, _) -> equal key entry_key) entries
-      with
-      | Some (_, value) -> value
-      | None -> nil)
-  | Vector, Int index -> vector_nth_opt value index |> Option.value ~default:nil
-  | _ -> nil)
+      | Some field -> List.assoc_opt field fields |> Option.map (fun get -> get ())
+      | None -> None)
+  | Map entries, _ ->
+      List.find_opt (fun (entry_key, _) -> equal key entry_key) entries
+      |> Option.map snd
+  | Vector, Int index -> vector_nth_opt value (Int64.to_int index)
+  | _ -> None
+
+let get value key =
+  match payload_get value key with
+  | Some result -> result
+  | None -> (
+      match value.lookup with
+      | Some lookup -> lookup key nil
+      | None -> (
+          match lookup_extension value with
+          | Some lookup -> lookup value key nil
+          | None -> nil))
 
 let indexed_get value index =
   match (value.payload, index.payload) with
-  | Array values, Int index -> Array.get values index
+  | Array values, Int index -> Array.get values (Int64.to_int index)
   | _ -> get value index
 
 let get_default value key default =
-  match value.lookup with
-  | Some lookup -> lookup key default
+  match payload_get value key with
+  | Some result -> result
   | None -> (
-  match (value.payload, key.payload) with
-  | Record (_, fields, extensions), key -> (
-      match nominal_field_name key with
-      | Some field -> (
-          match List.assoc_opt field fields with
-          | Some project -> project ()
-          | None -> List.assoc_opt field extensions |> Option.value ~default)
-      | None -> default)
-  | Opaque (_, fields), key -> (
-      match nominal_field_name key with
-      | Some field -> (
-          match List.assoc_opt field fields with
-          | Some project -> project ()
-          | None -> default)
-      | None -> default)
-  | Map entries, _ -> (
-      match
-        List.find_opt (fun (entry_key, _) -> equal key entry_key) entries
-      with
-      | Some (_, value) -> value
-      | None -> default)
-  | Vector, Int index ->
-      vector_nth_opt value index |> Option.value ~default
-  | _ -> default)
+      match value.lookup with
+      | Some lookup -> lookup key default
+      | None -> (
+          match lookup_extension value with
+          | Some lookup -> lookup value key default
+          | None -> default))
 
 let contains value key =
   match (value.payload, key.payload) with
@@ -810,8 +847,10 @@ let contains value key =
   | Map entries, _ ->
       List.exists (fun (entry_key, _) -> equal key entry_key) entries
   | Set values, _ -> List.exists (equal key) values
-  | Vector, Int index -> index >= 0 && index < Seq.length (to_seq value)
-  | Array values, Int index -> index >= 0 && index < Array.length values
+  | Vector, Int index ->
+      index >= 0L && index < Int64.of_int (Seq.length (to_seq value))
+  | Array values, Int index ->
+      index >= 0L && index < Int64.of_int (Array.length values)
   | _ -> false
 
 let entries value =
@@ -893,19 +932,19 @@ let is_number value =
 
 let is_zero value =
   match value.payload with
-  | Int value -> value = 0
+  | Int value -> value = 0L
   | Float value -> value = 0.
   | _ -> invalid_arg "zero? expects a numeric value"
 
 let is_positive value =
   match value.payload with
-  | Int value -> value > 0
+  | Int value -> value > 0L
   | Float value -> value > 0.
   | _ -> invalid_arg "pos? expects a numeric value"
 
 let is_negative value =
   match value.payload with
-  | Int value -> value < 0
+  | Int value -> value < 0L
   | Float value -> value < 0.
   | _ -> invalid_arg "neg? expects a numeric value"
 
@@ -964,12 +1003,7 @@ let identical left right =
     (Nil | Int _ | Float _ | Char _ | String _ | Symbol _ | Keyword _ | Bool _) ->
       equal left right
   | _ -> (
-      match (left.nominal, right.nominal) with
-      | Some (Nominal (left_tag, left_payload)),
-        Some (Nominal (right_tag, right_payload)) ->
-          Obj.repr left_tag = Obj.repr right_tag
-          && Obj.repr left_payload == Obj.repr right_payload
-      | (Some _ | None), (Some _ | None) -> false)
+      nominal_identity_equal left right)
 
 let identical_function =
   binary_function "identical?" (fun left right -> bool (identical left right))
@@ -1059,22 +1093,22 @@ let count_value value =
   | _ -> Seq.length (to_seq value)
 
 let count_function =
-  unary_function "count" (fun value -> int (count_value value))
+  unary_function "count" (fun value -> int (Int64.of_int (count_value value)))
 
 let range_sequence start stop step =
-  if step = 0 then invalid_arg "range step must not be zero";
+  if step = 0L then invalid_arg "range step must not be zero";
   Seq.unfold
     (fun current ->
-      if (step > 0 && current >= stop) || (step < 0 && current <= stop) then
+      if (step > 0L && current >= stop) || (step < 0L && current <= stop) then
         None
-      else Some (int current, current + step))
+      else Some (int current, Int64.add current step))
     start
 
 let range_function =
   function_ (function
-    | [ { payload = Int stop; _ } ] -> seq (range_sequence 0 stop 1)
+    | [ { payload = Int stop; _ } ] -> seq (range_sequence 0L stop 1L)
     | [ { payload = Int start; _ }; { payload = Int stop; _ } ] ->
-        seq (range_sequence start stop 1)
+        seq (range_sequence start stop 1L)
     | [ { payload = Int start; _ }; { payload = Int stop; _ };
         { payload = Int step; _ } ] ->
         seq (range_sequence start stop step)
@@ -1111,7 +1145,7 @@ let subs_function =
         in
         let start =
           match start.payload with
-          | Int value -> value
+          | Int value -> Int64.to_int value
           | _ -> invalid_arg "subs expects integer indexes"
         in
         string (String.sub source start (String.length source - start))
@@ -1122,7 +1156,7 @@ let subs_function =
           | _ -> invalid_arg "subs expects a string"
         in
         let integer = function
-          | { payload = Int value; _ } -> value
+          | { payload = Int value; _ } -> Int64.to_int value
           | _ -> invalid_arg "subs expects integer indexes"
         in
         let start = integer start in
@@ -1226,14 +1260,16 @@ let string_join_function =
 let string_index_of_function =
   binary_function "clojure.string/index-of" (fun source needle ->
       int
-        (Runtime_string.index_of (dynamic_string_value source)
-           (dynamic_string_value needle)))
+        (Int64.of_int
+           (Runtime_string.index_of (dynamic_string_value source)
+              (dynamic_string_value needle))))
 
 let string_last_index_of_function =
   binary_function "clojure.string/last-index-of" (fun source needle ->
       int
-        (Runtime_string.last_index_of (dynamic_string_value source)
-           (dynamic_string_value needle)))
+        (Int64.of_int
+           (Runtime_string.last_index_of (dynamic_string_value source)
+              (dynamic_string_value needle))))
 
 let dynamic_string_ternary name fn =
   function_ (function
@@ -1291,11 +1327,22 @@ let swap value update_fn arguments =
   reset value (call update_fn (deref value :: arguments))
 
 let rec hash value =
+  let hash_method =
+    match value.payload with
+    | Opaque _ -> find_protocol_method value "IHash" "-hash"
+    | _ -> None
+  in
+  match hash_method with
+  | Some hash_method -> (
+      match (hash_method []).payload with
+      | Int result -> Int64.to_int result
+      | _ -> invalid_arg "IHash/-hash must return int")
+  | None -> (
   match value.payload with
   | Nil -> 0
   | Bool true -> 1231
   | Bool false -> 1237
-  | Int value -> Runtime_hash.hash_int value
+  | Int value -> Runtime_hash.hash_int64 value
   | Float value -> Runtime_hash.hash_float value
   | Char value -> Char.code value
   | String value -> Runtime_hash.hash_string value
@@ -1330,7 +1377,7 @@ let rec hash value =
            (List.to_seq (field_hashes @ extension_hashes)))
   | Function _ -> 0
   | Reference _ -> 0
-  | Opaque (name, _) -> Runtime_hash.hash_string name
+  | Opaque (name, _) -> Runtime_hash.hash_string name)
 
 let hash_unordered_coll value =
   value |> to_seq |> Seq.map hash |> Runtime_hash.hash_unordered
@@ -1356,7 +1403,10 @@ let has_protocol value protocol_id =
 let invoke value protocol_id method_name arguments =
   match find_protocol_method value protocol_id method_name with
   | None ->
-      invalid_arg ("missing protocol method " ^ protocol_id ^ "/" ^ method_name)
+      let receiver_type = Option.value value.type_name ~default:"<dynamic>" in
+      invalid_arg
+        ("missing protocol method " ^ protocol_id ^ "/" ^ method_name
+       ^ " for " ^ receiver_type)
   | Some method_ -> method_ arguments
 
 let as_transient value =
@@ -1461,7 +1511,7 @@ let as_int value =
 let to_int value =
   match value.payload with
   | Int value -> value
-  | Float value -> int_of_float value
+  | Float value -> Int64.of_float value
   | _ -> invalid_arg "expected numeric value"
 
 let as_float value =

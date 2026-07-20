@@ -5,7 +5,9 @@ let rec accepts_int ty =
   | TNullable inner | TOcaml_app ("option", [ inner ]) -> accepts_int inner
   | ty -> Types.assignable ~policy:Host_boundary ~expected:TInt ~actual:ty
 
-let int value = Semantic_ir.Int value
+let int value = Semantic_ir.Int64 (Int64.of_int value)
+
+let apply name args = Semantic_ir.Apply (Semantic_ir.Ident name, args)
 
 let rec int_expression arg =
   match arg.ty with
@@ -24,10 +26,10 @@ let rec int_expression arg =
           [ arg.semantic_expr ] )
   | _ -> arg.semantic_expr
 
-let fold_infix operator first rest =
+let fold_call function_name first rest =
   List.fold_left
     (fun expression arg ->
-      Semantic_ir.Infix (operator, expression, int_expression arg))
+      apply function_name [ expression; int_expression arg ])
     (int_expression first) rest
 
 let expect_int_args name args =
@@ -41,18 +43,18 @@ let compile_operator name args =
   | "/", ([] | [ _ ]) -> Error.error "/ expects at least 2 arguments"
   | _, [] -> Error.error (name ^ " expects at least 1 arguments")
   | _, [ arg ] when name = "-" ->
-      Ok (typed_ir TInt (Semantic_ir.Prefix ("~-", int_expression arg)))
+      Ok (typed_ir TInt (apply "Int64.neg" [ int_expression arg ]))
   | _, [ arg ] -> Ok (typed_ir TInt (int_expression arg))
   | _, first :: rest ->
-      let op =
+      let function_name =
         match name with
-        | "+" -> "+"
-        | "-" -> "-"
-        | "*" -> "*"
-        | "/" -> "/"
-        | _ -> " "
+        | "+" -> "Int64.add"
+        | "-" -> "Int64.sub"
+        | "*" -> "Int64.mul"
+        | "/" -> "Int64.div"
+        | _ -> assert false
       in
-      Ok (typed_ir TInt (fold_infix op first rest))
+      Ok (typed_ir TInt (fold_call function_name first rest))
 
 let compile_unary name args build_expr =
   match args with
@@ -67,18 +69,23 @@ let compile_binary name args =
       if accepts_int left.ty && accepts_int right.ty then
         let expression =
           match name with
-          | "quot" -> Semantic_ir.Infix ("/", int_expression left, int_expression right)
-          | "rem" -> Semantic_ir.Infix ("mod", int_expression left, int_expression right)
+          | "quot" ->
+              apply "Int64.div" [ int_expression left; int_expression right ]
+          | "rem" ->
+              apply "Int64.rem" [ int_expression left; int_expression right ]
           | "mod" ->
-              Semantic_ir.Infix
-                ( "mod",
-                  Semantic_ir.Infix
-                    ( "+",
-                      Semantic_ir.Infix ("mod", int_expression left, int_expression right),
-                      int_expression right ),
-                  int_expression right )
-          | "bit-shift-left" -> Semantic_ir.Infix ("lsl", int_expression left, int_expression right)
-          | "bit-shift-right" -> Semantic_ir.Infix ("asr", int_expression left, int_expression right)
+              apply "Lg_runtime.Runtime_dynamic.clojure_mod"
+                [ int_expression left; int_expression right ]
+          | "bit-shift-left" ->
+              apply "Int64.shift_left"
+                [ int_expression left;
+                  apply "Int64.to_int" [ int_expression right ];
+                ]
+          | "bit-shift-right" ->
+              apply "Int64.shift_right"
+                [ int_expression left;
+                  apply "Int64.to_int" [ int_expression right ];
+                ]
           | _ -> int_expression left
         in
         Ok (typed_ir TInt expression)
@@ -109,18 +116,18 @@ let compile_variadic_bitwise name args =
   | [] -> Error.error (name ^ " expects at least 1 arguments")
   | _ ->
       if List.for_all (fun arg -> accepts_int arg.ty) args then
-        let op =
+        let function_name =
           match name with
-          | "bit-and" -> "land"
-          | "bit-or" -> "lor"
-          | "bit-xor" -> "lxor"
+          | "bit-and" -> "Int64.logand"
+          | "bit-or" -> "Int64.logor"
+          | "bit-xor" -> "Int64.logxor"
           | _ -> assert false
         in
         let expression =
           match args with
           | [] -> assert false
           | first :: rest ->
-              fold_infix op first rest
+              fold_call function_name first rest
         in
         Ok (typed_ir TInt expression)
       else Error.error ("expected int arguments for " ^ name)

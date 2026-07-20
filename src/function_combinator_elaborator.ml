@@ -369,7 +369,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
                                (apply "List.fold_left"
                                         [
                                           fn.semantic_expr;
-                                          Semantic_ir.Int 0;
+                                          Semantic_ir.Int64 0L;
                                           values_expr;
                                         ]))
                           | TFn ([ TInt; TInt ], TInt) ->

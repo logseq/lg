@@ -546,7 +546,7 @@ let rec source_name = function
   | TNamed_record _ -> "map"
 
 let rec ocaml_name = function
-  | TInt -> "int"
+  | TInt -> "int64"
   | TFloat -> "float"
   | TChar -> "char"
   | TString -> "string"
@@ -597,8 +597,14 @@ let rec ocaml_name = function
       | Ok set_module -> set_module ^ ".t"
       | Error _ -> "unsupported_set<" ^ ocaml_name inner ^ ">")
   | TSeq inner -> ocaml_name inner ^ " Seq.t"
+  | TFn ([], ret) -> "unit -> " ^ ocaml_name ret
   | TFn (args, ret) ->
-      (args |> List.map ocaml_name |> String.concat " -> ") ^ " -> " ^ ocaml_name ret
+      let argument_name = function
+        | TFn _ as argument -> "(" ^ ocaml_name argument ^ ")"
+        | argument -> ocaml_name argument
+      in
+      (args |> List.map argument_name |> String.concat " -> ")
+      ^ " -> " ^ ocaml_name ret
   | TOverloaded_fn arities -> ocaml_name (overloaded_storage_type arities)
   | TRecord _ -> "record"
   | TNamed_record record -> (
@@ -638,6 +644,12 @@ and set_module_name = function
   | TVector inner when is_dynamic inner ->
       Ok "Lg_runtime.Core_set.Dynamic_vector_set"
   | TVector (TVector TInt) -> Ok "Lg_runtime.Core_set.Int_vector_vector_set"
+  | TRecord _ -> Ok "Lg_runtime.Runtime_poly_set"
+  | TNamed_record { nominal = false; _ } ->
+      Ok "Lg_runtime.Runtime_poly_set"
+  | TNullable (TNamed_record record)
+  | TOcaml_app ("option", [ TNamed_record record ]) ->
+      Ok (record.set_module_name ^ "_nullable")
   | TNamed_record record -> Ok record.set_module_name
   | ty -> Error.error ("sets require a generated comparator for " ^ source_name ty)
 
@@ -1035,7 +1047,7 @@ let rec idents_in_conversion names = function
       List.fold_left
         (fun names (_, value) -> idents_in_conversion names value)
         names fields
-  | Semantic_ir.Int _ | Semantic_ir.Float _ | Semantic_ir.String _
+  | Semantic_ir.Int _ | Semantic_ir.Int64 _ | Semantic_ir.Float _ | Semantic_ir.String _
   | Semantic_ir.Char _ | Semantic_ir.Bool _ | Semantic_ir.Unit ->
       names
 
@@ -1102,7 +1114,7 @@ let rec dynamic_pinned_idents names = function
       List.fold_left
         (fun names (_, value) -> dynamic_pinned_idents names value)
         names fields
-  | Semantic_ir.Int _ | Semantic_ir.Float _ | Semantic_ir.String _
+  | Semantic_ir.Int _ | Semantic_ir.Int64 _ | Semantic_ir.Float _ | Semantic_ir.String _
   | Semantic_ir.Char _ | Semantic_ir.Bool _ | Semantic_ir.Unit
   | Semantic_ir.Ident _ ->
       names
@@ -1117,7 +1129,7 @@ let rec pattern_name = function
       match List.rev patterns with
       | pattern :: _ -> pattern_name pattern
       | [] -> None)
-  | Semantic_ir.PAny | Semantic_ir.PUnit | Semantic_ir.PInt _
+  | Semantic_ir.PAny | Semantic_ir.PUnit | Semantic_ir.PInt _ | Semantic_ir.PInt64 _
   | Semantic_ir.PString _ | Semantic_ir.PBool _ | Semantic_ir.PConstructor _
   | Semantic_ir.PList _ | Semantic_ir.PCons _ | Semantic_ir.PRecord _
   | Semantic_ir.POr _ ->

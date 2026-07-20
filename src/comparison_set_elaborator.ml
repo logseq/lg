@@ -84,8 +84,10 @@ let create ~compile_expr ~pack_dynamic_value ~capability_value =
               Result.map
                 (fun right ->
                   typed_ir TInt
-                    (apply "Lg_runtime.Runtime_dynamic.compare"
-                       [ left; right ]))
+                    (apply "Int64.of_int"
+                       [ apply "Lg_runtime.Runtime_dynamic.compare"
+                           [ left; right ];
+                       ]))
                 (pack_dynamic_value env dynamic_ty right))
       | Ok [ left; right ] ->
           let comparable =
@@ -116,8 +118,8 @@ let create ~compile_expr ~pack_dynamic_value ~capability_value =
           | Some (left, right, _) ->
             Ok
               (typed_ir TInt
-               (apply "Stdlib.compare"
-                  [ left; right ])))
+                 (apply "Int64.of_int"
+                    [ apply "Stdlib.compare" [ left; right ] ])))
       | Ok _ -> Error.error "compare expects 2 arguments"
     and compile_key_extreme scope env name arg_forms =
       match arg_forms with

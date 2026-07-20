@@ -537,10 +537,12 @@ module Lg_frontend : FRONTEND = struct
 end
 
 module Ocaml_parsetree_backend = struct
-  let implementation (typed : typed_result) =
+  let implementation ?(previous_items = []) (typed : typed_result) =
     match
-      Lowering.structure_of_located_items
-        (List.combine typed.locations typed.items)
+      let items = List.combine typed.locations typed.items in
+      if previous_items = [] then Lowering.structure_of_located_items items
+      else
+        Lowering.structure_of_incremental_located_items ~previous_items items
     with
     | Error _ as err -> err
     | Ok structure -> Ok { ast = typed.ast; items = typed.items; structure }
@@ -1270,13 +1272,16 @@ let print_parsetree = Ocaml_parsetree_backend.print
 
 let compile_chunk_with_diagnostics ?(target = Target.default)
     ?(filename = "<string>") state source =
+  let previous_items = state.located_items in
   match Lg_frontend.implementation ~target ~filename source with
   | Error _ as err -> err
   | Ok parsed -> (
       match typecheck_incremental state parsed with
       | Error _ as err -> err
       | Ok (state, typed) -> (
-          match Ocaml_parsetree_backend.implementation typed with
+          match
+            Ocaml_parsetree_backend.implementation ~previous_items typed
+          with
           | Error _ as err -> err
           | Ok result -> (
               match
@@ -1304,13 +1309,16 @@ let compile_chunk ?(target = Target.default) ?(filename = "<string>") state
 
 let compile_chunk_parsetree ?(target = Target.default) ?(filename = "<string>")
     state source =
+  let previous_items = state.located_items in
   match Lg_frontend.implementation ~target ~filename source with
   | Error _ as err -> err
   | Ok parsed -> (
       match typecheck_incremental state parsed with
       | Error _ as err -> err
       | Ok (state, typed) -> (
-          match Ocaml_parsetree_backend.implementation typed with
+          match
+            Ocaml_parsetree_backend.implementation ~previous_items typed
+          with
           | Error _ as err -> err
           | Ok result -> (
               match

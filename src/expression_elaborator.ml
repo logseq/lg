@@ -46,7 +46,8 @@ let rec compile_expr scope (env : Env.t) form =
             })
 
 and compile_expr_unlocated scope (env : Env.t) = function
-  | FInt value -> Ok (typed_ir TInt (Semantic_ir.Int value))
+  | FInt value ->
+      Ok (typed_ir TInt (Semantic_ir.Int64 (Int64.of_int value)))
   | FFloat "##Inf" ->
       Ok (typed_ir TFloat (Semantic_ir.Ident "Float.infinity"))
   | FFloat "##-Inf" ->

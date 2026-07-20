@@ -15,6 +15,7 @@ let compile_fn = Expression_elaborator.compile_fn
 let compile_args_for = Expression_elaborator.compile_args_for
 let compile_call = Expression_elaborator.compile_call
 let binding_of_expr = Expression_support.binding_of_expr
+let lookup_function = Expression_support.lookup_function
 let allocate_anonymous_record = Expression_support.allocate_anonymous_record
 
 let allocate_nested_anonymous_records =
@@ -84,6 +85,7 @@ let allocate_function_return_record env next_type
                     type_name = allocation.record.type_name;
                     type_parameters = allocation.record.type_parameters;
                     fields = allocation.record.fields;
+                    nominal = false;
                     location = None;
                   };
               ]
@@ -129,6 +131,7 @@ let allocate_function_local_records env next_type
                     type_name = allocation.record.type_name;
                     type_parameters = allocation.record.type_parameters;
                     fields = allocation.record.fields;
+                    nominal = false;
                     location = None;
                   };
               ];
@@ -171,6 +174,38 @@ let allocate_function_local_records env next_type
         Semantic_ir.Record (fields, Some type_name)
     | value -> value
   in
+  let named_record_for_identifier name expression =
+    let records = ref [] in
+    let inspect = function
+      | Semantic_ir.Typed (TNamed_record record, value)
+        when Semantic_ir.unlocated value = Semantic_ir.Ident name ->
+          if
+            not
+              (List.exists
+                 (fun candidate ->
+                   Type_id.equal candidate.type_id record.type_id)
+                 !records)
+          then records := record :: !records;
+          Semantic_ir.Typed (TNamed_record record, value)
+      | value -> value
+    in
+    ignore (Semantic_ir.rewrite inspect expression);
+    match !records with [ record ] -> Some record | _ -> None
+  in
+  let rec constrain_pattern body = function
+    | Semantic_ir.PLocated (node_id, location, pattern) ->
+        Semantic_ir.PLocated
+          (node_id, location, constrain_pattern body pattern)
+    | Semantic_ir.PVar name as pattern
+      when String.starts_with ~prefix:"__lg_dynamic_item_" name -> (
+        match named_record_for_identifier name body with
+        | None -> pattern
+        | Some record ->
+            Semantic_ir.PConstraint
+              ( pattern,
+                Structural_map.record_type_application record ))
+    | pattern -> pattern
+  in
   let materialize = function
     | Semantic_ir.Typed ((TRecord _ as ty), value) -> (
         match materialize_type ty with
@@ -187,7 +222,6 @@ let allocate_function_local_records env next_type
         Semantic_ir.PackDynamic
           {
             conversion with
-            source_ty = materialize_type conversion.source_ty;
             target_ty = materialize_type conversion.target_ty;
           }
     | Semantic_ir.UnpackDynamic conversion ->
@@ -204,16 +238,31 @@ let allocate_function_local_records env next_type
             source_ty = materialize_type conversion.source_ty;
             element_ty = materialize_type conversion.element_ty;
           }
+    | Semantic_ir.Fun (patterns, body) ->
+        Semantic_ir.Fun
+          (List.map (constrain_pattern body) patterns, body)
     | value -> value
   in
   let semantic_expr =
     Semantic_ir.rewrite materialize parts.body.semantic_expr
+  in
+  let param_bindings =
+    List.map
+      (fun (key, (binding : binding)) ->
+        let ty =
+          match binding.ty with
+          | TFn _ -> materialize_type binding.ty
+          | ty -> ty
+        in
+        (key, { binding with ty }))
+      parts.param_bindings
   in
   ( !current_env,
     !current_next_type,
     !items,
     {
       parts with
+      param_bindings;
       body = { parts.body with semantic_expr };
     } )
 
@@ -847,6 +896,7 @@ let rec compile scope env next_type = function
             compile_type_record_fields
               ?location:(Source_context.find name_form)
               ~allow_empty:true
+              ~nominal:false
               ~emitted_name:(Names.ocaml_binding_name scope name)
               scope env next_type name type_parameters record_fields
           with
@@ -862,8 +912,13 @@ let rec compile scope env next_type = function
                     | (protocol_name, methods) :: rest -> (
                         let wrap_method method_name receiver_name params
                             body_forms =
+                          let parameter_names =
+                            Destructure.pattern_names params
+                          in
                           let field_bindings =
                             fields
+                            |> List.filter (fun field_name ->
+                                   not (List.mem field_name parameter_names))
                             |> List.concat_map (fun field_name ->
                                    [
                                      FSymbol field_name;
@@ -912,7 +967,8 @@ let rec compile scope env next_type = function
                                 ~default:[ method_form ]
                           | method_form -> [ method_form ]
                         in
-                        let methods = List.concat_map expand_method methods
+                        let wrapped_methods =
+                          List.concat_map expand_method methods
                         in
                         let implementation_form =
                         match
@@ -921,7 +977,7 @@ let rec compile scope env next_type = function
                           | Some _ ->
                               FList
                                (FSymbol "extend-type-no-register" :: FSymbol name
-                               :: FSymbol protocol_name :: methods)
+                               :: FSymbol protocol_name :: wrapped_methods)
                           | None ->
                               FList
                                 (FSymbol "deftype-methods" :: FSymbol name
@@ -1046,7 +1102,20 @@ let rec compile scope env next_type = function
               :: rest -> (
                 match current_interface with
                 | Some "IPrintWithWriter" ->
-                    predeclare_methods env names current_interface rest
+                    let source_name =
+                      Expression_support.print_method_name record
+                    in
+                    let ocaml_name = Names.sanitize_name source_name in
+                    let dynamic = Types.dynamic_constraint TUnknown in
+                    let binding =
+                      Types.binding ~forward_declared:true ocaml_name
+                        (TFn
+                           ( [ receiver_ty; TOcaml "Buffer.t"; dynamic ],
+                             TUnit ))
+                    in
+                    predeclare_methods
+                      (Env.add (Names.scoped_key scope source_name) binding env)
+                      (ocaml_name :: names) current_interface rest
                 | Some protocol_name -> (
                     match
                       ( Protocol.find_protocol_id scope env protocol_name,
@@ -1107,7 +1176,20 @@ let rec compile scope env next_type = function
                   | [] -> []
                   | bindings -> [ Recursive_value_bindings bindings ]
                 in
-                Ok (scope, env, next_type, Group items)
+                Result.map
+                  (fun registration ->
+                    let items =
+                      match registration with
+                      | None -> items
+                      | Some expression ->
+                          items
+                          @ [
+                              Value_binding
+                                { pattern = Unit_pattern; expression };
+                            ]
+                    in
+                    (scope, env, next_type, Group items))
+                  (Call_elaborator.compile_deftype_registrations env record)
             | FSymbol interface_name :: rest ->
                 compile_methods env items (Some interface_name) rest
             | FList (FSymbol method_name :: arities) :: rest
@@ -1131,11 +1213,11 @@ let rec compile scope env next_type = function
                 :: (FVector params as params_form)
                 :: body_forms)
               :: rest -> (
-                if current_interface = Some "IPrintWithWriter" then
-                  compile_methods env items current_interface rest
-                else
                 let arity = List.length params in
                 let source_name =
+                  if current_interface = Some "IPrintWithWriter" then
+                    Expression_support.print_method_name record
+                  else
                     Expression_support.deftype_method_name record method_name
                       arity
                 in
@@ -1148,6 +1230,45 @@ let rec compile scope env next_type = function
                         FVector (FSymbol receiver_name :: remaining) )
                   | FSymbol receiver_name :: _ -> (receiver_name, params_form)
                   | _ -> ("__lg_deftype_this", params_form)
+                in
+                let rec unresolved_print_call = function
+                  | FList (FSymbol name :: arguments) ->
+                      let special_form =
+                        List.mem name
+                          [
+                            "binding";
+                            "cond";
+                            "do";
+                            "fn";
+                            "if";
+                            "let";
+                            "match";
+                            "try";
+                            "when";
+                            "deref";
+                            "pr-sequential-writer";
+                            "pr-writer";
+                          ]
+                      in
+                      ((not special_form)
+                      && not (String.starts_with ~prefix:"-" name)
+                      && Result.is_error (lookup_function scope env name))
+                      || List.exists unresolved_print_call arguments
+                  | FList forms | FVector forms ->
+                      List.exists unresolved_print_call forms
+                  | FMap pairs ->
+                      List.exists
+                        (fun (key, value) ->
+                          unresolved_print_call key
+                          || unresolved_print_call value)
+                        pairs
+                  | FSymbol _ | FInt _ | FFloat _ | FChar _ | FString _
+                  | FRegex _ | FBool _ | FKeyword _ | FCoreSymbol _ ->
+                      false
+                in
+                let skip_unresolved_print =
+                  current_interface = Some "IPrintWithWriter"
+                  && List.exists unresolved_print_call body_forms
                 in
                 let rec form_mentions name = function
                   | FSymbol candidate -> candidate = name
@@ -1234,6 +1355,12 @@ let rec compile scope env next_type = function
                 in
                 let param_type_overrides =
                   match (current_interface, method_name, params) with
+                  | Some "IPrintWithWriter", "-pr-writer", [ _; _; _ ] ->
+                      [
+                        Some receiver_ty;
+                        Some (TOcaml "Buffer.t");
+                        Some (Types.dynamic_constraint TUnknown);
+                      ]
                   | Some "ILookup", "-lookup", _receiver :: arguments ->
                       Some receiver_ty
                       :: List.map
@@ -1242,15 +1369,30 @@ let rec compile scope env next_type = function
                            arguments
                   | _ -> [ Some receiver_ty ]
                 in
+                if skip_unresolved_print then
+                  compile_methods
+                    (Env.remove (Names.scoped_key scope source_name) env)
+                    items current_interface rest
+                else
                 match
                   Expression_elaborator.compile_fn ~param_type_overrides scope
                     env params_form body_forms
                 with
                 | Error _ as err -> err
                 | Ok implementation -> (
+                    if
+                      current_interface = Some "IPrintWithWriter"
+                      && expression_references_declaration env
+                           implementation.semantic_expr
+                    then
+                      compile_methods
+                        (Env.remove (Names.scoped_key scope source_name) env)
+                        items current_interface rest
+                    else
                     let binding = binding_of_expr ocaml_name implementation in
                     let register_protocol env =
                       match current_interface with
+                      | Some "IPrintWithWriter" -> Ok env
                       | Some protocol_name
                         when Option.is_some
                                  (Protocol.find_protocol_id scope env
@@ -1348,6 +1490,15 @@ let rec compile scope env next_type = function
                       pattern = Named ocaml_name;
                         expression = implementation.semantic_expr;
                     } )))
+  | FList
+      (FSymbol "defmethod"
+      :: FSymbol (("t/assert-expr" | "t/report") as method_name)
+      :: _) ->
+      Ok
+        ( scope,
+          env,
+          next_type,
+          Comment ("test runner handles " ^ method_name) )
   | FList (FSymbol "defmethod" :: _) ->
       Error.error "defmethod currently supports print-method"
   | FList (FSymbol "recursive-definition-group" :: definitions) ->
@@ -2409,6 +2560,14 @@ let rec compile scope env next_type = function
               Value_binding
                 { pattern = Unit_pattern; expression = expr.semantic_expr } ))
   | FList [ FSymbol "namespace-scope"; FSymbol namespace_name ] ->
+      let env =
+        Env.add
+          (Names.scoped_key namespace_name "*print-namespace-maps*")
+          (Types.binding ~dynamic_var:true
+             "Lg_runtime.Runtime_print.print_namespace_maps"
+             (TRef (Types.dynamic_constraint TBool)))
+          env
+      in
       Ok
         (namespace_name, env, next_type, Comment ("namespace " ^ namespace_name))
   | FList (FSymbol "refer-clojure-exclude" :: names) ->

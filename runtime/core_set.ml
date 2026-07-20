@@ -1,17 +1,17 @@
-module Int_set = Set.Make (Int)
+module Int_set = Set.Make (Int64)
 module Float_set = Set.Make (Float)
 module String_set = Set.Make (String)
 
 module Bool_order = struct
   type t = bool
 
-  let compare = Bool.compare
+  let compare left right = Bool.compare right left
 end
 
 module Bool_set = Set.Make (Bool_order)
 
 module Int_list_set = Set.Make (struct
-  type t = int list
+  type t = int64 list
 
   let compare = Stdlib.compare
 end)
@@ -35,7 +35,7 @@ module Bool_list_set = Set.Make (struct
 end)
 
 module Int_vector_set = Set.Make (struct
-  type t = int Rrbvec.t
+  type t = int64 Rrbvec.t
 
   let compare = Stdlib.compare
 end)
@@ -76,7 +76,7 @@ module Dynamic_vector_set = Set.Make (struct
 end)
 
 module Int_vector_vector_set = Set.Make (struct
-  type t = int Rrbvec.t Rrbvec.t
+  type t = int64 Rrbvec.t Rrbvec.t
 
   let compare = Stdlib.compare
 end)

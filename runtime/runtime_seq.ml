@@ -93,15 +93,16 @@ let drop count sequence =
 let repeat value = Seq.repeat value |> memoize
 
 let range start step =
-  let rec next value () = Seq.Cons (value, next (value + step)) in
+  let rec next value () = Seq.Cons (value, next (Int64.add value step)) in
   next start |> memoize
 
 let range_until start stop step =
-  if step = 0 then invalid_arg "range step cannot be 0"
+  if step = 0L then invalid_arg "range step cannot be 0"
   else
     let rec next value () =
-      if (step > 0 && value >= stop) || (step < 0 && value <= stop) then Seq.Nil
-      else Seq.Cons (value, next (value + step))
+      if (step > 0L && value >= stop) || (step < 0L && value <= stop) then
+        Seq.Nil
+      else Seq.Cons (value, next (Int64.add value step))
     in
     next start |> memoize
 

@@ -32,6 +32,18 @@
   [^:string namespace ^:fn<fn<unit;unit>;unit> fixture]
   (runtime/register-each-fixture namespace fixture))
 
+(defn invoke-fixture! [^:dynamic fixture ^:fn<unit;unit> run]
+  (if (fn? fixture)
+    (fixture
+     (fn []
+       (clojure.test/invoke-test-body! run)))
+    (do
+      (when-let [before (:before fixture)]
+        (before))
+      (clojure.test/invoke-test-body! run)
+      (when-let [after (:after fixture)]
+        (after)))))
+
 (defmacro is
   ([form]
    `(clojure.test/is ~form ""))
@@ -58,6 +70,21 @@
               (clojure.test/pass!)
               (clojure.test/fail! "thrown-with-msg?" ~message)))))
 
+     (and (seq? form) (= 'thrown-msg? (first form)))
+     (let [expected-message (second form)
+           body (drop 2 form)]
+       `(try
+          ~@body
+          (clojure.test/fail! "thrown-msg? (no exception)" ~message)
+          (catch js/Error error#
+            (let [actual-message# (clojure.test/exception-message error#)]
+              (if (= ~expected-message actual-message#)
+                (clojure.test/pass!)
+                (clojure.test/fail!
+                 (str "thrown-msg? expected " ~expected-message
+                      ", got " actual-message#)
+                 ~message))))))
+
      :else
      `(if ~form
         (clojure.test/pass!)
@@ -68,7 +95,7 @@
 
 (defmacro testing [context & body]
   `(clojure.test/with-context
-    ~context
+    (str ~context)
     (fn []
       ~@body
       (clojure.test/finish-test!))))
@@ -96,8 +123,6 @@
             `(~register
               ~namespace
               (fn [^:fn<unit;unit> run#]
-                (~fixture
-                 (fn []
-                   (clojure.test/invoke-test-body! run#)))
+                (clojure.test/invoke-fixture! ~fixture run#)
                 (clojure.test/finish-test!))))
           fixtures))))

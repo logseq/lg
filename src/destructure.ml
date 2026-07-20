@@ -347,7 +347,8 @@ let field_type fields keyword =
   | None -> Error.error ("cannot destructure missing field " ^ keyword)
 
 let literal_default = function
-  | FInt value -> Ok (typed_ir TInt (Semantic_ir.Int value))
+  | FInt value ->
+      Ok (typed_ir TInt (Semantic_ir.Int64 (Int64.of_int value)))
   | FString value -> Ok (typed_ir TString (Semantic_ir.String value))
   | FBool value -> Ok (typed_ir TBool (Semantic_ir.Bool value))
   | FKeyword keyword -> Ok (typed_ir TKeyword (Semantic_ir.String keyword))
@@ -663,13 +664,15 @@ and bind_sequence ?compile_default env (target : typed_expr) forms =
     let semantic_expr =
       match target.ty with
       | TList _ ->
-          Core_sequence_transform.drop_list_expr (Semantic_ir.Int count)
+          Core_sequence_transform.drop_list_expr
+            (Semantic_ir.Int64 (Int64.of_int count))
             target.semantic_expr
       | TVector _ ->
           Semantic_ir.Apply
             ( Semantic_ir.Ident "Rrbvec.of_list",
               [
-                Core_sequence_transform.drop_list_expr (Semantic_ir.Int count)
+                Core_sequence_transform.drop_list_expr
+                  (Semantic_ir.Int64 (Int64.of_int count))
                   (Semantic_ir.Apply
                      ( Semantic_ir.Ident "Rrbvec.to_list",
                        [ target.semantic_expr ] ));

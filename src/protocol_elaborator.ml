@@ -175,11 +175,13 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
       let bind_record_fields params body_forms =
         match (receiver_ty, params) with
         | TNamed_record record, FVector (FSymbol receiver_name :: _) ->
+            let parameter_names = Destructure.pattern_names params in
             let bindings =
               record.fields
               |> List.filter (fun (field : field) ->
                      let name = Names.keyword_source_name field.keyword in
-                     List.exists (form_mentions name) body_forms)
+                     (not (List.mem name parameter_names))
+                     && List.exists (form_mentions name) body_forms)
               |> List.concat_map (fun (field : field) ->
                      let name = Names.keyword_source_name field.keyword in
                      [ FSymbol name;

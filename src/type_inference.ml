@@ -153,6 +153,12 @@ and refine_nonmatching_type existing inferred =
           Types.protocol_constraint_with_value inferred
             (refine_type existing value_ty)
       | None -> existing)
+  | (TNullable _ | TOcaml_app ("option", [ _ ])), inferred
+    when Option.is_some (Types.seqable_constraint_info inferred) ->
+      Types.dynamic_constraint TUnknown
+  | existing, (TNullable _ | TOcaml_app ("option", [ _ ]))
+    when Option.is_some (Types.seqable_constraint_info existing) ->
+      Types.dynamic_constraint TUnknown
   | TNullable existing, TNullable inferred ->
       Types.normalize_nullable (TNullable (refine_type existing inferred))
   | (TNullable existing | TOcaml_app ("option", [ existing ])), inferred
@@ -689,9 +695,15 @@ let rec inferred_form_type params = function
       TRef (TVector TUnknown)
   | FList [ FSymbol ("atom" | "volatile!"); FSymbol "nil" ] ->
       TRef (TNullable TUnknown)
+  | FList (FSymbol "delay" :: body_forms) -> (
+      match List.rev body_forms with
+      | result :: _ ->
+          TOcaml_app ("Lazy.t", [ inferred_form_type params result ])
+      | [] -> TOcaml_app ("Lazy.t", [ TUnknown ]))
   | FList [ FSymbol "deref"; FSymbol reference ] -> (
       match string_assoc_opt reference params with
       | Some (TRef value_ty) -> value_ty
+      | Some (TOcaml_app ("Lazy.t", [ value_ty ])) -> value_ty
       | Some _ | None -> TUnknown)
   | FSymbol name -> string_assoc_opt name params |> Option.value ~default:TUnknown
   | FList [ FSymbol field_access; FSymbol receiver ]
@@ -1159,8 +1171,19 @@ let infer_params ?(explicitly_dynamic_params = [])
         | TNullable value_ty | TOcaml_app ("option", [ value_ty ]) ->
             infer_expected (Types.weak_type value_ty) params reference
         | _ -> infer_form params reference)
-    | FList [ FSymbol "deref"; FSymbol reference ] ->
-        constrain_symbol (TRef expected_ty) params reference
+    | FList (FSymbol "delay" :: body_forms) -> (
+        match List.rev body_forms with
+        | result :: reversed_prefix ->
+            Result.bind (infer_all params (List.rev reversed_prefix)) (fun params ->
+                infer_expected expected_ty params result)
+        | [] -> Ok params)
+    | FList [ FSymbol "deref"; FSymbol reference ] -> (
+        match string_assoc_opt reference params with
+        | Some (TOcaml_app ("Lazy.t", [ _ ])) ->
+            constrain_symbol
+              (TOcaml_app ("Lazy.t", [ expected_ty ]))
+              params reference
+        | Some _ | None -> constrain_symbol (TRef expected_ty) params reference)
     | FList (FSymbol let_name :: bindings :: body_forms)
       when let_name = "let" || let_name = "let*"
            || String.ends_with ~suffix:"/let" let_name
@@ -4022,7 +4045,17 @@ let infer_params ?(explicitly_dynamic_params = [])
     | FList (FSymbol "when" :: condition :: body_forms) -> (
         match infer_truthy params condition with
         | Error _ as err -> err
-        | Ok params -> infer_all params body_forms)
+        | Ok params ->
+            let previous_hints = !branch_hint_symbols in
+            (match condition with
+            | FSymbol name when not (string_mem name !branch_hint_symbols) ->
+                branch_hint_symbols := name :: !branch_hint_symbols
+            | _ -> ());
+            Result.map
+              (fun inferred ->
+                restore_branch_evidence params inferred previous_hints
+                  condition)
+              (with_branch (fun () -> infer_all params body_forms)))
     | FList (FSymbol "cond" :: clauses) ->
         let rec infer_clauses params = function
           | [] -> Ok params

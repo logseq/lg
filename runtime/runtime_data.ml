@@ -117,7 +117,9 @@ and diff_sequential left right =
   let left_values = List.of_seq (Runtime_dynamic.to_seq left) in
   let right_values = List.of_seq (Runtime_dynamic.to_seq right) in
   let indexed values =
-    List.mapi (fun index value -> (Runtime_dynamic.int index, value)) values
+    List.mapi
+      (fun index value -> (Runtime_dynamic.int (Int64.of_int index), value))
+      values
   in
   let left_map = Runtime_dynamic.map (indexed left_values) in
   let right_map = Runtime_dynamic.map (indexed right_values) in
@@ -134,7 +136,7 @@ and vectorize value =
         entries
         |> List.map (fun (key, value) ->
                match key.Runtime_dynamic.payload with
-               | Runtime_dynamic.Int index -> (index, value)
+               | Runtime_dynamic.Int index -> (Int64.to_int index, value)
                | _ -> invalid_arg "clojure.data sequential diff index must be int")
       in
       let max_index =

@@ -822,7 +822,7 @@ let merge_branch_expressions left right =
 let unresolved_contextual_type = function TList TUnknown -> true | _ -> false
 
 let lg_metadata_type_for_ocaml_payload = function
-  | TOcaml "int" -> TInt
+  | TOcaml "int64" -> TInt
   | TOcaml "float" -> TFloat
   | TOcaml "char" -> TChar
   | TOcaml "string" -> TString
@@ -831,7 +831,7 @@ let lg_metadata_type_for_ocaml_payload = function
   | ty -> ty
 
 let rec lg_metadata_type_for_ocaml_type = function
-  | TOcaml "int" -> TInt
+  | TOcaml "int64" -> TInt
   | TOcaml "float" -> TFloat
   | TOcaml "char" -> TChar
   | TOcaml "string" -> TString
@@ -968,6 +968,7 @@ let allocate_nested_anonymous_records ~owner env next_type fields =
                     type_name = record.record.type_name;
                     type_parameters = record.record.type_parameters;
                     fields = record.record.fields;
+                    nominal = false;
                     location = None;
                   };
               ]
@@ -1348,32 +1349,36 @@ let lookup_function scope env name =
                (TFn ([ TInt; TInt ], TInt))
                (Semantic_ir.Fun
                   ( [ Semantic_ir.PVar "a"; Semantic_ir.PVar "b" ],
-                    Semantic_ir.Infix
-                      ("+", Semantic_ir.Ident "a", Semantic_ir.Ident "b") )))
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident "Int64.add",
+                        [ Semantic_ir.Ident "a"; Semantic_ir.Ident "b" ] ) )))
       | "-" ->
           Ok
             (typed_ir
                (TFn ([ TInt; TInt ], TInt))
                (Semantic_ir.Fun
                   ( [ Semantic_ir.PVar "a"; Semantic_ir.PVar "b" ],
-                    Semantic_ir.Infix
-                      ("-", Semantic_ir.Ident "a", Semantic_ir.Ident "b") )))
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident "Int64.sub",
+                        [ Semantic_ir.Ident "a"; Semantic_ir.Ident "b" ] ) )))
       | "*" ->
           Ok
             (typed_ir
                (TFn ([ TInt; TInt ], TInt))
                (Semantic_ir.Fun
                   ( [ Semantic_ir.PVar "a"; Semantic_ir.PVar "b" ],
-                    Semantic_ir.Infix
-                      ("*", Semantic_ir.Ident "a", Semantic_ir.Ident "b") )))
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident "Int64.mul",
+                        [ Semantic_ir.Ident "a"; Semantic_ir.Ident "b" ] ) )))
       | "/" ->
           Ok
             (typed_ir
                (TFn ([ TInt; TInt ], TInt))
                (Semantic_ir.Fun
                   ( [ Semantic_ir.PVar "a"; Semantic_ir.PVar "b" ],
-                    Semantic_ir.Infix
-                      ("/", Semantic_ir.Ident "a", Semantic_ir.Ident "b") )))
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident "Int64.div",
+                        [ Semantic_ir.Ident "a"; Semantic_ir.Ident "b" ] ) )))
       | "inc" ->
           Ok (static_function [ TInt ] TInt "int_inc")
       | "dec" ->
@@ -1386,13 +1391,13 @@ let lookup_function scope env name =
       | "even?" -> Ok (static_function [ TInt ] TBool "int_even")
       | "odd?" -> Ok (static_function [ TInt ] TBool "int_odd")
       | "compare" ->
-          Ok (static_function [ dynamic; dynamic ] TInt "compare")
+          Ok (static_function [ dynamic; dynamic ] TInt "compare_int64")
       | "rand" -> Ok (dynamic_function "rand_function")
       | "rand-int" ->
           Ok
             (typed_ir
                (TFn ([ TInt ], TInt))
-               (Semantic_ir.Ident "Lg_runtime.Runtime_random.rand_int"))
+               (Semantic_ir.Ident "Lg_runtime.Runtime_random.rand_int64"))
       | "true?" -> Ok (static_function [ dynamic ] TBool "is_true")
       | "false?" -> Ok (static_function [ dynamic ] TBool "is_false")
       | "nil?" -> Ok (static_function [ dynamic ] TBool "is_nil")
@@ -1911,7 +1916,14 @@ let row_type_items row_type_names param_tys =
           in
           let fields, type_parameters = parameterize_row_fields fields in
           Some
-            (Type_def { type_name; type_parameters; fields; location = None })
+            (Type_def
+               {
+                 type_name;
+                 type_parameters;
+                 fields;
+                 nominal = false;
+                 location = None;
+               })
       | _ -> None)
     row_type_names param_tys
   |> List.filter_map Fun.id
@@ -2013,8 +2025,25 @@ let constrain_record_function_argument_expr fn element_ty =
       | None -> fn.semantic_expr)
   | _ -> fn.semantic_expr
 
+let rec concrete_constraint_type = function
+  | ty when Types.is_dynamic ty -> true
+  | TUnknown | TVar _ | TRecord _ | TOverloaded_fn _ -> false
+  | TNullable ty | TArray ty | TRef ty | TList ty | TVector ty | TSet ty
+  | TSeq ty ->
+      concrete_constraint_type ty
+  | TOcaml_app (_, arguments) | TTuple arguments ->
+      List.for_all concrete_constraint_type arguments
+  | TFn (parameters, return_type) ->
+      List.for_all concrete_constraint_type (return_type :: parameters)
+  | TNamed_record record ->
+      List.for_all concrete_constraint_type record.type_arguments
+  | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
+  | TBool | TUnit | TNil | TOcaml _ ->
+      true
+
 let param_constraint_name = function
   | TOcaml_app (name, [ _; _ ]) when name = Types.seqable_constraint_name -> None
+  | TFn _ as ty when concrete_constraint_type ty -> Some (Types.ocaml_name ty)
   | (TInt | TFloat | TChar | TString | TSymbol | TKeyword | TBool | TUnit
     | TArray _ | TRef _ | TOcaml _ | TOcaml_app _ | TTuple _ | TNamed_record _) as ty ->
       Some (Types.ocaml_name ty)

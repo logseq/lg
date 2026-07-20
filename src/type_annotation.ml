@@ -60,10 +60,11 @@ let rec parse_ocaml_type source =
     | None ->
         if String.contains source '<' || String.contains source '>' then
           Error.error "malformed OCaml type application"
-        else if source = "int" then Ok TInt
+        else if source = "int" || source = "int64" then Ok TInt
         else if source = "float" then Ok TFloat
         else if source = "char" then Ok TChar
         else if source = "string" then Ok TString
+        else if source = "bytes" then Ok TString
         else if source = "bool" then Ok TBool
         else if source = "unit" then Ok TUnit
         else if source = "dynamic" then Ok (Types.dynamic_constraint TUnknown)
@@ -265,7 +266,7 @@ let of_param_annotation annotation =
         Ok (Types.dynamic_constraint TUnknown)
     | "boolean" | "Boolean" -> Ok TBool
     | "double" | "float" -> Ok TFloat
-    | "String" -> Ok TString
+    | "String" | "bytes" -> Ok TString
     | _ -> (
         match Host_interop.type_annotation type_name with
         | Some host_type -> Ok (TOcaml host_type)

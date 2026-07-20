@@ -21,6 +21,14 @@ let record_type_application record =
       "(" ^ String.concat ", " (List.map argument_name arguments) ^ ") "
       ^ record.type_name
 
+let record_projection_type record =
+  match record.type_arguments with
+  | [] -> record.type_name
+  | [ _ ] -> "_ " ^ record.type_name
+  | arguments ->
+      "(" ^ String.concat ", " (List.map (Fun.const "_") arguments) ^ ") "
+      ^ record.type_name
+
 let field_expr target field =
   match target.record_values with
   | Some values -> (
@@ -39,7 +47,7 @@ let field_expr target field =
             ( [
                 ( Semantic_ir.PConstraint
                     ( Semantic_ir.PVar target_name,
-                      record_type_application record ),
+                      record_projection_type record ),
                   target.semantic_expr );
               ],
               Semantic_ir.Field

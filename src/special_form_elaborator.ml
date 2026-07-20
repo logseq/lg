@@ -1152,6 +1152,19 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                          (Semantic_ir.If
                             (condition_code, then_sequence, else_sequence)))
                     | _ ->
+                        let dynamic = Types.dynamic_constraint TUnknown in
+                        (match
+                           ( pack_dynamic_value env dynamic then_expr,
+                             pack_dynamic_value env dynamic else_expr )
+                         with
+                        | Ok then_dynamic, Ok else_dynamic ->
+                            Ok
+                              (typed_ir dynamic
+                                 (Semantic_ir.If
+                                    ( condition_code,
+                                      then_dynamic,
+                                      else_dynamic )))
+                        | _ ->
                         let describe_type = function
                           | TRecord fields ->
                               "map {"
@@ -1166,7 +1179,9 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                         Error.error
                           ("if branches must have same type: "
                           ^ describe_type then_expr.ty ^ " and "
-                          ^ describe_type else_expr.ty))))
+                          ^ describe_type else_expr.ty)))
+                    )
+                )
         )
   and compile_if_not scope env condition then_form else_form =
     let else_form = narrow_symbol_predicates scope env condition else_form in
@@ -1465,7 +1480,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
       | Ok pattern ->
           if Types.equal expected_ty pattern.ty then
             match form with
-            | FInt value -> Ok (Semantic_ir.PInt value)
+            | FInt value -> Ok (Semantic_ir.PInt64 (Int64.of_int value))
             | FString value | FKeyword value -> Ok (Semantic_ir.PString value)
             | FBool value -> Ok (Semantic_ir.PBool value)
             | _ -> Error.error "unsupported match pattern"
@@ -1624,7 +1639,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                   ( Names.scoped_key scope name,
                     Types.binding ocaml_name target_ty );
                 ] )
-      | TInt, FInt value -> Ok (Semantic_ir.PInt value, [])
+      | TInt, FInt value -> Ok (Semantic_ir.PInt64 (Int64.of_int value), [])
       | TString, FString value -> Ok (Semantic_ir.PString value, [])
       | TKeyword, FKeyword keyword -> Ok (Semantic_ir.PString keyword, [])
       | TBool, FBool value -> Ok (Semantic_ir.PBool value, [])

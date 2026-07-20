@@ -72,7 +72,7 @@
   (edn/read-string contents))
 
 (defn- default-address-to-filename [^:int address] :string
-  ((Printf.sprintf "%08x") address))
+  (Lg_runtime.Runtime_int.format_hex address 8))
 
 (defn- default-filename-to-address [^:string filename] :int
   (Stdlib.int_of_string (str "0x" filename)))

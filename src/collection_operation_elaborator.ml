@@ -164,6 +164,15 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
         expected
     | _ -> field_ty
   in
+  let external_field type_name target keyword =
+    let field_name = Names.keyword_to_ocaml_name keyword in
+    let field_expr = Semantic_ir.Field (target.semantic_expr, field_name) in
+    match Ocaml_signature.field_type type_name field_name with
+    | Ok (TOcaml "int") ->
+        typed_ir TInt (apply "Int64.of_int" [ field_expr ])
+    | Ok field_ty -> typed_ir field_ty field_expr
+    | Error _ -> typed_ir TUnknown field_expr
+  in
   let instantiated_record_field scope env type_name arguments keyword =
     match Resolver.lookup_record_type scope env type_name with
     | Ok record
@@ -447,15 +456,15 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
           Ok
             (typed_ir (TSeq TInt)
                (apply "Lg_runtime.Runtime_seq.range"
-                  [ Semantic_ir.Int 0; Semantic_ir.Int 1 ]))
+                  [ Semantic_ir.Int64 0L; Semantic_ir.Int64 1L ]))
       | [ end_form ] -> (
           match compile_expr scope env end_form with
           | Error _ as err -> err
           | Ok end_expr ->
               if Types.equal end_expr.ty TInt then
                 Ok
-                  (finite_range (Semantic_ir.Int 0) end_expr.semantic_expr
-                     (Semantic_ir.Int 1))
+                  (finite_range (Semantic_ir.Int64 0L) end_expr.semantic_expr
+                     (Semantic_ir.Int64 1L))
               else Error.error "range arguments must be int")
       | [ start_form; end_form ] -> (
         match
@@ -468,7 +477,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
             then
                 Ok
                   (finite_range start_expr.semantic_expr end_expr.semantic_expr
-                     (Semantic_ir.Int 1))
+                     (Semantic_ir.Int64 1L))
               else Error.error "range arguments must be int")
     | [ start_form; end_form; step_form ] -> (
           if literal_zero step_form then Error.error "range step cannot be 0"
@@ -719,6 +728,10 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                ^ Types.source_name collection.ty))
       | Ok _ -> Error.error "cons expects a value and seqable collection"
     and compile_subvec scope env arg_forms =
+      let host_int expression =
+        Semantic_ir.Apply
+          (Semantic_ir.Ident "Int64.to_int", [ expression ])
+      in
       let uses_dynamic_storage ty =
         Types.is_dynamic ty || Types.equal ty TUnknown
         || match ty with TVar _ -> true | _ -> false
@@ -738,7 +751,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                             ( Semantic_ir.Ident "Rrbvec.subvec",
                             [
                               vector.semantic_expr;
-                                start.semantic_expr;
+                                host_int start.semantic_expr;
                                 Semantic_ir.Apply
                                 ( Semantic_ir.Ident "Rrbvec.length",
                                 [ vector.semantic_expr ] );
@@ -751,7 +764,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                       ( Semantic_ir.Ident
                           "Lg_runtime.Runtime_dynamic.subvec_value",
                         [ vector.semantic_expr;
-                          start.semantic_expr;
+                          host_int start.semantic_expr;
                           Semantic_ir.Apply
                             ( Semantic_ir.Ident
                                 "Lg_runtime.Runtime_dynamic.count_value",
@@ -771,8 +784,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                             ( Semantic_ir.Ident "Rrbvec.subvec",
                             [
                               vector.semantic_expr;
-                              start.semantic_expr;
-                              stop.semantic_expr;
+                              host_int start.semantic_expr;
+                              host_int stop.semantic_expr;
                             ] );
                       ] )))
           | vector_ty, TInt, TInt when uses_dynamic_storage vector_ty ->
@@ -782,8 +795,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                       ( Semantic_ir.Ident
                           "Lg_runtime.Runtime_dynamic.subvec_value",
                         [ vector.semantic_expr;
-                          start.semantic_expr;
-                          stop.semantic_expr;
+                          host_int start.semantic_expr;
+                          host_int stop.semantic_expr;
                         ] )))
           | TVector _, _, _ -> Error.error "subvec indexes must be int"
           | _ -> Error.error "subvec expects a vector")
@@ -820,7 +833,9 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                     (typed_ir inner
                        (Semantic_ir.Match
                           ( apply "Lg_runtime.Runtime_seq.nth_opt"
-                              [ index.semantic_expr; sequence ],
+                              [ apply "Int64.to_int" [ index.semantic_expr ];
+                                sequence;
+                              ],
                           [
                             ( Semantic_ir.PConstructor
                                   ("Some", Some (Semantic_ir.PVar "value")),
@@ -1240,11 +1255,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                         (typed_ir field_ty
                            (Structural_map.field_expr target field))
                   | None when is_ocaml_owned_type ty ->
-                      Ok
-                        (typed_ir TUnknown
-                           (Semantic_ir.Field
-                              ( target.semantic_expr,
-                                Names.keyword_to_ocaml_name keyword )))
+                      Ok (external_field type_name target keyword)
                   | None -> Error.error "get expects a map")
               | TOcaml type_name as ty -> (
                   match
@@ -1257,11 +1268,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                         (typed_ir field_ty
                            (Structural_map.field_expr target field))
                   | None when is_ocaml_owned_type ty ->
-                      Ok
-                        (typed_ir TUnknown
-                           (Semantic_ir.Field
-                              ( target.semantic_expr,
-                                Names.keyword_to_ocaml_name keyword )))
+                      Ok (external_field type_name target keyword)
                   | None -> Error.error "get expects a map")
               | ty when is_ocaml_owned_type ty ->
                   Ok
@@ -1285,7 +1292,9 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   Ok
                     (typed_ir inner
                      (apply "Rrbvec.nth"
-                        [ target.semantic_expr; index.semantic_expr ]))
+                        [ target.semantic_expr;
+                          apply "Int64.to_int" [ index.semantic_expr ];
+                        ]))
               | TVector _, _ -> Error.error "get vector index must be int"
               | ( (TNullable (TNamed_record record)
                   | TOcaml_app ("option", [ TNamed_record record ])),
@@ -1597,7 +1606,9 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                     (typed_ir inner
                        (Semantic_ir.Match
                         ( apply "Rrbvec.nth_opt"
-                            [ target.semantic_expr; index.semantic_expr ],
+                            [ target.semantic_expr;
+                              apply "Int64.to_int" [ index.semantic_expr ];
+                            ],
                           [
                             ( Semantic_ir.PConstructor
                                 ("Some", Some (Semantic_ir.PVar "value")),
@@ -1896,7 +1907,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                                   (apply "Rrbvec.set"
                                    [
                                      expr;
-                                     index.semantic_expr;
+                                     apply "Int64.to_int"
+                                       [ index.semantic_expr ];
                                      value.semantic_expr;
                                    ])
                                   rest
@@ -2607,7 +2619,9 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                     then
                       let old_expr =
                         apply "Rrbvec.nth"
-                          [ target.semantic_expr; index.semantic_expr ]
+                          [ target.semantic_expr;
+                            apply "Int64.to_int" [ index.semantic_expr ];
+                          ]
                       in
                       let arguments = typed_ir inner old_expr :: extra_args in
                       Result.map
@@ -2618,7 +2632,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                           typed_ir target.ty
                             (apply "Rrbvec.set"
                                [ target.semantic_expr;
-                                 index.semantic_expr;
+                                 apply "Int64.to_int" [ index.semantic_expr ];
                                  value_expr;
                                ]))
                         (prepare_updater_arguments [] param_tys arguments)
@@ -2788,6 +2802,27 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                                 (adapt_key_sequence key_ty actual_ty sequence))))))
       | _ -> Error.error "select-keys expects map and key collection"
     and compile_contains scope env arg_forms =
+      let compile_deftype_contains target key =
+        let record_target =
+          match target.ty with
+          | TNamed_record record -> Some (record, target.semantic_expr)
+          | TNullable (TNamed_record record)
+          | TOcaml_app ("option", [ TNamed_record record ]) ->
+              Some
+                ( record,
+                  Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Option.get",
+                      [ target.semantic_expr ] ) )
+          | _ -> None
+        in
+        Option.bind record_target (fun (record, semantic_expr) ->
+            let method_scope =
+              String.concat "/" (Type_id.owner record.type_id)
+            in
+            let receiver = typed_ir (TNamed_record record) semantic_expr in
+            compile_deftype_method method_scope env record "-contains-key?"
+              [ receiver; key ])
+      in
       let compile_dynamic_set_contains target element_ty candidate =
         let scalar_conversion =
           match element_ty with
@@ -2871,12 +2906,13 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
               (typed_ir TBool
                  (Semantic_ir.Infix
                     ( "&&",
-                      Semantic_ir.Infix (">=", value.semantic_expr, Semantic_ir.Int 0),
+                      Semantic_ir.Infix
+                        (">=", value.semantic_expr, Semantic_ir.Int64 0L),
                       Semantic_ir.Infix
                         ( "<",
                           value.semantic_expr,
-                          Semantic_ir.Apply
-                            (Semantic_ir.Ident "Rrbvec.length", [ target.semantic_expr ]) ) )))
+                          apply "Int64.of_int"
+                            [ apply "Rrbvec.length" [ target.semantic_expr ] ] ) )))
         | TVector _, _ -> Error.error "contains? vector index must be int"
         | TMap_keys, TKeyword ->
             Ok
@@ -2924,26 +2960,35 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
           match compile_expr scope env target_form with
           | Error _ as err -> err
           | Ok target -> (
-              match target.ty with
-              | TRecord fields | TNamed_record { fields; _ } ->
-                  if Option.is_some (find_field keyword fields) then
-                    Ok (typed_ir TBool (Semantic_ir.Bool true))
-                  else (
-                    match
-                      Structural_map.extension_contains target fields keyword
-                    with
-                    | Some result -> Ok result
-                    | None -> Ok (typed_ir TBool (Semantic_ir.Bool false)))
-              | _ ->
-                  compile_collection_contains target
-                    (typed_ir TKeyword (Semantic_ir.String keyword))))
+              let key =
+                typed_ir TKeyword (Semantic_ir.String keyword)
+              in
+              match compile_deftype_contains target key with
+              | Some result -> Ok result
+              | None -> (
+                  match target.ty with
+                  | TRecord fields | TNamed_record { fields; _ } ->
+                      if Option.is_some (find_field keyword fields) then
+                        Ok (typed_ir TBool (Semantic_ir.Bool true))
+                      else (
+                        match
+                          Structural_map.extension_contains target fields
+                            keyword
+                        with
+                        | Some result -> Ok result
+                        | None ->
+                            Ok (typed_ir TBool (Semantic_ir.Bool false)))
+                  | _ -> compile_collection_contains target key)))
     | [ target_form; value_form ] -> (
         match
           (compile_expr scope env target_form, compile_expr scope env value_form)
         with
           | (Error _ as err), _ -> err
           | _, (Error _ as err) -> err
-          | Ok target, Ok value -> compile_collection_contains target value)
+          | Ok target, Ok value -> (
+              match compile_deftype_contains target value with
+              | Some result -> Ok result
+              | None -> compile_collection_contains target value))
       | _ -> Error.error "contains? expects collection and key"
     and compile_keys scope env arg_forms =
       match compile_args_for scope env arg_forms with

@@ -112,7 +112,7 @@ let read_token state =
   String.sub state.source start (state.index - start)
 
 let parse_number token =
-  match int_of_string_opt token with
+  match Int64.of_string_opt token with
   | Some value -> Some (Runtime_dynamic.int value)
   | None -> Option.map Runtime_dynamic.float (float_of_string_opt token)
 

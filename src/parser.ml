@@ -200,10 +200,17 @@ and anonymous_function open_span close_span forms =
   in
   let rec rewrite (form : located_form) =
     let children = List.map rewrite form.children in
+    let rec map_pairs pairs = function
+      | key :: value :: rest ->
+          map_pairs ((key.form, value.form) :: pairs) rest
+      | [] -> List.rev pairs
+      | [ _ ] -> assert false
+    in
     let rewritten_form =
       match rewrite_symbol form.form with
       | FList _ -> FList (List.map (fun child -> child.form) children)
       | FVector _ -> FVector (List.map (fun child -> child.form) children)
+      | FMap _ -> FMap (map_pairs [] children)
       | rewritten -> rewritten
     in
     { form with form = rewritten_form; children }

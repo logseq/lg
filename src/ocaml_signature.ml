@@ -87,7 +87,8 @@ let rec of_compiler_type =
       in
       let arguments = List.map of_compiler_type arguments in
       match (name, arguments) with
-      | "int", [] -> TInt
+      | "int64", [] -> TInt
+      | ("int" | "Unix.file_perm"), [] -> TOcaml "int"
       | "float", [] -> TFloat
       | "char", [] -> TChar
       | "string", [] -> TString
@@ -162,9 +163,30 @@ let constructor_signature name =
       Lookup_cache.add cache key signature;
       signature
 
+let field_type type_name field_name =
+  let owner =
+    match String.rindex_opt type_name '.' with
+    | None -> ""
+    | Some index -> String.sub type_name 0 index
+  in
+  let qualified_name =
+    if owner = "" then field_name else owner ^ "." ^ field_name
+  in
+  match
+    Lg_compiler_support.Ocaml_value.lookup_label ~include_dirs:(include_dirs ())
+      qualified_name
+  with
+  | Ok compiler_type -> Ok (of_compiler_type compiler_type)
+  | Error message -> Error.error message
+
 let parameter_label_name = function
   | Positional -> None
   | Labelled name | Optional name -> Some name
+
+let supplied_argument_type parameter =
+  match (parameter.label, parameter.ty) with
+  | Optional _, (TNullable ty | TOcaml_app ("option", [ ty ])) -> ty
+  | _ -> parameter.ty
 
 let result_after_application signature arguments =
   let argument_labels = List.map fst arguments in
@@ -197,7 +219,8 @@ let result_after_application signature arguments =
                   signature.parameters
                   |> List.find_opt (fun parameter ->
                       parameter_label_name parameter.label = Some label)
-                  |> Option.map (fun parameter -> (parameter.ty, actual_ty)))
+                  |> Option.map (fun parameter ->
+                         (supplied_argument_type parameter, actual_ty)))
           in
           let remaining =
             List.filter

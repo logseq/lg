@@ -4,6 +4,7 @@ type pattern =
   | PAny
   | PUnit
   | PInt of int
+  | PInt64 of int64
   | PString of string
   | PBool of bool
   | PConstructor of string * pattern option
@@ -18,6 +19,7 @@ type pattern =
 type t =
   | Located of Source_node_id.t * Location.t * t
   | Int of int
+  | Int64 of int64
   | Float of string
   | String of string
   | Char of char
@@ -56,6 +58,7 @@ let rec pattern_to_source = function
   | PAny -> "_"
   | PUnit -> "()"
   | PInt value -> string_of_int value
+  | PInt64 value -> Int64.to_string value ^ "L"
   | PString value -> Printf.sprintf "%S" value
   | PBool value -> string_of_bool value
   | PConstructor (name, None) -> name
@@ -79,6 +82,7 @@ let rec pattern_to_source = function
 let rec to_source = function
   | Located (_, _, expression) -> to_source expression
   | Int value -> string_of_int value
+  | Int64 value -> Int64.to_string value ^ "L"
   | Float value -> value
   | String value -> Printf.sprintf "%S" value
   | Char value -> Printf.sprintf "%C" value
@@ -127,9 +131,9 @@ let rec to_source = function
       | [] -> "()"
       | [ expression ] -> to_source expression
       | expression :: rest ->
-          "(let _ = " ^ to_source expression ^ " in "
-          ^ to_source (Sequence rest)
-          ^ ")")
+          "(let __lg_discarded_value = " ^ to_source expression
+          ^ " in let _ = Stdlib.ignore __lg_discarded_value in "
+          ^ to_source (Sequence rest) ^ ")")
   | Let (bindings, body) ->
       List.fold_right
         (fun (pattern, value) acc ->
@@ -225,7 +229,7 @@ let rec pattern_node_ids = function
   | PRecord fields ->
       fields |> List.concat_map (fun (_, pattern) -> pattern_node_ids pattern)
   | PAlias (pattern, _) | PConstraint (pattern, _) -> pattern_node_ids pattern
-  | PVar _ | PAny | PUnit | PInt _ | PString _ | PBool _ -> []
+  | PVar _ | PAny | PUnit | PInt _ | PInt64 _ | PString _ | PBool _ -> []
 
 let add_pattern_node_ids patterns (expression : Parsetree.expression) =
   let attributes =
@@ -245,6 +249,9 @@ let rec pattern_to_parsetree = function
   | PAny -> Ast_helper.Pat.any ~loc ()
   | PUnit -> Ast_helper.Pat.construct ~loc (lid (Longident.Lident "()")) None
   | PInt value -> Ast_helper.Pat.constant ~loc (Ast_helper.Const.int ~loc value)
+  | PInt64 value ->
+      Ast_helper.Pat.constant ~loc
+        (Ast_helper.Const.int64 ~loc value)
   | PString value ->
       Ast_helper.Pat.constant ~loc (Ast_helper.Const.string ~loc value)
   | PBool value ->
@@ -364,6 +371,8 @@ and to_parsetree ~context = function
              })
   | Int value ->
       Ok (Ast_helper.Exp.constant ~loc (Ast_helper.Const.int ~loc value))
+  | Int64 value ->
+      Ok (Ast_helper.Exp.constant ~loc (Ast_helper.Const.int64 ~loc value))
   | Float value ->
       Ok (Ast_helper.Exp.constant ~loc (Ast_helper.Const.float ~loc value))
   | String value ->
@@ -493,8 +502,30 @@ and to_parsetree ~context = function
             | (Error _ as err), _ -> err
             | _, (Error _ as err) -> err
             | Ok expression, Ok body ->
-                let binding = Ast_helper.Vb.mk ~loc (Ast_helper.Pat.any ~loc ()) expression in
-                Ok (Ast_helper.Exp.let_ ~loc Asttypes.Nonrecursive [ binding ] body))
+                let discarded_name = "__lg_discarded_value" in
+                let discarded_binding =
+                  Ast_helper.Vb.mk ~loc
+                    (Ast_helper.Pat.var ~loc (str discarded_name))
+                    expression
+                in
+                let ignored =
+                  Ast_helper.Exp.apply ~loc
+                    (Ast_helper.Exp.ident ~loc
+                       (lid (longident_of_string "Stdlib.ignore")))
+                    [
+                      ( Asttypes.Nolabel,
+                        Ast_helper.Exp.ident ~loc
+                          (lid (Longident.Lident discarded_name)) );
+                    ]
+                in
+                let binding =
+                  Ast_helper.Vb.mk ~loc (Ast_helper.Pat.any ~loc ()) ignored
+                in
+                Ok
+                  (Ast_helper.Exp.let_ ~loc Asttypes.Nonrecursive
+                     [ discarded_binding ]
+                     (Ast_helper.Exp.let_ ~loc Asttypes.Nonrecursive [ binding ]
+                        body)))
       in
       build expressions)
   | Let (bindings, body) -> (

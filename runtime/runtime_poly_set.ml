@@ -5,20 +5,10 @@ let empty = []
 let rec mem value = function
   | [] -> false
   | current :: rest ->
-      let comparison = Stdlib.compare value current in
-      comparison = 0 || (comparison > 0 && mem value rest)
+      Stdlib.compare value current = 0 || mem value rest
 
 let add value set =
-  let rec insert reversed = function
-    | [] -> List.rev_append reversed [ value ]
-    | (current :: rest as remaining) ->
-        let comparison = Stdlib.compare value current in
-        if comparison = 0 then List.rev_append reversed remaining
-        else if comparison < 0 then
-          List.rev_append reversed (value :: remaining)
-        else insert (current :: reversed) rest
-  in
-  insert [] set
+  if mem value set then set else value :: set
 
 let remove value set =
   List.filter (fun current -> Stdlib.compare value current <> 0) set

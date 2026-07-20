@@ -1,3 +1,6 @@
 let expression = Semantic_lowering.expression
 let structure_of_located_items = Ocaml_parsetree.structure_of_located_items
+
+let structure_of_incremental_located_items =
+  Ocaml_parsetree.structure_of_incremental_located_items
 let print_implementation = Ocaml_parsetree.print_implementation

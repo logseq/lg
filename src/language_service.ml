@@ -297,9 +297,36 @@ let source_node_id_at analysis ~offset =
       | Some id, None | None, Some id -> Some id
       | None, None -> None)
 
+let source_type_name printed =
+  let is_identifier_char = function
+    | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' | '\'' -> true
+    | _ -> false
+  in
+  let length = String.length printed in
+  let buffer = Buffer.create length in
+  let rec copy index =
+    if index >= length then Buffer.contents buffer
+    else
+      let is_int64 =
+        index + 5 <= length
+        && String.sub printed index 5 = "int64"
+        && (index = 0 || not (is_identifier_char printed.[index - 1]))
+        && (index + 5 = length
+           || not (is_identifier_char printed.[index + 5]))
+      in
+      if is_int64 then (
+        Buffer.add_string buffer "int";
+        copy (index + 5))
+      else (
+        Buffer.add_char buffer printed.[index];
+        copy (index + 1))
+  in
+  copy 0
+
 let print_type env ty =
   Printtyp.wrap_printing_env ~error:false env (fun () ->
       Format.asprintf "%a" Printtyp.type_scheme ty)
+  |> source_type_name
 
 let source_symbol_basename name =
   match String.rindex_opt name '/' with

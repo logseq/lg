@@ -141,29 +141,21 @@ let rec to_seq_expr env collection =
       | Ok sequence -> Ok sequence
       | Error _ -> (
           match implementation.ty with
-          | TFn ([ receiver_ty ], TSeq inner)
+          | TFn ([ receiver_ty ], return_ty)
                           when Types.assignable ~policy:Host_boundary
                                  ~expected:receiver_ty ~actual:collection.ty ->
-              Ok
-                ( inner,
-                                apply implementation.ocaml_name
-                                  [ collection.semantic_expr ] )
-                        | TFn
-                            ( [ receiver_ty ],
-                              TOcaml_app (("Seq.t" | "Seq"), [ inner ]) )
-                          when Types.assignable ~policy:Host_boundary
-                                 ~expected:receiver_ty ~actual:collection.ty ->
-              Ok
-                ( inner,
-                  apply "Lg_runtime.Runtime_seq.memoize"
-                                  [
-                                    apply implementation.ocaml_name
-                                      [ collection.semantic_expr ];
-                                  ] )
+              if Types.equal return_ty collection.ty then
+                Error.error
+                  "Seqable/-seq implementation cannot return its receiver type"
+              else
+                to_seq_expr env
+                  (typed_ir return_ty
+                     (apply implementation.ocaml_name
+                        [ collection.semantic_expr ]))
           | _ ->
               Error.error
-                              "Seqable/-seq implementation must return a typed \
-                               lazy seq")))))
+                              "Seqable/-seq implementation must return a \
+                               seqable value")))))
 
 let accepts_seqable env ty =
   if Types.is_dynamic ty then true
@@ -220,7 +212,7 @@ let drop_expr env name collection count =
         Ok
           (typed_ir (TSeq inner)
              (apply "Lg_runtime.Runtime_seq.drop"
-                [ count.semantic_expr; sequence ]))
+                [ apply "Int64.to_int" [ count.semantic_expr ]; sequence ]))
 
 let seqable_adapter ?element_mapper env argument =
   let value_name = "seqable_value__" in
@@ -381,6 +373,7 @@ let reduce_expr env ?(short_circuit = false) fn init collection sequence =
         )
 
 let rec count_expr env collection =
+  let of_host_int expression = apply "Int64.of_int" [ expression ] in
   match collection.ty with
   | TNullable inner | TOcaml_app ("option", [ inner ]) ->
       let value_name = "__lg_counted_value" in
@@ -391,7 +384,7 @@ let rec count_expr env collection =
             ( collection.semantic_expr,
               [
                 ( Semantic_ir.PConstructor ("None", None),
-                  Semantic_ir.Int 0 );
+                  Semantic_ir.Int64 0L );
                 ( Semantic_ir.PConstructor
                     ("Some", Some (Semantic_ir.PVar value_name)),
                   present );
@@ -399,16 +392,19 @@ let rec count_expr env collection =
         (count_expr env value)
   | TOcaml_app ("Lg_runtime.Runtime_transient.vector", [ _ ]) ->
       Ok
-        (apply "Lg_runtime.Runtime_transient.vector_count"
-           [ collection.semantic_expr ])
+        (of_host_int
+           (apply "Lg_runtime.Runtime_transient.vector_count"
+              [ collection.semantic_expr ]))
   | TOcaml_app ("Lg_runtime.Runtime_transient.map", [ _; _ ]) ->
       Ok
-        (apply "Lg_runtime.Runtime_transient.map_count"
-           [ collection.semantic_expr ])
+        (of_host_int
+           (apply "Lg_runtime.Runtime_transient.map_count"
+              [ collection.semantic_expr ]))
   | TOcaml_app ("Lg_runtime.Runtime_transient.set", [ _ ]) ->
       Ok
-        (apply "Lg_runtime.Runtime_transient.set_count"
-           [ collection.semantic_expr ])
+        (of_host_int
+           (apply "Lg_runtime.Runtime_transient.set_count"
+              [ collection.semantic_expr ]))
   | _ ->
   let protocols = Compiler_environment.protocols env in
   match Core_protocols.find_counted collection.ty protocols with
@@ -416,21 +412,26 @@ let rec count_expr env collection =
       Ok
         (match collection.ty with
         | TList _ | TOcaml_app ("list", [ _ ]) ->
-            apply "List.length" [ collection.semantic_expr ]
-        | TVector _ -> apply "Rrbvec.length" [ collection.semantic_expr ]
+            of_host_int (apply "List.length" [ collection.semantic_expr ])
+        | TVector _ ->
+            of_host_int (apply "Rrbvec.length" [ collection.semantic_expr ])
         | TSet inner -> (
             match Types.set_module_name inner with
             | Ok set_module ->
-                apply (set_module ^ ".cardinal") [ collection.semantic_expr ]
+                of_host_int
+                  (apply (set_module ^ ".cardinal")
+                     [ collection.semantic_expr ])
             | Error _ ->
                 apply implementation.ocaml_name [ collection.semantic_expr ])
         | TArray _ | TOcaml_app ("array", [ _ ]) ->
-            apply "Array.length" [ collection.semantic_expr ]
-        | TString -> apply "String.length" [ collection.semantic_expr ]
+            of_host_int (apply "Array.length" [ collection.semantic_expr ])
+        | TString ->
+            of_host_int (apply "String.length" [ collection.semantic_expr ])
         | _ -> apply implementation.ocaml_name [ collection.semantic_expr ])
   | None -> (
       match to_seq_expr env collection with
-      | Ok (_, sequence) -> Ok (apply "Seq.length" [ sequence ])
+      | Ok (_, sequence) ->
+          Ok (of_host_int (apply "Seq.length" [ sequence ]))
       | Error _ -> Error.error "count expects a counted or seqable value")
 
 let is_counted env collection =
@@ -583,12 +584,13 @@ let last_expr env collection =
         Ok (typed_ir (TNullable inner) expression)
 
 let nth_expr env collection index =
+  let host_index = apply "Int64.to_int" [ index.semantic_expr ] in
   match collection.ty with
   | TOcaml_app ("Lg_runtime.Runtime_transient.vector", [ inner ]) ->
       Ok
         (typed_ir inner
            (apply "Lg_runtime.Runtime_transient.vector_nth"
-              [ collection.semantic_expr; index.semantic_expr ]))
+              [ collection.semantic_expr; host_index ]))
   | _ ->
   let protocols = Compiler_environment.protocols env in
   match Core_protocols.find_indexed collection.ty protocols with
@@ -598,22 +600,22 @@ let nth_expr env collection index =
           Ok
             (typed_ir inner
                (apply "List.nth"
-                  [ collection.semantic_expr; index.semantic_expr ]))
+                  [ collection.semantic_expr; host_index ]))
       | TVector inner ->
           Ok
             (typed_ir inner
                (apply "Rrbvec.nth"
-                  [ collection.semantic_expr; index.semantic_expr ]))
+                  [ collection.semantic_expr; host_index ]))
       | TArray inner | TOcaml_app ("array", [ inner ]) ->
           Ok
             (typed_ir inner
                (apply "Array.get"
-                  [ collection.semantic_expr; index.semantic_expr ]))
+                  [ collection.semantic_expr; host_index ]))
       | TString ->
           Ok
             (typed_ir TChar
                (apply "String.get"
-                  [ collection.semantic_expr; index.semantic_expr ]))
+                  [ collection.semantic_expr; host_index ]))
       | _ -> (
           match implementation.ty with
           | TFn ([ receiver_ty; index_ty ], return_ty)
@@ -640,4 +642,4 @@ let nth_expr env collection index =
           Ok
             (typed_ir inner
                (apply "Lg_runtime.Runtime_seq.nth"
-                  [ index.semantic_expr; sequence ])))
+                  [ host_index; sequence ])))

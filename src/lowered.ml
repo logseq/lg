@@ -81,6 +81,7 @@ type compiled_item =
       type_name : string;
       type_parameters : string list;
       fields : Types.field list;
+      nominal : bool;
       location : Location.t option;
     }
   | Type_alias of {

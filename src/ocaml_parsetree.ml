@@ -30,7 +30,7 @@ let type_constructor name args =
   Ast_helper.Typ.constr ~loc (lid (longident_of_string name)) args
 
 let rec core_type ?(type_variables = []) = function
-  | Types.TInt -> type_constructor "int" []
+  | Types.TInt -> type_constructor "int64" []
   | Types.TFloat -> type_constructor "float" []
   | Types.TChar -> type_constructor "char" []
   | Types.TString | Types.TRegex | Types.TSymbol | Types.TKeyword ->
@@ -336,9 +336,88 @@ let set_module_definition module_name element_ty =
   let type_declaration =
     Ast_helper.Type.mk ~loc ~manifest:(core_type element_ty) (str "t")
   in
+  let record_compare record_ty fields =
+    let left_name = "__lg_set_left" in
+    let right_name = "__lg_set_right" in
+    let ident name =
+      Ast_helper.Exp.ident ~loc (lid (Longident.Lident name))
+    in
+    let int_zero =
+      Ast_helper.Exp.constant ~loc (Ast_helper.Const.int ~loc 0)
+    in
+    let rec compare_fields index = function
+      | [] -> int_zero
+      | (field : Types.field) :: rest ->
+          let comparison_name =
+            "__lg_set_comparison_" ^ string_of_int index
+          in
+          let project record_name =
+            Ast_helper.Exp.field ~loc (ident record_name)
+              (lid (Longident.Lident field.ocaml_name))
+          in
+          let comparison =
+            Ast_helper.Exp.apply ~loc
+              (Ast_helper.Exp.ident ~loc
+                 (lid
+                    (longident_of_string
+                       "Lg_runtime.Runtime_compare.safe_compare")))
+              [ (Nolabel, project left_name); (Nolabel, project right_name) ]
+          in
+          let condition =
+            Ast_helper.Exp.apply ~loc
+              (Ast_helper.Exp.ident ~loc (lid (Longident.Lident "=")))
+              [ (Nolabel, ident comparison_name); (Nolabel, int_zero) ]
+          in
+          let body =
+            Ast_helper.Exp.ifthenelse ~loc condition
+              (compare_fields (index + 1) rest)
+              (Some (ident comparison_name))
+          in
+          Ast_helper.Exp.let_ ~loc Nonrecursive
+            [
+              Ast_helper.Vb.mk ~loc
+                (Ast_helper.Pat.var ~loc (str comparison_name))
+                comparison;
+            ]
+            body
+    in
+    let parameter name =
+      Ast_helper.Pat.constraint_ ~loc
+        (Ast_helper.Pat.var ~loc (str name))
+        (core_type record_ty)
+    in
+    let function_parameter pattern =
+      {
+        pparam_loc = loc;
+        pparam_desc = Pparam_val (Nolabel, None, pattern);
+      }
+    in
+    Ast_helper.Exp.function_ ~loc
+      [
+        function_parameter (parameter left_name);
+        function_parameter (parameter right_name);
+      ]
+      None (Pfunction_body (compare_fields 0 fields))
+  in
   let compare_binding =
     Ast_helper.Vb.mk ~loc (Ast_helper.Pat.var ~loc (str "compare"))
-      (Ast_helper.Exp.ident ~loc (lid (longident_of_string "Stdlib.compare")))
+      (match element_ty with
+      | Types.TNamed_record record ->
+          record_compare element_ty record.fields
+      | Types.TNullable (Types.TNamed_record record)
+      | Types.TOcaml_app ("option", [ Types.TNamed_record record ]) ->
+          Ast_helper.Exp.apply ~loc
+            (Ast_helper.Exp.ident ~loc
+               (lid
+                  (longident_of_string
+                     "Lg_runtime.Runtime_compare.compare_option")))
+            [
+              ( Nolabel,
+                record_compare (Types.TNamed_record record) record.fields );
+            ]
+      | _ ->
+          Ast_helper.Exp.ident ~loc
+            (lid (longident_of_string "Stdlib.compare")))
   in
   let comparator =
     Ast_helper.Mod.structure ~loc
@@ -505,17 +584,24 @@ let node_id_attribute node_id =
   in
   Ast_helper.Attr.mk (str "lg.node_id") payload
 
-let record_definition ~emit_set var_name identity type_name set_module_name fields
-    values =
+let record_definition ~emit_set ~emit_nullable_set var_name identity type_name
+    set_module_name fields values =
   let type_item = record_type_definition type_name [] fields None in
+  let record_type =
+    Types.named_record ~type_name ~set_module_name fields
+  in
   let type_items =
-    if emit_set then
+    [ type_item ]
+    @
+    (if emit_set then [ set_module_definition set_module_name record_type ]
+     else [])
+    @
+    if emit_nullable_set then
       [
-        type_item;
-        set_module_definition set_module_name
-          (Types.named_record ~type_name ~set_module_name fields);
+        set_module_definition (set_module_name ^ "_nullable")
+          (Types.TNullable record_type);
       ]
-    else [ type_item ]
+    else []
   in
   match record_values_to_parsetree var_name values with
   | Error _ as err -> err
@@ -542,17 +628,24 @@ let record_definition ~emit_set var_name identity type_name set_module_name fiel
       in
       Ok (type_items @ [ Ast_helper.Str.value ~loc Nonrecursive [ value_binding ] ])
 
-let projected_record_definition ~emit_set var_name identity type_name
-    set_module_name fields source =
+let projected_record_definition ~emit_set ~emit_nullable_set var_name identity
+    type_name set_module_name fields source =
   let type_item = record_type_definition type_name [] fields None in
+  let record_type =
+    Types.named_record ~type_name ~set_module_name fields
+  in
   let type_items =
-    if emit_set then
+    [ type_item ]
+    @
+    (if emit_set then [ set_module_definition set_module_name record_type ]
+     else [])
+    @
+    if emit_nullable_set then
       [
-        type_item;
-        set_module_definition set_module_name
-          (Types.named_record ~type_name ~set_module_name fields);
+        set_module_definition (set_module_name ^ "_nullable")
+          (Types.TNullable record_type);
       ]
-    else [ type_item ]
+    else []
   in
   match
     Ocaml_ir.to_parsetree ~context:("record source " ^ var_name)
@@ -754,9 +847,9 @@ let rec structure_of_item_with_sets requested_sets module_path = function
         [ polymorphic_holder_type_definition type_name field_name value_type
             type_variables ]
   | Comment _ -> Ok []
-  | Type_def { type_name; type_parameters; fields; location } ->
+  | Type_def { type_name; type_parameters; fields; nominal; location } ->
       let record_type =
-        Types.named_record ~nominal:true ~type_name ~type_parameters
+        Types.named_record ~nominal ~type_name ~type_parameters
           ~set_module_name:("Set_" ^ type_name) fields
       in
       let constructor_name =
@@ -768,23 +861,32 @@ let rec structure_of_item_with_sets requested_sets module_path = function
         record_type_definition type_name type_parameters fields location
       in
       let definitions =
+        let set_module_name = "Set_" ^ type_name in
+        [ type_definition ]
+        @
+        (if
+           type_parameters = []
+           && set_module_requested requested_sets module_path set_module_name
+         then [ set_module_definition set_module_name record_type ]
+         else [])
+        @
         if
           type_parameters = []
           && set_module_requested requested_sets module_path
-               ("Set_" ^ type_name)
+               (set_module_name ^ "_nullable")
         then
           [
-            type_definition;
-            set_module_definition ("Set_" ^ type_name) record_type;
+            set_module_definition (set_module_name ^ "_nullable")
+              (Types.TNullable record_type);
           ]
-        else [ type_definition ]
+        else []
       in
-      if Types.supports_structural_dynamic_packing record_type then
-        Ok definitions
-      else
+      if nominal || not (Types.supports_structural_dynamic_packing record_type)
+      then
         Ok
           (definitions
           @ [ nominal_tag_extension constructor_name record_type location ])
+      else Ok definitions
   | Type_alias { type_name; type_parameters; manifest; location } ->
       Ok [ type_alias_definition type_name type_parameters manifest location ]
   | Type_variant { type_name; type_parameters; constructors; location } ->
@@ -914,12 +1016,18 @@ let rec structure_of_item_with_sets requested_sets module_path = function
       record_definition
         ~emit_set:
           (set_module_requested requested_sets module_path set_module_name)
+        ~emit_nullable_set:
+          (set_module_requested requested_sets module_path
+             (set_module_name ^ "_nullable"))
         var_name identity type_name set_module_name fields values
   | Projected_record_def
       { var_name; identity; type_name; set_module_name; fields; source } ->
       projected_record_definition
         ~emit_set:
           (set_module_requested requested_sets module_path set_module_name)
+        ~emit_nullable_set:
+          (set_module_requested requested_sets module_path
+             (set_module_name ^ "_nullable"))
         var_name identity type_name set_module_name fields source
 
 and structure_of_items_with_sets requested_sets module_path items =
@@ -936,10 +1044,15 @@ let rec root_declared_set_modules modules items =
   List.fold_left
     (fun modules -> function
       | Type_def { type_name; type_parameters = []; _ } ->
-          String_map.add ("Set_" ^ type_name) () modules
+          let set_module_name = "Set_" ^ type_name in
+          modules
+          |> String_map.add set_module_name ()
+          |> String_map.add (set_module_name ^ "_nullable") ()
       | Record_def { set_module_name; _ }
       | Projected_record_def { set_module_name; _ } ->
-          String_map.add set_module_name () modules
+          modules
+          |> String_map.add set_module_name ()
+          |> String_map.add (set_module_name ^ "_nullable") ()
       | Group items -> root_declared_set_modules modules items
       | Type_def _ | Value_binding _ | Recursive_value_binding _
       | Recursive_value_bindings _ | Deferred_value_binding _
@@ -959,7 +1072,9 @@ let missing_root_set_definitions requested_sets items =
       then definitions
       else
         match element_ty with
-        | Types.TNamed_record _ ->
+        | Types.TNamed_record _
+        | Types.TNullable (Types.TNamed_record _)
+        | Types.TOcaml_app ("option", [ Types.TNamed_record _ ]) ->
             set_module_definition module_name element_ty :: definitions
         | _ -> definitions)
     requested_sets []
@@ -982,10 +1097,17 @@ let relocate_structure location structure =
   in
   mapper.structure mapper structure
 
-let structure_of_located_items items =
+let requested_sets_from_located_items items =
+  items
+  |> List.map snd
+  |> collect_set_modules_from_items [] String_map.empty
+
+let structure_of_located_items_excluding excluded_sets items =
   let plain_items = List.map snd items in
   let requested_sets =
     collect_set_modules_from_items [] String_map.empty plain_items
+    |> String_map.filter (fun module_name _ ->
+           not (String_map.mem module_name excluded_sets))
   in
   let prefix = missing_root_set_definitions requested_sets plain_items in
   let rec loop acc = function
@@ -1000,6 +1122,14 @@ let structure_of_located_items items =
             loop (relocate_structure location structure :: acc) rest)
   in
   loop [] items
+
+let structure_of_located_items items =
+  structure_of_located_items_excluding String_map.empty items
+
+let structure_of_incremental_located_items ~previous_items items =
+  structure_of_located_items_excluding
+    (requested_sets_from_located_items previous_items)
+    items
 
 let print_implementation structure =
   Format.asprintf "%a@." Pprintast.structure structure

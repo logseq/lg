@@ -189,7 +189,9 @@ let compile name args =
         args
   | "map?" ->
       compile_runtime_type_predicate name "Lg_runtime.Runtime_dynamic.is_map"
-        (function TRecord _ | TNamed_record _ -> true | _ -> false)
+        (function
+          | TRecord _ | TNamed_record { nominal = false; _ } -> true
+          | _ -> false)
         args
   | "fn?" ->
       compile_runtime_type_predicate name
@@ -199,13 +201,17 @@ let compile name args =
   | "coll?" ->
       compile_runtime_type_predicate name "Lg_runtime.Runtime_dynamic.is_coll"
         (function
-          | TList _ | TVector _ | TSeq _ | TSet _ | TRecord _ | TNamed_record _ -> true
+          | TList _ | TVector _ | TSeq _ | TSet _ | TRecord _
+          | TNamed_record { nominal = false; _ } ->
+              true
           | _ -> false)
         args
   | "associative?" ->
       compile_type_predicate
         name
-        (function TVector _ | TRecord _ | TNamed_record _ -> true | _ -> false)
+        (function
+          | TVector _ | TRecord _ | TNamed_record { nominal = false; _ } -> true
+          | _ -> false)
         args
   | "indexed?" -> compile_type_predicate name (function TVector _ -> true | _ -> false) args
   | "seqable?" ->
@@ -213,14 +219,16 @@ let compile name args =
         "Lg_runtime.Runtime_dynamic.is_seqable"
         (function
           | TString | TList _ | TVector _ | TSet _ | TRecord _
-          | TNamed_record _ ->
+          | TNamed_record { nominal = false; _ } ->
               true
           | _ -> false)
         args
   | "counted?" ->
       compile_type_predicate name
         (function
-          | TString | TList _ | TVector _ | TSet _ | TRecord _ | TNamed_record _ -> true
+          | TString | TList _ | TVector _ | TSet _ | TRecord _
+          | TNamed_record { nominal = false; _ } ->
+              true
           | _ -> false)
         args
   | _ -> Error.error ("unknown function " ^ name)

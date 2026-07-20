@@ -55,7 +55,9 @@ let resolve_protocol_id ~scope env protocol_id =
 let find_protocol_id scope env protocol_name =
   let protocol_name =
     match method_basename protocol_name with
+    | "ISeqable" -> "Seqable"
     | "ICounted" -> "Counted"
+    | "IEmptyableCollection" -> "Emptyable"
     | _ -> protocol_name
   in
   let registry = Env.protocols env in

@@ -284,7 +284,7 @@
 
 ; Index lookups
 
-(defn datoms
+(defn ^:seq<datascript.db/Datom> datoms
   "Index lookup. Returns a sequence of datoms (lazy iterator over actual DB index) which components (e, a, v) match passed arguments.
 
    Datoms are sorted in index sort order. Possible `index` values are: `:eavt`, `:aevt`, `:avet`.

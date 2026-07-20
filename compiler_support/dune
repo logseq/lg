@@ -1,4 +1,4 @@
 (library
  (name lg_compiler_support)
  (public_name lg.compiler_support)
- (libraries compiler-libs.common))
+ (libraries compiler-libs.common unix))

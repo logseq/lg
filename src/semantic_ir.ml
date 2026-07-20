@@ -4,6 +4,7 @@ type pattern =
   | PAny
   | PUnit
   | PInt of int
+  | PInt64 of int64
   | PString of string
   | PBool of bool
   | PConstructor of string * pattern option
@@ -19,6 +20,7 @@ type t =
   | Typed of Semantic_type.ty * t
   | Located of Source_node_id.t * Location.t * t
   | Int of int
+  | Int64 of int64
   | Float of string
   | String of string
   | Char of char
@@ -162,7 +164,7 @@ let rec type_annotations expression =
     | NullableToSeq { conversion = value; _ } ->
         [ value ]
     | Record (fields, _) -> List.map snd fields
-    | Int _ | Float _ | String _ | Char _ | Bool _ | Unit | Ident _ -> []
+    | Int _ | Int64 _ | Float _ | String _ | Char _ | Bool _ | Unit | Ident _ -> []
   in
   let own =
     match expression with
@@ -245,7 +247,7 @@ let rec rewrite fn expression =
     | NullableToSeq conversion ->
         NullableToSeq
           { conversion with conversion = rewrite fn conversion.conversion }
-    | (Int _ | Float _ | String _ | Char _ | Bool _ | Unit | Ident _) as value ->
+    | (Int _ | Int64 _ | Float _ | String _ | Char _ | Bool _ | Unit | Ident _) as value ->
         value
   in
   fn expression
@@ -282,7 +284,7 @@ let rec exists_identifier predicate expression =
     | NullableToSeq { conversion = value; _ } ->
         [ value ]
     | Record (fields, _) -> List.map snd fields
-    | Int _ | Float _ | String _ | Char _ | Bool _ | Unit | Ident _ -> []
+    | Int _ | Int64 _ | Float _ | String _ | Char _ | Bool _ | Unit | Ident _ -> []
   in
   match expression with
   | Ident name when predicate name -> true

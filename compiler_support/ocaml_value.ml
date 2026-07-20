@@ -71,3 +71,17 @@ let lookup_constructor ~include_dirs name =
           { arguments = List.map normalize description.cstr_args;
             result = normalize description.cstr_res }
   with exn -> Error (exception_message exn)
+
+let lookup_label ~include_dirs name =
+  try
+    init include_dirs;
+    match Longident.unflatten (String.split_on_char '.' name) with
+    | None -> Error ("invalid OCaml record field name " ^ name)
+    | Some longident ->
+        let env = Compmisc.initial_env () in
+        let description =
+          Env.lookup_label ~use:false ~loc:Location.none Env.Projection longident
+            env
+        in
+        Ok (normalize description.lbl_arg)
+  with exn -> Error (exception_message exn)

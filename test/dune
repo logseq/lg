@@ -156,6 +156,7 @@
  (deps
   datascript_schema_upstream_native.exe
   (alias datascript-schema-upstream-melange)
+  (alias datascript-upstream)
   datascript-schema-upstream-melange/test/datascript_schema_upstream_melange.js))
 
 (rule
@@ -1250,6 +1251,7 @@
   datascript/upstream/core.cljc
   ../test_runner/clojure/test.cljc
   ../test_runner/clojure/test_native.cljc
+  datascript/upstream_test_support/datascript/test/core.cljc
   datascript/upstream_tests/datascript/test/transact.cljc
   ../test_runner/clojure/run.cljc
   ../test_runner/runtime/lg_test_runtime.cma
@@ -1282,6 +1284,7 @@
    %{dep:datascript/upstream/core.cljc}
    %{dep:../test_runner/clojure/test.cljc}
    %{dep:../test_runner/clojure/test_native.cljc}
+   %{dep:datascript/upstream_test_support/datascript/test/core.cljc}
    %{dep:datascript/upstream_tests/datascript/test/transact.cljc}
    %{dep:../test_runner/clojure/run.cljc}
    -o
@@ -1317,6 +1320,7 @@
   datascript/upstream/core.cljc
   ../test_runner/clojure/test.cljc
   ../test_runner/clojure/test_melange.cljc
+  datascript/upstream_test_support/datascript/test/core.cljc
   datascript/upstream_tests/datascript/test/transact.cljc
   ../test_runner/clojure/run.cljc
   ../test_runner/runtime/lg_test_runtime.cma
@@ -1347,6 +1351,7 @@
    %{dep:datascript/upstream/core.cljc}
    %{dep:../test_runner/clojure/test.cljc}
    %{dep:../test_runner/clojure/test_melange.cljc}
+   %{dep:datascript/upstream_test_support/datascript/test/core.cljc}
    %{dep:datascript/upstream_tests/datascript/test/transact.cljc}
    %{dep:../test_runner/clojure/run.cljc}
    -o
@@ -1399,8 +1404,20 @@
   datascript/upstream/core.cljc
   ../test_runner/clojure/test.cljc
   ../test_runner/clojure/test_native.cljc
+  datascript/upstream_test_support/cognitect/transit.cljc
   datascript/upstream_test_support/datascript/test/core.cljc
+  datascript/upstream_tests/datascript/test/lru.cljc
+  datascript/upstream_tests/datascript/test/transact.cljc
   datascript/upstream_tests/datascript/test/conn.cljc
+  datascript/upstream_tests/datascript/test/listen.cljc
+  datascript/upstream_tests/datascript/test/filter.cljc
+  datascript/upstream_tests/datascript/test/ident.cljc
+  datascript/upstream_tests/datascript/test/components.cljc
+  datascript/upstream_tests/datascript/test/core.cljc
+  datascript/upstream_tests/datascript/test/db.cljc
+  datascript/upstream_tests/datascript/test/entity.cljc
+  datascript/upstream_tests/datascript/test/explode.cljc
+  datascript/upstream_tests/datascript/test/index.cljc
   ../test_runner/clojure/run.cljc
   ../test_runner/runtime/lg_test_runtime.cma
   ../test_runner/alcotest/lg_test_alcotest.cma
@@ -1432,8 +1449,20 @@
    %{dep:datascript/upstream/core.cljc}
    %{dep:../test_runner/clojure/test.cljc}
    %{dep:../test_runner/clojure/test_native.cljc}
+   %{dep:datascript/upstream_test_support/cognitect/transit.cljc}
    %{dep:datascript/upstream_test_support/datascript/test/core.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/lru.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/transact.cljc}
    %{dep:datascript/upstream_tests/datascript/test/conn.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/listen.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/filter.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/ident.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/components.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/core.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/db.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/entity.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/explode.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/index.cljc}
    %{dep:../test_runner/clojure/run.cljc}
    -o
    %{target})))
@@ -1468,8 +1497,21 @@
   datascript/upstream/core.cljc
   ../test_runner/clojure/test.cljc
   ../test_runner/clojure/test_melange.cljc
+  datascript/upstream_test_support/cognitect/transit.cljc
+  datascript/upstream_test_support/datascript/test/cljs.cljc
   datascript/upstream_test_support/datascript/test/core.cljc
+  datascript/upstream_tests/datascript/test/lru.cljc
+  datascript/upstream_tests/datascript/test/transact.cljc
   datascript/upstream_tests/datascript/test/conn.cljc
+  datascript/upstream_tests/datascript/test/listen.cljc
+  datascript/upstream_tests/datascript/test/filter.cljc
+  datascript/upstream_tests/datascript/test/ident.cljc
+  datascript/upstream_tests/datascript/test/components.cljc
+  datascript/upstream_tests/datascript/test/core.cljc
+  datascript/upstream_tests/datascript/test/db.cljc
+  datascript/upstream_tests/datascript/test/entity.cljc
+  datascript/upstream_tests/datascript/test/explode.cljc
+  datascript/upstream_tests/datascript/test/index.cljc
   ../test_runner/clojure/run.cljc
   ../test_runner/runtime/lg_test_runtime.cma
   ../bin/lg_cli.exe)
@@ -1499,8 +1541,21 @@
    %{dep:datascript/upstream/core.cljc}
    %{dep:../test_runner/clojure/test.cljc}
    %{dep:../test_runner/clojure/test_melange.cljc}
+   %{dep:datascript/upstream_test_support/cognitect/transit.cljc}
+   %{dep:datascript/upstream_test_support/datascript/test/cljs.cljc}
    %{dep:datascript/upstream_test_support/datascript/test/core.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/lru.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/transact.cljc}
    %{dep:datascript/upstream_tests/datascript/test/conn.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/listen.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/filter.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/ident.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/components.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/core.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/db.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/entity.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/explode.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/index.cljc}
    %{dep:../test_runner/clojure/run.cljc}
    -o
    %{target})))
@@ -1526,6 +1581,11 @@
    (run %{exe:datascript_conn_native.exe})
    (run node %{dep:datascript-conn-melange/test/datascript_conn_melange.js}))))
 
+(alias
+ (name datascript-upstream)
+ (deps
+  (alias datascript-conn)))
+
 (rule
  (target datascript_listen_native.ml)
  (deps
@@ -1550,6 +1610,7 @@
   datascript/upstream/core.cljc
   ../test_runner/clojure/test.cljc
   ../test_runner/clojure/test_native.cljc
+  datascript/upstream_test_support/datascript/test/core.cljc
   datascript/upstream_tests/datascript/test/listen.cljc
   ../test_runner/clojure/run.cljc
   ../test_runner/runtime/lg_test_runtime.cma
@@ -1582,6 +1643,7 @@
    %{dep:datascript/upstream/core.cljc}
    %{dep:../test_runner/clojure/test.cljc}
    %{dep:../test_runner/clojure/test_native.cljc}
+   %{dep:datascript/upstream_test_support/datascript/test/core.cljc}
    %{dep:datascript/upstream_tests/datascript/test/listen.cljc}
    %{dep:../test_runner/clojure/run.cljc}
    -o
@@ -1617,6 +1679,7 @@
   datascript/upstream/core.cljc
   ../test_runner/clojure/test.cljc
   ../test_runner/clojure/test_melange.cljc
+  datascript/upstream_test_support/datascript/test/core.cljc
   datascript/upstream_tests/datascript/test/listen.cljc
   ../test_runner/clojure/run.cljc
   ../test_runner/runtime/lg_test_runtime.cma
@@ -1647,6 +1710,7 @@
    %{dep:datascript/upstream/core.cljc}
    %{dep:../test_runner/clojure/test.cljc}
    %{dep:../test_runner/clojure/test_melange.cljc}
+   %{dep:datascript/upstream_test_support/datascript/test/core.cljc}
    %{dep:datascript/upstream_tests/datascript/test/listen.cljc}
    %{dep:../test_runner/clojure/run.cljc}
    -o
@@ -1699,6 +1763,7 @@
   datascript/upstream/core.cljc
   ../test_runner/clojure/test.cljc
   ../test_runner/clojure/test_native.cljc
+  datascript/upstream_test_support/datascript/test/core.cljc
   datascript/upstream_tests/datascript/test/filter.cljc
   ../test_runner/clojure/run.cljc
   ../test_runner/runtime/lg_test_runtime.cma
@@ -1731,6 +1796,7 @@
    %{dep:datascript/upstream/core.cljc}
    %{dep:../test_runner/clojure/test.cljc}
    %{dep:../test_runner/clojure/test_native.cljc}
+   %{dep:datascript/upstream_test_support/datascript/test/core.cljc}
    %{dep:datascript/upstream_tests/datascript/test/filter.cljc}
    %{dep:../test_runner/clojure/run.cljc}
    -o
@@ -1766,6 +1832,7 @@
   datascript/upstream/core.cljc
   ../test_runner/clojure/test.cljc
   ../test_runner/clojure/test_melange.cljc
+  datascript/upstream_test_support/datascript/test/core.cljc
   datascript/upstream_tests/datascript/test/filter.cljc
   ../test_runner/clojure/run.cljc
   ../test_runner/runtime/lg_test_runtime.cma
@@ -1796,6 +1863,7 @@
    %{dep:datascript/upstream/core.cljc}
    %{dep:../test_runner/clojure/test.cljc}
    %{dep:../test_runner/clojure/test_melange.cljc}
+   %{dep:datascript/upstream_test_support/datascript/test/core.cljc}
    %{dep:datascript/upstream_tests/datascript/test/filter.cljc}
    %{dep:../test_runner/clojure/run.cljc}
    -o

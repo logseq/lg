@@ -20,14 +20,15 @@ let ocaml_value name ty = Types.binding ~host_reference:(Ocaml_value name) name 
 let ocaml_host_functions = function
   | "ocaml.Stdlib" ->
       [
-        ("string-of-int", ocaml_value "string_of_int" (TFn ([ TInt ], TString)));
-        ("int-of-string", ocaml_value "int_of_string" (TFn ([ TString ], TInt)));
+        ("string-of-int", ocaml_value "Int64.to_string" (TFn ([ TInt ], TString)));
+        ("int-of-string", ocaml_value "Int64.of_string" (TFn ([ TString ], TInt)));
       ]
   | "ocaml.String" ->
       [
         ( "uppercase-ascii",
           ocaml_value "String.uppercase_ascii" (TFn ([ TString ], TString)) );
-        ("length", ocaml_value "String.length" (TFn ([ TString ], TInt)));
+        ("length", ocaml_value "Lg_runtime.Runtime_string.length"
+          (TFn ([ TString ], TInt)));
       ]
   | _ -> []
 

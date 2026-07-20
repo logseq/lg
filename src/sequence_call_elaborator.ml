@@ -759,15 +759,14 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                     let body =
                       Semantic_ir.If
                       ( Semantic_ir.Infix
-                          ("<=", Semantic_ir.Ident "n", Semantic_ir.Int 0),
+                          ("<=", Semantic_ir.Ident "n", Semantic_ir.Int64 0L),
                           Semantic_ir.Ident "acc",
                           apply "repeatedly"
                           [
                             Semantic_ir.Cons
                                 ( Semantic_ir.Apply (fn.semantic_expr, []),
                                   Semantic_ir.Ident "acc" );
-                            Semantic_ir.Infix
-                              ("-", Semantic_ir.Ident "n", Semantic_ir.Int 1);
+                            apply "Int64.pred" [ Semantic_ir.Ident "n" ];
                           ] )
                     in
                     Ok
@@ -1205,7 +1204,18 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                     Ok
                       (typed_ir (TSeq ret)
                          (apply "Lg_runtime.Runtime_seq.mapi"
-                            [ semantic_expr; sequence ]))
+                            [ Semantic_ir.Fun
+                                ( [ Semantic_ir.PVar "index";
+                                    Semantic_ir.PVar "item";
+                                  ],
+                                  Semantic_ir.Apply
+                                    ( semantic_expr,
+                                      [ apply "Int64.of_int"
+                                          [ Semantic_ir.Ident "index" ];
+                                        Semantic_ir.Ident "item";
+                                      ] ) );
+                              sequence;
+                            ]))
                 | Ok { ty = TFn _; _ } ->
                     Error.error
                       "map-indexed function type does not match collection"
@@ -1464,7 +1474,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                         ( [ Semantic_ir.PVar "index"; Semantic_ir.PVar "value" ],
                             Semantic_ir.Tuple
                             [
-                              Semantic_ir.Ident "index";
+                              apply "Int64.of_int"
+                                [ Semantic_ir.Ident "index" ];
                               Semantic_ir.Ident "value";
                             ] );
                       apply "Rrbvec.to_list" [ collection.semantic_expr ];

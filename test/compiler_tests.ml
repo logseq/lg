@@ -535,6 +535,30 @@ let test_function_local_nested_maps_emit_record_types () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_dynamic_transaction_vectors_accept_local_callback_return_shapes () =
+  let source =
+    {|
+(defn accept-dynamic [^:dynamic value]
+  (count value))
+(defn local-transactions []
+  (let [inc-age (fn [_database entity-id]
+                  [{:db/id entity-id :age 32}
+                   [:db/add entity-id :had-birthday true]])]
+    (+ (accept-dynamic [[:db.fn/call inc-age 1]])
+       (accept-dynamic [[:db.fn/call (fn [_database]
+                                      [{:name "Oleg"}])]])
+       (accept-dynamic [[:db.fn/call (fn [_database]
+                                      [{:db/id -1 :name "Vera"}])]]))))
+(println (local-transactions))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "dynamic_transaction_vectors_accept_local_callback_return_shapes" "3\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_incremental_anonymous_maps_reuse_equal_shapes () =
   let state, first =
     Lg.Compiler.compile_chunk Lg.Compiler.empty_state {|(def x {:a 1 :b "x"})|}
@@ -1403,7 +1427,7 @@ let test_typed_ir_preserves_explicit_boundary_operations () =
   let conversion =
     Lg.Semantic_ir.Apply
       ( Lg.Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.int",
-        [ Lg.Semantic_ir.Int 42 ] )
+        [ Lg.Semantic_ir.Int64 42L ] )
   in
   let packed =
     Lg.Semantic_ir.PackDynamic
@@ -1411,7 +1435,11 @@ let test_typed_ir_preserves_explicit_boundary_operations () =
   in
   let unpacked =
     Lg.Semantic_ir.UnpackDynamic
-      { source_ty = dynamic; target_ty = TInt; conversion = Lg.Semantic_ir.Int 42 }
+      {
+        source_ty = dynamic;
+        target_ty = TInt;
+        conversion = Lg.Semantic_ir.Int64 42L;
+      }
   in
   let normalized =
     Lg.Semantic_ir.NullableToSeq
@@ -1433,14 +1461,14 @@ let test_typed_ir_preserves_explicit_boundary_operations () =
   | Lg.Ocaml_ir.Apply _ -> ()
   | _ -> failwith "pack boundary must lower to its conversion");
   (match Lg.Semantic_lowering.expression unpacked with
-  | Lg.Ocaml_ir.Int 42 -> ()
+  | Lg.Ocaml_ir.Int64 42L -> ()
   | _ -> failwith "unpack boundary must lower to its conversion");
   (match Lg.Semantic_lowering.expression normalized with
   | Lg.Ocaml_ir.Ident "normalized" -> ()
   | _ -> failwith "nullable sequence boundary must lower to its conversion");
   (match
-     Lg.Expression_support.pack_plain_dynamic_value
-       (typed_ir TInt (Lg.Semantic_ir.Int 42))
+    Lg.Expression_support.pack_plain_dynamic_value
+       (typed_ir TInt (Lg.Semantic_ir.Int64 42L))
    with
   | Some expression -> (
       match expression with
@@ -2054,10 +2082,10 @@ let test_compiler_phases_have_explicit_boundaries () =
           |> expect_ok
         in
         (match Lg.Semantic_ir.unlocated scalar.semantic_expr with
-        | Lg.Semantic_ir.Int 7 -> ()
+        | Lg.Semantic_ir.Int64 7L -> ()
         | _ -> failwith "typed expressions should carry semantic AST nodes");
       match Lg.Lowering.expression scalar.semantic_expr with
-        | Lg.Ocaml_ir.Int 7 -> ()
+        | Lg.Ocaml_ir.Int64 7L -> ()
         | _ -> failwith "semantic lowering should produce backend IR")
     | _ -> failwith "top-level elaboration should have one owner"
 
@@ -2469,6 +2497,88 @@ let test_dynamic_vars_bind_and_restore_portably () =
   let native_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "dynamic_vars_bind_and_restore_portably"
     "false\ntrue\ntrue\nfalse\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_print_namespace_maps_dynamic_var_is_portable () =
+  let source =
+    {|
+(ns app.print-config)
+(println *print-namespace-maps*)
+(binding [*print-namespace-maps* true]
+  (println *print-namespace-maps*)
+  (set! *print-namespace-maps* false)
+  (println *print-namespace-maps*))
+(println *print-namespace-maps*)
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "print_namespace_maps_dynamic_var_is_portable"
+    "false\ntrue\nfalse\nfalse\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_with_open_binds_managed_values_portably () =
+  let source =
+    {|
+(println
+  (with-open [first-value "managed"
+              second-value (str first-value " value")]
+    second-value))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "with_open_binds_managed_values_portably"
+    "managed value\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_clojure_collection_protocol_names_dispatch_statically () =
+  let source =
+    {|
+(defrecord Bag [^int size]
+  ICounted
+  (-count [_] size)
+  IEmptyableCollection
+  (-empty [_] (->Bag 0)))
+(def bag (->Bag 3))
+(println (str (count bag) ":" (count (empty bag))))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "clojure_collection_protocol_names_dispatch_statically"
+    "3:0\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_jvm_memory_byte_interop_uses_portable_strings () =
+  let source =
+    {|
+(def bytes (.getBytes ^String "hello" "UTF-8"))
+(def decoded (String. ^bytes bytes "UTF-8"))
+(def output (java.io.ByteArrayOutputStream.))
+(.write output "ok")
+(println (str decoded ":" (.toByteArray output)))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "jvm_memory_byte_interop_uses_portable_strings"
+    "hello:ok\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_callback_return_records_are_materialized () =
+  let source =
+    {|
+(defn total [callback]
+  (let [result (callback)]
+    (+ (:fail result) (:error result))))
+(println (total #(hash-map :fail 1 :error 2)))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "callback_return_records_are_materialized" "3\n"
+    native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -4286,6 +4396,18 @@ let test_datascript_schema_reads_anonymous_functions_for_dynamic_contains () =
     "datascript_schema_reads_anonymous_functions_for_dynamic_contains" "true\n"
     ocaml_source
 
+let test_anonymous_function_rewrites_placeholders_inside_maps () =
+  let source =
+    {|
+(println (#(pr-str {:id %}) 42))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "anonymous_function_rewrites_placeholders_inside_maps"
+    "{:id 42}\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_top_level_require_imports_ocaml_modules () =
   let source =
     {|
@@ -5784,6 +5906,20 @@ let test_atom_nil_infers_nullable_record_from_map_destructuring () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_top_level_atom_nil_uses_dynamic_storage () =
+  let source =
+    {|
+(def slot (atom nil))
+(reset! slot 42)
+(println @slot)
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "top_level_atom_nil_uses_dynamic_storage" "42\n"
+    native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_ocaml_arrays_reject_invalid_operations () =
   Lg.Compiler.compile_string {|(def values (array 1 "two"))|}
   |> expect_error_contains "OCaml array elements must have the same type";
@@ -6007,7 +6143,25 @@ let test_custom_record_set_modules_are_emitted_on_demand () =
   if not (string_contains_substring with_set "module Set_user") then
     failwith "used custom record set modules must be emitted";
   assert_ocaml_runs "custom_record_set_modules_are_emitted_on_demand" "true\n"
-    with_set
+    with_set;
+  let with_nullable_set =
+    Lg.Compiler.compile_string
+      {|
+(type-record user (name :string))
+(def ada (record user (name "Ada")))
+(def maybe-ada (if true ada nil))
+(def users (hash-set maybe-ada))
+(println (contains? users maybe-ada))
+|}
+    |> expect_ok
+  in
+  if
+    not
+      (string_contains_substring with_nullable_set
+         "module Set_user_nullable")
+  then failwith "nullable custom record set modules must be emitted on demand";
+  assert_ocaml_runs "nullable_custom_record_set_modules_are_emitted_on_demand"
+    "true\n" with_nullable_set
 
 let test_ocaml_record_values_support_qualified_module_types () =
   let source =
@@ -6490,6 +6644,26 @@ let test_future_call_returns_a_realized_derefable_value () =
   let native_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "future_call_returns_a_realized_derefable_value"
     "true\n42\ntrue\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_delay_is_lazy_memoized_and_derefable () =
+  let source =
+    {|
+(def calls (atom 0))
+(def result
+  (delay
+    (swap! calls inc)
+    42))
+(println (= 0 @calls))
+(println @result)
+(println @result)
+(println (= 1 @calls))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "delay_is_lazy_memoized_and_derefable"
+    "true\n42\n42\ntrue\n" native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -7251,6 +7425,109 @@ let test_forward_declared_functions_refresh_nominal_returns () =
              failwith
                (name ^ " retained " ^ Lg.Types.source_name binding.ty)
          | None -> failwith ("missing definition for " ^ name))
+
+let test_forward_constructed_deftypes_remain_callable_through_aliases () =
+  let source =
+    {|
+(declare entity ->Entity)
+(defn entity [eid]
+  (when eid
+    (->Entity eid)))
+(deftype Entity [^int eid]
+  IFn
+  (-invoke [this key]
+    eid)
+  (-invoke [this key not-found]
+    not-found))
+(def public-entity entity)
+(def value (public-entity 42))
+(println (+ (value :db/id) 0))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "forward_constructed_deftypes_remain_callable_through_aliases" "42\n"
+    native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_if_heterogeneous_nominal_collections_use_dynamic_boundary () =
+  let source =
+    {|
+(declare ->Entity)
+(defn choose-entity [many?]
+  (if many?
+    (hash-set (->Entity 7 (volatile! {})))
+    (->Entity 7 (volatile! {}))))
+(deftype Entity [^int eid cache]
+  IEquiv
+  (-equiv [this other]
+    (and
+      (instance? Entity other)
+      (= eid (.-eid ^Entity other)))))
+(def entity (Entity. 7 (volatile! {})))
+(def one (choose-entity false))
+(def many (choose-entity true))
+(println (= one entity))
+(println (= many (hash-set entity)))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "if_heterogeneous_nominal_collections_use_dynamic_boundary" "true\ntrue\n"
+    native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_nullable_deftype_uses_custom_printer () =
+  let source =
+    {|
+(deftype Entity [^int eid]
+  IPrintWithWriter
+  (-pr-writer [_ writer opts]
+    (-write writer (str "<" eid ">"))))
+(def entity (if true (Entity. 7) nil))
+(println (pr-str entity))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "nullable_deftype_uses_custom_printer" "<7>\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_dynamic_deftype_values_do_not_gain_map_semantics () =
+  let source =
+    {|
+(deftype Token [^int id])
+(defn identity-dynamic [^:dynamic value]
+  value)
+(def token (identity-dynamic (Token. 1)))
+(println (map? token))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "dynamic_deftype_values_do_not_gain_map_semantics" "false\n"
+    native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_dynamic_deftype_preserves_identity_equality () =
+  let source =
+    {|
+(deftype Token [^int id])
+(defn identity-dynamic [^:dynamic value]
+  value)
+(def token (Token. 1))
+(def tokens {(identity-dynamic token) "same"})
+(println (get tokens (identity-dynamic token) "missing"))
+(println (get tokens (identity-dynamic (Token. 1)) "missing"))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "dynamic_deftype_preserves_identity_equality"
+    "same\nmissing\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_quoted_symbols_do_not_create_recursive_dependencies () =
   let quoted_name =
@@ -9079,6 +9356,18 @@ let test_melange_array_dot_map_uses_static_array_map () =
          "Lg_runtime.Runtime_array_melange.map")
   then failwith "expected Melange array maps to use the native JS array map"
 
+let test_native_and_melange_integer_literals_use_int64 () =
+  let source = {|(def large-id 285873023227265)|} in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let melange_source =
+    Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok
+  in
+  List.iter
+    (fun generated ->
+      if not (string_contains_substring generated "285873023227265L") then
+        failwith "language integers must compile to int64 literals")
+    [ native_source; melange_source ]
+
 let test_callable_expressions_are_evaluated_once () =
   let source =
     {|
@@ -9948,6 +10237,28 @@ let test_dynamic_deftype_lookup_and_assoc_dispatch () =
   in
   let native_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "dynamic_deftype_lookup_and_assoc_dispatch" "42:7\n9\n"
+    native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_forward_dynamic_deftype_lookup_registration () =
+  let source =
+    {|
+(declare make-item)
+(defn ^:dynamic dynamic-item []
+  (make-item))
+(deftype Item [value]
+  ILookup
+  (-lookup
+    ([_ key] (if (= key :computed) value nil))
+    ([_ key not-found] (if (= key :computed) value not-found))))
+(defn ^Item make-item []
+  (Item. 42))
+(println (:computed (dynamic-item)))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "forward_dynamic_deftype_lookup_registration" "42\n"
     native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
@@ -10934,7 +11245,7 @@ let test_batched_numeric_scalar_core_functions_work () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "batched_numeric_scalar_core_functions_work"
-    "true:false:true:false:false:true:false:true:false:true:false:true:4:5:0:true:false:4611686018427387903:3:3:2:2:12:12:3:1:5:5:3:3:-4:-4:name:Ada::admin?::ready\n"
+    "true:false:true:false:false:true:false:true:false:true:false:true:4:5:0:true:false:9223372036854775807:3:3:2:2:12:12:3:1:5:5:3:3:-4:-4:name:Ada::admin?::ready\n"
     ocaml_source
 
 let test_batched_numeric_scalar_core_functions_reject_non_int_bit_args () =
@@ -10985,6 +11296,24 @@ let test_hash_dispatches_to_record_ihash () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "hash_dispatches_to_record_ihash" "42\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_dynamic_hash_dispatches_to_deftype_ihash () =
+  let source =
+    {|
+(deftype HashBox [^int value]
+  IHash
+  (-hash [this]
+    (.-value this)))
+(defrecord Envelope [^:dynamic item])
+(def box (:item (Envelope. (HashBox. 42))))
+(println (hash box))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "dynamic_hash_dispatches_to_deftype_ihash" "42\n"
+    native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -12845,6 +13174,53 @@ let test_dynamic_boundaries_preserve_named_record_seqability () =
   assert_ocaml_runs "dynamic_boundaries_preserve_named_record_seqability"
     "[1 2 3]\n"
     ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_dynamic_boundaries_preserve_parameterized_record_seqability () =
+  let source =
+    {|
+(type-record bag [a]
+  (marker :a)
+  (values :array<int>))
+(extend-type bag Seqable
+  (-seq [bag] (array-seq (:values bag))))
+(def value
+  (record bag (marker "numbers") (values (array 1 2 3))))
+(defn first-dynamic [^:dynamic values]
+  (first values))
+(println (pr-str (first-dynamic value)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "dynamic_boundaries_preserve_parameterized_record_seqability" "1\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_sequential_destructuring_accepts_deftype_seqable_values () =
+  let source =
+    {|
+(defprotocol IDatom
+  (datom-tx [this]))
+(declare seq-datom)
+(deftype Datom [e a v ^number tx]
+  IDatom
+  (datom-tx [_] tx)
+  ISeqable
+  (-seq [datom] (seq-datom datom)))
+(defn seq-datom [^Datom datom]
+  (list (.-e datom) (.-a datom) (.-v datom)))
+(defn unpack [datom]
+  (let [[_ attribute value] datom]
+    [(datom-tx datom) attribute value]))
+(println (pr-str (unpack (Datom. 1 :name "Ivan" 7))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "sequential_destructuring_accepts_deftype_seqable_values"
+    "[7 :name \"Ivan\"]\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -17398,6 +17774,14 @@ let test_sets_support_named_records () =
   assert_ocaml_runs "sets_support_named_records" "1:true:true:1:true:0:true\n"
     ocaml_source
 
+let test_runtime_poly_set_follows_cljs_literal_order () =
+  let actual =
+    Lg_runtime.Runtime_poly_set.of_list [ "@2"; "@3" ]
+    |> Lg_runtime.Runtime_poly_set.elements
+  in
+  if actual <> [ "@3"; "@2" ] then
+    failwith "polymorphic set literals must enumerate newest values first"
+
 let test_sets_support_primitive_lists_and_vectors () =
   let source =
     {|
@@ -21230,7 +21614,7 @@ let test_incremental_compilation_preserves_record_sets () =
 |}
     |> expect_ok
   in
-  let _state, app_ocaml =
+  let state, app_ocaml =
     Lg.Compiler.compile_chunk state
       {|
 (def users (hash-set ada))
@@ -21238,8 +21622,36 @@ let test_incremental_compilation_preserves_record_sets () =
 |}
     |> expect_ok
   in
-  assert_ocaml_runs "incremental_compilation_preserves_record_sets" "1:true\n"
-    (people_ocaml ^ "\n\n" ^ app_ocaml)
+  let _state, reuse_ocaml =
+    Lg.Compiler.compile_chunk state
+      {|
+(def more-users (hash-set ada))
+(println (count more-users))
+|}
+    |> expect_ok
+  in
+  assert_ocaml_runs "incremental_compilation_preserves_record_sets" "1:true\n1\n"
+    (people_ocaml ^ "\n\n" ^ app_ocaml ^ "\n\n" ^ reuse_ocaml)
+
+let test_incremental_compilation_reuses_named_record_set_modules () =
+  let state, first_ocaml =
+    Lg.Compiler.compile_chunk Lg.Compiler.empty_state
+      {|
+(defrecord Item [^int id])
+(def first-items #{(->Item 1)})
+|}
+    |> expect_ok
+  in
+  let _state, second_ocaml =
+    Lg.Compiler.compile_chunk state
+      {|
+(def second-items #{(->Item 2)})
+(println (+ (count first-items) (count second-items)))
+|}
+    |> expect_ok
+  in
+  assert_ocaml_runs "incremental_compilation_reuses_named_record_set_modules"
+    "2\n" (first_ocaml ^ "\n\n" ^ second_ocaml)
 
 let test_incremental_compilation_preserves_composite_sets () =
   let state = Lg.Compiler.empty_state in
@@ -22057,8 +22469,61 @@ let test_compile_chunk_prints_parsetree_backend_output () =
   if source_output <> parsetree_output then
     failwith "compile_chunk should print the checked Parsetree backend output"
 
+let test_nullable_forwarding_preserves_sequential_capabilities () =
+  let source =
+    {|
+(defn compare-values [left right]
+  (if (and (sequential? left) (sequential? right))
+    (+ (count left) (count right))
+    -1))
+(defn nullable-forward [left right]
+  (if (nil? left)
+    0
+    (if (nil? right)
+      0
+      (compare-values left right))))
+(println (nullable-forward [1 2] (list 1 2 3)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "nullable_forwarding_preserves_sequential_capabilities"
+    "5\n" ocaml_source
+
+let test_local_when_function_accepts_nullable_results () =
+  let source =
+    {|
+(defrecord Item [value])
+(defn maybe-item [present]
+  (when present (->Item 41)))
+(let [project-when-present #(when % (:value %))]
+  (println
+    (str (project-when-present (maybe-item true)) ":"
+         (nil? (project-when-present (maybe-item false))))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "local_when_function_accepts_nullable_results" "41:true\n"
+    ocaml_source
+
+let test_discarded_function_values_use_ignore () =
+  let source =
+    {|
+(println (do (fn [] 1) 2))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if not (string_contains_substring ocaml_source "Stdlib.ignore") then
+    failwith "discarded expressions must use Stdlib.ignore";
+  assert_ocaml_runs "discarded_function_values_use_ignore" "2\n" ocaml_source
+
 let tests =
   [
+    ( "nullable forwarding preserves sequential capabilities",
+      test_nullable_forwarding_preserves_sequential_capabilities );
+    ( "local when function accepts nullable results",
+      test_local_when_function_accepts_nullable_results );
+    ( "discarded function values use ignore",
+      test_discarded_function_values_use_ignore );
     ( "compiler test directory avoids existing PID directory",
       test_test_directory_avoids_existing_pid_directory );
     ( "records, assoc, and dissoc generate typed OCaml",
@@ -22083,6 +22548,8 @@ let tests =
       test_module_local_anonymous_maps_reuse_equal_shapes );
     ( "function local nested maps emit record types",
       test_function_local_nested_maps_emit_record_types );
+    ( "dynamic transaction vectors accept local callback return shapes",
+      test_dynamic_transaction_vectors_accept_local_callback_return_shapes );
     ( "incremental anonymous maps reuse equal shapes",
       test_incremental_anonymous_maps_reuse_equal_shapes );
     ( "heterogeneous record vectors use dynamic values",
@@ -22274,6 +22741,16 @@ let tests =
       test_reader_conditional_import_refers_lg_record_types );
     ( "dynamic vars bind and restore portably",
       test_dynamic_vars_bind_and_restore_portably );
+    ( "print namespace maps dynamic var is portable",
+      test_print_namespace_maps_dynamic_var_is_portable );
+    ( "with-open binds managed values portably",
+      test_with_open_binds_managed_values_portably );
+    ( "Clojure collection protocol names dispatch statically",
+      test_clojure_collection_protocol_names_dispatch_statically );
+    ( "JVM memory byte interop uses portable strings",
+      test_jvm_memory_byte_interop_uses_portable_strings );
+    ( "callback return records are materialized",
+      test_callback_return_records_are_materialized );
     ("named fn is locally recursive", test_named_fn_is_locally_recursive);
     ( "if joins static and dynamic function parameters",
       test_if_joins_static_and_dynamic_function_parameters );
@@ -22430,6 +22907,8 @@ let tests =
       test_subs_accepts_guarded_dynamic_strings );
     ( "datascript schema reads anonymous functions for dynamic contains",
       test_datascript_schema_reads_anonymous_functions_for_dynamic_contains );
+    ( "anonymous functions rewrite placeholders inside maps",
+      test_anonymous_function_rewrites_placeholders_inside_maps );
     ("ocaml keyword names are munged", test_ocaml_keyword_names_are_munged);
     ( "module aliases replace legacy import aliases",
       test_module_aliases_replace_legacy_import_aliases );
@@ -22630,6 +23109,8 @@ let tests =
       test_local_volatile_nil_infers_value_from_reset );
     ( "atom nil infers nullable record from map destructuring",
       test_atom_nil_infers_nullable_record_from_map_destructuring );
+    ( "top-level atom nil uses dynamic storage",
+      test_top_level_atom_nil_uses_dynamic_storage );
     ( "OCaml arrays reject invalid operations",
       test_ocaml_arrays_reject_invalid_operations );
     ( "dynamic aget supports array indexes and nominal fields",
@@ -22723,6 +23204,8 @@ let tests =
       test_def_accepts_docstring_before_initializer );
     ( "future-call returns a realized derefable value",
       test_future_call_returns_a_realized_derefable_value );
+    ( "delay is lazy memoized and derefable",
+      test_delay_is_lazy_memoized_and_derefable );
     ( "multi-arity defn dispatches variadic fallback",
       test_multi_arity_defn_dispatches_variadic_fallback );
     ( "multi-arity defn supports cross-arity calls and recur",
@@ -22815,6 +23298,16 @@ let tests =
       test_forward_declared_deftype_fields_keep_nominal_receiver );
     ( "forward declared functions refresh nominal returns",
       test_forward_declared_functions_refresh_nominal_returns );
+    ( "forward constructed deftypes remain callable through aliases",
+      test_forward_constructed_deftypes_remain_callable_through_aliases );
+    ( "if heterogeneous nominal collections use a dynamic boundary",
+      test_if_heterogeneous_nominal_collections_use_dynamic_boundary );
+    ( "nullable deftype uses its custom printer",
+      test_nullable_deftype_uses_custom_printer );
+    ( "dynamic deftype values do not gain map semantics",
+      test_dynamic_deftype_values_do_not_gain_map_semantics );
+    ( "dynamic deftype preserves identity equality",
+      test_dynamic_deftype_preserves_identity_equality );
     ( "quoted symbols do not create recursive dependencies",
       test_quoted_symbols_do_not_create_recursive_dependencies );
     ( "forward declaration detection includes overload targets",
@@ -22956,6 +23449,8 @@ let tests =
       test_if_some_preserves_nominal_array_elements );
     ( "Melange array .map uses static array map",
       test_melange_array_dot_map_uses_static_array_map );
+    ( "Native and Melange integer literals use int64",
+      test_native_and_melange_integer_literals_use_int64 );
     ( "callable expressions are evaluated once",
       test_callable_expressions_are_evaluated_once );
     ( "extend-type supports multiple protocol groups",
@@ -23069,6 +23564,8 @@ let tests =
       test_get_dispatches_nullable_deftype_lookup_with_default );
     ( "dynamic deftype lookup and assoc dispatch",
       test_dynamic_deftype_lookup_and_assoc_dispatch );
+    ( "forward dynamic deftype lookup registration",
+      test_forward_dynamic_deftype_lookup_registration );
     ( "deftype method parameters shadow fields",
       test_deftype_method_parameters_shadow_fields );
     ( "get rejects vector default type mismatch",
@@ -23178,6 +23675,8 @@ let tests =
     ( "hash matches Clojure scalar and collection values",
       test_hash_matches_clojure_scalar_and_collection_values );
     ("hash dispatches to record IHash", test_hash_dispatches_to_record_ihash);
+    ( "dynamic hash dispatches to deftype IHash",
+      test_dynamic_hash_dispatches_to_deftype_ihash );
     ( "hash-unordered-coll uses static seqable capabilities",
       test_hash_unordered_coll_uses_static_seqable_capabilities );
     ( "numeric == supports mixed numbers",
@@ -23351,6 +23850,10 @@ let tests =
       test_sequence_navigation_accepts_all_seqable_types );
     ( "dynamic boundaries preserve named record Seqability",
       test_dynamic_boundaries_preserve_named_record_seqability );
+    ( "dynamic boundaries preserve parameterized record Seqability",
+      test_dynamic_boundaries_preserve_parameterized_record_seqability );
+    ( "sequential destructuring accepts deftype Seqable values",
+      test_sequential_destructuring_accepts_deftype_seqable_values );
     ( "optional sequential capabilities forward none",
       test_optional_sequential_capabilities_forward_none );
     ( "generic sequence navigation infers Seqable dictionaries",
@@ -23720,6 +24223,8 @@ let tests =
     ("apply rejects bad set reducers", test_apply_rejects_bad_set_reducers);
     ("set core api works", test_set_core_api);
     ("sets support named records", test_sets_support_named_records);
+    ( "runtime polymorphic sets follow CLJS literal order",
+      test_runtime_poly_set_follows_cljs_literal_order );
     ( "sets support primitive lists and vectors",
       test_sets_support_primitive_lists_and_vectors );
     ( "sets support nested composite elements",
@@ -23967,6 +24472,8 @@ let tests =
       test_incremental_compilation_preserves_state );
     ( "incremental compilation preserves record sets",
       test_incremental_compilation_preserves_record_sets );
+    ( "incremental compilation reuses named record set modules",
+      test_incremental_compilation_reuses_named_record_set_modules );
     ( "incremental compilation preserves composite sets",
       test_incremental_compilation_preserves_composite_sets );
     ( "module definitions support record sets",

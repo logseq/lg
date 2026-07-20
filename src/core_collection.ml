@@ -20,14 +20,17 @@ let count env collection =
   then
     Ok
       (typed_ir TInt
-         (apply "Lg_runtime.Runtime_map.count" [ collection.semantic_expr ]))
+         (apply "Int64.of_int"
+            [ apply "Lg_runtime.Runtime_map.count" [ collection.semantic_expr ] ]))
   else if Collection_capability.is_counted env collection then
     Collection_capability.count_expr env collection
     |> Result.map (typed_ir TInt)
   else
     match collection.ty with
   | TRecord fields | TNamed_record { fields; _ } ->
-      Ok (typed_ir TInt (Semantic_ir.Int (List.length fields)))
+      Ok
+        (typed_ir TInt
+           (Semantic_ir.Int64 (Int64.of_int (List.length fields))))
   | _ ->
       Collection_capability.count_expr env collection
       |> Result.map (typed_ir TInt)
@@ -179,16 +182,26 @@ let empty env collection =
             (typed_ir return_ty
                (apply ocaml_name [ collection.semantic_expr ]))
       | _ ->
+          let collection_type =
+            match collection.ty with
+            | TRecord fields ->
+                "map {"
+                ^ String.concat ", "
+                    (List.map (fun (field : field) -> field.keyword) fields)
+                ^ "}"
+            | TNamed_record record -> "record " ^ record.type_name
+            | ty -> Types.source_name ty
+          in
           Error.error
             ("empty expects a collection or string, got "
-            ^ Types.source_name collection.ty)) )
+            ^ collection_type)) )
 
 let take_list_expr count source =
   let n = Semantic_ir.Ident "n" in
   let xs = Semantic_ir.Ident "xs" in
   let body =
     Semantic_ir.If
-      ( Semantic_ir.Infix ("<=", n, Semantic_ir.Int 0),
+      ( Semantic_ir.Infix ("<=", n, Semantic_ir.Int64 0L),
         Semantic_ir.List [],
         Semantic_ir.Match
           ( xs,
@@ -197,7 +210,7 @@ let take_list_expr count source =
                 Semantic_ir.Cons
                   ( Semantic_ir.Ident "x",
                     apply "take__"
-                      [ Semantic_ir.Infix ("-", n, Semantic_ir.Int 1);
+                      [ apply "Int64.pred" [ n ];
                         Semantic_ir.Ident "rest" ] ) ) ] ) )
   in
   Semantic_ir.LetRec ("take__", [ Semantic_ir.PVar "n"; Semantic_ir.PVar "xs" ], body, [ count; source ])
@@ -207,14 +220,14 @@ let drop_list_expr count source =
   let xs = Semantic_ir.Ident "xs" in
   let body =
     Semantic_ir.If
-      ( Semantic_ir.Infix ("<=", n, Semantic_ir.Int 0),
+      ( Semantic_ir.Infix ("<=", n, Semantic_ir.Int64 0L),
         xs,
         Semantic_ir.Match
           ( xs,
             [ (Semantic_ir.PList [], Semantic_ir.List []);
               ( Semantic_ir.PCons (Semantic_ir.PAny, Semantic_ir.PVar "rest"),
                 apply "drop__"
-                  [ Semantic_ir.Infix ("-", n, Semantic_ir.Int 1);
+                  [ apply "Int64.pred" [ n ];
                     Semantic_ir.Ident "rest" ] ) ] ) )
   in
   Semantic_ir.LetRec ("drop__", [ Semantic_ir.PVar "n"; Semantic_ir.PVar "xs" ], body, [ count; source ])
@@ -231,7 +244,8 @@ let take_drop name count collection =
         in
         Ok
           (typed_ir (TSeq inner)
-             (apply runtime_name [ count.semantic_expr; sequence ]))
+             (apply runtime_name
+                [ apply "Int64.to_int" [ count.semantic_expr ]; sequence ]))
 
 let reverse collection =
   match collection.ty with

@@ -5,6 +5,7 @@ let rec pattern = function
   | PAny -> PAny
   | PUnit -> PUnit
   | PInt value -> PInt value
+  | PInt64 value -> PInt64 value
   | PString value -> PString value
   | PBool value -> PBool value
   | PConstructor (name, payload) ->
@@ -23,6 +24,7 @@ let rec expression = function
   | Semantic_ir.Located (node_id, location, value) ->
       Ocaml_ir.Located (node_id, location, expression value)
   | Int value -> Int value
+  | Int64 value -> Int64 value
   | Float value -> Float value
   | String value -> String value
   | Char value -> Char value
