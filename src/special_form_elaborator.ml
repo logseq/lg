@@ -328,6 +328,19 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
         map_array source_inner
           (adapt_vector_element env target_inner source_inner)
           branch.semantic_expr
+    | TNamed_record record, TRecord _
+      when Types.row_compatible ~expected:result_ty ~actual:branch.ty ->
+        let branch = { branch with record_values = None } in
+        Ok (Structural_map.as_named_record record branch).semantic_expr
+    | TRecord fields, (TRecord _ | TNamed_record _)
+      when Types.row_compatible ~expected:result_ty ~actual:branch.ty ->
+        (match branch.record_values with
+        | Some _ -> Ok branch.semantic_expr
+        | None ->
+            Ok
+              (Structural_map.record_expr fields
+                 (Structural_map.values_for branch fields))
+                .semantic_expr)
     | ( TFn (target_params, target_return),
         TFn (source_params, source_return) )
       when List.length target_params = List.length source_params
@@ -408,6 +421,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     | TFn _ -> true
     | TVector _ -> true
     | TArray _ -> true
+    | TRecord _ -> true
     | TNullable inner | TOcaml_app ("option", [ inner ]) ->
         requires_branch_adaptation inner
     | _ -> false

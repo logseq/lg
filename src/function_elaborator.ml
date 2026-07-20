@@ -572,6 +572,35 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
             |> List.filter_map (fun (spec : Destructure.param_spec) ->
                    if spec.destructured then Some spec.source_name else None)
           in
+          let rec directly_accesses_field parameter = function
+            | Ast.FList
+                [ Ast.FSymbol field_access; Ast.FSymbol target ]
+              when String.starts_with ~prefix:".-" field_access
+                   && String.equal parameter target ->
+                true
+            | Ast.FList forms | Ast.FVector forms ->
+                List.exists (directly_accesses_field parameter) forms
+            | Ast.FMap pairs ->
+                List.exists
+                  (fun (key, value) ->
+                    directly_accesses_field parameter key
+                    || directly_accesses_field parameter value)
+                  pairs
+            | Ast.FInt _ | Ast.FFloat _ | Ast.FChar _ | Ast.FString _
+            | Ast.FRegex _ | Ast.FBool _ | Ast.FKeyword _ | Ast.FSymbol _
+            | Ast.FCoreSymbol _ ->
+                false
+          in
+          let directly_accessed_parameters =
+            specs
+            |> List.filter_map (fun (spec : Destructure.param_spec) ->
+                   if
+                     List.exists
+                       (directly_accesses_field spec.source_name)
+                       body_forms
+                   then Some spec.source_name
+                   else None)
+          in
           let infer_structural_fields fields =
             TRecord
               (List.map
@@ -594,9 +623,16 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
             else
               match ty with
               | TNullable (TRecord fields) ->
-                  TNullable (infer_structural_fields fields)
+                  let structural = infer_structural_fields fields in
+                  if List.mem name directly_accessed_parameters then
+                    TNullable (infer_named_record scope env structural)
+                  else TNullable structural
               | TOcaml_app ("option", [ TRecord fields ]) ->
-                  TOcaml_app ("option", [ infer_structural_fields fields ])
+                  let structural = infer_structural_fields fields in
+                  if List.mem name directly_accessed_parameters then
+                    TOcaml_app
+                      ("option", [ infer_named_record scope env structural ])
+                  else TOcaml_app ("option", [ structural ])
               | ty -> infer_named_record scope env ty
           in
           let resolved_inferred =

@@ -10530,11 +10530,27 @@ let create ~compile_expr =
                   |> Option.value ~default:ret
                 in
                 let erased_callback_storage_call =
-                  List.exists
-                    (fun argument ->
-                      Types.is_dynamic argument.ty
+                  List.exists2
+                    (fun expected argument ->
+                      (Types.is_dynamic argument.ty
                       || has_capability_constraint argument.ty)
-                    args
+                      && (expects_dynamic_value expected
+                         || has_capability_constraint expected))
+                    param_tys args
+                  ||
+                  (List.exists Types.is_dynamic storage_param_tys
+                  && List.exists
+                       (function
+                         | TFn (parameters, return_ty) ->
+                             uses_dynamic_value_storage return_ty
+                             && List.exists
+                               (fun ty ->
+                                 Types.is_dynamic ty
+                                 || Types.equal ty TUnknown
+                                 || match ty with TVar _ -> true | _ -> false)
+                               parameters
+                         | _ -> false)
+                       storage_param_tys)
                 in
                 let erased_storage_call =
                   List.exists
@@ -10897,6 +10913,10 @@ let create ~compile_expr =
                 let storage_ret =
                   if sequence_storage_follows_adapter then ret
                   else if
+                    Option.is_some fn.return_param_index
+                    && Types.is_dynamic storage_ret_template
+                  then storage_ret_template
+                  else if
                     erased_storage_call
                     && runtime_dynamic_call
                     && Option.is_none fn.return_param_index
@@ -11078,7 +11098,7 @@ let create ~compile_expr =
           match compile_args_for scope argument_env arg_forms with
           | Error _ as err -> err
           | Ok args -> (
-              let args =
+              let normalized_args =
                 match args with
                 | receiver :: rest -> (
                     match receiver.ty with
@@ -11089,7 +11109,7 @@ let create ~compile_expr =
                               Protocol.type_satisfies env protocol_id receiver.ty
                           | None -> false
                         in
-                        if optional_statically_satisfies then args
+                        if optional_statically_satisfies then Ok args
                         else
                         let statically_satisfies =
                           Option.is_some
@@ -11104,14 +11124,23 @@ let create ~compile_expr =
                           if statically_satisfies then inner
                           else Types.dynamic_constraint inner
                         in
-                        typed_ir receiver_ty
-                          (Semantic_ir.Apply
-                             ( Semantic_ir.Ident "Option.get",
-                               [ receiver.semantic_expr ] ))
-                        :: rest
-                    | _ -> args)
-                | [] -> []
+                        let value =
+                          typed_ir inner
+                            (Semantic_ir.Apply
+                               ( Semantic_ir.Ident "Option.get",
+                                 [ receiver.semantic_expr ] ))
+                        in
+                        if statically_satisfies then
+                          Ok (typed_ir receiver_ty value.semantic_expr :: rest)
+                        else
+                          Result.map
+                            (fun semantic_expr ->
+                              typed_ir receiver_ty semantic_expr :: rest)
+                            (pack_dynamic_value env receiver_ty value)
+                    | _ -> Ok args)
+                | [] -> Ok []
               in
+              Result.bind normalized_args (fun args ->
               match marker.ty with
               | TFn (param_tys, _ret)
                 when List.length param_tys <> List.length args ->
@@ -11519,7 +11548,7 @@ let create ~compile_expr =
                                     (name
                                    ^ " called with incompatible arguments")
                               | _ -> Error.error (name ^ " is not callable")))))
-              | _ -> Error.error (name ^ " is not callable")))
+              | _ -> Error.error (name ^ " is not callable"))))
   and compile_args_for scope env arg_forms =
     let rec loop acc = function
       | [] -> Ok (List.rev acc)

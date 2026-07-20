@@ -507,8 +507,14 @@ let first_expr env collection =
                 [ collection.semantic_expr ]
           | _ -> apply "Lg_runtime.Runtime_seq.first_opt" [ sequence ]
       in
-      let return_ty =
-        if Types.is_dynamic inner then inner else TNullable inner
+      let expression, return_ty =
+        if Types.is_dynamic inner then (expression, inner)
+        else
+          match inner with
+          | TNullable _ | TOcaml_app ("option", [ _ ]) ->
+              ( apply "Option.join" [ expression ],
+                Types.normalize_nullable inner )
+          | _ -> (expression, TNullable inner)
       in
       Ok (typed_ir return_ty expression)
 

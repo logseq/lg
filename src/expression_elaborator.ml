@@ -1556,7 +1556,20 @@ and prepare_inferred_recursive_fn ~ocaml_name scope env source_name params
                   Types.equal provisional.body.ty TUnknown
                   || not requires_specialized_self_calls
                 then Ok provisional
-                else prepare provisional.body.ty)
+                else
+                  let rec stabilize_return remaining return_ty =
+                    Result.bind (prepare return_ty) (fun specialized ->
+                        if Types.equal specialized.body.ty return_ty then
+                          Ok specialized
+                        else if remaining = 0 then
+                          Error.error
+                            ("recursive defn " ^ source_name
+                           ^ " return type did not stabilize")
+                        else
+                          stabilize_return (remaining - 1)
+                            specialized.body.ty)
+                  in
+                  stabilize_return 4 provisional.body.ty)
           in
           if
             List.exists Types.is_dynamic dynamic_param_tys
