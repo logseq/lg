@@ -96,6 +96,9 @@
 
 #?(:native
    (defn- tuple-get [tuple idx]
+     (da/aget (__lg_dynamic tuple) idx))
+   :melange
+   (defn- tuple-get [tuple idx]
      (da/aget (__lg_dynamic tuple) idx)))
 
 #?(:native
@@ -147,6 +150,7 @@
                         (doseq [[idx-b idx-a] idxb->idxa]
                           (aset tuple' idx-a
                             (#?(:native tuple-get
+                                :melange tuple-get
                                 :cljs da/aget
                                 :clj get)
                              tuple-b idx-b)))
@@ -405,6 +409,7 @@
         (when (nil? (fnext (:tuples rel)))
           (let [idx (get (:attrs rel) pattern-el)]
             (#?(:native tuple-get
+                :melange tuple-get
                 :cljs da/aget
                 :clj get)
              tuple idx)))))))
@@ -481,6 +486,7 @@
   (when-some [rel (rel-with-attr context sym)]
     (when-some [tuple (first (:tuples rel))]
       (#?(:native tuple-get
+          :melange tuple-get
           :cljs da/aget
           :clj get)
        tuple ((:attrs rel) sym)))))
@@ -516,6 +522,7 @@
           (dotimes [i len]
             (when-some [tuple-idx (aget tuples-args i)]
               (let [v (#?(:native tuple-get
+                          :melange tuple-get
                           :cljs da/aget
                           :clj get)
                        tuple tuple-idx)]
@@ -526,6 +533,7 @@
         (dotimes [i len]
           (when-some [tuple-idx (aget tuples-args i)]
             (let [v (#?(:native tuple-get
+                        :melange tuple-get
                         :cljs da/aget
                         :clj get)
                      tuple tuple-idx)]

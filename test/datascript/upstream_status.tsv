@@ -28,11 +28,11 @@ datascript/test/index.cljc:test-datom	covered	test/datascript/upstream_tests/dat
 datascript/test/index.cljc:test-seek-datoms	covered	test/datascript/upstream_tests/datascript/test/index.cljc	-
 datascript/test/index.cljc:test-rseek-datoms	covered	test/datascript/upstream_tests/datascript/test/index.cljc	-
 datascript/test/index.cljc:test-index-range	covered	test/datascript/upstream_tests/datascript/test/index.cljc	-
-datascript/test/issues.cljc:issue-262	missing	-	-
-datascript/test/issues.cljc:issue-331	missing	-	-
-datascript/test/issues.cljc:issue-330	missing	-	-
-datascript/test/issues.cljc:issue-369	missing	-	-
-datascript/test/issues.cljc:issue-381	missing	-	-
+datascript/test/issues.cljc:issue-262	covered	test/datascript/upstream_tests/datascript/test/issues.cljc	-
+datascript/test/issues.cljc:issue-331	covered	test/datascript/upstream_tests/datascript/test/issues.cljc	-
+datascript/test/issues.cljc:issue-330	covered	test/datascript/upstream_tests/datascript/test/issues.cljc	-
+datascript/test/issues.cljc:issue-369	covered	test/datascript/upstream_tests/datascript/test/issues.cljc	-
+datascript/test/issues.cljc:issue-381	covered	test/datascript/upstream_tests/datascript/test/issues.cljc	-
 datascript/test/listen.cljc:test-listen!	covered	test/datascript/upstream_tests/datascript/test/listen.cljc	-
 datascript/test/lookup_refs.cljc:test-lookup-refs	missing	-	-
 datascript/test/lookup_refs.cljc:test-lookup-refs-transact	missing	-	-

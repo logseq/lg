@@ -881,6 +881,7 @@ let empty value =
     | Set _ -> set Seq.empty
     | Map _ -> map []
     | String _ -> string ""
+    (* Emptyable supplies the empty representation for custom collections. *)
     | _ -> (
         match find_protocol_method value "Emptyable" "-empty" with
         | Some method_ -> method_ []

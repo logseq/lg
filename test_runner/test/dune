@@ -8,6 +8,7 @@
   ../clojure/test.cljc
   ../clojure/test_native.cljc
   compatibility.cljc
+  (package lg-test)
   ../runtime/lg_test_runtime.cma
   ../alcotest/lg_test_alcotest.cma
   ../../bin/lg_cli.exe)
@@ -34,6 +35,7 @@
   ../clojure/test.cljc
   ../clojure/test_melange.cljc
   compatibility.cljc
+  (package lg-test)
   ../runtime/lg_test_runtime.cma
   ../../bin/lg_cli.exe)
  (action

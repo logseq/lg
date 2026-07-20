@@ -167,6 +167,7 @@
   ../test_runner/clojure/test_native.cljc
   datascript/upstream_tests/datascript/test/lru.cljc
   ../test_runner/clojure/run.cljc
+  (package lg-test)
   ../test_runner/runtime/lg_test_runtime.cma
   ../test_runner/alcotest/lg_test_alcotest.cma
   ../bin/lg_cli.exe)
@@ -199,6 +200,7 @@
   ../test_runner/clojure/test_melange.cljc
   datascript/upstream_tests/datascript/test/lru.cljc
   ../test_runner/clojure/run.cljc
+  (package lg-test)
   ../test_runner/runtime/lg_test_runtime.cma
   ../bin/lg_cli.exe)
  (action
@@ -1254,6 +1256,7 @@
   datascript/upstream_test_support/datascript/test/core.cljc
   datascript/upstream_tests/datascript/test/transact.cljc
   ../test_runner/clojure/run.cljc
+  (package lg-test)
   ../test_runner/runtime/lg_test_runtime.cma
   ../test_runner/alcotest/lg_test_alcotest.cma
   ../bin/lg_cli.exe)
@@ -1323,6 +1326,7 @@
   datascript/upstream_test_support/datascript/test/core.cljc
   datascript/upstream_tests/datascript/test/transact.cljc
   ../test_runner/clojure/run.cljc
+  (package lg-test)
   ../test_runner/runtime/lg_test_runtime.cma
   ../bin/lg_cli.exe)
  (action
@@ -1420,6 +1424,7 @@
   datascript/upstream_tests/datascript/test/index.cljc
   datascript/upstream_tests/datascript/test/issues.cljc
   ../test_runner/clojure/run.cljc
+  (package lg-test)
   ../test_runner/runtime/lg_test_runtime.cma
   ../test_runner/alcotest/lg_test_alcotest.cma
   ../bin/lg_cli.exe)
@@ -1516,6 +1521,7 @@
   datascript/upstream_tests/datascript/test/index.cljc
   datascript/upstream_tests/datascript/test/issues.cljc
   ../test_runner/clojure/run.cljc
+  (package lg-test)
   ../test_runner/runtime/lg_test_runtime.cma
   ../bin/lg_cli.exe)
  (action
@@ -1617,6 +1623,7 @@
   datascript/upstream_test_support/datascript/test/core.cljc
   datascript/upstream_tests/datascript/test/listen.cljc
   ../test_runner/clojure/run.cljc
+  (package lg-test)
   ../test_runner/runtime/lg_test_runtime.cma
   ../test_runner/alcotest/lg_test_alcotest.cma
   ../bin/lg_cli.exe)
@@ -1686,6 +1693,7 @@
   datascript/upstream_test_support/datascript/test/core.cljc
   datascript/upstream_tests/datascript/test/listen.cljc
   ../test_runner/clojure/run.cljc
+  (package lg-test)
   ../test_runner/runtime/lg_test_runtime.cma
   ../bin/lg_cli.exe)
  (action
@@ -1770,6 +1778,7 @@
   datascript/upstream_test_support/datascript/test/core.cljc
   datascript/upstream_tests/datascript/test/filter.cljc
   ../test_runner/clojure/run.cljc
+  (package lg-test)
   ../test_runner/runtime/lg_test_runtime.cma
   ../test_runner/alcotest/lg_test_alcotest.cma
   ../bin/lg_cli.exe)
@@ -1839,6 +1848,7 @@
   datascript/upstream_test_support/datascript/test/core.cljc
   datascript/upstream_tests/datascript/test/filter.cljc
   ../test_runner/clojure/run.cljc
+  (package lg-test)
   ../test_runner/runtime/lg_test_runtime.cma
   ../bin/lg_cli.exe)
  (action
