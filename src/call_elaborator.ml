@@ -3077,11 +3077,15 @@ let rec adapt_value_to_type env expected actual =
     let item = typed_ir actual_item (Semantic_ir.Ident item_name) in
     Result.map
       (fun item ->
-        Semantic_ir.Apply
-          ( Semantic_ir.Ident map_name,
-            [ Semantic_ir.Fun ([ Semantic_ir.PVar item_name ], item);
-              actual.semantic_expr;
-            ] ))
+        match Semantic_ir.unlocated item with
+        | Semantic_ir.Ident name when String.equal name item_name ->
+            actual.semantic_expr
+        | _ ->
+            Semantic_ir.Apply
+              ( Semantic_ir.Ident map_name,
+                [ Semantic_ir.Fun ([ Semantic_ir.PVar item_name ], item);
+                  actual.semantic_expr;
+                ] ))
       (adapt_value_to_type env expected_item item)
   else
     match (optional_payload expected, optional_payload actual.ty) with
@@ -3090,15 +3094,19 @@ let rec adapt_value_to_type env expected actual =
         let value = typed_ir actual_inner (Semantic_ir.Ident value_name) in
         Result.map
           (fun value ->
-            Semantic_ir.Match
-              ( actual.semantic_expr,
-                [
-                  ( Semantic_ir.PConstructor ("None", None),
-                    Semantic_ir.Constructor ("None", None) );
-                  ( Semantic_ir.PConstructor
-                      ("Some", Some (Semantic_ir.PVar value_name)),
-                    Semantic_ir.Constructor ("Some", Some value) );
-                ] ))
+            match Semantic_ir.unlocated value with
+            | Semantic_ir.Ident name when String.equal name value_name ->
+                actual.semantic_expr
+            | _ ->
+                Semantic_ir.Match
+                  ( actual.semantic_expr,
+                    [
+                      ( Semantic_ir.PConstructor ("None", None),
+                        Semantic_ir.Constructor ("None", None) );
+                      ( Semantic_ir.PConstructor
+                          ("Some", Some (Semantic_ir.PVar value_name)),
+                        Semantic_ir.Constructor ("Some", Some value) );
+                    ] ))
           (adapt_value_to_type env expected_inner value)
     | _ -> (
       match
@@ -3703,6 +3711,10 @@ let adapt_dynamic_callback env expected arg =
             let value = typed_ir expected_ty (Semantic_ir.Ident name) in
             let adapted =
               if Types.equal expected_ty actual_ty then Ok value.semantic_expr
+              else if
+                Types.is_dynamic expected_ty
+                && has_capability_constraint actual_ty
+              then dynamic_unpack env actual_ty value.semantic_expr
               else if
                 Types.is_dynamic expected_ty
                 && not (expects_dynamic_value actual_ty)
@@ -9101,13 +9113,60 @@ let create ~compile_expr =
             match Collection_capability.to_seq_expr env source with
             | Error _ -> Error.error "into source must be a collection"
             | Ok (element_ty, sequence) ->
-                let source =
-                  typed_ir (TList element_ty)
-                    (Semantic_ir.Apply
-                       ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.to_list",
-                         [ sequence ] ))
+                let target_element =
+                  match target.ty with
+                  | TVector inner | TList inner | TSet inner -> Some inner
+                  | _ -> None
                 in
-                Core_sequence_transform.compile "into" [ target; source ]))
+                let adapt_source target_element =
+                  let item_name = "__lg_into_adapted_item" in
+                  let item = typed_ir element_ty (Semantic_ir.Ident item_name) in
+                  let compatible =
+                    Types.assignable ~policy:Host_boundary
+                      ~expected:target_element ~actual:element_ty
+                    ||
+                    match optional_payload target_element with
+                    | Some inner ->
+                        Types.assignable ~policy:Host_boundary ~expected:inner
+                          ~actual:element_ty
+                    | None -> false
+                  in
+                  if not compatible then
+                    Error.error
+                      "into source element type must match target element type"
+                  else
+                    Result.map
+                      (fun item ->
+                        typed_ir (TList target_element)
+                          (Semantic_ir.Apply
+                             ( Semantic_ir.Ident
+                                 "Lg_runtime.Runtime_seq.to_list",
+                               [ Semantic_ir.Apply
+                                   ( Semantic_ir.Ident
+                                       "Lg_runtime.Runtime_seq.map",
+                                     [ Semantic_ir.Fun
+                                         ([ Semantic_ir.PVar item_name ], item);
+                                       sequence;
+                                     ] );
+                               ] )))
+                      (adapt_value_to_type env target_element item)
+                in
+                let source =
+                  match target_element with
+                  | Some target_element
+                    when not (Types.equal target_element element_ty) ->
+                      adapt_source target_element
+                  | Some _ | None ->
+                      Ok
+                        (typed_ir (TList element_ty)
+                           (Semantic_ir.Apply
+                              ( Semantic_ir.Ident
+                                  "Lg_runtime.Runtime_seq.to_list",
+                                [ sequence ] )))
+                in
+                Result.bind source (fun source ->
+                    Core_sequence_transform.compile "into"
+                      [ target; source ])))
   and compile_sequence_transform_call scope env name arg_forms =
     match (name, arg_forms) with
     | ("take-while" | "drop-while"), [ fn_form ] -> (
@@ -10501,15 +10560,31 @@ let create ~compile_expr =
                     storage_param_tys
                   |> List.map Type_inference.materialize_dynamic_unknown
                 in
-                let rec compile_arg_exprs index acc = function
-                  | [] -> Ok (List.rev acc)
-                  | arg :: rest -> (
+                  let rec compile_arg_exprs index acc = function
+                    | [] -> Ok (List.rev acc)
+                    | arg :: rest -> (
                       let expected_ty = List.nth param_tys index in
                       let expected_ty =
                         match
                           ( List.nth_opt storage_param_tys index,
                             arg.ty )
                         with
+                        | Some (TVector storage_item as storage_ty),
+                          TVector actual_item
+                          when (is_optional_type storage_item
+                               && not (is_optional_type actual_item))
+                               || (Types.is_dynamic storage_item
+                                  && not (Types.is_dynamic actual_item))
+                               || (Types.equal storage_item TUnknown
+                                  && not (Types.is_dynamic actual_item))
+                               || ((match storage_item with
+                                   | TVar _ -> true
+                                   | _ -> false)
+                                  && not (Types.is_dynamic actual_item)) ->
+                            (match storage_item with
+                            | TUnknown | TVar _ ->
+                                TVector (Types.dynamic_constraint TUnknown)
+                            | _ -> storage_ty)
                         | Some (TArray storage_item as storage_ty),
                           TArray actual_item
                           when (is_optional_type storage_item
@@ -10615,6 +10690,13 @@ let create ~compile_expr =
                             | _, TArray expected_item
                               when match arg.ty with
                                    | TArray actual_item ->
+                                       not
+                                         (Types.equal expected_item actual_item)
+                                   | _ -> false ->
+                              adapt_value_to_type env expected_ty arg
+                            | _, TVector expected_item
+                              when match arg.ty with
+                                   | TVector actual_item ->
                                        not
                                          (Types.equal expected_item actual_item)
                                    | _ -> false ->

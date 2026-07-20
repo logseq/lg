@@ -272,6 +272,16 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
   in
   let rec adapt_branch_expression env result_ty (branch : typed_expr) =
     match (result_ty, branch.ty) with
+    | target, source
+      when Option.is_some (Types.reduced_element target)
+           && Option.is_none (Types.reduced_element source) ->
+        let target_inner = Option.get (Types.reduced_element target) in
+        Result.map
+          (fun value ->
+            Semantic_ir.Apply
+              ( Semantic_ir.Ident "Lg_runtime.Runtime_reduced.continue",
+                [ value ] ))
+          (adapt_branch_expression env target_inner branch)
     | ( (TNullable target_inner
         | TOcaml_app ("option", [ target_inner ])),
         (TNullable source_inner
@@ -394,6 +404,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
   in
   let rec requires_branch_adaptation = function
     | ty when Types.is_dynamic ty -> true
+    | ty when Option.is_some (Types.reduced_element ty) -> true
     | TFn _ -> true
     | TVector _ -> true
     | TArray _ -> true
@@ -542,20 +553,29 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                      expression.semantic_expr)
                                  expressions)))
                   | Some element_ty ->
-                  let values =
-                    expressions
-                    |> List.map (fun expr ->
-                           let stored =
-                             capability_storage_expression expr.ty
-                               expr.semantic_expr
-                           in
-                           coerce_expression_to_type element_ty expr.ty stored)
-                  in
-                  Ok
-                    (typed_ir (TVector element_ty)
-                       (Semantic_ir.Apply
-                              ( Semantic_ir.Ident "Rrbvec.of_list",
-                                [ Semantic_ir.List values ] ))))
+                      let rec adapt values = function
+                        | [] -> Ok (List.rev values)
+                        | expression :: rest ->
+                            let expression =
+                              {
+                                expression with
+                                semantic_expr =
+                                  capability_storage_expression expression.ty
+                                    expression.semantic_expr;
+                              }
+                            in
+                            Result.bind
+                              (adapt_branch_expression env element_ty expression)
+                              (fun value -> adapt (value :: values) rest)
+                      in
+                      Result.map
+                        (fun values ->
+                          typed_ir (TVector element_ty)
+                            (Semantic_ir.Apply
+                               ( Semantic_ir.Ident "Rrbvec.of_list",
+                                 [ Semantic_ir.List values ] )))
+                        (adapt [] expressions)
+                  )
               | form :: rest -> (
                   match compile_expr scope env form with
                   | Error _ as err -> err
@@ -2222,6 +2242,16 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                 Types.next_seq (merge_element inner)
                             | None -> init_ty))
                   | FList [ FSymbol name; collection ]
+                    when name = "first"
+                         || String.ends_with ~suffix:"/first" name -> (
+                      match form_type aliases collection with
+                      | TList inner | TVector inner | TSeq inner ->
+                          TNullable inner
+                      | ty -> (
+                          match Types.next_seq_element ty with
+                          | Some inner -> TNullable inner
+                          | None -> TUnknown))
+                  | FList [ FSymbol name; collection ]
                     when name = "next"
                          || String.ends_with ~suffix:"/next" name -> (
                       let collection_ty = form_type aliases collection in
@@ -2234,7 +2264,23 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                           | None -> (
                               match Types.seqable_constraint_element ty with
                               | Some inner -> Types.next_seq inner
-                              | None -> TUnknown)))
+                                  | None -> TUnknown)))
+                  | FList [ FSymbol name; collection; item ]
+                    when name = "conj"
+                         || String.ends_with ~suffix:"/conj" name ->
+                      let collection_ty = form_type aliases collection in
+                      let item_ty = form_type aliases item in
+                      let merge inner =
+                        match merge_branch_types inner item_ty with
+                        | Some merged -> merged
+                        | None -> Types.dynamic_constraint TUnknown
+                      in
+                      (match collection_ty with
+                      | TList inner -> TList (merge inner)
+                      | TVector inner -> TVector (merge inner)
+                      | TSet inner -> TSet (merge inner)
+                      | TSeq inner -> TSeq (merge inner)
+                      | ty -> ty)
                   | FList (FSymbol name :: arguments) -> (
                       match Resolver.lookup_binding scope env name with
                       | Ok { ty = TFn (parameter_tys, return_ty); _ }
@@ -2319,6 +2365,12 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                     in
                     let widen_container current actual =
                       match (current, actual) with
+                      | TList current_inner, TList actual_inner ->
+                          TList
+                            (merge_sequence_inner current_inner actual_inner)
+                      | TVector current_inner, TVector actual_inner ->
+                          TVector
+                            (merge_sequence_inner current_inner actual_inner)
                       | ( (TList current_inner | TVector current_inner),
                           TSeq actual_inner )
                       | ( TSeq current_inner,

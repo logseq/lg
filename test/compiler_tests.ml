@@ -6262,7 +6262,7 @@ let test_typed_function_parameters_reject_bad_calls () =
 (def bad (inc1 "Ada"))
 |} in
   Lg.Compiler.compile_string source
-  |> expect_error "inc1 called with incompatible arguments"
+  |> expect_error_contains "inc1 called with incompatible arguments"
 
 let test_unit_annotations_reject_non_unit_arguments () =
   let source =
@@ -6272,7 +6272,7 @@ let test_unit_annotations_reject_non_unit_arguments () =
 |}
   in
   Lg.Compiler.compile_string source
-  |> expect_error "accept-unit called with incompatible arguments"
+  |> expect_error_contains "accept-unit called with incompatible arguments"
 
 let test_typed_function_parameters_reject_bad_bodies () =
   Lg.Compiler.compile_string {|(defn bad [^:string x] (+ x 1))|}
@@ -6735,7 +6735,7 @@ let test_unannotated_function_parameters_reject_bad_int_calls () =
 (def bad (inc1 "Ada"))
 |} in
   Lg.Compiler.compile_string source
-  |> expect_error "inc1 called with incompatible arguments"
+  |> expect_error_contains "inc1 called with incompatible arguments"
 
 let test_unannotated_function_parameters_use_clojure_truthiness () =
   let source =
@@ -6818,7 +6818,7 @@ let test_unannotated_function_parameters_reject_missing_structural_map_fields ()
 |}
   in
   Lg.Compiler.compile_string source
-  |> expect_error "next-age called with incompatible arguments"
+  |> expect_error_contains "next-age called with incompatible arguments"
 
 let test_static_protocols_dispatch_by_receiver_type () =
   let source =
@@ -10178,6 +10178,8 @@ let test_update_preserves_named_records_with_opaque_fields () =
 
 let test_defrecord_field_hints_reject_unknown_record_types () =
   Lg.Compiler.compile_string {|(defrecord Holder [^Missing value])|}
+  |> expect_error_contains "unknown record type Missing";
+  Lg.Compiler.compile_string {|(defrecord Holder [^:vector<Missing> values])|}
   |> expect_error_contains "unknown record type Missing"
 
 let test_defrecord_preserves_extension_map_entries () =
@@ -10830,7 +10832,7 @@ let test_batched_core_functions_infer_int_params () =
 |}
   in
   Lg.Compiler.compile_string source
-  |> expect_error "shifted called with incompatible arguments"
+  |> expect_error_contains "shifted called with incompatible arguments"
 
 let test_batched_numeric_scalar_core_functions_work () =
   let source =
@@ -10964,7 +10966,7 @@ let test_batched_numeric_scalar_core_functions_infer_int_params () =
 |}
   in
   Lg.Compiler.compile_string source
-  |> expect_error "clear-second called with incompatible arguments"
+  |> expect_error_contains "clear-second called with incompatible arguments"
 
 let test_clojure_string_module_batch_works () =
   let source =
@@ -11025,7 +11027,7 @@ let test_clojure_string_module_rejects_bad_args () =
 (require [clojure.string :as str])
 (def x (str/upper-case 1))
 |}
-  |> expect_error "str/upper-case called with incompatible arguments"
+  |> expect_error_contains "str/upper-case called with incompatible arguments"
 
 let test_clojure_string_module_rejects_unknown_refer () =
   Lg.Compiler.compile_string {|
@@ -16637,7 +16639,7 @@ let test_destructuring_rejects_missing_map_fields () =
 |}
   in
   Lg.Compiler.compile_string source
-  |> expect_error "next-age called with incompatible arguments"
+  |> expect_error_contains "next-age called with incompatible arguments"
 
 let test_let_destructuring_supports_nested_sequences () =
   let source =
@@ -17387,10 +17389,14 @@ let test_set_sequence_core_api () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "set_sequence_core_api" "true:true:true:6\n" ocaml_source
 
-let test_set_sequence_predicates_reject_bad_predicates () =
-  Lg.Compiler.compile_string
-    {|(def x (every? (fn [x] (+ x 1)) (hash-set 1 2)))|}
-  |> expect_error "every? expects a predicate matching set elements"
+let test_set_sequence_predicates_accept_truthy_results () =
+  let ocaml_source =
+    Lg.Compiler.compile_string
+      {|(println (every? (fn [x] (+ x 1)) (hash-set 1 2)))|}
+    |> expect_ok
+  in
+  assert_ocaml_runs "set_sequence_predicates_accept_truthy_results" "true\n"
+    ocaml_source
 
 let test_reduce_rejects_bad_set_reducers () =
   Lg.Compiler.compile_string
@@ -17414,10 +17420,14 @@ let test_set_map_rejects_function_type_mismatch () =
     {|(def xs (map (fn [^:string x] x) (hash-set 1 2)))|}
   |> expect_error "map function argument type does not match sequence"
 
-let test_set_filter_rejects_non_bool_predicates () =
-  Lg.Compiler.compile_string
-    {|(def xs (filter (fn [x] (+ x 1)) (hash-set 1 2)))|}
-  |> expect_error "filter expects a predicate matching sequence elements"
+let test_set_filter_accepts_truthy_predicates () =
+  let ocaml_source =
+    Lg.Compiler.compile_string
+      {|(println (pr-str (filter (fn [x] (+ x 1)) (hash-set 1 2))))|}
+    |> expect_ok
+  in
+  assert_ocaml_runs "set_filter_accepts_truthy_predicates" "(1 2)\n"
+    ocaml_source
 
 let test_list_core_api () =
   let source =
@@ -17515,9 +17525,14 @@ let test_sequence_boolean_predicates () =
   assert_ocaml_runs "sequence_boolean_predicates" "true:true:true\n"
     ocaml_source
 
-let test_sequence_boolean_predicates_reject_non_bool_predicates () =
-  Lg.Compiler.compile_string {|(def x (every? (fn [x] (+ x 1)) [1 2]))|}
-  |> expect_error "every? expects a predicate matching vector elements"
+let test_sequence_boolean_predicates_accept_truthy_results () =
+  let ocaml_source =
+    Lg.Compiler.compile_string
+      {|(println (every? (fn [x] (+ x 1)) [1 2]))|}
+    |> expect_ok
+  in
+  assert_ocaml_runs "sequence_boolean_predicates_accept_truthy_results" "true\n"
+    ocaml_source
 
 let test_empty_core_api () =
   let source =
@@ -17575,7 +17590,7 @@ let test_empty_core_api () =
 
 let test_empty_rejects_unsupported_values () =
   Lg.Compiler.compile_string {|(def x (empty 1))|}
-  |> expect_error "empty expects a collection or string"
+  |> expect_error_contains "empty expects a collection or string"
 
 let test_into_core_api () =
   let source =
@@ -18359,7 +18374,7 @@ let test_let_rejects_odd_binding_forms () =
 
 let test_map_rejects_non_function_argument () =
   Lg.Compiler.compile_string {|(def xs (map 1 [1 2]))|}
-  |> expect_error "map expects a function"
+  |> expect_error_contains "map expects a function"
 
 let test_match_expression_works () =
   let source =
@@ -18413,7 +18428,7 @@ let test_match_infers_target_type_from_patterns () =
     n (str "n=" n)))
 (def bad (describe "x"))
 |}
-  |> expect_error "describe called with incompatible arguments"
+  |> expect_error_contains "describe called with incompatible arguments"
 
 let test_match_supports_ocaml_constructor_patterns () =
   let source =
@@ -23631,14 +23646,14 @@ let tests =
     ("conj rejects set type mismatch", test_conj_rejects_set_type_mismatch);
     ("disj rejects set type mismatch", test_disj_rejects_set_type_mismatch);
     ("set sequence core api works", test_set_sequence_core_api);
-    ( "set sequence predicates reject bad predicates",
-      test_set_sequence_predicates_reject_bad_predicates );
+    ( "set sequence predicates accept truthy results",
+      test_set_sequence_predicates_accept_truthy_results );
     ("reduce rejects bad set reducers", test_reduce_rejects_bad_set_reducers);
     ("set map and filter core api works", test_set_map_and_filter_core_api);
     ( "set map rejects function type mismatch",
       test_set_map_rejects_function_type_mismatch );
-    ( "set filter rejects non-bool predicates",
-      test_set_filter_rejects_non_bool_predicates );
+    ( "set filter accepts truthy predicates",
+      test_set_filter_accepts_truthy_predicates );
     ("list core api works", test_list_core_api);
     ("sequence core api works on lists", test_sequence_core_api_on_lists);
     ("range core api works", test_range_core_api);
@@ -23652,8 +23667,8 @@ let tests =
     ( "reverse rejects unsupported collections",
       test_reverse_rejects_unsupported_collections );
     ("sequence boolean predicates work", test_sequence_boolean_predicates);
-    ( "sequence boolean predicates reject non-bool predicates",
-      test_sequence_boolean_predicates_reject_non_bool_predicates );
+    ( "sequence boolean predicates accept truthy results",
+      test_sequence_boolean_predicates_accept_truthy_results );
     ("empty core api works", test_empty_core_api);
     ("empty rejects unsupported values", test_empty_rejects_unsupported_values);
     ("into core api works", test_into_core_api);

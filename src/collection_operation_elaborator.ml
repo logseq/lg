@@ -607,6 +607,32 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                      (Semantic_ir.Apply
                         ( Semantic_ir.Ident "Rrbvec.push_back",
                           [ collection.semantic_expr; value.semantic_expr ] )))
+            | TVector
+                ((TNullable target_inner
+                 | TOcaml_app ("option", [ target_inner ])) as inner)
+              when (match value.ty with
+                   | TNullable _ | TOcaml_app ("option", [ _ ]) -> false
+                   | _ -> true)
+                   && (Types.is_dynamic target_inner
+                      || Types.assignable ~policy:Host_boundary
+                           ~expected:target_inner ~actual:value.ty) ->
+                let value =
+                  if Types.is_dynamic target_inner then
+                    pack_dynamic_value env target_inner value
+                  else
+                    Ok
+                      (coerce_expression_to_type target_inner value.ty
+                         value.semantic_expr)
+                in
+                Result.map
+                  (fun value ->
+                    typed_ir (TVector inner)
+                      (Semantic_ir.Apply
+                         ( Semantic_ir.Ident "Rrbvec.push_back",
+                           [ collection.semantic_expr;
+                             Semantic_ir.Constructor ("Some", Some value);
+                           ] )))
+                  value
             | TVector inner when Types.is_dynamic inner ->
                 Result.map
                   (fun value ->
@@ -2583,22 +2609,19 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                         apply "Rrbvec.nth"
                           [ target.semantic_expr; index.semantic_expr ]
                       in
-                      let value_expr =
-                        Semantic_ir.Apply
-                          ( fn.semantic_expr,
-                            old_expr
-                            :: List.map
-                                 (fun arg -> arg.semantic_expr)
-                                 extra_args )
-                      in
-                      Ok
-                        (typed_ir target.ty
-                           (apply "Rrbvec.set"
-                              [
-                                target.semantic_expr;
-                                index.semantic_expr;
-                                value_expr;
-                              ]))
+                      let arguments = typed_ir inner old_expr :: extra_args in
+                      Result.map
+                        (fun arguments ->
+                          let value_expr =
+                            Semantic_ir.Apply (fn.semantic_expr, arguments)
+                          in
+                          typed_ir target.ty
+                            (apply "Rrbvec.set"
+                               [ target.semantic_expr;
+                                 index.semantic_expr;
+                                 value_expr;
+                               ]))
+                        (prepare_updater_arguments [] param_tys arguments)
                     else
                       Error.error
                         "update function arguments do not match vector element \

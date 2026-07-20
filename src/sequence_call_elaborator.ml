@@ -312,6 +312,60 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
               (dynamic_unpack env actual_accumulator_ty call))
     | _ -> Ok fn
   in
+  let uses_builtin_reducible = function
+    | TList _ | TVector _ | TSet _ | TArray _ | TString | TSeq _
+    | TOcaml_app (("list" | "array" | "Seq.t" | "Seq"), [ _ ]) ->
+        true
+    | _ -> false
+  in
+  let adapt_protocol_argument env expected argument =
+    if Types.is_dynamic expected then
+      pack_dynamic_value env expected argument
+    else if
+      Types.equal expected argument.ty
+      || Types.assignable ~policy:Host_boundary ~expected ~actual:argument.ty
+    then Ok argument.semantic_expr
+    else if Types.is_dynamic argument.ty then
+      dynamic_unpack env expected argument.semantic_expr
+    else Error.error "protocol argument type does not match implementation"
+  in
+  let reduce_expression env ?(short_circuit = false) ~result_ty fn init
+      collection sequence =
+    if short_circuit || uses_builtin_reducible collection.ty then
+      Ok
+        (Collection_capability.reduce_expr env ~short_circuit fn init collection
+           sequence)
+    else
+      match
+        Core_protocols.find_reducible collection.ty
+          (Compiler_environment.protocols env)
+      with
+      | Some
+          { ty = TFn ([ _receiver_ty; reducer_ty; initial_ty ], return_ty);
+            ocaml_name;
+            _ } ->
+          Result.bind (adapt_protocol_argument env reducer_ty fn) (fun reducer ->
+              Result.bind
+                (adapt_protocol_argument env initial_ty init)
+                (fun initial ->
+                  let call =
+                    apply ocaml_name
+                      [ collection.semantic_expr; reducer; initial ]
+                  in
+                  if Types.is_dynamic result_ty then Ok call
+                  else if Types.is_dynamic return_ty then
+                    dynamic_unpack env result_ty call
+                  else if
+                    Types.equal result_ty return_ty
+                    || Types.assignable ~policy:Host_boundary
+                         ~expected:result_ty ~actual:return_ty
+                  then Ok call
+                  else Error.error "Reducible result type does not match init"))
+      | Some _ | None ->
+          Ok
+            (Collection_capability.reduce_expr env ~short_circuit fn init
+               collection sequence)
+  in
   let is_callable_map_type ty =
     Option.is_some (Types.dynamic_map_types ty)
     || match ty with
@@ -1122,15 +1176,14 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                                  ] ))
                       in
                       let initial = typed_ir TUnit Semantic_ir.Unit in
-                      Ok
-                        (typed_ir TUnit
-                           (Semantic_ir.Let
-                            ( [
-                                ( Semantic_ir.PUnit,
-                                  Collection_capability.reduce_expr env reducer
-                                    initial collection sequence );
-                              ],
-                                Semantic_ir.Unit )))
+                      Result.map
+                        (fun reduction ->
+                          typed_ir TUnit
+                            (Semantic_ir.Let
+                               ( [ (Semantic_ir.PUnit, reduction) ],
+                                 Semantic_ir.Unit )))
+                        (reduce_expression env ~result_ty:TUnit reducer initial
+                           collection sequence)
                   | Ok { ty = TFn _; _ } ->
                     Error.error "run! function type does not match collection"
                   | Ok _ -> Error.error "run! expects a function")))
@@ -1780,16 +1833,21 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                    ^ Types.source_name collection.ty)
               | Ok (inner, sequence) -> (
                   let accumulator_ty =
+                    let element_type_is_open =
+                      Types.is_dynamic inner
+                      || Types.equal inner TUnknown
+                      || match inner with TVar _ -> true | _ -> false
+                    in
                     match fn_form with
                     | FSymbol name -> (
                         match Resolver.lookup_binding scope env name with
                         | Ok { ty = TFn ([ acc_ty; _item_ty ], return_ty); _ }
-                          when Types.is_dynamic inner
+                          when element_type_is_open
                                && not (Types.is_dynamic acc_ty)
                                && Types.equal acc_ty return_ty ->
                             acc_ty
                         | Ok { ty = TOverloaded_fn arities; _ }
-                          when Types.is_dynamic inner -> (
+                          when element_type_is_open -> (
                             match
                               List.find_opt
                                 (fun arity ->
@@ -1832,6 +1890,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                                  ~actual:accumulator_ty
                                && Types.assignable ~policy:Host_boundary
                                     ~expected:item_ty ~actual:inner
+                               && Option.is_none
+                                    (Types.reduced_element return_ty)
                                && Types.assignable ~policy:Host_boundary
                                     ~expected:fn_accumulator_ty
                                     ~actual:return_ty ->
@@ -2102,10 +2162,10 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                              && Types.assignable ~policy:Host_boundary
                                   ~expected:init.ty ~actual:ret
                              && Option.is_none (Types.reduced_element ret) ->
-                          Ok
-                            (typed_ir ret
-                               (Collection_capability.reduce_expr env fn init
-                                  collection sequence))
+                          Result.map
+                            (typed_ir ret)
+                            (reduce_expression env ~result_ty:ret fn init
+                               collection sequence)
                       | TFn ([ acc_ty; item_ty ], ret)
                         when Types.assignable ~policy:Host_boundary
                                ~expected:acc_ty ~actual:init.ty

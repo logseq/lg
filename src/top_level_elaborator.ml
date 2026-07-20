@@ -227,6 +227,38 @@ let record_type_key = Resolver.record_type_key
 let inherit_scope_ocaml_value_refers =
   Expression_support.inherit_scope_ocaml_value_refers
 
+let rec unresolved_record_hint = function
+  | TOcaml name when String.starts_with ~prefix:"__lg_record:" name ->
+      Some
+        (String.sub name (String.length "__lg_record:")
+           (String.length name - String.length "__lg_record:"))
+  | TNullable ty | TArray ty | TRef ty | TList ty | TVector ty | TSet ty
+  | TSeq ty ->
+      unresolved_record_hint ty
+  | TOcaml_app (_, arguments) | TTuple arguments ->
+      List.find_map unresolved_record_hint arguments
+  | TFn (parameters, return_ty) ->
+      List.find_map unresolved_record_hint (return_ty :: parameters)
+  | TOverloaded_fn arities ->
+      List.find_map
+        (fun (arity : fn_arity) ->
+          match
+            List.find_map unresolved_record_hint
+              (arity.return_ty :: arity.fixed_params)
+          with
+          | Some _ as hint -> hint
+          | None -> Option.bind arity.rest_param unresolved_record_hint)
+        arities
+  | TRecord fields ->
+      List.find_map
+        (fun (field : field) -> unresolved_record_hint field.ty)
+        fields
+  | TNamed_record record ->
+      List.find_map unresolved_record_hint record.type_arguments
+  | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
+  | TBool | TUnit | TNil | TUnknown | TVar _ | TOcaml _ ->
+      None
+
 let rec form_mentions_symbol name = function
   | FSymbol candidate -> candidate = name
   | FList (FSymbol ("quote" | "clojure.core/quote") :: _) -> false
@@ -725,9 +757,11 @@ let rec compile scope env next_type = function
       :: FVector raw_fields
       :: interface_forms) ->
       let resolve_field_hint hint =
-        Result.map
-          (Function_elaborator.infer_named_record scope env)
-          (Type_annotation.of_param_annotation hint)
+        Result.bind (Type_annotation.of_param_annotation hint) (fun ty ->
+            let ty = Function_elaborator.infer_named_record scope env ty in
+            match unresolved_record_hint ty with
+            | Some name -> Error.error ("unknown record type " ^ name)
+            | None -> Ok ty)
       in
       let rec field_specs acc hint = function
         | [] -> (
