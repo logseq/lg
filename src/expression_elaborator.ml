@@ -251,12 +251,12 @@ and compile_expr_unlocated scope (env : Env.t) = function
       | None -> (
           match Env.find_inline_macro ~scope name env with
           | Some definition -> (
-          match Macro_expander.expand ~compiler_env:env definition args with
+          match Macro_expander.expand ~scope ~compiler_env:env definition args with
           | Error _ as err -> err
           | Ok expanded -> compile_expr scope env expanded)
           | None -> compile_call scope env name args)
       | Some definition -> (
-          match Macro_expander.expand ~compiler_env:env definition args with
+          match Macro_expander.expand ~scope ~compiler_env:env definition args with
           | Error _ as err -> err
           | Ok expanded -> compile_expr scope env expanded))
   | FList (FCoreSymbol core_symbol :: args) ->

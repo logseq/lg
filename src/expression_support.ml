@@ -286,7 +286,12 @@ and pack_plain_dynamic_value_impl value =
   | TSymbol -> Some (runtime "symbol" [ value.semantic_expr ])
   | TKeyword -> Some (runtime "keyword" [ value.semantic_expr ])
   | TBool -> Some (runtime "bool" [ value.semantic_expr ])
-  | TNil -> Some (Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.nil")
+  | TNil ->
+      Some
+        (Semantic_ir.Sequence
+           [ value.semantic_expr;
+             Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.nil";
+           ])
   | ty
     when Option.is_some (Types.protocol_constraint_info ty)
          || Option.is_some (Types.seqable_constraint_info ty) ->

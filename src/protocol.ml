@@ -53,6 +53,11 @@ let resolve_protocol_id ~scope env protocol_id =
     | _ -> protocol_id
 
 let find_protocol_id scope env protocol_name =
+  let protocol_name =
+    match method_basename protocol_name with
+    | "ICounted" -> "Counted"
+    | _ -> protocol_name
+  in
   let registry = Env.protocols env in
   let scoped_id =
     protocol_id scope protocol_name |> resolve_protocol_id ~scope env
@@ -320,25 +325,21 @@ let lookup_marker scope env method_name =
 
 let lookup_protocol_marker scope env protocol_name method_name =
   let registry = Env.protocols env in
-  let scoped_id = protocol_id scope protocol_name |> resolve_protocol_id ~scope env in
-  let root_id = Protocol_id.create ~owner:[] ~name:protocol_name in
-  let id =
-    if Option.is_some (Protocol_registry.find_protocol scoped_id registry) then
-      scoped_id
-    else root_id
-  in
-  let method_id = method_id id method_name in
-  match Protocol_registry.find_method id method_id registry with
-  | Some (signature : Protocol_registry.method_signature) ->
-      Some
-        (marker_binding id
-           {
-             method_id;
-             method_name;
-             param_tys = signature.param_tys;
-             return_ty = signature.return_ty;
-           })
+  match find_protocol_id scope env protocol_name with
   | None -> None
+  | Some id ->
+      let method_id = method_id id method_name in
+      (match Protocol_registry.find_method id method_id registry with
+      | Some (signature : Protocol_registry.method_signature) ->
+          Some
+            (marker_binding id
+               {
+                 method_id;
+                 method_name;
+                 param_tys = signature.param_tys;
+                 return_ty = signature.return_ty;
+               })
+      | None -> None)
 
 let lookup_impl env protocol_id method_name receiver_ty =
   match registry_receiver_id receiver_ty with

@@ -1,6 +1,7 @@
 type _ nominal_tag = ..
 type nominal = Nominal : 'a nominal_tag * 'a -> nominal
 type _ nominal_tag += Uuid_tag : Runtime_uuid.t nominal_tag
+type _ nominal_tag += Host_tag : Obj.t nominal_tag
 
 type t = {
   payload : payload;
@@ -75,16 +76,14 @@ let with_nominal tag payload value =
   { value with nominal = Some (Nominal (tag, payload)) }
 
 let with_assoc value associative = { value with associative = Some associative }
+let with_sequence value sequence = { value with sequence = Some sequence }
 
 let nominal value = value.nominal
 
 let unpack_nominal expected_tag value =
-  let constructor_id tag =
-    Obj.Extension_constructor.(id (of_val tag))
-  in
   match value.nominal with
   | Some (Nominal (actual_tag, payload))
-    when constructor_id actual_tag = constructor_id expected_tag ->
+    when Obj.repr actual_tag = Obj.repr expected_tag ->
       Some (Obj.repr payload)
   | Some _ | None -> None
 
@@ -103,12 +102,63 @@ let as_uuid value : Runtime_uuid.t =
 let symbol value = make (Symbol value)
 let keyword value = make (Keyword value)
 let bool value = make (Bool value)
+let unit () = nil
+
+let as_unit value =
+  match value.payload with
+  | Nil -> ()
+  | _ -> invalid_arg "dynamic value is not unit"
+
 let function_ value = make (Function value)
+
+let is_function value =
+  match value.payload with Function _ -> true | _ -> false
 
 let reference get set =
   make ~type_name:"clojure.lang.Atom" (Reference { get; set })
 
 let opaque name fields = make ~type_name:name (Opaque (name, fields))
+
+let host name value =
+  with_nominal Host_tag (Obj.repr value) (opaque name [])
+
+let as_host name value =
+  match (value.type_name, nominal value) with
+  | Some actual_name, Some (Nominal (Host_tag, payload))
+    when String.equal actual_name name ->
+      Obj.obj payload
+  | _ -> invalid_arg ("dynamic value is not " ^ name)
+
+let narrow_like (type expected_type) (expected : expected_type) value :
+    expected_type =
+  let payload =
+    match value.nominal with
+    | Some (Nominal (_, payload)) -> Some (Obj.repr payload)
+    | None -> (
+        match value.payload with
+        | Int value -> Some (Obj.repr value)
+        | Float value -> Some (Obj.repr value)
+        | Char value -> Some (Obj.repr value)
+        | String value | Symbol value | Keyword value -> Some (Obj.repr value)
+        | Bool value -> Some (Obj.repr value)
+        | Nil | Function _ | Array _ | List | Vector | Seq | Set _ | Map _
+        | Reference _ | Record _ | Opaque _ ->
+            None)
+  in
+  match payload with
+  | None -> invalid_arg "dynamic value cannot be narrowed by a value witness"
+  | Some payload ->
+      let expected = Obj.repr expected in
+      let same_shape =
+        if Obj.is_int expected || Obj.is_int payload then
+          Obj.is_int expected && Obj.is_int payload
+        else
+          Obj.tag expected = Obj.tag payload
+          && Obj.size expected = Obj.size payload
+      in
+      if same_shape then Obj.obj payload
+      else invalid_arg "dynamic value does not match its value witness"
+
 let metadata value = Option.value value.metadata ~default:nil
 
 let rec to_string ~pr value =
@@ -147,8 +197,12 @@ let rec to_string ~pr value =
 and to_seq value =
   match (value.payload, value.sequence) with
   | Nil, _ -> Seq.empty
+  | String value, None ->
+      value |> String.to_seq |> Seq.map (fun character -> make (Char character))
   | _, Some sequence -> sequence ()
-  | _, None -> invalid_arg "dynamic value is not seqable"
+  | _, None ->
+      invalid_arg
+        ("dynamic value is not seqable: " ^ to_string ~pr:true value)
 
 let first_value value =
   match (to_seq value) () with Seq.Nil -> nil | Seq.Cons (first, _) -> first
@@ -213,7 +267,28 @@ let lazy_record type_name fields extension_fields =
       |> Seq.map (fun (key, value) -> vector (Rrbvec.of_list [ key; value ])))
     (Record (type_name, fields, extension_fields))
 
+let find_protocol value protocol_id =
+  match
+    List.find_opt (fun protocol -> protocol.id = protocol_id) value.protocols
+  with
+  | Some _ as protocol -> protocol
+  | None ->
+      Option.bind (protocol_extension value protocol_id) (fun extended ->
+          List.find_opt
+            (fun protocol -> protocol.id = protocol_id)
+            extended.protocols)
+
+let find_protocol_method value protocol_id method_name =
+  Option.bind (find_protocol value protocol_id) (fun protocol ->
+      List.assoc_opt method_name protocol.methods)
+
 let rec equal left right =
+  match find_protocol_method left "IEquiv" "-equiv" with
+  | Some equiv -> (
+      match (equiv [ right ]).payload with
+      | Bool result -> result
+      | _ -> invalid_arg "IEquiv/-equiv must return bool")
+  | None -> (
   match (left.payload, right.payload) with
   | Nil, Nil -> true
   | Int left, Int right -> left = right
@@ -257,7 +332,7 @@ let rec equal left right =
   | Opaque _, Opaque _ -> false
   | Reference _, Reference _ -> false
   | Function _, Function _ -> false
-  | _ -> false
+  | _ -> false)
 
 let equal_arguments = function
   | [] | [ _ ] -> true
@@ -305,6 +380,24 @@ let rec compare_sequences left right =
       let result = compare left right in
       if result = 0 then compare_sequences left_rest right_rest else result
 
+and compare_entries (left_key, left_value) (right_key, right_value) =
+  let key_result = compare left_key right_key in
+  if key_result = 0 then compare left_value right_value else key_result
+
+and compare_entry_lists left right =
+  let left = List.sort compare_entries left in
+  let right = List.sort compare_entries right in
+  let rec loop left right =
+    match (left, right) with
+    | [], [] -> 0
+    | [], _ -> -1
+    | _, [] -> 1
+    | left_entry :: left_rest, right_entry :: right_rest ->
+        let result = compare_entries left_entry right_entry in
+        if result = 0 then loop left_rest right_rest else result
+  in
+  loop left right
+
 and compare left right =
   match (left.payload, right.payload) with
   | Nil, Nil -> 0
@@ -332,6 +425,25 @@ and compare left right =
       compare_at 0
   | (List | Vector | Seq), (List | Vector | Seq) ->
       compare_sequences (to_seq left) (to_seq right)
+  | Set left, Set right ->
+      compare_sequences
+        (List.sort compare left |> List.to_seq)
+        (List.sort compare right |> List.to_seq)
+  | Map left, Map right -> compare_entry_lists left right
+  | Record (left_name, left_fields, left_extensions),
+    Record (right_name, right_fields, right_extensions) ->
+      let name_result = String.compare left_name right_name in
+      if name_result <> 0 then name_result
+      else
+        let entries fields extensions =
+          List.map
+            (fun (key, project) -> (keyword key, project ()))
+            fields
+          @ List.map (fun (key, value) -> (keyword key, value)) extensions
+        in
+        compare_entry_lists
+          (entries left_fields left_extensions)
+          (entries right_fields right_extensions)
   | _ ->
       let rank = Int.compare (payload_rank left.payload) (payload_rank right.payload) in
       if rank <> 0 then rank else invalid_arg "dynamic values are not comparable"
@@ -542,6 +654,7 @@ let merge values =
 
 let dissoc value key =
   match value.payload with
+  | Nil -> value
   | Map entries ->
       map
         (List.filter
@@ -621,10 +734,13 @@ let nominal_field_name = function
 
 let get value key =
   match (value.payload, key.payload) with
-  | Record (_, fields, extensions), Keyword keyword -> (
-      match List.assoc_opt keyword fields with
-      | Some project -> project ()
-      | None -> List.assoc_opt keyword extensions |> Option.value ~default:nil)
+  | Record (_, fields, extensions), key -> (
+      match nominal_field_name key with
+      | Some field -> (
+          match List.assoc_opt field fields with
+          | Some project -> project ()
+          | None -> List.assoc_opt field extensions |> Option.value ~default:nil)
+      | None -> nil)
   | Opaque (_, fields), key -> (
       match nominal_field_name key with
       | Some field -> (
@@ -641,13 +757,20 @@ let get value key =
   | Vector, Int index -> vector_nth_opt value index |> Option.value ~default:nil
   | _ -> nil
 
+let indexed_get value index =
+  match (value.payload, index.payload) with
+  | Array values, Int index -> Array.get values index
+  | _ -> get value index
+
 let get_default value key default =
   match (value.payload, key.payload) with
-  | Record (_, fields, extensions), Keyword keyword -> (
-      match List.assoc_opt keyword fields with
-      | Some project -> project ()
-      | None ->
-          List.assoc_opt keyword extensions |> Option.value ~default)
+  | Record (_, fields, extensions), key -> (
+      match nominal_field_name key with
+      | Some field -> (
+          match List.assoc_opt field fields with
+          | Some project -> project ()
+          | None -> List.assoc_opt field extensions |> Option.value ~default)
+      | None -> default)
   | Opaque (_, fields), key -> (
       match nominal_field_name key with
       | Some field -> (
@@ -667,8 +790,10 @@ let get_default value key default =
 
 let contains value key =
   match (value.payload, key.payload) with
-  | Record (_, fields, extensions), Keyword keyword ->
-      List.mem_assoc keyword fields || List.mem_assoc keyword extensions
+  | Record (_, fields, extensions), key -> (
+      match nominal_field_name key with
+      | Some field -> List.mem_assoc field fields || List.mem_assoc field extensions
+      | None -> false)
   | Opaque (_, fields), key -> (
       match nominal_field_name key with
       | Some field -> List.mem_assoc field fields
@@ -829,7 +954,13 @@ let identical left right =
   | (Nil | Int _ | Float _ | Char _ | String _ | Symbol _ | Keyword _ | Bool _),
     (Nil | Int _ | Float _ | Char _ | String _ | Symbol _ | Keyword _ | Bool _) ->
       equal left right
-  | _ -> false
+  | _ -> (
+      match (left.nominal, right.nominal) with
+      | Some (Nominal (left_tag, left_payload)),
+        Some (Nominal (right_tag, right_payload)) ->
+          Obj.repr left_tag = Obj.repr right_tag
+          && Obj.repr left_payload == Obj.repr right_payload
+      | (Some _ | None), (Some _ | None) -> false)
 
 let identical_function =
   binary_function "identical?" (fun left right -> bool (identical left right))
@@ -1211,29 +1342,13 @@ let group_by key_fn pack_key pack_item sequence =
     (map []) sequence
 
 let has_protocol value protocol_id =
-  List.exists (fun protocol -> protocol.id = protocol_id) value.protocols
-  || has_protocol_extension value protocol_id
+  Option.is_some (find_protocol value protocol_id)
 
 let invoke value protocol_id method_name arguments =
-  let protocol =
-    match
-      List.find_opt (fun protocol -> protocol.id = protocol_id) value.protocols
-    with
-    | Some _ as protocol -> protocol
-    | None ->
-        Option.bind (protocol_extension value protocol_id) (fun extended ->
-            List.find_opt
-              (fun protocol -> protocol.id = protocol_id)
-              extended.protocols)
-  in
-  match protocol with
-  | None -> invalid_arg ("missing protocol " ^ protocol_id)
-  | Some protocol -> (
-      match List.assoc_opt method_name protocol.methods with
-      | None ->
-          invalid_arg
-            ("missing protocol method " ^ protocol_id ^ "/" ^ method_name)
-      | Some method_ -> method_ arguments)
+  match find_protocol_method value protocol_id method_name with
+  | None ->
+      invalid_arg ("missing protocol method " ^ protocol_id ^ "/" ^ method_name)
+  | Some method_ -> method_ arguments
 
 let as_transient value =
   if has_protocol value "IEditableCollection" then

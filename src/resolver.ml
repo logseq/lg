@@ -37,7 +37,19 @@ let lookup_record_type scope env type_name =
       let local_name =
         String.sub type_name (index + 1) (String.length type_name - index - 1)
       in
-      local_lookup alias local_name
+      (match local_lookup alias local_name with
+      | Ok _ as record -> record
+      | Error _ ->
+          let resolved_owner =
+            Env.resolve_namespace_alias ~scope alias env
+            |> Option.value ~default:alias
+          in
+          (match local_lookup (Names.sanitize_name resolved_owner) local_name with
+          | Ok _ as record -> record
+          | Error _ ->
+              local_lookup
+                (Names.module_path_to_ocaml resolved_owner)
+                local_name))
   | None ->
   match split_qualified_type_name type_name with
   | Some (module_path, local_name) -> (

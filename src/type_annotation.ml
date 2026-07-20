@@ -78,11 +78,17 @@ let rec parse_ocaml_type source =
                   |> Names.sanitize_name
                 in
                 Ok (TOcaml (module_path ^ "." ^ type_name))
-              else Ok (TOcaml source)
+              else Ok (TOcaml ("__lg_record:" ^ source))
           | _ ->
-              Ok
-                (TOcaml
-                   (if String.contains source '.' then source
+                Ok
+                  (TOcaml
+                     (if
+                      String.contains source '.'
+                    then source
+                    else if
+                      String.length source > 0
+                      && Char.uppercase_ascii source.[0] = source.[0]
+                    then "__lg_record:" ^ source
                     else Names.sanitize_name source)))
     | Some open_index ->
         let name = String.sub source 0 open_index |> String.trim in
@@ -114,6 +120,22 @@ let rec parse_ocaml_type source =
                       match args with
                       | [ inner ] -> Ok (TArray inner)
                       | _ -> Error.error "array expects one type argument"
+                    else if name = "vector" then
+                      match args with
+                      | [ inner ] -> Ok (TVector inner)
+                      | _ -> Error.error "vector expects one type argument"
+                    else if name = "list" then
+                      match args with
+                      | [ inner ] -> Ok (TList inner)
+                      | _ -> Error.error "list expects one type argument"
+                    else if name = "set" then
+                      match args with
+                      | [ inner ] -> Ok (TSet inner)
+                      | _ -> Error.error "set expects one type argument"
+                    else if name = "seq" then
+                      match args with
+                      | [ inner ] -> Ok (TSeq inner)
+                      | _ -> Error.error "seq expects one type argument"
                     else if name = "ref" then
                       match args with
                       | [ inner ] -> Ok (TRef inner)
@@ -130,7 +152,9 @@ let rec parse_ocaml_type source =
                     else
                       Ok
                         (TOcaml_app
-                           ( (if String.contains name '.' then name
+                           ( (if String.contains name '/' then
+                                "__lg_record_app:" ^ name
+                              else if String.contains name '.' then name
                               else Names.sanitize_name name),
                              args )))
 

@@ -1,0 +1,8 @@
+(install
+ (section share)
+ (package lg-test)
+ (files
+  (test.cljc as clojure/test.cljc)
+  (test_native.cljc as clojure/test_native.cljc)
+  (test_melange.cljc as clojure/test_melange.cljc)
+  (run.cljc as clojure/run.cljc)))

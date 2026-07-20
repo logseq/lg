@@ -1,0 +1,7 @@
+(library
+ (name lg_test_melange)
+ (public_name lg-test.melange)
+ (modes melange)
+ (preprocess
+  (pps melange.ppx))
+ (libraries lg-test.runtime))

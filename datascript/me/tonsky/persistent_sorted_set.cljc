@@ -118,7 +118,8 @@
     (if (<= left right)
       (let [middle (arrays/half (+ left right))
             middle-key (arrays/aget arr middle)]
-        (if (neg? (cmp middle-key key))
+        (if (neg? #?(:melange (uncurried-compare cmp middle-key key)
+                     :default (cmp middle-key key)))
           (recur (inc middle) right)
           (recur left (dec middle))))
       left)))
@@ -129,7 +130,8 @@
     (if (<= left right)
       (let [middle (arrays/half (+ left right))
             middle-key (arrays/aget arr middle)]
-        (if (pos? (cmp middle-key key))
+        (if (pos? #?(:melange (uncurried-compare cmp middle-key key)
+                     :default (cmp middle-key key)))
           (recur left (dec middle))
           (recur (inc middle) right)))
       left)))
@@ -138,7 +140,10 @@
   (let [length (arrays/alength arr)
         idx (binary-search-l cmp arr (dec length) key)]
     (if (and (< idx length)
-             (= 0 (cmp (arrays/aget arr idx) key)))
+             (= 0 #?(:melange
+                     (uncurried-compare cmp (arrays/aget arr idx) key)
+                     :default
+                     (cmp (arrays/aget arr idx) key))))
       idx
       -1)))
 
@@ -239,14 +244,40 @@
   (restore :fn<int64;option<tree<value>>>)
   (accessed :fn<int64;unit>)
   (store :fn<tree<value>;option<int64>;int64>)
-  (delete :fn<array<int64>;unit>))
+  (delete :fn<array<int64>;unit>)
+  (owner :option<dynamic>)
+  (pending-deletes :ref<array<int64>>)
+  (drain-writes :fn<unit;vector<vector<dynamic>>>))
 
 (defn make-storage [restore accessed store delete]
   (record storage
           (restore restore)
           (accessed accessed)
           (store store)
-          (delete delete)))
+          (delete delete)
+          (owner nil)
+          (pending-deletes (volatile! (arrays/empty-array)))
+          (drain-writes (fn [_] []))))
+
+(defn make-storage-with-owner
+  [restore accessed store delete owner pending-deletes drain-writes]
+  (record storage
+          (restore restore)
+          (accessed accessed)
+          (store store)
+          (delete delete)
+          (owner (Some owner))
+          (pending-deletes pending-deletes)
+          (drain-writes drain-writes)))
+
+(defn storage-owner [storage]
+  (:owner storage))
+
+(defn storage-pending-deletes [storage]
+  (:pending-deletes storage))
+
+(defn storage-drain-writes [storage]
+  ((:drain-writes storage) (Stdlib.ignore 0)))
 
 (defn- make-tree [keys children weak-children addresses address dirty]
   (record tree (keys keys) (children children) (_weak-children weak-children) (_addresses addresses) (_address (volatile! address)) (_dirty (volatile! dirty))))
@@ -328,8 +359,8 @@
     (match (restore address)
       (Some child)
       (do
-        (arrays/aset children idx nil)
-        (arrays/aset weak-children idx (Some (weak-ref child)))
+        (arrays/aset children idx (Some child))
+        (arrays/aset weak-children idx nil)
         child)
       None
       (Stdlib.failwith "persistent sorted set storage returned no child"))))
@@ -345,6 +376,8 @@
         (match (weak-deref reference)
           (Some child)
           (do
+            (arrays/aset children idx (Some child))
+            (arrays/aset weak-children idx nil)
             (match storage
               (Some storage-value)
               (match (arrays/aget addresses idx)
@@ -541,7 +574,10 @@
             keys-length (arrays/alength keys)]
         (cond
           (and (< idx keys-length)
-               (= 0 (cmp key (arrays/aget keys idx))))
+               (= 0 #?(:melange
+                       (uncurried-compare cmp key (arrays/aget keys idx))
+                       :default
+                       (cmp key (arrays/aget keys idx)))))
           nil
           (= keys-length max-len)
           (let [middle (arrays/half (inc keys-length))]
@@ -683,16 +719,17 @@
                      (nil? (arrays/aget addresses idx))
                      (deref (:_dirty child)))
                 (let [child-address (node-store child storage)]
-                  (arrays/aset addresses idx (Some child-address))))
-              (arrays/aset weak-children idx (Some (weak-ref child)))
-              (arrays/aset children idx nil))
+                  (arrays/aset addresses idx (Some child-address)))))
             (if-some [reference (arrays/aget weak-children idx)]
               (if-some [child (weak-deref reference)]
-                (when (or
-                       (nil? (arrays/aget addresses idx))
-                       (deref (:_dirty child)))
-                  (let [child-address (node-store child storage)]
-                    (arrays/aset addresses idx (Some child-address))))
+                (do
+                  (arrays/aset children idx (Some child))
+                  (arrays/aset weak-children idx nil)
+                  (when (or
+                         (nil? (arrays/aget addresses idx))
+                         (deref (:_dirty child)))
+                    (let [child-address (node-store child storage)]
+                      (arrays/aset addresses idx (Some child-address)))))
                 nil)
               nil))
           (recur (inc idx)))
@@ -738,8 +775,8 @@
         (match (restore address)
           (Some root)
           (do
-            (vreset! (:root set) nil)
-            (vreset! (:_weak-root set) (Some (weak-ref root)))
+            (vreset! (:root set) (Some root))
+            (vreset! (:_weak-root set) nil)
             root)
           None
           (Stdlib.failwith "persistent sorted set storage returned no root")))
@@ -753,7 +790,10 @@
     root
     (if-some [reference (deref (:_weak-root set))]
       (if-some [root (weak-deref reference)]
-        root
+        (do
+          (vreset! (:root set) (Some root))
+          (vreset! (:_weak-root set) nil)
+          root)
         (restore-root set))
       (restore-root set))))
 
@@ -768,6 +808,26 @@
 
 (defn set-storage [set]
   (deref (:storage set)))
+
+(defn- ^:vector<int64> node-collect-addresses
+  [node storage ^:vector<int64> addresses]
+  (let [addresses
+        (match (node-address node)
+          (Some address) (clojure.core/conj addresses address)
+          None addresses)]
+    (loop [idx 0
+           addresses addresses]
+      (if (= idx (node-child-count node))
+        addresses
+        (recur
+         (inc idx)
+         (node-collect-addresses
+          (node-child node idx storage)
+          storage
+          addresses))))))
+
+(defn ^:vector<int64> set-addresses [set]
+  (node-collect-addresses (set-root set) (set-storage set) []))
 
 #?(:native
    (type-record iterator [value]
@@ -1034,7 +1094,8 @@
             (recur
              (inc idx)
              value
-             (if (= 0 (cmp value previous))
+             (if (= 0 #?(:melange (uncurried-compare cmp value previous)
+                         :default (cmp value previous)))
                count
                (inc count)))))))))
 
@@ -1052,7 +1113,8 @@
                  previous (arrays/aget values 0)]
             (if (< source-idx length)
               (let [value (arrays/aget values source-idx)]
-                (if (= 0 (cmp value previous))
+                (if (= 0 #?(:melange (uncurried-compare cmp value previous)
+                            :default (cmp value previous)))
                   (recur (inc source-idx) result-idx value)
                   (do
                     (arrays/aset result result-idx value)
@@ -1108,7 +1170,23 @@
    (set-root set) (set-comparator set) key (set-storage set)))
 
 (defn set-contains? [set key]
-  (not (nil? (set-lookup set key))))
+  (let [cmp (set-comparator set)
+        storage (set-storage set)]
+    (loop [node (set-root set)]
+      (let [keys (:keys node)
+            length (arrays/alength keys)
+            idx (binary-search-l cmp keys (dec length) key)]
+        (if (= 0 (node-child-count node))
+          (and (< idx length)
+               (= 0 #?(:melange
+                       (uncurried-compare cmp (arrays/aget keys idx) key)
+                       :default
+                       (cmp (arrays/aget keys idx) key))))
+          (if (= idx length)
+            false
+            (if-some [child (arrays/aget (:children node) idx)]
+              (recur child)
+              (recur (node-child node idx storage)))))))))
 
 (defn set-conj-with [set key cmp]
   (if-some [roots
@@ -1214,7 +1292,7 @@
   (set-slice-with set key-from key-to (set-comparator set)))
 
 (defn set-rslice-with [set key-from key-to cmp]
-  (if-some [bounds (set-slice-bounds set key-from key-to cmp)]
+  (if-some [bounds (set-slice-bounds set key-to key-from cmp)]
     (match bounds
       (tuple left right)
       (Some
@@ -1238,8 +1316,8 @@
           None (Stdlib.failwith "persistent sorted set storage is unavailable"))
         address (node-store root storage-value)]
     (vreset! (:_address set) (Some address))
-    (vreset! (:_weak-root set) (Some (weak-ref root)))
-    (vreset! (:root set) nil)
+    (vreset! (:_weak-root set) nil)
+    (vreset! (:root set) (Some root))
     address))
 
 (extend-type btset Seqable
@@ -1247,6 +1325,30 @@
 
 (extend-type btset Counted
              (-count [set] (set-count set)))
+
+(defn- set-equiv [set ^:dynamic other]
+  (and
+   (instance? btset other)
+   (let [other-set (__lg_dynamic-narrow set other)]
+     (and
+      (= (set-count set) (set-count other-set))
+      (loop [left (seq set)
+             right (seq other-set)]
+        (cond
+          (empty? left) (empty? right)
+          (empty? right) false
+          :else
+          (if-some [left-value (first left)]
+            (if-some [right-value (first right)]
+              (if
+               (zero? ((set-comparator set) left-value right-value))
+                (recur (rest left) (rest right))
+                false)
+              false)
+            false)))))))
+
+(extend-type btset IEquiv
+             (-equiv [set ^:dynamic other] (set-equiv set other)))
 
 (extend-type btset Emptyable
              (-empty [set] (empty-set (set-comparator set))))
@@ -1289,7 +1391,12 @@
   ([values target]
    (seek values target (fn [left right] (compare left right))))
   ([values target cmp]
-   (filter #(not (neg? (cmp % target))) values)))
+   (filter
+    #(not
+      (neg?
+       #?(:melange (uncurried-compare cmp % target)
+          :default (cmp % target))))
+    values)))
 
 (defn comparator [set]
   (set-comparator set))
@@ -1310,11 +1417,14 @@
        (with-storage set storage)
        set))))
 
-(defn sorted-set* [opts]
-  (let [set (empty-set (:cmp opts))]
+(defn sorted-set-with-comparator [cmp opts]
+  (let [set (empty-set cmp)]
     (if-some [storage (:storage opts)]
       (with-storage set storage)
       set)))
+
+(defn sorted-set* [opts]
+  (sorted-set-with-comparator (:cmp opts) opts))
 
 (defn settings [_]
   (assoc {}

@@ -162,7 +162,12 @@
  (target datascript_lru_native.ml)
  (deps
   datascript/upstream/lru.cljc
-  datascript/lru_test.cljc
+  ../test_runner/clojure/test.cljc
+  ../test_runner/clojure/test_native.cljc
+  datascript/upstream_tests/datascript/test/lru.cljc
+  ../test_runner/clojure/run.cljc
+  ../test_runner/runtime/lg_test_runtime.cma
+  ../test_runner/alcotest/lg_test_alcotest.cma
   ../bin/lg_cli.exe)
  (action
   (run
@@ -171,7 +176,10 @@
    native
    --compile-files
    %{dep:datascript/upstream/lru.cljc}
-   %{dep:datascript/lru_test.cljc}
+   %{dep:../test_runner/clojure/test.cljc}
+   %{dep:../test_runner/clojure/test_native.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/lru.cljc}
+   %{dep:../test_runner/clojure/run.cljc}
    -o
    %{target})))
 
@@ -180,13 +188,17 @@
  (modules datascript_lru_native)
  (flags
   (:standard -w -32-37))
- (libraries lg.runtime rrbvec))
+ (libraries lg.runtime rrbvec lg-test.runtime lg-test.alcotest))
 
 (rule
  (target datascript_lru_melange.ml)
  (deps
   datascript/upstream/lru.cljc
-  datascript/lru_test.cljc
+  ../test_runner/clojure/test.cljc
+  ../test_runner/clojure/test_melange.cljc
+  datascript/upstream_tests/datascript/test/lru.cljc
+  ../test_runner/clojure/run.cljc
+  ../test_runner/runtime/lg_test_runtime.cma
   ../bin/lg_cli.exe)
  (action
   (run
@@ -195,7 +207,10 @@
    melange
    --compile-files
    %{dep:datascript/upstream/lru.cljc}
-   %{dep:datascript/lru_test.cljc}
+   %{dep:../test_runner/clojure/test.cljc}
+   %{dep:../test_runner/clojure/test_melange.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/lru.cljc}
+   %{dep:../test_runner/clojure/run.cljc}
    -o
    %{target})))
 
@@ -205,23 +220,18 @@
  (module_systems es6)
  (modules datascript_lru_melange)
  (compile_flags -w -32-37)
- (libraries lg.runtime rrbvec))
+ (libraries lg.runtime rrbvec lg-test.runtime lg-test.melange))
 
 (rule
  (alias datascript-lru)
  (deps
-  datascript/value_smoke.sh
-  datascript/lru.expected
   datascript_lru_native.exe
   (alias datascript-lru-melange)
   datascript-lru-melange/test/datascript_lru_melange.js)
  (action
-  (run
-   sh
-   %{dep:datascript/value_smoke.sh}
-   %{exe:datascript_lru_native.exe}
-   %{dep:datascript-lru-melange/test/datascript_lru_melange.js}
-   %{dep:datascript/lru.expected})))
+  (progn
+   (run %{exe:datascript_lru_native.exe})
+   (run node %{dep:datascript-lru-melange/test/datascript_lru_melange.js}))))
 
 (rule
  (alias runtest)
@@ -723,7 +733,7 @@
  (name persistent_sorted_set_storage_native)
  (modules persistent_sorted_set_storage_native)
  (flags
-  (:standard -w -32-37))
+  (:standard -w -32-37-69))
  (libraries lg.runtime rrbvec))
 
 (rule
@@ -754,7 +764,7 @@
  (modules persistent_sorted_set_storage_melange)
  (preprocess
   (pps melange.ppx))
- (compile_flags -w -32-37)
+ (compile_flags -w -32-37-69)
  (libraries lg.runtime rrbvec))
 
 (rule
@@ -783,7 +793,7 @@
  (modes js)
  (modules persistent_sorted_set_storage_jsoo)
  (flags
-  (:standard -w -32-37))
+  (:standard -w -32-37-69))
  (libraries lg.runtime rrbvec))
 
 (rule
@@ -902,3 +912,763 @@
  (flags
   (:standard -w -32-37))
  (libraries lg.runtime rrbvec))
+
+(rule
+ (target datascript_storage_smoke_native.ml)
+ (deps
+  ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.cljc
+  datascript/upstream/inline.cljc
+  datascript/upstream/util.cljc
+  datascript/upstream/lru.cljc
+  datascript/upstream/schema.cljc
+  datascript/upstream/db.cljc
+  datascript/upstream/storage.cljc
+  datascript/upstream/conn.cljc
+  datascript/storage_smoke.cljc
+  ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   native
+   --compile-files
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
+   %{dep:datascript/upstream/inline.cljc}
+   %{dep:datascript/upstream/util.cljc}
+   %{dep:datascript/upstream/lru.cljc}
+   %{dep:datascript/upstream/schema.cljc}
+   %{dep:datascript/upstream/db.cljc}
+   %{dep:datascript/upstream/storage.cljc}
+   %{dep:datascript/upstream/conn.cljc}
+   %{dep:datascript/storage_smoke.cljc}
+   -o
+   %{target})))
+
+(executable
+ (name datascript_storage_smoke_native)
+ (modules datascript_storage_smoke_native)
+ (flags
+  (:standard -w -5-26-27-32-37-39-69))
+ (libraries lg.runtime re rrbvec unix))
+
+(rule
+ (target datascript_storage_smoke_melange.ml)
+ (deps
+  ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.cljc
+  datascript/upstream/inline.cljc
+  datascript/upstream/util.cljc
+  datascript/upstream/lru.cljc
+  datascript/upstream/schema.cljc
+  datascript/upstream/db.cljc
+  datascript/upstream/storage.cljc
+  datascript/upstream/conn.cljc
+  datascript/storage_smoke.cljc
+  ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   melange
+   --compile-files
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
+   %{dep:datascript/upstream/inline.cljc}
+   %{dep:datascript/upstream/util.cljc}
+   %{dep:datascript/upstream/lru.cljc}
+   %{dep:datascript/upstream/schema.cljc}
+   %{dep:datascript/upstream/db.cljc}
+   %{dep:datascript/upstream/storage.cljc}
+   %{dep:datascript/upstream/conn.cljc}
+   %{dep:datascript/storage_smoke.cljc}
+   -o
+   %{target})))
+
+(melange.emit
+ (target datascript-storage-smoke-melange)
+ (alias datascript-storage-smoke-melange)
+ (module_systems es6)
+ (modules datascript_storage_smoke_melange)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -w -5-26-27-32-37-39-69)
+ (libraries lg.runtime rrbvec))
+
+(rule
+ (alias datascript-storage-smoke)
+ (deps
+  datascript/value_smoke.sh
+  datascript/storage_smoke.expected
+  datascript_storage_smoke_native.exe
+  (alias datascript-storage-smoke-melange)
+  datascript-storage-smoke-melange/test/datascript_storage_smoke_melange.js)
+ (action
+  (run
+   sh
+   %{dep:datascript/value_smoke.sh}
+   %{exe:datascript_storage_smoke_native.exe}
+   %{dep:datascript-storage-smoke-melange/test/datascript_storage_smoke_melange.js}
+   %{dep:datascript/storage_smoke.expected})))
+
+(rule
+ (target datascript_file_storage_smoke_native.ml)
+ (deps
+  ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.cljc
+  datascript/upstream/inline.cljc
+  datascript/upstream/util.cljc
+  datascript/upstream/lru.cljc
+  datascript/upstream/schema.cljc
+  datascript/upstream/db.cljc
+  datascript/upstream/parser.cljc
+  datascript/upstream/entity.cljc
+  datascript/upstream/built_ins.cljc
+  datascript/upstream/pull_parser.cljc
+  datascript/upstream/pull_api.cljc
+  datascript/upstream/query.cljc
+  datascript/upstream/storage.cljc
+  datascript/upstream/storage_file.cljc
+  datascript/upstream/serialize.cljc
+  datascript/upstream/conn.cljc
+  datascript/upstream/core.cljc
+  datascript/file_storage_smoke.cljc
+  ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   native
+   --compile-files
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
+   %{dep:datascript/upstream/inline.cljc}
+   %{dep:datascript/upstream/util.cljc}
+   %{dep:datascript/upstream/lru.cljc}
+   %{dep:datascript/upstream/schema.cljc}
+   %{dep:datascript/upstream/db.cljc}
+   %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/upstream/entity.cljc}
+   %{dep:datascript/upstream/built_ins.cljc}
+   %{dep:datascript/upstream/pull_parser.cljc}
+   %{dep:datascript/upstream/pull_api.cljc}
+   %{dep:datascript/upstream/query.cljc}
+   %{dep:datascript/upstream/storage.cljc}
+   %{dep:datascript/upstream/storage_file.cljc}
+   %{dep:datascript/upstream/serialize.cljc}
+   %{dep:datascript/upstream/conn.cljc}
+   %{dep:datascript/upstream/core.cljc}
+   %{dep:datascript/file_storage_smoke.cljc}
+   -o
+   %{target})))
+
+(executable
+ (name datascript_file_storage_smoke_native)
+ (modules datascript_file_storage_smoke_native)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries lg.runtime re rrbvec unix))
+
+(rule
+ (alias datascript-file-storage-smoke)
+ (deps
+  datascript/native_smoke.sh
+  datascript/file_storage_smoke.expected
+  datascript_file_storage_smoke_native.exe)
+ (action
+  (run
+   sh
+   %{dep:datascript/native_smoke.sh}
+   %{exe:datascript_file_storage_smoke_native.exe}
+   %{dep:datascript/file_storage_smoke.expected})))
+
+(rule
+ (target datascript_api_smoke_native.ml)
+ (deps
+  ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.cljc
+  datascript/upstream/inline.cljc
+  datascript/upstream/util.cljc
+  datascript/upstream/lru.cljc
+  datascript/upstream/schema.cljc
+  datascript/upstream/db.cljc
+  datascript/upstream/parser.cljc
+  datascript/upstream/entity.cljc
+  datascript/upstream/built_ins.cljc
+  datascript/upstream/pull_parser.cljc
+  datascript/upstream/pull_api.cljc
+  datascript/upstream/query.cljc
+  datascript/upstream/storage.cljc
+  datascript/upstream/storage_file.cljc
+  datascript/upstream/serialize.cljc
+  datascript/upstream/conn.cljc
+  datascript/upstream/core.cljc
+  datascript/api_smoke.cljc
+  ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   native
+   --compile-files
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
+   %{dep:datascript/upstream/inline.cljc}
+   %{dep:datascript/upstream/util.cljc}
+   %{dep:datascript/upstream/lru.cljc}
+   %{dep:datascript/upstream/schema.cljc}
+   %{dep:datascript/upstream/db.cljc}
+   %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/upstream/entity.cljc}
+   %{dep:datascript/upstream/built_ins.cljc}
+   %{dep:datascript/upstream/pull_parser.cljc}
+   %{dep:datascript/upstream/pull_api.cljc}
+   %{dep:datascript/upstream/query.cljc}
+   %{dep:datascript/upstream/storage.cljc}
+   %{dep:datascript/upstream/storage_file.cljc}
+   %{dep:datascript/upstream/serialize.cljc}
+   %{dep:datascript/upstream/conn.cljc}
+   %{dep:datascript/upstream/core.cljc}
+   %{dep:datascript/api_smoke.cljc}
+   -o
+   %{target})))
+
+(executable
+ (name datascript_api_smoke_native)
+ (modules datascript_api_smoke_native)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries lg.runtime re rrbvec unix))
+
+(rule
+ (target datascript_api_smoke_melange.ml)
+ (deps
+  ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.cljc
+  datascript/upstream/inline.cljc
+  datascript/upstream/util.cljc
+  datascript/upstream/lru.cljc
+  datascript/upstream/schema.cljc
+  datascript/upstream/db.cljc
+  datascript/upstream/parser.cljc
+  datascript/upstream/entity.cljc
+  datascript/upstream/built_ins.cljc
+  datascript/upstream/pull_parser.cljc
+  datascript/upstream/pull_api.cljc
+  datascript/upstream/query.cljc
+  datascript/upstream/storage.cljc
+  datascript/upstream/serialize.cljc
+  datascript/upstream/conn.cljc
+  datascript/upstream/core.cljc
+  datascript/api_smoke.cljc
+  ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   melange
+   --compile-files
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
+   %{dep:datascript/upstream/inline.cljc}
+   %{dep:datascript/upstream/util.cljc}
+   %{dep:datascript/upstream/lru.cljc}
+   %{dep:datascript/upstream/schema.cljc}
+   %{dep:datascript/upstream/db.cljc}
+   %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/upstream/entity.cljc}
+   %{dep:datascript/upstream/built_ins.cljc}
+   %{dep:datascript/upstream/pull_parser.cljc}
+   %{dep:datascript/upstream/pull_api.cljc}
+   %{dep:datascript/upstream/query.cljc}
+   %{dep:datascript/upstream/storage.cljc}
+   %{dep:datascript/upstream/serialize.cljc}
+   %{dep:datascript/upstream/conn.cljc}
+   %{dep:datascript/upstream/core.cljc}
+   %{dep:datascript/api_smoke.cljc}
+   -o
+   %{target})))
+
+(melange.emit
+ (target datascript-api-smoke-melange)
+ (alias datascript-api-smoke-melange)
+ (module_systems es6)
+ (modules datascript_api_smoke_melange)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -w -5-11-26-27-32-37-39-69)
+ (libraries lg.runtime rrbvec))
+
+(rule
+ (alias datascript-api-smoke)
+ (deps
+  datascript/value_smoke.sh
+  datascript/api_smoke.expected
+  datascript_api_smoke_native.exe
+  (alias datascript-api-smoke-melange)
+  datascript-api-smoke-melange/test/datascript_api_smoke_melange.js)
+ (action
+  (run
+   sh
+   %{dep:datascript/value_smoke.sh}
+   %{exe:datascript_api_smoke_native.exe}
+   %{dep:datascript-api-smoke-melange/test/datascript_api_smoke_melange.js}
+   %{dep:datascript/api_smoke.expected})))
+
+(rule
+ (target datascript_transact_native.ml)
+ (deps
+  ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.cljc
+  datascript/upstream/inline.cljc
+  datascript/upstream/util.cljc
+  datascript/upstream/lru.cljc
+  datascript/upstream/schema.cljc
+  datascript/upstream/db.cljc
+  datascript/upstream/parser.cljc
+  datascript/upstream/entity.cljc
+  datascript/upstream/built_ins.cljc
+  datascript/upstream/pull_parser.cljc
+  datascript/upstream/pull_api.cljc
+  datascript/upstream/query.cljc
+  datascript/upstream/storage.cljc
+  datascript/upstream/storage_file.cljc
+  datascript/upstream/serialize.cljc
+  datascript/upstream/conn.cljc
+  datascript/upstream/core.cljc
+  ../test_runner/clojure/test.cljc
+  ../test_runner/clojure/test_native.cljc
+  datascript/upstream_tests/datascript/test/transact.cljc
+  ../test_runner/clojure/run.cljc
+  ../test_runner/runtime/lg_test_runtime.cma
+  ../test_runner/alcotest/lg_test_alcotest.cma
+  ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   native
+   --compile-files
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
+   %{dep:datascript/upstream/inline.cljc}
+   %{dep:datascript/upstream/util.cljc}
+   %{dep:datascript/upstream/lru.cljc}
+   %{dep:datascript/upstream/schema.cljc}
+   %{dep:datascript/upstream/db.cljc}
+   %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/upstream/entity.cljc}
+   %{dep:datascript/upstream/built_ins.cljc}
+   %{dep:datascript/upstream/pull_parser.cljc}
+   %{dep:datascript/upstream/pull_api.cljc}
+   %{dep:datascript/upstream/query.cljc}
+   %{dep:datascript/upstream/storage.cljc}
+   %{dep:datascript/upstream/storage_file.cljc}
+   %{dep:datascript/upstream/serialize.cljc}
+   %{dep:datascript/upstream/conn.cljc}
+   %{dep:datascript/upstream/core.cljc}
+   %{dep:../test_runner/clojure/test.cljc}
+   %{dep:../test_runner/clojure/test_native.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/transact.cljc}
+   %{dep:../test_runner/clojure/run.cljc}
+   -o
+   %{target})))
+
+(executable
+ (name datascript_transact_native)
+ (modules datascript_transact_native)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries lg.runtime re rrbvec unix lg-test.runtime lg-test.alcotest))
+
+(rule
+ (target datascript_transact_melange.ml)
+ (deps
+  ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.cljc
+  datascript/upstream/inline.cljc
+  datascript/upstream/util.cljc
+  datascript/upstream/lru.cljc
+  datascript/upstream/schema.cljc
+  datascript/upstream/db.cljc
+  datascript/upstream/parser.cljc
+  datascript/upstream/entity.cljc
+  datascript/upstream/built_ins.cljc
+  datascript/upstream/pull_parser.cljc
+  datascript/upstream/pull_api.cljc
+  datascript/upstream/query.cljc
+  datascript/upstream/storage.cljc
+  datascript/upstream/serialize.cljc
+  datascript/upstream/conn.cljc
+  datascript/upstream/core.cljc
+  ../test_runner/clojure/test.cljc
+  ../test_runner/clojure/test_melange.cljc
+  datascript/upstream_tests/datascript/test/transact.cljc
+  ../test_runner/clojure/run.cljc
+  ../test_runner/runtime/lg_test_runtime.cma
+  ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   melange
+   --compile-files
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
+   %{dep:datascript/upstream/inline.cljc}
+   %{dep:datascript/upstream/util.cljc}
+   %{dep:datascript/upstream/lru.cljc}
+   %{dep:datascript/upstream/schema.cljc}
+   %{dep:datascript/upstream/db.cljc}
+   %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/upstream/entity.cljc}
+   %{dep:datascript/upstream/built_ins.cljc}
+   %{dep:datascript/upstream/pull_parser.cljc}
+   %{dep:datascript/upstream/pull_api.cljc}
+   %{dep:datascript/upstream/query.cljc}
+   %{dep:datascript/upstream/storage.cljc}
+   %{dep:datascript/upstream/serialize.cljc}
+   %{dep:datascript/upstream/conn.cljc}
+   %{dep:datascript/upstream/core.cljc}
+   %{dep:../test_runner/clojure/test.cljc}
+   %{dep:../test_runner/clojure/test_melange.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/transact.cljc}
+   %{dep:../test_runner/clojure/run.cljc}
+   -o
+   %{target})))
+
+(melange.emit
+ (target datascript-transact-melange)
+ (alias datascript-transact-melange)
+ (module_systems es6)
+ (modules datascript_transact_melange)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -w -5-11-26-27-32-37-39-69)
+ (libraries lg.runtime rrbvec lg-test.runtime lg-test.melange))
+
+(rule
+ (alias datascript-transact)
+ (deps
+  datascript_transact_native.exe
+  (alias datascript-transact-melange)
+  datascript-transact-melange/test/datascript_transact_melange.js)
+ (action
+  (progn
+   (run %{exe:datascript_transact_native.exe})
+   (run
+    node
+    %{dep:datascript-transact-melange/test/datascript_transact_melange.js}))))
+
+(rule
+ (target datascript_listen_native.ml)
+ (deps
+  ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.cljc
+  datascript/upstream/inline.cljc
+  datascript/upstream/util.cljc
+  datascript/upstream/lru.cljc
+  datascript/upstream/schema.cljc
+  datascript/upstream/db.cljc
+  datascript/upstream/parser.cljc
+  datascript/upstream/entity.cljc
+  datascript/upstream/built_ins.cljc
+  datascript/upstream/pull_parser.cljc
+  datascript/upstream/pull_api.cljc
+  datascript/upstream/query.cljc
+  datascript/upstream/storage.cljc
+  datascript/upstream/storage_file.cljc
+  datascript/upstream/serialize.cljc
+  datascript/upstream/conn.cljc
+  datascript/upstream/core.cljc
+  ../test_runner/clojure/test.cljc
+  ../test_runner/clojure/test_native.cljc
+  datascript/upstream_tests/datascript/test/listen.cljc
+  ../test_runner/clojure/run.cljc
+  ../test_runner/runtime/lg_test_runtime.cma
+  ../test_runner/alcotest/lg_test_alcotest.cma
+  ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   native
+   --compile-files
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
+   %{dep:datascript/upstream/inline.cljc}
+   %{dep:datascript/upstream/util.cljc}
+   %{dep:datascript/upstream/lru.cljc}
+   %{dep:datascript/upstream/schema.cljc}
+   %{dep:datascript/upstream/db.cljc}
+   %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/upstream/entity.cljc}
+   %{dep:datascript/upstream/built_ins.cljc}
+   %{dep:datascript/upstream/pull_parser.cljc}
+   %{dep:datascript/upstream/pull_api.cljc}
+   %{dep:datascript/upstream/query.cljc}
+   %{dep:datascript/upstream/storage.cljc}
+   %{dep:datascript/upstream/storage_file.cljc}
+   %{dep:datascript/upstream/serialize.cljc}
+   %{dep:datascript/upstream/conn.cljc}
+   %{dep:datascript/upstream/core.cljc}
+   %{dep:../test_runner/clojure/test.cljc}
+   %{dep:../test_runner/clojure/test_native.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/listen.cljc}
+   %{dep:../test_runner/clojure/run.cljc}
+   -o
+   %{target})))
+
+(executable
+ (name datascript_listen_native)
+ (modules datascript_listen_native)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries lg.runtime re rrbvec unix lg-test.runtime lg-test.alcotest))
+
+(rule
+ (target datascript_listen_melange.ml)
+ (deps
+  ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.cljc
+  datascript/upstream/inline.cljc
+  datascript/upstream/util.cljc
+  datascript/upstream/lru.cljc
+  datascript/upstream/schema.cljc
+  datascript/upstream/db.cljc
+  datascript/upstream/parser.cljc
+  datascript/upstream/entity.cljc
+  datascript/upstream/built_ins.cljc
+  datascript/upstream/pull_parser.cljc
+  datascript/upstream/pull_api.cljc
+  datascript/upstream/query.cljc
+  datascript/upstream/storage.cljc
+  datascript/upstream/serialize.cljc
+  datascript/upstream/conn.cljc
+  datascript/upstream/core.cljc
+  ../test_runner/clojure/test.cljc
+  ../test_runner/clojure/test_melange.cljc
+  datascript/upstream_tests/datascript/test/listen.cljc
+  ../test_runner/clojure/run.cljc
+  ../test_runner/runtime/lg_test_runtime.cma
+  ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   melange
+   --compile-files
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
+   %{dep:datascript/upstream/inline.cljc}
+   %{dep:datascript/upstream/util.cljc}
+   %{dep:datascript/upstream/lru.cljc}
+   %{dep:datascript/upstream/schema.cljc}
+   %{dep:datascript/upstream/db.cljc}
+   %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/upstream/entity.cljc}
+   %{dep:datascript/upstream/built_ins.cljc}
+   %{dep:datascript/upstream/pull_parser.cljc}
+   %{dep:datascript/upstream/pull_api.cljc}
+   %{dep:datascript/upstream/query.cljc}
+   %{dep:datascript/upstream/storage.cljc}
+   %{dep:datascript/upstream/serialize.cljc}
+   %{dep:datascript/upstream/conn.cljc}
+   %{dep:datascript/upstream/core.cljc}
+   %{dep:../test_runner/clojure/test.cljc}
+   %{dep:../test_runner/clojure/test_melange.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/listen.cljc}
+   %{dep:../test_runner/clojure/run.cljc}
+   -o
+   %{target})))
+
+(melange.emit
+ (target datascript-listen-melange)
+ (alias datascript-listen-melange)
+ (module_systems es6)
+ (modules datascript_listen_melange)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -w -5-11-26-27-32-37-39-69)
+ (libraries lg.runtime rrbvec lg-test.runtime lg-test.melange))
+
+(rule
+ (alias datascript-listen)
+ (deps
+  datascript_listen_native.exe
+  (alias datascript-listen-melange)
+  datascript-listen-melange/test/datascript_listen_melange.js)
+ (action
+  (progn
+   (run %{exe:datascript_listen_native.exe})
+   (run
+    node
+    %{dep:datascript-listen-melange/test/datascript_listen_melange.js}))))
+
+(rule
+ (target datascript_filter_native.ml)
+ (deps
+  ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.cljc
+  datascript/upstream/inline.cljc
+  datascript/upstream/util.cljc
+  datascript/upstream/lru.cljc
+  datascript/upstream/schema.cljc
+  datascript/upstream/db.cljc
+  datascript/upstream/parser.cljc
+  datascript/upstream/entity.cljc
+  datascript/upstream/built_ins.cljc
+  datascript/upstream/pull_parser.cljc
+  datascript/upstream/pull_api.cljc
+  datascript/upstream/query.cljc
+  datascript/upstream/storage.cljc
+  datascript/upstream/storage_file.cljc
+  datascript/upstream/serialize.cljc
+  datascript/upstream/conn.cljc
+  datascript/upstream/core.cljc
+  ../test_runner/clojure/test.cljc
+  ../test_runner/clojure/test_native.cljc
+  datascript/upstream_tests/datascript/test/filter.cljc
+  ../test_runner/clojure/run.cljc
+  ../test_runner/runtime/lg_test_runtime.cma
+  ../test_runner/alcotest/lg_test_alcotest.cma
+  ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   native
+   --compile-files
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
+   %{dep:datascript/upstream/inline.cljc}
+   %{dep:datascript/upstream/util.cljc}
+   %{dep:datascript/upstream/lru.cljc}
+   %{dep:datascript/upstream/schema.cljc}
+   %{dep:datascript/upstream/db.cljc}
+   %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/upstream/entity.cljc}
+   %{dep:datascript/upstream/built_ins.cljc}
+   %{dep:datascript/upstream/pull_parser.cljc}
+   %{dep:datascript/upstream/pull_api.cljc}
+   %{dep:datascript/upstream/query.cljc}
+   %{dep:datascript/upstream/storage.cljc}
+   %{dep:datascript/upstream/storage_file.cljc}
+   %{dep:datascript/upstream/serialize.cljc}
+   %{dep:datascript/upstream/conn.cljc}
+   %{dep:datascript/upstream/core.cljc}
+   %{dep:../test_runner/clojure/test.cljc}
+   %{dep:../test_runner/clojure/test_native.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/filter.cljc}
+   %{dep:../test_runner/clojure/run.cljc}
+   -o
+   %{target})))
+
+(executable
+ (name datascript_filter_native)
+ (modules datascript_filter_native)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries lg.runtime re rrbvec unix lg-test.runtime lg-test.alcotest))
+
+(rule
+ (target datascript_filter_melange.ml)
+ (deps
+  ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
+  ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.cljc
+  datascript/upstream/inline.cljc
+  datascript/upstream/util.cljc
+  datascript/upstream/lru.cljc
+  datascript/upstream/schema.cljc
+  datascript/upstream/db.cljc
+  datascript/upstream/parser.cljc
+  datascript/upstream/entity.cljc
+  datascript/upstream/built_ins.cljc
+  datascript/upstream/pull_parser.cljc
+  datascript/upstream/pull_api.cljc
+  datascript/upstream/query.cljc
+  datascript/upstream/storage.cljc
+  datascript/upstream/serialize.cljc
+  datascript/upstream/conn.cljc
+  datascript/upstream/core.cljc
+  ../test_runner/clojure/test.cljc
+  ../test_runner/clojure/test_melange.cljc
+  datascript/upstream_tests/datascript/test/filter.cljc
+  ../test_runner/clojure/run.cljc
+  ../test_runner/runtime/lg_test_runtime.cma
+  ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   melange
+   --compile-files
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
+   %{dep:datascript/upstream/inline.cljc}
+   %{dep:datascript/upstream/util.cljc}
+   %{dep:datascript/upstream/lru.cljc}
+   %{dep:datascript/upstream/schema.cljc}
+   %{dep:datascript/upstream/db.cljc}
+   %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/upstream/entity.cljc}
+   %{dep:datascript/upstream/built_ins.cljc}
+   %{dep:datascript/upstream/pull_parser.cljc}
+   %{dep:datascript/upstream/pull_api.cljc}
+   %{dep:datascript/upstream/query.cljc}
+   %{dep:datascript/upstream/storage.cljc}
+   %{dep:datascript/upstream/serialize.cljc}
+   %{dep:datascript/upstream/conn.cljc}
+   %{dep:datascript/upstream/core.cljc}
+   %{dep:../test_runner/clojure/test.cljc}
+   %{dep:../test_runner/clojure/test_melange.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/filter.cljc}
+   %{dep:../test_runner/clojure/run.cljc}
+   -o
+   %{target})))
+
+(melange.emit
+ (target datascript-filter-melange)
+ (alias datascript-filter-melange)
+ (module_systems es6)
+ (modules datascript_filter_melange)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -w -5-11-26-27-32-37-39-69)
+ (libraries lg.runtime rrbvec lg-test.runtime lg-test.melange))
+
+(rule
+ (alias datascript-filter)
+ (deps
+  datascript_filter_native.exe
+  (alias datascript-filter-melange)
+  datascript-filter-melange/test/datascript_filter_melange.js)
+ (action
+  (progn
+   (run %{exe:datascript_filter_native.exe})
+   (run
+    node
+    %{dep:datascript-filter-melange/test/datascript_filter_melange.js}))))

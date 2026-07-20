@@ -47,11 +47,19 @@ let compile_bool_literal_predicate name args expected =
   match one_arg name args with
   | Error _ as err -> err
   | Ok arg ->
-      if Types.equal arg.ty TBool then
-        Ok
-          (typed_ir TBool
-             (Semantic_ir.Infix ("=", arg.semantic_expr, Semantic_ir.Bool expected)))
-      else Ok (typed_ir TBool (Semantic_ir.Bool false))
+      let expression =
+        if Types.is_dynamic arg.ty then
+          Semantic_ir.Apply
+            ( Semantic_ir.Ident
+                (if expected then "Lg_runtime.Runtime_dynamic.is_true"
+                 else "Lg_runtime.Runtime_dynamic.is_false"),
+              [ arg.semantic_expr ] )
+        else if Types.equal arg.ty TBool then
+          Semantic_ir.Infix ("=", arg.semantic_expr, Semantic_ir.Bool expected)
+        else
+          Semantic_ir.Sequence [ arg.semantic_expr; Semantic_ir.Bool false ]
+      in
+      Ok (typed_ir TBool expression)
 
 let compile_type_predicate name predicate args = type_predicate name predicate args
 
@@ -183,7 +191,11 @@ let compile name args =
       compile_runtime_type_predicate name "Lg_runtime.Runtime_dynamic.is_map"
         (function TRecord _ | TNamed_record _ -> true | _ -> false)
         args
-  | "fn?" -> compile_type_predicate name (function TFn _ -> true | _ -> false) args
+  | "fn?" ->
+      compile_runtime_type_predicate name
+        "Lg_runtime.Runtime_dynamic.is_function"
+        (function TFn _ -> true | _ -> false)
+        args
   | "coll?" ->
       compile_runtime_type_predicate name "Lg_runtime.Runtime_dynamic.is_coll"
         (function

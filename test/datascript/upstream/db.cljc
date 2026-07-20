@@ -447,7 +447,11 @@
       (update :aevt persistent!)
       (update :avet persistent!)))
 
-(defrecord-updatable DB [schema eavt aevt avet max-eid max-tx rschema pull-patterns pull-attrs hash]
+(defrecord DB [schema
+               ^:set/btset<Datom> eavt
+               ^:set/btset<Datom> aevt
+               ^:set/btset<Datom> avet
+               max-eid max-tx rschema pull-patterns pull-attrs hash]
   IHash                (-hash  [db]        (hash-db db))
   IEquiv               (-equiv [db other]  (equiv-db db other))
   IReversible          (-rseq  [db]        (rseq (.-eavt db)))
@@ -548,7 +552,7 @@
        (satisfies? IDB x)))
 
 ;; ----------------------------------------------------------------------------
-(defrecord-updatable FilteredDB [unfiltered-db pred hash]
+(defrecord FilteredDB [unfiltered-db pred hash]
   IHash                (-hash  [db]        (hash-fdb db))
   IEquiv               (-equiv [db other]  (equiv-db db other))
   ICounted             (-count [db]        (count (-datoms db :eavt nil nil nil nil)))
@@ -586,7 +590,7 @@
   (-index-range [db attr start end]
                 (filter (.-pred db) (-index-range (.-unfiltered-db db) attr start end))))
 
-(defn unfiltered-db ^DB [db]
+(defn unfiltered-db ^datascript.db/DB [db]
   (if (instance? FilteredDB db)
     (.-unfiltered-db ^FilteredDB db)
     db))
@@ -699,15 +703,15 @@
             (when (= :db.cardinality/many (:db/cardinality (get schema attr)))
               (util/raise a " :db/tupleAttrs can’t depend on :db.cardinality/many attribute: " attr ex-data))))))))
 
-(defn ^DB empty-db [schema opts]
+(defn ^datascript.db/DB empty-db [schema opts]
   {:pre [(or (nil? schema) (map? schema))]}
   (validate-schema schema)
   (map->DB
    {:schema        schema
     :rschema       (rschema (merge implicit-schema schema))
-    :eavt          (set/sorted-set* (assoc opts :cmp cmp-datoms-eavt))
-    :aevt          (set/sorted-set* (assoc opts :cmp cmp-datoms-aevt))
-    :avet          (set/sorted-set* (assoc opts :cmp cmp-datoms-avet))
+    :eavt          (set/sorted-set-with-comparator cmp-datoms-eavt opts)
+    :aevt          (set/sorted-set-with-comparator cmp-datoms-aevt opts)
+    :avet          (set/sorted-set-with-comparator cmp-datoms-avet opts)
     :max-eid       e0
     :max-tx        tx0
     :pull-patterns (lru/cache 100)
@@ -735,7 +739,7 @@
                  res refs)]
     res))
 
-(defn ^DB init-db [datoms schema opts]
+(defn ^datascript.db/DB init-db [datoms schema opts]
   (when-some [not-datom (first (drop-while datom? datoms))]
     (util/raise "init-db expects list of Datoms, got " (type not-datom)
                 {:error :init-db}))
@@ -766,7 +770,7 @@
       :pull-attrs    (lru/cache 100)
       :hash          (atom 0)})))
 
-(defn ^DB restore-db [{:keys [schema eavt aevt avet max-eid max-tx] :as keys}]
+(defn ^datascript.db/DB restore-db [{:keys [schema eavt aevt avet max-eid max-tx] :as keys}]
   (map->DB
    {:schema        schema
     :rschema       (or (:rschema keys)
@@ -780,7 +784,7 @@
     :pull-attrs    (lru/cache 100)
     :hash          (atom 0)}))
 
-(defn with-schema [^DB db schema]
+(defn with-schema [^datascript.db/DB db schema]
   {:pre [(db? db) (or (nil? schema) (map? schema))]}
   (assoc db
          :schema        schema
@@ -797,11 +801,11 @@
       (= (first xs) (first ys)) (recur (next xs) (next ys))
       :else false)))
 
-(defn ^:private ^number hash-db [^DB db]
+(defn ^:private ^number hash-db [^datascript.db/DB db]
   (let [h @(.-hash db)]
     (if (zero? h)
       (reset! (.-hash db) (combine-hashes (hash (.-schema db))
-                                          (hash (.-eavt db))))
+                                          (hash-unordered-coll (.-eavt db))))
       h)))
 
 (defn ^:private ^number hash-fdb [^FilteredDB db]
@@ -875,13 +879,13 @@
         cmp     (set/comparator set)
         from    (components->pattern db index c0 c1 c2 c3 e0 tx0)
         to      (components->pattern db index c0 c1 c2 c3 emax txmax)
-        datom   (some-> set seq (set/seek from) first)]
+        datom   (some-> set seq (set/seek from cmp) first)]
     (when (and (some? datom) (<= 0 (cmp to datom)))
       datom)))
 
 ;; ----------------------------------------------------------------------------
 
-(defrecord TxReport [^DB db-before ^DB db-after tx-data tempids tx-meta])
+(defrecord TxReport [^datascript.db/DB db-before ^datascript.db/DB db-after tx-data tempids tx-meta])
 
 (defn ^boolean is-attr? [db attr property]
   (contains? (-attrs-by db property) attr))
@@ -1154,8 +1158,8 @@
 
 (defn- get-e-schema
   [schema e db-ident]
-  (let [result (schema e)
-        s (schema db-ident)]
+  (let [result (get schema e)
+        s (get schema db-ident)]
     (if (map? result)
       (merge result s)
       s)))
@@ -1219,7 +1223,7 @@
    queue
    tuples))
 
-(defn- transact-report [report datom]
+(defn- ^datascript.db/TxReport transact-report [^datascript.db/TxReport report ^Datom datom]
   (let [db      (:db-after report)
         a       (:a datom)
         report' (-> report
@@ -1355,7 +1359,7 @@
           [:db/add v   straight-a eid]
           [:db/add eid straight-a v])))))
 
-(defn- transact-add [report [_ e a v tx :as ent]]
+(defn- ^datascript.db/TxReport transact-add [^datascript.db/TxReport report [_ e a v tx :as ent]]
   (validate-attr a ent)
   (validate-val  v ent)
   (let [tx        (or tx (current-tx report))
@@ -1435,7 +1439,7 @@
 (defn check-value-tempids [report]
   (if-let [tempids (::value-tempids report)]
     (let [all-tempids (transient tempids)
-          reduce-fn   (fn [tempids datom]
+          reduce-fn   (fn [tempids ^Datom datom]
                         (if (datom-added datom)
                           (dissoc! tempids (:e datom))
                           tempids))
@@ -1697,11 +1701,14 @@
        (util/raise "Bad entity type at " entity ", expected map or vector"
                    {:error :transact/syntax, :tx-data entity})))))
 
-(defn transact-tx-data [report es]
+(defn- ^datascript.db/TxReport require-tx-report [^datascript.db/TxReport report]
+  report)
+
+(defn ^datascript.db/TxReport transact-tx-data [^datascript.db/TxReport report ^:dynamic es]
   (when-not (or
              (nil? es)
              (sequential? es))
     (util/raise "Bad transaction data " es ", expected sequential collection"
                 {:error :transact/syntax, :tx-data es}))
   (let [es' (assoc-auto-tempids (:db-before report) es)]
-    (transact-tx-data-impl report es')))
+    (require-tx-report (transact-tx-data-impl report es'))))

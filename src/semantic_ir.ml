@@ -176,6 +176,80 @@ let rec type_annotations expression =
   in
   own @ List.concat_map type_annotations (children expression)
 
+let rec rewrite fn expression =
+  let rewrite_pattern_case (pattern, body) = (pattern, rewrite fn body) in
+  let rewrite_guarded_case (pattern, guard, body) =
+    (pattern, Option.map (rewrite fn) guard, rewrite fn body)
+  in
+  let expression =
+    match expression with
+    | Typed (ty, value) -> Typed (ty, rewrite fn value)
+    | Located (node_id, location, value) ->
+        Located (node_id, location, rewrite fn value)
+    | Constructor (name, value) ->
+        Constructor (name, Option.map (rewrite fn) value)
+    | Tuple values -> Tuple (List.map (rewrite fn) values)
+    | List values -> List (List.map (rewrite fn) values)
+    | Array values -> Array (List.map (rewrite fn) values)
+    | Apply (callee, arguments) ->
+        Apply (rewrite fn callee, List.map (rewrite fn) arguments)
+    | Uncurried_apply (callee, arguments) ->
+        Uncurried_apply (rewrite fn callee, List.map (rewrite fn) arguments)
+    | Labelled_apply (callee, arguments) ->
+        Labelled_apply
+          ( rewrite fn callee,
+            List.map (fun (label, value) -> (label, rewrite fn value)) arguments )
+    | If (condition, then_expr, else_expr) ->
+        If
+          ( rewrite fn condition,
+            rewrite fn then_expr,
+            rewrite fn else_expr )
+    | Fun (patterns, body) -> Fun (patterns, rewrite fn body)
+    | Sequence values -> Sequence (List.map (rewrite fn) values)
+    | Let (bindings, body) ->
+        Let
+          ( List.map
+              (fun (pattern, value) -> (pattern, rewrite fn value))
+              bindings,
+            rewrite fn body )
+    | LetRec (name, patterns, body, arguments) ->
+        LetRec
+          ( name,
+            patterns,
+            rewrite fn body,
+            List.map (rewrite fn) arguments )
+    | LetRecIn (name, patterns, body, next) ->
+        LetRecIn (name, patterns, rewrite fn body, rewrite fn next)
+    | Match (target, cases) ->
+        Match (rewrite fn target, List.map rewrite_pattern_case cases)
+    | Match_guarded (target, cases) ->
+        Match_guarded
+          (rewrite fn target, List.map rewrite_guarded_case cases)
+    | Try (body, cases) ->
+        Try (rewrite fn body, List.map rewrite_guarded_case cases)
+    | Infix (operator, left, right) ->
+        Infix (operator, rewrite fn left, rewrite fn right)
+    | Prefix (operator, value) -> Prefix (operator, rewrite fn value)
+    | Field (value, field) -> Field (rewrite fn value, field)
+    | Cons (head, tail) -> Cons (rewrite fn head, rewrite fn tail)
+    | Record (fields, type_name) ->
+        Record
+          ( List.map (fun (name, value) -> (name, rewrite fn value)) fields,
+            type_name )
+    | PackDynamic conversion ->
+        PackDynamic
+          { conversion with conversion = rewrite fn conversion.conversion }
+    | UnpackDynamic conversion ->
+        UnpackDynamic
+          { conversion with conversion = rewrite fn conversion.conversion }
+    | NullableToSeq conversion ->
+        NullableToSeq
+          { conversion with conversion = rewrite fn conversion.conversion }
+    | (Int _ | Float _ | String _ | Char _ | Bool _ | Unit | Ident _) as value ->
+        value
+  in
+  fn expression
+
 let rec exists_identifier predicate expression =
   let children =
     match expression with

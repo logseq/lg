@@ -1,0 +1,7 @@
+(library
+ (name lg_test_runtime)
+ (public_name lg-test.runtime)
+ (modes native byte melange)
+ (preprocess
+  (pps melange.ppx))
+ (libraries lg.runtime))

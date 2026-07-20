@@ -96,6 +96,127 @@ let allocate_function_return_record env next_type
           { parts with body } )
   | _ -> (env, next_type, [], parts)
 
+let allocate_function_local_records env next_type
+    (parts : Expression_support.compiled_fn_parts) =
+  let current_env = ref env in
+  let current_next_type = ref next_type in
+  let items = ref [] in
+  let rec materialize_type = function
+    | TRecord fields
+      when not
+             (List.exists
+                (fun (field : field) ->
+                  unresolved_anonymous_return_type field.ty)
+                fields) ->
+        let fields =
+          List.map
+            (fun (field : field) ->
+              { field with ty = materialize_type field.ty })
+            fields
+        in
+        let allocation =
+          allocate_anonymous_record ~owner:"" !current_env !current_next_type
+            fields
+        in
+        current_env := allocation.env;
+        current_next_type := allocation.next_type;
+        if allocation.fresh then
+          items :=
+            !items
+            @ [
+                Type_def
+                  {
+                    type_name = allocation.record.type_name;
+                    type_parameters = allocation.record.type_parameters;
+                    fields = allocation.record.fields;
+                    location = None;
+                  };
+              ];
+        TNamed_record allocation.record
+    | TRecord _ as ty -> ty
+    | TNullable ty -> TNullable (materialize_type ty)
+    | TArray ty -> TArray (materialize_type ty)
+    | TRef ty -> TRef (materialize_type ty)
+    | TList ty -> TList (materialize_type ty)
+    | TVector ty -> TVector (materialize_type ty)
+    | TSet ty -> TSet (materialize_type ty)
+    | TSeq ty -> TSeq (materialize_type ty)
+    | TOcaml_app (name, arguments) ->
+        TOcaml_app (name, List.map materialize_type arguments)
+    | TTuple arguments -> TTuple (List.map materialize_type arguments)
+    | TFn (parameters, return_type) ->
+        TFn
+          ( List.map materialize_type parameters,
+            materialize_type return_type )
+    | TOverloaded_fn arities ->
+        TOverloaded_fn
+          (List.map
+             (fun arity ->
+               {
+                 fixed_params = List.map materialize_type arity.fixed_params;
+                 rest_param = Option.map materialize_type arity.rest_param;
+                 return_ty = materialize_type arity.return_ty;
+               })
+             arities)
+    | ( TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol
+      | TKeyword | TBool | TUnit | TNil | TUnknown | TVar _ | TOcaml _
+      | TNamed_record _ ) as ty ->
+        ty
+  in
+  let rec constrain_record type_name = function
+    | Semantic_ir.Located (node_id, location, value) ->
+        Semantic_ir.Located
+          (node_id, location, constrain_record type_name value)
+    | Semantic_ir.Record (fields, None) ->
+        Semantic_ir.Record (fields, Some type_name)
+    | value -> value
+  in
+  let materialize = function
+    | Semantic_ir.Typed ((TRecord _ as ty), value) -> (
+        match materialize_type ty with
+        | TNamed_record record ->
+            Semantic_ir.Typed
+              ( TNamed_record record,
+                constrain_record
+                  (Structural_map.record_type_application record)
+                  value )
+        | ty -> Semantic_ir.Typed (ty, value))
+    | Semantic_ir.Typed (ty, value) ->
+        Semantic_ir.Typed (materialize_type ty, value)
+    | Semantic_ir.PackDynamic conversion ->
+        Semantic_ir.PackDynamic
+          {
+            conversion with
+            source_ty = materialize_type conversion.source_ty;
+            target_ty = materialize_type conversion.target_ty;
+          }
+    | Semantic_ir.UnpackDynamic conversion ->
+        Semantic_ir.UnpackDynamic
+          {
+            conversion with
+            source_ty = materialize_type conversion.source_ty;
+            target_ty = materialize_type conversion.target_ty;
+          }
+    | Semantic_ir.NullableToSeq conversion ->
+        Semantic_ir.NullableToSeq
+          {
+            conversion with
+            source_ty = materialize_type conversion.source_ty;
+            element_ty = materialize_type conversion.element_ty;
+          }
+    | value -> value
+  in
+  let semantic_expr =
+    Semantic_ir.rewrite materialize parts.body.semantic_expr
+  in
+  ( !current_env,
+    !current_next_type,
+    !items,
+    {
+      parts with
+      body = { parts.body with semantic_expr };
+    } )
+
 let row_param_type_names = Expression_support.row_param_type_names
 let row_type_items = Expression_support.row_type_items
 let check_emitted_name_collision = Resolver.check_emitted_name_collision
@@ -604,16 +725,9 @@ let rec compile scope env next_type = function
       :: FVector raw_fields
       :: interface_forms) ->
       let resolve_field_hint hint =
-        Result.bind (Type_annotation.of_param_annotation hint) (function
-          | TOcaml type_name
-            when String.starts_with ~prefix:"__lg_record:" type_name ->
-              let source_name =
-                String.sub type_name (String.length "__lg_record:")
-                  (String.length type_name - String.length "__lg_record:")
-              in
-              Resolver.lookup_record_type scope env source_name
-              |> Result.map (fun record -> TNamed_record record)
-          | ty -> Ok ty)
+        Result.map
+          (Function_elaborator.infer_named_record scope env)
+          (Type_annotation.of_param_annotation hint)
       in
       let rec field_specs acc hint = function
         | [] -> (
@@ -1340,6 +1454,9 @@ let rec compile scope env next_type = function
                 let env, next_type, return_type_items, parts =
                   allocate_function_return_record env next_type parts
                 in
+                let env, next_type, local_type_items, parts =
+                  allocate_function_local_records env next_type parts
+                in
                 let param_tys =
                   parts.param_bindings
                   |> List.map (fun (_key, (binding : binding)) -> binding.ty)
@@ -1355,7 +1472,8 @@ let rec compile scope env next_type = function
                 in
                 let env = Env.add (Names.scoped_key scope name) binding env in
                 let rows =
-                  return_type_items @ row_type_items row_param_types param_tys
+                  return_type_items @ local_type_items
+                  @ row_type_items row_param_types param_tys
                 in
                 let recursive_binding =
                   {
@@ -1588,6 +1706,15 @@ let rec compile scope env next_type = function
   | FList (FSymbol "module-apply" :: _) ->
       Error.error
         "module-apply expects result, functor, and one or more argument modules"
+  | FList
+      [
+        FSymbol (("def" | "defonce") as definition);
+        (FSymbol _ as name_form);
+        FString _docstring;
+        expr_form;
+      ] ->
+      compile scope env next_type
+        (FList [ FSymbol definition; name_form; expr_form ])
   | FList
       [
         FSymbol ("def" | "defonce");
@@ -2013,6 +2140,9 @@ let rec compile scope env next_type = function
           let env, next_type, return_type_items, parts =
             allocate_function_return_record env next_type parts
           in
+          let env, next_type, local_type_items, parts =
+            allocate_function_local_records env next_type parts
+          in
           let ocaml_name = Names.ocaml_binding_name scope name in
           let param_tys =
             parts.param_bindings
@@ -2032,7 +2162,7 @@ let rec compile scope env next_type = function
                     binding_of_expr ~row_param_types ocaml_name expr
                   in
                   let type_items =
-                    return_type_items
+                    return_type_items @ local_type_items
                     @ row_type_items row_param_types param_tys
                   in
                   let binding, value_item =
@@ -2389,7 +2519,7 @@ let rec compile scope env next_type = function
                           expression = expr.semantic_expr;
                         } )))
       | Some definition -> (
-          match Macro_expander.expand ~compiler_env:env definition args with
+          match Macro_expander.expand ~scope ~compiler_env:env definition args with
           | Error _ as error -> error
           | Ok expanded -> compile scope env next_type expanded))
   | form -> (

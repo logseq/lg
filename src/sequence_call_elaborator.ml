@@ -50,12 +50,12 @@ let truthy_call return_ty fn arguments =
     Semantic_ir.Apply
       (Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.truthy", [ call ])
 
-let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
-  let special_forms : Special_form_elaborator.t =
-    Special_form_elaborator.create ~compile_expr ~dynamic_unpack
-      ~pack_dynamic_value
-      ~pack_constrained_value:(fun _env _expected argument ->
-        Ok argument.semantic_expr)
+let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
+    ~pack_constrained_value =
+    let special_forms : Special_form_elaborator.t =
+      Special_form_elaborator.create ~compile_expr ~dynamic_unpack
+        ~pack_dynamic_value
+        ~pack_constrained_value
       ~argument_compatible:(fun expected actual ->
         Types.assignable ~policy:Host_boundary ~expected ~actual)
   in
@@ -189,6 +189,64 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
   in
   let adapt_reducer_return env actual_accumulator_ty fn =
     match fn.ty with
+    | TFn ([ expected_accumulator_ty; item_ty ], return_ty)
+      when (not (Types.equal expected_accumulator_ty actual_accumulator_ty))
+           && Types.assignable ~policy:Host_boundary
+                ~expected:(Types.constraint_value_type expected_accumulator_ty)
+                ~actual:actual_accumulator_ty
+           && Types.assignable ~policy:Host_boundary
+                ~expected:actual_accumulator_ty ~actual:return_ty ->
+        let accumulator_name = "__lg_capability_reduce_accumulator" in
+        let item_name = "__lg_capability_reduce_item" in
+        let result =
+          typed_ir return_ty
+            (Semantic_ir.Apply
+               ( fn.semantic_expr,
+                 [
+                   Semantic_ir.Ident accumulator_name;
+                   Semantic_ir.Ident item_name;
+                 ] ))
+        in
+        Result.map
+          (fun result ->
+            typed_ir
+              (TFn
+                 ( [ expected_accumulator_ty; item_ty ],
+                   expected_accumulator_ty ))
+              (Semantic_ir.Fun
+                 ( [
+                     Semantic_ir.PVar accumulator_name;
+                     Semantic_ir.PVar item_name;
+                   ],
+                   result )))
+          (pack_constrained_value env expected_accumulator_ty result)
+    | TFn ([ expected_accumulator_ty; item_ty ], return_ty)
+      when (not (Types.equal return_ty actual_accumulator_ty))
+           && Types.equal
+                (Types.constraint_value_type return_ty)
+                actual_accumulator_ty ->
+        let accumulator_name = "__lg_protocol_reduce_accumulator" in
+        let item_name = "__lg_protocol_reduce_item" in
+        let result =
+          Semantic_ir.Apply
+            ( fn.semantic_expr,
+              [
+                Semantic_ir.Ident accumulator_name;
+                Semantic_ir.Ident item_name;
+              ] )
+        in
+        Ok
+          (typed_ir
+             (TFn
+                ( [ expected_accumulator_ty; item_ty ],
+                  actual_accumulator_ty ))
+             (Semantic_ir.Fun
+                ( [
+                    Semantic_ir.PVar accumulator_name;
+                    Semantic_ir.PVar item_name;
+                  ],
+                  coerce_expression_to_type actual_accumulator_ty return_ty
+                    result )))
     | TFn ([ _expected_accumulator_ty; item_ty ], return_ty)
       when Types.is_dynamic actual_accumulator_ty
            && not (Types.is_dynamic return_ty)
@@ -405,6 +463,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                      pattern element_binding element_ty;
                    ],
                    body.semantic_expr )))
+        |> fun result ->
+        Result.bind result (adapt_reducer_return env accumulator_ty)
     | FList
         (FSymbol "fn"
         :: (FVector [ _accumulator; _element ] as params)
@@ -416,6 +476,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
             | _ -> false)
           ~param_type_overrides:[ Some accumulator_ty; Some element_ty ]
           params body_forms
+        |> fun result ->
+        Result.bind result (adapt_reducer_return env accumulator_ty)
     | FList
         (FSymbol "fn" :: FSymbol name
         :: (FVector [ _accumulator; _element ] as params)
@@ -427,6 +489,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
             | _ -> false)
           ~param_type_overrides:[ Some accumulator_ty; Some element_ty ]
           params body_forms
+        |> fun result ->
+        Result.bind result (adapt_reducer_return env accumulator_ty)
     | FSymbol name ->
         let accumulator_name = "__lg_symbol_reduce_accumulator" in
         let item_name = "__lg_symbol_reduce_item" in
@@ -1913,6 +1977,22 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                         | TFn (accumulator_ty :: _, _) ->
                             specialize_empty_set accumulator_ty
                         | _ -> Ok init
+                      in
+                      let init =
+                        Result.bind init (fun init ->
+                            match fn.ty with
+                            | TFn (accumulator_ty :: _, _)
+                              when (not (Types.equal accumulator_ty init.ty))
+                                   && Types.assignable ~policy:Host_boundary
+                                        ~expected:
+                                          (Types.constraint_value_type
+                                             accumulator_ty)
+                                        ~actual:init.ty ->
+                                Result.map
+                                  (fun semantic_expr ->
+                                    { init with ty = accumulator_ty; semantic_expr })
+                                  (pack_constrained_value env accumulator_ty init)
+                            | _ -> Ok init)
                       in
                       let init =
                         Result.bind init (fun init ->

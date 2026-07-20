@@ -1,0 +1,71 @@
+(test
+ (name runtime_tests)
+ (libraries alcotest lg-test.runtime))
+
+(rule
+ (target compatibility_native.ml)
+ (deps
+  ../clojure/test.cljc
+  ../clojure/test_native.cljc
+  compatibility.cljc
+  ../runtime/lg_test_runtime.cma
+  ../alcotest/lg_test_alcotest.cma
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../../bin/lg_cli.exe}
+   --target
+   native
+   --compile-files
+   %{dep:../clojure/test.cljc}
+   %{dep:../clojure/test_native.cljc}
+   %{dep:compatibility.cljc}
+   -o
+   %{target})))
+
+(executable
+ (name compatibility_native)
+ (modules compatibility_native)
+ (libraries lg.runtime lg-test.runtime lg-test.alcotest))
+
+(rule
+ (target compatibility_melange.ml)
+ (deps
+  ../clojure/test.cljc
+  ../clojure/test_melange.cljc
+  compatibility.cljc
+  ../runtime/lg_test_runtime.cma
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../../bin/lg_cli.exe}
+   --target
+   melange
+   --compile-files
+   %{dep:../clojure/test.cljc}
+   %{dep:../clojure/test_melange.cljc}
+   %{dep:compatibility.cljc}
+   -o
+   %{target})))
+
+(melange.emit
+ (target compatibility-melange)
+ (alias compatibility-melange)
+ (module_systems es6)
+ (modules compatibility_melange)
+ (preprocess
+  (pps melange.ppx))
+ (libraries lg.runtime lg-test.runtime lg-test.melange))
+
+(rule
+ (alias runtest)
+ (deps
+  compatibility_native.exe
+  (alias compatibility-melange)
+  compatibility-melange/test_runner/test/compatibility_melange.js)
+ (action
+  (progn
+   (run %{exe:compatibility_native.exe})
+   (run
+    node
+    %{dep:compatibility-melange/test_runner/test/compatibility_melange.js}))))

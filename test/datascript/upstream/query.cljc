@@ -94,7 +94,22 @@
 
 #?(:clj (set! *unchecked-math* true))
 
-#?(:clj
+#?(:native
+   (defn- tuple-get [tuple idx]
+     (da/aget (__lg_dynamic tuple) idx)))
+
+#?(:native
+   (defn join-tuples [t1 idxs1
+                      t2 idxs2]
+     (let [l1  (alength idxs1)
+           l2  (alength idxs2)
+           res (da/make-array (+ l1 l2))]
+       (dotimes [i l1]
+         (aset res i (tuple-get t1 (aget idxs1 i))))
+       (dotimes [i l2]
+         (aset res (+ l1 i) (tuple-get t2 (aget idxs2 i))))
+       res))
+   :clj
    (defn join-tuples [t1 ^{:tag "[[Ljava.lang.Object;"} idxs1
                       t2 ^{:tag "[[Ljava.lang.Object;"} idxs2]
      (let [l1  (alength idxs1)
@@ -113,8 +128,10 @@
      (let [l1  (alength idxs1)
            l2  (alength idxs2)
            res (da/make-array (+ l1 l2))]
-       (dotimes [i l1] (aset res i (da/aget t1 (aget idxs1 i))))
-       (dotimes [i l2] (aset res (+ l1 i) (da/aget t2 (aget idxs2 i))))
+       (dotimes [i l1]
+         (aset res i (da/aget (__lg_dynamic t1) (aget idxs1 i))))
+       (dotimes [i l2]
+         (aset res (+ l1 i) (da/aget (__lg_dynamic t2) (aget idxs2 i))))
        res)))
 
 #?(:clj (set! *unchecked-math* false))
@@ -128,7 +145,11 @@
                     (fn [acc tuple-b]
                       (let [tuple' (da/make-array tlen)]
                         (doseq [[idx-b idx-a] idxb->idxa]
-                          (aset tuple' idx-a (#?(:cljs da/aget :clj get) tuple-b idx-b)))
+                          (aset tuple' idx-a
+                            (#?(:native tuple-get
+                                :cljs da/aget
+                                :clj get)
+                             tuple-b idx-b)))
                         (conj! acc tuple')))
                     (transient (vec tuples-a))
                     tuples-b))]
@@ -262,40 +283,38 @@
   *implicit-source* nil)
 
 (defn getter-fn [attrs attr]
-  (let [idx (attrs attr)]
+  (let [idx      (attrs attr)
+        int-idx? (int? idx)]
     (if (contains? *lookup-attrs* attr)
-      (if (int? idx)
-        (let [idx (int idx)]
-          (fn contained-int-getter-fn [tuple]
-            (let [eid #?(:cljs (da/aget tuple idx)
+      (match int-idx?
+        true
+        (let [int-idx (int idx)]
+          (fn [tuple]
+            (let [eid #?(:native (tuple-get tuple int-idx)
+                         :cljs (da/aget (__lg_dynamic tuple) int-idx)
                          :clj (if (.isArray (.getClass ^Object tuple))
-                                (aget ^objects tuple idx)
-                                (nth tuple idx)))]
+                                (aget ^objects tuple int-idx)
+                                (nth tuple int-idx)))]
               (cond
                 (number? eid)     eid ;; quick path to avoid fn call
                 (sequential? eid) (db/entid *implicit-source* eid)
                 (da/array? eid)   (db/entid *implicit-source* eid)
                 :else             eid))))
+        false
         ;; If the index is not an int?, the target can never be an array
-        (fn contained-getter-fn [tuple]
-          (let [eid #?(:cljs (da/aget tuple idx)
-                       :clj (.valAt ^ILookup tuple idx))]
-            (cond
-              (number? eid)     eid ;; quick path to avoid fn call
-              (sequential? eid) (db/entid *implicit-source* eid)
-              (da/array? eid)   (db/entid *implicit-source* eid)
-              :else             eid))))
-      (if (int? idx)
-        (let [idx (int idx)]
-          (fn int-getter [tuple]
-            #?(:cljs (da/aget tuple idx)
+        (fn [tuple] (da/aget (__lg_dynamic tuple) idx)))
+      (match int-idx?
+        true
+        (let [int-idx (int idx)]
+          (fn [tuple]
+            #?(:native (tuple-get tuple int-idx)
+               :cljs (da/aget (__lg_dynamic tuple) int-idx)
                :clj (if (.isArray (.getClass ^Object tuple))
-                      (aget ^objects tuple idx)
-                      (nth tuple idx)))))
+                      (aget ^objects tuple int-idx)
+                      (nth tuple int-idx)))))
+        false
         ;; If the index is not an int?, the target can never be an array
-        (fn getter [tuple]
-          #?(:cljs (da/aget tuple idx)
-             :clj (.valAt ^ILookup tuple idx)))))))
+        (fn [tuple] (da/aget (__lg_dynamic tuple) idx))))))
 
 (defn tuple-key-fn
   [attrs common-attrs]
@@ -385,7 +404,10 @@
       (when-some [tuple (first (:tuples rel))]
         (when (nil? (fnext (:tuples rel)))
           (let [idx (get (:attrs rel) pattern-el)]
-            (#?(:cljs da/aget :clj get) tuple idx)))))))
+            (#?(:native tuple-get
+                :cljs da/aget
+                :clj get)
+             tuple idx)))))))
 
 (defn substitute-constants [context pattern]
   (mapv #(or (substitute-constant context %) %) pattern))
@@ -458,7 +480,10 @@
 (defn- context-resolve-val [context sym]
   (when-some [rel (rel-with-attr context sym)]
     (when-some [tuple (first (:tuples rel))]
-      (#?(:cljs da/aget :clj get) tuple ((:attrs rel) sym)))))
+      (#?(:native tuple-get
+          :cljs da/aget
+          :clj get)
+       tuple ((:attrs rel) sym)))))
 
 (defn- rel-contains-attrs? [rel attrs]
   (some #(contains? (:attrs rel) %) attrs))
@@ -490,14 +515,20 @@
         (let [args (da/aclone static-args)]
           (dotimes [i len]
             (when-some [tuple-idx (aget tuples-args i)]
-              (let [v (#?(:cljs da/aget :clj get) tuple tuple-idx)]
+              (let [v (#?(:native tuple-get
+                          :cljs da/aget
+                          :clj get)
+                       tuple tuple-idx)]
                 (da/aset args i v))))
           (apply f args)))
       (fn [tuple]
         ;; TODO raise if not all args are bound
         (dotimes [i len]
           (when-some [tuple-idx (aget tuples-args i)]
-            (let [v (#?(:cljs da/aget :clj get) tuple tuple-idx)]
+            (let [v (#?(:native tuple-get
+                        :cljs da/aget
+                        :clj get)
+                     tuple tuple-idx)]
               (da/aset static-args i v))))
         (apply f static-args)))))
 
@@ -819,17 +850,22 @@
     (reduce resolve-clause context clauses)))
 
 (defn -collect-tuples
-  [acc rel ^long len copy-map]
+  [acc rel ^long len ^:array<dynamic> copy-map]
   (->Eduction
     (comp
       (map
-        (fn [#?(:cljs t1
+        (fn [#?(:native t1
+                :cljs t1
                 :clj ^{:tag "[[Ljava.lang.Object;"} t1)]
           (->Eduction
             (map
               (fn [t2]
                 (let [res (aclone t1)]
-                  #?(:clj
+                  #?(:native
+                     (dotimes [i len]
+                       (when-some [idx (aget copy-map i)]
+                         (aset res i (tuple-get t2 idx))))
+                     :clj
                      (if (.isArray (.getClass ^Object t2))
                        (dotimes [i len]
                          (when-some [idx (aget ^objects copy-map i)]

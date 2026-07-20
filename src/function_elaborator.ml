@@ -83,6 +83,30 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
       TVector (infer_named_record ~allow_dynamic_fields scope env inner)
   | TSet inner -> TSet (infer_named_record ~allow_dynamic_fields scope env inner)
   | TSeq inner -> TSeq (infer_named_record ~allow_dynamic_fields scope env inner)
+  | TFn (parameters, return_ty) ->
+      TFn
+        ( List.map
+            (infer_named_record ~allow_dynamic_fields scope env)
+            parameters,
+          infer_named_record ~allow_dynamic_fields scope env return_ty )
+  | TOverloaded_fn arities ->
+      TOverloaded_fn
+        (List.map
+           (fun (arity : fn_arity) ->
+             {
+               fixed_params =
+                 List.map
+                   (infer_named_record ~allow_dynamic_fields scope env)
+                   arity.fixed_params;
+               rest_param =
+                 Option.map
+                   (infer_named_record ~allow_dynamic_fields scope env)
+                   arity.rest_param;
+               return_ty =
+                 infer_named_record ~allow_dynamic_fields scope env
+                   arity.return_ty;
+             })
+           arities)
   | TTuple items ->
       TTuple
         (List.map (infer_named_record ~allow_dynamic_fields scope env) items)
@@ -93,12 +117,34 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
       match Types.dynamic_constraint_info ty with
       | None -> assert false
       | Some capability -> (
-          let capability =
-            infer_named_record ~allow_dynamic_fields:true scope env capability
+          let open_record_capability =
+            match capability with
+            | TRecord fields ->
+                Option.is_some (Types.find_record_extension_field fields)
+            | _ -> false
           in
-          match Types.constraint_value_type capability with
-          | TNamed_record _ -> capability
-          | _ -> Types.dynamic_constraint capability))
+          let capability =
+            match capability with
+            | TRecord fields when open_record_capability ->
+                TRecord
+                  (List.map
+                     (fun (field : field) ->
+                       {
+                         field with
+                         ty =
+                           infer_named_record ~allow_dynamic_fields:true scope
+                             env field.ty;
+                       })
+                     fields)
+            | capability ->
+                infer_named_record ~allow_dynamic_fields:true scope env
+                  capability
+          in
+          if open_record_capability then Types.dynamic_constraint capability
+          else
+            match Types.constraint_value_type capability with
+            | TNamed_record _ -> capability
+            | _ -> Types.dynamic_constraint capability))
   | ty when Option.is_some (Types.protocol_constraint_info ty) -> (
       match Types.protocol_constraint_info ty with
       | None -> assert false
@@ -126,20 +172,40 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
             infer_named_record ~allow_dynamic_fields scope env container;
           ] )
   | TOcaml_app (name, arguments) ->
-      TOcaml_app
-        ( name,
-          List.map
-            (infer_named_record ~allow_dynamic_fields scope env)
-            arguments )
+      let arguments =
+        List.map
+          (infer_named_record ~allow_dynamic_fields scope env)
+          arguments
+      in
+      let record_name =
+        if String.starts_with ~prefix:"__lg_record_app:" name then
+          String.sub name
+            (String.length "__lg_record_app:")
+            (String.length name - String.length "__lg_record_app:")
+        else name
+      in
+      (match Resolver.lookup_record_type scope env record_name with
+      | Ok record
+        when List.length record.type_parameters = List.length arguments ->
+          TNamed_record { record with type_arguments = arguments }
+      | Ok _ | Error _ -> TOcaml_app (name, arguments))
   | TOcaml name when String.starts_with ~prefix:"__lg_record:" name ->
       let source_name =
         String.sub name
           (String.length "__lg_record:")
           (String.length name - String.length "__lg_record:")
       in
-      Resolver.lookup_record_type scope env source_name
-      |> Result.map (fun record -> TNamed_record record)
-      |> Result.value ~default:(TOcaml name)
+      (match Resolver.lookup_record_type scope env source_name with
+      | Ok record -> TNamed_record record
+      | Error _ ->
+          Env.to_bindings env
+          |> List.find_map (fun (_, (binding : binding)) ->
+                 match binding.ty with
+                 | TNamed_record record
+                   when String.equal record.type_name source_name ->
+                     Some (TNamed_record record)
+                 | _ -> None)
+          |> Option.value ~default:(TOcaml name))
   | TRecord fields -> (
       let fields =
         List.map
@@ -564,6 +630,7 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                 |> List.mapi (fun index ((spec : Destructure.param_spec), inferred_ty) ->
                        let inferred_ty =
                          match inferred_ty with
+                         | TMap_keys -> Types.dynamic_constraint TMap_keys
                          | TRecord fields ->
                              TRecord
                                (List.map
@@ -614,6 +681,9 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                            | Some (Some ty) ->
                                if Types.equal ty TUnknown then
                                  (spec, inferred_ty)
+                               else if Types.equal ty TMap_keys then
+                                 (spec,
+                                  Type_inference.refine_type ty inferred_ty)
                                else if
                                  (refine_open_overrides
                                  && contains_open_type ty)

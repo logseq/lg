@@ -19,3 +19,17 @@
   (js_of_ocaml (>= 6.0))
   re
   yojson))
+
+(package
+ (name lg-test)
+ (maintainers "Tienson Qin <tiensonqin@gmail.com>")
+ (authors "Tienson Qin")
+ (synopsis "Clojure-compatible test runner for CljML")
+ (description
+  "A Clojure.test-compatible test runner with Alcotest and Melange backends.")
+ (depends
+  (ocaml (>= 5.4))
+  (dune (>= 3.17))
+  (melange (>= 6.0))
+  alcotest
+  lg))

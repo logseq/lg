@@ -3,6 +3,18 @@ type state = {
   mutable index : int;
 }
 
+let tag_parsers = Hashtbl.create 16
+
+let dynamic_function function_ =
+  Runtime_dynamic.function_ (function
+    | [ value ] -> function_ value
+    | _ -> invalid_arg "tag parser expects one argument")
+
+let register_tag_parser tag function_ =
+  let previous = Hashtbl.find_opt tag_parsers tag in
+  Hashtbl.replace tag_parsers tag function_;
+  Option.fold ~none:Runtime_dynamic.nil ~some:dynamic_function previous
+
 let length state = String.length state.source
 let at_end state = state.index >= length state
 let peek state = if at_end state then None else Some state.source.[state.index]
@@ -198,7 +210,14 @@ and parse_dispatch state =
       state.index <- state.index + 1;
       ignore (parse_value state);
       parse_value state
-  | _ -> fail state "unsupported dispatch macro"
+  | Some _ ->
+      let tag = read_token state in
+      skip_ignored state;
+      let value = parse_value state in
+      (match Hashtbl.find_opt tag_parsers tag with
+      | Some parser -> parser value
+      | None -> fail state ("no reader function for tag " ^ tag))
+  | None -> fail state "unexpected end of tagged literal"
 
 let read_string source =
   let state = { source; index = 0 } in

@@ -23,6 +23,7 @@ let transient_collection_id =
 
 let transient_set_id = Protocol_id.create ~owner:[] ~name:"ITransientSet"
 let equiv_id = Protocol_id.create ~owner:[] ~name:"IEquiv"
+let hash_id = Protocol_id.create ~owner:[] ~name:"IHash"
 let comparable_id = Protocol_id.create ~owner:[] ~name:"IComparable"
 let object_id = Protocol_id.create ~owner:[] ~name:"Object"
 let clojure_hash_id = Protocol_id.create ~owner:[] ~name:"clojure.lang.IHashEq"
@@ -151,6 +152,15 @@ let declare_collection_lifecycle_protocols registry =
            Protocol_registry.method_id = method_id equiv_id "-equiv";
            param_tys = [ receiver; receiver ];
            return_ty = TBool;
+         };
+       ]
+  |> add_or_fail
+  |> Protocol_registry.declare hash_id
+       [
+         {
+           Protocol_registry.method_id = method_id hash_id "-hash";
+           param_tys = [ TUnknown ];
+           return_ty = TInt;
          };
        ]
   |> add_or_fail

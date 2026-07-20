@@ -2,6 +2,9 @@ type ('key, 'value) t = ('key * 'value) list
 
 let empty = []
 
+let dynamic_key_equal left right =
+  Runtime_dynamic.equal left right || Runtime_dynamic.equal right left
+
 let assoc_by compare map key value =
   let rec insert acc = function
     | [] -> List.rev ((key, value) :: acc)
@@ -14,7 +17,23 @@ let assoc_by compare map key value =
   insert [] map
 
 let assoc map key value = assoc_by Stdlib.compare map key value
-let assoc_dynamic map key value = assoc_by Runtime_dynamic.compare map key value
+
+let assoc_dynamic map key value =
+  let rec insert accumulated = function
+    | [] -> List.rev ((key, value) :: accumulated)
+    | ((existing_key, _) as entry) :: rest ->
+        if dynamic_key_equal key existing_key then
+          List.rev_append accumulated ((key, value) :: rest)
+        else
+          match
+            try Some (Runtime_dynamic.compare key existing_key)
+            with Invalid_argument _ -> None
+          with
+          | Some comparison when comparison < 0 ->
+              List.rev_append accumulated ((key, value) :: entry :: rest)
+          | Some _ | None -> insert (entry :: accumulated) rest
+  in
+  insert [] map
 
 let zipmap_by assoc keys values =
   let rec build map keys values =
@@ -32,7 +51,11 @@ let dissoc_by compare map key =
   List.filter (fun (existing_key, _) -> compare key existing_key <> 0) map
 
 let dissoc map key = dissoc_by Stdlib.compare map key
-let dissoc_dynamic map key = dissoc_by Runtime_dynamic.compare map key
+
+let dissoc_dynamic map key =
+  List.filter
+    (fun (existing_key, _) -> not (dynamic_key_equal key existing_key))
+    map
 
 let get_option_by compare map key =
   map
@@ -42,7 +65,9 @@ let get_option_by compare map key =
 let get_option map key = get_option_by Stdlib.compare map key
 
 let get_option_dynamic map key =
-  get_option_by Runtime_dynamic.compare map key
+  map
+  |> List.find_opt (fun (existing_key, _) -> dynamic_key_equal key existing_key)
+  |> Option.map snd
 
 let get_default map key default =
   match get_option map key with Some value -> value | None -> default
@@ -64,7 +89,7 @@ let find map key =
 
 let find_dynamic map key =
   List.find_opt
-    (fun (existing_key, _) -> Runtime_dynamic.compare key existing_key = 0)
+    (fun (existing_key, _) -> dynamic_key_equal key existing_key)
     map
 
 let select_keys_by find assoc map keys =

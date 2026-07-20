@@ -34,10 +34,10 @@ let marker scope env protocol_name method_name =
         ("protocol " ^ protocol_name ^ " does not define method " ^ method_name)
   | Some marker
     when not
-           (let scoped_id = Protocol.protocol_id scope protocol_name in
-            let root_id = Protocol.protocol_id "" protocol_name in
-            Protocol.marker_has_protocol_id marker scoped_id
-            || Protocol.marker_has_protocol_id marker root_id) ->
+           (match Protocol.find_protocol_id scope env protocol_name with
+           | Some protocol_id ->
+               Protocol.marker_has_protocol_id marker protocol_id
+           | None -> false) ->
       Error.error
         ("protocol " ^ protocol_name ^ " does not define method " ^ method_name)
   | Some marker -> Ok marker

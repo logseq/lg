@@ -242,7 +242,22 @@ let form_dependencies ?(ignore_declarations = false) providers
                  else candidates
                in
                if String.starts_with ~prefix:"^" name then
-                 String.sub name 1 (String.length name - 1) :: candidates
+                 let hinted_name =
+                   String.sub name 1 (String.length name - 1)
+                 in
+                 let local_name =
+                   let separator =
+                     match String.rindex_opt hinted_name '/' with
+                     | Some index -> Some index
+                     | None -> String.rindex_opt hinted_name '.'
+                   in
+                   Option.map
+                     (fun index ->
+                       String.sub hinted_name (index + 1)
+                         (String.length hinted_name - index - 1))
+                     separator
+                 in
+                 Option.to_list local_name @ (hinted_name :: candidates)
                else candidates
              in
               List.concat_map

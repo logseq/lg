@@ -2,6 +2,8 @@ open Asttypes
 open Parsetree
 open Lowered
 
+module String_map = Map.Make (String)
+
 let parse_expression ~context source =
   let lexbuf = Lexing.from_string source in
   Location.init lexbuf context;
@@ -352,6 +354,148 @@ let set_module_definition module_name element_ty =
   in
   Ast_helper.Str.module_ ~loc module_binding
 
+let qualify_generated_module module_path module_name =
+  if module_path = [] || String.contains module_name '.' then module_name
+  else String.concat "." (module_path @ [ module_name ])
+
+let rec collect_set_modules_from_type module_path modules = function
+  | Types.TSet element_ty ->
+      let modules =
+        match Types.set_module_name element_ty with
+        | Ok module_name ->
+            String_map.add
+              (qualify_generated_module module_path module_name)
+              element_ty modules
+        | Error _ -> modules
+      in
+      collect_set_modules_from_type module_path modules element_ty
+  | Types.TNullable ty | Types.TArray ty | Types.TRef ty | Types.TList ty
+  | Types.TVector ty | Types.TSeq ty ->
+      collect_set_modules_from_type module_path modules ty
+  | Types.TOcaml_app (_, arguments) | Types.TTuple arguments ->
+      List.fold_left
+        (collect_set_modules_from_type module_path)
+        modules arguments
+  | Types.TFn (parameters, return_ty) ->
+      List.fold_left
+        (collect_set_modules_from_type module_path)
+        (collect_set_modules_from_type module_path modules return_ty)
+        parameters
+  | Types.TOverloaded_fn arities ->
+      List.fold_left
+        (fun modules (arity : Types.fn_arity) ->
+          let modules =
+            List.fold_left
+              (collect_set_modules_from_type module_path)
+              modules arity.fixed_params
+          in
+          let modules =
+            Option.fold ~none:modules
+              ~some:(collect_set_modules_from_type module_path modules)
+              arity.rest_param
+          in
+          collect_set_modules_from_type module_path modules arity.return_ty)
+        modules arities
+  | Types.TRecord fields ->
+      List.fold_left
+        (fun modules (field : Types.field) ->
+          collect_set_modules_from_type module_path modules field.ty)
+        modules fields
+  | Types.TNamed_record record ->
+      List.fold_left
+        (collect_set_modules_from_type module_path)
+        modules record.type_arguments
+  | Types.TInt | Types.TFloat | Types.TChar | Types.TString | Types.TRegex
+  | Types.TMap_keys | Types.TSymbol | Types.TKeyword | Types.TBool | Types.TUnit
+  | Types.TNil | Types.TUnknown | Types.TVar _ | Types.TOcaml _ ->
+      modules
+
+let collect_set_modules_from_expression module_path modules expression =
+  let modules = ref modules in
+  let collect_type ty =
+    modules := collect_set_modules_from_type module_path !modules ty
+  in
+  ignore
+    (Semantic_ir.rewrite
+       (fun expression ->
+         (match expression with
+         | Semantic_ir.Typed (ty, _) -> collect_type ty
+         | Semantic_ir.PackDynamic conversion ->
+             collect_type conversion.source_ty;
+             collect_type conversion.target_ty
+         | Semantic_ir.UnpackDynamic conversion ->
+             collect_type conversion.source_ty;
+             collect_type conversion.target_ty
+         | Semantic_ir.NullableToSeq conversion ->
+             collect_type conversion.source_ty;
+             collect_type conversion.element_ty
+         | _ -> ());
+         expression)
+       expression);
+  !modules
+
+let rec collect_set_modules_from_items module_path modules items =
+  let collect_expression = collect_set_modules_from_expression module_path in
+  let collect_field modules (field : Types.field) =
+    collect_set_modules_from_type module_path modules field.ty
+  in
+  List.fold_left
+    (fun modules -> function
+      | Value_binding { expression; _ }
+      | Recursive_value_binding { expression; _ }
+      | Deferred_value_binding { expression; _ } ->
+          collect_expression modules expression
+      | Recursive_value_bindings bindings ->
+          List.fold_left
+            (fun modules (binding : recursive_value) ->
+              collect_expression modules binding.expression)
+            modules bindings
+      | Polymorphic_holder_type { value_type; _ } ->
+          collect_set_modules_from_type module_path modules value_type
+      | Type_def { fields; _ } ->
+          List.fold_left collect_field modules fields
+      | Type_alias { manifest; _ } ->
+          collect_set_modules_from_type module_path modules manifest
+      | Type_variant { constructors; _ } ->
+          List.fold_left
+            (fun modules (constructor : variant_constructor) ->
+              List.fold_left
+                (collect_set_modules_from_type module_path)
+                modules constructor.payload_types)
+            modules constructors
+      | Group items -> collect_set_modules_from_items module_path modules items
+      | Module_def { module_name; items; _ } ->
+          collect_set_modules_from_items (module_path @ [ module_name ]) modules
+            items
+      | Module_functor { functor_name; items; _ } ->
+          collect_set_modules_from_items (module_path @ [ functor_name ]) modules
+            items
+      | Module_signature { items; _ } ->
+          List.fold_left
+            (fun modules -> function
+              | Signature_value { value_type; _ } ->
+                  collect_set_modules_from_type module_path modules value_type
+              | Signature_type { manifest = Some manifest; _ } ->
+                  collect_set_modules_from_type module_path modules manifest
+              | Signature_type { manifest = None; _ } | Signature_module _
+              | Signature_include _ ->
+                  modules)
+            modules items
+      | Record_def { fields; values; _ } ->
+          let modules = List.fold_left collect_field modules fields in
+          List.fold_left
+            (fun modules (_, expression) ->
+              collect_expression modules expression)
+            modules values
+      | Projected_record_def { fields; source; _ } ->
+          collect_expression
+            (List.fold_left collect_field modules fields)
+            source
+      | Comment _ | Module_alias _ | Module_apply _ | Open_module _
+      | Include_module _ ->
+          modules)
+    modules items
+
 let node_id_attribute node_id =
   let payload =
     Parsetree.PStr
@@ -361,11 +505,17 @@ let node_id_attribute node_id =
   in
   Ast_helper.Attr.mk (str "lg.node_id") payload
 
-let record_definition var_name identity type_name set_module_name fields values =
+let record_definition ~emit_set var_name identity type_name set_module_name fields
+    values =
   let type_item = record_type_definition type_name [] fields None in
-  let set_item =
-    set_module_definition set_module_name
-      (Types.named_record ~type_name ~set_module_name fields)
+  let type_items =
+    if emit_set then
+      [
+        type_item;
+        set_module_definition set_module_name
+          (Types.named_record ~type_name ~set_module_name fields);
+      ]
+    else [ type_item ]
   in
   match record_values_to_parsetree var_name values with
   | Error _ as err -> err
@@ -390,17 +540,19 @@ let record_definition var_name identity type_name set_module_name fields values 
           pattern
           annotated_expr
       in
-      Ok
-        [ type_item;
-          set_item;
-          Ast_helper.Str.value ~loc Nonrecursive [ value_binding ] ]
+      Ok (type_items @ [ Ast_helper.Str.value ~loc Nonrecursive [ value_binding ] ])
 
-let projected_record_definition var_name identity type_name set_module_name fields
-    source =
+let projected_record_definition ~emit_set var_name identity type_name
+    set_module_name fields source =
   let type_item = record_type_definition type_name [] fields None in
-  let set_item =
-    set_module_definition set_module_name
-      (Types.named_record ~type_name ~set_module_name fields)
+  let type_items =
+    if emit_set then
+      [
+        type_item;
+        set_module_definition set_module_name
+          (Types.named_record ~type_name ~set_module_name fields);
+      ]
+    else [ type_item ]
   in
   match
     Ocaml_ir.to_parsetree ~context:("record source " ^ var_name)
@@ -438,10 +590,7 @@ let projected_record_definition var_name identity type_name set_module_name fiel
             }
       in
       let value_binding = Ast_helper.Vb.mk ~loc pattern projected_expr in
-      Ok
-        [ type_item;
-          set_item;
-          Ast_helper.Str.value ~loc Nonrecursive [ value_binding ] ]
+      Ok (type_items @ [ Ast_helper.Str.value ~loc Nonrecursive [ value_binding ] ])
 
 let rec value_pattern = function
   | Named name -> Ast_helper.Pat.var ~loc (str name)
@@ -518,7 +667,80 @@ let recursive_value_bindings bindings =
   | Error _ as err -> err
   | Ok bindings -> Ok [ Ast_helper.Str.value ~loc Recursive bindings ]
 
-let rec structure_of_item = function
+let set_module_requested requested_sets module_path module_name =
+  String_map.mem
+    (qualify_generated_module module_path module_name)
+    requested_sets
+
+let anonymous_type_name = function
+  | {
+   pstr_desc = Pstr_type (Nonrecursive, [ declaration ]);
+   _;
+  }
+    when let name = declaration.ptype_name.txt in
+         String.length name > 1 && name.[0] = 't'
+         && String.for_all
+              (fun character -> character >= '0' && character <= '9')
+              (String.sub name 1 (String.length name - 1)) ->
+      Some declaration.ptype_name.txt
+  | _ -> None
+
+let referenced_local_types item =
+  let references = ref String_map.empty in
+  let default = Ast_iterator.default_iterator in
+  let iterator =
+    {
+      default with
+      typ =
+        (fun iterator ty ->
+          (match ty.ptyp_desc with
+          | Ptyp_constr ({ txt = Longident.Lident name; _ }, _) ->
+              references := String_map.add name () !references
+          | _ -> ());
+          default.typ iterator ty);
+    }
+  in
+  iterator.structure_item iterator item;
+  !references
+
+let remove_unused_anonymous_types structure =
+  let candidates, roots =
+    List.fold_left
+      (fun (candidates, roots) item ->
+        let references = referenced_local_types item in
+        match anonymous_type_name item with
+        | Some name -> (String_map.add name references candidates, roots)
+        | None ->
+            ( candidates,
+              String_map.union (fun _ () () -> Some ()) roots references ))
+      (String_map.empty, String_map.empty) structure
+  in
+  let rec reachable_types reachable pending =
+    match pending with
+    | [] -> reachable
+    | name :: pending when String_map.mem name reachable ->
+        reachable_types reachable pending
+    | name :: pending ->
+        let reachable = String_map.add name () reachable in
+        let dependencies =
+          String_map.find_opt name candidates
+          |> Option.value ~default:String_map.empty
+          |> String_map.to_seq |> Seq.map fst |> List.of_seq
+        in
+        reachable_types reachable (List.rev_append dependencies pending)
+  in
+  let reachable =
+    reachable_types String_map.empty
+      (roots |> String_map.to_seq |> Seq.map fst |> List.of_seq)
+  in
+  List.filter
+    (fun item ->
+      match anonymous_type_name item with
+      | Some name -> String_map.mem name reachable
+      | None -> true)
+    structure
+
+let rec structure_of_item_with_sets requested_sets module_path = function
   | Value_binding { pattern; expression } ->
       value_binding pattern expression
   | Recursive_value_binding { name; identity; expression } ->
@@ -545,11 +767,16 @@ let rec structure_of_item = function
       let type_definition =
         record_type_definition type_name type_parameters fields location
       in
-      let set_definition =
-        set_module_definition ("Set_" ^ type_name) record_type
-      in
       let definitions =
-        if type_parameters = [] then [ type_definition; set_definition ]
+        if
+          type_parameters = []
+          && set_module_requested requested_sets module_path
+               ("Set_" ^ type_name)
+        then
+          [
+            type_definition;
+            set_module_definition ("Set_" ^ type_name) record_type;
+          ]
         else [ type_definition ]
       in
       if Types.supports_structural_dynamic_packing record_type then
@@ -563,10 +790,14 @@ let rec structure_of_item = function
   | Type_variant { type_name; type_parameters; constructors; location } ->
       Ok
         [ type_variant_definition type_name type_parameters constructors location ]
-  | Group items -> structure_of_items items
+  | Group items ->
+      structure_of_items_with_sets requested_sets module_path items
   | Module_def
       { module_name; location; signature_name; signature_location; items } -> (
-      match structure_of_items items with
+      match
+        structure_of_items_with_sets requested_sets
+          (module_path @ [ module_name ]) items
+      with
       | Error _ as err -> err
       | Ok body ->
           let module_expr =
@@ -599,7 +830,10 @@ let rec structure_of_item = function
       in
       Ok [ Ast_helper.Str.module_ ~loc:alias_loc module_binding ]
   | Module_functor { functor_name; location; parameters; items } -> (
-      match structure_of_items items with
+      match
+        structure_of_items_with_sets requested_sets
+          (module_path @ [ functor_name ]) items
+      with
       | Error _ as err -> err
       | Ok body ->
           let module_expr =
@@ -677,21 +911,67 @@ let rec structure_of_item = function
         [ Ast_helper.Str.include_ ~loc:module_loc
             (Ast_helper.Incl.mk ~loc:module_loc module_expr) ]
   | Record_def { var_name; identity; type_name; set_module_name; fields; values } ->
-      record_definition var_name identity type_name set_module_name fields values
+      record_definition
+        ~emit_set:
+          (set_module_requested requested_sets module_path set_module_name)
+        var_name identity type_name set_module_name fields values
   | Projected_record_def
       { var_name; identity; type_name; set_module_name; fields; source } ->
-      projected_record_definition var_name identity type_name set_module_name fields
-        source
+      projected_record_definition
+        ~emit_set:
+          (set_module_requested requested_sets module_path set_module_name)
+        var_name identity type_name set_module_name fields source
 
-and structure_of_items items =
+and structure_of_items_with_sets requested_sets module_path items =
   let rec loop acc = function
-    | [] -> Ok (List.concat (List.rev acc))
+    | [] -> Ok (remove_unused_anonymous_types (List.concat (List.rev acc)))
     | item :: rest -> (
-        match structure_of_item item with
+        match structure_of_item_with_sets requested_sets module_path item with
         | Error _ as err -> err
         | Ok structure -> loop (structure :: acc) rest)
   in
   loop [] items
+
+let rec root_declared_set_modules modules items =
+  List.fold_left
+    (fun modules -> function
+      | Type_def { type_name; type_parameters = []; _ } ->
+          String_map.add ("Set_" ^ type_name) () modules
+      | Record_def { set_module_name; _ }
+      | Projected_record_def { set_module_name; _ } ->
+          String_map.add set_module_name () modules
+      | Group items -> root_declared_set_modules modules items
+      | Type_def _ | Value_binding _ | Recursive_value_binding _
+      | Recursive_value_bindings _ | Deferred_value_binding _
+      | Polymorphic_holder_type _ | Comment _ | Type_alias _ | Type_variant _
+      | Module_def _ | Module_alias _ | Module_functor _ | Module_apply _
+      | Module_signature _ | Open_module _ | Include_module _ ->
+          modules)
+    modules items
+
+let missing_root_set_definitions requested_sets items =
+  let declared_sets = root_declared_set_modules String_map.empty items in
+  String_map.fold
+    (fun module_name element_ty definitions ->
+      if
+        String.contains module_name '.'
+        || String_map.mem module_name declared_sets
+      then definitions
+      else
+        match element_ty with
+        | Types.TNamed_record _ ->
+            set_module_definition module_name element_ty :: definitions
+        | _ -> definitions)
+    requested_sets []
+
+let structure_of_items items =
+  let requested_sets =
+    collect_set_modules_from_items [] String_map.empty items
+  in
+  match structure_of_items_with_sets requested_sets [] items with
+  | Error _ as error -> error
+  | Ok structure ->
+      Ok (missing_root_set_definitions requested_sets items @ structure)
 
 let relocate_structure location structure =
   let mapper =
@@ -703,10 +983,18 @@ let relocate_structure location structure =
   mapper.structure mapper structure
 
 let structure_of_located_items items =
+  let plain_items = List.map snd items in
+  let requested_sets =
+    collect_set_modules_from_items [] String_map.empty plain_items
+  in
+  let prefix = missing_root_set_definitions requested_sets plain_items in
   let rec loop acc = function
-    | [] -> Ok (List.concat (List.rev acc))
+    | [] ->
+        Ok
+          (remove_unused_anonymous_types
+             (prefix @ List.concat (List.rev acc)))
     | (location, item) :: rest -> (
-        match structure_of_item item with
+        match structure_of_item_with_sets requested_sets [] item with
         | Error _ as err -> err
         | Ok structure ->
             loop (relocate_structure location structure :: acc) rest)

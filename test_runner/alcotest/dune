@@ -1,0 +1,5 @@
+(library
+ (name lg_test_alcotest)
+ (public_name lg-test.alcotest)
+ (modes native byte)
+ (libraries alcotest lg-test.runtime))

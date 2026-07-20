@@ -98,6 +98,19 @@ let rec refine_type existing inferred =
 
 and refine_nonmatching_type existing inferred =
   match (existing, inferred) with
+  | TMap_keys, ((TRecord _ | TNamed_record _) as map_ty)
+  | ((TRecord _ | TNamed_record _) as map_ty), TMap_keys ->
+      map_ty
+  | TMap_keys, inferred when Option.is_some (Types.dynamic_map_types inferred) ->
+      inferred
+  | existing, TMap_keys when Option.is_some (Types.dynamic_map_types existing) ->
+      existing
+  | TMap_keys, inferred
+    when Option.is_some (Types.seqable_constraint_info inferred) ->
+      Types.dynamic_map TKeyword (Types.dynamic_constraint TUnknown)
+  | existing, TMap_keys
+    when Option.is_some (Types.seqable_constraint_info existing) ->
+      Types.dynamic_map TKeyword (Types.dynamic_constraint TUnknown)
   | existing, inferred
     when Option.is_some (Types.seqable_constraint_info existing)
          && Option.is_some (Types.dynamic_map_types inferred) ->
@@ -341,7 +354,13 @@ let constrain_comparable_symbol params name =
 let constrain_seqable element_ty params name =
   let rec add_constraint = function
     | TUnknown | TVar _ -> Types.seqable_constraint element_ty
-    | TRecord _ as map_ty -> Types.dynamic_constraint map_ty
+    | TMap_keys ->
+        Types.dynamic_map TKeyword (Types.dynamic_constraint TUnknown)
+    | TRecord _ as map_ty ->
+        Types.dynamic_constraint
+          (Types.seqable_constraint_with_value
+             (Types.seqable_constraint element_ty)
+             map_ty)
     | TOcaml_app (constraint_name, [ existing_element; value_ty ])
       when constraint_name = Types.seqable_constraint_name
            || constraint_name = Types.optional_seqable_constraint_name
@@ -414,6 +433,30 @@ let add_record_field_constraint name keyword field_ty params =
                  (fun field -> field.keyword <> inferred.keyword)
                  fields)
       | Some _ when Types.equal inferred.ty TUnknown -> Ok fields
+      | Some existing
+        when (match existing.ty with
+             | TRecord _ | TNamed_record _ ->
+                 Option.is_some
+                   (Types.seqable_constraint_info inferred.ty)
+             | TMap_keys ->
+                 Option.is_some
+                   (Types.seqable_constraint_info inferred.ty)
+             | _ -> false) ->
+          Ok fields
+      | Some existing
+        when (match inferred.ty with
+             | TRecord _ | TNamed_record _ ->
+                 Option.is_some
+                   (Types.seqable_constraint_info existing.ty)
+             | TMap_keys ->
+                 Option.is_some
+                   (Types.seqable_constraint_info existing.ty)
+             | _ -> false) ->
+          Ok
+            (inferred
+            :: List.filter
+                 (fun field -> field.keyword <> inferred.keyword)
+                 fields)
       | Some existing ->
           Error.error
             ("cannot infer " ^ inferred.keyword ^ " as "
@@ -495,6 +538,47 @@ let add_record_field_constraint name keyword field_ty params =
               :: List.filter
                    (fun candidate -> candidate.keyword <> keyword)
                    fields)
+        | (TNamed_record { type_parameters = [ parameter ]; _ } as existing),
+          inferred
+          when Option.is_some (Types.seqable_constraint_element inferred) ->
+            let element_ty =
+              Option.get (Types.seqable_constraint_element inferred)
+            in
+            Ok
+              (make_field keyword
+                 (Types.substitute_type_variables
+                    [ (parameter, element_ty) ] existing)
+              :: List.filter
+                   (fun candidate -> candidate.keyword <> keyword)
+                   fields)
+        | ((TRecord _ | TNamed_record _) as existing), inferred
+          when Option.is_some (Types.seqable_constraint_info inferred) ->
+            Ok
+              (make_field keyword existing
+              :: List.filter
+                   (fun candidate -> candidate.keyword <> keyword)
+                   fields)
+        | existing, ((TRecord _ | TNamed_record _) as inferred)
+          when Option.is_some (Types.seqable_constraint_info existing) ->
+            Ok
+              (make_field keyword inferred
+              :: List.filter
+                   (fun candidate -> candidate.keyword <> keyword)
+                   fields)
+        | TMap_keys, inferred
+          when Option.is_some (Types.seqable_constraint_info inferred) ->
+            Ok
+              (make_field keyword (refine_type TMap_keys inferred)
+              :: List.filter
+                   (fun candidate -> candidate.keyword <> keyword)
+                   fields)
+        | existing, TMap_keys
+          when Option.is_some (Types.seqable_constraint_info existing) ->
+            Ok
+              (make_field keyword (refine_type existing TMap_keys)
+              :: List.filter
+                   (fun candidate -> candidate.keyword <> keyword)
+                   fields)
         | _ ->
             Error.error
               ("cannot infer " ^ keyword ^ " as " ^ Types.source_name field_ty
@@ -522,7 +606,19 @@ let add_record_field_constraint name keyword field_ty params =
               Type_solver.variables field.ty
               |> List.filter (fun name -> string_mem name record.type_parameters)
             in
-            let inferred_ty = stored_value_type field_ty in
+            let inferred_ty =
+              match
+                (field.ty, Types.seqable_constraint_element field_ty)
+              with
+              | ( TNamed_record
+                    { type_parameters = [ parameter ]; _ } as named,
+                  Some element_ty ) ->
+                  Types.substitute_type_variables
+                    [ (parameter, element_ty) ] named
+              | (TRecord _ | TNamed_record _ | TMap_keys), Some _ ->
+                  field.ty
+              | _ -> stored_value_type field_ty
+            in
             match (constrained_parameters, inferred_ty) with
             | [], _ -> Ok record_ty
             | _, (TUnknown | TVar _) -> Ok record_ty
@@ -574,7 +670,7 @@ let rec numeric_form_type params = function
       else TUnknown
   | _ -> TUnknown
 
-let inferred_form_type params = function
+let rec inferred_form_type params = function
   | FInt _ -> TInt
   | FFloat _ -> TFloat
   | FChar _ -> TChar
@@ -661,6 +757,8 @@ let inferred_form_type params = function
           Types.seqable_constraint_element collection_ty
           |> Option.value ~default:TUnknown
       | None -> TUnknown)
+  | FList [ FSymbol "__lg_dynamic-narrow"; expected; _value ] ->
+      inferred_form_type params expected
   | FList (FSymbol ("get" | "clojure.core/get") :: _) -> TUnknown
   | FList (_function :: FSymbol receiver :: _) -> (
       match string_assoc_opt receiver params with
@@ -919,6 +1017,25 @@ let infer_params ?(explicitly_dynamic_params = [])
   let rec infer_expected expected_ty params = function
     | FSymbol name -> constrain_symbol expected_ty params name
     | FList
+        [ FSymbol "__lg_dynamic"; FList [ FKeyword keyword; FSymbol name ] ] ->
+        add_record_field_constraint name keyword
+          (fresh_type_variable
+             ("dynamic_field_" ^ Names.keyword_to_ocaml_name keyword))
+          params
+    | FList [ FSymbol "__lg_dynamic"; value ] -> infer_form params value
+    | FList [ FSymbol "__lg_dynamic-narrow"; expected; value ] ->
+        infer_all params [ expected; value ]
+    | FList
+        [
+          FSymbol operation;
+          FList [ FSymbol "__lg_dynamic"; target ];
+          index;
+        ]
+      when has_source_name operation "aget"
+           || has_source_name operation "unsafe-aget" ->
+        Result.bind (infer_form params target) (fun params ->
+            infer_expected (Types.dynamic_constraint TUnknown) params index)
+    | FList
         (FSymbol "fn" :: FSymbol _name :: (FVector _ as fn_params)
         :: body_forms) ->
         infer_expected expected_ty params
@@ -1075,7 +1192,7 @@ let infer_params ?(explicitly_dynamic_params = [])
               | target -> infer_expected (TRecord preserved) params target
             in
             Result.bind infer_target (fun params ->
-                infer_assoc params target pairs))
+                infer_assoc ~constrain_assigned:false params target pairs))
     | FList [ FSymbol name; collection ]
       when (has_source_name name "array-from"
            || has_source_name name "into-array"
@@ -2130,7 +2247,7 @@ let infer_params ?(explicitly_dynamic_params = [])
                               params)
                           (propagate inferred (List.rev bindings)))))))
     | _ -> infer_all params body_forms
-  and infer_assoc params target pairs =
+  and infer_assoc ?(constrain_assigned = true) params target pairs =
     let target_name = assoc_root_symbol target in
     let rec infer_pairs params = function
       | [] -> Ok params
@@ -2164,6 +2281,8 @@ let infer_params ?(explicitly_dynamic_params = [])
                   in
                   match params with
                   | Error _ as error -> error
+                  | Ok params when not constrain_assigned ->
+                      infer_pairs params rest
                   | Ok params -> (
                       match
                         add_record_field_constraint name keyword field_ty params
@@ -2389,6 +2508,15 @@ let infer_params ?(explicitly_dynamic_params = [])
                 branch_hint_symbols := name :: !branch_hint_symbols
             | _ -> ());
             infer_form params value)
+    | FList
+        [ FSymbol "__lg_dynamic"; FList [ FKeyword keyword; FSymbol name ] ] ->
+        add_record_field_constraint name keyword
+          (fresh_type_variable
+             ("dynamic_field_" ^ Names.keyword_to_ocaml_name keyword))
+          params
+    | FList [ FSymbol "__lg_dynamic"; value ] -> infer_form params value
+    | FList [ FSymbol "__lg_dynamic-narrow"; expected; value ] ->
+        infer_all params [ expected; value ]
     | FList (FSymbol "record" :: _record_type :: field_forms) ->
         let values =
           List.filter_map
@@ -3031,6 +3159,16 @@ let infer_params ?(explicitly_dynamic_params = [])
         match constrain_symbol (TArray element_ty) params array with
         | Error _ as error -> error
         | Ok params -> infer_expected TInt params index)
+    | FList
+        [
+          FSymbol operation;
+          FList [ FSymbol "__lg_dynamic"; target ];
+          index;
+        ]
+      when has_source_name operation "aget"
+           || has_source_name operation "unsafe-aget" ->
+        Result.bind (infer_form params target) (fun params ->
+            infer_expected (Types.dynamic_constraint TUnknown) params index)
     | FList [ FSymbol "nth"; FSymbol collection; index ] ->
         Result.bind (constrain_seqable TUnknown params collection)
           (fun params -> infer_expected TInt params index)
@@ -3757,6 +3895,25 @@ let infer_params ?(explicitly_dynamic_params = [])
                (unresolved "map_key" key_ty)
                (unresolved "map_value" value_ty))
             params (FSymbol name)
+        with
+        | Error _ as error -> error
+        | Ok params -> infer_all params [ reducer; init ])
+    | FList [ FSymbol "reduce-kv"; reducer; init; collection ]
+      when
+        (match inferred_form_type params collection with
+        | TUnknown | TVar _ -> true
+        | _ -> false) -> (
+        let key_ty, value_ty = inferred_kv_reducer_types params init reducer in
+        let unresolved name = function
+          | TUnknown | TVar _ -> TVar name
+          | ty -> ty
+        in
+        match
+          infer_expected
+            (Types.dynamic_map
+               (unresolved "map_key" key_ty)
+               (unresolved "map_value" value_ty))
+            params collection
         with
         | Error _ as error -> error
         | Ok params -> infer_all params [ reducer; init ])

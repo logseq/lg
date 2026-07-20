@@ -653,6 +653,48 @@ and invoke_function_definition context (definition : Macro_definition.t)
                 { context with namespace = definition.namespace; locals }
                 arity.body))
 
+and expand_are parameters expression arguments =
+  let rec substitute bindings = function
+    | FSymbol name as form -> Option.value (List.assoc_opt name bindings) ~default:form
+    | FList forms -> FList (List.map (substitute bindings) forms)
+    | FVector forms -> FVector (List.map (substitute bindings) forms)
+    | FMap entries ->
+        FMap
+          (List.map
+             (fun (key, value) ->
+               (substitute bindings key, substitute bindings value))
+             entries)
+    | form -> form
+  in
+  let rec take count taken remaining =
+    if count = 0 then Ok (List.rev taken, remaining)
+    else
+      match remaining with
+      | [] -> Error.error "The number of args doesn't match are's argv."
+      | value :: rest -> take (count - 1) (value :: taken) rest
+  in
+  match parameters with
+  | [] when arguments = [] ->
+      Ok (Form (FList [ FList [ FSymbol "clojure.test/is"; expression ] ]))
+  | [] -> Error.error "The number of args doesn't match are's argv."
+  | parameters ->
+      let rec assertions accumulated = function
+        | [] -> Ok (Form (FList (List.rev accumulated)))
+        | arguments ->
+            Result.bind (take (List.length parameters) [] arguments)
+              (fun (values, rest) ->
+                let bindings = List.combine parameters values in
+                let assertion =
+                  FList
+                    [
+                      FSymbol "clojure.test/is";
+                      substitute bindings expression;
+                    ]
+                in
+                assertions (assertion :: accumulated) rest)
+      in
+      assertions [] arguments
+
 and eval_builtin context name arg_forms =
   let eval_args () = eval_forms context arg_forms in
   let unary fn =
@@ -824,6 +866,25 @@ and eval_builtin context name arg_forms =
   | "gensym" ->
       incr gensym_counter;
       Ok (Form (FSymbol ("G__" ^ string_of_int !gensym_counter)))
+  | "clojure.test/expand-are" -> (
+      match eval_args () with
+      | Ok
+          [
+            Form (FVector parameters);
+            Form expression;
+            Form (FList arguments);
+          ] ->
+          let rec parameter_names accumulated = function
+            | [] -> Ok (List.rev accumulated)
+            | FSymbol name :: rest -> parameter_names (name :: accumulated) rest
+            | _ -> Error.error "are expects a vector of symbols"
+          in
+          Result.bind (parameter_names [] parameters) (fun parameters ->
+              expand_are parameters expression arguments)
+      | Ok _ ->
+          Error.error
+            "clojure.test/expand-are expects parameters, expression, and arguments"
+      | Error _ as error -> error)
   | _ -> Error.error ("unsupported macro function " ^ name)
 
 and eval_apply context = function
@@ -1087,7 +1148,7 @@ and select_arity (definition : Macro_definition.t) args :
         (definition.name ^ " called with unsupported macro arity "
        ^ string_of_int (List.length args))
 
-let expand ~compiler_env (definition : Macro_definition.t) args =
+let expand ~scope ~compiler_env (definition : Macro_definition.t) args =
   if definition.name = "declare+" then
     let rec declared_name = function
       | FList [ FSymbol "__type-hint"; _; FSymbol name ] :: _ -> Ok name
@@ -1101,7 +1162,7 @@ let expand ~compiler_env (definition : Macro_definition.t) args =
       (declared_name args)
   else
   let macro_environment =
-    Form (FMap [ (FKeyword ":ns", FString definition.namespace) ])
+    Form (FMap [ (FKeyword ":ns", FString scope) ])
   in
   let context =
     {
@@ -1138,12 +1199,12 @@ let rec expand_all ~scope ~compiler_env = function
   | FList (FSymbol name :: args) -> (
       match Env.find_macro ~scope name compiler_env with
       | Some definition ->
-          Result.bind (expand ~compiler_env definition args) (fun expanded ->
+          Result.bind (expand ~scope ~compiler_env definition args) (fun expanded ->
               expand_all ~scope ~compiler_env expanded)
       | None -> (
           match Env.find_inline_macro ~scope name compiler_env with
           | Some definition ->
-              Result.bind (expand ~compiler_env definition args)
+              Result.bind (expand ~scope ~compiler_env definition args)
                 (fun expanded -> expand_all ~scope ~compiler_env expanded)
           | None ->
               Result.map

@@ -351,7 +351,7 @@
       (not (pss/set-contains? large-removed 1000)) ":"
       (= 1999 (pss/set-count large-removed))))
 (if-some [large-slice (pss/set-slice large-set 995 1005)]
-  (if-some [large-rslice (pss/set-rslice large-set 995 1005)]
+  (if-some [large-rslice (pss/set-rslice large-set 1005 995)]
     (println
      (str "set-slice:"
           (= 11 (count large-slice)) ":"

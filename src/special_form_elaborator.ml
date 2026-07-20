@@ -2072,7 +2072,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
         | None -> compile_expr scope env form
         | Some definition ->
             Result.bind
-              (Macro_expander.expand ~compiler_env:env definition args)
+              (Macro_expander.expand ~scope ~compiler_env:env definition args)
               (fun expanded ->
                 compile_loop_tail scope env loop_name param_tys expanded))
     | form -> compile_expr scope env form

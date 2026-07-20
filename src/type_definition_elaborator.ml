@@ -90,6 +90,7 @@ let compile_type_record ?location ?(allow_empty = false) scope env next_type
             err
         | Error _ -> Error.error ("unknown record field type " ^ keyword)
         | Ok ty ->
+            let ty = Function_elaborator.infer_named_record scope env ty in
             Ok
               {
                 keyword = ":" ^ field_name;

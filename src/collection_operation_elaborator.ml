@@ -164,6 +164,27 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
         expected
     | _ -> field_ty
   in
+  let instantiated_record_field scope env type_name arguments keyword =
+    match Resolver.lookup_record_type scope env type_name with
+    | Ok record
+      when List.length record.type_parameters = List.length arguments -> (
+        match find_field keyword record.fields with
+        | None -> None
+        | Some field ->
+            let substitutions =
+              List.combine record.type_parameters arguments
+            in
+            let field =
+              {
+                field with
+                ty = Types.substitute_type_variables substitutions field.ty;
+              }
+            in
+            Some
+              ( { record with type_arguments = arguments },
+                field ))
+    | Ok _ | Error _ -> None
+  in
   let resolve_keyword_alias scope env = function
     | FSymbol name as form -> (
         match lookup_binding scope env name with
@@ -1181,6 +1202,41 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   ("Lg_runtime.Runtime_transient.map", [ _; _ ]) ->
                   compile_transient_get target
                     (typed_ir TKeyword (Semantic_ir.String keyword)) None
+              | TOcaml_app (type_name, arguments) as ty -> (
+                  match
+                    instantiated_record_field scope env type_name arguments
+                      keyword
+                  with
+                  | Some (record, field) ->
+                      let target = { target with ty = TNamed_record record } in
+                      let field_ty = contextual_field_type env field.ty in
+                      Ok
+                        (typed_ir field_ty
+                           (Structural_map.field_expr target field))
+                  | None when is_ocaml_owned_type ty ->
+                      Ok
+                        (typed_ir TUnknown
+                           (Semantic_ir.Field
+                              ( target.semantic_expr,
+                                Names.keyword_to_ocaml_name keyword )))
+                  | None -> Error.error "get expects a map")
+              | TOcaml type_name as ty -> (
+                  match
+                    instantiated_record_field scope env type_name [] keyword
+                  with
+                  | Some (record, field) ->
+                      let target = { target with ty = TNamed_record record } in
+                      let field_ty = contextual_field_type env field.ty in
+                      Ok
+                        (typed_ir field_ty
+                           (Structural_map.field_expr target field))
+                  | None when is_ocaml_owned_type ty ->
+                      Ok
+                        (typed_ir TUnknown
+                           (Semantic_ir.Field
+                              ( target.semantic_expr,
+                                Names.keyword_to_ocaml_name keyword )))
+                  | None -> Error.error "get expects a map")
               | ty when is_ocaml_owned_type ty ->
                   Ok
                     (typed_ir TUnknown
@@ -1401,6 +1457,41 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
           | Ok target, Ok default -> (
               let target = unwrap_protocol_value target in
               match target.ty with
+              | (TNullable (TNamed_record record)
+                | TOcaml_app ("option", [ TNamed_record record ])) ->
+                  let value_name = "__lg_optional_lookup_value" in
+                  let value =
+                    typed_ir (TNamed_record record)
+                      (Semantic_ir.Ident value_name)
+                  in
+                  let key = typed_ir TKeyword (Semantic_ir.String keyword) in
+                  let lookup =
+                    match
+                      compile_deftype_method scope env record "valAt"
+                        [ value; key; default ]
+                    with
+                    | Some _ as result -> result
+                    | None ->
+                        compile_deftype_method scope env record "-lookup"
+                          [ value; key; default ]
+                  in
+                  (match lookup with
+                  | None -> Error.error "get expects a map"
+                  | Some lookup ->
+                      Result.map
+                        (fun missing ->
+                          typed_ir lookup.ty
+                            (Semantic_ir.Match
+                               ( target.semantic_expr,
+                                 [
+                                   ( Semantic_ir.PConstructor ("None", None),
+                                     missing );
+                                   ( Semantic_ir.PConstructor
+                                       ( "Some",
+                                         Some (Semantic_ir.PVar value_name) ),
+                                     lookup.semantic_expr );
+                                 ] )))
+                        (adapt_transient_value lookup.ty default))
               | TRecord fields | TNamed_record { fields; nominal = false; _ } -> (
                   match find_field keyword fields with
                   | Some field when Types.equal field.ty default.ty ->
@@ -2061,6 +2152,17 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                                  [ map; key.semantic_expr ])
                              target.semantic_expr keys))
                       (prepare_keys [] keys))
+              | TNil ->
+                  Result.map
+                    (fun keys ->
+                      typed_ir TNil
+                        (Semantic_ir.Sequence
+                           (target.semantic_expr
+                           :: List.map
+                                (fun key -> key.semantic_expr)
+                                keys
+                           @ [ Semantic_ir.Constructor ("None", None) ])))
+                    (compile_args_for scope env key_forms)
               | target_ty
                 when Types.is_dynamic target_ty
                      || Types.equal target_ty TUnknown
