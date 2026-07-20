@@ -34,11 +34,11 @@ datascript/test/issues.cljc:issue-330	covered	test/datascript/upstream_tests/dat
 datascript/test/issues.cljc:issue-369	covered	test/datascript/upstream_tests/datascript/test/issues.cljc	-
 datascript/test/issues.cljc:issue-381	covered	test/datascript/upstream_tests/datascript/test/issues.cljc	-
 datascript/test/listen.cljc:test-listen!	covered	test/datascript/upstream_tests/datascript/test/listen.cljc	-
-datascript/test/lookup_refs.cljc:test-lookup-refs	missing	-	-
-datascript/test/lookup_refs.cljc:test-lookup-refs-transact	missing	-	-
-datascript/test/lookup_refs.cljc:test-lookup-refs-transact-multi	missing	-	-
-datascript/test/lookup_refs.cljc:lookup-refs-index-access	missing	-	-
-datascript/test/lookup_refs.cljc:test-lookup-refs-query	missing	-	-
+datascript/test/lookup_refs.cljc:test-lookup-refs	covered	test/datascript/upstream_tests/datascript/test/lookup_refs.cljc	-
+datascript/test/lookup_refs.cljc:test-lookup-refs-transact	covered	test/datascript/upstream_tests/datascript/test/lookup_refs.cljc	-
+datascript/test/lookup_refs.cljc:test-lookup-refs-transact-multi	covered	test/datascript/upstream_tests/datascript/test/lookup_refs.cljc	-
+datascript/test/lookup_refs.cljc:lookup-refs-index-access	covered	test/datascript/upstream_tests/datascript/test/lookup_refs.cljc	-
+datascript/test/lookup_refs.cljc:test-lookup-refs-query	covered	test/datascript/upstream_tests/datascript/test/lookup_refs.cljc	-
 datascript/test/lru.cljc:test-lru	covered	test/datascript/upstream_tests/datascript/test/lru.cljc	-
 datascript/test/lru.cljc:test-cache	covered	test/datascript/upstream_tests/datascript/test/lru.cljc	-
 datascript/test/parser.cljc:bindings	missing	-	-

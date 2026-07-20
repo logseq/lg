@@ -4472,7 +4472,7 @@ let create ~compile_expr =
   in
   let functions : Function_combinator_elaborator.t =
     Function_combinator_elaborator.create ~compile_expr ~dynamic_unpack
-      ~pack_dynamic_value
+      ~pack_dynamic_value ~pack_constrained_value
   in
   let comparisons : Comparison_set_elaborator.t =
     let capability_value argument =

@@ -30,7 +30,8 @@ let compile_args_for compile_expr scope env arg_forms =
   in
   loop [] arg_forms
 
-let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
+let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
+    ~pack_constrained_value =
   let compile_args_for = compile_args_for compile_expr in
   let rec require_callable_value expression =
     match expression.ty with
@@ -71,26 +72,30 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
     if index = 0 then apply "fst" [ expression ]
     else overloaded_projection (apply "snd" [ expression ]) (index - 1)
   in
-  let prepare_apply_argument env ~actual_ty ~expected_ty expression =
-    if Types.is_dynamic expected_ty then
+  let prepare_apply_argument env ~expected_ty argument =
+    if
+      Option.is_some (Types.protocol_constraint_info expected_ty)
+      || Option.is_some (Types.seqable_constraint_info expected_ty)
+    then pack_constrained_value env expected_ty argument
+    else if Types.is_dynamic expected_ty then
       if
-        Types.is_dynamic actual_ty
-        || match actual_ty with TUnknown | TVar _ -> true | _ -> false
-      then Ok expression
+        Types.is_dynamic argument.ty
+        || match argument.ty with TUnknown | TVar _ -> true | _ -> false
+      then Ok argument.semantic_expr
       else
-        pack_dynamic_value env expected_ty (typed_ir actual_ty expression)
-    else if Types.is_dynamic actual_ty then
-      dynamic_unpack env expected_ty expression
+        pack_dynamic_value env expected_ty argument
+    else if Types.is_dynamic argument.ty then
+      dynamic_unpack env expected_ty argument.semantic_expr
     else if
       Types.assignable ~policy:Host_boundary ~expected:expected_ty
-        ~actual:actual_ty
-    then Ok expression
+        ~actual:argument.ty
+    then Ok argument.semantic_expr
     else
       Error.error
         ("apply argument type mismatch: expected "
         ^ Types.source_name expected_ty
         ^ ", got "
-        ^ Types.source_name actual_ty)
+        ^ Types.source_name argument.ty)
   in
   let compile_exact_apply env ~fn ~target ~fixed_args ~inner ~parameter_tys
       ~return_ty =
@@ -111,8 +116,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
         | [], [] -> Ok (List.rev prepared)
         | expected_ty :: expected, argument :: arguments ->
             Result.bind
-              (prepare_apply_argument env ~actual_ty:argument.ty ~expected_ty
-                 argument.semantic_expr) (fun expression ->
+              (prepare_apply_argument env ~expected_ty argument)
+              (fun expression ->
                 prepare_fixed (expression :: prepared) expected arguments)
         | _ -> Error.error "internal apply argument mismatch"
       in
@@ -121,8 +126,9 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
         | [], [] -> Ok (List.rev prepared)
         | expected_ty :: expected, name :: names ->
             Result.bind
-              (prepare_apply_argument env ~actual_ty:inner ~expected_ty
-                 (Semantic_ir.Ident name)) (fun expression ->
+              (prepare_apply_argument env ~expected_ty
+                 (typed_ir inner (Semantic_ir.Ident name)))
+              (fun expression ->
                 prepare_remaining (expression :: prepared) expected names)
         | _ -> Error.error "internal apply argument mismatch"
       in
@@ -315,30 +321,47 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value =
                                            fixed_args),
                                       list_expr )
                             in
-                            Ok
-                              (typed_ir TBool
-                                 (Semantic_ir.Let
-                                  ( [
-                                      ( Semantic_ir.PVar "__lg_apply_values",
-                                        values_expr );
-                                    ],
-                                      Semantic_ir.Infix
-                                        ( "=",
-                                          apply "List.length"
-                                          [
-                                            apply "List.sort_uniq"
-                                              [
-                                                Semantic_ir.Ident
-                                                    "Stdlib.compare";
+                            if
+                              Types.is_dynamic inner
+                              || match inner with
+                                 | TUnknown | TVar _ -> true
+                                 | _ -> false
+                            then
+                              Ok
+                                (typed_ir TBool
+                                   (apply
+                                      "Lg_runtime.Runtime_seq.all_distinct"
+                                      [
+                                        Semantic_ir.Ident
+                                          "Lg_runtime.Runtime_dynamic.polymorphic_equal";
+                                        values_expr;
+                                      ]))
+                            else
+                              Ok
+                                (typed_ir TBool
+                                   (Semantic_ir.Let
+                                    ( [
+                                        ( Semantic_ir.PVar
+                                            "__lg_apply_values",
+                                          values_expr );
+                                      ],
+                                        Semantic_ir.Infix
+                                          ( "=",
+                                            apply "List.length"
+                                            [
+                                              apply "List.sort_uniq"
+                                                [
                                                   Semantic_ir.Ident
-                                                    "__lg_apply_values";
-                                              ];
-                                          ],
-                                          apply "List.length"
-                                          [
-                                            Semantic_ir.Ident
-                                              "__lg_apply_values";
-                                          ] ) )))
+                                                      "Stdlib.compare";
+                                                    Semantic_ir.Ident
+                                                      "__lg_apply_values";
+                                                ];
+                                            ],
+                                            apply "List.length"
+                                            [
+                                              Semantic_ir.Ident
+                                                "__lg_apply_values";
+                                            ] ) )))
                           else
                             Error.error
                               "apply distinct? arguments must have the same type"

@@ -3,7 +3,10 @@ type nominal = Nominal : 'a nominal_tag * 'a -> nominal
 type _ nominal_tag += Uuid_tag : Runtime_uuid.t nominal_tag
 type _ nominal_tag += Host_tag : Obj.t nominal_tag
 
+let dynamic_marker = ref ()
+
 type t = {
+  marker : unit ref;
   payload : payload;
   sequence : (unit -> t Seq.t) option;
   sequential : bool;
@@ -81,6 +84,7 @@ let protocol_extension value protocol_id =
 let make ?sequence ?(sequential = false) ?(protocols = []) ?metadata ?type_name
     payload =
   {
+    marker = dynamic_marker;
     payload;
     sequence;
     sequential;
@@ -333,6 +337,14 @@ let same_nominal_type left right =
           Obj.repr left_tag = Obj.repr right_tag
       | None -> false)
 
+let expand_record_extension_entries entries =
+  List.concat_map
+    (fun ((key, value) as entry) ->
+      match (key.payload, value.payload) with
+      | Keyword ":__lg/extmap", Map extensions -> extensions
+      | _ -> [ entry ])
+    entries
+
 let rec equal left right =
   match find_protocol_method left "IEquiv" "-equiv" with
   | Some _ when not (same_nominal_type left right) -> false
@@ -365,6 +377,22 @@ let rec equal left right =
                  equal key other_key && equal value other_value)
                right)
            left
+  | Map left_entries, Record (right_name, right_fields, right_extensions)
+    when left.type_name = Some right_name && right.type_name = Some right_name ->
+      let left_entries = expand_record_extension_entries left_entries in
+      let right_entries =
+        List.map (fun (key, project) -> (keyword key, project ())) right_fields
+        @ List.map (fun (key, value) -> (keyword key, value)) right_extensions
+      in
+      List.length left_entries = List.length right_entries
+      && List.for_all
+           (fun (key, value) ->
+             List.exists
+               (fun (other_key, other_value) ->
+                 equal key other_key && equal value other_value)
+               right_entries)
+           left_entries
+  | Record _, Map _ -> equal right left
   | Record (left_name, left_fields, left_extensions),
     Record (right_name, right_fields, right_extensions) ->
       let entries fields extensions =
@@ -385,6 +413,21 @@ let rec equal left right =
   | Reference _, Reference _ -> false
   | Function _, Function _ -> false
   | _ -> false)
+
+let is_runtime_dynamic value =
+  try
+    let representation = Obj.repr value in
+    (not (Obj.is_int representation))
+    && Obj.tag representation = 0
+    && Obj.field representation 0 == Obj.repr dynamic_marker
+  with Invalid_argument _ -> false
+
+let polymorphic_equal left right =
+  if left == right then true
+  else if is_runtime_dynamic left && is_runtime_dynamic right then
+    equal (Obj.magic left) (Obj.magic right)
+  else
+    try left = right with Invalid_argument _ -> false
 
 let equal_arguments = function
   | [] | [ _ ] -> true
@@ -1359,6 +1402,16 @@ let rec hash value =
       value |> to_seq |> Seq.map hash |> Runtime_hash.hash_ordered
   | Set values ->
       values |> List.to_seq |> Seq.map hash |> Runtime_hash.hash_unordered
+  | Map entries when Option.is_some value.type_name ->
+      let name = Option.get value.type_name in
+      let entry_hashes =
+        entries |> expand_record_extension_entries |> List.to_seq
+        |> Seq.map (fun (key, entry_value) ->
+               [ hash key; hash entry_value ] |> List.to_seq
+               |> Runtime_hash.hash_ordered)
+      in
+      Runtime_hash.hash_combine (Runtime_hash.hash_string name)
+        (Runtime_hash.hash_unordered entry_hashes)
   | Map entries ->
       entries |> List.to_seq
       |> Seq.map (fun (key, value) ->
@@ -1472,7 +1525,7 @@ let set_difference first rest =
   |> Seq.filter (fun value ->
          not
            (List.exists
-           (fun candidate -> candidate |> to_seq |> Seq.exists (equal value))
+              (fun candidate -> candidate |> to_seq |> Seq.exists (equal value))
               rest))
   |> set
 

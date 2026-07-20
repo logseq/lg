@@ -643,6 +643,8 @@ and set_module_name = function
   | TVector TBool -> Ok "Lg_runtime.Core_set.Bool_vector_set"
   | TVector inner when is_dynamic inner ->
       Ok "Lg_runtime.Core_set.Dynamic_vector_set"
+  | TVector (TVector inner) when is_dynamic inner ->
+      Ok "Lg_runtime.Core_set.Dynamic_vector_vector_set"
   | TVector (TVector TInt) -> Ok "Lg_runtime.Core_set.Int_vector_vector_set"
   | TRecord _ -> Ok "Lg_runtime.Runtime_poly_set"
   | TNamed_record { nominal = false; _ } ->

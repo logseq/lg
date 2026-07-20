@@ -62,6 +62,15 @@ let distinct equal sequence =
   in
   loop [] sequence
 
+let all_distinct equal values =
+  let rec loop seen = function
+    | [] -> true
+    | value :: rest ->
+        if List.exists (equal value) seen then false
+        else loop (value :: seen) rest
+  in
+  loop [] values
+
 let concat sequences = List.fold_right Seq.append sequences Seq.empty |> memoize
 
 let interleave sequences =

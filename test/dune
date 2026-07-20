@@ -1423,6 +1423,7 @@
   datascript/upstream_tests/datascript/test/explode.cljc
   datascript/upstream_tests/datascript/test/index.cljc
   datascript/upstream_tests/datascript/test/issues.cljc
+  datascript/upstream_tests/datascript/test/lookup_refs.cljc
   ../test_runner/clojure/run.cljc
   (package lg-test)
   ../test_runner/runtime/lg_test_runtime.cma
@@ -1470,6 +1471,7 @@
    %{dep:datascript/upstream_tests/datascript/test/explode.cljc}
    %{dep:datascript/upstream_tests/datascript/test/index.cljc}
    %{dep:datascript/upstream_tests/datascript/test/issues.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/lookup_refs.cljc}
    %{dep:../test_runner/clojure/run.cljc}
    -o
    %{target})))
@@ -1520,6 +1522,7 @@
   datascript/upstream_tests/datascript/test/explode.cljc
   datascript/upstream_tests/datascript/test/index.cljc
   datascript/upstream_tests/datascript/test/issues.cljc
+  datascript/upstream_tests/datascript/test/lookup_refs.cljc
   ../test_runner/clojure/run.cljc
   (package lg-test)
   ../test_runner/runtime/lg_test_runtime.cma
@@ -1566,6 +1569,7 @@
    %{dep:datascript/upstream_tests/datascript/test/explode.cljc}
    %{dep:datascript/upstream_tests/datascript/test/index.cljc}
    %{dep:datascript/upstream_tests/datascript/test/issues.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/lookup_refs.cljc}
    %{dep:../test_runner/clojure/run.cljc}
    -o
    %{target})))

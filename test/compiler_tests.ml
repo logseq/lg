@@ -2045,6 +2045,8 @@ let test_compiler_phases_have_explicit_boundaries () =
               ~dynamic_unpack:(fun _ _ expression -> Ok expression)
               ~pack_dynamic_value:(fun _env _expected value ->
                 Ok value.Lg.Types.semantic_expr)
+              ~pack_constrained_value:(fun _env _expected value ->
+                Ok value.Lg.Types.semantic_expr)
           in
         operations.compile_identity "" Lg.Compiler_environment.empty
           [ Lg.Ast.FInt 1 ]
@@ -3165,10 +3167,18 @@ let test_current_datascript_parser_collects_pattern_variables () =
 (println (some? (parser/explicit-input first-pattern)))
 (println (count (parser/collect parser/explicit-input [first-pattern])))
 (println (count (parser/default-in (parser/parse-where (:where query-map)))))
+(println
+  (some?
+    (parser/parse-query
+      '[:find ?e ?e1 ?e2
+        :in $1 $2 [?e ...]
+        :where
+        [$1 ?e :id ?e1]
+        [$2 ?e :id ?e2]])))
 |}
   in
   register_datascript_behavior "test/datascript/parser_behavior.cljc" source
-    "true\ntrue\ntrue\n1\n1\n"
+    "true\ntrue\ntrue\n1\n1\ntrue\n"
 
 let test_current_datascript_query_behaves_on_native () =
   let source =
@@ -17648,6 +17658,27 @@ let test_apply_distinct_accepts_generic_seqable_values () =
   assert_ocaml_runs "apply_distinct_accepts_generic_seqable_values"
     "true\nfalse\n" ocaml_source
 
+let test_apply_distinct_handles_dynamic_protocol_values () =
+  let source =
+    {|
+(defprotocol IValue
+  (-value [source]))
+(defrecord Box [^int value]
+  IValue
+  (-value [source] (.-value source)))
+(defrecord Holder [values])
+(defn all-distinct? [^Holder holder]
+  (apply clojure.core/distinct? (.-values holder)))
+(println (all-distinct? (Holder. [(Box. 1) (Box. 2)])))
+(println (all-distinct? (Holder. [(Box. 1) (Box. 1)])))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "apply_distinct_handles_dynamic_protocol_values"
+    "true\nfalse\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_apply_calls_overloaded_functions_with_dynamic_arguments () =
   let source =
     {|
@@ -17664,6 +17695,28 @@ let test_apply_calls_overloaded_functions_with_dynamic_arguments () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "apply_calls_overloaded_functions_with_dynamic_arguments"
     "1\n4\n" ocaml_source
+
+let test_apply_packs_protocol_constraints_for_fixed_arguments () =
+  let source =
+    {|
+(defprotocol IValue
+  (-value [source]))
+(defrecord Box [^int value]
+  IValue
+  (-value [source] (.-value source)))
+(defn fetch
+  ([source] (-value source))
+  ([source ^int offset] (+ (-value source) offset)))
+(defn invoke-fetch [^Box source arguments]
+  (apply fetch source arguments))
+(println (invoke-fetch (Box. 41) [1]))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "apply_packs_protocol_constraints_for_fixed_arguments"
+    "42\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_apply_calls_dynamic_runtime_functions () =
   let source =
@@ -18609,6 +18662,24 @@ let test_sets_support_vectors_with_dynamic_elements () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "sets_support_vectors_with_dynamic_elements" "1:true\n"
     ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_sets_support_nested_vectors_with_dynamic_elements () =
+  let source =
+    {|
+(defrecord Holder [value])
+(defn row [holder]
+  [[(.-value ^Holder holder) 1]
+   [(.-value ^Holder holder) 2]])
+(def holder (Holder. :answer))
+(def rows (hash-set (row holder) (row holder)))
+(println (str (count rows) ":" (contains? rows (row holder))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "sets_support_nested_vectors_with_dynamic_elements"
+    "1:true\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -24212,8 +24283,12 @@ let tests =
       test_common_higher_order_helpers_reject_compare_type_mismatch );
     ( "apply distinct accepts generic seqable values",
       test_apply_distinct_accepts_generic_seqable_values );
+    ( "apply distinct handles dynamic protocol values",
+      test_apply_distinct_handles_dynamic_protocol_values );
     ( "apply calls overloaded functions with dynamic arguments",
       test_apply_calls_overloaded_functions_with_dynamic_arguments );
+    ( "apply packs protocol constraints for fixed arguments",
+      test_apply_packs_protocol_constraints_for_fixed_arguments );
     ( "apply calls dynamic runtime functions",
       test_apply_calls_dynamic_runtime_functions );
     ( "dynamic named records preserve mutable field identity",
@@ -24314,6 +24389,8 @@ let tests =
       test_set_literals_accept_dynamic_elements );
     ( "sets support vectors with dynamic elements",
       test_sets_support_vectors_with_dynamic_elements );
+    ( "sets support nested vectors with dynamic elements",
+      test_sets_support_nested_vectors_with_dynamic_elements );
     ( "cons and conj pack static values into dynamic vectors",
       test_cons_and_conj_pack_static_values_into_dynamic_vectors );
     ( "concat packs nested dynamic vectors at element boundary",
