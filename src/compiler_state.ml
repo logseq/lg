@@ -3,10 +3,19 @@ type t = {
   env : Compiler_environment.t;
   next_type : int;
   items : Lowered.compiled_item list;
+  dynamic_packers : Type_id.t list;
+  shared_values : string list;
 }
 
 let empty =
-  { scope = ""; env = Compiler_environment.empty; next_type = 1; items = [] }
+  {
+    scope = "";
+    env = Compiler_environment.empty;
+    next_type = 1;
+    items = [];
+    dynamic_packers = [];
+    shared_values = [];
+  }
 
 let with_target target state =
   { state with env = Compiler_environment.with_target target state.env }

@@ -41,9 +41,9 @@ datascript/test/lookup_refs.cljc:lookup-refs-index-access	covered	test/datascrip
 datascript/test/lookup_refs.cljc:test-lookup-refs-query	covered	test/datascript/upstream_tests/datascript/test/lookup_refs.cljc	-
 datascript/test/lru.cljc:test-lru	covered	test/datascript/upstream_tests/datascript/test/lru.cljc	-
 datascript/test/lru.cljc:test-cache	covered	test/datascript/upstream_tests/datascript/test/lru.cljc	-
-datascript/test/parser.cljc:bindings	missing	-	-
-datascript/test/parser.cljc:in	missing	-	-
-datascript/test/parser.cljc:with	missing	-	-
+datascript/test/parser.cljc:bindings	covered	test/datascript/upstream_tests/datascript/test/parser.cljc	-
+datascript/test/parser.cljc:in	covered	test/datascript/upstream_tests/datascript/test/parser.cljc	-
+datascript/test/parser.cljc:with	covered	test/datascript/upstream_tests/datascript/test/parser.cljc	-
 datascript/test/parser_find.cljc:test-parse-find	missing	-	-
 datascript/test/parser_find.cljc:test-parse-aggregate	missing	-	-
 datascript/test/parser_find.cljc:test-parse-custom-aggregates	missing	-	-

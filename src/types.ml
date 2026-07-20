@@ -689,6 +689,15 @@ let nominal_tag_name (record : named_record) =
       in
       module_path ^ ".Lg_nominal_" ^ local_name
 
+let dynamic_packer_key_name (record : named_record) =
+  let local_name name = "__lg_dynamic_packer_key_" ^ Names.sanitize_name name in
+  let record_name = Type_id.name record.type_id in
+  match String.rindex_opt record.type_name '.' with
+  | None -> local_name record_name
+  | Some separator ->
+      let module_path = String.sub record.type_name 0 separator in
+      module_path ^ "." ^ local_name record_name
+
 let rec qualify_module_type module_path ty =
   let qualify_name name =
     if String.contains name '.' then name else module_path ^ "." ^ name
@@ -996,7 +1005,9 @@ let instantiate_receiver_method_type receiver_ty method_ty =
   | _ -> method_ty
 let rec idents_in_conversion names = function
   | Semantic_ir.Ident name -> name :: names
-  | Semantic_ir.Typed (_, value) | Semantic_ir.Located (_, _, value) ->
+  | Semantic_ir.Typed (_, value)
+  | Semantic_ir.Located (_, _, value)
+  | Semantic_ir.SharedValue (_, value) ->
       idents_in_conversion names value
   | Semantic_ir.Constructor (_, value) ->
       Option.fold ~none:names ~some:(idents_in_conversion names) value
@@ -1039,7 +1050,9 @@ let rec idents_in_conversion names = function
         (idents_in_conversion names body) cases
   | Semantic_ir.Infix (_, left, right) | Semantic_ir.Cons (left, right) ->
       idents_in_conversion (idents_in_conversion names left) right
-  | Semantic_ir.Prefix (_, value) | Semantic_ir.Field (value, _) ->
+  | Semantic_ir.Prefix (_, value)
+  | Semantic_ir.Constraint (value, _)
+  | Semantic_ir.Field (value, _) ->
       idents_in_conversion names value
   | Semantic_ir.PackDynamic { conversion; _ }
   | Semantic_ir.UnpackDynamic { conversion; _ }
@@ -1049,6 +1062,10 @@ let rec idents_in_conversion names = function
       List.fold_left
         (fun names (_, value) -> idents_in_conversion names value)
         names fields
+  | Semantic_ir.RecordUpdate (record, fields) ->
+      List.fold_left
+        (fun names (_, value) -> idents_in_conversion names value)
+        (idents_in_conversion names record) fields
   | Semantic_ir.Int _ | Semantic_ir.Int64 _ | Semantic_ir.Float _ | Semantic_ir.String _
   | Semantic_ir.Char _ | Semantic_ir.Bool _ | Semantic_ir.Unit ->
       names
@@ -1057,7 +1074,9 @@ let rec dynamic_pinned_idents names = function
   | Semantic_ir.PackDynamic { conversion; _ } ->
       let names = idents_in_conversion names conversion in
       dynamic_pinned_idents names conversion
-  | Semantic_ir.Typed (_, value) | Semantic_ir.Located (_, _, value) ->
+  | Semantic_ir.Typed (_, value)
+  | Semantic_ir.Located (_, _, value)
+  | Semantic_ir.SharedValue (_, value) ->
       dynamic_pinned_idents names value
   | Semantic_ir.Constructor (_, value) ->
       Option.fold ~none:names ~some:(dynamic_pinned_idents names) value
@@ -1107,7 +1126,9 @@ let rec dynamic_pinned_idents names = function
         cases
   | Semantic_ir.Infix (_, left, right) | Semantic_ir.Cons (left, right) ->
       dynamic_pinned_idents (dynamic_pinned_idents names left) right
-  | Semantic_ir.Prefix (_, value) | Semantic_ir.Field (value, _) ->
+  | Semantic_ir.Prefix (_, value)
+  | Semantic_ir.Constraint (value, _)
+  | Semantic_ir.Field (value, _) ->
       dynamic_pinned_idents names value
   | Semantic_ir.UnpackDynamic { conversion; _ }
   | Semantic_ir.NullableToSeq { conversion; _ } ->
@@ -1116,6 +1137,10 @@ let rec dynamic_pinned_idents names = function
       List.fold_left
         (fun names (_, value) -> dynamic_pinned_idents names value)
         names fields
+  | Semantic_ir.RecordUpdate (record, fields) ->
+      List.fold_left
+        (fun names (_, value) -> dynamic_pinned_idents names value)
+        (dynamic_pinned_idents names record) fields
   | Semantic_ir.Int _ | Semantic_ir.Int64 _ | Semantic_ir.Float _ | Semantic_ir.String _
   | Semantic_ir.Char _ | Semantic_ir.Bool _ | Semantic_ir.Unit
   | Semantic_ir.Ident _ ->

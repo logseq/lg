@@ -262,6 +262,15 @@ let implemented_protocols env receiver_ty =
          then Some protocol_id
          else None)
 
+let dynamic_protocols env receiver_ty =
+  Protocol_registry.declarations (Env.protocols env)
+  |> List.filter_map (fun (protocol_id, _) ->
+         if
+           Option.is_some
+             (witness_implemented_methods env protocol_id receiver_ty)
+         then Some protocol_id
+         else None)
+
 let lookup_marker scope env method_name =
   let registry = Env.protocols env in
   let marker_for protocol_id method_name =

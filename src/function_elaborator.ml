@@ -864,13 +864,13 @@ let fn_code ?(row_param_type_names = []) parts =
         | None -> (param_tys, parts.body.ty, parts.body.semantic_expr))
     | return_ty, _ -> (param_tys, return_ty, parts.body.semantic_expr)
   in
-  let rec capability_pattern name ty =
+  let rec capability_pattern ?value_type name ty =
     match Types.protocol_constraint_info ty with
     | Some (protocol_id, _, value_ty) ->
         Semantic_ir.PTuple
           [
             Semantic_ir.PVar (Types.protocol_witness_name name protocol_id);
-            capability_pattern name value_ty;
+            capability_pattern ?value_type name value_ty;
           ]
     | None -> (
         match ty with
@@ -884,9 +884,15 @@ let fn_code ?(row_param_type_names = []) parts =
                   (if constraint_name = Types.seqable_constraint_name then
                      name ^ "__seq"
                    else name ^ "__seq_optional");
-                capability_pattern name value_ty;
+                capability_pattern ?value_type name value_ty;
               ]
-        | _ -> Semantic_ir.PVar name)
+        | _ ->
+            let pattern = Semantic_ir.PVar name in
+            Option.fold ~none:pattern
+              ~some:(fun type_name ->
+                if String.equal type_name "_" then pattern
+                else Semantic_ir.PConstraint (pattern, type_name))
+              value_type)
   in
   let param_patterns =
     List.map2 (fun name ty -> (name, ty)) param_names param_tys
@@ -904,9 +910,11 @@ let fn_code ?(row_param_type_names = []) parts =
                  | Some type_name -> apply_row_constraint_type type_name ty
                  | None -> ty
                in
-               Semantic_ir.PConstraint
-                 ( capability_pattern name ty,
-                   Types.ocaml_name (pattern_constraint_type pattern_ty) )
+               let value_type =
+                 pattern_ty |> Types.constraint_value_type
+                 |> pattern_constraint_type |> Types.ocaml_name
+               in
+               capability_pattern ~value_type name ty
              else
                match row_type_name with
                | Some type_name ->

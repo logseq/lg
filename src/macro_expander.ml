@@ -24,6 +24,36 @@ type context = { compiler_env : Env.t; namespace : string; locals : locals }
 let gensym_counter = ref 0
 let nil = Form (FSymbol "nil")
 
+let rec string_of_form = function
+  | FSymbol "nil" -> "nil"
+  | FSymbol name -> name
+  | FCoreSymbol symbol -> Ast.core_symbol_name symbol
+  | FKeyword keyword -> keyword
+  | FString value -> Printf.sprintf "%S" value
+  | FRegex value -> "#" ^ Printf.sprintf "%S" value
+  | FInt value -> string_of_int value
+  | FFloat value -> value
+  | FChar value -> "\\" ^ String.make 1 value
+  | FBool value -> string_of_bool value
+  | FList forms ->
+      "(" ^ String.concat " " (List.map string_of_form forms) ^ ")"
+  | FVector forms ->
+      "[" ^ String.concat " " (List.map string_of_form forms) ^ "]"
+  | FMap entries ->
+      let entries =
+        List.map
+          (fun (key, value) ->
+            string_of_form key ^ " " ^ string_of_form value)
+          entries
+      in
+      "{" ^ String.concat ", " entries ^ "}"
+
+let string_of_value = function
+  | Form (FSymbol "nil") -> Ok ""
+  | Form form -> Ok (string_of_form form)
+  | Closure _ | Macro_function _ | Builtin _ | Juxt _ | Volatile _ | Recur _ ->
+      Error.error "str expects macro form values"
+
 let core_form_name name expected =
   name = expected || String.ends_with ~suffix:("/" ^ expected) name
 
@@ -705,6 +735,16 @@ and eval_builtin context name arg_forms =
   in
   match name with
   | "System/getProperty" -> Ok nil
+  | "str" ->
+      Result.bind (eval_args ()) (fun values ->
+          let rec concatenate buffer = function
+            | [] -> Ok (Form (FString (Buffer.contents buffer)))
+            | value :: rest ->
+                Result.bind (string_of_value value) (fun value ->
+                    Buffer.add_string buffer value;
+                    concatenate buffer rest)
+          in
+          concatenate (Buffer.create 32) values)
   | "identity" | "num" -> unary (fun value -> Ok value)
   | "boolean" -> unary (fun value -> Ok (Form (FBool (truthy value))))
   | "string?" ->

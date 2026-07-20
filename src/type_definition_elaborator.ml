@@ -76,7 +76,15 @@ let compile_type_record_fields ?location ?(allow_empty = false) ?emitted_name
             env,
             next_type,
             Type_def
-              { type_name; type_parameters; fields; nominal; location }
+              {
+                type_id;
+                type_name;
+                type_parameters;
+                fields;
+                nominal;
+                dynamic_packer = false;
+                location;
+              }
           )
 
 let compile_type_record ?location ?(allow_empty = false) ?(nominal = true)

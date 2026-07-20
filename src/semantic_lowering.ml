@@ -85,11 +85,17 @@ let rec expression = function
   | Infix (operator, left, right) ->
       Infix (operator, expression left, expression right)
   | Prefix (operator, value) -> Prefix (operator, expression value)
+  | Constraint (value, type_name) -> Constraint (expression value, type_name)
   | Field (target, name) -> Field (expression target, name)
   | Cons (head, tail) -> Cons (expression head, expression tail)
   | Record (fields, type_name) ->
       Record
         (List.map (fun (name, value) -> (name, expression value)) fields, type_name)
+  | RecordUpdate (record, fields) ->
+      RecordUpdate
+        ( expression record,
+          List.map (fun (name, value) -> (name, expression value)) fields )
+  | SharedValue (_, value) -> expression value
   | PackDynamic { conversion; _ }
   | UnpackDynamic { conversion; _ }
   | NullableToSeq { conversion; _ } ->

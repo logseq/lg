@@ -44,9 +44,11 @@ type t =
   | Try of t * (pattern * t option * t) list
   | Infix of string * t * t
   | Prefix of string * t
+  | Constraint of t * string
   | Field of t * string
   | Cons of t * t
   | Record of (string * t) list * string option
+  | RecordUpdate of t * (string * t) list
 
 let rec unlocated = function
   | Located (_, _, expression) -> unlocated expression
@@ -180,6 +182,8 @@ let rec to_source = function
       "(" ^ to_source left ^ " " ^ operator ^ " " ^ to_source right ^ ")"
   | Prefix (operator, expression) ->
       "(" ^ operator ^ " " ^ to_source expression ^ ")"
+  | Constraint (expression, type_name) ->
+      "(" ^ to_source expression ^ " : " ^ type_name ^ ")"
   | Field (target, field_name) -> to_source target ^ "." ^ field_name
   | Cons (head, tail) -> "(" ^ to_source head ^ " :: " ^ to_source tail ^ ")"
   | Record (fields, type_name) ->
@@ -190,12 +194,32 @@ let rec to_source = function
       in
       let value = "{" ^ fields ^ "}" in
       (match type_name with None -> value | Some name -> "(" ^ value ^ " : " ^ name ^ ")")
+  | RecordUpdate (record, fields) ->
+      let fields =
+        fields
+        |> List.map (fun (name, value) -> name ^ " = " ^ to_source value)
+        |> String.concat "; "
+      in
+      "{" ^ to_source record ^ " with " ^ fields ^ "}"
 
 let loc = Location.none
-let lid value = Location.mkloc value loc
-let str value = Location.mkloc value loc
+
+let rec compact_longident = function
+  | Longident.Lident name -> Longident.Lident (Names.compact_generated_name name)
+  | Longident.Ldot (path, name) ->
+      Longident.Ldot
+        ( { path with txt = compact_longident path.txt },
+          { name with txt = Names.compact_generated_name name.txt } )
+  | Longident.Lapply (fn, argument) ->
+      Longident.Lapply
+        ( { fn with txt = compact_longident fn.txt },
+          { argument with txt = compact_longident argument.txt } )
+
+let lid value = Location.mkloc (compact_longident value) loc
+let str value = Location.mkloc (Names.compact_generated_name value) loc
 
 let longident_of_string name =
+  let name = Names.compact_runtime_path name in
   match String.split_on_char '.' name with
   | [] -> Longident.Lident name
   | first :: rest ->
@@ -205,6 +229,9 @@ let longident_of_string name =
         (Longident.Lident first) rest
 
 let core_type_of_source source =
+  let source =
+    source |> Names.compact_runtime_source |> Names.compact_generated_source
+  in
   let lexbuf = Lexing.from_string source in
   Location.init lexbuf ("generated type " ^ source);
   try Parse.core_type lexbuf
@@ -494,6 +521,29 @@ and to_parsetree ~context = function
                   (List.map function_parameter patterns)
                   None (Pfunction_body body))))
   | Sequence expressions -> (
+      let rec discardable = function
+        | Located (_, _, expression) | Constraint (expression, _) ->
+            discardable expression
+        | Int _ | Int64 _ | Float _ | String _ | Char _ | Bool _ | Unit
+        | Ident _ | Constructor (_, None) ->
+            true
+        | Constructor (_, Some value) -> discardable value
+        | Tuple values | List values | Array values ->
+            List.for_all discardable values
+        | Apply _ | Uncurried_apply _ | Labelled_apply _ | If _ | Fun _
+        | Sequence _ | Let _ | LetRec _ | LetRecIn _ | Match _
+        | Match_guarded _ | Try _ | Infix _ | Prefix _ | Field _ | Cons _
+        | Record _ | RecordUpdate _ ->
+            false
+      in
+      let rec elide_discarded_pure_values = function
+        | [] | [ _ ] as expressions -> expressions
+        | expression :: rest when discardable expression ->
+            elide_discarded_pure_values rest
+        | expression :: rest ->
+            expression :: elide_discarded_pure_values rest
+      in
+      let expressions = elide_discarded_pure_values expressions in
       let rec build = function
         | [] -> Ok (Ast_helper.Exp.construct ~loc (lid (Longident.Lident "()")) None)
         | [ expression ] -> to_parsetree ~context expression
@@ -502,7 +552,7 @@ and to_parsetree ~context = function
             | (Error _ as err), _ -> err
             | _, (Error _ as err) -> err
             | Ok expression, Ok body ->
-                let discarded_name = "__lg_discarded_value" in
+                let discarded_name = "__d" in
                 let discarded_binding =
                   Ast_helper.Vb.mk ~loc
                     (Ast_helper.Pat.var ~loc (str discarded_name))
@@ -629,6 +679,12 @@ and to_parsetree ~context = function
             (Ast_helper.Exp.apply ~loc
                (Ast_helper.Exp.ident ~loc (lid (Longident.Lident operator)))
                [ (Asttypes.Nolabel, expression) ]))
+  | Constraint (expression, type_name) ->
+      Result.map
+        (fun expression ->
+          Ast_helper.Exp.constraint_ ~loc expression
+            (core_type_of_source type_name))
+        (to_parsetree ~context expression)
   | Field (target, field_name) -> (
       match to_parsetree ~context target with
       | Error _ as err -> err
@@ -664,3 +720,20 @@ and to_parsetree ~context = function
              | Some name ->
                  Ast_helper.Exp.constraint_ ~loc expression
                    (core_type_of_source name))
+  | RecordUpdate (record, fields) -> (
+      match to_parsetree ~context record with
+      | Error _ as err -> err
+      | Ok record ->
+          let rec build_fields acc = function
+            | [] -> Ok (List.rev acc)
+            | (name, value) :: rest -> (
+                match to_parsetree ~context value with
+                | Error _ as err -> err
+                | Ok value ->
+                    build_fields
+                      ((lid (longident_of_string name), value) :: acc)
+                      rest)
+          in
+          Result.map
+            (fun fields -> Ast_helper.Exp.record ~loc fields (Some record))
+            (build_fields [] fields))

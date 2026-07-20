@@ -42,16 +42,10 @@ let field_expr target field =
   | None -> (
       match target.ty with
       | TNamed_record record ->
-          let target_name = "__lg_record_field_target" in
-          Semantic_ir.Let
-            ( [
-                ( Semantic_ir.PConstraint
-                    ( Semantic_ir.PVar target_name,
-                      record_projection_type record ),
-                  target.semantic_expr );
-              ],
-              Semantic_ir.Field
-                (Semantic_ir.Ident target_name, field.ocaml_name) )
+          Semantic_ir.Field
+            ( Semantic_ir.Constraint
+                (target.semantic_expr, record_projection_type record),
+              field.ocaml_name )
       | _ -> Semantic_ir.Field (target.semantic_expr, field.ocaml_name))
 
 let values_for target fields =

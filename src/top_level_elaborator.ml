@@ -82,10 +82,12 @@ let allocate_function_return_record env next_type
             @ [
                 Type_def
                   {
+                    type_id = allocation.record.type_id;
                     type_name = allocation.record.type_name;
                     type_parameters = allocation.record.type_parameters;
                     fields = allocation.record.fields;
                     nominal = false;
+                    dynamic_packer = false;
                     location = None;
                   };
               ]
@@ -128,10 +130,12 @@ let allocate_function_local_records env next_type
             @ [
                 Type_def
                   {
+                    type_id = allocation.record.type_id;
                     type_name = allocation.record.type_name;
                     type_parameters = allocation.record.type_parameters;
                     fields = allocation.record.fields;
                     nominal = false;
+                    dynamic_packer = false;
                     location = None;
                   };
               ];
@@ -737,7 +741,7 @@ let infer_defrecord_field_types scope env record_name field_names interface_form
         | Ok inferred_params ->
             List.combine field_names field_types
             |> List.mapi (fun index (name, previous) ->
-                let inferred =
+let inferred =
                   List.assoc_opt name inferred_params
                   |> Option.value ~default:TUnknown
                 in
@@ -771,6 +775,43 @@ let infer_defrecord_field_types scope env record_name field_names interface_form
            |> Option.value ~default:(Types.dynamic_constraint TUnknown))
   in
   inferred
+
+let append_dynamic_record_packer scope name = function
+  | Error _ as error -> error
+  | Ok (compiled_scope, env, next_type, item) -> (
+      let rec mark_dynamic_packer = function
+        | Type_def definition ->
+            Type_def { definition with dynamic_packer = true }
+        | Record_def definition ->
+            Record_def { definition with dynamic_packer = true }
+        | Projected_record_def definition ->
+            Projected_record_def { definition with dynamic_packer = true }
+        | Group items -> Group (List.map mark_dynamic_packer items)
+        | item -> item
+      in
+      match Resolver.lookup_record_type scope env name with
+      | Error _ as error -> error
+      | Ok record ->
+          Result.map
+            (fun registration ->
+              let registration_item =
+                Option.map
+                  (fun expression ->
+                    Value_binding { pattern = Unit_pattern; expression })
+                  registration
+              in
+              let item =
+                match (item, registration_item) with
+                | item, None -> mark_dynamic_packer item
+                | Group items, Some registration ->
+                    Group
+                      (List.map mark_dynamic_packer items @ [ registration ])
+                | item, Some registration ->
+                    Group [ mark_dynamic_packer item; registration ]
+              in
+              (compiled_scope, env, next_type, item))
+            (Call_elaborator.compile_dynamic_record_packer_registration env
+               record))
 
 let rec compile scope env next_type = function
   | FList
@@ -980,7 +1021,7 @@ let rec compile scope env next_type = function
                                :: FSymbol protocol_name :: wrapped_methods)
                           | None ->
                               FList
-                                (FSymbol "deftype-methods" :: FSymbol name
+                                (FSymbol "deftype-methods-no-pack" :: FSymbol name
                                :: FSymbol protocol_name :: methods)
                         in
                         match
@@ -995,7 +1036,8 @@ let rec compile scope env next_type = function
                   Result.bind
                     (predeclare_protocol_groups scope env receiver_form groups)
                     (fun env ->
-                      compile_groups env next_type (items_of type_item) groups)))
+                      compile_groups env next_type (items_of type_item) groups)
+                  |> append_dynamic_record_packer scope name))
   | FList
       (FSymbol "deftype"
       :: (FSymbol name as name_form)
@@ -1071,7 +1113,10 @@ let rec compile scope env next_type = function
             compile_type_record
               ?location:(Source_context.find name_form)
               scope env next_type name type_parameters field_forms)
-  | FList (FSymbol "deftype-methods" :: FSymbol type_name :: interface_forms)
+  | FList
+      (FSymbol
+         ("deftype-methods" | "deftype-methods-no-pack" as extension_kind)
+      :: FSymbol type_name :: interface_forms)
     -> (
       match Resolver.lookup_record_type scope env type_name with
       | Error _ as err -> err
@@ -1189,7 +1234,9 @@ let rec compile scope env next_type = function
                             ]
                     in
                     (scope, env, next_type, Group items))
-                  (Call_elaborator.compile_deftype_registrations env record)
+                  (Call_elaborator.compile_deftype_registrations
+                     ~dynamic_packer:(extension_kind = "deftype-methods") env
+                     record)
             | FSymbol interface_name :: rest ->
                 compile_methods env items (Some interface_name) rest
             | FList (FSymbol method_name :: arities) :: rest
@@ -1994,6 +2041,7 @@ let rec compile scope env next_type = function
                                 allocation.record.set_module_name;
                           fields;
                               values;
+                              dynamic_packer = false;
                             }
                   | None ->
                       Projected_record_def
@@ -2005,6 +2053,7 @@ let rec compile scope env next_type = function
                                 allocation.record.set_module_name;
                           fields;
                               source = expr.semantic_expr;
+                              dynamic_packer = false;
                             }
                     in
                     let item =
@@ -2427,7 +2476,24 @@ let rec compile scope env next_type = function
                 | Error _ | Ok { type_parameters = _ :: _; _ } -> Ok []
                 | Ok record ->
                     let rec compile compiled = function
-                      | [] -> Ok (List.rev compiled)
+                      | [] ->
+                          Result.map
+                            (fun packer ->
+                              let compiled = List.rev compiled in
+                              match packer with
+                              | None -> compiled
+                              | Some expression ->
+                                  compiled
+                                  @ [
+                                      Value_binding
+                                        {
+                                          pattern = Unit_pattern;
+                                          expression;
+                                        };
+                                    ])
+                            (Call_elaborator
+                             .compile_dynamic_record_packer_registration env
+                               record)
                       | (protocol_name, _) :: rest -> (
                           match
                             Protocol.find_protocol_id scope env protocol_name

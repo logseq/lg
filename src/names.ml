@@ -90,9 +90,22 @@ let is_qualified name = String.contains name '/'
 let scoped_key scope name =
   if is_qualified name || scope = "" then name else scope ^ "/" ^ name
 
+let compact_source_binding name =
+  if String.length name > 24 then
+    "lg_" ^ String.sub (Digest.to_hex (Digest.string name)) 0 8
+  else name
+
 let ocaml_binding_name scope name =
-  if scope = "" then sanitize_name name
-  else sanitize_name (scope ^ "_" ^ name)
+  let candidate =
+    if scope = "" then sanitize_name name
+    else sanitize_name (scope ^ "_" ^ name)
+  in
+  if
+    scope <> ""
+    &&
+    match scope.[0] with 'a' .. 'z' -> true | _ -> false
+  then compact_source_binding candidate
+  else candidate
 
 let module_segment_to_ocaml name =
   let sanitized = sanitize_name name in
@@ -104,3 +117,82 @@ let module_segment_to_ocaml name =
 let module_path_to_ocaml path =
   path |> String.split_on_char '.' |> List.map module_segment_to_ocaml
   |> String.concat "."
+
+let compact_runtime_aliases =
+  [
+    ("Lg_runtime.Runtime_dynamic", "Lg_runtime.Lg_dyn");
+    ("Lg_runtime.Runtime_seq", "Lg_runtime.Lg_seq");
+    ("Lg_runtime.Runtime_map", "Lg_runtime.Lg_map");
+    ("Lg_runtime.Runtime_exception", "Lg_runtime.Lg_exn");
+    ("Lg_runtime.Core_set", "Lg_runtime.Lg_set");
+  ]
+
+let compact_runtime_path name =
+  let rec compact = function
+    | [] -> name
+    | (prefix, alias) :: rest ->
+        if String.equal name prefix then alias
+        else
+          let dotted_prefix = prefix ^ "." in
+          if String.starts_with ~prefix:dotted_prefix name then
+            alias
+            ^ String.sub name (String.length prefix)
+                (String.length name - String.length prefix)
+          else compact rest
+  in
+  compact compact_runtime_aliases
+
+let replace_all source pattern replacement =
+  let pattern_length = String.length pattern in
+  let source_length = String.length source in
+  let buffer = Buffer.create source_length in
+  let rec loop index =
+    if index >= source_length then Buffer.contents buffer
+    else if
+      index + pattern_length <= source_length
+      && String.sub source index pattern_length = pattern
+    then (
+      Buffer.add_string buffer replacement;
+      loop (index + pattern_length))
+    else (
+      Buffer.add_char buffer source.[index];
+      loop (index + 1))
+  in
+  loop 0
+
+let compact_runtime_source source =
+  List.fold_left
+    (fun source (prefix, alias) -> replace_all source prefix alias)
+    source compact_runtime_aliases
+
+let compact_generated_name name =
+  if String.starts_with ~prefix:"__lg_" name then
+    "__l" ^ String.sub (Digest.to_hex (Digest.string name)) 0 8
+  else name
+
+let compact_generated_source source =
+  let source_length = String.length source in
+  let is_identifier_char = function
+    | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' -> true
+    | _ -> false
+  in
+  let buffer = Buffer.create source_length in
+  let rec loop index =
+    if index >= source_length then Buffer.contents buffer
+    else if
+      index + 5 <= source_length && String.sub source index 5 = "__lg_"
+    then
+      let rec identifier_end cursor =
+        if cursor < source_length && is_identifier_char source.[cursor] then
+          identifier_end (cursor + 1)
+        else cursor
+      in
+      let end_index = identifier_end (index + 5) in
+      let name = String.sub source index (end_index - index) in
+      Buffer.add_string buffer (compact_generated_name name);
+      loop end_index
+    else (
+      Buffer.add_char buffer source.[index];
+      loop (index + 1))
+  in
+  loop 0

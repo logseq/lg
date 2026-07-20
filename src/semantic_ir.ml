@@ -45,9 +45,12 @@ type t =
   | Try of t * (pattern * t option * t) list
   | Infix of string * t * t
   | Prefix of string * t
+  | Constraint of t * string
   | Field of t * string
   | Cons of t * t
   | Record of (string * t) list * string option
+  | RecordUpdate of t * (string * t) list
+  | SharedValue of string * t
   | PackDynamic of {
       source_ty : Semantic_type.ty;
       target_ty : Semantic_type.ty;
@@ -136,7 +139,8 @@ let annotate ty = function
 
 let rec type_annotations expression =
   let children = function
-    | Typed (_, value) | Located (_, _, value) -> [ value ]
+    | Typed (_, value) | Located (_, _, value) | SharedValue (_, value) ->
+        [ value ]
     | Constructor (_, value) -> Option.to_list value
     | Tuple values | List values | Array values | Sequence values -> values
     | Apply (fn, args) | Uncurried_apply (fn, args) -> fn :: args
@@ -158,12 +162,13 @@ let rec type_annotations expression =
              (fun (_, guard, handler) -> Option.to_list guard @ [ handler ])
              cases
     | Infix (_, left, right) | Cons (left, right) -> [ left; right ]
-    | Prefix (_, value) | Field (value, _)
+    | Prefix (_, value) | Constraint (value, _) | Field (value, _)
     | PackDynamic { conversion = value; _ }
     | UnpackDynamic { conversion = value; _ }
     | NullableToSeq { conversion = value; _ } ->
         [ value ]
     | Record (fields, _) -> List.map snd fields
+    | RecordUpdate (record, fields) -> record :: List.map snd fields
     | Int _ | Int64 _ | Float _ | String _ | Char _ | Bool _ | Unit | Ident _ -> []
   in
   let own =
@@ -232,12 +237,19 @@ let rec rewrite fn expression =
     | Infix (operator, left, right) ->
         Infix (operator, rewrite fn left, rewrite fn right)
     | Prefix (operator, value) -> Prefix (operator, rewrite fn value)
+    | Constraint (value, type_name) ->
+        Constraint (rewrite fn value, type_name)
     | Field (value, field) -> Field (rewrite fn value, field)
     | Cons (head, tail) -> Cons (rewrite fn head, rewrite fn tail)
     | Record (fields, type_name) ->
         Record
           ( List.map (fun (name, value) -> (name, rewrite fn value)) fields,
             type_name )
+    | RecordUpdate (record, fields) ->
+        RecordUpdate
+          ( rewrite fn record,
+            List.map (fun (name, value) -> (name, rewrite fn value)) fields )
+    | SharedValue (name, value) -> SharedValue (name, rewrite fn value)
     | PackDynamic conversion ->
         PackDynamic
           { conversion with conversion = rewrite fn conversion.conversion }
@@ -255,7 +267,8 @@ let rec rewrite fn expression =
 let rec exists_identifier predicate expression =
   let children =
     match expression with
-    | Typed (_, value) | Located (_, _, value) -> [ value ]
+    | Typed (_, value) | Located (_, _, value) | SharedValue (_, value) ->
+        [ value ]
     | Constructor (_, value) -> Option.to_list value
     | Tuple values | List values | Array values | Sequence values -> values
     | Apply (fn, args) | Uncurried_apply (fn, args) -> fn :: args
@@ -278,12 +291,13 @@ let rec exists_identifier predicate expression =
              (fun (_, guard, handler) -> Option.to_list guard @ [ handler ])
              cases
     | Infix (_, left, right) | Cons (left, right) -> [ left; right ]
-    | Prefix (_, value) | Field (value, _)
+    | Prefix (_, value) | Constraint (value, _) | Field (value, _)
     | PackDynamic { conversion = value; _ }
     | UnpackDynamic { conversion = value; _ }
     | NullableToSeq { conversion = value; _ } ->
         [ value ]
     | Record (fields, _) -> List.map snd fields
+    | RecordUpdate (record, fields) -> record :: List.map snd fields
     | Int _ | Int64 _ | Float _ | String _ | Char _ | Bool _ | Unit | Ident _ -> []
   in
   match expression with

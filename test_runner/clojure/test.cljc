@@ -53,7 +53,7 @@
      (let [body (drop 2 form)]
        `(try
           ~@body
-          (clojure.test/fail! (str '~form) ~message)
+          (clojure.test/fail! ~(str form) ~message)
           (catch js/Error _error
             (clojure.test/pass!))))
 
@@ -88,7 +88,7 @@
      :else
      `(if ~form
         (clojure.test/pass!)
-        (clojure.test/fail! (str '~form) ~message)))))
+        (clojure.test/fail! ~(str form) ~message)))))
 
 (defmacro are [argv expression & arguments]
   `(do ~@(clojure.test/expand-are argv expression arguments)))
@@ -108,7 +108,7 @@
          (clojure.test/finish-test!))
        (clojure.test/register-test!
         ~namespace
-        (str '~name)
+        ~(str name)
         ~name))))
 
 (defmacro use-fixtures [fixture-type & fixtures]

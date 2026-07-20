@@ -24,6 +24,8 @@ let rec for_all predicate sequence =
 let map fn sequence = sequence |> Seq.map fn |> memoize
 let mapi fn sequence = sequence |> Seq.mapi fn |> memoize
 let filter_map fn sequence = sequence |> Seq.filter_map fn |> memoize
+let capture_adapter adapter value _ = adapter value
+let map_adapter mapper adapter value = map mapper (adapter value)
 
 let rec map2 fn left right =
   memoize (fun () ->

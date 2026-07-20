@@ -78,10 +78,12 @@ type compiled_item =
     }
   | Comment of string
   | Type_def of {
+      type_id : Type_id.t;
       type_name : string;
       type_parameters : string list;
       fields : Types.field list;
       nominal : bool;
+      dynamic_packer : bool;
       location : Location.t option;
     }
   | Type_alias of {
@@ -137,6 +139,7 @@ type compiled_item =
       set_module_name : string;
       fields : Types.field list;
       values : (Types.field * Semantic_ir.t) list;
+      dynamic_packer : bool;
     }
   | Projected_record_def of {
       var_name : string;
@@ -145,4 +148,5 @@ type compiled_item =
       set_module_name : string;
       fields : Types.field list;
       source : Semantic_ir.t;
+      dynamic_packer : bool;
     }

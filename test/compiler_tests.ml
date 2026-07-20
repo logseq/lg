@@ -26,6 +26,16 @@ let string_contains_substring text expected =
   in
   expected_len = 0 || loop 0
 
+let count_substring text expected =
+  let expected_len = String.length expected in
+  let rec loop count index =
+    if expected_len = 0 || index + expected_len > String.length text then count
+    else if String.sub text index expected_len = expected then
+      loop (count + 1) (index + expected_len)
+    else loop count (index + 1)
+  in
+  loop 0 0
+
 let count_generated_anonymous_record_types source =
   let anonymous_type_name line =
     let words =
@@ -2818,7 +2828,10 @@ let test_referred_update_supports_threaded_nested_calls () =
     (provider_ocaml ^ "\n" ^ consumer_ocaml, consumer_ocaml)
   in
   let ocaml_source, consumer_ocaml = compile Lg.Target.Native in
-  if string_contains_substring consumer_ocaml "datascript_inline_update__" then
+  if
+    string_contains_substring consumer_ocaml
+      (Lg.Names.ocaml_binding_name "datascript.inline" "update" ^ "__")
+  then
     failwith "inline update calls must not use the runtime wrapper";
   assert_ocaml_runs "referred_update_supports_threaded_nested_calls"
     "1:1:1\n" ocaml_source;
@@ -4182,7 +4195,7 @@ let test_dynamic_protocol_witnesses_unpack_common_returns () =
   if
     not
       (string_contains_substring ocaml_source
-         "Lg_runtime.Runtime_dynamic.as_bool")
+         "Lg_dyn.as_bool")
   then
     failwith "dynamic protocol witnesses must unpack their common return type";
   ignore
@@ -8565,12 +8578,12 @@ let test_direct_val_at_uses_dynamic_map_comparator () =
   if
     not
       (string_contains_substring ocaml_source
-         "Lg_runtime.Runtime_map.get_option_dynamic")
+         "Lg_map.get_option_dynamic")
   then failwith "direct valAt should use the dynamic map comparator";
   if
     not
       (string_contains_substring ocaml_source
-         "Lg_runtime.Runtime_map.get_option_default_dynamic")
+         "Lg_map.get_option_default_dynamic")
   then failwith "direct valAt with a default should use the dynamic map comparator";
   let melange_source =
     Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok
@@ -8578,7 +8591,7 @@ let test_direct_val_at_uses_dynamic_map_comparator () =
   if
     not
       (string_contains_substring melange_source
-         "Lg_runtime.Runtime_map.get_option_dynamic")
+         "Lg_map.get_option_dynamic")
   then failwith "Melange direct valAt should use the dynamic map comparator"
 
 let test_recursive_protocol_vectors_materialize_optional_unknown_elements () =
@@ -12742,12 +12755,12 @@ let test_reduce_refines_empty_set_accumulators_without_widening_static_sets () =
   if
     not
       (string_contains_substring ocaml_source
-         "Lg_runtime.Core_set.Int_set.add")
+         "Lg_set.Int_set.add")
   then failwith "integer set accumulator must remain static";
   if
     not
       (string_contains_substring ocaml_source
-         "Lg_runtime.Runtime_dynamic.conj")
+         "Lg_dyn.conj")
   then failwith "nullable set accumulator must use the dynamic boundary";
   assert_ocaml_runs
     "reduce_refines_empty_set_accumulators_without_widening_static_sets"
@@ -15115,30 +15128,30 @@ let test_dynamic_generic_nominals_are_consumed_inside_existential_scope () =
     String.concat "\n" (List.rev (output :: outputs))
   in
   let ocaml_source = compile Lg.Target.Native in
+  let pss_name name =
+    Lg.Names.ocaml_binding_name "me.tonsky.persistent-sorted-set" name
+  in
   let node_conj_start =
-    expect_substring_index ocaml_source
-      "let rec ((me_tonsky_persistent_sorted_set_node_conj)"
+    expect_substring_index ocaml_source ("let rec " ^ pss_name "node-conj")
   in
-  let node_disj_start =
-    expect_substring_index ocaml_source
-      "let rec ((me_tonsky_persistent_sorted_set_node_disj)"
-  in
+  let node_conj_end = String.index_from ocaml_source node_conj_start '\n' in
   let node_conj_source =
-    String.sub ocaml_source node_conj_start
-      (node_disj_start - node_conj_start)
+    String.sub ocaml_source node_conj_start (node_conj_end - node_conj_start)
   in
   if
     string_contains_substring node_conj_source
-      "Lg_runtime.Runtime_dynamic"
+      "Lg_dyn"
   then
     failwith
       "node-conj should not require dynamic recursive-call specialization";
-  if string_contains_substring node_conj_source "__lg_adapt_collection_item"
+  if
+    string_contains_substring node_conj_source
+      (Lg.Names.compact_generated_name "__lg_adapt_collection_item")
   then
     failwith "node-conj should not map arrays for representation-only coercions";
   if
     string_contains_substring ocaml_source
-      "index: Lg_runtime.Runtime_dynamic.t"
+      "index: Lg_dyn.t"
   then
     failwith "protocol-backed defrecord fields must retain nominal evidence";
   assert_ocaml_runs
@@ -15146,16 +15159,11 @@ let test_dynamic_generic_nominals_are_consumed_inside_existential_scope () =
     "1:41:42:1:1:true:1:true\n" ocaml_source;
   let melange_source = compile Lg.Target.Melange in
   let node_fold_start =
-    expect_substring_index melange_source
-      "let rec ((me_tonsky_persistent_sorted_set_node_fold)"
+    expect_substring_index melange_source ("let rec " ^ pss_name "node-fold")
   in
-  let delete_address_start =
-    expect_substring_index melange_source
-      "let ((me_tonsky_persistent_sorted_set_delete_address)"
-  in
+  let node_fold_end = String.index_from melange_source node_fold_start '\n' in
   let node_fold_source =
-    String.sub melange_source node_fold_start
-      (delete_address_start - node_fold_start)
+    String.sub melange_source node_fold_start (node_fold_end - node_fold_start)
   in
   if not (string_contains_substring node_fold_source "Obj.magic") then
     failwith "node-fold should call fixed-arity callbacks directly on Melange"
@@ -16067,6 +16075,154 @@ let test_dynamic_callable_type_variables_propagate_to_arguments () =
 |}
   in
   ignore (Lg.Compiler.compile_string source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_dynamic_record_packing_is_shared_across_call_sites () =
+  let source call_count =
+    let calls =
+      List.init call_count (fun index ->
+          Printf.sprintf "(erase (Box. %d))" (index + 1))
+      |> String.concat " "
+    in
+    {|
+(defprotocol IChain
+  (-next [value]))
+(defrecord Box [^int value]
+  IChain
+  (-next [box] box))
+(defn erase [^:dynamic value] value)
+(println (count [|}
+    ^ calls
+    ^ {|]))
+|}
+  in
+  let single_source = Lg.Compiler.compile_string (source 1) |> expect_ok in
+  let repeated_source = Lg.Compiler.compile_string (source 8) |> expect_ok in
+  let registration_count =
+    count_substring repeated_source "register_record_packer"
+  in
+  if registration_count <> 1 then
+    failwith
+      (Printf.sprintf "expected one record packer registration, got %d"
+         registration_count);
+  let added_size = String.length repeated_source - String.length single_source in
+  if added_size > 20_000 then
+    failwith
+      (Printf.sprintf
+         "repeated dynamic record packing expanded generated code by %d bytes"
+         added_size);
+  assert_ocaml_runs "dynamic_record_packing_is_shared_across_call_sites"
+    "8\n" repeated_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange (source 8)
+    |> expect_ok)
+
+let test_protocol_witnesses_are_shared_across_call_sites () =
+  let source call_count =
+    let calls =
+      List.init call_count (fun index ->
+          Printf.sprintf "(read-box (Box. %d))" (index + 1))
+      |> String.concat " "
+    in
+    {|
+(defprotocol IReadBox
+  (-read [value fallback])
+  (-values [value first-value second-value]))
+(defrecord Box [^int value]
+  IReadBox
+  (-read [box _fallback] (.-value box))
+  (-values [box first-value second-value]
+    [(.-value box) first-value second-value]))
+(defn read-box [box]
+  [(-read box 0) (-values box 1 2)])
+(println (count [|}
+    ^ calls
+    ^ {|]))
+|}
+  in
+  let single_source = Lg.Compiler.compile_string (source 1) |> expect_ok in
+  let repeated_source = Lg.Compiler.compile_string (source 8) |> expect_ok in
+  let added_size = String.length repeated_source - String.length single_source in
+  if added_size > 4_000 then
+    failwith
+      (Printf.sprintf
+         "repeated protocol witnesses expanded generated code by %d bytes"
+         added_size);
+  assert_ocaml_runs "protocol_witnesses_are_shared_across_call_sites" "8\n"
+    repeated_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange (source 8)
+    |> expect_ok)
+
+let test_protocol_constraint_patterns_annotate_only_the_stored_value () =
+  let source =
+    {|
+(defprotocol Lookup
+  (lookup [value key fallback] :int))
+(extend-type :int
+  Lookup
+  (lookup [value _key _fallback] value))
+(defn use-value [value]
+  (lookup value :answer nil))
+(println (use-value 42))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let binding =
+    ocaml_source |> String.split_on_char '\n'
+    |> List.find (String.starts_with ~prefix:"let use_value ")
+  in
+  if string_contains_substring binding " -> Lg_dyn.t" then
+    failwith
+      "protocol constraint parameters repeated the complete witness type";
+  assert_ocaml_runs
+    "protocol_constraint_patterns_annotate_only_the_stored_value" "42\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_dynamic_functions_use_runtime_adapters () =
+  let source =
+    {|
+(defn erase [^:dynamic value] value)
+(defn add-values [^int left ^int right] (+ left right))
+(def dynamic-add (erase add-values))
+(println (dynamic-add 20 22))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if
+    not
+      (string_contains_substring ocaml_source
+         "Lg_dyn.function_adapter_2")
+  then failwith "dynamic functions should use the shared runtime adapter";
+  assert_ocaml_runs "dynamic_functions_use_runtime_adapters" "42\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_dynamic_protocol_methods_use_runtime_arity_adapters () =
+  let source =
+    {|
+(defprotocol Lookup
+  (lookup [value key fallback]))
+(defrecord Store [value]
+  Lookup
+  (lookup [store _key _fallback]
+    (.-value store)))
+(defn erase [^:dynamic value] value)
+(println (lookup (erase (Store. 42)) :answer nil))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if
+    not
+      (string_contains_substring ocaml_source
+         "Lg_dyn.protocol_method_2")
+  then failwith "dynamic protocol methods should use a shared arity adapter";
+  assert_ocaml_runs "dynamic_protocol_methods_use_runtime_arity_adapters"
+    "42\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -22587,6 +22743,17 @@ let test_discarded_function_values_use_ignore () =
     failwith "discarded expressions must use Stdlib.ignore";
   assert_ocaml_runs "discarded_function_values_use_ignore" "2\n" ocaml_source
 
+let test_discarded_pure_values_are_elided () =
+  let source =
+    {|
+(println (do nil 2))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Stdlib.ignore" then
+    failwith "discarded pure values should not generate effect scaffolding";
+  assert_ocaml_runs "discarded_pure_values_are_elided" "2\n" ocaml_source
+
 let tests =
   [
     ( "nullable forwarding preserves sequential capabilities",
@@ -22595,6 +22762,8 @@ let tests =
       test_local_when_function_accepts_nullable_results );
     ( "discarded function values use ignore",
       test_discarded_function_values_use_ignore );
+    ( "discarded pure values are elided",
+      test_discarded_pure_values_are_elided );
     ( "compiler test directory avoids existing PID directory",
       test_test_directory_avoids_existing_pid_directory );
     ( "records, assoc, and dissoc generate typed OCaml",
@@ -24130,6 +24299,16 @@ let tests =
       test_update_in_uses_dynamic_callbacks_for_dynamic_record_fields );
     ( "dynamic callable type variables propagate to arguments",
       test_dynamic_callable_type_variables_propagate_to_arguments );
+    ( "dynamic record packing is shared across call sites",
+      test_dynamic_record_packing_is_shared_across_call_sites );
+    ( "protocol witnesses are shared across call sites",
+      test_protocol_witnesses_are_shared_across_call_sites );
+    ( "protocol constraint patterns annotate only the stored value",
+      test_protocol_constraint_patterns_annotate_only_the_stored_value );
+    ( "dynamic functions use runtime adapters",
+      test_dynamic_functions_use_runtime_adapters );
+    ( "dynamic protocol methods use runtime arity adapters",
+      test_dynamic_protocol_methods_use_runtime_arity_adapters );
     ( "generic calls unpack dynamic nominal arguments",
       test_generic_calls_unpack_dynamic_nominal_arguments );
     ( "additional sequence helpers reject bad counts",

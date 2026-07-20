@@ -14,6 +14,7 @@ type t = {
 
 let dynamic_packer_counter = ref 0
 let dynamic_unpack_counter = ref 0
+let constrained_argument_counter = ref 0
 
 let java_exception_constructors =
   [
@@ -987,6 +988,27 @@ and pack_dynamic_payload ?(packing_context = []) env expected_dynamic argument =
 
 and pack_dynamic_payload_impl ?(packing_context = []) env expected_dynamic
     argument =
+  let share_literal kind packed =
+    let literal =
+      match Semantic_ir.unlocated argument.semantic_expr with
+      | Semantic_ir.Int value -> Some (string_of_int value)
+      | Semantic_ir.Int64 value -> Some (Int64.to_string value)
+      | Semantic_ir.Float value -> Some value
+      | Semantic_ir.String value -> Some (Printf.sprintf "%S" value)
+      | Semantic_ir.Char value -> Some (string_of_int (Char.code value))
+      | Semantic_ir.Bool value -> Some (string_of_bool value)
+      | _ -> None
+    in
+    match literal with
+    | None -> packed
+    | Some literal ->
+        let key = kind ^ ":" ^ literal in
+        let name =
+          "__lg_const_"
+          ^ String.sub (Digest.to_hex (Digest.string key)) 0 12
+        in
+        Semantic_ir.SharedValue (name, packed)
+  in
   let dynamic_core_function_adapter expression =
     match Semantic_ir.unlocated expression with
     | Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.int_quot" ->
@@ -1237,9 +1259,10 @@ and pack_dynamic_payload_impl ?(packing_context = []) env expected_dynamic
     match argument.ty with
     | TInt | TOcaml "int64" ->
         Ok
-          (Semantic_ir.Apply
-             ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.int",
-               [ argument.semantic_expr ] ))
+          (share_literal "int"
+             (Semantic_ir.Apply
+                ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.int",
+                  [ argument.semantic_expr ] )))
     | TOcaml "int" ->
         Ok
           (Semantic_ir.Apply
@@ -1247,19 +1270,22 @@ and pack_dynamic_payload_impl ?(packing_context = []) env expected_dynamic
                [ apply "Int64.of_int" [ argument.semantic_expr ] ] ))
     | TFloat | TOcaml "float" ->
         Ok
-          (Semantic_ir.Apply
-             ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.float",
-               [ argument.semantic_expr ] ))
+          (share_literal "float"
+             (Semantic_ir.Apply
+                ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.float",
+                  [ argument.semantic_expr ] )))
     | TChar | TOcaml "char" ->
         Ok
-          (Semantic_ir.Apply
-             ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.char",
-               [ argument.semantic_expr ] ))
+          (share_literal "char"
+             (Semantic_ir.Apply
+                ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.char",
+                  [ argument.semantic_expr ] )))
     | TString | TOcaml "string" ->
         Ok
-          (Semantic_ir.Apply
-             ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.string",
-               [ argument.semantic_expr ] ))
+          (share_literal "string"
+             (Semantic_ir.Apply
+                ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.string",
+                  [ argument.semantic_expr ] )))
     | TOcaml "Lg_runtime.Runtime_uuid.t" ->
         Ok
           (Semantic_ir.Apply
@@ -1267,19 +1293,22 @@ and pack_dynamic_payload_impl ?(packing_context = []) env expected_dynamic
                [ argument.semantic_expr ] ))
     | TSymbol ->
         Ok
-          (Semantic_ir.Apply
-             ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.symbol",
-               [ argument.semantic_expr ] ))
+          (share_literal "symbol"
+             (Semantic_ir.Apply
+                ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.symbol",
+                  [ argument.semantic_expr ] )))
     | TKeyword ->
         Ok
-          (Semantic_ir.Apply
-             ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.keyword",
-               [ argument.semantic_expr ] ))
+          (share_literal "keyword"
+             (Semantic_ir.Apply
+                ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.keyword",
+                  [ argument.semantic_expr ] )))
     | TBool | TOcaml "bool" ->
         Ok
-          (Semantic_ir.Apply
-             ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.bool",
-               [ argument.semantic_expr ] ))
+          (share_literal "bool"
+             (Semantic_ir.Apply
+                ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.bool",
+                  [ argument.semantic_expr ] )))
     | TOcaml name ->
         Ok
           (Semantic_ir.Apply
@@ -1453,6 +1482,37 @@ and pack_dynamic_payload_impl ?(packing_context = []) env expected_dynamic
           Ok
             (Semantic_ir.Ident
                ("Lg_runtime.Runtime_dynamic." ^ runtime_name))
+      | None
+        when List.length parameter_tys >= 1
+             && List.length parameter_tys <= 6 ->
+          let rec compile_unpackers compiled index = function
+            | [] -> Ok (List.rev compiled)
+            | parameter_ty :: rest ->
+                let name = "__lg_adapter_arg_" ^ string_of_int index in
+                Result.bind
+                  (dynamic_unpack env parameter_ty (Semantic_ir.Ident name))
+                  (fun unpacked ->
+                    compile_unpackers
+                      (Semantic_ir.Fun ([ Semantic_ir.PVar name ], unpacked)
+                      :: compiled)
+                      (index + 1) rest)
+          in
+          let result_name = "__lg_adapter_result" in
+          let result = typed_ir return_ty (Semantic_ir.Ident result_name) in
+          Result.bind (compile_unpackers [] 0 parameter_tys) (fun unpackers ->
+              Result.map
+                (fun packed_result ->
+                  let pack_result =
+                    Semantic_ir.Fun
+                      ([ Semantic_ir.PVar result_name ], packed_result)
+                  in
+                  Semantic_ir.Apply
+                    ( Semantic_ir.Ident
+                        ("Lg_runtime.Runtime_dynamic.function_adapter_"
+                        ^ string_of_int (List.length parameter_tys)),
+                      unpackers @ [ pack_result; argument.semantic_expr ] ))
+                (pack_dynamic_payload ~packing_context env expected_dynamic
+                   result))
       | None ->
         let argument_names =
           List.mapi
@@ -1792,25 +1852,20 @@ and pack_dynamic_payload_impl ?(packing_context = []) env expected_dynamic
     | TNamed_record record
       when record.nominal
            || not (supports_structural_dynamic_packing argument.ty) ->
-        let record_type_name =
-          record_type_application record.type_name record.type_arguments
-        in
-        let rebuilt_record replacement =
-          Semantic_ir.Record
-            ( List.map
-                (fun (field : field) ->
-                  let value =
-                    match replacement field with
-                    | Some value -> value
-                    | None -> record_field_expression field
-                  in
-                  (field.ocaml_name, value))
-                record.fields,
-              Some record_type_name )
-        in
-        let pack_rebuilt_record replacement =
+        let pack_updated_record (field : field) replacement =
+          let updated_record =
+            if List.length record.fields = 1 then
+              Semantic_ir.Record
+                ( [ (field.ocaml_name, replacement) ],
+                  Some
+                    (record_type_application record.type_name
+                       record.type_arguments) )
+            else
+              Semantic_ir.RecordUpdate
+                (argument.semantic_expr, [ (field.ocaml_name, replacement) ])
+          in
           pack_dynamic_value ~packing_context env expected_dynamic
-            (typed_ir argument.ty (rebuilt_record replacement))
+            (typed_ir argument.ty updated_record)
         in
         let rec pack_fields packed = function
           | [] -> Ok (List.rev packed)
@@ -1854,10 +1909,7 @@ and pack_dynamic_payload_impl ?(packing_context = []) env expected_dynamic
                     fields
               | Ok replacement ->
                   Result.bind
-                    (pack_rebuilt_record (fun candidate ->
-                         if candidate.keyword = field.keyword then
-                           Some replacement
-                         else None))
+                    (pack_updated_record field replacement)
                     (fun updated ->
                       pack_assoc_cases
                         ((Semantic_ir.PString field.keyword, updated) :: packed)
@@ -1905,20 +1957,14 @@ and pack_dynamic_payload_impl ?(packing_context = []) env expected_dynamic
                   (fun cases ->
                     let extension_keyword = "__lg_dynamic_record_keyword" in
                     Result.bind
-                      (pack_rebuilt_record (fun candidate ->
-                           if
-                             candidate.keyword = extension_field.keyword
-                           then
-                             Some
-                               (Semantic_ir.Apply
-                                  ( Semantic_ir.Ident
-                                      "Lg_runtime.Runtime_map.assoc",
-                                    [
-                                      record_field_expression extension_field;
-                                      Semantic_ir.Ident extension_keyword;
-                                      replacement;
-                                    ] ))
-                           else None))
+                      (pack_updated_record extension_field
+                         (Semantic_ir.Apply
+                            ( Semantic_ir.Ident "Lg_runtime.Runtime_map.assoc",
+                              [
+                                record_field_expression extension_field;
+                                Semantic_ir.Ident extension_keyword;
+                                replacement;
+                              ] )))
                       (fun extension_updated ->
                         add_dynamic_record_capabilities record
                           (Semantic_ir.Apply
@@ -2020,6 +2066,17 @@ and pack_dynamic_value ?(packing_context = []) ?protocol_ids
             (annotate
                (Semantic_ir.Apply
                   (Semantic_ir.Ident packer_name, [ argument.semantic_expr ])))
+      | None when record.type_parameters = [] ->
+          Ok
+            (annotate
+               (Semantic_ir.Apply
+                  ( Semantic_ir.Ident
+                      "Lg_runtime.Runtime_dynamic.pack_record",
+                    [
+                      Semantic_ir.Ident
+                        (Types.dynamic_packer_key_name record);
+                      argument.semantic_expr;
+                    ] )))
       | None ->
           incr dynamic_packer_counter;
           let suffix = string_of_int !dynamic_packer_counter in
@@ -2255,25 +2312,41 @@ and pack_dynamic_value_conversion ?(packing_context = []) ?protocol_ids
                                with
                               | Error _ as error -> error
                               | Ok result ->
-                              let method_ =
-                                let arguments_name =
-                                  "__lg_dynamic_arguments"
-                                in
-                                Semantic_ir.Fun
-                                  ( [ Semantic_ir.PVar arguments_name ],
-                                    Semantic_ir.Match
-                                      ( Semantic_ir.Ident arguments_name,
+                              let argument_patterns =
+                                List.map
+                                  (fun name -> Semantic_ir.PVar name)
+                                  argument_names
+                              in
+                              let method_entry =
+                                let arity = List.length argument_names in
+                                if arity <= 6 then
+                                  Semantic_ir.Apply
+                                    ( Semantic_ir.Ident
+                                        ("Lg_runtime.Runtime_dynamic.\
+                                          protocol_method_"
+                                        ^ string_of_int arity),
+                                      [
+                                        Semantic_ir.String method_name;
+                                        Semantic_ir.Fun
+                                          (argument_patterns, result);
+                                      ] )
+                                else
+                                  let arguments_name =
+                                    "__lg_dynamic_arguments"
+                                  in
+                                  let method_ =
+                                    Semantic_ir.Fun
+                                      ( [ Semantic_ir.PVar arguments_name ],
+                                        Semantic_ir.Match
+                                          ( Semantic_ir.Ident arguments_name,
                                             [
                                               ( Semantic_ir.PList
-                                              (List.map
-                                                 (fun name ->
-                                                   Semantic_ir.PVar name)
-                                                 argument_names),
-                                            result );
-                                          ( Semantic_ir.PAny,
-                                            Semantic_ir.Apply
-                                              ( Semantic_ir.Ident
-                                                  "invalid_arg",
+                                                  argument_patterns,
+                                                result );
+                                              ( Semantic_ir.PAny,
+                                                Semantic_ir.Apply
+                                                  ( Semantic_ir.Ident
+                                                      "invalid_arg",
                                                     [
                                                       Semantic_ir.String
                                                         ("wrong argument count \
@@ -2281,14 +2354,13 @@ and pack_dynamic_value_conversion ?(packing_context = []) ?protocol_ids
                                                           method " ^ method_name
                                                         );
                                                     ] ) );
-                                        ] ) )
+                                            ] ) )
+                                  in
+                                  Semantic_ir.Tuple
+                                    [ Semantic_ir.String method_name; method_ ]
                               in
                               compile_methods
-                                (Semantic_ir.Tuple
-                                       [
-                                         Semantic_ir.String method_name; method_;
-                                       ]
-                                :: compiled)
+                                (method_entry :: compiled)
                                 methods))
                       | _ ->
                           Error.error
@@ -2476,7 +2548,46 @@ let compile_deftype_print_registration env record =
                (Semantic_ir.Ident receiver_name))
       | _ -> Ok None)
 
-let compile_deftype_registrations env record =
+let compile_dynamic_record_packer_registration ?(basic = false) ?protocol_ids
+    env record =
+  if record.type_parameters <> [] then Ok None
+  else
+    let dynamic = Types.dynamic_constraint TUnknown in
+    let suffix = Names.sanitize_name (Type_id.to_string record.type_id) in
+    let packer_name = "__lg_pack_dynamic_record_" ^ suffix in
+    let argument_name = "__lg_dynamic_record_" ^ suffix in
+    let argument = typed_ir (TNamed_record record) (Semantic_ir.Ident argument_name) in
+    let packing_env =
+      if basic then
+        Compiler_environment.empty
+        |> Compiler_environment.with_target (Compiler_environment.target env)
+      else env
+    in
+    let protocol_ids =
+      match protocol_ids with
+      | Some protocol_ids -> protocol_ids
+      | None -> Protocol.dynamic_protocols env (TNamed_record record)
+    in
+    Result.map
+      (fun body ->
+        Some
+          (Semantic_ir.LetRecIn
+             ( packer_name,
+               [ typed_item_pattern argument_name (TNamed_record record) ],
+               body,
+               Semantic_ir.Apply
+                 ( Semantic_ir.Ident
+                     "Lg_runtime.Runtime_dynamic.register_record_packer",
+                   [
+                     Semantic_ir.Ident
+                       (Types.dynamic_packer_key_name record);
+                     Semantic_ir.Ident packer_name;
+                   ] ) )))
+      (pack_dynamic_value_conversion
+         ~packing_context:[ (record.type_id, packer_name) ] ~protocol_ids
+         packing_env dynamic argument)
+
+let compile_deftype_registrations ?(dynamic_packer = true) env record =
   let receiver_ty = TNamed_record record in
   let rec compile_protocol_registrations compiled = function
     | [] -> Ok (List.rev compiled)
@@ -2490,22 +2601,31 @@ let compile_deftype_registrations env record =
     (fun lookup_registration ->
       Result.bind (compile_deftype_print_registration env record)
         (fun print_registration ->
-          Result.map
-            (fun protocol_registrations ->
-              match
-                List.filter_map Fun.id
-                  [ lookup_registration; print_registration ]
-                @ protocol_registrations
-              with
-              | [] -> None
-              | [ registration ] -> Some registration
-              | registrations -> Some (Semantic_ir.Sequence registrations))
-            (compile_protocol_registrations []
-               (Protocol.implemented_protocols env receiver_ty
-               |> List.filter (fun protocol_id ->
-                      Protocol_id.equal protocol_id Core_protocols.equiv_id
-                      || Protocol_id.equal protocol_id
-                           Core_protocols.hash_id)))))
+          Result.bind
+            (if dynamic_packer then
+               compile_dynamic_record_packer_registration env record
+             else Ok None)
+            (fun packer_registration ->
+              Result.map
+                (fun protocol_registrations ->
+                  match
+                    List.filter_map Fun.id
+                      [
+                        lookup_registration;
+                        print_registration;
+                        packer_registration;
+                      ]
+                    @ protocol_registrations
+                  with
+                  | [] -> None
+                  | [ registration ] -> Some registration
+                  | registrations -> Some (Semantic_ir.Sequence registrations))
+                (compile_protocol_registrations []
+                   (Protocol.implemented_protocols env receiver_ty
+                   |> List.filter (fun protocol_id ->
+                          Protocol_id.equal protocol_id Core_protocols.equiv_id
+                          || Protocol_id.equal protocol_id
+                               Core_protocols.hash_id))))))
 
 let rec constrained_storage_type expected actual =
   match Types.dynamic_constraint_info expected with
@@ -2536,10 +2656,19 @@ let rec pack_constrained_value ?row_type_name env expected argument =
         Semantic_ir.Apply
           (Semantic_ir.Ident "Rrbvec.of_list", [ Semantic_ir.List _ ]) ) ->
         false
+    | ( None,
+        ( Semantic_ir.Int _ | Semantic_ir.Int64 _ | Semantic_ir.Float _
+        | Semantic_ir.String _ | Semantic_ir.Char _ | Semantic_ir.Bool _
+        | Semantic_ir.Unit | Semantic_ir.Constructor (_, None) ) ) ->
+        false
     | _ -> true
   in
   if requires_binding then
-      let argument_name = "__lg_constrained_argument" in
+      let () = incr constrained_argument_counter in
+      let argument_name =
+        "__lg_constrained_argument_"
+        ^ string_of_int !constrained_argument_counter
+      in
       let bound_expression = argument.semantic_expr in
       let bound_argument =
       {
@@ -2550,8 +2679,28 @@ let rec pack_constrained_value ?row_type_name env expected argument =
       in
       pack_constrained_value ?row_type_name env expected bound_argument
       |> Result.map (fun packed ->
-             Semantic_ir.Let
-               ([ (Semantic_ir.PVar argument_name, bound_expression) ], packed))
+             let occurrences = ref 0 in
+             let packed =
+               Semantic_ir.rewrite
+                 (function
+                   | Semantic_ir.Ident name as expression
+                     when String.equal name argument_name ->
+                       incr occurrences;
+                       expression
+                   | expression -> expression)
+                 packed
+             in
+             if !occurrences = 1 then
+               Semantic_ir.rewrite
+                 (function
+                   | Semantic_ir.Ident name
+                     when String.equal name argument_name ->
+                       bound_expression
+                   | expression -> expression)
+                 packed
+             else
+               Semantic_ir.Let
+                 ([ (Semantic_ir.PVar argument_name, bound_expression) ], packed))
   else
   match (expected, argument.ty) with
   | ( expected,
@@ -2816,6 +2965,27 @@ let rec pack_constrained_value ?row_type_name env expected argument =
             match implementations with
             | None -> Ok (Semantic_ir.Constructor ("None", None))
             | Some implementations ->
+                let shared_name =
+                  let implementation_key =
+                    implementations
+                    |> List.map (fun (implementation : binding) ->
+                           implementation.ocaml_name ^ ":"
+                           ^ Types.ocaml_name implementation.ty)
+                    |> String.concat ","
+                  in
+                  let key =
+                    String.concat "|"
+                      [
+                        Target.to_string (Compiler_environment.target env);
+                        Protocol_id.to_string protocol_id;
+                        Types.ocaml_name expected;
+                        Types.ocaml_name argument.ty;
+                        implementation_key;
+                      ]
+                  in
+                  "__lg_w_"
+                  ^ String.sub (Digest.to_hex (Digest.string key)) 0 12
+                in
                 let rec adapt_methods adapted expected implementations =
                   match (expected, implementations) with
                   | [], [] -> Ok (List.rev adapted)
@@ -2835,8 +3005,10 @@ let rec pack_constrained_value ?row_type_name env expected argument =
                     in
                     Result.map
                       (fun methods ->
-                        Semantic_ir.Constructor
-                          ("Some", Some (witness_storage methods)))
+                        Semantic_ir.SharedValue
+                          ( shared_name,
+                            Semantic_ir.Constructor
+                              ("Some", Some (witness_storage methods)) ))
                       (adapt_methods [] method_tys implementations)))
       in
       Result.bind witness (fun witness ->
@@ -2949,11 +3121,10 @@ let rec pack_constrained_value ?row_type_name env expected argument =
                           Collection_capability.seqable_adapter ?element_mapper
                             env argument
                 |> Result.map (fun adapter ->
-                       let value_name = "__lg_seqable_value" in
-                       Semantic_ir.Fun
-                         ( [ Semantic_ir.PVar value_name ],
-                           Semantic_ir.Apply
-                             (adapter, [ argument.semantic_expr ]) ))
+                       Semantic_ir.Apply
+                         ( Semantic_ir.Ident
+                             "Lg_runtime.Runtime_seq.capture_adapter",
+                           [ adapter; argument.semantic_expr ] ))
               in
               let forwarded_optional_adapter =
                 let expects_optional =
@@ -2979,6 +3150,12 @@ let rec pack_constrained_value ?row_type_name env expected argument =
                           let adapter_name =
                             "__lg_forwarded_seqable_adapter"
                           in
+                          let mapped_adapter =
+                            Semantic_ir.Apply
+                              ( Semantic_ir.Ident
+                                  "Lg_runtime.Runtime_seq.map_adapter",
+                                [ mapper; Semantic_ir.Ident adapter_name ] )
+                          in
                           Semantic_ir.Match
                             ( optional_adapter,
                               [
@@ -2990,25 +3167,7 @@ let rec pack_constrained_value ?row_type_name env expected argument =
                                         (Semantic_ir.PVar adapter_name) ),
                                   Semantic_ir.Constructor
                                     ( "Some",
-                                      Some
-                                        (Semantic_ir.Fun
-                                           ( [
-                                               Semantic_ir.PVar
-                                                 "__lg_seqable_value";
-                                             ],
-                                             Semantic_ir.Apply
-                                               ( Semantic_ir.Ident
-                                                   "Lg_runtime.Runtime_seq.map",
-                                                 [
-                                                   mapper;
-                                                   Semantic_ir.Apply
-                                                     ( Semantic_ir.Ident
-                                                         adapter_name,
-                                                       [
-                                                         Semantic_ir.Ident
-                                                           "__lg_seqable_value";
-                                                       ] );
-                                                 ] ) )) ) );
+                                      Some mapped_adapter ) );
                               ] ))
                 | _ -> None
               in
@@ -3049,25 +3208,26 @@ let rec pack_constrained_value ?row_type_name env expected argument =
                                       ("Some", Some adapter))
                   else Ok (Semantic_ir.Constructor ("None", None))
                 | None when Types.is_dynamic argument.ty ->
-                  let value_name = "__lg_dynamic_seqable_value" in
-                  let sequence =
-                    Semantic_ir.Apply
-                      ( Semantic_ir.Ident
-                          "Lg_runtime.Runtime_dynamic.to_seq",
-                        [ argument.semantic_expr ] )
-                  in
-                  let sequence =
+                  let adapter =
                     match element_mapper with
-                    | None -> sequence
+                    | None ->
+                        Semantic_ir.Ident
+                          "Lg_runtime.Runtime_dynamic.to_seq"
                     | Some mapper ->
                         Semantic_ir.Apply
-                                    ( Semantic_ir.Ident
-                                        "Lg_runtime.Runtime_seq.map",
-                            [ mapper; sequence ] )
+                          ( Semantic_ir.Ident
+                              "Lg_runtime.Runtime_seq.map_adapter",
+                            [
+                              mapper;
+                              Semantic_ir.Ident
+                                "Lg_runtime.Runtime_dynamic.to_seq";
+                            ] )
                   in
                   let adapter =
-                    Semantic_ir.Fun
-                      ([ Semantic_ir.PVar value_name ], sequence)
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident
+                          "Lg_runtime.Runtime_seq.capture_adapter",
+                        [ adapter; argument.semantic_expr ] )
                   in
                   Ok
                               (if name = Types.seqable_constraint_name then

@@ -241,10 +241,7 @@ let seqable_adapter ?element_mapper env argument =
                           Semantic_ir.Ident adapter_name );
                       ] )
             in
-            Ok
-              (Semantic_ir.Fun
-                 ( [ Semantic_ir.PVar value_name ],
-                   Semantic_ir.Apply (adapter, [ value ]) ))
+            Ok adapter
         | _ ->
             let packed_name = "__lg_seqable_argument" in
             let packed = Semantic_ir.Ident packed_name in
@@ -270,21 +267,27 @@ let seqable_adapter ?element_mapper env argument =
             Ok
               (Semantic_ir.Let
                  ( [ (Semantic_ir.PVar packed_name, argument.semantic_expr) ],
-                   Semantic_ir.Fun
-                     ( [ Semantic_ir.PVar value_name ],
-                       Semantic_ir.Apply (adapter, [ value ]) ) )))
+                   adapter )))
     | None
       when Types.equal argument.ty TUnknown
            || match argument.ty with TVar _ -> true | _ -> false ->
-        Ok
-          (Semantic_ir.Fun
-             ( [ Semantic_ir.PVar value_name ],
-               apply "Lg_runtime.Runtime_dynamic.to_seq" [ value ] ))
+        Ok (Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.to_seq")
     | None ->
         let parameter = typed_ir argument.ty value in
         to_seq_expr env parameter
         |> Result.map (fun (_, sequence) ->
-               Semantic_ir.Fun ([ Semantic_ir.PVar value_name ], sequence))
+               match Semantic_ir.unlocated sequence with
+               | Semantic_ir.Apply (adapter, [ argument ]) -> (
+                   match Semantic_ir.unlocated argument with
+                   | Semantic_ir.Ident candidate
+                     when String.equal candidate value_name ->
+                       adapter
+                   | _ ->
+                       Semantic_ir.Fun
+                         ([ Semantic_ir.PVar value_name ], sequence))
+               | _ ->
+                   Semantic_ir.Fun
+                     ([ Semantic_ir.PVar value_name ], sequence))
   in
   match adapter with
   | Error _ as err -> err
@@ -293,10 +296,7 @@ let seqable_adapter ?element_mapper env argument =
         match element_mapper with
         | None -> adapter
         | Some mapper ->
-            Semantic_ir.Fun
-              ( [ Semantic_ir.PVar value_name ],
-                apply "Lg_runtime.Runtime_seq.map"
-                  [ mapper; Semantic_ir.Apply (adapter, [ value ]) ] )
+            apply "Lg_runtime.Runtime_seq.map_adapter" [ mapper; adapter ]
       in
       Ok adapter
 

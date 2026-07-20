@@ -44,6 +44,48 @@ and protocol = { id : string; methods : (string * (t list -> t)) list }
 
 let protocol id methods = { id; methods }
 
+let wrong_protocol_method_arity name =
+  invalid_arg ("wrong argument count for dynamic protocol method " ^ name)
+
+let protocol_method_0 name method_ =
+  ( name,
+    function [] -> method_ () | _ -> wrong_protocol_method_arity name )
+
+let protocol_method_1 name method_ =
+  ( name,
+    function [ arg0 ] -> method_ arg0 | _ -> wrong_protocol_method_arity name )
+
+let protocol_method_2 name method_ =
+  ( name,
+    function
+    | [ arg0; arg1 ] -> method_ arg0 arg1
+    | _ -> wrong_protocol_method_arity name )
+
+let protocol_method_3 name method_ =
+  ( name,
+    function
+    | [ arg0; arg1; arg2 ] -> method_ arg0 arg1 arg2
+    | _ -> wrong_protocol_method_arity name )
+
+let protocol_method_4 name method_ =
+  ( name,
+    function
+    | [ arg0; arg1; arg2; arg3 ] -> method_ arg0 arg1 arg2 arg3
+    | _ -> wrong_protocol_method_arity name )
+
+let protocol_method_5 name method_ =
+  ( name,
+    function
+    | [ arg0; arg1; arg2; arg3; arg4 ] -> method_ arg0 arg1 arg2 arg3 arg4
+    | _ -> wrong_protocol_method_arity name )
+
+let protocol_method_6 name method_ =
+  ( name,
+    function
+    | [ arg0; arg1; arg2; arg3; arg4; arg5 ] ->
+        method_ arg0 arg1 arg2 arg3 arg4 arg5
+    | _ -> wrong_protocol_method_arity name )
+
 let protocol_extensions : ((string * string), t -> t) Hashtbl.t =
   Hashtbl.create 32
 
@@ -51,6 +93,23 @@ let lookup_extensions : (string, t -> t -> t -> t) Hashtbl.t =
   Hashtbl.create 32
 
 let printer_extensions : (string, t -> string) Hashtbl.t = Hashtbl.create 32
+
+let next_record_packer_key = ref 0
+
+let new_record_packer_key () =
+  let key = !next_record_packer_key in
+  incr next_record_packer_key;
+  key
+
+let record_packers : (int, Obj.t -> t) Hashtbl.t = Hashtbl.create 32
+
+let register_record_packer key packer =
+  Hashtbl.replace record_packers key (fun value -> packer (Obj.obj value))
+
+let pack_record key value =
+  match Hashtbl.find_opt record_packers key with
+  | Some packer -> packer (Obj.repr value)
+  | None -> invalid_arg "dynamic record packer is not registered"
 
 let register_protocol_extension type_name protocol_id repack =
   Hashtbl.replace protocol_extensions (type_name, protocol_id) repack
@@ -139,6 +198,62 @@ let as_unit value =
   | _ -> invalid_arg "dynamic value is not unit"
 
 let function_ value = make (Function value)
+
+let wrong_function_arity () = invalid_arg "wrong dynamic function argument count"
+
+let function_adapter_1 unpack_0 pack_result fn =
+  function_ (function
+    | [ argument_0 ] -> pack_result (fn (unpack_0 argument_0))
+    | _ -> wrong_function_arity ())
+
+let function_adapter_2 unpack_0 unpack_1 pack_result fn =
+  function_ (function
+    | [ argument_0; argument_1 ] ->
+        pack_result (fn (unpack_0 argument_0) (unpack_1 argument_1))
+    | _ -> wrong_function_arity ())
+
+let function_adapter_3 unpack_0 unpack_1 unpack_2 pack_result fn =
+  function_ (function
+    | [ argument_0; argument_1; argument_2 ] ->
+        pack_result
+          (fn (unpack_0 argument_0) (unpack_1 argument_1)
+             (unpack_2 argument_2))
+    | _ -> wrong_function_arity ())
+
+let function_adapter_4 unpack_0 unpack_1 unpack_2 unpack_3 pack_result fn =
+  function_ (function
+    | [ argument_0; argument_1; argument_2; argument_3 ] ->
+        pack_result
+          (fn (unpack_0 argument_0) (unpack_1 argument_1)
+             (unpack_2 argument_2) (unpack_3 argument_3))
+    | _ -> wrong_function_arity ())
+
+let function_adapter_5 unpack_0 unpack_1 unpack_2 unpack_3 unpack_4 pack_result
+    fn =
+  function_ (function
+    | [ argument_0; argument_1; argument_2; argument_3; argument_4 ] ->
+        pack_result
+          (fn (unpack_0 argument_0) (unpack_1 argument_1)
+             (unpack_2 argument_2) (unpack_3 argument_3)
+             (unpack_4 argument_4))
+    | _ -> wrong_function_arity ())
+
+let function_adapter_6 unpack_0 unpack_1 unpack_2 unpack_3 unpack_4 unpack_5
+    pack_result fn =
+  function_ (function
+    | [
+     argument_0;
+     argument_1;
+     argument_2;
+     argument_3;
+     argument_4;
+     argument_5;
+    ] ->
+        pack_result
+          (fn (unpack_0 argument_0) (unpack_1 argument_1)
+             (unpack_2 argument_2) (unpack_3 argument_3)
+             (unpack_4 argument_4) (unpack_5 argument_5))
+    | _ -> wrong_function_arity ())
 
 let is_function value =
   match value.payload with Function _ -> true | _ -> false

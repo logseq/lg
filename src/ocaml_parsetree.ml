@@ -14,10 +14,26 @@ let parse_expression ~context source =
      ^ Printexc.to_string exn)
 
 let loc = Location.none
-let str value = Location.mkloc value loc
-let lid value = Location.mkloc value loc
+
+let rec compact_longident = function
+  | Longident.Lident name -> Longident.Lident (Names.compact_generated_name name)
+  | Longident.Ldot (path, name) ->
+      Longident.Ldot
+        ( { path with txt = compact_longident path.txt },
+          { name with txt = Names.compact_generated_name name.txt } )
+  | Longident.Lapply (fn, argument) ->
+      Longident.Lapply
+        ( { fn with txt = compact_longident fn.txt },
+          { argument with txt = compact_longident argument.txt } )
+
+let str value = Location.mkloc (Names.compact_generated_name value) loc
+let lid value = Location.mkloc (compact_longident value) loc
+
+let named_loc value location =
+  Location.mkloc (Names.compact_generated_name value) location
 
 let longident_of_string name =
+  let name = Names.compact_runtime_path name in
   match String.split_on_char '.' name with
   | [] -> Longident.Lident name
   | first :: rest ->
@@ -188,7 +204,7 @@ let record_type_definition type_name parameters fields location =
     |> List.map (fun (field : Types.field) ->
            let field_loc = declaration_location field.location in
            Ast_helper.Type.field ~loc:field_loc
-             (Location.mkloc field.ocaml_name field_loc)
+             (named_loc field.ocaml_name field_loc)
              (core_type ~type_variables:parameters field.ty))
   in
   let type_declaration =
@@ -196,12 +212,12 @@ let record_type_definition type_name parameters fields location =
       Ast_helper.Type.mk ~loc:declaration_loc
         ~params:(type_parameters parameters)
         ~manifest:(Ast_helper.Typ.constr ~loc:declaration_loc (lid (Longident.Lident "unit")) [])
-        (Location.mkloc type_name declaration_loc)
+        (named_loc type_name declaration_loc)
     else
       Ast_helper.Type.mk ~loc:declaration_loc
         ~params:(type_parameters parameters)
         ~kind:(Ptype_record label_declarations)
-        (Location.mkloc type_name declaration_loc)
+        (named_loc type_name declaration_loc)
   in
   let recursion =
     if List.exists (fun (field : Types.field) -> type_mentions type_name field.ty) fields
@@ -243,7 +259,7 @@ let nominal_tag_extension constructor_name record_type location =
   in
   let constructor =
     Ast_helper.Te.decl ~loc:declaration_loc ~args:(Pcstr_tuple [])
-      ~res:result_type (Location.mkloc constructor_name declaration_loc)
+      ~res:result_type (named_loc constructor_name declaration_loc)
   in
   let extension =
     Ast_helper.Te.mk ~loc:declaration_loc ~attrs:[ warning_attribute ]
@@ -259,11 +275,39 @@ let nominal_tag_extension constructor_name record_type location =
   in
   Ast_helper.Str.type_extension ~loc:declaration_loc extension
 
+let dynamic_packer_key_definition type_id location =
+  let declaration_loc = declaration_location location in
+  let key_name =
+    "__lg_dynamic_packer_key_"
+    ^ Names.sanitize_name (Type_id.name type_id)
+  in
+  let create_key =
+    Ast_helper.Exp.apply ~loc:declaration_loc
+      (Ast_helper.Exp.ident ~loc:declaration_loc
+         (Location.mkloc
+            (longident_of_string
+               "Lg_runtime.Runtime_dynamic.new_record_packer_key")
+            declaration_loc))
+      [
+        ( Nolabel,
+          Ast_helper.Exp.construct ~loc:declaration_loc
+            (Location.mkloc (Longident.Lident "()") declaration_loc)
+            None );
+      ]
+  in
+  Ast_helper.Str.value ~loc:declaration_loc Nonrecursive
+    [
+      Ast_helper.Vb.mk ~loc:declaration_loc
+        (Ast_helper.Pat.var ~loc:declaration_loc
+           (named_loc key_name declaration_loc))
+        create_key;
+    ]
+
 let type_alias_definition type_name parameters manifest location =
   let declaration_loc = declaration_location location in
   let type_declaration =
     Ast_helper.Type.mk ~loc:declaration_loc ~params:(type_parameters parameters)
-      ~manifest:(core_type manifest) (Location.mkloc type_name declaration_loc)
+      ~manifest:(core_type manifest) (named_loc type_name declaration_loc)
   in
   Ast_helper.Str.type_ ~loc Nonrecursive [ type_declaration ]
 
@@ -277,12 +321,12 @@ let type_variant_definition type_name parameters constructors location =
            in
            Ast_helper.Type.constructor ~loc:constructor_loc
              ~args:(Pcstr_tuple (List.map core_type constructor.payload_types))
-             (Location.mkloc constructor.constructor_name constructor_loc))
+             (named_loc constructor.constructor_name constructor_loc))
   in
   let type_declaration =
     Ast_helper.Type.mk ~loc:declaration_loc ~params:(type_parameters parameters)
       ~kind:(Ptype_variant constructor_declarations)
-      (Location.mkloc type_name declaration_loc)
+      (named_loc type_name declaration_loc)
   in
   Ast_helper.Str.type_ ~loc Recursive [ type_declaration ]
 
@@ -290,7 +334,7 @@ let signature_item = function
   | Signature_value { value_name; value_type; location; _ } ->
       let item_loc = declaration_location location in
       Ast_helper.Sig.value ~loc:item_loc
-        (Ast_helper.Val.mk ~loc:item_loc (Location.mkloc value_name item_loc)
+        (Ast_helper.Val.mk ~loc:item_loc (named_loc value_name item_loc)
            (core_type value_type))
   | Signature_type
       { type_name; type_parameters = parameters; manifest; location } ->
@@ -299,10 +343,10 @@ let signature_item = function
         match manifest with
         | None ->
             Ast_helper.Type.mk ~loc:item_loc ~params:(type_parameters parameters)
-              (Location.mkloc type_name item_loc)
+              (named_loc type_name item_loc)
         | Some manifest ->
             Ast_helper.Type.mk ~loc:item_loc ~params:(type_parameters parameters)
-              ~manifest:(core_type manifest) (Location.mkloc type_name item_loc)
+              ~manifest:(core_type manifest) (named_loc type_name item_loc)
       in
       Ast_helper.Sig.type_ ~loc:item_loc Nonrecursive [ type_declaration ]
   | Signature_module
@@ -585,13 +629,16 @@ let node_id_attribute node_id =
   Ast_helper.Attr.mk (str "lg.node_id") payload
 
 let record_definition ~emit_set ~emit_nullable_set var_name identity type_name
-    set_module_name fields values =
+    set_module_name fields values dynamic_packer =
   let type_item = record_type_definition type_name [] fields None in
+  let dynamic_packer_key =
+    dynamic_packer_key_definition (Types.type_id_of_name type_name) None
+  in
   let record_type =
     Types.named_record ~type_name ~set_module_name fields
   in
   let type_items =
-    [ type_item ]
+    [ type_item ] @ if dynamic_packer then [ dynamic_packer_key ] else []
     @
     (if emit_set then [ set_module_definition set_module_name record_type ]
      else [])
@@ -629,13 +676,16 @@ let record_definition ~emit_set ~emit_nullable_set var_name identity type_name
       Ok (type_items @ [ Ast_helper.Str.value ~loc Nonrecursive [ value_binding ] ])
 
 let projected_record_definition ~emit_set ~emit_nullable_set var_name identity
-    type_name set_module_name fields source =
+    type_name set_module_name fields source dynamic_packer =
   let type_item = record_type_definition type_name [] fields None in
+  let dynamic_packer_key =
+    dynamic_packer_key_definition (Types.type_id_of_name type_name) None
+  in
   let record_type =
     Types.named_record ~type_name ~set_module_name fields
   in
   let type_items =
-    [ type_item ]
+    [ type_item ] @ if dynamic_packer then [ dynamic_packer_key ] else []
     @
     (if emit_set then [ set_module_definition set_module_name record_type ]
      else [])
@@ -847,7 +897,16 @@ let rec structure_of_item_with_sets requested_sets module_path = function
         [ polymorphic_holder_type_definition type_name field_name value_type
             type_variables ]
   | Comment _ -> Ok []
-  | Type_def { type_name; type_parameters; fields; nominal; location } ->
+  | Type_def
+      {
+        type_id;
+        type_name;
+        type_parameters;
+        fields;
+        nominal;
+        dynamic_packer;
+        location;
+      } ->
       let record_type =
         Types.named_record ~nominal ~type_name ~type_parameters
           ~set_module_name:("Set_" ^ type_name) fields
@@ -879,6 +938,16 @@ let rec structure_of_item_with_sets requested_sets module_path = function
             set_module_definition (set_module_name ^ "_nullable")
               (Types.TNullable record_type);
           ]
+        else []
+      in
+      let definitions =
+        definitions
+        @
+        if
+          dynamic_packer || nominal
+          || not (Types.supports_structural_dynamic_packing record_type)
+        then
+          [ dynamic_packer_key_definition type_id location ]
         else []
       in
       if nominal || not (Types.supports_structural_dynamic_packing record_type)
@@ -993,7 +1062,7 @@ let rec structure_of_item_with_sets requested_sets module_path = function
       Ok
         [ Ast_helper.Str.modtype ~loc:signature_loc
             (Ast_helper.Mtd.mk ~loc:signature_loc ~typ:module_type
-               (Location.mkloc signature_name signature_loc)) ]
+               (named_loc signature_name signature_loc)) ]
   | Open_module { module_name; location } ->
       let module_loc = declaration_location location in
       let module_expr =
@@ -1012,23 +1081,40 @@ let rec structure_of_item_with_sets requested_sets module_path = function
       Ok
         [ Ast_helper.Str.include_ ~loc:module_loc
             (Ast_helper.Incl.mk ~loc:module_loc module_expr) ]
-  | Record_def { var_name; identity; type_name; set_module_name; fields; values } ->
+  | Record_def
+      {
+        var_name;
+        identity;
+        type_name;
+        set_module_name;
+        fields;
+        values;
+        dynamic_packer;
+      } ->
       record_definition
         ~emit_set:
           (set_module_requested requested_sets module_path set_module_name)
         ~emit_nullable_set:
           (set_module_requested requested_sets module_path
              (set_module_name ^ "_nullable"))
-        var_name identity type_name set_module_name fields values
+        var_name identity type_name set_module_name fields values dynamic_packer
   | Projected_record_def
-      { var_name; identity; type_name; set_module_name; fields; source } ->
+      {
+        var_name;
+        identity;
+        type_name;
+        set_module_name;
+        fields;
+        source;
+        dynamic_packer;
+      } ->
       projected_record_definition
         ~emit_set:
           (set_module_requested requested_sets module_path set_module_name)
         ~emit_nullable_set:
           (set_module_requested requested_sets module_path
              (set_module_name ^ "_nullable"))
-        var_name identity type_name set_module_name fields source
+        var_name identity type_name set_module_name fields source dynamic_packer
 
 and structure_of_items_with_sets requested_sets module_path items =
   let rec loop acc = function
@@ -1132,4 +1218,52 @@ let structure_of_incremental_located_items ~previous_items items =
     items
 
 let print_implementation structure =
-  Format.asprintf "%a@." Pprintast.structure structure
+  let mapper =
+    {
+      Ast_mapper.default_mapper with
+      attributes =
+        (fun _mapper attributes ->
+          List.filter
+            (fun attribute -> attribute.Parsetree.attr_name.txt <> "lg.node_id")
+            attributes);
+    }
+  in
+  let structure = mapper.structure mapper structure in
+  let buffer = Buffer.create 4096 in
+  let formatter = Format.formatter_of_buffer buffer in
+  Format.pp_set_margin formatter 1_000_000;
+  Format.fprintf formatter "%a@." Pprintast.structure structure;
+  Format.pp_print_flush formatter ();
+  let source = Buffer.contents buffer in
+  let prefix = "Lg_runtime.Lg_" in
+  let prefix_length = String.length prefix in
+  let source_length = String.length source in
+  let compact = Buffer.create source_length in
+  let rec rewrite index in_string escaped =
+    if index >= source_length then Buffer.contents compact
+    else
+      let current = source.[index] in
+      if in_string then (
+        Buffer.add_char compact current;
+        if escaped then rewrite (index + 1) true false
+        else if current = '\\' then rewrite (index + 1) true true
+        else rewrite (index + 1) (current <> '"') false)
+      else if current = '"' then (
+        Buffer.add_char compact current;
+        rewrite (index + 1) true false)
+      else if
+        index + prefix_length <= source_length
+        && String.sub source index prefix_length = prefix
+      then (
+        Buffer.add_string compact "Lg_";
+        rewrite (index + prefix_length) false false)
+      else (
+        Buffer.add_char compact current;
+        rewrite (index + 1) false false)
+  in
+  let source =
+    if String.contains source 'L' then
+      "open Lg_runtime\n" ^ rewrite 0 false false
+    else source
+  in
+  source

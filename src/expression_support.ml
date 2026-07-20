@@ -932,8 +932,15 @@ let allocate_anonymous_record ~owner env next_type fields =
   | None ->
       let type_name = "t" ^ string_of_int next_type in
       let set_module_name = "Set_" ^ type_name in
+      let type_id =
+        Type_id.create
+          ~owner:(if String.equal owner "" then [] else [ owner ])
+          ~name:type_name
+      in
       let record =
-        match Types.named_record ~type_name ~set_module_name fields with
+        match
+          Types.named_record ~type_id ~type_name ~set_module_name fields
+        with
         | TNamed_record record -> record
         | _ -> assert false
       in
@@ -965,10 +972,12 @@ let allocate_nested_anonymous_records ~owner env next_type fields =
             @ [
                 Type_def
                   {
+                    type_id = record.record.type_id;
                     type_name = record.record.type_name;
                     type_parameters = record.record.type_parameters;
                     fields = record.record.fields;
                     nominal = false;
+                    dynamic_packer = false;
                     location = None;
                   };
               ]
@@ -1918,10 +1927,12 @@ let row_type_items row_type_names param_tys =
           Some
             (Type_def
                {
+                 type_id = Types.type_id_of_name type_name;
                  type_name;
                  type_parameters;
                  fields;
                  nominal = false;
+                 dynamic_packer = false;
                  location = None;
                })
       | _ -> None)
