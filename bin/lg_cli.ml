@@ -2,7 +2,11 @@ let usage () =
   prerr_endline
     "Usage: lg <input.cljc> [-o output.ml] | --interface <input.cljc> [-o \
      output.mli] | --run <input.cljc> | --compile-files <input.cljc>... -o \
-     output.ml | --run-files <input.cljc>... | --lsp";
+     output.ml | --compile-files-state <state> <input.cljc>... -o output.ml | \
+     --compile-chunk-from <state> <input.cljc> [-o output.ml] | \
+     --compile-chunk-state <input-state> <output-state> <input.cljc> [-o \
+     output.ml] | \
+     --run-files <input.cljc>... | --lsp";
   exit 2
 
 let read_file path =
@@ -22,11 +26,32 @@ let write_output output_path contents =
         ~finally:(fun () -> close_out_noerr oc)
         (fun () -> output_string oc contents)
 
-type cached_prefix = {
-  state : Lg.Compiler.state;
+type cached_prefix_state = { state : Lg.Compiler.state }
+
+type cached_prefix_output = {
   source_packages : string list;
   compilation : Lg.Compiler.compilation;
 }
+
+type compiler_state = Live of Lg.Compiler.state | Cached of string
+
+type saved_compilation_state = {
+  target : Lg.Target.t;
+  state : Lg.Compiler.state;
+  packages : string list;
+}
+
+let write_saved_compilation_state path saved =
+  let output = open_out_bin path in
+  Fun.protect
+    ~finally:(fun () -> close_out_noerr output)
+    (fun () -> Marshal.to_channel output saved [])
+
+let read_saved_compilation_state path =
+  let input = open_in_bin path in
+  Fun.protect
+    ~finally:(fun () -> close_in_noerr input)
+    (fun () -> (Marshal.from_channel input : saved_compilation_state))
 
 let compile_cache_enabled () =
   Sys.getenv_opt "LG_DISABLE_COMPILE_CACHE" <> Some "1"
@@ -35,6 +60,13 @@ let compile_cache_min_seconds () =
   match Sys.getenv_opt "LG_COMPILE_CACHE_MIN_SECONDS" with
   | Some value -> Option.value (float_of_string_opt value) ~default:0.25
   | None -> 0.25
+
+let rec find_repo_root dir =
+  if Sys.file_exists (Filename.concat dir "dune-project") then dir
+  else
+    let parent = Filename.dirname dir in
+    if parent = dir then failwith "could not find repo root"
+    else find_repo_root parent
 
 let rec ensure_directory path =
   if Sys.file_exists path then ()
@@ -46,7 +78,9 @@ let compile_cache_directory () =
   match Sys.getenv_opt "LG_CACHE_DIR" with
   | Some path -> Filename.concat path "compile-files"
   | None ->
-      Filename.concat (Sys.getcwd ()) "_build/.lg-cache/compile-files"
+      Filename.concat
+        (find_repo_root (Sys.getcwd ()))
+        "_build/.lg-cache/compile-files"
 
 let compiler_cache_identity () =
   Digest.string
@@ -59,34 +93,65 @@ let next_prefix_key ~target previous_key input_path source =
        [ previous_key; Lg.Target.to_string target; input_path; source ])
   |> Digest.to_hex
 
-let cache_path key =
-  Filename.concat (compile_cache_directory ()) (key ^ ".marshal")
+let cache_path key suffix =
+  Filename.concat (compile_cache_directory ()) (key ^ suffix ^ ".marshal")
 
-let read_cached_prefix key =
+let read_marshaled path =
+  let input = open_in_bin path in
+  Fun.protect
+    ~finally:(fun () -> close_in_noerr input)
+    (fun () -> Marshal.from_channel input)
+
+let read_cached_prefix_output key =
   if not (compile_cache_enabled ()) then None
   else
-    let path = cache_path key in
-    if not (Sys.file_exists path) then None
+    let state_path = cache_path key ".state" in
+    let output_path = cache_path key ".output" in
+    if not (Sys.file_exists state_path && Sys.file_exists output_path) then None
     else
       try
-        let input = open_in_bin path in
-        Fun.protect
-          ~finally:(fun () -> close_in_noerr input)
-          (fun () -> Some (Marshal.from_channel input : cached_prefix))
+        Some (read_marshaled output_path : cached_prefix_output)
       with _ -> None
 
-let write_cached_prefix key cached =
+let read_cached_prefix_state key =
+  let started_at = Sys.time () in
+  try
+    let path = cache_path key ".state" in
+    let cached = (read_marshaled path : cached_prefix_state) in
+    if Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" then
+      Printf.eprintf "lg: read cached state: %.3fs\n%!"
+        (Sys.time () -. started_at);
+    Ok cached.state
+  with exn ->
+    Error
+      {
+        Lg.Compiler.message =
+          "failed to read cached compiler state: " ^ Printexc.to_string exn;
+        location = None;
+      }
+
+let write_marshaled path value =
+  let temporary =
+    Filename.temp_file ~temp_dir:(Filename.dirname path) "prefix-" ".tmp"
+  in
+  let output = open_out_bin temporary in
+  Fun.protect
+    ~finally:(fun () -> close_out_noerr output)
+    (fun () -> Marshal.to_channel output value []);
+  Sys.rename temporary path
+
+let write_cached_prefix key state output =
   if compile_cache_enabled () then
     try
+      let started_at = Sys.time () in
       let directory = compile_cache_directory () in
       ensure_directory directory;
-      let path = cache_path key in
-      let temporary = Filename.temp_file ~temp_dir:directory "prefix-" ".tmp" in
-      let output = open_out_bin temporary in
-      Fun.protect
-        ~finally:(fun () -> close_out_noerr output)
-        (fun () -> Marshal.to_channel output cached []);
-      Sys.rename temporary path
+      write_marshaled (cache_path key ".state")
+        { state = Lg.Compiler.cacheable_state state };
+      write_marshaled (cache_path key ".output") output;
+      if Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" then
+        Printf.eprintf "lg: wrote cached prefix: %.3fs\n%!"
+          (Sys.time () -. started_at)
     with _ -> ()
 
 let report_cache_hit input_path =
@@ -98,6 +163,22 @@ type mode =
   | Interface of { input_path : string; output_path : string option }
   | Run of { input_path : string }
   | Compile_files of { input_paths : string list; output_path : string }
+  | Compile_files_state of {
+      state_path : string;
+      input_paths : string list;
+      output_path : string;
+    }
+  | Compile_chunk_from of {
+      state_path : string;
+      input_path : string;
+      output_path : string option;
+    }
+  | Compile_chunk_state of {
+      state_path : string;
+      output_state_path : string;
+      input_path : string;
+      output_path : string option;
+    }
   | Run_files of { input_paths : string list }
   | Lsp
 
@@ -134,18 +215,58 @@ let parse_args argv =
             Compile_files
               { input_paths = List.rev reversed_inputs; output_path }
         | _ -> usage ())
+    | _program :: "--compile-files-state" :: state_path :: args -> (
+        match List.rev args with
+        | output_path :: "-o" :: reversed_inputs when reversed_inputs <> [] ->
+            Compile_files_state
+              {
+                state_path;
+                input_paths = List.rev reversed_inputs;
+                output_path;
+              }
+        | _ -> usage ())
+    | [
+     _program;
+     "--compile-chunk-from";
+     state_path;
+     input_path;
+     "-o";
+     output_path;
+    ] ->
+        Compile_chunk_from
+          { state_path; input_path; output_path = Some output_path }
+    | [ _program; "--compile-chunk-from"; state_path; input_path ] ->
+        Compile_chunk_from { state_path; input_path; output_path = None }
+    | [
+     _program;
+     "--compile-chunk-state";
+     state_path;
+     output_state_path;
+     input_path;
+     "-o";
+     output_path;
+    ] ->
+        Compile_chunk_state
+          {
+            state_path;
+            output_state_path;
+            input_path;
+            output_path = Some output_path;
+          }
+    | [
+     _program;
+     "--compile-chunk-state";
+     state_path;
+     output_state_path;
+     input_path;
+    ] ->
+        Compile_chunk_state
+          { state_path; output_state_path; input_path; output_path = None }
     | _program :: "--run-files" :: input_paths when input_paths <> [] ->
         Run_files { input_paths }
     | _ -> usage ()
   in
   (target, mode)
-
-let rec find_repo_root dir =
-  if Sys.file_exists (Filename.concat dir "dune-project") then dir
-  else
-    let parent = Filename.dirname dir in
-    if parent = dir then failwith "could not find repo root"
-    else find_repo_root parent
 
 let rrbvec_build_dir () =
   Filename.concat
@@ -215,14 +336,43 @@ let run_ocaml_source packages ocaml_source =
       Sys.remove exe_path;
       exit code
 
+let concatenate_compilation_outputs outputs =
+  let runtime_open = "open Lg_runtime\n" in
+  let runtime_open_length = String.length runtime_open in
+  let _, outputs =
+    List.fold_left
+      (fun (seen_runtime_open, outputs) output ->
+        let starts_with_runtime_open =
+          String.starts_with ~prefix:runtime_open output
+        in
+        let output =
+          if seen_runtime_open && starts_with_runtime_open then
+            String.sub output runtime_open_length
+              (String.length output - runtime_open_length)
+          else output
+        in
+        (seen_runtime_open || starts_with_runtime_open, output :: outputs))
+      (false, []) outputs
+  in
+  outputs |> List.rev |> String.concat "\n"
+
+let resolve_compiler_state = function
+  | Live state -> Ok state
+  | Cached key -> read_cached_prefix_state key
+
 let compile_files target input_paths =
-  let rec loop prefix_key state needs_ocaml_restore packages outputs diagnostics =
+  let rec loop prefix_key compiler_state packages outputs diagnostics =
     function
     | [] ->
-        Ok
-          ( List.sort_uniq String.compare packages,
-            String.concat "\n" (List.rev outputs),
-            List.concat (List.rev diagnostics) )
+        Result.map
+          (fun state ->
+            let outputs = List.rev outputs in
+            let ocaml_source = concatenate_compilation_outputs outputs in
+            ( state,
+              List.sort_uniq String.compare packages,
+              ocaml_source,
+              List.concat (List.rev diagnostics) ))
+          (resolve_compiler_state compiler_state)
     | input_path :: rest -> (
         let source = read_file input_path in
         let prefix_key =
@@ -231,31 +381,25 @@ let compile_files target input_paths =
         match Lg.Compiler.required_ocaml_packages ~target source with
         | Error _ as err -> err
         | Ok source_packages -> (
-            match read_cached_prefix prefix_key with
+            match read_cached_prefix_output prefix_key with
             | Some cached ->
                 report_cache_hit input_path;
-                loop prefix_key cached.state true
+                loop prefix_key (Cached prefix_key)
                   (List.rev_append cached.source_packages packages)
                   (cached.compilation.ocaml_source :: outputs)
                   (cached.compilation.diagnostics :: diagnostics)
                   rest
             | None ->
-                let restored_state =
-                  if needs_ocaml_restore then
-                    Lg.Compiler.restore_ocaml_environment ~target
-                      ~packages:(List.sort_uniq String.compare packages)
-                      state (List.rev outputs)
-                  else Ok state
-                in
-                (match restored_state with
-                | Error _ as err -> err
-                | Ok state -> (
+                Result.bind
+                  (resolve_compiler_state compiler_state)
+                  (fun state ->
                     if Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" then
                       Printf.eprintf "lg: compiling %s\n%!" input_path;
                     let started_at = Sys.time () in
                     match
                       Lg.Compiler.compile_chunk_with_filename_and_diagnostics
-                        ~target ~filename:input_path state source
+                        ~target ~filename:input_path ~check_ocaml:false state
+                        source
                     with
                     | Error _ as err -> err
                     | Ok (state, compilation) ->
@@ -263,19 +407,15 @@ let compile_files target input_paths =
                           Sys.time () -. started_at
                           >= compile_cache_min_seconds ()
                         then
-                          write_cached_prefix prefix_key
-                            {
-                              state = Lg.Compiler.cacheable_state state;
-                              source_packages;
-                              compilation;
-                            };
-                        loop prefix_key state false
+                          write_cached_prefix prefix_key state
+                            { source_packages; compilation };
+                        loop prefix_key (Live state)
                           (List.rev_append source_packages packages)
                           (compilation.ocaml_source :: outputs)
                           (compilation.diagnostics :: diagnostics)
-                          rest))))
+                          rest)))
   in
-  loop (compiler_cache_identity ()) Lg.Compiler.empty_state false [] [] []
+  loop (compiler_cache_identity ()) (Live Lg.Compiler.empty_state) [] [] []
     input_paths
 
 let compile_file target input_path =
@@ -289,6 +429,28 @@ let compile_file target input_path =
       with
       | Error _ as err -> err
       | Ok compilation -> Ok (packages, compilation))
+
+let compile_chunk_from_saved_state target state_path input_path =
+  let saved = read_saved_compilation_state state_path in
+  if saved.target <> target then
+    Error
+      {
+        Lg.Compiler.message =
+          "saved compiler state target does not match --target";
+        location = None;
+      }
+  else
+    let source = read_file input_path in
+    Result.bind
+      (Lg.Compiler.required_ocaml_packages ~target source)
+      (fun source_packages ->
+        let packages =
+          List.sort_uniq String.compare (source_packages @ saved.packages)
+        in
+        Lg.Compiler.compile_chunk_with_filename_and_diagnostics ~target
+          ~filename:input_path ~check_ocaml:false saved.state source
+        |> Result.map (fun (state, compilation) ->
+               (state, packages, compilation)))
 
 let infer_interface target input_path =
   let source = read_file input_path in
@@ -331,13 +493,44 @@ let () =
   | Compile_files { input_paths; output_path } -> (
       match compile_files target input_paths with
       | Error err -> report_error err
-      | Ok (_packages, ocaml_source, diagnostics) ->
+      | Ok (_state, _packages, ocaml_source, diagnostics) ->
           report_diagnostics diagnostics;
           write_output (Some output_path) ocaml_source)
+  | Compile_files_state { state_path; input_paths; output_path } -> (
+      match compile_files target input_paths with
+      | Error err -> report_error err
+      | Ok (state, packages, ocaml_source, diagnostics) ->
+          report_diagnostics diagnostics;
+          write_output (Some output_path) ocaml_source;
+          write_saved_compilation_state state_path
+            {
+              target;
+              state = Lg.Compiler.cacheable_state state;
+              packages;
+            })
+  | Compile_chunk_from { state_path; input_path; output_path } -> (
+      match compile_chunk_from_saved_state target state_path input_path with
+      | Error err -> report_error err
+      | Ok (_state, _packages, compilation) ->
+          report_diagnostics compilation.diagnostics;
+          write_output output_path compilation.ocaml_source)
+  | Compile_chunk_state
+      { state_path; output_state_path; input_path; output_path } -> (
+      match compile_chunk_from_saved_state target state_path input_path with
+      | Error err -> report_error err
+      | Ok (state, packages, compilation) ->
+          report_diagnostics compilation.diagnostics;
+          write_output output_path compilation.ocaml_source;
+          write_saved_compilation_state output_state_path
+            {
+              target;
+              state = Lg.Compiler.cacheable_state state;
+              packages;
+            })
   | Run_files { input_paths } -> (
       match compile_files target input_paths with
       | Error err -> report_error err
-      | Ok (packages, ocaml_source, diagnostics) ->
+      | Ok (_state, packages, ocaml_source, diagnostics) ->
           report_diagnostics diagnostics;
           run_ocaml_source packages ocaml_source)
   | Lsp -> Lsp_server.run ()

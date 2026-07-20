@@ -21833,6 +21833,29 @@ let test_incremental_compilation_preserves_state () =
   assert_ocaml_runs "incremental_compilation_preserves_state" "Ada:true:36\n"
     (people_ocaml ^ "\n\n" ^ app_ocaml)
 
+let test_cacheable_incremental_state_compiles_without_ocaml_environment () =
+  let state, provider_ocaml =
+    Lg.Compiler.compile_chunk Lg.Compiler.empty_state
+      {|
+(def answer 40)
+(defn add2 [value] (+ value 2))
+|}
+    |> expect_ok
+  in
+  let cached_state = Lg.Compiler.cacheable_state state in
+  let serialized = Marshal.to_string cached_state [] in
+  let cached_state : Lg.Compiler.state = Marshal.from_string serialized 0 in
+  let _state, consumer_ocaml =
+    Lg.Compiler.compile_chunk_with_filename_and_diagnostics ~check_ocaml:false
+      ~filename:"consumer.cljc" cached_state {|
+(println (add2 answer))
+|}
+    |> expect_ok
+  in
+  assert_ocaml_runs
+    "cacheable_incremental_state_compiles_without_ocaml_environment" "42\n"
+    (provider_ocaml ^ "\n\n" ^ consumer_ocaml.ocaml_source)
+
 let test_incremental_compilation_preserves_record_sets () =
   let state = Lg.Compiler.empty_state in
   let state, people_ocaml =
@@ -24726,6 +24749,8 @@ let tests =
       test_incremental_compilation_preserves_opened_modules );
     ( "incremental compilation preserves state",
       test_incremental_compilation_preserves_state );
+    ( "cacheable incremental state compiles without OCaml environment",
+      test_cacheable_incremental_state_compiles_without_ocaml_environment );
     ( "incremental compilation preserves record sets",
       test_incremental_compilation_preserves_record_sets );
     ( "incremental compilation reuses named record set modules",

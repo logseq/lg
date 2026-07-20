@@ -1384,8 +1384,11 @@
     node
     %{dep:datascript-transact-melange/test/datascript_transact_melange.js}))))
 
+(include datascript_conn_tests.inc)
+
 (rule
  (target datascript_conn_native.ml)
+ (enabled_if false)
  (deps
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
@@ -1480,13 +1483,31 @@
 
 (executable
  (name datascript_conn_native)
- (modules datascript_conn_native)
+ (modules
+  datascript_conn_native_base
+  datascript_conn_native_test_lru
+  datascript_conn_native_test_transact
+  datascript_conn_native_test_conn
+  datascript_conn_native_test_listen
+  datascript_conn_native_test_filter
+  datascript_conn_native_test_ident
+  datascript_conn_native_test_components
+  datascript_conn_native_test_core
+  datascript_conn_native_test_db
+  datascript_conn_native_test_entity
+  datascript_conn_native_test_explode
+  datascript_conn_native_test_index
+  datascript_conn_native_test_issues
+  datascript_conn_native_test_lookup_refs
+  datascript_conn_native_test_parser
+  datascript_conn_native)
  (flags
   (:standard -w -5-11-26-27-32-37-39-69))
  (libraries lg.runtime re rrbvec unix lg-test.runtime lg-test.alcotest))
 
 (rule
  (target datascript_conn_melange.ml)
+ (enabled_if false)
  (deps
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
@@ -1582,7 +1603,24 @@
  (target datascript-conn-melange)
  (alias datascript-conn-melange)
  (module_systems es6)
- (modules datascript_conn_melange)
+ (modules
+  datascript_conn_melange_base
+  datascript_conn_melange_test_lru
+  datascript_conn_melange_test_transact
+  datascript_conn_melange_test_conn
+  datascript_conn_melange_test_listen
+  datascript_conn_melange_test_filter
+  datascript_conn_melange_test_ident
+  datascript_conn_melange_test_components
+  datascript_conn_melange_test_core
+  datascript_conn_melange_test_db
+  datascript_conn_melange_test_entity
+  datascript_conn_melange_test_explode
+  datascript_conn_melange_test_index
+  datascript_conn_melange_test_issues
+  datascript_conn_melange_test_lookup_refs
+  datascript_conn_melange_test_parser
+  datascript_conn_melange)
  (preprocess
   (pps melange.ppx))
  (compile_flags -w -5-11-26-27-32-37-39-69)

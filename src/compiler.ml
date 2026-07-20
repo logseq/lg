@@ -67,8 +67,9 @@ let compile_chunk_with_filename ?(target = Target.default) ~filename state
   Toolchain.compile_chunk ~target ~filename state source
 
 let compile_chunk_with_filename_and_diagnostics ?(target = Target.default)
-    ~filename state source =
-  Toolchain.compile_chunk_with_diagnostics ~target ~filename state source
+    ?(check_ocaml = true) ~filename state source =
+  Toolchain.compile_chunk_with_diagnostics ~target ~filename ~check_ocaml state
+    source
 
 let compile_chunk_parsetree ?(target = Target.default) state source =
   Toolchain.compile_chunk_parsetree ~target state source

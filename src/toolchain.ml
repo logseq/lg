@@ -1271,35 +1271,40 @@ let typecheck_parsetree ?(target = Target.default) ?(filename = "<string>")
 let print_parsetree = Ocaml_parsetree_backend.print
 
 let compile_chunk_with_diagnostics ?(target = Target.default)
-    ?(filename = "<string>") state source =
+    ?(filename = "<string>") ?(check_ocaml = true) state source =
   let previous_items = state.located_items in
   match Lg_frontend.implementation ~target ~filename source with
   | Error _ as err -> err
-  | Ok parsed -> (
-      match typecheck_incremental state parsed with
+  | Ok parsed ->
+      (match typecheck_incremental state parsed with
       | Error _ as err -> err
-      | Ok (state, typed) -> (
-          match
-            Ocaml_parsetree_backend.implementation ~previous_items typed
-          with
+      | Ok (state, typed) ->
+          (match
+             Ocaml_parsetree_backend.implementation ~previous_items typed
+           with
           | Error _ as err -> err
-          | Ok result -> (
-              match
-                Ocaml_typechecker.analyze ?compiler_env:state.ocaml_env
-                  result.structure
-              with
-              | Error _ as err -> err
-              | Ok analysis ->
-                  let state =
-                    { state with ocaml_env = Some analysis.compiler_env }
-                  in
-                  Ok
-                    ( state,
-                      {
-                        ocaml_source =
-                          Ocaml_parsetree_backend.print result.structure;
-                        diagnostics = analysis.diagnostics;
-                      } ))))
+          | Ok result ->
+              let ocaml_source =
+                Ocaml_parsetree_backend.print result.structure
+              in
+              if not check_ocaml then
+                Ok (state, { ocaml_source; diagnostics = [] })
+              else
+                match
+                  Ocaml_typechecker.analyze ?compiler_env:state.ocaml_env
+                    result.structure
+                with
+                | Error _ as err -> err
+                | Ok analysis ->
+                    let state =
+                      { state with ocaml_env = Some analysis.compiler_env }
+                    in
+                    Ok
+                      ( state,
+                        {
+                          ocaml_source;
+                          diagnostics = analysis.diagnostics;
+                        } )))
 
 let compile_chunk ?(target = Target.default) ?(filename = "<string>") state
     source =

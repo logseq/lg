@@ -18,7 +18,21 @@ type constructor_type = {
 let initialized = ref false
 
 let init include_dirs =
+  let uses_melange =
+    List.exists (fun path -> Filename.basename path = "melange") include_dirs
+  in
+  let standard_include_dirs =
+    if uses_melange then []
+    else
+      [ "unix"; "str" ]
+      |> List.map (Filename.concat Config.standard_library)
+      |> List.filter Sys.file_exists
+  in
+  let include_dirs = standard_include_dirs @ include_dirs in
   if not !initialized then (
+    if not uses_melange then
+      Clflags.include_dirs :=
+        List.sort_uniq String.compare (include_dirs @ !Clflags.include_dirs);
     Compmisc.init_path ();
     initialized := true);
   List.iter (fun dir -> Load_path.add_dir ~hidden:false dir) include_dirs
