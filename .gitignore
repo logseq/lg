@@ -1,5 +1,8 @@
 /_build/
 /.lg-cache/
+/_build-cache-validation/
+/_build-cache-validation-hit/
+/_build-melange-refresh/
 *.cmi
 *.cmo
 *.cmx
