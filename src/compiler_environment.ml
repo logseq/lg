@@ -187,6 +187,25 @@ let find_macro_value ~scope name env =
 let rec anonymous_type_equal left right =
   match (left, right) with
   | Types.TRecord left, Types.TRecord right -> anonymous_fields_equal left right
+  | Types.TRecord left, Types.TNamed_record { nominal = false; fields = right; _ }
+  | Types.TNamed_record { nominal = false; fields = left; _ }, Types.TRecord right ->
+      anonymous_fields_equal left right
+  | Types.TNullable left, Types.TNullable right
+  | Types.TArray left, Types.TArray right
+  | Types.TRef left, Types.TRef right
+  | Types.TList left, Types.TList right
+  | Types.TVector left, Types.TVector right
+  | Types.TSet left, Types.TSet right
+  | Types.TSeq left, Types.TSeq right ->
+      anonymous_type_equal left right
+  | Types.TOcaml_app (left_name, left_args),
+    Types.TOcaml_app (right_name, right_args)
+    when left_name = right_name ->
+      List.length left_args = List.length right_args
+      && List.for_all2 anonymous_type_equal left_args right_args
+  | Types.TTuple left, Types.TTuple right ->
+      List.length left = List.length right
+      && List.for_all2 anonymous_type_equal left right
   | _ -> Types.equal left right
 
 and anonymous_fields_equal left right =
@@ -204,12 +223,44 @@ and anonymous_fields_equal left right =
       | None -> false)
     left
 
+let rec anonymous_type_layout_compatible left right =
+  match (left, right) with
+  | Types.TRecord left, Types.TRecord right ->
+      anonymous_fields_layout_compatible left right
+  | Types.TRecord _, _ | _, Types.TRecord _ -> false
+  | _ -> Types.ocaml_name left = Types.ocaml_name right
+
+and anonymous_fields_layout_compatible left right =
+  List.length left = List.length right
+  &&
+  List.for_all
+    (fun (left_field : Types.field) ->
+      match
+        List.find_opt
+          (fun (right_field : Types.field) ->
+            right_field.keyword = left_field.keyword)
+          right
+      with
+      | Some right_field ->
+          anonymous_type_layout_compatible left_field.ty right_field.ty
+      | None -> false)
+    left
+
 let find_anonymous_record ~owner fields env =
   env.anonymous_records
   |> List.find_map (fun (record_owner, (record : Semantic_type.named_record)) ->
          if
            record_owner = owner
            && anonymous_fields_equal fields record.fields
+         then Some record
+         else None)
+
+let find_anonymous_record_by_layout ~owner fields env =
+  env.anonymous_records
+  |> List.find_map (fun (record_owner, (record : Semantic_type.named_record)) ->
+         if
+           record_owner = owner
+           && anonymous_fields_layout_compatible fields record.fields
          then Some record
          else None)
 

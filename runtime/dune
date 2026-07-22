@@ -4,4 +4,4 @@
  (modes native byte melange)
  (preprocess
   (pps melange.ppx))
- (libraries rrbvec))
+ (libraries rrbvec lg.edn-backend))

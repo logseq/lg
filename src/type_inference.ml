@@ -375,6 +375,7 @@ let constrain_seqable element_ty params name =
            || constraint_name = Types.optional_sequential_constraint_name ->
         let element_ty =
           if Types.equal existing_element TUnknown then element_ty
+          else if Types.is_dynamic existing_element then existing_element
           else refine_type existing_element element_ty
         in
         if constraint_name = Types.seqable_constraint_name then
@@ -747,6 +748,47 @@ let rec inferred_form_type params = function
     when String.equal operation "Array.length"
          || has_source_name operation "alength" ->
       TInt
+  | FList [ FSymbol operation; collection ]
+    when has_source_name operation "array-from"
+         || has_source_name operation "into-array"
+         || has_source_name operation "to-array" ->
+      let collection_ty = inferred_form_type params collection in
+      let element_ty =
+        match collection_ty with
+        | TArray element_ty | TList element_ty | TVector element_ty
+        | TSet element_ty | TSeq element_ty ->
+            element_ty
+        | collection_ty ->
+            Types.seqable_constraint_element collection_ty
+            |> Option.value
+                 ~default:
+                   (if Types.is_dynamic collection_ty then collection_ty
+                    else TUnknown)
+      in
+      TArray element_ty
+  | FList
+      (FSymbol (("cond->" | "cond->>") as operator) :: value :: clauses) ->
+      let thread value step =
+        match step with
+        | FSymbol name -> FList [ FSymbol name; value ]
+        | FKeyword _ as keyword -> FList [ keyword; value ]
+        | FList (FSymbol name :: arguments) ->
+            if operator = "cond->" then
+              FList (FSymbol name :: value :: arguments)
+            else FList ((FSymbol name :: arguments) @ [ value ])
+        | form -> form
+      in
+      let rec result_type current_form current_ty = function
+        | _condition :: step :: rest ->
+            let current_form = thread current_form step in
+            let step_ty = inferred_form_type params current_form in
+            let current_ty =
+              if Types.equal step_ty TUnknown then current_ty else step_ty
+            in
+            result_type current_form current_ty rest
+        | _ -> current_ty
+      in
+      result_type value (inferred_form_type params value) clauses
   | FList [ FSymbol operation; FSymbol array; _from; _to ]
     when String.equal operation "Array.sub"
          || has_source_name operation "aslice" -> (
@@ -935,6 +977,11 @@ let infer_params ?(explicitly_dynamic_params = [])
     ~lookup_function_ty
     ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
     ~resolve_named_record params body_forms =
+  let unresolved_parameter_names =
+    params
+    |> List.filter_map (fun (name, ty) ->
+           match ty with TUnknown | TVar _ -> Some name | _ -> None)
+  in
   let next_type_variable = ref 0 in
   let branch_depth = ref 0 in
   let branch_hint_symbols = ref [] in
@@ -1900,6 +1947,29 @@ let infer_params ?(explicitly_dynamic_params = [])
             List.exists compares body_forms
         | Ok _ | Error _ -> false)
     | _ -> false
+  and callback_checks_runtime_type = function
+    | FList (FSymbol "fn" :: (FVector _ as params_form) :: body_forms) -> (
+        match Destructure.parse_param_specs params_form with
+        | Ok [ (spec : Destructure.param_spec) ] when not spec.destructured ->
+            let rec checks = function
+              | FList
+                  [
+                    FSymbol "instance?";
+                    FSymbol _type_name;
+                    FSymbol value;
+                  ] ->
+                  String.equal value spec.source_name
+              | FList (FSymbol "fn" :: _) -> false
+              | FList forms | FVector forms -> List.exists checks forms
+              | FMap pairs ->
+                  List.exists
+                    (fun (key, value) -> checks key || checks value)
+                    pairs
+              | _ -> false
+            in
+            List.exists checks body_forms
+        | Ok _ | Error _ -> false)
+    | _ -> false
   and infer_sequence_form element_ty params = function
     | FSymbol name -> constrain_seqable element_ty params name
     | FList [ FKeyword keyword; FSymbol name ] ->
@@ -2247,9 +2317,14 @@ let infer_params ?(explicitly_dynamic_params = [])
                               (List.rev_append locals outer_params) value
                           in
                           let ty =
-                            if Types.equal ty TUnknown then
+                            match ty with
+                            | TArray element_ty when Types.is_dynamic element_ty ->
+                                TArray
+                                  (fresh_type_variable
+                                     ("let_array_" ^ Names.sanitize_name name))
+                            | ty when Types.equal ty TUnknown ->
                               TVar ("let_" ^ Names.sanitize_name name)
-                            else ty
+                            | ty -> ty
                           in
                           initial_locals ((name, ty) :: locals) rest
                     in
@@ -2335,7 +2410,15 @@ let infer_params ?(explicitly_dynamic_params = [])
     in
     let infer_target =
       match (target, pairs) with
-      | FSymbol _name, (FKeyword _ :: _ | []) -> infer_form params target
+      | FSymbol name, (FKeyword _ :: _ | []) ->
+          Result.map
+            (fun params ->
+              match string_assoc_opt name params with
+              | Some (TRecord _ as record_ty)
+                when string_mem name unresolved_parameter_names ->
+                  replace_param name (Types.dynamic_constraint record_ty) params
+              | Some _ | None -> params)
+            (infer_form params target)
       | FSymbol name, key_form :: value_form :: _ -> (
           match
             Option.bind (string_assoc_opt name params) Types.dynamic_map_types
@@ -3404,20 +3487,32 @@ let infer_params ?(explicitly_dynamic_params = [])
                 (inferred_form_type params function_form)
         in
         if dynamic_function then
-          match List.rev arguments with
-          | collection :: reversed_fixed ->
-              let dynamic = Types.dynamic_constraint TUnknown in
-              Result.bind
-                (infer_expected_all dynamic params (List.rev reversed_fixed))
-                (fun params ->
-                  match collection with
-                  | FSymbol name -> constrain_seqable dynamic params name
-                  | collection -> infer_form params collection)
-          | [] -> Ok params
+          let params =
+            match function_form with
+            | FSymbol name -> (
+                match string_assoc_opt name params with
+                | Some (TUnknown | TVar _) ->
+                    constrain_symbol (Types.dynamic_constraint TUnknown) params
+                      name
+                | _ -> Ok params)
+            | _ -> Ok params
+          in
+          Result.bind params (fun params ->
+              match List.rev arguments with
+              | collection :: reversed_fixed ->
+                  let dynamic = Types.dynamic_constraint TUnknown in
+                  Result.bind
+                    (infer_expected_all dynamic params (List.rev reversed_fixed))
+                    (fun params ->
+                      match collection with
+                      | FSymbol name -> constrain_seqable dynamic params name
+                      | collection -> infer_form params collection)
+              | [] -> Ok params)
         else (
           match List.rev arguments with
           | FSymbol collection :: reversed_fixed ->
               let fixed_count = List.length reversed_fixed in
+              let fixed_arguments = List.rev reversed_fixed in
               let rec drop count values =
                 if count <= 0 then values
                 else
@@ -3425,16 +3520,22 @@ let infer_params ?(explicitly_dynamic_params = [])
                   | [] -> []
                   | _ :: rest -> drop (count - 1) rest
               in
+              let rec take count values =
+                if count <= 0 then []
+                else
+                  match values with
+                  | [] -> []
+                  | value :: rest -> value :: take (count - 1) rest
+              in
               let remaining_parameters = function
                 | TFn (parameter_tys, _) -> drop fixed_count parameter_tys
                 | TOverloaded_fn arities ->
                     arities
                     |> List.concat_map (fun arity ->
-                           if fixed_count > List.length arity.fixed_params then
-                             []
-                           else
+                           if fixed_count <= List.length arity.fixed_params then
                              drop fixed_count arity.fixed_params
-                             @ Option.to_list arity.rest_param)
+                             @ Option.to_list arity.rest_param
+                           else Option.to_list arity.rest_param)
                 | _ -> []
               in
               let function_ty =
@@ -3447,15 +3548,47 @@ let infer_params ?(explicitly_dynamic_params = [])
                         |> Result.value ~default:TUnknown)
                 | form -> inferred_form_type params form
               in
-              let element_ty =
-                match remaining_parameters function_ty with
-                | [] -> TUnknown
-                | first :: rest
-                  when List.for_all (Types.equal first) rest ->
-                    first
-                | _ -> Types.dynamic_constraint TUnknown
+              let fixed_parameter_types =
+                match function_ty with
+                | TFn (parameter_tys, _)
+                  when fixed_count <= List.length parameter_tys ->
+                    take fixed_count parameter_tys
+                | TOverloaded_fn arities ->
+                    arities
+                    |> List.find_map (fun arity ->
+                           let declared_count =
+                             List.length arity.fixed_params
+                           in
+                           if fixed_count <= declared_count then
+                             Some (take fixed_count arity.fixed_params)
+                           else
+                             Option.map
+                               (fun rest_ty ->
+                                 arity.fixed_params
+                                 @ List.init (fixed_count - declared_count)
+                                     (fun _ -> rest_ty))
+                               arity.rest_param)
+                    |> Option.value
+                         ~default:
+                           (List.init fixed_count (fun _ -> TUnknown))
+                | _ -> List.init fixed_count (fun _ -> TUnknown)
               in
-              constrain_seqable element_ty params collection
+              Result.bind
+                (List.fold_left2
+                   (fun result expected argument ->
+                     Result.bind result (fun params ->
+                         infer_expected expected params argument))
+                   (Ok params) fixed_parameter_types fixed_arguments)
+                (fun params ->
+                  let element_ty =
+                    match remaining_parameters function_ty with
+                    | [] -> TUnknown
+                    | first :: rest
+                      when List.for_all (Types.equal first) rest ->
+                        first
+                    | _ -> Types.dynamic_constraint TUnknown
+                  in
+                  constrain_seqable element_ty params collection)
           | _ -> infer_all params arguments)
     | FList [ FSymbol ("map" | "mapv" | "keep"); fn; collection ] ->
         let inferred_element_ty = inferred_unary_function_param params fn in
@@ -3582,7 +3715,11 @@ let infer_params ?(explicitly_dynamic_params = [])
                   Types.is_dynamic ty
                   || Types.equal ty TUnknown
                   || (match ty with TVar _ -> true | _ -> false)
-              | None -> false)
+              | None -> (
+                  match lookup_function_ty name with
+                  | Ok (TFn ([ parameter_ty ], _)) ->
+                      Types.is_dynamic parameter_ty
+                  | Ok _ | Error _ -> false))
           | _ -> false
         in
         let element_ty =
@@ -3594,6 +3731,7 @@ let infer_params ?(explicitly_dynamic_params = [])
             (not dynamic_predicate)
             && Types.is_dynamic element_ty
             && not (callback_compares_destructured_values fn)
+            && not (callback_checks_runtime_type fn)
           then
             TUnknown
           else element_ty
@@ -3669,6 +3807,33 @@ let infer_params ?(explicitly_dynamic_params = [])
                 infer_expected
                   (TFn ([ accumulator_ty; element_ty ], TUnknown))
                   params reducer)))
+    | FList [ FSymbol "reduce"; reducer; collection ] ->
+        let declared_element_ty =
+          match reducer with
+          | FSymbol name -> (
+              let reducer_ty =
+                match string_assoc_opt name params with
+                | Some ty -> Ok ty
+                | None -> lookup_function_ty name
+              in
+              match reducer_ty with
+              | Ok (TFn ([ _accumulator_ty; element_ty ], _)) -> element_ty
+              | Ok (TOverloaded_fn arities) -> (
+                  match
+                    List.find_opt
+                      (fun (arity : fn_arity) ->
+                        Option.is_none arity.rest_param
+                        && List.length arity.fixed_params = 2)
+                      arities
+                  with
+                  | Some { fixed_params = [ _accumulator_ty; element_ty ]; _ }
+                    ->
+                      element_ty
+                  | Some _ | None -> TUnknown)
+              | Ok _ | Error _ -> TUnknown)
+          | _ -> TUnknown
+        in
+        infer_sequence_form declared_element_ty params collection
     | FList [ FSymbol "sort"; FSymbol collection ] ->
         constrain_seqable (Types.dynamic_constraint TUnknown) params collection
     | FList [ FSymbol "sort"; _comparator; FSymbol collection ] ->
@@ -3757,6 +3922,18 @@ let infer_params ?(explicitly_dynamic_params = [])
               (fun arg -> Types.is_dynamic (inferred_form_type params arg))
               args
           in
+          let has_open_argument =
+            List.exists
+              (fun arg ->
+                Type_solver.is_open (inferred_form_type params arg)
+                || match arg with
+                | FSymbol name -> (
+                    match string_assoc_opt name params with
+                    | Some (TUnknown | TVar _) -> true
+                    | Some _ | None -> false)
+                | _ -> false)
+              args
+          in
           let has_unresolved_symbol =
             List.exists
               (function
@@ -3779,6 +3956,10 @@ let infer_params ?(explicitly_dynamic_params = [])
                    args ->
               Types.dynamic_constraint TUnknown
           | ty :: _ -> ty
+          | []
+            when materialize_open_equality && has_open_argument
+                 && not has_unresolved_symbol ->
+              Types.dynamic_constraint TUnknown
           | [] when has_dynamic_argument ->
               Types.dynamic_constraint TUnknown
           | [] ->
@@ -4272,6 +4453,44 @@ let infer_params ?(explicitly_dynamic_params = [])
                      in
                      (local, ty))
             in
+            let equality_first_locals =
+              let rec collect locals = function
+                | FList (FSymbol ("=" | "not=") :: operands) ->
+                    List.fold_left
+                      (fun locals -> function
+                        | FList
+                            [
+                              FSymbol ("first" | "second" | "last");
+                              FSymbol local;
+                            ] ->
+                            if string_mem local locals then locals
+                            else local :: locals
+                        | _ -> locals)
+                      locals operands
+                | FList (FSymbol ("fn" | "loop") :: _) -> locals
+                | FList forms | FVector forms ->
+                    List.fold_left collect locals forms
+                | FMap pairs ->
+                    List.fold_left
+                      (fun locals (key, value) ->
+                        collect (collect locals key) value)
+                      locals pairs
+                | _ -> locals
+              in
+              if materialize_open_equality then
+                List.fold_left collect [] body_forms
+              else []
+            in
+            let local_params =
+              List.map
+                (fun (local, ty) ->
+                  if string_mem local equality_first_locals then
+                    ( local,
+                      Types.optional_seqable_constraint
+                        (Types.dynamic_constraint TUnknown) ty )
+                  else (local, ty))
+                local_params
+            in
                 match infer_all (local_params @ params) body_forms with
             | Error _ as error -> error
                 | Ok inferred -> (
@@ -4358,6 +4577,31 @@ let infer_params ?(explicitly_dynamic_params = [])
                              |> Option.value ~default:TUnknown
                            in
                            constrain_symbol local_ty params source
+                       | ( Ok params,
+                           FList
+                             [
+                               FSymbol ("seq" | "rest" | "next");
+                               FSymbol source;
+                             ] )
+                         when string_mem_assoc source params ->
+                           let local_ty =
+                             string_assoc_opt local inferred
+                             |> Option.value ~default:TUnknown
+                           in
+                           let element_ty =
+                             match local_ty with
+                             | ty when Types.is_dynamic ty -> Some ty
+                             | TSeq inner | TList inner | TVector inner
+                             | TArray inner | TSet inner ->
+                                 Some inner
+                             | TOcaml_app (("Seq.t" | "Seq"), [ inner ]) ->
+                                 Some inner
+                             | ty -> Types.seqable_constraint_element ty
+                           in
+                           Option.fold ~none:(Ok params)
+                             ~some:(fun element_ty ->
+                               constrain_seqable element_ty params source)
+                             element_ty
                      | Ok params, _ -> Ok params)
                      (Ok originals))))
     | FList (FSymbol let_name :: bindings :: body_forms)

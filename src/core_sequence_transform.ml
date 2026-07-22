@@ -2,8 +2,23 @@ open Types
 
 let apply name args = Semantic_ir.Apply (Semantic_ir.Ident name, args)
 
-let collection_to_list_expr collection =
+let rec collection_to_list_expr collection =
   match collection.ty with
+  | TNullable value_ty | TOcaml_app ("option", [ value_ty ]) ->
+      let value_name = "__lg_optional_collection" in
+      let value = typed_ir value_ty (Semantic_ir.Ident value_name) in
+      Result.map
+        (fun (inner, list_expr) ->
+          ( inner,
+            Semantic_ir.Match
+              ( collection.semantic_expr,
+                [
+                  (Semantic_ir.PConstructor ("None", None), Semantic_ir.List []);
+                  ( Semantic_ir.PConstructor
+                      ("Some", Some (Semantic_ir.PVar value_name)),
+                    list_expr );
+                ] ) ))
+        (collection_to_list_expr value)
   | TList inner -> Ok (inner, collection.semantic_expr)
   | TVector inner -> Ok (inner, apply "Rrbvec.to_list" [ collection.semantic_expr ])
   | TArray inner -> Ok (inner, apply "Array.to_list" [ collection.semantic_expr ])
@@ -52,8 +67,11 @@ let collection_to_seq_expr collection =
         (TChar, apply "Lg_runtime.Runtime_seq.of_string" [ collection.semantic_expr ])
   | _ -> Error.error "collection value is not sequenceable"
 
-let collection_from_list_expr collection_ty list_expr =
+let rec collection_from_list_expr collection_ty list_expr =
   match collection_ty with
+  | TNullable value_ty | TOcaml_app ("option", [ value_ty ]) ->
+      Semantic_ir.Constructor
+        ("Some", Some (collection_from_list_expr value_ty list_expr))
   | TList _ -> list_expr
   | TVector _ -> apply "Rrbvec.of_list" [ list_expr ]
   | TSeq _ -> apply "Lg_runtime.Runtime_seq.of_list" [ list_expr ]
@@ -230,6 +248,8 @@ let sort collection =
         let comparator =
           if Types.is_dynamic inner then
             Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.compare"
+          else if Types.equal inner TKeyword || Types.equal inner TSymbol then
+            Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.compare_identifier"
           else Semantic_ir.Ident "compare"
         in
         Ok
@@ -284,6 +304,14 @@ let repeat_forever value =
   Ok
     (typed_ir (TSeq value.ty)
        (apply "Lg_runtime.Runtime_seq.repeat" [ value.semantic_expr ]))
+
+let cycle collection =
+  match collection_to_seq_expr collection with
+  | Error _ -> Error.error "cycle expects a collection"
+  | Ok (inner, sequence) ->
+      Ok
+        (typed_ir (TSeq inner)
+           (apply "Lg_runtime.Runtime_seq.cycle" [ sequence ]))
 
 let interpose separator collection =
   match collection_to_list_expr collection with
@@ -713,6 +741,7 @@ let compile name args =
   | "set", [ collection ] -> set collection
   | "repeat", [ count; value ] -> repeat count value
   | "repeat", [ value ] -> repeat_forever value
+  | "cycle", [ collection ] -> cycle collection
   | "interpose", [ separator; collection ] -> interpose separator collection
   | "interleave", collections -> interleave collections
   | ("partition" | "partition-all"), [ size; collection ] ->
@@ -734,6 +763,7 @@ let compile name args =
     | "doall"),
     _ -> Error.error (name ^ " expects 1 arguments")
   | "repeat", _ -> Error.error "repeat expects value, or count and value"
+  | "cycle", _ -> Error.error "cycle expects 1 collection"
   | "interpose", _ -> Error.error "interpose expects separator and collection"
   | ("partition" | "partition-all"), _ ->
       Error.error (name ^ " expects size and collection")

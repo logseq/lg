@@ -1,7 +1,9 @@
 /_build/
+/.lg-cache/
 *.cmi
 *.cmo
 *.cmx
 *.o
 .lsp/
 .clj-kondo/
+node_modules/

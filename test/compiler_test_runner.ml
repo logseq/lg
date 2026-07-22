@@ -1,3 +1,5 @@
+let _ensure_edn_backend_linked = Lg_edn_backend.of_edn_string
+
 let repo_root () =
   Sys.executable_name |> Filename.dirname |> Filename.dirname
   |> Filename.dirname |> Filename.dirname

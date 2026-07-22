@@ -61,7 +61,12 @@ let lookup_record_type scope env type_name =
 let lookup_binding scope env name =
   match Env.find_opt (Names.scoped_key scope name) env with
   | Some (binding : binding) -> Ok binding
-  | None -> Error.error ("unknown function " ^ name)
+  | None -> (
+      (* Fully qualified calls into core namespaces resolve without an
+         explicit require, mirroring Clojure's auto-loading. *)
+      match Core_namespaces.lookup_qualified_member name with
+      | Some (binding : binding) -> Ok binding
+      | None -> Error.error ("unknown function " ^ name))
 
 let binding_owner key =
   match String.rindex_opt key '/' with

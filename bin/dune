@@ -2,4 +2,4 @@
  (name lg_cli)
  (public_name lg)
  (package lg)
- (libraries lg rrbvec yojson unix))
+ (libraries lg lg.edn-backend.native rrbvec yojson unix))

@@ -5,6 +5,10 @@ type t = {
   items : Lowered.compiled_item list;
   dynamic_packers : Type_id.t list;
   shared_values : string list;
+  runtime_var_reflection : bool;
+  runtime_definitions : string list;
+  runtime_var_requests : string list;
+  runtime_vars : string list;
 }
 
 let empty =
@@ -15,6 +19,10 @@ let empty =
     items = [];
     dynamic_packers = [];
     shared_values = [];
+    runtime_var_reflection = false;
+    runtime_definitions = [];
+    runtime_var_requests = [];
+    runtime_vars = [];
   }
 
 let with_target target state =

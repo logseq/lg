@@ -90,9 +90,28 @@ let is_qualified name = String.contains name '/'
 let scoped_key scope name =
   if is_qualified name || scope = "" then name else scope ^ "/" ^ name
 
+let compact_digest name =
+  let digest = Digest.string name in
+  let value = ref 0L in
+  for index = 0 to 3 do
+    value :=
+      Int64.logor (Int64.shift_left !value 8)
+        (Int64.of_int (Char.code digest.[index]))
+  done;
+  let alphabet =
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+  in
+  let encoded = Bytes.make 6 'a' in
+  for index = 5 downto 0 do
+    let digit = Int64.to_int (Int64.rem !value 62L) in
+    Bytes.set encoded index alphabet.[digit];
+    value := Int64.div !value 62L
+  done;
+  Bytes.unsafe_to_string encoded
+
 let compact_source_binding name =
   if String.length name > 24 then
-    "lg_" ^ String.sub (Digest.to_hex (Digest.string name)) 0 8
+    "g" ^ compact_digest name
   else name
 
 let ocaml_binding_name scope name =
@@ -167,7 +186,7 @@ let compact_runtime_source source =
 
 let compact_generated_name name =
   if String.starts_with ~prefix:"__lg_" name then
-    "__l" ^ String.sub (Digest.to_hex (Digest.string name)) 0 8
+    "l" ^ compact_digest name
   else name
 
 let compact_generated_source source =

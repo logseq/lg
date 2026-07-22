@@ -412,7 +412,9 @@ let rec compile_module ?location ?signature_name ?signature_location
                         Record_def
                           { var_name = local_name;
                             identity;
+                            type_id = allocation.record.type_id;
                             type_name = allocation.record.type_name;
+                            type_parameters = allocation.record.type_parameters;
                             set_module_name = allocation.record.set_module_name;
                             fields;
                             values;
@@ -421,7 +423,9 @@ let rec compile_module ?location ?signature_name ?signature_location
                         Projected_record_def
                           { var_name = local_name;
                             identity;
+                            type_id = allocation.record.type_id;
                             type_name = allocation.record.type_name;
+                            type_parameters = allocation.record.type_parameters;
                             set_module_name = allocation.record.set_module_name;
                             fields;
                             source = expr.semantic_expr;
@@ -528,8 +532,12 @@ let rec compile_module ?location ?signature_name ?signature_location
                   parts.param_bindings
                   |> List.map (fun (_key, (binding : binding)) -> binding.ty)
                 in
-                let local_row_types = row_param_type_names local_name param_tys in
-                let public_row_types = row_param_type_names public_name param_tys in
+                let local_row_types =
+                  row_param_type_names ~env local_name param_tys
+                in
+                let public_row_types =
+                  row_param_type_names ~env public_name param_tys
+                in
                 let expr = fn_code ~row_param_type_names:local_row_types parts in
                 let key = module_binding_key module_path name in
                 (match
@@ -577,8 +585,12 @@ let rec compile_module ?location ?signature_name ?signature_location
               parts.param_bindings
               |> List.map (fun (_key, (binding : binding)) -> binding.ty)
             in
-            let local_row_types = row_param_type_names local_name param_tys in
-            let public_row_types = row_param_type_names public_name param_tys in
+            let local_row_types =
+              row_param_type_names ~env local_name param_tys
+            in
+            let public_row_types =
+              row_param_type_names ~env public_name param_tys
+            in
             let expr = fn_code ~row_param_type_names:local_row_types parts in
             let key = module_binding_key module_path name in
             match

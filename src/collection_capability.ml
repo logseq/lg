@@ -25,7 +25,7 @@ let rec to_seq_expr env collection =
     | TOcaml_app ("Lg_runtime.Runtime_map.t", [ key_ty; value_ty ]) ->
         Ok
           ( TTuple [ key_ty; value_ty ],
-            apply "List.to_seq" [ collection.semantic_expr ] )
+            apply "Lg_runtime.Runtime_map.to_seq" [ collection.semantic_expr ] )
     | TNullable value_ty | TOcaml_app ("option", [ value_ty ]) -> (
       let value_name = "__lg_optional_seqable_value" in
       let value = typed_ir value_ty (Semantic_ir.Ident value_name) in

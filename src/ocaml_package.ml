@@ -29,6 +29,21 @@ let expand_include_directory directory =
   in
   directory :: nested
 
+let direct_ocamlpath_directories package =
+  let separator = if Sys.win32 then ';' else ':' in
+  let package_components = String.split_on_char '.' package in
+  Sys.getenv_opt "OCAMLPATH" |> Option.value ~default:""
+  |> String.split_on_char separator
+  |> List.filter_map (fun root ->
+      if root = "" then None
+      else
+        let directory =
+          List.fold_left Filename.concat root package_components
+        in
+        if contains_compiled_interface directory then Some directory else None)
+  |> List.concat_map expand_include_directory
+  |> List.sort_uniq String.compare
+
 let query_cache = Hashtbl.create 8
 
 let query package =
@@ -50,8 +65,11 @@ let query package =
         let result =
           match Unix.close_process_full (stdout, stdin, stderr) with
           | WEXITED 0 -> Ok directories
-          | WEXITED _ | WSIGNALED _ | WSTOPPED _ ->
-              Error.error ("OCaml package " ^ package ^ " was not found")
+          | WEXITED _ | WSIGNALED _ | WSTOPPED _ -> (
+              match direct_ocamlpath_directories package with
+              | _ :: _ as directories -> Ok directories
+              | [] ->
+                  Error.error ("OCaml package " ^ package ^ " was not found"))
         in
         Hashtbl.replace query_cache package result;
         result

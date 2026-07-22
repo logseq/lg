@@ -1,34 +1,115 @@
 let ensure_active active =
   if not active then invalid_arg "transient used after persistent!"
 
+type key_kind = Generic | Dynamic
+
+type 'key key_operations = {
+  hash : 'key -> int;
+  equal : 'key -> 'key -> bool;
+}
+
+let generic_key_operations () =
+  {
+    hash =
+      (fun value ->
+        if Runtime_dynamic.is_runtime_dynamic value then
+          Runtime_dynamic.hash (Obj.magic value)
+        else Hashtbl.hash value);
+    equal = Runtime_dynamic.polymorphic_equal;
+  }
+
+let dynamic_key_operations =
+  { hash = Runtime_dynamic.hash; equal = Runtime_dynamic.equal }
+
 type 'value set = {
-  values : ('value, unit) Hashtbl.t;
+  mutable buckets : 'value list array;
+  mutable size : int;
+  mutable key_kind : key_kind option;
+  mutable key_operations : 'value key_operations option;
   mutable active : bool;
 }
 
-let set_empty () = { values = Hashtbl.create 16; active = true }
+let set_empty () =
+  {
+    buckets = Array.make 16 [];
+    size = 0;
+    key_kind = None;
+    key_operations = None;
+    active = true;
+  }
+
+let activate_set_key_operations set kind operations =
+  match (set.key_kind, set.key_operations) with
+  | None, None ->
+      set.key_kind <- Some kind;
+      set.key_operations <- Some operations;
+      operations
+  | Some existing_kind, Some existing_operations when existing_kind = kind ->
+      existing_operations
+  | Some _, Some _ -> invalid_arg "transient set element type changed"
+  | _ -> invalid_arg "invalid transient set key state"
+
+let set_bucket_index operations buckets value =
+  (operations.hash value land max_int) mod Array.length buckets
+
+let set_add_without_resize set operations value =
+  let index = set_bucket_index operations set.buckets value in
+  if not (List.exists (operations.equal value) set.buckets.(index)) then (
+    set.buckets.(index) <- value :: set.buckets.(index);
+    set.size <- set.size + 1)
+
+let resize_set_if_needed set operations =
+  if set.size * 4 > Array.length set.buckets * 3 then (
+    let values = Array.to_list set.buckets |> List.concat in
+    set.buckets <- Array.make (Array.length set.buckets * 2) [];
+    set.size <- 0;
+    List.iter (set_add_without_resize set operations) values)
+
+let set_add_by kind operations set value =
+  ensure_active set.active;
+  let operations = activate_set_key_operations set kind operations in
+  set_add_without_resize set operations value;
+  resize_set_if_needed set operations;
+  set
 
 let set_of_list values =
-  let set = set_empty () in
-  List.iter (fun value -> Hashtbl.replace set.values value ()) values;
-  set
+  List.fold_left
+    (set_add_by Generic (generic_key_operations ()))
+    (set_empty ()) values
+
+let set_of_list_dynamic values =
+  List.fold_left (set_add_by Dynamic dynamic_key_operations) (set_empty ())
+    values
 
 let set_mem set value =
   ensure_active set.active;
-  Hashtbl.mem set.values value
+  let operations =
+    activate_set_key_operations set Generic (generic_key_operations ())
+  in
+  let index = set_bucket_index operations set.buckets value in
+  List.exists (operations.equal value) set.buckets.(index)
+
+let set_mem_dynamic set value =
+  ensure_active set.active;
+  let operations =
+    activate_set_key_operations set Dynamic dynamic_key_operations
+  in
+  let index = set_bucket_index operations set.buckets value in
+  List.exists (operations.equal value) set.buckets.(index)
 
 let set_count set =
   ensure_active set.active;
-  Hashtbl.length set.values
+  set.size
 
 let set_add set value =
-  ensure_active set.active;
-  Hashtbl.replace set.values value ();
-  set
+  set_add_by Generic (generic_key_operations ()) set value
+
+let set_add_dynamic set value =
+  set_add_by Dynamic dynamic_key_operations set value
 
 let set_to_seq set =
   ensure_active set.active;
-  let values = Hashtbl.to_seq_keys set.values |> List.of_seq in
+  let values = Array.to_list set.buckets |> List.concat in
   set.active <- false;
   List.to_seq values
 
@@ -76,13 +157,6 @@ let vector_persistent vector =
   vector.active <- false;
   result
 
-type key_kind = Generic | Dynamic
-
-type 'key key_operations = {
-  hash : 'key -> int;
-  equal : 'key -> 'key -> bool;
-}
-
 type ('key, 'value) map = {
   mutable buckets : ('key * 'value) list array;
   mutable size : int;
@@ -99,12 +173,6 @@ let map_empty () =
     key_operations = None;
     active = true;
   }
-
-let generic_key_operations () =
-  { hash = Hashtbl.hash; equal = (fun left right -> left = right) }
-
-let dynamic_key_operations =
-  { hash = Runtime_dynamic.hash; equal = Runtime_dynamic.equal }
 
 let activate_key_operations map kind operations =
   match (map.key_kind, map.key_operations) with

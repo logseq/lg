@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "transit-js": "file:vendor/transit-js-esm"
+  }
+}

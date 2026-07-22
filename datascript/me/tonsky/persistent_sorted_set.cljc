@@ -279,7 +279,8 @@
 (defn storage-drain-writes [storage]
   ((:drain-writes storage) (Stdlib.ignore 0)))
 
-(defn- make-tree [keys children weak-children addresses address dirty]
+(defn- make-tree
+  [keys children weak-children addresses ^:option<int64> address dirty]
   (record tree (keys keys) (children children) (_weak-children weak-children) (_addresses addresses) (_address (volatile! address)) (_dirty (volatile! dirty))))
 
 (defn node-address [node]
@@ -314,7 +315,7 @@
 
 (defn new-leaf [keys]
   (make-tree
-   keys (arrays/empty-array) (arrays/empty-array) (arrays/empty-array) nil true))
+   keys (arrays/empty-array) (arrays/empty-array) (arrays/empty-array) None true))
 
 (defn- new-leaf-address [keys address]
   (make-tree
@@ -330,7 +331,7 @@
    (loaded-children children)
    (arrays/make-array (arrays/alength children) nil)
    (children-addresses children)
-   nil
+   None
    true))
 
 (defn- new-node-state [keys children weak-children addresses address]
@@ -1149,7 +1150,7 @@
            (inc shift)))))))
 
 (defn from-sorted-array-base [cmp values]
-  (from-sorted-array-with-storage cmp values nil))
+  (from-sorted-array-with-storage cmp values None))
 
 (defn from-sequential [cmp values]
   (let [sorted (into-array values)]
@@ -1157,7 +1158,7 @@
     (from-sorted-array-base cmp (sorted-array-distinct sorted cmp))))
 
 (defn empty-set [cmp]
-  (make-set (new-leaf (arrays/empty-array)) 0 0 cmp nil))
+  (make-set (new-leaf (arrays/empty-array)) 0 0 cmp None))
 
 (defn set-lookup [set key]
   (node-lookup

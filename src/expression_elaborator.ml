@@ -78,7 +78,9 @@ and compile_expr_unlocated scope (env : Env.t) = function
             (typed_ir value_ty
                (Semantic_ir.Prefix ("!", Semantic_ir.Ident ocaml_name)))
       | Some binding ->
-          Ok (typed_ir binding.ty (Semantic_ir.Ident binding.ocaml_name))
+          Ok
+            (typed_ir binding.ty
+               (binding_value_expression binding))
       | None when name = "None" ->
           Ok
             (typed_ir
@@ -280,6 +282,7 @@ and compile_vector scope env forms =
   (Lazy.force context).special_forms.compile_vector scope env forms
 
 and compile_quoted scope env = function
+  | FSymbol "nil" -> compile_expr scope env (FSymbol "nil")
   | FSymbol symbol -> Ok (typed_ir TSymbol (Semantic_ir.String symbol))
   | FVector forms ->
       compile_expr scope env
@@ -294,7 +297,7 @@ and compile_quoted scope env = function
         (FMap
            (pairs
            |> List.map (fun (key, value) ->
-               (key, FList [ FSymbol "quote"; value ]))))
+               (FList [ FSymbol "quote"; key ], FList [ FSymbol "quote"; value ]))))
   | form -> compile_expr scope env form
 
 and compile_thread scope env position value steps =
@@ -749,8 +752,8 @@ and compile_let scope env bindings body_forms =
   (Lazy.force context).special_forms.compile_let scope env bindings body_forms
 
 and prepare_fn ?(param_type_overrides = []) ?variadic_rest_index
-    ?(materialize_open_equality = false) ?recur_target ?expected_return_ty scope
-    env params body_forms =
+    ?(materialize_open_equality = false) ?(refine_open_overrides = false)
+    ?recur_target ?expected_return_ty scope env params body_forms =
   let lookup_function_ty = lookup_function_ty scope env in
   let with_expected_return env =
     Env.with_expected_type expected_return_ty env
@@ -814,8 +817,9 @@ and prepare_fn ?(param_type_overrides = []) ?variadic_rest_index
             adapt
     in
     Function_elaborator.prepare ~param_type_overrides ?variadic_rest_index
-      ~materialize_open_equality ?compile_function_body ~lookup_function_ty
-      ~compile_default ~compile_body scope env params body_forms
+      ~materialize_open_equality ~refine_open_overrides ?compile_function_body
+      ~lookup_function_ty ~compile_default ~compile_body scope env params
+      body_forms
   in
   Result.bind (prepare param_type_overrides) (fun parts ->
       let record_values = Option.value parts.body.record_values ~default:[] in
@@ -824,7 +828,8 @@ and prepare_fn ?(param_type_overrides = []) ?variadic_rest_index
         parts.param_bindings
         |> List.mapi (fun index (_key, (binding : binding)) ->
                match List.nth_opt param_type_overrides index with
-               | Some (Some ty) when not (Types.equal ty TUnknown) -> Some ty
+               | Some (Some ty) when not (Types.equal ty TUnknown) ->
+                   if refine_open_overrides then Some binding.ty else Some ty
                | _ -> (
                    match
                      List.find_opt
@@ -845,12 +850,25 @@ and parse_multi_arity_clauses source_name forms =
   let rec parse_clause = function
     | FList (FVector raw_params :: body_forms) when body_forms <> [] -> (
         let rec split fixed = function
-          | [] -> Ok (List.rev fixed, None)
+          | [] -> Ok (List.rev fixed, None, None)
           | FSymbol "&" :: [ (FSymbol _ as rest) ] ->
-              Ok (List.rev fixed, Some [ rest ])
+              Ok (List.rev fixed, Some [ rest ], None)
           | FSymbol "&" :: [ FSymbol annotation; (FSymbol _ as rest) ]
             when String.starts_with ~prefix:"^:" annotation ->
-              Ok (List.rev fixed, Some [ FSymbol annotation; rest ])
+              Ok (List.rev fixed, Some [ FSymbol annotation; rest ], None)
+          | FSymbol "&" :: [ (FMap _ as rest_pattern) ] ->
+              (* kwargs-style rest: [& {:as args}] binds the rest seq as a
+                 map, compiled as (apply hash-map rest) *)
+              Ok
+                ( List.rev fixed,
+                  Some [ FSymbol "__lg_kwargs_rest" ],
+                  Some rest_pattern )
+          | FSymbol "&" :: [ FSymbol annotation; (FMap _ as rest_pattern) ]
+            when String.starts_with ~prefix:"^:" annotation ->
+              Ok
+                ( List.rev fixed,
+                  Some [ FSymbol annotation; FSymbol "__lg_kwargs_rest" ],
+                  Some rest_pattern )
           | FSymbol "&" :: _ ->
               Error.error
                 ("defn " ^ source_name
@@ -859,7 +877,27 @@ and parse_multi_arity_clauses source_name forms =
         in
         match split [] raw_params with
         | Error _ as err -> err
-        | Ok (fixed_forms, rest_forms) -> (
+        | Ok (fixed_forms, rest_forms, kwargs_pattern) -> (
+            let body_forms =
+              match kwargs_pattern with
+              | None -> body_forms
+              | Some rest_pattern ->
+                  [
+                    FList
+                      (FSymbol "let"
+                      :: FVector
+                           [
+                             rest_pattern;
+                             FList
+                               [
+                                 FSymbol "apply";
+                                 FSymbol "hash-map";
+                                 FSymbol "__lg_kwargs_rest";
+                               ];
+                           ]
+                      :: body_forms);
+                  ]
+            in
             let fixed_params = FVector fixed_forms in
             match Destructure.parse_param_specs fixed_params with
             | Error _ as err -> err
@@ -1602,8 +1640,56 @@ and fn_code ?(row_param_type_names = []) parts =
 
 and compile_fn ?(param_type_overrides = []) scope env params body_forms =
   let expected_type = Env.expected_type env in
+  let variadic_params =
+    match params with
+    | FVector forms ->
+        let rec split fixed = function
+          | [] -> Ok (FVector (List.rev fixed), None, None)
+          | FSymbol "&" :: [ (FSymbol _ as rest_name) ] ->
+              Ok
+                ( FVector (List.rev_append fixed [ rest_name ]),
+                  Some (List.length fixed),
+                  None )
+          | FSymbol "&" :: [ (FMap _ as rest_pattern) ] ->
+              (* kwargs-style rest: [& {:as args}] binds the rest seq as a
+                 map, compiled as (apply hash-map rest) *)
+              Ok
+                ( FVector (List.rev_append fixed [ FSymbol "__lg_kwargs_rest" ]),
+                  Some (List.length fixed),
+                  Some rest_pattern )
+          | FSymbol "&" :: _ ->
+              Error.error "fn variadic arity requires one rest parameter"
+          | form :: rest -> split (form :: fixed) rest
+        in
+        split [] forms
+    | _ -> Ok (params, None, None)
+  in
+  match variadic_params with
+  | Error _ as err -> err
+  | Ok (params, variadic_rest_index, kwargs_pattern) ->
+  let body_forms =
+    match kwargs_pattern with
+    | None -> body_forms
+    | Some rest_pattern ->
+        [
+          FList
+            (FSymbol "let"
+            :: FVector
+                 [
+                   rest_pattern;
+                   FList
+                     [
+                       FSymbol "apply";
+                       FSymbol "hash-map";
+                       FSymbol "__lg_kwargs_rest";
+                     ];
+                 ]
+            :: body_forms);
+        ]
+  in
   let param_type_overrides =
-    if param_type_overrides <> [] then param_type_overrides
+    if param_type_overrides <> [] || Option.is_some variadic_rest_index then
+      param_type_overrides
     else
       match (expected_type, Destructure.parse_param_specs params) with
       | Some (TFn (parameter_tys, _)), Ok specs
@@ -1614,16 +1700,62 @@ and compile_fn ?(param_type_overrides = []) scope env params body_forms =
       | _ -> []
   in
   let env = Env.with_expected_type None env in
-  match prepare_fn ~param_type_overrides scope env params body_forms with
+  match
+    prepare_fn ~param_type_overrides ?variadic_rest_index
+      ~refine_open_overrides:true scope env params body_forms
+  with
   | Error _ as err -> err
   | Ok parts when unresolved_contextual_type parts.body.ty ->
       Error.error "empty list requires a contextual element type"
-  | Ok parts -> Ok (fn_code parts)
+  | Ok parts -> (
+      let function_ = fn_code parts in
+      match variadic_rest_index with
+      | None -> Ok function_
+      | Some rest_index -> (
+          match function_.ty with
+          | TFn (param_tys, return_ty) ->
+              let rec take count values =
+                if count = 0 then []
+                else
+                  match values with
+                  | value :: rest -> value :: take (count - 1) rest
+                  | [] -> []
+              in
+              let fixed_params = take rest_index param_tys in
+              let rest_element =
+                match List.nth_opt param_tys rest_index with
+                | Some (TSeq element_ty) -> element_ty
+                | Some ty -> ty
+                | None -> TUnknown
+              in
+              let arity =
+                {
+                  fixed_params;
+                  rest_param = Some rest_element;
+                  return_ty;
+                }
+              in
+              Ok
+                (typed_ir (TOverloaded_fn [ arity ])
+                   (Semantic_ir.Tuple
+                      [ function_.semantic_expr; Semantic_ir.Unit ]))
+          | _ -> Ok function_))
 
 and compile_named_fn scope env name params body_forms =
   match Destructure.parse_param_specs params with
   | Error _ as error -> error
   | Ok specs ->
+      let variadic =
+        match params with
+        | FVector forms ->
+            let rec split fixed = function
+              | [] -> None
+              | FSymbol "&" :: [ FSymbol _ ] -> Some (List.length fixed)
+              | form :: rest -> split (form :: fixed) rest
+            in
+            split [] forms
+        | _ -> None
+      in
       let parameter_tys =
         List.map
           (fun (spec : Destructure.param_spec) ->
@@ -1634,7 +1766,26 @@ and compile_named_fn scope env name params body_forms =
         "__lg_named_fn_" ^ Names.sanitize_name name
       in
       let self_binding =
-        Types.binding ocaml_name (TFn (parameter_tys, TUnknown))
+        match variadic with
+        | Some rest_index ->
+            let rec take count values =
+              if count = 0 then []
+              else
+                match values with
+                | value :: rest -> value :: take (count - 1) rest
+                | [] -> []
+            in
+            Types.binding ~overload_targets:[ ocaml_name ] ocaml_name
+              (TOverloaded_fn
+                 [
+                   {
+                     fixed_params = take rest_index parameter_tys;
+                     rest_param = Some TUnknown;
+                     return_ty = TUnknown;
+                   };
+                 ])
+        | None ->
+            Types.binding ocaml_name (TFn (parameter_tys, TUnknown))
       in
       let body_env =
         Env.add (Names.scoped_key scope name) self_binding env
@@ -1652,6 +1803,25 @@ and compile_named_fn scope env name params body_forms =
                            patterns,
                            body,
                            Semantic_ir.Ident ocaml_name ));
+                }
+          | Semantic_ir.Tuple
+              [
+                Semantic_ir.Fun (patterns, body);
+                Semantic_ir.Unit;
+              ] ->
+              Ok
+                {
+                  function_ with
+                  semantic_expr =
+                    Semantic_ir.annotate function_.ty
+                      (Semantic_ir.LetRecIn
+                         ( ocaml_name,
+                           patterns,
+                           body,
+                           Semantic_ir.Tuple
+                             [
+                               Semantic_ir.Ident ocaml_name; Semantic_ir.Unit;
+                             ] ));
                 }
           | _ -> Error.error "named fn requires a function body")
 

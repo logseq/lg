@@ -1,5 +1,6 @@
 type parser_result = {
   target : Target.t;
+  source_unit : string;
   ast : Ast.form list;
   locations : Location.t list;
   form_locations : Source_context.entry list;
@@ -151,6 +152,21 @@ module Lg_frontend : FRONTEND = struct
              Some (Ast.FSymbol "^:dynamic")
          | _ -> None)
 
+  let keyword_metadata_value metadata form =
+    if
+      String.starts_with ~prefix:"^:" metadata
+      && match form with Ast.FVector _ | Ast.FMap _ -> true | _ -> false
+    then
+      let keyword = String.sub metadata 1 (String.length metadata - 1) in
+      Some
+        (Ast.FList
+           [
+             Ast.FSymbol "with-meta";
+             form;
+             Ast.FMap [ (Ast.FKeyword keyword, Ast.FBool true) ];
+           ])
+    else None
+
   let rec drop_definition_metadata = function
     | Ast.FSymbol "^" :: Ast.FMap _ :: rest ->
         drop_definition_metadata rest
@@ -205,18 +221,23 @@ module Lg_frontend : FRONTEND = struct
     | Ast.FSymbol "^" :: Ast.FMap entries :: form :: rest ->
         normalize_metadata_sequence
           (metadata_map_annotations entries @ (form :: rest))
-    | Ast.FSymbol metadata :: form :: rest when supported_type_hint metadata ->
-        Ast.FList
-          [
-            Ast.FSymbol "__type-hint";
-            Ast.FSymbol metadata;
-            normalize_metadata form;
-          ]
-        :: normalize_metadata_sequence rest
-    | Ast.FSymbol metadata :: rest when host_type_hint metadata ->
-        normalize_metadata_sequence rest
-    | Ast.FSymbol metadata :: rest when metadata_symbol metadata ->
-        normalize_metadata_sequence rest
+    | Ast.FSymbol metadata :: form :: rest -> (
+        match keyword_metadata_value metadata form with
+        | Some annotated ->
+            normalize_metadata annotated :: normalize_metadata_sequence rest
+        | None when supported_type_hint metadata ->
+            Ast.FList
+              [
+                Ast.FSymbol "__type-hint";
+                Ast.FSymbol metadata;
+                normalize_metadata form;
+              ]
+            :: normalize_metadata_sequence rest
+        | None when host_type_hint metadata || metadata_symbol metadata ->
+            normalize_metadata_sequence (form :: rest)
+        | None ->
+            normalize_metadata (Ast.FSymbol metadata)
+            :: normalize_metadata_sequence (form :: rest))
     | form :: rest ->
         normalize_metadata form :: normalize_metadata_sequence rest
     | [] -> []
@@ -225,10 +246,19 @@ module Lg_frontend : FRONTEND = struct
     | Ast.FSymbol "^" :: Ast.FMap entries :: form :: rest ->
         normalize_vector_metadata_sequence
           (metadata_map_annotations entries @ (form :: rest))
-    | Ast.FSymbol metadata :: rest when supported_type_hint metadata ->
-        Ast.FSymbol metadata :: normalize_vector_metadata_sequence rest
-    | Ast.FSymbol metadata :: rest when host_type_hint metadata ->
-        normalize_vector_metadata_sequence rest
+    | Ast.FSymbol metadata :: form :: rest -> (
+        match keyword_metadata_value metadata form with
+        | Some annotated ->
+            normalize_metadata annotated
+            :: normalize_vector_metadata_sequence rest
+        | None when supported_type_hint metadata ->
+            Ast.FSymbol metadata
+            :: normalize_vector_metadata_sequence (form :: rest)
+        | None when host_type_hint metadata ->
+            normalize_vector_metadata_sequence (form :: rest)
+        | None ->
+            normalize_metadata (Ast.FSymbol metadata)
+            :: normalize_vector_metadata_sequence (form :: rest))
     | form :: rest ->
         normalize_metadata form :: normalize_vector_metadata_sequence rest
     | [] -> []
@@ -520,6 +550,8 @@ module Lg_frontend : FRONTEND = struct
                 Ok
                   {
                     target;
+                    source_unit =
+                      "source_" ^ Digest.to_hex (Digest.string source);
                         ast =
                           List.map (fun located -> located.Ast.form) located_ast;
                     locations =
@@ -608,6 +640,8 @@ module Ocaml_typechecker = struct
             let typed_structure, _signature, _signature_names, _shape, env =
               Typemod.type_structure env structure
             in
+            Envaux.reset_cache ();
+            let env = env |> Env.keep_only_summary |> Envaux.env_of_only_summary in
             (typed_structure, env))
       in
       Ok { typed_structure; compiler_env; diagnostics = List.rev !diagnostics }
@@ -691,6 +725,9 @@ let checked_parsetree (typed : typed_result) =
   match Ocaml_parsetree_backend.implementation typed with
   | Error _ as err -> err
   | Ok result -> (
+      if Sys.getenv_opt "LG_DUMP_ML" = Some "1" then
+        Printf.eprintf "%s\n%!"
+          (Ocaml_parsetree.print_implementation result.structure);
       match Ocaml_typechecker.structure result.structure with
       | Error _ as err -> err
       | Ok diagnostics -> Ok (result, diagnostics))
@@ -922,6 +959,14 @@ let stabilize_typecheck ?compile_evidence ~compile
             (String.concat ", " names)
   in
   let evidence_compile = Option.value compile_evidence ~default:compile in
+  let initial_compile state =
+    match compile_evidence with
+    | None -> compile state
+    | Some compile_evidence -> (
+        match compile_evidence state with
+        | Ok _ as result -> result
+        | Error _ -> compile state)
+  in
   let seeded_state declarations protocol_evidence =
     {
       initial_state with
@@ -1003,7 +1048,7 @@ let stabilize_typecheck ?compile_evidence ~compile
               next_protocols
           )
   in
-  match compile_pass compile 1 initial_state with
+  match compile_pass initial_compile 1 initial_state with
   | Error _ as error -> error
   | Ok (((first_state : Compiler_state.t), _) as first_result) ->
       let initial_declarations =
@@ -1027,8 +1072,9 @@ let typecheck (parsed : parser_result) =
       in
       let compilation_ast = recursive_definition_ast parsed.ast in
       let compile state =
-        Source_context.with_locations parsed.form_locations (fun () ->
-            Typecheck.compile_forms_incremental state compilation_ast)
+        Source_context.with_source_unit parsed.source_unit (fun () ->
+            Source_context.with_locations parsed.form_locations (fun () ->
+                Typecheck.compile_forms_incremental state compilation_ast))
       in
       let evidence_ast = stabilization_ast parsed.ast in
       let compile_evidence =
@@ -1036,8 +1082,9 @@ let typecheck (parsed : parser_result) =
         else
           Some
             (fun state ->
-              Source_context.with_locations parsed.form_locations (fun () ->
-                  Typecheck.compile_forms_incremental state evidence_ast))
+              Source_context.with_source_unit parsed.source_unit (fun () ->
+                  Source_context.with_locations parsed.form_locations (fun () ->
+                      Typecheck.compile_forms_incremental state evidence_ast)))
       in
       match
         stabilize_typecheck ?compile_evidence ~compile ~initial_state parsed.ast
@@ -1071,8 +1118,10 @@ let typecheck_incremental state (parsed : parser_result) =
       in
       let compilation_ast = recursive_definition_ast parsed.ast in
       let compile typecheck_state =
-        Source_context.with_locations parsed.form_locations (fun () ->
-            Typecheck.compile_forms_incremental typecheck_state compilation_ast)
+        Source_context.with_source_unit parsed.source_unit (fun () ->
+            Source_context.with_locations parsed.form_locations (fun () ->
+                Typecheck.compile_forms_incremental typecheck_state
+                  compilation_ast))
       in
       let evidence_ast = stabilization_ast parsed.ast in
       let compile_evidence =
@@ -1080,9 +1129,10 @@ let typecheck_incremental state (parsed : parser_result) =
         else
           Some
             (fun typecheck_state ->
-              Source_context.with_locations parsed.form_locations (fun () ->
-                  Typecheck.compile_forms_incremental typecheck_state
-                    evidence_ast))
+              Source_context.with_source_unit parsed.source_unit (fun () ->
+                  Source_context.with_locations parsed.form_locations (fun () ->
+                      Typecheck.compile_forms_incremental typecheck_state
+                        evidence_ast)))
       in
       match
         stabilize_typecheck ?compile_evidence ~compile ~initial_state parsed.ast
@@ -1119,6 +1169,9 @@ let analyze ?(target = Target.default) ?(filename = "<string>") source =
           match Ocaml_parsetree_backend.implementation typed with
           | Error _ as err -> err
           | Ok parsetree -> (
+              if Sys.getenv_opt "LG_DUMP_ML" = Some "1" then
+                Printf.eprintf "%s\n%!"
+                  (Ocaml_parsetree.print_implementation parsetree.structure);
               match Ocaml_typechecker.analyze parsetree.structure with
               | Error _ as err -> err
               | Ok analysis ->
@@ -1189,6 +1242,9 @@ let analyze_workspace_with_errors ?(target = Target.default) sources =
           match Lowering.structure_of_located_items state.located_items with
           | Error _ as err -> err
           | Ok structure -> (
+              if Sys.getenv_opt "LG_DUMP_ML" = Some "1" then
+                Printf.eprintf "%s\n%!"
+                  (Ocaml_parsetree.print_implementation structure);
               match Ocaml_typechecker.analyze structure with
               | Error _ as err -> err
               | Ok analysis ->
@@ -1287,6 +1343,8 @@ let compile_chunk_with_diagnostics ?(target = Target.default)
               let ocaml_source =
                 Ocaml_parsetree_backend.print result.structure
               in
+              if Sys.getenv_opt "LG_DUMP_ML" = Some "1" then
+                Printf.eprintf "%s\n%!" ocaml_source;
               if not check_ocaml then
                 Ok (state, { ocaml_source; diagnostics = [] })
               else

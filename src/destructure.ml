@@ -661,25 +661,44 @@ and bind_sequence ?compile_default env (target : typed_expr) forms =
             bind_items item_at (index + 1) (List.rev_append bindings acc) rest)
   in
   let bind_rest count name =
-    let semantic_expr =
-      match target.ty with
-      | TList _ ->
-          Core_sequence_transform.drop_list_expr
-            (Semantic_ir.Int64 (Int64.of_int count))
-            target.semantic_expr
-      | TVector _ ->
-          Semantic_ir.Apply
-            ( Semantic_ir.Ident "Rrbvec.of_list",
-              [
-                Core_sequence_transform.drop_list_expr
-                  (Semantic_ir.Int64 (Int64.of_int count))
-                  (Semantic_ir.Apply
-                     ( Semantic_ir.Ident "Rrbvec.to_list",
-                       [ target.semantic_expr ] ));
-              ] )
-      | _ -> target.semantic_expr
+    let optional_sequence ty semantic_expr =
+      local_binding name (TNullable ty)
+        (Semantic_ir.Match
+           ( semantic_expr,
+             [
+               ( Semantic_ir.PList [],
+                 Semantic_ir.Constructor ("None", None) );
+               ( Semantic_ir.PVar "__lg_destructure_rest",
+                 Semantic_ir.Constructor
+                   ( "Some",
+                     Some (Semantic_ir.Ident "__lg_destructure_rest") ) );
+             ] ))
     in
-    local_binding name target.ty semantic_expr
+    match target.ty with
+    | TList inner ->
+        optional_sequence (TList inner)
+          (Core_sequence_transform.drop_list_expr
+             (Semantic_ir.Int64 (Int64.of_int count))
+             target.semantic_expr)
+    | TVector inner ->
+        optional_sequence (TList inner)
+          (Core_sequence_transform.drop_list_expr
+             (Semantic_ir.Int64 (Int64.of_int count))
+             (Semantic_ir.Apply
+                ( Semantic_ir.Ident "Rrbvec.to_list",
+                  [ target.semantic_expr ] )))
+    | _ ->
+        local_binding name target.ty target.semantic_expr
+  in
+  let bind_seq_rest count name inner sequence =
+    local_binding name (TNullable (TSeq inner))
+      (Semantic_ir.Apply
+         ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.non_empty",
+           [
+             Semantic_ir.Apply
+               ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.drop",
+                 [ Semantic_ir.Int count; sequence ] );
+           ] ))
   in
   match target.ty with
   | TTuple element_tys -> (
@@ -785,13 +804,7 @@ and bind_sequence ?compile_default env (target : typed_expr) forms =
                 | None -> bindings
                 | Some name ->
                     bindings
-                    @ [
-                        local_binding name (TSeq inner)
-                          (Semantic_ir.Apply
-                             ( Semantic_ir.Ident
-                                 "Lg_runtime.Runtime_seq.drop",
-                               [ Semantic_ir.Int item_count; sequence ] ));
-                      ]
+                    @ [ bind_seq_rest item_count name inner sequence ]
               in
               match pattern.sequence_as_name with
               | None -> bindings

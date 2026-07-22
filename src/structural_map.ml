@@ -256,6 +256,26 @@ let update_value target fields keyword value_ty value_expr =
   | Some _ ->
       Ok (replace_field target fields keyword value_expr)
 
+let update_value_as target fields keyword value_ty value_expr =
+  match find_field keyword fields with
+  | None -> Error.error ("cannot update unknown field " ^ keyword)
+  | Some field ->
+      let updated = { field with ty = value_ty } in
+      let fields =
+        List.map
+          (fun (candidate : field) ->
+            if candidate.keyword = keyword then updated else candidate)
+          fields
+      in
+      let values =
+        List.map
+          (fun (field : field) ->
+            if field.keyword = keyword then (field, value_expr)
+            else (field, field_expr target field))
+          fields
+      in
+      Ok (record_expr fields values)
+
 let select_keys target fields keywords =
   if keywords = [] then Error.error "select-keys requires at least one key"
   else

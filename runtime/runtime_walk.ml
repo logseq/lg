@@ -24,7 +24,7 @@ let walk inner outer form =
         |> List.of_seq
         |> Runtime_dynamic.list
         |> preserve_properties form
-    | Runtime_dynamic.Vector ->
+    | Runtime_dynamic.Vector _ ->
         form
         |> Runtime_dynamic.to_seq
         |> Seq.map inner
@@ -36,16 +36,18 @@ let walk inner outer form =
         form
         |> Runtime_dynamic.to_seq
         |> Seq.map inner
+        |> List.of_seq
+        |> List.to_seq
         |> Runtime_dynamic.seq
         |> preserve_properties form
-    | Runtime_dynamic.Set values ->
-        values
+    | Runtime_dynamic.Set set ->
+        set.values
         |> List.to_seq
         |> Seq.map inner
         |> Runtime_dynamic.set
         |> preserve_properties form
-    | Runtime_dynamic.Map entries ->
-        entries
+    | Runtime_dynamic.Map map ->
+        Runtime_dynamic.map_entries map
         |> List.map (fun (key, value) -> map_entry inner key value)
         |> Runtime_dynamic.map
         |> preserve_properties form

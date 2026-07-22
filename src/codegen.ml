@@ -29,7 +29,10 @@ let rec stringify_expr_ir ?(pr = false) expr =
   let scalar_mapper ty =
     match ty with
     | TInt -> Semantic_ir.Ident "Int64.to_string"
-    | TFloat -> Semantic_ir.Ident "string_of_float"
+    | TFloat ->
+        Semantic_ir.Ident
+          (if pr then "Lg_runtime.Runtime_dynamic.pr_str_float"
+           else "Lg_runtime.Runtime_dynamic.str_float")
     | TSymbol | TKeyword -> Semantic_ir.Fun ([ Semantic_ir.PVar "x" ], Semantic_ir.Ident "x")
     | TString ->
         if pr then
@@ -48,12 +51,23 @@ let rec stringify_expr_ir ?(pr = false) expr =
               (if pr then "Lg_runtime.Runtime_dynamic.pr_str"
                else "Lg_runtime.Runtime_dynamic.str")
               [ Semantic_ir.Ident "x" ] )
-    | TUnknown | TVar _ -> Semantic_ir.Fun ([ Semantic_ir.PAny ], Semantic_ir.String "<value>")
+    | TUnknown | TVar _ ->
+        Semantic_ir.Ident
+          (if pr then "Lg_runtime.Runtime_dynamic.polymorphic_pr_str"
+           else "Lg_runtime.Runtime_dynamic.polymorphic_str")
+    | TOcaml "value" ->
+        Semantic_ir.Ident
+          (if pr then "Lg_runtime.Runtime_dynamic.polymorphic_pr_str"
+           else "Lg_runtime.Runtime_dynamic.polymorphic_str")
     | _ -> Semantic_ir.Fun ([ Semantic_ir.PAny ], Semantic_ir.String "<value>")
   in
   match expr.ty with
   | TInt -> apply "Int64.to_string" [ expr.semantic_expr ]
-  | TFloat -> apply "string_of_float" [ expr.semantic_expr ]
+  | TFloat ->
+      apply
+        (if pr then "Lg_runtime.Runtime_dynamic.pr_str_float"
+         else "Lg_runtime.Runtime_dynamic.str_float")
+        [ expr.semantic_expr ]
   | TChar -> apply "String.make" [ Semantic_ir.Int 1; expr.semantic_expr ]
   | TString | TRegex ->
       if pr then apply "Printf.sprintf" [ Semantic_ir.String "%S"; expr.semantic_expr ]
@@ -86,9 +100,18 @@ let rec stringify_expr_ir ?(pr = false) expr =
             [ expr.semantic_expr ]
       | _ -> expr.semantic_expr)
   | TMap_keys -> Semantic_ir.String "<map>"
-  | TVar _ -> Semantic_ir.String "<value>"
+  | TVar _ ->
+      apply
+        (if pr then "Lg_runtime.Runtime_dynamic.polymorphic_pr_str"
+         else "Lg_runtime.Runtime_dynamic.polymorphic_str")
+        [ expr.semantic_expr ]
   | TOcaml "Lg_runtime.Runtime_uuid.t" ->
       apply "Lg_runtime.Runtime_uuid.to_string" [ expr.semantic_expr ]
+  | TOcaml "value" ->
+      apply
+        (if pr then "Lg_runtime.Runtime_dynamic.polymorphic_pr_str"
+         else "Lg_runtime.Runtime_dynamic.polymorphic_str")
+        [ expr.semantic_expr ]
   | TOcaml_app (name, [ inner ]) when name = Types.next_seq_type_name ->
       Semantic_ir.If
         ( apply "Lg_runtime.Runtime_seq.is_empty" [ expr.semantic_expr ],

@@ -362,6 +362,28 @@ let rec contains_open_type = function
   | TBool | TUnit | TNil | TOcaml _ ->
       false
 
+let rec contains_structural_record = function
+  | TRecord _ -> true
+  | TNullable ty | TArray ty | TRef ty | TList ty | TVector ty | TSet ty
+  | TSeq ty ->
+      contains_structural_record ty
+  | TOcaml_app (_, arguments) | TTuple arguments ->
+      List.exists contains_structural_record arguments
+  | TFn (parameters, return_ty) ->
+      List.exists contains_structural_record parameters
+      || contains_structural_record return_ty
+  | TOverloaded_fn arities ->
+      List.exists
+        (fun arity ->
+          List.exists contains_structural_record arity.fixed_params
+          || Option.fold ~none:false ~some:contains_structural_record
+               arity.rest_param
+          || contains_structural_record arity.return_ty)
+        arities
+  | TNamed_record _ | TInt | TFloat | TChar | TString | TRegex | TMap_keys
+  | TSymbol | TKeyword | TBool | TUnit | TNil | TUnknown | TVar _ | TOcaml _ ->
+      false
+
 let shared_parameter_variables inferred =
   inferred
   |> List.fold_left
@@ -722,7 +744,8 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                                   Type_inference.refine_type ty inferred_ty)
                                else if
                                  (refine_open_overrides
-                                 && contains_open_type ty)
+                                 && (contains_open_type ty
+                                    || contains_structural_record ty))
                                  || (Option.is_some
                                        (Types.seqable_constraint_info ty)
                                     && match inferred_ty with
@@ -744,7 +767,17 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                                            | Some _ | None -> false)
                                        | _ -> false)
                                then
-                                 (spec, Type_inference.refine_type ty inferred_ty)
+                                 let refined =
+                                   match (ty, inferred_ty) with
+                                   | TRecord _, TNamed_record record
+                                     when Types.row_compatible ~expected:ty
+                                            ~actual:inferred_ty ->
+                                       Type_inference.refine_type ty
+                                         (TRecord record.fields)
+                                   | _ ->
+                                       Type_inference.refine_type ty inferred_ty
+                                 in
+                                 (spec, refined)
                                else
                                  (spec, ty)
                            | None | Some None -> (spec, inferred_ty)))

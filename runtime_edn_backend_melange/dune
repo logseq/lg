@@ -1,0 +1,10 @@
+(copy_files ../runtime_edn_backend_native/edn_backend.ml)
+
+(library
+ (name lg_edn_backend_melange)
+ (public_name lg.edn-backend.melange)
+ (implements lg_edn_backend)
+ (modes melange)
+ (preprocess
+  (pps melange.ppx))
+ (libraries melange-edn-melange))

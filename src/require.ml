@@ -40,11 +40,7 @@ let ocaml_module_path module_name =
   else module_name
 
 let core_bindings = function
-  | "clojure.data" -> Core_data.bindings
-  | "clojure.edn" | "cljs.reader" -> Core_edn.bindings
-  | "clojure.string" -> Core_string.bindings
-  | "clojure.walk" -> Core_walk.bindings
-  | _ -> []
+  | module_name -> Core_namespaces.bindings module_name
 
 let add_core_alias_bindings env module_name alias =
   core_bindings module_name
@@ -52,10 +48,7 @@ let add_core_alias_bindings env module_name alias =
   |> fun bindings -> Env.add_bindings bindings env
 
 let core_namespace = function
-  | "clojure.core" | "cljs.core" | "clojure.data" | "clojure.set"
-  | "clojure.edn" | "cljs.reader" | "clojure.string" | "clojure.walk" ->
-      true
-  | _ -> false
+  | module_name -> Core_namespaces.is_core_namespace module_name
 
 let add_clojure_string_refer_bindings env scope names =
   let rec loop acc = function

@@ -5,6 +5,13 @@ let rec accepts_float ty =
   | TNullable inner | TOcaml_app ("option", [ inner ]) -> accepts_float inner
   | ty -> Types.equal ty TFloat
 
+let rec accepts_mixed_numeric ty =
+  match ty with
+  | TNullable inner | TOcaml_app ("option", [ inner ]) ->
+      accepts_mixed_numeric inner
+  | TInt | TFloat -> true
+  | _ -> false
+
 let expect_float_args args =
   List.for_all (fun arg -> accepts_float arg.ty) args
 
@@ -20,6 +27,16 @@ let rec float_expression arg =
               (Semantic_ir.Ident "Option.get", [ arg.semantic_expr ]);
         }
   | _ -> arg.semantic_expr
+
+(* Mixed int/float arithmetic widens integers to floats, matching Clojure's
+   numeric coercion semantics. *)
+let widen_to_float arg =
+  if accepts_float arg.ty then
+    { arg with ty = TFloat; semantic_expr = float_expression arg }
+  else
+    typed_ir TFloat
+      (Semantic_ir.Apply
+         (Semantic_ir.Ident "Int64.to_float", [ Core_int.int_expression arg ]))
 
 let fold_infix operator first rest =
   List.fold_left

@@ -24,6 +24,9 @@ let project_include_dirs () =
           Filename.concat root "_build/default/src/.lg.objs/byte";
           Filename.concat root "_build/default/runtime";
           Filename.concat root "_build/default/runtime/.lg_runtime.objs/byte";
+          Filename.concat root "_build/default/runtime_edn_backend";
+          Filename.concat root
+            "_build/default/runtime_edn_backend/.lg_edn_backend.objs/byte";
           Filename.concat root "_build/default/vendor/rrbvec";
           Filename.concat root "_build/default/vendor/rrbvec/.rrbvec.objs/byte";
         ]
@@ -94,6 +97,8 @@ let rec of_compiler_type =
       | "string", [] -> TString
       | "bool", [] -> TBool
       | "unit", [] -> TUnit
+      | "Lg_runtime.Runtime_dynamic.t", [] ->
+          Types.dynamic_constraint TUnknown
       | "list", [ inner ] -> TList inner
       | "array", [ inner ] -> TArray inner
       | "ref", [ inner ] -> TRef inner

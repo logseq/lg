@@ -1,0 +1,10 @@
+(library
+ (name lg_runtime_melange_aliases)
+ (public_name lg.runtime-melange-aliases)
+ (wrapped false)
+ (modes melange)
+ (preprocess
+ (pps melange.ppx))
+ (libraries
+  melange-edn-melange
+  melange-transit-melange))

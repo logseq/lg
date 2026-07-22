@@ -585,6 +585,184 @@ let test_incremental_anonymous_maps_reuse_equal_shapes () =
   assert_ocaml_runs "incremental_anonymous_maps_reuse_equal_shapes" "2\n"
     (first ^ "\n" ^ second)
 
+let test_incremental_dynamic_record_packing_emits_late_packer_key () =
+  let provider =
+    {|
+(def fixture {:before (fn [] true)})
+|}
+  in
+  let consumer =
+    {|
+(defn erase [^:dynamic value] value)
+(def erased (erase fixture))
+(println (boolean erased))
+|}
+  in
+  let state, provider_ocaml =
+    Lg.Compiler.compile_chunk Lg.Compiler.empty_state provider |> expect_ok
+  in
+  let _state, consumer_ocaml =
+    Lg.Compiler.compile_chunk state consumer |> expect_ok
+  in
+  assert_ocaml_runs "incremental_dynamic_record_packing_emits_late_packer_key"
+    "true\n" (provider_ocaml ^ "\n" ^ consumer_ocaml);
+  let state, _ =
+    Lg.Compiler.compile_chunk ~target:Lg.Target.Melange
+      Lg.Compiler.empty_state provider
+    |> expect_ok
+  in
+  ignore
+    (Lg.Compiler.compile_chunk ~target:Lg.Target.Melange state consumer
+    |> expect_ok)
+
+let test_independent_incremental_modules_use_distinct_record_packer_keys () =
+  let base_source =
+    {|
+(def callbacks (atom []))
+(defn add-callback [callback]
+  (swap! callbacks conj callback))
+(defn run-callbacks []
+  (doseq [callback (deref callbacks)]
+    (println (callback))))
+(defn erase [^:dynamic value] value)
+|}
+  in
+  let first_source =
+    {|
+(require [ocaml.Lg_runtime.Runtime_dynamic :as dynamic])
+(def first-record {:wrapper {:db/cardinality :db.cardinality/many}})
+(add-callback
+  (fn []
+    (if (= "{:wrapper {:db/cardinality :db.cardinality/many}}"
+           (dynamic/pr-str (erase first-record)))
+      "true"
+      "false")))
+|}
+  in
+  let second_source =
+    {|
+(require [ocaml.Lg_runtime.Runtime_dynamic :as dynamic])
+(def second-record {:wrapper {:db/isComponent true}})
+(dynamic/pr-str (erase second-record))
+|}
+  in
+  let runner_source = {|(run-callbacks)|} in
+  let base_state, base_ocaml =
+    Lg.Compiler.compile_chunk Lg.Compiler.empty_state base_source |> expect_ok
+  in
+  let base_state = Lg.Compiler.cacheable_state base_state in
+  let serialized = Marshal.to_string base_state [] in
+  let base_state : Lg.Compiler.state = Marshal.from_string serialized 0 in
+  let compile_independent source =
+    Lg.Compiler.compile_chunk_with_filename_and_diagnostics ~check_ocaml:false
+      ~filename:"independent.cljc" base_state source
+    |> expect_ok
+    |> fun (_, compilation) -> compilation.Lg.Compiler.ocaml_source
+  in
+  let first_ocaml =
+    compile_independent first_source
+  in
+  let second_ocaml =
+    compile_independent second_source
+  in
+  let runner_ocaml =
+    compile_independent runner_source
+  in
+  let module_source name source =
+    Printf.sprintf "module %s = struct\nopen Base\n%s\nend\n" name source
+  in
+  let ocaml_source =
+    "module Base = struct\n" ^ base_ocaml ^ "\nend\n"
+    ^ module_source "First" first_ocaml
+    ^ module_source "Second" second_ocaml
+    ^ module_source "Runner" runner_ocaml
+  in
+  assert_ocaml_runs
+    "independent_incremental_modules_use_distinct_record_packer_keys" "true\n"
+    ocaml_source
+
+let test_record_literals_disambiguate_subset_shapes () =
+  let source =
+    {|
+(defrecord ContextValue [db])
+(defrecord PatternValue [attrs])
+(def default-pattern (->PatternValue []))
+
+(defn consume-context [{:keys [context pattern]}]
+  [(.-db context) (.-attrs pattern)])
+
+(consume-context
+  {:context (->ContextValue :db)
+   :pattern default-pattern})
+
+(defrecord PatternHolder [name pattern])
+
+(defn pattern-only [name & {:as args}]
+  (map->PatternHolder
+    (merge
+      {:name name}
+      (when true {:pattern default-pattern})
+      args)))
+
+(println (= default-pattern (:pattern (pattern-only :answer))))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "record_literals_disambiguate_subset_shapes" "true\n"
+    native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_structural_row_projection_does_not_duplicate_argument_expression () =
+  let source =
+    {|
+(defrecord Database [a b c d e f g h])
+(defn make-database []
+  (Database. 1 2 3 4 5 6 7 8))
+(defn sum-database [{:keys [a b c d e f g h]}]
+  (+ a b c d e f g h))
+(println (sum-database (make-database)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let rec count_occurrences offset count =
+    let needle = "make_database" in
+    if offset + String.length needle > String.length ocaml_source then count
+    else if String.sub ocaml_source offset (String.length needle) = needle then
+      count_occurrences (offset + String.length needle) (count + 1)
+    else count_occurrences (offset + 1) count
+  in
+  let occurrences = count_occurrences 0 0 in
+  if occurrences > 2 then
+    failwith
+      (Printf.sprintf
+         "structural row projection duplicated make-database %d times"
+         occurrences);
+  assert_ocaml_runs
+    "structural_row_projection_does_not_duplicate_argument_expression"
+    "36\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_record_collection_callbacks_disambiguate_field_types () =
+  let source =
+    {|
+(ns app.record-callback)
+
+(def vector-ref {:ref [:nested]})
+(defn consume [values]
+  (map (fn [^:dynamic value] value) values))
+(defn pack-values []
+  (consume [{:ref :normal}]))
+(println (count (pack-values)))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "record_collection_callbacks_disambiguate_field_types"
+    "1\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_heterogeneous_record_vectors_use_dynamic_values () =
   let ocaml_source =
     Lg.Compiler.compile_string
@@ -948,11 +1126,63 @@ let test_compare_uses_dynamic_seqable_storage () =
 
 (println (compare-values "a" "b"))
 (println (less "a" "b" "c"))
+(println ((get {'less less} 'less) 1 2))
+(defn render-values [vars]
+  (pr-str (set vars)))
+(println (render-values ['?x]))
+(defn dynamic-value [^:dynamic value] value)
+(def equal-seq-values
+  [(dynamic-value [1 2]) (dynamic-value [1 2])])
+(println (= (take 1 equal-seq-values) (drop 1 equal-seq-values)))
 |}
   in
   let native_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "compare_uses_dynamic_seqable_storage" "-1\ntrue\n"
+  assert_ocaml_runs "compare_uses_dynamic_seqable_storage"
+    "-1\ntrue\ntrue\n#{?x}\ntrue\n"
     native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_generic_sequence_element_equality_avoids_host_function_compare () =
+  let source =
+    {|
+(deftype Datom [value ignored]
+  IEquiv
+  (-equiv [_ other]
+    (and (instance? Datom other)
+         (= value (.-value other)))))
+(defn same-index? [left right]
+  (loop [xs (seq left)
+         ys (seq right)]
+    (cond
+      (nil? xs) (nil? ys)
+      (= (first xs) (first ys)) (recur (next xs) (next ys))
+      :else false)))
+(def left (Datom. 42 (fn [] :left)))
+(def right (Datom. 42 (fn [] :right)))
+(println (same-index? [left] [right]))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "generic_sequence_element_equality_avoids_host_function_compare"
+    "true\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_seq_instance_validation_runs_before_nominal_unpacking () =
+  let source =
+    {|
+(deftype Datom [value])
+(defn datom? [value] (instance? Datom value))
+(defn first-invalid-datom [datoms]
+  (first (drop-while datom? datoms)))
+(println (vector? (first-invalid-datom [[:not-a-datom] {:not-a-datom true}])))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "seq_instance_validation_runs_before_nominal_unpacking"
+    "true\n" native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -2721,11 +2951,34 @@ let test_clojure_edn_read_string_behaves_on_native_and_melange () =
 (println (= "line\nnext" (edn/read-string "\"line\\nnext\"")))
 (println (nil? (edn/read-string "")))
 (println (= 1 (edn/read-string "1 2")))
+(def schema
+  {:avatar {:db/valueType :db.type/ref
+            :db/isComponent true}})
+(def restored-schema (edn/read-string (pr-str schema)))
+(println
+  (and
+    (= :db.type/ref (get-in restored-schema [:avatar :db/valueType]))
+    (= true (get-in restored-schema [:avatar :db/isComponent]))))
 |}
   in
   let native_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "clojure_edn_read_string_behaves_on_native_and_melange"
-    "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n" native_source;
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_external_overloaded_functions_work_as_dynamic_values () =
+  let source =
+    {|
+(ns app.edn-functions)
+
+(def readers {"edn" cljs.reader/read-string})
+(println (= 42 ((get readers "edn") "42")))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "external_overloaded_functions_work_as_dynamic_values"
+    "true\n" native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -2777,6 +3030,123 @@ let test_clojure_edn_read_string_rejects_invalid_collections () =
     "true\ntrue\ntrue\n" native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_clojure_edn_read_string_supports_symbolic_numbers () =
+  let source =
+    {|
+(ns app.symbolic-edn
+  (:require [#?(:cljs cljs.reader :clj clojure.edn) :as edn]))
+
+(def nan (edn/read-string "##NaN"))
+(def positive-infinity (edn/read-string "##Inf"))
+(def negative-infinity (edn/read-string "##-Inf"))
+(println (not= nan nan))
+(println (pos? positive-infinity))
+(println (neg? negative-infinity))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "clojure_edn_read_string_supports_symbolic_numbers"
+    "true\ntrue\ntrue\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_melange_transit_api_compiles_for_native_and_melange () =
+  let source =
+    {|
+(ns app.transit
+  (:require
+    [ocaml.Lg_runtime.Runtime_edn :as runtime-edn]
+    [ocaml.Transit_core.Json :as transit-json]
+    [ocaml.melange-edn-native/Melange_edn_native :as target-edn]
+    [ocaml.melange-transit-native/Transit_native.Transit.Json :as transit]))
+
+(def encoded
+  (transit/to-string
+    (transit/of-edn
+      (target-edn/of-edn-string
+        (runtime-edn/write-string {:answer 42})))
+    :mode (transit-json/Normal)))
+(defn decode [encoded]
+  (transit/of-string encoded))
+(runtime-edn/read-string
+  (target-edn/to-edn-string
+    (transit/to-edn (transit/of-string encoded))))
+|}
+  in
+  let compile target =
+    let state, _ =
+      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state source
+      |> expect_ok
+    in
+    match
+      Lg.Compiler_environment.find_opt "app.transit/decode"
+        state.typecheck_state.env
+    with
+    | Some { ty = Lg.Types.TFn ([ Lg.Types.TString ], _); _ } -> ()
+    | Some binding ->
+        failwith
+          ("expected transit wrapper string parameter, got "
+          ^ Lg.Types.source_name binding.ty)
+    | None -> failwith "expected transit wrapper binding"
+  in
+  compile Lg.Target.Native;
+  compile Lg.Target.Melange
+
+let test_structural_record_arguments_fill_optional_fields_and_adapt_callbacks () =
+  let provider_source =
+    {|
+(ns app.serialization)
+
+(defn serializable-impl
+  [value {:keys [freeze-fn freeze-kw]
+          :or {freeze-fn pr-str
+               freeze-kw str}}]
+  (freeze-fn value)
+  value)
+
+(defn serializable
+  ([value]
+   (serializable-impl value {}))
+  ([value options]
+   (serializable-impl value options)))
+|}
+  in
+  let consumer_source =
+    {|
+(ns app.serialization-test
+  (:require [app.api :as serialization]))
+
+(defn freeze-value [_] "encoded")
+(println (serialization/serializable 42 {:freeze-fn freeze-value}))
+|}
+  in
+  let api_source =
+    {|
+(ns app.api
+  (:require [app.serialization :as serialization]))
+
+(def serializable serialization/serializable)
+|}
+  in
+  let compile target =
+    let state, provider_ocaml =
+      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state provider_source
+      |> expect_ok
+    in
+    let state, api_ocaml =
+      Lg.Compiler.compile_chunk ~target state api_source |> expect_ok
+    in
+    let _, consumer_ocaml =
+      Lg.Compiler.compile_chunk ~target state consumer_source |> expect_ok
+    in
+    String.concat "\n" [ provider_ocaml; api_ocaml; consumer_ocaml ]
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs
+    "structural_record_arguments_fill_optional_fields_and_adapt_callbacks"
+    "42\n" native_source;
+  ignore (compile Lg.Target.Melange)
 
 let test_referred_update_supports_threaded_nested_calls () =
   let provider_source =
@@ -3091,6 +3461,81 @@ let test_current_datascript_pull_api_compiles_for_native_and_melange () =
   ignore (datascript_pull_baseline Lg.Target.Native);
   ignore (datascript_pull_baseline Lg.Target.Melange)
 
+let test_current_datascript_pull_parser_preserves_schema_semantics_on_native () =
+  let source =
+    {|
+(ns app.pull-parser-schema-behavior
+  (:require [datascript.db :as db]
+            [datascript.pull-parser :as pull-parser]))
+
+(def database
+  (db/init-db
+    []
+    {:ref {:db/valueType :db.type/ref}
+     :component {:db/valueType :db.type/ref
+                 :db/isComponent true}
+     :many {:db/cardinality :db.cardinality/many}}
+    {}))
+
+(def normal (pull-parser/parse-attr-name database :normal))
+(def ref-attr (pull-parser/parse-attr-name database :ref))
+(def component (pull-parser/parse-attr-name database :component))
+(def many (pull-parser/parse-attr-name database :many))
+(def reverse-ref (pull-parser/parse-attr-name database :_ref))
+
+(println (str (db/ref? database :normal) ":"
+              (db/component? database :normal) ":"
+              (db/multival? database :normal)))
+(println (str (nil? (:ref? normal)) ":"
+              (nil? (:component? normal)) ":"
+              (nil? (:multival? normal))))
+(println (str (:name ref-attr) ":" (:ref? ref-attr) ":"
+              (nil? (:component? ref-attr))))
+(println (str (:name component) ":" (:ref? component) ":"
+              (:component? component)))
+(println (str (:name many) ":" (:multival? many) ":" (:limit many)))
+(println (str (:name reverse-ref) ":" (:ref? reverse-ref) ":"
+              (:reverse? reverse-ref)))
+|}
+  in
+  let native_source =
+    compile_from_datascript_baseline Lg.Target.Native
+      (datascript_pull_parser_baseline Lg.Target.Native)
+      [ ("test/datascript/pull_parser_schema_behavior.cljc", source) ]
+  in
+  assert_ocaml_runs "current_datascript_pull_parser_schema_semantics"
+    "false:false:false\ntrue:true:true\n:ref:true:true\n:component:true:true\n:many:true:1000\n:ref:true:true\n"
+    native_source
+
+let test_record_equality_uses_clojure_function_identity () =
+  let source =
+    {|
+(defrecord Holder [f])
+(def shared identity)
+(println (= shared shared))
+(println (= (fn [x] x) (fn [x] x)))
+(println (= (->Holder shared) (->Holder shared)))
+(println (= (->Holder (fn [x] x)) (->Holder (fn [x] x))))
+|}
+  in
+  let native_source =
+    Lg.Compiler.compile_string ~target:Lg.Target.Native source |> expect_ok
+  in
+  assert_ocaml_runs "record_equality_uses_clojure_function_identity"
+    "true\nfalse\ntrue\nfalse\n" native_source
+
+let test_quote_preserves_nil_values () =
+  let source =
+    {|
+(println (nil? (second '(limit nil))))
+(println (= '(limit nil) (list 'limit nil)))
+|}
+  in
+  let native_source =
+    Lg.Compiler.compile_string ~target:Lg.Target.Native source |> expect_ok
+  in
+  assert_ocaml_runs "quote_preserves_nil_values" "true\ntrue\n" native_source
+
 let test_current_datascript_pull_api_behaves_on_native () =
   let source =
     {|
@@ -3266,7 +3711,9 @@ let test_current_datascript_serialize_roundtrips_on_native () =
      (db/datom 1 :age 19)
      (db/datom 1 :active true)
      (db/datom 2 :name "Oleg")]
-    {:name {:db/index true}}
+    {:name {:db/index true}
+     :avatar {:db/valueType :db.type/ref
+              :db/isComponent true}}
     {}))
 
 (def restored
@@ -3502,6 +3949,24 @@ let test_transient_collection_operations_preserve_values () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
+let test_dynamic_transient_sets_use_clojure_hashing () =
+  let source =
+    {|
+(defn dynamic [^:dynamic value] value)
+(def values (transient #{}))
+(def first-value (dynamic [1 2]))
+(def equal-value (dynamic [1 2]))
+(conj! values first-value)
+(conj! values equal-value)
+(println (str (contains? values equal-value) ":" (count values)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "dynamic_transient_sets_use_clojure_hashing" "true:1\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_get_supports_static_and_dynamic_transient_maps () =
   let source =
     {|
@@ -3713,6 +4178,129 @@ let test_metadata_map_prefixes_compile_without_java_types () =
     native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_keyword_reader_metadata_attaches_to_collection_values () =
+  let source =
+    {|
+(ns app.metadata)
+(let [plain ^:internal [:plain]
+      namespaced ^::internal [:namespaced]
+      queued (conj [] ^::internal [:queued])]
+  (println
+    (str (:internal (meta plain)) ":"
+         (::internal (meta namespaced)) ":"
+         (::internal (meta (first queued))))))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "keyword_reader_metadata_attaches_to_collection_values"
+    "true:true:true\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_named_records_preserve_metadata_across_static_boundaries () =
+  let source =
+    {|
+(defrecord Tagged [value])
+(defn tagged ^Tagged [value]
+  (with-meta (Tagged. value) {:source [:original]}))
+(defn source [^Tagged value]
+  (:source (meta value)))
+(let [value (tagged 42)]
+  (println (str (.-value value) ":" (pr-str (source value)))))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "named_records_preserve_metadata_across_static_boundaries"
+    "42:[:original]\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_named_record_protocol_dispatch_preserves_wrapper_metadata () =
+  let source =
+    {|
+(defprotocol Sourceable
+  (source [this]))
+(defrecord Tagged [value])
+(extend-protocol Sourceable
+  Tagged
+  (source [this]
+    (:source (meta this))))
+(defn with-source [obj source-form]
+  (with-meta obj {:source source-form}))
+(defn ^:dynamic tagged []
+  (with-source (Tagged. 42) [:original]))
+(let [value (tagged)]
+  (println (pr-str (source value))))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "named_record_protocol_dispatch_preserves_wrapper_metadata"
+    "[:original]\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_cross_module_extend_protocol_preserves_record_extension_field () =
+  let record_source =
+    {|
+(ns app.records)
+(defprotocol Existing
+  (existing-value [this]))
+(defrecord FindRel [elements]
+  Existing
+  (existing-value [_] elements))
+(defrecord FindColl [element]
+  Existing
+  (existing-value [_] element))
+(defrecord FindScalar [element]
+  Existing
+  (existing-value [_] element))
+(defrecord FindTuple [elements]
+  Existing
+  (existing-value [_] elements))
+|}
+  in
+  let extension_source =
+    {|
+(ns app.extension
+  (:require [app.records :refer [FindRel FindColl FindScalar FindTuple]]))
+(defprotocol Added
+  (added-value [this return-map tuples]))
+(extend-protocol Added
+  FindRel
+  (added-value [_ return-map tuples]
+    (if (nil? return-map) tuples (vec tuples)))
+
+  FindColl
+  (added-value [_ return-map tuples]
+    (into [] (map first) tuples))
+
+  FindScalar
+  (added-value [_ return-map tuples]
+    (ffirst tuples))
+
+  FindTuple
+  (added-value [_ return-map tuples]
+    (if (some? return-map) (first (vec tuples)) (first tuples))))
+(println (= [1 2] (added-value (FindColl. nil) nil [[1] [2]])))
+|}
+  in
+  let compile target =
+    let state, record_ocaml =
+      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state record_source
+      |> expect_ok
+    in
+    let _, extension_ocaml =
+      Lg.Compiler.compile_chunk ~target state extension_source |> expect_ok
+    in
+    record_ocaml ^ "\n" ^ extension_ocaml
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs
+    "cross_module_extend_protocol_preserves_record_extension_field" "true\n"
+    native_source;
+  ignore (compile Lg.Target.Melange)
 
 let test_java_is_array_idiom_lowers_to_portable_array_predicate () =
   let source =
@@ -4946,6 +5534,30 @@ let test_ocaml_package_requires_report_missing_packages () =
   |> expect_error_contains
        "OCaml package lg-package-that-does-not-exist was not found"
 
+let test_ocaml_package_finds_dune_install_interface_without_meta () =
+  let root = Filename.temp_dir "lg-ocamlpath-" "" in
+  let package_root = Filename.concat root "lg-test" in
+  let interface_dir = Filename.concat package_root "alcotest" in
+  Unix.mkdir package_root 0o755;
+  Unix.mkdir interface_dir 0o755;
+  let interface = Filename.concat interface_dir "lg_test_alcotest.cmi" in
+  write_file interface "";
+  let previous = Sys.getenv_opt "OCAMLPATH" in
+  Fun.protect
+    ~finally:(fun () ->
+      Unix.putenv "OCAMLPATH" (Option.value previous ~default:"");
+      Sys.remove interface;
+      Unix.rmdir interface_dir;
+      Unix.rmdir package_root;
+      Unix.rmdir root)
+    (fun () ->
+      Unix.putenv "OCAMLPATH" root;
+      match Lg.Ocaml_package.include_dirs [ "lg-test.alcotest" ] with
+      | Ok directories ->
+          if not (List.mem interface_dir directories) then
+            failwith "Dune interface directory was not returned"
+      | Error error -> failwith error.Lg.Error.message)
+
 let test_ocaml_package_requires_reject_invalid_package_names () =
   Lg.Compiler.compile_string {|
 (require [ocaml.package/bad;name])
@@ -6046,11 +6658,12 @@ let test_special_float_literals_are_portable () =
        (< ##-Inf -1.0) ":"
        (not= ##NaN ##NaN) ":"
        (number? ##Inf)))
+(println (str (pr-str ##Inf) ":" (pr-str ##-Inf) ":" (pr-str ##NaN)))
 |}
   in
   let native_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "special_float_literals_are_portable"
-    "true:true:true:true\n" native_source;
+    "true:true:true:true\n##Inf:##-Inf:##NaN\n" native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -6067,6 +6680,35 @@ let test_numeric_equality_accepts_dynamic_ints_and_floats () =
   let native_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "numeric_equality_accepts_dynamic_ints_and_floats"
     "false\ntrue\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_numeric_ordering_accepts_dynamic_ints_and_floats () =
+  let source =
+    {|
+(defn measured [^:dynamic elapsed]
+  [elapsed :result])
+
+(let [[elapsed _] (measured 1.5)]
+  (println (<= 0 elapsed (* 10 elapsed)))
+  (println (< 0 elapsed 2.0))
+  (println (> 2 elapsed 0))
+  (println (>= elapsed 1))
+  (println (< elapsed ##Inf))
+  (println (< ##NaN elapsed))
+  (println (+ elapsed 0.5))
+  (println (- elapsed 0.5))
+  (println (/ elapsed 0.5)))
+
+(let [[elapsed _] (measured 2)]
+  (println (< 1 elapsed 3.0))
+  (println (* elapsed 3)))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "numeric_ordering_accepts_dynamic_ints_and_floats"
+    "true\ntrue\ntrue\ntrue\ntrue\nfalse\n2.\n1.\n3.\ntrue\n6\n"
+    native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -7515,6 +8157,69 @@ let test_nullable_deftype_uses_custom_printer () =
   in
   let native_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "nullable_deftype_uses_custom_printer" "<7>\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_cross_namespace_deftype_uses_custom_printer () =
+  let model_source =
+    {|
+(ns app.model)
+(defprotocol IDatom
+  (datom-tx [this])
+  (datom-added [this]))
+(deftype Datom [^number e a v ^number tx
+                ^:mutable ^number idx ^:mutable ^number cached-hash]
+  IDatom
+  (datom-tx [_] tx)
+  (datom-added [_] true)
+  IPrintWithWriter
+  (-pr-writer [d writer opts]
+    (pr-sequential-writer writer pr-writer
+      "#app/Datom [" " " "]" opts
+      [(.-e d) (.-a d) (.-v d) (datom-tx d) (datom-added d)])))
+|}
+  in
+  let consumer_source =
+    {|
+(ns app.serialize
+  (:require [app.model :as model]))
+(def datom (model/Datom. 1 :name "Ada" 2 0 0))
+(println (pr-str datom))
+|}
+  in
+  let compile target =
+    let state, model_ocaml =
+      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state model_source
+      |> expect_ok
+    in
+    let _, consumer_ocaml =
+      Lg.Compiler.compile_chunk ~target state consumer_source |> expect_ok
+    in
+    model_ocaml ^ "\n" ^ consumer_ocaml
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs "cross_namespace_deftype_uses_custom_printer"
+    "#app/Datom [1 :name \"Ada\" 2 true]\n" native_source;
+  ignore (compile Lg.Target.Melange)
+
+let test_dynamic_function_return_preserves_record_protocols () =
+  let source =
+    {|
+(defprotocol IDB
+  (-schema [db]))
+(defrecord DB [schema]
+  IDB
+  (-schema [_] schema))
+(defn make-db [schema]
+  (DB. schema))
+(def readers {'db make-db})
+(def restored ((get readers 'db) 42))
+(println (-schema restored))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "dynamic_function_return_preserves_record_protocols"
+    "42\n" native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -11496,11 +12201,20 @@ let test_clojure_walk_preserves_collections_and_traversal_order () =
      (walk/postwalk
        (fn [^:dynamic value] (if (= value :old) :new value))
        {:old 1})))
+
+(def visited (atom 0))
+(walk/postwalk
+  (fn [^:dynamic value]
+    (if (or (= value 1) (= value 2))
+      (do (swap! visited inc) value)
+      value))
+  (map identity [1 2]))
+(println (= 2 @visited))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "clojure_walk_preserves_collections_and_traversal_order"
-    "true\ntrue\ntrue\ntrue\ntrue\n" ocaml_source;
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -12292,19 +13006,46 @@ let test_generic_clojure_set_subset_constrains_parameters () =
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange sequence_source
     |> expect_ok)
 
-let test_resolve_returns_nil_without_runtime_var_reflection () =
+let test_resolve_returns_runtime_vars () =
   let source =
     {|
+(ns app.resolve-vars)
+(def answer 42)
+(defn plus-one [value] (inc value))
 (defn resolve-value [sym]
   (when-some [var (resolve sym)]
     (deref var)))
+(println (resolve-value 'app.resolve-vars/answer))
+(println ((resolve-value (nth '[app.resolve-vars/plus-one] 0)) 41))
 (println (nil? (resolve 'missing/value)))
 (println (nil? (resolve-value 'missing/value)))
 |}
   in
   let native_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "resolve_returns_nil_without_runtime_var_reflection"
-    "true\ntrue\n" native_source;
+  assert_ocaml_runs "resolve_returns_runtime_vars" "42\n42\ntrue\ntrue\n"
+    native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_requiring_resolve_returns_runtime_vars () =
+  let source =
+    {|
+(ns app.runtime-vars)
+(def answer 42)
+(defn plus-one [value] (inc value))
+(defn resolved-value [sym]
+  (when-some [resolved (requiring-resolve sym)]
+    @resolved))
+(println (resolved-value 'app.runtime-vars/answer))
+(println ((resolved-value 'app.runtime-vars/plus-one) 41))
+(println (nil? (requiring-resolve 'app.runtime-vars/missing)))
+|}
+  in
+  let native_source =
+    Lg.Compiler.compile_string ~target:Lg.Target.Native source |> expect_ok
+  in
+  assert_ocaml_runs "requiring_resolve_returns_runtime_vars"
+    "42\n42\ntrue\n" native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -12380,6 +13121,7 @@ let test_batched_identifier_and_constructor_core_functions_work () =
 (def m2 (sorted-map :ready true))
 (def s1 (sorted-set 3 1 2 2))
 (def listed (list* 1 2 [3 4]))
+(def empty-list (list* []))
 (def mixed-list (list* 'or-join [1 2] (list [3] [4])))
 (defn namespace-or-empty [value]
   (if-let [ns (namespace value)] ns ""))
@@ -12387,6 +13129,7 @@ let test_batched_identifier_and_constructor_core_functions_work () =
   (str (name qualified) ":" (namespace-or-empty qualified) ":" (name kw) ":" (namespace-or-empty kw) ":"
        (name kw2) ":" (namespace-or-empty kw2) ":" (pr-str more-names) ":"
        (:name m1) ":" (:ready m2) ":" (pr-str s1) ":" (pr-str listed) ":"
+       (nil? empty-list) ":"
        (pr-str mixed-list) ":"
        (symbol? simple) ":" (symbol? :ready) ":"
        (simple-symbol? simple) ":" (simple-symbol? qualified) ":"
@@ -12397,7 +13140,7 @@ let test_batched_identifier_and_constructor_core_functions_work () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "batched_identifier_and_constructor_core_functions_work"
     "name:user:name:user:id:user:[ready user/name]:Ada:true:#{1 2 3}:(1 2 3 \
-     4):(or-join [1 2] [3] [4]):true:false:true:false:true:false:true:true:true\n"
+     4):true:(or-join [1 2] [3] [4]):true:false:true:false:true:false:true:true:true\n"
     ocaml_source
 
 let test_batched_identifier_and_constructor_core_functions_reject_bad_symbol_args
@@ -14037,8 +14780,7 @@ let test_typecheck_validates_full_compile_after_evidence_stabilizes () =
     Ok ({ state with env }, [])
   in
   let compile state =
-    let row_arity = if !full_passes = 0 then 29 else 53 in
-    compile_with_row_arity full_passes row_arity state
+    compile_with_row_arity full_passes 53 state
   in
   let compile_evidence state =
     compile_with_row_arity evidence_passes 41 state
@@ -14054,7 +14796,7 @@ let test_typecheck_validates_full_compile_after_evidence_stabilizes () =
       ~initial_state:Lg.Compiler_state.empty ast
     |> expect_ok
   in
-  if !full_passes <> 3 then
+  if !full_passes <> 2 then
     failwith
       ("the final full compile should stabilize its own ABI, got "
       ^ string_of_int !full_passes
@@ -16046,17 +16788,23 @@ let test_update_in_uses_dynamic_callbacks_for_dynamic_record_fields () =
       (keyword "nested")
       (hash-map (keyword "a") 1 (keyword "b") 2))
     (keyword "nested")))
+(def vector-updated
+  (update-in
+    (hash-map (keyword "friend") [(hash-map (keyword "name") "Ada")])
+    [(keyword "friend") 0]
+    assoc (keyword "age") 42))
 (println
   (str (get (.-value updated) :a) ":"
        (nil? (get (.-value updated) :b)) ":"
        (nil? (get (get (.-value nested-updated) :nested) :b)) ":"
-       (nil? (get (get direct-updated :nested) :a))))
+       (nil? (get (get direct-updated :nested) :a)) ":"
+       (get (get (get vector-updated (keyword "friend")) 0) (keyword "age"))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs
     "update_in_uses_dynamic_callbacks_for_dynamic_record_fields"
-    "1:true:true:true\n"
+    "1:true:true:true:42\n"
     ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
@@ -16910,6 +17658,25 @@ let test_destructuring_supports_rest_and_defaults () =
   assert_ocaml_runs "destructuring_supports_rest_and_defaults"
     "Ada:0:37:100:10:20:3:4:10:20:2:4\n" ocaml_source
 
+let test_sequential_destructuring_rest_uses_nil_when_empty () =
+  let source =
+    {|
+(let [[only & empty-rest] [1]
+      [_ & values] [1 2 3]
+      drained? (loop [remaining (seq [1])]
+                 (if (nil? remaining)
+                   true
+                   (let [[_ & more] remaining]
+                     (recur more))))]
+  (println (str (nil? empty-rest) ":" (first values) ":" (count values) ":"
+                (pr-str (list* 0 empty-rest)) ":"
+                (count (remove (fn [_] false) empty-rest)) ":" drained?)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "sequential_destructuring_rest_uses_nil_when_empty"
+    "true:2:2:(0):0:true\n" ocaml_source
+
 let test_let_destructuring_accepts_generic_seqable_values () =
   let source =
     {|
@@ -16955,12 +17722,12 @@ let test_dynamic_predicates_do_not_erase_concrete_array_elements () =
 (defn compare-items [^Item left ^Item right]
   (compare (.-id left) (.-id right)))
 (defn prepare [items]
-  (drop-while item? items)
-  (let [arr (array-from items)
+  (when-some [invalid (first (drop-while item? items))]
+    (throw (ex-info "invalid item" {:value invalid})))
+  (let [arr (into-array items)
         _   (asort! compare-items arr)]
-    arr))
-(def arr (prepare [(Item. 2) (Item. 1)]))
-(println (.-id (unsafe-aget arr 0)))
+    (.-id (unsafe-aget arr 0))))
+(println (prepare [(Item. 2) (Item. 1)]))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -17127,6 +17894,60 @@ let test_destructuring_preserves_row_polymorphic_function_calls () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "destructuring_preserves_row_polymorphic_function_calls"
     "hi Ada\n" ocaml_source
+
+let test_local_field_access_accepts_wider_named_records () =
+  let state, records_ocaml =
+    Lg.Compiler.compile_chunk Lg.Compiler.empty_state
+      {|
+(ns records)
+(defrecord DB [value])
+(defrecord TxReport [^DB db-after tempids])
+(defn consume [^:dynamic value] value)
+(defn make-report [] (TxReport. (DB. 42) {}))
+|}
+    |> expect_ok
+  in
+  let _, app_ocaml =
+    Lg.Compiler.compile_chunk state
+      {|
+(ns app (:require [records :as records]))
+(let [read-db (fn [report] (records/consume (:db-after report)))
+      report (records/make-report)]
+  (read-db report)
+  (println "ok"))
+|}
+    |> expect_ok
+  in
+  assert_ocaml_runs "local_field_access_accepts_wider_named_records" "ok\n"
+    (String.concat "\n" [ records_ocaml; app_ocaml ])
+
+let test_local_dissoc_preserves_named_record_fields () =
+  let state, records_ocaml =
+    Lg.Compiler.compile_chunk Lg.Compiler.empty_state
+      {|
+(ns records)
+(type-record tx-report [value] (tempids :dynamic))
+(defn make-report []
+  (record tx-report (tempids (__pack-dynamic {:keep 1 :drop 2}))))
+|}
+    |> expect_ok
+  in
+  let _, app_ocaml =
+    Lg.Compiler.compile_chunk state
+      {|
+(ns app (:require [records :as records]))
+(let [clean (fn [report] (dissoc (:tempids report) :drop))
+      unused-clean (fn [report] (dissoc (:tempids report) :drop))]
+  ((fn []
+     (let [report (records/make-report)]
+       (println (count (clean report)))))))
+|}
+    |> expect_ok
+  in
+  if count_substring app_ocaml "Lg_dyn.dissoc" < 2 then
+    failwith "dissoc must preserve unresolved record field access";
+  assert_ocaml_runs "local_dissoc_preserves_named_record_fields" "1\n"
+    (String.concat "\n" [ records_ocaml; app_ocaml ])
 
 let test_map_destructuring_as_preserves_open_map_access () =
   let source =
@@ -17683,13 +18504,14 @@ let test_common_higher_order_helpers () =
        (distinct? 1 2 3) ":" (distinct? 1 2 1) ":"
        (compare 1 2) ":" (compare "b" "a") ":"
        (max-key (fn [x] x) 1 4 2) ":"
-       (min-key (fn [x] x) 1 4 2)))
+       (min-key (fn [x] x) 1 4 2) ":"
+       (pr-str (sort [:db/id :normal :a/z :a/a]))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "common_higher_order_helpers"
     "(1 2 2 3 3 4):(1 2 2 3):(3 2 1):true:false:true:false:false:true:[9 10 \
-     11]:15:10:true:false:-1:1:4:1\n"
+     11]:15:10:true:false:-1:1:4:1:(:normal :a/a :a/z :db/id)\n"
     ocaml_source
 
 let test_sort_by_adapts_static_key_function_to_dynamic_elements () =
@@ -17849,8 +18671,22 @@ let test_apply_calls_overloaded_functions_with_dynamic_arguments () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let needle = "make_value__arity_3_0" in
+  let rec count_occurrences offset count =
+    if offset + String.length needle > String.length ocaml_source then count
+    else if String.sub ocaml_source offset (String.length needle) = needle then
+      count_occurrences (offset + String.length needle) (count + 1)
+    else count_occurrences (offset + 1) count
+  in
+  let occurrences = count_occurrences 0 0 in
+  if occurrences > 3 then
+    failwith
+      (Printf.sprintf "overloaded apply duplicated its function %d times"
+         occurrences);
   assert_ocaml_runs "apply_calls_overloaded_functions_with_dynamic_arguments"
-    "1\n4\n" ocaml_source
+    "1\n4\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_apply_packs_protocol_constraints_for_fixed_arguments () =
   let source =
@@ -17983,6 +18819,133 @@ let test_sets_support_named_records () =
   assert_ocaml_runs "sets_support_named_records" "1:true:true:1:true:0:true\n"
     ocaml_source
 
+let test_anonymous_record_fields_parameterize_polymorphic_sets () =
+  let source =
+    {|
+(def user {:name "Ada"})
+(def result {:profile (hash-set user)})
+(println (count (:profile result)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "anonymous_record_fields_parameterize_polymorphic_sets" "1\n"
+    ocaml_source
+
+let test_dynamic_record_sets_disambiguate_element_types () =
+  let source =
+    {|
+(def user {:name "Ada"})
+(def wider-user {:name "Petr" :age 42})
+(defn consume [^:dynamic value] value)
+(println (count (consume (hash-set user))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "dynamic_record_sets_disambiguate_element_types" "1\n"
+    ocaml_source
+
+let test_empty_transduced_vector_sets_preserve_element_shape () =
+  let source =
+    {|
+(defn consume [^:dynamic value] value)
+(consume (into (hash-set) (map vector) (hash-set)))
+(println "ok")
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "empty_transduced_vector_sets_preserve_element_shape"
+    "ok\n" ocaml_source
+
+let test_into_widens_heterogeneous_record_vectors () =
+  let source =
+    {|
+(defrecord Person [db-id name])
+(defrecord Entity [db-id])
+(def values (into [(Person. 1 "Ada")] [(Entity. 2)]))
+(println (count values))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "into_widens_heterogeneous_record_vectors" "2\n"
+    ocaml_source
+
+let test_anonymous_records_parameterize_nil_fields () =
+  let source =
+    {|
+(defn make-value [] {:items [nil]})
+(println (count (:items (make-value))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "anonymous_records_parameterize_nil_fields" "1\n"
+    ocaml_source
+
+let test_dynamic_vectors_compile_callbacks_with_dynamic_parameters () =
+  let source =
+    {|
+(def values [:name :xform (fn [value] (:name value))])
+(println (count values))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "dynamic_vectors_compile_callbacks_with_dynamic_parameters"
+    "3\n" ocaml_source
+
+let test_calls_wrap_records_for_nullable_destructured_parameters () =
+  let state, impl_ocaml =
+    Lg.Compiler.compile_chunk Lg.Compiler.empty_state
+      {|
+(ns impl)
+(defn parse-opts
+  ([db pattern] (parse-opts db pattern {}))
+  ([db pattern {:keys [visitor]}] visitor))
+(defn select-visitor [db pattern opts] (parse-opts db pattern opts))
+|}
+    |> expect_ok
+  in
+  let _, app_ocaml =
+    Lg.Compiler.compile_chunk state
+      {|
+(ns app (:require [impl :as impl]))
+(def opts {:visitor (fn [value] value)})
+(impl/parse-opts nil nil opts)
+(impl/select-visitor nil nil opts)
+(println "ok")
+|}
+    |> expect_ok
+  in
+  assert_ocaml_runs "calls_wrap_records_for_nullable_destructured_parameters"
+    "ok\n" (String.concat "\n" [ impl_ocaml; app_ocaml ])
+
+let test_local_variadic_functions_preserve_dynamic_parameter_constraints () =
+  let state, impl_ocaml =
+    Lg.Compiler.compile_chunk Lg.Compiler.empty_state {|
+(ns impl)
+(defn target [query & sources] (first query))
+|}
+    |> expect_ok
+  in
+  let state, api_ocaml =
+    Lg.Compiler.compile_chunk state {|
+(ns api (:require [impl :as impl]))
+(def ^{:arglists '([query & inputs])} public-target impl/target)
+|}
+    |> expect_ok
+  in
+  let _, app_ocaml =
+    Lg.Compiler.compile_chunk state {|
+(ns app (:require [api :as api]))
+(let [invoke (fn [query db & sources]
+               (apply api/public-target query db sources))]
+  (invoke [1 2] "db"))
+(println "ok")
+|}
+    |> expect_ok
+  in
+  assert_ocaml_runs
+    "local_variadic_functions_preserve_dynamic_parameter_constraints" "ok\n"
+    (String.concat "\n" [ impl_ocaml; api_ocaml; app_ocaml ])
+
 let test_runtime_poly_set_follows_cljs_literal_order () =
   let actual =
     Lg_runtime.Runtime_poly_set.of_list [ "@2"; "@3" ]
@@ -17990,6 +18953,20 @@ let test_runtime_poly_set_follows_cljs_literal_order () =
   in
   if actual <> [ "@3"; "@2" ] then
     failwith "polymorphic set literals must enumerate newest values first"
+
+let test_runtime_poly_set_compares_functions_by_identity () =
+  let first value = value + 1 in
+  let second value = value + 1 in
+  let values =
+    Lg_runtime.Runtime_poly_set.empty
+    |> Lg_runtime.Runtime_poly_set.add first
+    |> Lg_runtime.Runtime_poly_set.add first
+    |> Lg_runtime.Runtime_poly_set.add second
+  in
+  if Lg_runtime.Runtime_poly_set.cardinal values <> 2 then
+    failwith "polymorphic sets must deduplicate only identical function values";
+  if not (Lg_runtime.Runtime_poly_set.mem first values) then
+    failwith "polymorphic sets must find an identical function value"
 
 let test_sets_support_primitive_lists_and_vectors () =
   let source =
@@ -21772,6 +22749,26 @@ let test_incremental_compilation_preserves_modules () =
   assert_ocaml_runs "incremental_compilation_preserves_modules" "42\n"
     (module_ocaml ^ "\n\n" ^ app_ocaml)
 
+let test_incremental_compilation_preserves_modules_with_ocaml_packages () =
+  let state, _provider =
+    Lg.Compiler.compile_chunk_with_filename_and_diagnostics
+      ~filename:"math.cljc" Lg.Compiler.empty_state
+      {|
+(require [ocaml.package/core]
+         [ocaml.Core.Int :as int])
+(module Math
+  (defn magnitude-plus-two [x] (+ (int/abs x) 2)))
+|}
+    |> expect_ok
+  in
+  let _state, _consumer =
+    Lg.Compiler.compile_chunk_with_filename_and_diagnostics
+      ~filename:"main.cljc" state
+      {|(println (Math/magnitude-plus-two -40))|}
+    |> expect_ok
+  in
+  ()
+
 let test_incremental_compilation_preserves_opened_modules () =
   let state = Lg.Compiler.empty_state in
   let state, module_ocaml =
@@ -22815,6 +23812,16 @@ let tests =
       test_dynamic_transaction_vectors_accept_local_callback_return_shapes );
     ( "incremental anonymous maps reuse equal shapes",
       test_incremental_anonymous_maps_reuse_equal_shapes );
+    ( "incremental dynamic record packing emits late packer key",
+      test_incremental_dynamic_record_packing_emits_late_packer_key );
+    ( "independent incremental modules use distinct record packer keys",
+      test_independent_incremental_modules_use_distinct_record_packer_keys );
+    ( "record literals disambiguate subset shapes",
+      test_record_literals_disambiguate_subset_shapes );
+    ( "structural row projection does not duplicate argument expression",
+      test_structural_row_projection_does_not_duplicate_argument_expression );
+    ( "record collection callbacks disambiguate field types",
+      test_record_collection_callbacks_disambiguate_field_types );
     ( "heterogeneous record vectors use dynamic values",
       test_heterogeneous_record_vectors_use_dynamic_values );
     ( "declared and anonymous records share dynamic vectors",
@@ -22862,6 +23869,10 @@ let tests =
       test_doseq_map_entry_destructuring_preserves_map_values );
     ( "compare uses dynamic seqable storage",
       test_compare_uses_dynamic_seqable_storage );
+    ( "generic sequence element equality avoids host function compare",
+      test_generic_sequence_element_equality_avoids_host_function_compare );
+    ( "seq instance validation runs before nominal unpacking",
+      test_seq_instance_validation_runs_before_nominal_unpacking );
     ( "instance? supports Clojure collection interfaces",
       test_instance_predicate_supports_clojure_collection_interfaces );
     ( "condp selects first match and evaluates target once",
@@ -23025,10 +24036,18 @@ let tests =
       test_lazily_persistent_vector_create_owning_is_portable );
     ( "clojure.edn read-string behaves on Native and Melange",
       test_clojure_edn_read_string_behaves_on_native_and_melange );
+    ( "external overloaded functions work as dynamic values",
+      test_external_overloaded_functions_work_as_dynamic_values );
     ( "cljs.reader registered tag parsers affect read-string",
       test_cljs_reader_registered_tag_parsers_affect_read_string );
     ( "clojure.edn read-string rejects invalid collections",
       test_clojure_edn_read_string_rejects_invalid_collections );
+    ( "clojure.edn read-string supports symbolic numbers",
+      test_clojure_edn_read_string_supports_symbolic_numbers );
+    ( "melange-transit API compiles for Native and Melange",
+      test_melange_transit_api_compiles_for_native_and_melange );
+    ( "structural record arguments fill optional fields and adapt callbacks",
+      test_structural_record_arguments_fill_optional_fields_and_adapt_callbacks );
     ( "referred update supports threaded nested calls",
       test_referred_update_supports_threaded_nested_calls );
     ( "clj reader conditional macros survive deferred Melange bodies",
@@ -23037,6 +24056,14 @@ let tests =
       test_reader_conditional_accepts_metadata_branch_values );
     ( "metadata map prefixes compile without Java types",
       test_metadata_map_prefixes_compile_without_java_types );
+    ( "keyword reader metadata attaches to collection values",
+      test_keyword_reader_metadata_attaches_to_collection_values );
+    ( "named records preserve metadata across static boundaries",
+      test_named_records_preserve_metadata_across_static_boundaries );
+    ( "named record protocol dispatch preserves wrapper metadata",
+      test_named_record_protocol_dispatch_preserves_wrapper_metadata );
+    ( "cross-module extend-protocol preserves record extension field",
+      test_cross_module_extend_protocol_preserves_record_extension_field );
     ( "Java isArray idiom lowers to portable array predicate",
       test_java_is_array_idiom_lowers_to_portable_array_predicate );
     ( "dotimes evaluates bounds once and returns nil",
@@ -23053,6 +24080,11 @@ let tests =
       test_current_datascript_pull_parser_compiles_for_native_and_melange );
     ( "current DataScript pull API compiles for Native and Melange",
       test_current_datascript_pull_api_compiles_for_native_and_melange );
+    ( "current DataScript pull parser preserves schema semantics on Native",
+      test_current_datascript_pull_parser_preserves_schema_semantics_on_native );
+    ( "record equality uses Clojure function identity",
+      test_record_equality_uses_clojure_function_identity );
+    ("quote preserves nil values", test_quote_preserves_nil_values);
     ( "current DataScript pull API behaves on Native",
       test_current_datascript_pull_api_behaves_on_native );
     ( "current DataScript query compiles for Native and Melange",
@@ -23078,6 +24110,8 @@ let tests =
     ( "CLJS writer functions compile", test_cljs_writer_functions_compile );
     ( "transient collection operations preserve values",
       test_transient_collection_operations_preserve_values );
+    ( "dynamic transient sets use Clojure hashing",
+      test_dynamic_transient_sets_use_clojure_hashing );
     ( "get supports static and dynamic transient maps",
       test_get_supports_static_and_dynamic_transient_maps );
     ( "named reducers receive contextual accumulator types",
@@ -23248,6 +24282,8 @@ let tests =
       test_ocaml_package_requires_enable_inferred_calls );
     ( "OCaml package requires report missing packages",
       test_ocaml_package_requires_report_missing_packages );
+    ( "OCaml packages find Dune install interfaces without META",
+      test_ocaml_package_finds_dune_install_interface_without_meta );
     ( "OCaml package requires reject invalid package names",
       test_ocaml_package_requires_reject_invalid_package_names );
     ( "direct OCaml calls use qualified values",
@@ -23392,6 +24428,8 @@ let tests =
       test_special_float_literals_are_portable );
     ( "numeric equality accepts dynamic ints and floats",
       test_numeric_equality_accepts_dynamic_ints_and_floats );
+    ( "numeric ordering accepts dynamic ints and floats",
+      test_numeric_ordering_accepts_dynamic_ints_and_floats );
     ( "syntax convergence: float arithmetic uses types from option patterns",
       test_float_arithmetic_uses_types_from_option_patterns );
     ( "numeric coherence: float core operations agree",
@@ -23567,6 +24605,10 @@ let tests =
       test_if_heterogeneous_nominal_collections_use_dynamic_boundary );
     ( "nullable deftype uses its custom printer",
       test_nullable_deftype_uses_custom_printer );
+    ( "cross-namespace deftype uses its custom printer",
+      test_cross_namespace_deftype_uses_custom_printer );
+    ( "dynamic function return preserves record protocols",
+      test_dynamic_function_return_preserves_record_protocols );
     ( "dynamic deftype values do not gain map semantics",
       test_dynamic_deftype_values_do_not_gain_map_semantics );
     ( "dynamic deftype preserves identity equality",
@@ -24017,8 +25059,9 @@ let tests =
       test_computed_sets_are_first_class_predicates );
     ( "generic clojure.set subset constrains parameters",
       test_generic_clojure_set_subset_constrains_parameters );
-    ( "resolve returns nil without runtime Var reflection",
-      test_resolve_returns_nil_without_runtime_var_reflection );
+    ("resolve returns runtime Vars", test_resolve_returns_runtime_vars);
+    ( "requiring-resolve returns runtime Vars",
+      test_requiring_resolve_returns_runtime_vars );
     ( "let aliases propagate seqable constraints",
       test_let_aliases_propagate_seqable_constraints );
     ( "nested drop-while infers seqable parameters",
@@ -24400,6 +25443,8 @@ let tests =
       test_destructuring_supports_direct_keyword_bindings );
     ( "destructuring supports rest and defaults",
       test_destructuring_supports_rest_and_defaults );
+    ( "sequential destructuring rest uses nil when empty",
+      test_sequential_destructuring_rest_uses_nil_when_empty );
     ( "let destructuring accepts generic seqable values",
       test_let_destructuring_accepts_generic_seqable_values );
     ( "heterogeneous destructuring materializes dynamic elements",
@@ -24418,6 +25463,10 @@ let tests =
       test_macro_slots_preserve_dynamic_seqable_values );
     ( "destructuring preserves row polymorphic function calls",
       test_destructuring_preserves_row_polymorphic_function_calls );
+    ( "local field access accepts wider named records",
+      test_local_field_access_accepts_wider_named_records );
+    ( "local dissoc preserves named record fields",
+      test_local_dissoc_preserves_named_record_fields );
     ( "map destructuring as preserves open map access",
       test_map_destructuring_as_preserves_open_map_access );
     ( "map destructuring supports typed direct keyword bindings",
@@ -24500,8 +25549,26 @@ let tests =
     ("apply rejects bad set reducers", test_apply_rejects_bad_set_reducers);
     ("set core api works", test_set_core_api);
     ("sets support named records", test_sets_support_named_records);
+    ( "anonymous record fields parameterize polymorphic sets",
+      test_anonymous_record_fields_parameterize_polymorphic_sets );
+    ( "dynamic record sets disambiguate element types",
+      test_dynamic_record_sets_disambiguate_element_types );
+    ( "empty transduced vector sets preserve element shape",
+      test_empty_transduced_vector_sets_preserve_element_shape );
+    ( "into widens heterogeneous record vectors",
+      test_into_widens_heterogeneous_record_vectors );
+    ( "anonymous records parameterize nil fields",
+      test_anonymous_records_parameterize_nil_fields );
+    ( "dynamic vectors compile callbacks with dynamic parameters",
+      test_dynamic_vectors_compile_callbacks_with_dynamic_parameters );
+    ( "calls wrap records for nullable destructured parameters",
+      test_calls_wrap_records_for_nullable_destructured_parameters );
+    ( "local variadic functions preserve dynamic parameter constraints",
+      test_local_variadic_functions_preserve_dynamic_parameter_constraints );
     ( "runtime polymorphic sets follow CLJS literal order",
       test_runtime_poly_set_follows_cljs_literal_order );
+    ( "runtime polymorphic sets compare functions by identity",
+      test_runtime_poly_set_compares_functions_by_identity );
     ( "sets support primitive lists and vectors",
       test_sets_support_primitive_lists_and_vectors );
     ( "sets support nested composite elements",
@@ -24743,6 +25810,8 @@ let tests =
       test_module_definitions_support_type_aliases );
     ( "incremental compilation preserves modules",
       test_incremental_compilation_preserves_modules );
+    ( "incremental compilation preserves modules with OCaml packages",
+      test_incremental_compilation_preserves_modules_with_ocaml_packages );
     ("open module exposes values", test_open_module_exposes_values);
     ("include module exposes values", test_include_module_exposes_values);
     ( "incremental compilation preserves opened modules",
@@ -24981,6 +26050,7 @@ let datascript_integration_tests =
     "current DataScript Entity behaves on Native";
     "current DataScript pull parser compiles for Native and Melange";
     "current DataScript pull API compiles for Native and Melange";
+    "current DataScript pull parser preserves schema semantics on Native";
     "current DataScript pull API behaves on Native";
     "current DataScript query compiles for Native and Melange";
     "current DataScript parser collects pattern variables";

@@ -18,6 +18,14 @@ let rec pattern = function
   | PAlias (value, name) -> PAlias (pattern value, name)
   | POr (left, right) -> POr (pattern left, pattern right)
   | PConstraint (value, type_name) -> PConstraint (pattern value, type_name)
+  | PTyped (value, ty) ->
+      (match ty with
+      | Semantic_type.TNamed_record record ->
+          PConstraint
+            ( pattern value,
+              Structural_map.record_type_application record )
+      | Semantic_type.TRecord _ -> pattern value
+      | _ -> PConstraint (pattern value, Types.ocaml_name ty))
 
 let rec expression = function
   | Semantic_ir.Typed (_, value) -> expression value
@@ -58,6 +66,14 @@ let rec expression = function
                 (fun (pat, value) -> (pattern pat, expression value))
                 bindings,
               expression body ))
+  | EvaluateOnce (name, value, body) ->
+      Let
+        ( [
+            ( PConstraint
+                (PVar name, "Lg_runtime.Runtime_dynamic.t"),
+              expression value );
+          ],
+          expression body )
   | LetRec (name, params, body, args) ->
       LetRec
         (name, List.map pattern params, expression body, List.map expression args)

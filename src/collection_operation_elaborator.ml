@@ -65,6 +65,23 @@ let rec dynamicize_unknown = function
       TFn (List.map dynamicize_unknown parameters, dynamicize_unknown return_ty)
   | ty -> ty
 
+let typed_dynamic_item_pattern env name = function
+  | TRecord fields -> (
+      match
+        Env.find_anonymous_record
+          ~owner:(Source_context.anonymous_record_owner "") fields env
+      with
+      | Some record ->
+          Semantic_ir.PConstraint
+            ( Semantic_ir.PVar name,
+              Structural_map.record_type_application record )
+      | None -> Semantic_ir.PTyped (Semantic_ir.PVar name, TRecord fields))
+  | TNamed_record record ->
+      Semantic_ir.PConstraint
+        ( Semantic_ir.PVar name,
+          Structural_map.record_type_application record )
+  | _ -> Semantic_ir.PVar name
+
 let runtime_map_operation key_ty operation =
   "Lg_runtime.Runtime_map." ^ operation
   ^
@@ -261,7 +278,13 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
         Function_elaborator.prepare ~param_type_overrides:[ Some value_ty ]
           ~compile_default ~lookup_function_ty ~compile_body scope env params
           body_forms
-        |> Result.map Function_elaborator.fn_code
+        |> Result.map (fun parts ->
+               let fn = Function_elaborator.fn_code parts in
+               {
+                 fn with
+                 semantic_expr =
+                   constrain_record_function_argument_expr fn value_ty;
+               })
     | form -> compile_function_arg scope env form
   in
     let compile_deftype_method scope env record method_name args =
@@ -403,19 +426,31 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                         (fun arg -> Types.equal inner arg.ty)
                         prefix_args
                     then
-                        let list_expr =
-                          match prefix_args with
-                          | [] -> final_list_expr
-                          | _ ->
-                              Semantic_ir.Infix
-                                ( "@",
-                                  Semantic_ir.List
-                                  (List.map
-                                     (fun arg -> arg.semantic_expr)
-                                     prefix_args),
-                                  final_list_expr )
-                        in
-                        Ok (typed_ir (TList inner) list_expr)
+                      (match prefix_args with
+                      | [] ->
+                          let values = "__lg_list_star_values" in
+                          Ok
+                            (typed_ir (TNullable (TList inner))
+                               (Semantic_ir.Match
+                                  ( final_list_expr,
+                                    [ ( Semantic_ir.PList [],
+                                        Semantic_ir.Constructor ("None", None)
+                                      );
+                                      ( Semantic_ir.PVar values,
+                                        Semantic_ir.Constructor
+                                          ( "Some",
+                                            Some (Semantic_ir.Ident values) ) );
+                                    ] )))
+                      | _ ->
+                          Ok
+                            (typed_ir (TList inner)
+                               (Semantic_ir.Infix
+                                  ( "@",
+                                    Semantic_ir.List
+                                      (List.map
+                                         (fun arg -> arg.semantic_expr)
+                                         prefix_args),
+                                    final_list_expr ))))
                     else
                       let dynamic = Types.dynamic_constraint TUnknown in
                       let rec pack_prefix packed = function
@@ -2226,6 +2261,44 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                                    [ map; key ])
                                target.semantic_expr keys))
                         (pack [] keys))
+              | TNullable inner
+                when Types.is_dynamic inner
+                     || Types.equal inner TUnknown
+                     || match inner with TVar _ -> true | _ -> false ->
+                (* (dissoc nil k) => nil, so map over the option *)
+                Result.bind (compile_args_for scope env key_forms) (fun keys ->
+                    let rec pack packed = function
+                      | [] -> Ok (List.rev packed)
+                      | key :: rest -> (
+                          match pack_dynamic_scalar key with
+                          | Error _ as error -> error
+                          | Ok key -> pack (key :: packed) rest)
+                    in
+                    Result.map
+                      (fun keys ->
+                        let result_ty =
+                          if Types.is_dynamic inner then target.ty
+                          else TNullable (Types.dynamic_constraint TUnknown)
+                        in
+                        typed_ir result_ty
+                          (Semantic_ir.Match
+                             ( target.semantic_expr,
+                               [ ( Semantic_ir.PConstructor ("None", None),
+                                   Semantic_ir.Constructor ("None", None) );
+                                 ( Semantic_ir.PConstructor
+                                     ("Some", Some (Semantic_ir.PVar "map")),
+                                   Semantic_ir.Constructor
+                                     ( "Some",
+                                       Some
+                                         (List.fold_left
+                                            (fun map key ->
+                                              apply
+                                                "Lg_runtime.Runtime_dynamic.\
+                                                 dissoc"
+                                                [ map; key ])
+                                            (Semantic_ir.Ident "map")
+                                            keys)) ) ] )))
+                      (pack [] keys))
               | _ -> Error.error "dissoc expects a map"))
       | _ -> Error.error "dissoc expects map followed by keywords"
     and compile_merge scope env arg_forms =
@@ -2478,9 +2551,16 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                               dynamicize_unknown ret )
                           else (param_tys, ret)
                           in
-                        if
+                        let type_change =
                           (not (Types.is_dynamic field.ty))
                           && not (Types.equal ret field.ty)
+                        in
+                        if
+                          type_change
+                          &&
+                          match target.ty with
+                          | TRecord _ -> false
+                          | _ -> true
                         then
                           Error.error
                             (Printf.sprintf
@@ -2556,19 +2636,16 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                               let stored =
                                 if Types.is_dynamic field.ty then
                                   pack_dynamic_value env field.ty result
-                                else if Types.equal ret field.ty then
-                                  Ok result.semantic_expr
                                 else
-                                  Error.error
-                                    (Printf.sprintf
-                                       "cannot update %s as %s because it is \
-                                        already %s"
-                                       keyword (source_name ret)
-                                       (source_name field.ty))
+                                  Ok result.semantic_expr
                               in
                               Result.bind stored (fun stored ->
-                                  Structural_map.update_value target fields
-                                    keyword field.ty stored))
+                                  if type_change then
+                                    Structural_map.update_value_as target
+                                      fields keyword ret stored
+                                  else
+                                    Structural_map.update_value target fields
+                                      keyword field.ty stored))
                     | TFn _ ->
                         Error.error "update function argument count mismatch"
                       | _ -> Error.error "update expects a function"))
@@ -2615,7 +2692,6 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                              Types.assignable ~policy:Host_boundary ~expected
                                ~actual:arg.ty)
                               (drop 1 param_tys) extra_args
-                      && Types.equal ret inner
                     then
                       let old_expr =
                         apply "Rrbvec.nth"
@@ -2624,26 +2700,64 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                           ]
                       in
                       let arguments = typed_ir inner old_expr :: extra_args in
-                      Result.map
+                      Result.bind
+                        (prepare_updater_arguments [] param_tys arguments)
                         (fun arguments ->
                           let value_expr =
                             Semantic_ir.Apply (fn.semantic_expr, arguments)
                           in
-                          typed_ir target.ty
-                            (apply "Rrbvec.set"
-                               [ target.semantic_expr;
-                                 apply "Int64.to_int" [ index.semantic_expr ];
-                                 value_expr;
-                               ]))
-                        (prepare_updater_arguments [] param_tys arguments)
+                          if Types.equal ret inner then
+                            Ok
+                              (typed_ir target.ty
+                                 (apply "Rrbvec.set"
+                                    [
+                                      target.semantic_expr;
+                                      apply "Int64.to_int"
+                                        [ index.semantic_expr ];
+                                      value_expr;
+                                    ]))
+                          else
+                            (* Clojure update may change the element type;
+                               repack the whole vector as dynamic *)
+                            let dynamic = Types.dynamic_constraint TUnknown in
+                            let item_name = "__lg_update_item" in
+                            let item =
+                              typed_ir inner (Semantic_ir.Ident item_name)
+                            in
+                            match
+                              ( pack_dynamic_value env dynamic
+                                  (typed_ir ret value_expr),
+                                pack_dynamic_value env dynamic item )
+                            with
+                            | (Error _ as error), _ -> error
+                            | _, (Error _ as error) -> error
+                            | Ok packed_value, Ok packed_item ->
+                                Ok
+                                  (typed_ir (TVector dynamic)
+                                     (apply "Rrbvec.set"
+                                        [
+                                          apply "Rrbvec.of_list"
+                                            [
+                                              apply "List.map"
+                                                [
+                                                  Semantic_ir.Fun
+                                                    ( [
+                                                        typed_dynamic_item_pattern
+                                                          env item_name inner;
+                                                      ],
+                                                      packed_item );
+                                                  apply "Rrbvec.to_list"
+                                                    [ target.semantic_expr ];
+                                                ];
+                                            ];
+                                          apply "Int64.to_int"
+                                            [ index.semantic_expr ];
+                                          packed_value;
+                                        ])))
                     else
                       Error.error
                         "update function arguments do not match vector element \
                          and extra arguments"
-                  | TFn (_param_tys, ret) when not (Types.equal ret inner) ->
-                      Error.error
-                        ("cannot update vector element as " ^ source_name ret
-                       ^ " because it is already " ^ source_name inner)
                   | TFn _ ->
                       Error.error
                       "update function arguments do not match vector element \
@@ -2882,10 +2996,15 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
       | TOcaml_app ("Lg_runtime.Runtime_transient.set", [ element_type ]), _
           when Types.equal element_type TUnknown
                || Types.same_shape element_type value.ty ->
+            let contains =
+              if Types.is_dynamic element_type || Types.is_dynamic value.ty then
+                "Lg_runtime.Runtime_transient.set_mem_dynamic"
+              else "Lg_runtime.Runtime_transient.set_mem"
+            in
             Ok
               (typed_ir TBool
                  (Semantic_ir.Apply
-                  ( Semantic_ir.Ident "Lg_runtime.Runtime_transient.set_mem",
+                  ( Semantic_ir.Ident contains,
                       [ target.semantic_expr; value.semantic_expr ] )))
         | TOcaml_app ("Lg_runtime.Runtime_transient.set", _), _ ->
             Error.error
@@ -3001,7 +3120,13 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                    [
                      Semantic_ir.Apply
                        ( Semantic_ir.Ident "List.map",
-                         [ Semantic_ir.Ident "fst"; expression ] );
+                         [
+                           Semantic_ir.Ident "fst";
+                           Semantic_ir.Apply
+                             ( Semantic_ir.Ident
+                                 "Lg_runtime.Runtime_map.to_list",
+                               [ expression ] );
+                         ] );
                    ] ))
           in
           match target.ty with
@@ -3049,7 +3174,13 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                             ( Semantic_ir.Ident "List.map",
                               [
                                 Semantic_ir.Ident "fst";
-                                Structural_map.field_expr target extension_field;
+                                Semantic_ir.Apply
+                                  ( Semantic_ir.Ident
+                                      "Lg_runtime.Runtime_map.to_list",
+                                    [
+                                      Structural_map.field_expr target
+                                        extension_field;
+                                    ] );
                               ] );
                         ] )
               in
@@ -3094,7 +3225,10 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                               ( Semantic_ir.Ident "List.map",
                                 [
                                   Semantic_ir.Ident "snd";
-                                  target.semantic_expr;
+                                  Semantic_ir.Apply
+                                    ( Semantic_ir.Ident
+                                        "Lg_runtime.Runtime_map.to_list",
+                                      [ target.semantic_expr ] );
                                 ] );
                           ] )))
             | None -> (

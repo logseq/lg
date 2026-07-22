@@ -15,6 +15,7 @@ type pattern =
   | PAlias of pattern * string
   | POr of pattern * pattern
   | PConstraint of pattern * string
+  | PTyped of pattern * Semantic_type.ty
 
 type t =
   | Typed of Semantic_type.ty * t
@@ -38,6 +39,7 @@ type t =
   | Fun of pattern list * t
   | Sequence of t list
   | Let of (pattern * t) list * t
+  | EvaluateOnce of string * t * t
   | LetRec of string * pattern list * t * t list
   | LetRecIn of string * pattern list * t * t
   | Match of t * (pattern * t) list
@@ -148,6 +150,7 @@ let rec type_annotations expression =
     | If (condition, then_expr, else_expr) -> [ condition; then_expr; else_expr ]
     | Fun (_, body) -> [ body ]
     | Let (bindings, body) -> List.map snd bindings @ [ body ]
+    | EvaluateOnce (_, value, body) -> [ value; body; value ]
     | LetRec (_, _, body, args) -> body :: args
     | LetRecIn (_, _, body, next) -> [ body; next ]
     | Match (target, cases) -> target :: List.map snd cases
@@ -219,6 +222,8 @@ let rec rewrite fn expression =
               (fun (pattern, value) -> (pattern, rewrite fn value))
               bindings,
             rewrite fn body )
+    | EvaluateOnce (name, value, body) ->
+        EvaluateOnce (name, rewrite fn value, rewrite fn body)
     | LetRec (name, patterns, body, arguments) ->
         LetRec
           ( name,
@@ -277,6 +282,7 @@ let rec exists_identifier predicate expression =
         [ condition; then_expr; else_expr ]
     | Fun (_, body) -> [ body ]
     | Let (bindings, body) -> List.map snd bindings @ [ body ]
+    | EvaluateOnce (_, value, body) -> [ value; body; value ]
     | LetRec (_, _, body, args) -> body :: args
     | LetRecIn (_, _, body, next) -> [ body; next ]
     | Match (target, cases) -> target :: List.map snd cases

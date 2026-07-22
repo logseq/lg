@@ -19,6 +19,10 @@ let run_case (test_case : Lg_test_runtime.test_case) () =
       failures |> List.map failure_message |> String.concat "\n"
       |> Alcotest.fail
 
+let speed_level (test_case : Lg_test_runtime.test_case) =
+  if Lg_test_runtime.is_performance_case test_case then `Slow
+  else `Quick
+
 let run suite_name =
   let groups =
     Lg_test_runtime.grouped_cases ()
@@ -29,7 +33,8 @@ let run suite_name =
           | [] ->
               List.map
                 (fun test_case ->
-                  Alcotest.test_case test_case.Lg_test_runtime.name `Quick
+                  Alcotest.test_case test_case.Lg_test_runtime.name
+                    (speed_level test_case)
                     (run_case test_case))
                 cases
           | fixtures ->

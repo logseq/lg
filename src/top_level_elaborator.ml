@@ -152,16 +152,14 @@ let allocate_function_local_records env next_type
         TOcaml_app (name, List.map materialize_type arguments)
     | TTuple arguments -> TTuple (List.map materialize_type arguments)
     | TFn (parameters, return_type) ->
-        TFn
-          ( List.map materialize_type parameters,
-            materialize_type return_type )
+        TFn (parameters, materialize_type return_type)
     | TOverloaded_fn arities ->
         TOverloaded_fn
           (List.map
              (fun arity ->
                {
-                 fixed_params = List.map materialize_type arity.fixed_params;
-                 rest_param = Option.map materialize_type arity.rest_param;
+                 fixed_params = arity.fixed_params;
+                 rest_param = arity.rest_param;
                  return_ty = materialize_type arity.return_ty;
                })
              arities)
@@ -180,17 +178,24 @@ let allocate_function_local_records env next_type
   in
   let named_record_for_identifier name expression =
     let records = ref [] in
+    let add_record record =
+      if
+        not
+          (List.exists
+             (fun candidate -> Type_id.equal candidate.type_id record.type_id)
+             !records)
+      then records := record :: !records
+    in
     let inspect = function
       | Semantic_ir.Typed (TNamed_record record, value)
         when Semantic_ir.unlocated value = Semantic_ir.Ident name ->
-          if
-            not
-              (List.exists
-                 (fun candidate ->
-                   Type_id.equal candidate.type_id record.type_id)
-                 !records)
-          then records := record :: !records;
+          add_record record;
           Semantic_ir.Typed (TNamed_record record, value)
+      | Semantic_ir.PackDynamic
+          ({ source_ty = TNamed_record record; conversion; _ } as packed)
+        when Semantic_ir.exists_identifier (String.equal name) conversion ->
+          add_record record;
+          Semantic_ir.PackDynamic packed
       | value -> value
     in
     ignore (Semantic_ir.rewrite inspect expression);
@@ -208,10 +213,18 @@ let allocate_function_local_records env next_type
             Semantic_ir.PConstraint
               ( pattern,
                 Structural_map.record_type_application record ))
+    | Semantic_ir.PTyped (pattern, ty) ->
+        let ty =
+          match ty with TRecord _ -> ty | ty -> materialize_type ty
+        in
+        Semantic_ir.PTyped (pattern, ty)
     | pattern -> pattern
   in
   let materialize = function
-    | Semantic_ir.Typed ((TRecord _ as ty), value) -> (
+    | Semantic_ir.Typed ((TRecord _ as ty), value)
+      when (match Semantic_ir.unlocated value with
+           | Semantic_ir.Record _ -> true
+           | _ -> false) -> (
         match materialize_type ty with
         | TNamed_record record ->
             Semantic_ir.Typed
@@ -220,12 +233,15 @@ let allocate_function_local_records env next_type
                   (Structural_map.record_type_application record)
                   value )
         | ty -> Semantic_ir.Typed (ty, value))
+    | Semantic_ir.Typed ((TRecord _ as ty), value) ->
+        Semantic_ir.Typed (ty, value)
     | Semantic_ir.Typed (ty, value) ->
         Semantic_ir.Typed (materialize_type ty, value)
     | Semantic_ir.PackDynamic conversion ->
         Semantic_ir.PackDynamic
           {
             conversion with
+            source_ty = materialize_type conversion.source_ty;
             target_ty = materialize_type conversion.target_ty;
           }
     | Semantic_ir.UnpackDynamic conversion ->
@@ -269,6 +285,23 @@ let allocate_function_local_records env next_type
       param_bindings;
       body = { parts.body with semantic_expr };
     } )
+
+let allocate_multi_arity_local_records env next_type
+    (prepared : Expression_elaborator.prepared_multi_arity_fn) =
+  let env, next_type, items, clauses =
+    List.fold_left
+      (fun (env, next_type, items, clauses)
+           (clause : Expression_elaborator.prepared_multi_arity_clause) ->
+        let env, next_type, clause_items, parts =
+          allocate_function_local_records env next_type clause.parts
+        in
+        ( env,
+          next_type,
+          items @ clause_items,
+          { clause with parts } :: clauses ))
+      (env, next_type, [], []) prepared.clauses
+  in
+  (env, next_type, items, { prepared with clauses = List.rev clauses })
 
 let row_param_type_names = Expression_support.row_param_type_names
 let row_type_items = Expression_support.row_type_items
@@ -1122,6 +1155,12 @@ let rec compile scope env next_type = function
       | Error _ as err -> err
       | Ok record ->
           let receiver_ty = TNamed_record record in
+          let deftype_method_names =
+            interface_forms
+            |> List.filter_map (function
+                 | FList (FSymbol method_name :: _) -> Some method_name
+                 | _ -> None)
+          in
           let rec predeclare_methods env names current_interface = function
             | [] -> Ok (env, List.sort_uniq String.compare names)
             | FSymbol interface_name :: rest ->
@@ -1299,6 +1338,8 @@ let rec compile scope env next_type = function
                       in
                       ((not special_form)
                       && not (String.starts_with ~prefix:"-" name)
+                      && not (String.starts_with ~prefix:"." name)
+                      && not (List.mem name deftype_method_names)
                       && Result.is_error (lookup_function scope env name))
                       || List.exists unresolved_print_call arguments
                   | FList forms | FVector forms ->
@@ -1427,15 +1468,6 @@ let rec compile scope env next_type = function
                 with
                 | Error _ as err -> err
                 | Ok implementation -> (
-                    if
-                      current_interface = Some "IPrintWithWriter"
-                      && expression_references_declaration env
-                           implementation.semantic_expr
-                    then
-                      compile_methods
-                        (Env.remove (Names.scoped_key scope source_name) env)
-                        items current_interface rest
-                    else
                     let binding = binding_of_expr ocaml_name implementation in
                     let register_protocol env =
                       match current_interface with
@@ -1630,6 +1662,9 @@ let rec compile scope env next_type = function
             with
             | Error _ as error -> error
             | Ok prepared ->
+                let env, next_type, local_type_items, prepared =
+                  allocate_multi_arity_local_records env next_type prepared
+                in
                 let targets, overload_row_param_types, rows, arity_bindings =
                   Expression_elaborator.lower_prepared_multi_arity prepared
                 in
@@ -1653,7 +1688,7 @@ let rec compile scope env next_type = function
                 in
                 let new_bindings = arity_bindings @ [ dispatch_binding ] in
                 compile_definitions env next_type
-                  (List.rev_append rows row_items)
+                  (List.rev_append (local_type_items @ rows) row_items)
                   (List.rev_append new_bindings bindings)
                   rest)
         | FList
@@ -1698,7 +1733,7 @@ let rec compile scope env next_type = function
                   |> List.map (fun (_key, (binding : binding)) -> binding.ty)
                 in
                 let row_param_types =
-                  row_param_type_names ocaml_name param_tys
+                  row_param_type_names ~env ocaml_name param_tys
                 in
                 let expr =
                   fn_code ~row_param_type_names:row_param_types parts
@@ -1795,7 +1830,7 @@ let rec compile scope env next_type = function
             parts.param_bindings
             |> List.map (fun (_key, (binding : binding)) -> binding.ty)
           in
-          let row_param_types = row_param_type_names ocaml_name param_tys in
+          let row_param_types = row_param_type_names ~env ocaml_name param_tys in
           let expression =
             fn_code ~row_param_type_names:row_param_types parts
           in
@@ -2036,7 +2071,9 @@ let rec compile scope env next_type = function
                             {
                               var_name = ocaml_name;
                           identity;
+                          type_id = allocation.record.type_id;
                           type_name = allocation.record.type_name;
+                          type_parameters = allocation.record.type_parameters;
                               set_module_name =
                                 allocation.record.set_module_name;
                           fields;
@@ -2048,7 +2085,9 @@ let rec compile scope env next_type = function
                             {
                               var_name = ocaml_name;
                           identity;
+                          type_id = allocation.record.type_id;
                           type_name = allocation.record.type_name;
+                          type_parameters = allocation.record.type_parameters;
                               set_module_name =
                                 allocation.record.set_module_name;
                           fields;
@@ -2081,7 +2120,24 @@ let rec compile scope env next_type = function
                     in
                     Ok (scope, env, allocation.next_type, item)
           | _ ->
-              let binding = binding_of_expr ocaml_name expr in
+              let binding =
+                match expr_form with
+                | FSymbol source_name -> (
+                    match
+                      Env.find_opt (Names.scoped_key scope source_name) env
+                    with
+                    | Some source_binding ->
+                        {
+                          source_binding with
+                          ocaml_name;
+                          ty = expr.ty;
+                          host_reference = None;
+                          forward_declared = false;
+                          dynamic_var = false;
+                        }
+                    | None -> binding_of_expr ocaml_name expr)
+                | _ -> binding_of_expr ocaml_name expr
+              in
               Ok
                 ( scope,
                   Env.add env_key binding env,
@@ -2199,6 +2255,9 @@ let rec compile scope env next_type = function
           with
           | Error _ as err -> err
           | Ok prepared ->
+              let env, next_type, local_type_items, prepared =
+                allocate_multi_arity_local_records env next_type prepared
+              in
               let targets, overload_row_param_types, row_items,
                   recursive_bindings =
                 Expression_elaborator.lower_prepared_multi_arity prepared
@@ -2236,7 +2295,7 @@ let rec compile scope env next_type = function
                   Env.add env_key binding env,
                   next_type,
                   Group
-                    (row_items
+                    (local_type_items @ row_items
                     @ [
                         Recursive_value_bindings recursive_bindings; value_item;
                       ]) )))
@@ -2269,7 +2328,7 @@ let rec compile scope env next_type = function
                 parts.param_bindings
                 |> List.map (fun (_key, (binding : binding)) -> binding.ty)
               in
-              let row_param_types = row_param_type_names ocaml_name param_tys in
+              let row_param_types = row_param_type_names ~env ocaml_name param_tys in
               let expr = fn_code ~row_param_type_names:row_param_types parts in
               let env_key = Names.scoped_key scope name in
               match
@@ -2326,7 +2385,7 @@ let rec compile scope env next_type = function
             parts.param_bindings
             |> List.map (fun (_key, (binding : binding)) -> binding.ty)
           in
-          let row_param_types = row_param_type_names ocaml_name param_tys in
+          let row_param_types = row_param_type_names ~env ocaml_name param_tys in
           let expr = fn_code ~row_param_type_names:row_param_types parts in
           let env_key = Names.scoped_key scope name in
           match
@@ -2386,7 +2445,7 @@ let rec compile scope env next_type = function
             parts.param_bindings
             |> List.map (fun (_key, (binding : binding)) -> binding.ty)
           in
-          let row_param_types = row_param_type_names ocaml_name param_tys in
+          let row_param_types = row_param_type_names ~env ocaml_name param_tys in
           let expr = fn_code ~row_param_type_names:row_param_types parts in
           let env_key = Names.scoped_key scope name in
           match
@@ -2633,6 +2692,20 @@ let rec compile scope env next_type = function
              "Lg_runtime.Runtime_print.print_namespace_maps"
              (TRef (Types.dynamic_constraint TBool)))
           env
+      in
+      let env =
+        Env.add
+          (Names.scoped_key namespace_name "*data-readers*")
+          (Types.binding ~dynamic_var:true
+             "Lg_runtime.Runtime_edn.data_readers"
+             (TRef (Types.dynamic_constraint TUnknown)))
+          env
+      in
+      let env =
+        match List.assoc_opt "read-string" Core_edn.bindings with
+        | Some binding ->
+            Env.add (Names.scoped_key namespace_name "read-string") binding env
+        | None -> env
       in
       Ok
         (namespace_name, env, next_type, Comment ("namespace " ^ namespace_name))

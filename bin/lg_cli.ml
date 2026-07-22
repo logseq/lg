@@ -58,8 +58,8 @@ let compile_cache_enabled () =
 
 let compile_cache_min_seconds () =
   match Sys.getenv_opt "LG_COMPILE_CACHE_MIN_SECONDS" with
-  | Some value -> Option.value (float_of_string_opt value) ~default:0.25
-  | None -> 0.25
+  | Some value -> Option.value (float_of_string_opt value) ~default:0.
+  | None -> 0.
 
 let rec find_repo_root dir =
   if Sys.file_exists (Filename.concat dir "dune-project") then dir
@@ -80,12 +80,35 @@ let compile_cache_directory () =
   | None ->
       Filename.concat
         (find_repo_root (Sys.getcwd ()))
-        "_build/.lg-cache/compile-files"
+        ".lg-cache/compile-files"
 
 let compiler_cache_identity () =
-  Digest.string
-    (Sys.ocaml_version ^ "\000" ^ Digest.to_hex (Digest.file Sys.executable_name))
-  |> Digest.to_hex
+  let repo_root = find_repo_root (Sys.getcwd ()) in
+  let adjacent_compiler_directory =
+    Filename.concat (Filename.dirname Sys.executable_name) "../src"
+  in
+  let workspace_compiler_directory =
+    Filename.concat repo_root "_build/default/src"
+  in
+  let compiler_artifacts directory =
+    [ "lg.cmxa"; "lg.a"; "lg.cma" ]
+    |> List.map (Filename.concat directory)
+    |> List.filter Sys.file_exists
+  in
+  let artifacts =
+    match compiler_artifacts adjacent_compiler_directory with
+    | _ :: _ as artifacts -> artifacts
+    | [] -> (
+        match compiler_artifacts workspace_compiler_directory with
+        | _ :: _ as artifacts -> artifacts
+        | [] -> [ Sys.executable_name ])
+  in
+  let artifact_identity path =
+    Filename.basename path ^ "\000" ^ Digest.to_hex (Digest.file path)
+  in
+  String.concat "\000"
+    (Sys.ocaml_version :: List.map artifact_identity artifacts)
+  |> Digest.string |> Digest.to_hex
 
 let next_prefix_key ~target previous_key input_path source =
   Digest.string
@@ -356,23 +379,30 @@ let concatenate_compilation_outputs outputs =
   in
   outputs |> List.rev |> String.concat "\n"
 
-let resolve_compiler_state = function
+let read_compiler_state = function
   | Live state -> Ok state
   | Cached key -> read_cached_prefix_state key
+
+let resume_compiler_state ~target ~packages ~sources = function
+  | Live state -> Ok state
+  | Cached key ->
+      Result.bind (read_cached_prefix_state key) (fun state ->
+          Lg.Compiler.restore_ocaml_environment ~target ~packages state sources)
 
 let compile_files target input_paths =
   let rec loop prefix_key compiler_state packages outputs diagnostics =
     function
     | [] ->
+        let packages = List.sort_uniq String.compare packages in
+        let outputs = List.rev outputs in
         Result.map
           (fun state ->
-            let outputs = List.rev outputs in
             let ocaml_source = concatenate_compilation_outputs outputs in
             ( state,
-              List.sort_uniq String.compare packages,
+              packages,
               ocaml_source,
               List.concat (List.rev diagnostics) ))
-          (resolve_compiler_state compiler_state)
+          (read_compiler_state compiler_state)
     | input_path :: rest -> (
         let source = read_file input_path in
         let prefix_key =
@@ -391,15 +421,15 @@ let compile_files target input_paths =
                   rest
             | None ->
                 Result.bind
-                  (resolve_compiler_state compiler_state)
+                  (resume_compiler_state ~target ~packages
+                     ~sources:(List.rev outputs) compiler_state)
                   (fun state ->
                     if Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" then
                       Printf.eprintf "lg: compiling %s\n%!" input_path;
                     let started_at = Sys.time () in
                     match
                       Lg.Compiler.compile_chunk_with_filename_and_diagnostics
-                        ~target ~filename:input_path ~check_ocaml:false state
-                        source
+                        ~target ~filename:input_path state source
                     with
                     | Error _ as err -> err
                     | Ok (state, compilation) ->

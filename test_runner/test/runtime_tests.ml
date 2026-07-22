@@ -67,6 +67,43 @@ let test_fixtures_compose_in_declaration_order () =
     [ "first-before"; "second-before"; "test"; "second-after"; "first-after" ]
     !events
 
+let with_quick_mode value body =
+  let variable = "LG_TEST_QUICK" in
+  let previous = Sys.getenv_opt variable in
+  Fun.protect
+    ~finally:(fun () ->
+      Unix.putenv variable (Option.value previous ~default:""))
+    (fun () ->
+      Unix.putenv variable value;
+      body ())
+
+let test_runtime_quick_mode_skips_only_performance_cases () =
+  Lg_test_runtime.clear ();
+  let executed = ref [] in
+  let register name =
+    Lg_test_runtime.register "suite" name (fun () ->
+        executed := !executed @ [ name ])
+  in
+  register "ordinary test";
+  register "query performance";
+  register "lookup-perf";
+  register "performant behavior";
+  with_quick_mode "1" (fun () -> Lg_test_runtime.run "quick-selection");
+  Alcotest.(check (list string))
+    "only explicitly named performance cases are skipped"
+    [ "ordinary test"; "performant behavior" ]
+    !executed
+
+let test_runtime_default_mode_runs_performance_cases () =
+  Lg_test_runtime.clear ();
+  let executed = ref [] in
+  Lg_test_runtime.register "suite" "query performance" (fun () ->
+      executed := [ "query performance" ]);
+  with_quick_mode "0" (fun () -> Lg_test_runtime.run "default-selection");
+  Alcotest.(check (list string))
+    "run-tests remains complete by default"
+    [ "query performance" ] !executed
+
 let () =
   Alcotest.run "lg-test-runtime"
     [
@@ -86,5 +123,12 @@ let () =
         [
           Alcotest.test_case "compose in declaration order" `Quick
             test_fixtures_compose_in_declaration_order;
+        ] );
+      ( "selection",
+        [
+          Alcotest.test_case "quick mode skips performance cases" `Quick
+            test_runtime_quick_mode_skips_only_performance_cases;
+          Alcotest.test_case "default mode runs performance cases" `Quick
+            test_runtime_default_mode_runs_performance_cases;
         ] );
     ]

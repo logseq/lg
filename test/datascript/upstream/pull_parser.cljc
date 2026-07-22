@@ -67,8 +67,7 @@
     (when (fn? sym-or-fn)
       sym-or-fn)
     (get built-ins/query-fns sym-or-fn)
-    #?(:native nil
-       :clj (when (namespace sym-or-fn)
+    #?(:clj (when (namespace sym-or-fn)
               (when-some [v (requiring-resolve sym-or-fn)]
                 @v)))
     (util/raise "Can't resolve symbol " sym-or-fn {:error :parser/pull, :fragment sym-or-fn})))

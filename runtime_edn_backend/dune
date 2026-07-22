@@ -1,0 +1,5 @@
+(library
+ (name lg_edn_backend)
+ (public_name lg.edn-backend)
+ (modes native byte melange)
+ (virtual_modules edn_backend))

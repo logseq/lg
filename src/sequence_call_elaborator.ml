@@ -1416,7 +1416,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
           | (Error _ as error), _ -> error
           | _, (Error _ as error) -> error
         | Ok init, Ok collection -> (
-              let compile_for key_ty value_ty entries =
+              let compile_for fold key_ty value_ty entries =
                 match
                   compile_kv_reducer scope env init.ty key_ty value_ty fn_form
                 with
@@ -1439,7 +1439,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                         in
                         Ok
                           (typed_ir result_ty
-                             (apply "List.fold_left"
+                             (apply fold
                               [
                                 Semantic_ir.Fun
                                   ( [
@@ -1481,14 +1481,15 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                       apply "Rrbvec.to_list" [ collection.semantic_expr ];
                     ]
                   in
-                  compile_for TInt value_ty entries
+                  compile_for "List.fold_left" TInt value_ty entries
               | map_type -> (
                   match Types.dynamic_map_types map_type with
                   | Some (key_ty, value_ty) ->
-                      compile_for key_ty value_ty collection.semantic_expr
+                      compile_for "Lg_runtime.Runtime_map.fold_left" key_ty
+                        value_ty collection.semantic_expr
                 | None when Types.is_dynamic map_type ->
                     let dynamic = Types.dynamic_constraint TUnknown in
-                    compile_for dynamic dynamic
+                    compile_for "List.fold_left" dynamic dynamic
                       (apply "Lg_runtime.Runtime_dynamic.entries"
                          [ collection.semantic_expr ])
                 | None -> Error.error "reduce-kv expects a vector or map")))

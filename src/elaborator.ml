@@ -597,9 +597,8 @@ let rec add_initial_dynamic_record_packer env requests = function
         (fun items -> Lowered.Module_functor { definition with items })
         (add_initial_dynamic_record_packers env requests definition.items)
   | Lowered.Record_def
-      ({ type_name; set_module_name; fields; dynamic_packer; _ } as definition)
+      ({ type_id; type_name; set_module_name; fields; dynamic_packer; _ } as definition)
       as item ->
-      let type_id = Types.type_id_of_name type_name in
       if
         dynamic_packer
         || not (requested_dynamic_record requests type_id type_name)
@@ -615,9 +614,8 @@ let rec add_initial_dynamic_record_packer env requests = function
         append_basic_dynamic_record_packer env
           (Lowered.Record_def { definition with dynamic_packer = true }) record
   | Lowered.Projected_record_def
-      ({ type_name; set_module_name; fields; dynamic_packer; _ } as definition)
+      ({ type_id; type_name; set_module_name; fields; dynamic_packer; _ } as definition)
       as item ->
-      let type_id = Types.type_id_of_name type_name in
       if
         dynamic_packer
         || not (requested_dynamic_record requests type_id type_name)
@@ -863,15 +861,249 @@ let remove_resolved_names names form =
   let resolved = Dependency_graph.provided_names form in
   List.filter (fun name -> not (List.mem name resolved)) names
 
+let resolve_anonymous_record_patterns env items =
+  let rec resolve_pattern = function
+    | Semantic_ir.PLocated (node_id, location, pattern) ->
+        Semantic_ir.PLocated
+          (node_id, location, resolve_pattern pattern)
+    | Semantic_ir.PTyped (pattern, Types.TRecord fields) -> (
+        match
+          Compiler_environment.find_anonymous_record
+            ~owner:(Source_context.anonymous_record_owner "") fields env
+        with
+        | Some record ->
+            Semantic_ir.PConstraint
+              ( resolve_pattern pattern,
+                Structural_map.record_type_application record )
+        | None ->
+            Semantic_ir.PTyped
+              (resolve_pattern pattern, Types.TRecord fields))
+    | Semantic_ir.PTyped (pattern, ty) ->
+        Semantic_ir.PTyped (resolve_pattern pattern, ty)
+    | Semantic_ir.PConstructor (name, payload) ->
+        Semantic_ir.PConstructor (name, Option.map resolve_pattern payload)
+    | Semantic_ir.PTuple patterns ->
+        Semantic_ir.PTuple (List.map resolve_pattern patterns)
+    | Semantic_ir.PList patterns ->
+        Semantic_ir.PList (List.map resolve_pattern patterns)
+    | Semantic_ir.PCons (head, tail) ->
+        Semantic_ir.PCons (resolve_pattern head, resolve_pattern tail)
+    | Semantic_ir.PRecord fields ->
+        Semantic_ir.PRecord
+          (List.map
+             (fun (name, pattern) -> (name, resolve_pattern pattern))
+             fields)
+    | Semantic_ir.PAlias (pattern, name) ->
+        Semantic_ir.PAlias (resolve_pattern pattern, name)
+    | Semantic_ir.POr (left, right) ->
+        Semantic_ir.POr (resolve_pattern left, resolve_pattern right)
+    | Semantic_ir.PConstraint (pattern, type_name) ->
+        Semantic_ir.PConstraint (resolve_pattern pattern, type_name)
+    | (Semantic_ir.PVar _ | Semantic_ir.PAny | Semantic_ir.PUnit
+      | Semantic_ir.PInt _ | Semantic_ir.PInt64 _ | Semantic_ir.PString _
+      | Semantic_ir.PBool _) as pattern ->
+        pattern
+  in
+  let resolve_expression expression =
+    Semantic_ir.rewrite
+      (function
+        | Semantic_ir.Fun (patterns, body) ->
+            Semantic_ir.Fun (List.map resolve_pattern patterns, body)
+        | Semantic_ir.Let (bindings, body) ->
+            Semantic_ir.Let
+              (List.map
+                 (fun (pattern, value) ->
+                   (resolve_pattern pattern, value))
+                 bindings,
+               body)
+        | Semantic_ir.LetRec (name, patterns, body, arguments) ->
+            Semantic_ir.LetRec
+              (name, List.map resolve_pattern patterns, body, arguments)
+        | Semantic_ir.LetRecIn (name, patterns, body, next) ->
+            Semantic_ir.LetRecIn
+              (name, List.map resolve_pattern patterns, body, next)
+        | Semantic_ir.Match (target, cases) ->
+            Semantic_ir.Match
+              (target,
+               List.map
+                 (fun (pattern, body) ->
+                   (resolve_pattern pattern, body))
+                 cases)
+        | Semantic_ir.Match_guarded (target, cases) ->
+            Semantic_ir.Match_guarded
+              (target,
+               List.map
+                 (fun (pattern, guard, body) ->
+                   (resolve_pattern pattern, guard, body))
+                 cases)
+        | Semantic_ir.Try (body, cases) ->
+            Semantic_ir.Try
+              (body,
+               List.map
+                 (fun (pattern, guard, result) ->
+                   (resolve_pattern pattern, guard, result))
+                 cases)
+        | expression -> expression)
+      expression
+  in
+  let rec resolve_item = function
+    | Lowered.Value_binding binding ->
+        Lowered.Value_binding
+          { binding with expression = resolve_expression binding.expression }
+    | Lowered.Recursive_value_binding binding ->
+        Lowered.Recursive_value_binding
+          { binding with expression = resolve_expression binding.expression }
+    | Lowered.Recursive_value_bindings bindings ->
+        Lowered.Recursive_value_bindings
+          (List.map
+             (fun (binding : Lowered.recursive_value) ->
+               { binding with
+                 expression = resolve_expression binding.expression;
+               })
+             bindings)
+    | Lowered.Deferred_value_binding binding ->
+        Lowered.Deferred_value_binding
+          { binding with expression = resolve_expression binding.expression }
+    | Lowered.Record_def definition ->
+        Lowered.Record_def
+          { definition with
+            values =
+              List.map
+                (fun (field, value) ->
+                  (field, resolve_expression value))
+                definition.values;
+          }
+    | Lowered.Projected_record_def definition ->
+        Lowered.Projected_record_def
+          { definition with source = resolve_expression definition.source }
+    | Lowered.Group items -> Lowered.Group (List.map resolve_item items)
+    | Lowered.Module_def definition ->
+        Lowered.Module_def
+          { definition with items = List.map resolve_item definition.items }
+    | Lowered.Module_functor definition ->
+        Lowered.Module_functor
+          { definition with items = List.map resolve_item definition.items }
+    | item -> item
+  in
+  List.map resolve_item items
+
+let rec form_uses_runtime_var_reflection = function
+  | Ast.FList (Ast.FSymbol ("resolve" | "requiring-resolve") :: _) -> true
+  | Ast.FList (Ast.FSymbol ("quote" | "clojure.core/quote") :: _) -> false
+  | Ast.FList forms | Ast.FVector forms ->
+      List.exists form_uses_runtime_var_reflection forms
+  | Ast.FMap pairs ->
+      List.exists
+        (fun (key, value) ->
+          form_uses_runtime_var_reflection key
+          || form_uses_runtime_var_reflection value)
+        pairs
+  | Ast.FCoreSymbol _ | Ast.FSymbol _ | Ast.FKeyword _ | Ast.FString _
+  | Ast.FRegex _ | Ast.FInt _ | Ast.FFloat _ | Ast.FChar _ | Ast.FBool _ ->
+      false
+
+let rec runtime_definition_names scope = function
+  | Ast.FList [ Ast.FSymbol "defn-signature"; definition ] ->
+      runtime_definition_names scope definition
+  | Ast.FList (Ast.FSymbol "recursive-definition-group" :: definitions) ->
+      List.concat_map (runtime_definition_names scope) definitions
+  | Ast.FList
+      (Ast.FSymbol ("def" | "defonce" | "defn" | "defn-")
+      :: Ast.FSymbol name :: _) ->
+      [ Names.scoped_key scope name ]
+  | _ -> []
+
+let rec qualified_symbols = function
+  | Ast.FSymbol name when Names.is_qualified name -> [ name ]
+  | Ast.FList forms | Ast.FVector forms ->
+      List.concat_map qualified_symbols forms
+  | Ast.FMap pairs ->
+      List.concat_map
+        (fun (key, value) -> qualified_symbols key @ qualified_symbols value)
+        pairs
+  | Ast.FCoreSymbol _ | Ast.FSymbol _ | Ast.FKeyword _ | Ast.FString _
+  | Ast.FRegex _ | Ast.FInt _ | Ast.FFloat _ | Ast.FChar _ | Ast.FBool _ ->
+      []
+
+let rec quoted_qualified_symbols = function
+  | Ast.FList
+      [ Ast.FSymbol ("quote" | "clojure.core/quote"); quoted ] ->
+      qualified_symbols quoted
+  | Ast.FList forms | Ast.FVector forms ->
+      List.concat_map quoted_qualified_symbols forms
+  | Ast.FMap pairs ->
+      List.concat_map
+        (fun (key, value) ->
+          quoted_qualified_symbols key @ quoted_qualified_symbols value)
+        pairs
+  | Ast.FCoreSymbol _ | Ast.FSymbol _ | Ast.FKeyword _ | Ast.FString _
+  | Ast.FRegex _ | Ast.FInt _ | Ast.FFloat _ | Ast.FChar _ | Ast.FBool _ ->
+      []
+
+let compile_runtime_var_registrations definitions requests registered env
+    reflection_requested =
+  if not reflection_requested then ([], registered)
+  else
+    List.fold_left
+      (fun (items, registered) source_name ->
+        if
+          List.mem source_name registered
+          || not (List.mem source_name requests)
+        then (items, registered)
+        else
+          match Compiler_environment.find_opt source_name env with
+          | None -> (items, registered)
+          | Some (binding : Types.binding) when binding.forward_declared ->
+              (items, registered)
+          | Some binding ->
+              let dynamic = Types.dynamic_constraint Types.TUnknown in
+              let value =
+                Types.typed_ir binding.ty (Semantic_ir.Ident binding.ocaml_name)
+              in
+              (match Call_elaborator.pack_dynamic_value env dynamic value with
+              | Error _ -> (items, registered)
+              | Ok packed ->
+                  let registration =
+                    Lowered.Value_binding
+                      {
+                        pattern = Lowered.Unit_pattern;
+                        expression =
+                          Semantic_ir.Apply
+                            ( Semantic_ir.Ident
+                                "Lg_runtime.Runtime_dynamic.register_var",
+                              [ Semantic_ir.String source_name; packed ] );
+                      }
+                  in
+                  (registration :: items, source_name :: registered)))
+      ([], registered) definitions
+
+let surround_item before item after =
+  match (before, after) with
+  | [], [] -> item
+  | _ ->
+      Lowered.Group (List.rev before @ [ item ] @ List.rev after)
+
 let compile_forms_incremental (state : Compiler_state.t) forms =
   let report_timings = Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" in
+  let runtime_var_reflection = ref state.runtime_var_reflection in
+  let runtime_definitions = ref state.runtime_definitions in
+  let runtime_var_requests = ref state.runtime_var_requests in
+  let runtime_vars = ref state.runtime_vars in
   let finish scope env next_type items =
     let items =
       items
       |> List.sort (fun (left, _) (right, _) -> Int.compare left right)
       |> List.map snd
     in
-    Ok (scope, env, next_type, items)
+    Ok
+      ( scope,
+        env,
+        next_type,
+        items,
+        !runtime_var_reflection,
+        !runtime_definitions,
+        !runtime_var_requests,
+        !runtime_vars )
   in
   let rec compile_pending scope env next_type items unresolved_names pending =
     let rec loop scope env next_type items unresolved_names deferred first_error
@@ -887,6 +1119,7 @@ let compile_forms_incremental (state : Compiler_state.t) forms =
             | None -> Error.error "declared forms made no compilation progress")
       | (index, form) :: rest -> (
         let started_at = if report_timings then Sys.time () else 0.0 in
+        let previous_env = env in
         let compiled = compile_top_level scope env next_type form in
         let elapsed = if report_timings then Sys.time () -. started_at else 0.0 in
         if report_timings && elapsed >= 0.01 then (
@@ -918,6 +1151,30 @@ let compile_forms_incremental (state : Compiler_state.t) forms =
                 ((index, form) :: deferred) first_error made_progress rest
             else Error error
         | Ok (scope, env, next_type, item) ->
+            runtime_var_requests :=
+              List.rev_append
+                (quoted_qualified_symbols form)
+                !runtime_var_requests;
+            runtime_var_reflection :=
+              !runtime_var_reflection || form_uses_runtime_var_reflection form;
+            let before_registrations, registered =
+              compile_runtime_var_registrations !runtime_definitions
+                !runtime_var_requests !runtime_vars previous_env
+                !runtime_var_reflection
+            in
+            runtime_definitions :=
+              List.rev_append
+                (runtime_definition_names scope form)
+                !runtime_definitions;
+            let after_registrations, registered =
+              compile_runtime_var_registrations !runtime_definitions
+                !runtime_var_requests registered env
+                !runtime_var_reflection
+            in
+            runtime_vars := registered;
+            let item =
+              surround_item before_registrations item after_registrations
+            in
             let unresolved_names =
               remove_resolved_names unresolved_names form
             in
@@ -931,8 +1188,19 @@ let compile_forms_incremental (state : Compiler_state.t) forms =
     compile_pending state.scope state.env state.next_type [] [] indexed_forms
   with
   | Error _ as err -> err
-  | Ok (scope, env, next_type, new_items) ->
-      let new_items = order_deferred_items new_items in
+  | Ok
+      ( scope,
+        env,
+        next_type,
+        new_items,
+        runtime_var_reflection,
+        runtime_definitions,
+        runtime_var_requests,
+        runtime_vars ) ->
+      let new_items =
+        new_items |> order_deferred_items
+        |> resolve_anonymous_record_patterns env
+      in
       let requested =
         collect_dynamic_record_requests new_items
         |> List.filter (fun record ->
@@ -972,6 +1240,10 @@ let compile_forms_incremental (state : Compiler_state.t) forms =
                   items = state.items @ new_items;
                   dynamic_packers;
                   shared_values;
+                  runtime_var_reflection;
+                  runtime_definitions;
+                  runtime_var_requests;
+                  runtime_vars;
                 }
               in
               (next_state, new_items))

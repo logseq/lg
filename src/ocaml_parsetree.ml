@@ -56,7 +56,12 @@ let rec core_type ?(type_variables = []) = function
         (lid (longident_of_string "Lg_runtime.Core_set.String_set.t")) []
   | Types.TBool -> type_constructor "bool" []
   | Types.TUnit -> type_constructor "unit" []
-  | Types.TNil -> type_constructor "option" [ Ast_helper.Typ.any ~loc () ]
+  | Types.TNil ->
+      let payload =
+        if List.mem "a" type_variables then Ast_helper.Typ.var ~loc "a"
+        else Ast_helper.Typ.any ~loc ()
+      in
+      type_constructor "option" [ payload ]
   | Types.TNullable inner ->
       type_constructor "option" [ core_type ~type_variables inner ]
   | Types.TUnknown -> Ast_helper.Typ.var ~loc "a"
@@ -120,6 +125,9 @@ let rec core_type ?(type_variables = []) = function
       type_constructor "Seq.t" [ core_type ~type_variables inner ]
   | Types.TSet inner -> (
       match Types.set_module_name inner with
+      | Ok "Lg_runtime.Runtime_poly_set" ->
+          type_constructor "Lg_runtime.Runtime_poly_set.t"
+            [ core_type ~type_variables inner ]
       | Ok set_module ->
           Ast_helper.Typ.constr ~loc
             (lid (longident_of_string (set_module ^ ".t"))) []
@@ -274,34 +282,6 @@ let nominal_tag_extension constructor_name record_type location =
       [ constructor ]
   in
   Ast_helper.Str.type_extension ~loc:declaration_loc extension
-
-let dynamic_packer_key_definition type_id location =
-  let declaration_loc = declaration_location location in
-  let key_name =
-    "__lg_dynamic_packer_key_"
-    ^ Names.sanitize_name (Type_id.name type_id)
-  in
-  let create_key =
-    Ast_helper.Exp.apply ~loc:declaration_loc
-      (Ast_helper.Exp.ident ~loc:declaration_loc
-         (Location.mkloc
-            (longident_of_string
-               "Lg_runtime.Runtime_dynamic.new_record_packer_key")
-            declaration_loc))
-      [
-        ( Nolabel,
-          Ast_helper.Exp.construct ~loc:declaration_loc
-            (Location.mkloc (Longident.Lident "()") declaration_loc)
-            None );
-      ]
-  in
-  Ast_helper.Str.value ~loc:declaration_loc Nonrecursive
-    [
-      Ast_helper.Vb.mk ~loc:declaration_loc
-        (Ast_helper.Pat.var ~loc:declaration_loc
-           (named_loc key_name declaration_loc))
-        create_key;
-    ]
 
 let type_alias_definition type_name parameters manifest location =
   let declaration_loc = declaration_location location in
@@ -628,22 +608,22 @@ let node_id_attribute node_id =
   in
   Ast_helper.Attr.mk (str "lg.node_id") payload
 
-let record_definition ~emit_set ~emit_nullable_set var_name identity type_name
-    set_module_name fields values dynamic_packer =
-  let type_item = record_type_definition type_name [] fields None in
-  let dynamic_packer_key =
-    dynamic_packer_key_definition (Types.type_id_of_name type_name) None
+let record_definition ~emit_set ~emit_nullable_set var_name identity type_id
+    type_name type_parameters set_module_name fields values _dynamic_packer =
+  let type_item =
+    record_type_definition type_name type_parameters fields None
   in
   let record_type =
-    Types.named_record ~type_name ~set_module_name fields
+    Types.named_record ~type_id ~type_name ~type_parameters ~set_module_name fields
   in
   let type_items =
-    [ type_item ] @ if dynamic_packer then [ dynamic_packer_key ] else []
+    [ type_item ]
     @
-    (if emit_set then [ set_module_definition set_module_name record_type ]
+    (if emit_set && type_parameters = [] then
+       [ set_module_definition set_module_name record_type ]
      else [])
     @
-    if emit_nullable_set then
+    if emit_nullable_set && type_parameters = [] then
       [
         set_module_definition (set_module_name ^ "_nullable")
           (Types.TNullable record_type);
@@ -655,7 +635,9 @@ let record_definition ~emit_set ~emit_nullable_set var_name identity type_name
   | Ok record_fields ->
       let record_expr = Ast_helper.Exp.record ~loc record_fields None in
       let annotated_expr =
-        Ast_helper.Exp.constraint_ ~loc record_expr (type_constructor type_name [])
+        Ast_helper.Exp.constraint_ ~loc record_expr
+          (type_constructor type_name
+             (List.map (fun _ -> Ast_helper.Typ.any ~loc ()) type_parameters))
       in
       let value_binding =
         let pattern = Ast_helper.Pat.var ~loc (str var_name) in
@@ -676,21 +658,22 @@ let record_definition ~emit_set ~emit_nullable_set var_name identity type_name
       Ok (type_items @ [ Ast_helper.Str.value ~loc Nonrecursive [ value_binding ] ])
 
 let projected_record_definition ~emit_set ~emit_nullable_set var_name identity
-    type_name set_module_name fields source dynamic_packer =
-  let type_item = record_type_definition type_name [] fields None in
-  let dynamic_packer_key =
-    dynamic_packer_key_definition (Types.type_id_of_name type_name) None
+    type_id type_name type_parameters set_module_name fields source
+    _dynamic_packer =
+  let type_item =
+    record_type_definition type_name type_parameters fields None
   in
   let record_type =
-    Types.named_record ~type_name ~set_module_name fields
+    Types.named_record ~type_id ~type_name ~type_parameters ~set_module_name fields
   in
   let type_items =
-    [ type_item ] @ if dynamic_packer then [ dynamic_packer_key ] else []
+    [ type_item ]
     @
-    (if emit_set then [ set_module_definition set_module_name record_type ]
+    (if emit_set && type_parameters = [] then
+       [ set_module_definition set_module_name record_type ]
      else [])
     @
-    if emit_nullable_set then
+    if emit_nullable_set && type_parameters = [] then
       [
         set_module_definition (set_module_name ^ "_nullable")
           (Types.TNullable record_type);
@@ -720,7 +703,9 @@ let projected_record_definition ~emit_set ~emit_nullable_set var_name identity
               source_expr ]
           record_expr
         |> fun expression ->
-        Ast_helper.Exp.constraint_ ~loc expression (type_constructor type_name [])
+        Ast_helper.Exp.constraint_ ~loc expression
+          (type_constructor type_name
+             (List.map (fun _ -> Ast_helper.Typ.any ~loc ()) type_parameters))
       in
       let pattern = Ast_helper.Pat.var ~loc (str var_name) in
       let pattern =
@@ -899,12 +884,12 @@ let rec structure_of_item_with_sets requested_sets module_path = function
   | Comment _ -> Ok []
   | Type_def
       {
-        type_id;
+        type_id = _;
         type_name;
         type_parameters;
         fields;
         nominal;
-        dynamic_packer;
+        dynamic_packer = _;
         location;
       } ->
       let record_type =
@@ -938,16 +923,6 @@ let rec structure_of_item_with_sets requested_sets module_path = function
             set_module_definition (set_module_name ^ "_nullable")
               (Types.TNullable record_type);
           ]
-        else []
-      in
-      let definitions =
-        definitions
-        @
-        if
-          dynamic_packer || nominal
-          || not (Types.supports_structural_dynamic_packing record_type)
-        then
-          [ dynamic_packer_key_definition type_id location ]
         else []
       in
       if nominal || not (Types.supports_structural_dynamic_packing record_type)
@@ -1085,7 +1060,9 @@ let rec structure_of_item_with_sets requested_sets module_path = function
       {
         var_name;
         identity;
+        type_id;
         type_name;
+        type_parameters;
         set_module_name;
         fields;
         values;
@@ -1097,12 +1074,15 @@ let rec structure_of_item_with_sets requested_sets module_path = function
         ~emit_nullable_set:
           (set_module_requested requested_sets module_path
              (set_module_name ^ "_nullable"))
-        var_name identity type_name set_module_name fields values dynamic_packer
+        var_name identity type_id type_name type_parameters set_module_name fields
+        values dynamic_packer
   | Projected_record_def
       {
         var_name;
         identity;
+        type_id;
         type_name;
+        type_parameters;
         set_module_name;
         fields;
         source;
@@ -1114,7 +1094,8 @@ let rec structure_of_item_with_sets requested_sets module_path = function
         ~emit_nullable_set:
           (set_module_requested requested_sets module_path
              (set_module_name ^ "_nullable"))
-        var_name identity type_name set_module_name fields source dynamic_packer
+        var_name identity type_id type_name type_parameters set_module_name fields
+        source dynamic_packer
 
 and structure_of_items_with_sets requested_sets module_path items =
   let rec loop acc = function
@@ -1235,10 +1216,50 @@ let print_implementation structure =
   Format.fprintf formatter "%a@." Pprintast.structure structure;
   Format.pp_print_flush formatter ();
   let source = Buffer.contents buffer in
-  let prefix = "Lg_runtime.Lg_" in
-  let prefix_length = String.length prefix in
+  let declaration name target =
+    "open struct module " ^ name ^ " = " ^ target ^ " end\n"
+  in
+  let aliases =
+    [
+      (let name = "D" in
+       ("Lg_runtime.Lg_dyn", name, declaration name "Lg_runtime.Lg_dyn"));
+      (let name = "S" in
+       ("Lg_runtime.Lg_seq", name, declaration name "Lg_runtime.Lg_seq"));
+      (let name = "M" in
+       ("Lg_runtime.Lg_map", name, declaration name "Lg_runtime.Lg_map"));
+      (let name = "E" in
+       ("Lg_runtime.Lg_exn", name, declaration name "Lg_runtime.Lg_exn"));
+      (let name = "T" in
+       ("Lg_runtime.Lg_set", name, declaration name "Lg_runtime.Lg_set"));
+      (let name = "V" in
+       ("Rrbvec", name, declaration name "Rrbvec"));
+      (let name = "B" in
+       ("Stdlib", name, declaration name "Stdlib"));
+    ]
+  in
+  let identifier_char = function
+    | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' | '\'' -> true
+    | _ -> false
+  in
   let source_length = String.length source in
   let compact = Buffer.create source_length in
+  let used_aliases = Hashtbl.create (List.length aliases) in
+  let matching_alias index =
+    if
+      index > 0
+      && (identifier_char source.[index - 1] || source.[index - 1] = '.')
+    then None
+    else
+      List.find_opt
+        (fun (name, _, _) ->
+          let length = String.length name in
+          index + length <= source_length
+          && String.sub source index length = name
+          &&
+          let next = index + length in
+          next = source_length || not (identifier_char source.[next]))
+        aliases
+  in
   let rec rewrite index in_string escaped =
     if index >= source_length then Buffer.contents compact
     else
@@ -1251,19 +1272,21 @@ let print_implementation structure =
       else if current = '"' then (
         Buffer.add_char compact current;
         rewrite (index + 1) true false)
-      else if
-        index + prefix_length <= source_length
-        && String.sub source index prefix_length = prefix
-      then (
-        Buffer.add_string compact "Lg_";
-        rewrite (index + prefix_length) false false)
-      else (
-        Buffer.add_char compact current;
-        rewrite (index + 1) false false)
+      else
+        match matching_alias index with
+        | Some (name, alias, declaration) ->
+            Hashtbl.replace used_aliases alias declaration;
+            Buffer.add_string compact alias;
+            rewrite (index + String.length name) false false
+        | None ->
+            Buffer.add_char compact current;
+            rewrite (index + 1) false false
   in
-  let source =
-    if String.contains source 'L' then
-      "open Lg_runtime\n" ^ rewrite 0 false false
-    else source
+  let compact_source = rewrite 0 false false in
+  let alias_declarations =
+    aliases
+    |> List.filter_map (fun (_, alias, declaration) ->
+           if Hashtbl.mem used_aliases alias then Some declaration else None)
+    |> String.concat ""
   in
-  source
+  alias_declarations ^ compact_source

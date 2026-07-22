@@ -1,6 +1,6 @@
 (test
  (name runtime_tests)
- (libraries alcotest lg-test.runtime))
+ (libraries alcotest lg.edn-backend.native lg-test.runtime))
 
 (rule
  (target compatibility_native.ml)
@@ -27,7 +27,7 @@
 (executable
  (name compatibility_native)
  (modules compatibility_native)
- (libraries lg.runtime lg-test.runtime lg-test.alcotest))
+ (libraries lg.runtime lg.edn-backend.native lg-test.runtime lg-test.alcotest))
 
 (rule
  (target compatibility_melange.ml)
@@ -57,7 +57,12 @@
  (modules compatibility_melange)
  (preprocess
   (pps melange.ppx))
- (libraries lg.runtime lg-test.runtime lg-test.melange))
+ (libraries
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg-test.runtime
+  lg-test.melange))
 
 (rule
  (alias runtest)

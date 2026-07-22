@@ -201,6 +201,26 @@ let rec variables ty =
   | TBool | TUnit | TNil | TUnknown | TOcaml _ ->
       []
 
+let rec is_open = function
+  | TUnknown | TVar _ -> true
+  | TNullable inner | TArray inner | TRef inner | TList inner | TVector inner
+  | TSet inner | TSeq inner ->
+      is_open inner
+  | TOcaml_app (_, arguments) | TTuple arguments -> List.exists is_open arguments
+  | TFn (parameters, return_ty) -> List.exists is_open (return_ty :: parameters)
+  | TOverloaded_fn arities ->
+      List.exists
+        (fun arity ->
+          List.exists is_open
+            (arity.return_ty :: arity.fixed_params
+            @ Option.to_list arity.rest_param))
+        arities
+  | TRecord fields -> List.exists (fun (field : field) -> is_open field.ty) fields
+  | TNamed_record { type_arguments; _ } -> List.exists is_open type_arguments
+  | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
+  | TBool | TUnit | TNil | TOcaml _ ->
+      false
+
 let force substitutions name ty =
   let replacement = [ (name, ty) ] in
   (name, ty)

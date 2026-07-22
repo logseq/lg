@@ -1,4 +1,4 @@
 (library
  (name lg)
  (public_name lg)
- (libraries lg.runtime rrbvec compiler-libs.common lg_compiler_support unix))
+ (libraries compiler-libs.common lg_compiler_support unix))

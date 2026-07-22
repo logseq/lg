@@ -3,7 +3,10 @@
     [clojure.edn :as edn]
     [clojure.test :as t :refer [is are deftest testing]]
     [clojure.string :as str]
-    [cognitect.transit :as transit]
+    [ocaml.Lg_runtime.Runtime_edn :as runtime-edn]
+    [ocaml.Transit_core.Json :as transit-json]
+    [ocaml.melange-edn-native/Melange_edn_native :as target-edn]
+    [ocaml.melange-transit-native/Transit_native.Transit.Json :as transit]
     [datascript.core :as d]
     [datascript.impl.entity :as de]
     [datascript.db :as db :refer [defrecord-updatable]]
@@ -71,29 +74,28 @@
    :cljs
    (def no-namespace-maps {:before #(set! *print-namespace-maps* false)}))
 
+(defn transit-mode [type]
+  (case type
+    :json (transit-json/Normal)
+    :json-verbose (transit-json/Verbose)))
+
 (defn transit-write [o type]
-  #?(:clj
-     (with-open [os (java.io.ByteArrayOutputStream.)]
-       (let [writer (transit/writer os type)]
-         (transit/write writer o)
-         (.toByteArray os)))
-     :cljs
-     (transit/write (transit/writer type) o)))
+  (transit/to-string
+    (transit/of-edn
+      (target-edn/of-edn-string (runtime-edn/write-string o)))
+    :mode (transit-mode type)))
 
 (defn transit-write-str [o]
   #?(:clj (String. ^bytes (transit-write o :json) "UTF-8")
      :cljs (transit-write o :json)))
 
-(defn transit-read [s type]
-  #?(:clj
-     (with-open [is (java.io.ByteArrayInputStream. s)]
-       (transit/read (transit/reader is type)))
-     :cljs
-     (transit/read (transit/reader type) s)))
+(defn transit-read [s _type]
+  (runtime-edn/read-string
+    (target-edn/to-edn-string
+      (transit/to-edn (transit/of-string s)))))
 
 (defn transit-read-str [s]
-  #?(:clj  (transit-read (.getBytes ^String s "UTF-8") :json)
-     :cljs (transit-read s :json)))
+  (transit-read s :json))
 
 ;; Core tests
 

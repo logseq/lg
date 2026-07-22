@@ -2,24 +2,37 @@
  (name compiler_test_runner)
  (modules compiler_test_runner)
  (modes byte)
- (libraries dynlink lg unix re rrbvec))
+ (libraries dynlink lg lg.runtime lg.edn-backend.native unix re rrbvec))
 
 (test
  (name compiler_tests)
+ (modules compiler_tests)
  (deps
   compiler_test_runner.bc
   ../src/lg.cma
   ../runtime/lg_runtime.cma
   ../vendor/rrbvec/rrbvec.cma)
- (libraries lg unix rrbvec))
+ (libraries lg lg.runtime lg.edn-backend.native unix rrbvec))
 
 (test
  (name lgc_target_tests)
+ (modules lgc_target_tests)
  (libraries lg))
 
 (test
  (name runtime_transient_tests)
- (libraries lg.runtime rrbvec))
+ (modules runtime_transient_tests)
+ (libraries lg.runtime lg.edn-backend.native rrbvec))
+
+(test
+ (name runtime_dynamic_tests)
+ (modules runtime_dynamic_tests)
+ (libraries lg.runtime lg.edn-backend.native rrbvec))
+
+(test
+ (name runtime_seq_tests)
+ (modules runtime_seq_tests)
+ (libraries lg.runtime lg.edn-backend.native rrbvec))
 
 (rule
  (target lgc_native.ml)
@@ -1298,7 +1311,7 @@
  (modules datascript_transact_native)
  (flags
   (:standard -w -5-11-26-27-32-37-39-69))
- (libraries lg.runtime re rrbvec unix lg-test.runtime lg-test.alcotest))
+ (libraries lg.runtime lg.edn-backend.native melange-edn-native melange-transit-native yojson re rrbvec unix lg-test.runtime lg-test.alcotest))
 
 (rule
  (target datascript_transact_melange.ml)
@@ -1369,7 +1382,16 @@
  (preprocess
   (pps melange.ppx))
  (compile_flags -w -5-11-26-27-32-37-39-69)
- (libraries lg.runtime rrbvec lg-test.runtime lg-test.melange))
+ (libraries
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
 
 (rule
  (alias datascript-transact)
@@ -1411,7 +1433,6 @@
   datascript/upstream/core.cljc
   ../test_runner/clojure/test.cljc
   ../test_runner/clojure/test_native.cljc
-  datascript/upstream_test_support/cognitect/transit.cljc
   datascript/upstream_test_support/datascript/test/core.cljc
   datascript/upstream_tests/datascript/test/lru.cljc
   datascript/upstream_tests/datascript/test/transact.cljc
@@ -1428,6 +1449,26 @@
   datascript/upstream_tests/datascript/test/issues.cljc
   datascript/upstream_tests/datascript/test/lookup_refs.cljc
   datascript/upstream_tests/datascript/test/parser.cljc
+  datascript/upstream_tests/datascript/test/parser_find.cljc
+  datascript/upstream_tests/datascript/test/parser_query.cljc
+  datascript/upstream_tests/datascript/test/parser_return_map.cljc
+  datascript/upstream_tests/datascript/test/parser_rules.cljc
+  datascript/upstream_tests/datascript/test/parser_where.cljc
+  datascript/upstream_tests/datascript/test/pull_api.cljc
+  datascript/upstream_tests/datascript/test/pull_parser.cljc
+  datascript/upstream_tests/datascript/test/query.cljc
+  datascript/upstream_tests/datascript/test/query_aggregates.cljc
+  datascript/upstream_tests/datascript/test/query_find_specs.cljc
+  datascript/upstream_tests/datascript/test/query_fns.cljc
+  datascript/upstream_tests/datascript/test/query_not.cljc
+  datascript/upstream_tests/datascript/test/query_or.cljc
+  datascript/upstream_tests/datascript/test/query_pull.cljc
+  datascript/upstream_tests/datascript/test/query_return_map.cljc
+  datascript/upstream_tests/datascript/test/query_rules.cljc
+  datascript/upstream_tests/datascript/test/serialize.cljc
+  datascript/upstream_tests/datascript/test/tuples.cljc
+  datascript/upstream_tests/datascript/test/upsert.cljc
+  datascript/upstream_tests/datascript/test/validation.cljc
   ../test_runner/clojure/run.cljc
   (package lg-test)
   ../test_runner/runtime/lg_test_runtime.cma
@@ -1460,7 +1501,6 @@
    %{dep:datascript/upstream/core.cljc}
    %{dep:../test_runner/clojure/test.cljc}
    %{dep:../test_runner/clojure/test_native.cljc}
-   %{dep:datascript/upstream_test_support/cognitect/transit.cljc}
    %{dep:datascript/upstream_test_support/datascript/test/core.cljc}
    %{dep:datascript/upstream_tests/datascript/test/lru.cljc}
    %{dep:datascript/upstream_tests/datascript/test/transact.cljc}
@@ -1477,12 +1517,34 @@
    %{dep:datascript/upstream_tests/datascript/test/issues.cljc}
    %{dep:datascript/upstream_tests/datascript/test/lookup_refs.cljc}
    %{dep:datascript/upstream_tests/datascript/test/parser.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/parser_find.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/parser_query.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/parser_return_map.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/parser_rules.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/parser_where.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/pull_api.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/pull_parser.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/query.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/query_aggregates.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/query_find_specs.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/query_fns.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/query_not.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/query_or.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/query_pull.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/query_return_map.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/query_rules.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/serialize.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/tuples.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/upsert.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/validation.cljc}
    %{dep:../test_runner/clojure/run.cljc}
    -o
    %{target})))
 
-(executable
- (name datascript_conn_native)
+(library
+ (name datascript_conn_native_suite)
+ (wrapped false)
+ (modes byte native)
  (modules
   datascript_conn_native_base
   datascript_conn_native_test_lru
@@ -1500,10 +1562,52 @@
   datascript_conn_native_test_issues
   datascript_conn_native_test_lookup_refs
   datascript_conn_native_test_parser
-  datascript_conn_native)
+  datascript_conn_native_test_parser_find
+  datascript_conn_native_test_parser_query
+  datascript_conn_native_test_parser_return_map
+  datascript_conn_native_test_parser_rules
+  datascript_conn_native_test_parser_where
+  datascript_conn_native_test_pull_api
+  datascript_conn_native_test_pull_parser
+  datascript_conn_native_test_query
+  datascript_conn_native_test_query_aggregates
+  datascript_conn_native_test_query_find_specs
+  datascript_conn_native_test_query_fns
+  datascript_conn_native_test_query_not
+  datascript_conn_native_test_query_or
+  datascript_conn_native_test_query_pull
+  datascript_conn_native_test_query_return_map
+  datascript_conn_native_test_query_rules
+  datascript_conn_native_test_serialize
+  datascript_conn_native_test_tuples
+  datascript_conn_native_test_upsert
+  datascript_conn_native_test_validation)
  (flags
-  (:standard -w -5-11-26-27-32-37-39-69))
- (libraries lg.runtime re rrbvec unix lg-test.runtime lg-test.alcotest))
+ (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries lg.runtime lg.edn-backend.native melange-edn-native melange-transit-native yojson re rrbvec unix lg-test.runtime lg-test.alcotest))
+
+(executable
+ (name datascript_conn_native)
+ (modes byte)
+ (modules datascript_conn_native)
+ (libraries datascript_conn_native_suite))
+
+(rule
+ (target datascript_conn_native_perf.ml)
+ (deps datascript_conn_native.ml)
+ (action (copy %{deps} %{target})))
+
+(executable
+ (name datascript_conn_native_perf)
+ (modes native)
+ (modules datascript_conn_native_perf)
+ (libraries datascript_conn_native_suite))
+
+(executable
+ (name datascript_conn_native_tx_bench)
+ (modes native)
+ (modules datascript_conn_native_tx_bench)
+ (libraries datascript_conn_native_suite unix))
 
 (rule
  (target datascript_conn_melange.ml)
@@ -1529,7 +1633,6 @@
   datascript/upstream/core.cljc
   ../test_runner/clojure/test.cljc
   ../test_runner/clojure/test_melange.cljc
-  datascript/upstream_test_support/cognitect/transit.cljc
   datascript/upstream_test_support/datascript/test/cljs.cljc
   datascript/upstream_test_support/datascript/test/core.cljc
   datascript/upstream_tests/datascript/test/lru.cljc
@@ -1547,6 +1650,26 @@
   datascript/upstream_tests/datascript/test/issues.cljc
   datascript/upstream_tests/datascript/test/lookup_refs.cljc
   datascript/upstream_tests/datascript/test/parser.cljc
+  datascript/upstream_tests/datascript/test/parser_find.cljc
+  datascript/upstream_tests/datascript/test/parser_query.cljc
+  datascript/upstream_tests/datascript/test/parser_return_map.cljc
+  datascript/upstream_tests/datascript/test/parser_rules.cljc
+  datascript/upstream_tests/datascript/test/parser_where.cljc
+  datascript/upstream_tests/datascript/test/pull_api.cljc
+  datascript/upstream_tests/datascript/test/pull_parser.cljc
+  datascript/upstream_tests/datascript/test/query.cljc
+  datascript/upstream_tests/datascript/test/query_aggregates.cljc
+  datascript/upstream_tests/datascript/test/query_find_specs.cljc
+  datascript/upstream_tests/datascript/test/query_fns.cljc
+  datascript/upstream_tests/datascript/test/query_not.cljc
+  datascript/upstream_tests/datascript/test/query_or.cljc
+  datascript/upstream_tests/datascript/test/query_pull.cljc
+  datascript/upstream_tests/datascript/test/query_return_map.cljc
+  datascript/upstream_tests/datascript/test/query_rules.cljc
+  datascript/upstream_tests/datascript/test/serialize.cljc
+  datascript/upstream_tests/datascript/test/tuples.cljc
+  datascript/upstream_tests/datascript/test/upsert.cljc
+  datascript/upstream_tests/datascript/test/validation.cljc
   ../test_runner/clojure/run.cljc
   (package lg-test)
   ../test_runner/runtime/lg_test_runtime.cma
@@ -1577,7 +1700,6 @@
    %{dep:datascript/upstream/core.cljc}
    %{dep:../test_runner/clojure/test.cljc}
    %{dep:../test_runner/clojure/test_melange.cljc}
-   %{dep:datascript/upstream_test_support/cognitect/transit.cljc}
    %{dep:datascript/upstream_test_support/datascript/test/cljs.cljc}
    %{dep:datascript/upstream_test_support/datascript/test/core.cljc}
    %{dep:datascript/upstream_tests/datascript/test/lru.cljc}
@@ -1595,6 +1717,26 @@
    %{dep:datascript/upstream_tests/datascript/test/issues.cljc}
    %{dep:datascript/upstream_tests/datascript/test/lookup_refs.cljc}
    %{dep:datascript/upstream_tests/datascript/test/parser.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/parser_find.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/parser_query.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/parser_return_map.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/parser_rules.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/parser_where.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/pull_api.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/pull_parser.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/query.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/query_aggregates.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/query_find_specs.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/query_fns.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/query_not.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/query_or.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/query_pull.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/query_return_map.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/query_rules.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/serialize.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/tuples.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/upsert.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/validation.cljc}
    %{dep:../test_runner/clojure/run.cljc}
    -o
    %{target})))
@@ -1620,22 +1762,64 @@
   datascript_conn_melange_test_issues
   datascript_conn_melange_test_lookup_refs
   datascript_conn_melange_test_parser
+  datascript_conn_melange_test_parser_find
+  datascript_conn_melange_test_parser_query
+  datascript_conn_melange_test_parser_return_map
+  datascript_conn_melange_test_parser_rules
+  datascript_conn_melange_test_parser_where
+  datascript_conn_melange_test_pull_api
+  datascript_conn_melange_test_pull_parser
+  datascript_conn_melange_test_query
+  datascript_conn_melange_test_query_aggregates
+  datascript_conn_melange_test_query_find_specs
+  datascript_conn_melange_test_query_fns
+  datascript_conn_melange_test_query_not
+  datascript_conn_melange_test_query_or
+  datascript_conn_melange_test_query_pull
+  datascript_conn_melange_test_query_return_map
+  datascript_conn_melange_test_query_rules
+  datascript_conn_melange_test_serialize
+  datascript_conn_melange_test_tuples
+  datascript_conn_melange_test_upsert
+  datascript_conn_melange_test_validation
   datascript_conn_melange)
  (preprocess
   (pps melange.ppx))
- (compile_flags -w -5-11-26-27-32-37-39-69)
- (libraries lg.runtime rrbvec lg-test.runtime lg-test.melange))
+ (compile_flags -color never -w -5-11-26-27-32-37-39-69)
+ (libraries
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
 
 (rule
  (alias datascript-conn)
  (deps
-  datascript_conn_native.exe
+  datascript_conn_native.bc
   (alias datascript-conn-melange)
   datascript-conn-melange/test/datascript_conn_melange.js)
  (action
   (progn
-   (run %{exe:datascript_conn_native.exe})
-   (run node %{dep:datascript-conn-melange/test/datascript_conn_melange.js}))))
+   (run %{exe:datascript_conn_native.bc} --quick-tests)
+   (run
+    node
+    %{dep:datascript-conn-melange/test/datascript_conn_melange.js}
+    --quick-tests))))
+
+(rule
+ (alias datascript-conn-perf)
+ (deps datascript_conn_native_perf.exe)
+ (action
+  (run
+   %{exe:datascript_conn_native_perf.exe}
+   test
+   datascript.test.query-rules
+   2)))
 
 (alias
  (name datascript-upstream)
@@ -1711,7 +1895,7 @@
  (modules datascript_listen_native)
  (flags
   (:standard -w -5-11-26-27-32-37-39-69))
- (libraries lg.runtime re rrbvec unix lg-test.runtime lg-test.alcotest))
+ (libraries lg.runtime melange-edn-native melange-transit-native yojson re rrbvec unix lg-test.runtime lg-test.alcotest))
 
 (rule
  (target datascript_listen_melange.ml)
@@ -1782,7 +1966,7 @@
  (preprocess
   (pps melange.ppx))
  (compile_flags -w -5-11-26-27-32-37-39-69)
- (libraries lg.runtime rrbvec lg-test.runtime lg-test.melange))
+ (libraries lg.runtime lg.runtime-melange-aliases rrbvec lg-test.runtime lg-test.melange))
 
 (rule
  (alias datascript-listen)
@@ -1866,7 +2050,7 @@
  (modules datascript_filter_native)
  (flags
   (:standard -w -5-11-26-27-32-37-39-69))
- (libraries lg.runtime re rrbvec unix lg-test.runtime lg-test.alcotest))
+ (libraries lg.runtime melange-edn-native melange-transit-native yojson re rrbvec unix lg-test.runtime lg-test.alcotest))
 
 (rule
  (target datascript_filter_melange.ml)
@@ -1937,7 +2121,7 @@
  (preprocess
   (pps melange.ppx))
  (compile_flags -w -5-11-26-27-32-37-39-69)
- (libraries lg.runtime rrbvec lg-test.runtime lg-test.melange))
+ (libraries lg.runtime lg.runtime-melange-aliases rrbvec lg-test.runtime lg-test.melange))
 
 (rule
  (alias datascript-filter)

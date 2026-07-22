@@ -24,7 +24,7 @@ let partition value =
     let name =
       match value.Runtime_dynamic.payload with
       | Runtime_dynamic.Set _ -> ":set"
-      | Runtime_dynamic.List | Runtime_dynamic.Vector | Runtime_dynamic.Seq ->
+      | Runtime_dynamic.List | Runtime_dynamic.Vector _ | Runtime_dynamic.Seq ->
           ":sequential"
       | Runtime_dynamic.Map _ -> ":map"
       | _ -> ":atom"
@@ -70,7 +70,9 @@ let rec diff left right =
 
 and diff_maps left right =
   match (left.Runtime_dynamic.payload, right.Runtime_dynamic.payload) with
-  | Runtime_dynamic.Map left_entries, Runtime_dynamic.Map right_entries ->
+  | Runtime_dynamic.Map left_map, Runtime_dynamic.Map right_map ->
+      let left_entries = Runtime_dynamic.map_entries left_map in
+      let right_entries = Runtime_dynamic.map_entries right_map in
       let keys =
         List.fold_left
           (fun keys (key, _) -> add_unique keys key)
@@ -131,9 +133,9 @@ and diff_sequential left right =
 and vectorize value =
   match value.Runtime_dynamic.payload with
   | Runtime_dynamic.Nil -> nil
-  | Runtime_dynamic.Map entries ->
+  | Runtime_dynamic.Map map ->
       let indexed =
-        entries
+        Runtime_dynamic.map_entries map
         |> List.map (fun (key, value) ->
                match key.Runtime_dynamic.payload with
                | Runtime_dynamic.Int index -> (Int64.to_int index, value)
@@ -149,7 +151,9 @@ and vectorize value =
 
 and diff_sets left right =
   match (left.Runtime_dynamic.payload, right.Runtime_dynamic.payload) with
-  | Runtime_dynamic.Set left_values, Runtime_dynamic.Set right_values ->
+  | Runtime_dynamic.Set left_set, Runtime_dynamic.Set right_set ->
+      let left_values = left_set.values in
+      let right_values = right_set.values in
       let difference values other =
         List.filter
           (fun value ->

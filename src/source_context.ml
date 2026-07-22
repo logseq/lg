@@ -39,7 +39,21 @@ end)
 let locations : Location.t Form_table.t Domain.DLS.key =
   Domain.DLS.new_key (fun () -> Form_table.create 0)
 
+let source_unit : string option Domain.DLS.key =
+  Domain.DLS.new_key (fun () -> None)
+
 let find form = Form_table.find_opt (Domain.DLS.get locations) form
+
+let anonymous_record_owner owner =
+  match Domain.DLS.get source_unit with
+  | None -> owner
+  | Some source_unit when owner = "" -> source_unit
+  | Some source_unit -> source_unit ^ "." ^ owner
+
+let with_source_unit unit_id f =
+  let previous = Domain.DLS.get source_unit in
+  Domain.DLS.set source_unit (Some unit_id);
+  Fun.protect ~finally:(fun () -> Domain.DLS.set source_unit previous) f
 
 let with_locations entries f =
   let previous = Domain.DLS.get locations in

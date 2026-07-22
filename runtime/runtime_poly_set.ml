@@ -5,13 +5,15 @@ let empty = []
 let rec mem value = function
   | [] -> false
   | current :: rest ->
-      Stdlib.compare value current = 0 || mem value rest
+      Runtime_dynamic.polymorphic_equal value current || mem value rest
 
 let add value set =
   if mem value set then set else value :: set
 
 let remove value set =
-  List.filter (fun current -> Stdlib.compare value current <> 0) set
+  List.filter
+    (fun current -> not (Runtime_dynamic.polymorphic_equal value current))
+    set
 
 let of_list values = List.fold_left (fun set value -> add value set) empty values
 

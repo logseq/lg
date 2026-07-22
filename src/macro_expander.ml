@@ -685,7 +685,8 @@ and invoke_function_definition context (definition : Macro_definition.t)
 
 and expand_are parameters expression arguments =
   let rec substitute bindings = function
-    | FSymbol name as form -> Option.value (List.assoc_opt name bindings) ~default:form
+    | FSymbol name as form ->
+        Option.value (List.assoc_opt name bindings) ~default:form
     | FList forms -> FList (List.map (substitute bindings) forms)
     | FVector forms -> FVector (List.map (substitute bindings) forms)
     | FMap entries ->
@@ -708,7 +709,58 @@ and expand_are parameters expression arguments =
       Ok (Form (FList [ FList [ FSymbol "clojure.test/is"; expression ] ]))
   | [] -> Error.error "The number of args doesn't match are's argv."
   | parameters ->
-      let rec assertions accumulated = function
+      let rec usage name quoted = function
+        | FList [ FSymbol "quote"; FSymbol candidate ]
+          when String.equal name candidate ->
+            (true, false)
+        | FList [ FSymbol "quote"; _ ] -> (false, false)
+        | FSymbol candidate when String.equal name candidate ->
+            if quoted then (true, false) else (false, true)
+        | FList forms | FVector forms ->
+            List.fold_left
+              (fun (quoted_use, unquoted_use) form ->
+                let quoted_form, unquoted_form = usage name quoted form in
+                (quoted_use || quoted_form, unquoted_use || unquoted_form))
+              (false, false) forms
+        | FMap entries ->
+            List.fold_left
+              (fun (quoted_use, unquoted_use) (key, value) ->
+                let quoted_key, unquoted_key = usage name quoted key in
+                let quoted_value, unquoted_value = usage name quoted value in
+                ( quoted_use || quoted_key || quoted_value,
+                  unquoted_use || unquoted_key || unquoted_value ))
+              (false, false) entries
+        | _ -> (false, false)
+      in
+      let usages =
+        List.map (fun name -> (name, usage name false expression)) parameters
+      in
+      let mixed_quote_usage =
+        List.exists
+          (fun (_, (quoted_use, unquoted_use)) -> quoted_use && unquoted_use)
+          usages
+      in
+      let quoted_only name =
+        match List.assoc_opt name usages with
+        | Some (true, false) -> true
+        | Some _ | None -> false
+      in
+      let rec rewrite_quoted_parameters = function
+        | FList [ FSymbol "quote"; FSymbol name ] when quoted_only name ->
+            FSymbol name
+        | FList [ FSymbol "quote"; _ ] as form -> form
+        | FList forms -> FList (List.map rewrite_quoted_parameters forms)
+        | FVector forms -> FVector (List.map rewrite_quoted_parameters forms)
+        | FMap entries ->
+            FMap
+              (List.map
+                 (fun (key, value) ->
+                   ( rewrite_quoted_parameters key,
+                     rewrite_quoted_parameters value ))
+                 entries)
+        | form -> form
+      in
+      let rec expanded_assertions accumulated = function
         | [] -> Ok (Form (FList (List.rev accumulated)))
         | arguments ->
             Result.bind (take (List.length parameters) [] arguments)
@@ -721,9 +773,73 @@ and expand_are parameters expression arguments =
                       substitute bindings expression;
                     ]
                 in
-                assertions (assertion :: accumulated) rest)
+                expanded_assertions (assertion :: accumulated) rest)
       in
-      assertions [] arguments
+      if mixed_quote_usage then expanded_assertions [] arguments
+      else
+        let rec calls accumulated = function
+          | [] -> Ok (List.rev accumulated)
+          | arguments ->
+              Result.bind (take (List.length parameters) [] arguments)
+                (fun (values, rest) ->
+                  let arguments =
+                    List.map2
+                      (fun parameter value ->
+                        let value =
+                          if quoted_only parameter then
+                            FList [ FSymbol "quote"; value ]
+                          else value
+                        in
+                        FList [ FSymbol "__lg_dynamic"; value ])
+                      parameters values
+                  in
+                  calls
+                    (FList (FSymbol "__lg_are_check" :: arguments)
+                    :: accumulated)
+                    rest)
+        in
+        Result.map
+          (fun calls ->
+            let parameter_forms =
+              List.map (fun name -> FSymbol name) parameters
+            in
+            let checker_parameter_forms =
+              List.map
+                (fun name ->
+                  FList
+                    [
+                      FSymbol "__type-hint";
+                      FSymbol "^Object";
+                      FSymbol name;
+                    ])
+                parameters
+            in
+            let assertion =
+              FList
+                [
+                  FSymbol "clojure.test/is";
+                  rewrite_quoted_parameters expression;
+                  FList
+                    [
+                      FSymbol "str";
+                      FString "are arguments: ";
+                      FList [ FSymbol "pr-str"; FVector parameter_forms ];
+                    ];
+                ]
+            in
+            let checker =
+              FList
+                [ FSymbol "fn"; FVector checker_parameter_forms; assertion ]
+            in
+            Form
+              (FList
+                 [
+                   FList
+                     (FSymbol "let"
+                     :: FVector [ FSymbol "__lg_are_check"; checker ]
+                     :: calls);
+                 ]))
+          (calls [] arguments)
 
 and eval_builtin context name arg_forms =
   let eval_args () = eval_forms context arg_forms in

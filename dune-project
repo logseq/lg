@@ -18,6 +18,11 @@
   (melange (>= 6.0))
   (js_of_ocaml (>= 6.0))
   re
+  melange-edn-core
+  melange-edn-native
+  melange-edn-melange
+  melange-transit-native
+  melange-transit-melange
   yojson))
 
 (package

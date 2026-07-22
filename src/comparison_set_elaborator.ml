@@ -198,57 +198,52 @@ let create ~compile_expr ~pack_dynamic_value ~capability_value =
           Ok
             (typed_ir (TSet TUnknown)
                (Semantic_ir.Ident "Lg_runtime.Runtime_poly_set.empty"))
-      | first :: rest -> (
-          match compile_expr scope env first with
+      | _ :: _ -> (
+          match compile_args_for scope env arg_forms with
           | Error _ as err -> err
-          | Ok first_expr ->
-              let rec loop values = function
-              | [] when Types.is_dynamic first_expr.ty ->
-                  let dynamic = Types.dynamic_constraint TUnknown in
-                  let rec pack packed = function
-                    | [] -> Ok (List.rev packed)
-                    | value :: values ->
-                        Result.bind (pack_dynamic_value env dynamic value)
-                          (fun value -> pack (value :: packed) values)
-                  in
-                  Result.map
-                    (fun values ->
-                      typed_ir dynamic
-                        (Semantic_ir.Apply
-                           ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.set",
-                             [
-                               Semantic_ir.Apply
-                                 ( Semantic_ir.Ident
-                                     "Lg_runtime.Runtime_seq.of_list",
-                                   [ Semantic_ir.List values ] );
-                             ] )))
-                    (pack [] (List.rev values))
-                | [] ->
-                  Result.bind (Types.set_module_name first_expr.ty)
-                    (fun set_module ->
-                           let rec coerce_values acc = function
-                             | [] -> Ok (List.rev acc)
-                             | value :: rest ->
-                                 Result.bind (coerce_set_element first_expr.ty value)
-                                   (fun value -> coerce_values (value :: acc) rest)
-                           in
-                           coerce_values [] (List.rev values)
-                           |> Result.map (fun values ->
-                                  typed_ir (TSet first_expr.ty)
-                                    (Semantic_ir.Apply
-                                       ( Semantic_ir.Ident (set_module ^ ".of_list"),
-                                         [ Semantic_ir.List values ] ))))
-                | form :: rest -> (
-                    match compile_expr scope env form with
-                    | Error _ as err -> err
-                    | Ok expr ->
-                        if Types.same_shape first_expr.ty expr.ty then
-                          loop (expr :: values) rest
-                      else
-                        Error.error
-                          "hash-set elements must all have the same type")
+          | Ok [] -> Error.error "hash-set expects elements"
+          | Ok (first_expr :: _ as exprs) ->
+              let homogeneous =
+                List.for_all
+                  (fun expr -> Types.same_shape first_expr.ty expr.ty)
+                  exprs
               in
-              loop [ first_expr ] rest)
+              if (not homogeneous) || Types.is_dynamic first_expr.ty then
+                (* Clojure sets are heterogeneous: pack every element *)
+                let dynamic = Types.dynamic_constraint TUnknown in
+                let rec pack packed = function
+                  | [] -> Ok (List.rev packed)
+                  | value :: values ->
+                      Result.bind (pack_dynamic_value env dynamic value)
+                        (fun value -> pack (value :: packed) values)
+                in
+                Result.map
+                  (fun values ->
+                    typed_ir dynamic
+                      (Semantic_ir.Apply
+                         ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.set",
+                           [
+                             Semantic_ir.Apply
+                               ( Semantic_ir.Ident
+                                   "Lg_runtime.Runtime_seq.of_list",
+                                 [ Semantic_ir.List values ] );
+                           ] )))
+                  (pack [] exprs)
+              else
+                Result.bind (Types.set_module_name first_expr.ty)
+                  (fun set_module ->
+                    let rec coerce_values acc = function
+                      | [] -> Ok (List.rev acc)
+                      | value :: rest ->
+                          Result.bind (coerce_set_element first_expr.ty value)
+                            (fun value -> coerce_values (value :: acc) rest)
+                    in
+                    coerce_values [] exprs
+                    |> Result.map (fun values ->
+                           typed_ir (TSet first_expr.ty)
+                             (Semantic_ir.Apply
+                                ( Semantic_ir.Ident (set_module ^ ".of_list"),
+                                  [ Semantic_ir.List values ] )))))
     and compile_set_of arg_forms =
       match arg_forms with
       | [ FKeyword keyword ] -> (

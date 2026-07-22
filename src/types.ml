@@ -261,6 +261,7 @@ let dynamic_map key value =
   TOcaml_app ("Lg_runtime.Runtime_map.t", [ key; value ])
 
 let record_extension_keyword = ":__lg/extmap"
+let record_metadata_key = "\000lg-record-metadata"
 let record_extension_type = dynamic_map TKeyword (dynamic_constraint TUnknown)
 
 let dynamic_map_types = function
@@ -594,6 +595,8 @@ let rec ocaml_name = function
   | TVector inner -> ocaml_name inner ^ " Rrbvec.t"
   | TSet inner -> (
       match set_module_name inner with
+      | Ok "Lg_runtime.Runtime_poly_set" ->
+          ocaml_name inner ^ " Lg_runtime.Runtime_poly_set.t"
       | Ok set_module -> set_module ^ ".t"
       | Error _ -> "unsupported_set<" ^ ocaml_name inner ^ ">")
   | TSeq inner -> ocaml_name inner ^ " Seq.t"
@@ -641,11 +644,19 @@ and set_module_name = function
   | TVector (TString | TSymbol | TKeyword) ->
       Ok "Lg_runtime.Core_set.String_vector_set"
   | TVector TBool -> Ok "Lg_runtime.Core_set.Bool_vector_set"
+  | TVector (TUnknown | TVar _) -> Ok "Lg_runtime.Runtime_poly_set"
   | TVector inner when is_dynamic inner ->
       Ok "Lg_runtime.Core_set.Dynamic_vector_set"
   | TVector (TVector inner) when is_dynamic inner ->
       Ok "Lg_runtime.Core_set.Dynamic_vector_vector_set"
   | TVector (TVector TInt) -> Ok "Lg_runtime.Core_set.Int_vector_vector_set"
+  | TVector (TRecord _) -> Ok "Lg_runtime.Runtime_poly_set"
+  | TVector (TNamed_record { nominal = false; _ }) ->
+      Ok "Lg_runtime.Runtime_poly_set"
+  | TVector (TVector (TString | TSymbol | TKeyword)) ->
+      Ok "Lg_runtime.Runtime_poly_set"
+  | TVector (TVector (TRecord _)) -> Ok "Lg_runtime.Runtime_poly_set"
+  | TList (TRecord _) -> Ok "Lg_runtime.Runtime_poly_set"
   | TRecord _ -> Ok "Lg_runtime.Runtime_poly_set"
   | TNamed_record { nominal = false; _ } ->
       Ok "Lg_runtime.Runtime_poly_set"
@@ -689,14 +700,8 @@ let nominal_tag_name (record : named_record) =
       in
       module_path ^ ".Lg_nominal_" ^ local_name
 
-let dynamic_packer_key_name (record : named_record) =
-  let local_name name = "__lg_dynamic_packer_key_" ^ Names.sanitize_name name in
-  let record_name = Type_id.name record.type_id in
-  match String.rindex_opt record.type_name '.' with
-  | None -> local_name record_name
-  | Some separator ->
-      let module_path = String.sub record.type_name 0 separator in
-      module_path ^ "." ^ local_name record_name
+let dynamic_packer_key (record : named_record) =
+  Type_id.to_string record.type_id
 
 let rec qualify_module_type module_path ty =
   let qualify_name name =
@@ -1030,6 +1035,10 @@ let rec idents_in_conversion names = function
       List.fold_left
         (fun names (_, value) -> idents_in_conversion names value)
         (idents_in_conversion names body) bindings
+  | Semantic_ir.EvaluateOnce (_, value, body) ->
+      idents_in_conversion
+        (idents_in_conversion (idents_in_conversion names value) body)
+        value
   | Semantic_ir.LetRec (_, _, body, args) ->
       List.fold_left idents_in_conversion (idents_in_conversion names body) args
   | Semantic_ir.LetRecIn (_, _, body, next) ->
@@ -1103,6 +1112,10 @@ let rec dynamic_pinned_idents names = function
         (fun names (_, value) -> dynamic_pinned_idents names value)
         (dynamic_pinned_idents names body)
         bindings
+  | Semantic_ir.EvaluateOnce (_, value, body) ->
+      dynamic_pinned_idents
+        (dynamic_pinned_idents (dynamic_pinned_idents names value) body)
+        value
   | Semantic_ir.LetRec (_, _, body, args) ->
       List.fold_left dynamic_pinned_idents
         (dynamic_pinned_idents names body)
@@ -1149,6 +1162,7 @@ let rec dynamic_pinned_idents names = function
 let rec pattern_name = function
   | Semantic_ir.PVar name -> Some name
   | Semantic_ir.PConstraint (pattern, _) -> pattern_name pattern
+  | Semantic_ir.PTyped (pattern, _) -> pattern_name pattern
   | Semantic_ir.PLocated (_, _, pattern) -> pattern_name pattern
   | Semantic_ir.PAlias (pattern, name) -> (
       match pattern_name pattern with Some _ as name -> name | None -> Some name)

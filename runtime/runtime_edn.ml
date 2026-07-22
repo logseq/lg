@@ -1,9 +1,5 @@
-type state = {
-  source : string;
-  mutable index : int;
-}
-
 let tag_parsers = Hashtbl.create 16
+let data_readers = ref (Runtime_dynamic.map [])
 
 let dynamic_function function_ =
   Runtime_dynamic.function_ (function
@@ -15,211 +11,158 @@ let register_tag_parser tag function_ =
   Hashtbl.replace tag_parsers tag function_;
   Option.fold ~none:Runtime_dynamic.nil ~some:dynamic_function previous
 
-let length state = String.length state.source
-let at_end state = state.index >= length state
-let peek state = if at_end state then None else Some state.source.[state.index]
+let keyword_name value =
+  if String.starts_with ~prefix:":" value then
+    String.sub value 1 (String.length value - 1)
+  else value
 
-let fail state message =
-  invalid_arg (Printf.sprintf "EDN reader error at offset %d: %s" state.index message)
-
-let is_separator = function
-  | ' ' | '\n' | '\r' | '\t' | ',' -> true
-  | _ -> false
-
-let is_delimiter = function
-  | '(' | ')' | '[' | ']' | '{' | '}' | '"' | ';' -> true
-  | ch -> is_separator ch
-
-let rec skip_ignored state =
-  match peek state with
-  | Some ch when is_separator ch ->
-      state.index <- state.index + 1;
-      skip_ignored state
-  | Some ';' ->
-      while not (at_end state) && state.source.[state.index] <> '\n' do
-        state.index <- state.index + 1
-      done;
-      skip_ignored state
-  | _ -> ()
-
-let take state =
-  match peek state with
-  | Some ch ->
-      state.index <- state.index + 1;
-      ch
-  | None -> fail state "unexpected end of input"
-
-let expect state expected =
-  let actual = take state in
-  if actual <> expected then
-    fail state (Printf.sprintf "expected %C, got %C" expected actual)
-
-let read_hex_digit state =
-  match take state with
-  | '0' .. '9' as ch -> Char.code ch - Char.code '0'
-  | 'a' .. 'f' as ch -> 10 + Char.code ch - Char.code 'a'
-  | 'A' .. 'F' as ch -> 10 + Char.code ch - Char.code 'A'
-  | _ -> fail state "invalid unicode escape"
-
-let read_unicode_escape state =
-  let code = ref 0 in
-  for _ = 1 to 4 do
-    code := (!code * 16) + read_hex_digit state
-  done;
-  if !code <= 0x7f then String.make 1 (Char.chr !code)
-  else if !code <= 0x7ff then
-    String.init 2 (function
-      | 0 -> Char.chr (0xc0 lor (!code lsr 6))
-      | _ -> Char.chr (0x80 lor (!code land 0x3f)))
-  else
-    String.init 3 (function
-      | 0 -> Char.chr (0xe0 lor (!code lsr 12))
-      | 1 -> Char.chr (0x80 lor ((!code lsr 6) land 0x3f))
-      | _ -> Char.chr (0x80 lor (!code land 0x3f)))
-
-let read_quoted_string state =
-  expect state '"';
-  let buffer = Buffer.create 16 in
-  let rec loop () =
-    match take state with
-    | '"' -> Buffer.contents buffer
-    | '\\' -> (
-        match take state with
-        | '"' -> Buffer.add_char buffer '"'
-        | '\\' -> Buffer.add_char buffer '\\'
-        | 'n' -> Buffer.add_char buffer '\n'
-        | 'r' -> Buffer.add_char buffer '\r'
-        | 't' -> Buffer.add_char buffer '\t'
-        | 'b' -> Buffer.add_char buffer '\b'
-        | 'f' -> Buffer.add_char buffer '\012'
-        | 'u' -> Buffer.add_string buffer (read_unicode_escape state)
-        | _ -> fail state "unsupported string escape");
-        loop ()
-    | ch ->
-        Buffer.add_char buffer ch;
-        loop ()
-  in
-  loop ()
-
-let read_token state =
-  let start = state.index in
-  while
-    not (at_end state) && not (is_delimiter state.source.[state.index])
-  do
-    state.index <- state.index + 1
-  done;
-  if state.index = start then fail state "expected a value";
-  String.sub state.source start (state.index - start)
-
-let parse_number token =
-  match Int64.of_string_opt token with
-  | Some value -> Some (Runtime_dynamic.int value)
-  | None -> Option.map Runtime_dynamic.float (float_of_string_opt token)
-
-let parse_atom token =
-  match token with
-  | "nil" -> Runtime_dynamic.nil
-  | "true" -> Runtime_dynamic.bool true
-  | "false" -> Runtime_dynamic.bool false
-  | token when String.length token > 0 && token.[0] = ':' ->
-      Runtime_dynamic.keyword token
-  | token -> (
-      match parse_number token with
-      | Some value -> value
-      | None -> Runtime_dynamic.symbol token)
-
-let parse_character state =
-  expect state '\\';
-  let token = read_token state in
-  let value =
-    match token with
-    | "newline" -> '\n'
-    | "return" -> '\r'
-    | "space" -> ' '
-    | "tab" -> '\t'
-    | "backspace" -> '\b'
-    | "formfeed" -> '\012'
-    | token when String.length token = 1 -> token.[0]
-    | token
-      when String.length token = 5 && token.[0] = 'u' -> (
-        match int_of_string_opt ("0x" ^ String.sub token 1 4) with
-        | Some code when code <= 0xff -> Char.chr code
-        | _ -> fail state "unsupported character literal")
-    | _ -> fail state "unsupported character literal"
-  in
-  Runtime_dynamic.char value
-
-let rec parse_value state =
-  skip_ignored state;
-  match peek state with
-  | None -> fail state "unexpected end of input"
-  | Some '"' -> Runtime_dynamic.string (read_quoted_string state)
-  | Some '\\' -> parse_character state
-  | Some '(' ->
-      state.index <- state.index + 1;
-      Runtime_dynamic.list (parse_values_until state ')')
-  | Some '[' ->
-      state.index <- state.index + 1;
-      Runtime_dynamic.vector (Rrbvec.of_list (parse_values_until state ']'))
-  | Some '{' ->
-      state.index <- state.index + 1;
-      parse_map state
-  | Some '#' -> parse_dispatch state
-  | Some (')' | ']' | '}') -> fail state "unmatched delimiter"
-  | Some _ -> parse_atom (read_token state)
-
-and parse_values_until state closing =
-  let rec loop values =
-    skip_ignored state;
-    match peek state with
-    | Some ch when ch = closing ->
-        state.index <- state.index + 1;
-        List.rev values
-    | None -> fail state "unexpected end of collection"
-    | _ -> loop (parse_value state :: values)
-  in
-  loop []
-
-and parse_map state =
-  let values = parse_values_until state '}' in
-  let rec pairs entries = function
-    | [] -> Runtime_dynamic.map (List.rev entries)
-    | [ _ ] -> fail state "map literal must contain an even number of forms"
-    | key :: value :: rest ->
-        if List.exists (fun (existing, _) -> Runtime_dynamic.equal key existing) entries
-        then fail state "duplicate map key"
-        else pairs ((key, value) :: entries) rest
-  in
-  pairs [] values
-
-and parse_dispatch state =
-  expect state '#';
-  match peek state with
-  | Some '{' ->
-      state.index <- state.index + 1;
-      let values = parse_values_until state '}' in
-      let rec reject_duplicates seen = function
-        | [] -> Runtime_dynamic.set (List.to_seq (List.rev seen))
-        | value :: rest ->
-            if List.exists (Runtime_dynamic.equal value) seen then
-              fail state "duplicate set element"
-            else reject_duplicates (value :: seen) rest
+let rec of_dynamic value =
+  let open Runtime_dynamic in
+  match value.payload with
+  | Nil -> Lg_edn_backend.Nil
+  | Bool value -> Lg_edn_backend.Bool value
+  | String value -> Lg_edn_backend.String value
+  | Char value -> Lg_edn_backend.Char (Uchar.of_char value)
+  | Symbol value -> Lg_edn_backend.Symbol value
+  | Keyword value -> Lg_edn_backend.Keyword (keyword_name value)
+  | Int value -> Lg_edn_backend.Int value
+  | Float value -> Lg_edn_backend.Float value
+  | Regex value -> Lg_edn_backend.Regex value
+  | Array values ->
+      Lg_edn_backend.Vector (Array.map of_dynamic values)
+  | List ->
+      Lg_edn_backend.List
+        (value |> to_seq |> Seq.map of_dynamic |> Array.of_seq)
+  | Vector _ ->
+      Lg_edn_backend.Vector
+        (value |> to_seq |> Seq.map of_dynamic |> Array.of_seq)
+  | Seq ->
+      Lg_edn_backend.List
+        (value |> to_seq |> Seq.map of_dynamic |> Array.of_seq)
+  | Set set ->
+      Lg_edn_backend.Set (set.values |> List.map of_dynamic |> Array.of_list)
+  | Map map ->
+      Lg_edn_backend.Map
+        (Runtime_dynamic.map_entries map
+        |> List.map (fun (key, value) -> (of_dynamic key, of_dynamic value))
+        |> Array.of_list)
+  | Record (_, fields, extensions) ->
+      let fields =
+        List.map
+          (fun (key, project) ->
+            (Lg_edn_backend.Keyword (keyword_name key), of_dynamic (project ())))
+          fields
       in
-      reject_duplicates [] values
-  | Some '_' ->
-      state.index <- state.index + 1;
-      ignore (parse_value state);
-      parse_value state
-  | Some _ ->
-      let tag = read_token state in
-      skip_ignored state;
-      let value = parse_value state in
-      (match Hashtbl.find_opt tag_parsers tag with
+      let extensions =
+        List.map
+          (fun (key, value) ->
+            (Lg_edn_backend.Keyword (keyword_name key), of_dynamic value))
+          extensions
+      in
+      Lg_edn_backend.Map (Array.of_list (fields @ extensions))
+  | Function _ | Reference _ | Opaque _ ->
+      invalid_arg "value cannot be represented as EDN"
+
+let int64_of_number kind value =
+  match Int64.of_string_opt value with
+  | Some value -> Runtime_dynamic.int value
+  | None -> invalid_arg (kind ^ " is outside CljML's int64 range")
+
+type readers = {
+  readers : (string * (Runtime_dynamic.t -> Runtime_dynamic.t)) list;
+  default : (string -> Runtime_dynamic.t -> Runtime_dynamic.t) option;
+}
+
+let no_readers = { readers = []; default = None }
+
+let rec to_dynamic_with readers value =
+  match value with
+  | Lg_edn_backend.Nil -> Runtime_dynamic.nil
+  | Lg_edn_backend.Bool value -> Runtime_dynamic.bool value
+  | Lg_edn_backend.String value -> Runtime_dynamic.string value
+  | Lg_edn_backend.Char value -> (
+      match Uchar.to_char value with
+      | value -> Runtime_dynamic.char value
+      | exception Invalid_argument _ ->
+          invalid_arg "CljML characters currently require a single byte")
+  | Lg_edn_backend.Symbol value -> Runtime_dynamic.symbol value
+  | Lg_edn_backend.Keyword value -> Runtime_dynamic.keyword (":" ^ value)
+  | Lg_edn_backend.Int value -> Runtime_dynamic.int value
+  | Lg_edn_backend.Bigint value -> int64_of_number "EDN bigint" value
+  | Lg_edn_backend.Float value -> Runtime_dynamic.float value
+  | Lg_edn_backend.Decimal value -> (
+      match float_of_string_opt value with
+      | Some value -> Runtime_dynamic.float value
+      | None -> invalid_arg "invalid EDN decimal")
+  | Lg_edn_backend.Ratio _ ->
+      invalid_arg "EDN ratios are not supported by CljML numeric types"
+  | Lg_edn_backend.Regex value -> Runtime_dynamic.regex value
+  | Lg_edn_backend.List values ->
+      values |> Array.to_list |> List.map (to_dynamic_with readers)
+      |> Runtime_dynamic.list
+  | Lg_edn_backend.Vector values ->
+      values |> Array.to_list |> List.map (to_dynamic_with readers)
+      |> Rrbvec.of_list
+      |> Runtime_dynamic.vector
+  | Lg_edn_backend.Map entries ->
+      entries |> Array.to_list
+      |> List.map (fun (key, value) ->
+             (to_dynamic_with readers key, to_dynamic_with readers value))
+      |> Runtime_dynamic.map
+  | Lg_edn_backend.Set values ->
+      values |> Array.to_seq |> Seq.map (to_dynamic_with readers)
+      |> Runtime_dynamic.set
+  | Lg_edn_backend.Tagged (tag, value) -> (
+      let value = to_dynamic_with readers value in
+      match List.assoc_opt tag readers.readers with
       | Some parser -> parser value
-      | None -> fail state ("no reader function for tag " ^ tag))
-  | None -> fail state "unexpected end of tagged literal"
+      | None -> (
+          match Hashtbl.find_opt tag_parsers tag with
+          | Some parser -> parser value
+          | None -> (
+              match readers.default with
+              | Some default -> default tag value
+              | None -> invalid_arg ("no reader function for tag " ^ tag))))
+
+let to_dynamic value = to_dynamic_with no_readers value
+
+let dynamic_reader function_ value = Runtime_dynamic.call function_ [ value ]
+
+let readers_from_map reader_map =
+  let readers =
+    if Runtime_dynamic.is_nil reader_map then []
+    else
+      Runtime_dynamic.entries reader_map
+      |> List.map (fun (tag, function_) ->
+             ( Runtime_dynamic.as_symbol tag,
+               dynamic_reader function_ ))
+  in
+  readers
+
+let readers_from_options options =
+  let reader_map =
+    Runtime_dynamic.get options (Runtime_dynamic.keyword ":readers")
+  in
+  let readers = readers_from_map reader_map in
+  let default =
+    let function_ =
+      Runtime_dynamic.get options (Runtime_dynamic.keyword ":default")
+    in
+    if Runtime_dynamic.is_nil function_ then None
+    else
+      Some
+        (fun tag value ->
+          Runtime_dynamic.call function_
+            [ Runtime_dynamic.symbol tag; value ])
+  in
+  { readers; default }
 
 let read_string source =
-  let state = { source; index = 0 } in
-  skip_ignored state;
-  if at_end state then Runtime_dynamic.nil else parse_value state
+  Lg_edn_backend.of_edn_string source
+  |> to_dynamic_with { no_readers with readers = readers_from_map !data_readers }
+
+let read_string_with_options options source =
+  Lg_edn_backend.of_edn_string source
+  |> to_dynamic_with (readers_from_options options)
+
+let write_string value = value |> of_dynamic |> Lg_edn_backend.to_edn_string

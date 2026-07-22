@@ -76,6 +76,7 @@ math_source="$multi_dir/math.cljc"
 main_source="$multi_dir/main.cljc"
 multi_output="$multi_dir/app.ml"
 multi_stdout="$multi_dir/stdout"
+multi_cache_stderr="$multi_dir/cache.stderr"
 
 printf '%s\n' \
   '(require [ocaml.package/core]' \
@@ -86,8 +87,37 @@ printf '%s\n' \
 printf '%s\n' \
   '(println (Math/magnitude-plus-two -40))' > "$main_source"
 
-"$cli" --compile-files "$math_source" "$main_source" -o "$multi_output"
+LG_CACHE_DIR="$multi_dir/cache" \
+  "$cli" --compile-files "$math_source" "$main_source" -o "$multi_output"
 grep -q 'magnitude_plus_two' "$multi_output"
+
+LG_CACHE_DIR="$multi_dir/cache" LG_COMPILE_CACHE_DEBUG=1 \
+  "$cli" --compile-files "$math_source" "$main_source" -o "$multi_output" \
+  2> "$multi_cache_stderr"
+grep -q "compile cache hit: $math_source" "$multi_cache_stderr"
+grep -q "compile cache hit: $main_source" "$multi_cache_stderr"
+
+cache_cli_root="$multi_dir/cache-cli-root"
+cache_cli="$cache_cli_root/bin/lg"
+cache_compiler_dir="$cache_cli_root/src"
+source_compiler_dir="$(dirname "$cli")/../src"
+cache_artifact_stderr="$multi_dir/cache-artifact.stderr"
+mkdir -p "$cache_cli_root/bin" "$cache_compiler_dir"
+cp "$cli" "$cache_cli"
+cp "$source_compiler_dir/lg.cma" "$cache_compiler_dir/lg.cma"
+cp "$source_compiler_dir/lg.cmxa" "$cache_compiler_dir/lg.cmxa"
+chmod u+w "$cache_compiler_dir/lg.cmxa"
+
+LG_CACHE_DIR="$multi_dir/artifact-cache" \
+  "$cache_cli" --compile-files "$math_source" "$main_source" -o "$multi_output"
+printf 'changed-native-compiler' >> "$cache_compiler_dir/lg.cmxa"
+LG_CACHE_DIR="$multi_dir/artifact-cache" LG_COMPILE_CACHE_DEBUG=1 \
+  "$cache_cli" --compile-files "$math_source" "$main_source" -o "$multi_output" \
+  2> "$cache_artifact_stderr"
+if grep -q "compile cache hit:" "$cache_artifact_stderr"; then
+  echo "native compiler artifact change reused stale compile cache" >&2
+  exit 1
+fi
 
 "$cli" --run-files "$math_source" "$main_source" > "$multi_stdout"
 [ "$(cat "$multi_stdout")" = "42" ]

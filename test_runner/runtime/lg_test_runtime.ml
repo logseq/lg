@@ -6,7 +6,7 @@ type assertion_failure = {
   message : string;
 }
 
-let registered_cases = ref []
+let registered_cases = Queue.create ()
 let once_fixtures = ref []
 let each_fixtures = ref []
 let testing_contexts = ref []
@@ -14,12 +14,12 @@ let assertion_count = ref 0
 let assertion_failures = ref []
 
 let register namespace name body =
-  registered_cases := { namespace; name; body } :: !registered_cases
+  Queue.add { namespace; name; body } registered_cases
 
-let cases () = List.rev !registered_cases
+let cases () = registered_cases |> Queue.to_seq |> List.of_seq
 
 let clear () =
-  registered_cases := [];
+  Queue.clear registered_cases;
   once_fixtures := [];
   each_fixtures := []
 
@@ -97,6 +97,35 @@ let grouped_cases () =
                  else (namespace, cases))
                groups)
        []
+  |> List.sort (fun (left, _) (right, _) -> String.compare left right)
+
+let contains_substring source substring =
+  let source_length = String.length source in
+  let substring_length = String.length substring in
+  let rec search index =
+    index + substring_length <= source_length
+    &&
+    (String.sub source index substring_length = substring
+    || search (index + 1))
+  in
+  substring_length = 0 || search 0
+
+let is_performance_case test_case =
+  contains_substring test_case.name "performance"
+  || contains_substring test_case.name "-perf"
+
+let quick_mode_requested () =
+  Sys.getenv_opt "LG_TEST_QUICK" = Some "1"
+  || Array.exists (String.equal "--quick-tests") Sys.argv
+
+let selected_groups () =
+  if not (quick_mode_requested ()) then grouped_cases ()
+  else
+    grouped_cases ()
+    |> List.filter_map (fun (namespace, namespace_tests) ->
+        match List.filter (Fun.negate is_performance_case) namespace_tests with
+        | [] -> None
+        | selected -> Some (namespace, selected))
 
 let failure_message test_case failure =
   let context =
@@ -119,7 +148,7 @@ let run_case test_case =
     (count, failures, Some exn)
 
 let run suite_name =
-  let groups = grouped_cases () in
+  let groups = selected_groups () in
   let tests = List.concat_map snd groups in
   let assertions = ref 0 in
   let failures = ref [] in

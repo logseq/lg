@@ -33,6 +33,7 @@ let compile_args_for compile_expr scope env arg_forms =
 let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     ~pack_constrained_value =
   let compile_args_for = compile_args_for compile_expr in
+  let overloaded_apply_counter = ref 0 in
   let rec require_callable_value expression =
     match expression.ty with
     | TNullable inner | TOcaml_app ("option", [ inner ]) ->
@@ -146,6 +147,116 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                         ( target fn.semantic_expr,
                           fixed_arguments @ remaining_arguments )) ))
                (prepare_remaining [] remaining_parameter_tys argument_names)))
+  in
+  let compile_variadic_apply env ~fn ~target ~fixed_args ~inner ~list_expr
+      ~(arity : fn_arity) =
+    match arity.rest_param with
+    | None -> None
+    | Some rest_ty ->
+        let fixed_count = List.length arity.fixed_params in
+        let given = List.length fixed_args in
+        let rec prepare_fixed prepared expected arguments =
+          match (expected, arguments) with
+          | [], [] -> Ok (List.rev prepared)
+          | expected_ty :: expected, argument :: arguments ->
+              Result.bind
+                (prepare_apply_argument env ~expected_ty argument)
+                (fun expression ->
+                  prepare_fixed (expression :: prepared) expected arguments)
+          | _ -> Error.error "internal apply argument mismatch"
+        in
+        let adapt_rest_list list_expr =
+          if Types.equal inner rest_ty then Ok list_expr
+          else
+            let item_name = "__lg_apply_rest_item" in
+            match
+              prepare_apply_argument env ~expected_ty:rest_ty
+                (typed_ir inner (Semantic_ir.Ident item_name))
+            with
+            | Error _ as error -> error
+            | Ok adapted -> (
+                match Semantic_ir.unlocated adapted with
+                | Semantic_ir.Ident name when String.equal name item_name ->
+                    Ok list_expr
+                | _ ->
+                    Ok
+                      (apply "List.map"
+                         [
+                           Semantic_ir.Fun
+                             ([ Semantic_ir.PVar item_name ], adapted);
+                           list_expr;
+                         ]))
+        in
+        let rest_seq rest_list =
+          apply "Lg_runtime.Runtime_seq.of_list" [ rest_list ]
+        in
+        let compiled =
+          if given >= fixed_count then
+            let direct_args =
+              List.filteri (fun index _ -> index < fixed_count) fixed_args
+            in
+            let extra_args = drop fixed_count fixed_args in
+            Result.bind
+              (prepare_fixed [] arity.fixed_params direct_args)
+              (fun fixed_arguments ->
+                Result.bind
+                  (prepare_fixed []
+                     (List.init (List.length extra_args) (fun _ -> rest_ty))
+                     extra_args)
+                  (fun extra_arguments ->
+                    Result.map
+                      (fun rest_list ->
+                        ( Semantic_ir.PAny,
+                          typed_ir arity.return_ty
+                            (Semantic_ir.Apply
+                               ( target fn.semantic_expr,
+                                 fixed_arguments
+                                 @ [
+                                     rest_seq
+                                       (match extra_arguments with
+                                       | [] -> rest_list
+                                       | _ ->
+                                           Semantic_ir.Infix
+                                             ( "@",
+                                               Semantic_ir.List extra_arguments,
+                                               rest_list ));
+                                   ] )) ))
+                      (adapt_rest_list list_expr)))
+          else
+            let needed = fixed_count - given in
+            let head_names =
+              List.init needed (fun i -> "__lg_apply_head_" ^ string_of_int i)
+            in
+            let rest_name = "__lg_apply_rest" in
+            let pattern =
+              List.fold_right
+                (fun name tail -> Semantic_ir.PCons (Semantic_ir.PVar name, tail))
+                head_names (Semantic_ir.PVar rest_name)
+            in
+            Result.bind
+              (prepare_fixed []
+                 (List.filteri (fun index _ -> index < given)
+                    arity.fixed_params)
+                 fixed_args)
+              (fun fixed_arguments ->
+                Result.bind
+                  (prepare_fixed []
+                     (drop given arity.fixed_params)
+                     (List.map
+                        (fun name -> typed_ir inner (Semantic_ir.Ident name))
+                        head_names))
+                  (fun head_arguments ->
+                    Result.map
+                      (fun rest_list ->
+                        ( pattern,
+                          typed_ir arity.return_ty
+                            (Semantic_ir.Apply
+                               ( target fn.semantic_expr,
+                                 fixed_arguments @ head_arguments
+                                 @ [ rest_seq rest_list ] )) ))
+                      (adapt_rest_list (Semantic_ir.Ident rest_name))))
+        in
+        Some compiled
   in
     let compile_apply scope env arg_forms =
       let rec split_last acc = function
@@ -425,13 +536,32 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                              ] )))
                                     result)
                           | TOverloaded_fn arities ->
+                              incr overloaded_apply_counter;
+                              let function_name =
+                                "__lg_apply_overloaded_function_"
+                                ^ string_of_int !overloaded_apply_counter
+                              in
+                              let stable_fn =
+                                {
+                                  fn with
+                                  semantic_expr =
+                                    Semantic_ir.Ident function_name;
+                                }
+                              in
                               let compiled =
                                 arities
                                 |> List.mapi (fun index arity ->
                                        match arity.rest_param with
-                                       | Some _ -> None
+                                       | Some _ ->
+                                           compile_variadic_apply env
+                                             ~fn:stable_fn
+                                             ~target:(fun expression ->
+                                               overloaded_projection expression
+                                                 index)
+                                             ~fixed_args ~inner ~list_expr
+                                             ~arity
                                        | None ->
-                                           compile_exact_apply env ~fn
+                                           compile_exact_apply env ~fn:stable_fn
                                              ~target:(fun expression ->
                                               overloaded_projection expression
                                                 index)
@@ -473,24 +603,31 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                   | cases, Some return_ty ->
                                       Ok
                                         (typed_ir return_ty
-                                           (Semantic_ir.Match
-                                              ( list_expr,
-                                                List.map
-                                                    (fun (pattern, expression)
-                                                       ->
-                                                      ( pattern,
-                                                        expression.semantic_expr
-                                                      ))
-                                                  cases
-                                                  @ [
-                                                      ( Semantic_ir.PAny,
-                                                      apply "invalid_arg"
-                                                          [
-                                                            Semantic_ir.String
-                                                              "wrong apply \
-                                                               argument count";
-                                                          ] );
-                                                  ] ))))
+                                           (Semantic_ir.Let
+                                              ( [
+                                                  ( Semantic_ir.PVar
+                                                      function_name,
+                                                    fn.semantic_expr );
+                                                ],
+                                                Semantic_ir.Match
+                                                  ( list_expr,
+                                                    List.map
+                                                        (fun
+                                                          (pattern, expression)
+                                                           ->
+                                                          ( pattern,
+                                                            expression.semantic_expr
+                                                          ))
+                                                      cases
+                                                    @ [
+                                                        ( Semantic_ir.PAny,
+                                                          apply "invalid_arg"
+                                                            [
+                                                              Semantic_ir.String
+                                                                "wrong apply \
+                                                                 argument count";
+                                                            ] );
+                                                      ] ) ))))
                           | fn_type
                             when Types.is_dynamic fn_type
                                  || (match fn_type with

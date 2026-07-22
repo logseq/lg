@@ -467,6 +467,31 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                 ( Semantic_ir.Ident "Rrbvec.of_list",
                                   [ Semantic_ir.List (List.rev values) ] )))
                     | form :: forms -> (
+                        let rec dynamic_parameters = function
+                          | (FSymbol metadata as metadata_form)
+                            :: (FSymbol _ as parameter) :: rest
+                            when String.starts_with ~prefix:"^" metadata ->
+                              metadata_form :: parameter
+                              :: dynamic_parameters rest
+                          | (FSymbol "&" as rest_marker) :: rest ->
+                              rest_marker :: dynamic_parameters rest
+                          | (FSymbol _ as parameter) :: rest ->
+                              FSymbol "^:dynamic" :: parameter
+                              :: dynamic_parameters rest
+                          | parameter :: rest ->
+                              parameter :: dynamic_parameters rest
+                          | [] -> []
+                        in
+                        let form =
+                          match form with
+                          | FList
+                              (FSymbol "fn" :: FVector parameters :: body) ->
+                              FList
+                                (FSymbol "fn"
+                                :: FVector (dynamic_parameters parameters)
+                                :: body)
+                          | form -> form
+                        in
                         match
                           compile_expr scope env
                             (FList [ FSymbol "__lg_dynamic"; form ])
@@ -2346,11 +2371,47 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                   | FList
                       (FSymbol ("let" | "let*") :: FVector bindings
                       :: body_forms) ->
+                      let rec sequence_shape = function
+                        | TList inner -> Some (inner, TList inner)
+                        | TVector inner -> Some (inner, TList inner)
+                        | TSeq inner -> Some (inner, TSeq inner)
+                        | TNullable inner
+                        | TOcaml_app ("option", [ inner ]) ->
+                            sequence_shape inner
+                        | ty -> (
+                            match Types.next_seq_element ty with
+                            | Some inner -> Some (inner, Types.next_seq inner)
+                            | None -> None)
+                      in
+                      let rec bind_pattern aliases pattern ty =
+                        match pattern with
+                        | FSymbol name -> (name, ty) :: aliases
+                        | FVector forms -> (
+                            match
+                              ( Destructure.parse_sequence_pattern forms,
+                                sequence_shape ty )
+                            with
+                            | Ok pattern, Some (inner, rest_ty) ->
+                                let aliases =
+                                  List.fold_left
+                                    (fun aliases item_pattern ->
+                                      bind_pattern aliases item_pattern inner)
+                                    aliases pattern.item_patterns
+                                in
+                                Option.fold ~none:aliases
+                                  ~some:(fun name ->
+                                    (name, TNullable rest_ty) :: aliases)
+                                  pattern.rest_name
+                            | _ -> aliases)
+                        | FList
+                            [ FSymbol "__type-hint"; FSymbol _; pattern ] ->
+                            bind_pattern aliases pattern ty
+                        | _ -> aliases
+                      in
                       let rec bind aliases = function
-                        | FSymbol name :: value :: rest ->
+                        | pattern :: value :: rest ->
                             let ty = form_type aliases value in
-                            bind ((name, ty) :: aliases) rest
-                        | _ :: _ :: rest -> bind aliases rest
+                            bind (bind_pattern aliases pattern ty) rest
                         | _ -> aliases
                       in
                       let aliases = bind aliases bindings in
@@ -2764,8 +2825,12 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                               ( "Lg_runtime.Runtime_slot.t",
                                 [ Types.dynamic_constraint TUnknown ] ))
                            (Semantic_ir.Apply
-                              ( Semantic_ir.Ident "Lg_runtime.Runtime_slot.empty",
-                                [ Semantic_ir.Unit ] )))
+                              ( Semantic_ir.Ident
+                                  "Lg_runtime.Runtime_slot.of_value",
+                                [
+                                  Semantic_ir.Ident
+                                    "Lg_runtime.Runtime_dynamic.nil";
+                                ] )))
                   | _ -> compile_expr scope value_env value_form
                 in
                 match value with

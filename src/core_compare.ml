@@ -8,6 +8,18 @@ let fresh_nullable_equality_name () =
   "__lg_nullable_equality_value_"
   ^ string_of_int !nullable_equality_counter
 
+let polymorphic_sequence_equal left right =
+  Semantic_ir.Apply
+    ( Semantic_ir.Ident "Seq.equal",
+      [ Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.polymorphic_equal";
+        left;
+        right;
+      ] )
+
+let requires_runtime_equality = function
+  | TUnknown | TVar _ | TOcaml "value" -> true
+  | _ -> false
+
 let rec equality_expr left right =
   match (left.ty, right.ty) with
   | TNullable _, TNil ->
@@ -54,6 +66,16 @@ let rec equality_expr left right =
       | None -> Semantic_ir.Bool false)
   | _, right_ty when Types.is_dynamic right_ty ->
       equality_expr right left
+  | (TFn _ | TOverloaded_fn _), (TFn _ | TOverloaded_fn _) ->
+      Semantic_ir.Apply
+        ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.polymorphic_equal",
+          [ left.semantic_expr; right.semantic_expr ] )
+  | left_ty, right_ty
+    when requires_runtime_equality left_ty
+         && requires_runtime_equality right_ty ->
+      Semantic_ir.Apply
+        ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.polymorphic_equal",
+          [ left.semantic_expr; right.semantic_expr ] )
   | (TRecord _ | TNamed_record _), right_type
     when Option.is_some (Types.dynamic_map_types right_type) -> (
       match left.record_values with
@@ -105,6 +127,37 @@ let rec equality_expr left right =
             ( Semantic_ir.Ident (set_module ^ ".equal"),
               [ left.semantic_expr; right.semantic_expr ] )
       | Error _ -> Semantic_ir.Bool false)
+  | TList _, TList _ ->
+      polymorphic_sequence_equal
+        (Semantic_ir.Apply
+           (Semantic_ir.Ident "List.to_seq", [ left.semantic_expr ]))
+        (Semantic_ir.Apply
+           (Semantic_ir.Ident "List.to_seq", [ right.semantic_expr ]))
+  | TVector _, TVector _ ->
+      polymorphic_sequence_equal
+        (Semantic_ir.Apply
+           ( Semantic_ir.Ident "List.to_seq",
+             [ Semantic_ir.Apply
+                 (Semantic_ir.Ident "Rrbvec.to_list", [ left.semantic_expr ]);
+             ] ))
+        (Semantic_ir.Apply
+           ( Semantic_ir.Ident "List.to_seq",
+             [ Semantic_ir.Apply
+                 (Semantic_ir.Ident "Rrbvec.to_list", [ right.semantic_expr ]);
+             ] ))
+  | TArray _, TArray _ ->
+      polymorphic_sequence_equal
+        (Semantic_ir.Apply
+           (Semantic_ir.Ident "Array.to_seq", [ left.semantic_expr ]))
+        (Semantic_ir.Apply
+           (Semantic_ir.Ident "Array.to_seq", [ right.semantic_expr ]))
+  | TSeq _, TSeq _ ->
+      polymorphic_sequence_equal left.semantic_expr right.semantic_expr
+  | ( TOcaml_app (left_name, [ _ ]),
+      TOcaml_app (right_name, [ _ ]) )
+    when left_name = Types.next_seq_type_name
+         && right_name = Types.next_seq_type_name ->
+      polymorphic_sequence_equal left.semantic_expr right.semantic_expr
   | (TRecord fields | TNamed_record { fields; _ }), _ ->
       let parts =
         fields
@@ -142,6 +195,33 @@ let pairwise_equality_expressions args =
   in
   loop [] args
 
+let dynamic_numeric_function = function
+  | "<" -> "numeric_less"
+  | "<=" -> "numeric_less_equal"
+  | ">" -> "numeric_greater"
+  | ">=" -> "numeric_greater_equal"
+  | _ -> assert false
+
+let dynamic_numeric_pairwise_expressions name args =
+  let runtime_function =
+    "Lg_runtime.Runtime_dynamic." ^ dynamic_numeric_function name
+  in
+  let rec loop acc = function
+    | left :: ((right :: _) as rest) -> (
+        match
+          (pack_plain_dynamic_value left, pack_plain_dynamic_value right)
+        with
+        | Some left, Some right ->
+            loop
+              (Semantic_ir.Apply
+                 (Semantic_ir.Ident runtime_function, [ left; right ])
+              :: acc)
+              rest
+        | _ -> None)
+    | _ -> Some (List.rev acc)
+  in
+  loop [] args
+
 let compile name args =
   match args with
   | [] | [ _ ] ->
@@ -175,12 +255,20 @@ let compile name args =
             (name ^ " arguments must have the same type: "
             ^ String.concat ", " (List.map (fun arg -> Types.source_name arg.ty) args))
       else
-        let numeric_ty =
-          List.find_map
-            (fun arg -> if Types.is_numeric arg.ty then Some arg.ty else None)
-            args
-        in
-        (match numeric_ty with
+        let has_dynamic = List.exists (fun arg -> Types.is_dynamic arg.ty) args in
+        if has_dynamic then
+          match dynamic_numeric_pairwise_expressions name args with
+          | Some expressions ->
+              Ok (typed_ir TBool (and_expressions expressions))
+          | None ->
+              Error.error (name ^ " expects numeric arguments")
+        else
+          let numeric_ty =
+            List.find_map
+              (fun arg -> if Types.is_numeric arg.ty then Some arg.ty else None)
+              args
+          in
+          (match numeric_ty with
         | Some expected
           when List.for_all
                  (fun arg ->
@@ -190,6 +278,15 @@ let compile name args =
             Ok
               (typed_ir TBool
                  (and_expressions (pairwise_expressions name args)))
+        | Some _
+          when List.for_all
+                 (fun arg -> Core_float.accepts_mixed_numeric arg.ty)
+                 args ->
+            Ok
+              (typed_ir TBool
+                 (and_expressions
+                    (pairwise_expressions name
+                       (List.map Core_float.widen_to_float args))))
         | _ ->
             Error.error
               (name ^ " numeric arguments must all have the same type"))

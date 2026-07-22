@@ -73,7 +73,10 @@ let all_distinct equal values =
   in
   loop [] values
 
-let concat sequences = List.fold_right Seq.append sequences Seq.empty |> memoize
+let rec concat = function
+  | [] -> Seq.empty
+  | [ sequence ] -> sequence
+  | sequence :: rest -> Seq.append sequence (concat rest)
 
 let interleave sequences =
   let rec split heads tails = function
@@ -101,7 +104,18 @@ let drop count sequence =
     match sequence () with Seq.Nil -> Seq.empty | Seq.Cons (_, rest) -> rest
   else sequence |> Seq.drop count |> memoize
 
+let non_empty sequence =
+  match sequence () with Seq.Nil -> None | Seq.Cons _ -> Some sequence
+
 let repeat value = Seq.repeat value |> memoize
+
+let cycle values =
+  let values = memoize values in
+  match values () with
+  | Seq.Nil -> Seq.empty
+  | Seq.Cons _ ->
+      let rec loop () = Seq.append values loop () in
+      memoize loop
 
 let range start step =
   let rec next value () = Seq.Cons (value, next (Int64.add value step)) in

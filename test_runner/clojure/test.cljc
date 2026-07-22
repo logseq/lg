@@ -62,13 +62,17 @@
            body (drop 3 form)]
        `(try
           ~@body
-          (clojure.test/fail! "thrown-with-msg?" ~message)
+          (clojure.test/fail!
+           (str "exception matching " ~pattern ", but no exception was thrown")
+           ~message)
           (catch js/Error error#
-            (if (clojure.core/re-find
-                 ~pattern
-                 (clojure.test/exception-message error#))
-              (clojure.test/pass!)
-              (clojure.test/fail! "thrown-with-msg?" ~message)))))
+            (let [actual-message# (clojure.test/exception-message error#)]
+              (if (clojure.core/re-find ~pattern actual-message#)
+                (clojure.test/pass!)
+                (clojure.test/fail!
+                 (str "exception message matching " ~pattern
+                      ", got " actual-message#)
+                 ~message))))))
 
      (and (seq? form) (= 'thrown-msg? (first form)))
      (let [expected-message (second form)
