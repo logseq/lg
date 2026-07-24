@@ -1162,6 +1162,27 @@
        datoms))
    []))
 
+(signature datascript.db/reduce-eavt-slice
+  [result]
+  :fn<DB;int;keyword;option<Datascript_runtime.Data_value.t>;fn<result;Datom;result>;result;result>)
+
+(defn reduce-eavt-slice
+  [^DB db
+   ^:int entity
+   ^:keyword attr
+   ^:option<Datascript_runtime.Data_value.t> value
+   f
+   initial]
+  (set/set-slice-reduce-with
+   (.-eavt db)
+   (datom-bound
+    (Some entity) (Some attr) value None e0 tx0)
+   (datom-bound
+    (Some entity) (Some attr) value None e0 txmax)
+   (set/comparator (.-eavt db))
+   f
+   initial))
+
 (defn ^:vector<Datom> search-vector
   [^DB db
    ^:option<int> e
@@ -1170,13 +1191,11 @@
    ^:option<int> tx]
   (match (tuple e a v tx)
     (tuple (Some entity) (Some attr) value None)
-    (datom-slice-vector
-     (.-eavt db)
-     (datom-bound
-      (Some entity) (Some attr) value None e0 tx0)
-     (datom-bound
-      (Some entity) (Some attr) value None e0 txmax)
-     (fn [_datom] true))
+    (reduce-eavt-slice
+     db entity attr value
+     (fn [^:vector<Datom> datoms ^Datom datom]
+       (conj datoms datom))
+     [])
 
     (tuple None (Some attr) (Some value) None)
     (if (contains? (-attrs-by db :db/index) attr)

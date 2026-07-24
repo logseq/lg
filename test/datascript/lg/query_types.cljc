@@ -693,7 +693,20 @@
          (pattern-attr-constraint
           (pattern-element-at pattern 1))
           (Some (Some attr))
-          (let [projection
+          (let [entity-index
+                (get
+                 (relation-attrs input-relation)
+                 entity-variable
+                 0)
+                value-element (pattern-element-at pattern 2)
+                tx-element (pattern-element-at pattern 3)
+                added
+                (match
+                 (pattern-added-constraint
+                  (pattern-element-at pattern 4))
+                  (Some value) value
+                  None None)
+                projection
                 (unbound-pattern-projection
                  input-relation pattern)
                 variables (tuple-get projection 0)
@@ -704,20 +717,17 @@
                       ^:array<result> row]
                    (if-some
                      [entity-result
-                      (relation-result
-                       input-relation entity-variable row)]
+                      (row-get row entity-index)]
                      (if-some
                        [eid
                         (result-entity-id
                          database entity-result)]
                        (let [value
                              (pattern-row-value
-                              input-relation row
-                              (pattern-element-at pattern 2))
+                              input-relation row value-element)
                              tx-value
                              (pattern-row-value
-                              input-relation row
-                              (pattern-element-at pattern 3))
+                              input-relation row tx-element)
                              tx
                              (if-some [value tx-value]
                                (if-some
@@ -728,34 +738,35 @@
                                   database entity-ref)
                                  None)
                                None)
-                             added
-                             (match
-                              (pattern-added-constraint
-                               (pattern-element-at pattern 4))
-                               (Some value) value
-                               None None)
-                             datoms
-                             (datascript.db/search-vector
-                              database
-                              (Some eid) (Some attr)
-                              value tx)]
-                         (reduce
-                          (fn [^:vector<array<result>> rows
-                               ^datascript.db/Datom datom]
-                            (if
-                              (if-some [expected added]
-                                (= expected
-                                   (datascript.db/datom-added
-                                    datom))
-                                true)
-                              (conj
-                               rows
-                               (concat-rows
-                                row
-                                (project-datom-row
-                                 datom indexes)))
-                              rows))
-                          rows datoms))
+                             append-datom
+                             (fn [^:vector<array<result>> rows
+                                  ^datascript.db/Datom datom]
+                               (if
+                                 (if-some [expected added]
+                                   (= expected
+                                      (datascript.db/datom-added
+                                       datom))
+                                   true)
+                                 (conj
+                                  rows
+                                  (concat-rows
+                                   row
+                                   (project-datom-row
+                                    datom indexes)))
+                                 rows))]
+                         (match tx
+                           None
+                           (datascript.db/reduce-eavt-slice
+                            database eid attr value
+                            append-datom rows)
+                           (Some _)
+                           (reduce
+                            append-datom
+                            rows
+                            (datascript.db/search-vector
+                             database
+                             (Some eid) (Some attr)
+                             value tx))))
                        rows)
                      rows))
                  []
@@ -805,13 +816,19 @@
    patterns))
 
 (defn ^predicate-operand compile-predicate-argument
-  [^relation relation ^:datascript.parser/fn-arg argument]
+  [^relation relation
+   ^relation constants
+   ^:datascript.parser/fn-arg argument]
   (if-some [variable (parser/argument-variable-name argument)]
     (let [attrs (relation-attrs relation)]
       (if (contains? attrs variable)
         (PredicateColumn (get attrs variable 0))
-        (Stdlib.invalid_arg
-         (str "Predicate variable is not bound: " variable))))
+        (if-some [result
+                  (constant-relation-result
+                   constants variable)]
+          (PredicateValue (result-pattern-value result))
+          (Stdlib.invalid_arg
+           (str "Predicate variable is not bound: " variable)))))
     (if-some [value (parser/argument-constant argument)]
       (PredicateValue value)
       (Stdlib.invalid_arg
@@ -841,15 +858,18 @@
 
 (defn ^relation resolve-predicate
   [^relation relation
+   ^relation constants
    ^:datascript.parser/query-callable callable
    ^:vector<datascript.parser/fn-arg> arguments]
   (if-some [name (parser/static-callable-name callable)]
     (if (= name ">")
       (if (= (count arguments) 2)
         (let [left
-              (compile-predicate-argument relation (nth arguments 0))
+              (compile-predicate-argument
+               relation constants (nth arguments 0))
               right
-              (compile-predicate-argument relation (nth arguments 1))]
+              (compile-predicate-argument
+               relation constants (nth arguments 1))]
           (relation-with-rows
            relation
            (reduce
@@ -869,19 +889,39 @@
 (defn ^relation resolve-static-clauses
   [^datascript.db/DB database
    ^relation initial-relation
+   ^relation constants
    ^:vector<datascript.parser/clause> clauses]
   (reduce
    (fn [^relation relation ^:datascript.parser/clause clause]
      (match clause
        (PatternClause DefaultSource pattern)
-       (resolve-db-pattern database relation pattern)
+       (resolve-db-pattern
+        database relation
+        (substitute-pattern-constants constants pattern))
        (PredicateClause callable arguments)
-       (resolve-predicate relation callable arguments)
+       (resolve-predicate
+        relation constants callable arguments)
        _
        (Stdlib.invalid_arg
         "Static query contains an unsupported clause")))
    initial-relation
    clauses))
+
+(defn ^boolean single-row-constant-relation?
+  [^relation relation]
+  (and
+   (= 1 (count (relation-rows relation)))
+   (every?
+    (fn [^:string variable]
+      (some? (constant-relation-result relation variable)))
+    (keys (relation-attrs relation)))))
+
+(defn ^boolean relation-variables-used?
+  [^relation relation ^:vector<string> variables]
+  (some
+   (fn [^:string variable]
+     (contains? (relation-attrs relation) variable))
+   variables))
 
 (defn ^relation lookup-db-patterns
   [^datascript.db/DB database
@@ -968,9 +1008,24 @@
    ^relation input-relation]
   (if-some [variables
             (parser/find-variable-names (.-qfind query))]
-    (let [relation
+    (let [elide-input?
+          (and
+           (single-row-constant-relation? input-relation)
+           (not
+            (relation-variables-used?
+             input-relation variables)))
+          initial-relation
+          (if elide-input?
+            (identity-relation)
+            input-relation)
+          constants
+          (if elide-input?
+            input-relation
+            (identity-relation))
+          relation
           (resolve-static-clauses
-           database input-relation (.-qwhere query))
+           database initial-relation constants
+           (.-qwhere query))
           rows (project-find-rows relation variables)
           find (.-qfind query)]
       (find-output find rows))
@@ -1082,11 +1137,13 @@
         (recur
          (subvec remaining-bindings 1)
          (subvec remaining-inputs 1)
-         (hash-join
-          relation
-          (binding-relation
-           binding
-           (require-binding-input input))))
+         (let [bound
+               (binding-relation
+                binding
+                (require-binding-input input))]
+           (if (identity-relation? relation)
+             bound
+             (hash-join relation bound))))
         (Stdlib.invalid_arg "Missing query binding input"))
       relation)))
 

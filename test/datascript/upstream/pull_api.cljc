@@ -81,6 +81,24 @@
      pulled-to-data
      values)))
 
+(signature datascript.pull-api/assoc-pulled-value
+  :fn<map<keyword;pulled-value>;keyword;pulled-value;map<keyword;pulled-value>>)
+
+(defn ^:map<keyword;pulled-value> assoc-pulled-value
+  [^:map<keyword;pulled-value> values
+   ^:keyword key
+   ^pulled-value value]
+  (Lg_runtime.Runtime_map.assoc_small_string values key value))
+
+(signature datascript.pull-api/assoc-pulled-data
+  :fn<map<keyword;Datascript_runtime.Data_value.t>;keyword;Datascript_runtime.Data_value.t;map<keyword;Datascript_runtime.Data_value.t>>)
+
+(defn ^:map<keyword;Datascript_runtime.Data_value.t> assoc-pulled-data
+  [^:map<keyword;Datascript_runtime.Data_value.t> values
+   ^:keyword key
+   ^:Datascript_runtime.Data_value.t value]
+  (Lg_runtime.Runtime_map.assoc_small_string values key value))
+
 (defn ^:option<datascript.db/Datom> cursor-datom
   [^DatomCursor cursor]
   (.-current cursor))
@@ -271,7 +289,7 @@
 (defn ^pulled-value cycle-entity [^int id]
   (let [^:map<keyword;pulled-value> values {}]
     (PulledEntity
-     (assoc
+     (assoc-pulled-value
       values
       :db/id
       (PulledScalar
@@ -451,7 +469,8 @@
   (match (apply-attr-xform attr value)
     None values
     (Some value)
-    (assoc values (.-alias (dpp/attr-data attr)) value)))
+    (assoc-pulled-value
+     values (.-alias (dpp/attr-data attr)) value)))
 
 (defn ^frame merge-attrs-result
   [^AttrsState state ^ResultState result]
@@ -657,7 +676,7 @@
     (match (.-default data)
       None values
       (Some value)
-      (assoc
+      (assoc-pulled-value
        values
        (.-alias data)
        (PulledScalar value)))))
@@ -668,7 +687,7 @@
   (let [data (dpp/attr-data attr)]
     (match (.-default data)
       (Some value)
-      (assoc
+      (assoc-pulled-value
        values
        (.-alias data)
        (PulledScalar value))
@@ -903,7 +922,8 @@
    (fn [^:map<keyword;Datascript_runtime.Data_value.t> result
         ^:keyword key
         ^pulled-value value]
-     (assoc result key (pulled-to-data value)))
+     (assoc-pulled-data
+      result key (pulled-to-data value)))
    {}
    values))
 

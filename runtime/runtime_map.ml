@@ -107,20 +107,86 @@ let insert_position operations index key position =
   in
   insert 0 index
 
+let find_position_in_entries operations entries key =
+  let length = Rrbvec.length entries in
+  let rec find index =
+    if index = length then None
+    else
+      match Rrbvec.nth entries index with
+      | Some (existing_key, _) when operations.equal key existing_key ->
+          Some index
+      | Some _ | None -> find (index + 1)
+  in
+  find 0
+
+let index_entries operations entries =
+  Rrbvec.fold_left
+    (fun (index, position) entry ->
+      let index =
+        match entry with
+        | Some (key, _) -> insert_position operations index key position
+        | None -> index
+      in
+      (index, position + 1))
+    (Empty, 0) entries
+  |> fst
+
+let find_position operations map key =
+  match map.index with
+  | Empty when map.size > 0 ->
+      find_position_in_entries operations map.entries key
+  | Empty | Leaf _ | Branch _ ->
+      find_position_in operations map.index key
+
 let assoc_by operations map key value =
-  match find_position_in operations map.index key with
+  match find_position operations map key with
   | Some position ->
       { map with entries = Rrbvec.set map.entries position (Some (key, value)) }
   | None ->
       let position = Rrbvec.length map.entries in
+      let entries = Rrbvec.push_back map.entries (Some (key, value)) in
       {
-        index = insert_position operations map.index key position;
-        entries = Rrbvec.push_back map.entries (Some (key, value));
+        index =
+          insert_position operations
+            (match map.index with
+            | Empty when map.size > 0 ->
+                index_entries operations map.entries
+            | Empty | Leaf _ | Branch _ -> map.index)
+            key position;
+        entries;
         size = map.size + 1;
       }
 
 let assoc map key value = assoc_by generic_operations map key value
 let assoc_dynamic map key value = assoc_by dynamic_operations map key value
+
+let assoc_small_string map key value =
+  match map.index with
+  | Leaf _ | Branch _ -> assoc map key value
+  | Empty ->
+      let length = Rrbvec.length map.entries in
+      let rec find index =
+        if index = length then None
+        else
+          match Rrbvec.nth map.entries index with
+          | Some (existing_key, _) when String.equal key existing_key ->
+              Some index
+          | Some _ | None -> find (index + 1)
+      in
+      (match find 0 with
+      | Some position ->
+          {
+            map with
+            entries =
+              Rrbvec.set map.entries position (Some (key, value));
+          }
+      | None ->
+          {
+            index = Empty;
+            entries =
+              Rrbvec.push_back map.entries (Some (key, value));
+            size = map.size + 1;
+          })
 
 let of_list entries =
   List.fold_left (fun map (key, value) -> assoc map key value) empty entries
@@ -185,11 +251,15 @@ let remove_position operations index key =
   remove 0 index
 
 let dissoc_by operations map key =
-  match find_position_in operations map.index key with
+  match find_position operations map key with
   | None -> map
   | Some position ->
       {
-        index = remove_position operations map.index key;
+        index =
+          (match map.index with
+          | Empty -> Empty
+          | Leaf _ | Branch _ ->
+              remove_position operations map.index key);
         entries = Rrbvec.set map.entries position None;
         size = map.size - 1;
       }
@@ -198,7 +268,7 @@ let dissoc map key = dissoc_by generic_operations map key
 let dissoc_dynamic map key = dissoc_by dynamic_operations map key
 
 let find_by operations map key =
-  Option.bind (find_position_in operations map.index key) (fun position ->
+  Option.bind (find_position operations map key) (fun position ->
       Rrbvec.nth map.entries position)
 
 let find map key = find_by generic_operations map key
@@ -254,7 +324,15 @@ let merge left right =
   fold_left (fun result (key, value) -> assoc result key value) left right
 
 let to_list map =
-  fold_left (fun entries entry -> entry :: entries) [] map |> List.rev
+  let length = Rrbvec.length map.entries in
+  let rec collect index entries =
+    if index = length then List.rev entries
+    else
+      match Rrbvec.nth map.entries index with
+      | Some entry -> collect (index + 1) (entry :: entries)
+      | None -> collect (index + 1) entries
+  in
+  collect 0 []
 
 let to_seq map =
   let length = Rrbvec.length map.entries in

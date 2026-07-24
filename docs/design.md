@@ -287,6 +287,34 @@ The currently accepted measured representation optimizations are narrow:
 - Single-key hash joins use a scalar key and append the right-only columns in
   one array allocation. Multi-key joins retain the general closed-array key
   path.
+- A statically typed single-vector `mapv` maps the RRB vector directly.
+  Native retains the RRB structure; Melange maps a flat array and rebuilds the
+  vector so later query joins do not repeatedly traverse fragmented trees.
+  Other seqable inputs and multi-collection `mapv` keep their existing
+  sequence semantics.
+- Bound-entity query clauses reduce the same upstream EAVT slice directly into
+  result rows when no transaction constraint is present. The slice bounds,
+  comparator, datom order, added filtering, and projected columns are
+  unchanged; this only avoids allocating an intermediate datom vector.
+- A single-row scalar query input that is not part of the requested result may
+  be substituted into patterns and predicates. Multi-row relations are never
+  elided, even when all rows happen to contain equal values, because their
+  multiplicity can affect query semantics.
+- Pull result maps use a persistent, insertion-ordered small-string-key path
+  before conversion to the closed `Data_value` representation. Duplicate keys
+  still replace their existing value and ordinary maps retain the HAMT path.
+  Direct ordered traversal avoids a second higher-order fold over the small
+  result map.
+- DataScript identifier comparison checks namespace and name slices in place
+  instead of allocating substrings. Separator handling and lexical ordering
+  remain identical.
+
+With 20,000 people, 2 seconds of warmup, five 1-second samples, and batch size
+10, these optimizations made all 11 tracked workloads faster than the upstream
+JavaScript benchmark on both Native and Melange. The narrowest measured margin
+was Melange `pull-many`: a five-run median of 1.911 ms/op versus an upstream
+three-run median of 1.921 ms/op. This small margin should be treated as a
+regression-sensitive boundary, not as permission to change pull control flow.
 
 When an upstream API accepts several known shapes, LG represents those shapes
 with a closed sum, record, option, or static protocol. It does not make the API

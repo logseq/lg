@@ -119,12 +119,23 @@ let join_rows left left_indexes right right_indexes =
 let concat_rows = Array.append
 
 let product_rows left_rows right_rows =
-  Rrbvec.fold_left
-    (fun rows left ->
-      Rrbvec.fold_left
-        (fun rows right -> Rrbvec.push_back rows (concat_rows left right))
-        rows right_rows)
-    Rrbvec.empty left_rows
+  if Rrbvec.length left_rows = 1 then
+    let left = Rrbvec.nth left_rows 0 in
+    right_rows |> Rrbvec.to_array
+    |> Array.map (concat_rows left)
+    |> Rrbvec.of_array
+  else if Rrbvec.length right_rows = 1 then
+    let right = Rrbvec.nth right_rows 0 in
+    left_rows |> Rrbvec.to_array
+    |> Array.map (fun left -> concat_rows left right)
+    |> Rrbvec.of_array
+  else
+    Rrbvec.fold_left
+      (fun rows left ->
+        Rrbvec.fold_left
+          (fun rows right -> Rrbvec.push_back rows (concat_rows left right))
+          rows right_rows)
+      Rrbvec.empty left_rows
 
 let relation attrs rows lookup_databases =
   { attrs; rows; lookup_databases }

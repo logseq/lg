@@ -262,25 +262,69 @@ and hash_entity_ref = function
   | Ident value -> Hashtbl.hash (3, value)
   | Lookup_ref (attr, value) -> Hashtbl.hash (4, attr, hash value)
 
-let split_identifier value =
-  let offset =
+let identifier_offset value =
   if
     String.length value > 0
-    && (value.[0] = ':' || value.[0] = '\'')
+    && (String.unsafe_get value 0 = ':' || String.unsafe_get value 0 = '\'')
   then 1
   else 0
+
+let compare_string_slice left left_start left_length right right_start
+    right_length =
+  let shared_length = min left_length right_length in
+  let rec loop index =
+    if index = shared_length then Int.compare left_length right_length
+    else
+      let compared =
+        Char.compare
+          (String.unsafe_get left (left_start + index))
+          (String.unsafe_get right (right_start + index))
+      in
+      if compared = 0 then loop (index + 1) else compared
   in
-  match String.index_from_opt value offset '/' with
-  | None -> ("", String.sub value offset (String.length value - offset))
-  | Some separator ->
-      ( String.sub value offset (separator - offset),
-        String.sub value (separator + 1) (String.length value - separator - 1) )
+  loop 0
 
 let compare_identifier left right =
-  let left_namespace, left_name = split_identifier left in
-  let right_namespace, right_name = split_identifier right in
-  let namespace = String.compare left_namespace right_namespace in
-  if namespace <> 0 then namespace else String.compare left_name right_name
+  if String.equal left right then 0
+  else
+    let left_offset = identifier_offset left in
+    let right_offset = identifier_offset right in
+    let left_separator =
+      String.index_from_opt left left_offset '/'
+    in
+    let right_separator =
+      String.index_from_opt right right_offset '/'
+    in
+    let left_namespace_length =
+      match left_separator with
+      | None -> 0
+      | Some separator -> separator - left_offset
+    in
+    let right_namespace_length =
+      match right_separator with
+      | None -> 0
+      | Some separator -> separator - right_offset
+    in
+    let namespace =
+      compare_string_slice left left_offset left_namespace_length right
+        right_offset right_namespace_length
+    in
+    if namespace <> 0 then namespace
+    else
+      let left_name_start =
+        match left_separator with
+        | None -> left_offset
+        | Some separator -> separator + 1
+      in
+      let right_name_start =
+        match right_separator with
+        | None -> right_offset
+        | Some separator -> separator + 1
+      in
+      compare_string_slice left left_name_start
+        (String.length left - left_name_start)
+        right right_name_start
+        (String.length right - right_name_start)
 
 let rec compare_list compare left right =
   let length = Int.compare (List.length left) (List.length right) in

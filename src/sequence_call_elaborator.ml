@@ -1425,16 +1425,36 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                           | TFn ([ param_ty ], ret)
                             when Types.assignable ~policy:Host_boundary
                                    ~expected:param_ty ~actual:inner ->
-                              Ok
-                                (typed_ir (TVector ret)
-                                   (apply "Rrbvec.of_list"
+                              let mapped =
+                                match
+                                  (collection.ty, Env.target env)
+                                with
+                                | TVector _, Target.Melange ->
+                                    apply "Rrbvec.of_array"
+                                      [
+                                        apply "Array.map"
+                                          [
+                                            fn.semantic_expr;
+                                            apply "Rrbvec.to_array"
+                                              [ collection.semantic_expr ];
+                                          ];
+                                      ]
+                                | TVector _, (Target.Native | Target.Js_of_ocaml)
+                                  ->
+                                    apply "Rrbvec.map"
+                                      [ fn.semantic_expr; collection.semantic_expr ]
+                                | _ ->
+                                    apply "Rrbvec.of_list"
                                       [
                                         apply "List.of_seq"
                                           [
                                             apply "Lg_runtime.Runtime_seq.map"
                                               [ fn.semantic_expr; sequence ];
                                           ];
-                                      ]))
+                                      ]
+                              in
+                              Ok
+                                (typed_ir (TVector ret) mapped)
                           | TFn _ ->
                               Error.error
                                 "mapv function type does not match collection"
