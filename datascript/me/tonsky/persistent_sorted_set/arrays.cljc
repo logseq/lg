@@ -26,24 +26,12 @@
   `(array-values ~@values))
 
 (defmacro acopy [source source-start source-end target target-start]
-  #?(:melange
-     `(let [length# (- ~source-end ~source-start)]
-        (loop [idx# 0]
-          (if (< idx# length#)
-            (do
-              (unsafe-aset
-               ~target
-               (+ idx# ~target-start)
-               (unsafe-aget ~source (+ idx# ~source-start)))
-              (recur (inc idx#)))
-            nil)))
-     :default
-     `(Array.blit
-       ~source
-       ~source-start
-       ~target
-       ~target-start
-       (- ~source-end ~source-start))))
+  `(Array.blit
+    ~source
+    ~source-start
+    ~target
+    ~target-start
+    (- ~source-end ~source-start)))
 
 (defmacro aclone [values]
   `(Array.copy ~values))

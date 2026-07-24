@@ -278,83 +278,72 @@ let compile name args =
           Ok (typed_ir TBool (Semantic_ir.Bool (Types.equal arg.ty TInt))))
   | "nat-int?" ->
       int_predicate name args (fun expr ->
-          Semantic_ir.Infix (">=", expr, Semantic_ir.Int64 0L))
+          Semantic_ir.Infix (">=", expr, Semantic_ir.Int 0))
   | "pos-int?" ->
       int_predicate name args (fun expr ->
-          Semantic_ir.Infix (">", expr, Semantic_ir.Int64 0L))
+          Semantic_ir.Infix (">", expr, Semantic_ir.Int 0))
   | "neg-int?" ->
       int_predicate name args (fun expr ->
-          Semantic_ir.Infix ("<", expr, Semantic_ir.Int64 0L))
+          Semantic_ir.Infix ("<", expr, Semantic_ir.Int 0))
   | "boolean" -> compile_boolean name args
   | "bit-set" ->
       int_binary name args (fun left right ->
           typed_ir TInt
-            (apply "Int64.logor"
-               [ left;
-                 apply "Int64.shift_left"
-                   [ Semantic_ir.Int64 1L; apply "Int64.to_int" [ right ] ];
-               ]))
+            (Semantic_ir.Infix
+               ( "lor",
+                 left,
+                 Semantic_ir.Infix ("lsl", Semantic_ir.Int 1, right) )))
   | "bit-clear" ->
       int_binary name args (fun left right ->
           typed_ir TInt
-            (apply "Int64.logand"
-               [ left;
-                 apply "Int64.lognot"
-                   [ apply "Int64.shift_left"
-                       [ Semantic_ir.Int64 1L;
-                         apply "Int64.to_int" [ right ];
-                       ];
-                   ];
-               ]))
+            (Semantic_ir.Infix
+               ( "land",
+                 left,
+                 Semantic_ir.Prefix
+                   ("lnot", Semantic_ir.Infix ("lsl", Semantic_ir.Int 1, right))
+               )))
   | "bit-flip" ->
       int_binary name args (fun left right ->
           typed_ir TInt
-            (apply "Int64.logxor"
-               [ left;
-                 apply "Int64.shift_left"
-                   [ Semantic_ir.Int64 1L; apply "Int64.to_int" [ right ] ];
-               ]))
+            (Semantic_ir.Infix
+               ( "lxor",
+                 left,
+                 Semantic_ir.Infix ("lsl", Semantic_ir.Int 1, right) )))
   | "bit-test" ->
       int_binary name args (fun left right ->
           typed_ir TBool
             (Semantic_ir.Infix
                ( "<>",
-                 apply "Int64.logand"
-                   [ left;
-                     apply "Int64.shift_left"
-                       [ Semantic_ir.Int64 1L;
-                         apply "Int64.to_int" [ right ];
-                       ];
-                   ],
-                 Semantic_ir.Int64 0L )))
+                 Semantic_ir.Infix
+                   ("land", left, Semantic_ir.Infix ("lsl", Semantic_ir.Int 1, right)),
+                 Semantic_ir.Int 0 )))
   | "bit-shift-right-zero-fill" ->
       int_binary name args (fun left right ->
           typed_ir TInt
-            (apply "Int64.shift_right_logical"
-               [ left; apply "Int64.to_int" [ right ] ]))
+            (Semantic_ir.Infix ("lsr", left, right)))
   | "unchecked-add" | "unchecked-add-int" ->
       int_binary name args (fun left right ->
-          typed_ir TInt (apply "Int64.add" [ left; right ]))
+          typed_ir TInt (Semantic_ir.Infix ("+", left, right)))
   | "unchecked-subtract" | "unchecked-subtract-int" ->
       int_binary name args (fun left right ->
-          typed_ir TInt (apply "Int64.sub" [ left; right ]))
+          typed_ir TInt (Semantic_ir.Infix ("-", left, right)))
   | "unchecked-multiply" | "unchecked-multiply-int" ->
       int_binary name args (fun left right ->
-          typed_ir TInt (apply "Int64.mul" [ left; right ]))
+          typed_ir TInt (Semantic_ir.Infix ("*", left, right)))
   | "unchecked-divide-int" ->
       int_binary name args (fun left right ->
-          typed_ir TInt (apply "Int64.div" [ left; right ]))
+          typed_ir TInt (Semantic_ir.Infix ("/", left, right)))
   | "unchecked-remainder-int" ->
       int_binary name args (fun left right ->
-          typed_ir TInt (apply "Int64.rem" [ left; right ]))
+          typed_ir TInt (Semantic_ir.Infix ("mod", left, right)))
   | "unchecked-inc" | "unchecked-inc-int" ->
       int_unary name args (fun expr ->
-          apply "Int64.succ" [ expr ])
+          Semantic_ir.Infix ("+", expr, Semantic_ir.Int 1))
   | "unchecked-dec" | "unchecked-dec-int" ->
       int_unary name args (fun expr ->
-          apply "Int64.pred" [ expr ])
+          Semantic_ir.Infix ("-", expr, Semantic_ir.Int 1))
   | "unchecked-negate" | "unchecked-negate-int" ->
-      int_unary name args (fun expr -> apply "Int64.neg" [ expr ])
+      int_unary name args (fun expr -> Semantic_ir.Prefix ("~-", expr))
   | "name" -> compile_name name args
   | "namespace" -> compile_namespace name args
   | "keyword" -> compile_keyword name args

@@ -90,8 +90,9 @@ let rec of_compiler_type =
       in
       let arguments = List.map of_compiler_type arguments in
       match (name, arguments) with
-      | "int64", [] -> TInt
-      | ("int" | "Unix.file_perm"), [] -> TOcaml "int"
+      | "int", [] -> TInt
+      | "int64", [] -> TOcaml "int64"
+      | "Unix.file_perm", [] -> TOcaml "int"
       | "float", [] -> TFloat
       | "char", [] -> TChar
       | "string", [] -> TString
@@ -101,6 +102,7 @@ let rec of_compiler_type =
           Types.dynamic_constraint TUnknown
       | "list", [ inner ] -> TList inner
       | "array", [ inner ] -> TArray inner
+      | "Rrbvec.t", [ inner ] -> TVector inner
       | "ref", [ inner ] -> TRef inner
       | name, [] -> TOcaml name
       | name, arguments -> TOcaml_app (name, arguments))

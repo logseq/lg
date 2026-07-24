@@ -102,15 +102,6 @@ let strip_internal_metadata = function
   | FList [ FSymbol "__type-hint"; _; form ] -> form
   | form -> form
 
-let host_class_symbol name =
-  String.contains name '$'
-  ||
-  match String.rindex_opt name '.' with
-  | Some separator when separator + 1 < String.length name ->
-      let initial = name.[separator + 1] in
-      initial >= 'A' && initial <= 'Z'
-  | _ -> false
-
 let rec split_params fixed = function
   | [] -> Ok (List.rev fixed, None)
   | FSymbol "&" :: [ rest ] -> Ok (List.rev fixed, Some rest)
@@ -260,7 +251,12 @@ let rec eval context = function
                          "butlast";
                        ] ->
                   Ok (Builtin name)
-              | None when host_class_symbol name -> Ok (Form (FSymbol name))
+              | None
+                when String.starts_with ~prefix:"java." name
+                     || String.starts_with ~prefix:"javax." name
+                     || String.starts_with ~prefix:"clojure.lang." name ->
+                  Error.error
+                    "Java interop is not supported; use static LG types and functions"
               | None -> Error.error ("unknown macro symbol " ^ name))))
   | (FInt _ | FFloat _ | FChar _ | FString _ | FRegex _ | FBool _ | FKeyword _)
     as form ->
@@ -709,57 +705,6 @@ and expand_are parameters expression arguments =
       Ok (Form (FList [ FList [ FSymbol "clojure.test/is"; expression ] ]))
   | [] -> Error.error "The number of args doesn't match are's argv."
   | parameters ->
-      let rec usage name quoted = function
-        | FList [ FSymbol "quote"; FSymbol candidate ]
-          when String.equal name candidate ->
-            (true, false)
-        | FList [ FSymbol "quote"; _ ] -> (false, false)
-        | FSymbol candidate when String.equal name candidate ->
-            if quoted then (true, false) else (false, true)
-        | FList forms | FVector forms ->
-            List.fold_left
-              (fun (quoted_use, unquoted_use) form ->
-                let quoted_form, unquoted_form = usage name quoted form in
-                (quoted_use || quoted_form, unquoted_use || unquoted_form))
-              (false, false) forms
-        | FMap entries ->
-            List.fold_left
-              (fun (quoted_use, unquoted_use) (key, value) ->
-                let quoted_key, unquoted_key = usage name quoted key in
-                let quoted_value, unquoted_value = usage name quoted value in
-                ( quoted_use || quoted_key || quoted_value,
-                  unquoted_use || unquoted_key || unquoted_value ))
-              (false, false) entries
-        | _ -> (false, false)
-      in
-      let usages =
-        List.map (fun name -> (name, usage name false expression)) parameters
-      in
-      let mixed_quote_usage =
-        List.exists
-          (fun (_, (quoted_use, unquoted_use)) -> quoted_use && unquoted_use)
-          usages
-      in
-      let quoted_only name =
-        match List.assoc_opt name usages with
-        | Some (true, false) -> true
-        | Some _ | None -> false
-      in
-      let rec rewrite_quoted_parameters = function
-        | FList [ FSymbol "quote"; FSymbol name ] when quoted_only name ->
-            FSymbol name
-        | FList [ FSymbol "quote"; _ ] as form -> form
-        | FList forms -> FList (List.map rewrite_quoted_parameters forms)
-        | FVector forms -> FVector (List.map rewrite_quoted_parameters forms)
-        | FMap entries ->
-            FMap
-              (List.map
-                 (fun (key, value) ->
-                   ( rewrite_quoted_parameters key,
-                     rewrite_quoted_parameters value ))
-                 entries)
-        | form -> form
-      in
       let rec expanded_assertions accumulated = function
         | [] -> Ok (Form (FList (List.rev accumulated)))
         | arguments ->
@@ -775,71 +720,7 @@ and expand_are parameters expression arguments =
                 in
                 expanded_assertions (assertion :: accumulated) rest)
       in
-      if mixed_quote_usage then expanded_assertions [] arguments
-      else
-        let rec calls accumulated = function
-          | [] -> Ok (List.rev accumulated)
-          | arguments ->
-              Result.bind (take (List.length parameters) [] arguments)
-                (fun (values, rest) ->
-                  let arguments =
-                    List.map2
-                      (fun parameter value ->
-                        let value =
-                          if quoted_only parameter then
-                            FList [ FSymbol "quote"; value ]
-                          else value
-                        in
-                        FList [ FSymbol "__lg_dynamic"; value ])
-                      parameters values
-                  in
-                  calls
-                    (FList (FSymbol "__lg_are_check" :: arguments)
-                    :: accumulated)
-                    rest)
-        in
-        Result.map
-          (fun calls ->
-            let parameter_forms =
-              List.map (fun name -> FSymbol name) parameters
-            in
-            let checker_parameter_forms =
-              List.map
-                (fun name ->
-                  FList
-                    [
-                      FSymbol "__type-hint";
-                      FSymbol "^Object";
-                      FSymbol name;
-                    ])
-                parameters
-            in
-            let assertion =
-              FList
-                [
-                  FSymbol "clojure.test/is";
-                  rewrite_quoted_parameters expression;
-                  FList
-                    [
-                      FSymbol "str";
-                      FString "are arguments: ";
-                      FList [ FSymbol "pr-str"; FVector parameter_forms ];
-                    ];
-                ]
-            in
-            let checker =
-              FList
-                [ FSymbol "fn"; FVector checker_parameter_forms; assertion ]
-            in
-            Form
-              (FList
-                 [
-                   FList
-                     (FSymbol "let"
-                     :: FVector [ FSymbol "__lg_are_check"; checker ]
-                     :: calls);
-                 ]))
-          (calls [] arguments)
+      expanded_assertions [] arguments
 
 and eval_builtin context name arg_forms =
   let eval_args () = eval_forms context arg_forms in
@@ -850,7 +731,6 @@ and eval_builtin context name arg_forms =
     | Error _ as err -> err
   in
   match name with
-  | "System/getProperty" -> Ok nil
   | "str" ->
       Result.bind (eval_args ()) (fun values ->
           let rec concatenate buffer = function

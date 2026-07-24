@@ -1,6 +1,3 @@
-let equality_partition_protocol = "clojure.data/EqualityPartition"
-let diff_protocol = "clojure.data/Diff"
-
 let nil = Runtime_dynamic.nil
 let is_nil value = value.Runtime_dynamic.payload = Runtime_dynamic.Nil
 
@@ -17,19 +14,15 @@ let atom_diff left right =
   else triple left right nil
 
 let partition value =
-  if Runtime_dynamic.has_protocol value equality_partition_protocol then
-    Runtime_dynamic.invoke value equality_partition_protocol
-      "equality-partition" []
-  else
-    let name =
-      match value.Runtime_dynamic.payload with
-      | Runtime_dynamic.Set _ -> ":set"
-      | Runtime_dynamic.List | Runtime_dynamic.Vector _ | Runtime_dynamic.Seq ->
-          ":sequential"
-      | Runtime_dynamic.Map _ -> ":map"
-      | _ -> ":atom"
-    in
-    Runtime_dynamic.keyword name
+  let name =
+    match value.Runtime_dynamic.payload with
+    | Runtime_dynamic.Set _ -> ":set"
+    | Runtime_dynamic.List | Runtime_dynamic.Vector _ | Runtime_dynamic.Seq ->
+        ":sequential"
+    | Runtime_dynamic.Map _ -> ":map"
+    | _ -> ":atom"
+  in
+  Runtime_dynamic.keyword name
 
 let contains_key entries key =
   List.exists
@@ -59,8 +52,6 @@ let rec diff left right =
     let right_partition = partition right in
     if not (Runtime_dynamic.equal left_partition right_partition) then
       atom_diff left right
-    else if Runtime_dynamic.has_protocol left diff_protocol then
-      Runtime_dynamic.invoke left diff_protocol "diff-similar" [ right ]
     else
       match left_partition.Runtime_dynamic.payload with
       | Runtime_dynamic.Keyword ":map" -> diff_maps left right
@@ -120,7 +111,7 @@ and diff_sequential left right =
   let right_values = List.of_seq (Runtime_dynamic.to_seq right) in
   let indexed values =
     List.mapi
-      (fun index value -> (Runtime_dynamic.int (Int64.of_int index), value))
+      (fun index value -> (Runtime_dynamic.int index, value))
       values
   in
   let left_map = Runtime_dynamic.map (indexed left_values) in
@@ -138,7 +129,7 @@ and vectorize value =
         Runtime_dynamic.map_entries map
         |> List.map (fun (key, value) ->
                match key.Runtime_dynamic.payload with
-               | Runtime_dynamic.Int index -> (Int64.to_int index, value)
+               | Runtime_dynamic.Int index -> (index, value)
                | _ -> invalid_arg "clojure.data sequential diff index must be int")
       in
       let max_index =

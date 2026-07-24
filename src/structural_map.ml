@@ -10,24 +10,26 @@ let validate_unique_keywords pairs =
   loop [] pairs
 
 let record_type_application record =
+  let type_name = Types.ocaml_record_type_name record.type_name in
   let argument_name = function
     | TUnknown | TVar _ -> "_"
     | argument -> Types.ocaml_name argument
   in
   match record.type_arguments with
-  | [] -> record.type_name
-  | [ argument ] -> argument_name argument ^ " " ^ record.type_name
+  | [] -> type_name
+  | [ argument ] -> argument_name argument ^ " " ^ type_name
   | arguments ->
       "(" ^ String.concat ", " (List.map argument_name arguments) ^ ") "
-      ^ record.type_name
+      ^ type_name
 
 let record_projection_type record =
+  let type_name = Types.ocaml_record_type_name record.type_name in
   match record.type_arguments with
-  | [] -> record.type_name
-  | [ _ ] -> "_ " ^ record.type_name
+  | [] -> type_name
+  | [ _ ] -> "_ " ^ type_name
   | arguments ->
       "(" ^ String.concat ", " (List.map (Fun.const "_") arguments) ^ ") "
-      ^ record.type_name
+      ^ type_name
 
 let field_expr target field =
   match target.record_values with
@@ -115,6 +117,21 @@ let extension_assoc target fields keyword value =
                   field_expr target field;
                   Semantic_ir.String keyword;
                   value;
+                ] )))
+
+let extension_with_record_metadata target fields keyword metadata =
+  match Types.find_record_extension_field fields with
+  | None -> None
+  | Some field ->
+      Some
+        (replace_field target fields field.keyword
+           (Semantic_ir.Apply
+              ( Semantic_ir.Ident
+                  "Lg_runtime.Runtime_map.with_record_metadata",
+                [
+                  field_expr target field;
+                  Semantic_ir.String keyword;
+                  metadata;
                 ] )))
 
 let extension_dissoc target fields keyword =

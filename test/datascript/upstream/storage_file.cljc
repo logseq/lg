@@ -1,14 +1,37 @@
 (ns datascript.storage-file
   (:require
-   [clojure.edn :as edn]
    [datascript.storage :as storage]))
 
 (type-record file-storage-backend
   (directory :string)
-  (write-value :fn<out_channel;dynamic;unit>)
-  (read-value :fn<in_channel;dynamic>)
+  (write-value :fn<out_channel;Datascript_runtime.Storage_value.t;unit>)
+  (read-value :fn<in_channel;Datascript_runtime.Storage_value.t>)
   (address-to-filename :fn<int;string>)
   (filename-to-address :fn<string;int>))
+
+(type-record file-storage-options
+  (write-value :option<fn<out_channel;Datascript_runtime.Storage_value.t;unit>>)
+  (read-value :option<fn<in_channel;Datascript_runtime.Storage_value.t>>)
+  (address-to-filename :option<fn<int;string>>)
+  (filename-to-address :option<fn<string;int>>))
+
+(defn ^file-storage-options default-options []
+  (record file-storage-options
+          (write-value None)
+          (read-value None)
+          (address-to-filename None)
+          (filename-to-address None)))
+
+(defn ^file-storage-options options
+  [^:fn<out_channel;Datascript_runtime.Storage_value.t;unit> write-value
+   ^:fn<in_channel;Datascript_runtime.Storage_value.t> read-value
+   ^:fn<int;string> address-to-filename
+   ^:fn<string;int> filename-to-address]
+  (record file-storage-options
+          (write-value (Some write-value))
+          (read-value (Some read-value))
+          (address-to-filename (Some address-to-filename))
+          (filename-to-address (Some filename-to-address))))
 
 (defn- file-path
   [^file-storage-backend backend ^:int address]
@@ -17,7 +40,9 @@
    ((:address-to-filename backend) address)))
 
 (defn- write-file
-  [^file-storage-backend backend ^:int address ^:dynamic value]
+  [^file-storage-backend backend
+   ^:int address
+   ^:Datascript_runtime.Storage_value.t value]
   (let [output (Stdlib.open_out_bin (file-path backend address))
         _written ((:write-value backend) output value)]
     (Stdlib.close_out output)))
@@ -37,39 +62,16 @@
     (when (Sys.file_exists path)
       (Sys.remove path))))
 
-(extend-type file-storage-backend
-  storage/IStorage
-  (-store [backend address-data delete-addresses]
-    (doseq [[address data] address-data]
-      (write-file backend (int address) data))
-    (doseq [address delete-addresses]
-      (delete-file backend (int address))))
-  (-restore [backend address]
-    (read-file backend (int address)))
-  (-list-addresses [backend]
-    (mapv
-     (:filename-to-address backend)
-     (array-seq (Sys.readdir (:directory backend)))))
-  (-delete [backend addresses]
-    (doseq [address addresses]
-      (delete-file backend (int address)))))
-
 (defn- default-write
-  [^:out_channel output ^:dynamic value] :unit
-  (Stdlib.output_string output (pr-str value)))
-
-(defn- default-freeze [^:dynamic value] :string
-  (pr-str value))
+  [^:out_channel output
+   ^:Datascript_runtime.Storage_value.t value]
+  :unit
+  (Marshal.to_channel output value (list-of :Marshal.extern_flags)))
 
 (defn- default-read
-  [^:in_channel input] :dynamic
-  (edn/read-string
-   (Stdlib.really_input_string
-    input
-    (Stdlib.in_channel_length input))))
-
-(defn- default-thaw [^:string contents] :dynamic
-  (edn/read-string contents))
+  [^:in_channel input]
+  :Datascript_runtime.Storage_value.t
+  (Marshal.from_channel input))
 
 (defn- default-address-to-filename [^:int address] :string
   (Lg_runtime.Runtime_int.format_hex address 8))
@@ -82,40 +84,53 @@
     (Unix.mkdir directory 493))
   directory)
 
-(defn file-storage
+(defn ^:datascript.storage/storage-backend file-storage
   ([^:string directory]
-   (file-storage directory {}))
-  ([^:string directory ^:dynamic opts]
+   (file-storage
+    directory
+    (default-options)))
+  ([^:string directory ^file-storage-options opts]
    (let [write-value
-         (if-some [write (:write-fn opts)]
-           (__lg_dynamic-narrow default-write write)
-           (if-some [freeze (:freeze-fn opts)]
-             (let [freeze (__lg_dynamic-narrow default-freeze freeze)]
-               (fn [^:out_channel output ^:dynamic value]
-                 (Stdlib.output_string output (freeze value))))
-             default-write))
+         (if-some [write (:write-value opts)]
+           write
+           default-write)
          read-value
-         (if-some [read (:read-fn opts)]
-           (__lg_dynamic-narrow default-read read)
-           (if-some [thaw (:thaw-fn opts)]
-             (let [thaw (__lg_dynamic-narrow default-thaw thaw)]
-               (fn [^:in_channel input]
-                 (thaw
-                  (Stdlib.really_input_string
-                   input
-                   (Stdlib.in_channel_length input)))))
-             default-read))
+         (if-some [read (:read-value opts)]
+           read
+           default-read)
          address-to-filename
-         (if-some [convert (:addr->filename-fn opts)]
-           (__lg_dynamic-narrow default-address-to-filename convert)
+         (if-some [convert (:address-to-filename opts)]
+           convert
            default-address-to-filename)
          filename-to-address
-         (if-some [convert (:filename->addr-fn opts)]
-           (__lg_dynamic-narrow default-filename-to-address convert)
+         (if-some [convert (:filename-to-address opts)]
+           convert
            default-filename-to-address)]
-     (record file-storage-backend
-             (directory (ensure-directory directory))
-             (write-value write-value)
-             (read-value read-value)
-             (address-to-filename address-to-filename)
-             (filename-to-address filename-to-address)))))
+     (let [backend
+           (record file-storage-backend
+                   (directory (ensure-directory directory))
+                   (write-value write-value)
+                   (read-value read-value)
+                   (address-to-filename address-to-filename)
+                   (filename-to-address filename-to-address))]
+       (storage/make-backend
+        (fn [^:vector<tuple<int;Datascript_runtime.Storage_value.t>> address-data
+             ^:vector<int> delete-addresses]
+          (doseq [entry address-data]
+            (write-file
+             backend
+             (tuple-get entry 0)
+             (tuple-get entry 1)))
+          (doseq [address delete-addresses]
+            (delete-file backend address))
+          (Stdlib.ignore 0))
+        (fn [^:int address]
+          (read-file backend address))
+        (fn [^:unit _ignored]
+          (mapv
+           (:filename-to-address backend)
+           (array-seq (Sys.readdir (:directory backend)))))
+        (fn [^:vector<int> addresses]
+          (doseq [address addresses]
+            (delete-file backend address))
+          (Stdlib.ignore 0)))))))

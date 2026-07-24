@@ -194,10 +194,7 @@ let compile name args =
           | _ -> false)
         args
   | "fn?" ->
-      compile_runtime_type_predicate name
-        "Lg_runtime.Runtime_dynamic.is_function"
-        (function TFn _ -> true | _ -> false)
-        args
+      compile_type_predicate name (function TFn _ -> true | _ -> false) args
   | "coll?" ->
       compile_runtime_type_predicate name "Lg_runtime.Runtime_dynamic.is_coll"
         (function

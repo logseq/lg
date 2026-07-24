@@ -5,8 +5,9 @@ module Env = Compiler_environment
 
 let record_type_key = Resolver.record_type_key
 
-let declare_type scope env name kind =
-  Type_registry.declare ~scope name kind (Env.types env)
+let declare_type ?(type_parameters = []) ?manifest scope env name kind =
+  Type_registry.declare ~type_parameters ?manifest ~scope name kind
+    (Env.types env)
   |> Result.map (fun (type_id, types) -> (type_id, Env.with_types types env))
 
 let compile_type_alias ?location scope env next_type name type_parameters
@@ -16,14 +17,13 @@ let compile_type_alias ?location scope env next_type name type_parameters
       match
         Type_annotation.of_keyword_with_parameters type_parameters keyword
       with
-      | Error _ as err
-        when String.starts_with ~prefix:":ocaml/" keyword
-             || String.starts_with ~prefix:":param/" keyword ->
-          err
-      | Error _ -> Error.error ("unknown type alias target " ^ keyword)
+      | Error _ as error -> error
       | Ok manifest -> (
+          let manifest = Function_elaborator.infer_named_record scope env manifest in
           let type_name = Names.sanitize_name name in
-          match declare_type scope env name Alias with
+          match
+            declare_type ~type_parameters ~manifest scope env name Alias
+          with
           | Error _ as err -> err
           | Ok (_type_id, env) ->
               Ok
@@ -82,7 +82,6 @@ let compile_type_record_fields ?location ?(allow_empty = false) ?emitted_name
                 type_parameters;
                 fields;
                 nominal;
-                dynamic_packer = false;
                 location;
               }
           )
@@ -94,11 +93,7 @@ let compile_type_record ?location ?(allow_empty = false) ?(nominal = true)
         match
           Type_annotation.of_keyword_with_parameters type_parameters keyword
         with
-        | Error _ as err
-          when String.starts_with ~prefix:":ocaml/" keyword
-               || String.starts_with ~prefix:":param/" keyword ->
-            err
-        | Error _ -> Error.error ("unknown record field type " ^ keyword)
+        | Error _ as error -> error
         | Ok ty ->
             let ty = Function_elaborator.infer_named_record scope env ty in
             Ok
@@ -147,12 +142,9 @@ let compile_type_variant ?location scope env next_type name type_parameters
         match
           Type_annotation.of_keyword_with_parameters type_parameters keyword
         with
-        | Ok ty -> Ok ty
-        | Error _ as err
-          when String.starts_with ~prefix:":ocaml/" keyword
-               || String.starts_with ~prefix:":param/" keyword ->
-            err
-        | Error _ -> Error.error ("unknown variant payload type " ^ keyword))
+        | Ok ty ->
+            Ok (Function_elaborator.infer_named_record scope env ty)
+        | Error _ as error -> error)
     | _ -> Error.error "type-variant payload types must be keywords"
   in
   let constructor_spec = function

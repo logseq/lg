@@ -83,7 +83,6 @@ type compiled_item =
       type_parameters : string list;
       fields : Types.field list;
       nominal : bool;
-      dynamic_packer : bool;
       location : Location.t option;
     }
   | Type_alias of {
@@ -141,7 +140,6 @@ type compiled_item =
       set_module_name : string;
       fields : Types.field list;
       values : (Types.field * Semantic_ir.t) list;
-      dynamic_packer : bool;
     }
   | Projected_record_def of {
       var_name : string;
@@ -152,5 +150,4 @@ type compiled_item =
       set_module_name : string;
       fields : Types.field list;
       source : Semantic_ir.t;
-      dynamic_packer : bool;
     }

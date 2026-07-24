@@ -4,6 +4,31 @@ module Env = Compiler_environment
 
 let record_type_key scope type_name = "__record/" ^ scope ^ "/" ^ type_name
 
+let lookup_type_declaration scope env type_name =
+  let registry = Env.types env in
+  let lookup owner local_name =
+    Type_registry.emitted_name ~scope:owner local_name
+    |> fun emitted_name ->
+    Type_registry.find_by_emitted_name emitted_name registry
+  in
+  match String.rindex_opt type_name '/' with
+  | Some index ->
+      let alias = String.sub type_name 0 index in
+      let local_name =
+        String.sub type_name (index + 1) (String.length type_name - index - 1)
+      in
+      let resolved_owner =
+        Env.resolve_namespace_alias ~scope alias env
+        |> Option.value ~default:alias
+      in
+      (match lookup resolved_owner local_name with
+      | Some _ as declaration -> declaration
+      | None -> lookup alias local_name)
+  | None ->
+      if String.contains type_name '.' then
+        Type_registry.find_by_emitted_name type_name registry
+      else lookup scope type_name
+
 let split_qualified_type_name type_name =
   match String.rindex_opt type_name '.' with
   | None -> None
@@ -29,7 +54,22 @@ let lookup_record_type scope env type_name =
     match lookup owner local_name with
     | Some ({ ty = TNamed_record record; _ } : binding) -> Ok record
     | Some _ -> Error.error ("invalid record type metadata for " ^ type_name)
-    | None -> Error.error ("unknown record type " ^ type_name)
+    | None ->
+        let prefix = "__record/" ^ owner ^ "/" in
+        let records =
+          Env.to_bindings env
+          |> List.filter_map (fun (key, (binding : binding)) ->
+                 if String.starts_with ~prefix key then
+                   match binding.ty with
+                   | TNamed_record record
+                     when String.equal record.type_name local_name ->
+                       Some record
+                   | _ -> None
+                 else None)
+        in
+        (match records with
+        | [ record ] -> Ok record
+        | [] | _ :: _ :: _ -> Error.error ("unknown record type " ^ type_name))
   in
   match String.rindex_opt type_name '/' with
   | Some index ->

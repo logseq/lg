@@ -72,11 +72,11 @@
     @result))
 
 (defn next-300k []
-  (loop [values (seq set-300k)
+  (loop [values set-300k
          result 0]
-    (if (nil? values)
-      result
-      (recur (next values) (+ result (first values))))))
+    (if-some [value (first values)]
+      (recur (next values) (+ result value))
+      result)))
 
 (defn reduce-300k []
   (reduce + 0 set-300k))

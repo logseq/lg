@@ -1,6 +1,4 @@
-let type_annotation = function
-  | "java.io.Writer" -> Some "Buffer.t"
-  | _ -> None
+let type_annotation _ = None
 
 let dynamic_instance_property ~receiver_type:_ ~method_name:_ = None
 

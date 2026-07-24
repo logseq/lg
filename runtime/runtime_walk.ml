@@ -1,9 +1,8 @@
 let preserve_properties original rebuilt =
   {
     rebuilt with
-    Runtime_dynamic.protocols = original.Runtime_dynamic.protocols;
-    metadata = original.metadata;
-    type_name = original.type_name;
+    Runtime_dynamic.metadata = original.Runtime_dynamic.metadata;
+    type_name = original.Runtime_dynamic.type_name;
   }
 
 let map_entry inner key value =

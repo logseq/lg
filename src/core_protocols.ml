@@ -26,17 +26,6 @@ let equiv_id = Protocol_id.create ~owner:[] ~name:"IEquiv"
 let hash_id = Protocol_id.create ~owner:[] ~name:"IHash"
 let deref_id = Protocol_id.create ~owner:[] ~name:"IDeref"
 let comparable_id = Protocol_id.create ~owner:[] ~name:"IComparable"
-let object_id = Protocol_id.create ~owner:[] ~name:"Object"
-let clojure_hash_id = Protocol_id.create ~owner:[] ~name:"clojure.lang.IHashEq"
-
-let clojure_collection_id =
-  Protocol_id.create ~owner:[] ~name:"clojure.lang.IPersistentCollection"
-
-let clojure_transient_collection_id =
-  Protocol_id.create ~owner:[] ~name:"clojure.lang.ITransientCollection"
-
-let clojure_editable_collection_id =
-  Protocol_id.create ~owner:[] ~name:"clojure.lang.IEditableCollection"
 
 let data_owner = [ "clojure.data" ]
 
@@ -243,8 +232,7 @@ let declare_data_protocols registry =
        ]
   |> add_or_fail
 
-let declare_clojure_host_protocols registry =
-  let dynamic = Types.dynamic_constraint TUnknown in
+let declare_comparable_protocol registry =
   registry
   |> Protocol_registry.declare comparable_id
        [
@@ -252,90 +240,6 @@ let declare_clojure_host_protocols registry =
            Protocol_registry.method_id = method_id comparable_id "-compare";
            param_tys = [ TUnknown; TUnknown ];
            return_ty = TInt;
-         };
-       ]
-  |> add_or_fail
-  |> Protocol_registry.declare object_id
-       [
-         {
-           Protocol_registry.method_id = method_id object_id "hashCode";
-           param_tys = [ dynamic ];
-           return_ty = TInt;
-         };
-         {
-           Protocol_registry.method_id = method_id object_id "toString";
-           param_tys = [ dynamic ];
-           return_ty = TString;
-         };
-         {
-           Protocol_registry.method_id = method_id object_id "equals";
-           param_tys = [ dynamic; dynamic ];
-           return_ty = TBool;
-         };
-       ]
-  |> add_or_fail
-  |> Protocol_registry.declare clojure_hash_id
-       [
-         {
-           Protocol_registry.method_id = method_id clojure_hash_id "hasheq";
-           param_tys = [ dynamic ];
-           return_ty = TInt;
-         };
-       ]
-  |> add_or_fail
-  |> Protocol_registry.declare clojure_collection_id
-       [
-         {
-           Protocol_registry.method_id = method_id clojure_collection_id "count";
-           param_tys = [ dynamic ];
-           return_ty = TInt;
-         };
-         {
-           Protocol_registry.method_id = method_id clojure_collection_id "equiv";
-           param_tys = [ dynamic; dynamic ];
-           return_ty = TBool;
-         };
-         {
-           Protocol_registry.method_id = method_id clojure_collection_id "empty";
-           param_tys = [ dynamic ];
-           return_ty = dynamic;
-         };
-         {
-           Protocol_registry.method_id = method_id clojure_collection_id "cons";
-           param_tys = [ dynamic; dynamic ];
-           return_ty = dynamic;
-         };
-       ]
-  |> add_or_fail
-  |> Protocol_registry.declare clojure_editable_collection_id
-       [
-         {
-           Protocol_registry.method_id =
-             method_id clojure_editable_collection_id "empty";
-           param_tys = [ dynamic ];
-           return_ty = dynamic;
-         };
-         {
-           Protocol_registry.method_id =
-             method_id clojure_editable_collection_id "asTransient";
-           param_tys = [ dynamic ];
-           return_ty = dynamic;
-         };
-       ]
-  |> add_or_fail
-  |> Protocol_registry.declare clojure_transient_collection_id
-       [
-         {
-           Protocol_registry.method_id =
-             method_id clojure_transient_collection_id "conj";
-           param_tys = [ dynamic; dynamic ];
-           return_ty = dynamic;
-         };
-         {
-           Protocol_registry.method_id =
-             method_id clojure_transient_collection_id "persistent";
-           param_tys = [ dynamic ];
-           return_ty = dynamic;
          };
        ]
   |> add_or_fail
@@ -400,7 +304,8 @@ let initial_registry =
   |> add_indexed (Receiver_id.Host_receiver "array")
        "Lg.Core_protocols.nth_host_array"
   |> declare_emptyable |> declare_collection_lifecycle_protocols |> declare_deref
-  |> declare_clojure_host_protocols |> declare_data_protocols
+  |> declare_comparable_protocol
+  |> declare_data_protocols
 
 let find_seqable receiver_ty registry =
   match Receiver_id.of_type receiver_ty with
@@ -464,3 +369,17 @@ let find_emptyable receiver_ty registry =
   | Some receiver ->
       Protocol_registry.find_implementation emptyable_id empty_method_id
         receiver registry
+
+let find_comparable receiver_ty registry =
+  match Receiver_id.of_type receiver_ty with
+  | None -> None
+  | Some receiver ->
+      Protocol_registry.find_implementation comparable_id
+        (method_id comparable_id "-compare") receiver registry
+      |> Option.map (fun (implementation : binding) ->
+             {
+               implementation with
+               ty =
+                 instantiate_receiver_method_type receiver_ty
+                   implementation.ty;
+             })

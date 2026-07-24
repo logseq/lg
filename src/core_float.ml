@@ -36,7 +36,7 @@ let widen_to_float arg =
   else
     typed_ir TFloat
       (Semantic_ir.Apply
-         (Semantic_ir.Ident "Int64.to_float", [ Core_int.int_expression arg ]))
+         (Semantic_ir.Ident "float_of_int", [ Core_int.int_expression arg ]))
 
 let fold_infix operator first rest =
   List.fold_left

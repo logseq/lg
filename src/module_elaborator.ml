@@ -418,7 +418,7 @@ let rec compile_module ?location ?signature_name ?signature_location
                             set_module_name = allocation.record.set_module_name;
                             fields;
                             values;
-                            dynamic_packer = false }
+                          }
                     | None ->
                         Projected_record_def
                           { var_name = local_name;
@@ -429,7 +429,7 @@ let rec compile_module ?location ?signature_name ?signature_location
                             set_module_name = allocation.record.set_module_name;
                             fields;
                             source = expr.semantic_expr;
-                            dynamic_packer = false }
+                          }
                   else
                     let local_expr =
                       Structural_map.as_named_record allocation.record expr

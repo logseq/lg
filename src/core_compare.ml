@@ -8,20 +8,48 @@ let fresh_nullable_equality_name () =
   "__lg_nullable_equality_value_"
   ^ string_of_int !nullable_equality_counter
 
-let polymorphic_sequence_equal left right =
+let static_sequence_equal left right =
   Semantic_ir.Apply
     ( Semantic_ir.Ident "Seq.equal",
-      [ Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.polymorphic_equal";
-        left;
-        right;
-      ] )
+      [ Semantic_ir.Ident "="; left; right ] )
 
 let requires_runtime_equality = function
-  | TUnknown | TVar _ | TOcaml "value" -> true
+  | TUnknown | TOcaml "value" -> true
   | _ -> false
 
-let rec equality_expr left right =
+let sequential_type = function
+  | TList _ | TVector _ | TArray _ | TSeq _ -> true
+  | ty -> Option.is_some (Types.next_seq_element ty)
+
+let rec equality_expr ?env left right =
+  let resolve value =
+    match env with
+    | None -> value
+    | Some env ->
+        {
+          value with
+          ty =
+            Collection_capability.resolve_callback_record env value.ty;
+        }
+  in
+  let left = resolve left in
+  let right = resolve right in
   match (left.ty, right.ty) with
+  | TFloat, TInt ->
+      let right =
+        match Semantic_ir.unlocated right.semantic_expr with
+        | Semantic_ir.Int value ->
+            Semantic_ir.Float (string_of_int value ^ ".0")
+        | _ ->
+            Semantic_ir.Apply
+              (Semantic_ir.Ident "float_of_int", [ right.semantic_expr ])
+      in
+      Semantic_ir.Infix
+        ("=", left.semantic_expr, right)
+  | TInt, TFloat -> equality_expr ?env right left
+  | TOcaml "int", TInt ->
+      Semantic_ir.Infix ("=", left.semantic_expr, right.semantic_expr)
+  | TInt, TOcaml "int" -> equality_expr ?env right left
   | TNullable _, TNil ->
       Semantic_ir.Match
         ( left.semantic_expr,
@@ -29,7 +57,7 @@ let rec equality_expr left right =
             ( Semantic_ir.PConstructor ("Some", Some Semantic_ir.PAny),
               Semantic_ir.Bool false );
           ] )
-  | TNil, TNullable _ -> equality_expr right left
+  | TNil, TNullable _ -> equality_expr ?env right left
   | TNullable inner, right_ty
     when Types.assignable ~policy:Host_boundary ~expected:inner
            ~actual:right_ty ->
@@ -39,14 +67,14 @@ let rec equality_expr left right =
           [ (Semantic_ir.PConstructor ("None", None), Semantic_ir.Bool false);
             ( Semantic_ir.PConstructor
                 ("Some", Some (Semantic_ir.PVar nullable_value)),
-              equality_expr
+      equality_expr ?env
                 (typed_ir inner (Semantic_ir.Ident nullable_value))
                 right );
           ] )
   | left_ty, TNullable inner
     when Types.assignable ~policy:Host_boundary ~expected:inner
            ~actual:left_ty ->
-      equality_expr right left
+      equality_expr ?env right left
   | TNil, TNil -> Semantic_ir.Infix ("=", left.semantic_expr, right.semantic_expr)
   | TNil, _ | _, TNil ->
       Semantic_ir.Sequence
@@ -65,16 +93,24 @@ let rec equality_expr left right =
               [ left.semantic_expr; right ] )
       | None -> Semantic_ir.Bool false)
   | _, right_ty when Types.is_dynamic right_ty ->
-      equality_expr right left
+      equality_expr ?env right left
+  | left_ty, right_ty
+    when sequential_type left_ty && sequential_type right_ty -> (
+      match
+        ( Core_sequence_transform.collection_to_seq_expr left,
+          Core_sequence_transform.collection_to_seq_expr right )
+      with
+      | Ok (_, left), Ok (_, right) -> static_sequence_equal left right
+      | Error _, _ | _, Error _ -> Semantic_ir.Bool false)
   | (TFn _ | TOverloaded_fn _), (TFn _ | TOverloaded_fn _) ->
       Semantic_ir.Apply
-        ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.polymorphic_equal",
+        ( Semantic_ir.Ident "Lg_runtime.Runtime_static_value.equal",
           [ left.semantic_expr; right.semantic_expr ] )
   | left_ty, right_ty
     when requires_runtime_equality left_ty
          && requires_runtime_equality right_ty ->
       Semantic_ir.Apply
-        ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.polymorphic_equal",
+        ( Semantic_ir.Ident "Lg_runtime.Runtime_static_value.equal",
           [ left.semantic_expr; right.semantic_expr ] )
   | (TRecord _ | TNamed_record _), right_type
     when Option.is_some (Types.dynamic_map_types right_type) -> (
@@ -92,7 +128,7 @@ let rec equality_expr left right =
           Semantic_ir.Infix ("=", dynamic_left, right.semantic_expr))
   | left_type, (TRecord _ | TNamed_record _)
     when Option.is_some (Types.dynamic_map_types left_type) ->
-      equality_expr right left
+      equality_expr ?env right left
   | TSet left_inner, TSet right_inner -> (
       match Types.set_module_name left_inner with
       | Ok left_module -> (
@@ -127,37 +163,6 @@ let rec equality_expr left right =
             ( Semantic_ir.Ident (set_module ^ ".equal"),
               [ left.semantic_expr; right.semantic_expr ] )
       | Error _ -> Semantic_ir.Bool false)
-  | TList _, TList _ ->
-      polymorphic_sequence_equal
-        (Semantic_ir.Apply
-           (Semantic_ir.Ident "List.to_seq", [ left.semantic_expr ]))
-        (Semantic_ir.Apply
-           (Semantic_ir.Ident "List.to_seq", [ right.semantic_expr ]))
-  | TVector _, TVector _ ->
-      polymorphic_sequence_equal
-        (Semantic_ir.Apply
-           ( Semantic_ir.Ident "List.to_seq",
-             [ Semantic_ir.Apply
-                 (Semantic_ir.Ident "Rrbvec.to_list", [ left.semantic_expr ]);
-             ] ))
-        (Semantic_ir.Apply
-           ( Semantic_ir.Ident "List.to_seq",
-             [ Semantic_ir.Apply
-                 (Semantic_ir.Ident "Rrbvec.to_list", [ right.semantic_expr ]);
-             ] ))
-  | TArray _, TArray _ ->
-      polymorphic_sequence_equal
-        (Semantic_ir.Apply
-           (Semantic_ir.Ident "Array.to_seq", [ left.semantic_expr ]))
-        (Semantic_ir.Apply
-           (Semantic_ir.Ident "Array.to_seq", [ right.semantic_expr ]))
-  | TSeq _, TSeq _ ->
-      polymorphic_sequence_equal left.semantic_expr right.semantic_expr
-  | ( TOcaml_app (left_name, [ _ ]),
-      TOcaml_app (right_name, [ _ ]) )
-    when left_name = Types.next_seq_type_name
-         && right_name = Types.next_seq_type_name ->
-      polymorphic_sequence_equal left.semantic_expr right.semantic_expr
   | (TRecord fields | TNamed_record { fields; _ }), _ ->
       let parts =
         fields
@@ -168,7 +173,7 @@ let rec equality_expr left right =
                let right_field =
                  typed_ir field.ty (Structural_map.field_expr right field)
                in
-               equality_expr left_field right_field)
+               equality_expr ?env left_field right_field)
       in
       and_expressions parts
   | _ -> Semantic_ir.Infix ("=", left.semantic_expr, right.semantic_expr))
@@ -188,9 +193,24 @@ let pairwise_expressions op args =
   in
   loop [] args
 
-let pairwise_equality_expressions args =
+let host_int_ordering_expr op left right =
+  match (left.ty, right.ty) with
+  | TOcaml "int", TInt | TInt, TOcaml "int" ->
+      Semantic_ir.Infix (op, left.semantic_expr, right.semantic_expr)
+  | _ -> Semantic_ir.Infix (op, left.semantic_expr, right.semantic_expr)
+
+let pairwise_host_int_ordering_expressions op args =
   let rec loop acc = function
-    | left :: ((right :: _) as rest) -> loop (equality_expr left right :: acc) rest
+    | left :: ((right :: _) as rest) ->
+        loop (host_int_ordering_expr op left right :: acc) rest
+    | _ -> List.rev acc
+  in
+  loop [] args
+
+let pairwise_equality_expressions ?env args =
+  let rec loop acc = function
+    | left :: ((right :: _) as rest) ->
+        loop (equality_expr ?env left right :: acc) rest
     | _ -> List.rev acc
   in
   loop [] args
@@ -222,7 +242,7 @@ let dynamic_numeric_pairwise_expressions name args =
   in
   loop [] args
 
-let compile name args =
+let compile ?env name args =
   match args with
   | [] | [ _ ] ->
       Ok (typed_ir TBool (Semantic_ir.Bool (name <> "not=")))
@@ -234,6 +254,7 @@ let compile name args =
               Types.is_dynamic first.ty
               || Types.is_dynamic arg.ty
               || Types.same_shape first.ty arg.ty
+              || (Types.is_numeric first.ty && Types.is_numeric arg.ty)
               || (match (first.ty, arg.ty) with
                  | TNil, TNullable _ | TNullable _, TNil -> true
                  | TNullable inner, ty | ty, TNullable inner ->
@@ -242,10 +263,13 @@ let compile name args =
                  | _ -> false)
               || Types.assignable ~policy:Host_boundary ~expected:first.ty
                    ~actual:arg.ty
-              || Types.defer_to_ocaml ~expected:first.ty ~actual:arg.ty)
+              || Types.defer_to_ocaml ~expected:first.ty ~actual:arg.ty
+              || (sequential_type first.ty && sequential_type arg.ty))
             args
         then
-          let equal_expr = and_expressions (pairwise_equality_expressions args) in
+          let equal_expr =
+            and_expressions (pairwise_equality_expressions ?env args)
+          in
           let expression =
             if name = "not=" then Semantic_ir.Prefix ("not", equal_expr) else equal_expr
           in
@@ -262,6 +286,18 @@ let compile name args =
               Ok (typed_ir TBool (and_expressions expressions))
           | None ->
               Error.error (name ^ " expects numeric arguments")
+        else if
+          List.exists (fun arg -> Types.equal arg.ty (TOcaml "int")) args
+          && List.for_all
+               (fun arg ->
+                 Types.equal arg.ty TInt
+                 || Types.equal arg.ty (TOcaml "int"))
+               args
+        then
+          Ok
+            (typed_ir TBool
+               (and_expressions
+                  (pairwise_host_int_ordering_expressions name args)))
         else
           let numeric_ty =
             List.find_map

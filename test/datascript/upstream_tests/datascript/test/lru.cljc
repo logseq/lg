@@ -5,12 +5,12 @@
 
 (deftest test-lru
   (let [l0 (lru/lru 2)
-        l1 (assoc l0 :a 1)
-        l2 (assoc l1 :b 2)
-        l3 (assoc l2 :c 3)
-        l4 (assoc l3 :b 4)
-        l5 (assoc l4 :d 5)]
-    (are [l k v] (= (get l k) v)
+        l1 (lru/assoc-lru l0 :a 1)
+        l2 (lru/assoc-lru l1 :b 2)
+        l3 (lru/assoc-lru l2 :c 3)
+        l4 (lru/assoc-lru l3 :b 4)
+        l5 (lru/assoc-lru l4 :d 5)]
+    (are [l k v] (= (lru/get-lru l k nil) v)
       l0 :a nil
       l1 :a 1
       l2 :a 1

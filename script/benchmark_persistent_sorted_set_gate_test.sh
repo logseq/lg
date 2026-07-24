@@ -12,9 +12,6 @@ reduce-300K 2.0
 runtime lg-melange
 conj-10K 1.1
 reduce-300K 2.1
-runtime lg-js
-conj-10K 1.2
-reduce-300K 2.2
 runtime upstream-cljs
 conj-10K 3.0
 reduce-300K 4.0'
@@ -34,10 +31,8 @@ expect_failure() {
   fi
 }
 
-expect_failure "missing lg-js benchmark results" 'runtime lg-native
+expect_failure "missing lg-native benchmark results" 'runtime lg-melange
 conj-10K 1.0
-runtime lg-melange
-conj-10K 1.1
 runtime upstream-cljs
 conj-10K 3.0'
 
@@ -46,9 +41,6 @@ conj-10K 1.0
 reduce-300K 2.0
 runtime lg-melange
 conj-10K 1.1
-runtime lg-js
-conj-10K 1.2
-reduce-300K 2.2
 runtime upstream-cljs
 conj-10K 3.0
 reduce-300K 4.0'
@@ -57,8 +49,6 @@ expect_failure "lg-native conj-10K 3ms is not faster than upstream-cljs 3ms" 'ru
 conj-10K 3.0
 runtime lg-melange
 conj-10K 1.1
-runtime lg-js
-conj-10K 1.2
 runtime upstream-cljs
 conj-10K 3.0'
 
@@ -66,7 +56,5 @@ expect_failure "invalid upstream-cljs conj-10K result" 'runtime lg-native
 conj-10K 1.0
 runtime lg-melange
 conj-10K 1.1
-runtime lg-js
-conj-10K 1.2
 runtime upstream-cljs
 conj-10K NaN'

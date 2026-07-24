@@ -10,9 +10,15 @@
  (deps
   compiler_test_runner.bc
   ../src/lg.cma
-  ../runtime/lg_runtime.cma
+ ../runtime/lg_runtime.cma
   ../vendor/rrbvec/rrbvec.cma)
- (libraries lg lg.runtime lg.edn-backend.native unix rrbvec))
+ (libraries
+  datascript_runtime
+  lg
+  lg.runtime
+  lg.edn-backend.native
+  unix
+  rrbvec))
 
 (test
  (name lgc_target_tests)
@@ -28,6 +34,11 @@
  (name runtime_dynamic_tests)
  (modules runtime_dynamic_tests)
  (libraries lg.runtime lg.edn-backend.native rrbvec))
+
+(test
+ (name datascript_runtime_tests)
+ (modules datascript_runtime_tests)
+ (libraries datascript_runtime lg.runtime lg.edn-backend.native rrbvec))
 
 (test
  (name runtime_seq_tests)
@@ -68,7 +79,11 @@
  (alias lgc-melange)
  (module_systems es6)
  (modules lgc_melange)
- (libraries lg.runtime rrbvec))
+ (libraries
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  rrbvec))
 
 (rule
  (target datascript_value_native.ml)
@@ -95,7 +110,7 @@
  (modules datascript_value_native)
  (flags
   (:standard -w -32-37))
- (libraries lg.runtime rrbvec))
+ (libraries lg.edn-backend.native lg.runtime rrbvec))
 
 (rule
  (target datascript_value_melange.ml)
@@ -123,7 +138,11 @@
  (module_systems es6)
  (modules datascript_value_melange)
  (compile_flags -w -32-37)
- (libraries lg.runtime rrbvec))
+ (libraries
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  rrbvec))
 
 (rule
  (target datascript_schema_upstream_native.ml)
@@ -142,7 +161,7 @@
  (modules datascript_schema_upstream_native)
  (flags
   (:standard -w -32-37))
- (libraries lg.runtime rrbvec))
+ (libraries lg.edn-backend.native lg.runtime rrbvec))
 
 (rule
  (target datascript_schema_upstream_melange.ml)
@@ -162,7 +181,11 @@
  (module_systems es6)
  (modules datascript_schema_upstream_melange)
  (compile_flags -w -32-37)
- (libraries lg.runtime rrbvec))
+ (libraries
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  rrbvec))
 
 (alias
  (name runtest)
@@ -393,7 +416,7 @@
  (modules datascript_util_native)
  (flags
   (:standard -w -5-32-37-39))
- (libraries lg.runtime rrbvec unix))
+ (libraries lg.runtime lg.edn-backend.native rrbvec unix))
 
 (rule
  (target datascript_util_melange.ml)
@@ -418,7 +441,11 @@
  (module_systems es6)
  (modules datascript_util_melange)
  (compile_flags -w -5-32-37-39)
- (libraries lg.runtime rrbvec))
+ (libraries
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  rrbvec))
 
 (rule
  (alias datascript-util)
@@ -458,7 +485,7 @@
  (modules persistent_sorted_set_arrays_native)
  (flags
   (:standard -w -32-37))
- (libraries lg.runtime rrbvec))
+ (libraries lg.edn-backend.native lg.runtime rrbvec))
 
 (rule
  (target persistent_sorted_set_arrays_melange.ml)
@@ -483,7 +510,11 @@
  (module_systems es6)
  (modules persistent_sorted_set_arrays_melange)
  (compile_flags -w -32-37)
- (libraries lg.runtime rrbvec))
+ (libraries
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  rrbvec))
 
 (rule
  (alias runtest)
@@ -526,8 +557,8 @@
  (name persistent_sorted_set_path_native)
  (modules persistent_sorted_set_path_native)
  (flags
-  (:standard -w -32-37))
- (libraries lg.runtime rrbvec))
+  (:standard -w -27-32-37-69))
+ (libraries lg.edn-backend.native lg.runtime rrbvec))
 
 (rule
  (target persistent_sorted_set_path_melange.ml)
@@ -555,8 +586,12 @@
  (alias persistent-sorted-set-path-melange)
  (module_systems es6)
  (modules persistent_sorted_set_path_melange)
- (compile_flags -w -32-37)
- (libraries lg.runtime rrbvec))
+ (compile_flags -w -27-32-37-69)
+ (libraries
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  rrbvec))
 
 (rule
  (alias runtest)
@@ -599,8 +634,8 @@
  (name persistent_sorted_set_helpers_native)
  (modules persistent_sorted_set_helpers_native)
  (flags
-  (:standard -w -32-37))
- (libraries lg.runtime rrbvec))
+  (:standard -w -27-32-37-69))
+ (libraries lg.edn-backend.native lg.runtime rrbvec))
 
 (rule
  (target persistent_sorted_set_helpers_melange.ml)
@@ -630,8 +665,12 @@
  (modules persistent_sorted_set_helpers_melange)
  (preprocess
   (pps melange.ppx))
- (compile_flags -w -32-37)
- (libraries lg.runtime rrbvec))
+ (compile_flags -w -27-32-37-69)
+ (libraries
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  rrbvec))
 
 (rule
  (alias runtest)
@@ -674,8 +713,8 @@
  (name persistent_sorted_set_leaf_native)
  (modules persistent_sorted_set_leaf_native)
  (flags
-  (:standard -w -32-37))
- (libraries lg.runtime rrbvec))
+  (:standard -w -27-32-37-69))
+ (libraries lg.edn-backend.native lg.runtime rrbvec))
 
 (rule
  (target persistent_sorted_set_leaf_melange.ml)
@@ -705,8 +744,12 @@
  (modules persistent_sorted_set_leaf_melange)
  (preprocess
   (pps melange.ppx))
- (compile_flags -w -32-37)
- (libraries lg.runtime rrbvec))
+ (compile_flags -w -27-32-37-69)
+ (libraries
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  rrbvec))
 
 (rule
  (alias runtest)
@@ -749,8 +792,8 @@
  (name persistent_sorted_set_storage_native)
  (modules persistent_sorted_set_storage_native)
  (flags
-  (:standard -w -32-37-69))
- (libraries lg.runtime rrbvec))
+  (:standard -w -27-32-37-69))
+ (libraries lg.edn-backend.native lg.runtime rrbvec))
 
 (rule
  (target persistent_sorted_set_storage_melange.ml)
@@ -780,8 +823,12 @@
  (modules persistent_sorted_set_storage_melange)
  (preprocess
   (pps melange.ppx))
- (compile_flags -w -32-37-69)
- (libraries lg.runtime rrbvec))
+ (compile_flags -w -27-32-37-69)
+ (libraries
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  rrbvec))
 
 (rule
  (target persistent_sorted_set_storage_jsoo.ml)
@@ -866,8 +913,11 @@
  (name persistent_sorted_set_benchmark_native)
  (modules persistent_sorted_set_benchmark_native)
  (flags
-  (:standard -w -32-37))
- (libraries lg.runtime rrbvec))
+ (:standard -w -27-32-37-69))
+ (libraries
+  lg.edn-backend.native
+  lg.runtime
+  rrbvec))
 
 (rule
  (target persistent_sorted_set_benchmark_melange.ml)
@@ -897,8 +947,12 @@
  (modules persistent_sorted_set_benchmark_melange)
  (preprocess
   (pps melange.ppx))
- (compile_flags -w -32-37)
- (libraries lg.runtime rrbvec))
+ (compile_flags -w -27-32-37-69)
+ (libraries
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  rrbvec))
 
 (rule
  (target persistent_sorted_set_benchmark_jsoo.ml)
@@ -935,14 +989,16 @@
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.cljc
-  datascript/upstream/inline.cljc
   datascript/upstream/util.cljc
-  datascript/upstream/lru.cljc
   datascript/upstream/schema.cljc
   datascript/upstream/db.cljc
+  datascript/upstream/parser.cljc
+  datascript/lg/query_types.cljc
+  datascript/lg/query.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/conn.cljc
   datascript/storage_smoke.cljc
+  datascript_runtime/datascript_runtime.cma
   ../bin/lg_cli.exe)
  (action
   (run
@@ -953,11 +1009,12 @@
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
-   %{dep:datascript/upstream/inline.cljc}
    %{dep:datascript/upstream/util.cljc}
-   %{dep:datascript/upstream/lru.cljc}
    %{dep:datascript/upstream/schema.cljc}
    %{dep:datascript/upstream/db.cljc}
+   %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/lg/query_types.cljc}
+   %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/conn.cljc}
    %{dep:datascript/storage_smoke.cljc}
@@ -968,8 +1025,14 @@
  (name datascript_storage_smoke_native)
  (modules datascript_storage_smoke_native)
  (flags
-  (:standard -w -5-26-27-32-37-39-69))
- (libraries lg.runtime re rrbvec unix))
+  (:standard -w -5-26-27-32-34-37-39-69))
+ (libraries
+  datascript.runtime
+  lg.runtime
+  lg.edn-backend.native
+  re
+  rrbvec
+  unix))
 
 (rule
  (target datascript_storage_smoke_melange.ml)
@@ -977,14 +1040,16 @@
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.cljc
-  datascript/upstream/inline.cljc
   datascript/upstream/util.cljc
-  datascript/upstream/lru.cljc
   datascript/upstream/schema.cljc
   datascript/upstream/db.cljc
+  datascript/upstream/parser.cljc
+  datascript/lg/query_types.cljc
+  datascript/lg/query.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/conn.cljc
   datascript/storage_smoke.cljc
+  datascript_runtime/datascript_runtime.cma
   ../bin/lg_cli.exe)
  (action
   (run
@@ -995,11 +1060,12 @@
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
-   %{dep:datascript/upstream/inline.cljc}
    %{dep:datascript/upstream/util.cljc}
-   %{dep:datascript/upstream/lru.cljc}
    %{dep:datascript/upstream/schema.cljc}
    %{dep:datascript/upstream/db.cljc}
+   %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/lg/query_types.cljc}
+   %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/conn.cljc}
    %{dep:datascript/storage_smoke.cljc}
@@ -1013,24 +1079,38 @@
  (modules datascript_storage_smoke_melange)
  (preprocess
   (pps melange.ppx))
- (compile_flags -w -5-26-27-32-37-39-69)
- (libraries lg.runtime rrbvec))
+ (compile_flags -w -5-26-27-32-34-37-39-69)
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  rrbvec))
 
 (rule
  (alias datascript-storage-smoke)
  (deps
   datascript/value_smoke.sh
+  datascript/static_codegen_smoke.sh
   datascript/storage_smoke.expected
+  datascript_storage_smoke_native.ml
   datascript_storage_smoke_native.exe
   (alias datascript-storage-smoke-melange)
+  datascript_storage_smoke_melange.ml
   datascript-storage-smoke-melange/test/datascript_storage_smoke_melange.js)
  (action
-  (run
-   sh
-   %{dep:datascript/value_smoke.sh}
-   %{exe:datascript_storage_smoke_native.exe}
-   %{dep:datascript-storage-smoke-melange/test/datascript_storage_smoke_melange.js}
-   %{dep:datascript/storage_smoke.expected})))
+  (progn
+   (run
+    sh
+    %{dep:datascript/static_codegen_smoke.sh}
+    %{dep:datascript_storage_smoke_native.ml}
+    %{dep:datascript_storage_smoke_melange.ml})
+   (run
+    sh
+    %{dep:datascript/value_smoke.sh}
+    %{exe:datascript_storage_smoke_native.exe}
+    %{dep:datascript-storage-smoke-melange/test/datascript_storage_smoke_melange.js}
+    %{dep:datascript/storage_smoke.expected}))))
 
 (rule
  (target datascript_file_storage_smoke_native.ml)
@@ -1038,23 +1118,13 @@
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.cljc
-  datascript/upstream/inline.cljc
   datascript/upstream/util.cljc
-  datascript/upstream/lru.cljc
   datascript/upstream/schema.cljc
   datascript/upstream/db.cljc
-  datascript/upstream/parser.cljc
-  datascript/upstream/entity.cljc
-  datascript/upstream/built_ins.cljc
-  datascript/upstream/pull_parser.cljc
-  datascript/upstream/pull_api.cljc
-  datascript/upstream/query.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/storage_file.cljc
-  datascript/upstream/serialize.cljc
-  datascript/upstream/conn.cljc
-  datascript/upstream/core.cljc
   datascript/file_storage_smoke.cljc
+  datascript_runtime/datascript_runtime.cma
   ../bin/lg_cli.exe)
  (action
   (run
@@ -1065,22 +1135,11 @@
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
-   %{dep:datascript/upstream/inline.cljc}
    %{dep:datascript/upstream/util.cljc}
-   %{dep:datascript/upstream/lru.cljc}
    %{dep:datascript/upstream/schema.cljc}
    %{dep:datascript/upstream/db.cljc}
-   %{dep:datascript/upstream/parser.cljc}
-   %{dep:datascript/upstream/entity.cljc}
-   %{dep:datascript/upstream/built_ins.cljc}
-   %{dep:datascript/upstream/pull_parser.cljc}
-   %{dep:datascript/upstream/pull_api.cljc}
-   %{dep:datascript/upstream/query.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/storage_file.cljc}
-   %{dep:datascript/upstream/serialize.cljc}
-   %{dep:datascript/upstream/conn.cljc}
-   %{dep:datascript/upstream/core.cljc}
    %{dep:datascript/file_storage_smoke.cljc}
    -o
    %{target})))
@@ -1090,7 +1149,13 @@
  (modules datascript_file_storage_smoke_native)
  (flags
   (:standard -w -5-11-26-27-32-37-39-69))
- (libraries lg.runtime re rrbvec unix))
+ (libraries
+  datascript.runtime
+  lg.edn-backend.native
+  lg.runtime
+  re
+  rrbvec
+  unix))
 
 (rule
  (alias datascript-file-storage-smoke)
@@ -1111,17 +1176,16 @@
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.cljc
-  datascript/upstream/inline.cljc
   datascript/upstream/util.cljc
-  datascript/upstream/lru.cljc
   datascript/upstream/schema.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
+  datascript/lg/query_types.cljc
   datascript/upstream/entity.cljc
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
-  datascript/upstream/query.cljc
+  datascript/lg/query.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/storage_file.cljc
   datascript/upstream/serialize.cljc
@@ -1138,17 +1202,16 @@
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
-   %{dep:datascript/upstream/inline.cljc}
    %{dep:datascript/upstream/util.cljc}
-   %{dep:datascript/upstream/lru.cljc}
    %{dep:datascript/upstream/schema.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/lg/query_types.cljc}
    %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
-   %{dep:datascript/upstream/query.cljc}
+   %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/storage_file.cljc}
    %{dep:datascript/upstream/serialize.cljc}
@@ -1171,17 +1234,16 @@
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.cljc
-  datascript/upstream/inline.cljc
   datascript/upstream/util.cljc
-  datascript/upstream/lru.cljc
   datascript/upstream/schema.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
+  datascript/lg/query_types.cljc
   datascript/upstream/entity.cljc
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
-  datascript/upstream/query.cljc
+  datascript/lg/query.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/serialize.cljc
   datascript/upstream/conn.cljc
@@ -1197,17 +1259,16 @@
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
-   %{dep:datascript/upstream/inline.cljc}
    %{dep:datascript/upstream/util.cljc}
-   %{dep:datascript/upstream/lru.cljc}
    %{dep:datascript/upstream/schema.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/lg/query_types.cljc}
    %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
-   %{dep:datascript/upstream/query.cljc}
+   %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/serialize.cljc}
    %{dep:datascript/upstream/conn.cljc}
@@ -1248,17 +1309,16 @@
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.cljc
-  datascript/upstream/inline.cljc
   datascript/upstream/util.cljc
-  datascript/upstream/lru.cljc
   datascript/upstream/schema.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
+  datascript/lg/query_types.cljc
+  datascript/lg/query.cljc
   datascript/upstream/entity.cljc
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
-  datascript/upstream/query.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/storage_file.cljc
   datascript/upstream/serialize.cljc
@@ -1282,17 +1342,16 @@
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
-   %{dep:datascript/upstream/inline.cljc}
    %{dep:datascript/upstream/util.cljc}
-   %{dep:datascript/upstream/lru.cljc}
    %{dep:datascript/upstream/schema.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/lg/query_types.cljc}
+   %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
-   %{dep:datascript/upstream/query.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/storage_file.cljc}
    %{dep:datascript/upstream/serialize.cljc}
@@ -1311,7 +1370,7 @@
  (modules datascript_transact_native)
  (flags
   (:standard -w -5-11-26-27-32-37-39-69))
- (libraries lg.runtime lg.edn-backend.native melange-edn-native melange-transit-native yojson re rrbvec unix lg-test.runtime lg-test.alcotest))
+ (libraries datascript.runtime lg.runtime lg.edn-backend.native melange-edn-native melange-transit-native yojson re rrbvec unix lg-test.runtime lg-test.alcotest))
 
 (rule
  (target datascript_transact_melange.ml)
@@ -1319,17 +1378,16 @@
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.cljc
-  datascript/upstream/inline.cljc
   datascript/upstream/util.cljc
-  datascript/upstream/lru.cljc
   datascript/upstream/schema.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
+  datascript/lg/query_types.cljc
+  datascript/lg/query.cljc
   datascript/upstream/entity.cljc
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
-  datascript/upstream/query.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/serialize.cljc
   datascript/upstream/conn.cljc
@@ -1351,17 +1409,16 @@
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
-   %{dep:datascript/upstream/inline.cljc}
    %{dep:datascript/upstream/util.cljc}
-   %{dep:datascript/upstream/lru.cljc}
    %{dep:datascript/upstream/schema.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/lg/query_types.cljc}
+   %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
-   %{dep:datascript/upstream/query.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/serialize.cljc}
    %{dep:datascript/upstream/conn.cljc}
@@ -1415,17 +1472,16 @@
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.cljc
-  datascript/upstream/inline.cljc
   datascript/upstream/util.cljc
-  datascript/upstream/lru.cljc
   datascript/upstream/schema.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
+  datascript/lg/query_types.cljc
+  datascript/lg/query.cljc
   datascript/upstream/entity.cljc
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
-  datascript/upstream/query.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/storage_file.cljc
   datascript/upstream/serialize.cljc
@@ -1466,6 +1522,7 @@
   datascript/upstream_tests/datascript/test/query_return_map.cljc
   datascript/upstream_tests/datascript/test/query_rules.cljc
   datascript/upstream_tests/datascript/test/serialize.cljc
+  datascript/upstream_tests/datascript/test/storage.cljs
   datascript/upstream_tests/datascript/test/tuples.cljc
   datascript/upstream_tests/datascript/test/upsert.cljc
   datascript/upstream_tests/datascript/test/validation.cljc
@@ -1483,17 +1540,16 @@
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
-   %{dep:datascript/upstream/inline.cljc}
    %{dep:datascript/upstream/util.cljc}
-   %{dep:datascript/upstream/lru.cljc}
    %{dep:datascript/upstream/schema.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/lg/query_types.cljc}
+   %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
-   %{dep:datascript/upstream/query.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/storage_file.cljc}
    %{dep:datascript/upstream/serialize.cljc}
@@ -1534,6 +1590,7 @@
    %{dep:datascript/upstream_tests/datascript/test/query_return_map.cljc}
    %{dep:datascript/upstream_tests/datascript/test/query_rules.cljc}
    %{dep:datascript/upstream_tests/datascript/test/serialize.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/storage.cljs}
    %{dep:datascript/upstream_tests/datascript/test/tuples.cljc}
    %{dep:datascript/upstream_tests/datascript/test/upsert.cljc}
    %{dep:datascript/upstream_tests/datascript/test/validation.cljc}
@@ -1542,16 +1599,40 @@
    %{target})))
 
 (library
+ (name datascript_conn_native_base_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_base)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript.runtime lg.runtime lg.edn-backend.native melange-edn-native melange-transit-native yojson re rrbvec unix lg-test.runtime lg-test.alcotest))
+
+(library
+ (name datascript_conn_native_filter_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_filter)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_filter_native_runner)
+ (modes byte)
+ (modules datascript_filter_native_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_filter_test_lib))
+
+(library
  (name datascript_conn_native_suite)
  (wrapped false)
  (modes byte native)
  (modules
-  datascript_conn_native_base
   datascript_conn_native_test_lru
   datascript_conn_native_test_transact
   datascript_conn_native_test_conn
   datascript_conn_native_test_listen
-  datascript_conn_native_test_filter
   datascript_conn_native_test_ident
   datascript_conn_native_test_components
   datascript_conn_native_test_core
@@ -1579,12 +1660,13 @@
   datascript_conn_native_test_query_return_map
   datascript_conn_native_test_query_rules
   datascript_conn_native_test_serialize
+  datascript_conn_native_test_storage
   datascript_conn_native_test_tuples
   datascript_conn_native_test_upsert
   datascript_conn_native_test_validation)
  (flags
  (:standard -w -5-11-26-27-32-37-39-69))
- (libraries lg.runtime lg.edn-backend.native melange-edn-native melange-transit-native yojson re rrbvec unix lg-test.runtime lg-test.alcotest))
+ (libraries datascript_conn_native_base_lib datascript_conn_native_filter_test_lib datascript.runtime lg.runtime lg.edn-backend.native melange-edn-native melange-transit-native yojson re rrbvec unix lg-test.runtime lg-test.alcotest))
 
 (executable
  (name datascript_conn_native)
@@ -1616,17 +1698,16 @@
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.cljc
-  datascript/upstream/inline.cljc
   datascript/upstream/util.cljc
-  datascript/upstream/lru.cljc
   datascript/upstream/schema.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
+  datascript/lg/query_types.cljc
+  datascript/lg/query.cljc
   datascript/upstream/entity.cljc
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
-  datascript/upstream/query.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/serialize.cljc
   datascript/upstream/conn.cljc
@@ -1667,6 +1748,7 @@
   datascript/upstream_tests/datascript/test/query_return_map.cljc
   datascript/upstream_tests/datascript/test/query_rules.cljc
   datascript/upstream_tests/datascript/test/serialize.cljc
+  datascript/upstream_tests/datascript/test/storage.cljs
   datascript/upstream_tests/datascript/test/tuples.cljc
   datascript/upstream_tests/datascript/test/upsert.cljc
   datascript/upstream_tests/datascript/test/validation.cljc
@@ -1683,17 +1765,16 @@
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
-   %{dep:datascript/upstream/inline.cljc}
    %{dep:datascript/upstream/util.cljc}
-   %{dep:datascript/upstream/lru.cljc}
    %{dep:datascript/upstream/schema.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/lg/query_types.cljc}
+   %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
-   %{dep:datascript/upstream/query.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/serialize.cljc}
    %{dep:datascript/upstream/conn.cljc}
@@ -1734,6 +1815,7 @@
    %{dep:datascript/upstream_tests/datascript/test/query_return_map.cljc}
    %{dep:datascript/upstream_tests/datascript/test/query_rules.cljc}
    %{dep:datascript/upstream_tests/datascript/test/serialize.cljc}
+   %{dep:datascript/upstream_tests/datascript/test/storage.cljs}
    %{dep:datascript/upstream_tests/datascript/test/tuples.cljc}
    %{dep:datascript/upstream_tests/datascript/test/upsert.cljc}
    %{dep:datascript/upstream_tests/datascript/test/validation.cljc}
@@ -1779,14 +1861,19 @@
   datascript_conn_melange_test_query_return_map
   datascript_conn_melange_test_query_rules
   datascript_conn_melange_test_serialize
+  datascript_conn_melange_test_storage
   datascript_conn_melange_test_tuples
   datascript_conn_melange_test_upsert
   datascript_conn_melange_test_validation
+  datascript_benchmark_melange_support
+  datascript_benchmark_melange_impl
+  datascript_benchmark_melange
   datascript_conn_melange)
  (preprocess
   (pps melange.ppx))
  (compile_flags -color never -w -5-11-26-27-32-37-39-69)
  (libraries
+  datascript.runtime
   lg.edn-backend
   lg.edn-backend.melange
   lg.runtime
@@ -1832,17 +1919,16 @@
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.cljc
-  datascript/upstream/inline.cljc
   datascript/upstream/util.cljc
-  datascript/upstream/lru.cljc
   datascript/upstream/schema.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
+  datascript/lg/query_types.cljc
+  datascript/lg/query.cljc
   datascript/upstream/entity.cljc
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
-  datascript/upstream/query.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/storage_file.cljc
   datascript/upstream/serialize.cljc
@@ -1866,17 +1952,16 @@
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
-   %{dep:datascript/upstream/inline.cljc}
    %{dep:datascript/upstream/util.cljc}
-   %{dep:datascript/upstream/lru.cljc}
    %{dep:datascript/upstream/schema.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/lg/query_types.cljc}
+   %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
-   %{dep:datascript/upstream/query.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/storage_file.cljc}
    %{dep:datascript/upstream/serialize.cljc}
@@ -1903,17 +1988,16 @@
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.cljc
-  datascript/upstream/inline.cljc
   datascript/upstream/util.cljc
-  datascript/upstream/lru.cljc
   datascript/upstream/schema.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
+  datascript/lg/query_types.cljc
+  datascript/lg/query.cljc
   datascript/upstream/entity.cljc
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
-  datascript/upstream/query.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/serialize.cljc
   datascript/upstream/conn.cljc
@@ -1935,17 +2019,16 @@
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
-   %{dep:datascript/upstream/inline.cljc}
    %{dep:datascript/upstream/util.cljc}
-   %{dep:datascript/upstream/lru.cljc}
    %{dep:datascript/upstream/schema.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/lg/query_types.cljc}
+   %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
-   %{dep:datascript/upstream/query.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/serialize.cljc}
    %{dep:datascript/upstream/conn.cljc}
@@ -1987,17 +2070,16 @@
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.cljc
-  datascript/upstream/inline.cljc
   datascript/upstream/util.cljc
-  datascript/upstream/lru.cljc
   datascript/upstream/schema.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
+  datascript/lg/query_types.cljc
+  datascript/lg/query.cljc
   datascript/upstream/entity.cljc
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
-  datascript/upstream/query.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/storage_file.cljc
   datascript/upstream/serialize.cljc
@@ -2021,17 +2103,16 @@
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
-   %{dep:datascript/upstream/inline.cljc}
    %{dep:datascript/upstream/util.cljc}
-   %{dep:datascript/upstream/lru.cljc}
    %{dep:datascript/upstream/schema.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/lg/query_types.cljc}
+   %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
-   %{dep:datascript/upstream/query.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/storage_file.cljc}
    %{dep:datascript/upstream/serialize.cljc}
@@ -2058,17 +2139,16 @@
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.cljc
-  datascript/upstream/inline.cljc
   datascript/upstream/util.cljc
-  datascript/upstream/lru.cljc
   datascript/upstream/schema.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
+  datascript/lg/query_types.cljc
+  datascript/lg/query.cljc
   datascript/upstream/entity.cljc
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
-  datascript/upstream/query.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/serialize.cljc
   datascript/upstream/conn.cljc
@@ -2090,17 +2170,16 @@
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
-   %{dep:datascript/upstream/inline.cljc}
    %{dep:datascript/upstream/util.cljc}
-   %{dep:datascript/upstream/lru.cljc}
    %{dep:datascript/upstream/schema.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/lg/query_types.cljc}
+   %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
-   %{dep:datascript/upstream/query.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/serialize.cljc}
    %{dep:datascript/upstream/conn.cljc}

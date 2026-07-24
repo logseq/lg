@@ -195,7 +195,7 @@ let test_splices_reader_conditionals_into_collections () =
                    :cljs ["js-splice-a" "js-splice-b"])])
 (def options {#?@(:clj [:b "native-splice-map"]
                        :cljs [:b "js-splice-map"])})
-(defn #?@(:clj [^Boolean selected?] :cljs [^boolean selected?])
+(defn #?@(:clj [^:bool selected?] :cljs [^boolean selected?])
   [value]
   value)
 (println (str values ":" (:b options) ":" (selected? true)))

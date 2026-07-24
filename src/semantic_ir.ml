@@ -106,6 +106,9 @@ let scoped_let bindings body =
           (fun value -> Located (node_id, location, value))
           (scoped_value value)
     | Typed (_, value) -> scoped_value value
+    | UnpackDynamic
+        { target_ty = Semantic_type.TNamed_record _; conversion; _ } ->
+        Some conversion
     | Apply (fn, arguments) -> scoped_application fn arguments
     | _ -> None
   in

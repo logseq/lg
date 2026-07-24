@@ -139,7 +139,6 @@ let module_path_to_ocaml path =
 
 let compact_runtime_aliases =
   [
-    ("Lg_runtime.Runtime_dynamic", "Lg_runtime.Lg_dyn");
     ("Lg_runtime.Runtime_seq", "Lg_runtime.Lg_seq");
     ("Lg_runtime.Runtime_map", "Lg_runtime.Lg_map");
     ("Lg_runtime.Runtime_exception", "Lg_runtime.Lg_exn");

@@ -117,12 +117,25 @@ module Lg_frontend : FRONTEND = struct
   let host_type_hint name =
     metadata_symbol name && not (String.starts_with ~prefix:"^:" name)
 
+  let definition_type_hint name =
+    host_type_hint name
+    || String.contains name '<'
+    || List.mem name
+         [
+           "^:int";
+           "^:ordering";
+           "^:float";
+           "^:char";
+           "^:string";
+           "^:symbol";
+           "^:keyword";
+           "^:bool";
+           "^:unit";
+           "^:buffer";
+         ]
+
   let supported_type_hint name =
     if not (host_type_hint name) then false
-    else if
-      List.mem name
-        [ "^Object"; "^objects"; "^ILookup"; "^LazilyPersistentVector" ]
-    then false
     else
       let type_name = String.sub name 1 (String.length name - 1) in
       let qualified_record_hint =
@@ -136,7 +149,6 @@ module Lg_frontend : FRONTEND = struct
         | Some _ | None -> false
       in
       Option.is_some (Host_interop.type_annotation type_name)
-      || type_name = "clojure.lang.Associative"
       || qualified_record_hint
       || (not (String.contains type_name '.'))
          && not (String.contains type_name '/')
@@ -186,20 +198,44 @@ module Lg_frontend : FRONTEND = struct
   let rec normalize_metadata = function
     | Ast.FList
         (Ast.FSymbol (("def" | "defonce") as head) :: forms) ->
-        let forms = dynamic_definition_forms forms in
-        let forms =
-          match forms with
-          | Ast.FSymbol "^:dynamic" :: rest ->
-              Ast.FSymbol "^:dynamic" :: normalize_metadata_sequence rest
-          | forms -> normalize_metadata_sequence forms
-        in
-        Ast.FList (Ast.FSymbol head :: forms)
+        (match forms with
+        | Ast.FSymbol annotation :: name :: [ value ]
+          when definition_type_hint annotation ->
+            Ast.FList
+              [
+                Ast.FSymbol head;
+                normalize_metadata name;
+                Ast.FList
+                  [
+                    Ast.FSymbol "__type-hint";
+                    Ast.FSymbol annotation;
+                    normalize_metadata value;
+                  ];
+              ]
+        | forms ->
+            let forms = dynamic_definition_forms forms in
+            let forms =
+              match forms with
+              | Ast.FSymbol "^:dynamic" :: rest ->
+                  Ast.FSymbol "^:dynamic" :: normalize_metadata_sequence rest
+              | forms -> normalize_metadata_sequence forms
+            in
+            Ast.FList (Ast.FSymbol head :: forms))
     | Ast.FList
         (Ast.FSymbol (("defn" | "defn-") as head) :: forms)
       ->
-        Ast.FList
-          (Ast.FSymbol head
-          :: normalize_metadata_sequence (drop_definition_metadata forms))
+        (match forms with
+        | Ast.FSymbol annotation :: name :: rest
+          when definition_type_hint annotation ->
+            Ast.FList
+              (Ast.FSymbol head :: normalize_metadata name
+              :: Ast.FSymbol annotation
+              :: normalize_metadata_sequence rest)
+        | forms ->
+            Ast.FList
+              (Ast.FSymbol head
+              :: normalize_metadata_sequence
+                   (drop_definition_metadata forms)))
     | Ast.FList forms -> Ast.FList (normalize_metadata_sequence forms)
     | Ast.FVector forms ->
         Ast.FVector (normalize_vector_metadata_sequence forms)
@@ -393,7 +429,7 @@ module Lg_frontend : FRONTEND = struct
                       Error.error "lg namespaces do not support :import"
                   | _ ->
                       Error.error
-                        "ns supports :require, :require-macros, :refer-clojure \
+                          "ns supports :require, :require-macros, :refer-clojure \
                          :exclude clauses"
                 in
                 Result.map
@@ -751,6 +787,10 @@ let declaration_bindings ast env =
             declared form_names
         in
         declared_names declared rest
+    | Ast.FList
+        (Ast.FSymbol "declare+" :: Ast.FSymbol name :: _signature)
+      :: rest ->
+        declared_names (name :: declared) rest
     | Ast.FList
         [
           Ast.FSymbol "defn-signature";
@@ -1384,6 +1424,9 @@ let compile_chunk_parsetree ?(target = Target.default) ?(filename = "<string>")
           with
           | Error _ as err -> err
           | Ok result -> (
+              if Sys.getenv_opt "LG_DUMP_ML" = Some "1" then
+                Printf.eprintf "%s\n%!"
+                  (Ocaml_parsetree_backend.print result.structure);
               match
                 Ocaml_typechecker.analyze ?compiler_env:state.ocaml_env
                   result.structure

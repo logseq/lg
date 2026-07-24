@@ -1,26 +1,15 @@
 (ns datascript.util
   (:refer-clojure :exclude [find]))
 
-(def ^:dynamic *debug*
-  false)
-
-#?(:clj
-   (defmacro log [& body]
-     (when (System/getProperty "datascript.debug")
-       `(when *debug*
-          (println ~@body)))))
-
 #?(:clj
    (defmacro raise [& fragments]
      (let [msgs (butlast fragments)
-           data (last fragments)]
-       `(throw (ex-info (str ~@(map (fn [m#] (if (string? m#) m# (list 'pr-str m#))) msgs)) ~data)))))
+           _data (last fragments)]
+       `(Stdlib.invalid_arg
+         (str ~@(map (fn [m#] (if (string? m#) m# (list 'pr-str m#))) msgs))))))
 
 #?(:clj
-   (def ^:private ^:dynamic *if+-syms))
-  
-#?(:clj
-   (defn- if+-rewrite-cond-impl [cond]
+   (defn- if+-rewrite-cond-impl [cond syms]
      (clojure.core/cond
        (empty? cond)
        true
@@ -28,28 +17,29 @@
        (and
          (= :let (first cond))
          (empty? (second cond)))
-       (if+-rewrite-cond-impl (nnext cond))
+       (if+-rewrite-cond-impl (nnext cond) syms)
     
        (= :let (first cond))
        (let [[var val & rest] (second cond)
              sym                (gensym)]
-         (vswap! *if+-syms conj [var sym])
+         (vswap! syms conj [var sym])
          (list 'let [var (list 'clojure.core/vreset! sym val)]
            (if+-rewrite-cond-impl
              (cons 
                :let
                (cons rest
-                 (nnext cond))))))
+                 (nnext cond)))
+             syms)))
     
        :else
        (list 'and
          (first cond)
-         (if+-rewrite-cond-impl (next cond))))))
+         (if+-rewrite-cond-impl (next cond) syms)))))
 
 #?(:clj
    (defn- if+-rewrite-cond [cond]
-     (binding [*if+-syms (volatile! [])]
-       [(if+-rewrite-cond-impl cond) @*if+-syms])))
+     (let [syms (volatile! [])]
+       [(if+-rewrite-cond-impl cond syms) @syms])))
 
 #?(:clj
    (defn- flatten-1 [xs]
@@ -114,7 +104,7 @@
   (rand-int (bit-shift-left 1 pow)))
 
 (defn- to-hex-string [n l]
-  (let [s (.toString n 16)
+  (let [s (int-to-string-radix n 16)
         c (count s)]
     (cond
       (> c l) (subs s 0 l)
@@ -123,7 +113,7 @@
 
 (defn squuid
   ([]
-   (squuid #?(:clj  (System/currentTimeMillis)
+   (squuid #?(:clj  (current-time-millis)
               :cljs (.getTime (js/Date.)))))
   ([msec]
    (uuid
@@ -139,68 +129,7 @@
 
 (defn squuid-time-millis
   "Returns time that was used in [[squuid]] call, in milliseconds, rounded to the closest second."
-  [^Object uuid]
+  [^:string uuid]
   (-> (subs (str uuid) 0 8)
     (js/parseInt 16)
     (* 1000)))
-
-(defn distinct-by [f coll]
-  (->>
-    (reduce
-      (fn [[seen res :as acc] el]
-        (let [key (f el)]
-          (if (contains? seen key)
-            acc
-            [(conj! seen key) (conj! res el)])))
-      [(transient #{}) (transient [])]
-      coll)
-    second
-    persistent!))
-
-(defn find [pred xs]
-  (reduce
-    (fn [_ x]
-      (when (pred x)
-        (reduced x)))
-    nil xs))
-
-(defn single [coll]
-  (assert (nil? (next coll)) "Expected single element")
-  (first coll))
-
-(defn concatv [& xs]
-  (into [] cat xs))
-
-(defn zip
-  ([a b]
-   (mapv vector a b))
-  ([a b & rest]
-   (apply mapv vector a b rest)))
-
-(defn removem [key-pred m]
-  (persistent!
-    (reduce-kv
-      (fn [m k v]
-        (if (key-pred k)
-          m
-          (assoc! m k v)))
-      (transient (empty m)) m)))
-
-(def conjv
-  (fnil conj []))
-
-(def conjs
-  (fnil conj #{}))
-
-(defn reduce-indexed
-  "Same as reduce, but `f` takes [acc el idx]"
-  [f init xs]
-  (first
-    (reduce
-      (fn [[acc idx] x]
-        (let [res (f acc x idx)]
-          (if (reduced? res)
-            (reduced [res idx])
-            [res (inc idx)])))
-      [init 0]
-      xs)))

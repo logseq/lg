@@ -10,6 +10,9 @@ let prepare_recursive_fn = Expression_elaborator.prepare_recursive_fn
 let prepare_inferred_recursive_fn =
   Expression_elaborator.prepare_inferred_recursive_fn
 
+let prepare_inferred_recursive_fn_with_return =
+  Expression_elaborator.prepare_inferred_recursive_fn_with_return
+
 let fn_code = Expression_elaborator.fn_code
 let compile_fn = Expression_elaborator.compile_fn
 let compile_args_for = Expression_elaborator.compile_args_for
@@ -21,44 +24,11 @@ let allocate_anonymous_record = Expression_support.allocate_anonymous_record
 let allocate_nested_anonymous_records =
   Expression_support.allocate_nested_anonymous_records
 
-let rec unresolved_anonymous_return_type = function
-  | ty when Types.is_dynamic ty -> false
-  | TUnknown | TVar _ -> true
-  | TNullable ty | TArray ty | TRef ty | TList ty | TVector ty | TSet ty
-  | TSeq ty ->
-      unresolved_anonymous_return_type ty
-  | TOcaml_app (_, arguments) | TTuple arguments ->
-      List.exists unresolved_anonymous_return_type arguments
-  | TFn (parameters, return_ty) ->
-      List.exists unresolved_anonymous_return_type (return_ty :: parameters)
-  | TOverloaded_fn arities ->
-      List.exists
-        (fun (arity : fn_arity) ->
-          List.exists unresolved_anonymous_return_type
-            (arity.return_ty :: arity.fixed_params)
-          || Option.fold ~none:false ~some:unresolved_anonymous_return_type
-               arity.rest_param)
-        arities
-  | TRecord fields ->
-      List.exists
-        (fun (field : field) -> unresolved_anonymous_return_type field.ty)
-        fields
-  | TNamed_record record ->
-      List.exists unresolved_anonymous_return_type record.type_arguments
-  | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
-  | TBool | TUnit | TNil | TOcaml _ ->
-      false
-
 let allocate_function_return_record env next_type
     (parts : Expression_support.compiled_fn_parts) =
   match parts.body.ty with
   | TRecord fields
-    when not
-           (List.exists
-              (fun (field : field) ->
-                unresolved_anonymous_return_type field.ty)
-              fields)
-         && List.exists
+    when List.exists
               (fun (field : field) -> not (Types.is_dynamic field.ty))
               fields ->
       let nested =
@@ -68,15 +38,7 @@ let allocate_function_return_record env next_type
         allocate_anonymous_record ~owner:"" nested.env nested.next_type
           nested.nested_fields
       in
-      let allocation_unresolved =
-        List.exists
-          (fun (field : field) ->
-            unresolved_anonymous_return_type field.ty)
-          allocation.record.fields
-      in
-      if allocation_unresolved then (env, next_type, [], parts)
-      else
-        let items =
+      let items =
           if allocation.fresh then
             nested.items
             @ [
@@ -87,17 +49,43 @@ let allocate_function_return_record env next_type
                     type_parameters = allocation.record.type_parameters;
                     fields = allocation.record.fields;
                     nominal = false;
-                    dynamic_packer = false;
                     location = None;
                   };
               ]
           else nested.items
-        in
-        let body = Structural_map.as_named_record allocation.record parts.body in
-        ( allocation.env,
-          allocation.next_type,
-          items,
-          { parts with body } )
+      in
+      let body =
+          match parts.body.record_values with
+          | Some _ ->
+              Structural_map.as_named_record allocation.record parts.body
+          | None ->
+              let source_name = "__lg_function_record_result" in
+              let source =
+                {
+                  parts.body with
+                  semantic_expr = Semantic_ir.Ident source_name;
+                  record_values = None;
+                }
+              in
+              let projected =
+                Structural_map.as_named_record allocation.record source
+              in
+              {
+                projected with
+                semantic_expr =
+                  Semantic_ir.Let
+                    ( [
+                        ( Semantic_ir.PVar source_name,
+                          parts.body.semantic_expr );
+                      ],
+                      projected.semantic_expr );
+                record_values = None;
+              }
+      in
+      ( allocation.env,
+        allocation.next_type,
+        items,
+        { parts with body } )
   | _ -> (env, next_type, [], parts)
 
 let allocate_function_local_records env next_type
@@ -106,12 +94,7 @@ let allocate_function_local_records env next_type
   let current_next_type = ref next_type in
   let items = ref [] in
   let rec materialize_type = function
-    | TRecord fields
-      when not
-             (List.exists
-                (fun (field : field) ->
-                  unresolved_anonymous_return_type field.ty)
-                fields) ->
+    | TRecord fields ->
         let fields =
           List.map
             (fun (field : field) ->
@@ -135,12 +118,10 @@ let allocate_function_local_records env next_type
                     type_parameters = allocation.record.type_parameters;
                     fields = allocation.record.fields;
                     nominal = false;
-                    dynamic_packer = false;
                     location = None;
                   };
               ];
         TNamed_record allocation.record
-    | TRecord _ as ty -> ty
     | TNullable ty -> TNullable (materialize_type ty)
     | TArray ty -> TArray (materialize_type ty)
     | TRef ty -> TRef (materialize_type ty)
@@ -176,43 +157,9 @@ let allocate_function_local_records env next_type
         Semantic_ir.Record (fields, Some type_name)
     | value -> value
   in
-  let named_record_for_identifier name expression =
-    let records = ref [] in
-    let add_record record =
-      if
-        not
-          (List.exists
-             (fun candidate -> Type_id.equal candidate.type_id record.type_id)
-             !records)
-      then records := record :: !records
-    in
-    let inspect = function
-      | Semantic_ir.Typed (TNamed_record record, value)
-        when Semantic_ir.unlocated value = Semantic_ir.Ident name ->
-          add_record record;
-          Semantic_ir.Typed (TNamed_record record, value)
-      | Semantic_ir.PackDynamic
-          ({ source_ty = TNamed_record record; conversion; _ } as packed)
-        when Semantic_ir.exists_identifier (String.equal name) conversion ->
-          add_record record;
-          Semantic_ir.PackDynamic packed
-      | value -> value
-    in
-    ignore (Semantic_ir.rewrite inspect expression);
-    match !records with [ record ] -> Some record | _ -> None
-  in
-  let rec constrain_pattern body = function
+  let rec constrain_pattern = function
     | Semantic_ir.PLocated (node_id, location, pattern) ->
-        Semantic_ir.PLocated
-          (node_id, location, constrain_pattern body pattern)
-    | Semantic_ir.PVar name as pattern
-      when String.starts_with ~prefix:"__lg_dynamic_item_" name -> (
-        match named_record_for_identifier name body with
-        | None -> pattern
-        | Some record ->
-            Semantic_ir.PConstraint
-              ( pattern,
-                Structural_map.record_type_application record ))
+        Semantic_ir.PLocated (node_id, location, constrain_pattern pattern)
     | Semantic_ir.PTyped (pattern, ty) ->
         let ty =
           match ty with TRecord _ -> ty | ty -> materialize_type ty
@@ -259,8 +206,7 @@ let allocate_function_local_records env next_type
             element_ty = materialize_type conversion.element_ty;
           }
     | Semantic_ir.Fun (patterns, body) ->
-        Semantic_ir.Fun
-          (List.map (constrain_pattern body) patterns, body)
+        Semantic_ir.Fun (List.map constrain_pattern patterns, body)
     | value -> value
   in
   let semantic_expr =
@@ -519,26 +465,46 @@ let open_module_bindings = Module_environment.open_bindings
 let parse_type_parameters = Type_parameters.parse
 let compile_type_alias = Type_definition_elaborator.compile_type_alias
 let compile_type_record = Type_definition_elaborator.compile_type_record
+let compile_signature = Signature_elaborator.compile
 
 let compile_type_record_fields =
   Type_definition_elaborator.compile_type_record_fields
 
 let compile_type_variant = Type_definition_elaborator.compile_type_variant
 
+let sidecar_function_signature scope env name =
+  Signature_overlay.find_value (Names.scoped_key scope name)
+    (Env.signatures env)
+
+let prepare_function scope env name params body_forms =
+  let signature =
+    sidecar_function_signature scope env name
+    |> Option.map (Function_elaborator.infer_named_record scope env)
+  in
+  match signature with
+  | Some (TFn (parameter_types, return_type)) ->
+      Result.bind
+        (prepare_fn
+           ~param_type_overrides:(List.map Option.some parameter_types)
+           ~expected_return_ty:return_type scope env params body_forms)
+        (fun parts ->
+          Result.map
+            (fun semantic_expr ->
+              { parts with body = typed_ir return_type semantic_expr })
+            (Call_elaborator.adapt_value_to_type env return_type parts.body))
+  | Some _ -> Error.error ("function signature expected for " ^ name)
+  | None ->
+      prepare_fn ~materialize_open_equality:true scope env params body_forms
+
 let rec concrete_defrecord_field_type = function
   | TUnknown | TVar _ | TRecord _ -> None
   | ty when Types.is_dynamic ty -> None
   | ty when Option.is_some (Types.protocol_constraint_info ty) -> None
   | ty when Option.is_some (Types.seqable_constraint_info ty) -> None
-  | TNullable ((TUnknown | TVar _) as _inner) ->
-      Some (TNullable (Types.dynamic_constraint TUnknown))
-  | TNullable inner when Types.is_dynamic inner -> Some (TNullable inner)
-  | TOcaml_app ("option", [ (TUnknown | TVar _) ]) ->
-      Some
-        (TOcaml_app
-           ("option", [ Types.dynamic_constraint TUnknown ]))
-  | TOcaml_app ("option", [ inner ]) when Types.is_dynamic inner ->
-      Some (TOcaml_app ("option", [ inner ]))
+  | TNullable (TUnknown | TVar _) -> None
+  | TNullable inner when Types.is_dynamic inner -> None
+  | TOcaml_app ("option", [ (TUnknown | TVar _) ]) -> None
+  | TOcaml_app ("option", [ inner ]) when Types.is_dynamic inner -> None
   | TNullable ty ->
       Option.map (fun ty -> TNullable ty) (concrete_defrecord_field_type ty)
   | TOcaml_app (name, arguments) ->
@@ -805,46 +771,9 @@ let inferred =
     |> List.fold_left infer_method (List.map (fun _ -> TUnknown) field_names)
     |> List.map (fun ty ->
            concrete_defrecord_field_type ty
-           |> Option.value ~default:(Types.dynamic_constraint TUnknown))
+           |> Option.value ~default:TUnknown)
   in
   inferred
-
-let append_dynamic_record_packer scope name = function
-  | Error _ as error -> error
-  | Ok (compiled_scope, env, next_type, item) -> (
-      let rec mark_dynamic_packer = function
-        | Type_def definition ->
-            Type_def { definition with dynamic_packer = true }
-        | Record_def definition ->
-            Record_def { definition with dynamic_packer = true }
-        | Projected_record_def definition ->
-            Projected_record_def { definition with dynamic_packer = true }
-        | Group items -> Group (List.map mark_dynamic_packer items)
-        | item -> item
-      in
-      match Resolver.lookup_record_type scope env name with
-      | Error _ as error -> error
-      | Ok record ->
-          Result.map
-            (fun registration ->
-              let registration_item =
-                Option.map
-                  (fun expression ->
-                    Value_binding { pattern = Unit_pattern; expression })
-                  registration
-              in
-              let item =
-                match (item, registration_item) with
-                | item, None -> mark_dynamic_packer item
-                | Group items, Some registration ->
-                    Group
-                      (List.map mark_dynamic_packer items @ [ registration ])
-                | item, Some registration ->
-                    Group [ mark_dynamic_packer item; registration ]
-              in
-              (compiled_scope, env, next_type, item))
-            (Call_elaborator.compile_dynamic_record_packer_registration env
-               record))
 
 let rec compile scope env next_type = function
   | FList
@@ -929,8 +858,28 @@ let rec compile scope env next_type = function
       let items_of = function Group items -> items | item -> [ item ] in
       Result.bind (field_specs [] None raw_fields) (fun field_specs ->
           let fields = List.map fst field_specs in
-          let field_types =
+          let inferred_field_types =
             infer_defrecord_field_types scope env name fields interface_forms
+          in
+          let rec unresolved_field specs inferred =
+            match (specs, inferred) with
+            | (field_name, None) :: _, inferred_ty :: _
+              when Option.is_none
+                     (concrete_defrecord_field_type inferred_ty) ->
+                Some field_name
+            | _ :: specs, _ :: inferred ->
+                unresolved_field specs inferred
+            | [], [] -> None
+            | _ -> assert false
+          in
+          match unresolved_field field_specs inferred_field_types with
+          | Some field_name ->
+              Error.error
+                ("defrecord field " ^ field_name
+               ^ " requires a static type annotation")
+          | None ->
+          let field_types =
+            inferred_field_types
             |> List.map2 (fun (_field_name, explicit_ty) inferred_ty ->
                    match (explicit_ty, inferred_ty) with
                    | ( Some explicit_ty,
@@ -964,7 +913,6 @@ let rec compile scope env next_type = function
             List.map2
               (fun field_name ty -> Types.make_field (":" ^ field_name) ty)
               fields field_types
-            @ [ Types.make_record_extension_field () ]
           in
           match
             compile_type_record_fields
@@ -984,33 +932,9 @@ let rec compile scope env next_type = function
                   let rec compile_groups env next_type items = function
                     | [] -> Ok (scope, env, next_type, Group items)
                     | (protocol_name, methods) :: rest -> (
-                        let wrap_method method_name receiver_name params
+                        let wrap_method method_name _receiver_name params
                             body_forms =
-                          let parameter_names =
-                            Destructure.pattern_names params
-                          in
-                          let field_bindings =
-                            fields
-                            |> List.filter (fun field_name ->
-                                   not (List.mem field_name parameter_names))
-                            |> List.concat_map (fun field_name ->
-                                   [
-                                     FSymbol field_name;
-                                     FList
-                                       [
-                                         FSymbol (".-" ^ field_name);
-                                         FSymbol receiver_name;
-                                       ];
-                                   ])
-                          in
-                          FList
-                            [
-                              FSymbol method_name;
-                              params;
-                              FList
-                                (FSymbol "let" :: FVector field_bindings
-                               :: body_forms);
-                            ]
+                          FList (FSymbol method_name :: params :: body_forms)
                         in
                         let expand_method = function
                           | FList
@@ -1054,8 +978,9 @@ let rec compile scope env next_type = function
                                :: FSymbol protocol_name :: wrapped_methods)
                           | None ->
                               FList
-                                (FSymbol "deftype-methods-no-pack" :: FSymbol name
-                               :: FSymbol protocol_name :: methods)
+                               (FSymbol "deftype-methods-no-register"
+                               :: FSymbol name :: FSymbol protocol_name
+                               :: methods)
                         in
                         match
                           compile scope env next_type implementation_form
@@ -1069,8 +994,7 @@ let rec compile scope env next_type = function
                   Result.bind
                     (predeclare_protocol_groups scope env receiver_form groups)
                     (fun env ->
-                      compile_groups env next_type (items_of type_item) groups)
-                  |> append_dynamic_record_packer scope name))
+                      compile_groups env next_type (items_of type_item) groups)))
   | FList
       (FSymbol "deftype"
       :: (FSymbol name as name_form)
@@ -1092,63 +1016,55 @@ let rec compile scope env next_type = function
       Result.bind (field_specs [] None false raw_fields) (fun fields ->
           if fields = [] then Error.error "deftype expects at least one field"
           else
-            let definitions =
-              fields
-              |> List.mapi (fun index (field_name, metadata, mutable_field) ->
-                     let parameter = "field" ^ string_of_int index in
-                     let field_type, parameters =
-                       match metadata with
-                    | Some ("^int" | "^long" | "^number") -> ("int", [])
-                       | Some ("^boolean" | "^Boolean") -> ("bool", [])
-                       | Some ("^double" | "^float") -> ("float", [])
-                       | Some "^String" -> ("string", [])
-                       | _ -> ("dynamic", [])
-                     in
-                     let field_type =
-                       if mutable_field then "ref<" ^ field_type ^ ">"
-                       else field_type
-                     in
-                     match metadata with
-                     | Some ("^int" | "^long" | "^number") ->
-                      ( parameters,
-                        FList
-                          [ FSymbol field_name; FKeyword (":" ^ field_type) ] )
-                     | Some ("^boolean" | "^Boolean") ->
-                      ( parameters,
-                        FList
-                          [ FSymbol field_name; FKeyword (":" ^ field_type) ] )
-                     | Some ("^double" | "^float") ->
-                      ( parameters,
-                        FList
-                          [ FSymbol field_name; FKeyword (":" ^ field_type) ] )
-                     | Some "^String" ->
-                      ( parameters,
-                        FList
-                          [ FSymbol field_name; FKeyword (":" ^ field_type) ] )
-                     | Some "^clojure.lang.Associative" ->
-                         let key_parameter = parameter ^ "_key" in
-                         let value_parameter = parameter ^ "_value" in
-                         ( [ key_parameter; value_parameter ],
-                           FList
-                          [
-                            FSymbol field_name;
-                               FKeyword
-                              (":Lg_runtime.Runtime_map.t<" ^ key_parameter
-                             ^ ";" ^ value_parameter ^ ">");
-                             ] )
-                     | _ ->
-                         ( parameters,
-                           FList
-                          [ FSymbol field_name; FKeyword (":" ^ field_type) ] ))
+            let signature_fields =
+              Signature_overlay.find_record (Names.scoped_key scope name)
+                (Env.signatures env)
             in
-            let type_parameters = List.concat_map fst definitions in
-            let field_forms = List.map snd definitions in
-            compile_type_record
-              ?location:(Source_context.find name_form)
-              scope env next_type name type_parameters field_forms)
+            let signature_field_type field_name =
+              Option.bind signature_fields (fun fields ->
+                  fields
+                  |> List.find_opt (fun (field : Types.field) ->
+                         field.keyword = ":" ^ field_name)
+                  |> Option.map (fun (field : Types.field) -> field.ty))
+            in
+            let resolve_field_type field_name metadata =
+              match signature_field_type field_name with
+              | Some ty -> Ok ty
+              | None -> (
+                  match metadata with
+                  | None -> Ok TUnknown
+                  | Some annotation ->
+                      Result.map
+                        (Function_elaborator.infer_named_record scope env)
+                        (Type_annotation.of_param_annotation annotation))
+            in
+            let rec build_definitions definitions = function
+              | [] -> Ok (List.rev definitions)
+              | (field_name, metadata, mutable_field) :: rest ->
+                  Result.bind
+                    (resolve_field_type field_name metadata)
+                    (fun inferred_type ->
+                      let field_type =
+                        if mutable_field then TRef inferred_type
+                        else inferred_type
+                      in
+                      let definition =
+                        ( type_parameters_of_type field_type,
+                          Types.make_field (":" ^ field_name) field_type )
+                      in
+                      build_definitions (definition :: definitions) rest)
+            in
+            Result.bind (build_definitions [] fields) (fun definitions ->
+                let type_parameters = List.concat_map fst definitions in
+                let record_fields = List.map snd definitions in
+                compile_type_record_fields
+                  ?location:(Source_context.find name_form)
+                  scope env next_type name type_parameters record_fields))
   | FList
       (FSymbol
-         ("deftype-methods" | "deftype-methods-no-pack" as extension_kind)
+         ( "deftype-methods"
+         | "deftype-methods-no-pack"
+         | "deftype-methods-no-register" )
       :: FSymbol type_name :: interface_forms)
     -> (
       match Resolver.lookup_record_type scope env type_name with
@@ -1260,22 +1176,7 @@ let rec compile scope env next_type = function
                   | [] -> []
                   | bindings -> [ Recursive_value_bindings bindings ]
                 in
-                Result.map
-                  (fun registration ->
-                    let items =
-                      match registration with
-                      | None -> items
-                      | Some expression ->
-                          items
-                          @ [
-                              Value_binding
-                                { pattern = Unit_pattern; expression };
-                            ]
-                    in
-                    (scope, env, next_type, Group items))
-                  (Call_elaborator.compile_deftype_registrations
-                     ~dynamic_packer:(extension_kind = "deftype-methods") env
-                     record)
+                Ok (scope, env, next_type, Group items)
             | FSymbol interface_name :: rest ->
                 compile_methods env items (Some interface_name) rest
             | FList (FSymbol method_name :: arities) :: rest
@@ -1851,6 +1752,21 @@ let rec compile scope env next_type = function
         scope env next_type signature_name item_forms
   | FList (FSymbol "module-signature" :: _) ->
       Error.error "module-signature expects a name and signature items"
+  | FList [ FSymbol "signature"; FSymbol name; fields ] ->
+      compile_signature scope env next_type name fields
+  | FList
+      [ FSymbol "signature"; FSymbol name; type_parameters_form; fields ] -> (
+      match parse_type_parameters type_parameters_form with
+      | Error _ as error -> error
+      | Ok type_parameters ->
+          compile_signature ~type_parameters scope env next_type name fields)
+  | FList (FSymbol "signature" :: _) ->
+      Error.error
+        "signature expects a name, optional type parameters, and a type or \
+         record field map"
+  | FList (FSymbol "dynamic-codec" :: _) ->
+      Error.error
+        "dynamic-codec is not supported; use explicit sum constructors"
   | FList [ FSymbol "type-alias"; (FSymbol name as name_form); manifest_form ]
     ->
       compile_type_alias
@@ -1993,11 +1909,7 @@ let rec compile scope env next_type = function
         (FSymbol name as name_form);
         expr_form;
       ] -> (
-      let dynamic = Types.dynamic_constraint TUnknown in
-      match
-        compile_expr scope env
-          (FList [ FSymbol "__pack-dynamic"; expr_form ])
-      with
+      match compile_expr scope env expr_form with
       | Error _ as error -> error
       | Ok expr ->
           let ocaml_name = Names.ocaml_binding_name scope name in
@@ -2005,7 +1917,7 @@ let rec compile scope env next_type = function
           Result.map
             (fun () ->
               let binding =
-                Types.binding ~dynamic_var:true ocaml_name (TRef dynamic)
+                Types.binding ~dynamically_bindable:true ocaml_name (TRef expr.ty)
               in
               ( scope,
                 Env.add env_key binding env,
@@ -2078,7 +1990,6 @@ let rec compile scope env next_type = function
                                 allocation.record.set_module_name;
                           fields;
                               values;
-                              dynamic_packer = false;
                             }
                   | None ->
                       Projected_record_def
@@ -2092,7 +2003,6 @@ let rec compile scope env next_type = function
                                 allocation.record.set_module_name;
                           fields;
                               source = expr.semantic_expr;
-                              dynamic_packer = false;
                             }
                     in
                     let item =
@@ -2133,7 +2043,7 @@ let rec compile scope env next_type = function
                           ty = expr.ty;
                           host_reference = None;
                           forward_declared = false;
-                          dynamic_var = false;
+                          dynamically_bindable = false;
                         }
                     | None -> binding_of_expr ocaml_name expr)
                 | _ -> binding_of_expr ocaml_name expr
@@ -2188,11 +2098,52 @@ let rec compile scope env next_type = function
           :: body_forms))
   | FList
       (FSymbol (("defn" | "defn-") as definition)
+      :: (FSymbol _ as name_form)
+      :: FSymbol annotation
+      :: FString _docstring
+      :: forms)
+    when String.starts_with ~prefix:"^" annotation ->
+      compile scope env next_type
+        (FList
+           (FSymbol definition :: name_form :: FSymbol annotation :: forms))
+  | FList
+      (FSymbol (("defn" | "defn-") as definition)
+      :: (FSymbol _ as name_form)
+      :: FSymbol annotation
+      :: (FList _ as first_clause)
+      :: remaining_clauses)
+    when String.starts_with ~prefix:"^" annotation ->
+      if annotation = "^:dynamic" then
+        Type_annotation.reject_dynamic_type ()
+      else
+        let annotate_clause = function
+          | FList (params :: body_forms) ->
+              let body =
+                match body_forms with
+                | [ body ] -> body
+                | body_forms -> FList (FSymbol "do" :: body_forms)
+              in
+              FList
+                [
+                  params;
+                  FList [ FSymbol "__type-hint"; FSymbol annotation; body ];
+                ]
+          | clause -> clause
+        in
+        compile scope env next_type
+          (FList
+             (FSymbol definition :: name_form
+             :: List.map annotate_clause
+                  (first_clause :: remaining_clauses)))
+  | FList
+      (FSymbol (("defn" | "defn-") as definition)
       :: (FSymbol name as name_form)
       :: FSymbol annotation
       :: params :: body_forms)
     when String.starts_with ~prefix:"^" annotation -> (
-      if not (function_is_recursive scope name body_forms) then
+      if annotation = "^:dynamic" then
+        Type_annotation.reject_dynamic_type ()
+      else if not (function_is_recursive scope name body_forms) then
         let body =
           match body_forms with
           | [ body ] -> body
@@ -2209,26 +2160,13 @@ let rec compile scope env next_type = function
       else
       match Type_annotation.of_param_annotation annotation with
       | Error _ as error -> error
-      | Ok return_ty ->
-          let return_keyword =
-            match return_ty with
-            | TInt -> Ok ":int"
-            | TFloat -> Ok ":float"
-            | TChar -> Ok ":char"
-            | TString -> Ok ":string"
-            | TSymbol -> Ok ":symbol"
-            | TKeyword -> Ok ":keyword"
-            | TBool -> Ok ":bool"
-            | TUnit -> Ok ":unit"
-            | ty when Types.is_dynamic ty -> Ok ":dynamic"
-            | TOcaml name -> Ok (":" ^ name)
-            | _ -> Error.error "unsupported defn return type hint"
-          in
-          Result.bind return_keyword (fun return_keyword ->
-              compile scope env next_type
-                (FList
-                   (FSymbol definition :: name_form :: params
-                  :: FKeyword return_keyword :: body_forms))))
+      | Ok _ ->
+          compile scope env next_type
+            (FList
+               (FSymbol definition :: name_form :: params
+              :: FList
+                   [ FSymbol "__return-type"; FSymbol annotation ]
+              :: body_forms)))
   | FList
       (FSymbol (("defn" | "defn-") as definition)
       :: (FSymbol _ as name_form)
@@ -2243,14 +2181,25 @@ let rec compile scope env next_type = function
       :: remaining_clauses) -> (
       let ocaml_name = Names.ocaml_binding_name scope name in
       let env_key = Names.scoped_key scope name in
+      let recursive =
+        function_is_recursive scope name (first_clause :: remaining_clauses)
+      in
       match
         check_emitted_name_collision env ~source_key:env_key ~ocaml_name
       with
       | Error _ as err -> err
       | Ok () -> (
+          let signature =
+            match
+              sidecar_function_signature scope env name
+              |> Option.map (Function_elaborator.infer_named_record scope env)
+            with
+            | Some (TOverloaded_fn arities) -> Some arities
+            | Some _ | None -> None
+          in
           match
-            Expression_elaborator.prepare_multi_arity_fn ~ocaml_name scope env
-              name
+            Expression_elaborator.prepare_multi_arity_fn ?signature ~ocaml_name
+              scope env name
               (first_clause :: remaining_clauses)
           with
           | Error _ as err -> err
@@ -2290,15 +2239,23 @@ let rec compile scope env next_type = function
                         expression = prepared.expr.semantic_expr;
                       } )
               in
+              let arity_items =
+                if recursive then
+                  [ Recursive_value_bindings recursive_bindings ]
+                else
+                  List.map
+                    (fun ({ name; expression; _ } : Lowered.recursive_value) ->
+                      Value_binding
+                        { pattern = Named name; expression })
+                    recursive_bindings
+              in
               Ok
                 ( scope,
                   Env.add env_key binding env,
                   next_type,
                   Group
                     (local_type_items @ row_items
-                    @ [
-                        Recursive_value_bindings recursive_bindings; value_item;
-                      ]) )))
+                    @ arity_items @ [ value_item ]) )))
   | FList
       (FSymbol (("defn" | "defn-") as definition)
       :: (FSymbol _name as name_form)
@@ -2312,15 +2269,26 @@ let rec compile scope env next_type = function
       (FSymbol ("defn" | "defn-")
       :: (FSymbol name as name_form)
       :: params
-      :: FKeyword return_keyword
+      :: ((FKeyword _ | FList [ FSymbol "__return-type"; FSymbol _ ]) as
+          return_annotation)
       :: body_forms) -> (
-      match Type_annotation.of_keyword return_keyword with
+      let return_type =
+        match return_annotation with
+        | FKeyword keyword -> Type_annotation.of_keyword keyword
+        | FList [ FSymbol "__return-type"; FSymbol annotation ] ->
+            Type_annotation.of_param_annotation annotation
+        | _ -> assert false
+      in
+      match return_type with
       | Error _ as err -> err
       | Ok return_ty -> (
+          let return_ty =
+            Function_elaborator.infer_named_record scope env return_ty
+          in
           let ocaml_name = Names.ocaml_binding_name scope name in
           match
-             prepare_recursive_fn ~ocaml_name scope env name return_ty params
-               body_forms
+             prepare_inferred_recursive_fn_with_return ~ocaml_name scope env
+               name return_ty params body_forms
            with
           | Error _ as err -> err
           | Ok parts -> (
@@ -2375,10 +2343,36 @@ let rec compile scope env next_type = function
       :: params :: body_forms)
     when function_is_recursive scope name body_forms -> (
       let ocaml_name = Names.ocaml_binding_name scope name in
-      match
-        prepare_inferred_recursive_fn ~ocaml_name scope env name params
-          body_forms
-      with
+      let env_key = Names.scoped_key scope name in
+      let prepared =
+        match
+          sidecar_function_signature scope env name
+          |> Option.map (Function_elaborator.infer_named_record scope env)
+        with
+        | Some (TFn (parameter_tys, return_ty) as signature_ty) ->
+            let signature_env =
+              Env.add env_key
+                (Types.binding ocaml_name signature_ty)
+                env
+            in
+            let parameter_count =
+              match Destructure.parse_param_specs params with
+              | Ok specs -> List.length specs
+              | Error _ -> -1
+            in
+            if List.length parameter_tys <> parameter_count then
+              Error.error
+                ("function signature arity does not match recursive defn "
+               ^ name)
+            else
+              prepare_recursive_fn ~ocaml_name scope signature_env name
+                return_ty params body_forms
+        | Some _ -> Error.error ("function signature expected for " ^ name)
+        | None ->
+            prepare_inferred_recursive_fn ~ocaml_name scope env name params
+              body_forms
+      in
+      match prepared with
       | Error _ as err -> err
       | Ok parts -> (
           let param_tys =
@@ -2387,7 +2381,6 @@ let rec compile scope env next_type = function
           in
           let row_param_types = row_param_type_names ~env ocaml_name param_tys in
           let expr = fn_code ~row_param_type_names:row_param_types parts in
-          let env_key = Names.scoped_key scope name in
           match
             check_emitted_name_collision env ~source_key:env_key ~ocaml_name
           with
@@ -2427,9 +2420,7 @@ let rec compile scope env next_type = function
       (FSymbol ("defn" | "defn-")
       :: (FSymbol name as name_form)
       :: params :: body_forms) -> (
-      match
-        prepare_fn ~materialize_open_equality:true scope env params body_forms
-      with
+      match prepare_function scope env name params body_forms with
       | Error _ as err -> err
       | Ok parts when unresolved_contextual_type parts.body.ty ->
           Error.error "empty list requires a contextual element type"
@@ -2497,7 +2488,7 @@ let rec compile scope env next_type = function
         ?location:(Source_context.find name_form)
         scope env next_type protocol_name method_forms
   | FList
-      (FSymbol ("extend-type" | "extend-type-no-register" as extension_kind)
+      (FSymbol ("extend-type" | "extend-type-no-register")
       :: receiver_form :: implementations) ->
       let rec groups grouped current = function
         | [] -> (
@@ -2527,53 +2518,7 @@ let rec compile scope env next_type = function
           Result.bind
             (predeclare_protocol_groups scope env receiver_form groups)
             (fun env ->
-          let compile_registrations env =
-            match (extension_kind, receiver_form) with
-            | "extend-type-no-register", _ -> Ok []
-            | _, FSymbol receiver_name -> (
-                match Resolver.lookup_record_type scope env receiver_name with
-                | Error _ | Ok { type_parameters = _ :: _; _ } -> Ok []
-                | Ok record ->
-                    let rec compile compiled = function
-                      | [] ->
-                          Result.map
-                            (fun packer ->
-                              let compiled = List.rev compiled in
-                              match packer with
-                              | None -> compiled
-                              | Some expression ->
-                                  compiled
-                                  @ [
-                                      Value_binding
-                                        {
-                                          pattern = Unit_pattern;
-                                          expression;
-                                        };
-                                    ])
-                            (Call_elaborator
-                             .compile_dynamic_record_packer_registration env
-                               record)
-                      | (protocol_name, _) :: rest -> (
-                          match
-                            Protocol.find_protocol_id scope env protocol_name
-                          with
-                          | None -> compile compiled rest
-                          | Some protocol_id -> (
-                              match
-                                Call_elaborator.compile_protocol_extension_registration
-                                  env protocol_id (TNamed_record record)
-                              with
-                              | Error _ as error -> error
-                              | Ok expression ->
-                                  compile
-                                    (Value_binding
-                                       { pattern = Unit_pattern; expression }
-                                    :: compiled)
-                                    rest))
-                    in
-                    compile [] groups)
-            | _, _ -> Ok []
-          in
+          let compile_registrations _env = Ok [] in
           let rec compile_groups env next_type items = function
             | [] ->
                 Result.map
@@ -2688,17 +2633,9 @@ let rec compile scope env next_type = function
       let env =
         Env.add
           (Names.scoped_key namespace_name "*print-namespace-maps*")
-          (Types.binding ~dynamic_var:true
+          (Types.binding ~dynamically_bindable:true
              "Lg_runtime.Runtime_print.print_namespace_maps"
-             (TRef (Types.dynamic_constraint TBool)))
-          env
-      in
-      let env =
-        Env.add
-          (Names.scoped_key namespace_name "*data-readers*")
-          (Types.binding ~dynamic_var:true
-             "Lg_runtime.Runtime_edn.data_readers"
-             (TRef (Types.dynamic_constraint TUnknown)))
+             (TRef TBool))
           env
       in
       let env =
@@ -2752,7 +2689,13 @@ let rec compile scope env next_type = function
               | Some binding
                 when not (Types.equal binding.ty (TOcaml "__declared_fn")) ->
                   binding
-              | _ -> Types.binding ocaml_name (TOcaml "__declared_fn")
+              | _ -> (
+                  match sidecar_function_signature scope env name with
+                  | Some ty ->
+                      Types.binding ~forward_declared:true ocaml_name
+                        (Function_elaborator.infer_named_record scope env ty)
+                  | None ->
+                      Types.binding ocaml_name (TOcaml "__declared_fn"))
             in
             add_declarations (Env.add key binding env) rest
         | _ -> Error.error "declare expects symbols"

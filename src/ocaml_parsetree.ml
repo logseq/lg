@@ -46,7 +46,7 @@ let type_constructor name args =
   Ast_helper.Typ.constr ~loc (lid (longident_of_string name)) args
 
 let rec core_type ?(type_variables = []) = function
-  | Types.TInt -> type_constructor "int64" []
+  | Types.TInt -> type_constructor "int" []
   | Types.TFloat -> type_constructor "float" []
   | Types.TChar -> type_constructor "char" []
   | Types.TString | Types.TRegex | Types.TSymbol | Types.TKeyword ->
@@ -248,7 +248,7 @@ let polymorphic_holder_type_definition type_name field_name value_type
   in
   Ast_helper.Str.type_ ~loc Nonrecursive [ declaration ]
 
-let nominal_tag_extension constructor_name record_type location =
+let type_alias_definition type_name parameters manifest location =
   let declaration_loc = declaration_location location in
   let warning_attribute =
     Ast_helper.Attr.mk ~loc:declaration_loc
@@ -257,36 +257,12 @@ let nominal_tag_extension constructor_name record_type location =
          [
            Ast_helper.Str.eval ~loc:declaration_loc
              (Ast_helper.Exp.constant ~loc:declaration_loc
-                (Ast_helper.Const.string ~loc:declaration_loc "-38"));
+                (Ast_helper.Const.string ~loc:declaration_loc "-34"));
          ])
   in
-  let result_type =
-    Ast_helper.Typ.constr ~loc:declaration_loc
-      (lid (longident_of_string "Lg_runtime.Runtime_dynamic.nominal_tag"))
-      [ core_type record_type ]
-  in
-  let constructor =
-    Ast_helper.Te.decl ~loc:declaration_loc ~args:(Pcstr_tuple [])
-      ~res:result_type (named_loc constructor_name declaration_loc)
-  in
-  let extension =
-    Ast_helper.Te.mk ~loc:declaration_loc ~attrs:[ warning_attribute ]
-      ~params:
-        [
-          ( Ast_helper.Typ.any ~loc:declaration_loc (),
-            (NoVariance, NoInjectivity) );
-        ]
-      (Location.mkloc
-         (longident_of_string "Lg_runtime.Runtime_dynamic.nominal_tag")
-         declaration_loc)
-      [ constructor ]
-  in
-  Ast_helper.Str.type_extension ~loc:declaration_loc extension
-
-let type_alias_definition type_name parameters manifest location =
-  let declaration_loc = declaration_location location in
   let type_declaration =
-    Ast_helper.Type.mk ~loc:declaration_loc ~params:(type_parameters parameters)
+    Ast_helper.Type.mk ~loc:declaration_loc ~attrs:[ warning_attribute ]
+      ~params:(type_parameters parameters)
       ~manifest:(core_type manifest) (named_loc type_name declaration_loc)
   in
   Ast_helper.Str.type_ ~loc Nonrecursive [ type_declaration ]
@@ -609,7 +585,7 @@ let node_id_attribute node_id =
   Ast_helper.Attr.mk (str "lg.node_id") payload
 
 let record_definition ~emit_set ~emit_nullable_set var_name identity type_id
-    type_name type_parameters set_module_name fields values _dynamic_packer =
+    type_name type_parameters set_module_name fields values =
   let type_item =
     record_type_definition type_name type_parameters fields None
   in
@@ -658,8 +634,7 @@ let record_definition ~emit_set ~emit_nullable_set var_name identity type_id
       Ok (type_items @ [ Ast_helper.Str.value ~loc Nonrecursive [ value_binding ] ])
 
 let projected_record_definition ~emit_set ~emit_nullable_set var_name identity
-    type_id type_name type_parameters set_module_name fields source
-    _dynamic_packer =
+    type_id type_name type_parameters set_module_name fields source =
   let type_item =
     record_type_definition type_name type_parameters fields None
   in
@@ -889,17 +864,11 @@ let rec structure_of_item_with_sets requested_sets module_path = function
         type_parameters;
         fields;
         nominal;
-        dynamic_packer = _;
         location;
       } ->
       let record_type =
         Types.named_record ~nominal ~type_name ~type_parameters
           ~set_module_name:("Set_" ^ type_name) fields
-      in
-      let constructor_name =
-        match record_type with
-        | Types.TNamed_record record -> Types.nominal_tag_name record
-        | _ -> assert false
       in
       let type_definition =
         record_type_definition type_name type_parameters fields location
@@ -925,19 +894,14 @@ let rec structure_of_item_with_sets requested_sets module_path = function
           ]
         else []
       in
-      if nominal || not (Types.supports_structural_dynamic_packing record_type)
-      then
-        Ok
-          (definitions
-          @ [ nominal_tag_extension constructor_name record_type location ])
-      else Ok definitions
+      Ok definitions
   | Type_alias { type_name; type_parameters; manifest; location } ->
       Ok [ type_alias_definition type_name type_parameters manifest location ]
   | Type_variant { type_name; type_parameters; constructors; location } ->
       Ok
         [ type_variant_definition type_name type_parameters constructors location ]
   | Group items ->
-      structure_of_items_with_sets requested_sets module_path items
+      structure_of_items_with_sets ~prune:false requested_sets module_path items
   | Module_def
       { module_name; location; signature_name; signature_location; items } -> (
       match
@@ -1066,7 +1030,6 @@ let rec structure_of_item_with_sets requested_sets module_path = function
         set_module_name;
         fields;
         values;
-        dynamic_packer;
       } ->
       record_definition
         ~emit_set:
@@ -1075,7 +1038,7 @@ let rec structure_of_item_with_sets requested_sets module_path = function
           (set_module_requested requested_sets module_path
              (set_module_name ^ "_nullable"))
         var_name identity type_id type_name type_parameters set_module_name fields
-        values dynamic_packer
+        values
   | Projected_record_def
       {
         var_name;
@@ -1086,7 +1049,6 @@ let rec structure_of_item_with_sets requested_sets module_path = function
         set_module_name;
         fields;
         source;
-        dynamic_packer;
       } ->
       projected_record_definition
         ~emit_set:
@@ -1095,11 +1057,13 @@ let rec structure_of_item_with_sets requested_sets module_path = function
           (set_module_requested requested_sets module_path
              (set_module_name ^ "_nullable"))
         var_name identity type_id type_name type_parameters set_module_name fields
-        source dynamic_packer
+        source
 
-and structure_of_items_with_sets requested_sets module_path items =
+and structure_of_items_with_sets ?(prune = true) requested_sets module_path items =
   let rec loop acc = function
-    | [] -> Ok (remove_unused_anonymous_types (List.concat (List.rev acc)))
+    | [] ->
+        let structure = List.concat (List.rev acc) in
+        Ok (if prune then remove_unused_anonymous_types structure else structure)
     | item :: rest -> (
         match structure_of_item_with_sets requested_sets module_path item with
         | Error _ as err -> err
@@ -1221,8 +1185,6 @@ let print_implementation structure =
   in
   let aliases =
     [
-      (let name = "D" in
-       ("Lg_runtime.Lg_dyn", name, declaration name "Lg_runtime.Lg_dyn"));
       (let name = "S" in
        ("Lg_runtime.Lg_seq", name, declaration name "Lg_runtime.Lg_seq"));
       (let name = "M" in

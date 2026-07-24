@@ -1513,7 +1513,7 @@ let semantic_tokens analysis =
             occurrences
     | Lparen | Anon_lparen | Rparen | Lbracket | Rbracket | Lbrace
     | Set_lbrace | Rbrace | Quote | Syntax_quote | Unquote
-    | Unquote_splicing | Deref -> []
+    | Unquote_splicing | Deref | Var_quote _ -> []
   in
   analysis.tokens |> List.concat_map token_semantics
   |> List.sort (fun (left : semantic_token) (right : semantic_token) ->

@@ -1,40 +1,64 @@
 (ns datascript.test.file-storage-smoke
   (:require
-   [clojure.edn :as edn]
-   [datascript.core :as d]
    [datascript.db :as db]
-   [datascript.storage :as storage]))
+   [datascript.storage :as storage]
+   [datascript.storage-file :as storage-file]))
 
 (defn temporary-directory []
   (let [path (Filename.temp_file "lg-datascript-storage-" "")]
     (Sys.remove path)
     path))
 
-(defn cleanup-directory [backend directory]
+(defn cleanup-directory
+  [^Datascript_runtime.Storage_backend.t backend ^:string directory]
   (storage/-delete backend (storage/-list-addresses backend))
   (Unix.rmdir directory))
 
+(defn has-string?
+  [^datascript.db/DB database
+   ^:int eid
+   ^:keyword attr
+   ^:string value]
+  (if-some [datom (db/search-ea database eid attr)]
+    (Datascript_runtime.Data_value.equal
+     (.-v datom)
+     (Datascript_runtime.Data_value.String value))
+    false))
+
 (let [directory (temporary-directory)
-      backend (d/file-storage directory)
-      database (db/init-db [(db/datom 1 :name "Ivan")] {} {})
-      _stored (d/store database backend)
-      restored (d/restore backend)
-      reopened (d/file-storage directory)
-      restored-after-reopen (d/restore reopened)
+      backend (storage-file/file-storage directory)
+      database
+      (db/init-db
+       (to-array
+        [(db/datom
+          1 :name (Datascript_runtime.Data_value.String "Ivan"))])
+       {})
+      _stored (storage/store database backend)
+      restored (storage/restore backend)
+      reopened (storage-file/file-storage directory)
+      restored-after-reopen (storage/restore reopened)
       stored-addresses (set (storage/-list-addresses backend))
       stored-filenames (set (array-seq (Sys.readdir directory)))
       missing-before (storage/-restore backend 999999)
       _orphan-stored
-      (storage/-store backend [[999999 {:orphan true}]] [])
+      (storage/-store
+       backend
+       [(tuple
+         999999
+         (Datascript_runtime.Storage_value.Stored_tail []))]
+       [])
       orphan-present
       (contains? (set (storage/-list-addresses backend)) 999999)
       _orphan-deleted (storage/-delete backend [999999])
       missing-after (storage/-restore backend 999999)
       roundtrip-ok
-      (= "Ivan" (:v (first (db/-search restored [1 :name]))))
+      (if-some [database restored]
+        (has-string? database 1 :name "Ivan")
+        false)
       reopen-ok
-      (= "Ivan"
-         (:v (first (db/-search restored-after-reopen [1 :name]))))
+      (if-some [database restored-after-reopen]
+        (has-string? database 1 :name "Ivan")
+        false)
       addresses-ok
       (and (contains? stored-addresses 0)
            (contains? stored-addresses 1)
@@ -53,65 +77,38 @@
         missing-ok)))
 
 (let [directory (temporary-directory)
-      freeze-count (atom 0)
-      thaw-count (atom 0)
-      freeze-value
-      (fn [^:dynamic value]
-        (swap! freeze-count inc)
-        (pr-str value))
-      thaw-value
-      (fn [^:string contents]
-        (swap! thaw-count inc)
-        (edn/read-string contents))
-      backend
-      (d/file-storage
-       directory
-       {:freeze-fn freeze-value
-        :thaw-fn thaw-value})
-      database (db/init-db [(db/datom 1 :name "Ivan")] {} {})
-      _stored (d/store database backend)
-      restored (d/restore backend)
-      roundtrip-ok
-      (= "Ivan" (:v (first (db/-search restored [1 :name]))))
-      freeze-ok (pos? @freeze-count)
-      thaw-ok (pos? @thaw-count)
-      _cleaned (cleanup-directory backend directory)]
-  (println
-   (str "native:file-storage-custom:"
-        roundtrip-ok ":"
-        freeze-ok ":"
-        thaw-ok)))
-
-(let [directory (temporary-directory)
       write-count (atom 0)
       read-count (atom 0)
       backend
-      (d/file-storage
+      (storage-file/file-storage
        directory
-       {:addr->filename-fn (fn [^:int address] (str "addr-" address))
-        :filename->addr-fn
-        (fn [^:string filename]
-          (int
-           (Stdlib.int_of_string
-            (String.sub filename 5 (- (String.length filename) 5)))))
-        :write-fn
-        (fn [^:out_channel output ^:dynamic value]
-          (swap! write-count inc)
-          (Stdlib.output_string output (pr-str value)))
-        :read-fn
+       (storage-file/options
+        (fn [^:out_channel output
+             ^:Datascript_runtime.Storage_value.t value]
+          (Stdlib.ignore (swap! write-count inc))
+          (Marshal.to_channel
+           output value (list-of :Marshal.extern_flags)))
         (fn [^:in_channel input]
-          (swap! read-count inc)
-          (edn/read-string
-           (Stdlib.really_input_string
-            input
-            (Stdlib.in_channel_length input))))})
-      database (db/init-db [(db/datom 1 :name "Ivan")] {} {})
-      _stored (d/store database backend)
-      restored (d/restore backend)
+          (Stdlib.ignore (swap! read-count inc))
+          (Marshal.from_channel input))
+        (fn [^:int address] (str "addr-" address))
+        (fn [^:string filename]
+          (Stdlib.int_of_string
+           (String.sub filename 5 (- (String.length filename) 5))))))
+      database
+      (db/init-db
+       (to-array
+        [(db/datom
+          1 :name (Datascript_runtime.Data_value.String "Ivan"))])
+       {})
+      _stored (storage/store database backend)
+      restored (storage/restore backend)
       filenames (set (array-seq (Sys.readdir directory)))
       listed-addresses (set (storage/-list-addresses backend))
       roundtrip-ok
-      (= "Ivan" (:v (first (db/-search restored [1 :name]))))
+      (if-some [database restored]
+        (has-string? database 1 :name "Ivan")
+        false)
       callbacks-ok (and (pos? @write-count) (pos? @read-count))
       filenames-ok
       (and (contains? filenames "addr-0")

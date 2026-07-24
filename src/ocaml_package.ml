@@ -20,14 +20,20 @@ let contains_compiled_interface directory =
      |> Array.exists (String.ends_with ~suffix:".cmi")
 
 let expand_include_directory directory =
-  let nested =
+  let rec compiled_directories directory =
     if Sys.file_exists directory && Sys.is_directory directory then
-      Sys.readdir directory |> Array.to_list
-      |> List.map (Filename.concat directory)
-      |> List.filter contains_compiled_interface
+      let children =
+        Sys.readdir directory |> Array.to_list
+        |> List.map (Filename.concat directory)
+        |> List.filter (fun path ->
+               Sys.file_exists path && Sys.is_directory path)
+        |> List.concat_map compiled_directories
+      in
+      if contains_compiled_interface directory then directory :: children
+      else children
     else []
   in
-  directory :: nested
+  directory :: compiled_directories directory
 
 let direct_ocamlpath_directories package =
   let separator = if Sys.win32 then ';' else ':' in
@@ -36,6 +42,7 @@ let direct_ocamlpath_directories package =
   |> String.split_on_char separator
   |> List.filter_map (fun root ->
       if root = "" then None
+      else if contains_compiled_interface root then Some root
       else
         let directory =
           List.fold_left Filename.concat root package_components

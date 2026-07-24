@@ -464,12 +464,7 @@ and to_parsetree ~context = function
                 :: function_type.ptyp_attributes }
           in
           let fn =
-            Ast_helper.Exp.constraint_ ~loc
-              (Ast_helper.Exp.apply ~loc
-                 (Ast_helper.Exp.ident ~loc
-                    (lid (longident_of_string "Obj.magic")))
-                 [ (Asttypes.Nolabel, fn) ])
-              uncurried_type
+            Ast_helper.Exp.constraint_ ~loc fn uncurried_type
           in
           let application =
             Ast_helper.Exp.apply ~loc fn

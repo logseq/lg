@@ -1,74 +1,36 @@
 module Dynamic = Lg_runtime.Runtime_dynamic
 module Persistent_map = Lg_runtime.Runtime_map
+module Runtime_int = Lg_runtime.Runtime_int
 
-let key_id = Dynamic.keyword ":id"
+let test_popcount_32 () =
+  assert (Runtime_int.popcount_32 0 = 0);
+  assert (Runtime_int.popcount_32 1 = 1);
+  assert (Runtime_int.popcount_32 0xffffffff = 32);
+  assert (Runtime_int.popcount_32 0xaaaaaaaa = 16)
 
-let make_key comparisons id =
-  let value =
-    Dynamic.opaque "test.Key" [ (":id", fun () -> Dynamic.int id) ]
+let test_keywords_are_interned () =
+  assert (Dynamic.keyword ":query/attrs" == Dynamic.keyword ":query/attrs")
+
+let test_identifier_comparison_preserves_namespace_and_name_ordering () =
+  let compare left right =
+    Dynamic.compare (Dynamic.keyword left) (Dynamic.keyword right)
   in
-  Dynamic.with_protocols value
-    [
-      Dynamic.protocol "IHash"
-        [
-          Dynamic.protocol_method_0 "-hash" (fun () -> Dynamic.int id);
-        ];
-      Dynamic.protocol "IEquiv"
-        [
-          Dynamic.protocol_method_1 "-equiv" (fun other ->
-              incr comparisons;
-              Dynamic.bool
-                (Dynamic.numeric_equal (Dynamic.get other key_id)
-                   (Dynamic.int id)));
-        ];
-    ]
+  assert (compare ":a" ":a" = 0);
+  assert (compare ":a" ":a/b" < 0);
+  assert (compare ":alpha/z" ":beta/a" < 0);
+  assert (compare ":alpha/a" ":alpha/z" < 0);
+  assert (compare ":alpha/nested/a" ":alpha/nested/z" < 0);
+  assert (compare ":命名/甲" ":命名/乙" > 0);
+  assert (Dynamic.compare_identifier ":alpha/a" "alpha/a" = 0)
 
-let assert_comparisons_are_near_linear operation comparisons count =
-  let limit = count * 4 in
-  if !comparisons > limit then
-    failwith
-      (Printf.sprintf "%s used %d equality comparisons for %d distinct keys"
-         operation !comparisons count)
-
-let test_persistent_map_uses_hash_index () =
-  let comparisons = ref 0 in
-  let count = 256 in
-  let keys = List.init count (fun index -> make_key comparisons (Int64.of_int index)) in
-  let original = Dynamic.map [] in
-  let populated =
-    List.fold_left
-      (fun map key -> Dynamic.assoc map key (Dynamic.get key key_id))
-      original keys
-  in
-  assert (Dynamic.count_value original = 0);
-  assert (Dynamic.count_value populated = count);
-  List.iteri
-    (fun index key ->
-      assert
-        (Dynamic.numeric_equal (Dynamic.get populated key)
-           (Dynamic.int (Int64.of_int index))))
-    keys;
-  assert_comparisons_are_near_linear "dynamic map" comparisons count;
-  let duplicate = make_key comparisons 42L in
-  let replaced = Dynamic.assoc populated duplicate (Dynamic.string "updated") in
-  assert (Dynamic.count_value replaced = count);
-  assert (Dynamic.equal (Dynamic.get replaced duplicate) (Dynamic.string "updated"));
-  assert (Dynamic.numeric_equal (Dynamic.get populated duplicate) (Dynamic.int 42L))
-
-let test_persistent_map_preserves_insertion_order () =
-  let first = Dynamic.keyword ":first" in
-  let second = Dynamic.keyword ":second" in
-  let third = Dynamic.keyword ":third" in
-  let original =
-    Dynamic.map [ (first, Dynamic.int 1L); (second, Dynamic.int 2L) ]
-  in
-  let appended = Dynamic.assoc original third (Dynamic.int 3L) in
-  let replaced = Dynamic.assoc appended second (Dynamic.int 20L) in
-  let expected_keys = [ first; second; third ] in
-  assert (List.map fst (Dynamic.entries appended) = expected_keys);
-  assert (List.map fst (Dynamic.entries replaced) = expected_keys);
-  assert (Dynamic.numeric_equal (Dynamic.get replaced second) (Dynamic.int 20L));
-  assert (Dynamic.numeric_equal (Dynamic.get appended second) (Dynamic.int 2L))
+let test_dynamic_find_returns_a_map_entry_only_for_present_keys () =
+  let key = Dynamic.keyword ":answer" in
+  let map = Dynamic.map [ (key, Dynamic.int 42) ] in
+  let entry = Dynamic.find map key |> Option.get in
+  assert (Dynamic.equal (Dynamic.get entry (Dynamic.int 0)) key);
+  assert
+    (Dynamic.numeric_equal (Dynamic.get entry (Dynamic.int 1)) (Dynamic.int 42));
+  assert (Dynamic.find map (Dynamic.keyword ":missing") = None)
 
 let test_static_persistent_map_preserves_insertion_order () =
   let original =
@@ -84,74 +46,20 @@ let test_static_persistent_map_preserves_insertion_order () =
   assert (Persistent_map.get_option replaced ":email" = Some 20);
   assert (List.map fst (Persistent_map.to_list reinserted) = [ ":email"; ":age"; ":name" ])
 
-let test_update_in_traverses_vector_indexes () =
-  let friend = Dynamic.keyword ":friend" in
-  let age = Dynamic.keyword ":age" in
-  let target =
-    Dynamic.map
-      [
-        ( friend,
-          Dynamic.vector
-            (Rrbvec.of_list [ Dynamic.map [ (Dynamic.keyword ":name", Dynamic.string "Ada") ] ]) );
-      ]
+let test_polymorphic_hash_preserves_dynamic_value_semantics () =
+  let first =
+    Dynamic.vector (Rrbvec.of_list [ Dynamic.int 1; Dynamic.string "value" ])
   in
-  let assoc =
-    Dynamic.function_ (function
-      | [ target; key; value ] -> Dynamic.assoc target key value
-      | _ -> invalid_arg "assoc test callback expects three arguments")
+  let second =
+    Dynamic.vector (Rrbvec.of_list [ Dynamic.int 1; Dynamic.string "value" ])
   in
-  let updated =
-    Dynamic.update_in target
-      (List.to_seq [ friend; Dynamic.int 0L ])
-      assoc [ age; Dynamic.int 42L ]
-  in
-  assert
-    (Dynamic.numeric_equal
-       (Dynamic.get
-          (Dynamic.get (Dynamic.get updated friend) (Dynamic.int 0L))
-          age)
-       (Dynamic.int 42L))
-
-let test_persistent_set_uses_hash_index () =
-  let comparisons = ref 0 in
-  let count = 256 in
-  let keys = List.init count (fun index -> make_key comparisons (Int64.of_int index)) in
-  let original = Dynamic.set Seq.empty in
-  let populated = List.fold_left Dynamic.conj original keys in
-  assert (Dynamic.count_value original = 0);
-  assert (Dynamic.count_value populated = count);
-  List.iter (fun key -> assert (Dynamic.contains populated key)) keys;
-  assert_comparisons_are_near_linear "dynamic set" comparisons count;
-  let duplicate = make_key comparisons 42L in
-  let unchanged = Dynamic.conj populated duplicate in
-  assert (Dynamic.count_value unchanged = count);
-  assert (Dynamic.contains unchanged duplicate);
-  assert (not (Dynamic.contains original duplicate))
-
-let test_lazy_record_fields_are_evaluated_once () =
-  let evaluations = ref 0 in
-  let record =
-    Dynamic.lazy_record "test.LazyRecord"
-      [
-        ( ":value",
-          fun () ->
-            incr evaluations;
-            Dynamic.int 42L );
-      ]
-      []
-  in
-  assert (!evaluations = 0);
-  let key = Dynamic.keyword ":value" in
-  assert (Dynamic.numeric_equal (Dynamic.get record key) (Dynamic.int 42L));
-  assert (Dynamic.numeric_equal (Dynamic.get record key) (Dynamic.int 42L));
-  ignore (List.of_seq (Dynamic.to_seq record));
-  ignore (Dynamic.entries record);
-  assert (!evaluations = 1)
+  assert (Dynamic.polymorphic_equal first second);
+  assert (Dynamic.polymorphic_hash first = Dynamic.hash second)
 
 let () =
-  test_persistent_map_uses_hash_index ();
-  test_persistent_map_preserves_insertion_order ();
+  test_popcount_32 ();
+  test_keywords_are_interned ();
+  test_identifier_comparison_preserves_namespace_and_name_ordering ();
+  test_dynamic_find_returns_a_map_entry_only_for_present_keys ();
   test_static_persistent_map_preserves_insertion_order ();
-  test_update_in_traverses_vector_indexes ();
-  test_persistent_set_uses_hash_index ();
-  test_lazy_record_fields_are_evaluated_once ()
+  test_polymorphic_hash_preserves_dynamic_value_semantics ()

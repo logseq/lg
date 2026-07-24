@@ -20,8 +20,8 @@ let ocaml_value name ty = Types.binding ~host_reference:(Ocaml_value name) name 
 let ocaml_host_functions = function
   | "ocaml.Stdlib" ->
       [
-        ("string-of-int", ocaml_value "Int64.to_string" (TFn ([ TInt ], TString)));
-        ("int-of-string", ocaml_value "Int64.of_string" (TFn ([ TString ], TInt)));
+        ("string-of-int", ocaml_value "string_of_int" (TFn ([ TInt ], TString)));
+        ("int-of-string", ocaml_value "int_of_string" (TFn ([ TString ], TInt)));
       ]
   | "ocaml.String" ->
       [
@@ -195,6 +195,16 @@ let add_ocaml_refer_bindings env scope module_name names =
 
 let parse_entries entries =
   let package_prefix = "ocaml.package/" in
+  let is_dynamic_runtime_module name =
+    List.exists
+      (fun module_name ->
+        name = module_name
+        || String.starts_with ~prefix:(module_name ^ "/") name)
+      [
+        "ocaml.Lg_runtime.Runtime_dynamic";
+        "ocaml.Lg_runtime.Lg_dyn";
+      ]
+  in
   let parse_refer_names = function
     | FVector names ->
         let rec loop acc = function
@@ -206,6 +216,11 @@ let parse_entries entries =
     | _ -> Error.error "require :refer expects a vector of symbols"
   in
   let parse_require_entry = function
+    | FVector (FSymbol module_name :: _)
+      when is_dynamic_runtime_module module_name ->
+        Error.error
+          "the universal dynamic runtime is not available to LG source; \
+           define a closed sum type"
     | FVector [ FSymbol module_name ]
       when String.starts_with ~prefix:package_prefix module_name ->
         let package =

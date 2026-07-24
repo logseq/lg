@@ -348,7 +348,7 @@ let field_type fields keyword =
 
 let literal_default = function
   | FInt value ->
-      Ok (typed_ir TInt (Semantic_ir.Int64 (Int64.of_int value)))
+      Ok (typed_ir TInt (Semantic_ir.Int value))
   | FString value -> Ok (typed_ir TString (Semantic_ir.String value))
   | FBool value -> Ok (typed_ir TBool (Semantic_ir.Bool value))
   | FKeyword keyword -> Ok (typed_ir TKeyword (Semantic_ir.String keyword))
@@ -678,12 +678,12 @@ and bind_sequence ?compile_default env (target : typed_expr) forms =
     | TList inner ->
         optional_sequence (TList inner)
           (Core_sequence_transform.drop_list_expr
-             (Semantic_ir.Int64 (Int64.of_int count))
+             (Semantic_ir.Int count)
              target.semantic_expr)
     | TVector inner ->
         optional_sequence (TList inner)
           (Core_sequence_transform.drop_list_expr
-             (Semantic_ir.Int64 (Int64.of_int count))
+             (Semantic_ir.Int count)
              (Semantic_ir.Apply
                 ( Semantic_ir.Ident "Rrbvec.to_list",
                   [ target.semantic_expr ] )))
@@ -781,7 +781,7 @@ and bind_sequence ?compile_default env (target : typed_expr) forms =
             in
             let expression =
               if Types.is_dynamic inner then
-                let item_name = "__lg_destructure_dynamic_item" in
+                let item_name = "__lg_destructure_item" in
                 Semantic_ir.Match
                   ( item,
                     [

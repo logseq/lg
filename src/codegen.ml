@@ -28,7 +28,7 @@ let wrap_expr prefix value suffix =
 let rec stringify_expr_ir ?(pr = false) expr =
   let scalar_mapper ty =
     match ty with
-    | TInt -> Semantic_ir.Ident "Int64.to_string"
+    | TInt -> Semantic_ir.Ident "string_of_int"
     | TFloat ->
         Semantic_ir.Ident
           (if pr then "Lg_runtime.Runtime_dynamic.pr_str_float"
@@ -62,7 +62,7 @@ let rec stringify_expr_ir ?(pr = false) expr =
     | _ -> Semantic_ir.Fun ([ Semantic_ir.PAny ], Semantic_ir.String "<value>")
   in
   match expr.ty with
-  | TInt -> apply "Int64.to_string" [ expr.semantic_expr ]
+  | TInt -> apply "string_of_int" [ expr.semantic_expr ]
   | TFloat ->
       apply
         (if pr then "Lg_runtime.Runtime_dynamic.pr_str_float"

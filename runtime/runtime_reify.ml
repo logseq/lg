@@ -1,5 +1,4 @@
-type 'a t = { payload : 'a; dynamic : Runtime_dynamic.t }
+type 'a t = { payload : 'a }
 
-let make payload dynamic = { payload; dynamic }
+let make payload = { payload }
 let payload value = value.payload
-let dynamic value = value.dynamic

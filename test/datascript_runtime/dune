@@ -1,0 +1,7 @@
+(library
+ (name datascript_runtime)
+ (public_name datascript.runtime)
+ (modes native byte melange)
+ (preprocess
+  (pps melange.ppx))
+ (libraries lg.runtime lg.edn-backend rrbvec))

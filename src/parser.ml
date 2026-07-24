@@ -86,6 +86,15 @@ let rec parse_one ~target = function
       parse_reader_prefix ~target span "unquote-splicing" rest
   | { desc = Deref; span } :: rest ->
       parse_reader_prefix ~target span "deref" rest
+  | { desc = Var_quote value; span } :: rest ->
+      let symbol = located (FSymbol value) span in
+      let head = located (FSymbol "__lg-var-quote") span in
+      let children = [ head; symbol ] in
+      Ok
+        ( located ~children
+            (FList (List.map (fun child -> child.form) children))
+            span,
+          rest )
   | { desc = Symbol value; span } :: rest ->
       Ok (located (FSymbol value) span, rest)
   | { desc = Keyword value; span } :: rest ->
@@ -313,32 +322,6 @@ and select_reader_conditional target reader_span close_span forms =
   in
   Result.bind (collect [] [] forms) (fun branches ->
       let selected_form = function
-        | [ { form = FList (FKeyword ":import" :: entries); _ } ] ->
-            let host_namespace namespace_name =
-              namespace_name = "clojure.lang"
-              || String.starts_with ~prefix:"java." namespace_name
-              || String.starts_with ~prefix:"javax." namespace_name
-            in
-            let portable_entry = function
-              | FVector (FSymbol namespace_name :: names)
-                when names <> [] && not (host_namespace namespace_name) ->
-                  Some
-                    (FVector
-                       [
-                         FSymbol namespace_name;
-                         FKeyword ":refer";
-                         FVector names;
-                       ])
-              | _ -> None
-            in
-            let portable_entries = List.filter_map portable_entry entries in
-            if portable_entries = [] then
-              Ok (located (FSymbol omitted_reader_form) conditional_span)
-            else
-              Ok
-                (located
-                   (FList (FKeyword ":require" :: portable_entries))
-                   conditional_span)
         | [ selected ] -> Ok selected
         | selected ->
             Ok

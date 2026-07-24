@@ -5,14 +5,141 @@ let apply name args = Semantic_ir.Apply (Semantic_ir.Ident name, args)
 let identifier_holds_packed_constraint name =
   String.starts_with ~prefix:"__lg_constrained_argument" name
   || String.starts_with ~prefix:"__lg_erased_seqable_item" name
-  || String.starts_with ~prefix:"__lg_dynamic_optional_value" name
+  || String.starts_with ~prefix:"__lg_erased_optional_value" name
   || String.starts_with ~prefix:"__lg_optional_seqable_value" name
-  || String.starts_with ~prefix:"__lg_dynamic_callback_arg_" name
+  || String.starts_with ~prefix:"__lg_erased_callback_arg_" name
   || String.starts_with ~prefix:"__lg_nullable_callback_arg_" name
   || String.starts_with ~prefix:"__lg_static_argument_" name
-  || String.starts_with ~prefix:"__lg_dynamic_protocol_arg_" name
+  || String.starts_with ~prefix:"__lg_erased_protocol_arg_" name
+
+let valid_ocaml_type_name name =
+  String.length name > 0
+  && not (String.contains name ':')
+  && not (String.contains name '/')
+
+let local_record_source_name name =
+  let after separator name =
+    match String.rindex_opt name separator with
+    | Some index when index < String.length name - 1 ->
+        String.sub name (index + 1) (String.length name - index - 1)
+    | _ -> name
+  in
+  name |> after ':' |> after '/'
+
+let canonicalize_record_name record =
+  if valid_ocaml_type_name record.type_name then record
+  else
+    let local_name = local_record_source_name (Type_id.name record.type_id) in
+    let type_name = Names.sanitize_name local_name in
+    { record with type_name; set_module_name = "Set_" ^ type_name }
+
+let find_canonical_record env source_name =
+  let local_name = local_record_source_name source_name in
+  let ocaml_name = Names.sanitize_name local_name in
+  let records =
+    Compiler_environment.filter_map
+      (fun key (binding : binding) ->
+        if String.starts_with ~prefix:"__record/" key then
+          match binding.ty with
+          | TNamed_record record
+            when valid_ocaml_type_name record.type_name
+                 && (String.equal record.type_name ocaml_name
+                    || String.equal (Type_id.name record.type_id) local_name) ->
+              Some record
+          | _ -> None
+        else None)
+      env
+    |> List.sort_uniq (fun left right ->
+           Type_id.compare left.type_id right.type_id)
+  in
+  let same_fields left right =
+    List.length left.fields = List.length right.fields
+    && List.for_all2
+         (fun left right ->
+           String.equal left.keyword right.keyword
+           && Types.equal left.ty right.ty)
+         left.fields right.fields
+  in
+  let exact =
+    List.filter (fun record -> String.equal record.type_name ocaml_name) records
+  in
+  match exact with
+  | record :: rest when List.for_all (same_fields record) rest -> Some record
+  | _ -> (
+      match records with [ record ] -> Some record | _ -> None)
+
+let resolve_host_record env = function
+  | TNamed_record _ as ty -> ty
+  | TOcaml name as ty when String.starts_with ~prefix:"__lg_record:" name ->
+      let source_name =
+        String.sub name (String.length "__lg_record:")
+          (String.length name - String.length "__lg_record:")
+      in
+      let local_name =
+        match String.rindex_opt source_name '/' with
+        | None -> source_name
+        | Some index ->
+            String.sub source_name (index + 1)
+              (String.length source_name - index - 1)
+      in
+      let records =
+        Compiler_environment.filter_map
+          (fun key (binding : binding) ->
+            if String.starts_with ~prefix:"__record/" key then
+              match binding.ty with
+              | TNamed_record record
+                when record.type_name = source_name
+                     || Type_id.name record.type_id = source_name
+                     || Type_id.name record.type_id = local_name ->
+                  Some record
+              | _ -> None
+            else None)
+          env
+        |> List.filter (fun record -> valid_ocaml_type_name record.type_name)
+        |> List.sort_uniq (fun left right ->
+               let by_id = Type_id.compare left.type_id right.type_id in
+               if by_id <> 0 then by_id
+               else String.compare left.type_name right.type_name)
+      in
+      (match
+         List.find_opt
+           (fun record -> String.equal record.type_name source_name)
+           records
+       with
+      | Some record -> TNamed_record (canonicalize_record_name record)
+      | None -> (
+          match records with
+          | [ record ] -> TNamed_record (canonicalize_record_name record)
+          | _ -> ty))
+  | ty -> ty
+
+let rec resolve_callback_record env = function
+  | TNamed_record record as ty -> (
+      match find_canonical_record env (Type_id.name record.type_id) with
+      | Some canonical -> TNamed_record canonical
+      | None -> ty)
+  | TNullable inner -> TNullable (resolve_callback_record env inner)
+  | TArray inner -> TArray (resolve_callback_record env inner)
+  | TRef inner -> TRef (resolve_callback_record env inner)
+  | TList inner -> TList (resolve_callback_record env inner)
+  | TVector inner -> TVector (resolve_callback_record env inner)
+  | TSet inner -> TSet (resolve_callback_record env inner)
+  | TSeq inner -> TSeq (resolve_callback_record env inner)
+  | TOcaml_app (name, arguments) ->
+      TOcaml_app (name, List.map (resolve_callback_record env) arguments)
+  | TTuple items -> TTuple (List.map (resolve_callback_record env) items)
+  | TOcaml name as ty when String.starts_with ~prefix:"__lg_record:" name ->
+      let source_name =
+        String.sub name (String.length "__lg_record:")
+          (String.length name - String.length "__lg_record:")
+      in
+      (match find_canonical_record env source_name with
+      | Some record -> TNamed_record record
+      | None -> resolve_host_record env ty)
+  | ty -> resolve_host_record env ty
 
 let rec to_seq_expr env collection =
+  let collection = { collection with ty = resolve_host_record env collection.ty } in
   if Types.is_dynamic collection.ty then
     let element_ty = Types.dynamic_constraint TUnknown in
     Ok
@@ -212,7 +339,7 @@ let drop_expr env name collection count =
         Ok
           (typed_ir (TSeq inner)
              (apply "Lg_runtime.Runtime_seq.drop"
-                [ apply "Int64.to_int" [ count.semantic_expr ]; sequence ]))
+                [ count.semantic_expr; sequence ]))
 
 let seqable_adapter ?element_mapper env argument =
   let value_name = "seqable_value__" in
@@ -359,7 +486,11 @@ let reduce_expr env ?(short_circuit = false) fn init collection sequence =
               apply (set_module ^ ".fold")
                 [ reducer; collection.semantic_expr; init.semantic_expr ])
       | TArray _ | TOcaml_app ("array", [ _ ]) ->
-          apply "Array.fold_left"
+          apply
+            (match Compiler_environment.target env with
+            | Target.Melange ->
+                "Lg_runtime.Runtime_array_melange.fold_left"
+            | Target.Native | Target.Js_of_ocaml -> "Array.fold_left")
             [ fn.semantic_expr; init.semantic_expr; collection.semantic_expr ]
       | TString ->
           apply "String.fold_left"
@@ -373,7 +504,7 @@ let reduce_expr env ?(short_circuit = false) fn init collection sequence =
         )
 
 let rec count_expr env collection =
-  let of_host_int expression = apply "Int64.of_int" [ expression ] in
+  let of_host_int expression = expression in
   match collection.ty with
   | TNullable inner | TOcaml_app ("option", [ inner ]) ->
       let value_name = "__lg_counted_value" in
@@ -384,7 +515,7 @@ let rec count_expr env collection =
             ( collection.semantic_expr,
               [
                 ( Semantic_ir.PConstructor ("None", None),
-                  Semantic_ir.Int64 0L );
+                  Semantic_ir.Int 0 );
                 ( Semantic_ir.PConstructor
                     ("Some", Some (Semantic_ir.PVar value_name)),
                   present );
@@ -444,7 +575,7 @@ let first_expr env collection =
     | Ok (inner, sequence) ->
       let expression =
         if Types.is_dynamic inner then
-          let item_name = "__lg_first_dynamic_item" in
+          let item_name = "__lg_first_item" in
           Semantic_ir.Match
             ( apply "Lg_runtime.Runtime_seq.first_opt" [ sequence ],
               [
@@ -527,7 +658,7 @@ let last_expr env collection =
         Semantic_ir.Infix ("-", length, Semantic_ir.Int 1)
       in
       if Types.is_dynamic inner then
-        let item_name = "__lg_last_dynamic_item" in
+        let item_name = "__lg_last_item" in
         Ok
           (typed_ir inner
              (Semantic_ir.Match
@@ -584,7 +715,7 @@ let last_expr env collection =
         Ok (typed_ir (TNullable inner) expression)
 
 let nth_expr env collection index =
-  let host_index = apply "Int64.to_int" [ index.semantic_expr ] in
+  let host_index = index.semantic_expr in
   match collection.ty with
   | TOcaml_app ("Lg_runtime.Runtime_transient.vector", [ inner ]) ->
       Ok

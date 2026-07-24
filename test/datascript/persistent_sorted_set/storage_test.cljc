@@ -8,7 +8,7 @@
 
 (defn make-memory-storage []
   (let [disk (arrays/make-array 512 None)
-        next-address (atom (Int64.of_int 1))
+        next-address (atom 1)
         reads (atom 0)
         writes (atom 0)
         accessed (atom 0)
@@ -17,7 +17,7 @@
         (pss/make-storage
          (fn [address]
            (reset! reads (inc (deref reads)))
-           (arrays/aget disk (Int64.to_int address)))
+           (arrays/aget disk address))
          (fn [_address]
            (Stdlib.ignore (reset! accessed (inc (deref accessed)))))
          (fn [node previous-address]
@@ -25,7 +25,7 @@
                  (if-some [existing previous-address]
                    existing
                    (let [fresh (deref next-address)]
-                     (reset! next-address (Int64.succ fresh))
+                     (reset! next-address (inc fresh))
                      fresh))
                  snapshot
                  (if (= 0 (pss/node-child-count node))
@@ -36,7 +36,7 @@
                     (arrays/aclone (pss/node-keys node))
                     (arrays/aclone (pss/node-addresses node))
                     address))]
-             (arrays/aset disk (Int64.to_int address) (Some snapshot))
+             (arrays/aset disk address (Some snapshot))
              (reset! writes (inc (deref writes)))
              address))
          (fn [addresses]
@@ -96,9 +96,9 @@
           (= 100 (pss/set-count restored))))
     (println
      (str "lookup-cache:"
-          (= 42 (pss/set-lookup restored 42)) ":"
+          (= (Some 42) (pss/set-lookup restored 42)) ":"
           (= 2 (deref reads)) ":"
-          (= 42 (pss/set-lookup restored 42)) ":"
+          (= (Some 42) (pss/set-lookup restored 42)) ":"
           (= 2 (deref reads)) ":"
           (= 1 (deref accessed))))
     (println
@@ -113,7 +113,7 @@
       (println
        (str "incremental:"
             (= 2 (- (deref writes) writes-before)) ":"
-            (= 100 (pss/set-lookup updated 100)) ":"
+            (= (Some 100) (pss/set-lookup updated 100)) ":"
             (nil? (pss/set-lookup restored 100)) ":"
             (= 0 (deref deleted)))))))
 
@@ -136,7 +136,7 @@
      (str "delete-removed:"
           (= 2 (deref deleted)) ":"
           (nil? (pss/set-lookup updated 16)) ":"
-          (= 16 (pss/set-lookup original 16))))))
+          (= (Some 16) (pss/set-lookup original 16))))))
 
 (match (make-memory-storage)
   (tuple storage _reads _writes _accessed deleted)
@@ -147,7 +147,7 @@
      (str "store-attaches:"
           (= 0 (deref deleted)) ":"
           (nil? (pss/set-lookup updated 0)) ":"
-          (= 0 (pss/set-lookup original 0))))))
+          (= (Some 0) (pss/set-lookup original 0))))))
 
 (match (make-memory-storage)
   (tuple storage _reads _writes _accessed deleted)
@@ -159,7 +159,7 @@
      (str "delete:"
           (= 0 (deref deleted)) ":"
           (nil? (pss/set-lookup updated 0)) ":"
-          (= 0 (pss/set-lookup restored 0))))))
+          (= (Some 0) (pss/set-lookup restored 0))))))
 
 (match (make-memory-storage)
   (tuple storage reads writes _accessed _deleted)
@@ -176,9 +176,38 @@
 
 (match (make-memory-storage)
   (tuple storage reads _writes _accessed _deleted)
+  (let [original
+        (pss/with-ref-type
+         (range-set 100)
+         (Lg_runtime.Runtime_ref_type.Strong))
+        root-address (pss/store original storage)
+        restored (pss/restore-by
+                  int-compare root-address storage 1 100
+                  (Lg_runtime.Runtime_ref_type.Strong))
+        root (pss/set-root restored)
+        first-child
+        (pss/node-child root 0 (pss/set-storage restored))
+        reads-after-first-child (deref reads)
+        second-child
+        (pss/node-child root 0 (pss/set-storage restored))
+        second-read-cached (= reads-after-first-child (deref reads))
+        updated (pss/set-conj restored 100)]
+    (println
+     (str "strong-cache:"
+          (= (Some first-child) (arrays/aget (:children root) 0)) ":"
+          (nil? (arrays/aget (:_weak-children root) 0)) ":"
+          (= first-child second-child) ":"
+          second-read-cached ":"
+          (= (Lg_runtime.Runtime_ref_type.Strong)
+             (pss/set-ref-type updated))))))
+
+(match (make-memory-storage)
+  (tuple storage reads _writes _accessed _deleted)
   (let [original (range-set 100)
         root-address (pss/store original storage)
-        restored (pss/restore-by int-compare root-address storage 1 100)
+        restored (pss/restore-by
+                  int-compare root-address storage 1 100
+                  (Lg_runtime.Runtime_ref_type.Weak))
         root (pss/set-root restored)
         first-child (pss/node-child root 0 (Some storage))]
     (match (arrays/aget (:_weak-children root) 0)
@@ -195,7 +224,11 @@
       (let [restored-root (pss/set-root restored)]
         (println
          (str "weak-cache:"
-              (= 0 (pss/node-lookup first-child int-compare 0 nil)) ":"
-              (= 0 (pss/node-lookup restored-child int-compare 0 nil)) ":"
-              (= 99 (pss/node-lookup restored-root int-compare 99 (Some storage))) ":"
+              (= (Some 0)
+                 (pss/node-lookup first-child int-compare 0 None)) ":"
+              (= (Some 0)
+                 (pss/node-lookup restored-child int-compare 0 None)) ":"
+              (= (Some 99)
+                 (pss/node-lookup
+                  restored-root int-compare 99 (Some storage))) ":"
               (= 5 (deref reads))))))))

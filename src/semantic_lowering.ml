@@ -17,7 +17,9 @@ let rec pattern = function
       PRecord (List.map (fun (name, value) -> (name, pattern value)) fields)
   | PAlias (value, name) -> PAlias (pattern value, name)
   | POr (left, right) -> POr (pattern left, pattern right)
-  | PConstraint (value, type_name) -> PConstraint (pattern value, type_name)
+  | PConstraint (value, type_name) ->
+      PConstraint
+        (pattern value, Types.ocaml_record_type_name type_name)
   | PTyped (value, ty) ->
       (match ty with
       | Semantic_type.TNamed_record record ->

@@ -1,35 +1,14 @@
 (ns datascript.serialize
   (:refer-clojure :exclude [amap array?])
   (:require
-    [clojure.edn :as edn]
     [clojure.string :as str]
     [datascript.db :as db #?@(:cljs [:refer [Datom]])]
-    [datascript.lru :as lru]
     [datascript.storage :as storage]
-    [datascript.util :as util]
     [me.tonsky.persistent-sorted-set :as set]
     [me.tonsky.persistent-sorted-set.arrays :as arrays]))
 
-(def ^:const ^:private marker-kw 0)
-(def ^:const ^:private marker-other 1)
-(def ^:const ^:private marker-inf 2)
-(def ^:const ^:private marker-minus-inf 3)
-(def ^:const ^:private marker-nan 4)
-
-(defn- array [& args]
-  (vec args))
-
-(defn- dict [& args]
-  (apply hash-map args))
-
-(defn- array-get [d i]
-  (if (arrays/array? d) (arrays/aget d i) (nth d i)))
-
-(defn- dict-get [d k]
-  (get d k))
-
-(defn- array? [a]
-  (or (arrays/array? a) (vector? a)))
+(type-alias serialized-value
+  :Datascript_runtime.Serialization_value.t)
 
 (defn- amap [f xs]
   (mapv f xs))
@@ -37,36 +16,61 @@
 (defn- amap-indexed [f xs]
   (vec (map-indexed f xs)))
 
-(defn- attr-comparator
-  "Looks for a datom with attribute exactly bigger than the given one"
-  [^datascript.db/Datom d1 ^datascript.db/Datom d2]
-  (cond 
-    (nil? (.-a d2)) -1
-    (<= (compare (.-a d1) (.-a d2)) 0) -1
-    true 1))
-
 (defn- all-attrs
   "All attrs in a DB, distinct, sorted"
-  [db]
-  (if (empty? (:aevt db))
-    []
-    (loop [attrs (transient [(:a (first (:aevt db)))])]
-      (let [attr      (nth attrs (dec (count attrs)))
-            left      (db/datom 0 attr nil)
-            right     (db/datom db/emax nil nil)
-            next-attr (:a (first (set/slice (:aevt db) left right attr-comparator)))]
-        (if (some? next-attr)
-          (recur (conj! attrs next-attr))
-          (persistent! attrs))))))
+  [^datascript.db/DB db]
+  (vec
+   (distinct
+    (map (fn [^datascript.db/Datom datom] (.-a datom))
+         (:aevt db)))))
 
-(def ^{:arglists '([kw])} freeze-kw str)
+(defn ^:string freeze-kw [^:keyword kw]
+  (str kw))
 
-(defn- thaw-kw [s]
-  (if (str/starts-with? s ":")
-    (keyword (subs s 1))
-    s))
+(defn- thaw-kw [^:string s]
+  (keyword
+   (if (str/starts-with? s ":")
+     (subs s 1)
+     s)))
 
-(defn- serializable-impl
+(defn- ^serialized-value serialize-datom
+  [^:Datascript_runtime.Serialization_value.encoder encoder
+   ^:vector<string> attrs
+   ^:int idx
+   ^datascript.db/Datom datom]
+  (db/datom-set-idx datom idx)
+  (let [entity    (.-e datom)
+        attribute (Datascript_runtime.Serialization_value.attribute_index
+                   attrs
+                   (freeze-kw (.-a datom)))
+        value     (Datascript_runtime.Serialization_value.encode_value
+                   encoder
+                   (.-v datom))
+        tx        (- (.-tx datom) db/tx0)]
+    (Datascript_runtime.Serialization_value.datom
+     entity attribute value tx)))
+
+(defn- ^:vector<string> freeze-attrs [^:vector<keyword> attrs]
+  (mapv freeze-kw attrs))
+
+(defn- ^:vector<serialized-value> serialize-eavt
+  [^datascript.db/DB db
+   ^:Datascript_runtime.Serialization_value.encoder encoder
+   ^:vector<string> attrs]
+  (vec
+   (map-indexed
+    (fn [idx ^datascript.db/Datom datom]
+      (serialize-datom encoder attrs idx datom))
+    (:eavt db))))
+
+(defn- ^:vector<int> datom-indexes
+  [^:set/btset<datascript.db/Datom;Datascript_runtime.Storage_backend.t;tuple<int;Datascript_runtime.Storage_value.t>> datoms]
+  (mapv
+   (fn [^datascript.db/Datom datom]
+     (db/datom-get-idx datom))
+   datoms))
+
+(defn- ^serialized-value serializable-impl
   "Serialized structure breakdown:
 
    count    :: number    
@@ -79,118 +83,104 @@
    eavt     :: [[e a-idx v dtx] ...]
    a-idx    :: index in attrs
    v        :: (string | number | boolean | [0 <index in keywords>] | [1 <freezed v>])
-   dtx      :: tx - tx0
-   aevt     :: [<index in eavt> ...]
-   avet     :: [<index in eavt> ...]"
-  [db {:keys [freeze-fn freeze-kw]
-       :or   {freeze-fn pr-str
-              freeze-kw freeze-kw}}]
-  (when (storage/storage db)
-    (throw (ex-info "serializable doesn't work with databases that have :storage" {})))
+  dtx      :: tx - tx0
+  aevt     :: [<index in eavt> ...]
+  avet     :: [<index in eavt> ...]"
+  [^datascript.db/DB db]
   (let [attrs       (all-attrs db)
-        attrs-map   (into {} (map vector attrs (range)))
-        *kws        (volatile! (transient []))
-        *kw-map     (volatile! (transient {}))
-        write-kw    (fn [kw]
-                      (let [idx (or
-                                  (get @*kw-map kw)
-                                  (let [keywords (vswap! *kws conj! kw)
-                                        idx      (dec (count keywords))]
-                                    (vswap! *kw-map assoc! kw idx)
-                                    idx))]
-                        (array marker-kw idx)))
-        write-other (fn [v] (array marker-other (freeze-fn v)))
-        write-v     (fn [v]
-                      (cond
-                        (string? v)  v
-                        (number? v)  
-                        (cond
-                          (== ##Inf v)  (array marker-inf)
-                          (== ##-Inf v) (array marker-minus-inf)
-                          (not= v v) (array marker-nan)
-                          :else v)
+        frozen-attrs (freeze-attrs attrs)
+        encoder     (Datascript_runtime.Serialization_value.create_encoder)
+        eavt        (serialize-eavt db encoder frozen-attrs)
+        aevt        (datom-indexes (:aevt db))
+        avet        (datom-indexes (:avet db))
+        schema      (Datascript_runtime.Serialization_value.schema_to_string
+                     (:schema db))
+        kws         (Datascript_runtime.Serialization_value.encoder_keywords
+                     encoder)]
+    (Datascript_runtime.Serialization_value.database
+     (count (:eavt db))
+     db/tx0
+     (:max-eid db)
+     (:max-tx db)
+     schema
+     frozen-attrs
+     kws
+     eavt
+     (Some aevt)
+     (Some avet)
+     32
+     (Datascript_runtime.Storage_value.Strong))))
 
-                        (boolean? v) v
-                        (keyword? v) (write-kw v)
-                        true         (write-other v)))
-        eavt        (amap-indexed
-                      (fn [idx ^datascript.db/Datom d]
-                        (db/datom-set-idx d idx)
-                        (let [e  (.-e d)
-                              a  (attrs-map (.-a d))
-                              v  (write-v (.-v d))
-                              tx (- (.-tx d) db/tx0)]
-                          (array e a v tx)))
-                      (:eavt db))
-        aevt        (amap-indexed (fn [_ ^datascript.db/Datom d] (db/datom-get-idx d)) (:aevt db))
-        avet        (amap-indexed (fn [_ ^datascript.db/Datom d] (db/datom-get-idx d)) (:avet db))
-        schema      (freeze-fn (:schema db))
-        attrs       (amap freeze-kw attrs)
-        kws         (amap freeze-kw (persistent! @*kws))
-        settings    (set/settings (:eavt db))]
-    (dict
-      "count"    (count (:eavt db))
-      "tx0"      db/tx0
-      "max-eid"  (:max-eid db)
-      "max-tx"   (:max-tx db)
-      "schema"   schema
-      "attrs"    attrs
-      "keywords" kws
-      "eavt"     eavt
-      "aevt"     aevt
-      "avet"     avet
-      "branching-factor" (:branching-factor settings)
-      "ref-type"         (name (:ref-type settings)))))
+(defn ^serialized-value serializable [db]
+  (serializable-impl db))
 
-(defn serializable
-  ([db] (serializable-impl db {}))
-  ([db opts] (serializable-impl db opts)))
+(defn- ^datascript.db/Datom deserialize-datom
+  [^:int tx0
+   ^:vector<keyword> attrs
+   ^:vector<string> keywords
+   ^serialized-value datom]
+  (let [entity    (Datascript_runtime.Serialization_value.datom_entity datom)
+        attribute (nth attrs
+                       (Datascript_runtime.Serialization_value.datom_attribute
+                        datom))
+        value     (Datascript_runtime.Serialization_value.decode_value
+                   keywords
+                   (Datascript_runtime.Serialization_value.datom_value datom))
+        tx        (+ tx0
+                     (Datascript_runtime.Serialization_value.datom_tx datom))]
+    (db/datom entity attribute value tx)))
 
-(defn from-serializable
-  ([from] 
-   (from-serializable from {}))
-  ([from {:keys [thaw-fn thaw-kw]
-          :or   {thaw-fn edn/read-string
-                 thaw-kw thaw-kw}
-          :as opts}]
-   (let [tx0      (dict-get from "tx0")
-         schema   (thaw-fn (dict-get from "schema"))
-         _        (#'db/validate-schema schema)
-         attrs    (->> (dict-get from "attrs") (mapv thaw-kw))
-         keywords (->> (dict-get from "keywords") (mapv thaw-kw))
-         eavt     (->> (dict-get from "eavt")
-                    (amap (fn [arr]
-                            (let [e  (array-get arr 0)
-                                  a  (nth attrs (array-get arr 1))
-                                  v  (array-get arr 2)
-                                  v  (cond
-                                       (number? v)  v
-                                       (string? v)  v
-                                       (boolean? v) v
-                                       (array? v) (let [marker (array-get v 0)]
-                                                    (condp == marker
-                                                      marker-kw    (nth keywords (array-get v 1))
-                                                      marker-other (thaw-fn (array-get v 1))
-                                                      marker-inf   ##Inf
-                                                      marker-minus-inf ##-Inf
-                                                      marker-nan   ##NaN
-                                                      (util/raise "Unexpected value marker " marker " in " (pr-str v)
-                                                        {:error :serialize :value v})))
-                                       true (util/raise "Unexpected value type " (type v) " (" (pr-str v) ")"
-                                              {:error :serialize :value v}))
-                                  tx (+ tx0 (array-get arr 3))]
-                              (db/datom e a v tx))))
-                    (arrays/into-array))
-         aevt     (some->> (dict-get from "aevt") (amap #(arrays/aget eavt %)) (arrays/into-array))
-         avet     (some->> (dict-get from "avet") (amap #(arrays/aget eavt %)) (arrays/into-array))
-         settings (merge
-                    {:branching-factor (dict-get from "branching-factor")
-                     :ref-type         (some-> (dict-get from "ref-type") keyword)}
-                    (select-keys opts [:branching-factor :ref-type]))]
-     (db/restore-db
-       {:schema  schema
-        :eavt    (set/from-sorted-array db/cmp-datoms-eavt eavt (arrays/alength eavt) settings)
-        :aevt    (set/from-sorted-array db/cmp-datoms-aevt aevt (arrays/alength aevt) settings)
-        :avet    (set/from-sorted-array db/cmp-datoms-avet avet (arrays/alength avet) settings)
-        :max-eid (dict-get from "max-eid")
-        :max-tx  (dict-get from "max-tx")}))))
+(defn- ^:array<datascript.db/Datom> deserialize-datoms
+  [^:int tx0
+   ^:vector<keyword> attrs
+   ^:vector<string> keywords
+   ^:vector<serialized-value> datoms]
+  (arrays/into-array
+   (mapv
+    (fn [^serialized-value datom]
+      (deserialize-datom tx0 attrs keywords datom))
+    datoms)))
+
+(defn- ^:array<datascript.db/Datom> reorder-datoms
+  [^:array<datascript.db/Datom> datoms
+   ^:option<vector<int>> indexes]
+  (match indexes
+    (Some indexes)
+    (arrays/into-array
+     (mapv
+      (fn [^:int index]
+        (arrays/aget datoms index))
+      indexes))
+    None datoms))
+
+(defn ^datascript.db/DB from-serializable
+  [^serialized-value from]
+  (let [tx0      (Datascript_runtime.Serialization_value.tx0 from)
+         schema   (Datascript_runtime.Serialization_value.schema_of_string
+                   (Datascript_runtime.Serialization_value.schema_source from))
+         _        (db/validate-schema schema)
+         attrs    (->> (Datascript_runtime.Serialization_value.attrs from)
+                       (mapv thaw-kw))
+         keywords (Datascript_runtime.Serialization_value.keywords from)
+         eavt     (deserialize-datoms
+                   tx0 attrs keywords
+                   (Datascript_runtime.Serialization_value.datoms from))
+         aevt     (reorder-datoms
+                   eavt
+                   (Datascript_runtime.Serialization_value.aevt from))
+         avet     (reorder-datoms
+                   eavt
+                   (Datascript_runtime.Serialization_value.avet from))
+         _        (Datascript_runtime.Serialization_value.branching_factor from)
+         ref-type (Datascript_runtime.Serialization_value.ref_type from)]
+    (db/restore-db
+     (db/make-db-snapshot
+      schema
+      (set/from-sorted-array db/cmp-datoms-eavt eavt
+       (arrays/alength eavt) None ref-type)
+      (set/from-sorted-array db/cmp-datoms-aevt aevt
+       (arrays/alength aevt) None ref-type)
+      (set/from-sorted-array db/cmp-datoms-avet avet
+       (arrays/alength avet) None ref-type)
+      (Datascript_runtime.Serialization_value.max_eid from)
+      (Datascript_runtime.Serialization_value.max_tx from)))))

@@ -112,46 +112,47 @@
          (recur (clojure.core/conj result (int (Float.rem path 32.0)))
                 (Float.floor (/ path 32.0)))))))
 
-(defn binary-search-l [cmp arr right key]
-  (loop [left 0
-         right right]
-    (if (<= left right)
-      (let [middle (arrays/half (+ left right))
-            middle-key (arrays/aget arr middle)]
-        (if (neg? #?(:melange (uncurried-compare cmp middle-key key)
-                     :default (cmp middle-key key)))
-          (recur (inc middle) right)
-          (recur left (dec middle))))
-      left)))
+(defn binary-search-l [^:ordering-fn cmp arr right key]
+  #?(:melange
+     (array-binary-search-left cmp arr right key)
+     :default
+     (loop [left 0
+            right right]
+       (if (<= left right)
+         (let [middle (arrays/half (+ left right))
+               middle-key (arrays/aget arr middle)]
+           (if (neg? (uncurried-compare cmp middle-key key))
+             (recur (inc middle) right)
+             (recur left (dec middle))))
+         left))))
 
-(defn binary-search-r [cmp arr right key]
-  (loop [left 0
-         right right]
-    (if (<= left right)
-      (let [middle (arrays/half (+ left right))
-            middle-key (arrays/aget arr middle)]
-        (if (pos? #?(:melange (uncurried-compare cmp middle-key key)
-                     :default (cmp middle-key key)))
-          (recur left (dec middle))
-          (recur (inc middle) right)))
-      left)))
+(defn binary-search-r [^:ordering-fn cmp arr right key]
+  #?(:melange
+     (array-binary-search-right cmp arr right key)
+     :default
+     (loop [left 0
+            right right]
+       (if (<= left right)
+         (let [middle (arrays/half (+ left right))
+               middle-key (arrays/aget arr middle)]
+           (if (pos? (uncurried-compare cmp middle-key key))
+             (recur left (dec middle))
+             (recur (inc middle) right)))
+         left))))
 
-(defn lookup-exact [cmp arr key]
+(defn lookup-exact [^:ordering-fn cmp arr key]
   (let [length (arrays/alength arr)
         idx (binary-search-l cmp arr (dec length) key)]
     (if (and (< idx length)
-             (= 0 #?(:melange
-                     (uncurried-compare cmp (arrays/aget arr idx) key)
-                     :default
-                     (cmp (arrays/aget arr idx) key))))
+             (= 0 (uncurried-compare cmp (arrays/aget arr idx) key)))
       idx
-      -1)))
+      #?(:melange -1.0 :default -1))))
 
-(defn lookup-range [cmp arr key]
+(defn lookup-range [^:ordering-fn cmp arr key]
   (let [length (arrays/alength arr)
         idx (binary-search-l cmp arr (dec length) key)]
     (if (= idx length)
-      -1
+      #?(:melange -1.0 :default -1)
       idx)))
 
 (defn cut-n-splice [arr cut-from cut-to splice-from splice-to values]
@@ -209,7 +210,8 @@
          right 0 right-length result-right (- left-length result-left-length))))
     (arrays/array result-left result-right)))
 
-(defn eq-arr [cmp left left-from left-to right right-from right-to]
+(defn eq-arr
+  [^:ordering-fn cmp left left-from left-to right right-from right-to]
   (let [length (- left-to left-from)]
     (and
      (= length (- right-to right-from))
@@ -219,7 +221,7 @@
          true
 
          (not (= 0
-                 (cmp
+                 (uncurried-compare cmp
                   (arrays/aget left (+ idx left-from))
                   (arrays/aget right (+ idx right-from)))))
          false
@@ -227,7 +229,7 @@
          :else
          (recur (inc idx)))))))
 
-(defn check-n-splice [cmp arr from to new-arr]
+(defn check-n-splice [^:ordering-fn cmp arr from to new-arr]
   (if (eq-arr cmp arr from to new-arr 0 (arrays/alength new-arr))
     arr
     (splice arr from to new-arr)))
@@ -236,18 +238,31 @@
              (keys :array<value>)
              (children :array<option<tree<value>>>)
              (_weak-children :array<option<weak<tree<value>>>>)
-             (_addresses :array<option<int64>>)
-             (_address :ref<option<int64>>)
+             (_addresses :array<option<int>>)
+             (_address :ref<option<int>>)
              (_dirty :ref<bool>))
 
-(type-record storage [value]
-  (restore :fn<int64;option<tree<value>>>)
-  (accessed :fn<int64;unit>)
-  (store :fn<tree<value>;option<int64>;int64>)
-  (delete :fn<array<int64>;unit>)
-  (owner :option<dynamic>)
-  (pending-deletes :ref<array<int64>>)
-  (drain-writes :fn<unit;vector<vector<dynamic>>>))
+(type-record storage [value owner write]
+  (restore :fn<int;option<tree<value>>>)
+  (accessed :fn<int;unit>)
+  (store :fn<tree<value>;option<int>;int>)
+  (delete :fn<array<int>;unit>)
+  (owner :option<owner>)
+  (pending-deletes :ref<array<int>>)
+  (drain-writes :fn<unit;vector<write>>)
+  (ref-type :Lg_runtime.Runtime_ref_type.t))
+
+(signature me.tonsky.persistent-sorted-set/restore-child
+  [value owner write]
+  :fn<array<option<tree<value>>>;array<option<weak<tree<value>>>>;int;storage<value;owner;write>;int;tree<value>>)
+
+(signature me.tonsky.persistent-sorted-set/node-child
+  [value owner write]
+  :fn<tree<value>;int;option<storage<value;owner;write>>;tree<value>>)
+
+(signature me.tonsky.persistent-sorted-set/node-lookup
+  [value owner write]
+  :fn<tree<value>;fn<value;value;ordering>;value;option<storage<value;owner;write>>;option<value>>)
 
 (defn make-storage [restore accessed store delete]
   (record storage
@@ -257,7 +272,8 @@
           (delete delete)
           (owner nil)
           (pending-deletes (volatile! (arrays/empty-array)))
-          (drain-writes (fn [_] []))))
+          (drain-writes (fn [_] []))
+          (ref-type (Lg_runtime.Runtime_ref_type.Weak))))
 
 (defn make-storage-with-owner
   [restore accessed store delete owner pending-deletes drain-writes]
@@ -268,7 +284,20 @@
           (delete delete)
           (owner (Some owner))
           (pending-deletes pending-deletes)
-          (drain-writes drain-writes)))
+          (drain-writes drain-writes)
+          (ref-type (Lg_runtime.Runtime_ref_type.Weak))))
+
+(defn storage-with-ref-type
+  [storage ^:Lg_runtime.Runtime_ref_type.t ref-type]
+  (record storage
+          (restore (:restore storage))
+          (accessed (:accessed storage))
+          (store (:store storage))
+          (delete (:delete storage))
+          (owner (:owner storage))
+          (pending-deletes (:pending-deletes storage))
+          (drain-writes (:drain-writes storage))
+          (ref-type ref-type)))
 
 (defn storage-owner [storage]
   (:owner storage))
@@ -276,11 +305,15 @@
 (defn storage-pending-deletes [storage]
   (:pending-deletes storage))
 
+(signature me.tonsky.persistent-sorted-set/storage-drain-writes
+  [value owner write]
+  :fn<storage<value;owner;write>;vector<write>>)
+
 (defn storage-drain-writes [storage]
   ((:drain-writes storage) (Stdlib.ignore 0)))
 
 (defn- make-tree
-  [keys children weak-children addresses ^:option<int64> address dirty]
+  [keys children weak-children addresses ^:option<int> address dirty]
   (record tree (keys keys) (children children) (_weak-children weak-children) (_addresses addresses) (_address (volatile! address)) (_dirty (volatile! dirty))))
 
 (defn node-address [node]
@@ -355,14 +388,24 @@
 (defmacro node-keys [node]
   `(:keys ~node))
 
+(defn- retain-child [children weak-children idx storage child]
+  (match (:ref-type storage)
+    Lg_runtime.Runtime_ref_type.Strong
+    (do
+      (arrays/aset children idx (Some child))
+      (arrays/aset weak-children idx nil)
+      child)
+    Lg_runtime.Runtime_ref_type.Weak
+    (do
+      (arrays/aset children idx nil)
+      (arrays/aset weak-children idx (Some (weak-ref child)))
+      child)))
+
 (defn- restore-child [children weak-children idx storage address]
   (let [restore (:restore storage)]
     (match (restore address)
       (Some child)
-      (do
-        (arrays/aset children idx nil)
-        (arrays/aset weak-children idx (Some (weak-ref child)))
-        child)
+      (retain-child children weak-children idx storage child)
       None
       (Stdlib.failwith "persistent sorted set storage returned no child"))))
 
@@ -429,6 +472,10 @@
          (inc idx)
          (node-fold (node-child node idx storage) f result storage))))))
 
+(signature me.tonsky.persistent-sorted-set/delete-address
+  [value owner write]
+  :fn<option<storage<value;owner;write>>;option<int>;unit>)
+
 (defn- delete-address [storage address]
   (if-some [storage-value storage]
     (if-some [address-value address]
@@ -437,12 +484,14 @@
       nil)
     nil))
 
-(defn- address-option-equals? [candidate address]
+(defn- address-option-equals?
+  [^:option<int> candidate ^:int address]
   (match candidate
     (Some value) (= value address)
     None false))
 
-(defn- address-present? [addresses address]
+(defn- address-present?
+  [^:array<option<int>> addresses ^:int address]
   (loop [idx 0]
     (if (= idx (arrays/alength addresses))
       false
@@ -450,18 +499,23 @@
         true
         (recur (inc idx))))))
 
-(defn- removed-address? [candidate new-addresses]
+(defn- removed-address?
+  [^:option<int> candidate ^:array<option<int>> new-addresses]
   (match candidate
     (Some address)
     (not (address-present? new-addresses address))
     None false))
 
-(defn- address-value [candidate]
+(defn- ^:int address-value [^:option<int> candidate]
   (match candidate
     (Some address) address
     None (Stdlib.failwith "persistent sorted set address is unavailable")))
 
-(defn- removed-addresses [addresses from to new-addresses]
+(defn- ^:array<int> removed-addresses
+  [^:array<option<int>> addresses
+   ^:int from
+   ^:int to
+   ^:array<option<int>> new-addresses]
   (arrays/into-array
    (map
     address-value
@@ -469,7 +523,12 @@
      (fn [candidate] (removed-address? candidate new-addresses))
      (array-to-seq (arrays/aslice addresses from to))))))
 
-(defn- delete-removed-addresses [storage addresses from to new-addresses]
+(signature me.tonsky.persistent-sorted-set/delete-removed-addresses
+  [value owner write]
+  :fn<option<storage<value;owner;write>>;array<option<int>>;int;int;array<option<int>>;unit>)
+
+(defn- delete-removed-addresses
+  [storage addresses ^:int from ^:int to new-addresses]
   (if-some [storage-value storage]
     (let [removed
           (removed-addresses addresses from to new-addresses)]
@@ -481,28 +540,28 @@
 (defn- node-merge [node next storage]
   (delete-address storage (deref (:_address next)))
   (new-node-state
-   (arrays/aconcat (:keys node) (:keys next))
+   (arrays/aconcat (.-keys node) (.-keys next))
    (arrays/aconcat
-    (:children node) (:children next))
+    (.-children node) (.-children next))
    (arrays/aconcat
-    (:_weak-children node) (:_weak-children next))
+    (.-_weak-children node) (.-_weak-children next))
    (arrays/aconcat
-    (:_addresses node) (:_addresses next))
+    (.-_addresses node) (.-_addresses next))
    (deref (:_address node))))
 
 (defn- node-merge-n-split [node next]
   (let [split-keys
         (merge-n-split
-         (:keys node) (:keys next))
+         (.-keys node) (.-keys next))
         split-children
         (merge-n-split
-         (:children node) (:children next))
+         (.-children node) (.-children next))
         split-weak-children
         (merge-n-split
-         (:_weak-children node) (:_weak-children next))
+         (.-_weak-children node) (.-_weak-children next))
         split-addresses
         (merge-n-split
-         (:_addresses node) (:_addresses next))]
+         (.-_addresses node) (.-_addresses next))]
     (arrays/array
      (new-node-state
       (arrays/aget split-keys 0)
@@ -517,7 +576,11 @@
       (arrays/aget split-addresses 1)
       (deref (:_address next))))))
 
-(defn- rotate [node root? left right storage]
+(signature me.tonsky.persistent-sorted-set/rotate
+  [value owner write]
+  :fn<tree<value>;bool;option<tree<value>>;option<tree<value>>;option<storage<value;owner;write>>;array<tree<value>>>)
+
+(defn- rotate [node ^boolean root? left right storage]
   (cond
     root? (arrays/array node)
     (> (node-len node) min-len)
@@ -551,18 +614,22 @@
           (node-merge-n-split node right-node))
         (arrays/array node)))))
 
-(defn node-lookup [node cmp key storage]
+(defn node-lookup [node ^:ordering-fn cmp key storage]
   (loop [node node]
     (let [keys (:keys node)]
       (if (= 0 (node-child-count node))
         (let [idx (lookup-exact cmp keys key)]
-          (when-not (= -1 idx) (arrays/aget keys idx)))
+          (if (= -1 idx)
+            None
+            (Some (arrays/aget keys idx))))
         (let [idx (lookup-range cmp keys key)]
           (if (= -1 idx)
-            nil
-            (recur (node-child node idx storage))))))))
+            None
+            (recur
+             (node-child
+              node #?(:melange (int idx) :default idx) storage))))))))
 
-(defn node-conj [node cmp key storage]
+(defn node-conj [node ^:ordering-fn cmp key storage]
   (let [keys (:keys node)
         children (:children node)
         weak-children (:_weak-children node)
@@ -570,13 +637,11 @@
         address (deref (:_address node))]
     (if (= 0 (arrays/alength children))
       (let [idx (binary-search-l cmp keys (dec (arrays/alength keys)) key)
+            idx-int #?(:melange (int idx) :default idx)
             keys-length (arrays/alength keys)]
         (cond
           (and (< idx keys-length)
-               (= 0 #?(:melange
-                       (uncurried-compare cmp key (arrays/aget keys idx))
-                       :default
-                       (cmp key (arrays/aget keys idx)))))
+              (= 0 (uncurried-compare cmp key (arrays/aget keys idx))))
           nil
           (= keys-length max-len)
           (let [middle (arrays/half (inc keys-length))]
@@ -585,35 +650,38 @@
                (new-leaf-address (arrays/aslice keys 0 middle) address)
                (new-leaf
                 (cut-n-splice
-                 keys middle keys-length idx idx (arrays/array key))))
+                 keys middle keys-length idx-int idx-int (arrays/array key))))
               (arrays/array
                (new-leaf-address
-                (cut-n-splice keys 0 middle idx idx (arrays/array key))
+                (cut-n-splice
+                 keys 0 middle idx-int idx-int (arrays/array key))
                 address)
                (new-leaf (arrays/aslice keys middle keys-length)))))
           :else
           (arrays/array
            (new-leaf-address
-            (splice keys idx idx (arrays/array key)) address))))
+            (splice keys idx-int idx-int (arrays/array key)) address))))
       (let [idx (binary-search-l cmp keys (- (arrays/alength keys) 2) key)
-            child (node-child node idx storage)]
+            idx-int #?(:melange (int idx) :default idx)
+            child (node-child node idx-int storage)]
         (if-some [child-nodes (node-conj child cmp key storage)]
           (let [new-keys
                 (check-n-splice
-                 cmp keys idx (inc idx)
+                 cmp keys idx-int (inc idx-int)
                  (arrays/amap (fn [child] (node-lim-key child)) child-nodes))
                 new-children
                 (splice
-                 children idx (inc idx) (loaded-children child-nodes))
+                 children idx-int (inc idx-int) (loaded-children child-nodes))
                 new-weak-children
                 (splice
                  weak-children
-                 idx
-                 (inc idx)
+                 idx-int
+                 (inc idx-int)
                  (arrays/make-array (arrays/alength child-nodes) nil))
                 new-addresses
                 (splice
-                 addresses idx (inc idx) (children-addresses child-nodes))]
+                 addresses idx-int (inc idx-int)
+                 (children-addresses child-nodes))]
             (if (<= (arrays/alength new-children) max-len)
               (arrays/array
                (new-node-state
@@ -639,35 +707,45 @@
                   nil)))))
           nil)))))
 
-(defn node-disj [node cmp key root? left right storage]
+(signature me.tonsky.persistent-sorted-set/node-disj
+  [value owner write]
+  :fn<tree<value>;fn<value;value;ordering>;value;bool;option<tree<value>>;option<tree<value>>;option<storage<value;owner;write>>;option<array<tree<value>>>>)
+
+(defn node-disj
+  [node ^:ordering-fn cmp key ^boolean root? left right storage]
   (let [keys (:keys node)
         children (:children node)
         weak-children (:_weak-children node)]
     (if (= 0 (arrays/alength children))
-      (let [idx (lookup-exact cmp keys key)]
+      (let [idx (lookup-exact cmp keys key)
+            idx-int #?(:melange (int idx) :default idx)]
         (if (= -1 idx)
           nil
           (rotate
            (new-leaf-address
-            (splice keys idx (inc idx) (arrays/empty-array))
+            (splice keys idx-int (inc idx-int) (arrays/empty-array))
             (deref (:_address node)))
            root? left right storage)))
-      (let [idx (lookup-range cmp keys key)]
+      (let [idx (lookup-range cmp keys key)
+            idx-int #?(:melange (int idx) :default idx)]
         (if (= -1 idx)
           nil
           (let [children-length (arrays/alength children)
-                child (node-child node idx storage)
+                child (node-child node idx-int storage)
                 left-child
-                (when (> idx 0) (node-child node (dec idx) storage))
+                (when (> idx 0)
+                  (node-child node (dec idx-int) storage))
                 right-child
-                (when (< (inc idx) children-length)
-                  (node-child node (inc idx) storage))]
+                (when (< (inc idx-int) children-length)
+                  (node-child node (inc idx-int) storage))]
             (if-some [disjoined
                       (node-disj
                        child cmp key false left-child right-child storage)]
-              (let [left-idx (if (> idx 0) (dec idx) idx)
+              (let [left-idx (if (> idx 0) (dec idx-int) idx-int)
                     right-idx
-                    (if (< (inc idx) children-length) (+ idx 2) (inc idx))
+                    (if (< (inc idx-int) children-length)
+                      (+ idx-int 2)
+                      (inc idx-int))
                     new-keys
                     (check-n-splice
                      cmp keys left-idx right-idx
@@ -719,15 +797,16 @@
                       (deref (:_dirty child)))
                  (let [child-address (node-store child storage)]
                    (arrays/aset addresses idx (Some child-address))))
-               (arrays/aset weak-children idx (Some (weak-ref child)))
-               (arrays/aset children idx nil))
+               (retain-child children weak-children idx storage child))
              (if-some [reference (arrays/aget weak-children idx)]
                (if-some [child (weak-deref reference)]
-                 (when (or
-                        (nil? (arrays/aget addresses idx))
-                        (deref (:_dirty child)))
-                   (let [child-address (node-store child storage)]
-                     (arrays/aset addresses idx (Some child-address))))
+                 (do
+                   (when (or
+                          (nil? (arrays/aget addresses idx))
+                          (deref (:_dirty child)))
+                     (let [child-address (node-store child storage)]
+                       (arrays/aset addresses idx (Some child-address))))
+                   (retain-child children weak-children idx storage child))
                  nil)
               nil))
           (recur (inc idx)))
@@ -749,20 +828,50 @@
 
 (def average-len 24)
 
-(type-record btset [value]
+(type-record btset [value owner write]
              (root :ref<option<tree<value>>>)
              (_weak-root :ref<option<weak<tree<value>>>>)
+             (ref-type :ref<Lg_runtime.Runtime_ref_type.t>)
              (shift :int)
              (cnt :int)
-             (comparator :fn<value;value;int>)
-             (storage :ref<option<storage<value>>>)
-             (_address :ref<option<int64>>))
+             (comparator :fn<value;value;ordering>)
+             (storage :ref<option<storage<value;owner;write>>>)
+             (_address :ref<option<int>>))
 
 (defn- make-set [root shift cnt comparator storage]
-  (record btset (root (volatile! (Some root))) (_weak-root (volatile! nil)) (shift shift) (cnt cnt) (comparator comparator) (storage (volatile! storage)) (_address (volatile! nil))))
+  (record btset (root (volatile! (Some root))) (_weak-root (volatile! nil)) (ref-type (volatile! (Lg_runtime.Runtime_ref_type.Weak))) (shift shift) (cnt cnt) (comparator comparator) (storage (volatile! storage)) (_address (volatile! nil))))
 
 (defn- make-restored-set [shift cnt comparator storage address]
-  (record btset (root (volatile! nil)) (_weak-root (volatile! nil)) (shift shift) (cnt cnt) (comparator comparator) (storage (volatile! (Some storage))) (_address (volatile! (Some address)))))
+  (record btset (root (volatile! nil)) (_weak-root (volatile! nil)) (ref-type (volatile! (Lg_runtime.Runtime_ref_type.Weak))) (shift shift) (cnt cnt) (comparator comparator) (storage (volatile! (Some storage))) (_address (volatile! (Some address)))))
+
+(defn set-ref-type [set]
+  (deref (:ref-type set)))
+
+(defn with-ref-type [set ^:Lg_runtime.Runtime_ref_type.t ref-type]
+  (vreset! (:ref-type set) ref-type)
+  (match (deref (:storage set))
+    (Some storage)
+    (vreset!
+     (:storage set)
+     (Some (storage-with-ref-type storage ref-type)))
+    None nil)
+  set)
+
+(defn- inherit-set-settings [source target]
+  (with-ref-type target (set-ref-type source)))
+
+(defn- retain-root [set root]
+  (match (set-ref-type set)
+    Lg_runtime.Runtime_ref_type.Weak
+    (do
+      (vreset! (:_weak-root set) (Some (weak-ref root)))
+      (vreset! (:root set) nil)
+      root)
+    Lg_runtime.Runtime_ref_type.Strong
+    (do
+      (vreset! (:root set) (Some root))
+      (vreset! (:_weak-root set) nil)
+      root)))
 
 (defn- restore-root [set]
   (match (deref (:storage set))
@@ -773,9 +882,7 @@
         (match (restore address)
           (Some root)
           (do
-            (vreset! (:root set) nil)
-            (vreset! (:_weak-root set) (Some (weak-ref root)))
-            root)
+            (retain-root set root))
           None
           (Stdlib.failwith "persistent sorted set storage returned no root")))
       None
@@ -804,8 +911,8 @@
 (defn set-storage [set]
   (deref (:storage set)))
 
-(defn- ^:vector<int64> node-collect-addresses
-  [node storage ^:vector<int64> addresses]
+(defn- ^:vector<int> node-collect-addresses
+  [node storage ^:vector<int> addresses]
   (let [addresses
         (match (node-address node)
           (Some address) (clojure.core/conj addresses address)
@@ -821,29 +928,38 @@
           storage
           addresses))))))
 
-(defn ^:vector<int64> set-addresses [set]
+(defn ^:vector<int> set-addresses [set]
   (node-collect-addresses (set-root set) (set-storage set) []))
 
 #?(:native
-   (type-record iterator [value]
-                (iter-root :tree<value>)
-                (iter-shift :int)
-                (iter-left :int)
-                (iter-right :int)
-                (iter-keys :array<value>)
-                (iter-idx :int)
-                (iter-storage :option<storage<value>>))
+   (do
+     (type-record iterator [value owner write]
+                  (iter-root :tree<value>)
+                  (iter-shift :int)
+                  (iter-left :int)
+                  (iter-right :int)
+                  (iter-keys :array<value>)
+                  (iter-idx :int)
+                  (iter-storage :option<storage<value;owner;write>>)))
    :cljs
-   (type-record iterator [value]
-                (iter-root :tree<value>)
-                (iter-shift :int)
-                (iter-left :float)
-                (iter-right :float)
-                (iter-keys :array<value>)
-                (iter-idx :int)
-                (iter-storage :option<storage<value>>)))
+   (do
+     (type-record iterator [value owner write]
+                  (iter-root :tree<value>)
+                  (iter-shift :int)
+                  (iter-left :float)
+                  (iter-right :float)
+                  (iter-keys :array<value>)
+                  (iter-idx :int)
+                  (iter-storage :option<storage<value;owner;write>>))))
 
-(defn node-keys-at-path [root current-path shift storage]
+(signature me.tonsky.persistent-sorted-set/node-keys-at-path
+  [value owner write]
+  #?(:native
+     :fn<tree<value>;int;int;option<storage<value;owner;write>>;array<value>>
+     :cljs
+     :fn<tree<value>;float;int;option<storage<value;owner;write>>;array<value>>))
+
+(defn node-keys-at-path [root current-path ^:int shift storage]
   (loop [node root
          level shift]
     (if (pos? level)
@@ -852,7 +968,14 @@
        (dec level))
       (node-keys node))))
 
-(defn node-value-at-path [root current-path shift storage]
+(signature me.tonsky.persistent-sorted-set/node-value-at-path
+  [value owner write]
+  #?(:native
+     :fn<tree<value>;int;int;option<storage<value;owner;write>>;value>
+     :cljs
+     :fn<tree<value>;float;int;option<storage<value;owner;write>>;value>))
+
+(defn node-value-at-path [root current-path ^:int shift storage]
   (arrays/aget
    (node-keys-at-path root current-path shift storage)
    (path-get current-path 0)))
@@ -929,41 +1052,65 @@
       result
       (path-dec empty-path))))
 
-(defn seek-path [root key cmp shift storage]
+#?(:native
+   (signature me.tonsky.persistent-sorted-set/seek-path
+     [value owner write]
+     :fn<tree<value>;value;fn<value;value;ordering>;int;option<storage<value;owner;write>>;option<int>>)
+   :cljs
+   (signature me.tonsky.persistent-sorted-set/seek-path
+     [value owner write]
+     :fn<tree<value>;value;fn<value;value;ordering>;int;option<storage<value;owner;write>>;option<float>>))
+
+(defn seek-path [root key ^:ordering-fn cmp ^:int shift storage]
   (loop [node root
          current-path empty-path
-         level shift]
+         ^:int level shift]
     (let [keys (node-keys node)
           keys-length (arrays/alength keys)]
       (if (= 0 level)
         (let [idx (binary-search-l cmp keys (dec keys-length) key)]
           (if (= idx keys-length)
             nil
-            (Some (path-set current-path 0 idx))))
-        (let [idx (binary-search-l cmp keys (- keys-length 2) key)]
+            (Some
+             (path-set
+              current-path 0 #?(:melange (int idx) :default idx)))))
+        (let [idx (binary-search-l cmp keys (- keys-length 2) key)
+              idx-int #?(:melange (int idx) :default idx)]
           (recur
-           (node-child node idx storage)
-           (path-set current-path level idx)
+           (node-child node idx-int storage)
+           (path-set current-path level idx-int)
            (dec level)))))))
 
-(defn rseek-path [root key cmp shift storage]
+#?(:native
+   (signature me.tonsky.persistent-sorted-set/rseek-path
+     [value owner write]
+     :fn<tree<value>;value;fn<value;value;ordering>;int;option<storage<value;owner;write>>;int>)
+   :cljs
+   (signature me.tonsky.persistent-sorted-set/rseek-path
+     [value owner write]
+     :fn<tree<value>;value;fn<value;value;ordering>;int;option<storage<value;owner;write>>;float>))
+
+(defn rseek-path [root key ^:ordering-fn cmp ^:int shift storage]
   (loop [node root
          current-path empty-path
-         level shift]
+         ^:int level shift]
     (let [keys (node-keys node)
           keys-length (arrays/alength keys)]
       (if (= 0 level)
         (path-set
          current-path
          0
-         (binary-search-r cmp keys (dec keys-length) key))
-        (let [idx (binary-search-r cmp keys (- keys-length 2) key)]
+         #?(:melange
+            (int (binary-search-r cmp keys (dec keys-length) key))
+            :default (binary-search-r cmp keys (dec keys-length) key)))
+        (let [idx (binary-search-r cmp keys (- keys-length 2) key)
+              idx-int #?(:melange (int idx) :default idx)]
           (recur
-           (node-child node idx storage)
-           (path-set current-path level idx)
+           (node-child node idx-int storage)
+           (path-set current-path level idx-int)
            (dec level)))))))
 
-(defn node-seq-between [root left right shift storage]
+(defn node-seq-between [root left right ^:int shift storage]
   (seq-unfold
    (fn [current]
      (if (path-lt current right)
@@ -974,7 +1121,7 @@
        nil))
    left))
 
-(defn node-rseq-between [root left right shift storage]
+(defn node-rseq-between [root left right ^:int shift storage]
   (let [before-left (prev-path root left shift storage)]
     (seq-unfold
      (fn [current]
@@ -986,7 +1133,7 @@
          nil))
      (prev-path root right shift storage))))
 
-(defn node-seq [root shift storage]
+(defn node-seq [root ^:int shift storage]
   (if (= 0 shift)
     (array-to-seq (node-keys root))
     (seq-flat-map
@@ -994,7 +1141,7 @@
        (node-seq (node-child root idx storage) (dec shift) storage))
      (arrays/into-array (range 0 (node-child-count root))))))
 
-(defn node-rseq [root shift storage]
+(defn node-rseq [root ^:int shift storage]
   (if (= 0 shift)
     (array-to-rseq (node-keys root))
     (seq-flat-map-rev
@@ -1038,6 +1185,51 @@
             storage))
           nil)))))
 
+(signature me.tonsky.persistent-sorted-set/iterator-option-seq
+  [value owner write]
+  :fn<option<iterator<value;owner;write>>;seq<value>>)
+
+(defn- iterator-option-seq [iterator]
+  (match iterator
+    (Some value)
+    (let [root (:iter-root value)
+          shift (:iter-shift value)
+          right (:iter-right value)
+          storage (:iter-storage value)]
+      (seq-unfold
+       (fn [state]
+         (let [left (tuple-get state 0)
+               keys (tuple-get state 1)
+               idx (tuple-get state 2)]
+           (if (path-lt left right)
+             (let [item (arrays/aget keys idx)
+                   next-idx (inc idx)]
+               (if (< next-idx (arrays/alength keys))
+                 (Some
+                  (tuple item (tuple (path-inc left) keys next-idx)))
+                 (let [next-left (next-path root left shift storage)]
+                   (if (path-lt next-left right)
+                     (Some
+                      (tuple
+                       item
+                       (tuple
+                        next-left
+                        (node-keys-at-path
+                         root next-left shift storage)
+                        (path-get next-left 0))))
+                     (Some
+                      (tuple item (tuple next-left keys next-idx)))))))
+             nil)))
+       (tuple
+        (:iter-left value)
+        (:iter-keys value)
+        (:iter-idx value))))
+    None
+    (array-to-seq (arrays/empty-array))))
+
+(defn iterator-seq [iterator]
+  (iterator-option-seq (Some iterator)))
+
 (defn node-iter [root shift storage]
   (if (= 0 (node-len root))
     nil
@@ -1058,25 +1250,39 @@
         0
         storage)))))
 
-(defn- partition-array [values]
-  (let [length (arrays/alength values)]
-    (loop [offset 0
-           parts []]
-      (if (= offset length)
-        (arrays/into-array parts)
-        (let [remaining (- length offset)
-              size
-              (cond
-                (<= remaining max-len) remaining
-                (>= remaining (+ average-len min-len)) average-len
-                :else (arrays/half remaining))
-              next-offset (+ offset size)]
-          (recur
-           next-offset
-           (clojure.core/conj
-            parts (arrays/aslice values offset next-offset))))))))
+(defn- ^:int partition-size [^:int remaining]
+  (cond
+    (<= remaining max-len) remaining
+    (>= remaining (+ average-len min-len)) average-len
+    :else (arrays/half remaining)))
 
-(defn- unique-count [values cmp]
+(defn- ^:int partition-count [^:int length]
+  (loop [offset 0
+         count 0]
+    (if (= offset length)
+      count
+      (recur
+       (+ offset (partition-size (- length offset)))
+       (inc count)))))
+
+(defn- partition-array [values]
+  (let [length (arrays/alength values)
+        parts (arrays/make-array
+               (partition-count length)
+               (arrays/empty-array))]
+    (loop [offset 0
+           part-index 0]
+      (if (= offset length)
+        parts
+        (let [next-offset
+              (+ offset (partition-size (- length offset)))]
+          (arrays/aset
+           parts
+           part-index
+           (arrays/aslice values offset next-offset))
+          (recur next-offset (inc part-index)))))))
+
+(defn- unique-count [values ^:ordering-fn cmp]
   (let [length (arrays/alength values)]
     (if (= 0 length)
       0
@@ -1089,12 +1295,11 @@
             (recur
              (inc idx)
              value
-             (if (= 0 #?(:melange (uncurried-compare cmp value previous)
-                         :default (cmp value previous)))
+             (if (zero? (uncurried-compare cmp value previous))
                count
                (inc count)))))))))
 
-(defn sorted-array-distinct [values cmp]
+(defn sorted-array-distinct [values ^:ordering-fn cmp]
   (let [length (arrays/alength values)
         distinct-count (unique-count values cmp)]
     (if (= length distinct-count)
@@ -1108,8 +1313,7 @@
                  previous (arrays/aget values 0)]
             (if (< source-idx length)
               (let [value (arrays/aget values source-idx)]
-                (if (= 0 #?(:melange (uncurried-compare cmp value previous)
-                            :default (cmp value previous)))
+                (if (zero? (uncurried-compare cmp value previous))
                   (recur (inc source-idx) result-idx value)
                   (do
                     (arrays/aset result result-idx value)
@@ -1117,7 +1321,7 @@
               nil)))
         result))))
 
-(defn from-sorted-array-with-storage [cmp values storage]
+(defn from-sorted-array-with-storage [^:ordering-fn cmp values storage]
   (let [leaves
         (arrays/amap
          (fn [keys] (new-leaf keys))
@@ -1149,16 +1353,21 @@
             (partition-array current-level))
            (inc shift)))))))
 
-(defn from-sorted-array-base [cmp values]
+(defn from-sorted-array-base [^:ordering-fn cmp values]
   (from-sorted-array-with-storage cmp values None))
 
-(defn from-sequential [cmp values]
+(signature me.tonsky.persistent-sorted-set/from-sequential
+  [value]
+  :fn<fn<value;value;ordering>;seqable<value>;btset<value;unit;unit>>)
+
+(defn from-sequential [^:ordering-fn cmp values]
   (let [sorted (into-array values)]
     (asort! cmp sorted)
     (from-sorted-array-base cmp (sorted-array-distinct sorted cmp))))
 
-(defn empty-set [cmp]
-  (make-set (new-leaf (arrays/empty-array)) 0 0 cmp None))
+(defn empty-set [^:ordering-fn cmp]
+  (make-set
+   (new-leaf (arrays/empty-array)) 0 0 cmp None))
 
 (defn set-lookup [set key]
   (node-lookup
@@ -1173,43 +1382,44 @@
             idx (binary-search-l cmp keys (dec length) key)]
         (if (= 0 (node-child-count node))
           (and (< idx length)
-               (= 0 #?(:melange
-                       (uncurried-compare cmp (arrays/aget keys idx) key)
-                       :default
-                       (cmp (arrays/aget keys idx) key))))
+               (= 0 (uncurried-compare cmp (arrays/aget keys idx) key)))
           (if (= idx length)
             false
             (if-some [child (arrays/aget (:children node) idx)]
               (recur child)
-              (recur (node-child node idx storage)))))))))
+              (recur
+               (node-child
+                node #?(:melange (int idx) :default idx) storage)))))))))
 
-(defn set-conj-with [set key cmp]
+(defn set-conj-with [set key ^:ordering-fn cmp]
   (if-some [roots
             (node-conj
              (set-root set) cmp key (set-storage set))]
-    (if (= 1 (arrays/alength roots))
-      (make-set
-       (arrays/aget roots 0)
-       (set-shift set)
-       (inc (set-count set))
-       (set-comparator set)
-       (set-storage set))
-      (make-set
-       (new-node
-        (arrays/amap
-         (fn [root] (node-lim-key root))
+    (inherit-set-settings
+     set
+     (if (= 1 (arrays/alength roots))
+       (make-set
+        (arrays/aget roots 0)
+        (set-shift set)
+        (inc (set-count set))
+        (set-comparator set)
+        (set-storage set))
+       (make-set
+        (new-node
+         (arrays/amap
+          (fn [root] (node-lim-key root))
+          roots)
          roots)
-        roots)
-       (inc (set-shift set))
-       (inc (set-count set))
-       (set-comparator set)
-       (set-storage set)))
+        (inc (set-shift set))
+        (inc (set-count set))
+        (set-comparator set)
+        (set-storage set))))
     set))
 
 (defn set-conj [set key]
   (set-conj-with set key (set-comparator set)))
 
-(defn set-disj-with [set key cmp]
+(defn set-disj-with [set key ^:ordering-fn cmp]
   (if-some [roots
             (node-disj
              (set-root set)
@@ -1220,28 +1430,31 @@
              nil
              (set-storage set))]
     (let [root (arrays/aget roots 0)]
-      (if (and (> (set-shift set) 0)
-               (= 1 (node-len root)))
-        (make-set
-         (node-child root 0 (set-storage set))
-         (dec (set-shift set))
-         (dec (set-count set))
-         (set-comparator set)
-         (set-storage set))
-        (make-set
-         root
-         (set-shift set)
-         (dec (set-count set))
-         (set-comparator set)
-         (set-storage set))))
+      (inherit-set-settings
+       set
+       (if (and (> (set-shift set) 0)
+                (= 1 (node-len root)))
+         (make-set
+          (node-child root 0 (set-storage set))
+          (dec (set-shift set))
+          (dec (set-count set))
+          (set-comparator set)
+          (set-storage set))
+         (make-set
+          root
+          (set-shift set)
+          (dec (set-count set))
+          (set-comparator set)
+          (set-storage set)))))
     set))
 
 (defn set-disj [set key]
   (set-disj-with set key (set-comparator set)))
 
 (defn set-seq [set]
-  (node-seq
-   (set-root set) (set-shift set) (set-storage set)))
+  (iterator-option-seq
+   (node-iter
+    (set-root set) (set-shift set) (set-storage set))))
 
 (defn set-rseq [set]
   (node-rseq
@@ -1254,7 +1467,23 @@
 (defn set-reduce [set f initial]
   (node-fold (set-root set) f initial (set-storage set)))
 
-(defn- set-slice-bounds [set key-from key-to cmp]
+(defn seek-first [set target ^:ordering-fn cmp]
+  (if-some [path
+              (seek-path
+               (set-root set)
+               target
+               cmp
+               (set-shift set)
+               (set-storage set))]
+      (Some
+       (node-value-at-path
+        (set-root set)
+        path
+        (set-shift set)
+        (set-storage set)))
+    nil))
+
+(defn- set-slice-bounds [set key-from key-to ^:ordering-fn cmp]
   (if-some [left
             (seek-path
              (set-root set)
@@ -1274,19 +1503,65 @@
         nil))
     nil))
 
-(defn set-slice-with [set key-from key-to cmp]
+(defn set-slice-with [set key-from key-to ^:ordering-fn cmp]
   (if-some [bounds (set-slice-bounds set key-from key-to cmp)]
     (match bounds
       (tuple left right)
       (Some
-       (node-seq-between
-        (set-root set) left right (set-shift set) (set-storage set))))
+       (iterator-seq
+        (make-iterator
+         (set-root set)
+         (set-shift set)
+         left
+         right
+         (node-keys-at-path
+          (set-root set) left (set-shift set) (set-storage set))
+         (path-get left 0)
+         (set-storage set)))))
     nil))
 
 (defn set-slice [set key-from key-to]
   (set-slice-with set key-from key-to (set-comparator set)))
 
-(defn set-rslice-with [set key-from key-to cmp]
+(signature me.tonsky.persistent-sorted-set/set-slice-reduce-with
+  [value owner write result]
+  :fn<btset<value;owner;write>;value;value;fn<value;value;ordering>;fn<result;value;result>;result;result>)
+
+(defn set-slice-reduce-with
+  [set key-from key-to ^:ordering-fn cmp f initial]
+  (if-some [bounds (set-slice-bounds set key-from key-to cmp)]
+    (match bounds
+      (tuple left right)
+      (let [root (set-root set)
+            shift (set-shift set)
+            storage (set-storage set)]
+        (loop [left left
+               keys (node-keys-at-path root left shift storage)
+               index (path-get left 0)
+               result initial]
+          (if (path-lt left right)
+            (let [result (f result (arrays/aget keys index))
+                  next-index (inc index)]
+              (if (< next-index (arrays/alength keys))
+                (recur
+                 (path-inc left)
+                 keys
+                 next-index
+                 result)
+                (let [next-left
+                      (next-path root left shift storage)]
+                  (if (path-lt next-left right)
+                    (recur
+                     next-left
+                     (node-keys-at-path
+                      root next-left shift storage)
+                     (path-get next-left 0)
+                     result)
+                    result))))
+            result))))
+    initial))
+
+(defn set-rslice-with [set key-from key-to ^:ordering-fn cmp]
   (if-some [bounds (set-slice-bounds set key-to key-from cmp)]
     (match bounds
       (tuple left right)
@@ -1298,12 +1573,22 @@
 (defn set-rslice [set key-from key-to]
   (set-rslice-with set key-from key-to (set-comparator set)))
 
-(defn restore-by [cmp address storage shift count]
-  (make-restored-set shift count cmp storage address))
+(defn restore-by
+  ([^:ordering-fn cmp address storage shift count]
+   (restore-by
+    cmp address storage shift count
+    (Lg_runtime.Runtime_ref_type.Weak)))
+  ([^:ordering-fn cmp address storage shift count
+    ^:Lg_runtime.Runtime_ref_type.t ref-type]
+   (with-ref-type
+    (make-restored-set shift count cmp storage address)
+    ref-type)))
 
 (defn store [set storage]
   (when (nil? (set-storage set))
-    (vreset! (:storage set) (Some storage)))
+    (vreset!
+     (:storage set)
+     (Some (storage-with-ref-type storage (set-ref-type set)))))
   (let [root (set-root set)
         storage-value
         (match (set-storage set)
@@ -1311,8 +1596,7 @@
           None (Stdlib.failwith "persistent sorted set storage is unavailable"))
         address (node-store root storage-value)]
     (vreset! (:_address set) (Some address))
-    (vreset! (:_weak-root set) (Some (weak-ref root)))
-    (vreset! (:root set) nil)
+    (retain-root set root)
     address))
 
 (extend-type btset Seqable
@@ -1321,29 +1605,27 @@
 (extend-type btset Counted
              (-count [set] (set-count set)))
 
-(defn- set-equiv [set ^:dynamic other]
+(defn- set-equiv [^btset set ^btset other]
   (and
-   (instance? btset other)
-   (let [other-set (__lg_dynamic-narrow set other)]
-     (and
-      (= (set-count set) (set-count other-set))
-      (loop [left (seq set)
-             right (seq other-set)]
-        (cond
-          (empty? left) (empty? right)
-          (empty? right) false
-          :else
-          (if-some [left-value (first left)]
-            (if-some [right-value (first right)]
-              (if
-               (zero? ((set-comparator set) left-value right-value))
-                (recur (rest left) (rest right))
-                false)
-              false)
-            false)))))))
+   (= (set-count set) (set-count other))
+   (loop [left (seq set)
+          right (seq other)]
+     (cond
+       (empty? left) (empty? right)
+       (empty? right) false
+       :else
+       (if-some [left-value (first left)]
+         (if-some [right-value (first right)]
+           (if (= 0 ((set-comparator set)
+                     left-value
+                     right-value))
+             (recur (rest left) (rest right))
+             false)
+           false)
+         false)))))
 
 (extend-type btset IEquiv
-             (-equiv [set ^:dynamic other] (set-equiv set other)))
+             (-equiv [set other] (set-equiv set other)))
 
 (extend-type btset Emptyable
              (-empty [set] (empty-set (set-comparator set))))
@@ -1364,64 +1646,79 @@
 (extend-type btset Reducible
              (-reduce [set f initial] (set-reduce set f initial)))
 
-(defn conj [set key cmp]
+(defn conj [set key ^:ordering-fn cmp]
   (set-conj-with set key cmp))
 
-(defn disj [set key cmp]
+(defn disj [set key ^:ordering-fn cmp]
   (set-disj-with set key cmp))
 
 (defn slice
   ([set key-from key-to]
-   (slice set key-from key-to (set-comparator set)))
+   (set-slice-with set key-from key-to (set-comparator set)))
   ([set key-from key-to cmp]
-   (set-slice-with set key-from key-to cmp)))
+   (set-slice-with set key-from key-to (as-ordering cmp))))
 
 (defn rslice
   ([set key-from key-to]
-   (rslice set key-from key-to (set-comparator set)))
+   (set-rslice-with set key-from key-to (set-comparator set)))
   ([set key-from key-to cmp]
-   (set-rslice-with set key-from key-to cmp)))
+   (set-rslice-with set key-from key-to (as-ordering cmp))))
 
 (defn seek
   ([values target]
    (seek values target (fn [left right] (compare left right))))
   ([values target cmp]
-   (filter
-    #(not
-      (neg?
-       #?(:melange (uncurried-compare cmp % target)
-          :default (cmp % target))))
-    values)))
+   (let [cmp (as-ordering cmp)]
+     (filter
+      #(not
+        (neg?
+         (uncurried-compare cmp % target)))
+      values))))
 
 (defn comparator [set]
   (set-comparator set))
 
+(defn- sorted-prefix [values ^:int length]
+  (if (= length (arrays/alength values))
+    values
+    (arrays/aslice values 0 length)))
+
 (defn- with-storage [set storage]
   (do
-    (vreset! (:storage set) (Some storage))
+    (vreset!
+     (:storage set)
+     (Some (storage-with-ref-type storage (set-ref-type set))))
     set))
 
 (defn from-sorted-array
   ([cmp values]
    (from-sorted-array cmp values (arrays/alength values)))
   ([cmp values length]
-   (from-sorted-array-base cmp (arrays/aslice values 0 length)))
-  ([cmp values length opts]
-   (let [set (from-sorted-array-base cmp (arrays/aslice values 0 length))]
-     (if-some [storage (:storage opts)]
+   (from-sorted-array-base
+    (as-ordering cmp) (sorted-prefix values length)))
+  ([cmp values length storage]
+   (let [set
+         (from-sorted-array-base
+          (as-ordering cmp) (sorted-prefix values length))]
+     (if-some [storage storage]
        (with-storage set storage)
-       set))))
+       set)))
+  ([cmp values length storage ref-type]
+   (with-ref-type
+    (from-sorted-array cmp values length storage)
+    ref-type)))
 
-(defn sorted-set-with-comparator [cmp opts]
+(defn sorted-set-with-comparator [^:ordering-fn cmp storage]
   (let [set (empty-set cmp)]
-    (if-some [storage (:storage opts)]
+    (if-some [storage storage]
       (with-storage set storage)
       set)))
 
-(defn sorted-set* [opts]
-  (sorted-set-with-comparator (:cmp opts) opts))
+(type-record set-settings
+  (branching-factor :int)
+  (ref-type :Lg_runtime.Runtime_ref_type.t))
 
-(defn settings [_]
-  (assoc {}
-         :branching-factor 32
-         :ref-type :strong))
+(defn settings [^btset set]
+  (record set-settings
+          (branching-factor 32)
+          (ref-type (set-ref-type set))))

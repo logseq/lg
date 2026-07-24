@@ -18,7 +18,7 @@ let index_of source needle =
     search 0
 
 let includes source needle = index_of source needle >= 0
-let index_of_int64 source needle = Int64.of_int (index_of source needle)
+let index_of_int source needle = index_of source needle
 let join separator (to_seq, values) =
   String.concat separator (List.of_seq (to_seq values))
 
@@ -34,10 +34,9 @@ let last_index_of source needle =
     in
     search (source_len - needle_len)
 
-let last_index_of_int64 source needle =
-  Int64.of_int (last_index_of source needle)
+let last_index_of_int source needle = last_index_of source needle
 
-let length source = Int64.of_int (String.length source)
+let length source = String.length source
 
 let replace source match_value replacement =
   let match_len = String.length match_value in
@@ -183,7 +182,7 @@ let digit_value = function
   | _ -> -1
 
 let parse_int_radix source radix =
-  if radix < 2L || radix > 36L then
+  if radix < 2 || radix > 36 then
     invalid_arg "radix must be between 2 and 36";
   let source = String.trim source in
   if source = "" then invalid_arg "cannot parse an empty integer";
@@ -198,24 +197,23 @@ let parse_int_radix source radix =
     if index = String.length source then result
     else
       let digit = digit_value source.[index] in
-      let digit = Int64.of_int digit in
-      if digit < 0L || digit >= radix then invalid_arg "invalid digit for radix"
-      else loop (Int64.add (Int64.mul result radix) digit) (index + 1)
+      if digit < 0 || digit >= radix then invalid_arg "invalid digit for radix"
+      else loop ((result * radix) + digit) (index + 1)
   in
-  let result = loop 0L start in
-  if negative then Int64.neg result else result
+  let result = loop 0 start in
+  if negative then -result else result
 
 let int_to_string_radix value radix =
-  if radix < 2L || radix > 36L then
+  if radix < 2 || radix > 36 then
     invalid_arg "radix must be between 2 and 36";
-  if value = 0L then "0"
+  if value = 0 then "0"
   else
     let digits = "0123456789abcdefghijklmnopqrstuvwxyz" in
     let rec loop value acc =
-      if value = 0L then acc
+      if value = 0 then acc
       else
-        let digit = Int64.(to_int (abs (rem value radix))) in
-        loop (Int64.div value radix) (digits.[digit] :: acc)
+        let digit = abs (value mod radix) in
+        loop (value / radix) (digits.[digit] :: acc)
     in
     let encoded = loop value [] |> List.to_seq |> String.of_seq in
-    if value < 0L then "-" ^ encoded else encoded
+    if value < 0 then "-" ^ encoded else encoded

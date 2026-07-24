@@ -31,7 +31,30 @@ let test_map_lifecycle () =
   expect_invalid (fun () -> Lg_runtime.Runtime_transient.map_assoc map "c" 3);
   expect_invalid (fun () -> Lg_runtime.Runtime_transient.map_count map)
 
+let test_large_set_resize_is_stack_safe () =
+  let item_count = 20_000 in
+  let set = Lg_runtime.Runtime_transient.set_empty () in
+  for value = 0 to item_count - 1 do
+    ignore (Lg_runtime.Runtime_transient.set_add set value)
+  done;
+  assert (Lg_runtime.Runtime_transient.set_count set = item_count);
+  let values = Lg_runtime.Runtime_transient.set_to_seq set in
+  assert (Seq.length values = item_count)
+
+let test_large_map_resize_is_stack_safe () =
+  let item_count = 20_000 in
+  let map = Lg_runtime.Runtime_transient.map_empty () in
+  for key = 0 to item_count - 1 do
+    ignore (Lg_runtime.Runtime_transient.map_assoc map key (key + 1))
+  done;
+  assert (Lg_runtime.Runtime_transient.map_count map = item_count);
+  for key = 0 to item_count - 1 do
+    assert (Lg_runtime.Runtime_transient.map_get_option map key = Some (key + 1))
+  done
+
 let () =
   test_set_lifecycle ();
   test_vector_lifecycle ();
-  test_map_lifecycle ()
+  test_map_lifecycle ();
+  test_large_set_resize_is_stack_safe ();
+  test_large_map_resize_is_stack_safe ()

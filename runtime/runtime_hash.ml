@@ -33,15 +33,19 @@ let hash_int64 value =
     let hash = mix_h1 0l (mix_k1 low) in
     fmix (mix_h1 hash (mix_k1 high)) 8 |> Int32.to_int
 
-let hash_int value = hash_int64 (Int64.of_int value)
+let hash_int value =
+  if Sys.word_size = 32 then
+    hash_int64
+      (Int64.of_float (Runtime_int_melange.to_float_unchecked value))
+  else hash_int64 (Int64.of_int value)
 
-let java_string_hash value =
+let clojure_string_hash value =
   String.fold_left
     (fun hash char ->
       Int32.add (Int32.mul hash 31l) (Int32.of_int (Char.code char)))
     0l value
 
-let hash_string value = java_string_hash value |> hash_int32
+let hash_string value = clojure_string_hash value |> hash_int32
 
 let hash_unencoded_chars value =
   let rec pairs hash index =
@@ -81,7 +85,7 @@ let split_identifier value =
 let hash_symbol value =
   let namespace, name = split_identifier value in
   hash_combine (hash_unencoded_chars name)
-    (namespace |> Option.map java_string_hash |> Option.value ~default:0l
+    (namespace |> Option.map clojure_string_hash |> Option.value ~default:0l
     |> Int32.to_int)
 
 let hash_keyword value =

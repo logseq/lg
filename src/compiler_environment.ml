@@ -7,6 +7,7 @@ type t = {
   protocol_evidence : Protocol_registry.t option;
   modules : Module_registry.t;
   types : Type_registry.t;
+  signatures : Signature_overlay.t;
   anonymous_records : (string * Semantic_type.named_record) list;
   namespace_aliases : (string * string) list;
   core_exclusions : (string * string) list;
@@ -25,6 +26,7 @@ let empty =
     protocol_evidence = None;
     modules = Module_registry.empty;
     types = Type_registry.empty;
+    signatures = Signature_overlay.empty;
     anonymous_records = [];
     namespace_aliases = [];
     core_exclusions = [];
@@ -84,6 +86,8 @@ let modules env = env.modules
 let with_modules modules env = { env with modules }
 let types env = env.types
 let with_types types env = { env with types }
+let signatures env = env.signatures
+let with_signatures signatures env = { env with signatures }
 
 let add_namespace_alias ~scope ~alias ~target env =
   let key = Names.scoped_key scope alias in
@@ -225,9 +229,28 @@ and anonymous_fields_equal left right =
 
 let rec anonymous_type_layout_compatible left right =
   match (left, right) with
+  | (Types.TUnknown | Types.TVar _), _
+  | _, (Types.TUnknown | Types.TVar _) ->
+      true
   | Types.TRecord left, Types.TRecord right ->
       anonymous_fields_layout_compatible left right
   | Types.TRecord _, _ | _, Types.TRecord _ -> false
+  | Types.TNullable left, Types.TNullable right
+  | Types.TArray left, Types.TArray right
+  | Types.TRef left, Types.TRef right
+  | Types.TList left, Types.TList right
+  | Types.TVector left, Types.TVector right
+  | Types.TSet left, Types.TSet right
+  | Types.TSeq left, Types.TSeq right ->
+      anonymous_type_layout_compatible left right
+  | Types.TOcaml_app (left_name, left_args),
+    Types.TOcaml_app (right_name, right_args)
+    when left_name = right_name ->
+      List.length left_args = List.length right_args
+      && List.for_all2 anonymous_type_layout_compatible left_args right_args
+  | Types.TTuple left, Types.TTuple right ->
+      List.length left = List.length right
+      && List.for_all2 anonymous_type_layout_compatible left right
   | _ -> Types.ocaml_name left = Types.ocaml_name right
 
 and anonymous_fields_layout_compatible left right =

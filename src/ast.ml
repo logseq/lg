@@ -11,6 +11,7 @@ type token_desc =
   | Unquote
   | Unquote_splicing
   | Deref
+  | Var_quote of string
   | Rparen
   | Lbracket
   | Rbracket

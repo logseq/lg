@@ -10,12 +10,8 @@ type 'key key_operations = {
 
 let generic_key_operations () =
   {
-    hash =
-      (fun value ->
-        if Runtime_dynamic.is_runtime_dynamic value then
-          Runtime_dynamic.hash (Obj.magic value)
-        else Hashtbl.hash value);
-    equal = Runtime_dynamic.polymorphic_equal;
+    hash = Runtime_static_value.hash;
+    equal = Runtime_static_value.equal;
   }
 
 let dynamic_key_operations =
@@ -60,10 +56,12 @@ let set_add_without_resize set operations value =
 
 let resize_set_if_needed set operations =
   if set.size * 4 > Array.length set.buckets * 3 then (
-    let values = Array.to_list set.buckets |> List.concat in
+    let old_buckets = set.buckets in
     set.buckets <- Array.make (Array.length set.buckets * 2) [];
     set.size <- 0;
-    List.iter (set_add_without_resize set operations) values)
+    Array.iter
+      (List.iter (set_add_without_resize set operations))
+      old_buckets)
 
 let set_add_by kind operations set value =
   ensure_active set.active;
@@ -109,9 +107,9 @@ let set_add_dynamic set value =
 
 let set_to_seq set =
   ensure_active set.active;
-  let values = Array.to_list set.buckets |> List.concat in
+  let values = Array.to_seq set.buckets |> Seq.flat_map List.to_seq in
   set.active <- false;
-  List.to_seq values
+  values
 
 type 'value vector = {
   mutable reversed : 'value list;
@@ -202,12 +200,13 @@ let add_without_resize map operations key value =
 
 let resize_if_needed map operations =
   if map.size * 4 > Array.length map.buckets * 3 then (
-    let entries = Array.to_list map.buckets |> List.concat in
+    let old_buckets = map.buckets in
     map.buckets <- Array.make (Array.length map.buckets * 2) [];
     map.size <- 0;
-    List.iter
-      (fun (key, value) -> add_without_resize map operations key value)
-      entries)
+    Array.iter
+      (List.iter (fun (key, value) ->
+           add_without_resize map operations key value))
+      old_buckets)
 
 let map_assoc_by kind operations map key value =
   ensure_active map.active;

@@ -228,10 +228,43 @@ let freshen_deferred_type ?return_param_index ty =
       Types.TFn (parameters, return_ty)
   | ty -> freshen ty
 
+let direct_deferred_self_calls name implementation_name expression =
+  let recursive_name = implementation_name ^ "__recursive" in
+  let rec direct = function
+    | Semantic_ir.Typed (ty, expression) ->
+        Semantic_ir.Typed (ty, direct expression)
+    | Semantic_ir.Located (node_id, location, expression) ->
+        Semantic_ir.Located (node_id, location, direct expression)
+    | Semantic_ir.Fun (parameters, body) ->
+        let found_self_call = ref false in
+        let body =
+          Semantic_ir.rewrite
+            (function
+              | Semantic_ir.Ident candidate
+                when String.equal candidate name ->
+                  found_self_call := true;
+                  Semantic_ir.Ident recursive_name
+              | expression -> expression)
+            body
+        in
+        if !found_self_call then
+          Semantic_ir.LetRecIn
+            ( recursive_name,
+              parameters,
+              body,
+              Semantic_ir.Ident recursive_name )
+        else Semantic_ir.Fun (parameters, body)
+    | expression -> expression
+  in
+  direct expression
+
 let expand_deferred_binding name value_type return_param_index expression =
   let value_type = Types.align_deferred_param_types value_type expression in
   let value_type = freshen_deferred_type ?return_param_index value_type in
   let implementation_name = name ^ "__implementation" in
+  let expression =
+    direct_deferred_self_calls name implementation_name expression
+  in
   let holder_type_name = implementation_name ^ "_holder" in
   let holder_field_name = "value" in
   let holder_type =
@@ -433,275 +466,64 @@ let order_deferred_items items =
              | Lowered.Group items -> Lowered.Group (items @ initializers)
              | item -> Lowered.Group (item :: initializers)))
 
-let rec add_dynamic_record_request requests record =
-  let already_requested =
-    List.exists
-      (fun existing ->
-        Type_id.equal existing.Types.type_id record.Types.type_id)
-      !requests
-  in
-  if record.Types.type_parameters = [] && not already_requested then (
-    requests := record :: !requests;
-    List.iter
-      (fun (field : Types.field) ->
-        add_dynamic_record_requests_from_type requests field.ty)
-      record.fields)
-
-and add_dynamic_record_requests_from_type requests = function
-  | Types.TNamed_record record -> add_dynamic_record_request requests record
-  | Types.TNullable ty | Types.TArray ty | Types.TRef ty | Types.TList ty
-  | Types.TVector ty | Types.TSet ty | Types.TSeq ty ->
-      add_dynamic_record_requests_from_type requests ty
-  | Types.TOcaml_app (_, arguments) | Types.TTuple arguments ->
-      List.iter (add_dynamic_record_requests_from_type requests) arguments
-  | Types.TFn (arguments, result) ->
-      List.iter (add_dynamic_record_requests_from_type requests) arguments;
-      add_dynamic_record_requests_from_type requests result
-  | Types.TOverloaded_fn arities ->
-      List.iter
-        (fun (arity : Types.fn_arity) ->
-          List.iter
-            (add_dynamic_record_requests_from_type requests)
-            arity.fixed_params;
-          Option.iter
-            (add_dynamic_record_requests_from_type requests)
-            arity.rest_param;
-          add_dynamic_record_requests_from_type requests arity.return_ty)
-        arities
-  | Types.TRecord fields ->
-      List.iter
-        (fun (field : Types.field) ->
-          add_dynamic_record_requests_from_type requests field.ty)
-        fields
-  | Types.TInt | Types.TFloat | Types.TChar | Types.TString | Types.TRegex
-  | Types.TMap_keys | Types.TSymbol | Types.TKeyword | Types.TBool
-  | Types.TUnit | Types.TNil | Types.TUnknown | Types.TVar _ | Types.TOcaml _ ->
-      ()
-
-let collect_dynamic_record_requests items =
-  let requests = ref [] in
-  let collect_expression expression =
-    ignore
-      (Semantic_ir.rewrite
-         (fun expression ->
-           (match expression with
-           | Semantic_ir.PackDynamic
-               { source_ty = Types.TNamed_record record; _ } ->
-               add_dynamic_record_request requests record
-           | _ -> ());
-           expression)
-         expression)
-  in
-  let rec collect_item = function
-    | Lowered.Value_binding { expression; _ }
-    | Lowered.Recursive_value_binding { expression; _ }
-    | Lowered.Deferred_value_binding { expression; _ } ->
-        collect_expression expression
-    | Lowered.Recursive_value_bindings bindings ->
-        List.iter
-          (fun (binding : Lowered.recursive_value) ->
-            collect_expression binding.expression)
-          bindings
-    | Lowered.Record_def { values; _ } ->
-        List.iter (fun (_, value) -> collect_expression value) values
-    | Lowered.Projected_record_def { source; _ } -> collect_expression source
-    | Lowered.Group items
-    | Lowered.Module_def { items; _ }
-    | Lowered.Module_functor { items; _ } ->
-        List.iter collect_item items
-    | Lowered.Polymorphic_holder_type _ | Lowered.Comment _
-    | Lowered.Type_def _ | Lowered.Type_alias _ | Lowered.Type_variant _
-    | Lowered.Module_alias _ | Lowered.Module_apply _
-    | Lowered.Module_signature _ | Lowered.Open_module _
-    | Lowered.Include_module _ ->
-        ()
-  in
-  List.iter collect_item items;
-  List.rev !requests
-
-let local_record_type_name (record : Types.named_record) =
-  match String.rindex_opt record.type_name '.' with
-  | None -> record.type_name
-  | Some separator ->
-      String.sub record.type_name (separator + 1)
-        (String.length record.type_name - separator - 1)
-
-let requested_dynamic_record requests type_id type_name =
-  List.exists
-    (fun record ->
-      Type_id.equal record.Types.type_id type_id
-      || String.equal (local_record_type_name record) type_name)
-    requests
-
-let append_basic_dynamic_record_packer env item record =
-  Result.map
-    (function
-      | None -> item
-      | Some expression ->
-          Lowered.Group
-            [
-              item;
-              Lowered.Value_binding
-                { pattern = Lowered.Unit_pattern; expression };
-            ])
-    (Call_elaborator.compile_dynamic_record_packer_registration ~basic:true
-       ~protocol_ids:[] env record)
-
-let rec add_initial_dynamic_record_packer env requests = function
-  | Lowered.Type_def
-      ({
-         type_id;
-         type_name;
-         type_parameters;
-         fields;
-         nominal;
-         dynamic_packer;
-         location;
-       } as definition) ->
-      if
-        dynamic_packer
-        || not (requested_dynamic_record requests type_id type_name)
-      then
-        Ok (Lowered.Type_def definition)
-      else
-        let type_item =
-          Lowered.Type_def
-            {
-              type_id;
-              type_name;
-              type_parameters;
-              fields;
-              nominal;
-              dynamic_packer = true;
-              location;
-            }
-        in
-        let record =
-          match
-            Types.named_record ~type_id ~nominal ~type_name ~type_parameters
-              ~set_module_name:("Set_" ^ type_name) fields
-          with
-          | Types.TNamed_record record -> record
-          | _ -> assert false
-        in
-        append_basic_dynamic_record_packer env type_item record
-  | Lowered.Group items ->
-      Result.map (fun items -> Lowered.Group items)
-        (add_initial_dynamic_record_packers env requests items)
-  | Lowered.Module_def definition ->
-      Result.map
-        (fun items -> Lowered.Module_def { definition with items })
-        (add_initial_dynamic_record_packers env requests definition.items)
-  | Lowered.Module_functor definition ->
-      Result.map
-        (fun items -> Lowered.Module_functor { definition with items })
-        (add_initial_dynamic_record_packers env requests definition.items)
-  | Lowered.Record_def
-      ({ type_id; type_name; set_module_name; fields; dynamic_packer; _ } as definition)
-      as item ->
-      if
-        dynamic_packer
-        || not (requested_dynamic_record requests type_id type_name)
-      then Ok item
-      else
-        let record =
-          match
-            Types.named_record ~type_id ~type_name ~set_module_name fields
-          with
-          | Types.TNamed_record record -> record
-          | _ -> assert false
-        in
-        append_basic_dynamic_record_packer env
-          (Lowered.Record_def { definition with dynamic_packer = true }) record
-  | Lowered.Projected_record_def
-      ({ type_id; type_name; set_module_name; fields; dynamic_packer; _ } as definition)
-      as item ->
-      if
-        dynamic_packer
-        || not (requested_dynamic_record requests type_id type_name)
-      then Ok item
-      else
-        let record =
-          match
-            Types.named_record ~type_id ~type_name ~set_module_name fields
-          with
-          | Types.TNamed_record record -> record
-          | _ -> assert false
-        in
-        append_basic_dynamic_record_packer env
-          (Lowered.Projected_record_def
-             { definition with dynamic_packer = true })
-          record
-  | item -> Ok item
-
-and add_initial_dynamic_record_packers env requests items =
-  let rec loop compiled = function
-    | [] -> Ok (List.rev compiled)
-    | item :: rest ->
-        Result.bind
-          (add_initial_dynamic_record_packer env requests item)
-          (fun item -> loop (item :: compiled) rest)
-  in
-  loop [] items
-
-let dynamic_record_is_defined items record =
-  let rec defined = function
-    | Lowered.Type_def { type_id = candidate; type_name; _ } ->
-        Type_id.equal candidate record.Types.type_id
-        || String.equal type_name (local_record_type_name record)
-    | Lowered.Record_def { type_name; _ }
-    | Lowered.Projected_record_def { type_name; _ } ->
-        Type_id.equal (Types.type_id_of_name type_name) record.Types.type_id
-        || String.equal type_name (local_record_type_name record)
-    | Lowered.Group items
-    | Lowered.Module_def { items; _ }
-    | Lowered.Module_functor { items; _ } ->
-        List.exists defined items
-    | _ -> false
-  in
-  List.exists defined items
-
-let compile_existing_dynamic_record_packers env items requests =
-  let rec loop registrations = function
-    | [] -> Ok (List.rev registrations)
-    | record :: rest when dynamic_record_is_defined items record ->
-        loop registrations rest
-    | record :: rest ->
-        Result.bind
-          (Call_elaborator.compile_dynamic_record_packer_registration env record)
-          (fun registration ->
-            let registrations =
-              match registration with
-              | None -> registrations
-              | Some expression ->
-                  Lowered.Value_binding
-                    { pattern = Lowered.Unit_pattern; expression }
-                  :: registrations
-            in
-            loop registrations rest)
-  in
-  loop [] requests
-
 let share_expression ?(forbidden = []) shared_values expression =
   let shared_values = ref shared_values in
   let definitions = ref [] in
+  let share name value =
+    if
+      Semantic_ir.exists_identifier
+        (fun identifier -> List.mem identifier forbidden)
+        value
+    then value
+    else if List.mem name !shared_values then Semantic_ir.Ident name
+    else (
+      shared_values := name :: !shared_values;
+      definitions :=
+        Lowered.Value_binding
+          { pattern = Lowered.Named name; expression = value }
+        :: !definitions;
+      Semantic_ir.Ident name)
+  in
+  let shared_literal_name kind literal =
+    let key = kind ^ ":" ^ literal in
+    "__lg_const_"
+    ^ String.sub (Digest.to_hex (Digest.string key)) 0 12
+  in
+  let generated_keyword_counts = Hashtbl.create 8 in
+  let count_generated_keywords =
+    Semantic_ir.rewrite (function
+      | Semantic_ir.Apply
+          ( Semantic_ir.Ident
+              "Lg_runtime.Runtime_dynamic.keyword",
+            [ Semantic_ir.String keyword ] ) as expression ->
+          let name =
+            shared_literal_name "keyword" (Printf.sprintf "%S" keyword)
+          in
+          Hashtbl.replace generated_keyword_counts name
+            (1 + Option.value (Hashtbl.find_opt generated_keyword_counts name)
+                   ~default:0);
+          expression
+      | expression -> expression)
+  in
+  ignore (count_generated_keywords expression);
   let expression =
     Semantic_ir.rewrite
       (function
-        | Semantic_ir.SharedValue (name, value) ->
+        | Semantic_ir.SharedValue (name, value) -> share name value
+        | Semantic_ir.Apply
+            ( Semantic_ir.Ident
+                "Lg_runtime.Runtime_dynamic.keyword",
+              [ Semantic_ir.String keyword ] ) as expression ->
+            let name =
+              shared_literal_name "keyword" (Printf.sprintf "%S" keyword)
+            in
             if
-              Semantic_ir.exists_identifier
-                (fun identifier -> List.mem identifier forbidden)
-                value
-            then value
-            else if List.mem name !shared_values then Semantic_ir.Ident name
-            else (
-              shared_values := name :: !shared_values;
-              definitions :=
-                Lowered.Value_binding
-                  { pattern = Lowered.Named name; expression = value }
-                :: !definitions;
-              Semantic_ir.Ident name)
+              List.mem name !shared_values
+              || Option.value (Hashtbl.find_opt generated_keyword_counts name)
+                   ~default:0
+                 > 1
+            then share name expression
+            else expression
         | expression -> expression)
       expression
   in
@@ -987,123 +809,15 @@ let resolve_anonymous_record_patterns env items =
   in
   List.map resolve_item items
 
-let rec form_uses_runtime_var_reflection = function
-  | Ast.FList (Ast.FSymbol ("resolve" | "requiring-resolve") :: _) -> true
-  | Ast.FList (Ast.FSymbol ("quote" | "clojure.core/quote") :: _) -> false
-  | Ast.FList forms | Ast.FVector forms ->
-      List.exists form_uses_runtime_var_reflection forms
-  | Ast.FMap pairs ->
-      List.exists
-        (fun (key, value) ->
-          form_uses_runtime_var_reflection key
-          || form_uses_runtime_var_reflection value)
-        pairs
-  | Ast.FCoreSymbol _ | Ast.FSymbol _ | Ast.FKeyword _ | Ast.FString _
-  | Ast.FRegex _ | Ast.FInt _ | Ast.FFloat _ | Ast.FChar _ | Ast.FBool _ ->
-      false
-
-let rec runtime_definition_names scope = function
-  | Ast.FList [ Ast.FSymbol "defn-signature"; definition ] ->
-      runtime_definition_names scope definition
-  | Ast.FList (Ast.FSymbol "recursive-definition-group" :: definitions) ->
-      List.concat_map (runtime_definition_names scope) definitions
-  | Ast.FList
-      (Ast.FSymbol ("def" | "defonce" | "defn" | "defn-")
-      :: Ast.FSymbol name :: _) ->
-      [ Names.scoped_key scope name ]
-  | _ -> []
-
-let rec qualified_symbols = function
-  | Ast.FSymbol name when Names.is_qualified name -> [ name ]
-  | Ast.FList forms | Ast.FVector forms ->
-      List.concat_map qualified_symbols forms
-  | Ast.FMap pairs ->
-      List.concat_map
-        (fun (key, value) -> qualified_symbols key @ qualified_symbols value)
-        pairs
-  | Ast.FCoreSymbol _ | Ast.FSymbol _ | Ast.FKeyword _ | Ast.FString _
-  | Ast.FRegex _ | Ast.FInt _ | Ast.FFloat _ | Ast.FChar _ | Ast.FBool _ ->
-      []
-
-let rec quoted_qualified_symbols = function
-  | Ast.FList
-      [ Ast.FSymbol ("quote" | "clojure.core/quote"); quoted ] ->
-      qualified_symbols quoted
-  | Ast.FList forms | Ast.FVector forms ->
-      List.concat_map quoted_qualified_symbols forms
-  | Ast.FMap pairs ->
-      List.concat_map
-        (fun (key, value) ->
-          quoted_qualified_symbols key @ quoted_qualified_symbols value)
-        pairs
-  | Ast.FCoreSymbol _ | Ast.FSymbol _ | Ast.FKeyword _ | Ast.FString _
-  | Ast.FRegex _ | Ast.FInt _ | Ast.FFloat _ | Ast.FChar _ | Ast.FBool _ ->
-      []
-
-let compile_runtime_var_registrations definitions requests registered env
-    reflection_requested =
-  if not reflection_requested then ([], registered)
-  else
-    List.fold_left
-      (fun (items, registered) source_name ->
-        if
-          List.mem source_name registered
-          || not (List.mem source_name requests)
-        then (items, registered)
-        else
-          match Compiler_environment.find_opt source_name env with
-          | None -> (items, registered)
-          | Some (binding : Types.binding) when binding.forward_declared ->
-              (items, registered)
-          | Some binding ->
-              let dynamic = Types.dynamic_constraint Types.TUnknown in
-              let value =
-                Types.typed_ir binding.ty (Semantic_ir.Ident binding.ocaml_name)
-              in
-              (match Call_elaborator.pack_dynamic_value env dynamic value with
-              | Error _ -> (items, registered)
-              | Ok packed ->
-                  let registration =
-                    Lowered.Value_binding
-                      {
-                        pattern = Lowered.Unit_pattern;
-                        expression =
-                          Semantic_ir.Apply
-                            ( Semantic_ir.Ident
-                                "Lg_runtime.Runtime_dynamic.register_var",
-                              [ Semantic_ir.String source_name; packed ] );
-                      }
-                  in
-                  (registration :: items, source_name :: registered)))
-      ([], registered) definitions
-
-let surround_item before item after =
-  match (before, after) with
-  | [], [] -> item
-  | _ ->
-      Lowered.Group (List.rev before @ [ item ] @ List.rev after)
-
 let compile_forms_incremental (state : Compiler_state.t) forms =
   let report_timings = Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" in
-  let runtime_var_reflection = ref state.runtime_var_reflection in
-  let runtime_definitions = ref state.runtime_definitions in
-  let runtime_var_requests = ref state.runtime_var_requests in
-  let runtime_vars = ref state.runtime_vars in
   let finish scope env next_type items =
     let items =
       items
       |> List.sort (fun (left, _) (right, _) -> Int.compare left right)
       |> List.map snd
     in
-    Ok
-      ( scope,
-        env,
-        next_type,
-        items,
-        !runtime_var_reflection,
-        !runtime_definitions,
-        !runtime_var_requests,
-        !runtime_vars )
+    Ok (scope, env, next_type, items)
   in
   let rec compile_pending scope env next_type items unresolved_names pending =
     let rec loop scope env next_type items unresolved_names deferred first_error
@@ -1119,7 +833,6 @@ let compile_forms_incremental (state : Compiler_state.t) forms =
             | None -> Error.error "declared forms made no compilation progress")
       | (index, form) :: rest -> (
         let started_at = if report_timings then Sys.time () else 0.0 in
-        let previous_env = env in
         let compiled = compile_top_level scope env next_type form in
         let elapsed = if report_timings then Sys.time () -. started_at else 0.0 in
         if report_timings && elapsed >= 0.01 then (
@@ -1151,30 +864,6 @@ let compile_forms_incremental (state : Compiler_state.t) forms =
                 ((index, form) :: deferred) first_error made_progress rest
             else Error error
         | Ok (scope, env, next_type, item) ->
-            runtime_var_requests :=
-              List.rev_append
-                (quoted_qualified_symbols form)
-                !runtime_var_requests;
-            runtime_var_reflection :=
-              !runtime_var_reflection || form_uses_runtime_var_reflection form;
-            let before_registrations, registered =
-              compile_runtime_var_registrations !runtime_definitions
-                !runtime_var_requests !runtime_vars previous_env
-                !runtime_var_reflection
-            in
-            runtime_definitions :=
-              List.rev_append
-                (runtime_definition_names scope form)
-                !runtime_definitions;
-            let after_registrations, registered =
-              compile_runtime_var_registrations !runtime_definitions
-                !runtime_var_requests registered env
-                !runtime_var_reflection
-            in
-            runtime_vars := registered;
-            let item =
-              surround_item before_registrations item after_registrations
-            in
             let unresolved_names =
               remove_resolved_names unresolved_names form
             in
@@ -1188,66 +877,24 @@ let compile_forms_incremental (state : Compiler_state.t) forms =
     compile_pending state.scope state.env state.next_type [] [] indexed_forms
   with
   | Error _ as err -> err
-  | Ok
-      ( scope,
-        env,
-        next_type,
-        new_items,
-        runtime_var_reflection,
-        runtime_definitions,
-        runtime_var_requests,
-        runtime_vars ) ->
+  | Ok (scope, env, next_type, new_items) ->
       let new_items =
         new_items |> order_deferred_items
         |> resolve_anonymous_record_patterns env
       in
-      let requested =
-        collect_dynamic_record_requests new_items
-        |> List.filter (fun record ->
-               not
-                 (List.exists
-                    (fun type_id ->
-                      Type_id.equal type_id record.Types.type_id)
-                    state.dynamic_packers))
+      let new_items, shared_values =
+        share_item_list state.shared_values new_items
       in
-      Result.bind
-        (add_initial_dynamic_record_packers env requested new_items)
-        (fun new_items ->
-          Result.map
-            (fun registrations ->
-              let new_items =
-                match (registrations, new_items) with
-                | [], items -> items
-                | registrations, Lowered.Group items :: rest ->
-                    Lowered.Group (registrations @ items) :: rest
-                | registrations, first :: rest ->
-                    Lowered.Group (registrations @ [ first ]) :: rest
-                | _ :: _, [] -> assert false
-              in
-              let dynamic_packers =
-                List.fold_left
-                  (fun type_ids record -> record.Types.type_id :: type_ids)
-                  state.dynamic_packers requested
-              in
-              let new_items, shared_values =
-                share_item_list state.shared_values new_items
-              in
-              let next_state =
-                {
-                  Compiler_state.scope;
-                  Compiler_state.env;
-                  next_type;
-                  items = state.items @ new_items;
-                  dynamic_packers;
-                  shared_values;
-                  runtime_var_reflection;
-                  runtime_definitions;
-                  runtime_var_requests;
-                  runtime_vars;
-                }
-              in
-              (next_state, new_items))
-            (compile_existing_dynamic_record_packers env new_items requested))
+      let next_state =
+        {
+          Compiler_state.scope;
+          Compiler_state.env;
+          next_type;
+          items = state.items @ new_items;
+          shared_values;
+        }
+      in
+      Ok (next_state, new_items)
 
 let compile_forms forms =
   match compile_forms_incremental empty_state forms with

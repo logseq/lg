@@ -184,28 +184,57 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
             (String.length name - String.length "__lg_record_app:")
         else name
       in
+      (match Resolver.lookup_type_declaration scope env record_name with
+      | Some
+          {
+            kind = Alias;
+            type_parameters;
+            manifest = Some manifest;
+            _;
+          }
+        when List.length type_parameters = List.length arguments ->
+          let substitutions = List.combine type_parameters arguments in
+          Types.substitute_type_variables substitutions manifest
+          |> infer_named_record ~allow_dynamic_fields scope env
+      | Some { kind = Alias; _ } -> TOcaml_app (name, arguments)
+      | Some { kind = (Record | Variant); _ } | None ->
       (match Resolver.lookup_record_type scope env record_name with
       | Ok record
         when List.length record.type_parameters = List.length arguments ->
           TNamed_record { record with type_arguments = arguments }
-      | Ok _ | Error _ -> TOcaml_app (name, arguments))
-  | TOcaml name when String.starts_with ~prefix:"__lg_record:" name ->
+      | Ok _ | Error _ -> TOcaml_app (name, arguments)))
+  | TOcaml name as ty ->
+      let record_prefix = "__lg_record:" in
       let source_name =
-        String.sub name
-          (String.length "__lg_record:")
-          (String.length name - String.length "__lg_record:")
+        if String.starts_with ~prefix:record_prefix name then
+          String.sub name (String.length record_prefix)
+            (String.length name - String.length record_prefix)
+        else name
       in
       (match Resolver.lookup_record_type scope env source_name with
       | Ok record -> TNamed_record record
       | Error _ ->
-          Env.to_bindings env
-          |> List.find_map (fun (_, (binding : binding)) ->
-                 match binding.ty with
-                 | TNamed_record record
-                   when String.equal record.type_name source_name ->
-                     Some (TNamed_record record)
-                 | _ -> None)
-          |> Option.value ~default:(TOcaml name))
+          (match Resolver.lookup_type_declaration scope env source_name with
+          | Some
+              {
+                kind = Alias;
+                type_parameters = [];
+                manifest = Some manifest;
+                _;
+              } ->
+              infer_named_record ~allow_dynamic_fields scope env manifest
+          | Some { kind = Alias; _ } -> ty
+          | Some { kind = Variant; type_id; _ } ->
+              TOcaml (Names.sanitize_name (Type_id.name type_id))
+          | Some { kind = Record; _ } | None ->
+              Env.to_bindings env
+              |> List.find_map (fun (_, (binding : binding)) ->
+                     match binding.ty with
+                     | TNamed_record record
+                       when String.equal record.type_name source_name ->
+                       Some (TNamed_record record)
+                     | _ -> None)
+              |> Option.value ~default:ty))
   | TRecord fields -> (
       let fields =
         List.map
@@ -414,12 +443,13 @@ let reconcile_shared_parameter_variables original resolved =
     resolved
 
 let rec apply_row_constraint_type row_type_name = function
-  | TRecord _ -> TOcaml row_type_name
+  | TRecord _ -> TOcaml (Types.ocaml_record_type_name row_type_name)
   | TOcaml_app (name, [ TRecord _; container ])
     when name = Types.seqable_constraint_name
          || name = Types.optional_seqable_constraint_name
          || name = Types.optional_sequential_constraint_name ->
-      TOcaml_app (name, [ TOcaml row_type_name; container ])
+      TOcaml_app
+        (name, [ TOcaml (Types.ocaml_record_type_name row_type_name); container ])
   | TNullable ty -> TNullable (apply_row_constraint_type row_type_name ty)
   | TOcaml_app (name, arguments) ->
       TOcaml_app
@@ -537,16 +567,8 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
         Expression_support.dynamic_key_record_type env
       in
       let resolve_named_record = infer_named_record scope env in
-      let explicitly_dynamic_params =
-        specs
-        |> List.filter_map (fun (spec : Destructure.param_spec) ->
-               match spec.explicit_ty with
-               | Some ty when Types.is_dynamic ty -> Some spec.source_name
-               | Some _ | None -> None)
-      in
       match
-        Type_inference.infer_params ~explicitly_dynamic_params
-          ~materialize_open_equality
+        Type_inference.infer_params ~materialize_open_equality
           ~lookup_function_ty
           ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
           ~resolve_named_record
@@ -731,6 +753,11 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                                when Type_id.equal explicit.type_id
                                       inferred.type_id ->
                                  inferred_ty
+                             | ( TFn
+                                   ([ TUnknown; TUnknown ], TOcaml "int"),
+                                 TFn ([ _; _ ], _) ) ->
+                                 Type_inference.refine_type explicit_ty
+                                   inferred_ty
                              | _ -> explicit_ty
                            in
                            (spec, ty)

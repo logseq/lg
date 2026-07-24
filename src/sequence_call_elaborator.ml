@@ -29,6 +29,8 @@ type t = {
   compile_reduce : call;
 }
 
+let reduce_kv_counter = ref 0
+
 let compile_args_for compile_expr scope env arg_forms =
   let rec loop acc = function
     | [] -> Ok (List.rev acc)
@@ -125,7 +127,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
     match fn.ty with
     | TFn ([ expected_ty ], return_ty)
       when Types.is_dynamic actual_ty && not (Types.is_dynamic expected_ty) ->
-        let item_name = "__lg_dynamic_sequence_item" in
+        let item_name = "__lg_erased_sequence_item" in
         Result.map
           (fun item ->
             typed_ir (TFn ([ actual_ty ], return_ty))
@@ -152,7 +154,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
       when Types.is_dynamic actual_item_ty
            && not (Types.is_dynamic expected_item_ty) ->
         let accumulator_name = "__lg_reduce_accumulator" in
-        let item_name = "__lg_dynamic_reduce_item" in
+        let item_name = "__lg_erased_reduce_item" in
         Result.map
           (fun item ->
             typed_ir
@@ -251,8 +253,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
       when Types.is_dynamic actual_accumulator_ty
            && not (Types.is_dynamic return_ty)
            && Option.is_none (Types.reduced_element return_ty) ->
-        let accumulator_name = "__lg_dynamic_reduce_accumulator" in
-        let item_name = "__lg_dynamic_reduce_return_item" in
+        let accumulator_name = "__lg_erased_reduce_accumulator" in
+        let item_name = "__lg_erased_reduce_return_item" in
         let result =
           typed_ir return_ty
             (Semantic_ir.Apply
@@ -372,7 +374,11 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
        | TRecord _ | TNamed_record _ -> true
        | _ -> false
   in
-  let compile_function_arg_for_collection scope env element_ty = function
+  let compile_function_arg_for_collection scope env element_ty form =
+    let element_ty =
+      Collection_capability.resolve_callback_record env element_ty
+    in
+    match form with
     | FKeyword keyword ->
         let item_name = "__lg_keyword_function_item" in
         let binding = Types.binding item_name element_ty in
@@ -386,6 +392,36 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
               (TFn ([ element_ty ], body.ty))
                  (Semantic_ir.Fun
                     ([ Semantic_ir.PVar item_name ], body.semantic_expr)))
+    | FList (FSymbol "juxt" :: keyword_forms)
+      when keyword_forms <> []
+           && List.for_all
+                (function FKeyword _ -> true | _ -> false)
+                keyword_forms ->
+        let item_name = "__lg_juxt_keyword_item" in
+        let binding = Types.binding item_name element_ty in
+        let function_env =
+          Env.add (Names.scoped_key scope item_name) binding env
+        in
+        let dynamic = Types.dynamic_constraint TUnknown in
+        let rec compile_keywords compiled = function
+          | [] -> Ok (List.rev compiled)
+          | FKeyword keyword :: rest ->
+              Result.bind
+                (compile_expr scope function_env
+                   (FList [ FKeyword keyword; FSymbol item_name ]))
+                (fun value ->
+                  Result.bind (pack_dynamic_value env dynamic value)
+                    (fun value ->
+                      compile_keywords (value :: compiled) rest))
+          | _ -> assert false
+        in
+        Result.map
+          (fun values ->
+            typed_ir (TFn ([ element_ty ], TVector dynamic))
+              (Semantic_ir.Fun
+                 ( [ Semantic_ir.PVar item_name ],
+                   apply "Rrbvec.of_list" [ Semantic_ir.List values ] )))
+          (compile_keywords [] keyword_forms)
     | FList (FSymbol "fn" :: (FVector [ _ ] as params) :: body_forms) ->
         compile_contextual_fn scope env
           ~param_type_overrides:[ Some element_ty ] params body_forms
@@ -759,14 +795,15 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                     let body =
                       Semantic_ir.If
                       ( Semantic_ir.Infix
-                          ("<=", Semantic_ir.Ident "n", Semantic_ir.Int64 0L),
+                          ("<=", Semantic_ir.Ident "n", Semantic_ir.Int 0),
                           Semantic_ir.Ident "acc",
                           apply "repeatedly"
                           [
                             Semantic_ir.Cons
                                 ( Semantic_ir.Apply (fn.semantic_expr, []),
                                   Semantic_ir.Ident "acc" );
-                            apply "Int64.pred" [ Semantic_ir.Ident "n" ];
+                            Semantic_ir.Infix
+                              ("-", Semantic_ir.Ident "n", Semantic_ir.Int 1);
                           ] )
                     in
                     Ok
@@ -1210,8 +1247,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                                   ],
                                   Semantic_ir.Apply
                                     ( semantic_expr,
-                                      [ apply "Int64.of_int"
-                                          [ Semantic_ir.Ident "index" ];
+                                      [ Semantic_ir.Ident "index";
                                         Semantic_ir.Ident "item";
                                       ] ) );
                               sequence;
@@ -1409,6 +1445,12 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
     and compile_reduce_kv scope env arg_forms =
       match arg_forms with
     | [ fn_form; init_form; collection_form ] -> (
+          incr reduce_kv_counter;
+          let suffix = string_of_int !reduce_kv_counter in
+          let accumulator_name = "__lg_reduce_kv_accumulator_" ^ suffix in
+          let key_name = "__lg_reduce_kv_key_" ^ suffix in
+          let value_name = "__lg_reduce_kv_value_" ^ suffix in
+          let index_name = "__lg_reduce_kv_index_" ^ suffix in
           match
             ( compile_expr scope env init_form,
               compile_expr scope env collection_form )
@@ -1443,19 +1485,19 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                               [
                                 Semantic_ir.Fun
                                   ( [
-                                      Semantic_ir.PVar "accumulator";
+                                      Semantic_ir.PVar accumulator_name;
                                         Semantic_ir.PTuple
                                         [
-                                          Semantic_ir.PVar "key";
-                                          Semantic_ir.PVar "value";
+                                          Semantic_ir.PVar key_name;
+                                          Semantic_ir.PVar value_name;
                                         ];
                                     ],
                                       Semantic_ir.Apply
                                         ( fn.semantic_expr,
                                         [
-                                          Semantic_ir.Ident "accumulator";
-                                            Semantic_ir.Ident "key";
-                                          Semantic_ir.Ident "value";
+                                          Semantic_ir.Ident accumulator_name;
+                                            Semantic_ir.Ident key_name;
+                                          Semantic_ir.Ident value_name;
                                         ] ) );
                                   init.semantic_expr;
                                 entries;
@@ -1471,12 +1513,14 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                     apply "List.mapi"
                     [
                       Semantic_ir.Fun
-                        ( [ Semantic_ir.PVar "index"; Semantic_ir.PVar "value" ],
+                        ( [
+                            Semantic_ir.PVar index_name;
+                            Semantic_ir.PVar value_name;
+                          ],
                             Semantic_ir.Tuple
                             [
-                              apply "Int64.of_int"
-                                [ Semantic_ir.Ident "index" ];
-                              Semantic_ir.Ident "value";
+                              Semantic_ir.Ident index_name;
+                              Semantic_ir.Ident value_name;
                             ] );
                       apply "Rrbvec.to_list" [ collection.semantic_expr ];
                     ]
@@ -1661,31 +1705,9 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                     Error.error
                       "map function argument type does not match sequence"
                   | Ok fn when Types.is_dynamic fn.ty ->
-                      let dynamic = Types.dynamic_constraint TUnknown in
-                      let callable_name = "__lg_dynamic_map_callable" in
-                      let item_name = "__lg_dynamic_map_callable_item" in
-                      let item = typed_ir inner (Semantic_ir.Ident item_name) in
-                      Result.map
-                        (fun item ->
-                          typed_ir (TSeq dynamic)
-                            (Semantic_ir.Let
-                               ( [
-                                   ( Semantic_ir.PVar callable_name,
-                                     fn.semantic_expr );
-                                 ],
-                                 apply "Lg_runtime.Runtime_seq.map"
-                                   [
-                                     Semantic_ir.Fun
-                                       ( [ Semantic_ir.PVar item_name ],
-                                         apply
-                                           "Lg_runtime.Runtime_dynamic.call"
-                                           [
-                                             Semantic_ir.Ident callable_name;
-                                             Semantic_ir.List [ item ];
-                                           ] );
-                                     sequence;
-                                   ] )))
-                        (pack_dynamic_value env dynamic item)
+                      Error.error
+                        "map requires a statically typed function; define a \
+                         typed wrapper or closed sum type"
                   | Ok fn ->
                       Error.error
                         ("map expects a function, got "
@@ -1732,28 +1754,9 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                                    [ predicate; sequence ]))
                             (adapt_unary_function env inner fn)
                     | ty when Types.is_dynamic ty ->
-                        let item_name = "__lg_dynamic_filter_item" in
-                        let item =
-                          typed_ir inner (Semantic_ir.Ident item_name)
-                        in
-                        Result.map
-                          (fun item ->
-                            let predicate =
-                              Semantic_ir.Fun
-                                ( [ Semantic_ir.PVar item_name ],
-                                  apply "Lg_runtime.Runtime_dynamic.truthy"
-                                    [
-                                      apply "Lg_runtime.Runtime_dynamic.call"
-                                        [
-                                          fn.semantic_expr;
-                                          Semantic_ir.List [ item ];
-                                        ];
-                                    ] )
-                            in
-                            typed_ir (TSeq inner)
-                              (apply "Lg_runtime.Runtime_seq.filter"
-                                 [ predicate; sequence ]))
-                          (pack_dynamic_value env ty item)
+                        Error.error
+                          "filter requires a statically typed predicate; define \
+                           a typed wrapper or closed sum type"
                       | TFn _ ->
                           Error.error
                           "filter expects a predicate matching sequence \

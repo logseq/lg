@@ -1,14 +1,13 @@
 (ns datascript.core
   (:refer-clojure :exclude [filter])
   (:require
-    [#?(:melange cljs.reader :native clojure.edn) :as edn]
     [datascript.conn :as conn]
     [datascript.db :as db]
     [datascript.pull-api :as dp]
     [datascript.serialize :as ds]
     [datascript.storage :as storage]
     [#?(:native datascript.storage-file :melange datascript.storage) :as storage-file]
-    [datascript.query :as dq]
+    [datascript.lg.query :as dq]
     [datascript.impl.entity :as de]
     [datascript.util :as util]
     [me.tonsky.persistent-sorted-set :as set]))
@@ -158,16 +157,20 @@
    Options are:
 
    :branching-factor <int>, default 512. B-tree max node length
-   :ref-type         :strong | :soft | :weak, default :soft. How will nodes that are already
-                     stored on disk be referenced. Soft or weak means they might be unloaded
-                     from memory under memory pressure and later fetched from storage again.
-   :storage          <IStorage>. Will be used to store this db later with `(d/store db)`"
+   :ref-type         Strong | Weak, default Weak. How nodes that are already stored on disk
+                     are referenced. Weak nodes may be unloaded from memory under memory
+                     pressure and later fetched from storage again.
+  :storage          <IStorage>. Will be used to store this db later with `(d/store db)`"
   ([]
-   (db/empty-db nil {}))
-  ([schema]
-   (db/empty-db schema {}))
-  ([schema opts]
-   (db/empty-db schema (storage/maybe-adapt-storage opts))))
+   (db/empty-db None (db/default-options)))
+  ([^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema]
+   (db/empty-db (Some schema) (db/default-options)))
+  ([^:option<map<keyword;map<keyword;Datascript_runtime.Data_value.t>>> schema
+    ^datascript.db/database-options opts]
+   (let [database (db/empty-db schema opts)]
+     (when-some [backend (db/options-storage opts)]
+       (Stdlib.ignore (storage/store database backend)))
+     database)))
 
 (def ^{:arglists '([x])
        :doc "Returns `true` if the given value is an immutable database, `false` otherwise."}
@@ -182,21 +185,23 @@
              See also [[init-db]]."}
   datom db/datom)
 
-(def ^{:arglists '([x])
-       :doc "Returns `true` if the given value is a datom, `false` otherwise."}
-  datom? db/datom?)
-
 (defn ^datascript.db/DB init-db
   "Low-level fn for creating database quickly from a trusted sequence of datoms.
    Does no validation on inputs, so `datoms` must be well-formed and match schema.
    Used internally in db (de)serialization. See also [[datom]].
    For options, see [[empty-db]]"
-  ([datoms]
-   (db/init-db datoms nil {}))
-  ([datoms schema]
-   (db/init-db datoms schema {}))
-  ([datoms schema opts]
-   (db/init-db datoms schema (storage/maybe-adapt-storage opts))))
+  ([^:vector<datascript.db/Datom> datoms]
+   (db/init-db (to-array datoms) db/empty-schema))
+  ([^:vector<datascript.db/Datom> datoms
+    ^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema]
+   (db/init-db (to-array datoms) schema))
+  ([^:vector<datascript.db/Datom> datoms
+    ^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema
+    ^datascript.db/database-options opts]
+   (let [database (db/init-db (to-array datoms) schema opts)]
+     (when-some [backend (db/options-storage opts)]
+       (Stdlib.ignore (storage/store database backend)))
+     database)))
 
 (def ^{:arglists '([db] [db opts])
        :doc "Converts db into a data structure (not string!) that can be fed to serializer
@@ -235,11 +240,11 @@
 ; Filtered db
 
 (defn is-filtered
-  "Returns `true` if this database was filtered using [[filter]], `false` otherwise."
-  [x]
-  (instance? datascript.db/FilteredDB x))
+  "Returns true for a database view created by filter."
+  [database]
+  (db/-filtered? database))
 
-(defn filter
+(defn ^datascript.db/FilteredDB filter
   "Returns a view over database that has same interface but only includes datoms for which the `(pred db datom)` is true. Can be applied multiple times.
 
    Filtered DB gotchas:
@@ -248,22 +253,9 @@
    - Not cached. You pay filter penalty every time.
    - Supports entities, pull, queries, index access.
    - Does not support [[with]] and [[db-with]]."
-  [db pred]
-  {:pre [(db/db? db)]}
-  (if (is-filtered db)
-    (let [^datascript.db/FilteredDB fdb db
-          orig-pred (.-pred fdb)
-          orig-db   (.-unfiltered-db fdb)]
-      (datascript.db/FilteredDB.
-       orig-db
-       (fn [^datascript.db/Datom datom]
-         (and (orig-pred datom) (pred orig-db datom)))
-       (atom 0)))
-    (datascript.db/FilteredDB.
-     db
-     (fn [^datascript.db/Datom datom]
-       (pred db datom))
-     (atom 0))))
+  [database
+   ^:fn<datascript.db/DB;datascript.db/Datom;bool> pred]
+  (db/-filter-view database pred))
 
 
 ; Changing DB
@@ -274,7 +266,8 @@
 
 (defn ^datascript.db/DB db-with
   "Applies transaction to an immutable db value, returning new immutable db value. Same as `(:db-after (with db tx-data))`."
-  [^datascript.db/DB database ^:dynamic tx-data]
+  [^datascript.db/DB database
+   ^:vector<datascript.db/tx-entry> tx-data]
   (conn/db-with database tx-data))
 
 (defn ^datascript.db/DB with-schema
@@ -597,35 +590,22 @@
   conn/unlisten!)
 
 
-; Data Readers
-
-(def ^{:doc "Data readers for EDN readers. In CLJS they’re registered automatically. In CLJ, if `data_readers.clj` do not work, you can always do
-
-             ```
-             (clojure.edn/read-string {:readers data-readers} \"...\")
-             ```"}
-  data-readers {'datascript/Datom db/datom-from-reader
-                'datascript/DB    db/db-from-reader})
-
-#?(:cljs
-   (doseq [[tag cb] data-readers] (edn/register-tag-parser! tag cb)))
-
-
 ;; Datomic compatibility layer
 
 (def ^:private last-tempid (atom -1000000))
 
-(defn tempid
+(defn ^:Datascript_runtime.Data_value.entity_ref tempid
   "Allocates and returns an unique temporary id (a negative integer). Ignores `part`. Returns `x` if it is specified.
 
    Exists for Datomic API compatibility. Prefer using negative integers directly if possible."
-  ([part]
+  ([^:keyword part]
    (if (= part :db.part/tx)
-     :db/current-tx
-     (swap! last-tempid dec)))
-  ([part ^:dynamic x]
+     (Datascript_runtime.Data_value.Current_tx)
+     (Datascript_runtime.Data_value.Entity_id
+      (swap! last-tempid dec))))
+  ([^:keyword part ^:Datascript_runtime.Data_value.entity_ref x]
    (if (= part :db.part/tx)
-     :db/current-tx
+     (Datascript_runtime.Data_value.Current_tx)
      x)))
 
 (defn resolve-tempid
@@ -703,7 +683,7 @@
 (defn collect-garbage
   "Deletes all keys from storage that are not referenced by any of the currently alive db refs.
    Has a side-effect of fully loading databases fully into memory, so, can be slow"
-  [^:dynamic backend]
+  [backend]
   (storage/collect-garbage backend))
 
 #?(:native

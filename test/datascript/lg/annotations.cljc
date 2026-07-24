@@ -1,0 +1,112 @@
+(require [ocaml.package/datascript.runtime])
+
+(extend-type :Datascript_runtime.Data_value.t
+  IEquiv
+  (-equiv [^:Datascript_runtime.Data_value.t left
+           ^:Datascript_runtime.Data_value.t right]
+    (Datascript_runtime.Data_value.equal left right))
+  IHash
+  (-hash [^:Datascript_runtime.Data_value.t value]
+    (Datascript_runtime.Data_value.hash value))
+  IComparable
+  (-compare [^:Datascript_runtime.Data_value.t left
+             ^:Datascript_runtime.Data_value.t right]
+    (Datascript_runtime.Data_value.compare left right)))
+
+(signature datascript.db/Datom
+  {:e :int
+   :a :keyword
+   :v :Datascript_runtime.Data_value.t
+   :tx :int
+   :idx :int
+   :cached-hash :int})
+
+(signature datascript.db/empty-schema-entry
+  :map<keyword;Datascript_runtime.Data_value.t>)
+
+(signature datascript.db/empty-schema
+  :map<keyword;map<keyword;Datascript_runtime.Data_value.t>>)
+
+(signature datascript.db/empty-schema-idents
+  :map<int;keyword>)
+
+(signature datascript.db/empty-schema-drafts
+  :map<int;map<keyword;Datascript_runtime.Data_value.t>>)
+
+(signature datascript.db/datom
+  :overload<fn<int;keyword;Datascript_runtime.Data_value.t;datascript.db/Datom>;fn<int;keyword;Datascript_runtime.Data_value.t;int;datascript.db/Datom>;fn<int;keyword;Datascript_runtime.Data_value.t;int;bool;datascript.db/Datom>>)
+
+(signature datascript.db/datom-tx
+  :fn<datascript.db/Datom;int>)
+
+(signature datascript.db/datom-added
+  :fn<datascript.db/Datom;bool>)
+
+(signature datascript.db/datom-get-idx
+  :fn<datascript.db/Datom;int>)
+
+(signature Datascript_runtime.Data_value.tuple_entity_refs
+  :fn<vector<string>;vector<string>;Datascript_runtime.Data_value.t;vector<Datascript_runtime.Data_value.entity_ref>>)
+
+(signature Datascript_runtime.Data_value.resolve_tuple_refs
+  :fn<vector<string>;vector<string>;vector<int>;Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>)
+
+(signature Datascript_runtime.Data_value.keyword_map_value
+  :fn<Datascript_runtime.Data_value.t;option<map<keyword;Datascript_runtime.Data_value.t>>>)
+
+(signature datascript.db/cmp-datoms-eavt
+  :fn<datascript.db/Datom;datascript.db/Datom;int>)
+
+(signature datascript.db/cmp-datoms-aevt
+  :fn<datascript.db/Datom;datascript.db/Datom;int>)
+
+(signature datascript.db/cmp-datoms-avet
+  :fn<datascript.db/Datom;datascript.db/Datom;int>)
+
+(signature datascript.db/cmp-datoms-eav-quick
+  :fn<datascript.db/Datom;datascript.db/Datom;int>)
+
+(signature datascript.db/cmp-datoms-eavt-quick
+  :fn<datascript.db/Datom;datascript.db/Datom;int>)
+
+(signature datascript.db/cmp-datoms-aevt-quick
+  :fn<datascript.db/Datom;datascript.db/Datom;int>)
+
+(signature datascript.db/cmp-datoms-avet-quick
+  :fn<datascript.db/Datom;datascript.db/Datom;int>)
+
+(signature datascript.db/resolve-tuple-refs
+  :fn<datascript.db/DB;keyword;Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>)
+
+(signature datascript.db/schema-tuple-attrs
+  :fn<datascript.db/DB;keyword;vector<string>>)
+
+(signature datascript.db/data-value-tuple-items
+  :fn<Datascript_runtime.Data_value.t;vector<option<Datascript_runtime.Data_value.t>>>)
+
+(signature datascript.db/entid
+  :fn<datascript.db/DB;Datascript_runtime.Data_value.entity_ref;option<int>>)
+
+(signature datascript.db/entid-strict
+  :fn<datascript.db/DB;Datascript_runtime.Data_value.entity_ref;int>)
+
+(signature datascript.db/db-equal?
+  :fn<datascript.db/DB;datascript.db/DB;bool>)
+
+(signature datascript.db/db-hash
+  :fn<datascript.db/DB;int>)
+
+(signature datascript.db/db-count
+  :fn<datascript.db/DB;int>)
+
+(signature datascript.db/filtered-db-datoms
+  :fn<datascript.db/FilteredDB;vector<datascript.db/Datom>>)
+
+(signature datascript.db/filtered-db-equal?
+  :fn<datascript.db/FilteredDB;datascript.db/FilteredDB;bool>)
+
+(signature datascript.db/filtered-db-hash
+  :fn<datascript.db/FilteredDB;int>)
+
+(signature datascript.db/filtered-db-count
+  :fn<datascript.db/FilteredDB;int>)

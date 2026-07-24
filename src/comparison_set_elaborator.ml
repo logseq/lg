@@ -30,7 +30,7 @@ let compile_args_for compile_expr scope env arg_forms =
   in
   loop [] arg_forms
 
-let create ~compile_expr ~pack_dynamic_value ~capability_value =
+let create ~compile_expr =
   let compile_args_for = compile_args_for compile_expr in
   let compile_function_arg scope env = function
     | FSymbol name -> lookup_function scope env name
@@ -72,23 +72,6 @@ let create ~compile_expr ~pack_dynamic_value ~capability_value =
     and compile_compare scope env arg_forms =
       match compile_args_for scope env arg_forms with
       | Error _ as err -> err
-      | Ok [ left; right ]
-        when Types.is_dynamic (capability_value left).ty
-             || Types.is_dynamic (capability_value right).ty ->
-          let left = capability_value left in
-          let right = capability_value right in
-          let dynamic_ty =
-            if Types.is_dynamic left.ty then left.ty else right.ty
-          in
-          Result.bind (pack_dynamic_value env dynamic_ty left) (fun left ->
-              Result.map
-                (fun right ->
-                  typed_ir TInt
-                    (apply "Int64.of_int"
-                       [ apply "Lg_runtime.Runtime_dynamic.compare"
-                           [ left; right ];
-                       ]))
-                (pack_dynamic_value env dynamic_ty right))
       | Ok [ left; right ] ->
           let comparable =
             match (nullable_inner left.ty, nullable_inner right.ty) with
@@ -113,13 +96,42 @@ let create ~compile_expr ~pack_dynamic_value ~capability_value =
             Error.error
               ("compare arguments must have the same type: "
            ^ Types.source_name left.ty ^ " and " ^ Types.source_name right.ty)
-          | Some (_, _, ty) when not (comparable_type ty) ->
-            Error.error "compare expects comparable arguments"
-          | Some (left, right, _) ->
-            Ok
-              (typed_ir TInt
-                 (apply "Int64.of_int"
-                    [ apply "Stdlib.compare" [ left; right ] ])))
+          | Some (left, right, ty) -> (
+              match
+                Core_protocols.find_comparable ty
+                  (Compiler_environment.protocols env)
+              with
+              | Some
+                  {
+                    ty = TFn ([ left_ty; right_ty ], return_ty);
+                    ocaml_name;
+                    _;
+                  }
+                when Types.assignable ~policy:Host_boundary ~expected:left_ty
+                       ~actual:ty
+                     && Types.assignable ~policy:Host_boundary
+                          ~expected:right_ty ~actual:ty
+                     && (Types.equal return_ty TInt
+                        || Types.equal return_ty (TOcaml "int")
+                        || match return_ty with
+                           | TUnknown | TVar _ -> true
+                           | _ -> false) ->
+                  Ok
+                    (typed_ir TInt
+                       (apply ocaml_name [ left; right ]))
+              | Some _ ->
+                  Error.error
+                    "IComparable/-compare has an invalid signature"
+              | None when not (comparable_type ty) ->
+                  Error.error
+                    "compare expects one concrete comparable type; define a \
+                     closed sum type and match its cases explicitly for a \
+                     heterogeneous domain"
+              | None ->
+                  Ok
+                    (typed_ir TInt
+                       (apply "Stdlib.compare" [ left; right ])))
+            )
       | Ok _ -> Error.error "compare expects 2 arguments"
     and compile_key_extreme scope env name arg_forms =
       match arg_forms with
@@ -202,48 +214,37 @@ let create ~compile_expr ~pack_dynamic_value ~capability_value =
           match compile_args_for scope env arg_forms with
           | Error _ as err -> err
           | Ok [] -> Error.error "hash-set expects elements"
-          | Ok (first_expr :: _ as exprs) ->
-              let homogeneous =
-                List.for_all
-                  (fun expr -> Types.same_shape first_expr.ty expr.ty)
-                  exprs
-              in
-              if (not homogeneous) || Types.is_dynamic first_expr.ty then
-                (* Clojure sets are heterogeneous: pack every element *)
-                let dynamic = Types.dynamic_constraint TUnknown in
-                let rec pack packed = function
-                  | [] -> Ok (List.rev packed)
-                  | value :: values ->
-                      Result.bind (pack_dynamic_value env dynamic value)
-                        (fun value -> pack (value :: packed) values)
-                in
-                Result.map
-                  (fun values ->
-                    typed_ir dynamic
-                      (Semantic_ir.Apply
-                         ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.set",
-                           [
-                             Semantic_ir.Apply
-                               ( Semantic_ir.Ident
-                                   "Lg_runtime.Runtime_seq.of_list",
-                                 [ Semantic_ir.List values ] );
-                           ] )))
-                  (pack [] exprs)
-              else
-                Result.bind (Types.set_module_name first_expr.ty)
-                  (fun set_module ->
-                    let rec coerce_values acc = function
-                      | [] -> Ok (List.rev acc)
-                      | value :: rest ->
-                          Result.bind (coerce_set_element first_expr.ty value)
-                            (fun value -> coerce_values (value :: acc) rest)
-                    in
-                    coerce_values [] exprs
-                    |> Result.map (fun values ->
-                           typed_ir (TSet first_expr.ty)
-                             (Semantic_ir.Apply
-                                ( Semantic_ir.Ident (set_module ^ ".of_list"),
-                                  [ Semantic_ir.List values ] )))))
+          | Ok exprs ->
+              Result.bind
+                (merge_collection_value_types "set" exprs)
+                (fun element_ty ->
+                  Result.bind (set_module_name env element_ty)
+                    (fun set_module ->
+                      let rec coerce_values acc = function
+                        | [] -> Ok (List.rev acc)
+                        | value :: rest ->
+                            let coerced =
+                              if Types.equal element_ty value.ty then
+                                Ok value.semantic_expr
+                              else
+                                match element_ty with
+                                | TNullable _
+                                | TOcaml_app ("option", [ _ ]) ->
+                                    Ok
+                                      (coerce_expression_to_type element_ty
+                                         value.ty value.semantic_expr)
+                                | _ -> coerce_set_element element_ty value
+                            in
+                            Result.bind coerced (fun value ->
+                                coerce_values (value :: acc) rest)
+                      in
+                      coerce_values [] exprs
+                      |> Result.map (fun values ->
+                             typed_ir (TSet element_ty)
+                               (Semantic_ir.Apply
+                                  ( Semantic_ir.Ident
+                                      (set_module ^ ".of_list"),
+                                    [ Semantic_ir.List values ] ))))))
     and compile_set_of arg_forms =
       match arg_forms with
       | [ FKeyword keyword ] -> (

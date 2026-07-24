@@ -1,11 +1,13 @@
 let initialized = lazy (Random.self_init ())
 
+let seed value =
+  Lazy.force initialized;
+  Random.init value
+
 let rand_int bound =
   if bound <= 0 then invalid_arg "rand-int expects a positive bound";
   Lazy.force initialized;
   Random.int bound
-
-let rand_int64 bound = Int64.of_int (rand_int (Int64.to_int bound))
 
 let rand bound =
   if bound < 0. then invalid_arg "rand expects a non-negative bound";

@@ -103,7 +103,7 @@ let tokenize source =
       | '#' when i + 1 < String.length source && source.[i + 1] = '\'' ->
           let value, next = read_atom source (i + 2) in
           if value = "" then Error.error "var quote expects a symbol"
-          else loop next (token (Symbol value) i next :: tokens)
+          else loop next (token (Var_quote value) i next :: tokens)
       | '#' when i + 1 < String.length source && source.[i + 1] = '(' ->
           loop (i + 2) (token Anon_lparen i (i + 2) :: tokens)
       | ')' -> loop (i + 1) (token Rparen i (i + 1) :: tokens)

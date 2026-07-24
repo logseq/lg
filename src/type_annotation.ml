@@ -1,6 +1,19 @@
 open Ast
 open Types
 
+let reject_dynamic_type () =
+  Error.error
+    "dynamic is not a source type; define a closed sum type containing the \
+     supported values"
+
+let is_dynamic_runtime_type = function
+  | "Lg_runtime.Runtime_dynamic.t"
+  | "Lg_runtime.Lg_dyn.t"
+  | "Runtime_dynamic.t"
+  | "Lg_dyn.t" ->
+      true
+  | _ -> false
+
 let split_top_level_type_args source =
   let rec loop depth start index acc =
     if index >= String.length source then
@@ -47,8 +60,12 @@ let validate_ocaml_type_application name args =
   | "weak", _ -> Error.error "weak expects one type argument"
   | "result", [ _; _ ] -> Ok ()
   | "result", _ -> Error.error "result expects two type arguments"
-  | "fn", _ :: _ :: _ -> Ok ()
-  | "fn", _ -> Error.error "fn expects at least one parameter and a return type"
+  | "map", [ _; _ ] -> Ok ()
+  | "map", _ -> Error.error "map expects two type arguments"
+  | "fn", _ :: _ -> Ok ()
+  | "fn", [] -> Error.error "fn expects a return type"
+  | "overload", _ :: _ -> Ok ()
+  | "overload", _ -> Error.error "overload expects at least two function types"
   | _, [] -> Error.error "OCaml type application expects at least one argument"
   | _ -> Ok ()
 
@@ -60,14 +77,19 @@ let rec parse_ocaml_type source =
     | None ->
         if String.contains source '<' || String.contains source '>' then
           Error.error "malformed OCaml type application"
-        else if source = "int" || source = "int64" then Ok TInt
+        else if source = "ordering" then Ok (TOcaml "int")
+        else if source = "int" then Ok TInt
+        else if source = "int64" then Ok (TOcaml "int64")
         else if source = "float" then Ok TFloat
         else if source = "char" then Ok TChar
         else if source = "string" then Ok TString
         else if source = "bytes" then Ok TString
         else if source = "bool" then Ok TBool
         else if source = "unit" then Ok TUnit
-        else if source = "dynamic" then Ok (Types.dynamic_constraint TUnknown)
+        else if source = "symbol" then Ok TSymbol
+        else if source = "keyword" then Ok TKeyword
+        else if source = "dynamic" || is_dynamic_runtime_type source then
+          reject_dynamic_type ()
         else
           (match String.rindex_opt source '/' with
           | Some separator when separator > 0 ->
@@ -137,6 +159,14 @@ let rec parse_ocaml_type source =
                       match args with
                       | [ inner ] -> Ok (TSeq inner)
                       | _ -> Error.error "seq expects one type argument"
+                    else if name = "seqable" then
+                      match args with
+                      | [ inner ] -> Ok (Types.seqable_constraint inner)
+                      | _ -> Error.error "seqable expects one type argument"
+                    else if name = "map" then
+                      match args with
+                      | [ key; value ] -> Ok (Types.dynamic_map key value)
+                      | _ -> Error.error "map expects two type arguments"
                     else if name = "ref" then
                       match args with
                       | [ inner ] -> Ok (TRef inner)
@@ -150,6 +180,19 @@ let rec parse_ocaml_type source =
                       | return_ty :: reversed_params ->
                           Ok (TFn (List.rev reversed_params, return_ty))
                       | [] -> assert false
+                    else if name = "overload" then
+                      let rec arities acc = function
+                        | [] -> Ok (TOverloaded_fn (List.rev acc))
+                        | TFn (fixed_params, return_ty) :: rest ->
+                            arities
+                              ({ fixed_params; rest_param = None; return_ty }
+                              :: acc)
+                              rest
+                        | _ :: _ ->
+                            Error.error
+                              "overload arguments must all be function types"
+                      in
+                      arities [] args
                     else
                       Ok
                         (TOcaml_app
@@ -161,6 +204,9 @@ let rec parse_ocaml_type source =
 
 let of_keyword = function
   | ":int" -> Ok TInt
+  | ":ordering" -> Ok (TOcaml "int")
+  | ":ordering-fn" ->
+      Ok (TFn ([ TUnknown; TUnknown ], TOcaml "int"))
   | ":float" -> Ok TFloat
   | ":char" -> Ok TChar
   | ":string" -> Ok TString
@@ -168,20 +214,16 @@ let of_keyword = function
   | ":keyword" -> Ok TKeyword
   | ":bool" -> Ok TBool
   | ":unit" -> Ok TUnit
-  | ":dynamic" -> Ok (Types.dynamic_constraint TUnknown)
+  | ":buffer" -> Ok (TOcaml "Buffer.t")
+  | ":dynamic" -> reject_dynamic_type ()
   | ":transient-vector" ->
-      Ok
-        (TOcaml_app
-           ( "Lg_runtime.Runtime_transient.vector",
-             [ Types.dynamic_constraint TUnknown ] ))
+      Error.error
+        "transient-vector requires concrete element types; untyped transient \
+         collections are not supported"
   | ":transient-map" ->
-      Ok
-        (TOcaml_app
-           ( "Lg_runtime.Runtime_transient.map",
-             [
-               Types.dynamic_constraint TUnknown;
-               Types.dynamic_constraint TUnknown;
-             ] ))
+      Error.error
+        "transient-map requires concrete key and value types; untyped transient \
+         collections are not supported"
   | ":nil" -> Error.error "nil is not a valid type annotation"
   | keyword when String.starts_with ~prefix:":ocaml/" keyword ->
       Error.error "the :ocaml/ type prefix is not supported"
@@ -211,6 +253,21 @@ let rec resolve_type_parameters parameters = function
       resolve_type_parameters parameters inner |> Result.map (fun inner -> TArray inner)
   | TRef inner ->
       resolve_type_parameters parameters inner |> Result.map (fun inner -> TRef inner)
+  | TNullable inner ->
+      resolve_type_parameters parameters inner
+      |> Result.map (fun inner -> TNullable inner)
+  | TList inner ->
+      resolve_type_parameters parameters inner
+      |> Result.map (fun inner -> TList inner)
+  | TVector inner ->
+      resolve_type_parameters parameters inner
+      |> Result.map (fun inner -> TVector inner)
+  | TSet inner ->
+      resolve_type_parameters parameters inner
+      |> Result.map (fun inner -> TSet inner)
+  | TSeq inner ->
+      resolve_type_parameters parameters inner
+      |> Result.map (fun inner -> TSeq inner)
   | TTuple args ->
       let rec resolve_args acc = function
         | [] -> Ok (TTuple (List.rev acc))
@@ -240,11 +297,17 @@ let of_keyword_with_parameters parameters keyword =
   | Ok ty -> resolve_type_parameters parameters ty
 
 let of_param_annotation annotation =
-  if String.starts_with ~prefix:"^:" annotation then
+  if annotation = "^:dynamic" then reject_dynamic_type ()
+  else if String.starts_with ~prefix:"^:" annotation then
     match of_keyword (String.sub annotation 1 (String.length annotation - 1)) with
     | Ok ty -> Ok ty
     | (Error _ as err)
-      when String.starts_with ~prefix:"^:ocaml/" annotation
+      when annotation = "^:transient-vector"
+           || annotation = "^:transient-map"
+           || (String.length annotation > 2
+              && is_dynamic_runtime_type
+                   (String.sub annotation 2 (String.length annotation - 2)))
+           || String.starts_with ~prefix:"^:ocaml/" annotation
            || String.starts_with ~prefix:"^:param/" annotation ->
         err
     | Error _
@@ -262,14 +325,22 @@ let of_param_annotation annotation =
     (match type_name with
     | "int" | "long" | "number" -> Ok TInt
     | "Object" | "java.lang.Object" | "Number" | "java.lang.Number"
-    | "Comparable" | "java.lang.Comparable" ->
-        Ok (Types.dynamic_constraint TUnknown)
-    | "boolean" | "Boolean" -> Ok TBool
+    | "Comparable" | "java.lang.Comparable" | "Boolean" | "String" ->
+        Error.error
+          "Java interop is not supported; use static LG types and functions"
+    | type_name
+      when String.starts_with ~prefix:"java." type_name
+           || String.starts_with ~prefix:"javax." type_name
+           || String.starts_with ~prefix:"clojure.lang." type_name ->
+        Error.error
+          "Java interop is not supported; use static LG types and functions"
+    | "boolean" -> Ok TBool
     | "double" | "float" -> Ok TFloat
-    | "String" | "bytes" -> Ok TString
+    | "bytes" -> Ok TString
     | _ -> (
         match Host_interop.type_annotation type_name with
         | Some host_type -> Ok (TOcaml host_type)
+        | None when String.contains type_name '.' -> Ok (TOcaml type_name)
         | None -> Ok (TOcaml ("__lg_record:" ^ type_name))))
   else Error.error "function parameters must be symbols"
 

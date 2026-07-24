@@ -5,6 +5,8 @@ type kind = Alias | Record | Variant
 type declaration = {
   type_id : Type_id.t;
   kind : kind;
+  type_parameters : string list;
+  manifest : Types.ty option;
 }
 
 type t = declaration Emitted_map.t
@@ -16,7 +18,7 @@ let emitted_name ~scope source_name =
   if scope = "" then name
   else Names.module_path_to_ocaml scope ^ "." ^ name
 
-let declare ~scope source_name kind registry =
+let declare ?(type_parameters = []) ?manifest ~scope source_name kind registry =
   let type_id =
     Type_id.create ~owner:(if scope = "" then [] else [ scope ])
       ~name:source_name
@@ -32,7 +34,9 @@ let declare ~scope source_name kind registry =
   | None ->
       Ok
         ( type_id,
-          Emitted_map.add emitted_name { type_id; kind } registry )
+          Emitted_map.add emitted_name
+            { type_id; kind; type_parameters; manifest }
+            registry )
 
 let find_by_emitted_name emitted_name registry =
   Emitted_map.find_opt emitted_name registry
@@ -56,6 +60,9 @@ let export_scope ~from_scope ~to_scope source target =
       | (Error _ as err), _ -> err
       | Ok registry, None -> Ok registry
       | Ok registry, Some scope ->
-          declare ~scope (Type_id.name declaration.type_id) declaration.kind registry
+          declare ~type_parameters:declaration.type_parameters
+            ?manifest:declaration.manifest ~scope
+            (Type_id.name declaration.type_id)
+            declaration.kind registry
           |> Result.map snd)
     source (Ok target)

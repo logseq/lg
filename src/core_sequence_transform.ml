@@ -87,7 +87,7 @@ let take_list_expr count source =
   let xs = Semantic_ir.Ident "xs" in
   let body =
     Semantic_ir.If
-      ( Semantic_ir.Infix ("<=", n, Semantic_ir.Int64 0L),
+      ( Semantic_ir.Infix ("<=", n, Semantic_ir.Int 0),
         Semantic_ir.List [],
         Semantic_ir.Match
           ( xs,
@@ -96,7 +96,7 @@ let take_list_expr count source =
                 Semantic_ir.Cons
                   ( Semantic_ir.Ident "x",
                     apply name
-                      [ apply "Int64.pred" [ n ];
+                      [ Semantic_ir.Infix ("-", n, Semantic_ir.Int 1);
                         Semantic_ir.Ident "rest" ] ) ) ] ) )
   in
   Semantic_ir.LetRec (name, [ Semantic_ir.PVar "n"; Semantic_ir.PVar "xs" ], body, [ count; source ])
@@ -107,14 +107,14 @@ let drop_list_expr count source =
   let xs = Semantic_ir.Ident "xs" in
   let body =
     Semantic_ir.If
-      ( Semantic_ir.Infix ("<=", n, Semantic_ir.Int64 0L),
+      ( Semantic_ir.Infix ("<=", n, Semantic_ir.Int 0),
         xs,
         Semantic_ir.Match
           ( xs,
             [ (Semantic_ir.PList [], Semantic_ir.List []);
               ( Semantic_ir.PCons (Semantic_ir.PAny, Semantic_ir.PVar "rest"),
                 apply name
-                  [ apply "Int64.pred" [ n ];
+                  [ Semantic_ir.Infix ("-", n, Semantic_ir.Int 1);
                     Semantic_ir.Ident "rest" ] ) ] ) )
   in
   Semantic_ir.LetRec (name, [ Semantic_ir.PVar "n"; Semantic_ir.PVar "xs" ], body, [ count; source ])
@@ -296,7 +296,7 @@ let repeat count value =
     Ok
       (typed_ir (TSeq value.ty)
          (apply "Lg_runtime.Runtime_seq.take"
-            [ apply "Int64.to_int" [ count.semantic_expr ];
+            [ count.semantic_expr;
               apply "Lg_runtime.Runtime_seq.repeat" [ value.semantic_expr ] ]))
   else Error.error "repeat count must be int"
 
@@ -406,7 +406,7 @@ let partition name size collection =
         let take_body return_done return_empty =
           Semantic_ir.If
             ( Semantic_ir.Infix
-                ("=", Semantic_ir.Ident "n", Semantic_ir.Int64 0L),
+                ("=", Semantic_ir.Ident "n", Semantic_ir.Int 0),
               return_done
                 (Semantic_ir.Tuple
                    [ apply "List.rev" [ Semantic_ir.Ident "acc" ];
@@ -416,7 +416,8 @@ let partition name size collection =
                   [ (Semantic_ir.PList [], return_empty);
                     ( Semantic_ir.PCons (Semantic_ir.PVar "item", Semantic_ir.PVar "rest"),
                       apply "take"
-                        [ apply "Int64.pred" [ Semantic_ir.Ident "n" ];
+                        [ Semantic_ir.Infix
+                            ("-", Semantic_ir.Ident "n", Semantic_ir.Int 1);
                           Semantic_ir.Cons (Semantic_ir.Ident "item", Semantic_ir.Ident "acc");
                           Semantic_ir.Ident "rest" ] ) ] ) )
         in
@@ -519,12 +520,11 @@ let take_drop_last name count collection =
         let count_name = if name = "take-last" then "drop_count" else "keep_count" in
         let count_expr =
           apply "max"
-            [ Semantic_ir.Int64 0L;
-              apply "Int64.sub"
-                [ apply "Int64.of_int"
-                    [ apply "List.length" [ Semantic_ir.Ident "source" ] ];
-                  count.semantic_expr;
-                ] ]
+            [ Semantic_ir.Int 0;
+              Semantic_ir.Infix
+                ( "-",
+                  apply "List.length" [ Semantic_ir.Ident "source" ],
+                  count.semantic_expr ) ]
         in
         let result_expr =
           if name = "take-last" then
@@ -546,7 +546,10 @@ let take_nth count collection =
     match collection_to_list_expr collection with
     | Error _ -> Error.error "take-nth expects a collection"
     | Ok (_inner, list_expr) ->
-        let next_index = apply "Int64.succ" [ Semantic_ir.Ident "index" ] in
+        let next_index =
+          Semantic_ir.Infix
+            ("+", Semantic_ir.Ident "index", Semantic_ir.Int 1)
+        in
         let body =
           Semantic_ir.Match
             ( Semantic_ir.Ident "xs",
@@ -555,9 +558,11 @@ let take_nth count collection =
                   Semantic_ir.If
                     ( Semantic_ir.Infix
                         ( "=",
-                          apply "Int64.rem"
-                            [ Semantic_ir.Ident "index"; count.semantic_expr ],
-                          Semantic_ir.Int64 0L ),
+                          Semantic_ir.Infix
+                            ( "mod",
+                              Semantic_ir.Ident "index",
+                              count.semantic_expr ),
+                          Semantic_ir.Int 0 ),
                       apply "take_nth"
                         [ next_index;
                           Semantic_ir.Cons (Semantic_ir.Ident "item", Semantic_ir.Ident "acc");
@@ -572,7 +577,7 @@ let take_nth count collection =
             ( "take_nth",
               [ Semantic_ir.PVar "index"; Semantic_ir.PVar "acc"; Semantic_ir.PVar "xs" ],
               body,
-              [ Semantic_ir.Int64 0L; Semantic_ir.List []; list_expr ] )
+              [ Semantic_ir.Int 0; Semantic_ir.List []; list_expr ] )
         in
         Ok (typed_ir collection.ty (collection_from_list_expr collection.ty list_expr))
 
@@ -602,8 +607,7 @@ let bounded_count limit collection =
           (typed_ir TInt
              (apply "min"
                 [ limit.semantic_expr;
-                  apply "Int64.of_int"
-                    [ apply "List.length" [ list_expr ] ];
+                  apply "List.length" [ list_expr ];
                 ]))
 
 let dorun collection =

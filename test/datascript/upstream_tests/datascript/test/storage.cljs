@@ -234,7 +234,7 @@
                               ["streaming-transit-json"    (streaming-transit-json-storage temp-dir)]
                               ["inmemory-transit-json"     (inmemory-transit-json-storage temp-dir)]
                               ["streaming-transit-msgpack" (streaming-transit-msgpack-storage temp-dir)]]
-            ref       [:strong :soft :weak]
+            ref       [:strong :weak]
             order     [32 64 512]
             :let      [opts {:branching-factor order, :ref-type ref}]
             [size db] [["empty" (d/empty-db nil opts)

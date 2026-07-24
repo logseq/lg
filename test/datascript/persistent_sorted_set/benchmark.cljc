@@ -3,8 +3,8 @@
    [me.tonsky.persistent-sorted-set.arrays :as arrays]
    [me.tonsky.persistent-sorted-set :as pss]))
 
-(defn int-compare [left right]
-  (- left right))
+(defn ^:ordering int-compare [^:int left ^:int right]
+  (ordering-compare left right))
 
 (defn now []
   (Sys.time))
@@ -16,14 +16,14 @@
          (do
            ~expression
            (recur (inc warmup#)))
-         nil))
+         (Stdlib.ignore 0)))
      (let [started# (now)]
        (loop [iteration# 0]
          (if (< iteration# ~iterations)
            (do
              ~expression
              (recur (inc iteration#)))
-           nil))
+           (Stdlib.ignore 0)))
        (let [elapsed# (Float.sub (now) started#)
              millis#
              (Float.div
@@ -41,7 +41,7 @@
    (fn [idx] (mod (* idx 7919) 300000))
    (arrays/into-array (range 0 300000))))
 
-(defn insert-all [values]
+(defn ^:pss/btset<int;unit;unit> insert-all [^:array<int> values]
   (loop [set (pss/empty-set int-compare)
          idx 0]
     (if (= idx (arrays/alength values))
@@ -50,8 +50,8 @@
        (pss/set-conj set (arrays/aget values idx))
        (inc idx)))))
 
-(def set-10k (insert-all ints-10k))
-(def set-300k (insert-all ints-300k))
+(def ^:pss/btset<int;unit;unit> set-10k (insert-all ints-10k))
+(def ^:pss/btset<int;unit;unit> set-300k (insert-all ints-300k))
 
 (def ints-32 (arrays/into-array (range 0 32)))
 (def leaf-32 (pss/new-leaf ints-32))
@@ -67,7 +67,7 @@
 
 (defn profile-search-10k []
   (loop [idx 0
-         result 0]
+         result #?(:melange 0.0 :default 0)]
     (if (= idx 10000)
       result
       (recur
@@ -141,12 +141,12 @@
 
 (defn profile-full-leaf-conj-10k []
   (loop [idx 0
-         result nil]
+         result None]
     (if (= idx 10000)
       result
       (recur
        (inc idx)
-       (pss/node-conj leaf-32 int-compare (+ idx 32) nil)))))
+       (pss/node-conj leaf-32 int-compare (+ idx 32) None)))))
 
 (defn conj-10k []
   (insert-all ints-10k))
@@ -171,29 +171,20 @@
          (inc found)
          found)))))
 
-(defn sum-iterator [iterator result]
-  (if-some [next-iterator
-            (pss/iter-next iterator)]
-    (sum-iterator
-     next-iterator
-     (+ result
-        (pss/iter-first iterator)))
-    (+ result
-       (pss/iter-first iterator))))
-
 (defn next-300k []
-  (if-some [iterator (pss/set-iter set-300k)]
-    (sum-iterator iterator 0)
-    0))
+  (loop [values (seq set-300k)
+         result 0]
+    (if-some [value (first values)]
+      (recur (next values) (+ result value))
+      result)))
 
 (defn doseq-300k []
-  (let [result (atom 0)]
-    (doseq [value set-300k]
-      (reset! result (+ (deref result) value)))
+  (let [result (volatile! 0)]
+    (run! (fn [^:int value] (vswap! result + value)) set-300k)
     (deref result)))
 
 (defn reduce-300k []
-  (pss/set-reduce set-300k (fn [left right] (+ left right)) 0))
+  (reduce + 0 set-300k))
 
 (benchmark "conj-10K" 100 (conj-10k))
 (benchmark "disj-10K" 50 (disj-10k))

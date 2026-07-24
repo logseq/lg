@@ -1,9 +1,7 @@
 #!/usr/bin/env node
-"use strict";
+import fs from "node:fs";
 
-const fs = require("fs");
-
-const runtimeNames = ["lg-native", "lg-melange", "lg-js"];
+const runtimeNames = ["lg-native", "lg-melange"];
 
 function parseResults(output) {
   const results = {};
@@ -64,12 +62,10 @@ function check(output) {
   return failures;
 }
 
-if (require.main === module) {
-  const failures = check(fs.readFileSync(0, "utf8"));
-  if (failures.length > 0) {
-    console.error(failures.join("\n"));
-    process.exit(1);
-  }
+const failures = check(fs.readFileSync(0, "utf8"));
+if (failures.length > 0) {
+  console.error(failures.join("\n"));
+  process.exit(1);
 }
 
-module.exports = { check, parseResults };
+export { check, parseResults };

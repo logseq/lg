@@ -32,17 +32,11 @@
   [^:string namespace ^:fn<fn<unit;unit>;unit> fixture]
   (runtime/register-each-fixture namespace fixture))
 
-(defn invoke-fixture! [^:dynamic fixture ^:fn<unit;unit> run]
-  (if (fn? fixture)
-    (fixture
-     (fn []
-       (clojure.test/invoke-test-body! run)))
-    (do
-      (when-let [before (:before fixture)]
-        (before))
-      (clojure.test/invoke-test-body! run)
-      (when-let [after (:after fixture)]
-        (after)))))
+(defn invoke-fixture!
+  [^:fn<fn<unit;unit>;unit> fixture ^:fn<unit;unit> run]
+  (fixture
+   (fn []
+     (clojure.test/invoke-test-body! run))))
 
 (defmacro is
   ([form]

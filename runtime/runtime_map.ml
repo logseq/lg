@@ -1,13 +1,7 @@
 type 'key node =
   | Empty
-  | Node of {
-      left : 'key node;
-      key : 'key;
-      positions : ('key * int) list;
-      right : 'key node;
-      height : int;
-      size : int;
-    }
+  | Leaf of int * ('key * int) list
+  | Branch of int * 'key node array
 
 type ('key, 'value) t = {
   index : 'key node;
@@ -16,7 +10,7 @@ type ('key, 'value) t = {
 }
 
 type 'key operations = {
-  compare : 'key -> 'key -> int;
+  hash : 'key -> int;
   equal : 'key -> 'key -> bool;
 }
 
@@ -25,86 +19,26 @@ let empty = { index = Empty; entries = Rrbvec.empty; size = 0 }
 let dynamic_key_equal left right =
   Runtime_dynamic.equal left right || Runtime_dynamic.equal right left
 
-let dynamic_key_compare left right =
-  if dynamic_key_equal left right then 0
-  else
-    match Runtime_dynamic.compare left right with
-    | comparison when comparison <> 0 -> comparison
-    | _ -> Int.compare (Runtime_dynamic.hash left) (Runtime_dynamic.hash right)
-    | exception Invalid_argument _ ->
-        Int.compare (Runtime_dynamic.hash left) (Runtime_dynamic.hash right)
-
 let dynamic_operations =
-  { compare = dynamic_key_compare; equal = dynamic_key_equal }
-
-let polymorphic_key_equal left right =
-  if
-    Runtime_dynamic.is_runtime_dynamic left
-    && Runtime_dynamic.is_runtime_dynamic right
-  then dynamic_key_equal (Obj.magic left) (Obj.magic right)
-  else left = right
-
-let polymorphic_key_compare left right =
-  if
-    Runtime_dynamic.is_runtime_dynamic left
-    && Runtime_dynamic.is_runtime_dynamic right
-  then dynamic_key_compare (Obj.magic left) (Obj.magic right)
-  else Stdlib.compare left right
+  { hash = Runtime_dynamic.hash; equal = dynamic_key_equal }
 
 let generic_operations =
-  { compare = polymorphic_key_compare; equal = polymorphic_key_equal }
+  {
+    hash = Runtime_static_value.hash;
+    equal = Runtime_static_value.equal;
+  }
 
-let height = function Empty -> 0 | Node node -> node.height
-let node_count = function Empty -> 0 | Node node -> node.size
+let slot hash shift = (hash lsr shift) land 31
 
-let make left key positions right =
-  Node
-    {
-      left;
-      key;
-      positions;
-      right;
-      height = 1 + max (height left) (height right);
-      size = node_count left + List.length positions + node_count right;
-    }
+let bitmap_position bitmap bit =
+  Runtime_int.popcount_32 (bitmap land (bit - 1))
 
-let balance left key positions right =
-  let left_height = height left in
-  let right_height = height right in
-  if left_height > right_height + 2 then
-    match left with
-    | Empty -> invalid_arg "invalid persistent map balance"
-    | Node left_node ->
-        if height left_node.left >= height left_node.right then
-          make left_node.left left_node.key left_node.positions
-            (make left_node.right key positions right)
-        else (
-          match left_node.right with
-          | Empty -> invalid_arg "invalid persistent map balance"
-          | Node pivot ->
-              make
-                (make left_node.left left_node.key left_node.positions
-                   pivot.left)
-                pivot.key pivot.positions
-                (make pivot.right key positions right))
-  else if right_height > left_height + 2 then
-    match right with
-    | Empty -> invalid_arg "invalid persistent map balance"
-    | Node right_node ->
-        if height right_node.right >= height right_node.left then
-          make
-            (make left key positions right_node.left)
-            right_node.key right_node.positions right_node.right
-        else (
-          match right_node.left with
-          | Empty -> invalid_arg "invalid persistent map balance"
-          | Node pivot ->
-              make
-                (make left key positions pivot.left)
-                pivot.key pivot.positions
-                (make pivot.right right_node.key right_node.positions
-                   right_node.right))
-  else make left key positions right
+let array_insert values index value =
+  let length = Array.length values in
+  Array.init (length + 1) (fun current ->
+      if current < index then values.(current)
+      else if current = index then value
+      else values.(current - 1))
 
 let replace_position equal key position positions =
   let rec replace prefix = function
@@ -116,40 +50,62 @@ let replace_position equal key position positions =
   replace [] positions
 
 let find_position_in operations index key =
-  let rec find = function
+  let key_hash = operations.hash key in
+  let rec find shift = function
     | Empty -> None
-    | Node node ->
-        let comparison = operations.compare key node.key in
-        if comparison < 0 then find node.left
-        else if comparison > 0 then find node.right
+    | Leaf (existing_hash, positions) ->
+        if key_hash <> existing_hash then None
         else
           List.find_opt
             (fun (existing_key, _) -> operations.equal key existing_key)
-            node.positions
+            positions
           |> Option.map snd
+    | Branch (bitmap, children) ->
+        let bit = 1 lsl slot key_hash shift in
+        if bitmap land bit = 0 then None
+        else find (shift + 5) children.(bitmap_position bitmap bit)
   in
-  find index
+  find 0 index
 
 let insert_position operations index key position =
-  let rec insert = function
-    | Empty -> make Empty key [ (key, position) ] Empty
-    | Node node as unchanged ->
-        let comparison = operations.compare key node.key in
-        if comparison < 0 then
-          let left = insert node.left in
-          if left == node.left then unchanged
-          else balance left node.key node.positions node.right
-        else if comparison > 0 then
-          let right = insert node.right in
-          if right == node.right then unchanged
-          else balance node.left node.key node.positions right
+  let key_hash = operations.hash key in
+  let rec insert shift = function
+    | Empty -> Leaf (key_hash, [ (key, position) ])
+    | Leaf (existing_hash, positions) as unchanged ->
+        if key_hash = existing_hash then
+          Leaf
+            (existing_hash, replace_position operations.equal key position positions)
         else
-          let positions =
-            replace_position operations.equal key position node.positions
-          in
-          make node.left node.key positions node.right
+          let existing_slot = slot existing_hash shift in
+          let key_slot = slot key_hash shift in
+          if existing_slot = key_slot then
+            Branch (1 lsl existing_slot, [| insert (shift + 5) unchanged |])
+          else
+            let existing_bit = 1 lsl existing_slot in
+            let key_bit = 1 lsl key_slot in
+            let inserted = Leaf (key_hash, [ (key, position) ]) in
+            let children =
+              if existing_slot < key_slot then [| unchanged; inserted |]
+              else [| inserted; unchanged |]
+            in
+            Branch (existing_bit lor key_bit, children)
+    | Branch (bitmap, children) as unchanged ->
+        let bit = 1 lsl slot key_hash shift in
+        let child_position = bitmap_position bitmap bit in
+        if bitmap land bit = 0 then
+          Branch
+            ( bitmap lor bit,
+              array_insert children child_position
+                (Leaf (key_hash, [ (key, position) ])) )
+        else
+          let child = insert (shift + 5) children.(child_position) in
+          if child == children.(child_position) then unchanged
+          else
+            let updated = Array.copy children in
+            updated.(child_position) <- child;
+            Branch (bitmap, updated)
   in
-  insert index
+  insert 0 index
 
 let assoc_by operations map key value =
   match find_position_in operations map.index key with
@@ -186,49 +142,47 @@ let zipmap_by assoc keys values =
 let zipmap keys values = zipmap_by assoc keys values
 let zipmap_dynamic keys values = zipmap_by assoc_dynamic keys values
 
-let rec remove_min = function
-  | Empty -> invalid_arg "remove_min called on an empty map"
-  | Node { left = Empty; key; positions; right; _ } ->
-      (key, positions, right)
-  | Node node ->
-      let key, positions, left = remove_min node.left in
-      (key, positions, balance left node.key node.positions node.right)
-
-let merge left right =
-  match (left, right) with
-  | Empty, index | index, Empty -> index
-  | _ ->
-      let key, positions, right = remove_min right in
-      balance left key positions right
+let array_remove values index =
+  let length = Array.length values in
+  Array.init (length - 1) (fun current ->
+      if current < index then values.(current) else values.(current + 1))
 
 let remove_position operations index key =
-  let rec remove = function
+  let key_hash = operations.hash key in
+  let rec remove shift = function
     | Empty -> Empty
-    | Node node as unchanged ->
-        let comparison = operations.compare key node.key in
-        if comparison < 0 then
-          let left = remove node.left in
-          if left == node.left then unchanged
-          else balance left node.key node.positions node.right
-        else if comparison > 0 then
-          let right = remove node.right in
-          if right == node.right then unchanged
-          else balance node.left node.key node.positions right
+    | Leaf (existing_hash, positions) as unchanged ->
+        if key_hash <> existing_hash then unchanged
         else
-          let positions =
+          let remaining =
             List.filter
               (fun (existing_key, _) ->
                 not (operations.equal key existing_key))
-              node.positions
+              positions
           in
-          if List.length positions = List.length node.positions then unchanged
+          if List.length remaining = List.length positions then unchanged
+          else if remaining = [] then Empty
+          else Leaf (existing_hash, remaining)
+    | Branch (bitmap, children) as unchanged ->
+        let bit = 1 lsl slot key_hash shift in
+        if bitmap land bit = 0 then unchanged
+        else
+          let child_position = bitmap_position bitmap bit in
+          let child = remove (shift + 5) children.(child_position) in
+          if child == children.(child_position) then unchanged
           else
-            match positions with
-            | [] -> merge node.left node.right
-            | (representative, _) :: _ ->
-                make node.left representative positions node.right
+            match child with
+            | Empty ->
+                if Array.length children = 1 then Empty
+                else
+                  Branch
+                    (bitmap land lnot bit, array_remove children child_position)
+            | Leaf _ | Branch _ ->
+                let updated = Array.copy children in
+                updated.(child_position) <- child;
+                Branch (bitmap, updated)
   in
-  remove index
+  remove 0 index
 
 let dissoc_by operations map key =
   match find_position_in operations map.index key with
@@ -271,6 +225,10 @@ let get_option_default_dynamic map key default =
 let mem map key = Option.is_some (get_option map key)
 let mem_dynamic map key = Option.is_some (get_option_dynamic map key)
 
+let with_record_metadata map key metadata =
+  if Runtime_dynamic.is_nil metadata then dissoc map key
+  else assoc map key metadata
+
 let select_keys_by find assoc map keys =
   Seq.fold_left
     (fun selected key ->
@@ -291,6 +249,9 @@ let fold_left fn accumulator map =
     (fun accumulator entry ->
       match entry with Some entry -> fn accumulator entry | None -> accumulator)
     accumulator map.entries
+
+let merge left right =
+  fold_left (fun result (key, value) -> assoc result key value) left right
 
 let to_list map =
   fold_left (fun entries entry -> entry :: entries) [] map |> List.rev

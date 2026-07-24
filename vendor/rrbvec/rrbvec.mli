@@ -160,6 +160,9 @@ val of_list : 'a list -> 'a t
 (** Return the vector values as a list in order. *)
 val to_list : 'a t -> 'a list
 
+(** Return the vector values as a lazy sequence in order. *)
+val to_seq : 'a t -> 'a Seq.t
+
 (** Build a vector containing the array values in order. The input array is
     copied as needed; later mutations to the array do not affect the vector. *)
 val of_array : 'a array -> 'a t

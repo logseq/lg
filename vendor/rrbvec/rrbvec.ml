@@ -1236,6 +1236,50 @@ let prepend_array v values =
 
 let to_list v = fold_right (fun value acc -> value :: acc) v []
 
+type 'a seq_frame = {
+  seq_children : 'a node array;
+  seq_next_child : int;
+}
+
+let rec seq_array values index rest () =
+  if index = Array.length values then rest ()
+  else
+    Seq.Cons
+      (Array.unsafe_get values index, seq_array values (index + 1) rest)
+
+and seq_node node stack tail () =
+  match node with
+  | Empty -> seq_stack stack tail ()
+  | Leaf values -> seq_array values 0 (seq_stack stack tail) ()
+  | Branch branch ->
+      let children = branch.children in
+      let length = Array.length children in
+      if length = 0 then seq_stack stack tail ()
+      else
+        let stack =
+          if length = 1 then stack
+          else { seq_children = children; seq_next_child = 1 } :: stack
+        in
+        seq_node (Array.unsafe_get children 0) stack tail ()
+
+and seq_stack stack tail () =
+  match stack with
+  | [] -> seq_array tail 0 Seq.empty ()
+  | frame :: rest ->
+      let child =
+        Array.unsafe_get frame.seq_children frame.seq_next_child
+      in
+      let seq_next_child = frame.seq_next_child + 1 in
+      let stack =
+        if seq_next_child = Array.length frame.seq_children then rest
+        else { frame with seq_next_child } :: rest
+      in
+      seq_node child stack tail ()
+
+let to_seq = function
+  | Empty_vector -> Seq.empty
+  | Vector v -> seq_array v.head 0 (seq_node v.root [] v.tail)
+
 let reverse_array values =
   let length = Array.length values in
   if length = 0 then [||]

@@ -1,6 +1,17 @@
 type 'a t = 'a Seq.t
 
 let memoize sequence = Seq.memoize sequence
+
+let rec unfold_memoized step state =
+  let node =
+    lazy
+      (match step state with
+      | None -> Seq.Nil
+      | Some (value, next_state) ->
+          Seq.Cons (value, unfold_memoized step next_state))
+  in
+  fun () -> Lazy.force node
+
 let of_list values = values |> List.to_seq |> memoize
 let of_vector values = values |> Rrbvec.to_list |> of_list
 let of_array values = values |> Array.to_seq |> memoize
@@ -118,16 +129,16 @@ let cycle values =
       memoize loop
 
 let range start step =
-  let rec next value () = Seq.Cons (value, next (Int64.add value step)) in
+  let rec next value () = Seq.Cons (value, next (value + step)) in
   next start |> memoize
 
 let range_until start stop step =
-  if step = 0L then invalid_arg "range step cannot be 0"
+  if step = 0 then invalid_arg "range step cannot be 0"
   else
     let rec next value () =
-      if (step > 0L && value >= stop) || (step < 0L && value <= stop) then
+      if (step > 0 && value >= stop) || (step < 0 && value <= stop) then
         Seq.Nil
-      else Seq.Cons (value, next (Int64.add value step))
+      else Seq.Cons (value, next (value + step))
     in
     next start |> memoize
 
@@ -138,6 +149,11 @@ let first sequence =
 
 let first_opt sequence =
   match sequence () with Seq.Nil -> None | Seq.Cons (value, _) -> Some value
+
+let uncons sequence =
+  match sequence () with
+  | Seq.Nil -> None
+  | Seq.Cons (value, rest) -> Some (value, rest)
 
 let second sequence =
   match sequence () with

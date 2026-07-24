@@ -12,7 +12,7 @@ type binding = {
   forward_declared : bool;
   constant_keyword : string option;
   false_non_nil_names : string list;
-  dynamic_var : bool;
+  dynamically_bindable : bool;
 }
 
 and host_reference =
@@ -37,7 +37,7 @@ let typed_ir ty semantic_expr =
 let binding ?(row_param_types = []) ?host_reference ?protocol_id
     ?return_param_index ?(overload_targets = [])
     ?(overload_row_param_types = []) ?(forward_declared = false)
-    ?constant_keyword ?(false_non_nil_names = []) ?(dynamic_var = false)
+    ?constant_keyword ?(false_non_nil_names = []) ?(dynamically_bindable = false)
     ocaml_name ty =
   {
     ocaml_name;
@@ -51,7 +51,7 @@ let binding ?(row_param_types = []) ?host_reference ?protocol_id
     forward_declared;
     constant_keyword;
     false_non_nil_names;
-    dynamic_var;
+    dynamically_bindable;
   }
 
 let seqable_constraint_name = "__lg_seqable_constraint"
@@ -70,7 +70,7 @@ let optional_seqable_constraint element_ty value_ty =
 let optional_sequential_constraint element_ty value_ty =
   TOcaml_app (optional_sequential_constraint_name, [ element_ty; value_ty ])
 
-let dynamic_constraint_name = "__lg_dynamic_constraint"
+let dynamic_constraint_name = "__lg_open_value_constraint"
 let dynamic_constraint capability =
   TOcaml_app (dynamic_constraint_name, [ capability ])
 
@@ -80,6 +80,29 @@ let dynamic_constraint_info = function
   | _ -> None
 
 let is_dynamic ty = Option.is_some (dynamic_constraint_info ty)
+
+let rec contains_dynamic = function
+  | ty when is_dynamic ty -> true
+  | TNullable ty | TArray ty | TRef ty | TList ty | TVector ty | TSet ty
+  | TSeq ty ->
+      contains_dynamic ty
+  | TOcaml_app (_, arguments) | TTuple arguments ->
+      List.exists contains_dynamic arguments
+  | TFn (parameters, return_ty) ->
+      List.exists contains_dynamic (return_ty :: parameters)
+  | TOverloaded_fn arities ->
+      List.exists
+        (fun arity ->
+          List.exists contains_dynamic (arity.return_ty :: arity.fixed_params)
+          || Option.fold ~none:false ~some:contains_dynamic arity.rest_param)
+        arities
+  | TRecord fields ->
+      List.exists (fun (field : field) -> contains_dynamic field.ty) fields
+  | TNamed_record record ->
+      List.exists contains_dynamic record.type_arguments
+  | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
+  | TBool | TUnit | TNil | TUnknown | TVar _ | TOcaml _ ->
+      false
 
 let normalize_nullable ty =
   let rec payload = function
@@ -97,37 +120,6 @@ let weak_type value_ty = TOcaml_app (weak_type_name, [ value_ty ])
 let weak_element = function
   | TOcaml_app (name, [ value_ty ]) when name = weak_type_name -> Some value_ty
   | _ -> None
-
-let supports_structural_dynamic_packing ty =
-  let rec supports visited = function
-    | TInt | TFloat | TChar | TString | TSymbol | TKeyword | TBool | TNil
-    | TUnknown | TVar _ ->
-        true
-    | ty when is_dynamic ty -> true
-    | TNullable ty | TArray ty | TList ty | TVector ty | TSet ty | TSeq ty ->
-        supports visited ty
-    | TOcaml_app (("option" | "list" | "array" | "Seq.t" | "Seq"), [ ty ]) ->
-        supports visited ty
-    | TOcaml_app ("Lg_runtime.Runtime_reify.t", [ _ ]) -> true
-    | TTuple items -> List.for_all (supports visited) items
-    | TFn (parameters, return_ty) ->
-        List.for_all (supports visited) (return_ty :: parameters)
-    | TRecord fields ->
-        List.for_all
-          (fun (field : field) -> supports visited field.ty)
-          fields
-    | TNamed_record record ->
-        if List.exists (Type_id.equal record.type_id) visited then false
-        else
-          let visited = record.type_id :: visited in
-          List.for_all
-            (fun (field : field) -> supports visited field.ty)
-            record.fields
-    | TRef _ | TOverloaded_fn _ | TRegex | TMap_keys | TUnit | TOcaml _
-    | TOcaml_app _ ->
-        false
-  in
-  supports [] ty
 
 let protocol_constraint_prefix = "__lg_protocol_constraint:"
 let guarded_protocol_constraint_prefix = "__lg_guarded_protocol_constraint:"
@@ -283,6 +275,7 @@ let rec equal left right =
   match (left, right) with
   | TUnknown, TUnknown -> true
   | TVar left, TVar right -> left = right
+  | TInt, TOcaml "int" | TOcaml "int", TInt -> true
   | TInt, TInt
   | TFloat, TFloat
   | TChar, TChar
@@ -422,6 +415,7 @@ let classify_assignability ~expected ~actual =
 
 let rec assignable ~policy ~expected ~actual =
   match (expected, actual) with
+  | expected, actual when is_dynamic expected <> is_dynamic actual -> false
   | TNullable _, TNil -> true
   | TNullable expected, TNullable actual ->
       assignable ~policy ~expected ~actual
@@ -439,7 +433,10 @@ let rec assignable ~policy ~expected ~actual =
   | TNamed_record expected, TNamed_record actual
     when expected.type_name = actual.type_name ->
       equal (TNamed_record expected) (TNamed_record actual)
-      || policy = Host_boundary
+      ||
+      (policy = Host_boundary
+      && not expected.nominal
+      && not actual.nominal)
   | TNamed_record expected, TRecord actual when policy = Host_boundary ->
       let extensible =
         List.exists
@@ -543,11 +540,34 @@ let rec source_name = function
                ^ source_name arity.return_ty)
         |> String.concat "; ")
       ^ ">"
-  | TRecord _ -> "map"
-  | TNamed_record _ -> "map"
+  | TRecord fields ->
+      let field_name (field : field) =
+        field.keyword ^ ":" ^ source_name field.ty
+      in
+      "record<{" ^ String.concat "," (List.map field_name fields) ^ "}>"
+  | TNamed_record record when not record.nominal ->
+      source_name (TRecord record.fields)
+  | TNamed_record record ->
+      record.type_name
+      ^
+      match record.type_arguments with
+      | [] -> ""
+      | arguments ->
+          "<" ^ String.concat "," (List.map source_name arguments) ^ ">"
+
+let ocaml_record_type_name name =
+  let local_name separator name =
+    match String.rindex_opt name separator with
+    | Some index when index < String.length name - 1 ->
+        String.sub name (index + 1) (String.length name - index - 1)
+    | _ -> name
+  in
+  if String.contains name ':' || String.contains name '/' then
+    name |> local_name ':' |> local_name '/' |> String.uncapitalize_ascii
+  else name
 
 let rec ocaml_name = function
-  | TInt -> "int64"
+  | TInt -> "int"
   | TFloat -> "float"
   | TChar -> "char"
   | TString -> "string"
@@ -611,13 +631,14 @@ let rec ocaml_name = function
   | TOverloaded_fn arities -> ocaml_name (overloaded_storage_type arities)
   | TRecord _ -> "record"
   | TNamed_record record -> (
+      let type_name = ocaml_record_type_name record.type_name in
       match record.type_arguments with
-      | [] -> record.type_name
-      | [ argument ] -> ocaml_name argument ^ " " ^ record.type_name
+      | [] -> type_name
+      | [ argument ] -> ocaml_name argument ^ " " ^ type_name
       | arguments ->
           "("
           ^ String.concat ", " (List.map ocaml_name arguments)
-          ^ ") " ^ record.type_name)
+          ^ ") " ^ type_name)
 
 and overloaded_storage_type = function
   | [] -> TUnit
@@ -658,11 +679,18 @@ and set_module_name = function
   | TVector (TVector (TRecord _)) -> Ok "Lg_runtime.Runtime_poly_set"
   | TList (TRecord _) -> Ok "Lg_runtime.Runtime_poly_set"
   | TRecord _ -> Ok "Lg_runtime.Runtime_poly_set"
+  | TOcaml name when String.starts_with ~prefix:"__lg_record:" name ->
+      Ok "Lg_runtime.Runtime_poly_set"
+  | TOcaml _ -> Ok "Lg_runtime.Runtime_poly_set"
   | TNamed_record { nominal = false; _ } ->
       Ok "Lg_runtime.Runtime_poly_set"
   | TNullable (TNamed_record record)
   | TOcaml_app ("option", [ TNamed_record record ]) ->
       Ok (record.set_module_name ^ "_nullable")
+  | TNullable inner | TOcaml_app ("option", [ inner ]) ->
+      Result.map
+        (fun _ -> "Lg_runtime.Runtime_poly_set")
+        (set_module_name inner)
   | TNamed_record record -> Ok record.set_module_name
   | ty -> Error.error ("sets require a generated comparator for " ^ source_name ty)
 
@@ -699,9 +727,6 @@ let nominal_tag_name (record : named_record) =
           (String.length record.type_name - separator - 1)
       in
       module_path ^ ".Lg_nominal_" ^ local_name
-
-let dynamic_packer_key (record : named_record) =
-  Type_id.to_string record.type_id
 
 let rec qualify_module_type module_path ty =
   let qualify_name name =

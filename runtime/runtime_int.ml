@@ -9,13 +9,33 @@ let hash_combine seed hash_value =
   in
   to_int (logxor seed mixed)
 
-let hash_combine_int64 seed hash_value =
-  Int64.of_int
-    (hash_combine (Int64.to_int seed) (Int64.to_int hash_value))
+let popcount_32 value =
+  let value = value - ((value lsr 1) land 0x55555555) in
+  let value = (value land 0x33333333) + ((value lsr 2) land 0x33333333) in
+  let value = (value + (value lsr 4)) land 0x0f0f0f0f in
+  ((value * 0x01010101) lsr 24) land 0xff
+
+let clojure_mod left right =
+  let remainder = left mod right in
+  if remainder = 0 || (remainder > 0) = (right > 0) then remainder
+  else remainder + right
+
+let int_quot = ( / )
+let int_rem = ( mod )
+let int_inc value = value + 1
+let int_dec value = value - 1
+let int_max = Stdlib.max
+let int_min = Stdlib.min
+let int_zero value = value = 0
+let int_positive value = value > 0
+let int_negative value = value < 0
+let int_even value = value mod 2 = 0
+let int_odd value = value mod 2 <> 0
 
 let format_hex value width =
-  if width < 0L || width > Int64.of_int Sys.max_string_length then
+  if width < 0 || width > Sys.max_string_length then
     invalid_arg "hex width is out of range";
+  let value = Int64.of_int value in
   let digits = "0123456789abcdef" in
   let rec encode value encoded =
     if value = 0L then encoded
@@ -25,5 +45,5 @@ let format_hex value width =
   in
   let encoded = if value = 0L then [ '0' ] else encode value [] in
   let encoded = String.of_seq (List.to_seq encoded) in
-  let padding = max 0 (Int64.to_int width - String.length encoded) in
+  let padding = max 0 (width - String.length encoded) in
   String.make padding '0' ^ encoded

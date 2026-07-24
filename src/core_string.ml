@@ -12,10 +12,10 @@ let bindings =
     binding "capitalize" (runtime "capitalize") (fn [ TString ] TString);
     binding "ends-with?" (runtime "ends_with") (fn [ TString; TString ] TBool);
     binding "includes?" (runtime "includes") (fn [ TString; TString ] TBool);
-    binding "index-of" (runtime "index_of_int64") (fn [ TString; TString ] TInt);
+    binding "index-of" (runtime "index_of_int") (fn [ TString; TString ] TInt);
     binding "join" (runtime "join")
       (fn [ TString; Types.seqable_constraint TString ] TString);
-    binding "last-index-of" (runtime "last_index_of_int64")
+    binding "last-index-of" (runtime "last_index_of_int")
       (fn [ TString; TString ] TInt);
     binding "lower-case" "String.lowercase_ascii" (fn [ TString ] TString);
     binding "re-quote-replacement" (runtime "identity") (fn [ TString ] TString);

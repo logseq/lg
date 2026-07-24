@@ -15,8 +15,7 @@ fi
 if [ "${BENCH_SKIP_BUILD:-0}" != "1" ]; then
   dune build --profile release \
     test/persistent_sorted_set_benchmark_native.exe \
-    @test/persistent-sorted-set-benchmark-melange \
-    test/persistent_sorted_set_benchmark_jsoo.bc.js
+    @test/persistent-sorted-set-benchmark-melange
 fi
 
 compile_options="{:target :nodejs
@@ -46,8 +45,6 @@ output="$({
     "$repo_root/_build/default/test/persistent_sorted_set_benchmark_native.exe"
   run lg-melange node \
     "$repo_root/_build/default/test/persistent-sorted-set-benchmark-melange/test/persistent_sorted_set_benchmark_melange.js"
-  run lg-js node \
-    "$repo_root/_build/default/test/persistent_sorted_set_benchmark_jsoo.bc.js"
   run upstream-cljs node "$work_dir/upstream.js"
 })"
 
