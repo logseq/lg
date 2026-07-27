@@ -424,6 +424,20 @@ arity	datascript.inline/update	4	fixed
 arity	datascript.inline/update	5	fixed
 arity	datascript.inline/update	6	fixed
 arity	datascript.inline/update	6	variadic
+arity	datascript.js/conn_from_datoms	1	fixed
+arity	datascript.js/conn_from_datoms	2	fixed
+arity	datascript.js/create_conn	0	variadic
+arity	datascript.js/datoms	2	variadic
+arity	datascript.js/db	1	fixed
+arity	datascript.js/db_with	2	fixed
+arity	datascript.js/empty_db	0	variadic
+arity	datascript.js/entity	2	fixed
+arity	datascript.js/index_range	4	fixed
+arity	datascript.js/init_db	1	variadic
+arity	datascript.js/resolve_tempid	2	fixed
+arity	datascript.js/seek_datoms	2	variadic
+arity	datascript.js/squuid	0	fixed
+arity	datascript.js/squuid_time_millis	1	fixed
 arity	datascript.lru/ICache/-get	3	fixed
 arity	datascript.lru/assoc-lru	3	fixed
 arity	datascript.lru/cache	1	fixed
@@ -819,6 +833,13 @@ arity	datascript.pull-parser/with-limit	2	fixed
 arity	datascript.pull-parser/with-pattern	2	fixed
 arity	datascript.pull-parser/with-recursion	2	fixed
 arity	datascript.pull-parser/with-xform	2	fixed
+arity	datascript.query-v3/arange	2	fixed
+arity	datascript.query-v3/concatv	0	variadic
+arity	datascript.query-v3/has?	2	fixed
+arity	datascript.query-v3/mapa	2	fixed
+arity	datascript.query-v3/subarr	3	fixed
+arity	datascript.query-v3/zip	2	fixed
+arity	datascript.query-v3/zip	2	variadic
 arity	datascript.query/-aggregate	3	fixed
 arity	datascript.query/-call-fn	4	fixed
 arity	datascript.query/-collect	2	fixed
@@ -1347,6 +1368,28 @@ var	datascript.impl.entity/touch-components
 var	datascript.impl.entity/touch-entity
 var	datascript.inline/assoc
 var	datascript.inline/update
+var	datascript.js/conn_from_datoms
+var	datascript.js/conn_from_db
+var	datascript.js/create_conn
+var	datascript.js/datoms
+var	datascript.js/db
+var	datascript.js/db_with
+var	datascript.js/empty_db
+var	datascript.js/entity
+var	datascript.js/entity_db
+var	datascript.js/filter
+var	datascript.js/from_serializable
+var	datascript.js/index_range
+var	datascript.js/init_db
+var	datascript.js/is_filtered
+var	datascript.js/listen
+var	datascript.js/resolve_tempid
+var	datascript.js/seek_datoms
+var	datascript.js/serializable
+var	datascript.js/squuid
+var	datascript.js/squuid_time_millis
+var	datascript.js/touch
+var	datascript.js/unlisten
 var	datascript.lru/ICache
 var	datascript.lru/assoc-lru
 var	datascript.lru/cache
@@ -1739,8 +1782,16 @@ var	datascript.pull-parser/with-limit
 var	datascript.pull-parser/with-pattern
 var	datascript.pull-parser/with-recursion
 var	datascript.pull-parser/with-xform
+var	datascript.query-v3/arange
+var	datascript.query-v3/concatv
+var	datascript.query-v3/has?
+var	datascript.query-v3/lru-cache-size
+var	datascript.query-v3/mapa
+var	datascript.query-v3/subarr
+var	datascript.query-v3/zip
 var	datascript.query/*implicit-source*
 var	datascript.query/*lookup-attrs*
+var	datascript.query/*query-cache*
 var	datascript.query/-aggregate
 var	datascript.query/-call-fn
 var	datascript.query/-collect

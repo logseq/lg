@@ -141,12 +141,72 @@ do
   expect_text "the LG manifest preserves query helper: $query_helper_entry" \
     "$lg_api_manifest" "^$query_helper_entry$"
 done
+for query_v3_entry in \
+  'var	datascript.query-v3/lru-cache-size' \
+  'var	datascript.query-v3/mapa' \
+  'arity	datascript.query-v3/mapa	2	fixed' \
+  'var	datascript.query-v3/arange' \
+  'arity	datascript.query-v3/arange	2	fixed' \
+  'var	datascript.query-v3/subarr' \
+  'arity	datascript.query-v3/subarr	3	fixed' \
+  'var	datascript.query-v3/concatv' \
+  'arity	datascript.query-v3/concatv	0	variadic' \
+  'var	datascript.query-v3/zip' \
+  'arity	datascript.query-v3/zip	2	fixed' \
+  'arity	datascript.query-v3/zip	2	variadic' \
+  'var	datascript.query-v3/has\?' \
+  'arity	datascript.query-v3/has\?	2	fixed'
+do
+  expect_text "the LG manifest preserves query-v3 helper: $query_v3_entry" \
+    "$lg_api_manifest" "^$query_v3_entry$"
+done
 expect_text "the LG manifest preserves query helper: *implicit-source*" \
   "$lg_api_manifest" '^var	datascript\.query/\*implicit-source\*$'
 expect_text "the LG manifest preserves query helper: *lookup-attrs*" \
   "$lg_api_manifest" '^var	datascript\.query/\*lookup-attrs\*$'
 expect_text "the LG manifest preserves query helper: *query-cache*" \
   "$lg_api_manifest" '^var	datascript\.query/\*query-cache\*$'
+for js_adapter_entry in \
+  'var	datascript.js/serializable' \
+  'var	datascript.js/from_serializable' \
+  'var	datascript.js/touch' \
+  'var	datascript.js/entity_db' \
+  'var	datascript.js/filter' \
+  'var	datascript.js/is_filtered' \
+  'var	datascript.js/conn_from_db' \
+  'var	datascript.js/conn_from_datoms' \
+  'arity	datascript.js/conn_from_datoms	1	fixed' \
+  'arity	datascript.js/conn_from_datoms	2	fixed' \
+  'var	datascript.js/create_conn' \
+  'arity	datascript.js/create_conn	0	variadic' \
+  'var	datascript.js/datoms' \
+  'arity	datascript.js/datoms	2	variadic' \
+  'var	datascript.js/db' \
+  'arity	datascript.js/db	1	fixed' \
+  'var	datascript.js/db_with' \
+  'arity	datascript.js/db_with	2	fixed' \
+  'var	datascript.js/empty_db' \
+  'arity	datascript.js/empty_db	0	variadic' \
+  'var	datascript.js/entity' \
+  'arity	datascript.js/entity	2	fixed' \
+  'var	datascript.js/init_db' \
+  'arity	datascript.js/init_db	1	variadic' \
+  'var	datascript.js/index_range' \
+  'arity	datascript.js/index_range	4	fixed' \
+  'var	datascript.js/listen' \
+  'var	datascript.js/unlisten' \
+  'var	datascript.js/resolve_tempid' \
+  'arity	datascript.js/resolve_tempid	2	fixed' \
+  'var	datascript.js/squuid' \
+  'arity	datascript.js/squuid	0	fixed' \
+  'var	datascript.js/squuid_time_millis' \
+  'arity	datascript.js/squuid_time_millis	1	fixed' \
+  'var	datascript.js/seek_datoms' \
+  'arity	datascript.js/seek_datoms	2	variadic'
+do
+  expect_text "the LG manifest preserves typed JS adapter: $js_adapter_entry" \
+    "$lg_api_manifest" "^$js_adapter_entry$"
+done
 for inline_entry in \
   'var	datascript.inline/assoc' \
   'arity	datascript.inline/assoc	3	fixed' \

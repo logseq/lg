@@ -16,11 +16,13 @@
   datascript/upstream/pull_api.cljc
   datascript/lg/query_types.cljc
   datascript/lg/query.cljc
+  datascript/lg/query_v3.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/storage_file.cljc
   datascript/upstream/serialize.cljc
   datascript/upstream/conn.cljc
   datascript/upstream/core.cljc
+  datascript/lg/js.cljc
   ../test_runner/clojure/test.cljc
   ../test_runner/clojure/test_native.cljc
   datascript/upstream_test_support/datascript/test/core.cljc
@@ -55,11 +57,13 @@
    %{dep:datascript/upstream/pull_api.cljc}
    %{dep:datascript/lg/query_types.cljc}
    %{dep:datascript/lg/query.cljc}
+   %{dep:datascript/lg/query_v3.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/storage_file.cljc}
    %{dep:datascript/upstream/serialize.cljc}
    %{dep:datascript/upstream/conn.cljc}
    %{dep:datascript/upstream/core.cljc}
+   %{dep:datascript/lg/js.cljc}
    %{dep:../test_runner/clojure/test.cljc}
    %{dep:../test_runner/clojure/test_native.cljc}
    %{dep:datascript/upstream_test_support/datascript/test/core.cljc}
@@ -87,10 +91,12 @@
   datascript/upstream/pull_api.cljc
   datascript/lg/query_types.cljc
   datascript/lg/query.cljc
+  datascript/lg/query_v3.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/serialize.cljc
   datascript/upstream/conn.cljc
   datascript/upstream/core.cljc
+  datascript/lg/js.cljc
   ../test_runner/clojure/test.cljc
   ../test_runner/clojure/test_melange.cljc
   datascript/upstream_test_support/datascript/test/cljs.cljc
@@ -123,10 +129,12 @@
    %{dep:datascript/upstream/pull_api.cljc}
    %{dep:datascript/lg/query_types.cljc}
    %{dep:datascript/lg/query.cljc}
+   %{dep:datascript/lg/query_v3.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/serialize.cljc}
    %{dep:datascript/upstream/conn.cljc}
    %{dep:datascript/upstream/core.cljc}
+   %{dep:datascript/lg/js.cljc}
    %{dep:../test_runner/clojure/test.cljc}
    %{dep:../test_runner/clojure/test_melange.cljc}
    %{dep:datascript/upstream_test_support/datascript/test/cljs.cljc}

@@ -24,6 +24,7 @@ sh script/check_datascript_api_manifest.sh \
 | Pinned upstream file | LG file |
 |---|---|
 | `src/datascript/query.cljc` | `test/datascript/lg/query.cljc` |
+| `src/datascript/query_v3.cljc` | `test/datascript/lg/query_v3.cljc` |
 | `src/datascript/db.cljc` | `test/datascript/upstream/db.cljc` |
 | `src/datascript/pull_api.cljc` | `test/datascript/upstream/pull_api.cljc` |
 | `src/datascript/impl/entity.cljc` | `test/datascript/upstream/entity.cljc` |
@@ -34,6 +35,7 @@ sh script/check_datascript_api_manifest.sh \
 | `src/datascript/serialize.cljc` | `test/datascript/upstream/serialize.cljc` |
 | `src/datascript/pull_parser.cljc` | `test/datascript/upstream/pull_parser.cljc` |
 | `src/datascript/built_ins.cljc` | `test/datascript/upstream/built_ins.cljc` |
+| `src/datascript/js.cljs` | `test/datascript/lg/js.cljc` |
 
 Persistent sorted set is maintained in the same repository under
 `datascript/me/tonsky/`; it is a typed port of the corresponding upstream

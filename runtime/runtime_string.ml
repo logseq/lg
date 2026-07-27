@@ -203,6 +203,30 @@ let parse_int_radix source radix =
   let result = loop 0 start in
   if negative then -result else result
 
+let parse_float_radix source radix =
+  if radix < 2 || radix > 36 then
+    invalid_arg "radix must be between 2 and 36";
+  let source = String.trim source in
+  if source = "" then invalid_arg "cannot parse an empty number";
+  let negative, start =
+    match source.[0] with
+    | '-' -> (true, 1)
+    | '+' -> (false, 1)
+    | _ -> (false, 0)
+  in
+  if start = String.length source then invalid_arg "number requires digits";
+  let radix = Float.of_int radix in
+  let rec loop result index =
+    if index = String.length source then result
+    else
+      let digit = digit_value source.[index] in
+      if digit < 0 || Float.of_int digit >= radix then
+        invalid_arg "invalid digit for radix"
+      else loop ((result *. radix) +. Float.of_int digit) (index + 1)
+  in
+  let result = loop 0.0 start in
+  if negative then -.result else result
+
 let int_to_string_radix value radix =
   if radix < 2 || radix > 36 then
     invalid_arg "radix must be between 2 and 36";

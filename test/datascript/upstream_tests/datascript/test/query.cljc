@@ -7,6 +7,7 @@
     [datascript.lg.query-types :as query-types]
     [datascript.lru :as lru]
     [datascript.parser :as parser]
+    [datascript.query-v3 :as query-v3]
     [datascript.test.core :as tdc]))
 
 (defn ^:Datascript_runtime.Data_value.t query-form-vector
@@ -219,6 +220,36 @@
       (lru/-get
        query/*query-cache* query-form parse-query)
       (is (= 2 @parse-calls)))))
+
+(deftest test-query-v3-public-collection-helpers
+  (is (= [2 4 6] (vec (query-v3/mapa #(* 2 %) [1 2 3]))))
+  (is (= [] (vec (query-v3/mapa inc []))))
+  (is (= [2 3 4] (vec (query-v3/arange 2 5))))
+  (is (= [] (vec (query-v3/arange 3 3))))
+  (let [values (to-array [1 2 3 4])]
+    (is (= [2 3] (vec (query-v3/subarr values 1 3))))
+    (is (= [] (vec (query-v3/subarr values 2 2)))))
+  (let [one (Datascript_runtime.Data_value.Int 1)
+        two (Datascript_runtime.Data_value.Int 2)
+        three (Datascript_runtime.Data_value.Int 3)
+        four (Datascript_runtime.Data_value.Int 4)
+        five (Datascript_runtime.Data_value.Int 5)
+        six (Datascript_runtime.Data_value.Int 6)]
+    (is (= [] (query-v3/concatv)))
+    (is
+     (=
+      [one two three four]
+      (query-v3/concatv [one two] [three] [four])))
+    (is
+     (=
+      [[one four] [two five]]
+      (vec (query-v3/zip [one two three] [four five]))))
+    (is
+     (=
+      [[one three five] [two four six]]
+      (vec (query-v3/zip [one two] [three four] [five six])))))
+  (is (= (Some true) (query-v3/has? [1 2 3] 2)))
+  (is (= nil (query-v3/has? [1 2 3] 4))))
 
 (deftest test-public-tuple-key-helpers
   (let [attrs (query-types/index-attrs ["?x" "?y"])
