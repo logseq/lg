@@ -118,6 +118,14 @@
      0
      arguments))))
 
+(defn ^:option<Datascript_runtime.Data_value.t> even-query-argument
+  [^:vector<datascript.lg.query-types/result> arguments]
+  (if-some [argument (first arguments)]
+    (Some
+     (Datascript_runtime.Data_value.Bool
+      (= 0 (mod (query-result-int argument) 2))))
+    None))
+
 (defn ^:int query-call-int
   [^:option<Datascript_runtime.Data_value.t> value]
   (match value
@@ -889,6 +897,197 @@
            (vec (query-v3/-symbols (nth relations 0)))))
     (is (= [[3 300] [3 301]]
            (query-v3-int-rows (nth relations 0))))))
+
+(deftest test-query-v3-resolve-predicate-constant-only
+  (let [context
+        (query-v3/context-v3
+         []
+         {"?limit" (query-int-result 2)})
+        true-clause
+        (parser/static-predicate-clause
+         ">"
+         [(parser/variable-argument "?limit")
+          (parser/constant-argument
+           (Datascript_runtime.Data_value.Int 1))])
+        false-clause
+        (parser/static-predicate-clause
+         "<"
+         [(parser/variable-argument "?limit")
+          (parser/constant-argument
+           (Datascript_runtime.Data_value.Int 1))])]
+    (is (not
+         (query-v3-empty-context?
+          (query-v3/resolve-predicate context true-clause))))
+    (is
+     (query-v3-empty-context?
+      (query-v3/resolve-predicate context false-clause)))))
+
+(deftest test-query-v3-resolve-predicate-single-relation
+  (let [related
+        (query-v3/array-rel
+         ["?x"]
+         [(query-int-row [1])
+          (query-int-row [2])
+          (query-int-row [3])])
+        unrelated
+        (query-v3/array-rel
+         ["?tag"]
+         [(query-int-row [10])
+          (query-int-row [20])])
+        context (query-v3/context-v3 [related unrelated] {})
+        clause
+        (parser/static-predicate-clause
+         ">"
+         [(parser/variable-argument "?x")
+          (parser/constant-argument
+           (Datascript_runtime.Data_value.Int 1))])
+        resolved (query-v3/resolve-predicate context clause)
+        relations (query-v3-context-relations resolved)]
+    (is (= 2 (count relations)))
+    (is (= ["?tag"] (vec (query-v3/-symbols (nth relations 0)))))
+    (is (= [[10] [20]] (query-v3-int-rows (nth relations 0))))
+    (is (= ["?x"] (vec (query-v3/-symbols (nth relations 1)))))
+    (is (= [[2] [3]] (query-v3-int-rows (nth relations 1))))))
+
+(deftest test-query-v3-resolve-predicate-multiple-relations
+  (let [left
+        (query-v3/array-rel
+         ["?x"]
+         [(query-int-row [1])
+          (query-int-row [3])])
+        right
+        (query-v3/array-rel
+         ["?y"]
+         [(query-int-row [2])
+          (query-int-row [4])])
+        context (query-v3/context-v3 [left right] {})
+        clause
+        (parser/static-predicate-clause
+         "<"
+         [(parser/variable-argument "?x")
+          (parser/variable-argument "?y")])
+        resolved (query-v3/resolve-predicate context clause)
+        relations (query-v3-context-relations resolved)]
+    (is (= 1 (count relations)))
+    (is (= ["?x" "?y"]
+           (vec (query-v3/-symbols (nth relations 0)))))
+    (is (= [[1 2] [1 4] [3 4]]
+           (query-v3-int-rows (nth relations 0))))))
+
+(deftest test-query-v3-resolve-predicate-database-source
+  (let [database
+        (db/database-view
+         (d/db-with
+          (d/empty-db)
+          [[:db/add 2 :age 42]]))
+        entities
+        (query-v3/array-rel
+         ["?e"]
+         [(query-int-row [1])
+          (query-int-row [2])
+          (query-int-row [3])])
+        context
+        (query-v3/context-v3
+         [entities]
+         {}
+         {"$" (query-types/database-source database)})
+        clause
+        (parser/static-predicate-clause
+         "missing?"
+         [(parser/source-argument "$")
+          (parser/variable-argument "?e")
+          (parser/constant-argument
+           (Datascript_runtime.Data_value.Keyword ":age"))])
+        resolved (query-v3/resolve-predicate context clause)
+        relations (query-v3-context-relations resolved)]
+    (is (= 1 (count relations)))
+    (is (= [[1] [3]]
+           (query-v3-int-rows (nth relations 0))))))
+
+(deftest test-query-v3-resolve-predicate-variable-callable
+  (let [callable
+        (query-types/callable even-query-argument)
+        values
+        (query-v3/array-rel
+         ["?x"]
+         [(query-int-row [1])
+          (query-int-row [2])
+          (query-int-row [3])
+          (query-int-row [4])])
+        context
+        (query-v3/context-v3
+         [values]
+         {"?predicate" (query-types/callable-result callable)})
+        clause
+        (parser/variable-predicate-clause
+         "?predicate"
+         [(parser/variable-argument "?x")])
+        resolved (query-v3/resolve-predicate context clause)
+        relations (query-v3-context-relations resolved)]
+    (is (= 1 (count relations)))
+    (is (= [[2] [4]]
+           (query-v3-int-rows (nth relations 0))))))
+
+(deftest test-query-v3-resolve-predicate-errors
+  (let [context (query-v3/context-v3 [] {})]
+    (is
+     (=
+      "Unknown built-in unknown-predicate"
+      (try
+        (let [_resolved
+              (query-v3/resolve-predicate
+               context
+               (parser/static-predicate-clause
+                "unknown-predicate"
+                []))]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "Unknown function ?predicate"
+      (try
+        (let [_resolved
+              (query-v3/resolve-predicate
+               context
+               (parser/variable-predicate-clause
+                "?predicate"
+                []))]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "Unbound source variable: $missing"
+      (try
+        (let [_resolved
+              (query-v3/resolve-predicate
+               context
+               (parser/static-predicate-clause
+                "missing?"
+                [(parser/source-argument "$missing")
+                 (parser/constant-argument
+                  (Datascript_runtime.Data_value.Int 1))
+                 (parser/constant-argument
+                  (Datascript_runtime.Data_value.Keyword ":age"))]))]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "Insufficient bindings: #{?missing}"
+      (try
+        (let [_resolved
+              (query-v3/resolve-predicate
+               context
+               (parser/static-predicate-clause
+                ">"
+                [(parser/variable-argument "?missing")
+                 (parser/constant-argument
+                  (Datascript_runtime.Data_value.Int 1))]))]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))))
 
 (deftest test-public-tuple-key-helpers
   (let [attrs (query-types/index-attrs ["?x" "?y"])

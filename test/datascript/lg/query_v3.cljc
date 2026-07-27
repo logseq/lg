@@ -1,5 +1,6 @@
 (ns ^:no-doc datascript.query-v3
   (:require
+   [datascript.built-ins :as built-ins]
    [datascript.db :as db]
    [datascript.lg.query-types :as query-types]
    [datascript.parser :as parser]
@@ -132,6 +133,17 @@
 (type-variant query-context-v3
   EmptyContextV3
   (QueryContextV3 :datascript.query-v3/query-context-state-v3))
+
+(type-variant predicate-function-v3
+  (ComparisonPredicateV3
+   :string
+   :datascript.built-ins/query-function)
+  (PurePredicateV3
+   :string
+   :datascript.built-ins/query-function)
+  (VariablePredicateV3
+   :string
+   :datascript.lg.query-types/callable))
 
 (def empty-context EmptyContextV3)
 
@@ -797,3 +809,248 @@
           (resolve-pattern-db-closed database pattern)
           (resolve-pattern-coll-closed source pattern))]
     (hash-join-rel context relation)))
+
+(defn-
+  ^:tuple<datascript.parser/query-callable;vector<datascript.parser/fn-arg>>
+  predicate-clause-parts
+  [^datascript.parser/clause clause]
+  (match clause
+    (parser/PredicateClause callable arguments)
+    (tuple callable arguments)
+    _
+    (Stdlib.invalid_arg "Expected a DataScript predicate clause")))
+
+(defn ^predicate-function-v3 get-f
+  [^query-context-v3 context
+   ^datascript.parser/query-callable callable
+   ^:string _form]
+  (if-some [name (parser/static-callable-name callable)]
+    (if-some [function (built-ins/comparison-function name)]
+      (ComparisonPredicateV3 name function)
+      (if-some [function (built-ins/pure-function name)]
+        (PurePredicateV3 name function)
+        (Stdlib.invalid_arg
+         (str "Unknown built-in " name))))
+    (if-some [variable (parser/variable-callable-name callable)]
+      (if-some [result (get (context-constants context) variable)]
+        (if-some [callable (query-types/result-callable result)]
+          (VariablePredicateV3 variable callable)
+          (Stdlib.invalid_arg
+           (str "Query input is not a typed callable: " variable)))
+        (Stdlib.invalid_arg
+         (str "Unknown function " variable)))
+      (Stdlib.invalid_arg "Predicate function is missing"))))
+
+(defn- ^datascript.lg.query-types/result predicate-source-result
+  [^query-context-v3 context ^:string source-name]
+  (if-some [source (get (context-sources context) source-name)]
+    (if-some [database (query-types/source-database source)]
+      (query-types/database-result database)
+      (Stdlib.invalid_arg
+       (str "Predicate source is not a database: " source-name)))
+    (Stdlib.invalid_arg
+     (str "Unbound source variable: " source-name))))
+
+(defn collect-args!
+  [^query-context-v3 context
+   ^:vector<datascript.parser/fn-arg> arguments
+   ^:array<option<datascript.lg.query-types/result>> target
+   ^:string _form]
+  (reduce-kv
+   (fn [_ index argument]
+     (if-some [variable (parser/argument-variable-name argument)]
+       (if-some [value (get (context-constants context) variable)]
+         (aset target index (Some value))
+         (Stdlib.ignore 0))
+       (if-some [value (parser/argument-constant argument)]
+         (aset target index (Some (query-types/value-result value)))
+         (if-some [source-name
+                   (parser/argument-source-name argument)]
+           (aset
+            target
+            index
+            (Some (predicate-source-result context source-name)))
+           (Stdlib.invalid_arg "Invalid predicate argument"))))
+     (Stdlib.ignore 0))
+   (Stdlib.ignore 0)
+   arguments))
+
+(defn- ^:vector<tuple<string;int>> predicate-row-bindings
+  [^query-context-v3 context
+   ^:vector<datascript.parser/fn-arg> arguments]
+  (reduce-kv
+   (fn [bindings index argument]
+     (if-some [variable (parser/argument-variable-name argument)]
+       (if (contains? (context-constants context) variable)
+         bindings
+         (conj bindings (tuple variable index)))
+       bindings))
+   []
+   arguments))
+
+(defn- ^:bool context-variable-bound?
+  [^query-context-v3 context ^:string variable]
+  (or
+   (contains? (context-constants context) variable)
+   (some?
+    (some
+     (fn [relation]
+       (contains? (relation-offset-map relation) variable))
+     (context-relations context)))))
+
+(defn- ^:string predicate-variable-set-description
+  [^:vector<string> variables]
+  (str
+   "#{"
+   (reduce-kv
+    (fn [description index variable]
+      (if (= index 0)
+        variable
+        (str description " " variable)))
+    ""
+    variables)
+   "}"))
+
+(defn- check-predicate-bindings
+  [^query-context-v3 context ^:vector<string> variables]
+  (let [missing
+        (reduce
+         (fn [missing variable]
+           (if
+            (or
+             (context-variable-bound? context variable)
+             (contains? (set missing) variable))
+             missing
+             (conj missing variable)))
+         []
+         variables)]
+    (if (empty? missing)
+      (Stdlib.ignore 0)
+      (Stdlib.invalid_arg
+       (str
+        "Insufficient bindings: "
+        (predicate-variable-set-description missing))))))
+
+(defn- ^:vector<datascript.lg.query-types/result>
+  collected-predicate-arguments
+  [^:array<option<datascript.lg.query-types/result>> arguments]
+  (mapv
+   (fn [argument]
+     (match argument
+       (Some value) value
+       None
+       (Stdlib.invalid_arg "Predicate argument is not bound")))
+   arguments))
+
+(defn- ^:bool data-value-truthy?
+  [^:Datascript_runtime.Data_value.t value]
+  (if (Datascript_runtime.Data_value.is_nil value)
+    false
+    (match (Datascript_runtime.Data_value.bool_value value)
+      (Some value) value
+      None true)))
+
+(defn- ^:bool invoke-predicate
+  [^predicate-function-v3 function
+   ^:vector<datascript.lg.query-types/result> arguments]
+  (match function
+    (ComparisonPredicateV3 name function)
+    (if (built-ins/missing-function? function)
+      (if (= 3 (count arguments))
+        (query-types/query-missing?
+         (query-types/query-database-result (nth arguments 0))
+         (nth arguments 1)
+         (nth arguments 2))
+        (Stdlib.invalid_arg
+         "Invalid arguments for query predicate: missing?"))
+      (if-some
+        [matches?
+         (built-ins/apply-comparison
+          function
+          (mapv query-types/result-pattern-value arguments))]
+        matches?
+        (Stdlib.invalid_arg
+         (str "Invalid arguments for query predicate: " name))))
+    (PurePredicateV3 name function)
+    (if-some
+      [value
+       (built-ins/apply-pure-function
+        function
+        (mapv query-types/result-pattern-value arguments))]
+      (data-value-truthy? value)
+      (Stdlib.invalid_arg
+       (str "Invalid arguments for query predicate: " name)))
+    (VariablePredicateV3 _name callable)
+    (if-some [value (query-types/invoke-callable callable arguments)]
+      (data-value-truthy? value)
+      false)))
+
+(defn- fill-predicate-row!
+  [^relation-v3 relation
+   ^:array<datascript.lg.query-types/result> row
+   ^:vector<tuple<string;int>> bindings
+   ^:array<option<datascript.lg.query-types/result>> target]
+  (reduce
+   (fn [_ binding]
+     (let [variable (tuple-get binding 0)
+           index (tuple-get binding 1)]
+       (aset
+        target
+        index
+        (Some ((-getter relation variable) row))))
+     (Stdlib.ignore 0))
+   (Stdlib.ignore 0)
+   bindings))
+
+(defn- ^relation-v3 filter-predicate-relation
+  [^relation-v3 relation
+   ^predicate-function-v3 function
+   ^:vector<tuple<string;int>> bindings
+   ^:array<option<datascript.lg.query-types/result>> target]
+  (-alter-coll
+   relation
+   (fn [^:vector<array<datascript.lg.query-types/result>> rows]
+     (filterv
+      (fn [^:array<datascript.lg.query-types/result> row]
+        (let [_ (fill-predicate-row!
+                 relation row bindings target)]
+          (invoke-predicate
+           function
+           (collected-predicate-arguments target))))
+      rows))))
+
+(defn ^query-context-v3 resolve-predicate
+  [^query-context-v3 context ^datascript.parser/clause clause]
+  (let [parts (predicate-clause-parts clause)
+        callable (tuple-get parts 0)
+        arguments (tuple-get parts 1)
+        form ""
+        function (get-f context callable form)
+        target
+        (to-array
+         (mapv
+          (fn [_argument] None)
+          arguments))
+        _ (collect-args! context arguments target form)
+        bindings (predicate-row-bindings context arguments)
+        variables (mapv (fn [binding] (tuple-get binding 0)) bindings)
+        _ (check-predicate-bindings context variables)]
+    (if (empty? variables)
+      (if
+       (invoke-predicate
+        function
+        (collected-predicate-arguments target))
+        context
+        EmptyContextV3)
+      (match (extract-rels context variables)
+        (tuple None _)
+        (Stdlib.invalid_arg "Predicate relations are not bound")
+        (tuple (Some relations) remaining-context)
+        (let [relation
+              (if (= 1 (count relations))
+                (nth relations 0)
+                (product-all relations))
+              filtered
+              (filter-predicate-relation
+               relation function bindings target)]
+          (join-unrelated remaining-context filtered))))))
