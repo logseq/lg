@@ -22,9 +22,18 @@
    "q5-shortcircuit"
    "qpred1"
    "qpred2"
+   "pull-one-entities"
    "pull-one"
+   "pull-many-entities"
    "pull-many"
    "pull-wildcard"
+   "rules-wide-3x3"
+   "rules-wide-5x3"
+   "rules-wide-7x3"
+   "rules-wide-4x6"
+   "rules-long-10x3"
+   "rules-long-30x3"
+   "rules-long-30x5"
    "freeze"
    "thaw"])
 
@@ -34,4 +43,7 @@
     None benchmark-names))
 
 (doseq [name selected-benchmark-names]
-  (println (str name ":" (Float.to_string (benchmark/run-benchmark name)))))
+  (let [duration (benchmark/run-benchmark name)]
+    (when (< duration 0.0)
+      (Stdlib.invalid_arg (str "Unknown benchmark: " name)))
+    (println (str name ":" (Float.to_string duration)))))

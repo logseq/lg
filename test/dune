@@ -3869,7 +3869,8 @@
 (alias
  (name datascript-upstream)
  (deps
-  (alias datascript-conn)))
+  (alias datascript-conn)
+  (alias datascript-benchmark-surface)))
 
 (rule
  (target datascript_listen_native.ml)

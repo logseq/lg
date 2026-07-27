@@ -6,6 +6,7 @@
    [datascript.lg.query :as query]
    [datascript.lg.query-types :as query-types]
    [datascript.parser :as parser]
+   [datascript.impl.entity :as entity]
    [datascript.pull-api :as pull-api]
    [datascript.pull-parser :as pull-parser]
    [ocaml.Lg_runtime.Runtime_edn :as runtime-edn]))
@@ -927,6 +928,69 @@
   (delay
    (wide-db 4 5)))
 
+(defn benchmark-entity-ref []
+  (Datascript_runtime.Data_value.Entity_id 1))
+
+(type-variant pull-one-entity-tree
+  (PullOneEntityTree
+   :option<datascript.impl.entity/EntityValue>
+   :vector<pull-one-entity-tree>))
+
+(type-variant pull-many-entity-tree
+  (PullManyEntityTree
+   :option<datascript.impl.entity/EntityValue>
+   :option<datascript.impl.entity/EntityValue>
+   :option<datascript.impl.entity/EntityValue>
+   :option<datascript.impl.entity/EntityValue>
+   :option<datascript.impl.entity/EntityValue>
+   :option<datascript.impl.entity/EntityValue>
+   :vector<pull-many-entity-tree>))
+
+(defn entity-reference-children
+  [source]
+  (match (entity/lookup-entity source :follows)
+    (Some (entity/EntityReferences targets))
+    (reduce
+     (fn [children target]
+       (match target
+         (Some child) (conj children child)
+         None children))
+     []
+     (vec targets))
+    _ []))
+
+(defn pull-one-entity-tree
+  [source]
+  (PullOneEntityTree
+   (entity/lookup-entity source :name)
+   (mapv pull-one-entity-tree (entity-reference-children source))))
+
+(defn pull-many-entity-tree
+  [source]
+  (PullManyEntityTree
+   (entity/lookup-entity source :db/id)
+   (entity/lookup-entity source :last-name)
+   (entity/lookup-entity source :alias)
+   (entity/lookup-entity source :sex)
+   (entity/lookup-entity source :age)
+   (entity/lookup-entity source :salary)
+   (mapv pull-many-entity-tree (entity-reference-children source))))
+
+(defn pull-benchmark-root-entity []
+  (match
+   (entity/entity
+    (db/database-view @*pull-db)
+    (benchmark-entity-ref))
+    (Some source) source
+    None
+    (Stdlib.failwith
+     "Entity benchmark did not find the root entity")))
+
+(defn bench-pull-one-entities []
+  (bench/bench
+   (pull-one-entity-tree
+    (pull-benchmark-root-entity))))
+
 (defn pull-one-pattern [^datascript.db/database-view database]
   (pull-parser/recursive-pattern
    database
@@ -947,9 +1011,6 @@
    []
    :follows
    true))
-
-(defn benchmark-entity-ref []
-  (Datascript_runtime.Data_value.Entity_id 1))
 
 (defn assert-pull-output
   [^:option<map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>>
@@ -1256,6 +1317,11 @@
     (bench/bench
      (pull-api/pull-parsed view pattern entity-ref))))
 
+(defn bench-pull-many-entities []
+  (bench/bench
+   (pull-many-entity-tree
+    (pull-benchmark-root-entity))))
+
 (defn bench-pull-many []
   (let [database @*pull-db
         view (db/database-view database)
@@ -1276,8 +1342,92 @@
     (bench/bench
      (pull-api/pull-parsed view pattern entity-ref))))
 
+(def follows-rule-query
+  (parser/static-query-clauses-with-inputs
+   (parser/relation-find ["?entity" "?target"])
+   [(parser/static-rule-clause
+     "follows"
+     [(parser/pattern-variable "?entity")
+      (parser/pattern-variable "?target")])]
+   [(parser/make-static-source-input "$")
+    (parser/make-static-rules-input)]))
+
+(def follows-rules
+  (let [direct
+        (parser/pattern-clause
+         [(parser/pattern-variable "?source")
+          (parser/pattern-attribute :follows)
+          (parser/pattern-variable "?target")])
+        first-step
+        (parser/pattern-clause
+         [(parser/pattern-variable "?source")
+          (parser/pattern-attribute :follows)
+          (parser/pattern-variable "?intermediate")])
+        recursive-step
+        (parser/static-rule-clause
+         "follows"
+         [(parser/pattern-variable "?intermediate")
+          (parser/pattern-variable "?target")])]
+    (parser/static-rules
+     [(parser/static-rule-branch
+       "follows" ["?source" "?target"] [direct])
+      (parser/static-rule-branch
+       "follows" ["?source" "?target"]
+       [first-step recursive-step])])))
+
+(defn bench-rules
+  [database]
+  (query/q-closed
+   follows-rule-query
+   [(query-types/source-input
+     (query-types/database-source
+      (db/database-view database)))
+    (query-types/rules-input follows-rules)]))
+
+(defn bench-rules-wide-3x3 []
+  (let [database (wide-db 3 3)]
+    (bench/bench (bench-rules database))))
+
+(defn bench-rules-wide-5x3 []
+  (let [database (wide-db 5 3)]
+    (bench/bench (bench-rules database))))
+
+(defn bench-rules-wide-7x3 []
+  (let [database (wide-db 7 3)]
+    (bench/bench (bench-rules database))))
+
+(defn bench-rules-wide-4x6 []
+  (let [database (wide-db 4 6)]
+    (bench/bench (bench-rules database))))
+
+(defn bench-rules-long-10x3 []
+  (let [database (long-db 10 3)]
+    (bench/bench (bench-rules database))))
+
+(defn bench-rules-long-30x3 []
+  (let [database (long-db 30 3)]
+    (bench/bench (bench-rules database))))
+
+(defn bench-rules-long-30x5 []
+  (let [database (long-db 30 5)]
+    (bench/bench (bench-rules database))))
+
+(def serialization-people-count
+  (match (Sys.getenv_opt "LG_BENCH_SERIALIZE_PEOPLE")
+    (Some value) (Stdlib.int_of_string value)
+    None 300000))
+
+(def *serialize-db
+  (delay
+   (d/db-with
+    (d/empty-db schema)
+    (mapv
+     (fn [person]
+       (datascript.db/tx-entity person))
+     (bench/people serialization-people-count)))))
+
 (defn benchmark-serialized-db []
-  (d/serializable @*db100k))
+  (d/serializable @*serialize-db))
 
 (defn json-write [value]
   (runtime-edn/write-json-string value))
@@ -1290,7 +1440,7 @@
 
 (defn validate-thawed-db [^datascript.db/DB restored]
   (when-not
-      (= (count @*db100k)
+      (= (count @*serialize-db)
          (count restored))
     (Stdlib.failwith
      "Thawed benchmark database has the wrong datom count")))
@@ -1322,9 +1472,18 @@
    "q5-shortcircuit"    bench-q5-shortcircuit
    "qpred1"             bench-qpred1
    "qpred2"             bench-qpred2
+   "pull-one-entities"  bench-pull-one-entities
    "pull-one"           bench-pull-one
+   "pull-many-entities" bench-pull-many-entities
    "pull-many"          bench-pull-many
    "pull-wildcard"      bench-pull-wildcard
+   "rules-wide-3x3"     bench-rules-wide-3x3
+   "rules-wide-5x3"     bench-rules-wide-5x3
+   "rules-wide-7x3"     bench-rules-wide-7x3
+   "rules-wide-4x6"     bench-rules-wide-4x6
+   "rules-long-10x3"    bench-rules-long-10x3
+   "rules-long-30x3"    bench-rules-long-30x3
+   "rules-long-30x5"    bench-rules-long-30x5
    "freeze"             bench-freeze
    "thaw"               bench-thaw})
 
@@ -1341,6 +1500,9 @@
           prepared (count @*db100k)]
       (Stdlib.ignore prepared)
       (Float.sub (bench/now) started))
+
+    (= name "serialization-people-count")
+    (double serialization-people-count)
 
     :else
     (if-some [benchmark-fn (get benches name)]

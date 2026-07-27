@@ -2024,6 +2024,18 @@
    %{exe:datascript_benchmark_native.exe})))
 
 (rule
+ (alias datascript-benchmark-surface)
+ (deps
+  ../script/check_datascript_benchmark_surface_test.sh
+  datascript_benchmark_native.exe
+  (alias datascript-conn-melange)
+  datascript-conn-melange/test/datascript_benchmark_melange.js)
+ (action
+  (run
+   bash
+   %{dep:../script/check_datascript_benchmark_surface_test.sh})))
+
+(rule
  (targets datascript_benchmark_melange_support.ml datascript_benchmark_melange_support.state)
  (deps
   (:state datascript_conn_melange_base.state)
