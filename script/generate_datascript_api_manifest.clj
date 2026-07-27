@@ -152,6 +152,9 @@
 
 (def closed-option-surface
   [["datascript.pull-api/parse-opts" [:visitor]]
+   ["datascript.query-v3/resolve-not" [:clauses :source :vars]]
+   ["datascript.query-v3/resolve-or"
+    [:clauses :free :required :rule-vars :source]]
    ["datascript.db/db-from-reader" [:datoms :schema]]
    ["datascript.db/restore-db"
     [:aevt :avet :eavt :max-eid :max-tx :schema]]

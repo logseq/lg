@@ -1042,6 +1042,14 @@ option	datascript.db/restore-db	:max-eid
 option	datascript.db/restore-db	:max-tx
 option	datascript.db/restore-db	:schema
 option	datascript.pull-api/parse-opts	:visitor
+option	datascript.query-v3/resolve-not	:clauses
+option	datascript.query-v3/resolve-not	:source
+option	datascript.query-v3/resolve-not	:vars
+option	datascript.query-v3/resolve-or	:clauses
+option	datascript.query-v3/resolve-or	:free
+option	datascript.query-v3/resolve-or	:required
+option	datascript.query-v3/resolve-or	:rule-vars
+option	datascript.query-v3/resolve-or	:source
 option	datascript.serialize/from-serializable	:ref-type
 option	datascript.serialize/from-serializable	:thaw-fn
 option	datascript.serialize/from-serializable	:thaw-kw

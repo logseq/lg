@@ -260,6 +260,19 @@ do
   expect_text "the LG manifest preserves query-v3 helper: $query_v3_entry" \
     "$lg_api_manifest" "^$query_v3_entry$"
 done
+for query_clause_option in \
+  'option	datascript.query-v3/resolve-not	:clauses' \
+  'option	datascript.query-v3/resolve-not	:source' \
+  'option	datascript.query-v3/resolve-not	:vars' \
+  'option	datascript.query-v3/resolve-or	:clauses' \
+  'option	datascript.query-v3/resolve-or	:free' \
+  'option	datascript.query-v3/resolve-or	:required' \
+  'option	datascript.query-v3/resolve-or	:rule-vars' \
+  'option	datascript.query-v3/resolve-or	:source'
+do
+  expect_text "the LG manifest preserves closed query clause option: $query_clause_option" \
+    "$lg_api_manifest" "^$query_clause_option$"
+done
 expect_text "the LG manifest preserves query helper: *implicit-source*" \
   "$lg_api_manifest" '^var	datascript\.query/\*implicit-source\*$'
 expect_text "the LG manifest preserves query helper: *lookup-attrs*" \
