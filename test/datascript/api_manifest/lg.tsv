@@ -853,6 +853,7 @@ arity	datascript.query-v3/IRelation/-project	2	fixed
 arity	datascript.query-v3/IRelation/-size	1	fixed
 arity	datascript.query-v3/IRelation/-symbols	1	fixed
 arity	datascript.query-v3/IRelation/-union	2	fixed
+arity	datascript.query-v3/NativeColl/-native-coll	1	fixed
 arity	datascript.query-v3/arange	2	fixed
 arity	datascript.query-v3/array-rel	2	fixed
 arity	datascript.query-v3/bind	2	fixed
@@ -878,6 +879,9 @@ arity	datascript.query-v3/context-v3	3	fixed
 arity	datascript.query-v3/context-v3	4	fixed
 arity	datascript.query-v3/context-v3	5	fixed
 arity	datascript.query-v3/extract-rels	2	fixed
+arity	datascript.query-v3/fast-arr	0	fixed
+arity	datascript.query-v3/fast-map	0	fixed
+arity	datascript.query-v3/fast-set	0	fixed
 arity	datascript.query-v3/get-f	3	fixed
 arity	datascript.query-v3/get-source	2	fixed
 arity	datascript.query-v3/has?	2	fixed
@@ -886,6 +890,7 @@ arity	datascript.query-v3/hash-join-rel	2	fixed
 arity	datascript.query-v3/hash-map-rel	2	fixed
 arity	datascript.query-v3/join-unrelated	2	fixed
 arity	datascript.query-v3/mapa	2	fixed
+arity	datascript.query-v3/native-coll	1	fixed
 arity	datascript.query-v3/product	2	fixed
 arity	datascript.query-v3/product-all	1	fixed
 arity	datascript.query-v3/project-context	2	fixed
@@ -1086,6 +1091,7 @@ protocol	datascript.query-v3/IRelation	-project
 protocol	datascript.query-v3/IRelation	-size
 protocol	datascript.query-v3/IRelation	-symbols
 protocol	datascript.query-v3/IRelation	-union
+protocol	datascript.query-v3/NativeColl	-native-coll
 protocol	datascript.query/IBinding	in->rel
 protocol	datascript.query/IContextResolve	-context-resolve
 protocol	datascript.query/IPostProcess	-post-process
@@ -1874,6 +1880,7 @@ var	datascript.pull-parser/with-recursion
 var	datascript.pull-parser/with-xform
 var	datascript.query-v3/IClause
 var	datascript.query-v3/IRelation
+var	datascript.query-v3/NativeColl
 var	datascript.query-v3/arange
 var	datascript.query-v3/array-rel
 var	datascript.query-v3/bind
@@ -1895,6 +1902,9 @@ var	datascript.query-v3/context-sources
 var	datascript.query-v3/context-v3
 var	datascript.query-v3/empty-context
 var	datascript.query-v3/extract-rels
+var	datascript.query-v3/fast-arr
+var	datascript.query-v3/fast-map
+var	datascript.query-v3/fast-set
 var	datascript.query-v3/get-f
 var	datascript.query-v3/get-source
 var	datascript.query-v3/has?
@@ -1904,6 +1914,7 @@ var	datascript.query-v3/hash-map-rel
 var	datascript.query-v3/join-unrelated
 var	datascript.query-v3/lru-cache-size
 var	datascript.query-v3/mapa
+var	datascript.query-v3/native-coll
 var	datascript.query-v3/product
 var	datascript.query-v3/product-all
 var	datascript.query-v3/project-context

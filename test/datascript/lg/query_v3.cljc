@@ -102,6 +102,32 @@
 (defn has? [coll el]
   (some #(= el %) coll))
 
+(defprotocol NativeColl
+  (-native-coll [collection]))
+
+(defn native-coll [collection]
+  (if (satisfies? NativeColl collection)
+    (NativeColl/-native-coll collection)
+    collection))
+
+(signature datascript.query-v3/fast-map [key value]
+  :fn<map<key;value>>)
+
+(defn fast-map []
+  {})
+
+(signature datascript.query-v3/fast-arr [value]
+  :fn<vector<value>>)
+
+(defn fast-arr []
+  [])
+
+(signature datascript.query-v3/fast-set [value]
+  :fn<set<value>>)
+
+(defn fast-set []
+  #{})
+
 (type-alias relation-row
   :array<datascript.lg.query-types/result>)
 

@@ -295,6 +295,35 @@
   (is (= (Some true) (query-v3/has? [1 2 3] 2)))
   (is (= nil (query-v3/has? [1 2 3] 4))))
 
+(type-record query-v3-native-box
+  (values :vector<int>))
+
+(extend-type query-v3-native-box
+  query-v3/NativeColl
+  (-native-coll [box] box))
+
+(deftest test-query-v3-public-fast-collections
+  (let [appended (into (query-v3/fast-arr) [1 2 3])
+        associated (assoc (query-v3/fast-map) "one" 1)
+        distinct-values (into (query-v3/fast-set) [1 1 2])]
+    (is (empty? (query-v3/fast-arr)))
+    (is (= [1 2 3] appended))
+    (is (= 6 (reduce + 0 appended)))
+    (is (empty? (query-v3/fast-map)))
+    (is (= 1 (get associated "one")))
+    (is (= 0 (count (query-v3/fast-set))))
+    (is (= [1 2] (vec (sort distinct-values))))
+    (is (= 2 (count distinct-values)))))
+
+(deftest test-query-v3-public-native-coll
+  (let [ordinary [1 2]
+        native (record query-v3-native-box (values [3 4]))
+        converted (query-v3/native-coll native)]
+    (is (not (satisfies? query-v3/NativeColl ordinary)))
+    (is (satisfies? query-v3/NativeColl native))
+    (is (= ordinary (query-v3/native-coll ordinary)))
+    (is (= [3 4] (:values converted)))))
+
 (defn ^:vector<vector<int>> query-v3-int-rows
   [^datascript.query-v3/relation-v3 relation]
   (query-v3/-fold
