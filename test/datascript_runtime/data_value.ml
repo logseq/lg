@@ -691,3 +691,59 @@ let compare left right =
       match (sequence left, sequence right) with
       | Some left, Some right -> compare_list compare_option left right
       | _ -> Int.compare (rank left) (rank right))
+
+let numeric_float = function
+  | Int value | Ref value -> Some (float_of_int value)
+  | Wide_int value -> Some (Int64.to_float value)
+  | Float value -> Some value
+  | _ -> None
+
+let default_number_compare left right =
+  if left > right then 1 else if left < right then -1 else 0
+
+let comparable_vector_items = function
+  | Vector values -> Some (List.map Option.some values)
+  | Tuple values -> Some values
+  | _ -> None
+
+let rec compare_query_values left right =
+  if left == right then Some 0
+  else
+    match (left, right) with
+    | Nil, _ -> Some (-1)
+    | _, Nil -> Some 1
+    | (Int _ | Wide_int _ | Float _ | Ref _),
+      (Int _ | Wide_int _ | Float _ | Ref _) ->
+        Option.bind (numeric_float left) (fun left ->
+            Option.map
+              (fun right -> default_number_compare left right)
+              (numeric_float right))
+    | String left, String right | Uuid left, Uuid right ->
+        Some (String.compare left right)
+    | Keyword left, Keyword right | Symbol left, Symbol right ->
+        Some (compare_identifier left right)
+    | Bool left, Bool right -> Some (Bool.compare left right)
+    | Instant left, Instant right -> Some (Int.compare left right)
+    | (Vector _ | Tuple _), (Vector _ | Tuple _) ->
+        Option.bind (comparable_vector_items left) (fun left ->
+            Option.bind (comparable_vector_items right) (fun right ->
+                compare_query_vectors left right))
+    | _ -> None
+
+and compare_query_vectors left right =
+  let length = Int.compare (List.length left) (List.length right) in
+  if length <> 0 then Some length
+  else
+    match (left, right) with
+    | [], [] -> Some 0
+    | left :: left_rest, right :: right_rest ->
+        Option.bind
+          (match (left, right) with
+          | None, None -> Some 0
+          | None, Some _ -> Some (-1)
+          | Some _, None -> Some 1
+          | Some left, Some right -> compare_query_values left right)
+          (fun current ->
+            if current <> 0 then Some current
+            else compare_query_vectors left_rest right_rest)
+    | [], _ | _, [] -> assert false

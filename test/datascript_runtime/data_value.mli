@@ -73,5 +73,6 @@ val resolve_tuple_refs :
 val keyword_items : t -> string Rrbvec.t option
 val equal : t -> t -> bool
 val compare : t -> t -> int
+val compare_query_values : t -> t -> int option
 val hash : t -> int
 val to_edn_string : t -> string

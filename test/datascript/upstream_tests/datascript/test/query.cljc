@@ -2556,6 +2556,22 @@
       (catch (Invalid_argument message)
         (str message)))))
 
+(defn ^:vector<vector<string>> query-v3-compare-output-edn
+  [^:Datascript_runtime.Data_value.t left
+   ^:Datascript_runtime.Data_value.t right]
+  (query-v3-static-function-output-edn
+   "compare"
+   [(parser/constant-argument left)
+    (parser/constant-argument right)]))
+
+(defn ^:string query-v3-compare-error
+  [^:Datascript_runtime.Data_value.t left
+   ^:Datascript_runtime.Data_value.t right]
+  (query-v3-static-function-error
+   "compare"
+   [(parser/constant-argument left)
+    (parser/constant-argument right)]))
+
 (deftest test-query-v3-collection-emptiness-predicates
   (let [one (Datascript_runtime.Data_value.Int 1)
         attr (Datascript_runtime.Data_value.Keyword ":a")
@@ -3073,6 +3089,184 @@
      (=
       [["(1)"]]
       (query-v3-static-function-output-edn "list" one)))))
+
+(deftest test-query-v3-compare-built-in-scalars
+  (is
+   (=
+    [["-1"]]
+    (query-v3-compare-output-edn
+     (Datascript_runtime.Data_value.Int 2)
+     (Datascript_runtime.Data_value.Int 4))))
+  (is
+   (=
+    [["1"]]
+    (query-v3-compare-output-edn
+     (Datascript_runtime.Data_value.Int 4)
+     (Datascript_runtime.Data_value.Int 2))))
+  (is
+   (=
+    [["0"]]
+    (query-v3-compare-output-edn
+     (Datascript_runtime.Data_value.Int 4)
+     (Datascript_runtime.Data_value.Float 4.0))))
+  (is
+   (=
+    [["-1"]]
+    (query-v3-compare-output-edn
+     (Datascript_runtime.Data_value.Ref 4)
+     (Datascript_runtime.Data_value.Float 4.5))))
+  (is
+   (=
+    [["1"]]
+    (query-v3-compare-output-edn
+     (Datascript_runtime.Data_value.String "b")
+     (Datascript_runtime.Data_value.String "a"))))
+  (is
+   (=
+    [["-1"]]
+    (query-v3-compare-output-edn
+     (Datascript_runtime.Data_value.Keyword ":a/z")
+     (Datascript_runtime.Data_value.Keyword ":b/a"))))
+  (is
+   (=
+    [["-1"]]
+    (query-v3-compare-output-edn
+     (Datascript_runtime.Data_value.Symbol "a")
+     (Datascript_runtime.Data_value.Symbol "b"))))
+  (is
+   (=
+    [["-1"]]
+    (query-v3-compare-output-edn
+     (Datascript_runtime.Data_value.Bool false)
+     (Datascript_runtime.Data_value.Bool true))))
+  (is
+   (=
+    [["-1"]]
+    (query-v3-compare-output-edn
+     (Datascript_runtime.Data_value.Uuid
+      "00000000-0000-0000-0000-000000000001")
+     (Datascript_runtime.Data_value.Uuid
+      "00000000-0000-0000-0000-000000000002"))))
+  (is
+   (=
+    [["-1"]]
+    (query-v3-compare-output-edn
+     (Datascript_runtime.Data_value.Instant 1)
+     (Datascript_runtime.Data_value.Instant 2)))))
+
+(deftest test-query-v3-compare-built-in-nil-and-arity
+  (let [nil-value (Datascript_runtime.Data_value.Nil)
+        one (Datascript_runtime.Data_value.Int 1)
+        two (Datascript_runtime.Data_value.Int 2)]
+    (is (= [["0"]]
+           (query-v3-compare-output-edn nil-value nil-value)))
+    (is (= [["-1"]]
+           (query-v3-compare-output-edn nil-value one)))
+    (is (= [["1"]]
+           (query-v3-compare-output-edn one nil-value)))
+    (is
+     (=
+      [["0"]]
+      (query-v3-static-function-output-edn "compare" [])))
+    (is
+     (=
+      [["1"]]
+      (query-v3-static-function-output-edn
+       "compare"
+       [(parser/constant-argument one)])))
+    (is
+     (=
+      [["-1"]]
+      (query-v3-static-function-output-edn
+       "compare"
+       [(parser/constant-argument one)
+        (parser/constant-argument two)
+        (parser/constant-argument
+         (Datascript_runtime.Data_value.Int 0))])))))
+
+(deftest test-query-v3-compare-built-in-vectors
+  (let [one (Datascript_runtime.Data_value.Int 1)
+        two (Datascript_runtime.Data_value.Int 2)
+        three (Datascript_runtime.Data_value.Int 3)]
+    (is
+     (=
+      [["-1"]]
+      (query-v3-compare-output-edn
+       (query-form-vector [one two])
+       (query-form-vector [one three]))))
+    (is
+     (=
+      [["-1"]]
+      (query-v3-compare-output-edn
+       (query-form-vector [two])
+       (query-form-vector [one three]))))
+    (is
+     (=
+      [["-1"]]
+      (query-v3-compare-output-edn
+       (Datascript_runtime.Data_value.Tuple
+        (list (Some one)))
+       (query-form-vector [one two]))))))
+
+(deftest test-query-v3-compare-built-in-identity
+  (let [attr (Datascript_runtime.Data_value.Keyword ":a")
+        one (Datascript_runtime.Data_value.Int 1)
+        same-map
+        (Datascript_runtime.Data_value.Map
+         (list (tuple attr one)))
+        same-list (query-form-list [one])
+        same-regex (Datascript_runtime.Data_value.Regex "a")]
+    (is (= [["0"]]
+           (query-v3-compare-output-edn same-map same-map)))
+    (is (= [["0"]]
+           (query-v3-compare-output-edn same-list same-list)))
+    (is (= [["0"]]
+           (query-v3-compare-output-edn same-regex same-regex)))))
+
+(deftest test-query-v3-compare-built-in-errors
+  (let [attr (Datascript_runtime.Data_value.Keyword ":a")
+        one (Datascript_runtime.Data_value.Int 1)
+        first-map
+        (Datascript_runtime.Data_value.Map
+         (list (tuple attr one)))
+        second-map
+        (Datascript_runtime.Data_value.Map
+         (list (tuple attr one)))
+        first-list (query-form-list [one])
+        second-list (query-form-list [one])
+        first-regex (Datascript_runtime.Data_value.Regex "a")
+        second-regex (Datascript_runtime.Data_value.Regex "a")]
+    (is
+     (=
+      "Invalid arguments for query function: compare"
+      (query-v3-compare-error
+       one
+       (Datascript_runtime.Data_value.String "a"))))
+    (is
+     (=
+      "Invalid arguments for query function: compare"
+      (query-v3-compare-error
+       attr
+       (Datascript_runtime.Data_value.Symbol "a"))))
+    (is
+     (=
+      "Invalid arguments for query function: compare"
+      (query-v3-compare-error first-map second-map)))
+    (is
+     (=
+      "Invalid arguments for query function: compare"
+      (query-v3-compare-error first-list second-list)))
+    (is
+     (=
+      "Invalid arguments for query function: compare"
+      (query-v3-compare-error first-regex second-regex)))
+    (is
+     (=
+      "Invalid arguments for query function: compare"
+      (query-v3-compare-error
+       (query-form-vector [one])
+       (query-form-vector
+        [(Datascript_runtime.Data_value.String "a")]))))))
 
 (deftest test-query-v3-function-clause-built-in
   (let [query

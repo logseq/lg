@@ -493,6 +493,7 @@
     "*" (Some Multiply)
     "inc" (Some Increment)
     "dec" (Some Decrement)
+    "compare" (Some Compare)
     "keyword" (Some Keyword)
     "name" (Some Name)
     "namespace" (Some Namespace)
@@ -570,6 +571,21 @@
     (if (= 1 (count values))
       (Datascript_runtime.Data_value.decrement (nth values 0))
       None)
+    Compare
+    (let [left
+          (if (= 0 (count values))
+            (Datascript_runtime.Data_value.Nil)
+            (nth values 0))
+          right
+          (if (<= (count values) 1)
+            (Datascript_runtime.Data_value.Nil)
+            (nth values 1))]
+      (if-some
+        [comparison
+         (Datascript_runtime.Data_value.compare_query_values
+          left right)]
+        (Some (Datascript_runtime.Data_value.Int comparison))
+        None))
     Keyword
     (Datascript_runtime.Data_value.keyword_from_values values)
     Name
