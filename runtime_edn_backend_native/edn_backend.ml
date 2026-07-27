@@ -182,3 +182,130 @@ let regex_valid pattern =
 
 let regex_find pattern source =
   Re.execp (Re.Perl.compile_pat pattern) source
+
+let replacement_text source replacement groups =
+  let group_count = Re.Group.nb_groups groups in
+  let buffer = Buffer.create (String.length replacement) in
+  let add_group index =
+    match Re.Group.get_opt groups index with
+    | Some value -> Buffer.add_string buffer value
+    | None -> ()
+  in
+  let rec loop index =
+    if index >= String.length replacement then Buffer.contents buffer
+    else if
+      replacement.[index] = '$' && index + 1 < String.length replacement
+    then
+      match replacement.[index + 1] with
+      | '$' ->
+          Buffer.add_char buffer '$';
+          loop (index + 2)
+      | '&' ->
+          add_group 0;
+          loop (index + 2)
+      | '`' ->
+          let start = Re.Group.start groups 0 in
+          Buffer.add_substring buffer source 0 start;
+          loop (index + 2)
+      | '\'' ->
+          let stop = Re.Group.stop groups 0 in
+          Buffer.add_substring buffer source stop (String.length source - stop);
+          loop (index + 2)
+      | '1' .. '9' as digit ->
+          let first = Char.code digit - Char.code '0' in
+          let capture, consumed =
+            if index + 2 < String.length replacement then
+              match replacement.[index + 2] with
+              | '0' .. '9' as second ->
+                  let candidate =
+                    (first * 10) + Char.code second - Char.code '0'
+                  in
+                  if candidate < group_count then (candidate, 3)
+                  else (first, 2)
+              | _ -> (first, 2)
+            else (first, 2)
+          in
+          if capture < group_count then add_group capture
+          else (
+            Buffer.add_char buffer '$';
+            Buffer.add_char buffer digit);
+          loop (index + consumed)
+      | _ ->
+          Buffer.add_char buffer replacement.[index];
+          loop (index + 1)
+    else (
+      Buffer.add_char buffer replacement.[index];
+      loop (index + 1))
+  in
+  loop 0
+
+let regex_replace ~all ~pattern ~replacement source =
+  let regex = Re.Perl.compile_pat pattern in
+  Re.replace ~all regex
+    ~f:(replacement_text source replacement)
+    source
+
+let drop_trailing_empty values =
+  match values with
+  | [ Some "" ] -> values
+  | values ->
+      let rec drop = function
+        | Some "" :: rest -> drop rest
+        | values -> values
+      in
+      values |> List.rev |> drop |> List.rev
+
+let full_regex_split regex source =
+  let rec captures groups index values =
+    if index >= Re.Group.nb_groups groups then List.rev values
+    else captures groups (index + 1) (Re.Group.get_opt groups index :: values)
+  in
+  let rec collect cursor values = function
+    | [] ->
+        List.rev
+          (Some
+             (String.sub source cursor (String.length source - cursor))
+          :: values)
+    | groups :: rest ->
+        let start = Re.Group.start groups 0 in
+        let stop = Re.Group.stop groups 0 in
+        let text = Some (String.sub source cursor (start - cursor)) in
+        let captures = captures groups 1 [] in
+        collect stop (List.rev_append captures (text :: values)) rest
+  in
+  collect 0 [] (Re.all regex source)
+
+let limited_regex_split regex limit source =
+  let rec collect cursor remaining values = function
+    | _ when remaining = 1 ->
+        List.rev
+          (Some
+             (String.sub source cursor (String.length source - cursor))
+          :: values)
+    | [] ->
+        List.rev
+          (Some
+             (String.sub source cursor (String.length source - cursor))
+          :: values)
+    | groups :: rest ->
+        let start = Re.Group.start groups 0 in
+        let stop = Re.Group.stop groups 0 in
+        collect stop (remaining - 1)
+          (Some (String.sub source cursor (start - cursor)) :: values)
+          rest
+  in
+  collect 0 limit [] (Re.all regex source)
+
+let regex_split ~pattern ~limit source =
+  let regex = Re.Perl.compile_pat pattern in
+  let values =
+    match limit with
+    | Some value when value > 0 -> limited_regex_split regex value source
+    | _ -> full_regex_split regex source
+  in
+  let values =
+    match limit with
+    | Some value when value < 0 -> values
+    | None | Some _ -> drop_trailing_empty values
+  in
+  Array.of_list values

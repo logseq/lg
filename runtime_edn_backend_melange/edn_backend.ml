@@ -192,3 +192,95 @@ let regex_valid pattern =
 
 let regex_find pattern source =
   Js.Re.fromString pattern |> Js.Re.test ~str:source
+
+let regex_replace ~all ~pattern ~replacement source =
+  let flags = if all then "g" else "" in
+  let regexp = Js.Re.fromStringWithFlags pattern ~flags in
+  Js.String.replaceByRe ~regexp ~replacement source
+
+let drop_trailing_empty values =
+  if Array.length values = 1 && values.(0) = Some "" then values
+  else
+    let rec last_nonempty index =
+      if index < 0 then -1
+      else
+        match values.(index) with
+        | Some "" -> last_nonempty (index - 1)
+        | _ -> index
+    in
+    Array.sub values 0 (last_nonempty (Array.length values - 1) + 1)
+
+let limited_regex_split pattern limit source =
+  let regexp = Js.Re.fromStringWithFlags pattern ~flags:"g" in
+  let rec collect cursor remaining values =
+    if remaining = 1 then
+      Array.of_list
+        (List.rev
+           (Some
+              (String.sub source cursor (String.length source - cursor))
+           :: values))
+    else
+      match Js.Re.exec ~str:source regexp with
+      | None ->
+          Array.of_list
+            (List.rev
+               (Some
+                  (String.sub source cursor (String.length source - cursor))
+               :: values))
+      | Some result ->
+          let start = Js.Re.index result in
+          let matched =
+            Js.Re.captures result
+            |> fun captures -> Js.Nullable.toOption captures.(0)
+            |> Option.value ~default:""
+          in
+          let stop = start + String.length matched in
+          if String.length matched = 0 then
+            Js.Re.setLastIndex regexp (Js.Re.lastIndex regexp + 1);
+          collect stop (remaining - 1)
+            (Some (String.sub source cursor (start - cursor)) :: values)
+  in
+  collect 0 limit []
+
+let full_regex_split pattern source =
+  let regexp = Js.Re.fromStringWithFlags pattern ~flags:"g" in
+  let rec collect cursor values =
+    match Js.Re.exec ~str:source regexp with
+    | None ->
+        Array.of_list
+          (List.rev
+             (Some
+                (String.sub source cursor (String.length source - cursor))
+             :: values))
+    | Some result ->
+        let start = Js.Re.index result in
+        let captures = Js.Re.captures result in
+        let matched =
+          Js.Nullable.toOption captures.(0) |> Option.value ~default:""
+        in
+        let stop = start + String.length matched in
+        let rec capture_values index result =
+          if index >= Array.length captures then List.rev result
+          else
+            capture_values (index + 1)
+              (Js.Nullable.toOption captures.(index) :: result)
+        in
+        let segment =
+          Some (String.sub source cursor (start - cursor))
+          :: capture_values 1 []
+        in
+        if String.length matched = 0 then
+          Js.Re.setLastIndex regexp (Js.Re.lastIndex regexp + 1);
+        collect stop (List.rev_append segment values)
+  in
+  collect 0 []
+
+let regex_split ~pattern ~limit source =
+  let values =
+    match limit with
+    | Some value when value > 0 -> limited_regex_split pattern value source
+    | _ -> full_regex_split pattern source
+  in
+  match limit with
+  | Some value when value < 0 -> values
+  | None | Some _ -> drop_trailing_empty values

@@ -23,3 +23,7 @@ val of_json_string : string -> t
 val to_json_string : t -> string
 val regex_valid : string -> bool
 val regex_find : string -> string -> bool
+val regex_replace :
+  all:bool -> pattern:string -> replacement:string -> string -> string
+val regex_split :
+  pattern:string -> limit:int option -> string -> string option array

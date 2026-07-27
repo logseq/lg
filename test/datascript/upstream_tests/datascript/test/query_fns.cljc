@@ -393,6 +393,113 @@
              :where [(clojure.string/trim-newline "hi\r\n\n") ?x]])
       (Datascript_runtime.Data_value.String "hi")))))
 
+(deftest test-core-string-replacement-and-splitting-query-functions
+  (testing "replace and replace-first preserve literal and regex behavior"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where
+             [(clojure.string/replace "foo bar foo" "foo" "x") ?x]])
+      (Datascript_runtime.Data_value.String "x bar x")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where
+             [(clojure.string/replace "a1b22" #"[0-9]+" "#") ?x]])
+      (Datascript_runtime.Data_value.String "a#b#")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where
+             [(clojure.string/replace
+               "ab12cd"
+               #"([a-z]+)([0-9]+)"
+               "$$:$&:$2:$1")
+              ?x]])
+      (Datascript_runtime.Data_value.String "$:ab12:12:abcd")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where
+             [(clojure.string/replace-first "foo foo" "foo" "x") ?x]])
+      (Datascript_runtime.Data_value.String "x foo")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where
+             [(clojure.string/replace-first "a1b22" #"[0-9]+" "#") ?x]])
+      (Datascript_runtime.Data_value.String "a#b22"))))
+
+  (testing "split preserves regex captures, trailing items, and limits"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/split "a,b,,c," #",") ?x]])
+      (Datascript_runtime.Data_value.Vector
+       (list
+        (Datascript_runtime.Data_value.String "a")
+        (Datascript_runtime.Data_value.String "b")
+        (Datascript_runtime.Data_value.String "")
+        (Datascript_runtime.Data_value.String "c")))))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/split "a,b,c,d" #"," 3) ?x]])
+      (Datascript_runtime.Data_value.Vector
+       (list
+        (Datascript_runtime.Data_value.String "a")
+        (Datascript_runtime.Data_value.String "b")
+        (Datascript_runtime.Data_value.String "c,d")))))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/split "" #",") ?x]])
+      (Datascript_runtime.Data_value.Vector
+       (list (Datascript_runtime.Data_value.String "")))))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/split "abc" #"") ?x]])
+      (Datascript_runtime.Data_value.Vector
+       (list
+        (Datascript_runtime.Data_value.String "")
+        (Datascript_runtime.Data_value.String "a")
+        (Datascript_runtime.Data_value.String "b")
+        (Datascript_runtime.Data_value.String "c")))))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/split "a1b2" #"([0-9])") ?x]])
+      (Datascript_runtime.Data_value.Vector
+       (list
+        (Datascript_runtime.Data_value.String "a")
+        (Datascript_runtime.Data_value.String "1")
+        (Datascript_runtime.Data_value.String "b")
+        (Datascript_runtime.Data_value.String "2")))))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/split "a,b," #"," 0) ?x]])
+      (Datascript_runtime.Data_value.Vector
+       (list
+        (Datascript_runtime.Data_value.String "a")
+        (Datascript_runtime.Data_value.String "b")))))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/split "a,b," #"," -1) ?x]])
+      (Datascript_runtime.Data_value.Vector
+       (list
+        (Datascript_runtime.Data_value.String "a")
+        (Datascript_runtime.Data_value.String "b")
+        (Datascript_runtime.Data_value.String "")))))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/split "a,b,c" #"," 1) ?x]])
+      (Datascript_runtime.Data_value.Vector
+       (list (Datascript_runtime.Data_value.String "a,b,c")))))))
+
 (deftest test-query-fns
   (testing "predicate without free variables"
     (is (tdc/query-relation?

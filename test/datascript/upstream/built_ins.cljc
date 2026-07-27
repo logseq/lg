@@ -561,7 +561,10 @@
     "clojure.string/join" (Some Join)
     "clojure.string/index-of" (Some IndexOf)
     "clojure.string/last-index-of" (Some LastIndexOf)
+    "clojure.string/replace" (Some Replace)
+    "clojure.string/replace-first" (Some ReplaceFirst)
     "clojure.string/reverse" (Some Reverse)
+    "clojure.string/split" (Some Split)
     "clojure.string/split-lines" (Some SplitLines)
     "clojure.string/trim" (Some Trim)
     "clojure.string/trim-newline" (Some TrimNewline)
@@ -732,8 +735,14 @@
     (Datascript_runtime.Data_value.string_index_of values)
     LastIndexOf
     (Datascript_runtime.Data_value.string_last_index_of values)
+    Replace
+    (Datascript_runtime.Data_value.string_replace true values)
+    ReplaceFirst
+    (Datascript_runtime.Data_value.string_replace false values)
     Reverse
     (Datascript_runtime.Data_value.string_reverse values)
+    Split
+    (Datascript_runtime.Data_value.string_split values)
     SplitLines
     (Datascript_runtime.Data_value.string_split_lines values)
     Trim

@@ -799,6 +799,15 @@ and eval_builtin context name arg_forms =
           Ok
             (Form
                (FBool (match value with Form (FString _) -> true | _ -> false))))
+  | "regex?" ->
+      unary (fun value ->
+          Ok
+            (Form
+               (FBool (match value with Form (FRegex _) -> true | _ -> false))))
+  | "regex-source" ->
+      unary (function
+        | Form (FRegex value) -> Ok (Form (FString value))
+        | _ -> Error.error "regex-source expects a macro regex")
   | "float?" ->
       unary (fun value ->
           Ok

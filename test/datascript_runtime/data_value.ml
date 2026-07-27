@@ -549,6 +549,34 @@ let string_split_lines values =
           |> List.map (fun value -> String value)))
   | _ -> None
 
+let string_replace all values =
+  match Rrbvec.to_list values with
+  | [ String source; String matched; String replacement ] ->
+      Some
+        (String
+           ((if all then Lg_runtime.Runtime_string.replace
+             else Lg_runtime.Runtime_string.replace_first)
+              source matched replacement))
+  | [ String source; Regex pattern; String replacement ] ->
+      Some
+        (String
+           (Lg_edn_backend.regex_replace ~all ~pattern ~replacement source))
+  | _ -> None
+
+let string_split values =
+  let split source pattern limit =
+    Some
+      (Vector
+         (Lg_edn_backend.regex_split ~pattern ~limit source |> Array.to_list
+        |> List.map (function None -> Nil | Some value -> String value)))
+  in
+  match Rrbvec.to_list values with
+  | [ String source; Regex pattern ] -> split source pattern None
+  | [ String source; Regex pattern; limit ] ->
+      Option.bind (int_argument limit) (fun limit ->
+          split source pattern (Some limit))
+  | _ -> None
+
 let keyword_map_get key = function
   | Map entries ->
       List.find_map

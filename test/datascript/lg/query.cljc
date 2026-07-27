@@ -2036,29 +2036,33 @@
          (fn [value]
            (if (nil? value)
              (list 'Datascript_runtime.Data_value.Nil)
-             (if (string? value)
+             (if (regex? value)
                (list
-                'Datascript_runtime.Data_value.String
-                value)
-               (if (= value true)
+                'Datascript_runtime.Data_value.Regex
+                (regex-source value))
+               (if (string? value)
                  (list
-                  'Datascript_runtime.Data_value.Bool
-                  true)
-                 (if (= value false)
+                  'Datascript_runtime.Data_value.String
+                  value)
+                 (if (= value true)
                    (list
                     'Datascript_runtime.Data_value.Bool
-                    false)
-                   (if (symbol? value)
+                    true)
+                   (if (= value false)
                      (list
-                      'Datascript_runtime.Data_value.Symbol
-                      (str value))
-                     (if (float? value)
+                      'Datascript_runtime.Data_value.Bool
+                      false)
+                     (if (symbol? value)
                        (list
-                        'Datascript_runtime.Data_value.Float
-                        value)
-                       (list
-                        'Datascript_runtime.Data_value.Int
-                        value))))))))
+                        'Datascript_runtime.Data_value.Symbol
+                        (str value))
+                       (if (float? value)
+                         (list
+                          'Datascript_runtime.Data_value.Float
+                          value)
+                         (list
+                          'Datascript_runtime.Data_value.Int
+                          value)))))))))
          data-value-form
          (fn data-value-form [value]
            (if (vector? value)
