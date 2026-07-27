@@ -145,6 +145,12 @@
    :string
    :datascript.lg.query-types/callable))
 
+(type-variant collected-key-v3
+  (SingleCollectedKeyV3
+   :datascript.lg.query-types/result)
+  (CompositeCollectedKeyV3
+   :vector<datascript.lg.query-types/result>))
+
 (def empty-context EmptyContextV3)
 
 (defn ^query-context-v3 context-v3
@@ -1143,3 +1149,213 @@
       (context-with-default-source context source-name)
       context)
     context))
+
+(defn- ^:bool result-vectors-equal?
+  [^:vector<datascript.lg.query-types/result> left
+   ^:vector<datascript.lg.query-types/result> right]
+  (if (= (count left) (count right))
+    (loop [index 0]
+      (if (= index (count left))
+        true
+        (if
+         (Datascript_runtime.Query_value.equal_result
+          (nth left index)
+          (nth right index))
+          (recur (+ index 1))
+          false)))
+    false))
+
+(defn- ^:bool collected-keys-equal?
+  [^collected-key-v3 left ^collected-key-v3 right]
+  (match left
+    (SingleCollectedKeyV3 left)
+    (match right
+      (SingleCollectedKeyV3 right)
+      (Datascript_runtime.Query_value.equal_result left right)
+      _ false)
+    (CompositeCollectedKeyV3 left)
+    (match right
+      (CompositeCollectedKeyV3 right)
+      (result-vectors-equal? left right)
+      _ false)))
+
+(defn- ^:bool collected-key-member?
+  [^:vector<collected-key-v3> keys ^collected-key-v3 key]
+  (some?
+   (some
+    (fn [candidate]
+      (collected-keys-equal? candidate key))
+    keys)))
+
+(defn- ^:vector<collected-key-v3> add-collected-key
+  [^:vector<collected-key-v3> keys ^collected-key-v3 key]
+  (if (collected-key-member? keys key)
+    keys
+    (conj keys key)))
+
+(defn- ^:vector<collected-key-v3> collect-single-key
+  [^query-context-v3 context ^:string symbol]
+  (if-some [constant (get (context-constants context) symbol)]
+    [(SingleCollectedKeyV3 constant)]
+    (if-some [relation (first (related-rels context [symbol]))]
+      (let [getter (-getter relation symbol)]
+        (-fold
+         relation
+         (fn [keys row]
+           (add-collected-key
+            keys
+            (SingleCollectedKeyV3 (getter row))))
+         []))
+      [])))
+
+(defn-
+  ^:array<option<datascript.lg.query-types/result>>
+  collect-constant-specimen
+  [^query-context-v3 context ^:vector<string> symbols]
+  (to-array
+   (mapv
+    (fn [symbol]
+      (if-some [value (get (context-constants context) symbol)]
+        (Some value)
+        None))
+    symbols)))
+
+(defn- fill-collect-specimen!
+  [^relation-v3 relation
+   ^:array<datascript.lg.query-types/result> row
+   ^:vector<string> symbols
+   ^:array<option<datascript.lg.query-types/result>> specimen]
+  (reduce-kv
+   (fn [_ index symbol]
+     (if-some [relation-index
+               (get (relation-offset-map relation) symbol)]
+       (aset specimen index (Some (aget row relation-index)))
+       (Stdlib.ignore 0))
+     (Stdlib.ignore 0))
+   (Stdlib.ignore 0)
+   symbols))
+
+(defn-
+  ^:vector<array<option<datascript.lg.query-types/result>>>
+  expand-collect-specimens
+  [^:vector<array<option<datascript.lg.query-types/result>>> specimens
+   ^relation-v3 relation
+   ^:vector<string> symbols]
+  (reduce
+   (fn
+     [^:vector<array<option<datascript.lg.query-types/result>>> expanded
+      ^:array<option<datascript.lg.query-types/result>> specimen]
+     (-fold
+      relation
+      (fn
+        [^:vector<array<option<datascript.lg.query-types/result>>> expanded
+         ^:array<datascript.lg.query-types/result> row]
+        (let [copy (da/aclone specimen)
+              _ (fill-collect-specimen!
+                 relation row symbols copy)]
+          (conj expanded copy)))
+      expanded))
+   []
+   specimens))
+
+(defn-
+  ^:option<vector<datascript.lg.query-types/result>>
+  collect-specimen-results
+  [^:array<option<datascript.lg.query-types/result>> specimen]
+  (reduce
+   (fn
+     [^:option<vector<datascript.lg.query-types/result>> collected
+      ^:option<datascript.lg.query-types/result> item]
+     (match collected
+       None None
+       (Some values)
+       (match item
+         None None
+         (Some value)
+         (Some (conj values value)))))
+   (Some [])
+   specimen))
+
+(defn ^:vector<collected-key-v3> collect-opt
+  [^query-context-v3 context ^:vector<string> symbols]
+  (let [_ (check-bound context symbols "collect-opt")]
+    (if (= 1 (count symbols))
+      (collect-single-key context (nth symbols 0))
+      (let [specimens
+            (reduce
+             (fn [specimens relation]
+               (expand-collect-specimens
+                specimens relation symbols))
+             [(collect-constant-specimen context symbols)]
+             (related-rels context symbols))]
+        (reduce
+         (fn [keys specimen]
+           (match (collect-specimen-results specimen)
+             None keys
+             (Some values)
+             (add-collected-key
+              keys
+              (CompositeCollectedKeyV3 values))))
+         []
+         specimens)))))
+
+(defn- ^collected-key-v3 relation-row-key
+  [^relation-v3 relation
+   ^:array<datascript.lg.query-types/result> row
+   ^:vector<string> symbols]
+  (if (= 1 (count symbols))
+    (SingleCollectedKeyV3
+     ((-getter relation (nth symbols 0)) row))
+    (CompositeCollectedKeyV3
+     (mapv
+      (fn [symbol]
+        ((-getter relation symbol) row))
+      symbols))))
+
+(defn ^relation-v3 subtract-from-rel
+  [^relation-v3 relation
+   ^:vector<string> symbols
+   ^:vector<collected-key-v3> excluded]
+  (-alter-coll
+   relation
+   (fn [^:vector<array<datascript.lg.query-types/result>> rows]
+     (filterv
+      (fn [^:array<datascript.lg.query-types/result> row]
+        (not
+         (collected-key-member?
+          excluded
+          (relation-row-key relation row symbols))))
+      rows))))
+
+(defn ^query-context-v3 subtract-contexts
+  [^query-context-v3 context
+   ^query-context-v3 excluded-context
+   ^:vector<string> symbols]
+  (if (context-empty? context)
+    EmptyContextV3
+    (if (context-empty? excluded-context)
+      context
+      (let [non-constants
+            (filterv
+             (fn [symbol]
+               (not
+                (contains?
+                 (context-constants context)
+                 symbol)))
+             symbols)]
+        (if (empty? non-constants)
+          EmptyContextV3
+          (match (extract-rels context non-constants)
+            (tuple None _)
+            (Stdlib.invalid_arg
+             "Cannot subtract unbound query relations")
+            (tuple (Some relations) remaining-context)
+            (let [relation (product-all relations)
+                  excluded
+                  (collect-opt excluded-context non-constants)
+                  remaining
+                  (subtract-from-rel
+                   relation non-constants excluded)]
+              (join-unrelated
+               remaining-context
+               remaining))))))))

@@ -1209,6 +1209,164 @@
            (query-v3/context-default-source-symbol
             (query-v3/upd-default-source context predicate))))))
 
+(deftest test-query-v3-collect-opt
+  (let [single-context
+        (query-v3/context-v3
+         [(query-v3/array-rel
+           ["?x"]
+           [(query-int-row [1])
+            (query-int-row [1])
+            (query-int-row [2])])]
+         {})
+        constant-context
+        (query-v3/context-v3
+         []
+         {"?x" (query-int-result 7)})
+        composite-context
+        (query-v3/context-v3
+         [(query-v3/array-rel
+           ["?x"]
+           [(query-int-row [1])
+            (query-int-row [2])])
+          (query-v3/array-rel
+           ["?y"]
+           [(query-int-row [10])
+            (query-int-row [20])])]
+         {"?z" (query-int-result 5)})
+        single-keys (query-v3/collect-opt single-context ["?x"])
+        constant-keys (query-v3/collect-opt constant-context ["?x"])
+        composite-keys
+        (query-v3/collect-opt
+         composite-context
+         ["?x" "?y" "?z"])]
+    (is (= 2 (count single-keys)))
+    (is (= [[3]]
+           (query-v3-int-rows
+            (query-v3/subtract-from-rel
+             (query-v3/array-rel
+              ["?x"]
+              [(query-int-row [1])
+               (query-int-row [2])
+               (query-int-row [3])])
+             ["?x"]
+             single-keys))))
+    (is (= 1 (count constant-keys)))
+    (is (= [[6] [8]]
+           (query-v3-int-rows
+            (query-v3/subtract-from-rel
+             (query-v3/array-rel
+              ["?x"]
+              [(query-int-row [6])
+               (query-int-row [7])
+               (query-int-row [8])])
+             ["?x"]
+             constant-keys))))
+    (is (= 4 (count composite-keys)))
+    (is (= [[1 99 5]]
+           (query-v3-int-rows
+            (query-v3/subtract-from-rel
+             (query-v3/array-rel
+              ["?x" "?y" "?z"]
+              [(query-int-row [1 10 5])
+               (query-int-row [1 99 5])
+               (query-int-row [2 20 5])])
+             ["?x" "?y" "?z"]
+             composite-keys))))
+    (is
+     (=
+      "Insufficient bindings: #{?x} not bound in collect-opt"
+      (try
+        (let [_keys
+              (query-v3/collect-opt
+               query-v3/empty-context
+               ["?x"])]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))))
+
+(deftest test-query-v3-subtract-from-relation
+  (let [relation
+        (query-v3/array-rel
+         ["?x" "?value"]
+         [(query-int-row [1 10])
+          (query-int-row [2 20])
+          (query-int-row [3 30])])
+        exclude-context
+        (query-v3/context-v3
+         [(query-v3/array-rel
+           ["?x"]
+           [(query-int-row [2])])]
+         {})
+        excluded (query-v3/collect-opt exclude-context ["?x"])
+        remaining
+        (query-v3/subtract-from-rel relation ["?x"] excluded)]
+    (is (= ["?x" "?value"]
+           (vec (query-v3/-symbols remaining))))
+    (is (= [[1 10] [3 30]]
+           (query-v3-int-rows remaining)))))
+
+(deftest test-query-v3-subtract-contexts
+  (let [entities
+        (query-v3/array-rel
+         ["?e"]
+         [(query-int-row [1])
+          (query-int-row [2])
+          (query-int-row [3])])
+        tags
+        (query-v3/array-rel
+         ["?tag"]
+         [(query-int-row [10])
+          (query-int-row [20])])
+        context
+        (query-v3/context-v3 [entities tags] {})
+        excluded
+        (query-v3/context-v3
+         [(query-v3/array-rel
+           ["?e"]
+           [(query-int-row [2])
+            (query-int-row [3])])]
+         {})
+        remaining
+        (query-v3/subtract-contexts
+         context excluded ["?e"])
+        constants (query-v3-context-constants remaining)
+        relations (query-v3-context-relations remaining)]
+    (is (= 1
+           (query-result-int
+            (get constants "?e" (query-int-result 0)))))
+    (is (= 1 (count relations)))
+    (is (= [[10] [20]]
+           (query-v3-int-rows (nth relations 0))))
+    (is (= [[1] [2] [3]]
+           (query-v3-int-rows
+            (nth
+             (query-v3-context-relations
+              (query-v3/subtract-contexts
+               context query-v3/empty-context ["?e"]))
+             0))))
+    (is
+     (query-v3-empty-context?
+      (query-v3/subtract-contexts
+       (query-v3/context-v3
+        []
+        {"?constant" (query-int-result 1)})
+       (query-v3/context-v3
+        []
+        {"?constant" (query-int-result 1)})
+       ["?constant"])))
+    (is
+     (query-v3-empty-context?
+      (query-v3/subtract-contexts
+       context
+       (query-v3/context-v3
+        [(query-v3/array-rel
+          ["?e"]
+          [(query-int-row [1])
+           (query-int-row [2])
+           (query-int-row [3])])]
+        {})
+       ["?e"])))))
+
 (deftest test-public-tuple-key-helpers
   (let [attrs (query-types/index-attrs ["?x" "?y"])
         row (query-int-row [10 20])
