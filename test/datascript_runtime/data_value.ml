@@ -499,13 +499,33 @@ let increment = function
   | Int value -> Some (Int (value + 1))
   | Wide_int value -> Some (Wide_int (Int64.succ value))
   | Float value -> Some (Float (value +. 1.0))
-  | _ -> None
+  | Ref value -> Some (Int (value + 1))
+  | Nil -> Some (Int 1)
+  | Bool value -> Some (Int (if value then 2 else 1))
+  | String value -> Some (String (value ^ "1"))
+  | Symbol value | Keyword value | Uuid value ->
+      Some (String (value ^ "1"))
+  | Regex pattern -> Some (String ("/" ^ pattern ^ "/1"))
+  | (List _ | Vector _ | Map _ | Set _ | Tuple _ | Instant _ | Tx_ref
+    | Ref_to _) as value ->
+      Some (String (to_print_string value ^ "1"))
 
 let decrement = function
   | Int value -> Some (Int (value - 1))
   | Wide_int value -> Some (Wide_int (Int64.pred value))
   | Float value -> Some (Float (value -. 1.0))
-  | _ -> None
+  | Ref value | Instant value -> Some (Int (value - 1))
+  | Nil -> Some (Int (-1))
+  | Bool value -> Some (Int (if value then 0 else -1))
+  | String value ->
+      Some
+        (Float
+           (match javascript_number value with
+           | Some value -> value -. 1.0
+           | None -> Float.nan))
+  | Symbol _ | Keyword _ | Uuid _ | Regex _ | List _ | Vector _ | Map _
+  | Set _ | Tuple _ | Tx_ref | Ref_to _ ->
+      Some (Float Float.nan)
 
 let map_of_keyword_map values =
   Map

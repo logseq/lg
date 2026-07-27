@@ -625,6 +625,105 @@
       (Datascript_runtime.Data_value.Vector
        (list (Datascript_runtime.Data_value.Int 1)))))))
 
+(deftest test-core-increment-and-decrement-query-functions
+  (testing "missing arguments produce NaN and extra arguments are ignored"
+    (is
+     (scalar-output-nan?
+      (d/q '[:find ?x .
+             :where [(inc) ?x]])))
+    (is
+     (scalar-output-nan?
+      (d/q '[:find ?x .
+             :where [(dec) ?x]])))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(inc 1 9) ?x]])
+      (Datascript_runtime.Data_value.Int 2)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(dec 1 9) ?x]])
+      (Datascript_runtime.Data_value.Int 0))))
+
+  (testing "nil and booleans retain JavaScript numeric coercion"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(inc nil) ?x]])
+      (Datascript_runtime.Data_value.Int 1)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(dec nil) ?x]])
+      (Datascript_runtime.Data_value.Int -1)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(inc true) ?x]])
+      (Datascript_runtime.Data_value.Int 2)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(inc false) ?x]])
+      (Datascript_runtime.Data_value.Int 1)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(dec true) ?x]])
+      (Datascript_runtime.Data_value.Int 0)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(dec false) ?x]])
+      (Datascript_runtime.Data_value.Int -1))))
+
+  (testing "increment uses JavaScript addition for strings and printed values"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(inc "1") ?x]])
+      (Datascript_runtime.Data_value.String "11")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(inc :kind) ?x]])
+      (Datascript_runtime.Data_value.String ":kind1")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(inc [1 2]) ?x]])
+      (Datascript_runtime.Data_value.String "[1 2]1"))))
+
+  (testing "decrement converts numeric strings and rejects other printed values"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(dec "1") ?x]])
+      (Datascript_runtime.Data_value.Float 0.0)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(dec "1.5") ?x]])
+      (Datascript_runtime.Data_value.Float 0.5)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(dec "0x10") ?x]])
+      (Datascript_runtime.Data_value.Float 15.0)))
+    (is
+     (scalar-output-nan?
+      (d/q '[:find ?x .
+             :where [(dec "text") ?x]])))
+    (is
+     (scalar-output-nan?
+      (d/q '[:find ?x .
+             :where [(dec :kind) ?x]])))
+    (is
+     (scalar-output-nan?
+      (d/q '[:find ?x .
+             :where [(dec [1 2]) ?x]])))))
+
 (deftest test-core-collection-value-query-functions
   (testing "set preserves uniqueness and nil conversion"
     (is

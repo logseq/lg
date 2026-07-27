@@ -3779,7 +3779,76 @@
      (match (query-types/output-tuple output)
        (Some (Some row))
        (= [4 7] (mapv query-result-int (vec row)))
-       _ false))))
+       _ false)))
+  (is
+   (=
+    [["##NaN"]]
+    (query-v3-static-function-output-edn "inc" [])))
+  (is
+   (=
+    [["2"]]
+    (query-v3-static-function-output-edn
+     "inc"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.Int 1))
+      (parser/constant-argument
+       (Datascript_runtime.Data_value.Int 9))])))
+  (is
+   (=
+    [["##NaN"]]
+    (query-v3-static-function-output-edn "dec" [])))
+  (is
+   (=
+    [["0"]]
+    (query-v3-static-function-output-edn
+     "dec"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.Int 1))
+      (parser/constant-argument
+       (Datascript_runtime.Data_value.Int 9))])))
+  (is
+   (=
+    [["8"]]
+    (query-v3-static-function-output-edn
+     "inc"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.Ref 7))])))
+  (is
+   (=
+    [["6"]]
+    (query-v3-static-function-output-edn
+     "dec"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.Ref 7))])))
+  (is
+   (=
+    [["\"symbol1\""]]
+    (query-v3-static-function-output-edn
+     "inc"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.Symbol "symbol"))])))
+  (is
+   (=
+    [["\"550e8400-e29b-41d4-a716-4466554400001\""]]
+    (query-v3-static-function-output-edn
+     "inc"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.Uuid
+        "550e8400-e29b-41d4-a716-446655440000"))])))
+  (is
+   (=
+    [["\"/a+/1\""]]
+    (query-v3-static-function-output-edn
+     "inc"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.Regex "a+"))])))
+  (is
+   (=
+    [["9"]]
+    (query-v3-static-function-output-edn
+     "dec"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.Instant 10))]))))
 
 (deftest test-query-v3-function-clause-variable-callable
   (let [query
@@ -3946,17 +4015,6 @@
          (parser/static-function-clause
           "inc"
           [(parser/variable-argument "?missing")]
-          (parser/scalar-input "?value")))
-        invalid-arity-query
-        (query-v3-function-query
-         (parser/relation-find ["?value"])
-         []
-         (parser/static-function-clause
-          "inc"
-          [(parser/constant-argument
-            (Datascript_runtime.Data_value.Int 1))
-           (parser/constant-argument
-            (Datascript_runtime.Data_value.Int 2))]
           (parser/scalar-input "?value")))]
     (is
      (=
@@ -3971,14 +4029,6 @@
       "Insufficient bindings: #{?missing}"
       (try
         (let [_output (query-v3/q unbound-query)]
-          "no error")
-        (catch (Invalid_argument message)
-          (str message)))))
-    (is
-     (=
-      "Invalid arguments for query function: inc"
-      (try
-        (let [_output (query-v3/q invalid-arity-query)]
           "no error")
         (catch (Invalid_argument message)
           (str message)))))))
