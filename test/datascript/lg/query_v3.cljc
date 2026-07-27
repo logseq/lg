@@ -153,6 +153,11 @@
 
 (def empty-context EmptyContextV3)
 
+(defprotocol IClause
+  (-resolve-clause
+   [clause ^datascript.query-v3/query-context-v3 context]
+   :datascript.query-v3/query-context-v3))
+
 (defn ^query-context-v3 context-v3
   ([^:vector<relation-v3> relations
     ^:map<string;datascript.lg.query-types/result> constants]
@@ -1360,7 +1365,7 @@
                remaining-context
                remaining))))))))
 
-(declare resolve-clauses)
+(declare resolve-clauses resolve-clause-closed resolve-or)
 
 (defn ^query-context-v3 resolve-not
   [^query-context-v3 context ^datascript.parser/clause clause]
@@ -1385,6 +1390,84 @@
       (Stdlib.invalid_arg
        "Expected a DataScript not clause"))))
 
+(defn-
+  ^:vector<array<datascript.lg.query-types/result>>
+  collect-context-rows
+  [^query-context-v3 context ^:vector<string> symbols]
+  (if (context-empty? context)
+    []
+    (let [specimens
+          (reduce
+           (fn [specimens relation]
+             (expand-collect-specimens
+              specimens relation symbols))
+           [(collect-constant-specimen context symbols)]
+           (related-rels context symbols))]
+      (reduce
+       (fn [rows specimen]
+         (match (collect-specimen-results specimen)
+           None rows
+           (Some values)
+           (conj rows (to-array values))))
+       []
+       specimens))))
+
+(defn ^query-context-v3 resolve-or
+  [^query-context-v3 context ^datascript.parser/clause clause]
+  (if (context-empty? context)
+    EmptyContextV3
+    (if-some [parts (parser/or-clause-parts clause)]
+      (let [required (tuple-get parts 0)
+            symbols (tuple-get parts 1)
+            branches (tuple-get parts 2)
+            display
+            (if-some [display
+                      (parser/or-clause-display clause)]
+              display
+              "")
+            _ (check-bound context required display)
+            branch-context
+            (upd-default-source
+             (project-context context symbols)
+             clause)
+            contexts
+            (reduce
+             (fn [contexts branch]
+               (let [resolved
+                     (resolve-clause-closed
+                      branch-context branch)]
+                 (if (context-empty? resolved)
+                   contexts
+                   (conj contexts resolved))))
+             []
+             branches)]
+        (if (empty? contexts)
+          EmptyContextV3
+          (let [non-constants
+                (filterv
+                 (fn [symbol]
+                   (not
+                    (contains?
+                     (context-constants context)
+                     symbol)))
+                 symbols)]
+            (if (empty? non-constants)
+              context
+              (let [rows
+                    (reduce
+                     (fn [rows branch-result]
+                       (into
+                        rows
+                        (collect-context-rows
+                         branch-result non-constants)))
+                     []
+                     contexts)
+                    relation
+                    (array-rel non-constants rows)]
+                (hash-join-rel context relation))))))
+      (Stdlib.invalid_arg
+       "Expected a DataScript or clause"))))
+
 (defn- ^query-context-v3 resolve-clause-closed
   [^query-context-v3 context ^datascript.parser/clause clause]
   (match clause
@@ -1392,9 +1475,15 @@
     (parser/PredicateClause _ _) (resolve-predicate context clause)
     (parser/AndClause clauses) (resolve-clauses context clauses)
     (parser/NotClause _ _ _ _) (resolve-not context clause)
+    (parser/OrClause _ _ _ _ _) (resolve-or context clause)
     _
     (Stdlib.invalid_arg
      "Query-v3 clause is not implemented yet")))
+
+(extend-type datascript.parser/clause
+  IClause
+  (-resolve-clause [clause context]
+    (resolve-clause-closed context clause)))
 
 (defn ^query-context-v3 resolve-clauses
   [^query-context-v3 context
@@ -1405,6 +1494,6 @@
       resolved
       (if-some [clause (first remaining)]
         (recur
-         (resolve-clause-closed resolved clause)
+         (-resolve-clause clause resolved)
          (subvec remaining 1))
         resolved))))

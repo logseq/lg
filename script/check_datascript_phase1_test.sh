@@ -230,7 +230,12 @@ for query_v3_entry in \
   'var	datascript.query-v3/resolve-not' \
   'arity	datascript.query-v3/resolve-not	2	fixed' \
   'var	datascript.query-v3/resolve-clauses' \
-  'arity	datascript.query-v3/resolve-clauses	2	fixed'
+  'arity	datascript.query-v3/resolve-clauses	2	fixed' \
+  'var	datascript.query-v3/resolve-or' \
+  'arity	datascript.query-v3/resolve-or	2	fixed' \
+  'var	datascript.query-v3/IClause' \
+  'protocol	datascript.query-v3/IClause	-resolve-clause' \
+  'arity	datascript.query-v3/IClause/-resolve-clause	2	fixed'
 do
   expect_text "the LG manifest preserves query-v3 helper: $query_v3_entry" \
     "$lg_api_manifest" "^$query_v3_entry$"

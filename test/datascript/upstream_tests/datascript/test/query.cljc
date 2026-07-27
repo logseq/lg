@@ -1523,6 +1523,178 @@
         (catch (Invalid_argument message)
           (str message)))))))
 
+(deftest test-query-v3-resolve-or
+  (let [database
+        (db/database-view
+         (d/db-with
+          (d/empty-db)
+          [[:db/add 1 :kind "a"]
+           [:db/add 2 :kind "b"]
+           [:db/add 1 :also true]]))
+        context
+        (query-v3/context-v3
+         []
+         {}
+         {"$" (query-types/database-source database)})
+        kind-a
+        (parser/pattern-clause
+         [(parser/pattern-variable "?e")
+          (parser/pattern-attribute :kind)
+          (parser/pattern-constant
+           (Datascript_runtime.Data_value.String "a"))])
+        kind-b
+        (parser/pattern-clause
+         [(parser/pattern-variable "?e")
+          (parser/pattern-attribute :kind)
+          (parser/pattern-constant
+           (Datascript_runtime.Data_value.String "b"))])
+        also
+        (parser/pattern-clause
+         [(parser/pattern-variable "?e")
+          (parser/pattern-attribute :also)
+          (parser/pattern-constant
+           (Datascript_runtime.Data_value.Bool true))])
+        clause
+        (parser/static-or-clause
+         [kind-a kind-b]
+         "(or [?e :kind \"a\"] [?e :kind \"b\"])")
+        resolved (query-v3/resolve-or context clause)]
+    (is (= [[1] [2]]
+           (query-v3-int-rows
+            (nth (query-v3-context-relations resolved) 0))))
+    (is (= [[1] [2]]
+           (query-v3-int-rows
+            (nth
+             (query-v3-context-relations
+              (query-v3/-resolve-clause clause context))
+             0))))
+    (let [duplicates
+          (query-v3/resolve-or
+           context
+           (parser/static-or-clause
+            [kind-a also]
+            "(or [?e :kind \"a\"] [?e :also true])"))]
+      (is (= [[1] [1]]
+             (query-v3-int-rows
+              (nth
+               (query-v3-context-relations duplicates)
+               0)))))
+    (is
+     (query-v3-empty-context?
+      (query-v3/resolve-or
+       context
+       (parser/static-or-clause
+        [(parser/pattern-clause
+          [(parser/pattern-variable "?e")
+           (parser/pattern-attribute :missing-a)])
+         (parser/pattern-clause
+          [(parser/pattern-variable "?e")
+           (parser/pattern-attribute :missing-b)])]
+        "(or [?e :missing-a] [?e :missing-b])"))))
+    (let [constant-context
+          (query-v3/context-v3
+           []
+           {"?e" (query-int-result 1)}
+           {"$" (query-types/database-source database)})
+          constant-result
+          (query-v3/resolve-or constant-context clause)]
+      (is (not (query-v3-empty-context? constant-result)))
+      (is (= 1
+             (query-result-int
+              (get
+               (query-v3-context-constants constant-result)
+               "?e"
+               (query-int-result 0))))))))
+
+(deftest test-query-v3-resolve-or-join
+  (let [database
+        (db/database-view
+         (d/db-with
+          (d/empty-db)
+          [[:db/add 1 :a 10]
+           [:db/add 2 :b 20]]))
+        entities
+        (query-v3/array-rel
+         ["?e"]
+         [(query-int-row [1])
+          (query-int-row [2])])
+        context
+        (query-v3/context-v3
+         [entities]
+         {}
+         {"$" (query-types/database-source database)})
+        branch-a
+        (parser/pattern-clause
+         [(parser/pattern-variable "?e")
+          (parser/pattern-attribute :a)
+          (parser/pattern-variable "?value")])
+        branch-b
+        (parser/pattern-clause
+         [(parser/pattern-variable "?e")
+          (parser/pattern-attribute :b)
+          (parser/pattern-variable "?value")])
+        clause
+        (parser/static-or-join-clause
+         ["?e"]
+         ["?value"]
+         [branch-a branch-b]
+         "(or-join [?e ?value] [?e :a ?value] [?e :b ?value])")
+        resolved
+        (query-v3/resolve-or context clause)]
+    (is (= [[1 10] [2 20]]
+           (query-v3-int-rows
+            (nth (query-v3-context-relations resolved) 0)))))
+  (let [clause
+        (parser/static-or-join-clause
+         ["?required"]
+         ["?value"]
+         [(parser/pattern-clause
+           [(parser/pattern-variable "?required")
+            (parser/pattern-attribute :value)
+            (parser/pattern-variable "?value")])]
+         "(or-join [?required ?value] ...)")]
+    (is
+     (=
+      "Insufficient bindings: #{?required} not bound in (or-join [?required ?value] ...)"
+      (try
+        (let [_resolved
+              (query-v3/resolve-or
+               (query-v3/context-v3 [] {})
+               clause)]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))))
+
+(deftest test-query-v3-resolve-or-explicit-source
+  (let [rows
+        [(query-int-row [1 10])
+         (query-int-row [2 20])
+         (query-int-row [3 30])]
+        context
+        (query-v3/context-v3
+         []
+         {}
+         {"$rows" (query-types/relation-source rows)})
+        branch-10
+        (parser/pattern-clause
+         [(parser/pattern-variable "?e")
+          (parser/pattern-constant
+           (Datascript_runtime.Data_value.Int 10))])
+        branch-20
+        (parser/pattern-clause
+         [(parser/pattern-variable "?e")
+          (parser/pattern-constant
+           (Datascript_runtime.Data_value.Int 20))])
+        clause
+        (parser/static-source-or-clause
+         "$rows"
+         [branch-10 branch-20]
+         "(or $rows [?e 10] [?e 20])")
+        resolved (query-v3/resolve-or context clause)]
+    (is (= [[1] [2]]
+           (query-v3-int-rows
+            (nth (query-v3-context-relations resolved) 0))))))
+
 (deftest test-public-tuple-key-helpers
   (let [attrs (query-types/index-attrs ["?x" "?y"])
         row (query-int-row [10 20])
