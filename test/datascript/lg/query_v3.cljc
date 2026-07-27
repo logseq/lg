@@ -1359,3 +1359,52 @@
               (join-unrelated
                remaining-context
                remaining))))))))
+
+(declare resolve-clauses)
+
+(defn ^query-context-v3 resolve-not
+  [^query-context-v3 context ^datascript.parser/clause clause]
+  (if (context-empty? context)
+    EmptyContextV3
+    (match clause
+      (parser/NotClause _source variables clauses display)
+      (let [symbols
+            (mapv
+             (fn [^datascript.parser/Variable variable]
+               (str (.-symbol variable)))
+             variables)
+            _ (check-bound context symbols display)
+            nested-context
+            (resolve-clauses
+             (upd-default-source
+              (project-context context symbols)
+              clause)
+             clauses)]
+        (subtract-contexts context nested-context symbols))
+      _
+      (Stdlib.invalid_arg
+       "Expected a DataScript not clause"))))
+
+(defn- ^query-context-v3 resolve-clause-closed
+  [^query-context-v3 context ^datascript.parser/clause clause]
+  (match clause
+    (parser/PatternClause _ _) (resolve-pattern context clause)
+    (parser/PredicateClause _ _) (resolve-predicate context clause)
+    (parser/AndClause clauses) (resolve-clauses context clauses)
+    (parser/NotClause _ _ _ _) (resolve-not context clause)
+    _
+    (Stdlib.invalid_arg
+     "Query-v3 clause is not implemented yet")))
+
+(defn ^query-context-v3 resolve-clauses
+  [^query-context-v3 context
+   ^:vector<datascript.parser/clause> clauses]
+  (loop [resolved context
+         remaining clauses]
+    (if (context-empty? resolved)
+      resolved
+      (if-some [clause (first remaining)]
+        (recur
+         (resolve-clause-closed resolved clause)
+         (subvec remaining 1))
+        resolved))))

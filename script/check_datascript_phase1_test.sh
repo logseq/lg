@@ -226,7 +226,11 @@ for query_v3_entry in \
   'var	datascript.query-v3/subtract-from-rel' \
   'arity	datascript.query-v3/subtract-from-rel	3	fixed' \
   'var	datascript.query-v3/subtract-contexts' \
-  'arity	datascript.query-v3/subtract-contexts	3	fixed'
+  'arity	datascript.query-v3/subtract-contexts	3	fixed' \
+  'var	datascript.query-v3/resolve-not' \
+  'arity	datascript.query-v3/resolve-not	2	fixed' \
+  'var	datascript.query-v3/resolve-clauses' \
+  'arity	datascript.query-v3/resolve-clauses	2	fixed'
 do
   expect_text "the LG manifest preserves query-v3 helper: $query_v3_entry" \
     "$lg_api_manifest" "^$query_v3_entry$"

@@ -1367,6 +1367,162 @@
         {})
        ["?e"])))))
 
+(deftest test-query-v3-resolve-clauses-sequential-and-short-circuit
+  (let [rows
+        [(query-int-row [1])
+         (query-int-row [2])
+         (query-int-row [3])]
+        pattern
+        (parser/explicit-pattern-clause
+         "$rows"
+         [(parser/pattern-variable "?x")])
+        predicate
+        (parser/static-predicate-clause
+         ">"
+         [(parser/variable-argument "?x")
+          (parser/constant-argument
+           (Datascript_runtime.Data_value.Int 1))])
+        context
+        (query-v3/context-v3
+         []
+         {}
+         {"$rows" (query-types/relation-source rows)})
+        resolved
+        (query-v3/resolve-clauses
+         context
+         [pattern predicate])
+        nested
+        (query-v3/resolve-clauses
+         context
+         [(parser/static-and-clause [pattern predicate])])]
+    (is (= [[2] [3]]
+           (query-v3-int-rows
+            (nth (query-v3-context-relations resolved) 0))))
+    (is (= [[2] [3]]
+           (query-v3-int-rows
+            (nth (query-v3-context-relations nested) 0)))))
+  (let [false-predicate
+        (parser/static-predicate-clause
+         ">"
+         [(parser/constant-argument
+           (Datascript_runtime.Data_value.Int 1))
+          (parser/constant-argument
+           (Datascript_runtime.Data_value.Int 2))])
+        unresolved-pattern
+        (parser/pattern-clause
+         [(parser/pattern-variable "?never")])]
+    (is
+     (query-v3-empty-context?
+      (query-v3/resolve-clauses
+       (query-v3/context-v3 [] {})
+       [false-predicate unresolved-pattern])))))
+
+(deftest test-query-v3-resolve-not
+  (let [database
+        (db/database-view
+         (d/db-with
+          (d/empty-db)
+          [[:db/add 2 :blocked true]]))
+        entities
+        (query-v3/array-rel
+         ["?e"]
+         [(query-int-row [1])
+          (query-int-row [2])
+          (query-int-row [3])])
+        context
+        (query-v3/context-v3
+         [entities]
+         {}
+         {"$" (query-types/database-source database)})
+        blocked-pattern
+        (parser/pattern-clause
+         [(parser/pattern-variable "?e")
+          (parser/pattern-attribute :blocked)
+          (parser/pattern-constant
+           (Datascript_runtime.Data_value.Bool true))])
+        clause
+        (parser/static-not-clause
+         [blocked-pattern]
+         "(not [?e :blocked true])")
+        resolved (query-v3/resolve-not context clause)]
+    (is (= [[1] [3]]
+           (query-v3-int-rows
+            (nth (query-v3-context-relations resolved) 0))))
+    (is
+     (query-v3-empty-context?
+      (query-v3/resolve-not
+       (query-v3/context-v3
+        []
+        {"?e" (query-int-result 2)}
+        {"$" (query-types/database-source database)})
+       clause)))
+    (let [unblocked
+          (query-v3/resolve-not
+           (query-v3/context-v3
+            []
+            {"?e" (query-int-result 1)}
+            {"$" (query-types/database-source database)})
+           clause)]
+      (is (not (query-v3-empty-context? unblocked)))
+      (is (= 1
+             (query-result-int
+              (get
+               (query-v3-context-constants unblocked)
+               "?e"
+               (query-int-result 0))))))))
+
+(deftest test-query-v3-resolve-not-explicit-source
+  (let [blocked-rows
+        [(to-array
+          [(query-int-result 2)
+           (query-types/value-result
+            (Datascript_runtime.Data_value.Bool true))])]
+        entities
+        (query-v3/array-rel
+         ["?e"]
+         [(query-int-row [1])
+          (query-int-row [2])
+          (query-int-row [3])])
+        context
+        (query-v3/context-v3
+         [entities]
+         {}
+         {"$blocked"
+          (query-types/relation-source blocked-rows)})
+        nested-pattern
+        (parser/pattern-clause
+         [(parser/pattern-variable "?e")
+          (parser/pattern-constant
+           (Datascript_runtime.Data_value.Bool true))])
+        clause
+        (parser/static-source-not-clause
+         "$blocked"
+         [nested-pattern]
+         "(not $blocked [?e true])")
+        resolved
+        (query-v3/resolve-not context clause)]
+    (is (= [[1] [3]]
+           (query-v3-int-rows
+            (nth (query-v3-context-relations resolved) 0))))))
+
+(deftest test-query-v3-resolve-not-errors
+  (let [clause
+        (parser/static-not-clause
+         [(parser/pattern-clause
+           [(parser/pattern-variable "?missing")])]
+         "(not [?missing])")]
+    (is
+     (=
+      "Insufficient bindings: #{?missing} not bound in (not [?missing])"
+      (try
+        (let [_resolved
+              (query-v3/resolve-not
+               (query-v3/context-v3 [] {})
+               clause)]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))))
+
 (deftest test-public-tuple-key-helpers
   (let [attrs (query-types/index-attrs ["?x" "?y"])
         row (query-int-row [10 20])
