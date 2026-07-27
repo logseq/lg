@@ -230,6 +230,10 @@
   :fn<datascript.built-ins/query-function;bool>)
 (signature datascript.built-ins/missing-function?
   :fn<datascript.built-ins/query-function;bool>)
+(signature datascript.built-ins/differ-function?
+  :fn<datascript.built-ins/query-function;bool>)
+(signature datascript.built-ins/apply-differ
+  :fn<vector<Datascript_runtime.Data_value.t>;bool>)
 (signature datascript.built-ins/sum-aggregate?
   :fn<datascript.built-ins/built-in-aggregate-function;bool>)
 (signature datascript.built-ins/count-aggregate?
@@ -476,6 +480,26 @@
   (match function
     Missing true
     _ false))
+
+(defn differ-function? [function]
+  (match function
+    Differ true
+    _ false))
+
+(defn ^:bool apply-differ
+  [^:vector<Datascript_runtime.Data_value.t> values]
+  (let [middle (quot (count values) 2)
+        left (subvec values 0 middle)
+        right (subvec values middle)]
+    (not
+     (and
+      (= (count left) (count right))
+      (every?
+       (fn [^:int index]
+         (Datascript_runtime.Data_value.equal
+          (nth left index)
+          (nth right index)))
+       (range (count left)))))))
 
 (defn sum-aggregate?
   [function]

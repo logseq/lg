@@ -1878,13 +1878,15 @@
           (str message)))))
     (is
      (=
-      "Rules inputs are not supported by pinned query-v3"
+      "Rules query input requires a Rules_input"
       (try
         (let [_resolved
               (query-v3/resolve-ins
                context
                [(parser/make-static-rules-input)]
-               [(query-types/rules-input [])])]
+               [(query-types/binding-input
+                 (query-types/scalar-binding
+                  (query-int-result 1)))])]
           "no error")
         (catch (Invalid_argument message)
           (str message)))))))
@@ -2969,6 +2971,320 @@
                (query-v3-value-input
                 (Datascript_runtime.Data_value.String
                  "not-an-entity")))]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))))
+
+(defn ^datascript.parser/Query query-v3-rule-query
+  [^datascript.parser/find-spec find
+   ^:vector<datascript.parser/static-query-input> inputs
+   ^datascript.parser/clause clause]
+  (parser/static-query-clauses-with-inputs
+   find [clause] inputs))
+
+(defn ^:vector<datascript.parser/Rule>
+  query-v3-adult-rules
+  []
+  (let [adult-18
+        (parser/pattern-clause
+         [(parser/pattern-variable "?entity")
+          (parser/pattern-attribute :age)
+          (parser/pattern-constant
+           (Datascript_runtime.Data_value.Int 18))])
+        adult-20
+        (parser/pattern-clause
+         [(parser/pattern-variable "?entity")
+          (parser/pattern-attribute :age)
+          (parser/pattern-constant
+           (Datascript_runtime.Data_value.Int 20))])
+        ^:vector<datascript.parser/RuleBranch> branches
+        [(parser/static-rule-branch
+          "adult" ["?entity"] [adult-18])
+         (parser/static-rule-branch
+          "adult" ["?entity"] [adult-20])
+         (parser/static-rule-branch
+          "adult" ["?entity"] [adult-18])]]
+    (parser/static-rules branches)))
+
+(deftest test-query-v3-rules-input-and-branches
+  (let [database
+        (db/database-view
+         (d/db-with
+          (d/empty-db)
+          [[:db/add 1 :age 18]
+           [:db/add 2 :age 20]
+           [:db/add 3 :age 18]]))
+        query
+        (query-v3-rule-query
+         (parser/relation-find ["?person"])
+         [(parser/make-static-source-input "$")
+          (parser/make-static-rules-input)]
+         (parser/static-rule-clause
+          "adult"
+          [(parser/pattern-variable "?person")]))
+        output
+        (query-v3/q
+         query
+         (query-types/source-input
+          (query-types/database-source database))
+         (query-types/rules-input
+          (query-v3-adult-rules)))]
+    (is
+     (=
+      [[1] [3] [2]]
+      (query-int-rows
+       (require-query-v3-relation-output output))))))
+
+(deftest test-query-v3-rule-explicit-source
+  (let [database
+        (db/database-view
+         (d/db-with
+          (d/empty-db)
+          [[:db/add 1 :age 18]
+           [:db/add 2 :age 20]]))
+        query
+        (query-v3-rule-query
+         (parser/relation-find ["?person"])
+         [(parser/make-static-source-input "$people")
+          (parser/make-static-rules-input)]
+         (parser/static-source-rule-clause
+          "$people"
+          "adult"
+          [(parser/pattern-variable "?person")]))
+        output
+        (query-v3/q
+         query
+         (query-types/source-input
+          (query-types/database-source database))
+         (query-types/rules-input
+          (query-v3-adult-rules)))]
+    (is
+     (=
+      [[1] [2]]
+      (query-int-rows
+       (require-query-v3-relation-output output))))))
+
+(defn ^:vector<datascript.parser/Rule>
+  query-v3-older-than-rules
+  []
+  (let [^:vector<datascript.parser/RuleBranch> branches
+        [(parser/static-rule-branch-with-vars
+          "older-than"
+          ["?minimum"]
+          ["?entity"]
+          [(parser/pattern-clause
+            [(parser/pattern-variable "?entity")
+             (parser/pattern-attribute :age)
+             (parser/pattern-variable "?age")])
+           (parser/static-predicate-clause
+            ">"
+            [(parser/variable-argument "?age")
+             (parser/variable-argument "?minimum")])])]]
+    (parser/static-rules branches)))
+
+(deftest test-query-v3-rule-required-arguments
+  (let [database
+        (db/database-view
+         (d/db-with
+          (d/empty-db)
+          [[:db/add 1 :age 18]
+           [:db/add 2 :age 20]]))
+        clause
+        (parser/static-rule-clause
+         "older-than"
+         [(parser/pattern-variable "?minimum")
+          (parser/pattern-variable "?person")])
+        bound-query
+        (query-v3-rule-query
+         (parser/relation-find ["?person"])
+         [(parser/make-static-source-input "$")
+          (parser/make-static-rules-input)
+          (parser/make-static-value-input
+           (parser/scalar-input "?minimum"))]
+         clause)
+        unbound-query
+        (query-v3-rule-query
+         (parser/relation-find ["?person"])
+         [(parser/make-static-source-input "$")
+          (parser/make-static-rules-input)]
+         clause)
+        database-input
+        (query-types/source-input
+         (query-types/database-source database))
+        rules-input
+        (query-types/rules-input
+         (query-v3-older-than-rules))]
+    (is
+     (=
+      [[2]]
+      (query-int-rows
+       (require-query-v3-relation-output
+        (query-v3/q
+         bound-query
+         database-input
+         rules-input
+         (query-v3-value-input
+          (Datascript_runtime.Data_value.Int 18)))))))
+    (is
+     (=
+      "Insufficient bindings for required rule arguments"
+      (try
+        (let [_output
+              (query-v3/q
+               unbound-query database-input rules-input)]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))))
+
+(defn ^:vector<datascript.parser/Rule>
+  query-v3-ancestor-rules
+  []
+  (let [direct
+        (parser/pattern-clause
+         [(parser/pattern-variable "?ancestor")
+          (parser/pattern-attribute :parent)
+          (parser/pattern-variable "?descendant")])
+        step
+        (parser/pattern-clause
+         [(parser/pattern-variable "?ancestor")
+          (parser/pattern-attribute :parent)
+          (parser/pattern-variable "?middle")])
+        recurse
+        (parser/static-rule-clause
+         "ancestor"
+         [(parser/pattern-variable "?middle")
+          (parser/pattern-variable "?descendant")])
+        ^:vector<datascript.parser/RuleBranch> branches
+        [(parser/static-rule-branch-with-vars
+          "ancestor"
+          ["?ancestor"]
+          ["?descendant"]
+          [direct])
+         (parser/static-rule-branch-with-vars
+          "ancestor"
+          ["?ancestor"]
+          ["?descendant"]
+          [step recurse])]]
+    (parser/static-rules branches)))
+
+(deftest test-query-v3-recursive-rules
+  (let [database
+        (db/database-view
+         (d/db-with
+          (d/empty-db)
+          [[:db/add 1 :parent 2]
+           [:db/add 2 :parent 3]
+           [:db/add 3 :parent 4]]))
+        query
+        (query-v3-rule-query
+         (parser/relation-find ["?descendant"])
+         [(parser/make-static-source-input "$")
+          (parser/make-static-rules-input)]
+         (parser/static-rule-clause
+          "ancestor"
+          [(parser/pattern-constant
+            (Datascript_runtime.Data_value.Int 1))
+           (parser/pattern-variable "?descendant")]))
+        output
+        (query-v3/q
+         query
+         (query-types/source-input
+          (query-types/database-source database))
+         (query-types/rules-input
+          (query-v3-ancestor-rules)))]
+    (is
+     (=
+      [[2] [3] [4]]
+      (query-int-rows
+       (require-query-v3-relation-output output))))))
+
+(deftest test-query-v3-repeated-rule-call-terminates
+  (let [self-call
+        (parser/static-rule-clause
+         "loop"
+         [(parser/pattern-variable "?value")])
+        ^:vector<datascript.parser/RuleBranch> branches
+        [(parser/static-rule-branch-with-vars
+          "loop"
+          ["?value"]
+          []
+          [self-call])]
+        rules
+        (parser/static-rules branches)
+        query
+        (query-v3-rule-query
+         (parser/relation-find ["?value"])
+         [(parser/make-static-rules-input)
+          (parser/make-static-value-input
+           (parser/scalar-input "?value"))]
+         self-call)
+        output
+        (query-v3/q
+         query
+         (query-types/rules-input rules)
+         (query-v3-value-input
+          (Datascript_runtime.Data_value.Int 1)))]
+    (is
+     (=
+      []
+      (require-query-v3-relation-output output)))))
+
+(deftest test-query-v3-rule-errors
+  (let [adult-rules (query-v3-adult-rules)
+        unknown-query
+        (query-v3-rule-query
+         (parser/relation-find ["?person"])
+         [(parser/make-static-rules-input)]
+         (parser/static-rule-clause
+          "missing"
+          [(parser/pattern-variable "?person")]))
+        arity-query
+        (query-v3-rule-query
+         (parser/relation-find ["?person"])
+         [(parser/make-static-rules-input)]
+         (parser/static-rule-clause
+          "adult"
+          [(parser/pattern-variable "?person")
+           (parser/pattern-constant
+            (Datascript_runtime.Data_value.Int 1))]))
+        input-type-query
+        (query-v3-rule-query
+         (parser/relation-find ["?person"])
+         [(parser/make-static-rules-input)]
+         (parser/static-rule-clause
+          "adult"
+          [(parser/pattern-variable "?person")]))]
+    (is
+     (=
+      "Unknown rule 'missing in (missing ?person)"
+      (try
+        (let [_output
+              (query-v3/q
+               unknown-query
+               (query-types/rules-input []))]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "Rule arity mismatch"
+      (try
+        (let [_output
+              (query-v3/q
+               arity-query
+               (query-types/rules-input adult-rules))]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "Rules query input requires a Rules_input"
+      (try
+        (let [_output
+              (query-v3/q
+               input-type-query
+               (query-v3-value-input
+                (Datascript_runtime.Data_value.Int 1)))]
           "no error")
         (catch (Invalid_argument message)
           (str message)))))))

@@ -2726,6 +2726,8 @@
   :fn<string;vector<string>;vector<string>;vector<datascript.parser/clause>;datascript.parser/RuleBranch>)
 (signature datascript.parser/static-rules
   :fn<vector<datascript.parser/RuleBranch>;vector<datascript.parser/Rule>>)
+(signature datascript.parser/expand-rule-branch
+  :fn<datascript.parser/RuleBranch;vector<datascript.parser/pattern-element>;int;vector<datascript.parser/clause>>)
 (signature datascript.parser/rule-clause-parts
   :fn<datascript.parser/clause;option<tuple<string;vector<datascript.parser/pattern-element>>>>)
 (signature datascript.parser/rule-clause-source-name
@@ -3169,6 +3171,24 @@
 (defn ^:vector<datascript.parser/Rule> static-rules
   [^:vector<datascript.parser/RuleBranch> branches]
   (reduce add-rule-branch [] branches))
+
+(defn ^:vector<clause> expand-rule-branch
+  [^datascript.parser/RuleBranch branch
+   ^:vector<pattern-element> arguments
+   ^:int seqid]
+  (let [parameters (rule-vars-names (.-vars branch))]
+    (if (= (count parameters) (count arguments))
+      (let [replacements
+            (reduce-kv
+             (fn [^:map<string;pattern-element> replacements
+                  ^:int index
+                  ^:string parameter]
+               (assoc replacements parameter (nth arguments index)))
+             {}
+             parameters)]
+        (substitute-rule-clauses
+         replacements seqid (.-clauses branch)))
+      (Stdlib.invalid_arg "Rule arity mismatch"))))
 
 (defn ^:option<tuple<string;vector<pattern-element>>> rule-clause-parts
   [^clause clause]

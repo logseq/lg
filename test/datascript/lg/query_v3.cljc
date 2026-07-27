@@ -136,6 +136,7 @@
   (rels :vector<datascript.query-v3/relation-v3>)
   (consts :map<string;datascript.lg.query-types/result>)
   (sources :map<string;datascript.lg.query-types/source>)
+  (rules :vector<datascript.parser/Rule>)
   (default-source-symbol :string))
 
 (type-record aggregate-context-state-v3
@@ -146,6 +147,21 @@
 (type-variant query-context-v3
   EmptyContextV3
   (QueryContextV3 :datascript.query-v3/query-context-state-v3))
+
+(type-alias used-rule-arguments-v3
+  :map<string;vector<vector<datascript.parser/pattern-element>>>)
+
+(type-record rule-frame-v3
+  (prefix-clauses :vector<datascript.parser/clause>)
+  (prefix-context :datascript.query-v3/query-context-v3)
+  (clauses :vector<datascript.parser/clause>)
+  (used-arguments :datascript.query-v3/used-rule-arguments-v3)
+  (pending-guards :vector<datascript.parser/clause>))
+
+(type-record rule-clause-split-v3
+  (prefix :vector<datascript.parser/clause>)
+  (rule :option<datascript.parser/clause>)
+  (suffix :vector<datascript.parser/clause>))
 
 (type-variant predicate-function-v3
   (ComparisonPredicateV3
@@ -183,11 +199,19 @@
     ^:map<string;datascript.lg.query-types/result> constants
     ^:map<string;datascript.lg.query-types/source> sources
     ^:string default-source-symbol]
+   (context-v3
+    relations constants sources [] default-source-symbol))
+  ([^:vector<relation-v3> relations
+    ^:map<string;datascript.lg.query-types/result> constants
+    ^:map<string;datascript.lg.query-types/source> sources
+    ^:vector<datascript.parser/Rule> rules
+    ^:string default-source-symbol]
    (QueryContextV3
     (record query-context-state-v3
       (rels relations)
       (consts constants)
       (sources sources)
+      (rules rules)
       (default-source-symbol default-source-symbol)))))
 
 (defn ^:bool context-empty? [^query-context-v3 context]
@@ -215,6 +239,12 @@
     EmptyContextV3 {}
     (QueryContextV3 state) (:sources state)))
 
+(defn ^:vector<datascript.parser/Rule> context-rules
+  [^query-context-v3 context]
+  (match context
+    EmptyContextV3 []
+    (QueryContextV3 state) (:rules state)))
+
 (defn ^:string context-default-source-symbol
   [^query-context-v3 context]
   (match context
@@ -230,6 +260,7 @@
      relations
      (:consts state)
      (:sources state)
+     (:rules state)
      (:default-source-symbol state))))
 
 (defn- ^query-context-v3 context-with-constants
@@ -242,6 +273,7 @@
      (:rels state)
      constants
      (:sources state)
+     (:rules state)
      (:default-source-symbol state))))
 
 (defn- ^query-context-v3 context-with-sources
@@ -254,6 +286,20 @@
      (:rels state)
      (:consts state)
      sources
+     (:rules state)
+     (:default-source-symbol state))))
+
+(defn- ^query-context-v3 context-with-rules
+  [^query-context-v3 context
+   ^:vector<datascript.parser/Rule> rules]
+  (match context
+    EmptyContextV3 EmptyContextV3
+    (QueryContextV3 state)
+    (context-v3
+     (:rels state)
+     (:consts state)
+     (:sources state)
+     rules
      (:default-source-symbol state))))
 
 (defprotocol IRelation
@@ -588,8 +634,13 @@
       (if-some [descriptor (first remaining-descriptors)]
         (if-some [input (first remaining-inputs)]
           (if (parser/static-input-rules? descriptor)
-            (Stdlib.invalid_arg
-             "Rules inputs are not supported by pinned query-v3")
+            (if-some [rules (query-types/input-rules input)]
+              (recur
+               (context-with-rules resolved rules)
+               (subvec remaining-descriptors 1)
+               (subvec remaining-inputs 1))
+              (Stdlib.invalid_arg
+               "Rules query input requires a Rules_input"))
             (if-some
               [source-name
                (parser/static-input-source-name descriptor)]
@@ -806,6 +857,7 @@
        relations
        constants
        (:sources state)
+       (:rules state)
        (:default-source-symbol state)))))
 
 (defn- ^:tuple<datascript.parser/query-source;vector<datascript.parser/pattern-element>>
@@ -1180,14 +1232,17 @@
         (Stdlib.invalid_arg
          (str "Invalid arguments for query predicate: " name))))
     (PurePredicateV3 name function)
-    (if-some
-      [value
-       (built-ins/apply-pure-function
-        function
-        (mapv query-types/result-pattern-value arguments))]
-      (data-value-truthy? value)
-      (Stdlib.invalid_arg
-       (str "Invalid arguments for query predicate: " name)))
+    (if (built-ins/differ-function? function)
+      (built-ins/apply-differ
+       (mapv query-types/result-pattern-value arguments))
+      (if-some
+        [value
+         (built-ins/apply-pure-function
+          function
+          (mapv query-types/result-pattern-value arguments))]
+        (data-value-truthy? value)
+        (Stdlib.invalid_arg
+         (str "Invalid arguments for query predicate: " name))))
     (VariablePredicateV3 _name callable)
     (if-some [value (query-types/invoke-callable callable arguments)]
       (data-value-truthy? value)
@@ -1467,6 +1522,7 @@
      (:rels state)
      (:consts state)
      (:sources state)
+     (:rules state)
      source-name)))
 
 (defn- ^:option<datascript.parser/query-source> clause-query-source
