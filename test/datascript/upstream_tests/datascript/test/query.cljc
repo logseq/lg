@@ -260,6 +260,21 @@
      (conj rows (mapv query-result-int row)))
    []))
 
+(defn ^:vector<vector<string>> query-v3-edn-rows
+  [^datascript.query-v3/relation-v3 relation]
+  (query-v3/-fold
+   relation
+   (fn [^:vector<vector<string>> rows
+        ^:array<datascript.lg.query-types/result> row]
+     (conj
+      rows
+      (mapv
+       (fn [^datascript.lg.query-types/result result]
+         (Datascript_runtime.Data_value.to_edn_string
+          (query-types/result-pattern-value result)))
+       row)))
+   []))
+
 (deftest test-query-v3-array-relation
   (let [relation
         (query-v3/array-rel
@@ -310,6 +325,126 @@
             [(query-int-row [5 6])]))]
       (is (= [[1 2] [3 4] [5 6]]
              (query-v3-int-rows united))))))
+
+(deftest test-query-v3-coll-relation-query-rows
+  (let [pattern
+        [(parser/pattern-variable "?x")
+         (parser/pattern-placeholder)
+         (parser/pattern-variable "?y")
+         (parser/pattern-constant
+          (Datascript_runtime.Data_value.Int 200))]
+        relation
+        (query-v3/coll-rel
+         pattern
+         [(query-v3/CollQueryRowV3
+           (query-int-row [1 100 2 200]))
+          (query-v3/CollQueryRowV3
+           (query-int-row [3 300 4 200]))])
+        first-row (query-int-row [1 100 2 200])]
+    (is (= ["?x" "?y"] (vec (query-v3/-symbols relation))))
+    (is (= 2 (query-v3/-arity relation)))
+    (is (= 2 (query-v3/-size relation)))
+    (is (= [2 0]
+           (vec (query-v3/-indexes relation ["?y" "?x"]))))
+    (is (= 2
+           (query-result-int
+            ((query-v3/-getter relation "?y") first-row))))
+    (is (= [[1 100 2 200] [3 300 4 200]]
+           (query-v3-int-rows relation)))
+    (let [target (query-int-row [0 0])]
+      (query-v3/-copy-tuple
+       relation
+       first-row
+       (to-array [2 0])
+       target
+       (to-array [0 1]))
+      (is (= [2 1] (mapv query-result-int target))))
+    (let [projected
+          (query-v3/-project relation ["?y"])
+          altered
+          (query-v3/-alter-coll
+           projected
+           (fn [rows]
+             (subvec rows 1)))
+          other
+          (query-v3/-project
+           (query-v3/coll-rel
+            pattern
+            [(query-v3/CollQueryRowV3
+              (query-int-row [5 500 6 200]))])
+           ["?y"])
+          united (query-v3/-union altered other)]
+      (is (= ["?y"] (vec (query-v3/-symbols united))))
+      (is (= 1 (query-v3/-arity united)))
+      (is (= [[3 300 4 200] [5 500 6 200]]
+             (query-v3-int-rows united))))
+    (let [repeated
+          (query-v3/coll-rel
+           [(parser/pattern-variable "?x")
+            (parser/pattern-variable "?x")]
+           [(query-v3/CollQueryRowV3
+             (query-int-row [10 20]))])]
+      (is (= ["?x"] (vec (query-v3/-symbols repeated))))
+      (is (= 20
+             (query-result-int
+              ((query-v3/-getter repeated "?x")
+               (query-int-row [10 20]))))))
+    (is
+     (=
+      "Cannot union relations with different kinds"
+      (try
+        (let [_united
+              (query-v3/-union
+               relation
+               (query-v3/array-rel
+                ["?x" "?y"]
+                [(query-int-row [5 6])]))]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is (= 0
+           (query-v3/-size
+            (query-v3/coll-rel pattern []))))))
+
+(deftest test-query-v3-coll-relation-datom-rows
+  (let [pattern
+        [(parser/pattern-variable "?e")
+         (parser/pattern-variable "?a")
+         (parser/pattern-variable "?v")
+         (parser/pattern-placeholder)
+         (parser/pattern-variable "?added")]
+        datom (d/datom 7 :name "Ada" 99 true)
+        relation
+        (query-v3/coll-rel
+         pattern
+         [(query-v3/CollDatomRowV3 datom)])]
+    (is (= ["?e" "?a" "?v" "?added"]
+           (vec (query-v3/-symbols relation))))
+    (is (= 4 (query-v3/-arity relation)))
+    (is (= [["7" ":name" "\"Ada\"" "99" ":db/add"]]
+           (query-v3-edn-rows relation)))
+    (is (= ":name"
+           (Datascript_runtime.Data_value.to_edn_string
+            (query-types/result-pattern-value
+             ((query-v3/-getter relation "?a")
+              (query-types/datom-row datom))))))
+    (let [target (query-int-row [0 0 0])]
+      (query-v3/-copy-tuple
+       relation
+       (query-types/datom-row datom)
+       (to-array [0 2 4])
+       target
+       (to-array [0 1 2]))
+      (is (= ["7" "\"Ada\"" ":db/add"]
+             (mapv
+              (fn [result]
+                (Datascript_runtime.Data_value.to_edn_string
+                 (query-types/result-pattern-value result)))
+              target))))
+    (let [projected (query-v3/-project relation ["?v"])]
+      (is (= ["?v"] (vec (query-v3/-symbols projected))))
+      (is (= [["7" ":name" "\"Ada\"" "99" ":db/add"]]
+             (query-v3-edn-rows projected))))))
 
 (deftest test-query-v3-singleton-relation
   (let [relation (query-v3/singleton-rel)

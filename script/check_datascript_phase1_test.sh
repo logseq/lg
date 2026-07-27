@@ -179,6 +179,8 @@ for query_v3_entry in \
   'arity	datascript.query-v3/IRelation/-union	2	fixed' \
   'var	datascript.query-v3/array-rel' \
   'arity	datascript.query-v3/array-rel	2	fixed' \
+  'var	datascript.query-v3/coll-rel' \
+  'arity	datascript.query-v3/coll-rel	2	fixed' \
   'var	datascript.query-v3/singleton-rel' \
   'var	datascript.query-v3/product' \
   'arity	datascript.query-v3/product	2	fixed' \

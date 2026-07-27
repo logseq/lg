@@ -110,8 +110,13 @@
   (offset-map :map<string;int>)
   (rows :vector<array<datascript.lg.query-types/result>>))
 
+(type-variant coll-relation-row-v3
+  (CollQueryRowV3 :array<datascript.lg.query-types/result>)
+  (CollDatomRowV3 :datascript.db/Datom))
+
 (type-variant relation-v3
-  (ArrayRelationV3 :datascript.query-v3/relation-state))
+  (ArrayRelationV3 :datascript.query-v3/relation-state)
+  (CollRelationV3 :datascript.query-v3/relation-state))
 
 (defprotocol IRelation
   (-project
@@ -169,12 +174,16 @@
   [^relation-v3 relation]
   (match relation
     (ArrayRelationV3 state)
+    (:symbols state)
+    (CollRelationV3 state)
     (:symbols state)))
 
 (defn- ^:map<string;int> relation-offset-map
   [^relation-v3 relation]
   (match relation
     (ArrayRelationV3 state)
+    (:offset-map state)
+    (CollRelationV3 state)
     (:offset-map state)))
 
 (defn- ^:vector<array<datascript.lg.query-types/result>>
@@ -182,6 +191,8 @@
   [^relation-v3 relation]
   (match relation
     (ArrayRelationV3 state)
+    (:rows state)
+    (CollRelationV3 state)
     (:rows state)))
 
 (defn- ^:vector<array<datascript.lg.query-types/result>>
@@ -199,19 +210,54 @@
      (offset-map offset-map)
      (rows rows))))
 
+(defn- ^relation-v3 make-coll-relation
+  [^:vector<string> symbols
+   ^:map<string;int> offset-map
+   ^:vector<array<datascript.lg.query-types/result>> rows]
+  (CollRelationV3
+   (record relation-state
+     (symbols symbols)
+     (offset-map offset-map)
+     (rows rows))))
+
+(defn- ^relation-v3 make-relation-like
+  [^relation-v3 relation
+   ^:vector<string> symbols
+   ^:map<string;int> offset-map
+   ^:vector<array<datascript.lg.query-types/result>> rows]
+  (match relation
+    (ArrayRelationV3 _)
+    (make-array-relation symbols offset-map rows)
+    (CollRelationV3 _)
+    (make-coll-relation symbols offset-map rows)))
+
+(defn- ^:bool same-relation-kind?
+  [^relation-v3 left ^relation-v3 right]
+  (match left
+    (ArrayRelationV3 _)
+    (match right
+      (ArrayRelationV3 _) true
+      _ false)
+    (CollRelationV3 _)
+    (match right
+      (CollRelationV3 _) true
+      _ false)))
+
 (extend-type relation-v3
   IRelation
   (-project [relation requested-symbols]
     (let [offset-map (relation-offset-map relation)
           projected-symbols
           (selected-symbols offset-map requested-symbols)]
-      (make-array-relation
+      (make-relation-like
+       relation
        projected-symbols
        (selected-offsets offset-map projected-symbols)
        (relation-tuples relation))))
 
   (-alter-coll [relation transform]
-    (make-array-relation
+    (make-relation-like
+     relation
      (relation-symbols relation)
      (relation-offset-map relation)
      (transform (relation-tuples relation))))
@@ -255,16 +301,20 @@
     (Stdlib.ignore 0))
 
   (-union [relation other]
-    (if (= (relation-offset-map relation)
-           (relation-offset-map other))
-      (make-array-relation
-       (relation-symbols relation)
-       (relation-offset-map relation)
-       (into
-        (relation-tuples relation)
-        (relation-tuples other)))
+    (if (same-relation-kind? relation other)
+      (if (= (relation-offset-map relation)
+             (relation-offset-map other))
+        (make-relation-like
+         relation
+         (relation-symbols relation)
+         (relation-offset-map relation)
+         (into
+          (relation-tuples relation)
+          (relation-tuples other)))
+        (Stdlib.invalid_arg
+         "Cannot union relations with different symbols"))
       (Stdlib.invalid_arg
-       "Cannot union relations with different symbols"))))
+       "Cannot union relations with different kinds"))))
 
 (defn ^relation-v3 array-rel
   [^:vector<string> symbols
@@ -275,8 +325,31 @@
     (fn [offsets index symbol]
       (assoc offsets symbol index))
     {}
-    symbols)
+   symbols)
    rows))
+
+(defn- ^:array<datascript.lg.query-types/result> coll-row-array
+  [^coll-relation-row-v3 row]
+  (match row
+    (CollQueryRowV3 values) values
+    (CollDatomRowV3 datom) (query-types/datom-row datom)))
+
+(defn ^relation-v3 coll-rel
+  [^:vector<datascript.parser/pattern-element> pattern
+   ^:vector<coll-relation-row-v3> rows]
+  (let [offset-map
+        (reduce-kv
+         (fn [offsets index element]
+           (if-some [symbol
+                     (query-types/pattern-variable-name element)]
+             (assoc offsets symbol index)
+             offsets))
+         {}
+         pattern)]
+    (make-coll-relation
+     (vec (keys offset-map))
+     offset-map
+     (mapv coll-row-array rows))))
 
 (defn ^relation-v3 singleton-rel []
   (array-rel [] [(to-array [])]))
