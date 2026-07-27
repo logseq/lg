@@ -185,7 +185,11 @@ for query_v3_entry in \
   'var	datascript.query-v3/product' \
   'arity	datascript.query-v3/product	2	fixed' \
   'var	datascript.query-v3/product-all' \
-  'arity	datascript.query-v3/product-all	1	fixed'
+  'arity	datascript.query-v3/product-all	1	fixed' \
+  'var	datascript.query-v3/hash-map-rel' \
+  'arity	datascript.query-v3/hash-map-rel	2	fixed' \
+  'var	datascript.query-v3/hash-join' \
+  'arity	datascript.query-v3/hash-join	4	fixed'
 do
   expect_text "the LG manifest preserves query-v3 helper: $query_v3_entry" \
     "$lg_api_manifest" "^$query_v3_entry$"

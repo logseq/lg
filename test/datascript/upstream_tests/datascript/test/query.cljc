@@ -501,6 +501,108 @@
         projected-left
         (query-v3/singleton-rel)))))))
 
+(deftest test-query-v3-hash-join-single-key
+  (let [left
+        (query-v3/array-rel
+         ["?x" "?left"]
+         [(query-int-row [1 10])
+          (query-int-row [1 11])
+          (query-int-row [2 20])])
+        left-hash (query-v3/hash-map-rel left ["?x"])
+        right
+        (query-v3/array-rel
+         ["?x" "?right"]
+         [(query-int-row [1 100])
+          (query-int-row [2 200])
+          (query-int-row [1 101])
+          (query-int-row [3 300])])
+        joined
+        (query-v3/hash-join left left-hash ["?x"] right)]
+    (is (= ["?x" "?left" "?right"]
+           (vec (query-v3/-symbols joined))))
+    (is
+     (=
+      [[1 10 100]
+       [1 11 100]
+       [2 20 200]
+       [1 10 101]
+       [1 11 101]]
+      (query-v3-int-rows joined)))))
+
+(deftest test-query-v3-hash-join-composite-key
+  (let [left
+        (query-v3/array-rel
+         ["?x" "?y" "?left"]
+         [(query-int-row [1 2 10])
+          (query-int-row [1 3 11])
+          (query-int-row [1 2 12])])
+        left-hash
+        (query-v3/hash-map-rel left ["?x" "?y"])
+        right
+        (query-v3/array-rel
+         ["?y" "?x" "?right"]
+         [(query-int-row [2 1 100])
+          (query-int-row [3 1 101])
+          (query-int-row [2 9 999])])
+        joined
+        (query-v3/hash-join
+         left left-hash ["?x" "?y"] right)]
+    (is (= ["?x" "?y" "?left" "?right"]
+           (vec (query-v3/-symbols joined))))
+    (is (= [[1 2 10 100]
+            [1 2 12 100]
+            [1 3 11 101]]
+           (query-v3-int-rows joined)))))
+
+(deftest test-query-v3-hash-join-empty-key
+  (let [left
+        (query-v3/array-rel
+         ["?left"]
+         [(query-int-row [1])
+          (query-int-row [2])])
+        left-hash (query-v3/hash-map-rel left [])
+        right
+        (query-v3/array-rel
+         ["?right"]
+         [(query-int-row [10])
+          (query-int-row [20])])
+        joined (query-v3/hash-join left left-hash [] right)]
+    (is (= ["?left" "?right"]
+           (vec (query-v3/-symbols joined))))
+    (is (= [[1 10] [2 10] [1 20] [2 20]]
+           (query-v3-int-rows joined)))))
+
+(deftest test-query-v3-hash-join-normalizes-datom-keys
+  (let [pattern
+        [(parser/pattern-variable "?e")
+         (parser/pattern-variable "?a")
+         (parser/pattern-variable "?v")]
+        left
+        (query-v3/coll-rel
+         pattern
+         [(query-v3/CollDatomRowV3
+           (d/datom 7 :name "Ada" 99 true))])
+        left-hash
+        (query-v3/hash-map-rel left ["?e" "?a"])
+        right-row
+        (to-array
+         [(query-int-result 7)
+          (query-types/value-result
+           (Datascript_runtime.Data_value.Keyword ":name"))
+          (query-types/value-result
+           (Datascript_runtime.Data_value.String "match"))])
+        right
+        (query-v3/array-rel
+         ["?e" "?a" "?tag"]
+         [right-row])
+        joined
+        (query-v3/hash-join
+         left left-hash ["?e" "?a"] right)]
+    (is (= ["?e" "?a" "?v" "?tag"]
+           (vec (query-v3/-symbols joined))))
+    (is (= [["7" ":name" "\"Ada\"" "\"match\""]]
+           (query-v3-edn-rows joined)))))
+
 (deftest test-public-tuple-key-helpers
   (let [attrs (query-types/index-attrs ["?x" "?y"])
         row (query-int-row [10 20])

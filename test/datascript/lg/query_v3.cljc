@@ -105,6 +105,9 @@
 (type-alias relation-transform
   :fn<vector<array<datascript.lg.query-types/result>>;vector<array<datascript.lg.query-types/result>>>)
 
+(type-alias relation-hash-v3
+  :Datascript_runtime.Query_value.row_hash<datascript.db/database-view>)
+
 (type-record relation-state
   (symbols :vector<string>)
   (offset-map :map<string;int>)
@@ -385,3 +388,57 @@
 (defn ^relation-v3 product-all
   [^:vector<relation-v3> relations]
   (reduce product relations))
+
+(defn ^relation-hash-v3 hash-map-rel
+  [^relation-v3 relation ^:vector<string> symbols]
+  (Datascript_runtime.Query_value.row_hash
+   (relation-tuples relation)
+   (-indexes relation symbols)))
+
+(defn- ^:vector<string> symbols-not-in
+  [^:vector<string> excluded ^:vector<string> symbols]
+  (let [excluded (set excluded)]
+    (reduce
+     (fn [remaining symbol]
+       (if (contains? excluded symbol)
+         remaining
+         (conj remaining symbol)))
+     []
+     symbols)))
+
+(defn ^relation-v3 hash-join
+  [^relation-v3 left
+   ^relation-hash-v3 left-hash
+   ^:vector<string> join-symbols
+   ^relation-v3 right]
+  (let [left-symbols (-symbols left)
+        right-symbols (-symbols right)
+        keep-right-symbols
+        (symbols-not-in left-symbols right-symbols)
+        left-indexes (-indexes left left-symbols)
+        right-indexes (-indexes right keep-right-symbols)
+        right-key-indexes (-indexes right join-symbols)
+        rows
+        (reduce
+         (fn [rows right-row]
+           (if-some
+             [left-rows
+              (Datascript_runtime.Query_value.row_hash_find
+               left-hash right-row right-key-indexes)]
+             (reduce
+              (fn [rows left-row]
+                (conj
+                 rows
+                 (query-types/join-rows
+                  left-row
+                  left-indexes
+                  right-row
+                  right-indexes)))
+              rows
+              left-rows)
+             rows))
+         (empty (relation-tuples right))
+         (relation-tuples right))]
+    (array-rel
+     (into left-symbols keep-right-symbols)
+     rows)))

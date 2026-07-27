@@ -46,6 +46,9 @@ type 'db relation = {
   lookup_databases : (string, 'db) Lg_runtime.Lg_map.t;
 }
 
+type 'db row_hash =
+  (int, ('db result array * 'db result array Rrbvec.t) list) Hashtbl.t
+
 type ('db, 'rules) context = {
   relations : 'db relation Rrbvec.t;
   sources : (string, 'db source) Lg_runtime.Lg_map.t;
@@ -309,6 +312,37 @@ let hash_key key =
   Array.fold_left
     (fun hash result -> ((hash lsl 5) - hash) lxor hash_result result)
     0 key
+
+let row_hash_key row indexes =
+  Array.map (fun index -> join_key_value row.(index)) indexes
+
+let row_hash rows indexes =
+  let buckets = Hashtbl.create (max 16 (Rrbvec.length rows)) in
+  Rrbvec.iter
+    (fun row ->
+      let key = row_hash_key row indexes in
+      let hash = hash_key key in
+      let bucket = Hashtbl.find_opt buckets hash |> Option.value ~default:[] in
+      let rec add = function
+        | [] -> [ (key, Rrbvec.of_list [ row ]) ]
+        | (candidate, grouped_rows) :: rest
+          when equal_key key candidate ->
+            (candidate, Rrbvec.push_back grouped_rows row) :: rest
+        | group :: rest -> group :: add rest
+      in
+      Hashtbl.replace buckets hash (add bucket))
+    rows;
+  buckets
+
+let row_hash_find row_hash row indexes =
+  let key = row_hash_key row indexes in
+  let bucket =
+    Hashtbl.find_opt row_hash (hash_key key) |> Option.value ~default:[]
+  in
+  List.find_map
+    (fun (candidate, rows) ->
+      if equal_key key candidate then Some rows else None)
+    bucket
 
 let distinct_rows rows = distinct_by equal_key hash_key rows
 

@@ -41,6 +41,7 @@ type 'db output =
       (string, 'db result) Lg_runtime.Lg_map.t option
 
 type 'db relation
+type 'db row_hash
 type ('db, 'rules) context
 
 val database_source : 'db -> 'db source
@@ -152,6 +153,15 @@ val relation_lookup_database : 'db relation -> string -> 'db option
 val relation_with_rows : 'db relation -> 'db result array Rrbvec.t -> 'db relation
 val relation_append_rows : 'db relation -> 'db relation -> 'db relation
 val equal_result : 'db result -> 'db result -> bool
+
+val row_hash :
+  'db result array Rrbvec.t -> int array -> 'db row_hash
+
+val row_hash_find :
+  'db row_hash ->
+  'db result array ->
+  int array ->
+  'db result array Rrbvec.t option
 
 val distinct_result_maps :
   (string, 'db result) Lg_runtime.Lg_map.t Rrbvec.t ->
