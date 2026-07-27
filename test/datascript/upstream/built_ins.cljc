@@ -306,6 +306,10 @@
     "contains?" (Some Contains)
     "re-find" (Some RegexFind)
     "missing?" (Some Missing)
+    "clojure.string/blank?" (Some Blank)
+    "clojure.string/includes?" (Some Includes)
+    "clojure.string/starts-with?" (Some StartsWith)
+    "clojure.string/ends-with?" (Some EndsWith)
     None))
 
 (defn- ^:bool data-value-truthy?
@@ -480,6 +484,36 @@
        (nth values 0)
        (nth values 1))
       None)
+    Blank
+    (Some
+     (Datascript_runtime.Data_value.string_blank
+      (if (= 0 (count values))
+        (Datascript_runtime.Data_value.Nil)
+        (nth values 0))))
+    Includes
+    (if (= 0 (count values))
+      None
+      (Datascript_runtime.Data_value.string_includes
+       (nth values 0)
+       (if (= 1 (count values))
+         None
+         (Some (nth values 1)))))
+    StartsWith
+    (if (= 0 (count values))
+      None
+      (Datascript_runtime.Data_value.string_starts_with
+       (nth values 0)
+       (if (= 1 (count values))
+         None
+         (Some (nth values 1)))))
+    EndsWith
+    (if (= 0 (count values))
+      None
+      (Datascript_runtime.Data_value.string_ends_with
+       (nth values 0)
+       (if (= 1 (count values))
+         None
+         (Some (nth values 1)))))
     _ None))
 
 (defn pure-function

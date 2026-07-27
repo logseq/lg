@@ -48,6 +48,10 @@ val map_of_data_map_with :
 val map_get : t -> t -> t option
 val regex_pattern : t -> t option
 val regex_find : t -> t -> bool option
+val string_blank : t -> bool
+val string_includes : t -> t option -> bool option
+val string_starts_with : t -> t option -> bool option
+val string_ends_with : t -> t option -> bool option
 val keyword_map_get : string -> t -> t option
 val keyword_map_value : t -> (string, t) Lg_runtime.Runtime_map.t option
 val keyword_map_entries : t -> (string * t) Rrbvec.t option

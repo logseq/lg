@@ -2572,6 +2572,38 @@
    [(parser/constant-argument left)
     (parser/constant-argument right)]))
 
+(defn ^:vector<vector<string>>
+  query-v3-static-binary-function-output-edn
+  [^:string function-name
+   ^:Datascript_runtime.Data_value.t left
+   ^:Datascript_runtime.Data_value.t right]
+  (query-v3-static-function-output-edn
+   function-name
+   [(parser/constant-argument left)
+    (parser/constant-argument right)]))
+
+(defn ^:vector<vector<string>>
+  query-v3-static-string-predicate-output-edn
+  [^:string function-name
+   ^:vector<Datascript_runtime.Data_value.t> values
+   ^:Datascript_runtime.Data_value.t argument]
+  (let [query
+        (parser/static-query-clauses-with-inputs
+         (parser/relation-find ["?value"])
+         [(parser/static-predicate-clause
+           function-name
+           [(parser/variable-argument "?value")
+            (parser/constant-argument argument)])]
+         [(parser/make-static-value-input
+           (parser/collection-input
+            (parser/scalar-input "?value")))])
+        output
+        (query-v3/q
+         query
+         (query-v3-data-collection-input values))]
+    (query-output-edn-rows
+     (require-query-v3-relation-output output))))
+
 (deftest test-query-v3-collection-emptiness-predicates
   (let [one (Datascript_runtime.Data_value.Int 1)
         attr (Datascript_runtime.Data_value.Keyword ":a")
@@ -3267,6 +3299,288 @@
        (query-form-vector [one])
        (query-form-vector
         [(Datascript_runtime.Data_value.String "a")]))))))
+
+(deftest test-query-v3-string-blank-built-in
+  (let [blank-output
+        (fn [value]
+          (query-v3-static-unary-function-output-edn
+           "clojure.string/blank?"
+           value))]
+    (is (= [["true"]]
+           (blank-output (Datascript_runtime.Data_value.Nil))))
+    (is (= [["true"]]
+           (blank-output
+            (Datascript_runtime.Data_value.String ""))))
+    (is (= [["true"]]
+           (blank-output
+            (Datascript_runtime.Data_value.String " \n"))))
+    (is (= [["true"]]
+           (blank-output
+            (Datascript_runtime.Data_value.String " "))))
+    (is (= [["true"]]
+           (blank-output
+            (Datascript_runtime.Data_value.String "　"))))
+    (is (= [["false"]]
+           (blank-output
+            (Datascript_runtime.Data_value.String " a "))))
+    (is (= [["false"]]
+           (blank-output
+            (Datascript_runtime.Data_value.Int 1))))
+    (is (= [["false"]]
+           (blank-output
+            (Datascript_runtime.Data_value.Bool false))))
+    (is
+     (=
+      [["true"]]
+      (query-v3-static-function-output-edn
+       "clojure.string/blank?" [])))
+    (is
+     (=
+      [["true"]]
+      (query-v3-static-function-output-edn
+       "clojure.string/blank?"
+       [(parser/constant-argument
+         (Datascript_runtime.Data_value.String ""))
+        (parser/constant-argument
+         (Datascript_runtime.Data_value.String "ignored"))])))))
+
+(deftest test-query-v3-string-search-built-ins
+  (let [string-value
+        (fn [value]
+          (Datascript_runtime.Data_value.String value))]
+    (is
+     (=
+      [["true"]]
+      (query-v3-static-binary-function-output-edn
+       "clojure.string/includes?"
+       (string-value "datascript")
+       (string-value "script"))))
+    (is
+     (=
+      [["false"]]
+      (query-v3-static-binary-function-output-edn
+       "clojure.string/includes?"
+       (string-value "datascript")
+       (string-value "Script"))))
+    (is
+     (=
+      [["true"]]
+      (query-v3-static-binary-function-output-edn
+       "clojure.string/includes?"
+       (string-value "你好世界")
+       (string-value "好世"))))
+    (is
+     (=
+      [["true"]]
+      (query-v3-static-binary-function-output-edn
+       "clojure.string/starts-with?"
+       (string-value "datascript")
+       (string-value "data"))))
+    (is
+     (=
+      [["false"]]
+      (query-v3-static-binary-function-output-edn
+       "clojure.string/starts-with?"
+       (string-value "datascript")
+       (string-value "script"))))
+    (is
+     (=
+      [["true"]]
+      (query-v3-static-binary-function-output-edn
+       "clojure.string/starts-with?"
+       (string-value "你好世界")
+       (string-value "你好"))))
+    (is
+     (=
+      [["true"]]
+      (query-v3-static-binary-function-output-edn
+       "clojure.string/ends-with?"
+       (string-value "datascript")
+       (string-value "script"))))
+    (is
+     (=
+      [["false"]]
+      (query-v3-static-binary-function-output-edn
+       "clojure.string/ends-with?"
+       (string-value "datascript")
+       (string-value "data"))))
+    (is
+     (=
+      [["true"]]
+      (query-v3-static-binary-function-output-edn
+       "clojure.string/ends-with?"
+       (string-value "你好世界")
+       (string-value "世界"))))
+    (is
+     (=
+      [["true"]]
+      (query-v3-static-binary-function-output-edn
+       "clojure.string/includes?"
+       (string-value "datascript")
+       (string-value ""))))
+    (is
+     (=
+      [["true"]]
+      (query-v3-static-binary-function-output-edn
+       "clojure.string/starts-with?"
+       (string-value "datascript")
+       (string-value ""))))
+    (is
+     (=
+      [["true"]]
+      (query-v3-static-binary-function-output-edn
+       "clojure.string/ends-with?"
+       (string-value "datascript")
+       (string-value ""))))))
+
+(deftest test-query-v3-string-search-predicates
+  (let [values
+        [(Datascript_runtime.Data_value.String "datascript")
+         (Datascript_runtime.Data_value.String "data")
+         (Datascript_runtime.Data_value.String "script")]]
+    (is
+     (=
+      [["\"datascript\""] ["\"script\""]]
+      (query-v3-static-string-predicate-output-edn
+       "clojure.string/includes?"
+       values
+       (Datascript_runtime.Data_value.String "script"))))
+    (is
+     (=
+      [["\"datascript\""] ["\"data\""]]
+      (query-v3-static-string-predicate-output-edn
+       "clojure.string/starts-with?"
+       values
+       (Datascript_runtime.Data_value.String "data"))))
+    (is
+     (=
+      [["\"datascript\""] ["\"script\""]]
+      (query-v3-static-string-predicate-output-edn
+       "clojure.string/ends-with?"
+       values
+       (Datascript_runtime.Data_value.String "script"))))))
+
+(deftest test-query-v3-string-search-coercion-and-arity
+  (let [string-value
+        (fn [value]
+          (Datascript_runtime.Data_value.String value))
+        function-output
+        (fn [name arguments]
+          (query-v3-static-function-output-edn name arguments))]
+    (is
+     (=
+      [["true"]]
+      (function-output
+       "clojure.string/includes?"
+       [(parser/constant-argument
+         (string-value "undefined-value"))])))
+    (is
+     (=
+      [["true"]]
+      (query-v3-static-binary-function-output-edn
+       "clojure.string/includes?"
+       (string-value "null-value")
+       (Datascript_runtime.Data_value.Nil))))
+    (is
+     (=
+      [["true"]]
+      (query-v3-static-binary-function-output-edn
+       "clojure.string/includes?"
+       (string-value "x2y")
+       (Datascript_runtime.Data_value.Int 2))))
+    (is
+     (=
+      [["true"]]
+      (function-output
+       "clojure.string/starts-with?"
+       [(parser/constant-argument
+         (string-value "undefined-value"))])))
+    (is
+     (=
+      [["true"]]
+      (query-v3-static-binary-function-output-edn
+       "clojure.string/starts-with?"
+       (string-value "null-value")
+       (Datascript_runtime.Data_value.Nil))))
+    (is
+     (=
+      [["false"]]
+      (query-v3-static-binary-function-output-edn
+       "clojure.string/ends-with?"
+       (string-value "value2")
+       (Datascript_runtime.Data_value.Int 2))))
+    (is
+     (=
+      [["true"]]
+      (function-output
+       "clojure.string/includes?"
+       [(parser/constant-argument (string-value "abc"))
+        (parser/constant-argument (string-value "b"))
+        (parser/constant-argument
+         (string-value "ignored"))])))
+    (is
+     (=
+      [["true"]]
+      (function-output
+       "clojure.string/starts-with?"
+       [(parser/constant-argument (string-value "abc"))
+        (parser/constant-argument (string-value "a"))
+        (parser/constant-argument
+         (string-value "ignored"))])))
+    (is
+     (=
+      [["true"]]
+      (function-output
+       "clojure.string/ends-with?"
+       [(parser/constant-argument (string-value "abc"))
+        (parser/constant-argument (string-value "c"))
+        (parser/constant-argument
+         (string-value "ignored"))])))))
+
+(deftest test-query-v3-string-predicate-errors
+  (let [string-value
+        (fn [value]
+          (Datascript_runtime.Data_value.String value))
+        invalid-source
+        [(parser/constant-argument
+          (Datascript_runtime.Data_value.Nil))
+         (parser/constant-argument (string-value "x"))]]
+    (is
+     (=
+      "Invalid arguments for query function: clojure.string/includes?"
+      (query-v3-static-function-error
+       "clojure.string/includes?" [])))
+    (is
+     (=
+      "Invalid arguments for query function: clojure.string/includes?"
+      (query-v3-static-function-error
+       "clojure.string/includes?" invalid-source)))
+    (is
+     (=
+      "Invalid arguments for query function: clojure.string/starts-with?"
+      (query-v3-static-function-error
+       "clojure.string/starts-with?" invalid-source)))
+    (is
+     (=
+      "Invalid arguments for query function: clojure.string/ends-with?"
+      (query-v3-static-function-error
+       "clojure.string/ends-with?" invalid-source)))
+    (is
+     (=
+      "Invalid arguments for query function: clojure.string/ends-with?"
+      (query-v3-static-function-error
+       "clojure.string/ends-with?"
+       [(parser/constant-argument
+         (string-value "value-undefined"))])))
+    (is
+     (=
+      "Invalid arguments for query function: clojure.string/ends-with?"
+      (query-v3-static-function-error
+       "clojure.string/ends-with?"
+       [(parser/constant-argument
+         (string-value "value-null"))
+        (parser/constant-argument
+         (Datascript_runtime.Data_value.Nil))])))))
 
 (deftest test-query-v3-function-clause-built-in
   (let [query

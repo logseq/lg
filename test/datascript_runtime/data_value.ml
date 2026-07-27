@@ -37,6 +37,16 @@ let float_to_edn_string value =
     let rendered = string_of_float value in
     if String.ends_with ~suffix:"." rendered then rendered ^ "0" else rendered
 
+let float_to_javascript_string value =
+  if Float.is_nan value then "NaN"
+  else if Float.is_infinite value then
+    if value > 0. then "Infinity" else "-Infinity"
+  else
+    let rendered = string_of_float value in
+    if String.ends_with ~suffix:"." rendered then
+      String.sub rendered 0 (String.length rendered - 1)
+    else rendered
+
 let render_sequence opening closing values =
   opening ^ String.concat " " values ^ closing
 
@@ -228,6 +238,100 @@ let regex_find pattern source =
   | Regex pattern, String source ->
       Some (Lg_edn_backend.regex_find pattern source)
   | _ -> None
+
+let javascript_whitespace =
+  [
+    " ";
+    "\t";
+    "\n";
+    "\011";
+    "\012";
+    "\r";
+    "\194\160";
+    "\225\154\128";
+    "\226\128\128";
+    "\226\128\129";
+    "\226\128\130";
+    "\226\128\131";
+    "\226\128\132";
+    "\226\128\133";
+    "\226\128\134";
+    "\226\128\135";
+    "\226\128\136";
+    "\226\128\137";
+    "\226\128\138";
+    "\226\128\168";
+    "\226\128\169";
+    "\226\128\175";
+    "\226\129\159";
+    "\227\128\128";
+    "\239\187\191";
+  ]
+
+let whitespace_length_at source index =
+  List.find_map
+    (fun whitespace ->
+      let length = String.length whitespace in
+      if
+        index + length <= String.length source
+        && String.equal (String.sub source index length) whitespace
+      then Some length
+      else None)
+    javascript_whitespace
+
+let string_blank = function
+  | Nil -> true
+  | String source ->
+      let rec loop index =
+        if index = String.length source then true
+        else
+          match whitespace_length_at source index with
+          | Some length -> loop (index + length)
+          | None -> false
+      in
+      loop 0
+  | _ -> false
+
+let query_search_text = function
+  | Nil -> Some "null"
+  | String value | Symbol value | Keyword value | Uuid value -> Some value
+  | Int value | Ref value -> Some (string_of_int value)
+  | Wide_int value -> Some (Int64.to_string value)
+  | Float value -> Some (float_to_javascript_string value)
+  | Bool value -> Some (string_of_bool value)
+  | Regex value -> Some ("/" ^ value ^ "/")
+  | (List _ | Vector _ | Map _ | Set _ | Tuple _ | Tx_ref | Ref_to _) as value ->
+      Some (to_edn_string value)
+  | Instant _ -> None
+
+let query_search_text_or_undefined = function
+  | None -> Some "undefined"
+  | Some value -> query_search_text value
+
+let string_includes source needle =
+  match source with
+  | String source ->
+      Option.map
+        (fun needle -> Lg_runtime.Runtime_string.index_of source needle >= 0)
+        (query_search_text_or_undefined needle)
+  | _ -> None
+
+let string_starts_with source prefix =
+  match source with
+  | String source ->
+      Option.map
+        (fun prefix -> String.starts_with ~prefix source)
+        (query_search_text_or_undefined prefix)
+  | _ -> None
+
+let string_ends_with source suffix =
+  match (source, suffix) with
+  | String source, Some (String suffix) ->
+      Some (String.ends_with ~suffix source)
+  | _, None | _, Some Nil -> None
+  | String _, Some _ -> Some false
+  | Nil, Some _ -> None
+  | _, Some _ -> Some false
 
 let keyword_map_get key = function
   | Map entries ->
