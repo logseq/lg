@@ -108,6 +108,9 @@
 (type-alias relation-transform
   :fn<vector<array<datascript.lg.query-types/result>>;vector<array<datascript.lg.query-types/result>>>)
 
+(type-alias collect-specimen-v3
+  :array<option<datascript.lg.query-types/result>>)
+
 (type-alias relation-hash-v3
   :Datascript_runtime.Query_value.row_hash<datascript.db/database-view>)
 
@@ -123,6 +126,11 @@
 (type-variant relation-v3
   (ArrayRelationV3 :datascript.query-v3/relation-state)
   (CollRelationV3 :datascript.query-v3/relation-state))
+
+(type-variant collect-transform-v3
+  (RelationCollectTransformV3
+   :datascript.query-v3/relation-v3
+   :vector<tuple<int;int>>))
 
 (type-record query-context-state-v3
   (rels :vector<datascript.query-v3/relation-v3>)
@@ -1596,3 +1604,211 @@
          (-resolve-clause clause resolved)
          (subvec remaining 1))
         resolved))))
+
+(defn collect-consts
+  [^:vector<tuple<string;int>> symbols-indexed
+   ^collect-specimen-v3 specimen
+   ^:map<string;datascript.lg.query-types/result> constants]
+  (reduce
+   (fn [_ symbol-index]
+     (let [symbol (tuple-get symbol-index 0)
+           index (tuple-get symbol-index 1)]
+       (if-some [value (get constants symbol)]
+         (aset specimen index (Some value))
+         (Stdlib.ignore 0)))
+     (Stdlib.ignore 0))
+   (Stdlib.ignore 0)
+   symbols-indexed))
+
+(defn- ^:vector<tuple<int;int>> collect-copy-indexes
+  [^:vector<tuple<string;int>> symbols-indexed
+   ^:map<string;int> offsets]
+  (reduce
+   (fn [indexes symbol-index]
+     (let [symbol (tuple-get symbol-index 0)
+           target-index (tuple-get symbol-index 1)]
+       (if-some [source-index (get offsets symbol)]
+         (conj indexes (tuple source-index target-index))
+         indexes)))
+   []
+   symbols-indexed))
+
+(defn- ^collect-specimen-v3 copy-collect-specimen
+  [^collect-specimen-v3 specimen
+   ^:array<datascript.lg.query-types/result> row
+   ^:vector<tuple<int;int>> copy-indexes]
+  (let [copy (da/aclone specimen)]
+    (reduce
+     (fn [_ copy-index]
+       (aset
+        copy
+        (tuple-get copy-index 1)
+        (Some
+         (aget row (tuple-get copy-index 0))))
+       (Stdlib.ignore 0))
+     (Stdlib.ignore 0)
+     copy-indexes)
+    copy))
+
+(defn- ^:vector<collect-specimen-v3> expand-output-specimen
+  [^relation-v3 relation
+   ^:vector<tuple<int;int>> copy-indexes
+   ^collect-specimen-v3 specimen]
+  (mapv
+   (fn [row]
+     (copy-collect-specimen specimen row copy-indexes))
+   (relation-tuples relation)))
+
+(defn- ^:vector<collect-specimen-v3> expand-output-specimens
+  [^relation-v3 relation
+   ^:vector<tuple<int;int>> copy-indexes
+   ^:vector<collect-specimen-v3> specimens]
+  (vec
+   (mapcat
+    (fn [specimen]
+      (expand-output-specimen
+       relation copy-indexes specimen))
+    specimens)))
+
+(defn ^collect-transform-v3 collect-rel-xf
+  [^:vector<tuple<string;int>> symbols-indexed
+   ^relation-v3 relation]
+  (let [copy-indexes
+        (collect-copy-indexes
+         symbols-indexed
+         (relation-offset-map relation))]
+    (RelationCollectTransformV3
+     relation copy-indexes)))
+
+(defn- ^collect-specimen-v3 empty-collect-specimen
+  [^:int size]
+  (da/make-array size None))
+
+(defn- ^:array<datascript.lg.query-types/result>
+  require-collect-row
+  [^:vector<string> symbols
+   ^collect-specimen-v3 specimen]
+  (to-array
+   (reduce-kv
+    (fn [values index value]
+      (match value
+        (Some result) (conj values result)
+        None
+        (Stdlib.invalid_arg
+         (str
+          "Query find variable is not bound: "
+          (nth symbols index)))))
+    []
+    (vec specimen))))
+
+(defn- ^:vector<collect-specimen-v3> apply-collect-transform
+  [^:vector<collect-specimen-v3> specimens
+   ^collect-transform-v3 transform]
+  (match transform
+    (RelationCollectTransformV3 relation copy-indexes)
+    (expand-output-specimens
+     relation copy-indexes specimens)))
+
+(defn- ^:vector<collect-transform-v3> empty-collect-transforms []
+  [])
+
+(defn collect-to
+  ([^query-context-v3 context
+    ^:vector<string> symbols
+   ^:vector<array<datascript.lg.query-types/result>> acc]
+   (collect-to
+    context symbols acc (empty-collect-transforms)
+    (empty-collect-specimen (count symbols))))
+  ([^query-context-v3 context
+    ^:vector<string> symbols
+    ^:vector<array<datascript.lg.query-types/result>> acc
+    ^:vector<collect-transform-v3> transforms]
+   (collect-to
+    context symbols acc transforms
+    (empty-collect-specimen (count symbols))))
+  ([^query-context-v3 context
+    ^:vector<string> symbols
+    ^:vector<array<datascript.lg.query-types/result>> acc
+    ^:vector<collect-transform-v3> transforms
+    ^collect-specimen-v3 specimen]
+   (match context
+     EmptyContextV3 acc
+     (QueryContextV3 state)
+     (let [symbols-indexed
+           (reduce-kv
+            (fn [indexed index symbol]
+              (conj indexed (tuple symbol index)))
+            []
+            symbols)
+           _ (collect-consts
+              symbols-indexed specimen (:consts state))
+           relation-transforms
+           (mapv
+            (fn [relation]
+              (collect-rel-xf symbols-indexed relation))
+            (related-rels context symbols))
+           specimens
+           (reduce
+            apply-collect-transform
+            [specimen]
+            (into relation-transforms transforms))]
+       (reduce
+        (fn [rows collected]
+          (conj rows (require-collect-row symbols collected)))
+        acc
+        specimens)))))
+
+(defn ^datascript.lg.query-types/output q-closed
+  [^datascript.parser/Query query
+   ^:vector<datascript.lg.query-types/input> inputs]
+  (let [descriptors
+        (match (parser/static-query-inputs query)
+          (Some descriptors) descriptors
+          None
+          (Stdlib.invalid_arg
+           "Query-v3 requires statically representable inputs"))
+        context
+        (resolve-ins
+         (context-v3 [] {})
+         descriptors
+         (vec inputs))
+        context
+        (resolve-clauses context (.-qwhere query))
+        find (.-qfind query)
+        find-variables
+        (match (parser/find-projection-variable-names find)
+          (Some variables) variables
+          None
+          (Stdlib.invalid_arg
+           "Query-v3 find currently supports variables only"))
+        with-variables
+        (query-types/query-with-variable-names query)
+        all-variables
+        (vec (concat find-variables with-variables))
+        collected
+        (query-types/distinct-rows
+         (collect-to context all-variables []))
+        projected
+        (if (empty? with-variables)
+          collected
+          (let [indexes
+                (to-array (range (count find-variables)))]
+            (mapv
+             (fn [row]
+               (query-types/project-row row indexes))
+             collected)))]
+    (query-types/find-output
+     find
+     (.-qreturn-map query)
+     projected)))
+
+(defn q
+  {:inline
+   (fn [query & inputs]
+     (list
+      'datascript.query-v3/q-closed
+      query
+      (vec inputs)))}
+  [^datascript.parser/Query query
+   & ^:list<datascript.lg.query-types/input> inputs]
+  (q-closed query (vec inputs)))
