@@ -2007,6 +2007,27 @@
     (empty-aggregate-context-state)
     (context-relations context))))
 
+(defn- ^datascript.db/database-view pull-database
+  [^query-context-v3 context
+   ^:vector<datascript.parser/find-element> elements]
+  (loop [remaining elements]
+    (if-some [element (first remaining)]
+      (if-some [pull (parser/find-element-pull element)]
+        (let [source-name (parser/pull-source-name pull)]
+          (if-some [source
+                    (get (context-sources context) source-name)]
+            (if-some [database (query-types/source-database source)]
+              database
+              (Stdlib.invalid_arg
+               (str
+                "Query source is not a database: "
+                source-name)))
+            (Stdlib.invalid_arg
+             (str "Query source is not bound: " source-name))))
+        (recur (subvec remaining 1)))
+      (Stdlib.invalid_arg
+       "Pull find requires a database source"))))
+
 (defn collect-to
   ([^query-context-v3 context
     ^:vector<string> symbols
@@ -2071,6 +2092,12 @@
         (resolve-clauses context (.-qwhere query))
         find (.-qfind query)
         find-elements (parser/find-spec-elements find)
+        pull-patterns
+        (if (some parser/pull? find-elements)
+          (query-types/resolve-pull-patterns
+           find-elements
+           (aggregate-constants-relation context))
+          [])
         find-variables
         (match (parser/find-projection-variable-names find)
           (Some variables) variables
@@ -2100,7 +2127,16 @@
            (aggregate-constants-relation context)
            (aggregate-context-relation context)
            projected)
-          projected)]
+          projected)
+        rows
+        (if (some parser/pull? find-elements)
+          (query-types/pull-rows
+           (pull-database context find-elements)
+           (context-sources context)
+           find-elements
+           pull-patterns
+           rows)
+          rows)]
     (query-types/find-output
      find
      (.-qreturn-map query)

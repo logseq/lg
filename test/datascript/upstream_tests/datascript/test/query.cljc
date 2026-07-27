@@ -2757,6 +2757,222 @@
         (catch (Invalid_argument message)
           (str message)))))))
 
+(defn ^datascript.lg.query-types/input query-v3-value-input
+  [^:Datascript_runtime.Data_value.t value]
+  (query-types/binding-input
+   (query-types/scalar-binding
+    (query-types/value-result value))))
+
+(defn ^:Datascript_runtime.Data_value.t query-v3-name-pattern []
+  (query-form-vector
+   [(Datascript_runtime.Data_value.Keyword ":name")]))
+
+(deftest test-query-v3-pull-default-source-and-find-shapes
+  (let [database
+        (db/database-view
+         (d/db-with
+          (d/empty-db)
+          [[:db/add 1 :name "Ada"]
+           [:db/add 1 :age 42]
+           [:db/add 2 :name "Bob"]]))
+        pull
+        (parser/pull-find-element
+         "?entity"
+         (query-v3-name-pattern))
+        descriptors
+        [(parser/make-static-source-input "$")
+         (parser/make-static-value-input
+          (parser/collection-input
+           (parser/scalar-input "?entity")))]
+        relation-query
+        (parser/static-query-clauses-with-inputs
+         (parser/relation-find-elements
+          [(parser/variable-find-element "?entity")
+           pull])
+         []
+         descriptors)
+        collection-query
+        (parser/static-query-clauses-with-inputs
+         (parser/collection-find-element pull)
+         []
+         descriptors)
+        scalar-query
+        (parser/static-query-clauses-with-inputs
+         (parser/single-find-element pull)
+         []
+         descriptors)
+        database-input
+        (query-types/source-input
+         (query-types/database-source database))
+        entity-input (query-v3-int-collection-input [1 2])]
+    (is
+     (=
+      [["1" "{:name \"Ada\"}"]
+       ["2" "{:name \"Bob\"}"]]
+      (query-output-edn-rows
+       (require-query-v3-relation-output
+        (query-v3/q
+         relation-query database-input entity-input)))))
+    (is
+     (=
+      ["{:name \"Ada\"}" "{:name \"Bob\"}"]
+      (mapv
+       (fn [^datascript.lg.query-types/result result]
+         (Datascript_runtime.Data_value.to_edn_string
+          (query-types/result-pattern-value result)))
+       (require-query-v3-collection-output
+        (query-v3/q
+         collection-query database-input entity-input)))))
+    (is
+     (match
+      (query-types/output-scalar
+       (query-v3/q
+        scalar-query database-input entity-input))
+       (Some (Some result))
+       (=
+        "{:name \"Ada\"}"
+        (Datascript_runtime.Data_value.to_edn_string
+         (query-types/result-pattern-value result)))
+       _ false))))
+
+(deftest test-query-v3-pull-pattern-variable
+  (let [database
+        (db/database-view
+         (d/db-with
+          (d/empty-db)
+          [[:db/add 1 :name "Ada"]]))
+        query
+        (parser/static-query-clauses-with-inputs
+         (parser/relation-find-elements
+          [(parser/pull-variable-find-element
+            "?entity" "?pattern")])
+         []
+         [(parser/make-static-source-input "$")
+          (parser/make-static-value-input
+           (parser/scalar-input "?pattern"))
+          (parser/make-static-value-input
+           (parser/scalar-input "?entity"))])
+        output
+        (query-v3/q
+         query
+         (query-types/source-input
+          (query-types/database-source database))
+         (query-v3-value-input
+          (query-v3-name-pattern))
+         (query-v3-value-input
+          (Datascript_runtime.Data_value.Int 1)))]
+    (is
+     (=
+      [["{:name \"Ada\"}"]]
+      (query-output-edn-rows
+       (require-query-v3-relation-output output))))))
+
+(deftest test-query-v3-pull-explicit-source
+  (let [first-database
+        (db/database-view
+         (d/db-with
+          (d/empty-db)
+          [[:db/add 1 :name "First"]]))
+        second-database
+        (db/database-view
+         (d/db-with
+          (d/empty-db)
+          [[:db/add 1 :name "Second"]]))
+        query
+        (parser/static-query-clauses-with-inputs
+         (parser/relation-find-elements
+          [(parser/pull-source-find-element
+            "$second" "?entity"
+            (query-v3-name-pattern))])
+         []
+         [(parser/make-static-source-input "$first")
+          (parser/make-static-source-input "$second")
+          (parser/make-static-value-input
+           (parser/scalar-input "?entity"))])
+        output
+        (query-v3/q
+         query
+         (query-types/source-input
+          (query-types/database-source first-database))
+         (query-types/source-input
+          (query-types/database-source second-database))
+         (query-v3-value-input
+          (Datascript_runtime.Data_value.Int 1)))]
+    (is
+     (=
+      [["{:name \"Second\"}"]]
+      (query-output-edn-rows
+       (require-query-v3-relation-output output))))))
+
+(deftest test-query-v3-pull-errors
+  (let [database
+        (db/database-view
+         (d/db-with
+          (d/empty-db)
+          [[:db/add 1 :name "Ada"]]))
+        default-pull-query
+        (parser/static-query-clauses-with-inputs
+         (parser/relation-find-elements
+          [(parser/pull-find-element
+            "?entity" (query-v3-name-pattern))])
+         []
+         [(parser/make-static-source-input "$")
+          (parser/make-static-value-input
+           (parser/scalar-input "?entity"))])
+        variable-pattern-query
+        (parser/static-query-clauses-with-inputs
+         (parser/relation-find-elements
+          [(parser/pull-variable-find-element
+            "?entity" "?pattern")])
+         []
+         [(parser/make-static-source-input "$")
+          (parser/make-static-value-input
+           (parser/scalar-input "?entity"))])]
+    (is
+     (=
+      "Query source is not a database: $"
+      (try
+        (let [_output
+              (query-v3/q
+               default-pull-query
+               (query-types/source-input
+                (query-types/relation-source
+                 [(query-int-row [1])]))
+               (query-v3-value-input
+                (Datascript_runtime.Data_value.Int 1)))]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "Pull find pattern variable is not bound"
+      (try
+        (let [_output
+              (query-v3/q
+               variable-pattern-query
+               (query-types/source-input
+                (query-types/database-source database))
+               (query-v3-value-input
+                (Datascript_runtime.Data_value.Int 1)))]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "Pull find entity must be an entity reference"
+      (try
+        (let [_output
+              (query-v3/q
+               default-pull-query
+               (query-types/source-input
+                (query-types/database-source database))
+               (query-v3-value-input
+                (Datascript_runtime.Data_value.String
+                 "not-an-entity")))]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))))
+
 (deftest test-public-tuple-key-helpers
   (let [attrs (query-types/index-attrs ["?x" "?y"])
         row (query-int-row [10 20])
