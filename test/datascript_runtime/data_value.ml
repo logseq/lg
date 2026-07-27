@@ -295,6 +295,7 @@ let count_value = function
   | String value -> Some (String.length value)
   | List values | Vector values | Set values -> Some (List.length values)
   | Map entries -> Some (List.length entries)
+  | Tuple values -> Some (List.length values)
   | _ -> None
 
 let entity_ref_value = function
@@ -447,6 +448,25 @@ and entity_ref_equal left right =
   | Lookup_ref (left_attr, left_value), Lookup_ref (right_attr, right_value) ->
       String.equal left_attr right_attr && equal left_value right_value
   | _ -> false
+
+let index_in_bounds length = function
+  | Int index | Ref index -> index >= 0 && index < length
+  | Wide_int index ->
+      Int64.compare index 0L >= 0
+      && Int64.compare index (Int64.of_int length) < 0
+  | _ -> false
+
+let contains_key collection key =
+  match collection with
+  | Nil -> Some false
+  | String value -> Some (index_in_bounds (String.length value) key)
+  | Vector values -> Some (index_in_bounds (List.length values) key)
+  | Tuple values -> Some (index_in_bounds (List.length values) key)
+  | Map entries ->
+      Some (List.exists (fun (candidate, _) -> equal candidate key) entries)
+  | Set values -> Some (List.exists (equal key) values)
+  | List _ -> None
+  | _ -> None
 
 let map_get map key =
   match map with

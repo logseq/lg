@@ -302,6 +302,8 @@
     "string?" (Some String)
     "boolean?" (Some Boolean)
     "keyword?" (Some KeywordValue)
+    "empty?" (Some Empty)
+    "contains?" (Some Contains)
     "re-find" (Some RegexFind)
     "missing?" (Some Missing)
     None))
@@ -458,6 +460,20 @@
         (Datascript_runtime.Data_value.Keyword _) (Some true)
         _ (Some false))
       None)
+    Empty
+    (if (= 1 (count values))
+      (if-some [value
+                (Datascript_runtime.Data_value.count_value
+                 (nth values 0))]
+        (Some (= value 0))
+        None)
+      None)
+    Contains
+    (if (= 2 (count values))
+      (Datascript_runtime.Data_value.contains_key
+       (nth values 0)
+       (nth values 1))
+      None)
     RegexFind
     (if (= 2 (count values))
       (Datascript_runtime.Data_value.regex_find
@@ -484,6 +500,7 @@
     "and" (Some AndValues)
     "or" (Some OrValues)
     "count" (Some Count)
+    "not-empty" (Some NotEmpty)
     "get" (Some Get)
     "get-else" (Some GetElse)
     "get-some" (Some GetSome)
@@ -563,6 +580,17 @@
                 (Datascript_runtime.Data_value.count_value
                  (nth values 0))]
         (Some (Datascript_runtime.Data_value.Int value))
+        None)
+      None)
+    NotEmpty
+    (if (= 1 (count values))
+      (if-some [value
+                (Datascript_runtime.Data_value.count_value
+                 (nth values 0))]
+        (Some
+         (if (= value 0)
+           (Datascript_runtime.Data_value.Nil)
+           (nth values 0)))
         None)
       None)
     Get

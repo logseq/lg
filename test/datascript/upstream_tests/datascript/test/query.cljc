@@ -2523,6 +2523,192 @@
         (catch (Invalid_argument message)
           (str message)))))))
 
+(defn ^:vector<vector<string>> query-v3-contains-output-edn
+  [^:Datascript_runtime.Data_value.t collection
+   ^:Datascript_runtime.Data_value.t key]
+  (query-v3-static-function-output-edn
+   "contains?"
+   [(parser/constant-argument collection)
+    (parser/constant-argument key)]))
+
+(deftest test-query-v3-collection-emptiness-predicates
+  (let [one (Datascript_runtime.Data_value.Int 1)
+        attr (Datascript_runtime.Data_value.Keyword ":a")
+        empty-vector (query-form-vector [])
+        non-empty-vector (query-form-vector [one])
+        empty-list (query-form-list [])
+        non-empty-list (query-form-list [one])
+        empty-map (Datascript_runtime.Data_value.Map (list))
+        non-empty-map
+        (Datascript_runtime.Data_value.Map
+         (list (tuple attr one)))
+        empty-set (Datascript_runtime.Data_value.Set (list))
+        non-empty-set
+        (Datascript_runtime.Data_value.Set (list attr))
+        empty-tuple (Datascript_runtime.Data_value.Tuple (list))
+        non-empty-tuple
+        (Datascript_runtime.Data_value.Tuple
+         (list (Some one)))
+        values
+        [(Datascript_runtime.Data_value.Nil)
+         empty-vector
+         non-empty-vector
+         (Datascript_runtime.Data_value.String "")
+         (Datascript_runtime.Data_value.String "x")
+         empty-map
+         non-empty-map
+         empty-set
+         non-empty-set
+         empty-list
+         non-empty-list
+         empty-tuple
+         non-empty-tuple]]
+    (is
+     (=
+      [["nil"] ["[]"] ["\"\""] ["{}"] ["#{}"]]
+      (query-v3-static-predicate-output-edn
+       "empty?" values)))
+    (is
+     (=
+      [["[1]"]
+       ["\"x\""]
+       ["{:a 1}"]
+       ["#{:a}"]]
+      (query-v3-static-predicate-output-edn
+       "not-empty" values)))))
+
+(deftest test-query-v3-collection-emptiness-functions
+  (let [attr (Datascript_runtime.Data_value.Keyword ":a")
+        one (Datascript_runtime.Data_value.Int 1)
+        non-empty-map
+        (Datascript_runtime.Data_value.Map
+         (list (tuple attr one)))
+        empty-set (Datascript_runtime.Data_value.Set (list))
+        empty-tuple (Datascript_runtime.Data_value.Tuple (list))]
+    (is
+     (=
+      [["{:a 1}"]]
+      (query-v3-static-function-output-edn
+       "not-empty"
+       [(parser/constant-argument non-empty-map)])))
+    (is
+     (=
+      []
+      (query-v3-static-function-output-edn
+       "not-empty"
+       [(parser/constant-argument empty-set)])))
+    (is
+     (=
+      [["true"]]
+      (query-v3-static-function-output-edn
+       "empty?"
+       [(parser/constant-argument empty-tuple)])))))
+
+(deftest test-query-v3-contains-collections-and-indexes
+  (let [attr (Datascript_runtime.Data_value.Keyword ":a")
+        missing (Datascript_runtime.Data_value.Keyword ":missing")
+        one (Datascript_runtime.Data_value.Int 1)
+        data-map
+        (Datascript_runtime.Data_value.Map
+         (list (tuple attr one)))
+        data-set
+        (Datascript_runtime.Data_value.Set (list attr))
+        data-vector (query-form-vector [one])
+        data-tuple
+        (Datascript_runtime.Data_value.Tuple
+         (list (Some one)))
+        data-string (Datascript_runtime.Data_value.String "x")]
+    (is (= [["true"]]
+           (query-v3-contains-output-edn data-map attr)))
+    (is (= [["false"]]
+           (query-v3-contains-output-edn data-map missing)))
+    (is (= [["true"]]
+           (query-v3-contains-output-edn data-set attr)))
+    (is (= [["true"]]
+           (query-v3-contains-output-edn
+            data-vector
+            (Datascript_runtime.Data_value.Int 0))))
+    (is (= [["false"]]
+           (query-v3-contains-output-edn
+            data-vector
+            (Datascript_runtime.Data_value.Int 1))))
+    (is (= [["false"]]
+           (query-v3-contains-output-edn
+            data-vector
+            (Datascript_runtime.Data_value.Float 0.0))))
+    (is (= [["true"]]
+           (query-v3-contains-output-edn
+            data-tuple
+            (Datascript_runtime.Data_value.Int 0))))
+    (is (= [["true"]]
+           (query-v3-contains-output-edn
+            data-string
+            (Datascript_runtime.Data_value.Int 0))))
+    (is (= [["false"]]
+           (query-v3-contains-output-edn
+            data-string
+            (Datascript_runtime.Data_value.Int 1))))
+    (is (= [["false"]]
+           (query-v3-contains-output-edn
+            (Datascript_runtime.Data_value.Nil)
+            attr)))))
+
+(deftest test-query-v3-collection-predicate-errors
+  (let [invalid-list-query
+        (query-v3-function-query
+         (parser/relation-find ["?result"])
+         []
+         (parser/static-function-clause
+          "contains?"
+          [(parser/constant-argument
+            (query-form-list
+             [(Datascript_runtime.Data_value.Int 1)]))
+           (parser/constant-argument
+            (Datascript_runtime.Data_value.Int 0))]
+          (parser/scalar-input "?result")))
+        invalid-value-query
+        (query-v3-function-query
+         (parser/relation-find ["?result"])
+         []
+         (parser/static-function-clause
+          "empty?"
+          [(parser/constant-argument
+            (Datascript_runtime.Data_value.Int 1))]
+          (parser/scalar-input "?result")))
+        invalid-arity-query
+        (query-v3-function-query
+         (parser/relation-find ["?result"])
+         []
+         (parser/static-function-clause
+          "contains?"
+          [(parser/constant-argument
+            (query-form-vector []))]
+          (parser/scalar-input "?result")))]
+    (is
+     (=
+      "Invalid arguments for query function: contains?"
+      (try
+        (let [_output (query-v3/q invalid-list-query)]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "Invalid arguments for query function: empty?"
+      (try
+        (let [_output (query-v3/q invalid-value-query)]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "Invalid arguments for query function: contains?"
+      (try
+        (let [_output (query-v3/q invalid-arity-query)]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))))
+
 (deftest test-query-v3-function-clause-built-in
   (let [query
         (query-v3-function-query

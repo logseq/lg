@@ -59,6 +59,7 @@ val bool_value : t -> bool option
 val sequential_items : t -> t Rrbvec.t option
 val set_items : t -> t Rrbvec.t option
 val count_value : t -> int option
+val contains_key : t -> t -> bool option
 val entity_ref_value : t -> entity_ref option
 val lookup_ref_value : t -> (string * t) option
 val ref_value : t -> int option
