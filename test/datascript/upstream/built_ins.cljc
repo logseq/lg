@@ -297,6 +297,11 @@
     "nil?" (Some NilValue)
     "some?" (Some SomeValue)
     "not" (Some NotValue)
+    "number?" (Some Number)
+    "integer?" (Some Integer)
+    "string?" (Some String)
+    "boolean?" (Some Boolean)
+    "keyword?" (Some KeywordValue)
     "re-find" (Some RegexFind)
     "missing?" (Some Missing)
     None))
@@ -417,6 +422,41 @@
       (Some
        (not
         (data-value-truthy? (nth values 0))))
+      None)
+    Number
+    (if (= 1 (count values))
+      (match (nth values 0)
+        (Datascript_runtime.Data_value.Int _) (Some true)
+        (Datascript_runtime.Data_value.Wide_int _) (Some true)
+        (Datascript_runtime.Data_value.Float _) (Some true)
+        (Datascript_runtime.Data_value.Ref _) (Some true)
+        _ (Some false))
+      None)
+    Integer
+    (if (= 1 (count values))
+      (match (nth values 0)
+        (Datascript_runtime.Data_value.Int _) (Some true)
+        (Datascript_runtime.Data_value.Wide_int _) (Some true)
+        (Datascript_runtime.Data_value.Ref _) (Some true)
+        _ (Some false))
+      None)
+    String
+    (if (= 1 (count values))
+      (match (nth values 0)
+        (Datascript_runtime.Data_value.String _) (Some true)
+        _ (Some false))
+      None)
+    Boolean
+    (if (= 1 (count values))
+      (match (nth values 0)
+        (Datascript_runtime.Data_value.Bool _) (Some true)
+        _ (Some false))
+      None)
+    KeywordValue
+    (if (= 1 (count values))
+      (match (nth values 0)
+        (Datascript_runtime.Data_value.Keyword _) (Some true)
+        _ (Some false))
       None)
     RegexFind
     (if (= 2 (count values))

@@ -2410,6 +2410,119 @@
         (catch (Invalid_argument message)
           (str message)))))))
 
+(deftest test-query-v3-core-type-predicates
+  (let [values
+        [(Datascript_runtime.Data_value.Int 1)
+         (Datascript_runtime.Data_value.Wide_int
+          (Int64.of_int 2))
+         (Datascript_runtime.Data_value.Float 3.5)
+         (Datascript_runtime.Data_value.Ref 7)
+         (Datascript_runtime.Data_value.String "text")
+         (Datascript_runtime.Data_value.Bool false)
+         (Datascript_runtime.Data_value.Bool true)
+         (Datascript_runtime.Data_value.Keyword ":kind")
+         (Datascript_runtime.Data_value.Symbol "symbol")
+         (Datascript_runtime.Data_value.Nil)]]
+    (is
+     (=
+      [["1"] ["2"] ["3.5"] ["7"]]
+      (query-v3-static-predicate-output-edn
+       "number?" values)))
+    (is
+     (=
+      [["1"] ["2"] ["7"]]
+      (query-v3-static-predicate-output-edn
+       "integer?" values)))
+    (is
+     (=
+      [["\"text\""]]
+      (query-v3-static-predicate-output-edn
+       "string?" values)))
+    (is
+     (=
+      [["false"] ["true"]]
+      (query-v3-static-predicate-output-edn
+       "boolean?" values)))
+    (is
+     (=
+      [[":kind"]]
+      (query-v3-static-predicate-output-edn
+       "keyword?" values)))))
+
+(deftest test-query-v3-core-type-functions
+  (is
+   (=
+    [["true"]]
+    (query-v3-static-function-output-edn
+     "number?"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.Float 1.5))])))
+  (is
+   (=
+    [["false"]]
+    (query-v3-static-function-output-edn
+     "integer?"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.Float 1.5))])))
+  (is
+   (=
+    [["false"]]
+    (query-v3-static-function-output-edn
+     "string?"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.Keyword ":kind"))])))
+  (is
+   (=
+    [["true"]]
+    (query-v3-static-function-output-edn
+     "boolean?"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.Bool false))])))
+  (is
+   (=
+    [["true"]]
+    (query-v3-static-function-output-edn
+     "keyword?"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.Keyword ":kind"))]))))
+
+(deftest test-query-v3-core-type-predicate-invalid-arity
+  (let [zero-argument-query
+        (query-v3-function-query
+         (parser/relation-find ["?result"])
+         []
+         (parser/static-function-clause
+          "number?"
+          []
+          (parser/scalar-input "?result")))
+        two-argument-query
+        (query-v3-function-query
+         (parser/relation-find ["?result"])
+         []
+         (parser/static-function-clause
+          "keyword?"
+          [(parser/constant-argument
+            (Datascript_runtime.Data_value.Keyword ":kind"))
+           (parser/constant-argument
+            (Datascript_runtime.Data_value.Keyword ":extra"))]
+          (parser/scalar-input "?result")))]
+    (is
+     (=
+      "Invalid arguments for query function: number?"
+      (try
+        (let [_output (query-v3/q zero-argument-query)]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "Invalid arguments for query function: keyword?"
+      (try
+        (let [_output (query-v3/q two-argument-query)]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))))
+
 (deftest test-query-v3-function-clause-built-in
   (let [query
         (query-v3-function-query
