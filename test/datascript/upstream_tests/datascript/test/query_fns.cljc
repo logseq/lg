@@ -468,6 +468,130 @@
              :where [(odd? 3 2) ?x]])
       (Datascript_runtime.Data_value.Bool true)))))
 
+(deftest test-core-unary-truth-type-and-empty-query-predicates
+  (testing "truth predicates treat a missing argument as nil and ignore extras"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(true?) ?x]])
+      (Datascript_runtime.Data_value.Bool false)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(true? true false) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(false?) ?x]])
+      (Datascript_runtime.Data_value.Bool false)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(false? false true) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(nil?) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(nil? nil 1) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(some?) ?x]])
+      (Datascript_runtime.Data_value.Bool false)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(some? 1 nil) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(not) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(not false true) ?x]])
+      (Datascript_runtime.Data_value.Bool true))))
+
+  (testing "type predicates treat a missing argument as nil and ignore extras"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(number?) ?x]])
+      (Datascript_runtime.Data_value.Bool false)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(number? 1 "x") ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(string?) ?x]])
+      (Datascript_runtime.Data_value.Bool false)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(string? "x" 1) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(boolean?) ?x]])
+      (Datascript_runtime.Data_value.Bool false)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(boolean? true 1) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(keyword?) ?x]])
+      (Datascript_runtime.Data_value.Bool false)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(keyword? :kind 1) ?x]])
+      (Datascript_runtime.Data_value.Bool true))))
+
+  (testing "empty? treats a missing argument as nil and ignores extras"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(empty?) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(empty? nil) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(empty? [] [1]) ?x]])
+      (Datascript_runtime.Data_value.Bool true))))
+
+  (testing "empty? rejects a scalar with the upstream ISeqable error"
+    (is
+     (=
+      "1 is not ISeqable"
+      (try
+        (let [_output
+              (d/q '[:find ?x .
+                     :where [(empty? 1) ?x]])]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))))
+
 (deftest test-core-collection-value-query-functions
   (testing "set preserves uniqueness and nil conversion"
     (is

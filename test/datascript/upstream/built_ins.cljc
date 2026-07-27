@@ -397,77 +397,60 @@
      (Datascript_runtime.Data_value.is_odd
       (first-value values)))
     TrueValue
-    (if (= 1 (count values))
-      (Some
-       (Datascript_runtime.Data_value.equal
-        (nth values 0)
-        (Datascript_runtime.Data_value.Bool true)))
-      None)
+    (Some
+     (Datascript_runtime.Data_value.equal
+      (first-value values)
+      (Datascript_runtime.Data_value.Bool true)))
     FalseValue
-    (if (= 1 (count values))
-      (Some
-       (Datascript_runtime.Data_value.equal
-        (nth values 0)
-        (Datascript_runtime.Data_value.Bool false)))
-      None)
+    (Some
+     (Datascript_runtime.Data_value.equal
+      (first-value values)
+      (Datascript_runtime.Data_value.Bool false)))
     NilValue
-    (if (= 1 (count values))
-      (Some
-       (Datascript_runtime.Data_value.is_nil
-        (nth values 0)))
-      None)
+    (Some
+     (Datascript_runtime.Data_value.is_nil
+      (first-value values)))
     SomeValue
-    (if (= 1 (count values))
-      (Some
-       (not
-        (Datascript_runtime.Data_value.is_nil
-         (nth values 0))))
-      None)
+    (Some
+     (not
+      (Datascript_runtime.Data_value.is_nil
+       (first-value values))))
     NotValue
-    (if (= 1 (count values))
-      (Some
-       (not
-        (data-value-truthy? (nth values 0))))
-      None)
+    (Some
+     (not
+      (data-value-truthy? (first-value values))))
     Number
-    (if (= 1 (count values))
-      (match (nth values 0)
-        (Datascript_runtime.Data_value.Int _) (Some true)
-        (Datascript_runtime.Data_value.Wide_int _) (Some true)
-        (Datascript_runtime.Data_value.Float _) (Some true)
-        (Datascript_runtime.Data_value.Ref _) (Some true)
-        _ (Some false))
-      None)
+    (match (first-value values)
+      (Datascript_runtime.Data_value.Int _) (Some true)
+      (Datascript_runtime.Data_value.Wide_int _) (Some true)
+      (Datascript_runtime.Data_value.Float _) (Some true)
+      (Datascript_runtime.Data_value.Ref _) (Some true)
+      _ (Some false))
     Integer
     (Some
      (Datascript_runtime.Data_value.is_integer
       (first-value values)))
     String
-    (if (= 1 (count values))
-      (match (nth values 0)
-        (Datascript_runtime.Data_value.String _) (Some true)
-        _ (Some false))
-      None)
+    (match (first-value values)
+      (Datascript_runtime.Data_value.String _) (Some true)
+      _ (Some false))
     Boolean
-    (if (= 1 (count values))
-      (match (nth values 0)
-        (Datascript_runtime.Data_value.Bool _) (Some true)
-        _ (Some false))
-      None)
+    (match (first-value values)
+      (Datascript_runtime.Data_value.Bool _) (Some true)
+      _ (Some false))
     KeywordValue
-    (if (= 1 (count values))
-      (match (nth values 0)
-        (Datascript_runtime.Data_value.Keyword _) (Some true)
-        _ (Some false))
-      None)
+    (match (first-value values)
+      (Datascript_runtime.Data_value.Keyword _) (Some true)
+      _ (Some false))
     Empty
-    (if (= 1 (count values))
-      (if-some [value
-                (Datascript_runtime.Data_value.count_value
-                 (nth values 0))]
-        (Some (= value 0))
-        None)
-      None)
+    (let [value (first-value values)]
+      (if-some [count
+                (Datascript_runtime.Data_value.count_value value)]
+        (Some (= count 0))
+        (Stdlib.invalid_arg
+         (str
+          (Datascript_runtime.Data_value.to_edn_string value)
+          " is not ISeqable"))))
     Contains
     (if (= 2 (count values))
       (Datascript_runtime.Data_value.contains_key

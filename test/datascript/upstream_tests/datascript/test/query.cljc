@@ -2533,42 +2533,20 @@
       (parser/constant-argument
        (Datascript_runtime.Data_value.Bool false))]))))
 
-(deftest test-query-v3-core-truthiness-invalid-arity
-  (let [zero-argument-query
-        (query-v3-function-query
-         (parser/relation-find ["?result"])
-         []
-         (parser/static-function-clause
-          "true?"
-          []
-          (parser/scalar-input "?result")))
-        two-argument-query
-        (query-v3-function-query
-         (parser/relation-find ["?result"])
-         []
-         (parser/static-function-clause
-          "not"
-          [(parser/constant-argument
-            (Datascript_runtime.Data_value.Bool true))
-           (parser/constant-argument
-            (Datascript_runtime.Data_value.Bool false))]
-          (parser/scalar-input "?result")))]
-    (is
-     (=
-      "Invalid arguments for query function: true?"
-      (try
-        (let [_output (query-v3/q zero-argument-query)]
-          "no error")
-        (catch (Invalid_argument message)
-          (str message)))))
-    (is
-     (=
-      "Invalid arguments for query function: not"
-      (try
-        (let [_output (query-v3/q two-argument-query)]
-          "no error")
-        (catch (Invalid_argument message)
-          (str message)))))))
+(deftest test-query-v3-core-truthiness-unary-invocation
+  (is
+   (=
+    [["false"]]
+    (query-v3-static-function-output-edn "true?" [])))
+  (is
+   (=
+    [["false"]]
+    (query-v3-static-function-output-edn
+     "not"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.Bool true))
+      (parser/constant-argument
+       (Datascript_runtime.Data_value.Bool false))]))))
 
 (deftest test-query-v3-core-type-predicates
   (let [values
@@ -2670,42 +2648,20 @@
      [(parser/constant-argument
        (Datascript_runtime.Data_value.Keyword ":kind"))]))))
 
-(deftest test-query-v3-core-type-predicate-invalid-arity
-  (let [zero-argument-query
-        (query-v3-function-query
-         (parser/relation-find ["?result"])
-         []
-         (parser/static-function-clause
-          "number?"
-          []
-          (parser/scalar-input "?result")))
-        two-argument-query
-        (query-v3-function-query
-         (parser/relation-find ["?result"])
-         []
-         (parser/static-function-clause
-          "keyword?"
-          [(parser/constant-argument
-            (Datascript_runtime.Data_value.Keyword ":kind"))
-           (parser/constant-argument
-            (Datascript_runtime.Data_value.Keyword ":extra"))]
-          (parser/scalar-input "?result")))]
-    (is
-     (=
-      "Invalid arguments for query function: number?"
-      (try
-        (let [_output (query-v3/q zero-argument-query)]
-          "no error")
-        (catch (Invalid_argument message)
-          (str message)))))
-    (is
-     (=
-      "Invalid arguments for query function: keyword?"
-      (try
-        (let [_output (query-v3/q two-argument-query)]
-          "no error")
-        (catch (Invalid_argument message)
-          (str message)))))))
+(deftest test-query-v3-core-type-predicate-unary-invocation
+  (is
+   (=
+    [["false"]]
+    (query-v3-static-function-output-edn "number?" [])))
+  (is
+   (=
+    [["true"]]
+    (query-v3-static-function-output-edn
+     "keyword?"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.Keyword ":kind"))
+      (parser/constant-argument
+       (Datascript_runtime.Data_value.Keyword ":extra"))]))))
 
 (defn ^:vector<vector<string>> query-v3-contains-output-edn
   [^:Datascript_runtime.Data_value.t collection
@@ -2859,7 +2815,18 @@
       [["true"]]
       (query-v3-static-function-output-edn
        "empty?"
-       [(parser/constant-argument empty-tuple)])))))
+       [(parser/constant-argument empty-tuple)])))
+    (is
+     (=
+      [["true"]]
+      (query-v3-static-function-output-edn "empty?" [])))
+    (is
+     (=
+      [["true"]]
+      (query-v3-static-function-output-edn
+       "empty?"
+       [(parser/constant-argument empty-set)
+        (parser/constant-argument non-empty-map)])))))
 
 (deftest test-query-v3-contains-collections-and-indexes
   (let [attr (Datascript_runtime.Data_value.Keyword ":a")
@@ -2951,7 +2918,7 @@
           (str message)))))
     (is
      (=
-      "Invalid arguments for query function: empty?"
+      "1 is not ISeqable"
       (try
         (let [_output (query-v3/q invalid-value-query)]
           "no error")
