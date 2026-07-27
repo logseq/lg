@@ -327,6 +327,45 @@
      (to-array []))
     (is (= [7] (mapv query-result-int target)))))
 
+(deftest test-query-v3-relation-products
+  (let [left
+        (query-v3/array-rel
+         ["?x" "?ignored"]
+         [(query-int-row [1 100])
+          (query-int-row [2 200])])
+        projected-left (query-v3/-project left ["?x"])
+        right
+        (query-v3/array-rel
+         ["?y"]
+         [(query-int-row [10])
+          (query-int-row [20])])
+        third
+        (query-v3/array-rel
+         ["?z"]
+         [(query-int-row [30])])
+        product (query-v3/product projected-left right)
+        product-all
+        (query-v3/product-all [projected-left right third])]
+    (is (= ["?x" "?y"] (vec (query-v3/-symbols product))))
+    (is (= 2 (query-v3/-arity product)))
+    (is
+     (=
+      [[1 10] [1 20] [2 10] [2 20]]
+      (query-v3-int-rows product)))
+    (is (= ["?x" "?y" "?z"]
+           (vec (query-v3/-symbols product-all))))
+    (is
+     (=
+      [[1 10 30] [1 20 30] [2 10 30] [2 20 30]]
+      (query-v3-int-rows product-all)))
+    (is
+     (=
+      [[1] [2]]
+      (query-v3-int-rows
+       (query-v3/product
+        projected-left
+        (query-v3/singleton-rel)))))))
+
 (deftest test-public-tuple-key-helpers
   (let [attrs (query-types/index-attrs ["?x" "?y"])
         row (query-int-row [10 20])

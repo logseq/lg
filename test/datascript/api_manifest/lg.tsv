@@ -854,6 +854,8 @@ arity	datascript.query-v3/array-rel	2	fixed
 arity	datascript.query-v3/concatv	0	variadic
 arity	datascript.query-v3/has?	2	fixed
 arity	datascript.query-v3/mapa	2	fixed
+arity	datascript.query-v3/product	2	fixed
+arity	datascript.query-v3/product-all	1	fixed
 arity	datascript.query-v3/singleton-rel	0	fixed
 arity	datascript.query-v3/subarr	3	fixed
 arity	datascript.query-v3/zip	2	fixed
@@ -1823,6 +1825,8 @@ var	datascript.query-v3/concatv
 var	datascript.query-v3/has?
 var	datascript.query-v3/lru-cache-size
 var	datascript.query-v3/mapa
+var	datascript.query-v3/product
+var	datascript.query-v3/product-all
 var	datascript.query-v3/singleton-rel
 var	datascript.query-v3/subarr
 var	datascript.query-v3/zip

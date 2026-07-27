@@ -1,5 +1,6 @@
 (ns ^:no-doc datascript.query-v3
   (:require
+   [datascript.lg.query-types :as query-types]
    [me.tonsky.persistent-sorted-set.arrays :as da]))
 
 (def ^:const lru-cache-size 100)
@@ -279,3 +280,35 @@
 
 (defn ^relation-v3 singleton-rel []
   (array-rel [] [(to-array [])]))
+
+(defn ^relation-v3 product
+  [^relation-v3 left ^relation-v3 right]
+  (let [left-symbols (-symbols left)
+        right-symbols (-symbols right)
+        left-indexes (-indexes left left-symbols)
+        right-indexes (-indexes right right-symbols)
+        rows
+        (-fold
+         left
+         (fn [^:vector<array<datascript.lg.query-types/result>> rows
+              ^:array<datascript.lg.query-types/result> left-row]
+           (-fold
+            right
+            (fn [^:vector<array<datascript.lg.query-types/result>> rows
+                 ^:array<datascript.lg.query-types/result> right-row]
+              (conj
+               rows
+               (query-types/join-rows
+                left-row
+                left-indexes
+                right-row
+                right-indexes)))
+            rows))
+         [])]
+    (array-rel
+     (into left-symbols right-symbols)
+     rows)))
+
+(defn ^relation-v3 product-all
+  [^:vector<relation-v3> relations]
+  (reduce product relations))

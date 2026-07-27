@@ -179,7 +179,11 @@ for query_v3_entry in \
   'arity	datascript.query-v3/IRelation/-union	2	fixed' \
   'var	datascript.query-v3/array-rel' \
   'arity	datascript.query-v3/array-rel	2	fixed' \
-  'var	datascript.query-v3/singleton-rel'
+  'var	datascript.query-v3/singleton-rel' \
+  'var	datascript.query-v3/product' \
+  'arity	datascript.query-v3/product	2	fixed' \
+  'var	datascript.query-v3/product-all' \
+  'arity	datascript.query-v3/product-all	1	fixed'
 do
   expect_text "the LG manifest preserves query-v3 helper: $query_v3_entry" \
     "$lg_api_manifest" "^$query_v3_entry$"
