@@ -455,16 +455,16 @@
   [^relation-v3 relation]
   (relation-rows-closed relation))
 
-(defn- ^:string database-view-print-string-v3
-  [^datascript.db/database-view database]
+(defn- database-view-print-string-v3
+  [database]
   (match database
     (db/DatabaseView unfiltered)
     (db/database-print-string unfiltered)
     (db/FilteredDatabaseView filtered)
     (db/filtered-database-print-string filtered)))
 
-(defn- ^:string result-print-string-v3
-  [^datascript.lg.query-types/result result]
+(defn- result-print-string-v3
+  [result]
   (match result
     (Datascript_runtime.Query_value.Entity entity)
     (Stdlib.string_of_int entity)
@@ -481,7 +481,7 @@
     (Datascript_runtime.Query_value.Callable _)
     "#<function>"))
 
-(defn- ^:string relation-row-print-string-v3
+(defn- relation-row-print-string-v3
   [^:array<datascript.lg.query-types/result> row]
   (str
    "("
@@ -490,14 +490,14 @@
     (mapv result-print-string-v3 (vec row)))
    ")"))
 
-(defn- ^:string relation-kind-print-string-v3
-  [^relation-v3 relation]
+(defn- relation-kind-print-string-v3
+  [relation]
   (match relation
     (ArrayRelationV3 _) "ArrayRelation"
     (CollRelationV3 _) "CollRelation"))
 
-(defn- ^:string relation-print-string-v3
-  [^relation-v3 relation]
+(defn- relation-print-string-v3
+  [relation]
   (str
    "#"
    (relation-kind-print-string-v3 relation)
@@ -512,14 +512,14 @@
    "]}"))
 
 (defn pr-rel
-  [^relation-v3 relation ^:buffer writer]
+  [relation writer]
   (Buffer.add_string
    writer
    (relation-print-string-v3 relation))
   writer)
 
-(defn- ^:string context-constants-print-string-v3
-  [^:map<string;datascript.lg.query-types/result> constants]
+(defn- context-constants-print-string-v3
+  [constants]
   (str
    "{"
    (string/join
@@ -536,8 +536,8 @@
      constants))
    "}"))
 
-(defn- ^:string context-print-string-v3
-  [^query-context-v3 context]
+(defn- context-print-string-v3
+  [context]
   (let [relations (context-relations context)]
     (str
      "{:rels"
@@ -554,7 +554,7 @@
       (context-constants context))
      " }\n")))
 
-(defn println-context [^query-context-v3 context]
+(defn println-context [context]
   (print (context-print-string-v3 context)))
 
 (defn- ^relation-v3 make-array-relation
