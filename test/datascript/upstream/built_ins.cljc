@@ -493,6 +493,9 @@
     "*" (Some Multiply)
     "inc" (Some Increment)
     "dec" (Some Decrement)
+    "keyword" (Some Keyword)
+    "name" (Some Name)
+    "namespace" (Some Namespace)
     "vector" (Some Vector)
     "tuple" (Some Tuple)
     "hash-map" (Some HashMap)
@@ -565,6 +568,17 @@
     Decrement
     (if (= 1 (count values))
       (Datascript_runtime.Data_value.decrement (nth values 0))
+      None)
+    Keyword
+    (Datascript_runtime.Data_value.keyword_from_values values)
+    Name
+    (if (= 1 (count values))
+      (Datascript_runtime.Data_value.name_value (nth values 0))
+      None)
+    Namespace
+    (if (= 1 (count values))
+      (Datascript_runtime.Data_value.namespace_value
+       (nth values 0))
       None)
     Vector
     (Some (Datascript_runtime.Data_value.vector_of_vector values))

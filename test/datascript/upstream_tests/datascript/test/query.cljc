@@ -2531,6 +2531,14 @@
    [(parser/constant-argument collection)
     (parser/constant-argument key)]))
 
+(defn ^:vector<vector<string>>
+  query-v3-static-unary-function-output-edn
+  [^:string function-name
+   ^:Datascript_runtime.Data_value.t value]
+  (query-v3-static-function-output-edn
+   function-name
+   [(parser/constant-argument value)]))
+
 (deftest test-query-v3-collection-emptiness-predicates
   (let [one (Datascript_runtime.Data_value.Int 1)
         attr (Datascript_runtime.Data_value.Keyword ":a")
@@ -2703,6 +2711,218 @@
     (is
      (=
       "Invalid arguments for query function: contains?"
+      (try
+        (let [_output (query-v3/q invalid-arity-query)]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))))
+
+(deftest test-query-v3-keyword-built-in
+  (let [string-value
+        (Datascript_runtime.Data_value.String "person/name")
+        symbol-value
+        (Datascript_runtime.Data_value.Symbol "person/name")
+        keyword-value
+        (Datascript_runtime.Data_value.Keyword ":person/name")]
+    (is
+     (=
+      [[":person/name"]]
+      (query-v3-static-unary-function-output-edn
+       "keyword" string-value)))
+    (is
+     (=
+      [[":person/name"]]
+      (query-v3-static-unary-function-output-edn
+       "keyword" symbol-value)))
+    (is
+     (=
+      [[":person/name"]]
+      (query-v3-static-unary-function-output-edn
+       "keyword" keyword-value)))
+    (is
+     (=
+      [["::plain"]]
+      (query-v3-static-unary-function-output-edn
+       "keyword"
+       (Datascript_runtime.Data_value.String ":plain"))))
+    (is
+     (=
+      []
+      (query-v3-static-unary-function-output-edn
+       "keyword"
+       (Datascript_runtime.Data_value.Nil))))
+    (is
+     (=
+      []
+      (query-v3-static-unary-function-output-edn
+       "keyword"
+       (Datascript_runtime.Data_value.Int 1))))
+    (is
+     (=
+      [["\"person/name\""]
+       ["person/name"]
+       [":person/name"]]
+      (query-v3-static-predicate-output-edn
+       "keyword"
+       [string-value
+        symbol-value
+        keyword-value
+        (Datascript_runtime.Data_value.Int 1)
+        (Datascript_runtime.Data_value.Nil)])))))
+
+(deftest test-query-v3-keyword-two-argument-built-in
+  (is
+   (=
+    [[":person/name"]]
+    (query-v3-static-function-output-edn
+     "keyword"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.String "person"))
+      (parser/constant-argument
+       (Datascript_runtime.Data_value.String "name"))])))
+  (is
+   (=
+    [[":name"]]
+    (query-v3-static-function-output-edn
+     "keyword"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.Nil))
+      (parser/constant-argument
+       (Datascript_runtime.Data_value.String "name"))])))
+  (is
+   (=
+    [[":/name"]]
+    (query-v3-static-function-output-edn
+     "keyword"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.String ""))
+      (parser/constant-argument
+       (Datascript_runtime.Data_value.String "name"))]))))
+
+(deftest test-query-v3-name-built-in
+  (is
+   (=
+    [["\"plain\""]]
+    (query-v3-static-unary-function-output-edn
+     "name"
+     (Datascript_runtime.Data_value.String "plain"))))
+  (is
+   (=
+    [["\"name\""]]
+    (query-v3-static-unary-function-output-edn
+     "name"
+     (Datascript_runtime.Data_value.Keyword ":person/name"))))
+  (is
+   (=
+    [["\"name\""]]
+    (query-v3-static-unary-function-output-edn
+     "name"
+     (Datascript_runtime.Data_value.Symbol "person/name"))))
+  (is
+   (=
+    [["\"name/extra\""]]
+    (query-v3-static-unary-function-output-edn
+     "name"
+     (Datascript_runtime.Data_value.Keyword
+      ":person/name/extra"))))
+  (is
+   (=
+    [["\"plain\""]]
+    (query-v3-static-unary-function-output-edn
+     "name"
+     (Datascript_runtime.Data_value.Keyword ":plain")))))
+
+(deftest test-query-v3-namespace-built-in
+  (is
+   (=
+    [["\"person\""]]
+    (query-v3-static-unary-function-output-edn
+     "namespace"
+     (Datascript_runtime.Data_value.Keyword ":person/name"))))
+  (is
+   (=
+    [["\"person\""]]
+    (query-v3-static-unary-function-output-edn
+     "namespace"
+     (Datascript_runtime.Data_value.Symbol "person/name"))))
+  (is
+   (=
+    []
+    (query-v3-static-unary-function-output-edn
+     "namespace"
+     (Datascript_runtime.Data_value.Keyword ":plain"))))
+  (is
+   (=
+    [["\"\""]]
+    (query-v3-static-unary-function-output-edn
+     "namespace"
+     (Datascript_runtime.Data_value.Keyword ":/name")))))
+
+(deftest test-query-v3-named-built-in-errors
+  (let [invalid-keyword-query
+        (query-v3-function-query
+         (parser/relation-find ["?result"])
+         []
+         (parser/static-function-clause
+          "keyword"
+          [(parser/constant-argument
+            (Datascript_runtime.Data_value.Symbol "person"))
+           (parser/constant-argument
+            (Datascript_runtime.Data_value.Symbol "name"))]
+          (parser/scalar-input "?result")))
+        invalid-name-query
+        (query-v3-function-query
+         (parser/relation-find ["?result"])
+         []
+         (parser/static-function-clause
+          "name"
+          [(parser/constant-argument
+            (Datascript_runtime.Data_value.Int 1))]
+          (parser/scalar-input "?result")))
+        invalid-namespace-query
+        (query-v3-function-query
+         (parser/relation-find ["?result"])
+         []
+         (parser/static-function-clause
+          "namespace"
+          [(parser/constant-argument
+            (Datascript_runtime.Data_value.String "person/name"))]
+          (parser/scalar-input "?result")))
+        invalid-arity-query
+        (query-v3-function-query
+         (parser/relation-find ["?result"])
+         []
+         (parser/static-function-clause
+          "keyword"
+          []
+          (parser/scalar-input "?result")))]
+    (is
+     (=
+      "Invalid arguments for query function: keyword"
+      (try
+        (let [_output (query-v3/q invalid-keyword-query)]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "Invalid arguments for query function: name"
+      (try
+        (let [_output (query-v3/q invalid-name-query)]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "Invalid arguments for query function: namespace"
+      (try
+        (let [_output (query-v3/q invalid-namespace-query)]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "Invalid arguments for query function: keyword"
       (try
         (let [_output (query-v3/q invalid-arity-query)]
           "no error")

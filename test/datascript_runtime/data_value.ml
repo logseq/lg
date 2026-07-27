@@ -280,6 +280,48 @@ let keyword_value = function
   | Keyword value -> Some value
   | _ -> None
 
+let keyword_text value =
+  if String.length value > 0 && value.[0] = ':' then
+    String.sub value 1 (String.length value - 1)
+  else value
+
+let named_text = function
+  | Keyword value -> Some (keyword_text value)
+  | Symbol value -> Some value
+  | _ -> None
+
+let name_from_text value =
+  match String.index_opt value '/' with
+  | Some index ->
+      String.sub value (index + 1) (String.length value - index - 1)
+  | None -> value
+
+let keyword_from_values values =
+  match Rrbvec.to_list values with
+  | [ Keyword _ as value ] -> Some value
+  | [ String value ] | [ Symbol value ] -> Some (Keyword (":" ^ value))
+  | [ Nil ] -> Some Nil
+  | [ _ ] -> Some Nil
+  | [ String namespace; String name ] ->
+      Some (Keyword (":" ^ namespace ^ "/" ^ name))
+  | [ Nil; String name ] -> Some (Keyword (":" ^ name))
+  | [ _; _ ] -> None
+  | _ -> None
+
+let name_value = function
+  | String value -> Some (String value)
+  | (Keyword _ | Symbol _) as value ->
+      Option.map (fun text -> String (name_from_text text)) (named_text value)
+  | _ -> None
+
+let namespace_value value =
+  Option.map
+    (fun text ->
+      match String.index_opt text '/' with
+      | Some index -> String (String.sub text 0 index)
+      | None -> Nil)
+    (named_text value)
+
 let bool_value = function Bool value -> Some value | _ -> None
 
 let sequential_items = function

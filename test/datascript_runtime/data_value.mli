@@ -55,6 +55,9 @@ val string_vector : string Rrbvec.t -> t
 val temp_id_vector : string Rrbvec.t -> t
 val tuple_items : t -> t option Rrbvec.t option
 val keyword_value : t -> string option
+val keyword_from_values : t Rrbvec.t -> t option
+val name_value : t -> t option
+val namespace_value : t -> t option
 val bool_value : t -> bool option
 val sequential_items : t -> t Rrbvec.t option
 val set_items : t -> t Rrbvec.t option
