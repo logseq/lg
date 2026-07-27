@@ -217,6 +217,8 @@ for query_v3_entry in \
   'arity	datascript.query-v3/get-f	3	fixed' \
   'var	datascript.query-v3/resolve-predicate' \
   'arity	datascript.query-v3/resolve-predicate	2	fixed' \
+  'var	datascript.query-v3/resolve-function' \
+  'arity	datascript.query-v3/resolve-function	2	fixed' \
   'var	datascript.query-v3/project-rel' \
   'arity	datascript.query-v3/project-rel	2	fixed' \
   'var	datascript.query-v3/project-context' \

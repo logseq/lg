@@ -889,6 +889,7 @@ arity	datascript.query-v3/q	1	variadic
 arity	datascript.query-v3/q-closed	2	fixed
 arity	datascript.query-v3/related-rels	2	fixed
 arity	datascript.query-v3/resolve-clauses	2	fixed
+arity	datascript.query-v3/resolve-function	2	fixed
 arity	datascript.query-v3/resolve-ins	3	fixed
 arity	datascript.query-v3/resolve-not	2	fixed
 arity	datascript.query-v3/resolve-or	2	fixed
@@ -1902,6 +1903,7 @@ var	datascript.query-v3/q
 var	datascript.query-v3/q-closed
 var	datascript.query-v3/related-rels
 var	datascript.query-v3/resolve-clauses
+var	datascript.query-v3/resolve-function
 var	datascript.query-v3/resolve-ins
 var	datascript.query-v3/resolve-not
 var	datascript.query-v3/resolve-or

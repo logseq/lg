@@ -1258,6 +1258,191 @@
                relation function bindings target)]
           (join-unrelated remaining-context filtered))))))
 
+(defn- ^:option<Datascript_runtime.Data_value.t>
+  invoke-function
+  [^predicate-function-v3 function
+   ^:vector<datascript.lg.query-types/result> arguments]
+  (match function
+    (ComparisonPredicateV3 name function)
+    (if (built-ins/missing-function? function)
+      (if (= 3 (count arguments))
+        (Some
+         (Datascript_runtime.Data_value.Bool
+          (query-types/query-missing?
+           (query-types/query-database-result
+            (nth arguments 0))
+           (nth arguments 1)
+           (nth arguments 2))))
+        (Stdlib.invalid_arg
+         "Invalid arguments for query function: missing?"))
+      (if-some [value
+                (built-ins/apply-comparison
+                 function
+                 (mapv
+                  query-types/result-pattern-value
+                  arguments))]
+        (Some (Datascript_runtime.Data_value.Bool value))
+        (Stdlib.invalid_arg
+         (str "Invalid arguments for query function: " name))))
+    (PurePredicateV3 name function)
+    (if-some [value
+              (built-ins/apply-pure-function
+               function
+               (mapv
+                query-types/result-pattern-value
+                arguments))]
+      (Some value)
+      (Stdlib.invalid_arg
+       (str "Invalid arguments for query function: " name)))
+    (VariablePredicateV3 _name callable)
+    (query-types/invoke-callable callable arguments)))
+
+(defn-
+  ^:tuple<query-context-v3;relation-v3>
+  function-production
+  [^query-context-v3 context
+   ^:vector<string> variables]
+  (match (extract-rels context variables)
+    (tuple None unchanged-context)
+    (tuple unchanged-context (singleton-rel))
+    (tuple (Some relations) remaining-context)
+    (tuple remaining-context (product-all relations))))
+
+(defn- ^relation-v3 join-function-binding
+  [^relation-v3 production
+   ^:array<datascript.lg.query-types/result> row
+   ^datascript.parser/binding binding
+   ^:Datascript_runtime.Data_value.t value]
+  (let [row-relation
+        (array-rel (-symbols production) [row])
+        binding-relation
+        (bind
+         binding
+         (query-types/function-binding-value
+          binding value))
+        shared
+        (shared-symbols
+         (-symbols row-relation)
+         (-symbols binding-relation))]
+    (if (empty? shared)
+      (product row-relation binding-relation)
+      (hash-join
+       row-relation
+       (hash-map-rel row-relation shared)
+       shared
+       binding-relation))))
+
+(defn- ^:option<relation-v3> add-function-output
+  [^:option<relation-v3> output ^relation-v3 relation]
+  (match output
+    None (Some relation)
+    (Some previous) (Some (-union previous relation))))
+
+(defn- ^:vector<string> function-output-symbols
+  [^relation-v3 production
+   ^datascript.parser/binding binding]
+  (reduce
+   (fn [symbols symbol]
+     (if
+      (some?
+       (some
+        (fn [existing]
+          (= existing symbol))
+        symbols))
+       symbols
+       (conj symbols symbol)))
+   (-symbols production)
+   (parser/binding-variable-names binding)))
+
+(defn- ^:bool function-row-matches-constants?
+  [^:map<string;datascript.lg.query-types/result> constants
+   ^relation-v3 relation
+   ^:array<datascript.lg.query-types/result> row]
+  (every?
+   (fn [symbol]
+     (if-some [constant (get constants symbol)]
+       (Datascript_runtime.Query_value.equal_result
+        ((-getter relation symbol) row)
+        constant)
+       true))
+   (-symbols relation)))
+
+(defn- ^relation-v3 filter-function-constants
+  [^query-context-v3 context ^relation-v3 relation]
+  (let [constants (context-constants context)]
+    (-alter-coll
+     relation
+     (fn [^:vector<array<datascript.lg.query-types/result>> rows]
+       (filterv
+        (fn [^:array<datascript.lg.query-types/result> row]
+          (function-row-matches-constants?
+           constants relation row))
+        rows)))))
+
+(defn ^query-context-v3 resolve-function
+  [^query-context-v3 context
+   ^datascript.parser/clause clause]
+  (match clause
+    (parser/FunctionClause callable arguments binding)
+    (let [form ""
+          function (get-f context callable form)
+          target
+          (to-array
+           (mapv
+            (fn [_argument] None)
+            arguments))
+          _ (collect-args! context arguments target form)
+          bindings (predicate-row-bindings context arguments)
+          variables
+          (mapv
+           (fn [binding]
+             (tuple-get binding 0))
+           bindings)
+          _ (check-bound context variables form)
+          production-parts
+          (function-production context variables)
+          remaining-context (tuple-get production-parts 0)
+          production (tuple-get production-parts 1)
+          output
+          (reduce
+           (fn [output row]
+             (let [row-target (da/aclone target)
+                   _ (fill-predicate-row!
+                      production row bindings row-target)
+                   invocation
+                   (invoke-function
+                    function
+                    (collected-predicate-arguments
+                     row-target))]
+               (match invocation
+                 None output
+                 (Some value)
+                 (if
+                  (Datascript_runtime.Data_value.is_nil
+                   value)
+                   output
+                   (add-function-output
+                    output
+                    (join-function-binding
+                     production row binding value))))))
+           None
+           (relation-tuples production))
+          relation
+          (match output
+            (Some relation) relation
+            None
+            (array-rel
+             (function-output-symbols
+              production binding)
+             []))]
+      (join-unrelated
+       remaining-context
+       (filter-function-constants
+        remaining-context relation)))
+    _
+    (Stdlib.invalid_arg
+     "Expected a DataScript function clause")))
+
 (defn- ^query-context-v3 context-with-default-source
   [^query-context-v3 context ^:string source-name]
   (match context
@@ -1604,6 +1789,7 @@
   (match clause
     (parser/PatternClause _ _) (resolve-pattern context clause)
     (parser/PredicateClause _ _) (resolve-predicate context clause)
+    (parser/FunctionClause _ _ _) (resolve-function context clause)
     (parser/AndClause clauses) (resolve-clauses context clauses)
     (parser/NotClause _ _ _ _) (resolve-not context clause)
     (parser/OrClause _ _ _ _ _) (resolve-or context clause)

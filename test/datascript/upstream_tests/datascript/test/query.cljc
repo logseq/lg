@@ -141,6 +141,31 @@
       _ (Stdlib.invalid_arg "Expected a database query argument"))
     None))
 
+(defn ^:option<Datascript_runtime.Data_value.t>
+  relation-query-result
+  [^:vector<datascript.lg.query-types/result> arguments]
+  (if-some [argument (first arguments)]
+    (let [value (query-result-int argument)]
+      (Some
+       (query-form-vector
+        [(query-form-vector
+          [(Datascript_runtime.Data_value.Int value)
+           (Datascript_runtime.Data_value.Int 10)])
+         (query-form-vector
+          [(Datascript_runtime.Data_value.Int value)
+           (Datascript_runtime.Data_value.Int 20)])])))
+    None))
+
+(defn ^:option<Datascript_runtime.Data_value.t>
+  nil-query-result
+  [^:vector<datascript.lg.query-types/result> _arguments]
+  (Some (Datascript_runtime.Data_value.Nil)))
+
+(defn ^:option<Datascript_runtime.Data_value.t>
+  absent-query-value
+  [^:vector<datascript.lg.query-types/result> _arguments]
+  None)
+
 (defn ^:vector<vector<int>> mapped-int-rows
   [^:vector<map<string;datascript.lg.query-types/result>> rows
    ^:vector<string> keys]
@@ -2149,6 +2174,256 @@
     (is (= 1
            (query-result-int
             (get constants "?entity" (query-int-result 0)))))))
+
+(defn ^datascript.parser/Query query-v3-function-query
+  [^datascript.parser/find-spec find
+   ^:vector<datascript.parser/static-query-input> inputs
+   ^datascript.parser/clause clause]
+  (parser/static-query-clauses-with-inputs
+   find [clause] inputs))
+
+(deftest test-query-v3-function-clause-built-in
+  (let [query
+        (query-v3-function-query
+         (parser/relation-find ["?x" "?next"])
+         [(parser/make-static-value-input
+           (parser/collection-input
+            (parser/scalar-input "?x")))]
+         (parser/static-function-clause
+          "inc"
+          [(parser/variable-argument "?x")]
+          (parser/scalar-input "?next")))
+        output
+        (query-v3/q
+         query
+         (query-v3-int-collection-input [1 2]))]
+    (is (= [[1 2] [2 3]]
+           (query-int-rows
+            (require-query-v3-relation-output output)))))
+  (let [query
+        (query-v3-function-query
+         (parser/tuple-find ["?x" "?sum"])
+         [(parser/make-static-value-input
+           (parser/scalar-input "?x"))]
+         (parser/static-function-clause
+          "+"
+          [(parser/variable-argument "?x")
+           (parser/constant-argument
+            (Datascript_runtime.Data_value.Int 3))]
+          (parser/scalar-input "?sum")))
+        output
+        (query-v3/q
+         query
+         (query-types/binding-input
+          (query-types/scalar-binding
+           (query-int-result 4))))]
+    (is
+     (match (query-types/output-tuple output)
+       (Some (Some row))
+       (= [4 7] (mapv query-result-int (vec row)))
+       _ false))))
+
+(deftest test-query-v3-function-clause-variable-callable
+  (let [query
+        (query-v3-function-query
+         (parser/relation-find ["?x" "?sum"])
+         [(parser/make-static-value-input
+           (parser/scalar-input "?function"))
+          (parser/make-static-value-input
+           (parser/collection-input
+            (parser/scalar-input "?x")))]
+         (parser/variable-function-clause
+          "?function"
+          [(parser/variable-argument "?x")
+           (parser/constant-argument
+            (Datascript_runtime.Data_value.Int 10))]
+          (parser/scalar-input "?sum")))
+        output
+        (query-v3/q
+         query
+         (query-types/binding-input
+          (query-types/scalar-binding
+           (query-types/callable-result
+            (query-types/callable
+             sum-query-arguments))))
+         (query-v3-int-collection-input [1 2]))]
+    (is (= [[1 11] [2 12]]
+           (query-int-rows
+            (require-query-v3-relation-output output))))))
+
+(deftest test-query-v3-function-clause-binding-shapes
+  (let [tuple-query
+        (query-v3-function-query
+         (parser/tuple-find ["?left" "?right"])
+         []
+         (parser/static-function-clause
+          "vector"
+          [(parser/constant-argument
+            (Datascript_runtime.Data_value.Int 1))
+           (parser/constant-argument
+            (Datascript_runtime.Data_value.Int 2))]
+          (parser/tuple-input
+           [(parser/scalar-input "?left")
+            (parser/scalar-input "?right")])))
+        tuple-output (query-v3/q tuple-query)
+        collection-query
+        (query-v3-function-query
+         (parser/collection-find "?item")
+         []
+         (parser/static-function-clause
+          "vector"
+          [(parser/constant-argument
+            (Datascript_runtime.Data_value.Int 3))
+           (parser/constant-argument
+            (Datascript_runtime.Data_value.Int 4))]
+          (parser/collection-input
+           (parser/scalar-input "?item"))))
+        collection-output (query-v3/q collection-query)]
+    (is
+     (match (query-types/output-tuple tuple-output)
+       (Some (Some row))
+       (= [1 2] (mapv query-result-int (vec row)))
+       _ false))
+    (is (= [3 4]
+           (mapv
+            query-result-int
+            (require-query-v3-collection-output
+             collection-output))))))
+
+(deftest test-query-v3-function-clause-relation-binding
+  (let [query
+        (query-v3-function-query
+         (parser/relation-find ["?x" "?tag"])
+         [(parser/make-static-value-input
+           (parser/scalar-input "?function"))
+          (parser/make-static-value-input
+           (parser/collection-input
+            (parser/scalar-input "?x")))]
+         (parser/variable-function-clause
+          "?function"
+          [(parser/variable-argument "?x")]
+          (parser/collection-input
+           (parser/tuple-input
+            [(parser/scalar-input "?x")
+             (parser/scalar-input "?tag")]))))
+        output
+        (query-v3/q
+         query
+         (query-types/binding-input
+          (query-types/scalar-binding
+           (query-types/callable-result
+            (query-types/callable
+             relation-query-result))))
+         (query-v3-int-collection-input [1 2]))]
+    (is (= [[1 10] [1 20] [2 10] [2 20]]
+           (query-int-rows
+            (require-query-v3-relation-output output))))))
+
+(deftest test-query-v3-function-clause-empty-results
+  (let [query
+        (fn [^:string function-variable]
+          (query-v3-function-query
+           (parser/relation-find ["?value"])
+           [(parser/make-static-value-input
+             (parser/scalar-input function-variable))]
+           (parser/variable-function-clause
+            function-variable
+            []
+            (parser/scalar-input "?value"))))
+        nil-output
+        (query-v3/q
+         (query "?nil-function")
+         (query-types/binding-input
+          (query-types/scalar-binding
+           (query-types/callable-result
+            (query-types/callable nil-query-result)))))
+        absent-output
+        (query-v3/q
+         (query "?absent-function")
+         (query-types/binding-input
+          (query-types/scalar-binding
+           (query-types/callable-result
+            (query-types/callable absent-query-value)))))]
+    (is (= []
+           (query-int-rows
+            (require-query-v3-relation-output
+             nil-output))))
+    (is (= []
+           (query-int-rows
+            (require-query-v3-relation-output
+             absent-output))))))
+
+(deftest test-query-v3-function-clause-overlapping-binding
+  (let [query
+        (query-v3-function-query
+         (parser/relation-find ["?x"])
+         [(parser/make-static-value-input
+           (parser/collection-input
+            (parser/scalar-input "?x")))]
+         (parser/static-function-clause
+          "inc"
+          [(parser/variable-argument "?x")]
+          (parser/scalar-input "?x")))
+        output
+        (query-v3/q
+         query
+         (query-v3-int-collection-input [1 2]))]
+    (is (= []
+           (query-int-rows
+            (require-query-v3-relation-output output))))))
+
+(deftest test-query-v3-function-clause-errors
+  (let [unknown-query
+        (query-v3-function-query
+         (parser/relation-find ["?value"])
+         []
+         (parser/static-function-clause
+          "unknown-function"
+          []
+          (parser/scalar-input "?value")))
+        unbound-query
+        (query-v3-function-query
+         (parser/relation-find ["?value"])
+         []
+         (parser/static-function-clause
+          "inc"
+          [(parser/variable-argument "?missing")]
+          (parser/scalar-input "?value")))
+        invalid-arity-query
+        (query-v3-function-query
+         (parser/relation-find ["?value"])
+         []
+         (parser/static-function-clause
+          "inc"
+          [(parser/constant-argument
+            (Datascript_runtime.Data_value.Int 1))
+           (parser/constant-argument
+            (Datascript_runtime.Data_value.Int 2))]
+          (parser/scalar-input "?value")))]
+    (is
+     (=
+      "Unknown built-in unknown-function"
+      (try
+        (let [_output (query-v3/q unknown-query)]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "Insufficient bindings: #{?missing}"
+      (try
+        (let [_output (query-v3/q unbound-query)]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "Invalid arguments for query function: inc"
+      (try
+        (let [_output (query-v3/q invalid-arity-query)]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))))
 
 (deftest test-public-tuple-key-helpers
   (let [attrs (query-types/index-attrs ["?x" "?y"])
