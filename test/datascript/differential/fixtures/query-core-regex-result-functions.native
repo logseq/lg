@@ -1,0 +1,10 @@
+re-find="bbb"
+re-find-captures=["abbb" "a" "bbb"]
+re-find-optional=["b" nil]
+re-find-missing=nil
+re-matches=["abbb" "bbb"]
+re-matches-partial=nil
+re-seq=("1" "22")
+re-seq-captures=(["a1" "a" "1"] ["b22" "b" "22"])
+re-seq-missing=nil
+re-seq-zero-width=("" "" "")

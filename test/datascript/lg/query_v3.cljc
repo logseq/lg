@@ -1356,10 +1356,10 @@
    ^datascript.parser/query-callable callable
    ^:string _form]
   (if-some [name (parser/static-callable-name callable)]
-    (if-some [function (built-ins/comparison-function name)]
-      (ComparisonPredicateV3 name function)
-      (if-some [function (built-ins/pure-function name)]
-        (PurePredicateV3 name function)
+    (if-some [function (built-ins/pure-function name)]
+      (PurePredicateV3 name function)
+      (if-some [function (built-ins/comparison-function name)]
+        (ComparisonPredicateV3 name function)
         (Stdlib.invalid_arg
          (str "Unknown built-in " name))))
     (if-some [variable (parser/variable-callable-name callable)]

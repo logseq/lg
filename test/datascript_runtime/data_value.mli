@@ -57,7 +57,9 @@ val map_of_data_map_with :
 val map_get : t -> t -> t option
 val get_or_default : t -> t -> t -> t option
 val regex_pattern : t -> t option
-val regex_find : t -> t -> bool option
+val regex_find_value : t Rrbvec.t -> t option
+val regex_matches_value : t Rrbvec.t -> t option
+val regex_sequence_value : t Rrbvec.t -> t option
 val string_blank : t -> bool
 val string_includes : t -> t option -> bool option
 val string_starts_with : t -> t option -> bool option

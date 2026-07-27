@@ -193,6 +193,49 @@ let regex_valid pattern =
 let regex_find pattern source =
   Js.Re.fromString pattern |> Js.Re.test ~str:source
 
+type regex_match = { captures : string option array }
+
+let regex_match result =
+  {
+    captures =
+      Js.Re.captures result
+      |> Array.map Js.Nullable.toOption;
+  }
+
+let regex_find_groups ~pattern source =
+  Js.Re.fromString pattern
+  |> Js.Re.exec ~str:source
+  |> Option.map regex_match
+
+let regex_matches_groups ~pattern source =
+  match Js.Re.fromString pattern |> Js.Re.exec ~str:source with
+  | None -> None
+  | Some result ->
+      let captures = Js.Re.captures result in
+      let matched =
+        Js.Nullable.toOption captures.(0)
+        |> Option.value ~default:""
+      in
+      if Js.Re.index result = 0 && String.length matched = String.length source
+      then Some (regex_match result)
+      else None
+
+let regex_all_groups ~pattern source =
+  let regexp = Js.Re.fromStringWithFlags pattern ~flags:"g" in
+  let rec collect matches =
+    match Js.Re.exec ~str:source regexp with
+    | None -> Array.of_list (List.rev matches)
+    | Some result ->
+        let value = regex_match result in
+        let matched =
+          value.captures.(0) |> Option.value ~default:""
+        in
+        if String.length matched = 0 then
+          Js.Re.setLastIndex regexp (Js.Re.lastIndex regexp + 1);
+        collect (value :: matches)
+  in
+  collect []
+
 let regex_replace ~all ~pattern ~replacement source =
   let flags = if all then "g" else "" in
   let regexp = Js.Re.fromStringWithFlags pattern ~flags in

@@ -17,12 +17,17 @@ type t =
   | Set of t array
   | Tagged of string * t
 
+type regex_match = { captures : string option array }
+
 val of_edn_string : string -> t
 val to_edn_string : t -> string
 val of_json_string : string -> t
 val to_json_string : t -> string
 val regex_valid : string -> bool
 val regex_find : string -> string -> bool
+val regex_find_groups : pattern:string -> string -> regex_match option
+val regex_matches_groups : pattern:string -> string -> regex_match option
+val regex_all_groups : pattern:string -> string -> regex_match array
 val regex_replace :
   all:bool -> pattern:string -> replacement:string -> string -> string
 val regex_split :

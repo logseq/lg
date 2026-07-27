@@ -500,6 +500,88 @@
       (Datascript_runtime.Data_value.Vector
        (list (Datascript_runtime.Data_value.String "a,b,c")))))))
 
+(deftest test-core-regex-result-query-functions
+  (testing "re-find returns strings, capture vectors, and nil"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(re-find #"b+" "abbbc") ?x]])
+      (Datascript_runtime.Data_value.String "bbb")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(re-find #"(a)(b+)" "abbbc") ?x]])
+      (Datascript_runtime.Data_value.Vector
+       (list
+        (Datascript_runtime.Data_value.String "abbb")
+        (Datascript_runtime.Data_value.String "a")
+        (Datascript_runtime.Data_value.String "bbb")))))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(re-find #"(a)?b" "b") ?x]])
+      (Datascript_runtime.Data_value.Vector
+       (list
+        (Datascript_runtime.Data_value.String "b")
+        (Datascript_runtime.Data_value.Nil)))))
+    (is
+     (scalar-output-missing?
+      (d/q '[:find ?x .
+             :where [(re-find #"z+" "abbbc") ?x]]))))
+
+  (testing "re-matches requires the complete source"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(re-matches #"a(b+)" "abbb") ?x]])
+      (Datascript_runtime.Data_value.Vector
+       (list
+        (Datascript_runtime.Data_value.String "abbb")
+        (Datascript_runtime.Data_value.String "bbb")))))
+    (is
+     (scalar-output-missing?
+      (d/q '[:find ?x .
+             :where [(re-matches #"b+" "abbbc") ?x]]))))
+
+  (testing "re-seq preserves captures, misses, and zero-width progress"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(re-seq #"[0-9]+" "a1b22") ?x]])
+      (Datascript_runtime.Data_value.List
+       (list
+        (Datascript_runtime.Data_value.String "1")
+        (Datascript_runtime.Data_value.String "22")))))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(re-seq #"([a-z])([0-9]+)" "a1b22") ?x]])
+      (Datascript_runtime.Data_value.List
+       (list
+        (Datascript_runtime.Data_value.Vector
+         (list
+          (Datascript_runtime.Data_value.String "a1")
+          (Datascript_runtime.Data_value.String "a")
+          (Datascript_runtime.Data_value.String "1")))
+        (Datascript_runtime.Data_value.Vector
+         (list
+          (Datascript_runtime.Data_value.String "b22")
+          (Datascript_runtime.Data_value.String "b")
+          (Datascript_runtime.Data_value.String "22")))))))
+    (is
+     (scalar-output-missing?
+      (d/q '[:find ?x .
+             :where [(re-seq #"z+" "a1b22") ?x]])))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(re-seq #"" "ab") ?x]])
+      (Datascript_runtime.Data_value.List
+       (list
+        (Datascript_runtime.Data_value.String "")
+        (Datascript_runtime.Data_value.String "")
+        (Datascript_runtime.Data_value.String "")))))))
+
 (deftest test-query-fns
   (testing "predicate without free variables"
     (is (tdc/query-relation?

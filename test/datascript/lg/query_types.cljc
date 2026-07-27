@@ -29,6 +29,10 @@
   (PredicateColumn :int)
   (PredicateValue :Datascript_runtime.Data_value.t))
 
+(type-variant static-predicate-function
+  (ComparisonStaticPredicate :datascript.built-ins/query-function)
+  (PureStaticPredicate :datascript.built-ins/query-function))
+
 (type-variant rule-call-argument
   (RuleCallVariable :string :vector<result>)
   (RuleCallConstant :Datascript_runtime.Data_value.t))
@@ -1879,6 +1883,14 @@
           (Some binding)
           (str " " (query-binding-description binding) "]")))))))
 
+(defn- ^:bool data-value-truthy?
+  [^:Datascript_runtime.Data_value.t value]
+  (if (Datascript_runtime.Data_value.is_nil value)
+    false
+    (match (Datascript_runtime.Data_value.bool_value value)
+      (Some boolean-value) boolean-value
+      None true)))
+
 (defn ^relation resolve-predicate
   [^datascript.db/database-view database
    ^:map<string;source> sources
@@ -1891,16 +1903,17 @@
              relation constants name arguments None)]
     (if-some
      [function
-      (if-some [comparison
-                (built-ins/comparison-function name)]
-        (Some comparison)
-        (if-some [candidate
-                  (built-ins/pure-function name)]
-          (if (built-ins/differ-function? candidate)
-            (Some candidate)
-            None)
+      (if-some [pure (built-ins/pure-function name)]
+        (Some (PureStaticPredicate pure))
+        (if-some [comparison
+                  (built-ins/comparison-function name)]
+          (Some (ComparisonStaticPredicate comparison))
           None))]
-      (if (built-ins/missing-function? function)
+      (if
+       (match function
+         (ComparisonStaticPredicate comparison)
+         (built-ins/missing-function? comparison)
+         (PureStaticPredicate _) false)
         (resolve-database-predicate
          database sources relation constants arguments)
         (let [operands
@@ -1919,12 +1932,20 @@
                        (predicate-operand-value row operand))
                      operands)]
                 (if-some [matches?
-                          (if
-                           (built-ins/differ-function? function)
-                            (Some
-                             (built-ins/apply-differ values))
+                          (match function
+                            (ComparisonStaticPredicate comparison)
                             (built-ins/apply-comparison
-                             function values))]
+                             comparison values)
+                            (PureStaticPredicate pure)
+                            (if (built-ins/differ-function? pure)
+                              (Some
+                               (built-ins/apply-differ values))
+                              (if-some
+                               [value
+                                (built-ins/apply-pure-function
+                                 pure values)]
+                                (Some (data-value-truthy? value))
+                                None)))]
                   (if matches?
                     (conj rows row)
                     rows)

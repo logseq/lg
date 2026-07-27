@@ -304,7 +304,6 @@
     "keyword?" (Some KeywordValue)
     "empty?" (Some Empty)
     "contains?" (Some Contains)
-    "re-find" (Some RegexFind)
     "missing?" (Some Missing)
     "clojure.string/blank?" (Some Blank)
     "clojure.string/includes?" (Some Includes)
@@ -478,12 +477,6 @@
        (nth values 0)
        (nth values 1))
       None)
-    RegexFind
-    (if (= 2 (count values))
-      (Datascript_runtime.Data_value.regex_find
-       (nth values 0)
-       (nth values 1))
-      None)
     Blank
     (Some
      (Datascript_runtime.Data_value.string_blank
@@ -554,6 +547,9 @@
     "get-else" (Some GetElse)
     "get-some" (Some GetSome)
     "-differ?" (Some Differ)
+    "re-find" (Some RegexFind)
+    "re-matches" (Some RegexMatches)
+    "re-seq" (Some RegexSequence)
     "re-pattern" (Some RegexPattern)
     "clojure.string/lower-case" (Some LowerCase)
     "clojure.string/upper-case" (Some UpperCase)
@@ -719,6 +715,12 @@
          (nth values 1)
          (nth values 2))
         None))
+    RegexFind
+    (Datascript_runtime.Data_value.regex_find_value values)
+    RegexMatches
+    (Datascript_runtime.Data_value.regex_matches_value values)
+    RegexSequence
+    (Datascript_runtime.Data_value.regex_sequence_value values)
     RegexPattern
     (if (= 1 (count values))
       (Datascript_runtime.Data_value.regex_pattern (nth values 0))

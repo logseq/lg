@@ -373,10 +373,40 @@ let regex_pattern = function
       Some (Regex pattern)
   | _ -> None
 
-let regex_find pattern source =
-  match (pattern, source) with
-  | Regex pattern, String source ->
-      Some (Lg_edn_backend.regex_find pattern source)
+let regex_match_value match_result =
+  let captures = match_result.Lg_edn_backend.captures in
+  let value = function Some value -> String value | None -> Nil in
+  if Array.length captures = 1 then value captures.(0)
+  else Vector (Array.to_list captures |> List.map value)
+
+let regex_find_value values =
+  match Rrbvec.to_list values with
+  | [ Regex pattern; String source ] ->
+      Some
+        (Lg_edn_backend.regex_find_groups ~pattern source
+        |> Option.map regex_match_value
+        |> Option.value ~default:Nil)
+  | _ -> None
+
+let regex_matches_value values =
+  match Rrbvec.to_list values with
+  | [ Regex pattern; String source ] ->
+      Some
+        (Lg_edn_backend.regex_matches_groups ~pattern source
+        |> Option.map regex_match_value
+        |> Option.value ~default:Nil)
+  | _ -> None
+
+let regex_sequence_value values =
+  match Rrbvec.to_list values with
+  | [ Regex pattern; String source ] ->
+      let matches = Lg_edn_backend.regex_all_groups ~pattern source in
+      if Array.length matches = 0 then Some Nil
+      else
+        Some
+          (List
+             (Array.to_list matches
+             |> List.map regex_match_value))
   | _ -> None
 
 let javascript_whitespace =

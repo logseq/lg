@@ -183,6 +183,29 @@ let regex_valid pattern =
 let regex_find pattern source =
   Re.execp (Re.Perl.compile_pat pattern) source
 
+type regex_match = { captures : string option array }
+
+let regex_match groups =
+  {
+    captures =
+      Array.init (Re.Group.nb_groups groups) (Re.Group.get_opt groups);
+  }
+
+let regex_find_groups ~pattern source =
+  Re.exec_opt (Re.Perl.compile_pat pattern) source
+  |> Option.map regex_match
+
+let regex_matches_groups ~pattern source =
+  Re.exec_opt
+    (Re.compile (Re.whole_string (Re.Perl.re pattern)))
+    source
+  |> Option.map regex_match
+
+let regex_all_groups ~pattern source =
+  Re.all (Re.Perl.compile_pat pattern) source
+  |> List.map regex_match
+  |> Array.of_list
+
 let replacement_text source replacement groups =
   let group_count = Re.Group.nb_groups groups in
   let buffer = Buffer.create (String.length replacement) in
