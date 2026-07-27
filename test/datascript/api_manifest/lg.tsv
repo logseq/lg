@@ -852,6 +852,7 @@ arity	datascript.query-v3/IRelation/-symbols	1	fixed
 arity	datascript.query-v3/IRelation/-union	2	fixed
 arity	datascript.query-v3/arange	2	fixed
 arity	datascript.query-v3/array-rel	2	fixed
+arity	datascript.query-v3/bind	2	fixed
 arity	datascript.query-v3/check-bound	3	fixed
 arity	datascript.query-v3/coll-rel	2	fixed
 arity	datascript.query-v3/collect-args!	4	fixed
@@ -880,6 +881,7 @@ arity	datascript.query-v3/project-context	2	fixed
 arity	datascript.query-v3/project-rel	2	fixed
 arity	datascript.query-v3/related-rels	2	fixed
 arity	datascript.query-v3/resolve-clauses	2	fixed
+arity	datascript.query-v3/resolve-ins	3	fixed
 arity	datascript.query-v3/resolve-not	2	fixed
 arity	datascript.query-v3/resolve-or	2	fixed
 arity	datascript.query-v3/resolve-pattern	2	fixed
@@ -1856,6 +1858,7 @@ var	datascript.query-v3/IClause
 var	datascript.query-v3/IRelation
 var	datascript.query-v3/arange
 var	datascript.query-v3/array-rel
+var	datascript.query-v3/bind
 var	datascript.query-v3/check-bound
 var	datascript.query-v3/coll-rel
 var	datascript.query-v3/collect-args!
@@ -1884,6 +1887,7 @@ var	datascript.query-v3/project-context
 var	datascript.query-v3/project-rel
 var	datascript.query-v3/related-rels
 var	datascript.query-v3/resolve-clauses
+var	datascript.query-v3/resolve-ins
 var	datascript.query-v3/resolve-not
 var	datascript.query-v3/resolve-or
 var	datascript.query-v3/resolve-pattern
