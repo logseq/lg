@@ -231,6 +231,18 @@
      (:sources state)
      (:default-source-symbol state))))
 
+(defn- ^query-context-v3 context-with-sources
+  [^query-context-v3 context
+   ^:map<string;datascript.lg.query-types/source> sources]
+  (match context
+    EmptyContextV3 EmptyContextV3
+    (QueryContextV3 state)
+    (context-v3
+     (:rels state)
+     (:consts state)
+     sources
+     (:default-source-symbol state))))
+
 (defprotocol IRelation
   (-project
    [relation ^:vector<string> symbols]
@@ -498,6 +510,93 @@
 (defn ^relation-v3 product-all
   [^:vector<relation-v3> relations]
   (reduce product relations))
+
+(defn ^relation-v3 bind
+  [^datascript.parser/binding binding
+   ^datascript.lg.query-types/binding-value value]
+  (let [relation
+        (query-types/binding-relation binding value)]
+    (array-rel
+     (parser/binding-variable-names binding)
+     (query-types/relation-rows relation))))
+
+(defn- ^datascript.lg.query-types/binding-value
+  require-v3-binding-input
+  [^datascript.lg.query-types/input input]
+  (if-some [value (query-types/input-binding input)]
+    value
+    (Stdlib.invalid_arg
+     "Query value input requires a Binding_input")))
+
+(defn- ^query-context-v3 resolve-value-input
+  [^query-context-v3 context
+   ^datascript.parser/binding binding
+   ^datascript.lg.query-types/input input]
+  (let [relation
+        (bind binding (require-v3-binding-input input))]
+    (if (= 1 (-size relation))
+      (context-with-constants
+       context
+       (merge
+        (context-constants context)
+        (relation-constants relation)))
+      (context-with-relations
+       context
+       (conj
+        (context-relations context)
+        relation)))))
+
+(defn- ^query-context-v3 resolve-source-input
+  [^query-context-v3 context
+   ^:string source-name
+   ^datascript.lg.query-types/input input]
+  (if-some [source (query-types/input-source input)]
+    (context-with-sources
+     context
+     (assoc (context-sources context) source-name source))
+    (Stdlib.invalid_arg
+     "Source query input requires a Source_input")))
+
+(defn ^query-context-v3 resolve-ins
+  [^query-context-v3 context
+   ^:vector<datascript.parser/static-query-input> descriptors
+   ^:vector<datascript.lg.query-types/input> inputs]
+  (if (not (= (count descriptors) (count inputs)))
+    (Stdlib.invalid_arg
+     (str
+      "Wrong number of query inputs: "
+      (count descriptors)
+      " required, "
+      (count inputs)
+      " provided"))
+    (loop [resolved context
+           remaining-descriptors descriptors
+           remaining-inputs inputs]
+      (if-some [descriptor (first remaining-descriptors)]
+        (if-some [input (first remaining-inputs)]
+          (if (parser/static-input-rules? descriptor)
+            (Stdlib.invalid_arg
+             "Rules inputs are not supported by pinned query-v3")
+            (if-some
+              [source-name
+               (parser/static-input-source-name descriptor)]
+              (recur
+               (resolve-source-input
+                resolved source-name input)
+               (subvec remaining-descriptors 1)
+               (subvec remaining-inputs 1))
+              (if-some
+                [binding
+                 (parser/static-input-binding descriptor)]
+                (recur
+                 (resolve-value-input
+                  resolved binding input)
+                 (subvec remaining-descriptors 1)
+                 (subvec remaining-inputs 1))
+                (Stdlib.invalid_arg
+                 "Unsupported static query input descriptor"))))
+          (Stdlib.invalid_arg "Missing query input"))
+        resolved))))
 
 (defn ^relation-hash-v3 hash-map-rel
   [^relation-v3 relation ^:vector<string> symbols]

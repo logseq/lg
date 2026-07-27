@@ -1695,6 +1695,164 @@
            (query-v3-int-rows
             (nth (query-v3-context-relations resolved) 0))))))
 
+(deftest test-query-v3-bind-input-values
+  (let [scalar
+        (query-v3/bind
+         (parser/scalar-input "?x")
+         (query-types/scalar-binding
+          (query-int-result 7)))
+        ignored
+        (query-v3/bind
+         (parser/ignore-input)
+         (query-types/scalar-binding
+          (query-int-result 99)))
+        tuple
+        (query-v3/bind
+         (parser/tuple-input
+          [(parser/scalar-input "?x")
+           (parser/scalar-input "?y")])
+         (query-types/collection-binding
+          [(query-types/scalar-binding
+            (query-int-result 1))
+           (query-types/scalar-binding
+            (query-int-result 2))]))
+        collection
+        (query-v3/bind
+         (parser/collection-input
+          (parser/scalar-input "?x"))
+         (query-types/collection-binding
+          [(query-types/scalar-binding
+            (query-int-result 1))
+           (query-types/scalar-binding
+            (query-int-result 2))
+           (query-types/scalar-binding
+            (query-int-result 3))]))
+        empty-collection
+        (query-v3/bind
+         (parser/collection-input
+          (parser/scalar-input "?x"))
+         (query-types/collection-binding []))]
+    (is (= ["?x"] (vec (query-v3/-symbols scalar))))
+    (is (= [[7]] (query-v3-int-rows scalar)))
+    (is (= [] (vec (query-v3/-symbols ignored))))
+    (is (= [[]] (query-v3-int-rows ignored)))
+    (is (= ["?x" "?y"] (vec (query-v3/-symbols tuple))))
+    (is (= [[1 2]] (query-v3-int-rows tuple)))
+    (is (= [[1] [2] [3]]
+           (query-v3-int-rows collection)))
+    (is (= ["?x"]
+           (vec (query-v3/-symbols empty-collection))))
+    (is (= 0 (query-v3/-size empty-collection)))))
+
+(deftest test-query-v3-bind-input-errors
+  (is
+   (=
+    "Scalar query input requires a Scalar_binding"
+    (try
+      (let [_relation
+            (query-v3/bind
+             (parser/scalar-input "?x")
+             (query-types/collection-binding []))]
+        "no error")
+      (catch (Invalid_argument message)
+        (str message)))))
+  (is
+   (=
+    "Tuple query input has too few values"
+    (try
+      (let [_relation
+            (query-v3/bind
+             (parser/tuple-input
+              [(parser/scalar-input "?x")
+               (parser/scalar-input "?y")])
+             (query-types/collection-binding
+              [(query-types/scalar-binding
+                (query-int-result 1))]))]
+        "no error")
+      (catch (Invalid_argument message)
+        (str message))))))
+
+(deftest test-query-v3-resolve-inputs
+  (let [source
+        (query-types/relation-source
+         [(query-int-row [10])
+          (query-int-row [20])])
+        descriptors
+        [(parser/make-static-source-input "$rows")
+         (parser/make-static-value-input
+          (parser/scalar-input "?limit"))
+         (parser/make-static-value-input
+          (parser/collection-input
+           (parser/scalar-input "?x")))]
+        inputs
+        [(query-types/source-input source)
+         (query-types/binding-input
+          (query-types/scalar-binding
+           (query-int-result 2)))
+         (query-types/binding-input
+          (query-types/collection-binding
+           [(query-types/scalar-binding
+             (query-int-result 1))
+            (query-types/scalar-binding
+             (query-int-result 2))
+            (query-types/scalar-binding
+             (query-int-result 3))]))]
+        resolved
+        (query-v3/resolve-ins
+         (query-v3/context-v3 [] {})
+         descriptors
+         inputs)
+        constants (query-v3-context-constants resolved)
+        relations (query-v3-context-relations resolved)]
+    (is (= 1 (count (query-v3/context-sources resolved))))
+    (is (= 2
+           (query-result-int
+            (get constants "?limit" (query-int-result 0)))))
+    (is (= 1 (count relations)))
+    (is (= [[1] [2] [3]]
+           (query-v3-int-rows (nth relations 0))))))
+
+(deftest test-query-v3-resolve-input-errors
+  (let [context (query-v3/context-v3 [] {})]
+    (is
+     (=
+      "Wrong number of query inputs: 1 required, 0 provided"
+      (try
+        (let [_resolved
+              (query-v3/resolve-ins
+               context
+               [(parser/make-static-source-input "$")]
+               [])]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "Source query input requires a Source_input"
+      (try
+        (let [_resolved
+              (query-v3/resolve-ins
+               context
+               [(parser/make-static-source-input "$")]
+               [(query-types/binding-input
+                 (query-types/scalar-binding
+                  (query-int-result 1)))])]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "Rules inputs are not supported by pinned query-v3"
+      (try
+        (let [_resolved
+              (query-v3/resolve-ins
+               context
+               [(parser/make-static-rules-input)]
+               [(query-types/rules-input [])])]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))))
+
 (deftest test-public-tuple-key-helpers
   (let [attrs (query-types/index-attrs ["?x" "?y"])
         row (query-int-row [10 20])
