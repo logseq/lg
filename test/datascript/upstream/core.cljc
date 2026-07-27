@@ -999,6 +999,18 @@
   "Removes registered listener from connection. See also [[listen!]]."
   conn/unlisten!)
 
+(type-variant data-reader
+  (DatomDataReader
+   :fn<Datascript_runtime.Serialization_value.datom_reader_value;datascript.db/Datom>)
+  (DatabaseDataReader
+   :fn<Datascript_runtime.Serialization_value.database_reader_value;datascript.db/DB>))
+
+(def ^:map<symbol;data-reader> data-readers
+  {(symbol "datascript/Datom")
+   (DatomDataReader db/datom-from-reader)
+   (symbol "datascript/DB")
+   (DatabaseDataReader db/db-from-reader)})
+
 
 ;; Datomic compatibility layer
 

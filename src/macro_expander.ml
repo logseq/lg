@@ -751,6 +751,21 @@ and eval_builtin context name arg_forms =
     | Error _ as err -> err
   in
   match name with
+  | "assert" -> (
+      let fail = function
+        | None -> Error.error "Assert failed"
+        | Some message ->
+            Result.bind (eval context message) (fun message ->
+                Result.bind (string_of_value message) Error.error)
+      in
+      match arg_forms with
+      | [ condition ] ->
+          Result.bind (eval context condition) (fun condition ->
+              if truthy condition then Ok nil else fail None)
+      | [ condition; message ] ->
+          Result.bind (eval context condition) (fun condition ->
+              if truthy condition then Ok nil else fail (Some message))
+      | _ -> Error.error "assert expects one or two macro arguments")
   | "str" ->
       Result.bind (eval_args ()) (fun values ->
           let rec concatenate buffer = function

@@ -141,8 +141,31 @@
    ["source-form" "transaction" "map-operation-vector-datom-function"]
    ["source-form" "schema" "map"]
    ["source-form" "serialization-options" "map"]
+   ["arity" "datascript.inline/assoc" "3" "fixed"]
+   ["arity" "datascript.inline/update" "3" "fixed"]
+   ["arity" "datascript.inline/update" "4" "fixed"]
+   ["arity" "datascript.inline/update" "5" "fixed"]
+   ["arity" "datascript.inline/update" "6" "fixed"]
+   ["arity" "datascript.inline/update" "6" "variadic"]
    ["tagged-reader" "datascript/Datom"]
    ["tagged-reader" "datascript/DB"]])
+
+(def closed-option-surface
+  [["datascript.pull-api/parse-opts" [:visitor]]
+   ["datascript.db/db-from-reader" [:datoms :schema]]
+   ["datascript.db/restore-db"
+    [:aevt :avet :eavt :max-eid :max-tx :schema]]
+   ["datascript.storage/restore-impl"
+    [:aevt :aevt-metadata
+     :avet :avet-metadata
+     :eavt :eavt-metadata
+     :max-addr :max-eid :max-tx :schema]]])
+
+(def closed-option-entries
+  (mapcat
+   (fn [[qualified-name options]]
+     (map #(vector "option" qualified-name (str %)) options))
+   closed-option-surface))
 
 (def lg-source-paths
   ["test/datascript/lg/query.cljc"
@@ -203,6 +226,7 @@
                     {:files (mapv #(.getPath %) missing-files)})))
       entries (concat
                (mapcat #(file-entries % namespace-overrides (= :lg mode)) files)
+               (when (= :lg mode) closed-option-entries)
                static-surface)]
   (doseq [entry (sort-by format-entry (distinct entries))]
     (println (format-entry entry))))

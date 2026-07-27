@@ -452,6 +452,7 @@
 (rule
  (target datascript_util_native.ml)
  (deps
+  datascript/upstream/inline.cljc
   datascript/upstream/util.cljc
   datascript/util_test.cljc
   ../bin/lg_cli.exe)
@@ -461,6 +462,7 @@
    --target
    native
    --compile-files
+   %{dep:datascript/upstream/inline.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/util_test.cljc}
    -o
@@ -470,12 +472,13 @@
  (name datascript_util_native)
  (modules datascript_util_native)
  (flags
-  (:standard -w -5-32-37-39))
+  (:standard -w -5-26-32-37-39))
  (libraries lg.runtime lg.edn-backend.native rrbvec unix))
 
 (rule
  (target datascript_util_melange.ml)
  (deps
+  datascript/upstream/inline.cljc
   datascript/upstream/util.cljc
   datascript/util_test.cljc
   ../bin/lg_cli.exe)
@@ -485,6 +488,7 @@
    --target
    melange
    --compile-files
+   %{dep:datascript/upstream/inline.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/util_test.cljc}
    -o
@@ -495,7 +499,7 @@
  (alias datascript-util-melange)
  (module_systems es6)
  (modules datascript_util_melange)
- (compile_flags -w -5-32-37-39)
+ (compile_flags -w -5-26-32-37-39)
  (libraries lg.edn-backend lg.edn-backend.melange lg.runtime rrbvec))
 
 (rule

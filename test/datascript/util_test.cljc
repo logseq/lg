@@ -1,5 +1,6 @@
 (ns datascript.test.util
-  (:require [datascript.util :as util]))
+  (:require [datascript.inline :as inline]
+            [datascript.util :as util]))
 
 (def environment #?(:native "native" :melange "melange"))
 
@@ -56,6 +57,83 @@
        (= 5 macro-if) ":"
        (= 5 macro-cond) ":"
        (= 3 (util/some-of nil nil 3 4))))
+
+(def debug-before util/*debug*)
+(def debug-during
+  (binding [util/*debug* true]
+    util/*debug*))
+(def debug-after util/*debug*)
+(println
+  (str environment ":debug:"
+       (= false debug-before) ":"
+       (= true debug-during) ":"
+       (= false debug-after)))
+
+(def assoc-map-calls (volatile! 0))
+(def assoc-key-calls (volatile! 0))
+(def ^:map<keyword;int> inline-empty-map {})
+(defn ^:map<keyword;int> inline-int-map []
+  (assoc inline-empty-map :a 1))
+(def assoc-single
+  (inline/assoc
+   (do
+     (vswap! assoc-map-calls inc)
+     (inline-int-map))
+   (do
+     (vswap! assoc-key-calls inc)
+     :b)
+   2))
+(def assoc-many
+  (inline/assoc (inline-int-map) :b 2 :c 3 :d 4))
+
+(println
+  (str environment ":inline-assoc:"
+       (and
+        (= 1 (get assoc-single :a))
+        (= 2 (get assoc-single :b))) ":"
+       (= 1 @assoc-map-calls) ":"
+       (= 1 @assoc-key-calls) ":"
+       (and
+        (= 1 (get assoc-many :a))
+        (= 2 (get assoc-many :b))
+        (= 3 (get assoc-many :c))
+        (= 4 (get assoc-many :d)))))
+
+(def update-map-calls (volatile! 0))
+(def update-key-calls (volatile! 0))
+(defn ^:map<keyword;int> inline-counter-map []
+  (assoc inline-empty-map :n 1))
+(def update-once
+  (inline/update
+   (do
+     (vswap! update-map-calls inc)
+     (inline-counter-map))
+   (do
+     (vswap! update-key-calls inc)
+     :n)
+   inc))
+
+(println
+  (str environment ":inline-update:"
+       (= 2 (get update-once :n)) ":"
+       (= 1 @update-map-calls) ":"
+       (= 1 @update-key-calls) ":"
+       (= 3
+          (get
+           (inline/update (inline-counter-map) :n + 2)
+           :n)) ":"
+       (= 6
+          (get
+           (inline/update (inline-counter-map) :n + 2 3)
+           :n)) ":"
+       (= 10
+          (get
+           (inline/update (inline-counter-map) :n + 2 3 4)
+           :n)) ":"
+       (= 15
+          (get
+           (inline/update (inline-counter-map) :n + 2 3 4 5)
+           :n))))
 
 (def timestamp 1700000000)
 (def id (util/squuid timestamp))

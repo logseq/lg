@@ -16276,6 +16276,55 @@ let test_inline_macros_can_distinguish_float_literals () =
   assert_ocaml_runs "inline_macros_can_distinguish_float_literals"
     "float:other\n" ocaml_source
 
+let test_macro_assert_validates_expansion_inputs () =
+  let provider =
+    {|
+(ns app.asserting-macro)
+(defmacro require-one [value & more]
+  (assert (empty? more) "require-one expects one argument")
+  value)
+|}
+  in
+  let state, _ =
+    Lg.Compiler.compile_chunk Lg.Compiler.empty_state provider |> expect_ok
+  in
+  let _, valid =
+    Lg.Compiler.compile_chunk state
+      {|
+(ns app.valid
+  (:require [app.asserting-macro :refer [require-one]]))
+(println (require-one 42))
+|}
+    |> expect_ok
+  in
+  assert_ocaml_runs "macro_assert_validates_expansion_inputs" "42\n" valid;
+  Lg.Compiler.compile_chunk state
+    {|
+(ns app.invalid
+  (:require [app.asserting-macro :refer [require-one]]))
+(require-one 1 2)
+|}
+  |> Result.map snd
+  |> expect_error "require-one expects one argument"
+
+let test_datascript_inline_assoc_rejects_odd_pairs () =
+  let provider =
+    read_file
+      (Filename.concat (repo_root ()) "test/datascript/upstream/inline.cljc")
+  in
+  let state, _ =
+    Lg.Compiler.compile_chunk Lg.Compiler.empty_state provider |> expect_ok
+  in
+  Lg.Compiler.compile_chunk state
+    {|
+(ns app.invalid-inline-assoc
+  (:require [datascript.inline :as inline]))
+(inline/assoc {} :a 1 :b)
+|}
+  |> Result.map snd
+  |> expect_error
+       "assoc expects an even number of arguments after map/vector"
+
 let test_inline_attribute_expands_same_namespace_calls () =
   let source =
     {|
@@ -32807,6 +32856,10 @@ let tests =
       test_defn_accepts_attribute_maps_and_return_hints );
     ( "inline macros can distinguish float literals",
       test_inline_macros_can_distinguish_float_literals );
+    ( "macro assert validates expansion inputs",
+      test_macro_assert_validates_expansion_inputs );
+    ( "DataScript inline assoc rejects odd pairs",
+      test_datascript_inline_assoc_rejects_odd_pairs );
     ( "inline attributes expand same namespace calls",
       test_inline_attribute_expands_same_namespace_calls );
     ( "inline attributes expand namespace alias calls",

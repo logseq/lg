@@ -140,6 +140,144 @@
      (mapv optional-query-int row))
    rows))
 
+(deftest test-public-map-star
+  (let [increment (fn [^:int value] (+ value 1))]
+    (is (= [2 3 4] (query/map* increment [1 2 3])))
+    (is (= (list 4 3 2) (query/map* increment (list 1 2 3))))))
+
+(deftest test-public-group-by-helpers
+  (let [collection-calls (volatile! 0)
+        grouped
+        (query/-group-by
+         (fn [^:int value] (mod value 2))
+         []
+         (do
+           (vswap! collection-calls inc)
+           [1 2 3 4]))
+        hashed
+        (query/hash-attrs
+         (fn [^:int value] (mod value 2))
+         [1 2 3 4])]
+    (is (= 1 @collection-calls))
+    (is (= [1 3] (get grouped 1)))
+    (is (= [2 4] (get grouped 0)))
+    (is (= (list 3 1) (get hashed 1)))
+    (is (= (list 4 2) (get hashed 0)))))
+
+(deftest test-public-tuple-key-helpers
+  (let [attrs (query-types/index-attrs ["?x" "?y"])
+        row (query-int-row [10 20])
+        getter (query/getter-fn attrs "?y")]
+    (is (= 20 (query-result-int (getter row))))
+    (is
+     (match ((query/tuple-key-fn attrs ["?x"]) row)
+       (query/SingleTupleKey value)
+       (= 10 (query-result-int value))
+       _ false))
+    (is
+     (match ((query/tuple-key-fn attrs ["?x" "?y"]) row)
+       (query/CompositeTupleKey values)
+       (= [10 20] (mapv query-result-int values))
+       _ false)))
+
+  (let [database
+        (->
+         (d/empty-db {:name {:db/unique :db.unique/identity}})
+         (d/db-with [[:db/add 1 :name "Ada"]]))
+        attrs (query-types/index-attrs ["?e"])
+        lookup-ref
+        (query-form-vector
+         [(Datascript_runtime.Data_value.Keyword ":name")
+          (Datascript_runtime.Data_value.String "Ada")])
+        row
+        (to-array [(query-types/value-result lookup-ref)])
+        resolved
+        (binding
+         [query/*lookup-attrs* (conj (set-of :string) "?e")
+          query/*implicit-source*
+          (Some (db/database-view database))]
+          ((query/getter-fn attrs "?e") row))]
+    (is (= 1 (query-result-int resolved)))))
+
+(defn ^datascript.lg.query-types/context predicate-test-context
+  [^:vector<int> values]
+  (let [database (db/database-view (d/empty-db))
+        relation
+        (query-types/relation
+         (query-types/index-attrs ["?x"])
+         (mapv
+          (fn [^:int value]
+            (query-int-row [value]))
+          values)
+         {})]
+    (query-types/context
+     [relation]
+     {"$" (query-types/database-source database)}
+     [])))
+
+(defn ^datascript.parser/clause greater-than-clause
+  [^:int value]
+  (parser/static-predicate-clause
+   ">"
+   [(parser/variable-argument "?x")
+    (parser/constant-argument
+     (Datascript_runtime.Data_value.Int value))]))
+
+(defn ^:vector<int> context-x-values
+  [^datascript.lg.query-types/context context]
+  (let [relations (query-types/context-relations context)]
+    (if-some [relation (first relations)]
+      (let [^:vector<string> variables ["?x"]
+            ^:vector<vector<int>> rows
+            (relation-int-rows relation variables)]
+        (mapv
+         (fn [^:vector<int> row]
+           (nth row 0))
+         rows))
+      [])))
+
+(deftest test-public-resolve-clause-helpers
+  (let [context (predicate-test-context [1 2 3])
+        clause (greater-than-clause 1)]
+    (is (= [2 3] (context-x-values
+                  (query/-resolve-clause context clause))))
+    (is (= [2 3] (context-x-values
+                  (query/-resolve-clause context clause clause))))
+    (is (= [2 3] (context-x-values
+                  (query/resolve-clause context clause))))
+    (is (= [3] (context-x-values
+                (query/-q
+                 context
+                 [clause (greater-than-clause 2)])))))
+
+  (let [empty-context (predicate-test-context [])]
+    (is (= []
+           (context-x-values
+            (query/resolve-clause
+             empty-context
+             (greater-than-clause 1)))))))
+
+(deftest test-public-predicate-and-function-helpers
+  (let [context (predicate-test-context [1 2 3])
+        filtered
+        (query/filter-by-pred context (greater-than-clause 1))]
+    (is (= [2 3] (context-x-values filtered))))
+
+  (let [context (predicate-test-context [1 2])
+        clause
+        (parser/static-function-clause
+         "+"
+         [(parser/variable-argument "?x")
+          (parser/constant-argument
+           (Datascript_runtime.Data_value.Int 10))]
+         (parser/scalar-input "?y"))
+        bound (query/bind-by-fn context clause)
+        relations (query-types/context-relations bound)]
+    (if-some [relation (first relations)]
+      (is (= [[1 11] [2 12]]
+             (relation-int-rows relation ["?x" "?y"])))
+      (is false))))
+
 (deftest test-public-form-predicates
   (let [source (Datascript_runtime.Data_value.Symbol "$")
         named-source (Datascript_runtime.Data_value.Symbol "$users")

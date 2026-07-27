@@ -104,6 +104,76 @@ do
   expect_text "the LG manifest records a multi-arity definition: $arity" \
     "$lg_api_manifest" "^$arity$"
 done
+expect_text "the LG manifest preserves the public pull visitor option" \
+  "$lg_api_manifest" '^option	datascript\.pull-api/parse-opts	:visitor$'
+expect_text "the LG manifest preserves the public data-readers registry" \
+  "$lg_api_manifest" '^var	datascript\.core/data-readers$'
+for query_helper_entry in \
+  'var	datascript.query/map\*' \
+  'arity	datascript.query/map\*	2	fixed' \
+  'var	datascript.query/-group-by' \
+  'arity	datascript.query/-group-by	3	fixed' \
+  'var	datascript.query/hash-attrs' \
+  'arity	datascript.query/hash-attrs	2	fixed' \
+  'var	datascript.query/getter-fn' \
+  'arity	datascript.query/getter-fn	2	fixed' \
+  'var	datascript.query/tuple-key-fn' \
+  'arity	datascript.query/tuple-key-fn	2	fixed' \
+  'var	datascript.query/-resolve-clause' \
+  'arity	datascript.query/-resolve-clause	2	fixed' \
+  'arity	datascript.query/-resolve-clause	3	fixed' \
+  'var	datascript.query/resolve-clause' \
+  'arity	datascript.query/resolve-clause	2	fixed' \
+  'var	datascript.query/-q' \
+  'arity	datascript.query/-q	2	fixed' \
+  'var	datascript.query/filter-by-pred' \
+  'arity	datascript.query/filter-by-pred	2	fixed' \
+  'var	datascript.query/bind-by-fn' \
+  'arity	datascript.query/bind-by-fn	2	fixed'
+do
+  expect_text "the LG manifest preserves query helper: $query_helper_entry" \
+    "$lg_api_manifest" "^$query_helper_entry$"
+done
+expect_text "the LG manifest preserves query helper: *implicit-source*" \
+  "$lg_api_manifest" '^var	datascript\.query/\*implicit-source\*$'
+expect_text "the LG manifest preserves query helper: *lookup-attrs*" \
+  "$lg_api_manifest" '^var	datascript\.query/\*lookup-attrs\*$'
+for inline_entry in \
+  'var	datascript.inline/assoc' \
+  'arity	datascript.inline/assoc	3	fixed' \
+  'arity	datascript.inline/assoc	3	variadic' \
+  'arity	datascript.inline/update	3	fixed' \
+  'arity	datascript.inline/update	4	fixed' \
+  'arity	datascript.inline/update	5	fixed' \
+  'arity	datascript.inline/update	6	fixed' \
+  'arity	datascript.inline/update	6	variadic'
+do
+  expect_text "the LG manifest preserves inline API: $inline_entry" \
+    "$lg_api_manifest" "^$inline_entry$"
+done
+for restore_option in \
+  'option	datascript.db/db-from-reader	:datoms' \
+  'option	datascript.db/db-from-reader	:schema' \
+  'option	datascript.db/restore-db	:aevt' \
+  'option	datascript.db/restore-db	:avet' \
+  'option	datascript.db/restore-db	:eavt' \
+  'option	datascript.db/restore-db	:max-eid' \
+  'option	datascript.db/restore-db	:max-tx' \
+  'option	datascript.db/restore-db	:schema' \
+  'option	datascript.storage/restore-impl	:aevt' \
+  'option	datascript.storage/restore-impl	:aevt-metadata' \
+  'option	datascript.storage/restore-impl	:avet' \
+  'option	datascript.storage/restore-impl	:avet-metadata' \
+  'option	datascript.storage/restore-impl	:eavt' \
+  'option	datascript.storage/restore-impl	:eavt-metadata' \
+  'option	datascript.storage/restore-impl	:max-addr' \
+  'option	datascript.storage/restore-impl	:max-eid' \
+  'option	datascript.storage/restore-impl	:max-tx' \
+  'option	datascript.storage/restore-impl	:schema'
+do
+  expect_text "the LG manifest preserves closed restore option: $restore_option" \
+    "$lg_api_manifest" "^$restore_option$"
+done
 
 expect_file "the API manifest comparator exists" "$compare_script"
 if [ -f "$repo_root/$compare_script" ]; then

@@ -1,6 +1,9 @@
 (ns datascript.util
   (:refer-clojure :exclude [find]))
 
+(def ^:dynamic *debug*
+  false)
+
 #?(:clj
    (defmacro raise [& fragments]
      (let [msgs (butlast fragments)

@@ -15,6 +15,26 @@
 (type-alias collect-row
   :array<option<datascript.lg.query-types/result>>)
 
+(type-alias tuple-getter
+  :fn<array<datascript.lg.query-types/result>;datascript.lg.query-types/result>)
+
+(type-variant tuple-key
+  (SingleTupleKey :datascript.lg.query-types/result)
+  (CompositeTupleKey :vector<datascript.lg.query-types/result>))
+
+(type-alias tuple-key-getter
+  :fn<array<datascript.lg.query-types/result>;tuple-key>)
+
+(signature datascript.lg.query/*lookup-attrs*
+  :set<string>)
+(def ^:dynamic *lookup-attrs*
+  (set-of :string))
+
+(signature datascript.lg.query/*implicit-source*
+  :option<datascript.db/database-view>)
+(def ^:dynamic *implicit-source*
+  None)
+
 (type-record aggregate-context-state
   (seen :map<string;bool>)
   (attrs :map<string;int>)
@@ -54,7 +74,38 @@
     (keys left))
    (every?
     (fn [^:string key] (contains? left key))
-    (keys right))))
+   (keys right))))
+
+(defn ^tuple-getter getter-fn
+  [^:map<string;int> attrs ^:string attr]
+  (if-some [index (get attrs attr)]
+    (fn [^:array<datascript.lg.query-types/result> row]
+      (let [result (query-types/require-row-result row index)]
+        (if (contains? *lookup-attrs* attr)
+          (match *implicit-source*
+            None result
+            (Some database)
+            (query-types/resolve-lookup-result database result))
+          result)))
+    (Stdlib.invalid_arg
+     (str "Unknown relation attribute " attr))))
+
+(defn ^tuple-key-getter tuple-key-fn
+  [^:map<string;int> attrs ^:vector<string> common-attrs]
+  (if (= 1 (count common-attrs))
+    (let [getter (getter-fn attrs (nth common-attrs 0))]
+      (fn [^:array<datascript.lg.query-types/result> row]
+        (SingleTupleKey (getter row))))
+    (let [getters (mapv
+                   (fn [^:string attr]
+                     (getter-fn attrs attr))
+                   common-attrs)]
+      (fn [^:array<datascript.lg.query-types/result> row]
+        (CompositeTupleKey
+         (mapv
+          (fn [^tuple-getter getter]
+            (getter row))
+          getters))))))
 
 (defn ^:set<string> bound-vars
   [^datascript.lg.query-types/context context]
@@ -886,6 +937,33 @@
          (map-return-rows keys tuples))
         (Stdlib.invalid_arg "Unsupported query return-map type")))))
 
+(defmacro map* [f xs]
+  `(let [f# ~f
+         xs# ~xs]
+     (reduce
+      (fn [result# value#]
+        (conj result# (f# value#)))
+      (empty xs#)
+      xs#)))
+
+(defmacro -group-by [f init coll]
+  `(let [f# ~f
+         init# ~init
+         coll# ~coll]
+     (persistent!
+      (reduce
+       (fn [result# value#]
+         (let [key# (f# value#)]
+           (assoc!
+            result#
+            key#
+            (conj (get result# key# init#) value#))))
+       (transient {})
+       coll#))))
+
+(defmacro hash-attrs [key-fn tuples]
+  `(datascript.lg.query/-group-by ~key-fn (list) ~tuples))
+
 (defprotocol IPostProcess
   (-post-process
    [find return-map tuples]
@@ -1214,6 +1292,95 @@
              (Datascript_runtime.Data_value.to_edn_string branch))))))
      (Stdlib.ignore 0)
      branches)))
+
+(defn- ^datascript.db/database-view context-database
+  [^datascript.lg.query-types/context context]
+  (match *implicit-source*
+    (Some database) database
+    None
+    (if-some [source
+              (get
+               (query-types/context-sources context)
+               "$")]
+      (if-some [database (query-types/source-database source)]
+        database
+        (Stdlib.invalid_arg
+         "Default query source is not a database"))
+      (Stdlib.invalid_arg
+       "Default query source is not bound"))))
+
+(defn ^datascript.lg.query-types/context -resolve-clause
+  ([^datascript.lg.query-types/context context
+    ^datascript.parser/clause clause]
+   (-resolve-clause context clause clause))
+  ([^datascript.lg.query-types/context context
+    ^datascript.parser/clause clause
+    ^datascript.parser/clause _orig-clause]
+   (let [relations (query-types/context-relations context)
+         initial
+         (reduce
+          (fn [^datascript.lg.query-types/relation relation
+               ^datascript.lg.query-types/relation next-relation]
+            (query-types/hash-join relation next-relation))
+          (query-types/identity-relation)
+          relations)
+         ^datascript.lg.query-types/rule-path rule-path []
+         resolved
+         (query-types/resolve-static-clauses
+          (context-database context)
+          (query-types/context-sources context)
+          "$"
+          initial
+          (query-types/identity-relation)
+          (query-types/context-rules context)
+          rule-path
+          [clause])]
+     (query-types/context
+      [resolved]
+      (query-types/context-sources context)
+      (query-types/context-rules context)))))
+
+(defn ^datascript.lg.query-types/context resolve-clause
+  [^datascript.lg.query-types/context context
+   ^datascript.parser/clause clause]
+  (if
+   (some
+    (fn [^datascript.lg.query-types/relation relation]
+      (empty? (query-types/relation-rows relation)))
+    (query-types/context-relations context))
+    context
+    (-resolve-clause context clause)))
+
+(defn ^datascript.lg.query-types/context filter-by-pred
+  [^datascript.lg.query-types/context context
+   ^datascript.parser/clause clause]
+  (match clause
+    (PredicateClause _callable _arguments)
+    (-resolve-clause context clause)
+    _
+    (Stdlib.invalid_arg
+     "filter-by-pred expects a predicate clause")))
+
+(defn ^datascript.lg.query-types/context bind-by-fn
+  [^datascript.lg.query-types/context context
+   ^datascript.parser/clause clause]
+  (match clause
+    (FunctionClause _callable _arguments _binding)
+    (-resolve-clause context clause)
+    _
+    (Stdlib.invalid_arg
+     "bind-by-fn expects a function clause")))
+
+(defn ^datascript.lg.query-types/context -q
+  [^datascript.lg.query-types/context context
+   ^:vector<datascript.parser/clause> clauses]
+  (binding [*implicit-source* (Some (context-database context))]
+    (reduce
+     (fn [^datascript.lg.query-types/context context
+          ^datascript.parser/clause clause]
+       (resolve-clause context clause))
+     context
+     clauses)))
 
 (defn q-closed
   [query inputs]

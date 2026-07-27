@@ -66,3 +66,33 @@
        (d/datom 2 :age 37)
        (d/datom 2 :name "Petr")
        (d/datom 2 :huh? false)]))))
+
+(deftest test-data-readers
+  (let [expected (d/datom 1 :name "Ada" 17 false)
+        reader-value
+        (Datascript_runtime.Serialization_value.read_datom
+         (pr-str expected))]
+    (is
+     (match (get d/data-readers (symbol "datascript/Datom"))
+       None false
+       (Some reader)
+       (match reader
+         (datascript.core/DatomDataReader read)
+         (= expected (read reader-value))
+         _ false))))
+
+  (let [expected
+        (->
+         (d/empty-db {:name {:db/unique :db.unique/identity}})
+         (d/db-with [[:db/add 1 :name "Ada"]]))
+        reader-value
+        (Datascript_runtime.Serialization_value.read_database
+         (pr-str expected))]
+    (is
+     (match (get d/data-readers (symbol "datascript/DB"))
+       None false
+       (Some reader)
+       (match reader
+         (datascript.core/DatabaseDataReader read)
+         (datascript.db/db-equal? expected (read reader-value))
+         _ false)))))

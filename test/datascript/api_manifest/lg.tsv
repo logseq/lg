@@ -416,7 +416,14 @@ arity	datascript.impl.entity/raw-entity-attr	3	fixed
 arity	datascript.impl.entity/touch	1	fixed
 arity	datascript.impl.entity/touch-components	2	fixed
 arity	datascript.impl.entity/touch-entity	1	fixed
+arity	datascript.inline/assoc	3	fixed
+arity	datascript.inline/assoc	3	variadic
+arity	datascript.inline/update	3	fixed
 arity	datascript.inline/update	3	variadic
+arity	datascript.inline/update	4	fixed
+arity	datascript.inline/update	5	fixed
+arity	datascript.inline/update	6	fixed
+arity	datascript.inline/update	6	variadic
 arity	datascript.lru/ICache/-get	3	fixed
 arity	datascript.lru/assoc-lru	3	fixed
 arity	datascript.lru/cache	1	fixed
@@ -816,11 +823,16 @@ arity	datascript.query/-aggregate	3	fixed
 arity	datascript.query/-collect	2	fixed
 arity	datascript.query/-collect	3	fixed
 arity	datascript.query/-collect-tuples	4	fixed
+arity	datascript.query/-group-by	3	fixed
+arity	datascript.query/-q	2	fixed
+arity	datascript.query/-resolve-clause	2	fixed
+arity	datascript.query/-resolve-clause	3	fixed
 arity	datascript.query/IBinding/in->rel	2	fixed
 arity	datascript.query/IContextResolve/-context-resolve	2	fixed
 arity	datascript.query/IPostProcess/-post-process	3	fixed
 arity	datascript.query/aggregate	3	fixed
 arity	datascript.query/attr?	1	fixed
+arity	datascript.query/bind-by-fn	2	fixed
 arity	datascript.query/bound-vars	1	fixed
 arity	datascript.query/check-bound	3	fixed
 arity	datascript.query/check-free-same	3	fixed
@@ -830,7 +842,10 @@ arity	datascript.query/collect	2	fixed
 arity	datascript.query/collect-vars	1	fixed
 arity	datascript.query/dynamic-lookup-attrs	2	fixed
 arity	datascript.query/empty-rel	1	fixed
+arity	datascript.query/filter-by-pred	2	fixed
 arity	datascript.query/free-var?	1	fixed
+arity	datascript.query/getter-fn	2	fixed
+arity	datascript.query/hash-attrs	2	fixed
 arity	datascript.query/hash-join	2	fixed
 arity	datascript.query/intersect-keys	2	fixed
 arity	datascript.query/join-tuples	4	fixed
@@ -840,6 +855,7 @@ arity	datascript.query/lookup-pattern	3	fixed
 arity	datascript.query/lookup-pattern-coll	3	fixed
 arity	datascript.query/lookup-pattern-db	3	fixed
 arity	datascript.query/lookup-ref?	1	fixed
+arity	datascript.query/map*	2	fixed
 arity	datascript.query/matches-pattern?	2	fixed
 arity	datascript.query/normalize-pattern-clause	1	fixed
 arity	datascript.query/parse-rules	1	fixed
@@ -849,6 +865,7 @@ arity	datascript.query/q	1	variadic
 arity	datascript.query/q-closed	2	fixed
 arity	datascript.query/q-db	2	fixed
 arity	datascript.query/remove-pairs	2	fixed
+arity	datascript.query/resolve-clause	2	fixed
 arity	datascript.query/resolve-in	2	fixed
 arity	datascript.query/resolve-ins	3	fixed
 arity	datascript.query/resolve-pattern-lookup-refs	2	fixed
@@ -861,6 +878,7 @@ arity	datascript.query/substitute-constant	2	fixed
 arity	datascript.query/substitute-constants	2	fixed
 arity	datascript.query/subtract-rel	2	fixed
 arity	datascript.query/sum-rel	2	fixed
+arity	datascript.query/tuple-key-fn	2	fixed
 arity	datascript.query/tuples->return-map	2	fixed
 arity	datascript.query/walk-collect	2	fixed
 arity	datascript.schema/is-system-keyword?	1	fixed
@@ -914,11 +932,30 @@ arity	datascript.util/squuid	1	fixed
 arity	datascript.util/squuid-time-millis	1	fixed
 arity	datascript.util/zip	2	fixed
 arity	datascript.util/zip	2	variadic
+option	datascript.db/db-from-reader	:datoms
+option	datascript.db/db-from-reader	:schema
+option	datascript.db/restore-db	:aevt
+option	datascript.db/restore-db	:avet
+option	datascript.db/restore-db	:eavt
+option	datascript.db/restore-db	:max-eid
+option	datascript.db/restore-db	:max-tx
+option	datascript.db/restore-db	:schema
+option	datascript.pull-api/parse-opts	:visitor
 option	datascript.serialize/from-serializable	:ref-type
 option	datascript.serialize/from-serializable	:thaw-fn
 option	datascript.serialize/from-serializable	:thaw-kw
 option	datascript.serialize/serializable	:freeze-fn
 option	datascript.serialize/serializable	:freeze-kw
+option	datascript.storage/restore-impl	:aevt
+option	datascript.storage/restore-impl	:aevt-metadata
+option	datascript.storage/restore-impl	:avet
+option	datascript.storage/restore-impl	:avet-metadata
+option	datascript.storage/restore-impl	:eavt
+option	datascript.storage/restore-impl	:eavt-metadata
+option	datascript.storage/restore-impl	:max-addr
+option	datascript.storage/restore-impl	:max-eid
+option	datascript.storage/restore-impl	:max-tx
+option	datascript.storage/restore-impl	:schema
 protocol	datascript.db/IDB	-attr-tuples
 protocol	datascript.db/IDB	-attrs-by
 protocol	datascript.db/IDB	-schema
@@ -1012,6 +1049,7 @@ var	datascript.core/conn-from-datoms
 var	datascript.core/conn-from-db
 var	datascript.core/conn?
 var	datascript.core/create-conn
+var	datascript.core/data-readers
 var	datascript.core/datom
 var	datascript.core/datom?
 var	datascript.core/datoms
@@ -1304,6 +1342,7 @@ var	datascript.impl.entity/raw-entity-attr
 var	datascript.impl.entity/touch
 var	datascript.impl.entity/touch-components
 var	datascript.impl.entity/touch-entity
+var	datascript.inline/assoc
 var	datascript.inline/update
 var	datascript.lru/ICache
 var	datascript.lru/assoc-lru
@@ -1697,14 +1736,20 @@ var	datascript.pull-parser/with-limit
 var	datascript.pull-parser/with-pattern
 var	datascript.pull-parser/with-recursion
 var	datascript.pull-parser/with-xform
+var	datascript.query/*implicit-source*
+var	datascript.query/*lookup-attrs*
 var	datascript.query/-aggregate
 var	datascript.query/-collect
 var	datascript.query/-collect-tuples
+var	datascript.query/-group-by
+var	datascript.query/-q
+var	datascript.query/-resolve-clause
 var	datascript.query/IBinding
 var	datascript.query/IContextResolve
 var	datascript.query/IPostProcess
 var	datascript.query/aggregate
 var	datascript.query/attr?
+var	datascript.query/bind-by-fn
 var	datascript.query/bound-vars
 var	datascript.query/check-bound
 var	datascript.query/check-free-same
@@ -1714,7 +1759,10 @@ var	datascript.query/collect
 var	datascript.query/collect-vars
 var	datascript.query/dynamic-lookup-attrs
 var	datascript.query/empty-rel
+var	datascript.query/filter-by-pred
 var	datascript.query/free-var?
+var	datascript.query/getter-fn
+var	datascript.query/hash-attrs
 var	datascript.query/hash-join
 var	datascript.query/intersect-keys
 var	datascript.query/join-tuples
@@ -1724,6 +1772,7 @@ var	datascript.query/lookup-pattern
 var	datascript.query/lookup-pattern-coll
 var	datascript.query/lookup-pattern-db
 var	datascript.query/lookup-ref?
+var	datascript.query/map*
 var	datascript.query/matches-pattern?
 var	datascript.query/normalize-pattern-clause
 var	datascript.query/parse-rules
@@ -1732,6 +1781,7 @@ var	datascript.query/q
 var	datascript.query/q-closed
 var	datascript.query/q-db
 var	datascript.query/remove-pairs
+var	datascript.query/resolve-clause
 var	datascript.query/resolve-in
 var	datascript.query/resolve-ins
 var	datascript.query/resolve-pattern-lookup-refs
@@ -1744,6 +1794,7 @@ var	datascript.query/substitute-constant
 var	datascript.query/substitute-constants
 var	datascript.query/subtract-rel
 var	datascript.query/sum-rel
+var	datascript.query/tuple-key-fn
 var	datascript.query/tuples->return-map
 var	datascript.query/walk-collect
 var	datascript.schema/is-system-keyword?
@@ -1774,6 +1825,7 @@ var	datascript.storage/storage-adapter
 var	datascript.storage/store
 var	datascript.storage/store-impl!
 var	datascript.storage/store-tail
+var	datascript.util/*debug*
 var	datascript.util/concatv
 var	datascript.util/cond+
 var	datascript.util/conjs
