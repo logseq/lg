@@ -117,7 +117,8 @@
 (type-record relation-state
   (symbols :vector<string>)
   (offset-map :map<string;int>)
-  (rows :vector<array<datascript.lg.query-types/result>>))
+  (rows :vector<array<datascript.lg.query-types/result>>)
+  (lookup-databases :map<string;datascript.db/database-view>))
 
 (type-variant coll-relation-row-v3
   (CollQueryRowV3 :array<datascript.lg.query-types/result>)
@@ -366,6 +367,18 @@
    {}
    symbols))
 
+(defn- ^:map<string;datascript.db/database-view>
+  selected-lookup-databases
+  [^:map<string;datascript.db/database-view> lookup-databases
+   ^:vector<string> symbols]
+  (reduce
+   (fn [selected symbol]
+     (if-some [database (get lookup-databases symbol)]
+       (assoc selected symbol database)
+       selected))
+   {}
+   symbols))
+
 (defn- ^:vector<string> relation-symbols
   [^relation-v3 relation]
   (match relation
@@ -391,6 +404,15 @@
     (CollRelationV3 state)
     (:rows state)))
 
+(defn- ^:map<string;datascript.db/database-view>
+  relation-lookup-databases-v3
+  [^relation-v3 relation]
+  (match relation
+    (ArrayRelationV3 state)
+    (:lookup-databases state)
+    (CollRelationV3 state)
+    (:lookup-databases state)))
+
 (defn- ^:vector<array<datascript.lg.query-types/result>>
   relation-tuples
   [^relation-v3 relation]
@@ -399,33 +421,40 @@
 (defn- ^relation-v3 make-array-relation
   [^:vector<string> symbols
    ^:map<string;int> offset-map
-   ^:vector<array<datascript.lg.query-types/result>> rows]
+   ^:vector<array<datascript.lg.query-types/result>> rows
+   ^:map<string;datascript.db/database-view> lookup-databases]
   (ArrayRelationV3
    (record relation-state
      (symbols symbols)
      (offset-map offset-map)
-     (rows rows))))
+     (rows rows)
+     (lookup-databases lookup-databases))))
 
 (defn- ^relation-v3 make-coll-relation
   [^:vector<string> symbols
    ^:map<string;int> offset-map
-   ^:vector<array<datascript.lg.query-types/result>> rows]
+   ^:vector<array<datascript.lg.query-types/result>> rows
+   ^:map<string;datascript.db/database-view> lookup-databases]
   (CollRelationV3
    (record relation-state
      (symbols symbols)
      (offset-map offset-map)
-     (rows rows))))
+     (rows rows)
+     (lookup-databases lookup-databases))))
 
 (defn- ^relation-v3 make-relation-like
   [^relation-v3 relation
    ^:vector<string> symbols
    ^:map<string;int> offset-map
-   ^:vector<array<datascript.lg.query-types/result>> rows]
+   ^:vector<array<datascript.lg.query-types/result>> rows
+   ^:map<string;datascript.db/database-view> lookup-databases]
   (match relation
     (ArrayRelationV3 _)
-    (make-array-relation symbols offset-map rows)
+    (make-array-relation
+     symbols offset-map rows lookup-databases)
     (CollRelationV3 _)
-    (make-coll-relation symbols offset-map rows)))
+    (make-coll-relation
+     symbols offset-map rows lookup-databases)))
 
 (defn- ^:bool same-relation-kind?
   [^relation-v3 left ^relation-v3 right]
@@ -449,14 +478,18 @@
        relation
        projected-symbols
        (selected-offsets offset-map projected-symbols)
-       (relation-tuples relation))))
+       (relation-tuples relation)
+       (selected-lookup-databases
+        (relation-lookup-databases-v3 relation)
+        projected-symbols))))
 
   (-alter-coll [relation transform]
     (make-relation-like
      relation
      (relation-symbols relation)
      (relation-offset-map relation)
-     (transform (relation-tuples relation))))
+     (transform (relation-tuples relation))
+     (relation-lookup-databases-v3 relation)))
 
   (-symbols [relation]
     (relation-symbols relation))
@@ -506,15 +539,17 @@
          (relation-offset-map relation)
          (into
           (relation-tuples relation)
-          (relation-tuples other)))
+          (relation-tuples other))
+         (relation-lookup-databases-v3 relation))
         (Stdlib.invalid_arg
          "Cannot union relations with different symbols"))
       (Stdlib.invalid_arg
        "Cannot union relations with different kinds"))))
 
-(defn ^relation-v3 array-rel
+(defn- ^relation-v3 array-rel-with-lookups
   [^:vector<string> symbols
-   ^:vector<array<datascript.lg.query-types/result>> rows]
+   ^:vector<array<datascript.lg.query-types/result>> rows
+   ^:map<string;datascript.db/database-view> lookup-databases]
   (make-array-relation
    symbols
    (reduce-kv
@@ -522,7 +557,13 @@
       (assoc offsets symbol index))
     {}
    symbols)
-   rows))
+   rows
+   lookup-databases))
+
+(defn ^relation-v3 array-rel
+  [^:vector<string> symbols
+   ^:vector<array<datascript.lg.query-types/result>> rows]
+  (array-rel-with-lookups symbols rows {}))
 
 (defn- ^:array<datascript.lg.query-types/result> coll-row-array
   [^coll-relation-row-v3 row]
@@ -530,9 +571,10 @@
     (CollQueryRowV3 values) values
     (CollDatomRowV3 datom) (query-types/datom-row datom)))
 
-(defn ^relation-v3 coll-rel
+(defn- ^relation-v3 coll-rel-with-lookups
   [^:vector<datascript.parser/pattern-element> pattern
-   ^:vector<coll-relation-row-v3> rows]
+   ^:vector<coll-relation-row-v3> rows
+   ^:map<string;datascript.db/database-view> lookup-databases]
   (let [offset-map
         (reduce-kv
          (fn [offsets index element]
@@ -545,7 +587,13 @@
     (make-coll-relation
      (vec (keys offset-map))
      offset-map
-     (mapv coll-row-array rows))))
+     (mapv coll-row-array rows)
+     lookup-databases)))
+
+(defn ^relation-v3 coll-rel
+  [^:vector<datascript.parser/pattern-element> pattern
+   ^:vector<coll-relation-row-v3> rows]
+  (coll-rel-with-lookups pattern rows {}))
 
 (defn ^relation-v3 singleton-rel []
   (array-rel [] [(to-array [])]))
@@ -574,9 +622,12 @@
                 right-indexes)))
             rows))
          [])]
-    (array-rel
+    (array-rel-with-lookups
      (into left-symbols right-symbols)
-     rows)))
+     rows
+     (query-types/merge-lookup-databases
+      (relation-lookup-databases-v3 left)
+      (relation-lookup-databases-v3 right)))))
 
 (defn ^relation-v3 product-all
   [^:vector<relation-v3> relations]
@@ -724,9 +775,65 @@
              rows))
          (empty (relation-tuples right))
          (relation-tuples right))]
-    (array-rel
+    (array-rel-with-lookups
      (into left-symbols keep-right-symbols)
-     rows)))
+     rows
+     (query-types/merge-lookup-databases
+      (relation-lookup-databases-v3 left)
+      (relation-lookup-databases-v3 right)))))
+
+(defn- ^:bool relation-has-lookup-database?
+  [^relation-v3 relation ^:vector<string> symbols]
+  (let [lookup-databases
+        (relation-lookup-databases-v3 relation)]
+    (some?
+     (some
+      (fn [symbol]
+        (contains? lookup-databases symbol))
+      symbols))))
+
+(defn- ^datascript.lg.query-types/relation
+  relation-runtime-v3
+  [^relation-v3 relation]
+  (query-types/relation
+   (relation-offset-map relation)
+   (relation-tuples relation)
+   (relation-lookup-databases-v3 relation)))
+
+(defn- ^:array<datascript.lg.query-types/result>
+  project-runtime-relation-row-v3
+  [^datascript.lg.query-types/relation relation
+   ^:vector<string> symbols
+   ^:array<datascript.lg.query-types/result> row]
+  (to-array
+   (mapv
+    (fn [symbol]
+      (if-some [result
+                (query-types/relation-result
+                 relation symbol row)]
+        result
+        (Stdlib.invalid_arg
+         (str "Missing joined relation symbol " symbol))))
+    symbols)))
+
+(defn- ^relation-v3 hash-join-with-lookups-v3
+  [^relation-v3 left ^relation-v3 right]
+  (let [symbols
+        (into
+         (-symbols left)
+         (symbols-not-in (-symbols left) (-symbols right)))
+        joined
+        (query-types/hash-join
+         (relation-runtime-v3 left)
+         (relation-runtime-v3 right))]
+    (array-rel-with-lookups
+     symbols
+     (mapv
+      (fn [row]
+        (project-runtime-relation-row-v3
+         joined symbols row))
+      (query-types/relation-rows joined))
+     (query-types/relation-lookup-databases joined))))
 
 (defn- ^:map<string;datascript.lg.query-types/result>
   relation-constants
@@ -814,14 +921,21 @@
             (shared-symbols
              (-symbols related-relation)
              (-symbols relation))
-            relation-hash
-            (hash-map-rel related-relation join-symbols)
             joined
-            (hash-join
-             related-relation
-             relation-hash
-             join-symbols
-             relation)]
+            (if
+             (or
+              (relation-has-lookup-database?
+               related-relation join-symbols)
+              (relation-has-lookup-database?
+               relation join-symbols))
+              (hash-join-with-lookups-v3
+               related-relation relation)
+              (hash-join
+               related-relation
+               (hash-map-rel
+                related-relation join-symbols)
+               join-symbols
+               relation))]
         (join-unrelated remaining-context joined)))))
 
 (defn ^:option<relation-v3> project-rel
@@ -895,8 +1009,23 @@
        (str "Source " source-name " is not defined")))))
 
 (defn- ^relation-v3 empty-pattern-relation
-  [^:vector<datascript.parser/pattern-element> pattern]
-  (coll-rel pattern []))
+  [^:vector<datascript.parser/pattern-element> pattern
+   ^:map<string;datascript.db/database-view> lookup-databases]
+  (coll-rel-with-lookups pattern [] lookup-databases))
+
+(defn- ^:map<string;datascript.db/database-view>
+  pattern-lookup-databases-v3
+  [^datascript.db/database-view database
+   ^:vector<datascript.parser/pattern-element> pattern]
+  (match
+   (query-types/pattern-attr-constraint
+    (query-types/pattern-element-at pattern 1))
+    (Some attr)
+    (query-types/pattern-lookup-databases
+     database pattern attr)
+    None
+    (query-types/pattern-lookup-databases
+     database pattern None)))
 
 (defn- ^relation-v3 resolve-pattern-db-closed
   [^datascript.db/database-view database
@@ -904,49 +1033,54 @@
   (if (or (empty? pattern) (> (count pattern) 5))
     (Stdlib.invalid_arg
      "DataScript patterns must contain one to five elements")
-    (match
-     (tuple
-      (query-types/pattern-entity-constraint
-       database
-       (query-types/pattern-element-at pattern 0))
-      (query-types/pattern-attr-constraint
-       (query-types/pattern-element-at pattern 1))
-      (query-types/pattern-value-constraint
-       (query-types/pattern-element-at pattern 2))
-      (query-types/pattern-entity-constraint
-       database
-       (query-types/pattern-element-at pattern 3))
-      (query-types/pattern-added-constraint
-       (query-types/pattern-element-at pattern 4)))
-      (tuple
-       (Some entity)
-       (Some attr)
-       (Some value)
-       (Some tx)
-       (Some added))
-      (if-some
-        [resolved-value
-         (query-types/resolve-pattern-value-constraint
-          database attr value)]
-        (let [datoms
-              (db/database-view-search-vector
-               database entity attr resolved-value tx)
-              datoms
-              (if-some [added added]
-                (filterv
-                 (fn [datom]
-                   (= added (db/datom-added datom)))
-                 datoms)
-                datoms)]
-          (coll-rel
-           pattern
-           (mapv
-            (fn [datom]
-              (CollDatomRowV3 datom))
-            datoms)))
-        (empty-pattern-relation pattern))
-      _
-      (empty-pattern-relation pattern))))
+    (let [lookup-databases
+          (pattern-lookup-databases-v3 database pattern)]
+      (match
+       (tuple
+        (query-types/pattern-entity-constraint
+         database
+         (query-types/pattern-element-at pattern 0))
+        (query-types/pattern-attr-constraint
+         (query-types/pattern-element-at pattern 1))
+        (query-types/pattern-value-constraint
+         (query-types/pattern-element-at pattern 2))
+        (query-types/pattern-entity-constraint
+         database
+         (query-types/pattern-element-at pattern 3))
+        (query-types/pattern-added-constraint
+         (query-types/pattern-element-at pattern 4)))
+        (tuple
+         (Some entity)
+         (Some attr)
+         (Some value)
+         (Some tx)
+         (Some added))
+        (if-some
+          [resolved-value
+           (query-types/resolve-pattern-value-constraint
+            database attr value)]
+          (let [datoms
+                (db/database-view-search-vector
+                 database entity attr resolved-value tx)
+                datoms
+                (if-some [added added]
+                  (filterv
+                   (fn [datom]
+                     (= added (db/datom-added datom)))
+                   datoms)
+                  datoms)]
+            (coll-rel-with-lookups
+             pattern
+             (mapv
+              (fn [datom]
+                (CollDatomRowV3 datom))
+              datoms)
+             lookup-databases))
+          (empty-pattern-relation
+           pattern lookup-databases))
+        _
+        (empty-pattern-relation
+         pattern lookup-databases)))))
 
 (defn ^relation-v3 resolve-pattern-db
   [^datascript.db/database-view database

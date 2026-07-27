@@ -1911,6 +1911,37 @@
         (query-int-result value)))
      values))))
 
+(defn ^datascript.lg.query-types/input query-v3-data-collection-input
+  [^:vector<Datascript_runtime.Data_value.t> values]
+  (query-types/binding-input
+   (query-types/collection-binding
+    (mapv
+     (fn [^:Datascript_runtime.Data_value.t value]
+       (query-types/scalar-binding
+        (query-types/value-result value)))
+     values))))
+
+(defn ^datascript.lg.query-types/input
+  query-v3-data-tuple-collection-input
+  [^:vector<vector<Datascript_runtime.Data_value.t>> rows]
+  (query-types/binding-input
+   (query-types/collection-binding
+    (mapv
+     (fn [^:vector<Datascript_runtime.Data_value.t> row]
+       (query-types/collection-binding
+        (mapv
+         (fn [^:Datascript_runtime.Data_value.t value]
+           (query-types/scalar-binding
+            (query-types/value-result value)))
+         row)))
+     rows))))
+
+(defn ^:Datascript_runtime.Data_value.t query-v3-lookup-ref
+  [^:keyword attr ^:string value]
+  (query-form-vector
+   [(Datascript_runtime.Data_value.Keyword (str attr))
+    (Datascript_runtime.Data_value.String value)]))
+
 (defn ^:vector<array<datascript.lg.query-types/result>>
   require-query-v3-relation-output
   [^datascript.lg.query-types/output output]
@@ -3286,8 +3317,169 @@
                (query-v3-value-input
                 (Datascript_runtime.Data_value.Int 1)))]
           "no error")
-        (catch (Invalid_argument message)
-          (str message)))))))
+      (catch (Invalid_argument message)
+        (str message)))))))
+
+(deftest test-query-v3-lookup-ref-input-joins-entity-position
+  (let [database
+        (db/database-view
+         (d/db-with
+          (d/empty-db
+           {:email {:db/unique :db.unique/identity}})
+          [[:db/add 1 :email "ada@example.com"]
+           [:db/add 1 :age 30]
+           [:db/add 2 :email "bob@example.com"]
+           [:db/add 2 :age 40]]))
+        query
+        (parser/static-query-clauses-with-inputs
+         (parser/relation-find ["?age"])
+         [(parser/pattern-clause
+           [(parser/pattern-variable "?entity")
+            (parser/pattern-attribute :age)
+            (parser/pattern-variable "?age")])]
+         [(parser/make-static-source-input "$")
+          (parser/make-static-value-input
+           (parser/collection-input
+            (parser/scalar-input "?entity")))])
+        input
+        (query-v3-data-collection-input
+         [(query-v3-lookup-ref :email "ada@example.com")
+          (query-v3-lookup-ref :email "missing@example.com")
+          (query-v3-lookup-ref :email "bob@example.com")])
+        output
+        (query-v3/q
+         query
+         (query-types/source-input
+          (query-types/database-source database))
+         input)]
+    (is
+     (=
+      [[30] [40]]
+      (query-int-rows
+       (require-query-v3-relation-output output))))))
+
+(deftest test-query-v3-lookup-ref-input-joins-ref-value
+  (let [database
+        (db/database-view
+         (d/db-with
+          (d/empty-db
+           {:email {:db/unique :db.unique/identity}
+            :friend {:db/valueType :db.type/ref}})
+          [[:db/add 1 :email "ada@example.com"]
+           [:db/add 2 :email "bob@example.com"]
+           [:db/add 10 :friend 1]
+           [:db/add 20 :friend 2]]))
+        query
+        (parser/static-query-clauses-with-inputs
+         (parser/relation-find ["?person"])
+         [(parser/pattern-clause
+           [(parser/pattern-variable "?person")
+            (parser/pattern-attribute :friend)
+            (parser/pattern-variable "?friend")])]
+         [(parser/make-static-source-input "$")
+          (parser/make-static-value-input
+           (parser/collection-input
+            (parser/scalar-input "?friend")))])
+        output
+        (query-v3/q
+         query
+         (query-types/source-input
+          (query-types/database-source database))
+         (query-v3-data-collection-input
+          [(query-v3-lookup-ref :email "ada@example.com")
+           (query-v3-lookup-ref :email "bob@example.com")]))]
+    (is
+     (=
+      [[10] [20]]
+      (query-int-rows
+       (require-query-v3-relation-output output))))))
+
+(deftest test-query-v3-lookup-ref-uses-explicit-source
+  (let [default-database
+        (db/database-view
+         (d/db-with
+          (d/empty-db
+           {:email {:db/unique :db.unique/identity}})
+          [[:db/add 1 :email "same@example.com"]
+           [:db/add 1 :age 10]]))
+        other-database
+        (db/database-view
+         (d/db-with
+          (d/empty-db
+           {:email {:db/unique :db.unique/identity}})
+          [[:db/add 2 :email "same@example.com"]
+           [:db/add 2 :age 20]]))
+        query
+        (parser/static-query-clauses-with-inputs
+         (parser/relation-find ["?age"])
+         [(parser/explicit-pattern-clause
+           "$other"
+           [(parser/pattern-variable "?entity")
+            (parser/pattern-attribute :age)
+            (parser/pattern-variable "?age")])]
+         [(parser/make-static-source-input "$")
+          (parser/make-static-source-input "$other")
+          (parser/make-static-value-input
+           (parser/collection-input
+            (parser/scalar-input "?entity")))])
+        output
+        (query-v3/q
+         query
+         (query-types/source-input
+          (query-types/database-source default-database))
+         (query-types/source-input
+          (query-types/database-source other-database))
+         (query-v3-data-collection-input
+          [(query-v3-lookup-ref :email "same@example.com")
+           (query-v3-lookup-ref :email "missing@example.com")]))]
+    (is
+     (=
+      [[20]]
+      (query-int-rows
+       (require-query-v3-relation-output output))))))
+
+(deftest test-query-v3-lookup-ref-composite-join-key
+  (let [database
+        (db/database-view
+         (d/db-with
+          (d/empty-db
+           {:email {:db/unique :db.unique/identity}})
+          [[:db/add 1 :email "ada@example.com"]
+           [:db/add 1 :tag "x"]
+           [:db/add 2 :email "bob@example.com"]
+           [:db/add 2 :tag "y"]]))
+        query
+        (parser/static-query-clauses-with-inputs
+         (parser/relation-find ["?tag"])
+         [(parser/pattern-clause
+           [(parser/pattern-variable "?entity")
+            (parser/pattern-attribute :tag)
+            (parser/pattern-variable "?tag")])]
+         [(parser/make-static-source-input "$")
+          (parser/make-static-value-input
+           (parser/collection-input
+            (parser/tuple-input
+             [(parser/scalar-input "?entity")
+              (parser/scalar-input "?tag")])))] )
+        input
+        (query-v3-data-tuple-collection-input
+         [[(query-v3-lookup-ref :email "ada@example.com")
+           (Datascript_runtime.Data_value.String "x")]
+          [(query-v3-lookup-ref :email "ada@example.com")
+           (Datascript_runtime.Data_value.String "wrong")]
+          [(query-v3-lookup-ref :email "bob@example.com")
+           (Datascript_runtime.Data_value.String "y")]])
+        output
+        (query-v3/q
+         query
+         (query-types/source-input
+          (query-types/database-source database))
+         input)]
+    (is
+     (=
+      [["\"x\""] ["\"y\""]]
+      (query-output-edn-rows
+       (require-query-v3-relation-output output))))))
 
 (deftest test-public-tuple-key-helpers
   (let [attrs (query-types/index-attrs ["?x" "?y"])
