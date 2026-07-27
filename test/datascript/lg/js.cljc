@@ -5,11 +5,82 @@
    [datascript.conn :as conn]
    [datascript.core :as d]
    [datascript.db :as db]
+   [datascript.lg.query :as query]
+   [datascript.lg.query-types :as query-types]
+   [datascript.parser :as parser]
    [datascript.pull-api :as pull-api]
    [datascript.pull-parser :as pull-parser]))
 
 (def ^:export serializable d/serializable)
 (def ^:export from_serializable d/from-serializable)
+
+(defn- q-string [source inputs]
+  (query/q-closed
+   (parser/parse-query
+    (Datascript_runtime.Serialization_value.data_value_of_edn_string
+     source))
+   inputs))
+
+(defn ^:export q
+  {:inline
+   (fn [source & inputs]
+     (let [data-value-form
+           (fn [value]
+             (if (nil? value)
+               (list 'Datascript_runtime.Data_value.Nil)
+               (if (keyword? value)
+                 (list
+                  'Datascript_runtime.Data_value.Keyword
+                  (str value))
+                 (if (string? value)
+                   (list
+                    'Datascript_runtime.Data_value.String
+                    value)
+                   (if (= value true)
+                     (list
+                      'Datascript_runtime.Data_value.Bool
+                      true)
+                     (if (= value false)
+                       (list
+                        'Datascript_runtime.Data_value.Bool
+                        false)
+                       (list
+                        'Datascript_runtime.Data_value.Int
+                        value)))))))
+           database-input
+           (fn [database]
+             (list
+              'datascript.lg.query-types/source-input
+              (list
+               'datascript.lg.query-types/database-source
+               (list
+                'datascript.db/database-view
+                database))))
+           scalar-input
+           (fn [value]
+             (list
+              'datascript.lg.query-types/binding-input
+              (list
+               'datascript.lg.query-types/scalar-binding
+               (list
+                'datascript.lg.query-types/value-result
+                (data-value-form value)))))
+           input-forms
+           (if (empty? inputs)
+             []
+             (let [database (first inputs)]
+             (reduce
+              (fn [forms value]
+                (conj forms (scalar-input value)))
+              [(database-input database)]
+              (next inputs))))]
+       (list
+        'datascript.js/q-string
+        source
+        input-forms)))}
+  [^string source
+   & ^:list<datascript.lg.query-types/input> inputs]
+  (q-string source (vec inputs)))
 
 (defn- data-value-int [field value]
   (match value

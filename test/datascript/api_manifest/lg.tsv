@@ -437,6 +437,7 @@ arity	datascript.js/init_db	1	variadic
 arity	datascript.js/js->Datom	1	fixed
 arity	datascript.js/pull	3	fixed
 arity	datascript.js/pull_many	3	fixed
+arity	datascript.js/q	1	variadic
 arity	datascript.js/reset_conn	2	variadic
 arity	datascript.js/resolve_tempid	2	fixed
 arity	datascript.js/seek_datoms	2	variadic
@@ -1391,6 +1392,7 @@ var	datascript.js/js->Datom
 var	datascript.js/listen
 var	datascript.js/pull
 var	datascript.js/pull_many
+var	datascript.js/q
 var	datascript.js/reset_conn
 var	datascript.js/resolve_tempid
 var	datascript.js/seek_datoms

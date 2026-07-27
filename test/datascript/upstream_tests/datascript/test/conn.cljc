@@ -218,6 +218,29 @@
     (is (= [2] (mapv (fn [datom] (.-e datom)) entity-datoms)))
     (is (= [2 3] (mapv (fn [datom] (.-e datom)) seeked)))))
 
+(deftest test-js-static-query-wrapper
+  (let [database
+        (d/init-db
+         [(d/datom 1 :name "Ada")
+          (d/datom 1 :age 41)
+          (d/datom 2 :name "Bob")
+          (d/datom 2 :age 17)
+          (d/datom 3 :name "Cara")
+          (d/datom 3 :age 29)])]
+    (is
+     (tdc/query-relation?
+      (js/q
+       "[:find ?e ?name :where [?e :name ?name]]"
+       database)
+      [[1 "Ada"] [2 "Bob"] [3 "Cara"]]))
+    (is
+     (tdc/query-collection?
+      (js/q
+       "[:find [?name ...] :in $ ?minimum :where [?e :age ?age] [?e :name ?name] [(> ?age ?minimum)]]"
+       database
+       20)
+      ["Ada" "Cara"]))))
+
 (deftest test-js-static-datom-conversion
   (let [minimal (js/js->Datom [1 :name "Ada"])
         complete (js/js->Datom [2 :age 42 77 false "ignored"])

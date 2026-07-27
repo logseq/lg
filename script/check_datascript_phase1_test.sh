@@ -201,6 +201,8 @@ for js_adapter_entry in \
   'arity	datascript.js/pull	3	fixed' \
   'var	datascript.js/pull_many' \
   'arity	datascript.js/pull_many	3	fixed' \
+  'var	datascript.js/q' \
+  'arity	datascript.js/q	1	variadic' \
   'var	datascript.js/resolve_tempid' \
   'arity	datascript.js/resolve_tempid	2	fixed' \
   'var	datascript.js/reset_conn' \
