@@ -259,17 +259,214 @@
              :where [(integer? nil) ?x]])
       (Datascript_runtime.Data_value.Bool false))))
 
-  (testing "integer? rejects unsupported arities"
+  (testing "integer? retains upstream CLJS unary invocation behavior"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(integer?) ?x]])
+      (Datascript_runtime.Data_value.Bool false)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(integer? 1 2) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(integer? 1.5 2) ?x]])
+      (Datascript_runtime.Data_value.Bool false)))))
+
+(deftest test-core-sign-and-parity-query-predicates
+  (testing "zero? uses upstream numeric identity and ignores extra arguments"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(zero? 0.0) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(zero? -0.0) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(zero? 0.5) ?x]])
+      (Datascript_runtime.Data_value.Bool false)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(zero? ##NaN) ?x]])
+      (Datascript_runtime.Data_value.Bool false)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(zero? "0") ?x]])
+      (Datascript_runtime.Data_value.Bool false)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(zero? nil) ?x]])
+      (Datascript_runtime.Data_value.Bool false)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(zero?) ?x]])
+      (Datascript_runtime.Data_value.Bool false)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(zero? 0 1) ?x]])
+      (Datascript_runtime.Data_value.Bool true))))
+
+  (testing "pos? and neg? preserve JavaScript primitive number coercion"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(pos? 0.5) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(pos? ##Inf) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(pos? ##NaN) ?x]])
+      (Datascript_runtime.Data_value.Bool false)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(pos? "2") ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(pos? "0x10") ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(pos? "0b10") ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(pos? "0o10") ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(pos? "1_0") ?x]])
+      (Datascript_runtime.Data_value.Bool false)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(pos? true) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(pos? nil) ?x]])
+      (Datascript_runtime.Data_value.Bool false)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(pos? []) ?x]])
+      (Datascript_runtime.Data_value.Bool false)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(neg? -0.5) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(neg? ##-Inf) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(neg? "-2") ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(neg?) ?x]])
+      (Datascript_runtime.Data_value.Bool false)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(pos? 1 0) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(neg? -1 0) ?x]])
+      (Datascript_runtime.Data_value.Bool true))))
+
+  (testing "even? and odd? accept integral numbers and reject other values"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(even? 2.0) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(even? -0.0) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(odd? 3.0) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(odd? -3.0) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
     (is
      (thrown-msg?
-      "Invalid arguments for query function: integer?"
+      "Argument must be an integer: 2.5"
       (d/q '[:find ?x .
-             :where [(integer?) ?x]])))
+             :where [(even? 2.5) ?x]])))
     (is
      (thrown-msg?
-      "Invalid arguments for query function: integer?"
+      "Argument must be an integer: NaN"
       (d/q '[:find ?x .
-             :where [(integer? 1 2) ?x]])))))
+             :where [(odd? ##NaN) ?x]])))
+    (is
+     (thrown-msg?
+      "Argument must be an integer: Infinity"
+      (d/q '[:find ?x .
+             :where [(even? ##Inf) ?x]])))
+    (is
+     (thrown-msg?
+      "Argument must be an integer: 2"
+      (d/q '[:find ?x .
+             :where [(odd? "2") ?x]])))
+    (is
+     (thrown-msg?
+      "Argument must be an integer: "
+      (d/q '[:find ?x .
+             :where [(even? nil) ?x]])))
+    (is
+     (thrown-msg?
+      "Argument must be an integer: "
+      (d/q '[:find ?x .
+             :where [(odd?) ?x]])))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(even? 2 3) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(odd? 3 2) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))))
 
 (deftest test-core-collection-value-query-functions
   (testing "set preserves uniqueness and nil conversion"

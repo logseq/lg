@@ -360,6 +360,12 @@
             (recur (+ index 1))
             false))))))
 
+(defn- first-value
+  [values]
+  (if (= 0 (count values))
+    (Datascript_runtime.Data_value.Nil)
+    (nth values 0)))
+
 (defn apply-comparison
   [function
     values]
@@ -371,40 +377,25 @@
     LessEqual (Some (ordered-values? function values))
     GreaterEqual (Some (ordered-values? function values))
     Zero
-    (if (= 1 (count values))
-      (match (nth values 0)
-        (Datascript_runtime.Data_value.Int value)
-        (Some (= value 0))
-        _ None)
-      None)
+    (Some
+     (Datascript_runtime.Data_value.is_zero
+      (first-value values)))
     Positive
-    (if (= 1 (count values))
-      (match (nth values 0)
-        (Datascript_runtime.Data_value.Int value)
-        (Some (> value 0))
-        _ None)
-      None)
+    (Some
+     (Datascript_runtime.Data_value.is_positive
+      (first-value values)))
     Negative
-    (if (= 1 (count values))
-      (match (nth values 0)
-        (Datascript_runtime.Data_value.Int value)
-        (Some (< value 0))
-        _ None)
-      None)
+    (Some
+     (Datascript_runtime.Data_value.is_negative
+      (first-value values)))
     Even
-    (if (= 1 (count values))
-      (match (nth values 0)
-        (Datascript_runtime.Data_value.Int value)
-        (Some (= 0 (mod value 2)))
-        _ None)
-      None)
+    (Some
+     (Datascript_runtime.Data_value.is_even
+      (first-value values)))
     Odd
-    (if (= 1 (count values))
-      (match (nth values 0)
-        (Datascript_runtime.Data_value.Int value)
-        (Some (not (= 0 (mod value 2))))
-        _ None)
-      None)
+    (Some
+     (Datascript_runtime.Data_value.is_odd
+      (first-value values)))
     TrueValue
     (if (= 1 (count values))
       (Some
@@ -448,11 +439,9 @@
         _ (Some false))
       None)
     Integer
-    (if (= 1 (count values))
-      (Some
-       (Datascript_runtime.Data_value.is_integer
-        (nth values 0)))
-      None)
+    (Some
+     (Datascript_runtime.Data_value.is_integer
+      (first-value values)))
     String
     (if (= 1 (count values))
       (match (nth values 0)

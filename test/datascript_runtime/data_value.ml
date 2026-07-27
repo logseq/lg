@@ -256,6 +256,69 @@ let is_integer = function
       Float.is_finite value && Float.equal value (Float.trunc value)
   | _ -> false
 
+let prefixed_number radix source =
+  let length = String.length source in
+  if length = 2 then None
+  else
+    try
+      Some
+        (Lg_runtime.Runtime_string.parse_float_radix
+           (String.sub source 2 (length - 2))
+           radix)
+    with Invalid_argument _ -> None
+
+let javascript_number source =
+  let source = String.trim source in
+  if source = "" then Some 0.0
+  else if String.contains source '_' then None
+  else if String.length source >= 2 && source.[0] = '0' then
+    match source.[1] with
+    | 'b' | 'B' -> prefixed_number 2 source
+    | 'o' | 'O' -> prefixed_number 8 source
+    | 'x' | 'X' -> prefixed_number 16 source
+    | _ -> float_of_string_opt source
+  else
+    match source with
+    | "inf" | "+inf" | "-inf" -> None
+    | _ -> float_of_string_opt source
+
+let sign_number = function
+  | Int value | Ref value | Instant value -> Some (float_of_int value)
+  | Wide_int value -> Some (Int64.to_float value)
+  | Float value -> Some value
+  | Bool value -> Some (if value then 1.0 else 0.0)
+  | String value -> javascript_number value
+  | _ -> None
+
+let is_zero value =
+  match numeric_float value with
+  | Some value -> value = 0.0
+  | None -> false
+
+let is_positive value =
+  match sign_number value with
+  | Some value -> value > 0.0
+  | None -> false
+
+let is_negative value =
+  match sign_number value with
+  | Some value -> value < 0.0
+  | None -> false
+
+let parity_error value =
+  invalid_arg ("Argument must be an integer: " ^ to_clojure_string value)
+
+let is_even value =
+  if not (is_integer value) then parity_error value
+  else
+    match value with
+    | Int value | Ref value -> value mod 2 = 0
+    | Wide_int value -> Int64.rem value 2L = 0L
+    | Float value -> Float.rem value 2.0 = 0.0
+    | _ -> parity_error value
+
+let is_odd value = not (is_even value)
+
 let identical_number left right =
   match (numeric_float left, numeric_float right) with
   | Some left, Some right -> left = right
