@@ -155,7 +155,31 @@ for query_v3_entry in \
   'arity	datascript.query-v3/zip	2	fixed' \
   'arity	datascript.query-v3/zip	2	variadic' \
   'var	datascript.query-v3/has\?' \
-  'arity	datascript.query-v3/has\?	2	fixed'
+  'arity	datascript.query-v3/has\?	2	fixed' \
+  'var	datascript.query-v3/IRelation' \
+  'protocol	datascript.query-v3/IRelation	-alter-coll' \
+  'protocol	datascript.query-v3/IRelation	-arity' \
+  'protocol	datascript.query-v3/IRelation	-copy-tuple' \
+  'protocol	datascript.query-v3/IRelation	-fold' \
+  'protocol	datascript.query-v3/IRelation	-getter' \
+  'protocol	datascript.query-v3/IRelation	-indexes' \
+  'protocol	datascript.query-v3/IRelation	-project' \
+  'protocol	datascript.query-v3/IRelation	-size' \
+  'protocol	datascript.query-v3/IRelation	-symbols' \
+  'protocol	datascript.query-v3/IRelation	-union' \
+  'arity	datascript.query-v3/IRelation/-alter-coll	2	fixed' \
+  'arity	datascript.query-v3/IRelation/-arity	1	fixed' \
+  'arity	datascript.query-v3/IRelation/-copy-tuple	5	fixed' \
+  'arity	datascript.query-v3/IRelation/-fold	3	fixed' \
+  'arity	datascript.query-v3/IRelation/-getter	2	fixed' \
+  'arity	datascript.query-v3/IRelation/-indexes	2	fixed' \
+  'arity	datascript.query-v3/IRelation/-project	2	fixed' \
+  'arity	datascript.query-v3/IRelation/-size	1	fixed' \
+  'arity	datascript.query-v3/IRelation/-symbols	1	fixed' \
+  'arity	datascript.query-v3/IRelation/-union	2	fixed' \
+  'var	datascript.query-v3/array-rel' \
+  'arity	datascript.query-v3/array-rel	2	fixed' \
+  'var	datascript.query-v3/singleton-rel'
 do
   expect_text "the LG manifest preserves query-v3 helper: $query_v3_entry" \
     "$lg_api_manifest" "^$query_v3_entry$"

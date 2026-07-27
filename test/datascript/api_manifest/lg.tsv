@@ -839,10 +839,22 @@ arity	datascript.pull-parser/with-limit	2	fixed
 arity	datascript.pull-parser/with-pattern	2	fixed
 arity	datascript.pull-parser/with-recursion	2	fixed
 arity	datascript.pull-parser/with-xform	2	fixed
+arity	datascript.query-v3/IRelation/-alter-coll	2	fixed
+arity	datascript.query-v3/IRelation/-arity	1	fixed
+arity	datascript.query-v3/IRelation/-copy-tuple	5	fixed
+arity	datascript.query-v3/IRelation/-fold	3	fixed
+arity	datascript.query-v3/IRelation/-getter	2	fixed
+arity	datascript.query-v3/IRelation/-indexes	2	fixed
+arity	datascript.query-v3/IRelation/-project	2	fixed
+arity	datascript.query-v3/IRelation/-size	1	fixed
+arity	datascript.query-v3/IRelation/-symbols	1	fixed
+arity	datascript.query-v3/IRelation/-union	2	fixed
 arity	datascript.query-v3/arange	2	fixed
+arity	datascript.query-v3/array-rel	2	fixed
 arity	datascript.query-v3/concatv	0	variadic
 arity	datascript.query-v3/has?	2	fixed
 arity	datascript.query-v3/mapa	2	fixed
+arity	datascript.query-v3/singleton-rel	0	fixed
 arity	datascript.query-v3/subarr	3	fixed
 arity	datascript.query-v3/zip	2	fixed
 arity	datascript.query-v3/zip	2	variadic
@@ -1011,6 +1023,16 @@ protocol	datascript.parser/ITraversable	-postwalk
 protocol	datascript.pull-api/IFrame	-merge
 protocol	datascript.pull-api/IFrame	-run
 protocol	datascript.pull-api/IFrame	-str
+protocol	datascript.query-v3/IRelation	-alter-coll
+protocol	datascript.query-v3/IRelation	-arity
+protocol	datascript.query-v3/IRelation	-copy-tuple
+protocol	datascript.query-v3/IRelation	-fold
+protocol	datascript.query-v3/IRelation	-getter
+protocol	datascript.query-v3/IRelation	-indexes
+protocol	datascript.query-v3/IRelation	-project
+protocol	datascript.query-v3/IRelation	-size
+protocol	datascript.query-v3/IRelation	-symbols
+protocol	datascript.query-v3/IRelation	-union
 protocol	datascript.query/IBinding	in->rel
 protocol	datascript.query/IContextResolve	-context-resolve
 protocol	datascript.query/IPostProcess	-post-process
@@ -1794,11 +1816,14 @@ var	datascript.pull-parser/with-limit
 var	datascript.pull-parser/with-pattern
 var	datascript.pull-parser/with-recursion
 var	datascript.pull-parser/with-xform
+var	datascript.query-v3/IRelation
 var	datascript.query-v3/arange
+var	datascript.query-v3/array-rel
 var	datascript.query-v3/concatv
 var	datascript.query-v3/has?
 var	datascript.query-v3/lru-cache-size
 var	datascript.query-v3/mapa
+var	datascript.query-v3/singleton-rel
 var	datascript.query-v3/subarr
 var	datascript.query-v3/zip
 var	datascript.query/*implicit-source*

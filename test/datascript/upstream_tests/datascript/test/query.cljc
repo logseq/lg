@@ -251,6 +251,82 @@
   (is (= (Some true) (query-v3/has? [1 2 3] 2)))
   (is (= nil (query-v3/has? [1 2 3] 4))))
 
+(defn ^:vector<vector<int>> query-v3-int-rows
+  [^datascript.query-v3/relation-v3 relation]
+  (query-v3/-fold
+   relation
+   (fn [^:vector<vector<int>> rows
+        ^:array<datascript.lg.query-types/result> row]
+     (conj rows (mapv query-result-int row)))
+   []))
+
+(deftest test-query-v3-array-relation
+  (let [relation
+        (query-v3/array-rel
+         ["?x" "?y"]
+         [(query-int-row [1 2])
+          (query-int-row [3 4])])
+        first-row (query-int-row [1 2])]
+    (is (= ["?x" "?y"] (vec (query-v3/-symbols relation))))
+    (is (= 2 (query-v3/-arity relation)))
+    (is (= 2 (query-v3/-size relation)))
+    (is (= 2 (query-result-int
+              ((query-v3/-getter relation "?y") first-row))))
+    (is (= [1 0]
+           (vec (query-v3/-indexes relation ["?y" "?x"]))))
+    (is (= 4
+           (query-v3/-fold
+            relation
+            (fn [total row]
+              (+ total
+                 (query-result-int (aget row 0))))
+            0)))
+    (let [projected (query-v3/-project relation ["?y"])]
+      (is (= ["?y"] (vec (query-v3/-symbols projected))))
+      (is (= 1 (query-v3/-arity projected)))
+      (is (= [[1 2] [3 4]] (query-v3-int-rows projected)))
+      (is (= 2
+             (query-result-int
+              ((query-v3/-getter projected "?y") first-row)))))
+    (let [altered
+          (query-v3/-alter-coll
+           relation
+           (fn [rows]
+             (subvec rows 1)))]
+      (is (= [[3 4]] (query-v3-int-rows altered))))
+    (let [target (query-int-row [0 0])]
+      (query-v3/-copy-tuple
+       relation
+       first-row
+       (to-array [0 1])
+       target
+       (to-array [1 0]))
+      (is (= [2 1] (mapv query-result-int target))))
+    (let [united
+          (query-v3/-union
+           relation
+           (query-v3/array-rel
+            ["?x" "?y"]
+            [(query-int-row [5 6])]))]
+      (is (= [[1 2] [3 4] [5 6]]
+             (query-v3-int-rows united))))))
+
+(deftest test-query-v3-singleton-relation
+  (let [relation (query-v3/singleton-rel)
+        target (query-int-row [7])]
+    (is (= [] (vec (query-v3/-symbols relation))))
+    (is (= 0 (query-v3/-arity relation)))
+    (is (= 1 (query-v3/-size relation)))
+    (is (= [[]] (query-v3-int-rows relation)))
+    (is (= [] (vec (query-v3/-indexes relation []))))
+    (query-v3/-copy-tuple
+     relation
+     (to-array [])
+     (to-array [])
+     target
+     (to-array []))
+    (is (= [7] (mapv query-result-int target)))))
+
 (deftest test-public-tuple-key-helpers
   (let [attrs (query-types/index-attrs ["?x" "?y"])
         row (query-int-row [10 20])
