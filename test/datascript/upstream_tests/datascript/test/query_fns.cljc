@@ -69,6 +69,98 @@
      expected)
     _ false))
 
+(defn scalar-output-nan?
+  [^query-types/output output]
+  (match (query-types/output-scalar output)
+    (Some
+     (Some
+      (Datascript_runtime.Query_value.Value
+       (Datascript_runtime.Data_value.Float value))))
+    (Float.is_nan value)
+    _ false))
+
+(defn scalar-output-missing?
+  [^query-types/output output]
+  (match (query-types/output-scalar output)
+    (Some None) true
+    _ false))
+
+(deftest test-core-numeric-query-functions
+  (testing "division preserves upstream arities and floating-point results"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(/ 8 2 2) ?x]])
+      (Datascript_runtime.Data_value.Float 2.0)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(/ 4) ?x]])
+      (Datascript_runtime.Data_value.Float 0.25)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(/ 1 0) ?x]])
+      (Datascript_runtime.Data_value.Float ##Inf)))
+    (is
+     (scalar-output-nan?
+      (d/q '[:find ?x .
+             :where [(/) ?x]]))))
+
+  (testing "quotient, remainder, and modulo retain negative-number semantics"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(quot -7 3) ?x]])
+      (Datascript_runtime.Data_value.Int -2)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(rem -7 3) ?x]])
+      (Datascript_runtime.Data_value.Int -1)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(mod -7 3) ?x]])
+      (Datascript_runtime.Data_value.Int 2)))
+    (is
+     (scalar-output-nan?
+      (d/q '[:find ?x .
+             :where [(quot 1 0) ?x]])))
+    (is
+     (scalar-output-nan?
+      (d/q '[:find ?x .
+             :where [(rem 1 0) ?x]])))
+    (is
+     (scalar-output-nan?
+      (d/q '[:find ?x .
+             :where [(mod 1 0) ?x]]))))
+
+  (testing "minimum and maximum preserve variadic and empty results"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(max 3 9 4) ?x]])
+      (Datascript_runtime.Data_value.Int 9)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(min 3 9 4) ?x]])
+      (Datascript_runtime.Data_value.Int 3)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(max 3 4.5) ?x]])
+      (Datascript_runtime.Data_value.Float 4.5)))
+    (is
+     (scalar-output-missing?
+      (d/q '[:find ?x .
+             :where [(max) ?x]])))
+    (is
+     (scalar-output-missing?
+      (d/q '[:find ?x .
+             :where [(min) ?x]])))))
+
 (deftest test-query-fns
   (testing "predicate without free variables"
     (is (tdc/query-relation?

@@ -36,6 +36,12 @@ val is_nil : t -> bool
 val add : t Rrbvec.t -> t option
 val subtract : t Rrbvec.t -> t option
 val multiply : t Rrbvec.t -> t option
+val divide : t Rrbvec.t -> t option
+val quotient : t Rrbvec.t -> t option
+val remainder : t Rrbvec.t -> t option
+val modulo : t Rrbvec.t -> t option
+val maximum : t Rrbvec.t -> t option
+val minimum : t Rrbvec.t -> t option
 val increment : t -> t option
 val decrement : t -> t option
 val map_of_keyword_map : (string, t) Lg_runtime.Runtime_map.t -> t

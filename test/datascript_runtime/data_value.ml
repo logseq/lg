@@ -193,6 +193,85 @@ let multiply values =
       Option.bind result (fun left -> multiply_pair left value))
     (Some (Int 1)) values
 
+let numeric_float = function
+  | Int value | Ref value -> Some (float_of_int value)
+  | Wide_int value -> Some (Int64.to_float value)
+  | Float value -> Some value
+  | _ -> None
+
+let divide values =
+  match Rrbvec.to_list values with
+  | [] -> Some (Float Float.nan)
+  | first :: rest ->
+      Option.bind (numeric_float first) (fun first_number ->
+          match rest with
+          | [] -> Some (Float (1.0 /. first_number))
+          | _ ->
+              List.fold_left
+                (fun result value ->
+                  Option.bind result (fun result ->
+                      Option.map
+                        (fun value -> result /. value)
+                        (numeric_float value)))
+                (Some first_number) rest
+              |> Option.map (fun value -> Float value))
+
+let integral_numeric_result value =
+  if Float.is_finite value && Float.equal value (Float.trunc value) then
+    let minimum = float_of_int min_int and maximum = float_of_int max_int in
+    if value >= minimum && value < maximum then Int (int_of_float value)
+    else Float value
+  else Float value
+
+let binary_numeric operation values =
+  match Rrbvec.to_list values with
+  | [ left; right ] ->
+      Option.bind (numeric_float left) (fun left ->
+          Option.map
+            (fun right -> integral_numeric_result (operation left right))
+            (numeric_float right))
+  | _ -> None
+
+let quotient values =
+  binary_numeric
+    (fun left right ->
+      if Float.equal right 0.0 then Float.nan
+      else Float.trunc (left /. right))
+    values
+
+let remainder values = binary_numeric Float.rem values
+
+let modulo values =
+  binary_numeric
+    (fun left right ->
+      let remainder = Float.rem left right in
+      if
+        Float.is_nan remainder
+        || Float.equal remainder 0.0
+        || (remainder > 0.0) = (right > 0.0)
+      then remainder
+      else remainder +. right)
+    values
+
+let numeric_extreme better values =
+  match Rrbvec.to_list values with
+  | [] -> Some Nil
+  | first :: rest ->
+      Option.bind (numeric_float first) (fun _ ->
+          List.fold_left
+            (fun result value ->
+              Option.bind result (fun current ->
+                  Option.bind (numeric_float current) (fun current_number ->
+                      Option.map
+                        (fun value_number ->
+                          if better value_number current_number then value
+                          else current)
+                        (numeric_float value))))
+            (Some first) rest)
+
+let maximum values = numeric_extreme ( > ) values
+let minimum values = numeric_extreme ( < ) values
+
 let increment = function
   | Int value -> Some (Int (value + 1))
   | Wide_int value -> Some (Wide_int (Int64.succ value))

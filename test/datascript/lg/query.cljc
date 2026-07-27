@@ -2052,9 +2052,13 @@
                      (list
                       'Datascript_runtime.Data_value.Symbol
                       (str value))
-                     (list
-                      'Datascript_runtime.Data_value.Int
-                      value)))))))
+                     (if (float? value)
+                       (list
+                        'Datascript_runtime.Data_value.Float
+                        value)
+                       (list
+                        'Datascript_runtime.Data_value.Int
+                        value))))))))
          data-value-form
          (fn data-value-form [value]
            (if (vector? value)
@@ -2286,7 +2290,10 @@
          namespaced-symbol?
          (fn [value]
            (if (symbol? value)
-             (if (nil? (namespace value)) false true)
+             (let [symbol-namespace (namespace value)]
+               (if (nil? symbol-namespace)
+                 false
+                 (if (= symbol-namespace "") false true)))
              false))
          static-custom-function-elements
          (reduce

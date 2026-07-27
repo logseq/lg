@@ -525,8 +525,14 @@
     "+" (Some Add)
     "-" (Some Subtract)
     "*" (Some Multiply)
+    "/" (Some Divide)
+    "quot" (Some Quotient)
+    "rem" (Some Remainder)
+    "mod" (Some Modulo)
     "inc" (Some Increment)
     "dec" (Some Decrement)
+    "max" (Some Maximum)
+    "min" (Some Minimum)
     "compare" (Some Compare)
     "keyword" (Some Keyword)
     "name" (Some Name)
@@ -597,6 +603,14 @@
     (Datascript_runtime.Data_value.subtract values)
     Multiply
     (Datascript_runtime.Data_value.multiply values)
+    Divide
+    (Datascript_runtime.Data_value.divide values)
+    Quotient
+    (Datascript_runtime.Data_value.quotient values)
+    Remainder
+    (Datascript_runtime.Data_value.remainder values)
+    Modulo
+    (Datascript_runtime.Data_value.modulo values)
     Increment
     (if (= 1 (count values))
       (Datascript_runtime.Data_value.increment (nth values 0))
@@ -605,6 +619,10 @@
     (if (= 1 (count values))
       (Datascript_runtime.Data_value.decrement (nth values 0))
       None)
+    Maximum
+    (Datascript_runtime.Data_value.maximum values)
+    Minimum
+    (Datascript_runtime.Data_value.minimum values)
     Compare
     (let [left
           (if (= 0 (count values))
