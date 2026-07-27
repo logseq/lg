@@ -250,6 +250,12 @@ let numeric_float = function
   | Float value -> Some value
   | _ -> None
 
+let is_integer = function
+  | Int _ | Wide_int _ | Ref _ -> true
+  | Float value ->
+      Float.is_finite value && Float.equal value (Float.trunc value)
+  | _ -> false
+
 let identical_number left right =
   match (numeric_float left, numeric_float right) with
   | Some left, Some right -> left = right

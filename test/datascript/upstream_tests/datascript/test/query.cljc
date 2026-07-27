@@ -2575,7 +2575,10 @@
         [(Datascript_runtime.Data_value.Int 1)
          (Datascript_runtime.Data_value.Wide_int
           (Int64.of_int 2))
+         (Datascript_runtime.Data_value.Float 3.0)
          (Datascript_runtime.Data_value.Float 3.5)
+         (Datascript_runtime.Data_value.Float ##NaN)
+         (Datascript_runtime.Data_value.Float ##Inf)
          (Datascript_runtime.Data_value.Ref 7)
          (Datascript_runtime.Data_value.String "text")
          (Datascript_runtime.Data_value.Bool false)
@@ -2585,12 +2588,12 @@
          (Datascript_runtime.Data_value.Nil)]]
     (is
      (=
-      [["1"] ["2"] ["3.5"] ["7"]]
+      [["1"] ["2"] ["3.0"] ["3.5"] ["##NaN"] ["##Inf"] ["7"]]
       (query-v3-static-predicate-output-edn
        "number?" values)))
     (is
      (=
-      [["1"] ["2"] ["7"]]
+      [["1"] ["2"] ["3.0"] ["7"]]
       (query-v3-static-predicate-output-edn
        "integer?" values)))
     (is
@@ -2624,6 +2627,27 @@
      "integer?"
      [(parser/constant-argument
        (Datascript_runtime.Data_value.Float 1.5))])))
+  (is
+   (=
+    [["true"]]
+    (query-v3-static-function-output-edn
+     "integer?"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.Float 3.0))])))
+  (is
+   (=
+    [["false"]]
+    (query-v3-static-function-output-edn
+     "integer?"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.Float ##NaN))])))
+  (is
+   (=
+    [["false"]]
+    (query-v3-static-function-output-edn
+     "integer?"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.Float ##Inf))])))
   (is
    (=
     [["false"]]

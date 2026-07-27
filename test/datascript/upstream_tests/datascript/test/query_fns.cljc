@@ -187,6 +187,90 @@
       (d/q '[:find ?x .
              :where [(min) ?x]])))))
 
+  (testing "empty ordered comparisons retain upstream CLJS results"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(<) ?x]])
+      (Datascript_runtime.Data_value.Bool false)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(>) ?x]])
+      (Datascript_runtime.Data_value.Bool false)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(<=) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(>=) ?x]])
+      (Datascript_runtime.Data_value.Bool true))))
+
+(deftest test-core-integer-query-predicate
+  (testing "integer? accepts every finite integral numeric representation"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(integer? 2) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(integer? 2.0) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(integer? -0.0) ?x]])
+      (Datascript_runtime.Data_value.Bool true))))
+
+  (testing "integer? rejects fractional, non-finite, and non-number values"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(integer? 2.5) ?x]])
+      (Datascript_runtime.Data_value.Bool false)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(integer? ##NaN) ?x]])
+      (Datascript_runtime.Data_value.Bool false)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(integer? ##Inf) ?x]])
+      (Datascript_runtime.Data_value.Bool false)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(integer? ##-Inf) ?x]])
+      (Datascript_runtime.Data_value.Bool false)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(integer? "2") ?x]])
+      (Datascript_runtime.Data_value.Bool false)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(integer? nil) ?x]])
+      (Datascript_runtime.Data_value.Bool false))))
+
+  (testing "integer? rejects unsupported arities"
+    (is
+     (thrown-msg?
+      "Invalid arguments for query function: integer?"
+      (d/q '[:find ?x .
+             :where [(integer?) ?x]])))
+    (is
+     (thrown-msg?
+      "Invalid arguments for query function: integer?"
+      (d/q '[:find ?x .
+             :where [(integer? 1 2) ?x]])))))
+
 (deftest test-core-collection-value-query-functions
   (testing "set preserves uniqueness and nil conversion"
     (is

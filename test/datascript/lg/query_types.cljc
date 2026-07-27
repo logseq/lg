@@ -1891,6 +1891,31 @@
       (Some boolean-value) boolean-value
       None true)))
 
+(defn- static-function-built-in
+  [function]
+  (match function
+    (ComparisonStaticPredicate comparison) comparison
+    (PureStaticPredicate pure) pure))
+
+(defn- static-function
+  [name]
+  (if-some [pure (built-ins/pure-function name)]
+    (Some (PureStaticPredicate pure))
+    (if-some [comparison (built-ins/comparison-function name)]
+      (Some (ComparisonStaticPredicate comparison))
+      None)))
+
+(defn- apply-static-function
+  [function values]
+  (match function
+    (ComparisonStaticPredicate comparison)
+    (if-some [matches?
+              (built-ins/apply-comparison comparison values)]
+      (Some (Datascript_runtime.Data_value.Bool matches?))
+      None)
+    (PureStaticPredicate pure)
+    (built-ins/apply-pure-function pure values)))
+
 (defn ^relation resolve-predicate
   [^datascript.db/database-view database
    ^:map<string;source> sources
@@ -1901,14 +1926,7 @@
   (if-some [name (parser/static-callable-name callable)]
     (let [_ (validate-static-call-bindings
              relation constants name arguments None)]
-    (if-some
-     [function
-      (if-some [pure (built-ins/pure-function name)]
-        (Some (PureStaticPredicate pure))
-        (if-some [comparison
-                  (built-ins/comparison-function name)]
-          (Some (ComparisonStaticPredicate comparison))
-          None))]
+    (if-some [function (static-function name)]
       (if
        (match function
          (ComparisonStaticPredicate comparison)
@@ -1940,10 +1958,9 @@
                             (if (built-ins/differ-function? pure)
                               (Some
                                (built-ins/apply-differ values))
-                              (if-some
-                               [value
-                                (built-ins/apply-pure-function
-                                 pure values)]
+                              (if-some [value
+                                        (apply-static-function
+                                         function values)]
                                 (Some (data-value-truthy? value))
                                 None)))]
                   (if matches?
@@ -1994,13 +2011,18 @@
   (if-some [name (parser/static-callable-name callable)]
     (let [_ (validate-static-call-bindings
              relation constants name arguments (Some binding))]
-    (if-some [function (built-ins/pure-function name)]
+    (if-some [function (static-function name)]
       (if
-       (or
-        (built-ins/get-else-function? function)
-        (built-ins/get-some-function? function))
+       (match function
+         (PureStaticPredicate pure)
+         (or
+          (built-ins/get-else-function? pure)
+          (built-ins/get-some-function? pure))
+         (ComparisonStaticPredicate _) false)
         (resolve-database-function
-         database sources relation constants function arguments binding)
+         database sources relation constants
+         (static-function-built-in function)
+         arguments binding)
         (let [operands
               (mapv
                (fn [^:datascript.parser/fn-arg argument]
@@ -2016,8 +2038,7 @@
                           (predicate-operand-value row operand))
                         operands)]
                    (if-some [value
-                             (built-ins/apply-pure-function
-                              function values)]
+                             (apply-static-function function values)]
                      (if (Datascript_runtime.Data_value.is_nil value)
                        output
                        (let [joined

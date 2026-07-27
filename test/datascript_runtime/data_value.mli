@@ -45,6 +45,7 @@ val minimum : t Rrbvec.t -> t option
 val range_value : t Rrbvec.t -> t option
 val random_value : t Rrbvec.t -> t option
 val random_int_value : t Rrbvec.t -> t option
+val is_integer : t -> bool
 val identical_value : t Rrbvec.t -> t option
 val string_value : t Rrbvec.t -> t option
 val pr_str : t Rrbvec.t -> t option

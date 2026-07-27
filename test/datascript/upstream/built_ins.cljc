@@ -335,23 +335,30 @@
 (defn ordered-values?
   [function
     values]
-  (loop [index 1]
-    (if (>= index (count values))
-      true
-      (let [comparison
-            (Datascript_runtime.Data_value.compare
-             (nth values (- index 1))
-             (nth values index))
-            ordered?
-            (match function
-              Less (neg? comparison)
-              Greater (pos? comparison)
-              LessEqual (not (pos? comparison))
-              GreaterEqual (not (neg? comparison))
-              _ false)]
-        (if ordered?
-          (recur (+ index 1))
-          false)))))
+  (if (empty? values)
+    (match function
+      Less false
+      Greater false
+      LessEqual true
+      GreaterEqual true
+      _ false)
+    (loop [index 1]
+      (if (>= index (count values))
+        true
+        (let [comparison
+              (Datascript_runtime.Data_value.compare
+               (nth values (- index 1))
+               (nth values index))
+              ordered?
+              (match function
+                Less (neg? comparison)
+                Greater (pos? comparison)
+                LessEqual (not (pos? comparison))
+                GreaterEqual (not (neg? comparison))
+                _ false)]
+          (if ordered?
+            (recur (+ index 1))
+            false))))))
 
 (defn apply-comparison
   [function
@@ -442,11 +449,9 @@
       None)
     Integer
     (if (= 1 (count values))
-      (match (nth values 0)
-        (Datascript_runtime.Data_value.Int _) (Some true)
-        (Datascript_runtime.Data_value.Wide_int _) (Some true)
-        (Datascript_runtime.Data_value.Ref _) (Some true)
-        _ (Some false))
+      (Some
+       (Datascript_runtime.Data_value.is_integer
+        (nth values 0)))
       None)
     String
     (if (= 1 (count values))
