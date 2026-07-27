@@ -555,6 +555,9 @@ let test_serialization_uses_a_closed_typed_facade () =
     = Rrbvec.of_list [ ":user/name" ]);
   assert (
     Serialization_value.datoms serialized = Rrbvec.of_list [ datom ]);
+  assert (Serialization_value.datoms_array serialized = [| datom |]);
+  assert (Serialization_value.aevt_array serialized = Some [| 0 |]);
+  assert (Serialization_value.avet_array serialized = Some [| 0 |]);
   assert (Serialization_value.datom_entity datom = 42);
   assert (Serialization_value.ref_type serialized = Storage_value.Weak);
   assert (Serialization_value.format serialized = Serialization_value.Current);

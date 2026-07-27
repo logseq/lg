@@ -69,8 +69,122 @@ let rec to_edn = function
 
 let of_edn_string source = Melange_edn.of_edn_string source |> of_edn
 let to_edn_string value = value |> to_edn |> Melange_edn.to_edn_string
-let of_json_string source = Melange_edn_melange.of_json_string source |> of_edn
-let to_json_string value = value |> to_edn |> Melange_edn_melange.to_json_string
+
+let min_safe_json_integer = -9007199254740991.
+let max_safe_json_integer = 9007199254740991.
+
+let json_number value =
+  if
+    value >= min_safe_json_integer
+    && value <= max_safe_json_integer
+    && Float.is_integer value
+  then Int (Int64.of_float value)
+  else Float value
+
+let rec of_json json =
+  match Js.Json.classify json with
+  | JSONNull -> Nil
+  | JSONFalse -> Bool false
+  | JSONTrue -> Bool true
+  | JSONString value -> String value
+  | JSONNumber value -> json_number value
+  | JSONArray values -> Vector (Array.map of_json values)
+  | JSONObject entries ->
+      Map
+        (Array.map
+           (fun (key, value) -> (String key, of_json value))
+           (Js.Dict.entries entries))
+
+let of_json_string source = source |> Js.Json.parseExn |> of_json
+
+let json_key = function
+  | String value | Symbol value | Keyword value -> value
+  | _ ->
+      invalid_arg
+        "EDN map contains a key that cannot be encoded as a JSON object name"
+
+type json_writer = {
+  mutable tokens : string array;
+  chunks : string array;
+}
+
+let flush_json_writer writer =
+  if Array.length writer.tokens > 0 then (
+    let chunk = Js.Array.join ~sep:"" writer.tokens in
+    ignore (Js.Array.push ~value:chunk writer.chunks);
+    writer.tokens <- [||])
+
+let add_json_token writer token =
+  ignore (Js.Array.push ~value:token writer.tokens);
+  if Array.length writer.tokens >= 8_192 then flush_json_writer writer
+
+let add_json_string writer value =
+  add_json_token writer (Js.Json.stringify (Js.Json.string value))
+
+let add_json_char writer value =
+  value
+  |> Melange_edn.char
+  |> Melange_edn.any
+  |> Melange_edn.to_edn_string
+  |> add_json_string writer
+
+let add_json_float writer value =
+  match classify_float value with
+  | FP_nan -> add_json_string writer "NaN"
+  | FP_infinite when value > 0. -> add_json_string writer "Infinity"
+  | FP_infinite -> add_json_string writer "-Infinity"
+  | FP_normal | FP_subnormal | FP_zero ->
+      add_json_token writer (Js.Json.stringify (Js.Json.number value))
+
+let add_json_int writer value =
+  let min_safe_json_integer = -9007199254740991L in
+  let max_safe_json_integer = 9007199254740991L in
+  if value >= min_safe_json_integer && value <= max_safe_json_integer then
+    add_json_token writer
+      (Js.Json.stringify (Js.Json.number (Int64.to_float value)))
+  else add_json_string writer (Int64.to_string value)
+
+let rec add_json_value writer = function
+  | Nil -> add_json_token writer "null"
+  | Bool true -> add_json_token writer "true"
+  | Bool false -> add_json_token writer "false"
+  | String value | Symbol value | Bigint value | Decimal value | Ratio value
+  | Regex value ->
+      add_json_string writer value
+  | Char value -> add_json_char writer value
+  | Keyword value -> add_json_string writer (":" ^ value)
+  | Int value -> add_json_int writer value
+  | Float value -> add_json_float writer value
+  | List values | Vector values | Set values ->
+      add_json_token writer "[";
+      Array.iteri
+        (fun index value ->
+          if index > 0 then add_json_token writer ",";
+          add_json_value writer value)
+        values;
+      add_json_token writer "]"
+  | Map entries ->
+      add_json_token writer "{";
+      Array.iteri
+        (fun index (key, value) ->
+          if index > 0 then add_json_token writer ",";
+          add_json_string writer (json_key key);
+          add_json_token writer ":";
+          add_json_value writer value)
+        entries;
+      add_json_token writer "}"
+  | Tagged (tag, value) ->
+      add_json_token writer "{\"tag\":";
+      add_json_string writer tag;
+      add_json_token writer ",\"value\":";
+      add_json_value writer value;
+      add_json_token writer "}"
+
+let to_json_string value =
+  let writer = { tokens = [||]; chunks = [||] } in
+  add_json_value writer value;
+  flush_json_writer writer;
+  Js.Array.join ~sep:"" writer.chunks
 
 let regex_valid pattern =
   let _ = Js.Re.fromString pattern in

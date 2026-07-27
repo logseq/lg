@@ -67,6 +67,9 @@ val keywords : t -> string Rrbvec.t
 val datoms : t -> t Rrbvec.t
 val aevt : t -> int Rrbvec.t option
 val avet : t -> int Rrbvec.t option
+val datoms_array : t -> t array
+val aevt_array : t -> int array option
+val avet_array : t -> int array option
 val branching_factor : t -> int
 val ref_type : t -> Storage_value.ref_type
 

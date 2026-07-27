@@ -1,6 +1,33 @@
 module Edn = Lg_edn_backend
 module Runtime_edn = Lg_runtime.Runtime_edn
 
+let assert_json expected value =
+  assert (String.equal expected (Runtime_edn.write_json_string value))
+
+let () =
+  assert_json "null" Edn.Nil;
+  assert_json "true" (Edn.Bool true);
+  assert_json {|["value",42,1.5,"NaN","Infinity","-Infinity"]|}
+    (Edn.Vector
+       [|
+         Edn.String "value";
+         Edn.Int 42L;
+         Edn.Float 1.5;
+         Edn.Float nan;
+         Edn.Float infinity;
+         Edn.Float neg_infinity;
+       |]);
+  assert_json
+    {|{"name":"Ada","kind":":person","tagged":{"tag":"uuid","value":"id"}}|}
+    (Edn.Map
+       [|
+         (Edn.String "name", Edn.String "Ada");
+         (Edn.String "kind", Edn.Keyword "person");
+         (Edn.String "tagged", Edn.Tagged ("uuid", Edn.String "id"));
+       |]);
+  assert_json {|["9007199254740992"]|}
+    (Edn.List [| Edn.Int 9007199254740992L |])
+
 let () =
   let count = 20_000 in
   let value =
@@ -13,3 +40,14 @@ let () =
   let encoded = Runtime_edn.write_json_string value in
   let decoded = Runtime_edn.read_json_string encoded in
   assert (decoded = value)
+
+let () =
+  match Sys.getenv_opt "LG_EDN_JSON_WRITE_STRESS_COUNT" with
+  | None -> ()
+  | Some source ->
+      let count = int_of_string source in
+      let value =
+        Edn.Vector
+          (Array.init count (fun value -> Edn.Int (Int64.of_int value)))
+      in
+      ignore (Runtime_edn.write_json_string value)

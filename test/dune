@@ -41,6 +41,11 @@
  (libraries datascript_runtime lg.runtime lg.edn-backend.native rrbvec))
 
 (test
+ (name datascript_serialization_allocation_tests)
+ (modules datascript_serialization_allocation_tests)
+ (libraries datascript_runtime lg.runtime lg.edn-backend.native rrbvec))
+
+(test
  (name runtime_seq_tests)
  (modules runtime_seq_tests)
  (libraries lg.runtime lg.edn-backend.native rrbvec))
@@ -53,6 +58,11 @@
 (test
  (name runtime_edn_json_tests)
  (modules runtime_edn_json_tests)
+ (libraries lg.runtime lg.edn-backend.native rrbvec))
+
+(test
+ (name runtime_edn_json_allocation_tests)
+ (modules runtime_edn_json_allocation_tests)
  (libraries lg.runtime lg.edn-backend.native rrbvec))
 
 (rule
@@ -75,7 +85,10 @@
   runtime-edn-json-tests-melange/test/runtime_edn_json_tests_melange.js)
  (action
   (run
+   env
+   LG_EDN_JSON_WRITE_STRESS_COUNT=500000
    node
+   --max-old-space-size=112
    %{dep:runtime-edn-json-tests-melange/test/runtime_edn_json_tests_melange.js})))
 
 (rule

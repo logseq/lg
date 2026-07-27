@@ -15,7 +15,9 @@ let vector_values = function
   | Lg_edn_backend.Vector values -> Array.to_list values
   | _ -> invalid_arg "expected serialized vector"
 
-let rrbvec_of_values values = values |> vector_values |> Rrbvec.of_list
+let rrbvec_of_values = function
+  | Lg_edn_backend.Vector values -> Rrbvec.of_array values
+  | _ -> invalid_arg "expected serialized vector"
 
 let edn_keyword value =
   if String.starts_with ~prefix:":" value then
@@ -229,32 +231,29 @@ let attribute_index attrs target =
 let datom entity attribute value tx =
   vector [ int entity; int attribute; value; int tx ]
 
-let datom_fields value =
-  match vector_values value with
-  | [ entity; attribute; value; tx ] -> (entity, attribute, value, tx)
+let datom_field index = function
+  | Lg_edn_backend.Vector fields when Array.length fields = 4 ->
+      fields.(index)
   | _ -> invalid_arg "invalid serialized datom"
 
 let datom_entity value =
-  let entity, _, _, _ = datom_fields value in
-  int_value entity
+  int_value (datom_field 0 value)
 
 let datom_attribute value =
-  let _, attribute, _, _ = datom_fields value in
-  int_value attribute
+  int_value (datom_field 1 value)
 
-let datom_value value =
-  let _, _, value, _ = datom_fields value in
-  value
+let datom_value value = datom_field 2 value
 
 let datom_tx value =
-  let _, _, _, tx = datom_fields value in
-  int_value tx
+  int_value (datom_field 3 value)
 
 let string_vector values =
-  values |> Rrbvec.to_list |> List.map string |> vector
+  Lg_edn_backend.Vector
+    (Array.map string (Rrbvec.to_array values))
 
 let int_vector values =
-  values |> Rrbvec.to_list |> List.map int |> vector
+  Lg_edn_backend.Vector
+    (Array.map int (Rrbvec.to_array values))
 
 let optional_int_vector = function
   | None -> Lg_edn_backend.Nil
@@ -275,7 +274,7 @@ let database_with_schema count tx0 max_eid max_tx schema attrs keywords datoms a
       field "schema" schema;
       field "attrs" (string_vector attrs);
       field "keywords" (string_vector keywords);
-      field "eavt" (vector (Rrbvec.to_list datoms));
+      field "eavt" (Lg_edn_backend.Vector (Rrbvec.to_array datoms));
       field "aevt" (optional_int_vector aevt);
       field "avet" (optional_int_vector avet);
       field "branching-factor" (int branching_factor);
@@ -343,21 +342,39 @@ let max_tx value = field value "max-tx" |> int_value
 let schema_source value = field value "schema" |> string_value
 let schema_value value = field value "schema"
 
-let string_vector_value value =
-  value |> vector_values |> List.map string_value |> Rrbvec.of_list
+let string_vector_value = function
+  | Lg_edn_backend.Vector values ->
+      Rrbvec.of_array (Array.map string_value values)
+  | _ -> invalid_arg "expected serialized string vector"
 
-let int_vector_value value =
-  value |> vector_values |> List.map int_value |> Rrbvec.of_list
+let int_vector_value = function
+  | Lg_edn_backend.Vector values ->
+      Rrbvec.of_array (Array.map int_value values)
+  | _ -> invalid_arg "expected serialized int vector"
+
+let vector_array = function
+  | Lg_edn_backend.Vector values -> values
+  | _ -> invalid_arg "expected serialized vector"
+
+let int_array_value value =
+  Array.map int_value (vector_array value)
 
 let optional_int_vector_value = function
   | Lg_edn_backend.Nil -> None
   | value -> Some (int_vector_value value)
+
+let optional_int_array_value = function
+  | Lg_edn_backend.Nil -> None
+  | value -> Some (int_array_value value)
 
 let attrs value = field value "attrs" |> string_vector_value
 let keywords value = field value "keywords" |> string_vector_value
 let datoms value = field value "eavt" |> rrbvec_of_values
 let aevt value = field value "aevt" |> optional_int_vector_value
 let avet value = field value "avet" |> optional_int_vector_value
+let datoms_array value = field value "eavt" |> vector_array
+let aevt_array value = field value "aevt" |> optional_int_array_value
+let avet_array value = field value "avet" |> optional_int_array_value
 let branching_factor value =
   match format value with
   | Current -> field value "branching-factor" |> int_value

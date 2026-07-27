@@ -38,6 +38,20 @@ expected_workloads=(
   thaw
 )
 
+benchmark_source="$repo_root/test/datascript/benchmark/datascript/bench/datascript.cljc"
+thaw_restore_calls="$(
+  awk '
+    /^\(defn bench-thaw/ { in_thaw = 1; next }
+    in_thaw && /^\(defn / { exit }
+    in_thaw && /d\/from-serializable/ { calls++ }
+    END { print calls + 0 }
+  ' "$benchmark_source"
+)"
+if [ "$thaw_restore_calls" -ne 1 ]; then
+  echo "bench-thaw must preserve upstream single-restore control flow: found $thaw_restore_calls calls" >&2
+  exit 1
+fi
+
 check_runtime() {
   local runtime="$1"
   shift
@@ -59,7 +73,7 @@ check_runtime() {
       exit 1
     fi
     if ! awk -v value="$value" \
-      'BEGIN { exit !(value ~ /^[0-9]+([.][0-9]+)?([eE][-+]?[0-9]+)?$/ && value >= 0) }'
+      'BEGIN { exit !(value ~ /^[0-9]+([.][0-9]*)?([eE][-+]?[0-9]+)?$/ && value >= 0) }'
     then
       echo "$runtime benchmark $workload returned invalid time: $value" >&2
       exit 1
@@ -109,15 +123,22 @@ check_runtime() {
     exit 1
   fi
 
-  if LG_BENCH_PEOPLE=10 \
-     LG_BENCH_WARMUP_MS=0 \
-     LG_BENCH_SAMPLE_MS=0 \
-     LG_BENCH_BATCH=1 \
-     LG_BENCH_SEED=42 \
-     LG_BENCHMARK=not-a-benchmark \
-       "$@" > /dev/null 2>&1
+  local unknown_output
+  if ! unknown_output="$(
+    LG_BENCH_PEOPLE=10 \
+    LG_BENCH_WARMUP_MS=0 \
+    LG_BENCH_SAMPLE_MS=0 \
+    LG_BENCH_BATCH=1 \
+    LG_BENCH_SEED=42 \
+    LG_BENCHMARK=not-a-benchmark \
+      "$@"
+  )"
   then
-    echo "$runtime benchmark runner accepted an unknown workload" >&2
+    echo "$runtime benchmark runner rejected an unknown workload" >&2
+    exit 1
+  fi
+  if [ "$unknown_output" != "Unknown benchmark: not-a-benchmark" ]; then
+    echo "$runtime benchmark runner did not match upstream unknown-workload output: $unknown_output" >&2
     exit 1
   fi
 }

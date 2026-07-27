@@ -231,23 +231,21 @@
    ^:vector<keyword> attrs
    ^:vector<string> keywords
    ^codec thaw-codec
-   ^:vector<serialized-value> datoms]
-  (arrays/into-array
-   (mapv
-    (fn [^serialized-value datom]
-      (deserialize-datom tx0 attrs keywords thaw-codec datom))
-    datoms)))
+   ^:array<serialized-value> datoms]
+  (arrays/amap
+   (fn [^serialized-value datom]
+     (deserialize-datom tx0 attrs keywords thaw-codec datom))
+   datoms))
 
 (defn- ^:array<datascript.db/Datom> reorder-datoms
   [^:array<datascript.db/Datom> datoms
-   ^:option<vector<int>> indexes]
+   ^:option<array<int>> indexes]
   (match indexes
     (Some indexes)
-    (arrays/into-array
-     (mapv
-      (fn [^:int index]
-        (arrays/aget datoms index))
-      indexes))
+    (arrays/amap
+     (fn [^:int index]
+       (arrays/aget datoms index))
+     indexes)
     None datoms))
 
 (defn- ^datascript.db/DB from-serializable-impl
@@ -277,13 +275,13 @@
                            (thaw-keyword-value keyword-thawer value)))))
          eavt     (deserialize-datoms
                    tx0 attrs keywords thaw-codec
-                   (Datascript_runtime.Serialization_value.datoms from))
+                   (Datascript_runtime.Serialization_value.datoms_array from))
          aevt     (reorder-datoms
                    eavt
-                   (Datascript_runtime.Serialization_value.aevt from))
+                   (Datascript_runtime.Serialization_value.aevt_array from))
          avet     (reorder-datoms
                    eavt
-                   (Datascript_runtime.Serialization_value.avet from))
+                   (Datascript_runtime.Serialization_value.avet_array from))
          _        (Datascript_runtime.Serialization_value.branching_factor from)
          serialized-ref-type
          (Datascript_runtime.Serialization_value.ref_type from)

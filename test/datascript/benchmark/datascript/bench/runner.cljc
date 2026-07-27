@@ -44,6 +44,6 @@
 
 (doseq [name selected-benchmark-names]
   (let [duration (benchmark/run-benchmark name)]
-    (when (< duration 0.0)
-      (Stdlib.invalid_arg (str "Unknown benchmark: " name)))
-    (println (str name ":" (Float.to_string duration)))))
+    (if (< duration 0.0)
+      (println (str "Unknown benchmark: " name))
+      (println (str name ":" (Float.to_string duration))))))

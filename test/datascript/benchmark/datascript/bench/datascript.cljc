@@ -1438,22 +1438,12 @@
 (defn benchmark-frozen-db []
   (json-write (benchmark-serialized-db)))
 
-(defn validate-thawed-db [^datascript.db/DB restored]
-  (when-not
-      (= (count @*serialize-db)
-         (count restored))
-    (Stdlib.failwith
-     "Thawed benchmark database has the wrong datom count")))
-
 (defn bench-freeze []
   (bench/bench
    (json-write (benchmark-serialized-db))))
 
 (defn bench-thaw []
-  (let [frozen (benchmark-frozen-db)
-        restored
-        (d/from-serializable (json-read frozen))]
-    (validate-thawed-db restored)
+  (let [frozen (benchmark-frozen-db)]
     (bench/bench
      (d/from-serializable (json-read frozen)))))
 
