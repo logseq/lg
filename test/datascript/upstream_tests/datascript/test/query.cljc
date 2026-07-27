@@ -2226,6 +2226,190 @@
   (parser/static-query-clauses-with-inputs
    find [clause] inputs))
 
+(defn ^:vector<vector<string>> query-v3-static-predicate-output-edn
+  [^:string function-name
+   ^:vector<Datascript_runtime.Data_value.t> values]
+  (let [query
+        (parser/static-query-clauses-with-inputs
+         (parser/relation-find ["?value"])
+         [(parser/static-predicate-clause
+           function-name
+           [(parser/variable-argument "?value")])]
+         [(parser/make-static-value-input
+           (parser/collection-input
+            (parser/scalar-input "?value")))])
+        output
+        (query-v3/q
+         query
+         (query-v3-data-collection-input values))]
+    (query-output-edn-rows
+     (require-query-v3-relation-output output))))
+
+(defn ^:vector<vector<string>> query-v3-static-function-output-edn
+  [^:string function-name
+   ^:vector<datascript.parser/fn-arg> arguments]
+  (let [query
+        (query-v3-function-query
+         (parser/relation-find ["?result"])
+         []
+         (parser/static-function-clause
+          function-name
+          arguments
+          (parser/scalar-input "?result")))
+        output (query-v3/q query)]
+    (query-output-edn-rows
+     (require-query-v3-relation-output output))))
+
+(deftest test-query-v3-core-truthiness-predicates
+  (let [values
+        [(Datascript_runtime.Data_value.Nil)
+         (Datascript_runtime.Data_value.Bool false)
+         (Datascript_runtime.Data_value.Bool true)
+         (Datascript_runtime.Data_value.Int 0)]]
+    (is (= [["true"]]
+           (query-v3-static-predicate-output-edn
+            "true?" values)))
+    (is (= [["false"]]
+           (query-v3-static-predicate-output-edn
+            "false?" values)))
+    (is (= [["nil"]]
+           (query-v3-static-predicate-output-edn
+            "nil?" values)))
+    (is (= [["false"] ["true"] ["0"]]
+           (query-v3-static-predicate-output-edn
+            "some?" values)))
+    (is (= [["nil"] ["false"]]
+           (query-v3-static-predicate-output-edn
+            "not" values)))))
+
+(deftest test-query-v3-core-truthiness-functions
+  (is
+   (=
+    [["true"]]
+    (query-v3-static-function-output-edn
+     "true?"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.Bool true))])))
+  (is
+   (=
+    [["false"]]
+    (query-v3-static-function-output-edn
+     "false?"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.Bool true))])))
+  (is
+   (=
+    [["true"]]
+    (query-v3-static-function-output-edn
+     "nil?"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.Nil))])))
+  (is
+   (=
+    [["false"]]
+    (query-v3-static-function-output-edn
+     "some?"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.Nil))])))
+  (is
+   (=
+    [["true"]]
+    (query-v3-static-function-output-edn
+     "not"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.Bool false))]))))
+
+(deftest test-query-v3-and-or-preserve-upstream-values
+  (is
+   (=
+    [["true"]]
+    (query-v3-static-function-output-edn "and" [])))
+  (is
+   (=
+    [["\"last\""]]
+    (query-v3-static-function-output-edn
+     "and"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.Bool true))
+      (parser/constant-argument
+       (Datascript_runtime.Data_value.Int 7))
+      (parser/constant-argument
+       (Datascript_runtime.Data_value.String "last"))])))
+  (is
+   (=
+    [["false"]]
+    (query-v3-static-function-output-edn
+     "and"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.Int 7))
+      (parser/constant-argument
+       (Datascript_runtime.Data_value.Bool false))
+      (parser/constant-argument
+       (Datascript_runtime.Data_value.String "unreached"))])))
+  (is
+   (=
+    []
+    (query-v3-static-function-output-edn "or" [])))
+  (is
+   (=
+    [["\"winner\""]]
+    (query-v3-static-function-output-edn
+     "or"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.Nil))
+      (parser/constant-argument
+       (Datascript_runtime.Data_value.Bool false))
+      (parser/constant-argument
+       (Datascript_runtime.Data_value.String "winner"))
+      (parser/constant-argument
+       (Datascript_runtime.Data_value.Int 9))])))
+  (is
+   (=
+    [["false"]]
+    (query-v3-static-function-output-edn
+     "or"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.Nil))
+      (parser/constant-argument
+       (Datascript_runtime.Data_value.Bool false))]))))
+
+(deftest test-query-v3-core-truthiness-invalid-arity
+  (let [zero-argument-query
+        (query-v3-function-query
+         (parser/relation-find ["?result"])
+         []
+         (parser/static-function-clause
+          "true?"
+          []
+          (parser/scalar-input "?result")))
+        two-argument-query
+        (query-v3-function-query
+         (parser/relation-find ["?result"])
+         []
+         (parser/static-function-clause
+          "not"
+          [(parser/constant-argument
+            (Datascript_runtime.Data_value.Bool true))
+           (parser/constant-argument
+            (Datascript_runtime.Data_value.Bool false))]
+          (parser/scalar-input "?result")))]
+    (is
+     (=
+      "Invalid arguments for query function: true?"
+      (try
+        (let [_output (query-v3/q zero-argument-query)]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "Invalid arguments for query function: not"
+      (try
+        (let [_output (query-v3/q two-argument-query)]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))))
+
 (deftest test-query-v3-function-clause-built-in
   (let [query
         (query-v3-function-query

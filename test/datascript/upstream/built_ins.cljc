@@ -292,9 +292,22 @@
     "neg?" (Some Negative)
     "even?" (Some Even)
     "odd?" (Some Odd)
+    "true?" (Some TrueValue)
+    "false?" (Some FalseValue)
+    "nil?" (Some NilValue)
+    "some?" (Some SomeValue)
+    "not" (Some NotValue)
     "re-find" (Some RegexFind)
     "missing?" (Some Missing)
     None))
+
+(defn- ^:bool data-value-truthy?
+  [^:Datascript_runtime.Data_value.t value]
+  (if (Datascript_runtime.Data_value.is_nil value)
+    false
+    (match (Datascript_runtime.Data_value.bool_value value)
+      (Some boolean-value) boolean-value
+      None true)))
 
 (defn values-equal?
   [values]
@@ -372,6 +385,39 @@
         (Some (not (= 0 (mod value 2))))
         _ None)
       None)
+    TrueValue
+    (if (= 1 (count values))
+      (Some
+       (Datascript_runtime.Data_value.equal
+        (nth values 0)
+        (Datascript_runtime.Data_value.Bool true)))
+      None)
+    FalseValue
+    (if (= 1 (count values))
+      (Some
+       (Datascript_runtime.Data_value.equal
+        (nth values 0)
+        (Datascript_runtime.Data_value.Bool false)))
+      None)
+    NilValue
+    (if (= 1 (count values))
+      (Some
+       (Datascript_runtime.Data_value.is_nil
+        (nth values 0)))
+      None)
+    SomeValue
+    (if (= 1 (count values))
+      (Some
+       (not
+        (Datascript_runtime.Data_value.is_nil
+         (nth values 0))))
+      None)
+    NotValue
+    (if (= 1 (count values))
+      (Some
+       (not
+        (data-value-truthy? (nth values 0))))
+      None)
     RegexFind
     (if (= 2 (count values))
       (Datascript_runtime.Data_value.regex_find
@@ -395,6 +441,8 @@
     "tuple" (Some Tuple)
     "hash-map" (Some HashMap)
     "array-map" (Some HashMap)
+    "and" (Some AndValues)
+    "or" (Some OrValues)
     "count" (Some Count)
     "get" (Some Get)
     "get-else" (Some GetElse)
@@ -402,6 +450,26 @@
     "-differ?" (Some Differ)
     "re-pattern" (Some RegexPattern)
     None))
+
+(defn- ^:Datascript_runtime.Data_value.t and-values
+  [^:vector<Datascript_runtime.Data_value.t> values]
+  (loop [remaining values
+         result (Datascript_runtime.Data_value.Bool true)]
+    (if-some [value (first remaining)]
+      (if (data-value-truthy? value)
+        (recur (subvec remaining 1) value)
+        value)
+      result)))
+
+(defn- ^:Datascript_runtime.Data_value.t or-values
+  [^:vector<Datascript_runtime.Data_value.t> values]
+  (loop [remaining values
+         result (Datascript_runtime.Data_value.Nil)]
+    (if-some [value (first remaining)]
+      (if (data-value-truthy? value)
+        value
+        (recur (subvec remaining 1) value))
+      result)))
 
 (defn add-values
   [values]
@@ -445,6 +513,8 @@
     (Some (Datascript_runtime.Data_value.vector_of_vector values))
     Tuple
     (Some (Datascript_runtime.Data_value.vector_of_vector values))
+    AndValues (Some (and-values values))
+    OrValues (Some (or-values values))
     HashMap
     (data-map values)
     Count
