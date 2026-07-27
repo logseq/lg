@@ -30,6 +30,7 @@ and t =
 val tuple_of_vector : t option Rrbvec.t -> t
 val set_of_vector : t Rrbvec.t -> t
 val vector_of_vector : t Rrbvec.t -> t
+val list_of_vector : t Rrbvec.t -> t
 val vector_of_vector_with : ('value -> t) -> 'value Rrbvec.t -> t
 val is_nil : t -> bool
 val add : t Rrbvec.t -> t option

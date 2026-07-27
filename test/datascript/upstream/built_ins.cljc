@@ -498,6 +498,7 @@
     "namespace" (Some Namespace)
     "vector" (Some Vector)
     "tuple" (Some Tuple)
+    "list" (Some List)
     "hash-map" (Some HashMap)
     "array-map" (Some HashMap)
     "and" (Some AndValues)
@@ -584,6 +585,8 @@
     (Some (Datascript_runtime.Data_value.vector_of_vector values))
     Tuple
     (Some (Datascript_runtime.Data_value.vector_of_vector values))
+    List
+    (Some (Datascript_runtime.Data_value.list_of_vector values))
     AndValues (Some (and-values values))
     OrValues (Some (or-values values))
     HashMap

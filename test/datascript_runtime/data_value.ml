@@ -88,6 +88,7 @@ and entity_ref_to_edn_string = function
 let tuple_of_vector values = Tuple (Rrbvec.to_list values)
 let set_of_vector values = Set (Rrbvec.to_list values)
 let vector_of_vector values = Vector (Rrbvec.to_list values)
+let list_of_vector values = List (Rrbvec.to_list values)
 let vector_of_vector_with convert values =
   Vector
     (Rrbvec.fold_right

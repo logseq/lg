@@ -2539,6 +2539,23 @@
    function-name
    [(parser/constant-argument value)]))
 
+(defn ^:string query-v3-static-function-error
+  [^:string function-name
+   ^:vector<datascript.parser/fn-arg> arguments]
+  (let [query
+        (query-v3-function-query
+         (parser/relation-find ["?result"])
+         []
+         (parser/static-function-clause
+          function-name
+          arguments
+          (parser/scalar-input "?result")))]
+    (try
+      (let [_output (query-v3/q query)]
+        "no error")
+      (catch (Invalid_argument message)
+        (str message)))))
+
 (deftest test-query-v3-collection-emptiness-predicates
   (let [one (Datascript_runtime.Data_value.Int 1)
         attr (Datascript_runtime.Data_value.Keyword ":a")
@@ -2928,6 +2945,134 @@
           "no error")
         (catch (Invalid_argument message)
           (str message)))))))
+
+(deftest test-query-v3-identity-built-ins
+  (is
+   (=
+    [[":person/name"]]
+    (query-v3-static-unary-function-output-edn
+     "identity"
+     (Datascript_runtime.Data_value.Keyword ":person/name"))))
+  (is
+   (=
+    []
+    (query-v3-static-unary-function-output-edn
+     "ground"
+     (Datascript_runtime.Data_value.Nil))))
+  (is
+   (=
+    [["[1 \"a\"]"]]
+    (query-v3-static-unary-function-output-edn
+     "untuple"
+     (query-form-vector
+      [(Datascript_runtime.Data_value.Int 1)
+       (Datascript_runtime.Data_value.String "a")])))))
+
+(deftest test-query-v3-ordered-collection-constructors
+  (let [arguments
+        [(parser/constant-argument
+          (Datascript_runtime.Data_value.Int 1))
+         (parser/constant-argument
+          (Datascript_runtime.Data_value.String "a"))
+         (parser/constant-argument
+          (Datascript_runtime.Data_value.Int 1))]]
+    (is
+     (=
+      [["[]"]]
+      (query-v3-static-function-output-edn "vector" [])))
+    (is
+     (=
+      [["[1 \"a\" 1]"]]
+      (query-v3-static-function-output-edn "vector" arguments)))
+    (is
+     (=
+      [["[]"]]
+      (query-v3-static-function-output-edn "tuple" [])))
+    (is
+     (=
+      [["[1 \"a\" 1]"]]
+      (query-v3-static-function-output-edn "tuple" arguments)))
+    (is
+     (=
+      [["()"]]
+      (query-v3-static-function-output-edn "list" [])))
+    (is
+     (=
+      [["(1 \"a\" 1)"]]
+      (query-v3-static-function-output-edn "list" arguments)))))
+
+(deftest test-query-v3-map-constructors
+  (let [empty-arguments []
+        duplicate-key-arguments
+        [(parser/constant-argument
+          (Datascript_runtime.Data_value.Keyword ":a"))
+         (parser/constant-argument
+          (Datascript_runtime.Data_value.Int 1))
+         (parser/constant-argument
+          (Datascript_runtime.Data_value.Keyword ":a"))
+         (parser/constant-argument
+          (Datascript_runtime.Data_value.Int 2))]]
+    (is
+     (=
+      [["{}"]]
+      (query-v3-static-function-output-edn
+       "hash-map" empty-arguments)))
+    (is
+     (=
+      [["{:a 2}"]]
+      (query-v3-static-function-output-edn
+       "hash-map" duplicate-key-arguments)))
+    (is
+     (=
+      [["{}"]]
+      (query-v3-static-function-output-edn
+       "array-map" empty-arguments)))
+    (is
+     (=
+      [["{:a 2}"]]
+      (query-v3-static-function-output-edn
+       "array-map" duplicate-key-arguments)))))
+
+(deftest test-query-v3-constructor-errors
+  (let [one
+        [(parser/constant-argument
+          (Datascript_runtime.Data_value.Int 1))]
+        two
+        [(parser/constant-argument
+          (Datascript_runtime.Data_value.Int 1))
+         (parser/constant-argument
+          (Datascript_runtime.Data_value.Int 2))]
+        one-key
+        [(parser/constant-argument
+          (Datascript_runtime.Data_value.Keyword ":a"))]]
+    (is
+     (=
+      "Invalid arguments for query function: identity"
+      (query-v3-static-function-error "identity" [])))
+    (is
+     (=
+      "Invalid arguments for query function: identity"
+      (query-v3-static-function-error "identity" two)))
+    (is
+     (=
+      "Invalid arguments for query function: ground"
+      (query-v3-static-function-error "ground" [])))
+    (is
+     (=
+      "Invalid arguments for query function: untuple"
+      (query-v3-static-function-error "untuple" two)))
+    (is
+     (=
+      "Invalid arguments for query function: hash-map"
+      (query-v3-static-function-error "hash-map" one-key)))
+    (is
+     (=
+      "Invalid arguments for query function: array-map"
+      (query-v3-static-function-error "array-map" one-key)))
+    (is
+     (=
+      [["(1)"]]
+      (query-v3-static-function-output-edn "list" one)))))
 
 (deftest test-query-v3-function-clause-built-in
   (let [query
