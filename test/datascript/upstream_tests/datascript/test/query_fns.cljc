@@ -739,6 +739,98 @@
       (d/q '[:find ?x .
              :where [(rand-int) ?x]])))))
 
+(deftest test-core-string-escape-query-function
+  (testing "escape replaces mapped characters and preserves unmapped text"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where
+             [(clojure.string/escape
+               "a<b&c"
+               {\< "&lt;" \& "&amp;"})
+              ?x]])
+      (Datascript_runtime.Data_value.String "a&lt;b&amp;c")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where
+             [(clojure.string/escape
+               "abc"
+               {\a nil \b 7})
+              ?x]])
+      (Datascript_runtime.Data_value.String "a7c")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where
+             [(clojure.string/escape
+               "abc"
+               {\a false \b :k \c \x})
+              ?x]])
+      (Datascript_runtime.Data_value.String "false:kx")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where
+             [(clojure.string/escape
+               "你好a"
+               {\a "!"})
+              ?x]])
+      (Datascript_runtime.Data_value.String "你好!")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where
+             [(clojure.string/escape
+               ""
+               {\a "x"})
+              ?x]])
+      (Datascript_runtime.Data_value.String ""))))
+
+  (testing "single-character string keys retain upstream CLJS character identity"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where
+             [(clojure.string/escape
+               "你好abc"
+               {"你" "N" "a" "x" "bc" "ignored"})
+              ?x]])
+      (Datascript_runtime.Data_value.String "N好xbc"))))
+
+  (testing "escape rejects unsupported arities and argument shapes"
+    (is
+     (thrown-msg?
+      "Invalid arguments for query function: clojure.string/escape"
+      (d/q '[:find ?x .
+             :where [(clojure.string/escape) ?x]])))
+    (is
+     (thrown-msg?
+      "Invalid arguments for query function: clojure.string/escape"
+      (d/q '[:find ?x .
+             :where [(clojure.string/escape "abc") ?x]])))
+    (is
+     (thrown-msg?
+      "Invalid arguments for query function: clojure.string/escape"
+      (d/q '[:find ?x .
+             :where
+             [(clojure.string/escape "abc" {\a "x"} "extra")
+              ?x]])))
+    (is
+     (thrown-msg?
+      "Invalid arguments for query function: clojure.string/escape"
+      (d/q '[:find ?x .
+             :where
+             [(clojure.string/escape 1 {\a "x"})
+              ?x]])))
+    (is
+     (thrown-msg?
+      "Invalid arguments for query function: clojure.string/escape"
+      (d/q '[:find ?x .
+             :where
+             [(clojure.string/escape "abc" 1)
+              ?x]])))))
+
 (deftest test-query-fns
   (testing "predicate without free variables"
     (is (tdc/query-relation?

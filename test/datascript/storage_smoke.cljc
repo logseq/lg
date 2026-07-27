@@ -1193,19 +1193,27 @@
         (Some database) database
         None (Stdlib.invalid_arg "Missing last stored database"))
       gc-needed-ok
-      (> (count (storage/-list-addresses (memory-backend backend)))
+      (> (count
+          (Datascript_runtime.Storage_backend.list_addresses
+           (memory-backend backend)))
          (count (storage/addresses [last-stored])))
       disk-address-count-before-gc
-      (count (storage/-list-addresses (memory-backend backend)))
+      (count
+       (Datascript_runtime.Storage_backend.list_addresses
+        (memory-backend backend)))
       _collected (storage/collect-garbage (memory-backend backend))
       gc-ok
       (and
-       (<= (count (storage/-list-addresses (memory-backend backend)))
+       (<= (count
+            (Datascript_runtime.Storage_backend.list_addresses
+             (memory-backend backend)))
            disk-address-count-before-gc)
        (every?
         (fn [address]
           (contains?
-           (set (storage/-list-addresses (memory-backend backend)))
+           (set
+            (Datascript_runtime.Storage_backend.list_addresses
+             (memory-backend backend)))
            address))
         (storage/addresses [last-stored])))
       restored-after-gc (restore-connection! backend)

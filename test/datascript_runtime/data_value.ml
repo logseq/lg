@@ -633,6 +633,58 @@ let string_index_of values =
             (Lg_runtime.Runtime_string.index_of_from source needle start))
   | _ -> None
 
+let utf8_character_length_at source index =
+  let first = Char.code source.[index] in
+  let expected =
+    if first land 0x80 = 0 then 1
+    else if first land 0xe0 = 0xc0 then 2
+    else if first land 0xf0 = 0xe0 then 3
+    else if first land 0xf8 = 0xf0 then 4
+    else 1
+  in
+  let rec valid_continuations offset =
+    if offset = expected then true
+    else
+      let position = index + offset in
+      position < String.length source
+      && Char.code source.[position] land 0xc0 = 0x80
+      && valid_continuations (offset + 1)
+  in
+  if expected = 1 || valid_continuations 1 then expected else 1
+
+let is_cljs_character_string value =
+  let length = String.length value in
+  length > 0 && length <= 3 && utf8_character_length_at value 0 = length
+
+let string_escape values =
+  let replacement entries character =
+    List.find_map
+      (function
+        | String candidate, value
+          when is_cljs_character_string candidate
+               && String.equal candidate character ->
+            Some value
+        | _ -> None)
+      entries
+  in
+  let escape source entries =
+    let result = Buffer.create (String.length source) in
+    let rec loop index =
+      if index < String.length source then
+        let length = utf8_character_length_at source index in
+        let character = String.sub source index length in
+        (match replacement entries character with
+        | Some Nil | None -> Buffer.add_string result character
+        | Some value -> Buffer.add_string result (to_clojure_string value));
+        loop (index + length)
+    in
+    loop 0;
+    String (Buffer.contents result)
+  in
+  match Rrbvec.to_list values with
+  | [ String source; Map entries ] -> Some (escape source entries)
+  | _ -> None
+
 let string_last_index_of values =
   match Rrbvec.to_list values with
   | [ String source; String needle ] ->

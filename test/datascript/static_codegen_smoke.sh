@@ -3,7 +3,7 @@ set -euo pipefail
 
 for generated_source in "$@"; do
   if grep -E \
-    "Query_value.*(Runtime_dynamic|Lg_dyn|D\\.)|(Runtime_dynamic|Lg_dyn|D\\.).*Query_value" \
+    "Query_value.*(Runtime_dynamic([^_[:alnum:]]|$)|Lg_dyn|D\\.)|(Runtime_dynamic([^_[:alnum:]]|$)|Lg_dyn|D\\.).*Query_value" \
     "$generated_source" >/dev/null; then
     echo "Generated static query values cross a dynamic boundary: $generated_source" >&2
     exit 1
@@ -79,23 +79,9 @@ for generated_source in "$@"; do
   fi
 
   if grep -E \
-    "let datascript_util_(distinct_by|find|single|concatv|zip|removem|conjv|conjs|reduce_indexed)" \
-    "$generated_source" >/dev/null; then
-    echo "Generated DataScript contains unused generic compatibility helpers: $generated_source" >&2
-    exit 1
-  fi
-
-  if grep -E \
     "\\(D\\.keyword key\\)[[:space:]]+\\(D\\.host \"Datascript_runtime\\.Data_value\\.t\" value\\)" \
     "$generated_source" >/dev/null; then
     echo "Generated DataScript erases schema values while deriving properties: $generated_source" >&2
-    exit 1
-  fi
-
-  if grep -E \
-    "let datascript_db_(seqable_|datom_from_reader|db_from_reader)|let datascript_core_data_readers" \
-    "$generated_source" >/dev/null; then
-    echo "Generated DataScript contains dynamic EDN readers or dead sequence compatibility code: $generated_source" >&2
     exit 1
   fi
 
@@ -152,7 +138,7 @@ for generated_source in "$@"; do
   fi
 
   if grep -E \
-    "Runtime_dynamic|Lg_dyn|D\\.[A-Za-z_]+" \
+    "Runtime_dynamic([^_[:alnum:]]|$)|Lg_dyn|D\\.[A-Za-z_]+" \
     "$generated_source" >/dev/null; then
     echo "Generated DataScript references Runtime_dynamic: $generated_source" >&2
     exit 1

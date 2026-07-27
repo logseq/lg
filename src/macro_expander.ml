@@ -52,6 +52,7 @@ let rec string_of_form = function
 let string_of_value = function
   | Form (FSymbol "nil") -> Ok ""
   | Form (FString value) -> Ok value
+  | Form (FChar value) -> Ok (String.make 1 value)
   | Form form -> Ok (string_of_form form)
   | Closure _ | Macro_function _ | Builtin _ | Juxt _ | Volatile _ | Recur _ ->
       Error.error "str expects macro form values"
@@ -799,6 +800,11 @@ and eval_builtin context name arg_forms =
           Ok
             (Form
                (FBool (match value with Form (FString _) -> true | _ -> false))))
+  | "char?" ->
+      unary (fun value ->
+          Ok
+            (Form
+               (FBool (match value with Form (FChar _) -> true | _ -> false))))
   | "regex?" ->
       unary (fun value ->
           Ok

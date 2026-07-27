@@ -75,6 +75,7 @@ val string_upper_case : t Rrbvec.t -> t option
 val string_capitalize : t Rrbvec.t -> t option
 val string_join : t Rrbvec.t -> t option
 val string_index_of : t Rrbvec.t -> t option
+val string_escape : t Rrbvec.t -> t option
 val string_last_index_of : t Rrbvec.t -> t option
 val string_reverse : t Rrbvec.t -> t option
 val string_split_lines : t Rrbvec.t -> t option

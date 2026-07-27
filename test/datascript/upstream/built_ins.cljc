@@ -565,6 +565,7 @@
     "clojure.string/capitalize" (Some Capitalize)
     "clojure.string/join" (Some Join)
     "clojure.string/index-of" (Some IndexOf)
+    "clojure.string/escape" (Some Escape)
     "clojure.string/last-index-of" (Some LastIndexOf)
     "clojure.string/replace" (Some Replace)
     "clojure.string/replace-first" (Some ReplaceFirst)
@@ -756,6 +757,8 @@
     (Datascript_runtime.Data_value.string_join values)
     IndexOf
     (Datascript_runtime.Data_value.string_index_of values)
+    Escape
+    (Datascript_runtime.Data_value.string_escape values)
     LastIndexOf
     (Datascript_runtime.Data_value.string_last_index_of values)
     Replace
