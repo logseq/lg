@@ -1,0 +1,15 @@
+set=#{1 2}
+set-nil=#{}
+range-one=(0 1 2 3)
+range-two=(2 3 4)
+range-negative-step=(5 3 1)
+str=:a1x
+empty-str=
+subs-two=llo
+subs-three=ell
+subs-negative=hello
+subs-clamped=llo
+get-present=1
+get-missing=9
+get-vector-default=9
+get-nil-default=9

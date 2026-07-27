@@ -161,6 +161,106 @@
       (d/q '[:find ?x .
              :where [(min) ?x]])))))
 
+(deftest test-core-collection-value-query-functions
+  (testing "set preserves uniqueness and nil conversion"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(set [1 1 2]) ?x]])
+      (Datascript_runtime.Data_value.Set
+       (list
+        (Datascript_runtime.Data_value.Int 1)
+        (Datascript_runtime.Data_value.Int 2)))))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(set nil) ?x]])
+      (Datascript_runtime.Data_value.Set (list)))))
+
+  (testing "range preserves one, two, and negative-step arities"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(range 4) ?x]])
+      (Datascript_runtime.Data_value.List
+       (list
+        (Datascript_runtime.Data_value.Int 0)
+        (Datascript_runtime.Data_value.Int 1)
+        (Datascript_runtime.Data_value.Int 2)
+        (Datascript_runtime.Data_value.Int 3)))))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(range 2 5) ?x]])
+      (Datascript_runtime.Data_value.List
+       (list
+        (Datascript_runtime.Data_value.Int 2)
+        (Datascript_runtime.Data_value.Int 3)
+        (Datascript_runtime.Data_value.Int 4)))))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(range 5 0 -2) ?x]])
+      (Datascript_runtime.Data_value.List
+       (list
+        (Datascript_runtime.Data_value.Int 5)
+        (Datascript_runtime.Data_value.Int 3)
+        (Datascript_runtime.Data_value.Int 1))))))
+
+  (testing "str and subs preserve JavaScript boundary behavior"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(str nil :a 1 "x") ?x]])
+      (Datascript_runtime.Data_value.String ":a1x")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(str) ?x]])
+      (Datascript_runtime.Data_value.String "")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(subs "hello" 2) ?x]])
+      (Datascript_runtime.Data_value.String "llo")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(subs "hello" 1 4) ?x]])
+      (Datascript_runtime.Data_value.String "ell")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(subs "hello" -2) ?x]])
+      (Datascript_runtime.Data_value.String "hello")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(subs "hello" 2 20) ?x]])
+      (Datascript_runtime.Data_value.String "llo"))))
+
+  (testing "three-argument get returns present values or its default"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(get {:a 1} :a 9) ?x]])
+      (Datascript_runtime.Data_value.Int 1)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(get {:a 1} :b 9) ?x]])
+      (Datascript_runtime.Data_value.Int 9)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(get [10] 2 9) ?x]])
+      (Datascript_runtime.Data_value.Int 9)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(get nil :a 9) ?x]])
+      (Datascript_runtime.Data_value.Int 9)))))
+
 (deftest test-query-fns
   (testing "predicate without free variables"
     (is (tdc/query-relation?

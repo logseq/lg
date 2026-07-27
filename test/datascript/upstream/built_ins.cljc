@@ -540,12 +540,16 @@
     "vector" (Some Vector)
     "tuple" (Some Tuple)
     "list" (Some List)
+    "set" (Some Set)
     "hash-map" (Some HashMap)
     "array-map" (Some HashMap)
     "and" (Some AndValues)
     "or" (Some OrValues)
     "count" (Some Count)
+    "range" (Some Range)
     "not-empty" (Some NotEmpty)
+    "str" (Some StringValue)
+    "subs" (Some Substring)
     "get" (Some Get)
     "get-else" (Some GetElse)
     "get-some" (Some GetSome)
@@ -655,6 +659,10 @@
     (Some (Datascript_runtime.Data_value.vector_of_vector values))
     List
     (Some (Datascript_runtime.Data_value.list_of_vector values))
+    Set
+    (if (= 1 (count values))
+      (Datascript_runtime.Data_value.set_value (nth values 0))
+      None)
     AndValues (Some (and-values values))
     OrValues (Some (or-values values))
     HashMap
@@ -667,6 +675,8 @@
         (Some (Datascript_runtime.Data_value.Int value))
         None)
       None)
+    Range
+    (Datascript_runtime.Data_value.range_value values)
     NotEmpty
     (if (= 1 (count values))
       (if-some [value
@@ -678,12 +688,22 @@
            (nth values 0)))
         None)
       None)
+    StringValue
+    (Datascript_runtime.Data_value.string_value values)
+    Substring
+    (Datascript_runtime.Data_value.substring values)
     Get
     (if (= 2 (count values))
-      (Datascript_runtime.Data_value.map_get
+      (Datascript_runtime.Data_value.get_or_default
        (nth values 0)
-       (nth values 1))
-      None)
+       (nth values 1)
+       (Datascript_runtime.Data_value.Nil))
+      (if (= 3 (count values))
+        (Datascript_runtime.Data_value.get_or_default
+         (nth values 0)
+         (nth values 1)
+         (nth values 2))
+        None))
     RegexPattern
     (if (= 1 (count values))
       (Datascript_runtime.Data_value.regex_pattern (nth values 0))

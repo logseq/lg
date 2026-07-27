@@ -42,6 +42,9 @@ val remainder : t Rrbvec.t -> t option
 val modulo : t Rrbvec.t -> t option
 val maximum : t Rrbvec.t -> t option
 val minimum : t Rrbvec.t -> t option
+val range_value : t Rrbvec.t -> t option
+val string_value : t Rrbvec.t -> t option
+val substring : t Rrbvec.t -> t option
 val increment : t -> t option
 val decrement : t -> t option
 val map_of_keyword_map : (string, t) Lg_runtime.Runtime_map.t -> t
@@ -52,6 +55,7 @@ val map_of_data_map : (t, t) Lg_runtime.Runtime_map.t -> t
 val map_of_data_map_with :
   ('value -> t) -> (t, 'value) Lg_runtime.Runtime_map.t -> t
 val map_get : t -> t -> t option
+val get_or_default : t -> t -> t -> t option
 val regex_pattern : t -> t option
 val regex_find : t -> t -> bool option
 val string_blank : t -> bool
@@ -74,6 +78,7 @@ val sequential_items : t -> t Rrbvec.t option
 val set_items : t -> t Rrbvec.t option
 val count_value : t -> int option
 val contains_key : t -> t -> bool option
+val set_value : t -> t option
 val entity_ref_value : t -> entity_ref option
 val lookup_ref_value : t -> (string * t) option
 val ref_value : t -> int option

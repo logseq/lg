@@ -95,6 +95,17 @@ and entity_ref_to_edn_string = function
   | Lookup_ref (attr, value) ->
       "[" ^ attr ^ " " ^ to_edn_string value ^ "]"
 
+let to_clojure_string = function
+  | Nil -> ""
+  | String value | Symbol value | Keyword value | Uuid value -> value
+  | Int value | Ref value | Instant value -> string_of_int value
+  | Wide_int value -> Int64.to_string value
+  | Float value -> float_to_javascript_string value
+  | Bool value -> string_of_bool value
+  | Regex value -> value
+  | (List _ | Vector _ | Map _ | Set _ | Tuple _ | Tx_ref | Ref_to _) as value ->
+      to_edn_string value
+
 let tuple_of_vector values = Tuple (Rrbvec.to_list values)
 let set_of_vector values = Set (Rrbvec.to_list values)
 let vector_of_vector values = Vector (Rrbvec.to_list values)
@@ -271,6 +282,56 @@ let numeric_extreme better values =
 
 let maximum values = numeric_extreme ( > ) values
 let minimum values = numeric_extreme ( < ) values
+
+let int_argument = function Int value | Ref value -> Some value | _ -> None
+
+let range_value values =
+  let build start finish step =
+    if step = 0 then None
+    else
+      let before_finish value = if step > 0 then value < finish else value > finish in
+      let rec loop value result =
+        if before_finish value then loop (value + step) (Int value :: result)
+        else Some (List (List.rev result))
+      in
+      loop start []
+  in
+  match Rrbvec.to_list values with
+  | [ finish ] -> Option.bind (int_argument finish) (fun finish -> build 0 finish 1)
+  | [ start; finish ] ->
+      Option.bind (int_argument start) (fun start ->
+          Option.bind (int_argument finish) (fun finish -> build start finish 1))
+  | [ start; finish; step ] ->
+      Option.bind (int_argument start) (fun start ->
+          Option.bind (int_argument finish) (fun finish ->
+              Option.bind (int_argument step) (fun step ->
+                  build start finish step)))
+  | _ -> None
+
+let string_value values =
+  Some
+    (String
+       (Rrbvec.fold_left
+          (fun result value -> result ^ to_clojure_string value)
+          "" values))
+
+let substring values =
+  let clamp length index = max 0 (min length index) in
+  let extract source start finish =
+    let length = String.length source in
+    let start = clamp length start and finish = clamp length finish in
+    let start, finish = if start <= finish then (start, finish) else (finish, start) in
+    Some (String (String.sub source start (finish - start)))
+  in
+  match Rrbvec.to_list values with
+  | [ String source; start ] ->
+      Option.bind (int_argument start) (fun start ->
+          extract source start (String.length source))
+  | [ String source; start; finish ] ->
+      Option.bind (int_argument start) (fun start ->
+          Option.bind (int_argument finish) (fun finish ->
+              extract source start finish))
+  | _ -> None
 
 let increment = function
   | Int value -> Some (Int (value + 1))
@@ -675,6 +736,28 @@ and entity_ref_equal left right =
       String.equal left_attr right_attr && equal left_value right_value
   | _ -> false
 
+let set_value = function
+  | Nil -> Some (Set [])
+  | Set values -> Some (Set values)
+  | List values | Vector values ->
+      Some
+        (Set
+           (List.fold_left
+              (fun unique value ->
+                if List.exists (equal value) unique then unique
+                else unique @ [ value ])
+              [] values))
+  | Tuple values ->
+      Some
+        (Set
+           (List.fold_left
+              (fun unique value ->
+                let value = Option.value ~default:Nil value in
+                if List.exists (equal value) unique then unique
+                else unique @ [ value ])
+              [] values))
+  | _ -> None
+
 let index_in_bounds length = function
   | Int index | Ref index -> index >= 0 && index < length
   | Wide_int index ->
@@ -694,16 +777,35 @@ let contains_key collection key =
   | List _ -> None
   | _ -> None
 
-let map_get map key =
-  match map with
+let get_or_default collection key default =
+  let indexed values =
+    match key with
+    | Int index | Ref index when index >= 0 ->
+        Option.value ~default (List.nth_opt values index)
+    | _ -> default
+  in
+  match collection with
+  | Nil -> Some default
   | Map entries ->
       Some
-        (Option.value ~default:Nil
+        (Option.value ~default
            (List.find_map
               (fun (candidate, value) ->
                 if equal candidate key then Some value else None)
               entries))
-  | _ -> Some Nil
+  | Vector values -> Some (indexed values)
+  | Tuple values ->
+      let values = List.map (Option.value ~default:Nil) values in
+      Some (indexed values)
+  | Set values ->
+      Some
+        (Option.value ~default
+           (List.find_opt (fun candidate -> equal candidate key) values))
+  | List _ | String _ | Symbol _ | Bool _ | Keyword _ | Uuid _ | Instant _
+  | Regex _ | Int _ | Wide_int _ | Float _ | Ref _ | Tx_ref | Ref_to _ ->
+      Some default
+
+let map_get map key = get_or_default map key Nil
 
 let combine_hash seed value = (seed * 33) lxor value
 
