@@ -251,16 +251,12 @@ let string_vector values =
   Lg_edn_backend.Vector
     (Array.map string (Rrbvec.to_array values))
 
-let int_vector values =
-  Lg_edn_backend.Vector
-    (Array.map int (Rrbvec.to_array values))
-
-let optional_int_vector = function
+let optional_int_array = function
   | None -> Lg_edn_backend.Nil
-  | Some values -> int_vector values
+  | Some values -> Lg_edn_backend.Vector (Array.map int values)
 
-let database_with_schema count tx0 max_eid max_tx schema attrs keywords datoms aevt avet
-    branching_factor ref_type =
+let database_arrays_with_schema count tx0 max_eid max_tx schema attrs keywords
+    datoms aevt avet branching_factor ref_type =
   let ref_type =
     match ref_type with Storage_value.Strong -> "strong" | Storage_value.Weak -> "weak"
   in
@@ -274,12 +270,25 @@ let database_with_schema count tx0 max_eid max_tx schema attrs keywords datoms a
       field "schema" schema;
       field "attrs" (string_vector attrs);
       field "keywords" (string_vector keywords);
-      field "eavt" (Lg_edn_backend.Vector (Rrbvec.to_array datoms));
-      field "aevt" (optional_int_vector aevt);
-      field "avet" (optional_int_vector avet);
+      field "eavt" (Lg_edn_backend.Vector datoms);
+      field "aevt" (optional_int_array aevt);
+      field "avet" (optional_int_array avet);
       field "branching-factor" (int branching_factor);
       field "ref-type" (string ref_type);
     |]
+
+let database_with_schema count tx0 max_eid max_tx schema attrs keywords datoms
+    aevt avet branching_factor ref_type =
+  database_arrays_with_schema count tx0 max_eid max_tx schema attrs keywords
+    (Rrbvec.to_array datoms)
+    (Option.map Rrbvec.to_array aevt)
+    (Option.map Rrbvec.to_array avet)
+    branching_factor ref_type
+
+let database_arrays count tx0 max_eid max_tx schema attrs keywords datoms aevt
+    avet branching_factor ref_type =
+  database_arrays_with_schema count tx0 max_eid max_tx (string schema) attrs
+    keywords datoms aevt avet branching_factor ref_type
 
 let database count tx0 max_eid max_tx schema attrs keywords datoms aevt avet
     branching_factor ref_type =

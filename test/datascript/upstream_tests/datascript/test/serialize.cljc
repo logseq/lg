@@ -167,6 +167,25 @@
 (def transaction-data
   (mapv db/tx-datom data))
 
+(deftest test-custom-freeze-called-once-per-value
+  (let [calls (volatile! 0)
+        freeze-fn
+        (fn [^:Lg_edn_backend.t value]
+          (vswap! calls inc)
+          value)
+        database
+        (d/init-db
+         [(d/datom
+           1
+           :payload
+           (Datascript_runtime.Data_value.Map
+            (list
+             (tuple
+              (Datascript_runtime.Data_value.Keyword ":key")
+              (Datascript_runtime.Data_value.String "value")))))])]
+    (d/serializable database {:freeze-fn freeze-fn})
+    (is (= 2 @calls))))
+
 (defn
   ^:map<keyword;Datascript_runtime.Data_value.t>
   serialize-schema-entry

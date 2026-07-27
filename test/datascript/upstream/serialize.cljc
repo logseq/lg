@@ -94,23 +94,41 @@
      (freeze-keyword-value keyword-freezer attr))
    attrs))
 
-(defn- ^:vector<serialized-value> serialize-eavt
-   [^datascript.db/DB db
+(defn- ^:array<serialized-value> serialize-eavt
+  [^datascript.db/DB db
    ^:Datascript_runtime.Serialization_value.encoder encoder
    ^codec freeze-codec
    ^:vector<string> attrs]
-  (vec
-   (map-indexed
-    (fn [idx ^datascript.db/Datom datom]
-      (serialize-datom encoder freeze-codec attrs idx datom))
-    (:eavt db))))
+  (let [datoms (:eavt db)]
+    (if-some [first-datom (first datoms)]
+      (let [result
+            (arrays/make-array
+             (count datoms)
+             (serialize-datom
+              encoder freeze-codec attrs 0 first-datom))]
+        (reduce
+         (fn [^:int index ^datascript.db/Datom datom]
+           (if (> index 0)
+             (arrays/aset
+              result index
+              (serialize-datom encoder freeze-codec attrs index datom))
+             (Stdlib.ignore 0))
+           (inc index))
+         0
+         datoms)
+        result)
+      (arrays/empty-array))))
 
-(defn- ^:vector<int> datom-indexes
+(defn- ^:array<int> datom-indexes
   [^:set/btset<datascript.db/Datom;Datascript_runtime.Storage_backend.t;tuple<int;Datascript_runtime.Storage_value.t>> datoms]
-  (mapv
-   (fn [^datascript.db/Datom datom]
-     (db/datom-get-idx datom))
-   datoms))
+  (let [result (arrays/make-array (count datoms) 0)]
+    (reduce
+     (fn [^:int index ^datascript.db/Datom datom]
+       (arrays/aset result index (db/datom-get-idx datom))
+       (inc index))
+     0
+     datoms)
+    result))
 
 (defn- ^:Datascript_runtime.Storage_value.ref_type serialized-ref-type
   [^:Lg_runtime.Runtime_ref_type.t ref-type]
@@ -157,7 +175,7 @@
                       encoder))]
     (match freeze-codec
       (CustomCodec freeze-fn)
-      (Datascript_runtime.Serialization_value.database_with_schema
+      (Datascript_runtime.Serialization_value.database_arrays_with_schema
        (count (:eavt db))
        db/tx0
        (:max-eid db)
@@ -173,7 +191,7 @@
        (:branching-factor settings)
        (serialized-ref-type (:ref-type settings)))
       DefaultCodec
-      (Datascript_runtime.Serialization_value.database
+      (Datascript_runtime.Serialization_value.database_arrays
        (count (:eavt db))
        db/tx0
        (:max-eid db)

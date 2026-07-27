@@ -29,6 +29,20 @@ let () =
     (Edn.List [| Edn.Int 9007199254740992L |])
 
 let () =
+  let value =
+    Edn.Vector
+      [|
+        Edn.String "quote: \"";
+        Edn.String "backslash: \\";
+        Edn.String "line\nbreak";
+        Edn.String "control: \001";
+        Edn.String "unicode: λ";
+      |]
+  in
+  let encoded = Runtime_edn.write_json_string value in
+  assert (Runtime_edn.read_json_string encoded = value)
+
+let () =
   let count = 20_000 in
   let value =
     Edn.Map

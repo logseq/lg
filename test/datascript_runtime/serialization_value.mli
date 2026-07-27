@@ -56,6 +56,36 @@ val database_with_schema :
   Storage_value.ref_type ->
   t
 
+val database_arrays :
+  int ->
+  int ->
+  int ->
+  int ->
+  string ->
+  string Rrbvec.t ->
+  string Rrbvec.t ->
+  t array ->
+  int array option ->
+  int array option ->
+  int ->
+  Storage_value.ref_type ->
+  t
+
+val database_arrays_with_schema :
+  int ->
+  int ->
+  int ->
+  int ->
+  t ->
+  string Rrbvec.t ->
+  string Rrbvec.t ->
+  t array ->
+  int array option ->
+  int array option ->
+  int ->
+  Storage_value.ref_type ->
+  t
+
 val count : t -> int
 val tx0 : t -> int
 val max_eid : t -> int

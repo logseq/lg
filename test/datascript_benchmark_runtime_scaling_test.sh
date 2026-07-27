@@ -32,6 +32,34 @@ run_melange_once() {
       '$1 == benchmark_name { print $2 }'
 }
 
+run_native_serialization_once() {
+  local benchmark_name=$1
+  local people_count=$2
+  LG_BENCHMARK="$benchmark_name" \
+    LG_BENCH_SERIALIZE_PEOPLE="$people_count" \
+    LG_BENCH_WARMUP_MS=0 \
+    LG_BENCH_SAMPLE_MS=0 \
+    LG_BENCH_BATCH=1 \
+    LG_BENCH_SEED=42 \
+    "$native_executable" |
+    awk -F: -v benchmark_name="$benchmark_name" \
+      '$1 == benchmark_name { print $2 }'
+}
+
+run_melange_serialization_once() {
+  local benchmark_name=$1
+  local people_count=$2
+  LG_BENCHMARK="$benchmark_name" \
+    LG_BENCH_SERIALIZE_PEOPLE="$people_count" \
+    LG_BENCH_WARMUP_MS=0 \
+    LG_BENCH_SAMPLE_MS=0 \
+    LG_BENCH_BATCH=1 \
+    LG_BENCH_SEED=42 \
+    node "$melange_javascript" |
+    awk -F: -v benchmark_name="$benchmark_name" \
+      '$1 == benchmark_name { print $2 }'
+}
+
 native_init_ms=$(run_native_once init)
 melange_init_ms=$(run_melange_once init)
 
@@ -82,6 +110,24 @@ if ! check_rule_scaling native "$native_wide_5_ms" "$native_wide_7_ms"; then
   failures=1
 fi
 if ! check_rule_scaling melange "$melange_wide_5_ms" "$melange_wide_7_ms"; then
+  failures=1
+fi
+
+native_freeze_ms=$(run_native_serialization_once freeze 300000)
+melange_freeze_ms=$(run_melange_serialization_once freeze 300000)
+
+if ! awk -v native_ms="$native_freeze_ms" -v melange_ms="$melange_freeze_ms" '
+  BEGIN {
+    ratio = melange_ms / native_ms
+    if (ratio >= 4.0) {
+      printf "Melange freeze copies the closed serialization tree: native=%sms melange=%sms ratio=%.2f\n",
+        native_ms, melange_ms, ratio
+      exit 1
+    }
+    printf "freeze cross-runtime scaling: native=%sms melange=%sms ratio=%.2f\n",
+      native_ms, melange_ms, ratio
+  }
+'; then
   failures=1
 fi
 

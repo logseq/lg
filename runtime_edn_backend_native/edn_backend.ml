@@ -99,7 +99,7 @@ let rec of_json = function
 let of_json_string source = source |> Yojson.Safe.from_string |> of_json
 
 let add_json_string buffer value =
-  Buffer.add_string buffer (Yojson.Safe.to_string (`String value))
+  Yojson.Safe.write_string buffer value
 
 let add_json_key buffer = function
   | String value | Symbol value -> add_json_string buffer value

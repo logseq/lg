@@ -22,6 +22,20 @@ let () =
       (Printf.sprintf
          "JSON writing copied the complete closed EDN tree: %.0f bytes"
          allocated_bytes);
+  let string_value =
+    Edn.Vector
+      (Array.init count (fun index ->
+           Edn.String (Printf.sprintf "person-%d-\"quoted\"" index)))
+  in
+  Gc.compact ();
+  let allocated_before = Gc.allocated_bytes () in
+  let _string_encoded = Runtime_edn.write_json_string string_value in
+  let allocated_bytes = Gc.allocated_bytes () -. allocated_before in
+  if allocated_bytes >= 16_000_000. then
+    failwith
+      (Printf.sprintf
+         "JSON writing allocated per-string intermediate values: %.0f bytes"
+         allocated_bytes);
   Gc.compact ();
   let allocated_before = Gc.allocated_bytes () in
   let _decoded = Runtime_edn.read_json_string _encoded in
