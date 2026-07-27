@@ -853,12 +853,20 @@ arity	datascript.query-v3/arange	2	fixed
 arity	datascript.query-v3/array-rel	2	fixed
 arity	datascript.query-v3/coll-rel	2	fixed
 arity	datascript.query-v3/concatv	0	variadic
+arity	datascript.query-v3/context-constants	1	fixed
+arity	datascript.query-v3/context-empty?	1	fixed
+arity	datascript.query-v3/context-relations	1	fixed
+arity	datascript.query-v3/context-v3	2	fixed
+arity	datascript.query-v3/extract-rels	2	fixed
 arity	datascript.query-v3/has?	2	fixed
 arity	datascript.query-v3/hash-join	4	fixed
+arity	datascript.query-v3/hash-join-rel	2	fixed
 arity	datascript.query-v3/hash-map-rel	2	fixed
+arity	datascript.query-v3/join-unrelated	2	fixed
 arity	datascript.query-v3/mapa	2	fixed
 arity	datascript.query-v3/product	2	fixed
 arity	datascript.query-v3/product-all	1	fixed
+arity	datascript.query-v3/related-rels	2	fixed
 arity	datascript.query-v3/singleton-rel	0	fixed
 arity	datascript.query-v3/subarr	3	fixed
 arity	datascript.query-v3/zip	2	fixed
@@ -1826,13 +1834,22 @@ var	datascript.query-v3/arange
 var	datascript.query-v3/array-rel
 var	datascript.query-v3/coll-rel
 var	datascript.query-v3/concatv
+var	datascript.query-v3/context-constants
+var	datascript.query-v3/context-empty?
+var	datascript.query-v3/context-relations
+var	datascript.query-v3/context-v3
+var	datascript.query-v3/empty-context
+var	datascript.query-v3/extract-rels
 var	datascript.query-v3/has?
 var	datascript.query-v3/hash-join
+var	datascript.query-v3/hash-join-rel
 var	datascript.query-v3/hash-map-rel
+var	datascript.query-v3/join-unrelated
 var	datascript.query-v3/lru-cache-size
 var	datascript.query-v3/mapa
 var	datascript.query-v3/product
 var	datascript.query-v3/product-all
+var	datascript.query-v3/related-rels
 var	datascript.query-v3/singleton-rel
 var	datascript.query-v3/subarr
 var	datascript.query-v3/zip

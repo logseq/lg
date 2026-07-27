@@ -603,6 +603,138 @@
     (is (= [["7" ":name" "\"Ada\"" "\"match\""]]
            (query-v3-edn-rows joined)))))
 
+(defn ^:bool query-v3-empty-context?
+  [^datascript.query-v3/query-context-v3 context]
+  (query-v3/context-empty? context))
+
+(defn ^:vector<datascript.query-v3/relation-v3>
+  query-v3-context-relations
+  [^datascript.query-v3/query-context-v3 context]
+  (query-v3/context-relations context))
+
+(defn ^:map<string;datascript.lg.query-types/result>
+  query-v3-context-constants
+  [^datascript.query-v3/query-context-v3 context]
+  (query-v3/context-constants context))
+
+(deftest test-query-v3-join-unrelated-context
+  (let [context (query-v3/context-v3 [] {})
+        empty-relation (query-v3/array-rel ["?x"] [])
+        singleton
+        (query-v3/array-rel
+         ["?x" "?y"]
+         [(query-int-row [1 2])])
+        multiple
+        (query-v3/array-rel
+         ["?z"]
+         [(query-int-row [10])
+          (query-int-row [20])])]
+    (is (query-v3-empty-context?
+         (query-v3/join-unrelated context empty-relation)))
+    (let [with-constants
+          (query-v3/join-unrelated context singleton)
+          constants (query-v3-context-constants with-constants)]
+      (is (= 0 (count (query-v3-context-relations with-constants))))
+      (is (= 1
+             (query-result-int
+              (get constants "?x" (query-int-result 0)))))
+      (is (= 2
+             (query-result-int
+              (get constants "?y" (query-int-result 0))))))
+    (let [with-relation
+          (query-v3/join-unrelated context multiple)]
+      (is (= 1 (count (query-v3-context-relations with-relation))))
+      (is (= [[10] [20]]
+             (query-v3-int-rows
+              (nth
+               (query-v3-context-relations with-relation)
+               0)))))))
+
+(deftest test-query-v3-context-hash-join
+  (let [related
+        (query-v3/array-rel
+         ["?x" "?left"]
+         [(query-int-row [1 10])
+          (query-int-row [2 20])])
+        unrelated
+        (query-v3/array-rel
+         ["?z"]
+         [(query-int-row [7])
+          (query-int-row [8])])
+        context
+        (query-v3/context-v3 [related unrelated] {})
+        incoming
+        (query-v3/array-rel
+         ["?x" "?right"]
+         [(query-int-row [2 200])
+          (query-int-row [1 100])])
+        joined-context
+        (query-v3/hash-join-rel context incoming)
+        relations (query-v3-context-relations joined-context)]
+    (is (= 2 (count relations)))
+    (is (= ["?z"] (vec (query-v3/-symbols (nth relations 0)))))
+    (is (= [[7] [8]] (query-v3-int-rows (nth relations 0))))
+    (is (= ["?x" "?left" "?right"]
+           (vec (query-v3/-symbols (nth relations 1)))))
+    (is (= [[2 20 200] [1 10 100]]
+           (query-v3-int-rows (nth relations 1))))
+    (is (= 1
+           (count
+            (query-v3/related-rels
+             joined-context ["?right"]))))
+    (match
+     (query-v3/extract-rels joined-context ["?right"])
+     (tuple extracted remaining)
+     (do
+       (match extracted
+         None (is false)
+         (Some extracted)
+         (is (= 1 (count extracted))))
+       (is (= 1
+              (count
+               (query-v3-context-relations remaining))))))))
+
+(deftest test-query-v3-context-hash-join-multiple-relations
+  (let [left
+        (query-v3/array-rel
+         ["?x" "?left"]
+         [(query-int-row [1 10])
+          (query-int-row [2 20])])
+        middle
+        (query-v3/array-rel
+         ["?y" "?middle"]
+         [(query-int-row [3 30])
+          (query-int-row [4 40])])
+        unrelated
+        (query-v3/array-rel
+         ["?z"]
+         [(query-int-row [9])
+          (query-int-row [10])])
+        context
+        (query-v3/context-v3 [left unrelated middle] {})
+        incoming
+        (query-v3/array-rel
+         ["?x" "?y" "?right"]
+         [(query-int-row [2 3 200])
+          (query-int-row [1 4 100])])
+        joined-context
+        (query-v3/hash-join-rel context incoming)
+        relations (query-v3-context-relations joined-context)]
+    (is (= 2 (count relations)))
+    (is (= ["?z"] (vec (query-v3/-symbols (nth relations 0)))))
+    (is (= ["?x" "?left" "?y" "?middle" "?right"]
+           (vec (query-v3/-symbols (nth relations 1)))))
+    (is (= [[2 20 3 30 200]
+            [1 10 4 40 100]]
+           (query-v3-int-rows (nth relations 1))))
+    (is
+     (query-v3-empty-context?
+      (query-v3/hash-join-rel
+       context
+       (query-v3/array-rel
+        ["?x"]
+        [(query-int-row [99])]))))))
+
 (deftest test-public-tuple-key-helpers
   (let [attrs (query-types/index-attrs ["?x" "?y"])
         row (query-int-row [10 20])

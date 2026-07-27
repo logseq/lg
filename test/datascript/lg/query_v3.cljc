@@ -121,6 +121,57 @@
   (ArrayRelationV3 :datascript.query-v3/relation-state)
   (CollRelationV3 :datascript.query-v3/relation-state))
 
+(type-record query-context-state-v3
+  (rels :vector<datascript.query-v3/relation-v3>)
+  (consts :map<string;datascript.lg.query-types/result>))
+
+(type-variant query-context-v3
+  EmptyContextV3
+  (QueryContextV3 :datascript.query-v3/query-context-state-v3))
+
+(def empty-context EmptyContextV3)
+
+(defn ^query-context-v3 context-v3
+  [^:vector<relation-v3> relations
+   ^:map<string;datascript.lg.query-types/result> constants]
+  (QueryContextV3
+   (record query-context-state-v3
+     (rels relations)
+     (consts constants))))
+
+(defn ^:bool context-empty? [^query-context-v3 context]
+  (match context
+    EmptyContextV3 true
+    (QueryContextV3 _) false))
+
+(defn ^:vector<relation-v3> context-relations
+  [^query-context-v3 context]
+  (match context
+    EmptyContextV3 []
+    (QueryContextV3 state) (:rels state)))
+
+(defn ^:map<string;datascript.lg.query-types/result>
+  context-constants
+  [^query-context-v3 context]
+  (match context
+    EmptyContextV3 {}
+    (QueryContextV3 state) (:consts state)))
+
+(defn- ^query-context-v3 context-with-relations
+  [^query-context-v3 context ^:vector<relation-v3> relations]
+  (match context
+    EmptyContextV3 EmptyContextV3
+    (QueryContextV3 state)
+    (context-v3 relations (:consts state))))
+
+(defn- ^query-context-v3 context-with-constants
+  [^query-context-v3 context
+   ^:map<string;datascript.lg.query-types/result> constants]
+  (match context
+    EmptyContextV3 EmptyContextV3
+    (QueryContextV3 state)
+    (context-v3 (:rels state) constants)))
+
 (defprotocol IRelation
   (-project
    [relation ^:vector<string> symbols]
@@ -442,3 +493,99 @@
     (array-rel
      (into left-symbols keep-right-symbols)
      rows)))
+
+(defn- ^:map<string;datascript.lg.query-types/result>
+  relation-constants
+  [^relation-v3 relation]
+  (if-some [row (first (relation-tuples relation))]
+    (reduce
+     (fn [constants symbol]
+       (assoc constants symbol ((-getter relation symbol) row)))
+     {}
+     (-symbols relation))
+    {}))
+
+(defn- ^:bool relation-shares-symbols?
+  [^relation-v3 relation ^:set<string> symbols]
+  (some?
+   (some
+    (fn [symbol]
+      (contains? symbols symbol))
+    (-symbols relation))))
+
+(defn ^:vector<relation-v3> related-rels
+  [^query-context-v3 context ^:vector<string> symbols]
+  (let [symbols (set symbols)]
+    (filterv
+     (fn [relation]
+       (relation-shares-symbols? relation symbols))
+     (context-relations context))))
+
+(defn
+  ^:tuple<option<vector<datascript.query-v3/relation-v3>>;datascript.query-v3/query-context-v3>
+  extract-rels
+  [^query-context-v3 context ^:vector<string> symbols]
+  (let [symbols (set symbols)
+        related
+        (filterv
+         (fn [relation]
+           (relation-shares-symbols? relation symbols))
+         (context-relations context))]
+    (if (empty? related)
+      (tuple None context)
+      (tuple
+       (Some related)
+       (context-with-relations
+        context
+        (filterv
+         (fn [relation]
+           (not (relation-shares-symbols? relation symbols)))
+         (context-relations context)))))))
+
+(defn ^query-context-v3 join-unrelated
+  [^query-context-v3 context ^relation-v3 relation]
+  (if (context-empty? context)
+    EmptyContextV3
+    (case (-size relation)
+      0 EmptyContextV3
+      1
+      (context-with-constants
+       context
+       (merge
+        (context-constants context)
+        (relation-constants relation)))
+      (context-with-relations
+       context
+       (conj (context-relations context) relation)))))
+
+(defn- ^:vector<string> shared-symbols
+  [^:vector<string> left ^:vector<string> right]
+  (let [right (set right)]
+    (filterv
+     (fn [symbol]
+       (contains? right symbol))
+     left)))
+
+(defn ^query-context-v3 hash-join-rel
+  [^query-context-v3 context ^relation-v3 relation]
+  (if (or (context-empty? context)
+          (= 0 (-size relation)))
+    EmptyContextV3
+    (match (extract-rels context (-symbols relation))
+      (tuple None unchanged-context)
+      (join-unrelated unchanged-context relation)
+      (tuple (Some related) remaining-context)
+      (let [related-relation (product-all related)
+            join-symbols
+            (shared-symbols
+             (-symbols related-relation)
+             (-symbols relation))
+            relation-hash
+            (hash-map-rel related-relation join-symbols)
+            joined
+            (hash-join
+             related-relation
+             relation-hash
+             join-symbols
+             relation)]
+        (join-unrelated remaining-context joined)))))

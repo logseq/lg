@@ -189,7 +189,16 @@ for query_v3_entry in \
   'var	datascript.query-v3/hash-map-rel' \
   'arity	datascript.query-v3/hash-map-rel	2	fixed' \
   'var	datascript.query-v3/hash-join' \
-  'arity	datascript.query-v3/hash-join	4	fixed'
+  'arity	datascript.query-v3/hash-join	4	fixed' \
+  'var	datascript.query-v3/empty-context' \
+  'var	datascript.query-v3/related-rels' \
+  'arity	datascript.query-v3/related-rels	2	fixed' \
+  'var	datascript.query-v3/extract-rels' \
+  'arity	datascript.query-v3/extract-rels	2	fixed' \
+  'var	datascript.query-v3/join-unrelated' \
+  'arity	datascript.query-v3/join-unrelated	2	fixed' \
+  'var	datascript.query-v3/hash-join-rel' \
+  'arity	datascript.query-v3/hash-join-rel	2	fixed'
 do
   expect_text "the LG manifest preserves query-v3 helper: $query_v3_entry" \
     "$lg_api_manifest" "^$query_v3_entry$"
