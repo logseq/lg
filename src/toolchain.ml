@@ -199,6 +199,22 @@ module Lg_frontend : FRONTEND = struct
     | Ast.FList
         (Ast.FSymbol (("def" | "defonce") as head) :: forms) ->
         (match forms with
+        | Ast.FSymbol "^:dynamic"
+          :: Ast.FSymbol annotation
+          :: name :: [ value ]
+          when definition_type_hint annotation ->
+            Ast.FList
+              [
+                Ast.FSymbol head;
+                Ast.FSymbol "^:dynamic";
+                normalize_metadata name;
+                Ast.FList
+                  [
+                    Ast.FSymbol "__type-hint";
+                    Ast.FSymbol annotation;
+                    normalize_metadata value;
+                  ];
+              ]
         | Ast.FSymbol annotation :: name :: [ value ]
           when definition_type_hint annotation ->
             Ast.FList

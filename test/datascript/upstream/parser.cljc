@@ -1091,6 +1091,184 @@
   [^:vector<datascript.parser/clause> clauses]
   (vec (distinct (mapcat clause-vars clauses))))
 
+(defn- ^:string auto-rule-variable
+  [^:string variable ^:int seqid]
+  (str variable "__auto__" seqid))
+
+(defn- ^datascript.parser/Variable substitute-rule-variable
+  [^:map<string;pattern-element> replacements
+   ^:int seqid
+   ^datascript.parser/Variable variable]
+  (let [name (str (.-symbol variable))]
+    (if-some [replacement (get replacements name)]
+      (match replacement
+        (PatternVariable replacement-variable)
+        replacement-variable
+        _
+        (Stdlib.invalid_arg
+         (str
+          "Rule variable "
+          name
+          " must remain a variable in this position")))
+      (Variable. (auto-rule-variable name seqid)))))
+
+(defn- ^pattern-element substitute-rule-pattern-element
+  [^:map<string;pattern-element> replacements
+   ^:int seqid
+   ^pattern-element element]
+  (match element
+    (PatternVariable variable)
+    (let [name (str (.-symbol variable))]
+      (if-some [replacement (get replacements name)]
+        replacement
+        (PatternVariable
+         (Variable. (auto-rule-variable name seqid)))))
+    _ element))
+
+(defn- ^fn-arg substitute-rule-fn-arg
+  [^:map<string;pattern-element> replacements
+   ^:int seqid
+   ^fn-arg argument]
+  (match argument
+    (FnArgVariable variable)
+    (let [name (str (.-symbol variable))]
+      (if-some [replacement (get replacements name)]
+        (match replacement
+          (PatternVariable replacement-variable)
+          (FnArgVariable replacement-variable)
+          (PatternConstant value)
+          (FnArgConstant value)
+          PatternPlaceholder
+          (Stdlib.invalid_arg
+           (str
+            "Rule variable "
+            name
+            " cannot become a placeholder function argument")))
+        (FnArgVariable
+         (Variable. (auto-rule-variable name seqid)))))
+    _ argument))
+
+(defn- ^query-callable substitute-rule-callable
+  [^:map<string;pattern-element> replacements
+   ^:int seqid
+   ^query-callable callable]
+  (match callable
+    (VariableCallable variable)
+    (VariableCallable
+     (substitute-rule-variable replacements seqid variable))
+    _ callable))
+
+(declare substitute-rule-binding
+         substitute-rule-clause
+         substitute-rule-clauses)
+
+(defn- ^binding substitute-rule-binding
+  [^:map<string;pattern-element> replacements
+   ^:int seqid
+   ^binding binding]
+  (match binding
+    BindIgnore BindIgnore
+    (BindScalar variable)
+    (BindScalar
+     (substitute-rule-variable replacements seqid variable))
+    (BindTuple bindings)
+    (BindTuple
+     (mapv
+      (fn [^binding binding]
+        (substitute-rule-binding replacements seqid binding))
+      bindings))
+    (BindColl binding)
+    (BindColl
+     (substitute-rule-binding replacements seqid binding))))
+
+(defn- ^datascript.parser/RuleVars substitute-rule-vars
+  [^:map<string;pattern-element> replacements
+   ^:int seqid
+   ^datascript.parser/RuleVars variables]
+  (RuleVars.
+   (match (.-required variables)
+     None None
+     (Some required)
+     (Some
+      (mapv
+       (fn [^datascript.parser/Variable variable]
+         (substitute-rule-variable
+          replacements seqid variable))
+       required)))
+   (mapv
+    (fn [^datascript.parser/Variable variable]
+      (substitute-rule-variable replacements seqid variable))
+    (.-free variables))))
+
+(defn- ^clause substitute-rule-clause
+  [^:map<string;pattern-element> replacements
+   ^:int seqid
+   ^clause clause]
+  (match clause
+    (PatternClause source pattern)
+    (PatternClause
+     source
+     (mapv
+      (fn [^pattern-element element]
+        (substitute-rule-pattern-element
+         replacements seqid element))
+      pattern))
+    (PredicateClause callable arguments)
+    (PredicateClause
+     (substitute-rule-callable replacements seqid callable)
+     (mapv
+      (fn [^fn-arg argument]
+        (substitute-rule-fn-arg
+         replacements seqid argument))
+      arguments))
+    (FunctionClause callable arguments binding)
+    (FunctionClause
+     (substitute-rule-callable replacements seqid callable)
+     (mapv
+      (fn [^fn-arg argument]
+        (substitute-rule-fn-arg
+         replacements seqid argument))
+      arguments)
+     (substitute-rule-binding replacements seqid binding))
+    (RuleClause source name arguments)
+    (RuleClause
+     source
+     name
+     (mapv
+      (fn [^pattern-element argument]
+        (substitute-rule-pattern-element
+         replacements seqid argument))
+      arguments))
+    (NotClause source variables clauses display)
+    (NotClause
+     source
+     (mapv
+      (fn [^datascript.parser/Variable variable]
+        (substitute-rule-variable
+         replacements seqid variable))
+      variables)
+     (substitute-rule-clauses replacements seqid clauses)
+     display)
+    (OrClause source kind variables clauses display)
+    (OrClause
+     source
+     kind
+     (substitute-rule-vars replacements seqid variables)
+     (substitute-rule-clauses replacements seqid clauses)
+     display)
+    (AndClause clauses)
+    (AndClause
+     (substitute-rule-clauses replacements seqid clauses))))
+
+(defn ^:private ^:vector<clause> substitute-rule-clauses
+  [^:map<string;pattern-element> replacements
+   ^:int seqid
+   ^:vector<clause> clauses]
+  (mapv
+   (fn [^clause clause]
+     (substitute-rule-clause replacements seqid clause))
+   clauses))
+
 (defn ^:option<vector<datascript.parser/clause>> parse-clauses
   [^:vector<Datascript_runtime.Data_value.t> clauses]
   (parse-items

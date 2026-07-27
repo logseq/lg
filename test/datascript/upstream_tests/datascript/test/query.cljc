@@ -5,6 +5,7 @@
     [datascript.db :as db]
     [datascript.lg.query :as query]
     [datascript.lg.query-types :as query-types]
+    [datascript.lru :as lru]
     [datascript.parser :as parser]
     [datascript.test.core :as tdc]))
 
@@ -84,6 +85,17 @@
      (Datascript_runtime.Data_value.to_edn_string value))
    values))
 
+(defn ^:vector<string> clause-variable-names
+  [^:vector<datascript.parser/clause> clauses]
+  (vec
+   (mapcat
+    (fn [^datascript.parser/clause clause]
+      (mapv
+       (fn [^datascript.parser/Variable variable]
+         (str (.-symbol variable)))
+       (datascript.parser/clause-vars clause)))
+    clauses)))
+
 (defn ^:array<datascript.lg.query-types/result> query-int-row
   [^:vector<int> values]
   (to-array (mapv query-int-result values)))
@@ -104,6 +116,21 @@
        (+ total (query-result-int result)))
      0
      arguments))))
+
+(defn ^:int query-call-int
+  [^:option<Datascript_runtime.Data_value.t> value]
+  (match value
+    (Some (Datascript_runtime.Data_value.Int value)) value
+    _ (Stdlib.invalid_arg "Expected an integer query call result")))
+
+(defn ^:option<Datascript_runtime.Data_value.t> database-marker
+  [^:vector<datascript.lg.query-types/result> arguments]
+  (if-some [argument (first arguments)]
+    (match argument
+      (Datascript_runtime.Query_value.Database _database)
+      (Some (Datascript_runtime.Data_value.Int 1))
+      _ (Stdlib.invalid_arg "Expected a database query argument"))
+    None))
 
 (defn ^:vector<vector<int>> mapped-int-rows
   [^:vector<map<string;datascript.lg.query-types/result>> rows
@@ -163,6 +190,35 @@
     (is (= [2 4] (get grouped 0)))
     (is (= (list 3 1) (get hashed 1)))
     (is (= (list 4 2) (get hashed 0)))))
+
+(deftest test-public-query-cache
+  (let [query-form
+        (query-form-vector
+         [(Datascript_runtime.Data_value.Keyword ":find")
+          (Datascript_runtime.Data_value.Symbol "?e")
+          (Datascript_runtime.Data_value.Keyword ":where")
+          (query-form-vector
+           [(Datascript_runtime.Data_value.Symbol "?e")
+            (Datascript_runtime.Data_value.Keyword ":age")
+            (Datascript_runtime.Data_value.Int 18)])])
+        parse-calls (atom 0)
+        parse-query
+        (fn []
+          (swap! parse-calls inc)
+          (parser/parse-query query-form))]
+    (binding [query/*query-cache* (lru/cache 2)]
+      (lru/-get
+       query/*query-cache* query-form parse-query)
+      (lru/-get
+       query/*query-cache* query-form parse-query)
+      (is (= 1 @parse-calls))
+      (binding [query/*query-cache* (lru/cache 2)]
+        (lru/-get
+         query/*query-cache* query-form parse-query)
+        (is (= 2 @parse-calls)))
+      (lru/-get
+       query/*query-cache* query-form parse-query)
+      (is (= 2 @parse-calls)))))
 
 (deftest test-public-tuple-key-helpers
   (let [attrs (query-types/index-attrs ["?x" "?y"])
@@ -276,6 +332,40 @@
     (if-some [relation (first relations)]
       (is (= [[1 11] [2 12]]
              (relation-int-rows relation ["?x" "?y"])))
+      (is false))))
+
+(deftest test-public-call-fn
+  (let [context (predicate-test-context [1 2])
+        relations (query-types/context-relations context)]
+    (if-some [relation (first relations)]
+      (let [rows (query-types/relation-rows relation)
+            call
+            (query/-call-fn
+             context
+             relation
+             (query-types/callable sum-query-arguments)
+             [(parser/variable-argument "?x")
+              (parser/constant-argument
+               (Datascript_runtime.Data_value.Int 10))])
+            source-call
+            (query/-call-fn
+             context
+             relation
+             (query-types/callable database-marker)
+             [(parser/source-argument "$")])]
+        (is (= 11 (query-call-int (call (nth rows 0)))))
+        (is (= 12 (query-call-int (call (nth rows 1)))))
+        (is (= 1 (query-call-int (source-call (nth rows 0)))))
+        (let [missing-call
+              (query/-call-fn
+               context
+               relation
+               (query-types/callable sum-query-arguments)
+               [(parser/variable-argument "?missing")])]
+          (is
+           (thrown-msg?
+            "Callable variable is not bound: ?missing"
+            (missing-call (nth rows 0))))))
       (is false))))
 
 (deftest test-public-form-predicates
@@ -981,6 +1071,193 @@
              (query-form-strings (tuple-get split 0))))
       (is (= ["[(-differ? ?missing)]"]
              (query-form-strings (tuple-get split 1)))))))
+
+(deftest test-public-solve-rule
+  (let [database
+        (->
+         (d/empty-db)
+         (d/db-with
+          [[:db/add 1 :age 18]
+           [:db/add 2 :age 20]
+           [:db/add 3 :age 18]]))
+        database-view (db/database-view database)
+        adult-18-clause
+        (parser/pattern-clause
+         [(parser/pattern-variable "?e")
+          (parser/pattern-attribute :age)
+          (parser/pattern-constant
+           (Datascript_runtime.Data_value.Int 18))])
+        adult-20-clause
+        (parser/pattern-clause
+         [(parser/pattern-variable "?e")
+          (parser/pattern-attribute :age)
+          (parser/pattern-constant
+           (Datascript_runtime.Data_value.Int 20))])
+        ^:vector<datascript.parser/RuleBranch> rule-branches
+         [(parser/static-rule-branch
+           "adult" ["?e"] [adult-18-clause])
+          (parser/static-rule-branch
+           "adult" ["?e"] [adult-20-clause])
+          (parser/static-rule-branch
+           "adult" ["?e"] [adult-18-clause])
+          (parser/static-rule-branch
+           "has-adult"
+           []
+           [(parser/pattern-clause
+             [(parser/pattern-placeholder)
+              (parser/pattern-attribute :age)
+              (parser/pattern-constant
+               (Datascript_runtime.Data_value.Int 18))])])]
+        rules
+        (parser/static-rules rule-branches)
+        default-context
+        (query-types/context
+         []
+         {"$" (query-types/database-source database-view)}
+         rules)
+        explicit-context
+        (query-types/context
+         []
+         {"$people" (query-types/database-source database-view)}
+         rules)
+        adult-call
+        (parser/static-rule-clause
+         "adult"
+         [(parser/pattern-variable "?person")])
+        explicit-adult-call
+        (parser/static-source-rule-clause
+         "$people"
+         "adult"
+         [(parser/pattern-variable "?person")])]
+    (is (= [[1] [3] [2]]
+           (relation-int-rows
+            (query/solve-rule default-context adult-call)
+            ["?person"])))
+    (is (= [[1] [3] [2]]
+           (relation-int-rows
+            (query/solve-rule explicit-context explicit-adult-call)
+            ["?person"])))
+    (let [exists-call
+          (parser/static-rule-clause "has-adult" [])]
+      (is (= 1
+             (count
+              (query-types/relation-rows
+               (query/solve-rule default-context exists-call))))))
+    (is
+     (thrown-msg?
+      "solve-rule expects a rule clause"
+      (query/solve-rule
+       default-context
+       (greater-than-clause 10))))))
+
+(deftest test-public-expand-rule
+  (reset! query/rule-seqid 0)
+  (let [database
+        (->
+         (d/empty-db)
+         (d/db-with
+          [[:db/add 1 :age 20]
+           [:db/add 2 :age 15]
+           [:db/add 2 :score 30]]))
+        database-view (db/database-view database)
+        age-pattern
+        (parser/pattern-clause
+         [(parser/pattern-variable "?e")
+          (parser/pattern-attribute :age)
+          (parser/pattern-variable "?age")])
+        age-predicate
+        (parser/static-predicate-clause
+         ">"
+         [(parser/variable-argument "?age")
+          (parser/constant-argument
+           (Datascript_runtime.Data_value.Int 17))])
+        score-pattern
+        (parser/pattern-clause
+         [(parser/pattern-variable "?e")
+          (parser/pattern-attribute :score)
+          (parser/pattern-variable "?score")])
+        score-predicate
+        (parser/static-predicate-clause
+         ">"
+         [(parser/variable-argument "?score")
+          (parser/constant-argument
+           (Datascript_runtime.Data_value.Int 20))])
+        ^:vector<datascript.parser/RuleBranch> branches
+        [(parser/static-rule-branch
+          "adult" ["?e"] [age-pattern age-predicate])
+         (parser/static-rule-branch
+          "adult" ["?e"] [score-pattern score-predicate])]
+        rules (parser/static-rules branches)
+        context
+        (query-types/context
+         []
+         {"$" (query-types/database-source database-view)}
+         rules)
+        variable-call
+        (parser/static-rule-clause
+         "adult"
+         [(parser/pattern-variable "?person")])
+        ^:map<string;vector<vector<Datascript_runtime.Data_value.t>>>
+        used-args
+        {"adult"
+         [[(Datascript_runtime.Data_value.Symbol "?previous")]]}
+        expanded
+        (query/expand-rule variable-call context used-args)]
+    (is (= 2 (count expanded)))
+    (is (= ["?person"
+            "?age__auto__1"
+            "?age__auto__1"]
+           (clause-variable-names (nth expanded 0))))
+    (is (= ["?person"
+            "?score__auto__1"
+            "?score__auto__1"]
+           (clause-variable-names (nth expanded 1))))
+    (let [first-result
+          (query/-q context (nth expanded 0))
+          second-result
+          (query/-q context (nth expanded 1))]
+      (if-some [relation
+                (first (query-types/context-relations first-result))]
+        (is (= [[1]]
+               (relation-int-rows relation ["?person"])))
+        (is false))
+      (if-some [relation
+                (first (query-types/context-relations second-result))]
+        (is (= [[2]]
+               (relation-int-rows relation ["?person"])))
+        (is false)))
+    (let [expanded-again
+          (query/expand-rule variable-call context {})]
+      (is (= ["?person"
+              "?age__auto__2"
+              "?age__auto__2"]
+             (clause-variable-names
+              (nth expanded-again 0)))))
+    (let [constant-call
+          (parser/static-rule-clause
+           "adult"
+           [(parser/pattern-constant
+             (Datascript_runtime.Data_value.Int 1))])
+          constant-expanded
+          (query/expand-rule constant-call context {})
+          first-result
+          (query/-q context (nth constant-expanded 0))
+          second-result
+          (query/-q context (nth constant-expanded 1))]
+      (is (= ["?age__auto__3" "?age__auto__3"]
+             (clause-variable-names
+              (nth constant-expanded 0))))
+      (if-some [relation
+                (first (query-types/context-relations first-result))]
+        (is (= 1
+               (count (query-types/relation-rows relation))))
+        (is false))
+      (if-some [relation
+                (first (query-types/context-relations second-result))]
+        (is (= 0
+               (count (query-types/relation-rows relation))))
+        (is false)))
+    (is (= 3 @query/rule-seqid))))
 
 (deftest test-public-aggregation
   (let [color

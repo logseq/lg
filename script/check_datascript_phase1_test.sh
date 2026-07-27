@@ -129,7 +129,14 @@ for query_helper_entry in \
   'var	datascript.query/filter-by-pred' \
   'arity	datascript.query/filter-by-pred	2	fixed' \
   'var	datascript.query/bind-by-fn' \
-  'arity	datascript.query/bind-by-fn	2	fixed'
+  'arity	datascript.query/bind-by-fn	2	fixed' \
+  'var	datascript.query/-call-fn' \
+  'arity	datascript.query/-call-fn	4	fixed' \
+  'var	datascript.query/solve-rule' \
+  'arity	datascript.query/solve-rule	2	fixed' \
+  'var	datascript.query/rule-seqid' \
+  'var	datascript.query/expand-rule' \
+  'arity	datascript.query/expand-rule	3	fixed'
 do
   expect_text "the LG manifest preserves query helper: $query_helper_entry" \
     "$lg_api_manifest" "^$query_helper_entry$"
@@ -138,6 +145,8 @@ expect_text "the LG manifest preserves query helper: *implicit-source*" \
   "$lg_api_manifest" '^var	datascript\.query/\*implicit-source\*$'
 expect_text "the LG manifest preserves query helper: *lookup-attrs*" \
   "$lg_api_manifest" '^var	datascript\.query/\*lookup-attrs\*$'
+expect_text "the LG manifest preserves query helper: *query-cache*" \
+  "$lg_api_manifest" '^var	datascript\.query/\*query-cache\*$'
 for inline_entry in \
   'var	datascript.inline/assoc' \
   'arity	datascript.inline/assoc	3	fixed' \
