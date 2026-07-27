@@ -2569,6 +2569,194 @@
         (catch (Invalid_argument message)
           (str message)))))))
 
+(defn ^datascript.lg.query-types/input
+  query-v3-int-tuple-collection-input
+  [^:vector<vector<int>> rows]
+  (query-types/binding-input
+   (query-types/collection-binding
+    (mapv
+     (fn [^:vector<int> row]
+       (query-types/collection-binding
+        (mapv
+         (fn [^:int value]
+           (query-types/scalar-binding
+            (query-int-result value)))
+         row)))
+     rows))))
+
+(deftest test-query-v3-aggregates-grouping-and-all-aggregate
+  (let [binding
+        (parser/collection-input
+         (parser/tuple-input
+          [(parser/scalar-input "?group")
+           (parser/scalar-input "?x")]))
+        input
+        (query-v3-int-tuple-collection-input
+         [[1 10] [2 7] [1 20]])
+        sum-x
+        (parser/aggregate-find-element
+         "sum"
+         [(parser/variable-argument "?x")])
+        count-x
+        (parser/aggregate-find-element
+         "count"
+         [(parser/variable-argument "?x")])
+        grouped-query
+        (parser/static-query-clauses-with-inputs
+         (parser/relation-find-elements
+          [(parser/variable-find-element "?group")
+           sum-x
+           count-x])
+         []
+         [(parser/make-static-value-input binding)])
+        all-aggregate-query
+        (parser/static-query-clauses-with-inputs
+         (parser/relation-find-elements
+          [sum-x count-x])
+         []
+         [(parser/make-static-value-input binding)])]
+    (is
+     (=
+      [[1 30 2] [2 7 1]]
+      (query-int-rows
+       (require-query-v3-relation-output
+        (query-v3/q grouped-query input)))))
+    (is
+     (=
+      [[37 3]]
+      (query-int-rows
+       (require-query-v3-relation-output
+        (query-v3/q all-aggregate-query input)))))))
+
+(deftest test-query-v3-aggregate-with-preserves-multiplicity
+  (let [binding
+        (parser/collection-input
+         (parser/tuple-input
+          [(parser/scalar-input "?x")
+           (parser/scalar-input "?tag")]))
+        find
+        (parser/single-find-element
+         (parser/aggregate-find-element
+          "count"
+          [(parser/variable-argument "?x")]))
+        base-query
+        (parser/static-query-clauses-with-inputs
+         find
+         []
+         [(parser/make-static-value-input binding)])
+        with-query (parser/query-with base-query ["?tag"])
+        input
+        (query-v3-int-tuple-collection-input
+         [[1 10] [1 20] [2 30]])
+        base-output (query-v3/q base-query input)
+        with-output (query-v3/q with-query input)]
+    (is
+     (match (query-types/output-scalar base-output)
+       (Some (Some result)) (= 2 (query-result-int result))
+       _ false))
+    (is
+     (match (query-types/output-scalar with-output)
+       (Some (Some result)) (= 3 (query-result-int result))
+       _ false))))
+
+(deftest test-query-v3-parameterized-and-custom-aggregates
+  (let [parameterized-max
+        (parser/aggregate-find-element
+         "max"
+         [(parser/variable-argument "?limit")
+          (parser/variable-argument "?x")])
+        custom-sum
+        (parser/custom-aggregate-find-element
+         "?aggregate"
+         [(parser/variable-argument "?x")])
+        parameterized-query
+        (parser/static-query-clauses-with-inputs
+         (parser/relation-find-elements [parameterized-max])
+         []
+         [(parser/make-static-value-input
+           (parser/scalar-input "?limit"))
+          (parser/make-static-value-input
+           (parser/collection-input
+            (parser/scalar-input "?x")))])
+        custom-query
+        (parser/static-query-clauses-with-inputs
+         (parser/relation-find-elements [custom-sum])
+         []
+         [(parser/make-static-value-input
+           (parser/scalar-input "?aggregate"))
+          (parser/make-static-value-input
+           (parser/collection-input
+            (parser/scalar-input "?x")))])
+        parameterized-output
+        (query-v3/q
+         parameterized-query
+         (query-types/binding-input
+          (query-types/scalar-binding
+           (query-int-result 2)))
+         (query-v3-int-collection-input [1 3 2]))
+        custom-output
+        (query-v3/q
+         custom-query
+         (query-types/binding-input
+          (query-types/scalar-binding
+           (query-types/callable-result
+            (query-types/callable sum-query-arguments))))
+         (query-v3-int-collection-input [1 3 2]))]
+    (is
+     (=
+      [["[2 3]"]]
+      (query-output-edn-rows
+       (require-query-v3-relation-output
+        parameterized-output))))
+    (is
+     (=
+      [[6]]
+      (query-int-rows
+       (require-query-v3-relation-output
+        custom-output))))))
+
+(deftest test-query-v3-aggregate-errors
+  (let [unknown-query
+        (query-v3-collection-input-query
+         (parser/relation-find-elements
+          [(parser/aggregate-find-element
+            "unknown-aggregate"
+            [(parser/variable-argument "?x")])])
+         "?x")
+        unbound-parameter-query
+        (parser/static-query-clauses-with-inputs
+         (parser/relation-find-elements
+          [(parser/aggregate-find-element
+            "max"
+            [(parser/variable-argument "?limit")
+             (parser/variable-argument "?x")])])
+         []
+         [(parser/make-static-value-input
+           (parser/collection-input
+            (parser/scalar-input "?x")))])]
+    (is
+     (=
+      "Unknown aggregate function: unknown-aggregate"
+      (try
+        (let [_output
+              (query-v3/q
+               unknown-query
+               (query-v3-int-collection-input [1]))]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "Aggregate parameters must be constants"
+      (try
+        (let [_output
+              (query-v3/q
+               unbound-parameter-query
+               (query-v3-int-collection-input [1 3]))]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))))
+
 (deftest test-public-tuple-key-helpers
   (let [attrs (query-types/index-attrs ["?x" "?y"])
         row (query-int-row [10 20])

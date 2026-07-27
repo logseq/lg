@@ -138,6 +138,11 @@
   (sources :map<string;datascript.lg.query-types/source>)
   (default-source-symbol :string))
 
+(type-record aggregate-context-state-v3
+  (seen :map<string;bool>)
+  (attrs :map<string;int>)
+  (values :vector<datascript.lg.query-types/result>))
+
 (type-variant query-context-v3
   EmptyContextV3
   (QueryContextV3 :datascript.query-v3/query-context-state-v3))
@@ -1932,6 +1937,76 @@
 (defn- ^:vector<collect-transform-v3> empty-collect-transforms []
   [])
 
+(defn- ^aggregate-context-state-v3 add-aggregate-context-value
+  [^aggregate-context-state-v3 state
+   ^:string variable
+   ^:option<datascript.lg.query-types/result> value]
+  (let [seen (assoc (:seen state) variable true)]
+    (if-some [value value]
+      (record aggregate-context-state-v3
+        (seen seen)
+        (attrs
+         (assoc
+          (:attrs state)
+          variable
+          (count (:values state))))
+        (values (conj (:values state) value)))
+      (record aggregate-context-state-v3
+        (seen seen)
+        (attrs (:attrs state))
+        (values (:values state))))))
+
+(defn- ^datascript.lg.query-types/relation aggregate-state-relation
+  [^aggregate-context-state-v3 state]
+  (query-types/relation
+   (:attrs state)
+   [(to-array (:values state))]
+   {}))
+
+(defn- ^aggregate-context-state-v3 empty-aggregate-context-state []
+  (record aggregate-context-state-v3
+    (seen {})
+    (attrs {})
+    (values [])))
+
+(defn- ^datascript.lg.query-types/relation
+  aggregate-constants-relation
+  [^query-context-v3 context]
+  (aggregate-state-relation
+   (reduce-kv
+    (fn [^aggregate-context-state-v3 state
+         ^:string variable
+         ^datascript.lg.query-types/result value]
+      (add-aggregate-context-value
+       state variable (Some value)))
+    (empty-aggregate-context-state)
+    (context-constants context))))
+
+(defn- ^datascript.lg.query-types/relation
+  aggregate-context-relation
+  [^query-context-v3 context]
+  (aggregate-state-relation
+   (reduce
+    (fn [^aggregate-context-state-v3 state
+         ^relation-v3 relation]
+      (let [first-row (first (relation-tuples relation))]
+        (reduce-kv
+         (fn [^aggregate-context-state-v3 state
+              ^:string variable
+              ^:int index]
+           (if (contains? (:seen state) variable)
+             state
+             (add-aggregate-context-value
+              state
+              variable
+              (if-some [row first-row]
+                (query-types/row-get row index)
+                None))))
+         state
+         (relation-offset-map relation))))
+    (empty-aggregate-context-state)
+    (context-relations context))))
+
 (defn collect-to
   ([^query-context-v3 context
     ^:vector<string> symbols
@@ -1995,6 +2070,7 @@
         context
         (resolve-clauses context (.-qwhere query))
         find (.-qfind query)
+        find-elements (parser/find-spec-elements find)
         find-variables
         (match (parser/find-projection-variable-names find)
           (Some variables) variables
@@ -2016,11 +2092,19 @@
             (mapv
              (fn [row]
                (query-types/project-row row indexes))
-             collected)))]
+             collected)))
+        rows
+        (if (some parser/aggregate? find-elements)
+          (query-types/aggregate-rows
+           find-elements
+           (aggregate-constants-relation context)
+           (aggregate-context-relation context)
+           projected)
+          projected)]
     (query-types/find-output
      find
      (.-qreturn-map query)
-     projected)))
+     rows)))
 
 (defn q
   {:inline
