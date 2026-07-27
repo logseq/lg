@@ -1889,7 +1889,17 @@
   (if-some [name (parser/static-callable-name callable)]
     (let [_ (validate-static-call-bindings
              relation constants name arguments None)]
-    (if-some [function (built-ins/comparison-function name)]
+    (if-some
+     [function
+      (if-some [comparison
+                (built-ins/comparison-function name)]
+        (Some comparison)
+        (if-some [candidate
+                  (built-ins/pure-function name)]
+          (if (built-ins/differ-function? candidate)
+            (Some candidate)
+            None)
+          None))]
       (if (built-ins/missing-function? function)
         (resolve-database-predicate
          database sources relation constants arguments)
@@ -1909,7 +1919,12 @@
                        (predicate-operand-value row operand))
                      operands)]
                 (if-some [matches?
-                          (built-ins/apply-comparison function values)]
+                          (if
+                           (built-ins/differ-function? function)
+                            (Some
+                             (built-ins/apply-differ values))
+                            (built-ins/apply-comparison
+                             function values))]
                   (if matches?
                     (conj rows row)
                     rows)
@@ -2863,12 +2878,12 @@
       (Datascript_runtime.Query_value.tuple_output
        (first rows)))))
 
-(defn ^output execute-db-query-with-rules
+(defn ^output execute-resolved-query
   [^datascript.db/database-view database
    ^:map<string;source> sources
    ^datascript.parser/Query query
-   ^relation input-relation
-   ^rules rules]
+   ^relation constants
+   ^relation resolved-relation]
   (if-some [variables
             (parser/find-projection-variable-names
              (.-qfind query))]
@@ -2883,24 +2898,6 @@
           used-variables
           (vec
            (concat all-variables pull-pattern-variables))
-          elide-input?
-          (and
-           (single-row-constant-relation? input-relation)
-            (not
-             (relation-variables-used?
-             input-relation used-variables)))
-          initial-relation
-          (if elide-input?
-            (identity-relation)
-            input-relation)
-          constants
-          (if elide-input?
-            input-relation
-            (identity-relation))
-          resolved-relation
-          (resolve-static-clauses
-           database sources "$" initial-relation constants rules []
-           (.-qwhere query))
           relation
           (ensure-empty-relation-variables
            resolved-relation used-variables)
@@ -2931,6 +2928,49 @@
       (find-output find (.-qreturn-map query) rows))
     (Stdlib.invalid_arg
      "Static query find supports variables only")))
+
+(defn ^output execute-db-query-with-rules
+  [^datascript.db/database-view database
+   ^:map<string;source> sources
+   ^datascript.parser/Query query
+   ^relation input-relation
+   ^rules rules]
+  (let [variables
+        (if-some [variables
+                  (parser/find-projection-variable-names
+                   (.-qfind query))]
+          variables
+          [])
+        elements (parser/find-spec-elements (.-qfind query))
+        with-variables (query-with-variable-names query)
+        pull-pattern-variables
+        (pull-pattern-variable-names elements)
+        used-variables
+        (vec
+         (concat
+          variables
+          with-variables
+          pull-pattern-variables))
+        elide-input?
+        (and
+         (single-row-constant-relation? input-relation)
+         (not
+          (relation-variables-used?
+           input-relation used-variables)))
+        initial-relation
+        (if elide-input?
+          (identity-relation)
+          input-relation)
+        constants
+        (if elide-input?
+          input-relation
+          (identity-relation))
+        resolved-relation
+        (resolve-static-clauses
+         database sources "$" initial-relation constants rules []
+         (.-qwhere query))]
+    (execute-resolved-query
+     database sources query constants resolved-relation)))
 
 (defn ^output execute-db-query-with-relation
   [^datascript.db/database-view database

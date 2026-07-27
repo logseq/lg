@@ -5,6 +5,12 @@ external call0 : (unit -> 'a) -> int -> 'a = "call" [@@mel.send]
 external call2 : ('a -> 'b -> 'c) -> int -> 'a -> 'b -> 'c = "call"
   [@@mel.send]
 
+external sort_raw : 'a array -> ('a -> 'a -> int) -> 'a array = "sort"
+  [@@mel.send]
+
+let sort values compare =
+  ignore (sort_raw values (fun left right -> call2 compare 0 left right))
+
 external reduce_raw :
   'a array -> ('b -> 'a -> int -> 'a array -> 'b) -> 'b -> 'b = "reduce"
   [@@mel.send]

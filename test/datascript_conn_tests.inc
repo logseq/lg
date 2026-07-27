@@ -2024,6 +2024,20 @@
    %{exe:datascript_benchmark_native.exe})))
 
 (rule
+ (alias datascript-benchmark-runtime-scaling)
+ (deps
+  datascript_benchmark_runtime_scaling_test.sh
+  datascript_benchmark_native.exe
+  (alias datascript-conn-melange)
+  datascript-conn-melange/test/datascript_benchmark_melange.js)
+ (action
+  (run
+   bash
+   %{dep:datascript_benchmark_runtime_scaling_test.sh}
+   %{exe:datascript_benchmark_native.exe}
+   %{dep:datascript-conn-melange/test/datascript_benchmark_melange.js})))
+
+(rule
  (alias datascript-benchmark-surface)
  (deps
   ../script/check_datascript_benchmark_surface_test.sh

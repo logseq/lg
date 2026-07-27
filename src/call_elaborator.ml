@@ -6469,9 +6469,17 @@ let create ~compile_expr =
                                         Semantic_ir.Ident right_name;
                                       ] ) )
                           in
+                          let sort, arguments =
+                            match Env.target env with
+                            | Target.Melange ->
+                                ( "Lg_runtime.Runtime_array_melange.sort",
+                                  [ array; host_cmp ] )
+                            | Target.Native | Target.Js_of_ocaml ->
+                                ("Array.sort", [ host_cmp; array ])
+                          in
                           Ok
                             (typed_ir TUnit
-                               (apply "Array.sort" [ host_cmp; array ]))
+                               (apply sort arguments))
             | Some _ | None ->
                 Error.error
                   "asort! expects a comparator and compatible array")

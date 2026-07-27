@@ -5906,11 +5906,11 @@
          "$people"
          "adult"
          [(parser/pattern-variable "?person")])]
-    (is (= [[1] [3] [2]]
+    (is (= [[1] [3] [2] [1] [3]]
            (relation-int-rows
             (query/solve-rule default-context adult-call)
             ["?person"])))
-    (is (= [[1] [3] [2]]
+    (is (= [[1] [3] [2] [1] [3]]
            (relation-int-rows
             (query/solve-rule explicit-context explicit-adult-call)
             ["?person"])))

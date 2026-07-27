@@ -1953,6 +1953,7 @@ var	datascript.query-v3/subtract-from-rel
 var	datascript.query-v3/upd-default-source
 var	datascript.query-v3/zip
 var	datascript.query/*implicit-source*
+var	datascript.query/*implicit-source-name*
 var	datascript.query/*lookup-attrs*
 var	datascript.query/*query-cache*
 var	datascript.query/-aggregate
