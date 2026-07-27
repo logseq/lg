@@ -324,6 +324,137 @@
     (is (= ordinary (query-v3/native-coll ordinary)))
     (is (= [3 4] (:values converted)))))
 
+(deftest test-query-v3-public-relation-printing
+  (let [relation
+        (query-v3/array-rel
+         ["?x" "?y"]
+         [(query-int-row [1 2])
+          (query-int-row [3 4])])
+        writer (Buffer.create 128)
+        returned (query-v3/pr-rel relation writer)
+        empty-writer (Buffer.create 64)
+        _empty-returned
+        (query-v3/pr-rel
+         (query-v3/array-rel [] [])
+         empty-writer)
+        coll-writer (Buffer.create 64)
+        _coll-returned
+        (query-v3/pr-rel
+         (query-v3/coll-rel
+          [(parser/pattern-variable "?x")]
+          [(query-v3/CollQueryRowV3
+            (query-int-row [5]))])
+         coll-writer)
+        closed-writer (Buffer.create 256)
+        _closed-returned
+        (query-v3/pr-rel
+         (query-v3/array-rel
+          ["?e" "?a" "?v" "?pull" "?added" "?db" "?fn"]
+          [(to-array
+            [(query-types/entity-result 7)
+             (query-types/attr-result :name)
+             (query-types/value-result
+              (Datascript_runtime.Data_value.String "Ada"))
+             (query-types/pull-result
+              (Datascript_runtime.Data_value.vector_of_vector
+               [(Datascript_runtime.Data_value.Int 1)]))
+             (query-types/added-result true)
+             (query-types/database-result
+              (db/database-view (d/empty-db)))
+             (query-types/callable-result
+              (query-types/callable
+               (fn
+                 [^:vector<datascript.lg.query-types/result>
+                  _arguments]
+                 nil)))])])
+         closed-writer)]
+    (is
+     (=
+      "#ArrayRelation{:symbols (?x ?y), :coll [(1 2) (3 4)]}"
+      (Buffer.contents returned)))
+    (is
+     (=
+      "#ArrayRelation{:symbols (), :coll []}"
+      (Buffer.contents empty-writer)))
+    (is
+     (=
+      "#CollRelation{:symbols (?x), :coll [(5)]}"
+      (Buffer.contents coll-writer)))
+    (is
+     (=
+      (str
+       "#ArrayRelation{:symbols (?e ?a ?v ?pull ?added ?db ?fn), "
+       ":coll [(7 :name \"Ada\" [1] true "
+       "#datascript/DB {:schema {}, :datoms []} #<function>)]}")
+      (Buffer.contents closed-writer)))))
+
+(deftest test-query-v3-public-context-printing
+  (let [empty-context
+        (query-v3/context-v3 [] {})
+        empty-output
+        (query-v3/context-print-string-v3 empty-context)
+        relation
+        (query-v3/array-rel
+         ["?x"]
+         [(query-int-row [1])])
+        populated-context
+        (query-v3/context-v3
+         [relation]
+         {"?limit" (query-int-result 9)})
+        populated-output
+        (query-v3/context-print-string-v3
+         populated-context)]
+    (query-v3/println-context empty-context)
+    (query-v3/println-context populated-context)
+    (is
+     (=
+      "{:rels  []\n  :consts {} }\n"
+      empty-output))
+    (is
+     (=
+      (str
+       "{:rels  #ArrayRelation{:symbols (?x), :coll [(1)]}\n"
+       "  :consts {?limit 9} }\n")
+      populated-output))))
+
+(deftest test-query-v3-public-query-cache
+  (let [query-form
+        (query-form-vector
+         [(Datascript_runtime.Data_value.Keyword ":find")
+          (Datascript_runtime.Data_value.Symbol "?e")
+          (Datascript_runtime.Data_value.Keyword ":where")
+          (query-form-vector
+           [(Datascript_runtime.Data_value.Symbol "?e")
+            (Datascript_runtime.Data_value.Keyword ":age")
+            (Datascript_runtime.Data_value.Int 18)])])
+        parsed-query (parser/parse-query query-form)
+        cache-hit-calls (atom 0)
+        compute-query
+        (fn []
+          (swap! cache-hit-calls inc)
+          parsed-query)
+        eviction-calls (atom 0)]
+    (lru/-get query-v3/query-cache query-form compute-query)
+    (lru/-get query-v3/query-cache query-form compute-query)
+    (is (= 1 @cache-hit-calls))
+    (dotimes [index 101]
+      (lru/-get
+       query-v3/query-cache
+       (Datascript_runtime.Data_value.String
+        (str "__query-v3-cache-" index))
+       (fn []
+         (swap! eviction-calls inc)
+         parsed-query)))
+    (is (= 101 @eviction-calls))
+    (lru/-get
+     query-v3/query-cache
+     (Datascript_runtime.Data_value.String
+      "__query-v3-cache-0")
+     (fn []
+       (swap! eviction-calls inc)
+       parsed-query))
+    (is (= 102 @eviction-calls))))
+
 (defn ^:vector<vector<int>> query-v3-int-rows
   [^datascript.query-v3/relation-v3 relation]
   (query-v3/-fold

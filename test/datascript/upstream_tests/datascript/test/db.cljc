@@ -129,9 +129,15 @@
         (d/db-with
          (d/empty-db)
          [{:db/id 1 :name "Ivan"}])
-        writer (Buffer.create 128)]
+        writer (Buffer.create 128)
+        empty-writer (Buffer.create 64)]
     (db/pr-db database writer ())
-    (is (= (str database) (Buffer.contents writer)))))
+    (db/pr-db (d/empty-db) empty-writer ())
+    (is (= (str database) (Buffer.contents writer)))
+    (is
+     (=
+      "#datascript/DB {:schema {}, :datoms []}"
+      (Buffer.contents empty-writer)))))
 
 (deftest test-defrecord-updatable
   (is (= 0xBEEF (hash (HashBeef. :ignored)))))

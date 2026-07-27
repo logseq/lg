@@ -1,12 +1,23 @@
 (ns ^:no-doc datascript.query-v3
   (:require
+   [clojure.string :as string]
    [datascript.built-ins :as built-ins]
    [datascript.db :as db]
    [datascript.lg.query-types :as query-types]
+   [datascript.lru :as lru]
    [datascript.parser :as parser]
    [me.tonsky.persistent-sorted-set.arrays :as da]))
 
 (def ^:const lru-cache-size 100)
+
+(type-alias query-cache-state-v3
+  :datascript.lru/cache-state<Datascript_runtime.Data_value.t;datascript.parser/Query>)
+
+(signature datascript.query-v3/query-cache
+  :datascript.query-v3/query-cache-state-v3)
+
+(def ^query-cache-state-v3 query-cache
+  (lru/cache lru-cache-size))
 
 (signature datascript.query-v3/mapa [input output]
   :fn<fn<input;output>;vector<input>;array<output>>)
@@ -443,6 +454,108 @@
   relation-tuples
   [^relation-v3 relation]
   (relation-rows-closed relation))
+
+(defn- ^:string database-view-print-string-v3
+  [^datascript.db/database-view database]
+  (match database
+    (db/DatabaseView unfiltered)
+    (db/database-print-string unfiltered)
+    (db/FilteredDatabaseView filtered)
+    (db/filtered-database-print-string filtered)))
+
+(defn- ^:string result-print-string-v3
+  [^datascript.lg.query-types/result result]
+  (match result
+    (Datascript_runtime.Query_value.Entity entity)
+    (Stdlib.string_of_int entity)
+    (Datascript_runtime.Query_value.Attr attr)
+    attr
+    (Datascript_runtime.Query_value.Value value)
+    (Datascript_runtime.Data_value.to_edn_string value)
+    (Datascript_runtime.Query_value.Database database)
+    (database-view-print-string-v3 database)
+    (Datascript_runtime.Query_value.Pull value)
+    (Datascript_runtime.Data_value.to_edn_string value)
+    (Datascript_runtime.Query_value.Added added)
+    (if added "true" "false")
+    (Datascript_runtime.Query_value.Callable _)
+    "#<function>"))
+
+(defn- ^:string relation-row-print-string-v3
+  [^:array<datascript.lg.query-types/result> row]
+  (str
+   "("
+   (string/join
+    " "
+    (mapv result-print-string-v3 (vec row)))
+   ")"))
+
+(defn- ^:string relation-kind-print-string-v3
+  [^relation-v3 relation]
+  (match relation
+    (ArrayRelationV3 _) "ArrayRelation"
+    (CollRelationV3 _) "CollRelation"))
+
+(defn- ^:string relation-print-string-v3
+  [^relation-v3 relation]
+  (str
+   "#"
+   (relation-kind-print-string-v3 relation)
+   "{:symbols ("
+   (string/join " " (relation-symbols relation))
+   "), :coll ["
+   (string/join
+    " "
+    (mapv
+     relation-row-print-string-v3
+     (relation-rows-closed relation)))
+   "]}"))
+
+(defn pr-rel
+  [^relation-v3 relation ^:buffer writer]
+  (Buffer.add_string
+   writer
+   (relation-print-string-v3 relation))
+  writer)
+
+(defn- ^:string context-constants-print-string-v3
+  [^:map<string;datascript.lg.query-types/result> constants]
+  (str
+   "{"
+   (string/join
+    ", "
+    (reduce-kv
+     (fn [entries symbol value]
+       (conj
+        entries
+        (str
+         symbol
+         " "
+         (result-print-string-v3 value))))
+     []
+     constants))
+   "}"))
+
+(defn- ^:string context-print-string-v3
+  [^query-context-v3 context]
+  (let [relations (context-relations context)]
+    (str
+     "{:rels"
+     (if (empty? relations)
+       "  []\n"
+       (str
+        "  "
+        (string/join
+         "\n  "
+         (mapv relation-print-string-v3 relations))
+        "\n"))
+     "  :consts "
+     (context-constants-print-string-v3
+      (context-constants context))
+     " }\n")))
+
+(defn println-context [^query-context-v3 context]
+  (print (context-print-string-v3 context)))
 
 (defn- ^relation-v3 make-array-relation
   [^:vector<string> symbols

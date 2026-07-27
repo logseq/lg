@@ -891,6 +891,8 @@ arity	datascript.query-v3/hash-map-rel	2	fixed
 arity	datascript.query-v3/join-unrelated	2	fixed
 arity	datascript.query-v3/mapa	2	fixed
 arity	datascript.query-v3/native-coll	1	fixed
+arity	datascript.query-v3/pr-rel	2	fixed
+arity	datascript.query-v3/println-context	1	fixed
 arity	datascript.query-v3/product	2	fixed
 arity	datascript.query-v3/product-all	1	fixed
 arity	datascript.query-v3/project-context	2	fixed
@@ -1915,12 +1917,15 @@ var	datascript.query-v3/join-unrelated
 var	datascript.query-v3/lru-cache-size
 var	datascript.query-v3/mapa
 var	datascript.query-v3/native-coll
+var	datascript.query-v3/pr-rel
+var	datascript.query-v3/println-context
 var	datascript.query-v3/product
 var	datascript.query-v3/product-all
 var	datascript.query-v3/project-context
 var	datascript.query-v3/project-rel
 var	datascript.query-v3/q
 var	datascript.query-v3/q-closed
+var	datascript.query-v3/query-cache
 var	datascript.query-v3/related-rels
 var	datascript.query-v3/resolve-clauses
 var	datascript.query-v3/resolve-function

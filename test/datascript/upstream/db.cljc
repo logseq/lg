@@ -949,8 +949,11 @@
    ^:seq<Datom> datoms]
   (str
    "#datascript/DB {:schema "
-   (Datascript_runtime.Serialization_value.schema_to_string
-    schema)
+   (match schema
+     None "{}"
+     (Some _)
+     (Datascript_runtime.Serialization_value.schema_to_string
+      schema))
    ", :datoms ["
    (reduce
     (fn [^:string result ^Datom datom]
