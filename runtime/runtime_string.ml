@@ -5,34 +5,42 @@ let is_whitespace = function
 let blank source = String.trim source = ""
 let ends_with source suffix = String.ends_with ~suffix source
 
-let index_of source needle =
+let index_of_from source needle start =
   let needle_len = String.length needle in
   let source_len = String.length source in
-  if needle_len = 0 then 0
+  let start = max 0 (min source_len start) in
+  if needle_len = 0 then start
   else
     let rec search index =
       if index + needle_len > source_len then -1
       else if String.sub source index needle_len = needle then index
       else search (index + 1)
     in
-    search 0
+    search start
+
+let index_of source needle = index_of_from source needle 0
 
 let includes source needle = index_of source needle >= 0
 let index_of_int source needle = index_of source needle
 let join separator (to_seq, values) =
   String.concat separator (List.of_seq (to_seq values))
 
-let last_index_of source needle =
+let last_index_of_from source needle start =
   let needle_len = String.length needle in
   let source_len = String.length source in
-  if needle_len = 0 then source_len
+  let start = min source_len start in
+  if start < 0 then -1
+  else if needle_len = 0 then start
   else
     let rec search index =
       if index < 0 then -1
       else if String.sub source index needle_len = needle then index
       else search (index - 1)
     in
-    search (source_len - needle_len)
+    search (min start (source_len - needle_len))
+
+let last_index_of source needle =
+  last_index_of_from source needle (String.length source)
 
 let last_index_of_int source needle = last_index_of source needle
 
@@ -122,9 +130,15 @@ let split source separator =
     Rrbvec.of_list (loop [] 0 0)
 
 let split_lines source =
+  let length = String.length source in
   let rec loop acc start index =
-    if index >= String.length source then
-      List.rev (String.sub source start (String.length source - start) :: acc)
+    if index >= length then
+      let acc =
+        if start < length || length = 0 then
+          String.sub source start (length - start) :: acc
+        else acc
+      in
+      List.rev acc
     else if source.[index] = '\n' then
       let stop =
         if index > start && source.[index - 1] = '\r' then index - 1 else index
@@ -134,7 +148,7 @@ let split_lines source =
         (index + 1) (index + 1)
     else loop acc start (index + 1)
   in
-  Rrbvec.of_list (if source = "" then [] else loop [] 0 0)
+  Rrbvec.of_list (loop [] 0 0)
 
 let triml source =
   let rec first index =

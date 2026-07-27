@@ -555,6 +555,18 @@
     "get-some" (Some GetSome)
     "-differ?" (Some Differ)
     "re-pattern" (Some RegexPattern)
+    "clojure.string/lower-case" (Some LowerCase)
+    "clojure.string/upper-case" (Some UpperCase)
+    "clojure.string/capitalize" (Some Capitalize)
+    "clojure.string/join" (Some Join)
+    "clojure.string/index-of" (Some IndexOf)
+    "clojure.string/last-index-of" (Some LastIndexOf)
+    "clojure.string/reverse" (Some Reverse)
+    "clojure.string/split-lines" (Some SplitLines)
+    "clojure.string/trim" (Some Trim)
+    "clojure.string/trim-newline" (Some TrimNewline)
+    "clojure.string/triml" (Some TrimLeft)
+    "clojure.string/trimr" (Some TrimRight)
     None))
 
 (defn- ^:Datascript_runtime.Data_value.t and-values
@@ -708,6 +720,30 @@
     (if (= 1 (count values))
       (Datascript_runtime.Data_value.regex_pattern (nth values 0))
       None)
+    LowerCase
+    (Datascript_runtime.Data_value.string_lower_case values)
+    UpperCase
+    (Datascript_runtime.Data_value.string_upper_case values)
+    Capitalize
+    (Datascript_runtime.Data_value.string_capitalize values)
+    Join
+    (Datascript_runtime.Data_value.string_join values)
+    IndexOf
+    (Datascript_runtime.Data_value.string_index_of values)
+    LastIndexOf
+    (Datascript_runtime.Data_value.string_last_index_of values)
+    Reverse
+    (Datascript_runtime.Data_value.string_reverse values)
+    SplitLines
+    (Datascript_runtime.Data_value.string_split_lines values)
+    Trim
+    (Datascript_runtime.Data_value.string_trim values)
+    TrimNewline
+    (Datascript_runtime.Data_value.string_trim_newline values)
+    TrimLeft
+    (Datascript_runtime.Data_value.string_trim_left values)
+    TrimRight
+    (Datascript_runtime.Data_value.string_trim_right values)
     _ None))
 
 (defn get-else-function? [function]

@@ -2293,7 +2293,11 @@
              (let [symbol-namespace (namespace value)]
                (if (nil? symbol-namespace)
                  false
-                 (if (= symbol-namespace "") false true)))
+                 (if (= symbol-namespace "")
+                   false
+                   (if (= symbol-namespace "clojure.string")
+                     false
+                     true))))
              false))
          static-custom-function-elements
          (reduce

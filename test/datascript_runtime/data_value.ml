@@ -473,6 +473,82 @@ let string_ends_with source suffix =
   | Nil, Some _ -> None
   | _, Some _ -> Some false
 
+let unary_string operation values =
+  match Rrbvec.to_list values with
+  | [ String source ] -> Some (String (operation source))
+  | _ -> None
+
+let string_lower_case values = unary_string String.lowercase_ascii values
+let string_upper_case values = unary_string String.uppercase_ascii values
+let string_capitalize values = unary_string Lg_runtime.Runtime_string.capitalize values
+let string_reverse values = unary_string Lg_runtime.Runtime_string.reverse values
+let string_trim values = unary_string String.trim values
+let string_trim_newline values =
+  unary_string Lg_runtime.Runtime_string.trim_newline values
+
+let string_trim_left values = unary_string Lg_runtime.Runtime_string.triml values
+let string_trim_right values = unary_string Lg_runtime.Runtime_string.trimr values
+
+let join_items = function
+  | Nil -> Some []
+  | List values | Vector values | Set values -> Some values
+  | Tuple values ->
+      Some (List.map (function None -> Nil | Some value -> value) values)
+  | Map entries ->
+      Some (List.map (fun (key, value) -> Vector [ key; value ]) entries)
+  | _ -> None
+
+let string_join values =
+  let join separator collection =
+    Option.map
+      (fun values ->
+        String
+          (String.concat separator
+             (List.map
+                (function Nil -> "" | value -> to_clojure_string value)
+                values)))
+      (join_items collection)
+  in
+  match Rrbvec.to_list values with
+  | [ collection ] -> join "" collection
+  | [ separator; collection ] ->
+      let separator =
+        match separator with Nil -> "null" | value -> to_clojure_string value
+      in
+      join separator collection
+  | _ -> None
+
+let index_result index = Some (if index < 0 then Nil else Int index)
+
+let string_index_of values =
+  match Rrbvec.to_list values with
+  | [ String source; String needle ] ->
+      index_result (Lg_runtime.Runtime_string.index_of source needle)
+  | [ String source; String needle; start ] ->
+      Option.bind (int_argument start) (fun start ->
+          index_result
+            (Lg_runtime.Runtime_string.index_of_from source needle start))
+  | _ -> None
+
+let string_last_index_of values =
+  match Rrbvec.to_list values with
+  | [ String source; String needle ] ->
+      index_result (Lg_runtime.Runtime_string.last_index_of source needle)
+  | [ String source; String needle; start ] ->
+      Option.bind (int_argument start) (fun start ->
+          index_result
+            (Lg_runtime.Runtime_string.last_index_of_from source needle start))
+  | _ -> None
+
+let string_split_lines values =
+  match Rrbvec.to_list values with
+  | [ String source ] ->
+      Some
+        (Vector
+           (Lg_runtime.Runtime_string.split_lines source |> Rrbvec.to_list
+          |> List.map (fun value -> String value)))
+  | _ -> None
+
 let keyword_map_get key = function
   | Map entries ->
       List.find_map

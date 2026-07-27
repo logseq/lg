@@ -261,6 +261,138 @@
              :where [(get nil :a 9) ?x]])
       (Datascript_runtime.Data_value.Int 9)))))
 
+(deftest test-core-string-query-functions
+  (testing "case conversion, capitalization, and reversal preserve string results"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/lower-case "HeLLo") ?x]])
+      (Datascript_runtime.Data_value.String "hello")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/upper-case "HeLLo") ?x]])
+      (Datascript_runtime.Data_value.String "HELLO")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/capitalize "hELLO") ?x]])
+      (Datascript_runtime.Data_value.String "Hello")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/capitalize "") ?x]])
+      (Datascript_runtime.Data_value.String "")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/reverse "abc") ?x]])
+      (Datascript_runtime.Data_value.String "cba"))))
+
+  (testing "join preserves both arities and JavaScript coercion"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/join ["a" "b" "c"]) ?x]])
+      (Datascript_runtime.Data_value.String "abc")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/join "," ["a" nil 2 :k]) ?x]])
+      (Datascript_runtime.Data_value.String "a,,2,:k")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/join nil ["a" "b"]) ?x]])
+      (Datascript_runtime.Data_value.String "anullb")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/join "," nil) ?x]])
+      (Datascript_runtime.Data_value.String ""))))
+
+  (testing "index lookup preserves start positions and missing results"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/index-of "banana" "na") ?x]])
+      (Datascript_runtime.Data_value.Int 2)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/index-of "banana" "na" 3) ?x]])
+      (Datascript_runtime.Data_value.Int 4)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/index-of "banana" "" 99) ?x]])
+      (Datascript_runtime.Data_value.Int 6)))
+    (is
+     (scalar-output-missing?
+      (d/q '[:find ?x .
+             :where [(clojure.string/index-of "banana" "zz") ?x]])))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/last-index-of "banana" "na") ?x]])
+      (Datascript_runtime.Data_value.Int 4)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/last-index-of "banana" "na" 3) ?x]])
+      (Datascript_runtime.Data_value.Int 2)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/last-index-of "banana" "" 99) ?x]])
+      (Datascript_runtime.Data_value.Int 6)))
+    (is
+     (scalar-output-missing?
+      (d/q '[:find ?x .
+             :where [(clojure.string/last-index-of "banana" "na" -1) ?x]]))))
+
+  (testing "line splitting and trimming preserve boundary characters"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/split-lines "a\r\nb\n") ?x]])
+      (Datascript_runtime.Data_value.Vector
+       (list
+        (Datascript_runtime.Data_value.String "a")
+        (Datascript_runtime.Data_value.String "b")))))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/split-lines "") ?x]])
+      (Datascript_runtime.Data_value.Vector
+       (list (Datascript_runtime.Data_value.String "")))))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/split-lines "a\rb") ?x]])
+      (Datascript_runtime.Data_value.Vector
+       (list (Datascript_runtime.Data_value.String "a\rb")))))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/trim "  hi \n") ?x]])
+      (Datascript_runtime.Data_value.String "hi")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/triml "  hi  ") ?x]])
+      (Datascript_runtime.Data_value.String "hi  ")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/trimr "  hi  ") ?x]])
+      (Datascript_runtime.Data_value.String "  hi")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/trim-newline "hi\r\n\n") ?x]])
+      (Datascript_runtime.Data_value.String "hi")))))
+
 (deftest test-query-fns
   (testing "predicate without free variables"
     (is (tdc/query-relation?

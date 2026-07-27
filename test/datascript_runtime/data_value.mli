@@ -62,6 +62,18 @@ val string_blank : t -> bool
 val string_includes : t -> t option -> bool option
 val string_starts_with : t -> t option -> bool option
 val string_ends_with : t -> t option -> bool option
+val string_lower_case : t Rrbvec.t -> t option
+val string_upper_case : t Rrbvec.t -> t option
+val string_capitalize : t Rrbvec.t -> t option
+val string_join : t Rrbvec.t -> t option
+val string_index_of : t Rrbvec.t -> t option
+val string_last_index_of : t Rrbvec.t -> t option
+val string_reverse : t Rrbvec.t -> t option
+val string_split_lines : t Rrbvec.t -> t option
+val string_trim : t Rrbvec.t -> t option
+val string_trim_newline : t Rrbvec.t -> t option
+val string_trim_left : t Rrbvec.t -> t option
+val string_trim_right : t Rrbvec.t -> t option
 val keyword_map_get : string -> t -> t option
 val keyword_map_value : t -> (string, t) Lg_runtime.Runtime_map.t option
 val keyword_map_entries : t -> (string * t) Rrbvec.t option

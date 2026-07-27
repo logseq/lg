@@ -38,6 +38,9 @@ let read_string source start =
           | 'n' ->
               Buffer.add_char buffer '\n';
               loop (i + 2)
+          | 'r' ->
+              Buffer.add_char buffer '\r';
+              loop (i + 2)
           | ch ->
               Buffer.add_char buffer ch;
               loop (i + 2))
