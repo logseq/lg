@@ -4,6 +4,8 @@
     [datascript.core :as d]
     [datascript.db :as db]
     [datascript.lg.query-types :as query-types]
+    [datascript.parser :as parser]
+    [datascript.query-v3 :as query-v3]
     [datascript.test.core :as tdc]))
 
 (defn ^:int query-int [^query-types/result result]
@@ -830,6 +832,181 @@
              :where
              [(clojure.string/escape "abc" 1)
               ?x]])))))
+
+(defn ^query-types/input query-data-value-input
+  [^:Datascript_runtime.Data_value.t value]
+  (query-types/binding-input
+   (query-types/scalar-binding
+    (query-types/value-result value))))
+
+(defn ^query-types/output query-identical-values
+  [^:Datascript_runtime.Data_value.t left
+   ^:Datascript_runtime.Data_value.t right]
+  (let [query
+        (parser/static-query-clauses-with-inputs
+         (parser/single-find-element
+          (parser/variable-find-element "?result"))
+         [(parser/static-function-clause
+           "identical?"
+           [(parser/variable-argument "?left")
+            (parser/variable-argument "?right")]
+           (parser/scalar-input "?result"))]
+         [(parser/make-static-value-input
+           (parser/scalar-input "?left"))
+          (parser/make-static-value-input
+           (parser/scalar-input "?right"))])]
+    (query-v3/q
+     query
+     (query-data-value-input left)
+     (query-data-value-input right))))
+
+(defn ^boolean query-identical-result?
+  [^:Datascript_runtime.Data_value.t left
+   ^:Datascript_runtime.Data_value.t right
+   ^boolean expected]
+  (scalar-output-value?
+   (query-identical-values left right)
+   (Datascript_runtime.Data_value.Bool expected)))
+
+(deftest test-core-identical-query-function
+  (testing "primitive values retain upstream JavaScript identity"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(identical? nil nil) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(identical? true true) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(identical? 1 1.0) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(identical? 0 -0.0) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(identical? ##NaN ##NaN) ?x]])
+      (Datascript_runtime.Data_value.Bool false)))
+    (is
+     (query-identical-result?
+      (Datascript_runtime.Data_value.String "same")
+      (Datascript_runtime.Data_value.String "same")
+      true))
+    (is
+     (query-identical-result?
+      (Datascript_runtime.Data_value.Int 7)
+      (Datascript_runtime.Data_value.Wide_int
+       (Int64.of_int 7))
+      true))
+    (is
+     (query-identical-result?
+      (Datascript_runtime.Data_value.Ref 7)
+      (Datascript_runtime.Data_value.Float 7.0)
+      true)))
+
+  (testing "object values require the same closed value instance"
+    (let [vector-value
+          (Datascript_runtime.Data_value.Vector
+           (list (Datascript_runtime.Data_value.Int 1)))
+          map-value
+          (Datascript_runtime.Data_value.Map
+           (list
+            (tuple
+             (Datascript_runtime.Data_value.Keyword ":a")
+             (Datascript_runtime.Data_value.Int 1))))
+          keyword-value
+          (Datascript_runtime.Data_value.Keyword ":a")
+          symbol-value
+          (Datascript_runtime.Data_value.Symbol "a")
+          regex-value
+          (Datascript_runtime.Data_value.Regex "a")
+          uuid-value
+          (Datascript_runtime.Data_value.Uuid
+           "00000000-0000-0000-0000-000000000001")]
+      (is (query-identical-result? vector-value vector-value true))
+      (is
+       (query-identical-result?
+        vector-value
+        (Datascript_runtime.Data_value.Vector
+         (list (Datascript_runtime.Data_value.Int 1)))
+        false))
+      (is (query-identical-result? map-value map-value true))
+      (is
+       (query-identical-result?
+        map-value
+        (Datascript_runtime.Data_value.Map
+         (list
+          (tuple
+           (Datascript_runtime.Data_value.Keyword ":a")
+           (Datascript_runtime.Data_value.Int 1))))
+        false))
+      (is (query-identical-result? keyword-value keyword-value true))
+      (is
+       (query-identical-result?
+        keyword-value
+        (Datascript_runtime.Data_value.Keyword ":a")
+        false))
+      (is (query-identical-result? symbol-value symbol-value true))
+      (is
+       (query-identical-result?
+        symbol-value
+        (Datascript_runtime.Data_value.Symbol "a")
+        false))
+      (is (query-identical-result? regex-value regex-value true))
+      (is
+       (query-identical-result?
+        regex-value
+        (Datascript_runtime.Data_value.Regex "a")
+        false))
+      (is (query-identical-result? uuid-value uuid-value true))
+      (is
+       (query-identical-result?
+        uuid-value
+        (Datascript_runtime.Data_value.Uuid
+         "00000000-0000-0000-0000-000000000001")
+        false))))
+
+  (testing "equal object literals are not identical"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(identical? :a :a) ?x]])
+      (Datascript_runtime.Data_value.Bool false)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(identical? [1] [1]) ?x]])
+      (Datascript_runtime.Data_value.Bool false)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(identical? #"a" #"a") ?x]])
+      (Datascript_runtime.Data_value.Bool false))))
+
+  (testing "identical? rejects every unsupported arity"
+    (is
+     (thrown-msg?
+      "Invalid arguments for query function: identical?"
+      (d/q '[:find ?x .
+             :where [(identical?) ?x]])))
+    (is
+     (thrown-msg?
+      "Invalid arguments for query function: identical?"
+      (d/q '[:find ?x .
+             :where [(identical? 1) ?x]])))
+    (is
+     (thrown-msg?
+      "Invalid arguments for query function: identical?"
+      (d/q '[:find ?x .
+             :where [(identical? 1 1 1) ?x]])))))
 
 (deftest test-query-fns
   (testing "predicate without free variables"

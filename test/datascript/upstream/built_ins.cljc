@@ -543,6 +543,7 @@
     "array-map" (Some HashMap)
     "and" (Some AndValues)
     "or" (Some OrValues)
+    "identical?" (Some Identical)
     "count" (Some Count)
     "range" (Some Range)
     "not-empty" (Some NotEmpty)
@@ -690,6 +691,8 @@
       None)
     AndValues (Some (and-values values))
     OrValues (Some (or-values values))
+    Identical
+    (Datascript_runtime.Data_value.identical_value values)
     HashMap
     (data-map values)
     Count

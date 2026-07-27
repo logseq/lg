@@ -1,0 +1,12 @@
+nil=true
+boolean=true
+numeric=true
+signed-zero=true
+nan=false
+string=true
+same-object=true
+equal-distinct-object=false
+equal-keyword-literals=false
+equal-vector-literals=false
+equal-regex-literals=false
+invalid-arities-rejected=true

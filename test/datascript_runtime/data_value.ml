@@ -250,6 +250,26 @@ let numeric_float = function
   | Float value -> Some value
   | _ -> None
 
+let identical_number left right =
+  match (numeric_float left, numeric_float right) with
+  | Some left, Some right -> left = right
+  | _ -> false
+
+let identical left right =
+  match (left, right) with
+  | Nil, Nil -> true
+  | Bool left, Bool right -> Bool.equal left right
+  | String left, String right -> String.equal left right
+  | (Int _ | Wide_int _ | Float _ | Ref _),
+    (Int _ | Wide_int _ | Float _ | Ref _) ->
+      identical_number left right
+  | _ -> left == right
+
+let identical_value values =
+  match Rrbvec.to_list values with
+  | [ left; right ] -> Some (Bool (identical left right))
+  | _ -> None
+
 let random_value values =
   match Rrbvec.to_list values with
   | [] -> Some (Float (Lg_runtime.Runtime_random.rand 1.0))
