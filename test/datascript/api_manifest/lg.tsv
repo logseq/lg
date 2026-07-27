@@ -434,10 +434,15 @@ arity	datascript.js/empty_db	0	variadic
 arity	datascript.js/entity	2	fixed
 arity	datascript.js/index_range	4	fixed
 arity	datascript.js/init_db	1	variadic
+arity	datascript.js/js->Datom	1	fixed
+arity	datascript.js/pull	3	fixed
+arity	datascript.js/pull_many	3	fixed
+arity	datascript.js/reset_conn	2	variadic
 arity	datascript.js/resolve_tempid	2	fixed
 arity	datascript.js/seek_datoms	2	variadic
 arity	datascript.js/squuid	0	fixed
 arity	datascript.js/squuid_time_millis	1	fixed
+arity	datascript.js/transact	2	variadic
 arity	datascript.lru/ICache/-get	3	fixed
 arity	datascript.lru/assoc-lru	3	fixed
 arity	datascript.lru/cache	1	fixed
@@ -1382,13 +1387,18 @@ var	datascript.js/from_serializable
 var	datascript.js/index_range
 var	datascript.js/init_db
 var	datascript.js/is_filtered
+var	datascript.js/js->Datom
 var	datascript.js/listen
+var	datascript.js/pull
+var	datascript.js/pull_many
+var	datascript.js/reset_conn
 var	datascript.js/resolve_tempid
 var	datascript.js/seek_datoms
 var	datascript.js/serializable
 var	datascript.js/squuid
 var	datascript.js/squuid_time_millis
 var	datascript.js/touch
+var	datascript.js/transact
 var	datascript.js/unlisten
 var	datascript.lru/ICache
 var	datascript.lru/assoc-lru

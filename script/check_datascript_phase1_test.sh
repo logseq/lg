@@ -193,16 +193,26 @@ for js_adapter_entry in \
   'arity	datascript.js/init_db	1	variadic' \
   'var	datascript.js/index_range' \
   'arity	datascript.js/index_range	4	fixed' \
+  'var	datascript.js/js->Datom' \
+  'arity	datascript.js/js->Datom	1	fixed' \
   'var	datascript.js/listen' \
   'var	datascript.js/unlisten' \
+  'var	datascript.js/pull' \
+  'arity	datascript.js/pull	3	fixed' \
+  'var	datascript.js/pull_many' \
+  'arity	datascript.js/pull_many	3	fixed' \
   'var	datascript.js/resolve_tempid' \
   'arity	datascript.js/resolve_tempid	2	fixed' \
+  'var	datascript.js/reset_conn' \
+  'arity	datascript.js/reset_conn	2	variadic' \
   'var	datascript.js/squuid' \
   'arity	datascript.js/squuid	0	fixed' \
   'var	datascript.js/squuid_time_millis' \
   'arity	datascript.js/squuid_time_millis	1	fixed' \
   'var	datascript.js/seek_datoms' \
-  'arity	datascript.js/seek_datoms	2	variadic'
+  'arity	datascript.js/seek_datoms	2	variadic' \
+  'var	datascript.js/transact' \
+  'arity	datascript.js/transact	2	variadic'
 do
   expect_text "the LG manifest preserves typed JS adapter: $js_adapter_entry" \
     "$lg_api_manifest" "^$js_adapter_entry$"
