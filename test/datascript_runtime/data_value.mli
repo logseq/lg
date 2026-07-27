@@ -44,6 +44,10 @@ val maximum : t Rrbvec.t -> t option
 val minimum : t Rrbvec.t -> t option
 val range_value : t Rrbvec.t -> t option
 val string_value : t Rrbvec.t -> t option
+val pr_str : t Rrbvec.t -> t option
+val print_str : t Rrbvec.t -> t option
+val println_str : t Rrbvec.t -> t option
+val prn_str : t Rrbvec.t -> t option
 val substring : t Rrbvec.t -> t option
 val increment : t -> t option
 val decrement : t -> t option

@@ -106,6 +106,46 @@ let to_clojure_string = function
   | (List _ | Vector _ | Map _ | Set _ | Tuple _ | Tx_ref | Ref_to _) as value ->
       to_edn_string value
 
+let rec to_print_string = function
+  | Nil -> "nil"
+  | String value | Symbol value | Keyword value -> value
+  | Int value | Ref value -> string_of_int value
+  | Wide_int value -> Int64.to_string value
+  | Float value -> float_to_javascript_string value
+  | Bool value -> string_of_bool value
+  | (Uuid _ | Instant _ | Regex _) as value -> to_edn_string value
+  | List values ->
+      render_sequence "(" ")" (List.map to_print_string values)
+  | Vector values ->
+      render_sequence "[" "]" (List.map to_print_string values)
+  | Map entries ->
+      render_sequence
+        "{" "}"
+        (List.map
+           (fun (key, value) ->
+             to_print_string key ^ " " ^ to_print_string value)
+           entries)
+  | Set values ->
+      render_sequence "#{" "}" (List.map to_print_string values)
+  | Tuple values ->
+      render_sequence
+        "[" "]"
+        (List.map
+           (function None -> "nil" | Some value -> to_print_string value)
+           values)
+  | Tx_ref -> ":db/current-tx"
+  | Ref_to entity_ref -> entity_ref_to_print_string entity_ref
+
+and entity_ref_to_print_string = function
+  | Entity_id value -> string_of_int value
+  | Temp_id value -> value
+  | Auto_tempid value ->
+      "#datascript/AutoTempid [" ^ string_of_int value ^ "]"
+  | Current_tx -> ":db/current-tx"
+  | Ident value -> value
+  | Lookup_ref (attr, value) ->
+      "[" ^ attr ^ " " ^ to_print_string value ^ "]"
+
 let tuple_of_vector values = Tuple (Rrbvec.to_list values)
 let set_of_vector values = Set (Rrbvec.to_list values)
 let vector_of_vector values = Vector (Rrbvec.to_list values)
@@ -314,6 +354,19 @@ let string_value values =
        (Rrbvec.fold_left
           (fun result value -> result ^ to_clojure_string value)
           "" values))
+
+let render_printed_values render newline values =
+  let output =
+    Rrbvec.to_list values
+    |> List.map render
+    |> String.concat " "
+  in
+  Some (String (if newline then output ^ "\n" else output))
+
+let pr_str = render_printed_values to_edn_string false
+let print_str = render_printed_values to_print_string false
+let println_str = render_printed_values to_print_string true
+let prn_str = render_printed_values to_edn_string true
 
 let substring values =
   let clamp length index = max 0 (min length index) in

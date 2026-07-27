@@ -53,7 +53,10 @@
   StringValue
   Substring
   Get
-  PrintedString
+  PrStr
+  PrintStr
+  PrintlnStr
+  PrnStr
   RegexFind
   RegexMatches
   RegexSequence
@@ -148,10 +151,10 @@
    'str StringValue
    'subs Substring
    'get Get
-   'pr-str PrintedString
-   'print-str PrintedString
-   'println-str PrintedString
-   'prn-str PrintedString
+   'pr-str PrStr
+   'print-str PrintStr
+   'println-str PrintlnStr
+   'prn-str PrnStr
    're-find RegexFind
    're-matches RegexMatches
    're-seq RegexSequence
@@ -544,6 +547,10 @@
     "str" (Some StringValue)
     "subs" (Some Substring)
     "get" (Some Get)
+    "pr-str" (Some PrStr)
+    "print-str" (Some PrintStr)
+    "println-str" (Some PrintlnStr)
+    "prn-str" (Some PrnStr)
     "get-else" (Some GetElse)
     "get-some" (Some GetSome)
     "-differ?" (Some Differ)
@@ -715,6 +722,14 @@
          (nth values 1)
          (nth values 2))
         None))
+    PrStr
+    (Datascript_runtime.Data_value.pr_str values)
+    PrintStr
+    (Datascript_runtime.Data_value.print_str values)
+    PrintlnStr
+    (Datascript_runtime.Data_value.println_str values)
+    PrnStr
+    (Datascript_runtime.Data_value.prn_str values)
     RegexFind
     (Datascript_runtime.Data_value.regex_find_value values)
     RegexMatches

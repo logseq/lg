@@ -582,6 +582,84 @@
         (Datascript_runtime.Data_value.String "")
         (Datascript_runtime.Data_value.String "")))))))
 
+(deftest test-core-printing-query-functions
+  (testing "pr-str prints readable values and separates arguments"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(pr-str) ?x]])
+      (Datascript_runtime.Data_value.String "")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(pr-str "a\nb" :k nil [1 "x"]) ?x]])
+      (Datascript_runtime.Data_value.String
+       "\"a\\nb\" :k nil [1 \"x\"]")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(pr-str ["a\nb" ["x" nil]] 2) ?x]])
+      (Datascript_runtime.Data_value.String
+       "[\"a\\nb\" [\"x\" nil]] 2"))))
+
+  (testing "print-str prints non-readable nested values"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(print-str) ?x]])
+      (Datascript_runtime.Data_value.String "")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(print-str nil) ?x]])
+      (Datascript_runtime.Data_value.String "nil")))
+    (is
+     (match
+      (Datascript_runtime.Data_value.print_str
+       [(Datascript_runtime.Data_value.Uuid
+         "550e8400-e29b-41d4-a716-446655440000")])
+      (Some actual)
+      (Datascript_runtime.Data_value.equal
+       actual
+       (Datascript_runtime.Data_value.String
+        "#uuid \"550e8400-e29b-41d4-a716-446655440000\""))
+      None false))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(print-str #"a") ?x]])
+      (Datascript_runtime.Data_value.String "#\"a\"")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(print-str ["a\nb" ["x" nil]] 2) ?x]])
+      (Datascript_runtime.Data_value.String
+       "[a\nb [x nil]] 2"))))
+
+  (testing "println-str and prn-str always append one newline"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(println-str) ?x]])
+      (Datascript_runtime.Data_value.String "\n")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(println-str "a\nb" :k nil [1 "x"]) ?x]])
+      (Datascript_runtime.Data_value.String
+       "a\nb :k nil [1 x]\n")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(prn-str) ?x]])
+      (Datascript_runtime.Data_value.String "\n")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(prn-str "a\nb" :k nil [1 "x"]) ?x]])
+      (Datascript_runtime.Data_value.String
+       "\"a\\nb\" :k nil [1 \"x\"]\n")))))
+
 (deftest test-query-fns
   (testing "predicate without free variables"
     (is (tdc/query-relation?
