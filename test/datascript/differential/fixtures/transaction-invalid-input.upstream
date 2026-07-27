@@ -1,0 +1,2 @@
+Bad entity type at 42, expected map or vector
+Unknown operation at ["wat" 1 :name "value"], expected :db/add, :db/retract, :db.fn/call, :db.fn/retractAttribute, :db.fn/retractEntity or an ident corresponding to an installed transaction function (e.g. {:db/ident <keyword> :db/fn <Ifn>}, usage of :db/ident requires {:db/unique :db.unique/identity} in schema)

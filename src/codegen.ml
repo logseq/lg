@@ -51,7 +51,7 @@ let rec stringify_expr_ir ?(pr = false) expr =
               (if pr then "Lg_runtime.Runtime_dynamic.pr_str"
                else "Lg_runtime.Runtime_dynamic.str")
               [ Semantic_ir.Ident "x" ] )
-    | TUnknown | TVar _ ->
+    | TUnknown | TMeta _ | TVar _ ->
         Semantic_ir.Ident
           (if pr then "Lg_runtime.Runtime_dynamic.polymorphic_pr_str"
            else "Lg_runtime.Runtime_dynamic.polymorphic_str")
@@ -100,13 +100,15 @@ let rec stringify_expr_ir ?(pr = false) expr =
             [ expr.semantic_expr ]
       | _ -> expr.semantic_expr)
   | TMap_keys -> Semantic_ir.String "<map>"
-  | TVar _ ->
+  | TMeta _ | TVar _ ->
       apply
         (if pr then "Lg_runtime.Runtime_dynamic.polymorphic_pr_str"
          else "Lg_runtime.Runtime_dynamic.polymorphic_str")
         [ expr.semantic_expr ]
   | TOcaml "Lg_runtime.Runtime_uuid.t" ->
       apply "Lg_runtime.Runtime_uuid.to_string" [ expr.semantic_expr ]
+  | TOcaml "Lg_edn_backend.t" ->
+      apply "Lg_runtime.Runtime_edn.write_string" [ expr.semantic_expr ]
   | TOcaml "value" ->
       apply
         (if pr then "Lg_runtime.Runtime_dynamic.polymorphic_pr_str"

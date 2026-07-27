@@ -16,7 +16,7 @@ let count env collection =
   if
     Option.is_some (Types.dynamic_map_types collection.ty)
     || Types.equal collection.ty TUnknown
-    || match collection.ty with TVar _ -> true | _ -> false
+    || match collection.ty with TMeta _ | TVar _ -> true | _ -> false
   then
     Ok
       (typed_ir TInt
@@ -42,7 +42,7 @@ let first env collection =
            (apply "Lg_runtime.Runtime_map.first_exn" [ collection.semantic_expr ]))
   | None
     when Types.equal collection.ty TUnknown
-         || (match collection.ty with TVar _ -> true | _ -> false) ->
+         || (match collection.ty with TMeta _ | TVar _ -> true | _ -> false) ->
       Ok
         (typed_ir (TTuple [ TUnknown; TUnknown ])
            (apply "Lg_runtime.Runtime_map.first_exn" [ collection.semantic_expr ]))
@@ -159,7 +159,7 @@ let empty env collection =
   | TString -> Ok (typed_ir TString (Semantic_ir.String ""))
   | _ -> (
       match Types.seqable_constraint_info collection.ty with
-      | Some (_, _, (TUnknown | TVar _)) ->
+      | Some (_, _, (TUnknown | TMeta _ | TVar _)) ->
           Ok
             (typed_ir (Types.dynamic_constraint TUnknown)
                (apply "Lg_runtime.Runtime_dynamic.empty"

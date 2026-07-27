@@ -89,7 +89,7 @@
   Boolean
   KeywordValue)
 
-(def ^:map<symbol;datascript.built-ins/query-function> query-fns
+(def query-fns
   {'= Equal
    '== Equal
    'not= NotEqual
@@ -200,7 +200,7 @@
   AggregateCount
   CountDistinct)
 
-(def ^:map<symbol;datascript.built-ins/built-in-aggregate-function> aggregates
+(def aggregates
   {'sum Sum
    'avg Average
    'median Median
@@ -213,3 +213,338 @@
    'sample Sample
    'count AggregateCount
    'count-distinct CountDistinct})
+
+(signature datascript.built-ins/aggregate-function
+  :fn<string;option<datascript.built-ins/built-in-aggregate-function>>)
+(signature datascript.built-ins/comparison-function
+  :fn<string;option<datascript.built-ins/query-function>>)
+(signature datascript.built-ins/apply-comparison
+  :fn<datascript.built-ins/query-function;vector<Datascript_runtime.Data_value.t>;option<bool>>)
+(signature datascript.built-ins/pure-function
+  :fn<string;option<datascript.built-ins/query-function>>)
+(signature datascript.built-ins/apply-pure-function
+  :fn<datascript.built-ins/query-function;vector<Datascript_runtime.Data_value.t>;option<Datascript_runtime.Data_value.t>>)
+(signature datascript.built-ins/get-else-function?
+  :fn<datascript.built-ins/query-function;bool>)
+(signature datascript.built-ins/get-some-function?
+  :fn<datascript.built-ins/query-function;bool>)
+(signature datascript.built-ins/missing-function?
+  :fn<datascript.built-ins/query-function;bool>)
+(signature datascript.built-ins/sum-aggregate?
+  :fn<datascript.built-ins/built-in-aggregate-function;bool>)
+(signature datascript.built-ins/count-aggregate?
+  :fn<datascript.built-ins/built-in-aggregate-function;bool>)
+(signature datascript.built-ins/count-distinct-aggregate?
+  :fn<datascript.built-ins/built-in-aggregate-function;bool>)
+(signature datascript.built-ins/average-aggregate?
+  :fn<datascript.built-ins/built-in-aggregate-function;bool>)
+(signature datascript.built-ins/median-aggregate?
+  :fn<datascript.built-ins/built-in-aggregate-function;bool>)
+(signature datascript.built-ins/variance-aggregate?
+  :fn<datascript.built-ins/built-in-aggregate-function;bool>)
+(signature datascript.built-ins/standard-deviation-aggregate?
+  :fn<datascript.built-ins/built-in-aggregate-function;bool>)
+(signature datascript.built-ins/distinct-aggregate?
+  :fn<datascript.built-ins/built-in-aggregate-function;bool>)
+(signature datascript.built-ins/minimum-aggregate?
+  :fn<datascript.built-ins/built-in-aggregate-function;bool>)
+(signature datascript.built-ins/maximum-aggregate?
+  :fn<datascript.built-ins/built-in-aggregate-function;bool>)
+(signature datascript.built-ins/random-aggregate?
+  :fn<datascript.built-ins/built-in-aggregate-function;bool>)
+(signature datascript.built-ins/sample-aggregate?
+  :fn<datascript.built-ins/built-in-aggregate-function;bool>)
+
+(defn aggregate-function
+  [function-name]
+  (case function-name
+    "sum" (Some Sum)
+    "avg" (Some Average)
+    "median" (Some Median)
+    "variance" (Some Variance)
+    "stddev" (Some StandardDeviation)
+    "distinct" (Some Distinct)
+    "min" (Some AggregateMinimum)
+    "max" (Some AggregateMaximum)
+    "rand" (Some AggregateRandom)
+    "sample" (Some Sample)
+    "count" (Some AggregateCount)
+    "count-distinct" (Some CountDistinct)
+    None))
+
+(defn comparison-function
+  [function-name]
+  (case function-name
+    "=" (Some Equal)
+    "==" (Some Equal)
+    "not=" (Some NotEqual)
+    "!=" (Some NotEqual)
+    "<" (Some Less)
+    ">" (Some Greater)
+    "<=" (Some LessEqual)
+    ">=" (Some GreaterEqual)
+    "zero?" (Some Zero)
+    "pos?" (Some Positive)
+    "neg?" (Some Negative)
+    "even?" (Some Even)
+    "odd?" (Some Odd)
+    "re-find" (Some RegexFind)
+    "missing?" (Some Missing)
+    None))
+
+(defn values-equal?
+  [values]
+  (if (<= (count values) 1)
+    true
+    (let [expected (nth values 0)]
+      (every?
+       (fn [value]
+         (Datascript_runtime.Data_value.equal expected value))
+       (subvec values 1)))))
+
+(defn ordered-values?
+  [function
+    values]
+  (loop [index 1]
+    (if (>= index (count values))
+      true
+      (let [comparison
+            (Datascript_runtime.Data_value.compare
+             (nth values (- index 1))
+             (nth values index))
+            ordered?
+            (match function
+              Less (neg? comparison)
+              Greater (pos? comparison)
+              LessEqual (not (pos? comparison))
+              GreaterEqual (not (neg? comparison))
+              _ false)]
+        (if ordered?
+          (recur (+ index 1))
+          false)))))
+
+(defn apply-comparison
+  [function
+    values]
+  (match function
+    Equal (Some (values-equal? values))
+    NotEqual (Some (not (values-equal? values)))
+    Less (Some (ordered-values? function values))
+    Greater (Some (ordered-values? function values))
+    LessEqual (Some (ordered-values? function values))
+    GreaterEqual (Some (ordered-values? function values))
+    Zero
+    (if (= 1 (count values))
+      (match (nth values 0)
+        (Datascript_runtime.Data_value.Int value)
+        (Some (= value 0))
+        _ None)
+      None)
+    Positive
+    (if (= 1 (count values))
+      (match (nth values 0)
+        (Datascript_runtime.Data_value.Int value)
+        (Some (> value 0))
+        _ None)
+      None)
+    Negative
+    (if (= 1 (count values))
+      (match (nth values 0)
+        (Datascript_runtime.Data_value.Int value)
+        (Some (< value 0))
+        _ None)
+      None)
+    Even
+    (if (= 1 (count values))
+      (match (nth values 0)
+        (Datascript_runtime.Data_value.Int value)
+        (Some (= 0 (mod value 2)))
+        _ None)
+      None)
+    Odd
+    (if (= 1 (count values))
+      (match (nth values 0)
+        (Datascript_runtime.Data_value.Int value)
+        (Some (not (= 0 (mod value 2))))
+        _ None)
+      None)
+    RegexFind
+    (if (= 2 (count values))
+      (Datascript_runtime.Data_value.regex_find
+       (nth values 0)
+       (nth values 1))
+      None)
+    _ None))
+
+(defn pure-function
+  [function-name]
+  (case function-name
+    "identity" (Some Identity)
+    "ground" (Some Identity)
+    "untuple" (Some Identity)
+    "+" (Some Add)
+    "-" (Some Subtract)
+    "*" (Some Multiply)
+    "inc" (Some Increment)
+    "dec" (Some Decrement)
+    "vector" (Some Vector)
+    "tuple" (Some Tuple)
+    "hash-map" (Some HashMap)
+    "array-map" (Some HashMap)
+    "count" (Some Count)
+    "get" (Some Get)
+    "get-else" (Some GetElse)
+    "get-some" (Some GetSome)
+    "re-pattern" (Some RegexPattern)
+    None))
+
+(defn add-values
+  [values]
+  (Datascript_runtime.Data_value.add values))
+
+(defn data-map
+  [values]
+  (if (= 0 (mod (count values) 2))
+    (loop [remaining values
+            entries {}]
+      (if-some [key (first remaining)]
+        (if-some [value (first (subvec remaining 1))]
+          (recur (subvec remaining 2) (assoc entries key value))
+          None)
+        (Some
+         (Datascript_runtime.Data_value.map_of_data_map entries))))
+    None))
+
+(defn apply-pure-function
+  [function
+    values]
+  (match function
+    Identity
+    (if (= 1 (count values))
+      (nth values 0)
+      None)
+    Add (add-values values)
+    Subtract
+    (Datascript_runtime.Data_value.subtract values)
+    Multiply
+    (Datascript_runtime.Data_value.multiply values)
+    Increment
+    (if (= 1 (count values))
+      (Datascript_runtime.Data_value.increment (nth values 0))
+      None)
+    Decrement
+    (if (= 1 (count values))
+      (Datascript_runtime.Data_value.decrement (nth values 0))
+      None)
+    Vector
+    (Some (Datascript_runtime.Data_value.vector_of_vector values))
+    Tuple
+    (Some (Datascript_runtime.Data_value.vector_of_vector values))
+    HashMap
+    (data-map values)
+    Count
+    (if (= 1 (count values))
+      (if-some [value
+                (Datascript_runtime.Data_value.count_value
+                 (nth values 0))]
+        (Some (Datascript_runtime.Data_value.Int value))
+        None)
+      None)
+    Get
+    (if (= 2 (count values))
+      (Datascript_runtime.Data_value.map_get
+       (nth values 0)
+       (nth values 1))
+      None)
+    RegexPattern
+    (if (= 1 (count values))
+      (Datascript_runtime.Data_value.regex_pattern (nth values 0))
+      None)
+    _ None))
+
+(defn get-else-function? [function]
+  (match function
+    GetElse true
+    _ false))
+
+(defn get-some-function? [function]
+  (match function
+    GetSome true
+    _ false))
+
+(defn missing-function? [function]
+  (match function
+    Missing true
+    _ false))
+
+(defn sum-aggregate?
+  [function]
+  (match function
+    Sum true
+    _ false))
+
+(defn count-aggregate?
+  [function]
+  (match function
+    AggregateCount true
+    _ false))
+
+(defn count-distinct-aggregate?
+  [function]
+  (match function
+    CountDistinct true
+    _ false))
+
+(defn average-aggregate?
+  [function]
+  (match function
+    Average true
+    _ false))
+
+(defn median-aggregate?
+  [function]
+  (match function
+    Median true
+    _ false))
+
+(defn variance-aggregate?
+  [function]
+  (match function
+    Variance true
+    _ false))
+
+(defn standard-deviation-aggregate?
+  [function]
+  (match function
+    StandardDeviation true
+    _ false))
+
+(defn distinct-aggregate?
+  [function]
+  (match function
+    Distinct true
+    _ false))
+
+(defn minimum-aggregate?
+  [function]
+  (match function
+    AggregateMinimum true
+    _ false))
+
+(defn maximum-aggregate?
+  [function]
+  (match function
+    AggregateMaximum true
+    _ false))
+
+(defn random-aggregate?
+  [function]
+  (match function
+    AggregateRandom true
+    _ false))
+
+(defn sample-aggregate?
+  [function]
+  (match function
+    Sample true
+    _ false))

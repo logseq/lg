@@ -19,7 +19,9 @@ type serialized_index = {
 type ref_type = Lg_runtime.Runtime_ref_type.t = Strong | Weak
 
 type serialized_root = {
-  schema : (string, (string, Data_value.t) Lg_runtime.Lg_map.t) Lg_runtime.Lg_map.t;
+  schema :
+    (string, (string, Data_value.t) Lg_runtime.Lg_map.t) Lg_runtime.Lg_map.t
+    option;
   max_eid : int;
   max_tx : int;
   eavt : int;
@@ -52,7 +54,8 @@ val index_shift : serialized_index -> int
 val index_count : serialized_index -> int
 
 val serialized_root :
-  (string, (string, Data_value.t) Lg_runtime.Lg_map.t) Lg_runtime.Lg_map.t ->
+  (string, (string, Data_value.t) Lg_runtime.Lg_map.t) Lg_runtime.Lg_map.t
+  option ->
   int ->
   int ->
   int ->
@@ -69,6 +72,7 @@ val serialized_root :
 val root_schema :
   serialized_root ->
   (string, (string, Data_value.t) Lg_runtime.Lg_map.t) Lg_runtime.Lg_map.t
+  option
 
 val root_max_eid : serialized_root -> int
 val root_max_tx : serialized_root -> int

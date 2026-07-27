@@ -5,6 +5,9 @@ type 'db result =
   | Database of 'db
   | Pull of Data_value.t
   | Added of bool
+  | Callable of 'db callable
+
+and 'db callable = 'db result Rrbvec.t -> Data_value.t option
 
 type 'db source =
   | Database_source of 'db
@@ -24,6 +27,18 @@ type 'db output =
   | Collection_output of 'db result Rrbvec.t
   | Scalar_output of 'db result option
   | Tuple_output of 'db result array option
+  | Keyword_relation_output of
+      (string, 'db result) Lg_runtime.Lg_map.t Rrbvec.t
+  | Symbol_relation_output of
+      (string, 'db result) Lg_runtime.Lg_map.t Rrbvec.t
+  | String_relation_output of
+      (string, 'db result) Lg_runtime.Lg_map.t Rrbvec.t
+  | Keyword_tuple_output of
+      (string, 'db result) Lg_runtime.Lg_map.t option
+  | Symbol_tuple_output of
+      (string, 'db result) Lg_runtime.Lg_map.t option
+  | String_tuple_output of
+      (string, 'db result) Lg_runtime.Lg_map.t option
 
 type 'db relation = {
   attrs : (string, int) Lg_runtime.Lg_map.t;
@@ -45,6 +60,10 @@ let value value = Value value
 let database database = Database database
 let pull result = Pull result
 let added added = Added added
+let callable invoke = invoke
+let callable_result callable = Callable callable
+let result_callable = function Callable callable -> Some callable | _ -> None
+let invoke_callable callable arguments = callable arguments
 let scalar_binding result = Scalar_binding result
 let collection_binding values = Collection_binding values
 let source_input source = Source_input source
@@ -88,19 +107,59 @@ let tuple_output row = Tuple_output row
 
 let output_relation = function
   | Relation_output rows -> Some rows
-  | Collection_output _ | Scalar_output _ | Tuple_output _ -> None
+  | Collection_output _ | Scalar_output _ | Tuple_output _
+  | Keyword_relation_output _ | Symbol_relation_output _
+  | String_relation_output _ | Keyword_tuple_output _ | Symbol_tuple_output _
+  | String_tuple_output _ ->
+      None
 
 let output_collection = function
   | Collection_output values -> Some values
-  | Relation_output _ | Scalar_output _ | Tuple_output _ -> None
+  | Relation_output _ | Scalar_output _ | Tuple_output _
+  | Keyword_relation_output _ | Symbol_relation_output _
+  | String_relation_output _ | Keyword_tuple_output _ | Symbol_tuple_output _
+  | String_tuple_output _ ->
+      None
 
 let output_scalar = function
   | Scalar_output value -> Some value
-  | Relation_output _ | Collection_output _ | Tuple_output _ -> None
+  | Relation_output _ | Collection_output _ | Tuple_output _
+  | Keyword_relation_output _ | Symbol_relation_output _
+  | String_relation_output _ | Keyword_tuple_output _ | Symbol_tuple_output _
+  | String_tuple_output _ ->
+      None
 
 let output_tuple = function
   | Tuple_output row -> Some row
-  | Relation_output _ | Collection_output _ | Scalar_output _ -> None
+  | Relation_output _ | Collection_output _ | Scalar_output _
+  | Keyword_relation_output _ | Symbol_relation_output _
+  | String_relation_output _ | Keyword_tuple_output _ | Symbol_tuple_output _
+  | String_tuple_output _ ->
+      None
+
+let output_keyword_relation = function
+  | Keyword_relation_output rows -> Some rows
+  | _ -> None
+
+let output_symbol_relation = function
+  | Symbol_relation_output rows -> Some rows
+  | _ -> None
+
+let output_string_relation = function
+  | String_relation_output rows -> Some rows
+  | _ -> None
+
+let output_keyword_tuple = function
+  | Keyword_tuple_output row -> Some row
+  | _ -> None
+
+let output_symbol_tuple = function
+  | Symbol_tuple_output row -> Some row
+  | _ -> None
+
+let output_string_tuple = function
+  | String_tuple_output row -> Some row
+  | _ -> None
 
 let empty_row () = [||]
 
@@ -137,6 +196,21 @@ let product_rows left_rows right_rows =
           rows right_rows)
       Rrbvec.empty left_rows
 
+let collect_tuples acc relation len copy_map =
+  Rrbvec.fold_left
+    (fun collected seed ->
+      Rrbvec.fold_left
+        (fun collected row ->
+          let result = Array.copy seed in
+          for index = 0 to len - 1 do
+            match copy_map.(index) with
+            | Some source_index -> result.(index) <- Some row.(source_index)
+            | None -> ()
+          done;
+          Rrbvec.push_back collected result)
+        collected relation.rows)
+    Rrbvec.empty acc
+
 let relation attrs rows lookup_databases =
   { attrs; rows; lookup_databases }
 
@@ -165,6 +239,7 @@ let relation_append_rows left right =
   { left with rows = Rrbvec.append left.rows right.rows }
 
 let join_key_value = function
+  | Entity entity -> Value (Data_value.Int entity)
   | Attr attribute -> Value (Data_value.Keyword attribute)
   | result -> result
 
@@ -176,6 +251,7 @@ let equal_result left right =
   | Database left, Database right -> left == right
   | Pull left, Pull right -> Data_value.equal left right
   | Added left, Added right -> Bool.equal left right
+  | Callable left, Callable right -> left == right
   | _ -> false
 
 let hash_result = function
@@ -185,6 +261,39 @@ let hash_result = function
   | Database database -> Hashtbl.hash (3, database)
   | Pull value -> Hashtbl.hash (4, Data_value.hash value)
   | Added added -> Hashtbl.hash (5, added)
+  | Callable callable -> Hashtbl.hash (6, callable)
+
+let equal_result_map left right =
+  Lg_runtime.Lg_map.count left = Lg_runtime.Lg_map.count right
+  && Lg_runtime.Lg_map.fold_left
+       (fun equal (key, value) ->
+         equal
+         &&
+         match Lg_runtime.Lg_map.get_option right key with
+         | Some candidate -> equal_result value candidate
+         | None -> false)
+       true left
+
+let hash_result_map map =
+  Lg_runtime.Lg_map.fold_left
+    (fun hash (key, value) ->
+      hash lxor Hashtbl.hash (key, hash_result value))
+    0 map
+
+let distinct_by equal hash_value values =
+  let buckets = Hashtbl.create (max 16 (Rrbvec.length values)) in
+  Rrbvec.fold_left
+    (fun unique_values value ->
+      let hash = hash_value value in
+      let bucket = Option.value (Hashtbl.find_opt buckets hash) ~default:[] in
+      if List.exists (equal value) bucket then unique_values
+      else (
+        Hashtbl.replace buckets hash (value :: bucket);
+        Rrbvec.push_back unique_values value))
+    Rrbvec.empty values
+
+let distinct_result_maps maps =
+  distinct_by equal_result_map hash_result_map maps
 
 let equal_key left right =
   let length = Array.length left in
@@ -200,6 +309,248 @@ let hash_key key =
   Array.fold_left
     (fun hash result -> ((hash lsl 5) - hash) lxor hash_result result)
     0 key
+
+let distinct_rows rows = distinct_by equal_key hash_key rows
+
+let equal_optional_key left right =
+  let length = Array.length left in
+  length = Array.length right
+  &&
+  let rec loop index =
+    index = length
+    ||
+    match (left.(index), right.(index)) with
+    | None, None -> loop (index + 1)
+    | Some left, Some right ->
+        equal_result left right && loop (index + 1)
+    | None, Some _ | Some _, None -> false
+  in
+  loop 0
+
+let hash_optional_key key =
+  Array.fold_left
+    (fun hash value ->
+      let value_hash =
+        match value with None -> 0x4f1bbcdc | Some result -> hash_result result
+      in
+      ((hash lsl 5) - hash) lxor value_hash)
+    0 key
+
+let distinct_optional_rows rows =
+  distinct_by equal_optional_key hash_optional_key rows
+
+let group_rows rows indexes =
+  let rec add_row key row = function
+    | [] -> [ (key, [ row ]) ]
+    | (candidate, grouped_rows) :: rest when equal_key key candidate ->
+        (candidate, row :: grouped_rows) :: rest
+    | group :: rest -> group :: add_row key row rest
+  in
+  Rrbvec.fold_left
+    (fun groups row -> add_row (project_row row indexes) row groups)
+    [] rows
+  |> List.map (fun (_, grouped_rows) ->
+         Rrbvec.of_list (List.rev grouped_rows))
+  |> Rrbvec.of_list
+
+let subtract_relation left right =
+  let shared_indexes =
+    Lg_runtime.Lg_map.fold_left
+      (fun indexes (variable, left_index) ->
+        match Lg_runtime.Lg_map.get_option right.attrs variable with
+        | Some right_index -> (left_index, right_index) :: indexes
+        | None -> indexes)
+      [] left.attrs
+    |> List.rev
+  in
+  let left_indexes =
+    shared_indexes |> List.map fst |> Array.of_list
+  in
+  let right_indexes =
+    shared_indexes |> List.map snd |> Array.of_list
+  in
+  let buckets =
+    Hashtbl.create (max 16 (Rrbvec.length right.rows))
+  in
+  Rrbvec.iter
+    (fun row ->
+      let key = project_row row right_indexes in
+      let hash = hash_key key in
+      let bucket =
+        Option.value (Hashtbl.find_opt buckets hash) ~default:[]
+      in
+      Hashtbl.replace buckets hash (key :: bucket))
+    right.rows;
+  let rows =
+    Rrbvec.fold_left
+      (fun rows row ->
+        let key = project_row row left_indexes in
+        let bucket =
+          Option.value
+            (Hashtbl.find_opt buckets (hash_key key))
+            ~default:[]
+        in
+        if List.exists (equal_key key) bucket then rows
+        else Rrbvec.push_back rows row)
+      Rrbvec.empty left.rows
+  in
+  { left with rows }
+
+let aggregate_values rows index =
+  rows |> Rrbvec.to_list
+  |> List.map (fun row ->
+         match row_get row index with
+         | Some (Value value) -> value
+         | Some _ -> invalid_arg "aggregate input must be a DataScript value"
+         | None -> invalid_arg "aggregate row index is out of bounds")
+
+let numeric_value = function
+  | Data_value.Int value -> float_of_int value
+  | Data_value.Float value -> value
+  | _ -> invalid_arg "aggregate expects numeric values"
+
+let aggregate_sum rows index =
+  let values = aggregate_values rows index in
+  let all_ints =
+    List.for_all
+      (function Data_value.Int _ -> true | Data_value.Float _ -> false | _ -> false)
+      values
+  in
+  if all_ints then
+    Value
+      (Data_value.Int
+         (List.fold_left
+            (fun sum -> function
+              | Data_value.Int value -> sum + value
+              | _ -> assert false)
+            0 values))
+  else
+    Value
+      (Data_value.Float
+         (List.fold_left
+            (fun sum value -> sum +. numeric_value value)
+            0.0 values))
+
+let aggregate_average rows index =
+  let values = aggregate_values rows index in
+  let total =
+    List.fold_left (fun sum value -> sum +. numeric_value value) 0.0 values
+  in
+  Value (Data_value.Float (total /. float_of_int (List.length values)))
+
+let aggregate_median rows index =
+  let values =
+    aggregate_values rows index |> List.sort Data_value.compare
+    |> Array.of_list
+  in
+  let length = Array.length values in
+  let middle = length / 2 in
+  if length mod 2 = 1 then Value values.(middle)
+  else
+    Value
+      (Data_value.Float
+         ((numeric_value values.(middle - 1) +. numeric_value values.(middle))
+         /. 2.0))
+
+let aggregate_variance rows index =
+  let values = aggregate_values rows index |> List.map numeric_value in
+  let length = List.length values in
+  let mean =
+    List.fold_left ( +. ) 0.0 values /. float_of_int length
+  in
+  let squared_deviations =
+    List.fold_left
+      (fun sum value ->
+        let difference = value -. mean in
+        sum +. (difference *. difference))
+      0.0 values
+  in
+  Value (Data_value.Float (squared_deviations /. float_of_int length))
+
+let aggregate_standard_deviation rows index =
+  match aggregate_variance rows index with
+  | Value (Data_value.Float variance) ->
+      Value (Data_value.Float (Float.sqrt variance))
+  | _ -> assert false
+
+let aggregate_minimum rows index =
+  match aggregate_values rows index with
+  | first :: rest ->
+      Value
+        (List.fold_left
+           (fun minimum value ->
+             if Data_value.compare value minimum < 0 then value else minimum)
+           first rest)
+  | [] -> invalid_arg "min aggregate requires at least one value"
+
+let aggregate_maximum rows index =
+  match aggregate_values rows index with
+  | first :: rest ->
+      Value
+        (List.fold_left
+           (fun maximum value ->
+             if Data_value.compare value maximum > 0 then value else maximum)
+           first rest)
+  | [] -> invalid_arg "max aggregate requires at least one value"
+
+let rec take count values =
+  if count <= 0 then []
+  else
+    match values with
+    | [] -> []
+    | value :: rest -> value :: take (count - 1) rest
+
+let aggregate_minimum_n rows index count =
+  let values =
+    aggregate_values rows index |> List.sort Data_value.compare
+    |> take count
+  in
+  Value (Data_value.Vector values)
+
+let aggregate_maximum_n rows index count =
+  let values =
+    aggregate_values rows index |> List.sort Data_value.compare
+    |> List.rev |> take count |> List.rev
+  in
+  Value (Data_value.Vector values)
+
+let random_value values =
+  let values = Array.of_list values in
+  let length = Array.length values in
+  if length = 0 then invalid_arg "rand aggregate requires at least one value";
+  values.(Random.int length)
+
+let aggregate_random rows index =
+  Value (random_value (aggregate_values rows index))
+
+let aggregate_random_n rows index count =
+  let values = aggregate_values rows index in
+  Value
+    (Data_value.Vector
+       (List.init (max 0 count) (fun _ -> random_value values)))
+
+let aggregate_sample rows index count =
+  let values = aggregate_values rows index |> Array.of_list in
+  for index = Array.length values - 1 downto 1 do
+    let swap_index = Random.int (index + 1) in
+    let value = values.(index) in
+    values.(index) <- values.(swap_index);
+    values.(swap_index) <- value
+  done;
+  Value
+    (Data_value.Vector
+       (values |> Array.to_list |> take (max 0 count)))
+
+let aggregate_distinct rows index =
+  let values =
+    List.fold_left
+      (fun distinct value ->
+        if List.exists (Data_value.equal value) distinct then distinct
+        else value :: distinct)
+      [] (aggregate_values rows index)
+    |> List.rev
+  in
+  Value (Data_value.Set values)
 
 let append_right_only left right right_indexes =
   let left_length = Array.length left in

@@ -9,6 +9,20 @@ let test_closed_values_compare_without_dynamic_boxing () =
   assert (Value.compare (Value.Ref 42) (Value.Int 42) = 0);
   assert (Value.compare (Value.Keyword ":user/name") (Value.String "Ada") < 0)
 
+let test_wide_integers_remain_closed_numeric_values () =
+  let wide = Value.Wide_int 3_735_928_559L in
+  let native_int = Value.Int 3_735_928_559 in
+  assert (Value.equal wide native_int);
+  assert (Value.compare wide native_int = 0);
+  assert (Value.hash wide = Value.hash native_int);
+  assert (Value.to_edn_string wide = "3735928559");
+  assert (
+    Value.add (Rrbvec.of_list [ wide; Value.Int 1 ])
+    = Some (Value.Wide_int 3_735_928_560L));
+  assert (
+    Value.multiply (Rrbvec.of_list [ wide; Value.Int 2 ])
+    = Some (Value.Wide_int 7_471_857_118L))
+
 let test_nil_wildcards_are_checked_without_general_value_equality () =
   assert (Value.is_nil Value.Nil);
   assert (not (Value.is_nil (Value.Int 0)));
@@ -141,6 +155,25 @@ let test_entity_refs_are_extracted_from_closed_values () =
     Value.entity_ref_value (Value.Ref 42)
     = Some (Value.Entity_id 42));
   assert (Value.entity_ref_value (Value.String "42") = None)
+
+let test_lookup_refs_are_extracted_from_closed_vectors () =
+  assert (
+    Value.lookup_ref_value
+      (Value.Vector
+         [ Value.Keyword ":name"; Value.String "Alice" ])
+    = Some (":name", Value.String "Alice"));
+  assert (
+    Value.lookup_ref_value
+      (Value.List [ Value.Keyword ":name"; Value.Int 1 ])
+    = Some (":name", Value.Int 1));
+  assert (
+    Value.lookup_ref_value
+      (Value.Vector [ Value.String "name"; Value.String "Alice" ])
+    = None);
+  assert (
+    Value.lookup_ref_value
+      (Value.Vector [ Value.Keyword ":name" ])
+    = None)
 
 let test_ref_values_are_extracted_statically () =
   assert (Value.ref_value (Value.Ref 42) = Some 42);
@@ -371,6 +404,18 @@ let test_query_hash_join_uses_closed_result_keys () =
       (Rrbvec.of_list [ [| Query_value.Entity 7 |] ])
       (Lg_runtime.Lg_map.of_list [ ("?e", "database") ])
   in
+  let entity_id_value_relation =
+    Query_value.relation
+      (Lg_runtime.Lg_map.of_list [ ("?e", 0) ])
+      (Rrbvec.of_list [ [| Query_value.Value (Value.Int 7) |] ])
+      empty_databases
+  in
+  assert (
+    Rrbvec.length
+      (Query_value.relation_rows
+         (Query_value.hash_join (fun _ result -> result) entity_relation
+            entity_id_value_relation))
+    = 1);
   let ref_relation =
     Query_value.relation
       (Lg_runtime.Lg_map.of_list [ ("?e", 0) ])
@@ -472,18 +517,21 @@ let test_storage_backend_has_a_static_payload_boundary () =
 
 let test_serialization_uses_a_closed_typed_facade () =
   let schema =
-    Lg_runtime.Lg_map.of_list
-      [
-        ( ":user/name",
-          Lg_runtime.Lg_map.of_list
-            [
-              (":db/valueType", Value.Keyword ":db.type/string");
-              (":db/index", Value.Bool true);
-            ] );
-      ]
+    Some
+      (Lg_runtime.Lg_map.of_list
+         [
+           ( ":user/name",
+             Lg_runtime.Lg_map.of_list
+               [
+                 (":db/valueType", Value.Keyword ":db.type/string");
+                 (":db/index", Value.Bool true);
+               ] );
+         ])
   in
   let schema_source = Serialization_value.schema_to_string schema in
   assert (Serialization_value.schema_of_string schema_source = schema);
+  let absent_schema_source = Serialization_value.schema_to_string None in
+  assert (Serialization_value.schema_of_string absent_schema_source = None);
   let encoded_name =
     Serialization_value.encode_non_keyword (Value.String "Ada")
   in
@@ -509,6 +557,11 @@ let test_serialization_uses_a_closed_typed_facade () =
     Serialization_value.datoms serialized = Rrbvec.of_list [ datom ]);
   assert (Serialization_value.datom_entity datom = 42);
   assert (Serialization_value.ref_type serialized = Storage_value.Weak);
+  assert (Serialization_value.format serialized = Serialization_value.Current);
+  let legacy = Serialization_value.as_legacy serialized in
+  assert (Serialization_value.format legacy = Serialization_value.Legacy);
+  assert (Serialization_value.branching_factor legacy = 32);
+  assert (Serialization_value.ref_type legacy = Storage_value.Strong);
   assert (
     Serialization_value.decode_value Rrbvec.empty encoded_name
     = Value.String "Ada");
@@ -538,6 +591,7 @@ let test_serialization_uses_a_closed_typed_facade () =
 
 let () =
   test_closed_values_compare_without_dynamic_boxing ();
+  test_wide_integers_remain_closed_numeric_values ();
   test_nil_wildcards_are_checked_without_general_value_equality ();
   test_sequential_values_share_datascript_equality ();
   test_map_and_set_equality_ignore_insertion_order ();
@@ -550,6 +604,7 @@ let () =
   test_boolean_payload_is_extracted_statically ();
   test_collection_items_preserve_collection_kind ();
   test_entity_refs_are_extracted_from_closed_values ();
+  test_lookup_refs_are_extracted_from_closed_vectors ();
   test_ref_values_are_extracted_statically ();
   test_tuple_refs_are_resolved_statically ();
   test_keyword_collections_are_validated_statically ();

@@ -38,17 +38,36 @@ let rec truthiness_expression ty expression =
   | ty when Types.is_dynamic ty ->
       Semantic_ir.Apply
         (Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.truthy", [ expression ])
+  | ty when Option.is_some (Types.truthy_constraint_info ty) ->
+      (match Semantic_ir.unlocated expression with
+      | Semantic_ir.Ident name ->
+          Semantic_ir.Apply
+            (Semantic_ir.Ident (name ^ "__truthy"), [ expression ])
+      | _ ->
+          Semantic_ir.Apply
+            ( Semantic_ir.Apply
+                (Semantic_ir.Ident "fst", [ expression ]),
+              [ Semantic_ir.Apply (Semantic_ir.Ident "snd", [ expression ]) ] ))
   | TBool -> expression
   | TNil -> Semantic_ir.Sequence [ expression; Semantic_ir.Bool false ]
   | TNullable payload_ty ->
+      let truthy_payload =
+        let payload = Semantic_ir.Ident "truthy_value" in
+        match Types.truthy_constraint_info payload_ty with
+        | Some _ ->
+            Semantic_ir.Apply
+              ( Semantic_ir.Apply
+                  (Semantic_ir.Ident "fst", [ payload ]),
+                [ Semantic_ir.Apply (Semantic_ir.Ident "snd", [ payload ]) ] )
+        | None -> truthiness_expression payload_ty payload
+      in
       Semantic_ir.Match
         ( expression,
           [
             (Semantic_ir.PConstructor ("None", None), Semantic_ir.Bool false);
             ( Semantic_ir.PConstructor
                 ("Some", Some (Semantic_ir.PVar "truthy_value")),
-              truthiness_expression payload_ty
-                (Semantic_ir.Ident "truthy_value") );
+              truthy_payload );
           ] )
   | TOcaml_app ("option", [ _ ]) | TOcaml "option" ->
       Semantic_ir.Match
@@ -99,7 +118,7 @@ let is_ocaml_constructor_pattern_target target_ty name =
   ||
   match target_ty with
      | TNullable _ -> List.mem name [ "Some"; "None" ]
-     | TUnknown | TVar _ ->
+     | TUnknown | TMeta _ | TVar _ ->
          List.mem name [ "Some"; "None"; "Ok"; "Error" ]
          || String.contains name '.' || String.contains name '/'
   | _ -> false
@@ -202,8 +221,8 @@ let rec merge_branch_types left right =
       when List.length left_params = List.length right_params ->
         let merge_parameter left right =
           match (left, right) with
-          | TArray (TUnknown | TVar _), (TUnknown | TVar _)
-          | (TUnknown | TVar _), TArray (TUnknown | TVar _) ->
+          | TArray (TUnknown | TMeta _ | TVar _), (TUnknown | TMeta _ | TVar _)
+          | (TUnknown | TMeta _ | TVar _), TArray (TUnknown | TMeta _ | TVar _) ->
               Some (TArray (Types.dynamic_constraint TUnknown))
           | _ when Types.equal left right -> Some left
           | _ -> merge_branch_types left right
@@ -232,12 +251,16 @@ let rec merge_branch_types left right =
     | TArray left, TArray right ->
         let merged_element =
           match (left, right) with
-          | (TUnknown | TVar _), ty | ty, (TUnknown | TVar _) -> Some ty
+          | (TUnknown | TMeta _ | TVar _), ty | ty, (TUnknown | TMeta _ | TVar _) -> Some ty
           | _ -> merge_branch_types left right
         in
         Option.map (fun inner -> TArray inner) merged_element
     | TVar _, TVar _ -> Some left
     | TVar _, ty | ty, TVar _ -> Some ty
+    | TMeta _, _ | _, TMeta _ -> (
+        match Type_solver.unify [] left right with
+        | Ok substitutions -> Some (Type_solver.apply substitutions left)
+        | Error _ -> None)
     | TUnknown, ty | ty, TUnknown -> Some ty
     | _ when Types.defer_to_ocaml ~expected:left ~actual:right -> Some left
     | _ -> None
@@ -308,6 +331,14 @@ let capability_storage_expression ty expression =
                 build name value_ty;
               ]
         | None -> (
+            match Types.contains_constraint_info ty with
+            | Some (_, value_ty) ->
+                Semantic_ir.Tuple
+                  [
+                    Semantic_ir.Ident (name ^ "__contains");
+                    build name value_ty;
+                  ]
+            | None -> (
             match ty with
             | TOcaml_app (constraint_name, [ _element_ty; value_ty ])
               when constraint_name = Types.seqable_constraint_name
@@ -322,7 +353,7 @@ let capability_storage_expression ty expression =
                        else name ^ "__seq_optional");
                     build name value_ty;
                   ]
-            | _ -> Semantic_ir.Ident name))
+            | _ -> Semantic_ir.Ident name)))
   in
   match Semantic_ir.unlocated expression with
   | Semantic_ir.Ident name -> build name ty
@@ -331,7 +362,7 @@ let capability_storage_expression ty expression =
 let pack_plain_dynamic_value value =
   if
     Types.is_dynamic value.ty
-    || match value.ty with TUnknown | TVar _ -> true | _ -> false
+    || match value.ty with TUnknown | TMeta _ | TVar _ -> true | _ -> false
   then
       Some
         (Semantic_ir.PackDynamic
@@ -346,19 +377,30 @@ let coerce_expression_to_type ?(stored = false) target_ty source_ty expression =
   match (target_ty, source_ty) with
   | target_ty, source_ty when protocol_has_value target_ty source_ty ->
       let rec unwrap ty expression =
+        let unwrap_stored value_ty =
+          let expression =
+            if stored then
+              Semantic_ir.Apply (Semantic_ir.Ident "snd", [ expression ])
+            else
+              match Semantic_ir.unlocated expression with
+              | Semantic_ir.Ident _ -> expression
+              | _ ->
+                  Semantic_ir.Apply (Semantic_ir.Ident "snd", [ expression ])
+          in
+          unwrap value_ty expression
+        in
         match Types.protocol_constraint_info ty with
-        | None -> expression
-        | Some (_, _, value_ty) ->
-            let expression =
-              if stored then
-                Semantic_ir.Apply (Semantic_ir.Ident "snd", [ expression ])
-              else
-                match Semantic_ir.unlocated expression with
-                | Semantic_ir.Ident _ -> expression
-                | _ ->
-                    Semantic_ir.Apply (Semantic_ir.Ident "snd", [ expression ])
-            in
-            unwrap value_ty expression
+        | Some (_, _, value_ty) -> unwrap_stored value_ty
+        | None -> (
+            match Types.truthy_constraint_info ty with
+            | Some value_ty -> unwrap_stored value_ty
+            | None -> (
+                match Types.printable_constraint_info ty with
+                | Some value_ty -> unwrap_stored value_ty
+                | None -> (
+                    match Types.symbol_predicate_constraint_info ty with
+                    | Some value_ty -> unwrap_stored value_ty
+                    | None -> expression)))
       in
       unwrap source_ty expression
   | TSeq target_inner, (TList source_inner | TVector source_inner) ->
@@ -376,7 +418,7 @@ let coerce_expression_to_type ?(stored = false) target_ty source_ty expression =
       in
       let _ = (target_inner, source_inner) in
       sequence
-  | TSet target_inner, TSet (TUnknown | TVar _) -> (
+  | TSet target_inner, TSet (TUnknown | TMeta _ | TVar _) -> (
       match Types.set_module_name target_inner with
       | Ok set_module ->
           Semantic_ir.Apply
@@ -388,7 +430,7 @@ let coerce_expression_to_type ?(stored = false) target_ty source_ty expression =
                     [ expression ] );
               ] )
       | Error _ -> expression)
-  | TSet (TUnknown | TVar _), TSet source_inner -> (
+  | TSet (TUnknown | TMeta _ | TVar _), TSet source_inner -> (
       match Types.set_module_name source_inner with
       | Ok set_module ->
           Semantic_ir.Apply
@@ -607,7 +649,7 @@ let record_type_key = Resolver.record_type_key
 let record_type_application type_name arguments =
   let type_name = Types.ocaml_record_type_name type_name in
   let argument_name = function
-    | TUnknown | TVar _ -> "_"
+    | TUnknown | TMeta _ | TVar _ -> "_"
     | argument -> Types.ocaml_name argument
   in
   match arguments with
@@ -664,6 +706,7 @@ let binding_of_expr ?(row_param_types = []) ocaml_name expr =
     binding with
     ty = Types.align_deferred_param_types binding.ty expr.semantic_expr;
   }
+  |> Types.generalize_binding
 
 type anonymous_record_allocation = {
   record : named_record;
@@ -678,7 +721,7 @@ let anonymous_record_type_parameters fields =
     if not (List.mem name !parameters) then parameters := !parameters @ [ name ]
   in
   let rec visit = function
-    | TUnknown | TNil -> add "a"
+    | TUnknown | TMeta _ | TNil -> add "a"
     | TVar name -> add name
     | TNullable ty | TArray ty | TRef ty | TList ty | TVector ty | TSet ty
     | TSeq ty ->
@@ -824,7 +867,7 @@ let allocate_nested_anonymous_records ~owner env next_type fields =
         in
         allocate_arities env next_type items [] arities
     | ( TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol
-      | TKeyword | TBool | TUnit | TNil | TUnknown | TVar _ | TOcaml _
+      | TKeyword | TBool | TUnit | TNil | TUnknown | TMeta _ | TVar _ | TOcaml _
       | TNamed_record _ ) as ty ->
         (ty, env, next_type, items)
   and map_inner env next_type items wrap inner =
@@ -1116,6 +1159,8 @@ let dynamic_key_record_type env expected_field_ty =
                     List.combine record.type_parameters arguments
                     |> List.filter (fun (parameter, argument) ->
                            argument <> TVar parameter)
+                    |> List.map (fun (parameter, argument) ->
+                           (Type_solver.Declared parameter, argument))
                   in
                   Some
                     (Types.substitute_type_variables substitutions
@@ -1248,25 +1293,11 @@ let lookup_function_ty scope env name =
               match Protocol.lookup_marker scope env name with
               | Some
                   {
-                    protocol_id = Some protocol_id;
-                    ty = TFn (_ :: rest, return_ty);
+                    protocol_id = Some _;
+                    ty = TFn (receiver_ty :: rest, return_ty);
                     _;
-                  } -> (
-                  match
-                    Protocol.constraint_type scope env
-                      (Protocol_id.to_string protocol_id)
-                  with
-                  | Some receiver_ty ->
-                      let rest =
-                        List.map
-                          (function
-                            | TUnknown | TVar _ ->
-                                Types.dynamic_constraint TUnknown
-                            | ty -> ty)
-                          rest
-                      in
-                      Ok (TFn (receiver_ty :: rest, return_ty))
-                  | None -> Error.error ("unknown function " ^ name))
+                  } ->
+                  Ok (TFn (receiver_ty :: rest, return_ty))
               | Some marker -> Ok marker.ty
               | None -> Error.error ("unknown function " ^ name))))
 
@@ -1319,7 +1350,7 @@ let parameterize_row_fields fields =
         parameter
   in
   let rec parameterize = function
-    | TUnknown -> TVar (fresh_parameter ())
+    | TUnknown | TMeta _ -> TVar (fresh_parameter ())
     | TVar name -> TVar (named_parameter name)
     | TNullable ty -> TNullable (parameterize ty)
     | TOcaml_app (name, arguments) ->
@@ -1360,15 +1391,38 @@ let parameterize_row_fields fields =
   let fields = List.map parameterize_field fields in
   (fields, List.rev !parameters)
 
-let row_param_fields ?(allow_nullable = false) = function
+let direct_row_fields ?(allow_nullable = false) = function
   | TRecord fields -> Some fields
-  | TNullable (TRecord fields) when allow_nullable -> Some fields
-  | TOcaml_app ("option", [ TRecord fields ]) when allow_nullable -> Some fields
-  | TOcaml_app (constraint_name, [ TRecord fields; _ ])
+  | TNullable (TRecord fields) | TOcaml_app ("option", [ TRecord fields ])
+    when allow_nullable ->
+      Some fields
+  | _ -> None
+
+let tuple_row_fields = function
+  | TRecord fields | TNamed_record { fields; nominal = false; _ } -> Some fields
+  | _ -> None
+
+let row_param_fields ?(allow_nullable = false) = function
+  | ty when Option.is_some (direct_row_fields ~allow_nullable ty) ->
+      direct_row_fields ~allow_nullable ty
+  | ty when Option.is_some (Types.contains_constraint_info ty) ->
+      let _, value_ty = Types.contains_constraint_info ty |> Option.get in
+      direct_row_fields ~allow_nullable value_ty
+  | TOcaml_app (constraint_name, [ element_ty; _ ])
     when constraint_name = Types.seqable_constraint_name
          || constraint_name = Types.optional_seqable_constraint_name
          || constraint_name = Types.optional_sequential_constraint_name ->
-      Some fields
+      (match direct_row_fields ~allow_nullable element_ty with
+      | Some _ as fields -> fields
+      | None -> (
+          match element_ty with
+          | TTuple items ->
+              items
+              |> List.filter_map tuple_row_fields
+              |> (function
+                   | [ fields ] -> Some fields
+                   | [] | _ :: _ :: _ -> None)
+          | _ -> None))
   | _ -> None
 
 let row_param_type_names ?env ?(nullable_row_indices = []) prefix param_tys =
@@ -1391,6 +1445,12 @@ let row_param_type_names ?env ?(nullable_row_indices = []) prefix param_tys =
   in
   param_tys
   |> List.mapi (fun index param_ty ->
+       let named_constraint_row =
+         match Types.contains_constraint_info param_ty with
+         | Some (_, TNamed_record record) ->
+             Some (Structural_map.record_type_application record)
+         | Some _ | None -> None
+       in
        let nullable_fields =
          match param_ty with
          | TNullable (TRecord fields)
@@ -1403,6 +1463,9 @@ let row_param_type_names ?env ?(nullable_row_indices = []) prefix param_tys =
            ~some:(fun fields -> not (has_named_candidate fields))
            nullable_fields
        in
+       match named_constraint_row with
+       | Some type_name -> Some type_name
+       | None -> (
        match
          row_param_fields
            ~allow_nullable:
@@ -1420,7 +1483,7 @@ let row_param_type_names ?env ?(nullable_row_indices = []) prefix param_tys =
           | parameters -> "(" ^ String.concat ", " parameters ^ ") " ^ type_name
            in
            Some applied_name
-       | None -> None)
+       | None -> None))
 
 let row_type_items row_type_names param_tys =
   List.map2
@@ -1558,7 +1621,7 @@ let constrain_record_function_argument_expr fn element_ty =
 
 let rec concrete_constraint_type = function
   | ty when Types.is_dynamic ty -> true
-  | TUnknown | TVar _ | TRecord _ | TOverloaded_fn _ -> false
+  | TUnknown | TMeta _ | TVar _ | TRecord _ | TOverloaded_fn _ -> false
   | TNullable ty | TArray ty | TRef ty | TList ty | TVector ty | TSet ty
   | TSeq ty ->
       concrete_constraint_type ty

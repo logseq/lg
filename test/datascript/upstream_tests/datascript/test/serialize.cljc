@@ -7,12 +7,27 @@
     [datascript.test.core :as tdc]
     [ocaml.Lg_runtime.Runtime_edn :as runtime-edn]
     [ocaml.melange-edn-native/Melange_edn_native :as native-edn]
-    #?(:clj [ocaml.yojson/Yojson.Safe :as yojson]))
-  #?(:clj
-     (:import
-       [clojure.lang ExceptionInfo])))
+    #?(:clj [ocaml.yojson/Yojson.Safe :as yojson])))
 
-(t/use-fixtures :once tdc/no-namespace-maps)
+(type-alias serialized-value :Lg_edn_backend.t)
+
+(defn ^serialized-value identity-serialized
+  [^serialized-value value]
+  value)
+
+(defn ^serialized-value serialized-codec
+  [^serialized-value value ^:keyword _type]
+  value)
+
+(defn database-has-nan? [^datascript.db/DB database]
+  (if-some [entity (d/entity database 1)]
+    (match (:nan entity)
+      (Some
+       (datascript.impl.entity/EntityScalar
+        (Datascript_runtime.Data_value.Float value)))
+      (js/isNaN value)
+      _ false)
+    false))
 
 #?(:clj
 (defn yojson-write [value]
@@ -37,13 +52,44 @@
     (native-edn/to-edn-string (native-edn/of-json-string source)))))
 
 (def readers
-  {#?@(:cljs ["cljs.reader/read-string"  cljs.reader/read-string]
-       :clj  ["clojure.edn/read-string"  #(clojure.edn/read-string {:readers d/data-readers} %)
-              "clojure.core/read-string" #(binding [*data-readers* (merge *data-readers* d/data-readers)]
-                                            (read-string %))])})
+  {"clojure.edn/read-string" edn/read-string
+   "clojure.core/read-string" edn/read-string})
+
+(def datom-readers
+  {"clojure.edn/read-string" db/datom-from-edn-string
+   "clojure.core/read-string" db/datom-from-edn-string})
+
+(def database-readers
+  {"clojure.edn/read-string" db/db-from-edn-string
+   "clojure.core/read-string" db/db-from-edn-string})
+
+(deftest test-public-reader-functions
+  (let [expected (db/datom 1 :name "Oleg" 17 false)
+        reader-value
+        (Datascript_runtime.Serialization_value.read_datom
+         (pr-str expected))]
+    (is (= expected (db/datom-from-reader reader-value)))
+    (is (not (db/datom-added
+              (db/datom-from-reader reader-value)))))
+
+  (let [expected
+        (->
+         (d/empty-db {:name {:db/unique :db.unique/identity}})
+         (d/db-with [[:db/add 1 :name "Petr"]
+                     [:db/add 2 :name "Ivan"]]))
+        reader-value
+        (Datascript_runtime.Serialization_value.read_database
+         (pr-str expected))
+        restored (db/db-from-reader reader-value)]
+    (is (db/db-equal? expected restored))
+    (is (= (:schema expected) (:schema restored)))
+    (is
+     (db/datom-vectors-equal?
+      (vec (d/datoms expected :eavt))
+      (vec (d/datoms restored :eavt))))))
 
 (deftest test-pr-read
-  (doseq [[r read-fn] readers]
+  (doseq [[r read-fn] datom-readers]
     (testing r
       (let [d (db/datom 1 :name "Oleg" 17 true)]
         (is (= (pr-str d) "#datascript/Datom [1 :name \"Oleg\" 17 true]"))
@@ -51,8 +97,9 @@
       
       (let [d (db/datom 1 :name 3)]
         (is (= (pr-str d) "#datascript/Datom [1 :name 3 536870912 true]"))
-        (is (= d (read-fn (pr-str d)))))
-      
+        (is (= d (read-fn (pr-str d)))))))
+  (doseq [[r read-fn] database-readers]
+    (testing r
       (let [db (-> (d/empty-db {:name {:db/unique :db.unique/identity}})
                  (d/db-with [[:db/add 1 :name "Petr"]
                              [:db/add 1 :age 44]])
@@ -68,64 +115,120 @@
         (is (= db (read-fn (pr-str db))))))))
 
 (def data
-  [[1 :name    "Petr"]
-   [1 :aka     "Devil"]
-   [1 :aka     "Tupen"]
-   [1 :age     15]
-   [1 :follows 2]
-   [1 :email   "petr@gmail.com"]
-   [1 :avatar  10]
-   [10 :url    "http://"]
-   [1 :attach  {:some-key :some-value}]
-   [2 :name    "Oleg"]
-   [2 :age     30]
-   [2 :email   "oleg@gmail.com"]
-   [2 :attach  [:just :values]]
-   [3 :name    "Ivan"]
-   [3 :age     15]
-   [3 :follows 2]
-   [3 :attach  {:another :map}]
-   [3 :avatar  30]
-   [4 :name    "Nick" d/tx0]
-   [5 :inf     ##Inf]
-   [5 :-inf    ##-Inf]
+  [(d/datom 1 :name "Petr")
+   (d/datom 1 :aka "Devil")
+   (d/datom 1 :aka "Tupen")
+   (d/datom 1 :age 15)
+   (d/datom 1 :follows 2)
+   (d/datom 1 :email "petr@gmail.com")
+   (d/datom 1 :avatar 10)
+   (d/datom 10 :url "http://")
+   (d/datom
+    1
+    :attach
+    (Datascript_runtime.Data_value.Map
+     (list
+      (tuple
+       (Datascript_runtime.Data_value.Keyword ":some-key")
+       (Datascript_runtime.Data_value.Keyword ":some-value")))))
+   (d/datom 2 :name "Oleg")
+   (d/datom 2 :age 30)
+   (d/datom 2 :email "oleg@gmail.com")
+   (d/datom
+    2
+    :attach
+    (Datascript_runtime.Data_value.Vector
+     (list
+      (Datascript_runtime.Data_value.Keyword ":just")
+      (Datascript_runtime.Data_value.Keyword ":values"))))
+   (d/datom 3 :name "Ivan")
+   (d/datom 3 :age 15)
+   (d/datom 3 :follows 2)
+   (d/datom
+    3
+    :attach
+    (Datascript_runtime.Data_value.Map
+     (list
+      (tuple
+       (Datascript_runtime.Data_value.Keyword ":another")
+       (Datascript_runtime.Data_value.Keyword ":map")))))
+   (d/datom 3 :avatar 30)
+   (d/datom 4 :name "Nick" d/tx0)
+   (d/datom
+    5 :inf
+    (Datascript_runtime.Data_value.Float ##Inf))
+   (d/datom
+    5 :-inf
+    (Datascript_runtime.Data_value.Float ##-Inf))
    ;; check that facts about transactions doesn’t set off max-eid
-   [d/tx0      :txInstant 0xdeadbeef]
-   [30 :url    "https://"]])
+   (d/datom d/tx0 :txInstant 0xdeadbeef)
+   (d/datom 30 :url "https://")])
 
-(def schema 
-  {:name    {} ;; nothing special about name
-   :aka     {:db/cardinality :db.cardinality/many}
-   :age     {:db/index true}
-   :follows {:db/valueType :db.type/ref}
-   :email   {:db/unique :db.unique/identity}
-   :avatar  {:db/valueType :db.type/ref, :db/isComponent true}
-   :url     {}   ;; just a component prop
-   :attach  {}}) ;; should skip index
+(def transaction-data
+  (mapv db/tx-datom data))
+
+(defn
+  ^:map<keyword;Datascript_runtime.Data_value.t>
+  serialize-schema-entry
+  [^:vector<keyword> keys
+   ^:vector<Datascript_runtime.Data_value.t> values]
+  (zipmap keys values))
+
+(def
+  ^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>>
+  schema
+  (zipmap
+   [:name :aka :age :follows :email :avatar :url :attach]
+   [(serialize-schema-entry [] [])
+    (serialize-schema-entry
+     [:db/cardinality]
+     [(Datascript_runtime.Data_value.Keyword
+       ":db.cardinality/many")])
+    (serialize-schema-entry
+     [:db/index]
+     [(Datascript_runtime.Data_value.Bool true)])
+    (serialize-schema-entry
+     [:db/valueType]
+     [(Datascript_runtime.Data_value.Keyword ":db.type/ref")])
+    (serialize-schema-entry
+     [:db/unique]
+     [(Datascript_runtime.Data_value.Keyword
+       ":db.unique/identity")])
+    (serialize-schema-entry
+     [:db/valueType :db/isComponent]
+     [(Datascript_runtime.Data_value.Keyword ":db.type/ref")
+      (Datascript_runtime.Data_value.Bool true)])
+    (serialize-schema-entry [] [])
+    (serialize-schema-entry [] [])]))
 
 (deftest test-init-db
   (let [db-init     (d/init-db
-                      (map (fn [[e a v]] (d/datom e a v)) data)
+                      data
                       schema)
         db-transact (d/db-with
                       (d/empty-db schema)
-                      (map (fn [[e a v]] [:db/add e a v]) data))]
+                      transaction-data)]
 
     (testing "db-init produces the same result as regular transactions"
       (is (= db-init db-transact)))
 
     (testing "db-init produces the same max-eid as regular transactions"
-      (let [assertions [[:db/add -1 :name "Lex"]]]
+      (let [assertions
+            [(db/tx-add
+              (Datascript_runtime.Data_value.Temp_id "-1")
+              :name
+              (Datascript_runtime.Data_value.String "Lex"))]]
         (is (= (d/db-with db-init assertions)
               (d/db-with db-transact assertions)))))
     
     (testing "Roundtrip"
-      (doseq [[r read-fn] readers]
+      (doseq [[r read-fn] database-readers]
         (testing r
-          (is (= db-init (read-fn (pr-str db-init)))))))
+          (let [roundtripped (read-fn (pr-str db-init))]
+            (is (= db-init roundtripped))))))
 
     (testing "Reporting"
-      (is (thrown-with-msg? ExceptionInfo #"init-db expects list of Datoms, got "
+      (is (thrown-msg? "init-db expects list of Datoms, got [[:add -1 :name \"Ivan\"] {:add -1, :age 35}]"
             (d/init-db [[:add -1 :name "Ivan"] {:add -1 :age 35}] schema))))))
 
 (deftest ^{:doc "issue-463"} test-max-eid-from-refs
@@ -133,7 +236,7 @@
              (d/db-with [[:db/add 1 :name "Ivan"]])
              (d/db-with [{:db/id 1 :ref {:name "Oleg"}}]))]
     (is (= 2 (:max-eid db)))
-    (doseq [[r read-fn] readers]
+    (doseq [[r read-fn] database-readers]
       (testing r
         (let [db' (read-fn (pr-str db))]
           (is (= 2 (:max-eid db'))))))))
@@ -141,13 +244,17 @@
 (deftest serialize
   (let [db (d/db-with
              (d/empty-db schema)
-             (map (fn [[e a v]] [:db/add e a v]) data))]
-    (is (= db (-> db d/serializable d/from-serializable)))
-    (is (= db (-> db d/serializable pr-str edn/read-string d/from-serializable)))
-    (is (= db (-> db (d/serializable {:freeze-fn tdc/transit-write-str}) pr-str edn/read-string (d/from-serializable {:thaw-fn tdc/transit-read-str}))))
+             transaction-data)]
+    (testing "direct"
+      (let [restored (-> db d/serializable d/from-serializable)]
+        (is (= db restored))))
+    (testing "edn"
+      (is (= db (-> db d/serializable pr-str edn/read-string d/from-serializable))))
+    (testing "custom EDN"
+      (is (= db (-> db (d/serializable {:freeze-fn identity-serialized}) pr-str edn/read-string (d/from-serializable {:thaw-fn identity-serialized})))))
     (doseq [type [:json :json-verbose]]
       (testing type
-        (is (= db (-> db d/serializable (tdc/transit-write type) (tdc/transit-read type) d/from-serializable)))))
+        (is (= db (-> db d/serializable (serialized-codec type) (serialized-codec type) d/from-serializable)))))
     #?(:clj
        (is (= db (-> db d/serializable yojson-write yojson-read d/from-serializable))))
     #?(:cljs
@@ -157,13 +264,13 @@
   (let [db (d/db-with
              (d/empty-db schema)
              [[:db/add 1 :nan ##NaN]])
-        valid? #(#?(:clj Double/isNaN :cljs js/isNaN) (:nan (d/entity % 1)))]
+        valid? database-has-nan?]
     (is (valid? (-> db d/serializable d/from-serializable)))
     (is (valid? (-> db d/serializable pr-str edn/read-string d/from-serializable)))
-    (is (valid? (-> db (d/serializable {:freeze-fn tdc/transit-write-str}) pr-str edn/read-string (d/from-serializable {:thaw-fn tdc/transit-read-str}))))
+    (is (valid? (-> db (d/serializable {:freeze-fn identity-serialized}) pr-str edn/read-string (d/from-serializable {:thaw-fn identity-serialized}))))
     (doseq [type [:json :json-verbose]]
       (testing type
-        (is (valid? (-> db d/serializable (tdc/transit-write type) (tdc/transit-read type) d/from-serializable)))))
+        (is (valid? (-> db d/serializable (serialized-codec type) (serialized-codec type) d/from-serializable)))))
     #?(:clj
        (is (valid? (-> db d/serializable yojson-write yojson-read d/from-serializable))))
     #?(:cljs

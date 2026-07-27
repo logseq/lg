@@ -1,22 +1,41 @@
 (ns ^:no-doc datascript.pull-api
   (:require
+   [clojure.string :as str]
    [datascript.pull-parser :as dpp]
    [datascript.db :as db]
    [me.tonsky.persistent-sorted-set :as set]))
 
 (type-variant pulled-value
   (PulledScalar :Datascript_runtime.Data_value.t)
-  (PulledEntity :map<keyword;pulled-value>)
+  (PulledEntity
+   :map<Datascript_runtime.Data_value.t;pulled-value>)
   (PulledMany :vector<pulled-value>))
 
-(type-variant pull-visit
-  (VisitAttr :int :keyword)
-  (VisitWildcard :int)
-  (VisitReverse :keyword :int))
+(type-alias pull-visitor
+  :fn<keyword;option<int>;option<keyword>;option<int>;unit>)
 
 (type-record PullContext
-  (db :datascript.db/DB)
-  (visitor :option<fn<pull-visit;unit>>))
+  (db :datascript.db/database-view)
+  (visitor :option<pull-visitor>))
+
+(type-record PullOptions
+  (visitor :option<pull-visitor>))
+
+(type-record ParsedPullOptions
+  (context :datascript.pull-api/PullContext)
+  (pattern :datascript.pull-parser/PullPattern))
+
+(signature datascript.pull-api/pull-options
+  :fn<pull-visitor;PullOptions>)
+
+(defn ^PullOptions pull-options
+  [visitor]
+  (record PullOptions
+    (visitor (Some visitor))))
+
+(defn ^PullOptions default-pull-options []
+  (record PullOptions
+    (visitor None)))
 
 (type-record DatomCursor
   (current :option<datascript.db/Datom>)
@@ -42,7 +61,7 @@
 (type-record ReverseAttrsState
   (seen :set<int>)
   (recursion-limits :map<int;int>)
-  (values :map<keyword;pulled-value>)
+  (values :map<Datascript_runtime.Data_value.t;pulled-value>)
   (pattern :datascript.pull-parser/PullPattern)
   (attr :option<datascript.pull-parser/pull-attr>)
   (attrs :vector<datascript.pull-parser/pull-attr>)
@@ -52,7 +71,7 @@
 (type-record AttrsState
   (seen :set<int>)
   (recursion-limits :map<int;int>)
-  (values :map<keyword;pulled-value>)
+  (values :map<Datascript_runtime.Data_value.t;pulled-value>)
   (pattern :datascript.pull-parser/PullPattern)
   (attr :option<datascript.pull-parser/pull-attr>)
   (resume-attr :option<datascript.pull-parser/pull-attr>)
@@ -68,6 +87,13 @@
   (ReverseAttrsFrame :datascript.pull-api/ReverseAttrsState)
   (AttrsFrame :datascript.pull-api/AttrsState))
 
+(defprotocol IFrame
+  (-merge [this result] :datascript.pull-api/frame)
+  (-run
+   [this context]
+   :vector<datascript.pull-api/frame>)
+  (-str [this] :string))
+
 (defn ^:Datascript_runtime.Data_value.t pulled-to-data
   [^pulled-value value]
   (match value
@@ -77,27 +103,29 @@
      pulled-to-data
      values)
     (PulledEntity values)
-    (Datascript_runtime.Data_value.map_of_keyword_map_with
+    (Datascript_runtime.Data_value.map_of_data_map_with
      pulled-to-data
      values)))
 
 (signature datascript.pull-api/assoc-pulled-value
-  :fn<map<keyword;pulled-value>;keyword;pulled-value;map<keyword;pulled-value>>)
+  :fn<map<Datascript_runtime.Data_value.t;pulled-value>;Datascript_runtime.Data_value.t;pulled-value;map<Datascript_runtime.Data_value.t;pulled-value>>)
 
-(defn ^:map<keyword;pulled-value> assoc-pulled-value
-  [^:map<keyword;pulled-value> values
-   ^:keyword key
+(defn ^:map<Datascript_runtime.Data_value.t;pulled-value>
+  assoc-pulled-value
+  [^:map<Datascript_runtime.Data_value.t;pulled-value> values
+   ^:Datascript_runtime.Data_value.t key
    ^pulled-value value]
-  (Lg_runtime.Runtime_map.assoc_small_string values key value))
+  (assoc values key value))
 
 (signature datascript.pull-api/assoc-pulled-data
-  :fn<map<keyword;Datascript_runtime.Data_value.t>;keyword;Datascript_runtime.Data_value.t;map<keyword;Datascript_runtime.Data_value.t>>)
+  :fn<map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>;Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t;map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>>)
 
-(defn ^:map<keyword;Datascript_runtime.Data_value.t> assoc-pulled-data
-  [^:map<keyword;Datascript_runtime.Data_value.t> values
-   ^:keyword key
+(defn ^:map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>
+  assoc-pulled-data
+  [^:map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t> values
+   ^:Datascript_runtime.Data_value.t key
    ^:Datascript_runtime.Data_value.t value]
-  (Lg_runtime.Runtime_map.assoc_small_string values key value))
+  (assoc values key value))
 
 (defn ^:option<datascript.db/Datom> cursor-datom
   [^DatomCursor cursor]
@@ -137,7 +165,7 @@
   (ResultFrame
    (frame-result
     (non-empty-many values)
-    (non-empty-cursor cursor))))
+    (Some cursor))))
 
 (defn ^boolean cursor-matches-attr?
   [^DatomCursor cursor ^:keyword attr]
@@ -162,7 +190,7 @@
       (ResultFrame
        (frame-result
         (Some (PulledMany values))
-        (non-empty-cursor cursor))))))
+        (Some cursor))))))
 
 (defn ^frame run-multival-attr
   [^:vector<pulled-value> values
@@ -192,11 +220,17 @@
    (.-attr state)
    (.-datoms state)))
 
-(defn visit [^PullContext context ^pull-visit event]
+(defn visit
+  [^PullContext context
+   ^:keyword kind
+   ^:option<int> entity
+   ^:option<keyword> attr
+   ^:option<int> value]
   :unit
   (match (.-visitor context)
     None (Stdlib.ignore 0)
-    (Some visitor) (Stdlib.ignore (visitor event))))
+    (Some visitor)
+    (Stdlib.ignore (visitor kind entity attr value))))
 
 (defn ^:option<DatomCursor> cursor-from-seq
   [^:seq<datascript.db/Datom> datoms]
@@ -214,49 +248,81 @@
     None None
     (Some datoms) (cursor-from-seq datoms)))
 
+(defn ^boolean attr-in-range?
+  [^:keyword attr ^:keyword from ^:keyword to]
+  (and
+   (not (neg? (compare attr from)))
+   (not (pos? (compare attr to)))))
+
+(defn ^:option<DatomCursor> pull-forward-cursor
+  [^datascript.db/database-view database
+   ^datascript.pull-parser/PullPattern pattern
+  ^int id]
+  (if (:wildcard pattern)
+    (cursor-from-datoms
+     (db/database-view-search
+      database
+      (Some id)
+      None
+      None
+      None))
+    (match (:first-attr pattern)
+      None None
+      (Some first-attr)
+      (match (:last-attr pattern)
+        None None
+        (Some last-attr)
+        (let [from (.-name (dpp/attr-data first-attr))
+              to (.-name (dpp/attr-data last-attr))]
+          (match database
+            (db/DatabaseView unfiltered)
+            (cursor-from-datoms
+             (set/slice
+              (.-eavt unfiltered)
+              (db/datom-bound
+               (Some id)
+               (Some from)
+               None
+               None
+               db/e0
+               db/tx0)
+              (db/datom-bound
+               (Some id)
+               (Some to)
+               None
+               None
+               db/e0
+               db/txmax)))
+            (db/FilteredDatabaseView _)
+            (if-some
+              [datoms
+               (db/database-view-search
+                database
+                (Some id)
+                None
+                None
+                None)]
+              (cursor-from-seq
+               (filter
+                (fn [datom]
+                  (attr-in-range?
+                   (.-a datom)
+                   from
+                   to))
+                datoms))
+              None)))))))
+
 (defn ^AttrsState attrs-state
   [^PullContext context
    ^:set<int> seen
    ^:map<int;int> recursion-limits
-   ^datascript.pull-parser/PullPattern pattern
+  ^datascript.pull-parser/PullPattern pattern
    ^int id]
   (let [database (.-db context)
-        datoms
-        (if (:wildcard pattern)
-          (set/slice
-           (.-eavt database)
-           (db/datom-bound
-            (Some id) None None None db/e0 db/tx0)
-           (db/datom-bound
-            (Some id) None None None db/e0 db/txmax))
-          (match (:first-attr pattern)
-            None None
-            (Some first-attr)
-            (match (:last-attr pattern)
-              None None
-              (Some last-attr)
-              (let [from
-                    (.-name (dpp/attr-data first-attr))
-                    to
-                    (.-name (dpp/attr-data last-attr))]
-                (set/slice
-                 (.-eavt database)
-                 (db/datom-bound
-                  (Some id)
-                  (Some from)
-                  None
-                  None
-                  db/e0
-                  db/tx0)
-                 (db/datom-bound
-                  (Some id)
-                  (Some to)
-                  None
-                  None
-                  db/e0
-                  db/txmax))))))]
+        datoms (pull-forward-cursor database pattern id)]
     (when (:wildcard pattern)
-      (visit context (VisitWildcard id)))
+      (visit
+       context :db.pull/wildcard (Some id) None None))
     (record AttrsState
       (seen seen)
       (recursion-limits recursion-limits)
@@ -266,8 +332,18 @@
       (resume-attr None)
       (attrs (:attrs pattern))
       (attr-index 1)
-      (datoms (cursor-from-datoms datoms))
+      (datoms datoms)
       (id id))))
+
+(defn ^frame attrs-frame
+  [^PullContext context
+   ^:set<int> seen
+   ^:map<int;int> recursion-limits
+   ^datascript.pull-parser/PullPattern pattern
+   ^int id]
+  (AttrsFrame
+   (attrs-state
+    context seen recursion-limits pattern id)))
 
 (defn ^datascript.pull-parser/PullPattern attr-pattern
   [^datascript.pull-parser/pull-attr attr]
@@ -287,11 +363,12 @@
       (dpp/attr-pattern-wildcard attr)))))
 
 (defn ^pulled-value cycle-entity [^int id]
-  (let [^:map<keyword;pulled-value> values {}]
+  (let [^:map<Datascript_runtime.Data_value.t;pulled-value>
+        values {}]
     (PulledEntity
      (assoc-pulled-value
       values
-      :db/id
+      (Datascript_runtime.Data_value.Keyword ":db/id")
       (PulledScalar
        (Datascript_runtime.Data_value.Int id))))))
 
@@ -302,15 +379,14 @@
    ^datascript.pull-parser/PullPattern pattern
    ^datascript.pull-parser/pull-attr attr
    ^int id]
-  (AttrsFrame
-   (attrs-state
-    context
-    (conj seen id)
-    recursion-limits
-    (if (.-recursive (dpp/attr-data attr))
-      pattern
-      (attr-pattern attr))
-    id)))
+  (attrs-frame
+   context
+   (conj seen id)
+   recursion-limits
+   (if (.-recursive (dpp/attr-data attr))
+     pattern
+     (attr-pattern attr))
+   id))
 
 (defn ^frame ref-frame
   [^PullContext context
@@ -321,9 +397,8 @@
    ^int id]
   (let [data (dpp/attr-data attr)]
     (if-not (auto-expanding? attr)
-      (AttrsFrame
-       (attrs-state
-        context seen recursion-limits (attr-pattern attr) id))
+      (attrs-frame
+       context seen recursion-limits (attr-pattern attr) id)
       (if (contains? seen id)
         (ResultFrame
          (frame-result
@@ -376,7 +451,7 @@
   (ResultFrame
    (frame-result
     (non-empty-many (.-values state))
-    (non-empty-cursor (.-datoms state)))))
+    (Some (.-datoms state)))))
 
 (defn ^frame skip-multival-ref
   [^MultivalRefAttrState state]
@@ -387,7 +462,7 @@
        (frame-result
         (Some
          (PulledMany (.-values state)))
-        None))
+        (Some (.-datoms state))))
       (Some datom)
       (if (= (.-a datom) (.-name data))
         (skip-multival-ref (next-multival-ref-state state))
@@ -462,8 +537,9 @@
         (Some value)
         (Some (PulledScalar value))))))
 
-(defn ^:map<keyword;pulled-value> merge-attr-value
-  [^:map<keyword;pulled-value> values
+(defn ^:map<Datascript_runtime.Data_value.t;pulled-value>
+  merge-attr-value
+  [^:map<Datascript_runtime.Data_value.t;pulled-value> values
    ^datascript.pull-parser/pull-attr attr
    ^:option<pulled-value> value]
   (match (apply-attr-xform attr value)
@@ -562,7 +638,7 @@
 
 (defn ^AttrsState attrs-state-with
   [^AttrsState state
-   ^:map<keyword;pulled-value> values
+   ^:map<Datascript_runtime.Data_value.t;pulled-value> values
    ^:option<datascript.pull-parser/pull-attr> attr
    ^:option<datascript.pull-parser/pull-attr> resume-attr
    ^int attr-index
@@ -581,7 +657,7 @@
 
 (defn ^AttrsState advance-attrs-state
   [^AttrsState state
-   ^:map<keyword;pulled-value> values
+   ^:map<Datascript_runtime.Data_value.t;pulled-value> values
    ^:option<DatomCursor> datoms]
   (let [index (.-attr-index state)]
     (attrs-state-with
@@ -660,8 +736,9 @@
         (Stdlib.invalid_arg
          "Scalar attribute does not start a child frame")))))
 
-(defn ^:map<keyword;pulled-value> add-scalar-datom
-  [^:map<keyword;pulled-value> values
+(defn ^:map<Datascript_runtime.Data_value.t;pulled-value>
+  add-scalar-datom
+  [^:map<Datascript_runtime.Data_value.t;pulled-value> values
    ^datascript.pull-parser/pull-attr attr
    ^datascript.db/Datom datom]
   (merge-attr-value
@@ -669,8 +746,9 @@
    attr
    (Some (PulledScalar (.-v datom)))))
 
-(defn ^:map<keyword;pulled-value> add-default
-  [^:map<keyword;pulled-value> values
+(defn ^:map<Datascript_runtime.Data_value.t;pulled-value>
+  add-default
+  [^:map<Datascript_runtime.Data_value.t;pulled-value> values
    ^datascript.pull-parser/pull-attr attr]
   (let [data (dpp/attr-data attr)]
     (match (.-default data)
@@ -681,8 +759,9 @@
        (.-alias data)
        (PulledScalar value)))))
 
-(defn ^:map<keyword;pulled-value> add-missing-value
-  [^:map<keyword;pulled-value> values
+(defn ^:map<Datascript_runtime.Data_value.t;pulled-value>
+  add-missing-value
+  [^:map<Datascript_runtime.Data_value.t;pulled-value> values
    ^datascript.pull-parser/pull-attr attr]
   (let [data (dpp/attr-data attr)]
     (match (.-default data)
@@ -701,7 +780,10 @@
   (let [data (dpp/attr-data attr)]
     (visit
      context
-     (VisitAttr (.-id state) (.-name data)))
+     :db.pull/attr
+     (Some (.-id state))
+     (Some (.-name data))
+     None)
     (advance-attrs-state
      state
      (add-missing-value (.-values state) attr)
@@ -728,6 +810,12 @@
     (Some datom)
     (let [attr (dpp/attribute (.-db context) (.-a datom))
           data (dpp/attr-data attr)]
+      (visit
+       context
+       :db.pull/attr
+       (Some (.-id state))
+       (Some (.-name data))
+       None)
       (if (or (.-multival data) (.-ref data))
         (start-attr-child
          context state attr explicit-attr cursor)
@@ -817,7 +905,10 @@
                 (do
                   (visit
                    context
-                   (VisitAttr (.-id state) (.-name data)))
+                   :db.pull/attr
+                   (Some (.-id state))
+                   (Some (.-name data))
+                   None)
                   (if (or (.-multival data) (.-ref data))
                     (start-attr-child
                      context state attr None cursor)
@@ -834,7 +925,7 @@
 
 (defn ^ReverseAttrsState advance-reverse-state
   [^ReverseAttrsState state
-   ^:map<keyword;pulled-value> values]
+   ^:map<Datascript_runtime.Data_value.t;pulled-value> values]
   (let [attrs (.-attrs state)
         index (.-attr-index state)]
     (record ReverseAttrsState
@@ -862,7 +953,7 @@
     (let [data (dpp/attr-data attr)
           cursor
           (cursor-from-datoms
-           (db/-search
+           (db/database-view-search
             (.-db context)
             None
             (Some (.-name data))
@@ -872,7 +963,10 @@
             None))]
       (visit
        context
-       (VisitReverse (.-name data) (.-id state)))
+       :db.pull/reverse
+       None
+       (Some (.-name data))
+       (Some (.-id state)))
       (match cursor
         None
         [(ReverseAttrsFrame
@@ -916,12 +1010,100 @@
     (Stdlib.invalid_arg
      "ResultFrame cannot be run")))
 
-(defn ^:map<keyword;Datascript_runtime.Data_value.t> pulled-map-to-data
-  [^:map<keyword;pulled-value> values]
+(defn- ^ResultState frame-result-state-exn [^frame result]
+  (match result
+    (ResultFrame state) state
+    _
+    (Stdlib.invalid_arg
+     "Frame merge requires a ResultFrame")))
+
+(defn- ^:string pull-attr-string
+  [^datascript.pull-parser/pull-attr attr]
+  (let [data (dpp/attr-data attr)
+        alias (.-alias data)]
+    (match alias
+      (Datascript_runtime.Data_value.Nil)
+      (str (.-name data))
+      _
+      (Datascript_runtime.Data_value.to_edn_string alias))))
+
+(defn- ^:string remaining-attrs-string
+  [^:vector<datascript.pull-parser/pull-attr> attrs
+   ^int index]
+  (if (< index (count attrs))
+    (str/join
+     " "
+     (mapv
+      pull-attr-string
+      (subvec attrs index)))
+    ""))
+
+(defn- ^:string frame-string [^frame current]
+  (match current
+    (ResultFrame state)
+    (str
+     "ResultFrame<value="
+     (match (.-value state)
+       None ""
+       (Some value)
+       (Datascript_runtime.Data_value.to_edn_string
+        (pulled-to-data value)))
+     ">")
+    (MultivalAttrFrame state)
+    (str
+     "MultivalAttrFrame<attr="
+     (pull-attr-string (.-attr state))
+     ">")
+    (MultivalRefAttrFrame state)
+    (str
+     "MultivalAttrFrame<attr="
+     (pull-attr-string (.-attr state))
+     ">")
+    (ReverseAttrsFrame state)
+    (str
+     "ReverseAttrsFrame<id="
+     (.-id state)
+     ", attr="
+     (match (.-attr state)
+       None ""
+       (Some attr) (pull-attr-string attr))
+     ", attrs="
+     (remaining-attrs-string
+      (.-attrs state)
+      (.-attr-index state))
+     ">")
+    (AttrsFrame state)
+    (str
+     "AttrsFrame<id="
+     (.-id state)
+     ", attr="
+     (match (.-attr state)
+       None ""
+       (Some attr) (pull-attr-string attr))
+     ", attrs="
+     (remaining-attrs-string
+      (.-attrs state)
+      (.-attr-index state))
+     ">")))
+
+(extend-type datascript.pull-api/frame
+  IFrame
+  (-merge [current result]
+    (merge-frame
+     current
+     (frame-result-state-exn result)))
+  (-run [current context]
+    (run-frame context current))
+  (-str [current]
+    (frame-string current)))
+
+(defn
+  ^:map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>
+  pulled-map-to-data
+  [^:map<Datascript_runtime.Data_value.t;pulled-value> values]
   (reduce-kv
-   (fn [^:map<keyword;Datascript_runtime.Data_value.t> result
-        ^:keyword key
-        ^pulled-value value]
+   (fn
+     [result key value]
      (assoc-pulled-data
       result key (pulled-to-data value)))
    {}
@@ -979,23 +1161,25 @@
         stack-before-current
         (run-frame context current))))))
 
-(defn ^:option<map<keyword;Datascript_runtime.Data_value.t>> pull
-  [^datascript.db/DB database
+(defn
+  ^:option<map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>>
+  pull-parsed-with-options
+  [^datascript.db/database-view database
    ^datascript.pull-parser/PullPattern pattern
-   ^:Datascript_runtime.Data_value.entity_ref entity-ref]
-  (if-some [eid (db/entid database entity-ref)]
+   ^:Datascript_runtime.Data_value.entity_ref entity-ref
+   ^PullOptions options]
+  (if-some [eid (db/database-view-entid database entity-ref)]
     (let [context
           (record PullContext
             (db database)
-            (visitor None))
+            (visitor (.-visitor options)))
           root
-          (AttrsFrame
-           (attrs-state
-            context
-            (set-of :int)
-            {}
-            pattern
-            eid))]
+          (attrs-frame
+           context
+           (set-of :int)
+           {}
+           pattern
+           eid)]
       (match (run-stack context (list root))
         None None
         (Some (PulledEntity values))
@@ -1005,11 +1189,796 @@
          "Root pull result is not an entity")))
     None))
 
-(defn ^:vector<option<map<keyword;Datascript_runtime.Data_value.t>>> pull-many
-  [^datascript.db/DB database
+(defn ^ParsedPullOptions parse-opts
+  ([^datascript.db/database-view database
+    ^:vector<datascript.pull-parser/pull-source-item> pattern]
+   (parse-opts database pattern (default-pull-options)))
+  ([^datascript.db/database-view database
+    ^:vector<datascript.pull-parser/pull-source-item> pattern
+    ^PullOptions options]
+   (record ParsedPullOptions
+     (context
+      (record PullContext
+        (db database)
+        (visitor (.-visitor options))))
+     (pattern (dpp/parse-pattern-view database pattern)))))
+
+(defn
+  ^:option<map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>>
+  pull-impl
+  [^ParsedPullOptions parsed
+   ^:Datascript_runtime.Data_value.entity_ref entity-ref]
+  (let [context (.-context parsed)]
+    (pull-parsed-with-options
+     (.-db context)
+     (.-pattern parsed)
+     entity-ref
+     (record PullOptions
+       (visitor (.-visitor context))))))
+
+(defn
+  ^:option<map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>>
+  pull-parsed
+  [^datascript.db/database-view database
+   ^datascript.pull-parser/PullPattern pattern
+   ^:Datascript_runtime.Data_value.entity_ref entity-ref]
+  (pull-parsed-with-options
+   database pattern entity-ref (default-pull-options)))
+
+(defn
+  ^:option<map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>>
+  pull-source-with-options
+  [^datascript.db/database-view database
+   ^:vector<datascript.pull-parser/pull-source-item> pattern
+   ^:Datascript_runtime.Data_value.entity_ref entity-ref
+   ^PullOptions options]
+  (pull-parsed-with-options
+   database
+   (dpp/parse-pattern-view database pattern)
+   entity-ref
+   options))
+
+(defn
+  ^:option<map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>>
+  pull-source
+  [^datascript.db/database-view database
+   ^:vector<datascript.pull-parser/pull-source-item> pattern
+   ^:Datascript_runtime.Data_value.entity_ref entity-ref]
+  (pull-parsed
+   database
+   (dpp/parse-pattern-view database pattern)
+   entity-ref))
+
+(defn pull
+  {:inline
+   (fn [database pattern entity-id & options]
+     (let [unquote-form
+           (fn [form]
+             (if (and
+                  (seq? form)
+                  (= 'quote (first form)))
+               (second form)
+               form))
+           source-item
+           (fn source-item [item]
+             (let [item (unquote-form item)]
+               (if
+                 (or
+                  (map? item)
+                  (and
+                   (vector? item)
+                   (= :datascript.pull/map-entry
+                      (first item))))
+                 (if (and (map? item) (next item))
+                   (list
+                    'datascript.pull-parser/source-group
+                    (list
+                     'vec
+                     (cons
+                      'list
+                      (map
+                       (fn [entry]
+                         (source-item
+                          [:datascript.pull/map-entry entry]))
+                       item))))
+               (let [entry
+                     (if (map? item)
+                       (first item)
+                       (second item))
+                     source-attr-form
+                     (unquote-form (first entry))
+                     source-option
+                     (fn [option value]
+                       (if (= option :as)
+                         (list
+                          'datascript.pull-parser/option-alias
+                          value)
+                         (if (= option :limit)
+                           (if (nil? value)
+                             (list
+                              'datascript.pull-parser/option-unlimited)
+                             (list
+                              'datascript.pull-parser/option-limit
+                              value))
+                           (if (= option :xform)
+                             (list
+                              'datascript.pull-parser/option-xform
+                              value)
+                             (let [default-form
+                                   (if (nil? value)
+                                     (list
+                                      'Datascript_runtime.Data_value.Nil)
+                                     (if (string? value)
+                                       (list
+                                        'Datascript_runtime.Data_value.String
+                                        value)
+                                       (if (keyword? value)
+                                         (list
+                                          'Datascript_runtime.Data_value.Keyword
+                                          (str value))
+                                         (if (= value true)
+                                           (list
+                                            'Datascript_runtime.Data_value.Bool
+                                            true)
+                                           (if (= value false)
+                                             (list
+                                              'Datascript_runtime.Data_value.Bool
+                                              false)
+                                             (list
+                                              'Datascript_runtime.Data_value.Int
+                                              value))))))]
+                               (list
+                                'datascript.pull-parser/option-default
+                                default-form))))))
+                     source-attr
+                     (if (vector? source-attr-form)
+                       (first source-attr-form)
+                       (if (seq? source-attr-form)
+                         (second source-attr-form)
+                         source-attr-form))
+                     source-options
+                     (if (vector? source-attr-form)
+                       (loop [remaining (next source-attr-form)
+                              result []]
+                         (if (empty? remaining)
+                           result
+                           (recur
+                            (nnext remaining)
+                            (conj
+                             result
+                             (source-option
+                              (first remaining)
+                              (second remaining))))))
+                       (if (seq? source-attr-form)
+                         [(source-option
+                           (if (or
+                                (= 'limit (first source-attr-form))
+                                (= "limit" (first source-attr-form)))
+                             :limit
+                             :default)
+                           (first (nnext source-attr-form)))]
+                         []))
+                     source-pattern (unquote-form (second entry))]
+                 (if (vector? source-pattern)
+                   (if (empty? source-options)
+                     (list
+                      'datascript.pull-parser/source-nested
+                      source-attr
+                      (list
+                       'vec
+                       (cons
+                        'list
+                        (map source-item source-pattern))))
+                     (list
+                      'datascript.pull-parser/source-nested-options
+                      source-attr
+                      (list
+                       'vec
+                       (cons 'list source-options))
+                      (list
+                       'vec
+                       (cons
+                        'list
+                        (map source-item source-pattern)))))
+                   (if (empty? source-options)
+                     (list
+                      'datascript.pull-parser/source-recursion
+                      source-attr
+                      (if (or
+                           (= source-pattern '...)
+                           (= source-pattern "..."))
+                        'None
+                        (list 'Some source-pattern)))
+                     (list
+                      'datascript.pull-parser/source-recursion-options
+                      source-attr
+                      (list
+                       'vec
+                       (cons 'list source-options))
+                      (if (or
+                           (= source-pattern '...)
+                           (= source-pattern "..."))
+                        'None
+                        (list 'Some source-pattern)))))))
+               (if (seq? item)
+                 (let [operation (first item)
+                       source-attr (second item)
+                       value (first (nnext item))]
+                   (if (or
+                        (= operation 'limit)
+                        (= operation "limit"))
+                     (list
+                      'datascript.pull-parser/source-options
+                      source-attr
+                      (list
+                       'vector
+                       (if (nil? value)
+                         (list
+                          'datascript.pull-parser/option-unlimited)
+                         (list
+                          'datascript.pull-parser/option-limit
+                          value))))
+                     (let [default-form
+                           (if (nil? value)
+                             (list
+                              'Datascript_runtime.Data_value.Nil)
+                             (if (string? value)
+                               (list
+                                'Datascript_runtime.Data_value.String
+                                value)
+                               (if (keyword? value)
+                                 (list
+                                  'Datascript_runtime.Data_value.Keyword
+                                  (str value))
+                                 (if (= value true)
+                                   (list
+                                    'Datascript_runtime.Data_value.Bool
+                                    true)
+                                   (if (= value false)
+                                     (list
+                                      'Datascript_runtime.Data_value.Bool
+                                      false)
+                                     (list
+                                      'Datascript_runtime.Data_value.Int
+                                      value))))))]
+                       (list
+                        'datascript.pull-parser/source-default
+                        source-attr
+                        default-form))))
+               (if (vector? item)
+                 (let [source-attr (first item)
+                       source-option
+                       (fn [option value]
+                         (if (= option :as)
+                           (list
+                            'datascript.pull-parser/option-alias
+                            value)
+                           (if (= option :limit)
+                             (if (nil? value)
+                               (list
+                                'datascript.pull-parser/option-unlimited)
+                               (list
+                                'datascript.pull-parser/option-limit
+                                value))
+                             (if (= option :xform)
+                               (list
+                                'datascript.pull-parser/option-xform
+                                value)
+                               (let [default-form
+                                     (if (nil? value)
+                                       (list
+                                        'Datascript_runtime.Data_value.Nil)
+                                       (if (string? value)
+                                         (list
+                                          'Datascript_runtime.Data_value.String
+                                          value)
+                                         (if (keyword? value)
+                                           (list
+                                            'Datascript_runtime.Data_value.Keyword
+                                            (str value))
+                                           (if (= value true)
+                                             (list
+                                              'Datascript_runtime.Data_value.Bool
+                                              true)
+                                             (if (= value false)
+                                               (list
+                                                'Datascript_runtime.Data_value.Bool
+                                                false)
+                                               (if
+                                                (or
+                                                 (symbol? value)
+                                                 (seq? value))
+                                                value
+                                                (list
+                                                 'Datascript_runtime.Data_value.Int
+                                                 value)))))))]
+                                 (list
+                                  'datascript.pull-parser/option-default
+                                  default-form))))))
+                       option-forms
+                       (loop [remaining (next item)
+                              result []]
+                         (if (empty? remaining)
+                           result
+                           (recur
+                            (nnext remaining)
+                            (conj
+                             result
+                             (source-option
+                              (first remaining)
+                              (second remaining))))))]
+                   (list
+                    'datascript.pull-parser/source-options
+                    source-attr
+                    (list
+                     'vec
+                     (cons 'list option-forms))))
+               (if (or
+                    (= item :*)
+                    (= item '*)
+                    (= item "*"))
+                 'datascript.pull-parser/source-wildcard
+                 (list
+                  'datascript.pull-parser/source-attribute
+                  item)))))))]
+       (let [pattern (unquote-form pattern)
+             source
+             (if (vector? pattern)
+               (vec (map source-item pattern))
+               pattern)
+             entity-ref
+             (if (vector? entity-id)
+               (let [lookup-attr (first entity-id)
+                     lookup-value (second entity-id)
+                     value-form
+                     (if (nil? lookup-value)
+                       (list
+                        'Datascript_runtime.Data_value.Nil)
+                       (if (string? lookup-value)
+                         (list
+                          'Datascript_runtime.Data_value.String
+                          lookup-value)
+                         (if (keyword? lookup-value)
+                           (list
+                            'Datascript_runtime.Data_value.Keyword
+                            (str lookup-value))
+                           (if (or
+                                (symbol? lookup-value)
+                                (seq? lookup-value))
+                             lookup-value
+                             (list
+                              'Datascript_runtime.Data_value.Int
+                              lookup-value)))))]
+                 (list
+                  'Datascript_runtime.Data_value.Lookup_ref
+                  (str lookup-attr)
+                  value-form))
+               (if (keyword? entity-id)
+                 (list
+                  'Datascript_runtime.Data_value.Ident
+                  (str entity-id))
+                 (list
+                  'Datascript_runtime.Data_value.Entity_id
+                  entity-id)))]
+         (if (empty? options)
+           (list
+            'datascript.pull-api/pull-source
+            (list
+             'datascript.db/database-view
+             database)
+            source
+            entity-ref)
+           (list
+            'datascript.pull-api/pull-source-with-options
+            (list
+             'datascript.db/database-view
+             database)
+            source
+            entity-ref
+            (first options))))))}
+  ([^datascript.db/database-view database
+    ^:vector<datascript.pull-parser/pull-source-item> pattern
+    ^:Datascript_runtime.Data_value.entity_ref entity-ref]
+   (pull-source database pattern entity-ref))
+  ([^datascript.db/database-view database
+    ^:vector<datascript.pull-parser/pull-source-item> pattern
+    ^:Datascript_runtime.Data_value.entity_ref entity-ref
+    ^PullOptions options]
+   (pull-source-with-options database pattern entity-ref options)))
+
+(defn
+  ^:vector<option<map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>>>
+  pull-many-parsed
+  [^datascript.db/database-view database
    ^datascript.pull-parser/PullPattern pattern
    ^:vector<Datascript_runtime.Data_value.entity_ref> entity-refs]
   (mapv
-   (fn [^:Datascript_runtime.Data_value.entity_ref entity-ref]
-     (pull database pattern entity-ref))
+   (fn [entity-ref]
+     (pull-parsed database pattern entity-ref))
    entity-refs))
+
+(defn ^:vector<Datascript_runtime.Data_value.entity_ref>
+  entity-ids-to-refs
+  [^:vector<int> entity-ids]
+  (mapv
+   (fn [entity-id]
+     (Datascript_runtime.Data_value.Entity_id entity-id))
+   entity-ids))
+
+(defn
+  ^:vector<option<map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>>>
+  pull-many-source
+  [^datascript.db/database-view database
+   ^:vector<datascript.pull-parser/pull-source-item> source
+  ^:vector<Datascript_runtime.Data_value.entity_ref> entity-refs]
+  (let [pattern (dpp/parse-pattern-view database source)]
+    (pull-many-parsed database pattern entity-refs)))
+
+(defn
+  ^:vector<option<map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>>>
+  pull-many-source-with-options
+  [^datascript.db/database-view database
+   ^:vector<datascript.pull-parser/pull-source-item> source
+   ^:vector<Datascript_runtime.Data_value.entity_ref> entity-refs
+   ^PullOptions options]
+  (let [pattern (dpp/parse-pattern-view database source)]
+    (mapv
+     (fn [entity-ref]
+       (pull-parsed-with-options
+        database pattern entity-ref options))
+     entity-refs)))
+
+(defn pull-many
+  {:inline
+   (fn [database pattern entity-ids & options]
+     (let [unquote-form
+           (fn [form]
+             (if (and
+                  (seq? form)
+                  (= 'quote (first form)))
+               (second form)
+               form))
+           source-item
+           (fn source-item [item]
+             (let [item (unquote-form item)]
+               (if
+                 (or
+                  (map? item)
+                  (and
+                   (vector? item)
+                   (= :datascript.pull/map-entry
+                      (first item))))
+                 (if (and (map? item) (next item))
+                   (list
+                    'datascript.pull-parser/source-group
+                    (list
+                     'vec
+                     (cons
+                      'list
+                      (map
+                       (fn [entry]
+                         (source-item
+                          [:datascript.pull/map-entry entry]))
+                       item))))
+                   (let [entry
+                         (if (map? item)
+                           (first item)
+                           (second item))
+                         source-attr-form
+                         (unquote-form (first entry))
+                         source-option
+                         (fn [option value]
+                           (if (= option :as)
+                             (list
+                              'datascript.pull-parser/option-alias
+                              value)
+                             (if (= option :limit)
+                               (if (nil? value)
+                                 (list
+                                  'datascript.pull-parser/option-unlimited)
+                                 (list
+                                  'datascript.pull-parser/option-limit
+                                  value))
+                               (if (= option :xform)
+                                 (list
+                                  'datascript.pull-parser/option-xform
+                                  value)
+                                 (let [default-form
+                                       (if (nil? value)
+                                         (list
+                                          'Datascript_runtime.Data_value.Nil)
+                                         (if (string? value)
+                                           (list
+                                            'Datascript_runtime.Data_value.String
+                                            value)
+                                           (if (keyword? value)
+                                             (list
+                                              'Datascript_runtime.Data_value.Keyword
+                                              (str value))
+                                             (if (= value true)
+                                               (list
+                                                'Datascript_runtime.Data_value.Bool
+                                                true)
+                                               (if (= value false)
+                                                 (list
+                                                  'Datascript_runtime.Data_value.Bool
+                                                  false)
+                                                 (list
+                                                  'Datascript_runtime.Data_value.Int
+                                                  value))))))]
+                                   (list
+                                    'datascript.pull-parser/option-default
+                                    default-form))))))
+                         source-attr
+                         (if (vector? source-attr-form)
+                           (first source-attr-form)
+                           (if (seq? source-attr-form)
+                             (second source-attr-form)
+                             source-attr-form))
+                         source-options
+                         (if (vector? source-attr-form)
+                           (loop [remaining (next source-attr-form)
+                                  result []]
+                             (if (empty? remaining)
+                               result
+                               (recur
+                                (nnext remaining)
+                                (conj
+                                 result
+                                 (source-option
+                                  (first remaining)
+                                  (second remaining))))))
+                           (if (seq? source-attr-form)
+                             [(source-option
+                               (if (or
+                                    (= 'limit (first source-attr-form))
+                                    (= "limit" (first source-attr-form)))
+                                 :limit
+                                 :default)
+                               (first (nnext source-attr-form)))]
+                             []))
+                         source-pattern (unquote-form (second entry))]
+                     (if (vector? source-pattern)
+                       (if (empty? source-options)
+                         (list
+                          'datascript.pull-parser/source-nested
+                          source-attr
+                          (list
+                           'vec
+                           (cons
+                            'list
+                            (map source-item source-pattern))))
+                         (list
+                          'datascript.pull-parser/source-nested-options
+                          source-attr
+                          (list
+                           'vec
+                           (cons 'list source-options))
+                          (list
+                           'vec
+                           (cons
+                            'list
+                            (map source-item source-pattern)))))
+                       (if (empty? source-options)
+                         (list
+                          'datascript.pull-parser/source-recursion
+                          source-attr
+                          (if (or
+                               (= source-pattern '...)
+                               (= source-pattern "..."))
+                            'None
+                            (list 'Some source-pattern)))
+                         (list
+                          'datascript.pull-parser/source-recursion-options
+                          source-attr
+                          (list
+                           'vec
+                           (cons 'list source-options))
+                          (if (or
+                               (= source-pattern '...)
+                               (= source-pattern "..."))
+                            'None
+                            (list 'Some source-pattern)))))))
+               (if (seq? item)
+                 (let [operation (first item)
+                       source-attr (second item)
+                       value (first (nnext item))]
+                   (if (or
+                        (= operation 'limit)
+                        (= operation "limit"))
+                     (list
+                      'datascript.pull-parser/source-options
+                      source-attr
+                      (list
+                       'vector
+                       (if (nil? value)
+                         (list
+                          'datascript.pull-parser/option-unlimited)
+                         (list
+                          'datascript.pull-parser/option-limit
+                          value))))
+                     (let [default-form
+                           (if (nil? value)
+                             (list
+                              'Datascript_runtime.Data_value.Nil)
+                             (if (string? value)
+                               (list
+                                'Datascript_runtime.Data_value.String
+                                value)
+                               (if (keyword? value)
+                                 (list
+                                  'Datascript_runtime.Data_value.Keyword
+                                  (str value))
+                                 (if (= value true)
+                                   (list
+                                    'Datascript_runtime.Data_value.Bool
+                                    true)
+                                   (if (= value false)
+                                     (list
+                                      'Datascript_runtime.Data_value.Bool
+                                      false)
+                                     (list
+                                      'Datascript_runtime.Data_value.Int
+                                      value))))))]
+                       (list
+                        'datascript.pull-parser/source-default
+                        source-attr
+                        default-form))))
+               (if (vector? item)
+                 (let [source-attr (first item)
+                       source-option
+                       (fn [option value]
+                         (if (= option :as)
+                           (list
+                            'datascript.pull-parser/option-alias
+                            value)
+                           (if (= option :limit)
+                             (if (nil? value)
+                               (list
+                                'datascript.pull-parser/option-unlimited)
+                               (list
+                                'datascript.pull-parser/option-limit
+                                value))
+                             (if (= option :xform)
+                               (list
+                                'datascript.pull-parser/option-xform
+                                value)
+                               (let [default-form
+                                     (if (nil? value)
+                                       (list
+                                        'Datascript_runtime.Data_value.Nil)
+                                       (if (string? value)
+                                         (list
+                                          'Datascript_runtime.Data_value.String
+                                          value)
+                                         (if (keyword? value)
+                                           (list
+                                            'Datascript_runtime.Data_value.Keyword
+                                            (str value))
+                                           (if (= value true)
+                                             (list
+                                              'Datascript_runtime.Data_value.Bool
+                                              true)
+                                             (if (= value false)
+                                               (list
+                                                'Datascript_runtime.Data_value.Bool
+                                                false)
+                                               (if
+                                                (or
+                                                 (symbol? value)
+                                                 (seq? value))
+                                                value
+                                                (list
+                                                 'Datascript_runtime.Data_value.Int
+                                                 value)))))))]
+                                 (list
+                                  'datascript.pull-parser/option-default
+                                  default-form))))))
+                       option-forms
+                       (loop [remaining (next item)
+                              result []]
+                         (if (empty? remaining)
+                           result
+                           (recur
+                            (nnext remaining)
+                            (conj
+                             result
+                             (source-option
+                              (first remaining)
+                              (second remaining))))))]
+                   (list
+                    'datascript.pull-parser/source-options
+                    source-attr
+                    (list
+                     'vec
+                     (cons 'list option-forms))))
+               (if (or
+                    (= item :*)
+                    (= item '*)
+                    (= item "*"))
+                 'datascript.pull-parser/source-wildcard
+                 (list
+                  'datascript.pull-parser/source-attribute
+                  item)))))))
+           entity-ref
+           (fn [entity-id]
+             (if (vector? entity-id)
+               (let [lookup-attr (first entity-id)
+                     lookup-value (second entity-id)
+                     value-form
+                     (if (nil? lookup-value)
+                       (list
+                        'Datascript_runtime.Data_value.Nil)
+                       (if (string? lookup-value)
+                         (list
+                          'Datascript_runtime.Data_value.String
+                          lookup-value)
+                         (if (keyword? lookup-value)
+                           (list
+                            'Datascript_runtime.Data_value.Keyword
+                            (str lookup-value))
+                           (if (or
+                                (symbol? lookup-value)
+                                (seq? lookup-value))
+                             lookup-value
+                             (list
+                              'Datascript_runtime.Data_value.Int
+                              lookup-value)))))]
+                 (list
+                  'Datascript_runtime.Data_value.Lookup_ref
+                  (str lookup-attr)
+                  value-form))
+               (if (keyword? entity-id)
+                 (list
+                  'Datascript_runtime.Data_value.Ident
+                  (str entity-id))
+                 (list
+                  'Datascript_runtime.Data_value.Entity_id
+                  entity-id))))]
+       (let [pattern (unquote-form pattern)
+             source
+             (if (vector? pattern)
+               (list
+                'vec
+                (cons 'list (map source-item pattern)))
+               pattern)
+             entity-refs
+             (if (vector? entity-ids)
+               (list
+                'vec
+                (cons
+                 'list
+                 (reduce
+                  (fn [refs entity-id]
+                    (conj refs (entity-ref entity-id)))
+                  []
+                  entity-ids)))
+               (list
+                'datascript.pull-api/entity-ids-to-refs
+                entity-ids))]
+         (if (empty? options)
+           (list
+            'datascript.pull-api/pull-many-source
+            (list
+             'datascript.db/database-view
+             database)
+            source
+            entity-refs)
+           (list
+            'datascript.pull-api/pull-many-source-with-options
+            (list
+             'datascript.db/database-view
+             database)
+            source
+            entity-refs
+            (first options))))))}
+  ([^datascript.db/database-view database
+    ^:vector<datascript.pull-parser/pull-source-item> source
+    ^:vector<Datascript_runtime.Data_value.entity_ref> entity-refs]
+   (pull-many-source database source entity-refs))
+  ([^datascript.db/database-view database
+    ^:vector<datascript.pull-parser/pull-source-item> source
+    ^:vector<Datascript_runtime.Data_value.entity_ref> entity-refs
+    ^PullOptions options]
+   (pull-many-source-with-options
+    database source entity-refs options)))

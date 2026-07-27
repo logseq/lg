@@ -477,10 +477,13 @@ let compile_chunk_from_saved_state target state_path input_path =
         let packages =
           List.sort_uniq String.compare (source_packages @ saved.packages)
         in
-        Lg.Compiler.compile_chunk_with_filename_and_diagnostics ~target
-          ~filename:input_path ~check_ocaml:false saved.state source
-        |> Result.map (fun (state, compilation) ->
-               (state, packages, compilation)))
+        Result.bind
+          (Lg.Compiler.restore_ocaml_environment ~target ~packages saved.state [])
+          (fun state ->
+            Lg.Compiler.compile_chunk_with_filename_and_diagnostics ~target
+              ~filename:input_path ~check_ocaml:false state source
+            |> Result.map (fun (state, compilation) ->
+                   (state, packages, compilation))))
 
 let infer_interface target input_path =
   let source = read_file input_path in

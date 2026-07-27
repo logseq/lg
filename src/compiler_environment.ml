@@ -229,8 +229,8 @@ and anonymous_fields_equal left right =
 
 let rec anonymous_type_layout_compatible left right =
   match (left, right) with
-  | (Types.TUnknown | Types.TVar _), _
-  | _, (Types.TUnknown | Types.TVar _) ->
+  | (Types.TUnknown | Types.TMeta _ | Types.TVar _), _
+  | _, (Types.TUnknown | Types.TMeta _ | Types.TVar _) ->
       true
   | Types.TRecord left, Types.TRecord right ->
       anonymous_fields_layout_compatible left right

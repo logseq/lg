@@ -324,6 +324,7 @@ let of_param_annotation annotation =
     in
     (match type_name with
     | "int" | "long" | "number" -> Ok TInt
+    | "string" -> Ok TString
     | "Object" | "java.lang.Object" | "Number" | "java.lang.Number"
     | "Comparable" | "java.lang.Comparable" | "Boolean" | "String" ->
         Error.error

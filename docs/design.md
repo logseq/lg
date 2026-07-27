@@ -233,9 +233,18 @@ algorithms.
 
 ### Upstream behavior is authoritative
 
+The authoritative compatibility baseline is the Logseq DataScript fork at
+commit `3f141af97b70e1f14c65eaa119acd822ebece37e`. The repository URL, source
+mapping, generated public API manifest, and differential fixture inventory are
+recorded in `test/datascript/UPSTREAM.md`.
+
 Static typing may change the representation of an upstream value, but it must
 not remove an upstream operation, arity, predicate composition rule, index
 ordering, transaction ordering rule, or observable database behavior.
+
+Annotation difficulty cannot justify missing upstream behavior. A compiler
+inference gap must be fixed or represented by a permitted explicit boundary;
+it must not narrow or remove the DataScript API.
 
 Ports keep upstream control flow and algorithms unless a measured,
 semantics-preserving optimization is documented. Replacing an upstream
@@ -308,6 +317,12 @@ The currently accepted measured representation optimizations are narrow:
 - DataScript identifier comparison checks namespace and name slices in place
   instead of allocating substrings. Separator handling and lexical ordering
   remain identical.
+- Persistent sorted set iteration retains upstream leaf-sized chunk boundaries.
+  Each leaf has one memoized sequence boundary, while values inside the leaf
+  are read directly from its existing key array. The next leaf remains lazy,
+  so storage callbacks occur in the same order as upstream. On the tracked
+  300,000-element `next` workload this reduced Native and Melange to
+  2.90 ms and 4.20 ms respectively, versus 6.05 ms for upstream ClojureScript.
 
 With 20,000 people, 2 seconds of warmup, five 1-second samples, and batch size
 10, these optimizations made all 11 tracked workloads faster than the upstream

@@ -625,6 +625,38 @@ let into target source =
   | Error _ -> Error.error "into source must be a collection"
   | Ok (source_inner, source_list_expr) -> (
       match target.ty with
+      | target_ty when Option.is_some (Types.dynamic_map_types target_ty) ->
+          let target_key, target_value =
+            Option.get (Types.dynamic_map_types target_ty)
+          in
+          (match source_inner with
+          | TTuple [ source_key; source_value ]
+            when Types.equal target_key source_key
+                 && Types.equal target_value source_value ->
+              Ok
+                (typed_ir target.ty
+                   (apply "List.fold_left"
+                      [
+                        Semantic_ir.Fun
+                          ( [
+                              Semantic_ir.PVar "map";
+                              Semantic_ir.PVar "entry";
+                            ],
+                            apply "Lg_runtime.Runtime_map.assoc"
+                              [
+                                Semantic_ir.Ident "map";
+                                apply "fst" [ Semantic_ir.Ident "entry" ];
+                                apply "snd" [ Semantic_ir.Ident "entry" ];
+                              ] );
+                        target.semantic_expr;
+                        source_list_expr;
+                      ]))
+          | TTuple [ _; _ ] ->
+              Error.error
+                "into source entry types must match target map types"
+          | _ ->
+              Error.error
+                "into map target expects key-value tuple entries")
       | TVector (TVar _) ->
           Ok
             (typed_ir (TVector source_inner)
@@ -711,7 +743,7 @@ let into_cat target source =
         (typed_ir (TList element_type) (apply "List.concat" [ outer ]))
   | Ok (inner, outer)
     when Types.is_dynamic inner
-         || match inner with TUnknown | TVar _ -> true | _ -> false ->
+         || match inner with TUnknown | TMeta _ | TVar _ -> true | _ -> false ->
       let flattened =
         apply "List.concat"
           [ apply "List.map"

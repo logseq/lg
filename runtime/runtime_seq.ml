@@ -12,6 +12,30 @@ let rec unfold_memoized step state =
   in
   fun () -> Lazy.force node
 
+let rec unfold_chunks step state =
+  let chunk =
+    lazy
+      (match step state with
+      | None -> None
+      | Some (values, from, until, next_state) ->
+          let rest =
+            let sequence = lazy (unfold_chunks step (next_state ())) in
+            fun () -> Lazy.force sequence ()
+          in
+          Some (values, from, until, rest))
+  in
+  let rec emit values index until rest () =
+    if index >= until then rest ()
+    else
+      Seq.Cons
+        (Array.get values index, emit values (index + 1) until rest)
+  in
+  fun () ->
+    match Lazy.force chunk with
+    | None -> Seq.Nil
+    | Some (values, from, until, rest) ->
+        emit values from until rest ()
+
 let of_list values = values |> List.to_seq |> memoize
 let of_vector values = values |> Rrbvec.to_list |> of_list
 let of_array values = values |> Array.to_seq |> memoize
@@ -65,13 +89,13 @@ let rec drop_while predicate sequence =
           else Seq.Cons (value, rest))
 
 let distinct equal sequence =
-  let rec loop seen sequence =
-    memoize (fun () ->
-        match sequence () with
-        | Seq.Nil -> Seq.Nil
-        | Seq.Cons (value, rest) ->
-            if List.exists (equal value) seen then (loop seen rest) ()
-            else Seq.Cons (value, loop (value :: seen) rest))
+  let rec loop seen sequence = memoize (fun () -> advance seen sequence)
+  and advance seen sequence =
+    match sequence () with
+    | Seq.Nil -> Seq.Nil
+    | Seq.Cons (value, rest) ->
+        if List.exists (equal value) seen then advance seen rest
+        else Seq.Cons (value, loop (value :: seen) rest)
   in
   loop [] sequence
 

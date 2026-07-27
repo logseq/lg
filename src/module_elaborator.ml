@@ -564,6 +564,7 @@ let rec compile_module ?location ?signature_name ?signature_location
                             Source_context.find name_form
                             |> Option.map (fun location ->
                                    (Source_node_id.of_location location, location));
+                          type_annotation = None;
                           expression = expr.semantic_expr;
                         }
                     in

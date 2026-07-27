@@ -1822,7 +1822,7 @@ let rec add_type_references add ty references =
         references fields
   | TNullable inner -> add_type_references add inner references
   | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
-  | TBool | TUnit | TNil | TUnknown | TVar _ ->
+  | TBool | TUnit | TNil | TUnknown | TMeta _ | TVar _ ->
       references
 
 let add_type_annotation_references add source references =

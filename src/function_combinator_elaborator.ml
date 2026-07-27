@@ -81,7 +81,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     else if Types.is_dynamic expected_ty then
       if
         Types.is_dynamic argument.ty
-        || match argument.ty with TUnknown | TVar _ -> true | _ -> false
+        || match argument.ty with TUnknown | TMeta _ | TVar _ -> true | _ -> false
       then Ok argument.semantic_expr
       else
         pack_dynamic_value env expected_ty argument
@@ -438,7 +438,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                             if
                               Types.is_dynamic inner
                               || match inner with
-                                 | TUnknown | TVar _ -> true
+                                 | TUnknown | TMeta _ | TVar _ -> true
                                  | _ -> false
                             then
                               let equality =
@@ -639,7 +639,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                           | fn_type
                             when Types.is_dynamic fn_type
                                  || (match fn_type with
-                                    | TUnknown | TVar _ -> true
+                                    | TUnknown | TMeta _ | TVar _ -> true
                                     | _ -> false) ->
                               Error.error
                                 "apply requires a statically typed function; \

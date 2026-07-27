@@ -1,45 +1,122 @@
 (ns datascript.test.parser-query
   (:require
-    [clojure.test :as t :refer [is are deftest testing]]
-    [datascript.core :as d]
-    [datascript.db :as db]
-    [datascript.parser :as dp]
-    [datascript.test.core :as tdc])
-  #?(:clj
-     (:import
-       [clojure.lang ExceptionInfo])))
+    [clojure.test :refer [deftest is]]
+    [datascript.parser :as dp]))
+
+(defn ^:Datascript_runtime.Data_value.t symbol-value [^:string value]
+  (Datascript_runtime.Data_value.Symbol value))
+
+(defn ^:Datascript_runtime.Data_value.t keyword-value [^:keyword value]
+  (Datascript_runtime.Data_value.Keyword (str value)))
+
+(defn ^:Datascript_runtime.Data_value.t sequence-value
+  [^:vector<Datascript_runtime.Data_value.t> values]
+  (Datascript_runtime.Data_value.vector_of_vector values))
+
+(defn ^:Datascript_runtime.Data_value.t pattern
+  [^:vector<string> values]
+  (sequence-value (mapv symbol-value values)))
+
+(defn ^:Datascript_runtime.Data_value.t query-form
+  [^:vector<Datascript_runtime.Data_value.t> values]
+  (sequence-value values))
+
+(defn assert-invalid-query
+  [^:Datascript_runtime.Data_value.t form ^:string message]
+  (is (thrown-msg? message (dp/parse-query form))))
 
 (deftest validation
-  (are [q msg] (thrown-msg? msg (dp/parse-query q))
-    '[:find ?e :where [?x]]
-    "Query for unknown vars: [?e]"
-
-    '[:find ?e :with ?f :where [?e]]
-    "Query for unknown vars: [?f]"
-       
-    '[:find ?e ?x ?t :in ?x :where [?e]]
-    "Query for unknown vars: [?t]"
-       
-    '[:find ?x ?e :with ?y ?e :where [?x ?e ?y]]
-    ":find and :with should not use same variables: [?e]"
-       
-    '[:find ?e :in $ $ ?x :where [?e]]
-    "Vars used in :in should be distinct"
-       
-    '[:find ?e :in ?x $ ?x :where [?e]]
-    "Vars used in :in should be distinct"
-
-    '[:find ?e :in $ % ?x % :where [?e]]
-    "Vars used in :in should be distinct"
-       
-    '[:find ?n :with ?e ?f ?e :where [?e ?f ?n]]
-    "Vars used in :with should be distinct"
-       
-    '[:find ?x :where [$1 ?x]]
-    "Where uses unknown source vars: [$1]"
-       
-    '[:find ?x :in $1 :where [$2 ?x]]
-    "Where uses unknown source vars: [$2]"
-       
-    '[:find ?e :where (rule ?e)]
-    "Missing rules var '%' in :in"))
+  (assert-invalid-query
+   (query-form
+    [(keyword-value :find) (symbol-value "?e")
+     (keyword-value :where) (pattern ["?x"])])
+   "Query for unknown vars: [?e]")
+  (assert-invalid-query
+   (query-form
+    [(keyword-value :find) (symbol-value "?e")
+     (keyword-value :with) (symbol-value "?f")
+     (keyword-value :where) (pattern ["?e"])])
+   "Query for unknown vars: [?f]")
+  (assert-invalid-query
+   (query-form
+    [(keyword-value :find)
+     (symbol-value "?e")
+     (symbol-value "?x")
+     (symbol-value "?t")
+     (keyword-value :in)
+     (symbol-value "?x")
+     (keyword-value :where)
+     (pattern ["?e"])])
+   "Query for unknown vars: [?t]")
+  (assert-invalid-query
+   (query-form
+    [(keyword-value :find)
+     (symbol-value "?x")
+     (symbol-value "?e")
+     (keyword-value :with)
+     (symbol-value "?y")
+     (symbol-value "?e")
+     (keyword-value :where)
+     (pattern ["?x" "?e" "?y"])])
+   ":find and :with should not use same variables: [?e]")
+  (assert-invalid-query
+   (query-form
+    [(keyword-value :find) (symbol-value "?e")
+     (keyword-value :in)
+     (symbol-value "$")
+     (symbol-value "$")
+     (symbol-value "?x")
+     (keyword-value :where)
+     (pattern ["?e"])])
+   "Vars used in :in should be distinct")
+  (assert-invalid-query
+   (query-form
+    [(keyword-value :find) (symbol-value "?e")
+     (keyword-value :in)
+     (symbol-value "?x")
+     (symbol-value "$")
+     (symbol-value "?x")
+     (keyword-value :where)
+     (pattern ["?e"])])
+   "Vars used in :in should be distinct")
+  (assert-invalid-query
+   (query-form
+    [(keyword-value :find) (symbol-value "?e")
+     (keyword-value :in)
+     (symbol-value "$")
+     (symbol-value "%")
+     (symbol-value "?x")
+     (symbol-value "%")
+     (keyword-value :where)
+     (pattern ["?e"])])
+   "Vars used in :in should be distinct")
+  (assert-invalid-query
+   (query-form
+    [(keyword-value :find) (symbol-value "?n")
+     (keyword-value :with)
+     (symbol-value "?e")
+     (symbol-value "?f")
+     (symbol-value "?e")
+     (keyword-value :where)
+     (pattern ["?e" "?f" "?n"])])
+   "Vars used in :with should be distinct")
+  (assert-invalid-query
+   (query-form
+    [(keyword-value :find) (symbol-value "?x")
+     (keyword-value :where)
+     (pattern ["$1" "?x"])])
+   "Where uses unknown source vars: [$1]")
+  (assert-invalid-query
+   (query-form
+    [(keyword-value :find) (symbol-value "?x")
+     (keyword-value :in) (symbol-value "$1")
+     (keyword-value :where)
+     (pattern ["$2" "?x"])])
+   "Where uses unknown source vars: [$2]")
+  (assert-invalid-query
+   (query-form
+    [(keyword-value :find) (symbol-value "?e")
+     (keyword-value :where)
+     (sequence-value
+      [(symbol-value "rule") (symbol-value "?e")])])
+   "Missing rules var '%' in :in"))

@@ -1,0 +1,10 @@
+equal=1
+not-equal=2
+chained-less=2
+greater=2
+less-equal=2
+greater-equal=2
+unary-less=3
+variadic-equal=3
+alias-not-equal=2
+alias-equal=1

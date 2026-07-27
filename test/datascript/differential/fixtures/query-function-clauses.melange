@@ -1,0 +1,5 @@
+identity=1
+ground=2
+add=37
+bound-add=10:15,20:25,30:35
+conflict=empty

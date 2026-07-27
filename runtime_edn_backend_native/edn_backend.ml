@@ -1,3 +1,5 @@
+module Melange_edn = Melange_edn_native
+
 type t =
   | Nil
   | Bool of bool
@@ -67,3 +69,12 @@ let rec to_edn = function
 
 let of_edn_string source = Melange_edn.of_edn_string source |> of_edn
 let to_edn_string value = value |> to_edn |> Melange_edn.to_edn_string
+let of_json_string source = Melange_edn_native.of_json_string source |> of_edn
+let to_json_string value = value |> to_edn |> Melange_edn_native.to_json_string
+
+let regex_valid pattern =
+  let _ = Re.Perl.compile_pat pattern in
+  true
+
+let regex_find pattern source =
+  Re.execp (Re.Perl.compile_pat pattern) source

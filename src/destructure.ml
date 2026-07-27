@@ -366,8 +366,8 @@ let rec infer_map_type pattern lookup_local_ty =
                in
                let ty =
                  match (parsed.as_name, ty) with
-                 | Some _, (TUnknown | TVar _) ->
-                     Types.dynamic_constraint TUnknown
+                 | Some _, (TUnknown | TMeta _ | TVar _) ->
+                     Type_solver.fresh ()
                  | _ -> ty
                in
                let ty =
@@ -380,7 +380,18 @@ let rec infer_map_type pattern lookup_local_ty =
       let fields =
         match parsed.as_name with
         | None -> fields
-        | Some _ -> fields @ [ Types.make_record_extension_field () ]
+        | Some name ->
+            let source_ty =
+              match lookup_local_ty name with
+              | TUnknown | TMeta _ | TVar _ -> Type_solver.fresh ()
+              | ty -> ty
+            in
+            fields
+            @ [
+                Types.make_record_extension_field
+                  ~ty:source_ty
+                  ();
+              ]
       in
       TRecord fields)
 
@@ -413,6 +424,27 @@ and infer_pattern_type pattern lookup_local_ty =
   | FMap pairs -> infer_map_type pairs lookup_local_ty
   | FVector forms -> infer_sequence_type forms lookup_local_ty
   | _ -> Error.error "unsupported destructuring pattern"
+
+let infer_generator_pattern_type pattern lookup_local_ty =
+  match pattern with
+  | FVector forms -> (
+      match parse_sequence_pattern forms with
+      | Ok { item_patterns; rest_name = None; sequence_as_name = _ } ->
+          let item_tys =
+            List.map
+              (fun item ->
+                infer_pattern_type item lookup_local_ty
+                |> Result.value ~default:TUnknown)
+              item_patterns
+          in
+          (match item_tys with
+          | [] -> Ok (TVector TUnknown)
+          | first :: rest
+            when List.for_all (fun ty -> Types.equal first ty) rest ->
+              Ok (TVector first)
+          | _ -> Ok (TTuple item_tys))
+      | Ok _ | Error _ -> infer_pattern_type pattern lookup_local_ty)
+  | _ -> infer_pattern_type pattern lookup_local_ty
 
 let compile_default_value compile_default expected form =
   match compile_default with
@@ -548,7 +580,15 @@ let rec bind_map ?compile_default ~env (target : typed_expr) pairs =
                   match parsed.as_name with
                   | None -> acc
                   | Some name ->
-                      local_binding name target.ty target.semantic_expr :: acc
+                      (match Types.find_record_extension_field fields with
+                      | Some field
+                        when Types.is_static_record_source_field field ->
+                          local_binding name field.ty
+                            (Structural_map.field_expr target field)
+                          :: acc
+                      | Some _ | None ->
+                          local_binding name target.ty target.semantic_expr
+                          :: acc)
                 in
                 Ok (List.rev acc)
             | binding :: rest -> (
@@ -600,7 +640,7 @@ and bind_sequence ?compile_default env (target : typed_expr) forms =
     if Types.is_dynamic ty then true
     else
       match Types.seqable_constraint_info ty with
-      | Some (_, _, (TUnknown | TVar _)) -> true
+      | Some (_, _, (TUnknown | TMeta _ | TVar _)) -> true
       | Some (_, _, value_ty) -> Types.is_dynamic value_ty
       | None -> (
           match Types.protocol_constraint_info ty with
@@ -608,7 +648,7 @@ and bind_sequence ?compile_default env (target : typed_expr) forms =
           | None -> false)
   in
   let rec materialize_erased_element = function
-    | TUnknown | TVar _ -> Types.dynamic_constraint TUnknown
+    | TUnknown | TMeta _ | TVar _ -> Types.dynamic_constraint TUnknown
     | TList inner -> TList (materialize_erased_element inner)
     | TVector inner -> TVector (materialize_erased_element inner)
     | ty -> ty

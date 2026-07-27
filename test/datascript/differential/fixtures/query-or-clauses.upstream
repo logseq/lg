@@ -1,0 +1,5 @@
+intersecting=1,3,4
+one-empty=3,4
+and-branches=1,4
+duplicate-branches=1,2
+variable-mismatch=invalid

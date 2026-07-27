@@ -102,8 +102,13 @@
    ^:vector<string> rules]
   (Datascript_runtime.Query_value.context relations sources rules))
 
-(defn ^:map<string;datascript.db/DB> empty-query-databases []
+(defn ^:map<string;datascript.db/database-view> empty-query-databases []
   {})
+
+(defn ^datascript.lg.query-types/source static-database-source
+  [^datascript.db/DB database]
+  (query-types/database-source
+   (db/database-view database)))
 
 (def closed-relation-source
   (relation-query-source [(closed-query-row)]))
@@ -152,7 +157,7 @@
   (query-types/binding-input closed-query-binding))
 
 (def closed-rules-input
-  (query-types/rules-input {}))
+  (query-types/rules-input []))
 
 (defn ^datascript.parser/pattern-element parse-pattern-element!
   [^:Datascript_runtime.Data_value.t value]
@@ -168,6 +173,9 @@
      (db/datom
       2 :name (Datascript_runtime.Data_value.String "Oleg"))])
    {}))
+
+(def static-query-view
+  (db/database-view static-query-database))
 
 (def static-name-pattern
   [(parse-pattern-element!
@@ -219,27 +227,27 @@
 
 (def static-name-relation
   (query-types/lookup-db-pattern
-   static-query-database
+   static-query-view
    static-name-pattern))
 
 (def static-ivan-relation
   (query-types/lookup-db-pattern
-   static-query-database
+   static-query-view
    static-ivan-pattern))
 
 (def static-missing-relation
   (query-types/lookup-db-pattern
-   static-query-database
+   static-query-view
    static-missing-pattern))
 
 (def static-all-components-relation
   (query-types/lookup-db-pattern
-   static-query-database
+   static-query-view
    static-all-components-pattern))
 
 (def static-retracted-relation
   (query-types/lookup-db-pattern
-   static-query-database
+   static-query-view
    static-retracted-pattern))
 
 (def static-age-pattern
@@ -263,14 +271,17 @@
       2 :age (Datascript_runtime.Data_value.Int 37))])
    {}))
 
+(def static-join-view
+  (db/database-view static-join-database))
+
 (def static-joined-relation
   (query-types/lookup-db-patterns
-   static-join-database
+   static-join-view
    [static-name-pattern static-age-pattern]))
 
 (def static-empty-where-relation
   (query-types/lookup-db-patterns
-   static-join-database
+   static-join-view
    []))
 
 (def static-query-patterns
@@ -298,22 +309,22 @@
 
 (def static-relation-output
   (query-types/execute-db-query
-   static-join-database
+   static-join-view
    static-relation-query))
 
 (def static-collection-output
   (query-types/execute-db-query
-   static-join-database
+   static-join-view
    static-collection-query))
 
 (def static-scalar-output
   (query-types/execute-db-query
-   static-join-database
+   static-join-view
    static-scalar-query))
 
 (def static-tuple-output
   (query-types/execute-db-query
-   static-join-database
+   static-join-view
    static-tuple-query))
 
 (def static-db-input-query
@@ -325,7 +336,7 @@
   (query-types/execute-query
    static-db-input-query
    [(query-types/source-input
-     (query-types/database-source
+     (static-database-source
       static-join-database))]))
 
 (def static-bound-query
@@ -338,7 +349,7 @@
   (query-types/execute-query
    static-bound-query
    [(query-types/source-input
-     (query-types/database-source
+     (static-database-source
       static-join-database))
     (query-types/binding-input
      (query-types/scalar-binding
@@ -358,7 +369,7 @@
   (query-types/execute-query
    static-tuple-input-query
    [(query-types/source-input
-     (query-types/database-source
+     (static-database-source
       static-query-database))
     (query-types/binding-input
      (query-types/collection-binding
@@ -382,7 +393,7 @@
   (query-types/execute-query
    static-collection-input-query
    [(query-types/source-input
-     (query-types/database-source
+     (static-database-source
       static-query-database))
     (query-types/binding-input
      (query-types/collection-binding
@@ -397,7 +408,7 @@
   (static-query/q
    static-collection-input-query
    [(query-types/source-input
-     (query-types/database-source
+     (static-database-source
       static-query-database))
     (query-types/binding-input
      (query-types/collection-binding
@@ -443,7 +454,7 @@
   (try
     (Stdlib.ignore
      (query-types/lookup-db-pattern
-      static-query-database
+      static-query-view
       (conj
        static-name-pattern
        (parse-pattern-element!
@@ -460,7 +471,7 @@
   (try
     (Stdlib.ignore
      (query-types/execute-db-query
-      static-join-database
+      static-join-view
       (parser/static-query
        (parser/relation-find ["?missing"])
        static-query-patterns)))
@@ -484,10 +495,10 @@
      (query-types/execute-query
       static-db-input-query
       [(query-types/source-input
-        (query-types/database-source
+        (static-database-source
          static-join-database))
        (query-types/source-input
-        (query-types/database-source
+        (static-database-source
          static-join-database))]))
     false
     (catch _
@@ -498,7 +509,7 @@
     (Stdlib.ignore
      (query-types/execute-query
       static-db-input-query
-      [(query-types/rules-input {})]))
+      [(query-types/rules-input [])]))
     false
     (catch _
       true)))
@@ -509,7 +520,7 @@
      (query-types/execute-query
       static-bound-query
       [(query-types/source-input
-        (query-types/database-source
+        (static-database-source
          static-join-database))
        (query-types/binding-input
         (query-types/collection-binding
@@ -526,7 +537,7 @@
      (query-types/execute-query
       static-tuple-input-query
       [(query-types/source-input
-        (query-types/database-source
+        (static-database-source
          static-query-database))
        (query-types/binding-input
         (query-types/collection-binding
@@ -856,12 +867,12 @@
     (range 1 1001))))
 
 (defn tail-datom-count [^datascript.conn/Conn connection]
-  (let [^datascript.conn/conn-state state @(:state-ref connection)
+  (let [^datascript.conn/conn-state state @(:atom connection)
         ^:vector<vector<datascript.db/Datom>> tail (:tx-tail state)]
     (transduce (map count) + 0 tail)))
 
 (defn tail-group-count [^datascript.conn/Conn connection]
-  (let [^datascript.conn/conn-state state @(:state-ref connection)
+  (let [^datascript.conn/conn-state state @(:atom connection)
         ^:vector<vector<datascript.db/Datom>> tail (:tx-tail state)]
     (count tail)))
 
@@ -1176,7 +1187,7 @@
       final-tail-ok
       (and (= 29 (count @(:writes backend)))
            (= 1 (last @(:writes backend))))
-      state @(:state-ref restored-without-tail)
+      state @(:atom restored-without-tail)
       last-stored
       (match (:db-last-stored state)
         (Some database) database

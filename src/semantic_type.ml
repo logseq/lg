@@ -1,3 +1,8 @@
+type metavariable = {
+  id : int;
+  location : Location.t option;
+}
+
 type ty =
   | TInt
   | TFloat
@@ -12,6 +17,7 @@ type ty =
   | TNil
   | TNullable of ty
   | TUnknown
+  | TMeta of metavariable
   | TVar of string
   | TOcaml of string
   | TOcaml_app of string * ty list
@@ -48,4 +54,16 @@ and fn_arity = {
   fixed_params : ty list;
   rest_param : ty option;
   return_ty : ty;
+}
+
+type scheme_variable =
+  | Declared_variable of string
+  | Inferred_variable of {
+      metavariable_id : int;
+      name : string;
+    }
+
+type scheme = {
+  quantified : scheme_variable list;
+  body : ty;
 }

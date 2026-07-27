@@ -1,5 +1,32 @@
 open Types
 
+let rec contains_unresolved_type = function
+  | TUnknown | TMeta _ | TVar _ -> true
+  | TNullable ty | TArray ty | TRef ty | TList ty | TVector ty | TSet ty
+  | TSeq ty ->
+      contains_unresolved_type ty
+  | TOcaml_app (_, arguments) | TTuple arguments ->
+      List.exists contains_unresolved_type arguments
+  | TFn (parameters, return_ty) ->
+      List.exists contains_unresolved_type (return_ty :: parameters)
+  | TOverloaded_fn arities ->
+      List.exists
+        (fun (arity : fn_arity) ->
+          List.exists contains_unresolved_type
+            (arity.return_ty :: arity.fixed_params)
+          || Option.fold ~none:false ~some:contains_unresolved_type
+               arity.rest_param)
+        arities
+  | TRecord fields ->
+      List.exists
+        (fun (field : field) -> contains_unresolved_type field.ty)
+        fields
+  | TNamed_record record ->
+      List.exists contains_unresolved_type record.type_arguments
+  | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
+  | TBool | TUnit | TNil | TOcaml _ ->
+      false
+
 let validate_unique_keywords pairs =
   let rec loop seen = function
     | [] -> Ok ()
@@ -12,7 +39,7 @@ let validate_unique_keywords pairs =
 let record_type_application record =
   let type_name = Types.ocaml_record_type_name record.type_name in
   let argument_name = function
-    | TUnknown | TVar _ -> "_"
+    | argument when contains_unresolved_type argument -> "_"
     | argument -> Types.ocaml_name argument
   in
   match record.type_arguments with
@@ -155,7 +182,7 @@ let extension_contains target fields keyword =
                 [ field_expr target field; Semantic_ir.String keyword ] )))
 
 let unresolved_field (field : field) =
-  match field.ty with TUnknown | TVar _ -> true | _ -> false
+  match field.ty with TUnknown | TMeta _ | TVar _ -> true | _ -> false
 
 let assoc target fields keyword value =
   match find_field keyword fields with

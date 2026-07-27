@@ -6,7 +6,7 @@ type state = Compiler_state.t
 let empty_state = Compiler_state.empty
 
 let rec contains_inferred_type = function
-  | Types.TUnknown | Types.TVar _ -> true
+  | Types.TUnknown | Types.TMeta _ | Types.TVar _ -> true
   | Types.TNullable ty | Types.TArray ty | Types.TRef ty | Types.TList ty
   | Types.TVector ty | Types.TSet ty | Types.TSeq ty ->
       contains_inferred_type ty
@@ -34,7 +34,7 @@ let rec contains_inferred_type = function
 
 let deferred_type_variables ty =
   let rec collect variables = function
-    | Types.TUnknown -> "a" :: variables
+    | Types.TUnknown | Types.TMeta _ -> "a" :: variables
     | Types.TVar name -> name :: variables
     | Types.TNullable ty | Types.TArray ty | Types.TRef ty | Types.TList ty
     | Types.TVector ty | Types.TSet ty | Types.TSeq ty ->
@@ -73,6 +73,7 @@ let freshen_deferred_type ?return_param_index ty =
   in
   let rec freshen = function
     | Types.TUnknown -> fresh_variable ()
+    | Types.TMeta meta -> Type_solver.fresh ?location:meta.location ()
     | Types.TVar _ as ty -> ty
     | Types.TNullable ty -> Types.TNullable (freshen ty)
     | Types.TArray ty -> Types.TArray (freshen ty)
@@ -134,6 +135,7 @@ let freshen_deferred_type ?return_param_index ty =
     in
     let rec dynamic_unknowns = function
       | Types.TUnknown -> Types.dynamic_constraint Types.TUnknown
+      | Types.TMeta _ as ty -> ty
       | Types.TVar _ as ty -> ty
       | Types.TNullable ty -> Types.TNullable (dynamic_unknowns ty)
       | Types.TArray ty -> Types.TArray (dynamic_unknowns ty)

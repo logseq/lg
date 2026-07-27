@@ -10,13 +10,14 @@ type named_call =
   string -> Env.t -> string -> Ast.form list -> expression_result
 
 type forms = Ast.form list -> expression_result
+type env_forms = Env.t -> Ast.form list -> expression_result
 
 type t = {
   compile_distinct_question : call;
   compile_compare : call;
   compile_key_extreme : named_call;
   compile_hash_set : call;
-  compile_set_of : forms;
+  compile_set_of : env_forms;
   compile_disj : call;
 }
 
@@ -37,7 +38,7 @@ let create ~compile_expr =
     | form -> compile_expr scope env form
   in
   let rec comparable_type = function
-    | TInt | TFloat | TString | TSymbol | TKeyword | TBool | TUnknown | TVar _
+    | TInt | TFloat | TString | TSymbol | TKeyword | TBool | TUnknown | TMeta _ | TVar _
       ->
         true
     | TNullable inner | TOcaml_app ("option", [ inner ]) ->
@@ -114,7 +115,7 @@ let create ~compile_expr =
                      && (Types.equal return_ty TInt
                         || Types.equal return_ty (TOcaml "int")
                         || match return_ty with
-                           | TUnknown | TVar _ -> true
+                           | TUnknown | TMeta _ | TVar _ -> true
                            | _ -> false) ->
                   Ok
                     (typed_ir TInt
@@ -245,13 +246,32 @@ let create ~compile_expr =
                                   ( Semantic_ir.Ident
                                       (set_module ^ ".of_list"),
                                     [ Semantic_ir.List values ] ))))))
-    and compile_set_of arg_forms =
+    and compile_set_of env arg_forms =
       match arg_forms with
       | [ FKeyword keyword ] -> (
           match Type_annotation.of_keyword keyword with
           | Error _ -> Error.error ("unknown set element type " ^ keyword)
           | Ok element_ty ->
-              Types.set_module_name element_ty
+              let set_module =
+                match element_ty with
+                | TOcaml "int" -> Ok "Lg_runtime.Core_set.Int_set"
+                | TOcaml name
+                  when not (String.contains name '.')
+                       && not
+                            (String.starts_with ~prefix:"__lg_record:" name) -> (
+                    match
+                      Type_registry.find_by_emitted_name name
+                        (Compiler_environment.types env)
+                    with
+                    | Some { kind = Type_registry.Variant; _ } ->
+                        Ok "Lg_runtime.Runtime_poly_set"
+                    | Some _ | None ->
+                        Error.error
+                          ("sets require a generated comparator for "
+                         ^ Types.source_name element_ty))
+                | _ -> set_module_name env element_ty
+              in
+              set_module
               |> Result.map (fun set_module ->
                 typed_ir (TSet element_ty)
                   (Semantic_ir.Ident (set_module ^ ".empty"))))

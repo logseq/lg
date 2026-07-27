@@ -1,108 +1,74 @@
-module D = Lg_runtime.Runtime_dynamic
+module B = Datascript_conn_native_base
+module M = Lg_runtime.Runtime_map
+module V = Datascript_runtime.Data_value
 
 let entity index =
-  D.map
+  B.datascript_db_tx_entity
+    (M.of_list
     [
-      (D.keyword ":db/id", D.int (-index));
-      (D.keyword ":item/id", D.int index);
-      (D.keyword ":item/status", D.string "pending");
-    ]
+      (":db/id", V.Int (-index));
+      (":item/id", V.Int index);
+      (":item/status", V.String "pending");
+    ])
 
 let operation entity_id value =
-  D.vector
-    (Rrbvec.of_list
-       [
-         D.keyword ":db/add";
-         D.int entity_id;
-         D.keyword ":item/id";
-         D.int value;
-       ])
+  B.datascript_db_tx_add (V.Entity_id entity_id) ":item/id" (V.Int value)
 
 let person index =
   let name = "name-" ^ string_of_int ((index * 7919) mod 8) in
   let last_name =
     "last-" ^ string_of_int ((index * 3571) mod 6)
   in
-  D.map
+  B.datascript_db_tx_entity
+    (M.of_list
     [
-      (D.keyword ":db/id", D.string (string_of_int index));
-      (D.keyword ":id", D.int index);
-      (D.keyword ":name", D.string name);
-      (D.keyword ":last-name", D.string last_name);
-      (D.keyword ":full-name", D.string (name ^ " " ^ last_name));
-      ( D.keyword ":alias",
-        D.vector
-          (Rrbvec.of_list
+      (":db/id", V.Ref_to (V.Temp_id (string_of_int index)));
+      (":id", V.Int index);
+      (":name", V.String name);
+      (":last-name", V.String last_name);
+      (":full-name", V.String (name ^ " " ^ last_name));
+      ( ":alias",
+        V.Vector
              [
-               D.string "A. C. Q. W.";
-               D.string "A. C. Q. W.";
-               D.string "A. C. Q. W.";
-               D.string "A. C. Q. W.";
-               D.string "A. C. Q. W.";
-             ]) );
-      (D.keyword ":sex", D.keyword ":male");
-      (D.keyword ":age", D.int ((index * 7919) mod 100));
-      ( D.keyword ":salary",
-        D.int ((index * 7919) mod 100_000) );
-    ]
+               V.String "A. C. Q. W.";
+               V.String "A. C. Q. W.";
+               V.String "A. C. Q. W.";
+               V.String "A. C. Q. W.";
+               V.String "A. C. Q. W.";
+             ] );
+      (":sex", V.Keyword ":male");
+      (":age", V.Int ((index * 7919) mod 100));
+      (":salary", V.Int ((index * 7919) mod 100_000));
+    ])
 
 let benchmark_schema =
-  D.map
+  M.of_list
     [
-      ( D.keyword ":id",
-        D.map
+      ( ":id",
+        M.of_list
           [
-            ( D.keyword ":db/unique",
-              D.keyword ":db.unique/identity" );
+            (":db/unique", V.Keyword ":db.unique/identity");
           ] );
-      ( D.keyword ":follows",
-        D.map
+      ( ":follows",
+        M.of_list
           [
-            (D.keyword ":db/valueType", D.keyword ":db.type/ref");
-            ( D.keyword ":db/cardinality",
-              D.keyword ":db.cardinality/many" );
+            (":db/valueType", V.Keyword ":db.type/ref");
+            (":db/cardinality", V.Keyword ":db.cardinality/many");
           ] );
-      ( D.keyword ":alias",
-        D.map
+      ( ":alias",
+        M.of_list
           [
-            ( D.keyword ":db/cardinality",
-              D.keyword ":db.cardinality/many" );
+            (":db/cardinality", V.Keyword ":db.cardinality/many");
           ] );
     ]
 
 let () =
   let count = int_of_string Sys.argv.(1) in
   let mode = if Array.length Sys.argv > 2 then Sys.argv.(2) else "seq" in
-  if
-    mode = "dynamic-map" || mode = "dynamic-pair"
-    || mode = "dynamic-conversion"
-  then (
-    let started_at = Unix.gettimeofday () in
-    let map = ref (D.map []) in
-    let reverse = ref (D.map []) in
-    for index = 1 to count do
-      let key = D.int (-index) in
-      let value = D.int index in
-      map := D.assoc !map key value;
-      if mode = "dynamic-pair" then
-        reverse := D.assoc !reverse value (D.set (Seq.return key))
-    done;
-    if mode = "dynamic-conversion" then
-      let static =
-        D.entries !map |> Lg_runtime.Runtime_map.of_list_dynamic
-      in
-      let static =
-        Datascript_conn_native_base.datascript_util_removem
-          (fun _ -> false) static
-      in
-      ignore (D.map (Lg_runtime.Runtime_map.to_list static));
-    Printf.printf "%d %.6f\n" count (Unix.gettimeofday () -. started_at);
-    exit 0);
   let database =
     if mode = "people" || mode = "people-random" || mode = "people-vector" then
-      Datascript_conn_native_base.datascript_core_empty_db__arity_1_1
-        benchmark_schema
-    else Datascript_conn_native_base.datascript_core_empty_db__arity_0_0 ()
+      B.datascript_core_empty_db__arity_1_1 benchmark_schema
+    else B.datascript_core_empty_db__arity_0_0 ()
   in
   let values =
     List.init count (fun index ->
@@ -116,14 +82,10 @@ let () =
         else if mode = "three-ops" then
           [
             operation (-index) index;
-            D.vector
-              (Rrbvec.of_list
-                 [
-                   D.keyword ":db/add";
-                   D.int (-index);
-                   D.keyword ":item/status";
-                   D.string "pending";
-                 ]);
+            B.datascript_db_tx_add
+              (V.Entity_id (-index))
+              ":item/status"
+              (V.String "pending");
           ]
         else if mode = "ops" then [ operation (-index) index ]
         else if mode = "same-tempid" then [ operation (-1) index ]
@@ -133,18 +95,14 @@ let () =
   in
   let transactions =
     match mode with
-    | "list" -> D.list values
-    | "vector" -> D.vector (Rrbvec.of_list values)
-    | "people-vector" -> D.vector (Rrbvec.of_list values)
-    | "seq" -> D.seq (List.to_seq values)
+    | "list" | "vector" | "people-vector" | "seq" ->
+        Rrbvec.of_list values
     | "ops" | "three-ops" | "same-tempid" | "positive-ops" | "people"
     | "people-random" ->
-        D.list values
+        Rrbvec.of_list values
     | mode -> invalid_arg ("unknown transaction collection: " ^ mode)
   in
   let started_at = Unix.gettimeofday () in
-  let _ =
-    Datascript_conn_native_base.datascript_core_db_with database transactions
-  in
+  let _ = B.datascript_core_db_with database transactions in
   let elapsed = Unix.gettimeofday () -. started_at in
   Printf.printf "%d %.6f\n" count elapsed

@@ -6,6 +6,7 @@
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/lg/annotations.cljc
   datascript/upstream/util.cljc
+  datascript/upstream/lru.cljc
   datascript/upstream/schema.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
@@ -23,6 +24,7 @@
   ../test_runner/clojure/test.cljc
   ../test_runner/clojure/test_native.cljc
   datascript/upstream_test_support/datascript/test/core.cljc
+  datascript/upstream_test_support/datascript/test/storage_support.cljc
   datascript/benchmark/datascript/bench/bench.cljc
   datascript/benchmark/datascript/bench/datascript.cljc
   %{lib:datascript.runtime:datascript_runtime.cmi}
@@ -43,6 +45,7 @@
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/lg/annotations.cljc}
    %{dep:datascript/upstream/util.cljc}
+   %{dep:datascript/upstream/lru.cljc}
    %{dep:datascript/upstream/schema.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
@@ -60,6 +63,7 @@
    %{dep:../test_runner/clojure/test.cljc}
    %{dep:../test_runner/clojure/test_native.cljc}
    %{dep:datascript/upstream_test_support/datascript/test/core.cljc}
+   %{dep:datascript/upstream_test_support/datascript/test/storage_support.cljc}
    %{dep:datascript/benchmark/datascript/bench/bench.cljc}
    %{dep:datascript/benchmark/datascript/bench/datascript.cljc}
    -o
@@ -73,6 +77,7 @@
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/lg/annotations.cljc
   datascript/upstream/util.cljc
+  datascript/upstream/lru.cljc
   datascript/upstream/schema.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
@@ -90,6 +95,7 @@
   ../test_runner/clojure/test_melange.cljc
   datascript/upstream_test_support/datascript/test/cljs.cljc
   datascript/upstream_test_support/datascript/test/core.cljc
+  datascript/upstream_test_support/datascript/test/storage_support.cljc
   datascript/benchmark/datascript/bench/bench.cljc
   datascript/benchmark/datascript/bench/datascript.cljc
   %{lib:datascript.runtime:datascript_runtime__Serialization_value.cmi}
@@ -107,6 +113,7 @@
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/lg/annotations.cljc}
    %{dep:datascript/upstream/util.cljc}
+   %{dep:datascript/upstream/lru.cljc}
    %{dep:datascript/upstream/schema.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
@@ -124,6 +131,7 @@
    %{dep:../test_runner/clojure/test_melange.cljc}
    %{dep:datascript/upstream_test_support/datascript/test/cljs.cljc}
    %{dep:datascript/upstream_test_support/datascript/test/core.cljc}
+   %{dep:datascript/upstream_test_support/datascript/test/storage_support.cljc}
    %{dep:datascript/benchmark/datascript/bench/bench.cljc}
    %{dep:datascript/benchmark/datascript/bench/datascript.cljc}
    -o
@@ -140,14 +148,114 @@
  (action (with-stdout-to %{target} (progn (echo "open Datascript_conn_native_base\n") (run %{exe:../bin/lg_cli.exe} --target native --compile-chunk-from %{state} %{input}) (echo "\nlet __lg_test_module_loaded = ()\n")))))
 
 (rule
+ (target datascript_conn_native_transact_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_transact.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_conn_native_test_transact_retract_static.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input datascript/upstream_tests/datascript/test/transact_retract_static.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_conn_native_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_conn_native_transact_retract_static_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_transact_retract_static.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
  (target datascript_conn_native_test_conn.ml)
  (deps (:state datascript_conn_native_base.state) (:input datascript/upstream_tests/datascript/test/conn.cljc) ../bin/lg_cli.exe)
  (action (with-stdout-to %{target} (progn (echo "open Datascript_conn_native_base\n") (run %{exe:../bin/lg_cli.exe} --target native --compile-chunk-from %{state} %{input}) (echo "\nlet __lg_test_module_loaded = ()\n")))))
 
 (rule
+ (target datascript_conn_native_conn_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_conn.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
  (target datascript_conn_native_test_listen.ml)
  (deps (:state datascript_conn_native_base.state) (:input datascript/upstream_tests/datascript/test/listen.cljc) ../bin/lg_cli.exe)
  (action (with-stdout-to %{target} (progn (echo "open Datascript_conn_native_base\n") (run %{exe:../bin/lg_cli.exe} --target native --compile-chunk-from %{state} %{input}) (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_conn_native_listen_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_listen.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
 
 (rule
  (target datascript_conn_native_test_filter.ml)
@@ -166,6 +274,406 @@
    (progn
     (echo
      "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_filter.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_pull_api_native_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_pull_api.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_pull_parser_native_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_pull_parser.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_serialize_native_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_serialize.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_query_find_specs_native_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_query_find_specs.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_query_native_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_query.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_query_aggregates_native_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_query_aggregates.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_query_fns_native_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_query_fns.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_query_not_native_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_query_not.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_query_or_native_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_query_or.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_query_pull_native_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_query_pull.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_query_rules_native_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_query_rules.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_parser_native_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_parser.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_parser_rules_native_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_parser_rules.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_parser_where_native_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_parser_where.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_parser_find_native_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_parser_find.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_parser_query_native_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_parser_query.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_parser_return_map_native_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_parser_return_map.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_validation_native_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_validation.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_upsert_native_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_upsert.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_query_return_map_native_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_query_return_map.__lg_test_module_loaded\n")
     (run
      %{exe:../bin/lg_cli.exe}
      --target
@@ -216,8 +724,8 @@
 
 (rule
  (target datascript_conn_native_test_lookup_refs.ml)
- (deps (:state datascript_conn_native_test_core.state) (:input datascript/upstream_tests/datascript/test/lookup_refs.cljc) ../bin/lg_cli.exe)
- (action (with-stdout-to %{target} (progn (echo "open Datascript_conn_native_base\nopen Datascript_conn_native_test_core\n") (run %{exe:../bin/lg_cli.exe} --target native --compile-chunk-from %{state} %{input}) (echo "\nlet __lg_test_module_loaded = ()\n")))))
+ (deps (:state datascript_conn_native_base.state) (:input datascript/upstream_tests/datascript/test/lookup_refs.cljc) ../bin/lg_cli.exe)
+ (action (with-stdout-to %{target} (progn (echo "open Datascript_conn_native_base\n") (run %{exe:../bin/lg_cli.exe} --target native --compile-chunk-from %{state} %{input}) (echo "\nlet __lg_test_module_loaded = ()\n")))))
 
 (rule
  (target datascript_conn_native_test_parser.ml)
@@ -306,8 +814,8 @@
 
 (rule
  (target datascript_conn_native_test_serialize.ml)
- (deps (:state datascript_conn_native_test_core.state) (:input datascript/upstream_tests/datascript/test/serialize.cljc) ../bin/lg_cli.exe)
- (action (with-stdout-to %{target} (progn (echo "open Datascript_conn_native_base\nopen Datascript_conn_native_test_core\n") (run %{exe:../bin/lg_cli.exe} --target native --compile-chunk-from %{state} %{input}) (echo "\nlet __lg_test_module_loaded = ()\n")))))
+ (deps (:state datascript_conn_native_base.state) (:input datascript/upstream_tests/datascript/test/serialize.cljc) ../bin/lg_cli.exe)
+ (action (with-stdout-to %{target} (progn (echo "open Datascript_conn_native_base\n") (run %{exe:../bin/lg_cli.exe} --target native --compile-chunk-from %{state} %{input}) (echo "\nlet __lg_test_module_loaded = ()\n")))))
 
 (rule
  (target datascript_conn_native_test_storage.ml)
@@ -321,8 +829,8 @@
 
 (rule
  (target datascript_conn_native_test_upsert.ml)
- (deps (:state datascript_conn_native_test_core.state) (:input datascript/upstream_tests/datascript/test/upsert.cljc) ../bin/lg_cli.exe)
- (action (with-stdout-to %{target} (progn (echo "open Datascript_conn_native_base\nopen Datascript_conn_native_test_core\n") (run %{exe:../bin/lg_cli.exe} --target native --compile-chunk-from %{state} %{input}) (echo "\nlet __lg_test_module_loaded = ()\n")))))
+ (deps (:state datascript_conn_native_base.state) (:input datascript/upstream_tests/datascript/test/upsert.cljc) ../bin/lg_cli.exe)
+ (action (with-stdout-to %{target} (progn (echo "open Datascript_conn_native_base\n") (run %{exe:../bin/lg_cli.exe} --target native --compile-chunk-from %{state} %{input}) (echo "\nlet __lg_test_module_loaded = ()\n")))))
 
 (rule
  (target datascript_conn_native_test_validation.ml)
@@ -406,8 +914,8 @@
 
 (rule
  (target datascript_conn_melange_test_lookup_refs.ml)
- (deps (:state datascript_conn_melange_test_core.state) (:input datascript/upstream_tests/datascript/test/lookup_refs.cljc) ../bin/lg_cli.exe)
- (action (with-stdout-to %{target} (progn (echo "open Datascript_conn_melange_base\nopen Datascript_conn_melange_test_core\n") (run %{exe:../bin/lg_cli.exe} --target melange --compile-chunk-from %{state} %{input}) (echo "\nlet __lg_test_module_loaded = ()\n")))))
+ (deps (:state datascript_conn_melange_base.state) (:input datascript/upstream_tests/datascript/test/lookup_refs.cljc) ../bin/lg_cli.exe)
+ (action (with-stdout-to %{target} (progn (echo "open Datascript_conn_melange_base\n") (run %{exe:../bin/lg_cli.exe} --target melange --compile-chunk-from %{state} %{input}) (echo "\nlet __lg_test_module_loaded = ()\n")))))
 
 (rule
  (target datascript_conn_melange_test_parser.ml)
@@ -496,8 +1004,8 @@
 
 (rule
  (target datascript_conn_melange_test_serialize.ml)
- (deps (:state datascript_conn_melange_test_core.state) (:input datascript/upstream_tests/datascript/test/serialize.cljc) ../bin/lg_cli.exe)
- (action (with-stdout-to %{target} (progn (echo "open Datascript_conn_melange_base\nopen Datascript_conn_melange_test_core\n") (run %{exe:../bin/lg_cli.exe} --target melange --compile-chunk-from %{state} %{input}) (echo "\nlet __lg_test_module_loaded = ()\n")))))
+ (deps (:state datascript_conn_melange_base.state) (:input datascript/upstream_tests/datascript/test/serialize.cljc) ../bin/lg_cli.exe)
+ (action (with-stdout-to %{target} (progn (echo "open Datascript_conn_melange_base\n") (run %{exe:../bin/lg_cli.exe} --target melange --compile-chunk-from %{state} %{input}) (echo "\nlet __lg_test_module_loaded = ()\n")))))
 
 (rule
  (target datascript_conn_melange_test_storage.ml)
@@ -511,8 +1019,8 @@
 
 (rule
  (target datascript_conn_melange_test_upsert.ml)
- (deps (:state datascript_conn_melange_test_core.state) (:input datascript/upstream_tests/datascript/test/upsert.cljc) ../bin/lg_cli.exe)
- (action (with-stdout-to %{target} (progn (echo "open Datascript_conn_melange_base\nopen Datascript_conn_melange_test_core\n") (run %{exe:../bin/lg_cli.exe} --target melange --compile-chunk-from %{state} %{input}) (echo "\nlet __lg_test_module_loaded = ()\n")))))
+ (deps (:state datascript_conn_melange_base.state) (:input datascript/upstream_tests/datascript/test/upsert.cljc) ../bin/lg_cli.exe)
+ (action (with-stdout-to %{target} (progn (echo "open Datascript_conn_melange_base\n") (run %{exe:../bin/lg_cli.exe} --target melange --compile-chunk-from %{state} %{input}) (echo "\nlet __lg_test_module_loaded = ()\n")))))
 
 (rule
  (target datascript_conn_melange_test_validation.ml)
@@ -528,6 +1036,926 @@
    (progn
     (echo "open Datascript_conn_melange_base\nlet () =\n  ignore Datascript_conn_melange_test_lru.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_transact.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_conn.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_listen.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_filter.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_ident.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_components.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_core.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_db.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_entity.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_explode.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_index.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_issues.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_lookup_refs.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_parser.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_parser_find.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_parser_query.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_parser_return_map.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_parser_rules.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_parser_where.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_pull_api.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_pull_parser.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_query.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_query_aggregates.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_query_find_specs.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_query_fns.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_query_not.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_query_or.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_query_pull.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_query_return_map.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_query_rules.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_serialize.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_storage.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_tuples.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_upsert.__lg_test_module_loaded;\n  ignore Datascript_conn_melange_test_validation.__lg_test_module_loaded\n")
       (run %{exe:../bin/lg_cli.exe} --target melange --compile-chunk-from %{state} %{input})))))
+
+(rule
+ (target datascript_pull_melange_test_pull_api.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input datascript/upstream_tests/datascript/test/pull_api.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_pull_melange_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_pull_melange_test_pull_parser.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input datascript/upstream_tests/datascript/test/pull_parser.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_pull_melange_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_pull_melange_runner.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_pull_melange_base\nlet () =\n  ignore Datascript_pull_melange_test_pull_api.__lg_test_module_loaded;\n  ignore Datascript_pull_melange_test_pull_parser.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_serialize_melange_test.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input datascript/upstream_tests/datascript/test/serialize.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_serialize_melange_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_serialize_melange_runner.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_serialize_melange_base\nlet () = ignore Datascript_serialize_melange_test.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_query_find_specs_melange_test.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input datascript/upstream_tests/datascript/test/query_find_specs.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_query_find_specs_melange_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_query_melange_test.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input datascript/upstream_tests/datascript/test/query.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_query_melange_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_query_aggregates_melange_test.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input datascript/upstream_tests/datascript/test/query_aggregates.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_query_aggregates_melange_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_query_aggregates_melange_runner.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_query_aggregates_melange_base\nlet () = ignore Datascript_query_aggregates_melange_test.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_query_fns_melange_test.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input datascript/upstream_tests/datascript/test/query_fns.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_query_fns_melange_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_query_fns_melange_runner.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_query_fns_melange_base\nlet () = ignore Datascript_query_fns_melange_test.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_query_not_melange_test.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input datascript/upstream_tests/datascript/test/query_not.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_query_not_melange_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_query_not_melange_runner.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_query_not_melange_base\nlet () = ignore Datascript_query_not_melange_test.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_query_or_melange_test.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input datascript/upstream_tests/datascript/test/query_or.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_query_or_melange_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_query_or_melange_runner.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_query_or_melange_base\nlet () = ignore Datascript_query_or_melange_test.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_query_pull_melange_test.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input datascript/upstream_tests/datascript/test/query_pull.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_query_pull_melange_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_query_pull_melange_runner.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_query_pull_melange_base\nlet () = ignore Datascript_query_pull_melange_test.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_query_rules_melange_test.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input datascript/upstream_tests/datascript/test/query_rules.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_query_rules_melange_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_query_rules_melange_runner.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_query_rules_melange_base\nlet () = ignore Datascript_query_rules_melange_test.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_parser_melange_test.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input datascript/upstream_tests/datascript/test/parser.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_parser_melange_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_parser_melange_runner.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_parser_melange_base\nlet () = ignore Datascript_parser_melange_test.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_parser_rules_melange_test.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input datascript/upstream_tests/datascript/test/parser_rules.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_parser_rules_melange_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_parser_rules_melange_runner.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_parser_rules_melange_base\nlet () = ignore Datascript_parser_rules_melange_test.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_parser_where_melange_test.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input datascript/upstream_tests/datascript/test/parser_where.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_parser_where_melange_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_parser_where_melange_runner.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_parser_where_melange_base\nlet () = ignore Datascript_parser_where_melange_test.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_parser_find_melange_test.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input datascript/upstream_tests/datascript/test/parser_find.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_parser_find_melange_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_parser_find_melange_runner.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_parser_find_melange_base\nlet () = ignore Datascript_parser_find_melange_test.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_parser_query_melange_test.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input datascript/upstream_tests/datascript/test/parser_query.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_parser_query_melange_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_parser_query_melange_runner.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_parser_query_melange_base\nlet () = ignore Datascript_parser_query_melange_test.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_parser_return_map_melange_test.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input datascript/upstream_tests/datascript/test/parser_return_map.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_parser_return_map_melange_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_parser_return_map_melange_runner.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_parser_return_map_melange_base\nlet () = ignore Datascript_parser_return_map_melange_test.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_validation_melange_test.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input datascript/upstream_tests/datascript/test/validation.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_validation_melange_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_validation_melange_runner.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_validation_melange_base\nlet () = ignore Datascript_validation_melange_test.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_upsert_melange_test.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input datascript/upstream_tests/datascript/test/upsert.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_upsert_melange_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_upsert_melange_runner.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_upsert_melange_base\nlet () = ignore Datascript_upsert_melange_test.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_storage_native_test.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input datascript/upstream_tests/datascript/test/storage.clj)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_conn_native_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_storage_native_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_storage_native_test.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_storage_melange_test.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input datascript/upstream_tests/datascript/test/storage.cljs)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_storage_melange_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_storage_melange_runner.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_storage_melange_base\nlet () = ignore Datascript_storage_melange_test.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_tuples_native_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_tuples.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_tuples_melange_test.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input datascript/upstream_tests/datascript/test/tuples.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_tuples_melange_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_tuples_melange_runner.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_tuples_melange_base\nlet () = ignore Datascript_tuples_melange_test.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_query_melange_runner.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_query_melange_base\nlet () = ignore Datascript_query_melange_test.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_query_find_specs_melange_runner.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_query_find_specs_melange_base\nlet () = ignore Datascript_query_find_specs_melange_test.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_query_return_map_melange_test.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input datascript/upstream_tests/datascript/test/query_return_map.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_query_return_map_melange_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_query_return_map_melange_runner.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_query_return_map_melange_base\nlet () = ignore Datascript_query_return_map_melange_test.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})))))
 
 (rule
  (targets datascript_benchmark_native_support.ml datascript_benchmark_native_support.state)
@@ -623,3 +2051,543 @@
    (progn
     (echo "open Datascript_benchmark_melange_impl\n")
     (run %{exe:../bin/lg_cli.exe} --target melange --compile-chunk-from %{state} %{input})))))
+
+(rule
+ (target datascript_ident_native_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_ident.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_ident_melange_test.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input datascript/upstream_tests/datascript/test/ident.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_ident_melange_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_ident_melange_runner.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_ident_melange_base\nlet () = ignore Datascript_ident_melange_test.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_components_native_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_components.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_components_melange_test.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input datascript/upstream_tests/datascript/test/components.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_components_melange_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_components_melange_runner.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_components_melange_base\nlet () = ignore Datascript_components_melange_test.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_explode_native_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_explode.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_explode_melange_test.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input datascript/upstream_tests/datascript/test/explode.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_explode_melange_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_explode_melange_runner.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_explode_melange_base\nlet () = ignore Datascript_explode_melange_test.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_index_native_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_index.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_index_melange_test.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input datascript/upstream_tests/datascript/test/index.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_index_melange_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_index_melange_runner.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_index_melange_base\nlet () = ignore Datascript_index_melange_test.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_entity_native_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_entity.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_entity_melange_test.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input datascript/upstream_tests/datascript/test/entity.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_entity_melange_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_entity_melange_runner.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_entity_melange_base\nlet () = ignore Datascript_entity_melange_test.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_issues_native_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_issues.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_issues_melange_test.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input datascript/upstream_tests/datascript/test/issues.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_issues_melange_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_issues_melange_runner.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_issues_melange_base\nlet () = ignore Datascript_issues_melange_test.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_db_native_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_db.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_db_melange_test.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input datascript/upstream_tests/datascript/test/db.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_db_melange_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_db_melange_runner.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_db_melange_base\nlet () = ignore Datascript_db_melange_test.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_core_native_runner.ml)
+ (deps
+  (:state datascript_conn_native_test_core.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_core.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_core_melange_test.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input datascript/upstream_tests/datascript/test/core.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_core_melange_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_core_melange_runner.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_core_melange_base\nlet () = ignore Datascript_core_melange_test.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_lookup_refs_native_runner.ml)
+ (deps
+  (:state datascript_conn_native_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_conn_native_base\nlet () = ignore Datascript_conn_native_test_lookup_refs.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{state}
+     %{input})))))
+
+(rule
+ (target datascript_lookup_refs_melange_test.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input datascript/upstream_tests/datascript/test/lookup_refs.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Datascript_lookup_refs_melange_base\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})
+    (echo "\nlet __lg_test_module_loaded = ()\n")))))
+
+(rule
+ (target datascript_lookup_refs_melange_runner.ml)
+ (deps
+  (:state datascript_conn_melange_base.state)
+  (:input ../test_runner/clojure/run.cljc)
+  ../bin/lg_cli.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo
+     "open Datascript_lookup_refs_melange_base\nlet () = ignore Datascript_lookup_refs_melange_test.__lg_test_module_loaded\n")
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{state}
+     %{input})))))

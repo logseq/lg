@@ -1,0 +1,68 @@
+# area	feature	accepted-form	classification	evidence
+query-clause	default-source-pattern	[?e :attr ?v]	parity	test/datascript/upstream_tests/datascript/test/query.cljc
+query-clause	explicit-source-pattern	[$src ?e :attr ?v]	parity	test/datascript/upstream_tests/datascript/test/query.cljc
+query-clause	collection-source-pattern	[$coll ?x]	parity	test/datascript/upstream_tests/datascript/test/query.cljc
+query-clause	predicate	[(pred ?x)]	parity	test/datascript/upstream_tests/datascript/test/query_fns.cljc
+query-clause	function	[(f ?x) ?result]	parity	test/datascript/upstream_tests/datascript/test/query_fns.cljc
+query-clause	rule	(rule-name ?x)	parity	test/datascript/upstream_tests/datascript/test/query_rules.cljc
+query-clause	recursion	recursive-rule	parity	test/datascript/upstream_tests/datascript/test/query_rules.cljc
+query-clause	and	(and clause+)	parity	test/datascript/upstream_tests/datascript/test/parser_where.cljc
+query-clause	not	(not clause+)	parity	test/datascript/upstream_tests/datascript/test/query_not.cljc
+query-clause	not-join	(not-join [vars] clause+)	parity	test/datascript/upstream_tests/datascript/test/query_not.cljc
+query-clause	or	(or branch+)	parity	test/datascript/upstream_tests/datascript/test/query_or.cljc
+query-clause	or-join	(or-join [vars] branch+)	parity	test/datascript/upstream_tests/datascript/test/query_or.cljc
+find	relation	:find ?x ?y	parity	test/datascript/upstream_tests/datascript/test/query_find_specs.cljc
+find	collection	:find [?x ...]	parity	test/datascript/upstream_tests/datascript/test/query_find_specs.cljc
+find	tuple	:find [?x ?y]	parity	test/datascript/upstream_tests/datascript/test/query_find_specs.cljc
+find	scalar	:find ?x .	parity	test/datascript/upstream_tests/datascript/test/query_find_specs.cljc
+find	aggregate	(aggregate ?x)	parity	test/datascript/upstream_tests/datascript/test/query_aggregates.cljc
+find	pull	(pull ?e pattern)	parity	test/datascript/upstream_tests/datascript/test/query_pull.cljc
+find	with	:with [?x]	parity	test/datascript/upstream_tests/datascript/test/parser.cljc
+find	return-map	:keys/:strs/:syms	parity	test/datascript/upstream_tests/datascript/test/query_return_map.cljc
+find	uniqueness	set-of-tuples	parity	test/datascript/upstream_tests/datascript/test/query.cljc
+input	scalar	?x	parity	test/datascript/upstream_tests/datascript/test/query.cljc
+input	collection	[?x ...]	parity	test/datascript/upstream_tests/datascript/test/query.cljc
+input	tuple	[?x ?y]	parity	test/datascript/upstream_tests/datascript/test/query.cljc
+input	relation	[[?x ?y]]	parity	test/datascript/upstream_tests/datascript/test/query.cljc
+input	source	$	parity	test/datascript/upstream_tests/datascript/test/query.cljc
+input	rules	%	parity	test/datascript/upstream_tests/datascript/test/query_rules.cljc
+pull	wildcard	*	parity	test/datascript/upstream_tests/datascript/test/pull_api.cljc
+pull	attribute	:attr	parity	test/datascript/upstream_tests/datascript/test/pull_api.cljc
+pull	alias	[:attr :as :alias]	parity	test/datascript/upstream_tests/datascript/test/pull_api.cljc
+pull	default	[:attr :default value]	parity	test/datascript/upstream_tests/datascript/test/pull_api.cljc
+pull	limit	[:attr :limit n]	parity	test/datascript/upstream_tests/datascript/test/pull_api.cljc
+pull	transform	[:attr :xform f]	parity	test/datascript/upstream_tests/datascript/test/pull_api.cljc
+pull	combined-options	[:attr :as :alias :default value]	parity	test/datascript/upstream_tests/datascript/test/pull_api.cljc
+pull	reverse	:_attr	parity	test/datascript/upstream_tests/datascript/test/pull_api.cljc
+pull	recursion	{:attr depth-or-ellipsis}	parity	test/datascript/upstream_tests/datascript/test/pull_api.cljc
+pull	cycle	recursive-component	parity	test/datascript/upstream_tests/datascript/test/pull_api.cljc
+pull	visitor	{:visitor callback}	parity	test/datascript/upstream_tests/datascript/test/pull_api.cljc
+pull	missing-entity	unknown-eid	parity	test/datascript/upstream_tests/datascript/test/pull_api.cljc
+pull	pull-many-parse-reuse	pattern-plus-eids	parity	test/datascript/upstream/pull_api.cljc
+transaction	entity-map	{:db/id id :attr value}	parity	test/datascript/upstream_tests/datascript/test/transact.cljc
+transaction	add	[:db/add e a v]	parity	test/datascript/upstream_tests/datascript/test/transact.cljc
+transaction	retract	[:db/retract e a v]	parity	test/datascript/upstream_tests/datascript/test/transact.cljc
+transaction	retract-attribute	[:db.fn/retractAttribute e a]	parity	test/datascript/upstream_tests/datascript/test/transact.cljc
+transaction	retract-entity	[:db.fn/retractEntity e]	parity	test/datascript/upstream_tests/datascript/test/transact.cljc
+transaction	cas	[:db.fn/cas e a old new]	parity	test/datascript/upstream_tests/datascript/test/transact.cljc
+transaction	raw-datom	Datom	parity	test/datascript/upstream_tests/datascript/test/transact.cljc
+transaction	transaction-function	[fn args*]	parity	test/datascript/upstream_tests/datascript/test/transact.cljc
+transaction	installed-transaction-function	[ident args*]	parity	test/datascript/upstream_tests/datascript/test/transact.cljc
+transaction	nested-map	nested-entity-map	parity	test/datascript/upstream_tests/datascript/test/explode.cljc
+transaction	reverse-ref	reverse-attribute-map	parity	test/datascript/upstream_tests/datascript/test/explode.cljc
+transaction	tuple-maintenance	tuple-schema-and-data	parity	test/datascript/upstream_tests/datascript/test/tuples.cljc
+transaction	unique-identity	unique-identity-upsert	parity	test/datascript/upstream_tests/datascript/test/upsert.cljc
+transaction	component-cascade	retract-component	parity	test/datascript/upstream_tests/datascript/test/components.cljc
+transaction	tempid	int-string-current-tx	parity	test/datascript/upstream_tests/datascript/test/transact.cljc
+transaction	ordering	ordered-tx-report	parity	test/datascript/upstream_tests/datascript/test/transact.cljc
+transaction	invalid-input	unsupported-form	parity	test/datascript/upstream_tests/datascript/test/validation.cljc
+serialization	default-payload	closed-default-payload	representation-only	test/datascript/upstream/serialize.cljc
+serialization	custom-codec	{:freeze-fn f :thaw-fn f}	parity	test/datascript/upstream_tests/datascript/test/serialize.cljc
+serialization	options	option-map	parity	test/datascript/upstream_tests/datascript/test/serialize.cljc
+serialization	schema	schema-payload	representation-only	test/datascript/upstream_tests/datascript/test/serialize.cljc
+serialization	datom-order	ordered-datoms	representation-only	test/datascript/upstream_tests/datascript/test/serialize.cljc
+serialization	index-reuse	stored-indexes	measured-optimization	test/datascript/upstream/storage.cljc
+serialization	branching	branching-factor-options	representation-only	test/datascript/upstream/storage.cljc
+serialization	reference-policy	Strong-or-Weak	representation-only	test/compiler_tests.ml
+serialization	storage-rejection	attached-storage	parity	test/compiler_tests.ml
+serialization	old-format	versioned-payload	parity	test/datascript/upstream_tests/datascript/test/serialize.cljc

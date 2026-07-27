@@ -38,6 +38,7 @@ type variant_constructor = {
 type recursive_value = {
   name : string;
   identity : (Source_node_id.t * Location.t) option;
+  type_annotation : Types.ty option;
   expression : Semantic_ir.t;
 }
 
@@ -61,6 +62,7 @@ type compiled_item =
   | Recursive_value_binding of {
       name : string;
       identity : (Source_node_id.t * Location.t) option;
+      type_annotation : Types.ty option;
       expression : Semantic_ir.t;
     }
   | Recursive_value_bindings of recursive_value list

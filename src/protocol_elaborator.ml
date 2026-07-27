@@ -28,7 +28,10 @@ let define ?location scope env protocol_name method_forms =
           Ok (env, Comment ("protocol " ^ protocol_name)))
 
 let marker scope env protocol_name method_name =
-  match Protocol.lookup_protocol_marker scope env protocol_name method_name with
+  match
+    Protocol.lookup_protocol_marker ~refine:false scope env protocol_name
+      method_name
+  with
   | None ->
       Error.error
         ("protocol " ^ protocol_name ^ " does not define method " ^ method_name)
@@ -91,28 +94,43 @@ let compile_defprotocol ?location scope env next_type protocol_name method_forms
 
 let protocol_receiver_type scope env = function
   | FKeyword receiver_keyword -> Type_annotation.of_keyword receiver_keyword
-  | FSymbol type_name ->
-      Resolver.lookup_record_type scope env type_name
-      |> Result.map (fun record -> TNamed_record record)
-  | _ -> Error.error "extend-type receiver must be a type keyword or record type"
+  | FSymbol type_name -> (
+      match Resolver.lookup_record_type scope env type_name with
+      | Ok record -> Ok (TNamed_record record)
+      | Error _ -> (
+          match Resolver.lookup_type_declaration scope env type_name with
+          | Some
+              {
+                Type_registry.kind = Variant;
+                type_id;
+                type_parameters;
+                _;
+              } ->
+              let emitted_name =
+                Names.sanitize_name (Type_id.name type_id)
+              in
+              if type_parameters = [] then Ok (TOcaml emitted_name)
+              else
+                Ok
+                  (TOcaml_app
+                     ( emitted_name,
+                       List.map (fun parameter -> TVar parameter) type_parameters
+                     ))
+          | Some _ | None ->
+              Error.error ("unknown protocol receiver type " ^ type_name)))
+  | _ ->
+      Error.error
+        "extend-type receiver must be a type keyword, record, or closed variant"
 
 let protocol_parameter_overrides receiver_ty = function
   | TFn (parameter_tys, _) ->
-      let infer_generic_parameters =
-        match receiver_ty with
-        | TNamed_record { type_parameters = _ :: _; fields; _ } ->
-            Option.is_none (Types.find_record_extension_field fields)
-        | _ -> false
-      in
       List.mapi
         (fun index ty ->
           if index = 0 then Some receiver_ty
-          else if infer_generic_parameters then None
           else
-            Some
-              (match ty with
-              | TUnknown | TVar _ -> Types.dynamic_constraint TUnknown
-              | ty -> ty))
+            match ty with
+            | TUnknown | TMeta _ | TVar _ -> None
+            | ty -> Some ty)
         parameter_tys
   | _ -> [ Some receiver_ty ]
 
@@ -235,9 +253,15 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                                            (index, expected, actual))
                                     |> List.find_opt
                                          (fun (_index, expected, actual) ->
-                                           not
-                                             (Types.assignable ~policy:Host_boundary ~expected
-                                                ~actual))
+                                           (not
+                                              (match expected with
+                                              | TUnknown | TMeta _ | TVar _ ->
+                                                  true
+                                              | _ -> false))
+                                           && not
+                                                (Types.assignable
+                                                   ~policy:Host_boundary
+                                                   ~expected ~actual))
                                   in
                                   (match mismatch with
                                   | Some (index, expected, _actual) ->
@@ -246,7 +270,12 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                                        ^ string_of_int (index + 1) ^ " must be "
                                        ^ source_name expected)
                                   | None
-                                    when not
+                                    when (not
+                                            (match expected_ret with
+                                            | TUnknown | TMeta _ | TVar _ ->
+                                                true
+                                            | _ -> false))
+                                         && not
                                            (Types.assignable ~policy:Host_boundary
                                               ~expected:expected_ret
                                               ~actual:actual_ret) ->
@@ -258,7 +287,18 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                                     Protocol.impl_ocaml_name scope protocol_name
                                       method_name receiver_ty
                                   in
-                                  let binding = Expression_support.binding_of_expr ocaml_name expr in
+                                  let binding =
+                                    Expression_support.binding_of_expr
+                                      ocaml_name expr
+                                  in
+                                  let binding =
+                                    if
+                                      Option.is_none binding.return_param_index
+                                      && Types.equal receiver_ty actual_ret
+                                    then
+                                      { binding with return_param_index = Some 0 }
+                                    else binding
+                                  in
                                   (match
                                      add_implementation
                                        ?location:(Source_context.find name_form) env
@@ -290,7 +330,7 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                                                 Protocol.refine_deferred_type
                                                   env expr.ty;
                                               return_param_index =
-                                                expr.return_param_index;
+                                                binding.return_param_index;
                                               expression = expr.semantic_expr;
                                             }
                                         else if
@@ -302,6 +342,7 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                                           Recursive_value_binding
                                             { name = ocaml_name;
                                               identity = None;
+                                              type_annotation = None;
                                               expression = expr.semantic_expr;
                                             }
                                         else
@@ -323,9 +364,15 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
               |> List.fold_left
                    (fun (ordinary, recursive) -> function
                      | Recursive_value_binding
-                         { name; identity; expression } ->
+                         { name; identity; type_annotation; expression } ->
                          ( ordinary,
-                           ({ name; identity; expression } : recursive_value)
+                           ({
+                              name;
+                              identity;
+                              type_annotation;
+                              expression;
+                            }
+                             : recursive_value)
                            :: recursive )
                      | item -> (item :: ordinary, recursive))
                    ([], [])

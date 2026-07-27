@@ -148,9 +148,16 @@ let lg_build_dir () = Filename.concat (repo_root ()) "_build/default/src"
 let lg_runtime_build_dir () =
   Filename.concat (repo_root ()) "_build/default/runtime"
 
+let datascript_runtime_build_dir () =
+  Filename.concat (repo_root ()) "_build/default/test/datascript_runtime"
+
 let lg_byte_cmi_dir () = Filename.concat (lg_build_dir ()) ".lg.objs/byte"
 let lg_runtime_byte_cmi_dir () =
   Filename.concat (lg_runtime_build_dir ()) ".lg_runtime.objs/byte"
+
+let datascript_runtime_byte_cmi_dir () =
+  Filename.concat (datascript_runtime_build_dir ())
+    ".datascript_runtime.objs/byte"
 
 let compiler_test_runner () =
   Filename.concat (repo_root ()) "_build/default/test/compiler_test_runner.bc"
@@ -202,7 +209,7 @@ let test_test_directory_avoids_existing_pid_directory () =
 let compile_only_command dir ml_path =
   Printf.sprintf
     "cd %s && ocamlfind ocamlc -package re,unix -w -26 -I %s -I %s -I %s -I %s \
-     -I %s -I %s -c %s"
+     -I %s -I %s -I %s -I %s -c %s"
     (Filename.quote dir)
     (Filename.quote (rrbvec_build_dir ()))
     (Filename.quote (rrbvec_cmi_dir ()))
@@ -210,6 +217,8 @@ let compile_only_command dir ml_path =
     (Filename.quote (lg_byte_cmi_dir ()))
     (Filename.quote (lg_runtime_build_dir ()))
     (Filename.quote (lg_runtime_byte_cmi_dir ()))
+    (Filename.quote (datascript_runtime_build_dir ()))
+    (Filename.quote (datascript_runtime_byte_cmi_dir ()))
     (Filename.quote (Filename.basename ml_path))
 
 let run_compiled_module_command dir cmo_paths output_path =
@@ -634,7 +643,8 @@ let test_record_literals_disambiguate_subset_shapes () =
 (def default-pattern (->PatternValue []))
 
 (defn consume-context [{:keys [context pattern]}]
-  [(.-db context) (.-attrs pattern)])
+  (and (= :db (.-db context))
+       (= [] (.-attrs pattern))))
 
 (consume-context
   {:context (->ContextValue :db)
@@ -642,12 +652,10 @@ let test_record_literals_disambiguate_subset_shapes () =
 
 (defrecord PatternHolder [name pattern])
 
-(defn pattern-only [name & {:as args}]
+(defn pattern-only [name]
   (map->PatternHolder
-    (merge
-      {:name name}
-      (when true {:pattern default-pattern})
-      args)))
+    {:name name
+     :pattern default-pattern}))
 
 (println (= default-pattern (:pattern (pattern-only :answer))))
 |}
@@ -856,6 +864,27 @@ let test_nil_predicates_and_truthiness_use_options () =
     "true:false:false:true:false:true:true:false:true:false:false:true\n"
     ocaml_source
 
+let test_nil_equality_accepts_annotated_options () =
+  let source =
+    {|
+(type-record Box
+  (value :option<int>))
+(def missing (record Box (value None)))
+(def present (record Box (value (Some 7))))
+(println
+  (str (= nil (:value missing)) ":"
+       (= (:value missing) nil) ":"
+       (= nil (:value present)) ":"
+       (not= nil (:value present)) ":"
+       (= (:value missing) (:value missing)) ":"
+       (= (:value present) (:value present)) ":"
+       (= (:value missing) (:value present))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "nil_equality_accepts_annotated_options"
+    "true:true:false:true:true:true:false\n" ocaml_source
+
 let test_if_some_and_when_some_bind_option_payloads () =
   let source =
     {|
@@ -1050,11 +1079,13 @@ let test_doseq_map_entry_destructuring_preserves_map_values () =
     (println (str attribute ":" (:enabled fields false)))))
 
 (print-fields (edn/read-string "{:name {:enabled true}}"))
+(print-fields (edn/read-string "{:age {}}"))
+(print-fields (edn/read-string "{}"))
 |}
   in
   let native_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "doseq_map_entry_destructuring_preserves_map_values"
-    ":name:true\n" native_source;
+    ":name:true\n:age:false\n" native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -1200,6 +1231,153 @@ let test_type_solver_preserves_shared_and_independent_variables () =
   | Error _ -> ()
   | Ok _ -> failwith "recursive substitutions must fail the occurs check"
 
+let test_type_schemes_distinguish_declared_and_inferred_variables () =
+  let open Lg.Types in
+  let inferred = Lg.Type_solver.fresh () in
+  let inferred_scheme =
+    Lg.Type_solver.generalize (TFn ([ inferred ], inferred))
+  in
+  (match inferred_scheme.quantified with
+  | [ Inferred_variable _ ] -> ()
+  | _ -> failwith "inferred metavariables must retain their category");
+  let declared_scheme =
+    Lg.Type_solver.generalize
+      (TFn ([ TVar "value"; TVar "value" ], TVar "value"))
+  in
+  match declared_scheme.quantified with
+  | [ Declared_variable "value" ] -> ()
+  | _ -> failwith "declared variables must retain their category"
+
+let test_type_scheme_instantiation_preserves_shared_identity () =
+  let open Lg.Types in
+  let inferred = Lg.Type_solver.fresh () in
+  let scheme = Lg.Type_solver.generalize (TFn ([ inferred ], inferred)) in
+  let first = Lg.Type_solver.instantiate scheme in
+  let second = Lg.Type_solver.instantiate scheme in
+  match (first, second) with
+  | TFn ([ TMeta first_parameter ], TMeta first_return),
+    TFn ([ TMeta second_parameter ], TMeta second_return) ->
+      if first_parameter.id <> first_return.id then
+        failwith "one instantiation must preserve shared occurrences";
+      if second_parameter.id <> second_return.id then
+        failwith "one instantiation must preserve shared occurrences";
+      if first_parameter.id = second_parameter.id then
+        failwith "separate instantiations must use fresh metavariables"
+  | _ -> failwith "inferred schemes must instantiate to metavariables"
+
+let test_inferred_type_scheme_names_are_canonical () =
+  let open Lg.Types in
+  let first = Lg.Type_solver.generalize (TVector (Lg.Type_solver.fresh ())) in
+  let second = Lg.Type_solver.generalize (TVector (Lg.Type_solver.fresh ())) in
+  if
+    not
+      (equal
+         (Lg.Type_solver.canonical_scheme_body first)
+         (Lg.Type_solver.canonical_scheme_body second))
+  then
+    failwith "alpha-equivalent inferred schemes must have stable bodies"
+
+let test_inference_holes_do_not_collide_with_declared_type_names () =
+  let source =
+    {|
+(ns user)
+(signature user/keep-value [g1 wrapped]
+  :fn<g1;wrapped;g1>)
+(defn keep-value [value wrapped]
+  (match wrapped
+    (Some item)
+    (do
+      (+ item 1)
+      value)
+    None
+    value))
+(println (keep-value "Ada" (Some 41)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "independent inference holes must remain static";
+  assert_ocaml_runs "inference_holes_do_not_collide_with_declared_type_names"
+    "Ada\n" ocaml_source
+
+let test_option_record_field_callables_remain_static () =
+  let source =
+    {|
+(type-record storage [value]
+  (restore :fn<int;option<value>>))
+
+(type-record holder [value]
+  (storage :ref<option<storage<value>>>)
+  (address :ref<option<int>>))
+
+(defn holder-storage [state]
+  (deref (:storage state)))
+
+(defn holder-left [state]
+  (holder-storage state)
+  (holder-right state))
+
+(defn holder-right [state]
+  (holder-storage state)
+  (holder-left state))
+
+(defn ensure-storage [state storage]
+  (when (nil? (holder-storage state))
+    (vreset! (:storage state) (Some storage)))
+  (let [storage-value
+        (match (holder-storage state)
+          (Some value) value
+          None (Stdlib.failwith "missing storage"))]
+    (restore-value state)))
+
+(defn restore-value [state]
+  (match (deref (:storage state))
+    (Some storage)
+    (match (deref (:address state))
+      (Some address)
+      (let [restore (:restore storage)]
+        (match (restore address)
+          (Some value) value
+          None (Stdlib.failwith "missing value")))
+      None (Stdlib.failwith "missing address"))
+    None (Stdlib.failwith "missing storage")))
+
+(defn restore [address]
+  (Some address))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "option-bound record callables must remain static"
+
+let test_local_function_annotations_resolve_named_records () =
+  let source =
+    {|
+(ns user)
+
+(deftype Datum [^int value])
+(type-record Database (value :int))
+(deftype View
+  [^user/Database database
+   ^:fn<user/Datum;bool> predicate])
+
+(defn apply-datum
+  ([^:fn<user/Database;user/Datum;bool> predicate
+    ^user/Database database]
+   (apply-datum predicate database "default"))
+  ([^:fn<user/Database;user/Datum;bool> predicate
+    ^user/Database database
+    ^:string _key]
+   (View.
+    database
+    (fn [^user/Datum datum]
+      (predicate database datum)))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "local function annotations must resolve to named records"
+
 let test_empty_type_substitutions_preserve_type_identity () =
   let open Lg.Types in
   let ty =
@@ -1213,7 +1391,13 @@ let test_unrelated_type_substitutions_preserve_type_identity () =
   let ty =
     TFn ([ TRecord [ make_field ":name" TString ] ], TSeq (TVector TString))
   in
-  if not (Lg.Type_solver.apply [ ("other", TInt) ] ty == ty) then
+  if
+    not
+      (Lg.Type_solver.apply
+         [ (Lg.Type_solver.Declared "other", TInt) ]
+         ty
+      == ty)
+  then
     failwith "unrelated substitutions must not copy an unchanged type tree"
 
 let test_type_solver_applies_deep_substitutions_linearly () =
@@ -1230,7 +1414,11 @@ let test_type_solver_applies_deep_substitutions_linearly () =
   let unchanged = TRecord [ make_field ":name" TString ] in
   let template = TTuple [ unchanged; nest depth (TVar "leaf") ] in
   let started_at = Sys.time () in
-  let applied = Lg.Type_solver.apply [ ("leaf", TInt) ] template in
+  let applied =
+    Lg.Type_solver.apply
+      [ (Lg.Type_solver.Declared "leaf", TInt) ]
+      template
+  in
   let elapsed = Sys.time () -. started_at in
   (match applied with
   | TTuple [ actual_unchanged; nested ] ->
@@ -1263,7 +1451,11 @@ let test_type_solver_preserves_shared_substitution_dags () =
   in
   let template = share depth (TVar "leaf") in
   let started_at = Sys.time () in
-  let applied = Lg.Type_solver.apply [ ("leaf", TInt) ] template in
+  let applied =
+    Lg.Type_solver.apply
+      [ (Lg.Type_solver.Declared "leaf", TInt) ]
+      template
+  in
   let elapsed = Sys.time () -. started_at in
   if leaf depth applied <> TInt then
     failwith "shared substitutions must replace the target variable";
@@ -2234,8 +2426,11 @@ let test_map_updates_require_sum_values () =
 (def value (assoc (hash-map key 1) :right "two"))|}
   |> expect_error_contains "define a sum type"
 
-let test_heterogeneous_map_literals_require_a_declared_sum_type () =
-  Lg.Compiler.compile_string {|(def value {:left 1 :right "two"})|}
+let test_heterogeneous_runtime_maps_require_a_declared_sum_type () =
+  Lg.Compiler.compile_string
+    {|(def left :left)
+(def right :right)
+(def value (hash-map left 1 right "two"))|}
   |> expect_error_contains
        "heterogeneous map values have types int | string; define a sum type"
 
@@ -2852,6 +3047,33 @@ let test_protocol_implementation_populates_typed_registry () =
   with
   | Some binding when binding.ocaml_name <> "" -> ()
   | _ -> failwith "extend-type must populate the typed protocol registry"
+
+let test_closed_variants_implement_protocols_without_dynamic_dispatch () =
+  let source =
+    {|
+(type-variant value
+  Missing
+  (Number :int))
+(defprotocol Readable
+  (read-value [value] :int))
+(extend-type value
+  Readable
+  (read-value [value]
+    (match value
+      Missing 0
+      (Number number) number)))
+(println
+  (str
+    (read-value (Number 42))
+    ":"
+    (satisfies? Readable Missing)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "closed variant protocol dispatch must remain static";
+  assert_ocaml_runs "closed_variants_implement_protocols_without_dynamic_dispatch"
+    "42:true\n" ocaml_source
 
 let test_module_protocols_preserve_typed_registry_state () =
   let state =
@@ -3506,6 +3728,115 @@ let test_require_refers_lg_record_types () =
   in
   compile Lg.Target.Native;
   compile Lg.Target.Melange
+
+let test_empty_defrecord_suppresses_unused_type_warning () =
+  let ocaml_source =
+    Lg.Compiler.compile_string {|(defrecord Empty [])|} |> expect_ok
+  in
+  if
+    not
+      (string_contains_substring ocaml_source
+         {|unit[@@warning "-34"]|})
+  then failwith "empty defrecord type must suppress warning 34"
+
+let test_incremental_namespaces_export_declared_function_definitions () =
+  let provider =
+    {|
+(ns ^:no-doc app.entity)
+(declare entity touch)
+(type-record Entity
+  (value :int))
+(defn ^:option<app.entity/Entity> entity [^int number]
+  (Some (record Entity (value (+ number 1)))))
+(defn ^:option<app.entity/Entity> touch
+  [^:option<app.entity/Entity> entity]
+  entity)
+|}
+  in
+  let consumer =
+    {|
+(ns app.consumer
+  (:require [app.entity :as provider]))
+(def ^{:tag app.entity/Entity
+       :arglists '([number])
+       :doc "Constructs an entity."}
+  entity provider/entity)
+(println
+  (match (provider/touch (entity 41))
+    None 0
+    (Some entity) (:value entity)))
+|}
+  in
+  let compile target =
+    let state, provider_ocaml =
+      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state provider
+      |> expect_ok
+    in
+    let state, middle_ocaml =
+      Lg.Compiler.compile_chunk ~target state
+        {|
+(ns app.middle)
+(def middle-value 1)
+|}
+      |> expect_ok
+    in
+    let _, consumer_ocaml =
+      Lg.Compiler.compile_chunk ~target state consumer |> expect_ok
+    in
+    provider_ocaml ^ "\n" ^ middle_ocaml ^ "\n" ^ consumer_ocaml
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs
+    "incremental_namespaces_export_declared_function_definitions"
+    "42\n" native_source;
+  ignore (compile Lg.Target.Melange)
+
+let test_namespace_aliases_do_not_depend_on_same_named_public_definitions () =
+  let entity_provider =
+    {|
+(ns app.entity)
+(defn ^int entity [^int value]
+  (+ value 1))
+|}
+  in
+  let db_provider =
+    {|
+(ns app.db)
+(defn ^int current [^int value]
+  value)
+|}
+  in
+  let consumer =
+    {|
+(ns app.core
+  (:require
+    [app.entity :as de]
+    [app.db :as db]))
+
+(def entity de/entity)
+(defn ^int db [^int value]
+  (db/current value))
+(println (entity (db 41)))
+|}
+  in
+  let compile target =
+    let state, entity_ocaml =
+      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state entity_provider
+      |> expect_ok
+    in
+    let state, db_ocaml =
+      Lg.Compiler.compile_chunk ~target state db_provider |> expect_ok
+    in
+    let _, consumer_ocaml =
+      Lg.Compiler.compile_chunk ~target state consumer |> expect_ok
+    in
+    String.concat "\n" [ entity_ocaml; db_ocaml; consumer_ocaml ]
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs
+    "namespace_aliases_do_not_depend_on_same_named_public_definitions"
+    "42\n" native_source;
+  ignore (compile Lg.Target.Melange)
 
 let test_dynamically_bound_vars_bind_and_restore_portably () =
   let source =
@@ -4180,6 +4511,40 @@ let test_current_datascript_chain_compiles_for_native_and_melange () =
   ignore (current_datascript_baseline Lg.Target.Native);
   ignore (current_datascript_baseline Lg.Target.Melange)
 
+let test_current_datascript_filter_protocol_accepts_nominal_callback () =
+  let source =
+    {|
+(ns app.filtered-db
+  (:require [datascript.db :as db]))
+(defn ^datascript.db/FilteredDB filter-view
+  [database
+   ^:fn<datascript.db/DB;datascript.db/Datom;bool> pred]
+  (db/-filter-view database pred))
+|}
+  in
+  let provider_sources () =
+    [
+      "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
+      "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+      "datascript/me/tonsky/persistent_sorted_set.cljc";
+      "test/datascript/upstream/util.cljc";
+      "test/datascript/upstream/schema.cljc";
+      "test/datascript/upstream/db.cljc";
+    ]
+    |> List.map (fun path ->
+           (path, read_file (Filename.concat (repo_root ()) path)))
+  in
+  let compile target =
+    let baseline =
+      compile_datascript_sources target Lg.Compiler.empty_state
+        (provider_sources ())
+    in
+    compile_from_datascript_baseline target baseline
+      [ ("test/datascript/filter_protocol.cljc", source) ]
+  in
+  ignore (compile Lg.Target.Native);
+  ignore (compile Lg.Target.Melange)
+
 let test_datascript_make_array_one_arity_behaves_on_native_and_melange () =
   let source =
     {|
@@ -4217,13 +4582,211 @@ let test_current_datascript_entity_behaves_on_native () =
     {}
     {}))
 (when-some [person (entity/entity database 1)]
-  (println
-    (str (:db/id person) ":" (:name person) ":" (:age person) ":"
-         (count person))))
+  (let [id
+        (match (:db/id person)
+          (Some
+           (entity/EntityScalar
+            (Datascript_runtime.Data_value.Int value)))
+          value
+          _ (Stdlib.failwith "Entity id is unavailable"))
+        name
+        (match (:name person)
+          (Some
+           (entity/EntityScalar
+            (Datascript_runtime.Data_value.String value)))
+          value
+          _ (Stdlib.failwith "Entity name is unavailable"))
+        age
+        (match (:age person)
+          (Some
+           (entity/EntityScalar
+            (Datascript_runtime.Data_value.Int value)))
+          value
+          _ (Stdlib.failwith "Entity age is unavailable"))]
+    (println (str id ":" name ":" age ":" (count person)))))
 |}
   in
   register_datascript_behavior "test/datascript/entity_behavior.cljc" source
     "1:Ivan:19:2\n"
+
+let test_current_datascript_entity_navigates_references () =
+  let source =
+    {|
+(ns app.entity-reference-navigation
+  (:require
+   [datascript.db :as db]
+   [datascript.impl.entity :as entity]))
+
+(def ^:map<keyword;Datascript_runtime.Data_value.t> ref-properties
+  (assoc
+   {}
+   :db/valueType
+   (Datascript_runtime.Data_value.Keyword ":db.type/ref")))
+
+(def ^:map<keyword;Datascript_runtime.Data_value.t> many-ref-properties
+  (assoc
+   ref-properties
+   :db/cardinality
+   (Datascript_runtime.Data_value.Keyword ":db.cardinality/many")))
+
+(def ^:map<keyword;Datascript_runtime.Data_value.t> component-ref-properties
+  (assoc
+   ref-properties
+   :db/isComponent
+   (Datascript_runtime.Data_value.Bool true)))
+
+(def ^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema
+  (assoc
+   {}
+   :friend ref-properties
+   :members many-ref-properties
+   :parent component-ref-properties))
+
+(def database
+  (db/init-db
+   (to-array
+    [(db/datom 1 :name (Datascript_runtime.Data_value.String "one"))
+     (db/datom 1 :friend (Datascript_runtime.Data_value.Ref 2))
+     (db/datom 1 :members (Datascript_runtime.Data_value.Ref 2))
+     (db/datom 1 :members (Datascript_runtime.Data_value.Ref 3))
+     (db/datom 1 :members (Datascript_runtime.Data_value.Ref 99))
+     (db/datom 2 :name (Datascript_runtime.Data_value.String "two"))
+     (db/datom 2 :friend (Datascript_runtime.Data_value.Ref 1))
+     (db/datom 2 :parent (Datascript_runtime.Data_value.Ref 1))
+     (db/datom 3 :name (Datascript_runtime.Data_value.String "three"))
+     (db/datom 4 :friend (Datascript_runtime.Data_value.Ref 99))])
+   schema
+   (db/default-options)))
+
+(defn entity-name [^datascript.impl.entity/Entity value]
+  (match (entity/lookup-entity value :name)
+    (Some
+     (datascript.impl.entity/EntityScalar
+      (Datascript_runtime.Data_value.String name)))
+    name
+    _ (Stdlib.failwith "Entity name is unavailable")))
+
+(defn reference-name [^datascript.impl.entity/Entity value attr]
+  (match (entity/lookup-entity value attr)
+    (Some (datascript.impl.entity/EntityReference target))
+    (entity-name target)
+    _ (Stdlib.failwith "Expected a single entity reference")))
+
+(defn reference-names [^datascript.impl.entity/Entity value attr]
+  (match (entity/lookup-entity value attr)
+    (Some (datascript.impl.entity/EntityReferences targets))
+    (set
+     (mapv
+      (fn [target]
+        (match target
+          (Some target) (entity-name target)
+          None "nil"))
+      targets))
+    _ (Stdlib.failwith "Expected multiple entity references")))
+
+(defn references-are-set [^datascript.impl.entity/Entity value attr]
+  (match (entity/lookup-entity value attr)
+    (Some (datascript.impl.entity/EntityReferences targets))
+    (set? targets)
+    _ false))
+
+(when-some [one (entity/entity
+                 database
+                 (Datascript_runtime.Data_value.Entity_id 1))]
+  (println
+   (match (:name one)
+     (Some
+      (datascript.impl.entity/EntityScalar
+       (Datascript_runtime.Data_value.String name)))
+     (= "one" name)
+     _ false))
+  (println (= "two" (reference-name one :friend)))
+  (println (references-are-set one :members))
+  (println (= #{"two" "three" "nil"} (reference-names one :members)))
+  (println (= #{"two"} (reference-names one :_friend)))
+  (println (= "two" (reference-name one :_parent)))
+  (println (nil? (entity/lookup-entity one :missing))))
+
+(when-some [dangling (entity/entity
+                      database
+                      (Datascript_runtime.Data_value.Entity_id 4))]
+  (println (nil? (entity/lookup-entity dangling :friend))))
+|}
+  in
+  let compile target =
+    compile_from_datascript_baseline target
+      (current_datascript_baseline target)
+      [ ("test/datascript/entity_reference_navigation.cljc", source) ]
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs "current_datascript_entity_navigates_references"
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n" native_source;
+  ignore (compile Lg.Target.Melange)
+
+let test_current_datascript_entity_preserves_identity_and_lookup_edges () =
+  let source =
+    {|
+(ns app.entity-identity
+  (:require
+   [datascript.db :as db]
+   [datascript.impl.entity :as entity]))
+
+(def datoms
+  (to-array
+   [(db/datom 1 :name (Datascript_runtime.Data_value.String "one"))
+    (db/datom 1 :age (Datascript_runtime.Data_value.Int 42))]))
+
+(def first-db (db/init-db datoms {} (db/default-options)))
+(def second-db (db/init-db datoms {} (db/default-options)))
+
+(defn ^:datascript.impl.entity/entity-value lookup-with-default
+  [^datascript.impl.entity/Entity value
+   ^:keyword key
+   ^:datascript.impl.entity/entity-value not-found]
+  (get value key not-found))
+
+(when-some [first-entity
+            (entity/entity
+             first-db
+             (Datascript_runtime.Data_value.Entity_id 1))]
+  (when-some [same-entity
+              (entity/entity
+               first-db
+               (Datascript_runtime.Data_value.Entity_id 1))]
+    (when-some [other-db-entity
+                (entity/entity
+                 second-db
+                 (Datascript_runtime.Data_value.Entity_id 1))]
+      (let [hash-before (hash first-entity)]
+        (entity/touch (Some first-entity))
+        (entity/touch (Some same-entity))
+        (entity/touch (Some other-db-entity))
+        (println (= first-entity same-entity))
+        (println (= hash-before (hash first-entity)))
+        (println (= (hash first-entity) (hash same-entity)))
+        (println (not (= first-entity other-db-entity)))
+        (println (not (= (hash first-entity) (hash other-db-entity))))
+        (println (contains? first-entity :name))
+        (println (not (contains? first-entity :missing)))
+        (when-some [fallback (entity/lookup-entity first-entity :name)]
+          (println
+           (match
+            (lookup-with-default first-entity :missing fallback)
+            (datascript.impl.entity/EntityScalar
+             (Datascript_runtime.Data_value.String value))
+            (= "one" value)
+            _ false)))))))
+|}
+  in
+  let compile target =
+    compile_from_datascript_baseline target
+      (current_datascript_baseline target)
+      [ ("test/datascript/entity_identity.cljc", source) ]
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs "current_datascript_entity_preserves_identity_and_lookup_edges"
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n" native_source;
+  ignore (compile Lg.Target.Melange)
 
 let current_datascript_pull_parser_sources () =
   let path = "test/datascript/upstream/pull_parser.cljc" in
@@ -4278,6 +4841,179 @@ let test_current_datascript_pull_api_compiles_for_native_and_melange () =
   ignore (datascript_pull_baseline Lg.Target.Native);
   ignore (datascript_pull_baseline Lg.Target.Melange)
 
+let test_current_datascript_pull_accepts_source_and_closed_runtime_patterns () =
+  let source =
+    {|
+(ns app.pull-source-forms
+  (:require [datascript.db :as db]
+            [datascript.pull-api :as pull]
+            [datascript.pull-parser :as parser]))
+(def database
+  (db/init-db
+    (to-array
+     [(db/datom
+       1
+       :name
+       (Datascript_runtime.Data_value.String "Ivan"))])
+    {}))
+(def literal-result
+  (pull/pull database [:name] 1))
+(def runtime-pattern
+  [(parser/source-attribute :name)])
+(def runtime-result
+  (pull/pull database runtime-pattern 1))
+(def before-many-parse-count @parser/attr-key-counter)
+(def many-results
+  (pull/pull-many database [:name] [1]))
+(def after-many-parse-count @parser/attr-key-counter)
+(def default-result
+  (pull/pull database [[:missing :default "fallback"]] 1))
+(def visit-count (volatile! 0))
+(def last-visit-kind (volatile! :none))
+(def last-visit-entity (volatile! -1))
+(def last-visit-attr (volatile! :none))
+(def last-visit-value-absent (volatile! false))
+(def visitor
+  (fn [kind entity attr value]
+    (vreset! last-visit-kind kind)
+    (match entity
+      None (vreset! last-visit-entity -1)
+      (Some entity) (vreset! last-visit-entity entity))
+    (match attr
+      None (vreset! last-visit-attr :none)
+      (Some attr) (vreset! last-visit-attr attr))
+    (vreset! last-visit-value-absent (nil? value))
+    (vswap! visit-count inc)
+    (Stdlib.ignore 0)))
+(def visitor-options
+  (pull/pull-options visitor))
+(def no-visitor-options
+  (pull/default-pull-options))
+(def visitor-matches
+  (do
+    (vreset! visit-count 0)
+    (let [result
+          (pull/pull database [:name] 1 visitor-options)]
+      (and
+       (= 1 @visit-count)
+       (= :db.pull/attr @last-visit-kind)
+       (= 1 @last-visit-entity)
+       (= :name @last-visit-attr)
+       @last-visit-value-absent
+       (if-some [pulled result]
+         (contains? pulled :name)
+         false)))))
+(def no-visitor-matches
+  (do
+    (vreset! visit-count 0)
+    (let [result
+          (pull/pull database [:name] 1 no-visitor-options)]
+      (and
+       (= 0 @visit-count)
+       (if-some [pulled result]
+         (contains? pulled :name)
+         false)))))
+(def missing-visitor-matches
+  (do
+    (vreset! visit-count 0)
+    (let [result
+          (pull/pull database [:name] 999 visitor-options)]
+      (and
+       (= 1 @visit-count)
+       (= :db.pull/attr @last-visit-kind)
+       (= 999 @last-visit-entity)
+       (= :name @last-visit-attr)
+       @last-visit-value-absent
+       (nil? result)))))
+(def many-visitor-matches
+  (do
+    (vreset! visit-count 0)
+    (let [result
+          (pull/pull-many
+           database [:name] [1 999] visitor-options)]
+      (and
+       (= 2 @visit-count)
+       (= :db.pull/attr @last-visit-kind)
+       (= 999 @last-visit-entity)
+       (= :name @last-visit-attr)
+       @last-visit-value-absent
+       (= 2 (count result))
+       (some? (first result))
+       (nil? (second result))))))
+(def literal-matches
+  (if-some [pulled literal-result]
+    (if-some [value (:name pulled)]
+      (Datascript_runtime.Data_value.equal
+       value
+       (Datascript_runtime.Data_value.String "Ivan"))
+      false)
+    false))
+(def runtime-matches
+  (if-some [pulled runtime-result]
+    (if-some [value (:name pulled)]
+      (Datascript_runtime.Data_value.equal
+       value
+       (Datascript_runtime.Data_value.String "Ivan"))
+      false)
+    false))
+(def many-matches
+  (if-some [pulled (first many-results)]
+    (if-some [value (:name pulled)]
+      (Datascript_runtime.Data_value.equal
+       value
+       (Datascript_runtime.Data_value.String "Ivan"))
+      false)
+    false))
+(def many-parsed-once
+  (= (inc before-many-parse-count) after-many-parse-count))
+(def default-matches
+  (if-some [pulled default-result]
+    (if-some [value (:missing pulled)]
+      (Datascript_runtime.Data_value.equal
+       value
+       (Datascript_runtime.Data_value.String "fallback"))
+      false)
+    false))
+(println
+  (str literal-matches ":"
+       runtime-matches ":"
+       many-matches ":"
+       many-parsed-once ":"
+       default-matches ":"
+       visitor-matches ":"
+       no-visitor-matches ":"
+       missing-visitor-matches ":"
+       many-visitor-matches))
+|}
+  in
+  let provider_sources () =
+    [
+      "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
+      "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+      "datascript/me/tonsky/persistent_sorted_set.cljc";
+      "test/datascript/upstream/util.cljc";
+      "test/datascript/upstream/schema.cljc";
+      "test/datascript/upstream/db.cljc";
+      "test/datascript/upstream/pull_parser.cljc";
+      "test/datascript/upstream/pull_api.cljc";
+    ]
+    |> List.map (fun path ->
+           (path, read_file (Filename.concat (repo_root ()) path)))
+  in
+  let compile target =
+    let baseline =
+      compile_datascript_sources target Lg.Compiler.empty_state
+        (provider_sources ())
+    in
+    compile_from_datascript_baseline target baseline
+      [ ("test/datascript/pull_source_forms.cljc", source) ]
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs
+    "current_datascript_pull_accepts_source_and_closed_runtime_patterns"
+    "true:true:true:true:true:true:true:true:true\n" native_source;
+  ignore (compile Lg.Target.Melange)
+
 let test_current_datascript_pull_parser_preserves_schema_semantics_on_native () =
   let source =
     {|
@@ -4287,12 +5023,20 @@ let test_current_datascript_pull_parser_preserves_schema_semantics_on_native () 
 
 (def database
   (db/init-db
-    []
-    {:ref {:db/valueType :db.type/ref}
-     :component {:db/valueType :db.type/ref
-                 :db/isComponent true}
-     :many {:db/cardinality :db.cardinality/many}}
-    {}))
+    (to-array [])
+    (zipmap
+      [:ref :component :many]
+      [(zipmap
+         [:db/valueType]
+         [(Datascript_runtime.Data_value.Keyword ":db.type/ref")])
+       (zipmap
+         [:db/valueType :db/isComponent]
+         [(Datascript_runtime.Data_value.Keyword ":db.type/ref")
+          (Datascript_runtime.Data_value.Bool true)])
+       (zipmap
+         [:db/cardinality]
+         [(Datascript_runtime.Data_value.Keyword ":db.cardinality/many")])])
+    (db/default-options)))
 
 (def normal (pull-parser/parse-attr-name database :normal))
 (def ref-attr (pull-parser/parse-attr-name database :ref))
@@ -4381,39 +5125,154 @@ let test_current_datascript_pull_api_behaves_on_native () =
 
 (def database
   (db/init-db
-    [(db/datom 1 :name "Ivan")
-     (db/datom 1 :tags :a)
-     (db/datom 1 :tags :b)
-     (db/datom 1 :friend 2)
-     (db/datom 2 :name "Oleg")
-     (db/datom 3 :friend 2)]
-    {:tags {:db/cardinality :db.cardinality/many}
-     :friend {:db/valueType :db.type/ref
-              :db/cardinality :db.cardinality/one}}
-    {}))
+    (to-array
+     [(db/datom 1 :name "Ivan")
+      (db/datom 1 :tags :a)
+      (db/datom 1 :tags :b)
+      (db/datom 1 :friend (Datascript_runtime.Data_value.Ref 2))
+      (db/datom 2 :name "Oleg")
+      (db/datom 2 :friend (Datascript_runtime.Data_value.Ref 1))
+      (db/datom 3 :friend (Datascript_runtime.Data_value.Ref 2))])
+    (zipmap
+     [:tags :friend]
+     [(zipmap
+       [:db/cardinality]
+       [(Datascript_runtime.Data_value.Keyword
+         ":db.cardinality/many")])
+      (zipmap
+       [:db/valueType :db/cardinality]
+       [(Datascript_runtime.Data_value.Keyword
+         ":db.type/ref")
+        (Datascript_runtime.Data_value.Keyword
+         ":db.cardinality/one")])])
+    (db/default-options)))
+
+(defn data-equals?
+  [^:option<Datascript_runtime.Data_value.t> actual
+   ^:Datascript_runtime.Data_value.t expected]
+  (match actual
+    None false
+    (Some actual)
+    (Datascript_runtime.Data_value.equal actual expected)))
+
+(defn ^int data-count
+  [^:option<Datascript_runtime.Data_value.t> actual]
+  (match actual
+    None 0
+    (Some actual)
+    (match
+     (Datascript_runtime.Data_value.sequential_items actual)
+     None 0
+     (Some items) (count items))))
+
+(defn nested-data-equals?
+  [^:option<Datascript_runtime.Data_value.t> actual
+   ^:string key
+   ^:Datascript_runtime.Data_value.t expected]
+  (match actual
+    None false
+    (Some actual)
+    (data-equals?
+     (Datascript_runtime.Data_value.keyword_map_get key actual)
+     expected)))
+
+(defn transformed-name
+  [^:option<Datascript_runtime.Data_value.t> _value]
+  (Some
+   (Datascript_runtime.Data_value.String "transformed")))
 
 (def direct (pull/pull database [:name :tags] 1))
+(def aliased (pull/pull database [[:name :as :display-name]] 1))
 (def defaulted (pull/pull database [[:missing :default "fallback"]] 1))
+(def limited (pull/pull database [[:tags :limit 1]] 1))
+(def transformed
+  (pull/pull database [[:name :xform transformed-name]] 1))
+(def combined-options
+  (pull/pull
+   database
+   [[:unknown :as :renamed :default false]]
+   1))
+(def recursive-result
+  (pull/pull database [:name {:friend 1}] 1))
+(def cycle-result
+  (pull/pull database [:name {:friend ...}] 1))
 (def reverse-result (pull/pull database [{:_friend [:db/id]}] 2))
 (def wildcard-result (pull/pull database [:*] 1))
 (def many-result (pull/pull-many database [:name] [1 2 999]))
 
-(println (= "Ivan" (:name direct)))
-(println (= #{:a :b} (set (:tags direct))))
-(println (= "fallback" (:missing defaulted)))
-(println (= #{1 3} (set (map :db/id (:_friend reverse-result)))))
-(println (and (= "Ivan" (:name wildcard-result))
-              (= 2 (:db/id (:friend wildcard-result)))))
-(println (and (= ["Ivan" "Oleg" nil] (mapv :name many-result))
-              (nil? (pull/pull database [:name] 999))))
+(println
+ (data-equals?
+  (:name direct)
+  (Datascript_runtime.Data_value.String "Ivan")))
+(println (= 2 (data-count (:tags direct))))
+(println
+ (data-equals?
+  (:display-name aliased)
+  (Datascript_runtime.Data_value.String "Ivan")))
+(println
+ (data-equals?
+  (:missing defaulted)
+  (Datascript_runtime.Data_value.String "fallback")))
+(println (= 1 (data-count (:tags limited))))
+(println
+ (data-equals?
+  (:name transformed)
+  (Datascript_runtime.Data_value.String "transformed")))
+(println
+ (data-equals?
+  (:renamed combined-options)
+  (Datascript_runtime.Data_value.Bool false)))
+(println
+ (nested-data-equals?
+  (:friend recursive-result)
+  ":name"
+  (Datascript_runtime.Data_value.String "Oleg")))
+(println
+ (nested-data-equals?
+  (:friend cycle-result)
+  ":name"
+  (Datascript_runtime.Data_value.String "Oleg")))
+(println (= 2 (data-count (:_friend reverse-result))))
+(println
+ (and
+  (data-equals?
+   (:name wildcard-result)
+   (Datascript_runtime.Data_value.String "Ivan"))
+  (some? (:friend wildcard-result))))
+(println
+ (and
+  (if-some [first-result (first many-result)]
+    (data-equals?
+     (:name first-result)
+     (Datascript_runtime.Data_value.String "Ivan"))
+    false)
+  (if-some [second-result (second many-result)]
+    (data-equals?
+     (:name second-result)
+     (Datascript_runtime.Data_value.String "Oleg"))
+    false)
+  (nil? (nth many-result 2))
+  (nil? (pull/pull database [:name] 999))))
 |}
   in
-  register_datascript_behavior "test/datascript/pull_api_behavior.cljc" source
-    "true\ntrue\ntrue\ntrue\ntrue\ntrue\n"
+  let compile target =
+    compile_from_datascript_baseline target
+      (datascript_pull_baseline target)
+      [ ("test/datascript/pull_api_behavior.cljc", source) ]
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs "current_datascript_pull_api_behaves_on_native"
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n"
+    native_source;
+  ignore (compile Lg.Target.Melange)
 
 let current_datascript_query_only_sources () =
-  let path = "test/datascript/upstream/query.cljc" in
-  [ (path, read_file (Filename.concat (repo_root ()) path)) ]
+  [
+    "test/datascript/lg/query_types.cljc";
+    "test/datascript/lg/query.cljc";
+  ]
+  |> List.map (fun path ->
+         (path, read_file (Filename.concat (repo_root ()) path)))
 
 let current_datascript_query_sources () =
   current_datascript_pull_sources () @ current_datascript_query_only_sources ()
@@ -4479,15 +5338,18 @@ let test_current_datascript_query_behaves_on_native () =
     {|
 (ns app.query-behavior
   (:require [datascript.db :as db]
-            [datascript.query :as query]))
+            [datascript.lg.query :as query]
+            [datascript.lg.query-types :as query-types]))
 
 (def database
   (db/init-db
-    [(db/datom 1 :name "Ivan")
-     (db/datom 1 :age 19)
-     (db/datom 2 :name "Oleg")]
+    (to-array
+     [(db/datom 1 :name "Ivan")
+      (db/datom 1 :age 19)
+      (db/datom 2 :name "Oleg")
+      (db/datom 2 :age 19)])
     {}
-    {}))
+    (db/default-options)))
 
 (println
   (= #{[1 "Ivan"] [2 "Oleg"]}
@@ -4495,16 +5357,2725 @@ let test_current_datascript_query_behaves_on_native () =
        '[:find ?e ?name
          :where [?e :name ?name]]
        database)))
+
+(def duplicate-result
+  (query/q
+    '[:find ?age ?age
+      :where [?e :age ?age]]
+    database))
+
+(println
+  (if-some [rows (query-types/output-relation duplicate-result)]
+    (= 1 (count rows))
+    false))
 |}
   in
   register_datascript_behavior "test/datascript/query_behavior.cljc" source
-    "true\n"
+    "true\ntrue\n"
+
+let test_current_datascript_query_deduplicates_projection () =
+  let source =
+    {|
+(ns app.query-duplicate-projection
+  (:require [datascript.db :as db]
+            [datascript.lg.query :as query]
+            [datascript.lg.query-types :as query-types]))
+
+(def database
+  (db/init-db
+    (to-array
+     [(db/datom 1 :age 19)
+      (db/datom 2 :age 19)])
+    {}
+    (db/default-options)))
+
+(def result
+  (query/q
+    '[:find ?age ?age
+      :where [?e :age ?age]]
+    database))
+
+(println
+  (if-some [rows (query-types/output-relation result)]
+    (= 1 (count rows))
+    false))
+|}
+  in
+  let native_source =
+    compile_from_datascript_baseline Lg.Target.Native
+      (datascript_query_baseline Lg.Target.Native)
+      [ ("test/datascript/query_duplicate_projection.cljc", source) ]
+  in
+  assert_ocaml_runs "current_datascript_query_deduplicates_projection"
+    "true\n" native_source;
+  ignore
+    (compile_from_datascript_baseline Lg.Target.Melange
+       (datascript_query_baseline Lg.Target.Melange)
+       [ ("test/datascript/query_duplicate_projection.cljc", source) ])
+
+let test_current_datascript_query_supports_with () =
+  let source =
+    {|
+(ns app.query-with
+  (:require [datascript.db :as db]
+            [datascript.lg.query :as query]
+            [datascript.lg.query-types :as query-types]))
+
+(def database
+  (db/init-db
+    (to-array
+     [(db/datom 1 :age 19)
+      (db/datom 2 :age 19)])
+    {}
+    (db/default-options)))
+
+(def without-with
+  (query/q
+    '[:find ?age
+      :where [?e :age ?age]]
+    database))
+
+(def with-result
+  (query/q
+    '[:find ?age
+      :with ?e
+      :where [?e :age ?age]]
+    database))
+
+(def empty-result
+  (query/q
+    '[:find ?e
+      :with ?age
+      :where
+      [?e :age ?age]
+      [?e :name "Missing"]]
+    database))
+
+(def overlap-rejected?
+  (try
+    (query/q
+      '[:find ?age
+        :with ?age
+        :where [?e :age ?age]]
+      database)
+    false
+    (catch (Invalid_argument _) true)))
+
+(def duplicate-rejected?
+  (try
+    (query/q
+      '[:find ?age
+        :with ?e ?e
+        :where [?e :age ?age]]
+      database)
+    false
+    (catch (Invalid_argument _) true)))
+
+(println
+  (if-some [rows (query-types/output-relation without-with)]
+    (= 1 (count rows))
+    false))
+(println
+  (if-some [rows (query-types/output-relation with-result)]
+    (= 2 (count rows))
+    false))
+(println
+  (if-some [rows (query-types/output-relation with-result)]
+    (every?
+     (fn [row] (= 1 (alength row)))
+     rows)
+    false))
+(println
+  (if-some [rows (query-types/output-relation empty-result)]
+    (empty? rows)
+    false))
+(println overlap-rejected?)
+(println duplicate-rejected?)
+|}
+  in
+  let native_source =
+    compile_from_datascript_baseline Lg.Target.Native
+      (datascript_query_baseline Lg.Target.Native)
+      [ ("test/datascript/query_with.cljc", source) ]
+  in
+  assert_ocaml_runs "current_datascript_query_supports_with"
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\n" native_source;
+  ignore
+    (compile_from_datascript_baseline Lg.Target.Melange
+       (datascript_query_baseline Lg.Target.Melange)
+       [ ("test/datascript/query_with.cljc", source) ])
+
+let test_current_datascript_query_supports_core_aggregates () =
+  let source =
+    {|
+(ns app.query-aggregates
+  (:require [datascript.db :as db]
+            [datascript.lg.query :as query]
+            [datascript.lg.query-types :as query-types]))
+
+(def database
+  (db/init-db
+    (to-array
+     [(db/datom 1 :heads 3)
+      (db/datom 1 :kind "red")
+      (db/datom 2 :heads 1)
+      (db/datom 2 :kind "red")
+      (db/datom 3 :heads 1)
+      (db/datom 3 :kind "blue")
+      (db/datom 4 :heads 1)
+      (db/datom 4 :kind "blue")])
+    {}
+    (db/default-options)))
+
+(defn result-int [result]
+  (if-some [value (query-types/result-value result)]
+    (match value
+      (Datascript_runtime.Data_value.Int value) value
+      _ -1)
+    -1))
+
+(defn result-string [result]
+  (if-some [value (query-types/result-value result)]
+    (match value
+      (Datascript_runtime.Data_value.String value) value
+      _ "")
+    ""))
+
+(defn relation-row [output]
+  (if-some [rows (query-types/output-relation output)]
+    (first rows)
+    (query-types/empty-row)))
+
+(def sum-without-with
+  (query/q
+    '[:find (sum ?heads)
+      :where [?e :heads ?heads]]
+    database))
+
+(def aggregates-with
+  (query/q
+    '[:find (sum ?heads) (count ?heads) (count-distinct ?heads)
+      :with ?e
+      :where [?e :heads ?heads]]
+    database))
+
+(def grouped
+  (query/q
+    '[:find ?kind (sum ?heads)
+      :where
+      [?e :kind ?kind]
+      [?e :heads ?heads]]
+    database))
+
+(def empty-result
+  (query/q
+    '[:find (sum ?heads)
+      :where
+      [?e :heads ?heads]
+      [?e :kind "missing"]]
+    database))
+
+(def sum-row (relation-row sum-without-with))
+(def aggregate-row (relation-row aggregates-with))
+
+(println
+  (= 4
+     (result-int
+      (if-some [result (query-types/row-get sum-row 0)]
+        result
+        (query-types/value-result
+         (Datascript_runtime.Data_value.Int -1))))))
+(println
+  (and
+   (= 6
+      (result-int
+       (if-some [result (query-types/row-get aggregate-row 0)]
+         result
+         (query-types/value-result
+          (Datascript_runtime.Data_value.Int -1)))))
+   (= 4
+      (result-int
+       (if-some [result (query-types/row-get aggregate-row 1)]
+         result
+         (query-types/value-result
+          (Datascript_runtime.Data_value.Int -1)))))
+   (= 2
+      (result-int
+       (if-some [result (query-types/row-get aggregate-row 2)]
+         result
+         (query-types/value-result
+          (Datascript_runtime.Data_value.Int -1)))))))
+(println
+  (if-some [rows (query-types/output-relation grouped)]
+    (and
+     (= 2 (count rows))
+     (= "red"
+        (result-string
+         (if-some [result (query-types/row-get (nth rows 0) 0)]
+           result
+           (query-types/value-result
+            (Datascript_runtime.Data_value.String "")))))
+     (= 4
+        (result-int
+         (if-some [result (query-types/row-get (nth rows 0) 1)]
+           result
+           (query-types/value-result
+            (Datascript_runtime.Data_value.Int -1)))))
+     (= "blue"
+        (result-string
+         (if-some [result (query-types/row-get (nth rows 1) 0)]
+           result
+           (query-types/value-result
+            (Datascript_runtime.Data_value.String "")))))
+     (= 1
+        (result-int
+         (if-some [result (query-types/row-get (nth rows 1) 1)]
+           result
+           (query-types/value-result
+            (Datascript_runtime.Data_value.Int -1))))))
+    false))
+(println
+  (if-some [rows (query-types/output-relation empty-result)]
+    (empty? rows)
+    false))
+|}
+  in
+  let native_source =
+    compile_from_datascript_baseline Lg.Target.Native
+      (datascript_query_baseline Lg.Target.Native)
+      [ ("test/datascript/query_aggregates.cljc", source) ]
+  in
+  assert_ocaml_runs "current_datascript_query_supports_core_aggregates"
+    "true\ntrue\ntrue\ntrue\n" native_source;
+  ignore
+    (compile_from_datascript_baseline Lg.Target.Melange
+       (datascript_query_baseline Lg.Target.Melange)
+       [ ("test/datascript/query_aggregates.cljc", source) ])
+
+let test_current_datascript_query_supports_source_less_inputs () =
+  let source =
+    {|
+(ns app.query-source-less
+  (:require [datascript.lg.query :as query]
+            [datascript.lg.query-types :as query-types]))
+
+(def without-with
+  (query/q
+    '[:find (sum ?heads)
+      :in [[?monster ?heads]]]
+    [["Cerberus" 3]
+     ["Medusa" 1]
+     ["Cyclops" 1]
+     ["Chimera" 1]]))
+
+(def with-result
+  (query/q
+    '[:find (sum ?heads)
+      :with ?monster
+      :in [[?monster ?heads]]]
+    [["Cerberus" 3]
+     ["Medusa" 1]
+     ["Cyclops" 1]
+     ["Chimera" 1]]))
+
+(def collection-result
+  (query/q
+    '[:find (count ?value)
+      :in [?value ...]]
+    [1 2 2]))
+
+(defn ^:int aggregate-int [output]
+  (if-some [rows (query-types/output-relation output)]
+    (if-some [row (first rows)]
+      (if-some [result (query-types/row-get row 0)]
+        (if-some [value (query-types/result-value result)]
+          (match value
+            (Datascript_runtime.Data_value.Int value) value
+            _ -1)
+          -1)
+        -1)
+      -1)
+    -1))
+
+(println (= 4 (aggregate-int without-with)))
+(println (= 6 (aggregate-int with-result)))
+(println (= 2 (aggregate-int collection-result)))
+|}
+  in
+  let native_source =
+    compile_from_datascript_baseline Lg.Target.Native
+      (datascript_query_baseline Lg.Target.Native)
+      [ ("test/datascript/query_source_less.cljc", source) ]
+  in
+  assert_ocaml_runs "current_datascript_query_supports_source_less_inputs"
+    "true\ntrue\ntrue\n" native_source;
+  ignore
+    (compile_from_datascript_baseline Lg.Target.Melange
+       (datascript_query_baseline Lg.Target.Melange)
+       [ ("test/datascript/query_source_less.cljc", source) ])
+
+let test_current_datascript_query_supports_explicit_sources () =
+  let source =
+    {|
+(ns app.query-explicit-sources
+  (:require [datascript.db :as db]
+            [datascript.lg.query :as query]
+            [datascript.lg.query-types :as query-types]))
+
+(def database
+  (db/init-db
+    (to-array
+     [(db/datom 1 :name "Ivan")
+      (db/datom 1 :age 15)
+      (db/datom 2 :name "Petr")
+      (db/datom 2 :age 37)
+      (db/datom 3 :name "Ivan")
+      (db/datom 3 :age 37)])
+    {}
+    (db/default-options)))
+
+(def named-database
+  (query/q
+    '[:find ?a ?v
+      :in $db ?e
+      :where [$db ?e ?a ?v]]
+    database
+    1))
+
+(def database-and-relation
+  (query/q
+    '[:find ?e ?email
+      :in $ $contacts
+      :where [?e :name ?name]
+             [$contacts ?name ?email]]
+    database
+    [["Ivan" "ivan@example.com"]
+     ["Petr" "petr@example.com"]]))
+
+(def two-relations
+  (query/q
+    '[:find ?name ?age
+      :in $names $ages
+      :where [$names ?id ?name]
+             [$ages ?id ?age]]
+    [[1 "Ivan"] [2 "Petr"]]
+    [[1 15] [3 41]]))
+
+(def reordered-source
+  (query/q
+    '[:find ?name
+      :in ?entity $db
+      :where [$db ?entity :name ?name]]
+    2
+    database))
+
+(def empty-relation
+  (query/q
+    '[:find ?value
+      :in $values
+      :where [$values ?value]]
+    []))
+
+(def missing-source-rejected?
+  (try
+    (query/q
+      '[:find ?name
+        :in $names $ages
+        :where [$names ?id ?name]
+               [$ages ?id ?age]]
+      [[1 "Ivan"]])
+    false
+    (catch (Invalid_argument _) true)))
+
+(println
+  (if-some [rows (query-types/output-relation named-database)]
+    (= 2 (count rows))
+    false))
+(println
+  (if-some [rows (query-types/output-relation database-and-relation)]
+    (= 3 (count rows))
+    false))
+(println
+  (if-some [rows (query-types/output-relation two-relations)]
+    (= 1 (count rows))
+    false))
+(println
+  (if-some [rows (query-types/output-relation reordered-source)]
+    (= 1 (count rows))
+    false))
+(println
+  (if-some [rows (query-types/output-relation empty-relation)]
+    (empty? rows)
+    false))
+(println missing-source-rejected?)
+|}
+  in
+  let native_source =
+    compile_from_datascript_baseline Lg.Target.Native
+      (datascript_query_baseline Lg.Target.Native)
+      [ ("test/datascript/query_explicit_sources.cljc", source) ]
+  in
+  assert_ocaml_runs "current_datascript_query_supports_explicit_sources"
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\n" native_source;
+  ignore
+    (compile_from_datascript_baseline Lg.Target.Melange
+       (datascript_query_baseline Lg.Target.Melange)
+       [ ("test/datascript/query_explicit_sources.cljc", source) ])
+
+let test_current_datascript_query_supports_comparison_predicates () =
+  let source =
+    {|
+(ns app.query-comparison-predicates
+  (:require [datascript.db :as db]
+            [datascript.lg.query :as query]
+            [datascript.lg.query-types :as query-types]))
+
+(def database
+  (db/init-db
+    (to-array
+     [(db/datom 1 :age 10)
+      (db/datom 2 :age 20)
+      (db/datom 3 :age 30)])
+    {}
+    (db/default-options)))
+
+(defn ^:int row-count [output]
+  (if-some [rows (query-types/output-relation output)]
+    (count rows)
+    -1))
+
+(println
+ (= 1
+    (row-count
+     (query/q
+     '[:find ?e
+       :where
+       [?e :age ?age]
+       [(= ?age 20)]]
+      database))))
+(println
+ (= 2
+    (row-count
+     (query/q
+     '[:find ?e
+       :where
+       [?e :age ?age]
+       [(not= ?age 20)]]
+      database))))
+(println
+ (= 2
+    (row-count
+     (query/q
+     '[:find ?e
+       :where
+       [?e :age ?age]
+       [(< 5 ?age 25)]]
+      database))))
+(println
+ (= 2
+    (row-count
+     (query/q
+     '[:find ?e
+       :where
+       [?e :age ?age]
+       [(> ?age 15)]]
+      database))))
+(println
+ (= 2
+    (row-count
+     (query/q
+     '[:find ?e
+       :where
+       [?e :age ?age]
+       [(<= ?age 20)]]
+      database))))
+(println
+ (= 2
+    (row-count
+     (query/q
+     '[:find ?e
+       :where
+       [?e :age ?age]
+       [(>= ?age 20)]]
+      database))))
+(println
+ (= 3
+    (row-count
+     (query/q
+     '[:find ?e
+       :where
+       [?e :age ?age]
+       [(< ?age)]]
+      database))))
+(println
+ (= 3
+    (row-count
+     (query/q
+     '[:find ?e
+       :where
+       [?e :age ?age]
+       [(= ?age ?age ?age)]]
+      database))))
+(println
+ (= 2
+    (row-count
+     (query/q
+     '[:find ?e
+       :where
+       [?e :age ?age]
+       [(!= ?age 20)]]
+      database))))
+(println
+ (= 1
+    (row-count
+     (query/q
+     '[:find ?e
+       :where
+       [?e :age ?age]
+       [(== ?age 20)]]
+      database))))
+|}
+  in
+  let native_source =
+    compile_from_datascript_baseline Lg.Target.Native
+      (datascript_query_baseline Lg.Target.Native)
+      [ ("test/datascript/query_comparison_predicates.cljc", source) ]
+  in
+  assert_ocaml_runs "current_datascript_query_supports_comparison_predicates"
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n"
+    native_source;
+  ignore
+    (compile_from_datascript_baseline Lg.Target.Melange
+       (datascript_query_baseline Lg.Target.Melange)
+       [ ("test/datascript/query_comparison_predicates.cljc", source) ])
+
+let test_current_datascript_query_supports_function_clauses () =
+  let source =
+    {|
+(ns app.query-function-clauses
+  (:require [datascript.lg.query :as query]
+            [datascript.lg.query-types :as query-types]))
+
+(defn ^:int result-int [row index]
+  (if-some [result (query-types/row-get row index)]
+    (if-some [value (query-types/result-value result)]
+      (match value
+        (Datascript_runtime.Data_value.Int value) value
+        _ -1)
+      -1)
+    -1))
+
+(defn ^boolean contains-pair? [output left right]
+  (if-some [rows (query-types/output-relation output)]
+    (some
+     (fn [row]
+       (and
+        (= left (result-int row 0))
+        (= right (result-int row 1))))
+     rows)
+    false))
+
+(def identity-result
+  (query/q
+   '[:find ?n
+     :where [(identity 1) ?n]]))
+
+(def ground-result
+  (query/q
+   '[:find ?n
+     :where [(ground 2) ?n]]))
+
+(def add-result
+  (query/q
+   '[:find ?sum
+     :where [(+ 15 22) ?sum]]))
+
+(def bound-add-result
+  (query/q
+   '[:find ?age ?next
+     :in [?age ...]
+     :where [(+ ?age 5) ?next]]
+   [10 20 30]))
+
+(def conflict-result
+  (query/q
+   '[:find ?n
+     :where
+     [(identity 1) ?n]
+     [(identity 2) ?n]]))
+
+(println
+ (if-some [rows (query-types/output-relation identity-result)]
+   (= 1 (result-int (first rows) 0))
+   false))
+(println
+ (if-some [rows (query-types/output-relation ground-result)]
+   (= 2 (result-int (first rows) 0))
+   false))
+(println
+ (if-some [rows (query-types/output-relation add-result)]
+   (= 37 (result-int (first rows) 0))
+   false))
+(println
+ (and
+  (contains-pair? bound-add-result 10 15)
+  (contains-pair? bound-add-result 20 25)
+  (contains-pair? bound-add-result 30 35)))
+(println
+ (if-some [rows (query-types/output-relation conflict-result)]
+   (empty? rows)
+   false))
+|}
+  in
+  let native_source =
+    compile_from_datascript_baseline Lg.Target.Native
+      (datascript_query_baseline Lg.Target.Native)
+      [ ("test/datascript/query_function_clauses.cljc", source) ]
+  in
+  assert_ocaml_runs "current_datascript_query_supports_function_clauses"
+    "true\ntrue\ntrue\ntrue\ntrue\n" native_source;
+  ignore
+    (compile_from_datascript_baseline Lg.Target.Melange
+       (datascript_query_baseline Lg.Target.Melange)
+       [ ("test/datascript/query_function_clauses.cljc", source) ])
+
+let test_current_datascript_query_supports_function_result_bindings () =
+  let source =
+    {|
+(ns app.query-function-result-bindings
+  (:require [datascript.lg.query :as query]
+            [datascript.lg.query-types :as query-types]))
+
+(defn ^:int result-int [row index]
+  (if-some [result (query-types/row-get row index)]
+    (if-some [value (query-types/result-value result)]
+      (match value
+        (Datascript_runtime.Data_value.Int value) value
+        _ -1)
+      -1)
+    -1))
+
+(defn ^:string result-keyword [row index]
+  (if-some [result (query-types/row-get row index)]
+    (if-some [value (query-types/result-value result)]
+      (match value
+        (Datascript_runtime.Data_value.Keyword value) value
+        _ "")
+      "")
+    ""))
+
+(def tuple-result
+  (query/q
+   '[:find ?left ?right
+     :where [(identity [3 4]) [?left ?right]]]))
+
+(def collection-result
+  (query/q
+   '[:find ?vowel
+     :where [(ground [:a :e :i :o :u]) [?vowel ...]]]))
+
+(def relation-result
+  (query/q
+   '[:find ?left ?right
+     :where
+     [(ground [[:a :ignored :c]
+               [:d :ignored :f]])
+      [[?left _ ?right] ...]]]))
+
+(def ignore-result
+  (query/q
+   '[:find ?input
+     :in ?input
+     :where [(ground :ignored) _]]
+   7))
+
+(def empty-collection-result
+  (query/q
+   '[:find ?value
+     :where [(ground []) [?value ...]]]))
+
+(println
+ (if-some [rows (query-types/output-relation tuple-result)]
+   (if-some [row (first rows)]
+     (and (= 3 (result-int row 0))
+          (= 4 (result-int row 1)))
+     false)
+   false))
+(println
+ (if-some [rows (query-types/output-relation collection-result)]
+   (and
+    (= 5 (count rows))
+    (some
+     (fn [row] (= ":i" (result-keyword row 0)))
+     rows))
+   false))
+(println
+ (if-some [rows (query-types/output-relation relation-result)]
+   (and
+    (= 2 (count rows))
+    (some
+     (fn [row]
+       (and (= ":a" (result-keyword row 0))
+            (= ":c" (result-keyword row 1))))
+     rows)
+    (some
+     (fn [row]
+       (and (= ":d" (result-keyword row 0))
+            (= ":f" (result-keyword row 1))))
+     rows))
+   false))
+(println
+ (if-some [rows (query-types/output-relation ignore-result)]
+   (= 7 (result-int (first rows) 0))
+   false))
+(println
+ (if-some [rows (query-types/output-relation empty-collection-result)]
+   (empty? rows)
+   false))
+|}
+  in
+  let native_source =
+    compile_from_datascript_baseline Lg.Target.Native
+      (datascript_query_baseline Lg.Target.Native)
+      [ ("test/datascript/query_function_result_bindings.cljc", source) ]
+  in
+  assert_ocaml_runs
+    "current_datascript_query_supports_function_result_bindings"
+    "true\ntrue\ntrue\ntrue\ntrue\n" native_source;
+  ignore
+    (compile_from_datascript_baseline Lg.Target.Melange
+       (datascript_query_baseline Lg.Target.Melange)
+       [ ("test/datascript/query_function_result_bindings.cljc", source) ])
+
+let test_current_datascript_query_supports_core_arithmetic_functions () =
+  let source =
+    {|
+(ns app.query-core-arithmetic-functions
+  (:require [datascript.lg.query :as query]
+            [datascript.lg.query-types :as query-types]))
+
+(defn ^:int scalar-int [output]
+  (if-some [rows (query-types/output-relation output)]
+    (if-some [row (first rows)]
+      (if-some [result (query-types/row-get row 0)]
+        (if-some [value (query-types/result-value result)]
+          (match value
+            (Datascript_runtime.Data_value.Int value) value
+            _ -999)
+          -999)
+        -999)
+      -999)
+    -999))
+
+(println
+ (= 15
+    (scalar-int
+     (query/q
+      '[:find ?value
+        :where [(- 20 3 2) ?value]]))))
+(println
+ (= -5
+    (scalar-int
+     (query/q
+      '[:find ?value
+        :where [(- 5) ?value]]))))
+(println
+ (= 24
+    (scalar-int
+     (query/q
+      '[:find ?value
+        :where [(* 2 3 4) ?value]]))))
+(println
+ (= 1
+    (scalar-int
+     (query/q
+      '[:find ?value
+        :where [(*) ?value]]))))
+(println
+ (= 10
+    (scalar-int
+     (query/q
+      '[:find ?value
+        :where [(inc 9) ?value]]))))
+(println
+ (= 8
+    (scalar-int
+     (query/q
+      '[:find ?value
+        :where [(dec 9) ?value]]))))
+(println
+ (try
+  (query/q
+   '[:find ?value
+     :where [(-) ?value]])
+  false
+  (catch (Invalid_argument _) true)))
+(println
+ (try
+  (query/q
+   '[:find ?value
+     :where [(inc 1 2) ?value]])
+  false
+  (catch (Invalid_argument _) true)))
+|}
+  in
+  let native_source =
+    compile_from_datascript_baseline Lg.Target.Native
+      (datascript_query_baseline Lg.Target.Native)
+      [ ("test/datascript/query_core_arithmetic_functions.cljc", source) ]
+  in
+  assert_ocaml_runs
+    "current_datascript_query_supports_core_arithmetic_functions"
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n" native_source;
+  ignore
+    (compile_from_datascript_baseline Lg.Target.Melange
+       (datascript_query_baseline Lg.Target.Melange)
+       [ ("test/datascript/query_core_arithmetic_functions.cljc", source) ])
+
+let test_current_datascript_query_supports_not_clauses () =
+  let source =
+    {|
+(ns app.query-not-clauses
+  (:require [datascript.db :as db]
+            [datascript.lg.query :as query]
+            [datascript.lg.query-types :as query-types]))
+
+(def database
+  (db/init-db
+   (to-array
+    [(db/datom 1 :name "Ivan")
+     (db/datom 1 :age 10)
+     (db/datom 2 :name "Ivan")
+     (db/datom 2 :age 20)
+     (db/datom 3 :name "Oleg")
+     (db/datom 3 :age 10)
+     (db/datom 4 :name "Oleg")
+     (db/datom 4 :age 20)])
+   {}
+   (db/default-options)))
+
+(defn ^boolean contains-entity? [output entity]
+  (if-some [rows (query-types/output-relation output)]
+    (some
+     (fn [row]
+       (if-some [result (query-types/row-get row 0)]
+         (match result
+           (Datascript_runtime.Query_value.Entity value)
+           (= entity value)
+           (Datascript_runtime.Query_value.Value
+            (Datascript_runtime.Data_value.Int value))
+           (= entity value)
+           _ false)
+         false))
+     rows)
+    false))
+
+(defn ^:int row-count [output]
+  (if-some [rows (query-types/output-relation output)]
+    (count rows)
+    -1))
+
+(def simple
+  (query/q
+   '[:find ?e
+     :where
+     [?e :name]
+     (not [?e :name "Ivan"])]
+   database))
+
+(def multi-clause
+  (query/q
+   '[:find ?e
+     :where
+     [?e :name]
+     (not
+      [?e :name "Ivan"]
+      [?e :age 10])]
+   database))
+
+(def local-variable
+  (query/q
+   '[:find ?e
+     :where
+     [?e :name]
+     (not
+      [?e :age ?age]
+      [(> ?age 10)])]
+   database))
+
+(def full-exclude
+  (query/q
+   '[:find ?e
+     :where
+     [?e :name]
+     (not [?e :age])]
+   database))
+
+(def empty-exclude
+  (query/q
+   '[:find ?e
+     :where
+     [?e :name]
+     (not
+      [?e :name "Ivan"]
+      [?e :name "Oleg"])]
+   database))
+
+(println
+ (and (= 2 (row-count simple))
+      (contains-entity? simple 3)
+      (contains-entity? simple 4)))
+(println
+ (and (= 3 (row-count multi-clause))
+      (contains-entity? multi-clause 2)
+      (contains-entity? multi-clause 3)
+      (contains-entity? multi-clause 4)))
+(println
+ (and (= 2 (row-count local-variable))
+      (contains-entity? local-variable 1)
+      (contains-entity? local-variable 3)))
+(println (= 0 (row-count full-exclude)))
+(println (= 4 (row-count empty-exclude)))
+(println
+ (try
+  (query/q
+   '[:find ?e
+     :where
+     (not [?e :name "Ivan"])
+     [?e :name]]
+   database)
+  false
+  (catch (Invalid_argument _) true)))
+|}
+  in
+  let native_source =
+    compile_from_datascript_baseline Lg.Target.Native
+      (datascript_query_baseline Lg.Target.Native)
+      [ ("test/datascript/query_not_clauses.cljc", source) ]
+  in
+  assert_ocaml_runs "current_datascript_query_supports_not_clauses"
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\n" native_source;
+  ignore
+    (compile_from_datascript_baseline Lg.Target.Melange
+       (datascript_query_baseline Lg.Target.Melange)
+       [ ("test/datascript/query_not_clauses.cljc", source) ])
+
+let test_current_datascript_query_supports_not_join_clauses () =
+  let source =
+    {|
+(ns app.query-not-join-clauses
+  (:require [datascript.db :as db]
+            [datascript.lg.query :as query]
+            [datascript.lg.query-types :as query-types]))
+
+(def database
+  (db/init-db
+   (to-array
+    [(db/datom 1 :name "Ivan")
+     (db/datom 1 :age 10)
+     (db/datom 2 :name "Oleg")
+     (db/datom 2 :age 20)])
+   {}
+   (db/default-options)))
+
+(defn ^:int row-count [output]
+  (if-some [rows (query-types/output-relation output)]
+    (count rows)
+    -1))
+
+(def regular-not
+  (query/q
+   '[:find ?e
+     :where
+     [?e :age ?value]
+     (not [?e :name ?value])]
+   database))
+
+(def explicit-join
+  (query/q
+   '[:find ?e
+     :where
+     [?e :age ?value]
+     (not-join [?e]
+       [?e :name ?value])]
+   database))
+
+(def exclude-oleg
+  (query/q
+   '[:find ?e ?age
+     :where
+     [?e :age ?age]
+     (not-join [?e]
+       [?e :name "Oleg"]
+       [?e :age ?inner-age])]
+   database))
+
+(println (= 2 (row-count regular-not)))
+(println (= 0 (row-count explicit-join)))
+(println (= 1 (row-count exclude-oleg)))
+(println
+ (try
+  (query/q
+   '[:find ?e
+     :where
+     [?e :name]
+     (not-join [?missing]
+       [?missing :age])]
+   database)
+  false
+  (catch (Invalid_argument _) true)))
+|}
+  in
+  let native_source =
+    compile_from_datascript_baseline Lg.Target.Native
+      (datascript_query_baseline Lg.Target.Native)
+      [ ("test/datascript/query_not_join_clauses.cljc", source) ]
+  in
+  assert_ocaml_runs "current_datascript_query_supports_not_join_clauses"
+    "true\ntrue\ntrue\ntrue\n" native_source;
+  ignore
+    (compile_from_datascript_baseline Lg.Target.Melange
+       (datascript_query_baseline Lg.Target.Melange)
+       [ ("test/datascript/query_not_join_clauses.cljc", source) ])
+
+let test_current_datascript_query_supports_or_clauses () =
+  let source =
+    {|
+(ns app.query-or-clauses
+  (:require [datascript.db :as db]
+            [datascript.lg.query :as query]
+            [datascript.lg.query-types :as query-types]))
+
+(def database
+  (db/init-db
+   (to-array
+    [(db/datom 1 :name "Ivan")
+     (db/datom 1 :age 10)
+     (db/datom 2 :name "Ivan")
+     (db/datom 2 :age 20)
+     (db/datom 3 :name "Oleg")
+     (db/datom 3 :age 10)
+     (db/datom 4 :name "Oleg")
+     (db/datom 4 :age 20)])
+   {}
+   (db/default-options)))
+
+(defn ^:int row-count [output]
+  (if-some [rows (query-types/output-relation output)]
+    (count rows)
+    -1))
+
+(defn ^boolean contains-entity? [output entity]
+  (if-some [rows (query-types/output-relation output)]
+    (some
+     (fn [row]
+       (if-some [result (query-types/row-get row 0)]
+         (match result
+           (Datascript_runtime.Query_value.Entity value)
+           (= entity value)
+           _ false)
+         false))
+     rows)
+    false))
+
+(def intersecting
+  (query/q
+   '[:find ?e
+     :where
+     (or
+      [?e :name "Oleg"]
+      [?e :age 10])]
+   database))
+
+(def one-empty
+  (query/q
+   '[:find ?e
+     :where
+     (or
+      [?e :name "Oleg"]
+      [?e :age 30])]
+   database))
+
+(def conjunctions
+  (query/q
+   '[:find ?e
+     :where
+     [?e :age ?age]
+     (or
+      (and
+       [?e :name "Ivan"]
+       [1 :age ?age])
+      (and
+       [?e :name "Oleg"]
+       [2 :age ?age]))]
+   database))
+
+(def duplicate-branches
+  (query/q
+   '[:find ?e
+     :where
+     (or
+      [?e :name "Ivan"]
+      [?e :name "Ivan"])]
+   database))
+
+(println
+ (and (= 3 (row-count intersecting))
+      (contains-entity? intersecting 1)
+      (contains-entity? intersecting 3)
+      (contains-entity? intersecting 4)))
+(println
+ (and (= 2 (row-count one-empty))
+      (contains-entity? one-empty 3)
+      (contains-entity? one-empty 4)))
+(println
+ (and (= 2 (row-count conjunctions))
+      (contains-entity? conjunctions 1)
+      (contains-entity? conjunctions 4)))
+(println (= 2 (row-count duplicate-branches)))
+(println
+ (try
+  (query/q
+   '[:find ?e
+     :where
+     (or
+      [?e :name ?name]
+      [?e :age ?age])]
+   database)
+  false
+  (catch (Invalid_argument _) true)))
+|}
+  in
+  let native_source =
+    compile_from_datascript_baseline Lg.Target.Native
+      (datascript_query_baseline Lg.Target.Native)
+      [ ("test/datascript/query_or_clauses.cljc", source) ]
+  in
+  assert_ocaml_runs "current_datascript_query_supports_or_clauses"
+    "true\ntrue\ntrue\ntrue\ntrue\n" native_source;
+  ignore
+    (compile_from_datascript_baseline Lg.Target.Melange
+       (datascript_query_baseline Lg.Target.Melange)
+       [ ("test/datascript/query_or_clauses.cljc", source) ])
+
+let test_current_datascript_query_supports_or_join_clauses () =
+  let source =
+    {|
+(ns app.query-or-join-clauses
+  (:require [datascript.db :as db]
+            [datascript.lg.query :as query]
+            [datascript.lg.query-types :as query-types]))
+
+(def database
+  (db/init-db
+   (to-array
+    [(db/datom 1 :name "Ivan")
+     (db/datom 1 :age 10)
+     (db/datom 2 :name "Oleg")
+     (db/datom 2 :age 20)])
+   {}
+   (db/default-options)))
+
+(defn ^:int row-count [output]
+  (if-some [rows (query-types/output-relation output)]
+    (count rows)
+    -1))
+
+(def regular-or
+  (query/q
+   '[:find ?e
+     :where
+     [?e :age ?value]
+     (or [?e :name ?value])]
+   database))
+
+(def explicit-join
+  (query/q
+   '[:find ?e
+     :where
+     [?e :age ?value]
+     (or-join [?e]
+       [?e :name ?value])]
+   database))
+
+(def multiple-branches
+  (query/q
+   '[:find ?e
+     :where
+     (or-join [?e]
+       [?e :name "Ivan"]
+       (and
+        [?e :name "Oleg"]
+        [?e :age 20]))]
+   database))
+
+(println (= 0 (row-count regular-or)))
+(println (= 2 (row-count explicit-join)))
+(println (= 2 (row-count multiple-branches)))
+(println
+ (try
+  (query/q
+   '[:find ?e
+     :where
+     (or-join [[?required] ?e]
+       [?e :name "Ivan"])]
+   database)
+  false
+  (catch (Invalid_argument _) true)))
+|}
+  in
+  let native_source =
+    compile_from_datascript_baseline Lg.Target.Native
+      (datascript_query_baseline Lg.Target.Native)
+      [ ("test/datascript/query_or_join_clauses.cljc", source) ]
+  in
+  assert_ocaml_runs "current_datascript_query_supports_or_join_clauses"
+    "true\ntrue\ntrue\ntrue\n" native_source;
+  ignore
+    (compile_from_datascript_baseline Lg.Target.Melange
+       (datascript_query_baseline Lg.Target.Melange)
+       [ ("test/datascript/query_or_join_clauses.cljc", source) ])
+
+let test_current_datascript_query_supports_non_recursive_rules () =
+  let source =
+    {|
+(ns app.query-non-recursive-rules
+  (:require [datascript.db :as db]
+            [datascript.lg.query :as query]
+            [datascript.lg.query-types :as query-types]))
+
+(def database
+  (db/init-db
+   (to-array
+    [(db/datom 1 :follow 2)
+     (db/datom 2 :follow 3)
+     (db/datom 2 :follow 4)
+     (db/datom 1 :name "Ivan")
+     (db/datom 2 :name "Oleg")])
+   {}
+   (db/default-options)))
+
+(defn ^:int row-count [output]
+  (if-some [rows (query-types/output-relation output)]
+    (count rows)
+    -1))
+
+(defn ^boolean contains-entity? [output entity]
+  (if-some [rows (query-types/output-relation output)]
+    (some
+     (fn [row]
+       (if-some [result (query-types/row-get row 0)]
+         (match result
+           (Datascript_runtime.Query_value.Entity value)
+           (= entity value)
+           (Datascript_runtime.Query_value.Value
+            (Datascript_runtime.Data_value.Int value))
+           (= entity value)
+           _ false)
+         false))
+     rows)
+    false))
+
+(def direct
+  (query/q
+   '[:find ?from ?to
+     :in $ %
+     :where (follow ?from ?to)]
+   database
+   '[[(follow ?from ?to)
+      [?from :follow ?to]]
+     [(follow ?from ?to)
+      [?from :follow ?middle]
+      [?middle :follow ?to]]]))
+
+(def branched
+  (query/q
+   '[:find ?to
+     :in $ ?start %
+     :where (follow ?start ?to)]
+   database
+   1
+   '[[(follow ?from ?to)
+      [?from :follow ?to]]
+     [(follow ?from ?to)
+      [?from :follow ?middle]
+      [?middle :follow ?to]]]))
+
+(def constant-argument
+  (query/q
+   '[:find ?entity
+     :in $ %
+     :where (named ?entity "Ivan")]
+   database
+   '[[(named ?entity ?wanted)
+      [?entity :name ?wanted]]]))
+
+(println (= 5 (row-count direct)))
+(println
+ (and (= 3 (row-count branched))
+      (contains-entity? branched 2)
+      (contains-entity? branched 3)
+      (contains-entity? branched 4)))
+(println
+ (and (= 1 (row-count constant-argument))
+      (contains-entity? constant-argument 1)))
+(println
+ (try
+  (query/q
+   '[:find ?entity
+     :in $ %
+     :where (missing ?entity)]
+   database
+   [])
+  false
+  (catch (Invalid_argument _) true)))
+|}
+  in
+  let native_source =
+    compile_from_datascript_baseline Lg.Target.Native
+      (datascript_query_baseline Lg.Target.Native)
+      [ ("test/datascript/query_non_recursive_rules.cljc", source) ]
+  in
+  assert_ocaml_runs "current_datascript_query_supports_non_recursive_rules"
+    "true\ntrue\ntrue\ntrue\n" native_source;
+  ignore
+    (compile_from_datascript_baseline Lg.Target.Melange
+       (datascript_query_baseline Lg.Target.Melange)
+       [ ("test/datascript/query_non_recursive_rules.cljc", source) ])
+
+let test_current_datascript_query_supports_recursive_rules () =
+  let source =
+    {|
+(ns app.query-recursive-rules
+  (:require [datascript.db :as db]
+            [datascript.lg.query :as query]
+            [datascript.lg.query-types :as query-types]))
+
+(defn ^:int row-count [output]
+  (if-some [rows (query-types/output-relation output)]
+    (count rows)
+    -1))
+
+(def transitive
+  (query/q
+   '[:find ?to
+     :in $ ?from %
+     :where (follow ?from ?to)]
+   (db/init-db
+    (to-array
+     [(db/datom 1 :follow 2)
+      (db/datom 2 :follow 3)
+      (db/datom 2 :follow 4)
+      (db/datom 3 :follow 4)
+      (db/datom 4 :follow 6)])
+    {}
+    (db/default-options))
+   1
+   '[[(follow ?from ?to)
+      [?from :follow ?to]]
+     [(follow ?from ?to)
+      [?from :follow ?middle]
+      (follow ?middle ?to)]]))
+
+(def reversed
+  (query/q
+   '[:find ?from ?to
+     :in $ %
+     :where (follow ?from ?to)]
+   (db/init-db
+    (to-array
+     [(db/datom 1 :follow 2)
+      (db/datom 2 :follow 3)])
+    {}
+    (db/default-options))
+   '[[(follow ?from ?to)
+      [?from :follow ?to]]
+     [(follow ?from ?to)
+      (follow ?to ?from)]]))
+
+(def cyclic
+  (query/q
+   '[:find ?from ?to
+     :in $ %
+     :where (follow ?from ?to)]
+   (db/init-db
+    (to-array
+     [(db/datom 1 :follow 2)
+      (db/datom 2 :follow 3)
+      (db/datom 3 :follow 1)])
+    {}
+    (db/default-options))
+   '[[(follow ?from ?to)
+      [?from :follow ?to]]
+     [(follow ?from ?to)
+      (follow ?to ?from)]]))
+
+(def mutual-database
+  (db/init-db
+   (to-array
+    [(db/datom 0 :f1 1)
+     (db/datom 1 :f2 2)
+     (db/datom 2 :f1 3)
+     (db/datom 3 :f2 4)
+     (db/datom 4 :f1 5)
+     (db/datom 5 :f2 6)])
+   {}
+   (db/default-options)))
+
+(def mutual
+  (query/q
+   '[:find ?from ?to
+     :in $ %
+     :where (f1 ?from ?to)]
+   mutual-database
+   '[[(f1 ?from ?to)
+      [?from :f1 ?to]]
+     [(f1 ?from ?to)
+      [?middle :f1 ?to]
+      (f2 ?from ?middle)]
+     [(f2 ?from ?to)
+      [?from :f2 ?to]]
+     [(f2 ?from ?to)
+      [?middle :f2 ?to]
+      (f1 ?from ?middle)]]))
+
+(println (= 4 (row-count transitive)))
+(println (= 4 (row-count reversed)))
+(println (= 6 (row-count cyclic)))
+(println (= 9 (row-count mutual)))
+|}
+  in
+  let native_source =
+    compile_from_datascript_baseline Lg.Target.Native
+      (datascript_query_baseline Lg.Target.Native)
+      [ ("test/datascript/query_recursive_rules.cljc", source) ]
+  in
+  assert_ocaml_runs "current_datascript_query_supports_recursive_rules"
+    "true\ntrue\ntrue\ntrue\n" native_source;
+  ignore
+    (compile_from_datascript_baseline Lg.Target.Melange
+       (datascript_query_baseline Lg.Target.Melange)
+       [ ("test/datascript/query_recursive_rules.cljc", source) ])
+
+let test_current_datascript_query_supports_rule_predicates_and_false_arguments
+    () =
+  let source =
+    {|
+(ns app.query-rule-predicates
+  (:require [datascript.db :as db]
+            [datascript.lg.query :as query]
+            [datascript.lg.query-types :as query-types]))
+
+(defn ^:int row-count [output]
+  (if-some [rows (query-types/output-relation output)]
+    (count rows)
+    -1))
+
+(defn ^boolean contains-entity? [output expected]
+  (if-some [rows (query-types/output-relation output)]
+    (some
+     (fn [row]
+       (if-some [result (query-types/row-get row 0)]
+         (match result
+           (Datascript_runtime.Query_value.Entity entity)
+           (= expected entity)
+           _ false)
+         false))
+     rows)
+    false))
+
+(def database
+  (db/init-db
+   (to-array
+    [(db/datom 1 :follow 2)
+     (db/datom 2 :follow 4)
+     (db/datom 3 :follow 4)
+     (db/datom 4 :follow 6)
+     (db/datom 20 :age 17)
+     (db/datom 21 :age 18)
+     (db/datom 22 :age 42)
+     (db/datom
+      10 :flag (Datascript_runtime.Data_value.Bool true))
+     (db/datom
+      11 :flag (Datascript_runtime.Data_value.Bool false))])
+   {}
+   (db/default-options)))
+
+(def even-links
+  (query/q
+   '[:find ?from ?to
+     :in $ %
+     :where (even-link ?from ?to)]
+   database
+   '[[(even-link ?from ?to)
+      [?from :follow ?to]
+      [(even? ?from)]
+      [(even? ?to)]]]))
+
+(def false-flags
+  (query/q
+   '[:find ?entity
+     :in $ %
+     :where (flagged ?entity false)]
+   database
+   '[[(flagged ?entity ?value)
+      [?entity :flag ?value]]]))
+
+(def adults
+  (query/q
+   '[:find ?entity
+     :in $ % ?minimum
+     :where (adult ?minimum ?entity)]
+   database
+   '[[(adult [?minimum] ?entity)
+      [?entity :age ?age]
+      [(>= ?age ?minimum)]]]
+   18))
+
+(def insufficient-required-argument?
+  (try
+   (query/q
+    '[:find ?entity
+      :in $ %
+      :where (adult ?minimum ?entity)]
+    database
+    '[[(adult [?minimum] ?entity)
+       [?entity :age ?age]
+       [(>= ?age ?minimum)]]])
+   false
+   (catch (Invalid_argument _) true)))
+
+(println (= 2 (row-count even-links)))
+(println
+ (and
+  (= 1 (row-count false-flags))
+  (contains-entity? false-flags 11)))
+(println (= 2 (row-count adults)))
+(println insufficient-required-argument?)
+|}
+  in
+  let native_source =
+    compile_from_datascript_baseline Lg.Target.Native
+      (datascript_query_baseline Lg.Target.Native)
+      [ ("test/datascript/query_rule_predicates.cljc", source) ]
+  in
+  assert_ocaml_runs
+    "current_datascript_query_supports_rule_predicates_and_false_arguments"
+    "true\ntrue\ntrue\ntrue\n" native_source;
+  ignore
+    (compile_from_datascript_baseline Lg.Target.Melange
+       (datascript_query_baseline Lg.Target.Melange)
+       [ ("test/datascript/query_rule_predicates.cljc", source) ])
+
+let test_current_datascript_query_supports_deterministic_aggregates () =
+  let source =
+    {|
+(ns app.query-deterministic-aggregates
+  (:require [datascript.db :as db]
+            [datascript.lg.query :as query]
+            [datascript.lg.query-types :as query-types]))
+
+(def database
+  (db/init-db
+    (to-array
+     [(db/datom 1 :score 10)
+      (db/datom 2 :score 15)
+      (db/datom 3 :score 20)
+      (db/datom 4 :score 35)
+      (db/datom 5 :score 75)])
+    {}
+    (db/default-options)))
+
+(def result
+  (query/q
+    '[:find
+      (avg ?score)
+      (median ?score)
+      (variance ?score)
+      (stddev ?score)
+      (min ?score)
+      (max ?score)
+      (distinct ?score)
+      :where [?e :score ?score]]
+    database))
+
+(defn row-value [row index]
+  (if-some [result (query-types/row-get row index)]
+    (query-types/result-value result)
+    None))
+
+(println
+  (if-some [rows (query-types/output-relation result)]
+    (if-some [row (first rows)]
+      (and
+       (if-some [value (row-value row 0)]
+         (Datascript_runtime.Data_value.equal
+          value
+          (Datascript_runtime.Data_value.Float 31.0))
+         false)
+       (if-some [value (row-value row 1)]
+         (Datascript_runtime.Data_value.equal
+          value
+          (Datascript_runtime.Data_value.Int 20))
+         false)
+       (if-some [value (row-value row 2)]
+         (Datascript_runtime.Data_value.equal
+          value
+          (Datascript_runtime.Data_value.Float 554.0))
+         false)
+       (if-some [value (row-value row 3)]
+         (match value
+           (Datascript_runtime.Data_value.Float value)
+           (and (> value 23.537) (< value 23.538))
+           _ false)
+         false)
+       (if-some [value (row-value row 4)]
+         (Datascript_runtime.Data_value.equal
+          value
+          (Datascript_runtime.Data_value.Int 10))
+         false)
+       (if-some [value (row-value row 5)]
+         (Datascript_runtime.Data_value.equal
+          value
+          (Datascript_runtime.Data_value.Int 75))
+         false)
+       (if-some [value (row-value row 6)]
+         (if-some [items
+                   (Datascript_runtime.Data_value.set_items value)]
+           (= 5 (count items))
+           false)
+         false))
+      false)
+    false))
+|}
+  in
+  let native_source =
+    compile_from_datascript_baseline Lg.Target.Native
+      (datascript_query_baseline Lg.Target.Native)
+      [ ("test/datascript/query_deterministic_aggregates.cljc", source) ]
+  in
+  assert_ocaml_runs
+    "current_datascript_query_supports_deterministic_aggregates" "true\n"
+    native_source;
+  ignore
+    (compile_from_datascript_baseline Lg.Target.Melange
+       (datascript_query_baseline Lg.Target.Melange)
+       [ ("test/datascript/query_deterministic_aggregates.cljc", source) ])
+
+let test_current_datascript_query_supports_parameterized_min_max () =
+  let source =
+    {|
+(ns app.query-parameterized-min-max
+  (:require [datascript.db :as db]
+            [datascript.lg.query :as query]
+            [datascript.lg.query-types :as query-types]))
+
+(def database
+  (db/init-db
+    (to-array
+     [(db/datom 1 :value :a-/b)
+      (db/datom 2 :value :a/b)
+      (db/datom 3 :value :a/c)])
+    {}
+    (db/default-options)))
+
+(def result
+  (query/q
+    '[:find (min ?value) (max ?value) (min 2 ?value) (max 2 ?value)
+      :where [?e :value ?value]]
+    database))
+
+(defn row-value [row index]
+  (if-some [result (query-types/row-get row index)]
+    (query-types/result-value result)
+    None))
+
+(def expected-min-two
+  (Datascript_runtime.Data_value.vector_of_vector
+   [(Datascript_runtime.Data_value.Keyword ":a/b")
+    (Datascript_runtime.Data_value.Keyword ":a/c")]))
+
+(def expected-max-two
+  (Datascript_runtime.Data_value.vector_of_vector
+   [(Datascript_runtime.Data_value.Keyword ":a/c")
+    (Datascript_runtime.Data_value.Keyword ":a-/b")]))
+
+(println
+  (if-some [rows (query-types/output-relation result)]
+    (if-some [row (first rows)]
+      (and
+       (if-some [value (row-value row 0)]
+         (Datascript_runtime.Data_value.equal
+          value
+          (Datascript_runtime.Data_value.Keyword ":a/b"))
+         false)
+       (if-some [value (row-value row 1)]
+         (Datascript_runtime.Data_value.equal
+          value
+          (Datascript_runtime.Data_value.Keyword ":a-/b"))
+         false)
+       (if-some [value (row-value row 2)]
+         (Datascript_runtime.Data_value.equal
+          value expected-min-two)
+         false)
+       (if-some [value (row-value row 3)]
+         (Datascript_runtime.Data_value.equal
+          value expected-max-two)
+         false))
+      false)
+    false))
+|}
+  in
+  let native_source =
+    compile_from_datascript_baseline Lg.Target.Native
+      (datascript_query_baseline Lg.Target.Native)
+      [ ("test/datascript/query_parameterized_min_max.cljc", source) ]
+  in
+  assert_ocaml_runs "current_datascript_query_supports_parameterized_min_max"
+    "true\n" native_source;
+  ignore
+    (compile_from_datascript_baseline Lg.Target.Melange
+       (datascript_query_baseline Lg.Target.Melange)
+       [ ("test/datascript/query_parameterized_min_max.cljc", source) ])
+
+let test_current_datascript_query_supports_random_aggregates () =
+  let source =
+    {|
+(ns app.query-random-aggregates
+  (:require [datascript.db :as db]
+            [datascript.lg.query :as query]
+            [datascript.lg.query-types :as query-types]))
+
+(def database
+  (db/init-db
+    (to-array
+     [(db/datom 1 :score 1)
+      (db/datom 2 :score 2)
+      (db/datom 3 :score 3)
+      (db/datom 4 :score 4)
+      (db/datom 5 :score 5)])
+    {}
+    (db/default-options)))
+
+(def result
+  (query/q
+    '[:find
+      (rand ?score)
+      (rand 3 ?score)
+      (sample 3 ?score)
+      (sample 10 ?score)
+      :where [?e :score ?score]]
+    database))
+
+(defn row-value [row index]
+  (if-some [result (query-types/row-get row index)]
+    (query-types/result-value result)
+    None))
+
+(defn ^:int value-int
+  [^:Datascript_runtime.Data_value.t value]
+  (match value
+    (Datascript_runtime.Data_value.Int value) value
+    _ -1))
+
+(defn valid-score?
+  [^:Datascript_runtime.Data_value.t value]
+  (let [score (value-int value)]
+    (and (>= score 1) (<= score 5))))
+
+(defn ^:vector<int> vector-scores
+  [^:Datascript_runtime.Data_value.t value]
+  (if-some [items
+            (Datascript_runtime.Data_value.sequential_items value)]
+    (mapv value-int items)
+    []))
+
+(println
+  (if-some [rows (query-types/output-relation result)]
+    (if-some [row (first rows)]
+      (and
+       (if-some [value (row-value row 0)]
+         (valid-score? value)
+         false)
+       (if-some [value (row-value row 1)]
+         (let [scores (vector-scores value)]
+           (and
+            (= 3 (count scores))
+            (every?
+             (fn [score] (and (>= score 1) (<= score 5)))
+             scores)))
+         false)
+       (if-some [value (row-value row 2)]
+         (let [scores (vector-scores value)]
+           (and
+            (= 3 (count scores))
+            (= 3 (count (distinct scores)))
+            (every?
+             (fn [score] (and (>= score 1) (<= score 5)))
+             scores)))
+         false)
+       (if-some [value (row-value row 3)]
+         (let [scores (vector-scores value)]
+           (and
+            (= 5 (count scores))
+            (= 5 (count (distinct scores)))))
+         false))
+      false)
+    false))
+|}
+  in
+  let native_source =
+    compile_from_datascript_baseline Lg.Target.Native
+      (datascript_query_baseline Lg.Target.Native)
+      [ ("test/datascript/query_random_aggregates.cljc", source) ]
+  in
+  assert_ocaml_runs "current_datascript_query_supports_random_aggregates"
+    "true\n" native_source;
+  ignore
+    (compile_from_datascript_baseline Lg.Target.Melange
+       (datascript_query_baseline Lg.Target.Melange)
+       [ ("test/datascript/query_random_aggregates.cljc", source) ])
+
+let test_current_datascript_query_supports_pull_find () =
+  let source =
+    {|
+(ns app.query-pull-find
+  (:require [datascript.db :as db]
+            [datascript.lg.query :as query]
+            [datascript.lg.query-types :as query-types]))
+
+(def database
+  (db/init-db
+    (to-array
+     [(db/datom 1 :name "Ivan")
+      (db/datom 1 :age 25)
+      (db/datom 2 :name "Petr")
+      (db/datom 2 :age 44)])
+    {}
+    (db/default-options)))
+
+(def named
+  (query/q
+    '[:find ?e (pull ?e [:name])
+      :where [?e :name ?name]]
+    database))
+
+(def wildcard
+  (query/q
+    '[:find (pull ?e [:*])
+      :where [?e :name ?name]]
+    database))
+
+(defn ^:option<Datascript_runtime.Data_value.t> pull-value
+  [^:array<datascript.lg.query-types/result> row ^:int index]
+  (if-some [result (query-types/row-get row index)]
+    (match result
+      (Datascript_runtime.Query_value.Pull value) (Some value)
+      _ None)
+    None))
+
+(println
+  (if-some [rows (query-types/output-relation named)]
+    (and
+     (= 2 (count rows))
+     (= 2 (alength (nth rows 0)))
+     (if-some [value (pull-value (nth rows 0) 1)]
+       (and
+        (if-some [name
+                  (Datascript_runtime.Data_value.keyword_map_get
+                   ":name" value)]
+          (Datascript_runtime.Data_value.equal
+           name
+           (Datascript_runtime.Data_value.String "Ivan"))
+          false)
+        (nil?
+         (Datascript_runtime.Data_value.keyword_map_get
+          ":age" value)))
+       false))
+    false))
+(println
+  (if-some [rows (query-types/output-relation wildcard)]
+    (if-some [value (pull-value (nth rows 0) 0)]
+      (and
+       (some?
+        (Datascript_runtime.Data_value.keyword_map_get
+         ":db/id" value))
+       (some?
+        (Datascript_runtime.Data_value.keyword_map_get
+         ":name" value))
+       (some?
+        (Datascript_runtime.Data_value.keyword_map_get
+         ":age" value)))
+      false)
+    false))
+|}
+  in
+  let native_source =
+    compile_from_datascript_baseline Lg.Target.Native
+      (datascript_query_baseline Lg.Target.Native)
+      [ ("test/datascript/query_pull_find.cljc", source) ]
+  in
+  assert_ocaml_runs "current_datascript_query_supports_pull_find"
+    "true\ntrue\n" native_source;
+  ignore
+    (compile_from_datascript_baseline Lg.Target.Melange
+       (datascript_query_baseline Lg.Target.Melange)
+       [ ("test/datascript/query_pull_find.cljc", source) ])
+
+let test_current_datascript_query_supports_variable_pull_pattern () =
+  let source =
+    {|
+(ns app.query-variable-pull-pattern
+  (:require [datascript.db :as db]
+            [datascript.lg.query :as query]
+            [datascript.lg.query-types :as query-types]))
+
+(def database
+  (db/init-db
+    (to-array
+     [(db/datom 1 :name "Ivan")
+      (db/datom 1 :age 25)])
+    {}
+    (db/default-options)))
+
+(def result
+  (query/q
+    '[:find ?e (pull ?e ?pattern)
+      :in $ ?pattern
+      :where [?e :name ?name]]
+    database
+    [:name]))
+
+(println
+  (if-some [rows (query-types/output-relation result)]
+    (if-some [pull-result
+              (query-types/row-get (first rows) 1)]
+      (match pull-result
+        (Datascript_runtime.Query_value.Pull value)
+        (and
+         (some?
+          (Datascript_runtime.Data_value.keyword_map_get
+           ":name" value))
+         (nil?
+          (Datascript_runtime.Data_value.keyword_map_get
+           ":age" value)))
+        _ false)
+      false)
+    false))
+|}
+  in
+  let native_source =
+    compile_from_datascript_baseline Lg.Target.Native
+      (datascript_query_baseline Lg.Target.Native)
+      [ ("test/datascript/query_variable_pull_pattern.cljc", source) ]
+  in
+  assert_ocaml_runs
+    "current_datascript_query_supports_variable_pull_pattern" "true\n"
+    native_source;
+  ignore
+    (compile_from_datascript_baseline Lg.Target.Melange
+       (datascript_query_baseline Lg.Target.Melange)
+       [ ("test/datascript/query_variable_pull_pattern.cljc", source) ])
+
+let test_current_datascript_query_supports_single_find_element () =
+  let source =
+    {|
+(ns app.query-single-find
+  (:require [datascript.db :as db]
+            [datascript.lg.query :as query]
+            [datascript.lg.query-types :as query-types]))
+
+(def database
+  (db/init-db
+    (to-array
+     [(db/datom 1 :name "Ivan")
+      (db/datom 2 :name "Oleg")])
+    {}
+    (db/default-options)))
+
+(def result
+  (query/q
+    '[:find ?name
+      :where [?e :name ?name]]
+    database))
+
+(println
+  (if-some [rows (query-types/output-relation result)]
+    (and
+     (= 2 (count rows))
+     (= 1 (alength (nth rows 0))))
+    false))
+|}
+  in
+  let native_source =
+    compile_from_datascript_baseline Lg.Target.Native
+      (datascript_query_baseline Lg.Target.Native)
+      [ ("test/datascript/query_single_find.cljc", source) ]
+  in
+  assert_ocaml_runs "current_datascript_query_supports_single_find_element"
+    "true\n" native_source;
+  ignore
+    (compile_from_datascript_baseline Lg.Target.Melange
+       (datascript_query_baseline Lg.Target.Melange)
+       [ ("test/datascript/query_single_find.cljc", source) ])
+
+let test_current_datascript_query_supports_literal_find_shapes () =
+  let source =
+    {|
+(ns app.query-literal-find-shapes
+  (:require [datascript.db :as db]
+            [datascript.lg.query :as query]
+            [datascript.lg.query-types :as query-types]))
+
+(def database
+  (db/init-db
+    (to-array
+     [(db/datom 1 :name "Ivan")
+      (db/datom 2 :name "Oleg")])
+    {}
+    (db/default-options)))
+
+(def scalar
+  (query/q
+    '[:find ?e .
+      :where [?e :name "Ivan"]]
+    database))
+
+(def scalar-empty
+  (query/q
+    '[:find ?e .
+      :where [?e :name "Missing"]]
+    database))
+
+(def collection
+  (query/q
+    '[:find [?name ...]
+      :where [?e :name ?name]]
+    database))
+
+(def collection-empty
+  (query/q
+    '[:find [?name ...]
+      :where
+      [?e :name ?name]
+      [?e :missing true]]
+    database))
+
+(def tuple-result
+  (query/q
+    '[:find [?e ?name]
+      :where [?e :name ?name]]
+    database))
+
+(def tuple-empty
+  (query/q
+    '[:find [?e ?name]
+      :where
+      [?e :name ?name]
+      [?e :missing true]]
+    database))
+
+(println
+  (if-some [value (query-types/output-scalar scalar)]
+    (some? value)
+    false))
+(println
+  (if-some [value (query-types/output-scalar scalar-empty)]
+    (nil? value)
+    false))
+(println
+  (if-some [values (query-types/output-collection collection)]
+    (= 2 (count values))
+    false))
+(println
+  (if-some [values
+            (query-types/output-collection collection-empty)]
+    (empty? values)
+    false))
+(println
+  (if-some [row (query-types/output-tuple tuple-result)]
+    (if-some [row row]
+      (= 2 (alength row))
+      false)
+    false))
+(println
+  (if-some [row (query-types/output-tuple tuple-empty)]
+    (nil? row)
+    false))
+|}
+  in
+  let native_source =
+    compile_from_datascript_baseline Lg.Target.Native
+      (datascript_query_baseline Lg.Target.Native)
+      [ ("test/datascript/query_literal_find_shapes.cljc", source) ]
+  in
+  assert_ocaml_runs
+    "current_datascript_query_supports_literal_find_shapes"
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\n" native_source;
+  ignore
+    (compile_from_datascript_baseline Lg.Target.Melange
+       (datascript_query_baseline Lg.Target.Melange)
+       [ ("test/datascript/query_literal_find_shapes.cljc", source) ])
+
+let test_current_datascript_query_supports_return_maps () =
+  let source =
+    {|
+(ns app.query-return-maps
+  (:require [datascript.db :as db]
+            [datascript.lg.query :as query]
+            [datascript.lg.query-types :as query-types]))
+
+(def database
+  (db/init-db
+    (to-array
+     [(db/datom 1 :name "Petr")
+      (db/datom 1 :age 44)
+      (db/datom 2 :name "Ivan")
+      (db/datom 2 :age 25)
+      (db/datom 3 :name "Sergey")
+      (db/datom 3 :age 25)])
+    {}
+    (db/default-options)))
+
+(def keyword-result
+  (query/q
+    '[:find ?name ?age
+      :keys n a
+      :where [?e :name ?name]
+             [?e :age ?age]]
+    database))
+
+(def symbol-result
+  (query/q
+    '[:find ?name ?age
+      :syms person years
+      :where [?e :name ?name]
+             [?e :age ?age]]
+    database))
+
+(def string-result
+  (query/q
+    '[:find ?name ?age
+      :strs person years
+      :where [?e :name ?name]
+             [?e :age ?age]]
+    database))
+
+(def tuple-result
+  (query/q
+    '[:find [?name ?age]
+      :keys n a
+      :where [?e :name ?name]
+             [(= ?name "Ivan")]
+             [?e :age ?age]]
+    database))
+
+(def empty-result
+  (query/q
+    '[:find ?name
+      :keys n
+      :where [?e :name "Missing"]
+             [?e :name ?name]]
+    database))
+
+(def duplicate-key-result
+  (query/q
+    '[:find ?name ?age
+      :keys value value
+      :where [?e :name ?name]
+             [?e :age ?age]]
+    database))
+
+(defn ^boolean map-has-values?
+  [^:map<string;datascript.lg.query-types/result> row
+   ^:string first-key
+   ^:string second-key]
+  (and
+   (contains? row first-key)
+   (contains? row second-key)))
+
+(println
+  (if-some [rows (query-types/output-keyword-relation keyword-result)]
+    (if-some [row (first rows)]
+      (and
+       (= 3 (count rows))
+       (map-has-values? row ":n" ":a"))
+      false)
+    false))
+(println
+  (if-some [rows (query-types/output-symbol-relation symbol-result)]
+    (if-some [row (first rows)]
+      (and
+       (= 3 (count rows))
+       (map-has-values? row "person" "years"))
+      false)
+    false))
+(println
+  (if-some [rows (query-types/output-string-relation string-result)]
+    (if-some [row (first rows)]
+      (and
+       (= 3 (count rows))
+       (map-has-values? row "person" "years"))
+      false)
+    false))
+(println
+  (if-some [maybe-row (query-types/output-keyword-tuple tuple-result)]
+    (if-some [mapped-row maybe-row]
+      (map-has-values? mapped-row ":n" ":a")
+      false)
+    false))
+(println
+  (if-some [rows (query-types/output-keyword-relation empty-result)]
+    (empty? rows)
+    false))
+(println
+  (if-some [rows
+            (query-types/output-keyword-relation
+             duplicate-key-result)]
+    (= 2 (count rows))
+    false))
+|}
+  in
+  let native_source =
+    compile_from_datascript_baseline Lg.Target.Native
+      (datascript_query_baseline Lg.Target.Native)
+      [ ("test/datascript/query_return_maps.cljc", source) ]
+  in
+  assert_ocaml_runs "current_datascript_query_supports_return_maps"
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\n" native_source;
+  ignore
+    (compile_from_datascript_baseline Lg.Target.Melange
+       (datascript_query_baseline Lg.Target.Melange)
+       [ ("test/datascript/query_return_maps.cljc", source) ])
+
+let test_current_datascript_query_rejects_invalid_return_maps () =
+  let assert_compile_fails expected filename source =
+    let message =
+      try
+        ignore
+          (compile_from_datascript_baseline Lg.Target.Native
+             (datascript_query_baseline Lg.Target.Native)
+             [ (filename, source) ]);
+        failwith ("expected compilation failure containing " ^ expected)
+      with Failure message -> message
+    in
+    if not (string_contains_substring message expected) then
+      failwith
+        (Printf.sprintf "expected error containing %S, got %S" expected message)
+  in
+  assert_compile_fails "must match count of :find"
+    "test/datascript/query_return_map_arity.cljc"
+    {|
+(ns app.query-return-map-arity
+  (:require [datascript.lg.query :as query]))
+
+(query/q
+  '[:find ?name ?age
+    :keys name
+    :in ?name ?age]
+  "Ivan"
+  25)
+|};
+  assert_compile_fails "does not work with single-scalar :find"
+    "test/datascript/query_return_map_scalar.cljc"
+    {|
+(ns app.query-return-map-scalar
+  (:require [datascript.lg.query :as query]))
+
+(query/q
+  '[:find ?name .
+    :keys name
+    :in ?name]
+  "Ivan")
+|}
+
+let test_current_datascript_query_joins_multiple_patterns () =
+  let source =
+    {|
+(ns app.query-multiple-patterns
+  (:require [datascript.db :as db]
+            [datascript.lg.query :as query]
+            [datascript.lg.query-types :as query-types]))
+
+(def database
+  (db/init-db
+    (to-array
+     [(db/datom 1 :name "Ivan")
+      (db/datom 1 :age 19)
+      (db/datom 2 :name "Oleg")
+      (db/datom 2 :age 20)])
+    {}
+    (db/default-options)))
+
+(def result
+  (query/q
+    '[:find ?e ?name
+      :where
+      [?e :name ?name]
+      [?e :age 19]]
+    database))
+
+(println
+  (if-some [rows (query-types/output-relation result)]
+    (= 1 (count rows))
+    false))
+|}
+  in
+  let native_source =
+    compile_from_datascript_baseline Lg.Target.Native
+      (datascript_query_baseline Lg.Target.Native)
+      [ ("test/datascript/query_multiple_patterns.cljc", source) ]
+  in
+  assert_ocaml_runs "current_datascript_query_joins_multiple_patterns"
+    "true\n" native_source;
+  ignore
+    (compile_from_datascript_baseline Lg.Target.Melange
+       (datascript_query_baseline Lg.Target.Melange)
+       [ ("test/datascript/query_multiple_patterns.cljc", source) ])
+
+let test_current_datascript_query_supports_scalar_input () =
+  let source =
+    {|
+(ns app.query-scalar-input
+  (:require [datascript.db :as db]
+            [datascript.lg.query :as query]
+            [datascript.lg.query-types :as query-types]))
+
+(def database
+  (db/init-db
+    (to-array
+     [(db/datom 1 :name "Ivan")
+      (db/datom 1 :age 19)
+      (db/datom 2 :name "Oleg")
+      (db/datom 2 :age 20)])
+    {}
+    (db/default-options)))
+
+(def result
+  (query/q
+    '[:find ?name
+      :in $ ?age
+      :where
+      [?e :age ?age]
+      [?e :name ?name]]
+    database
+    19))
+
+(println
+  (if-some [rows (query-types/output-relation result)]
+    (= 1 (count rows))
+    false))
+|}
+  in
+  let native_source =
+    compile_from_datascript_baseline Lg.Target.Native
+      (datascript_query_baseline Lg.Target.Native)
+      [ ("test/datascript/query_scalar_input.cljc", source) ]
+  in
+  assert_ocaml_runs "current_datascript_query_supports_scalar_input"
+    "true\n" native_source;
+  ignore
+    (compile_from_datascript_baseline Lg.Target.Melange
+       (datascript_query_baseline Lg.Target.Melange)
+       [ ("test/datascript/query_scalar_input.cljc", source) ])
+
+let test_current_datascript_query_supports_collection_input () =
+  let source =
+    {|
+(ns app.query-collection-input
+  (:require [datascript.db :as db]
+            [datascript.lg.query :as query]
+            [datascript.lg.query-types :as query-types]))
+
+(def database
+  (db/init-db
+    (to-array
+     [(db/datom 1 :name "Ivan")
+      (db/datom 1 :age 19)
+      (db/datom 2 :name "Oleg")
+      (db/datom 2 :age 20)
+      (db/datom 3 :name "Petr")
+      (db/datom 3 :age 21)])
+    {}
+    (db/default-options)))
+
+(def result
+  (query/q
+    '[:find ?name
+      :in $ [?age ...]
+      :where
+      [?e :age ?age]
+      [?e :name ?name]]
+    database
+    [19 20]))
+
+(println
+  (if-some [rows (query-types/output-relation result)]
+    (= 2 (count rows))
+    false))
+|}
+  in
+  let native_source =
+    compile_from_datascript_baseline Lg.Target.Native
+      (datascript_query_baseline Lg.Target.Native)
+      [ ("test/datascript/query_collection_input.cljc", source) ]
+  in
+  assert_ocaml_runs "current_datascript_query_supports_collection_input"
+    "true\n" native_source;
+  ignore
+    (compile_from_datascript_baseline Lg.Target.Melange
+       (datascript_query_baseline Lg.Target.Melange)
+       [ ("test/datascript/query_collection_input.cljc", source) ])
+
+let test_current_datascript_query_supports_tuple_input () =
+  let source =
+    {|
+(ns app.query-tuple-input
+  (:require [datascript.db :as db]
+            [datascript.lg.query :as query]
+            [datascript.lg.query-types :as query-types]))
+
+(def database
+  (db/init-db
+    (to-array
+     [(db/datom 1 :name "Ivan")
+      (db/datom 1 :age 19)
+      (db/datom 2 :name "Oleg")
+      (db/datom 2 :age 20)])
+    {}
+    (db/default-options)))
+
+(def matching
+  (query/q
+    '[:find ?e ?name
+      :in $ [?age ?name]
+      :where
+      [?e :age ?age]
+      [?e :name ?name]]
+    database
+    [19 "Ivan"]))
+
+(def crossed
+  (query/q
+    '[:find ?e ?name
+      :in $ [?age ?name]
+      :where
+      [?e :age ?age]
+      [?e :name ?name]]
+    database
+    [19 "Oleg"]))
+
+(def ignored
+  (query/q
+    '[:find ?name
+      :in $ [?age _]
+      :where
+      [?e :age ?age]
+      [?e :name ?name]]
+    database
+    [20 "unused"]))
+
+(def mismatch-rejected?
+  (try
+    (query/q
+      '[:find ?e ?name
+        :in $ [?age ?name]
+        :where
+        [?e :age ?age]
+        [?e :name ?name]]
+      database
+      [19])
+    false
+    (catch (Invalid_argument _) true)))
+
+(println
+  (if-some [rows (query-types/output-relation matching)]
+    (= 1 (count rows))
+    false))
+(println
+  (if-some [rows (query-types/output-relation crossed)]
+    (empty? rows)
+    false))
+(println
+  (if-some [rows (query-types/output-relation ignored)]
+    (= 1 (count rows))
+    false))
+(println mismatch-rejected?)
+|}
+  in
+  let native_source =
+    compile_from_datascript_baseline Lg.Target.Native
+      (datascript_query_baseline Lg.Target.Native)
+      [ ("test/datascript/query_tuple_input.cljc", source) ]
+  in
+  assert_ocaml_runs "current_datascript_query_supports_tuple_input"
+    "true\ntrue\ntrue\ntrue\n" native_source;
+  ignore
+    (compile_from_datascript_baseline Lg.Target.Melange
+       (datascript_query_baseline Lg.Target.Melange)
+       [ ("test/datascript/query_tuple_input.cljc", source) ])
+
+let test_current_datascript_query_supports_relation_input () =
+  let source =
+    {|
+(ns app.query-relation-input
+  (:require [datascript.db :as db]
+            [datascript.lg.query :as query]
+            [datascript.lg.query-types :as query-types]))
+
+(def database
+  (db/init-db
+    (to-array
+     [(db/datom 1 :name "Ivan")
+      (db/datom 1 :age 19)
+      (db/datom 2 :name "Oleg")
+      (db/datom 2 :age 20)])
+    {}
+    (db/default-options)))
+
+(def matching
+  (query/q
+    '[:find ?e ?name
+      :in $ [[?age ?name]]
+      :where
+      [?e :age ?age]
+      [?e :name ?name]]
+    database
+    [[19 "Ivan"] [20 "Oleg"]]))
+
+(def crossed
+  (query/q
+    '[:find ?e ?name
+      :in $ [[?age ?name]]
+      :where
+      [?e :age ?age]
+      [?e :name ?name]]
+    database
+    [[19 "Oleg"]]))
+
+(def empty-input
+  (query/q
+    '[:find ?e ?name
+      :in $ [[?age ?name]]
+      :where
+      [?e :age ?age]
+      [?e :name ?name]]
+    database
+    []))
+
+(def mismatch-rejected?
+  (try
+    (query/q
+      '[:find ?e ?name
+        :in $ [[?age ?name]]
+        :where
+        [?e :age ?age]
+        [?e :name ?name]]
+      database
+      [[19]])
+    false
+    (catch (Invalid_argument _) true)))
+
+(println
+  (if-some [rows (query-types/output-relation matching)]
+    (= 2 (count rows))
+    false))
+(println
+  (if-some [rows (query-types/output-relation crossed)]
+    (empty? rows)
+    false))
+(println
+  (if-some [rows (query-types/output-relation empty-input)]
+    (empty? rows)
+    false))
+(println mismatch-rejected?)
+|}
+  in
+  let native_source =
+    compile_from_datascript_baseline Lg.Target.Native
+      (datascript_query_baseline Lg.Target.Native)
+      [ ("test/datascript/query_relation_input.cljc", source) ]
+  in
+  assert_ocaml_runs "current_datascript_query_supports_relation_input"
+    "true\ntrue\ntrue\ntrue\n" native_source;
+  ignore
+    (compile_from_datascript_baseline Lg.Target.Melange
+       (datascript_query_baseline Lg.Target.Melange)
+       [ ("test/datascript/query_relation_input.cljc", source) ])
+
+let test_current_datascript_query_supports_programmatic_query_values () =
+  let source =
+    {|
+(ns app.query-programmatic
+  (:require [datascript.db :as db]
+            [datascript.lg.query :as query]
+            [datascript.lg.query-types :as query-types]
+            [datascript.parser :as parser]))
+
+(def database
+  (db/init-db
+    (to-array
+     [(db/datom 1 :name "Ivan")
+      (db/datom 2 :name "Oleg")])
+    {}
+    (db/default-options)))
+
+(def programmatic-query
+  (parser/static-db-query-with-bindings
+   (parser/relation-find ["?e"])
+   [[(parser/pattern-variable "?e")
+     (parser/pattern-attribute :name)
+     (parser/pattern-variable "?name")]]
+   [(parser/scalar-input "?name")]))
+
+(def source-input
+  (query-types/source-input
+   (query-types/database-source database)))
+
+(def name-input
+  (query-types/binding-input
+   (query-types/scalar-binding
+    (query-types/value-result
+     (Datascript_runtime.Data_value.String "Ivan")))))
+
+(def vector-result
+  (query/q programmatic-query [source-input name-input]))
+
+(def variadic-result
+  (query/q programmatic-query source-input name-input))
+
+(println
+  (if-some [rows (query-types/output-relation vector-result)]
+    (= 1 (count rows))
+    false))
+(println
+  (if-some [rows (query-types/output-relation variadic-result)]
+    (= 1 (count rows))
+    false))
+|}
+  in
+  let native_source =
+    compile_from_datascript_baseline Lg.Target.Native
+      (datascript_query_baseline Lg.Target.Native)
+      [ ("test/datascript/query_programmatic.cljc", source) ]
+  in
+  assert_ocaml_runs
+    "current_datascript_query_supports_programmatic_query_values"
+    "true\ntrue\n" native_source;
+  ignore
+    (compile_from_datascript_baseline Lg.Target.Melange
+       (datascript_query_baseline Lg.Target.Melange)
+       [ ("test/datascript/query_programmatic.cljc", source) ])
 
 let current_datascript_serialize_sources () =
   let storage_source =
     {|
-(ns datascript.storage)
-(defn storage [_] nil)
+(ns datascript.storage
+  (:require
+   [me.tonsky.persistent-sorted-set :as set]))
+
+(defn storage [database]
+  (set/set-storage (:eavt database)))
 |}
   in
   let path = "test/datascript/upstream/serialize.cljc" in
@@ -4516,23 +8087,130 @@ let current_datascript_serialize_sources () =
 let native_datascript_serialize_baseline =
   lazy
     (extend_datascript_baseline Lg.Target.Native
-       (datascript_query_baseline Lg.Target.Native)
+       (current_datascript_baseline Lg.Target.Native)
        (current_datascript_serialize_sources ()))
 
 let melange_datascript_serialize_baseline =
   lazy
     (extend_datascript_baseline Lg.Target.Melange
-       (datascript_query_baseline Lg.Target.Melange)
+       (current_datascript_baseline Lg.Target.Melange)
        (current_datascript_serialize_sources ()))
 
 let datascript_serialize_baseline target =
   datascript_baseline_for target native_datascript_serialize_baseline
     melange_datascript_serialize_baseline
-    (current_datascript_query_sources () @ current_datascript_serialize_sources ())
+    (current_datascript_sources () @ current_datascript_serialize_sources ())
 
 let test_current_datascript_serialize_compiles_for_native_and_melange () =
   ignore (datascript_serialize_baseline Lg.Target.Native);
   ignore (datascript_serialize_baseline Lg.Target.Melange)
+
+let test_current_datascript_serialize_supports_typed_custom_codec () =
+  let source =
+    {|
+(ns app.serialization-codec
+  (:require [datascript.db :as db]
+            [datascript.serialize :as serialize]
+            [me.tonsky.persistent-sorted-set :as set]))
+
+(def freeze-count (volatile! 0))
+(def thaw-count (volatile! 0))
+(def freeze-keyword-count (volatile! 0))
+(def thaw-keyword-count (volatile! 0))
+
+(def database
+  (db/init-db
+   (to-array [(db/datom 1 :name "Ivan")])
+   db/empty-schema
+   (db/default-options)))
+
+(def strong-database
+  (db/init-db
+   (to-array [(db/datom 1 :name "Ivan")])
+   db/empty-schema
+   (db/options-with-ref-type
+    (db/default-options)
+    (Lg_runtime.Runtime_ref_type.Strong))))
+
+(def default-restored
+  (serialize/from-serializable
+   (serialize/serializable database)))
+
+(def frozen
+  (serialize/serializable
+   database
+   {:freeze-fn
+    (fn [value]
+      (vswap! freeze-count inc)
+      value)}))
+
+(def restored
+  (serialize/from-serializable
+   frozen
+   {:thaw-fn
+    (fn [value]
+      (vswap! thaw-count inc)
+      value)}))
+
+(def keyword-frozen
+  (serialize/serializable
+   database
+   {:freeze-kw
+    (fn [value]
+      (vswap! freeze-keyword-count inc)
+      value)}))
+
+(def keyword-restored
+  (serialize/from-serializable
+   keyword-frozen
+   {:thaw-kw
+    (fn [value]
+      (vswap! thaw-keyword-count inc)
+      value)}))
+
+(def weak-restored
+  (serialize/from-serializable
+   frozen
+   {:thaw-fn
+    (fn [value] value)
+    :ref-type (Lg_runtime.Runtime_ref_type.Weak)}))
+
+(def legacy-restored
+  (serialize/from-serializable
+   (Datascript_runtime.Serialization_value.as_legacy
+    (serialize/serializable database))))
+
+(println (db/db-equal? database default-restored))
+(println (pos? @freeze-count))
+(println (pos? @thaw-count))
+(println (db/db-equal? database restored))
+(println (pos? @freeze-keyword-count))
+(println (pos? @thaw-keyword-count))
+(println (db/db-equal? database keyword-restored))
+(println
+ (= (Lg_runtime.Runtime_ref_type.Weak)
+    (set/set-ref-type (:eavt weak-restored))))
+(println (db/db-equal? database legacy-restored))
+(println
+ (= (Datascript_runtime.Storage_value.Weak)
+    (Datascript_runtime.Serialization_value.ref_type
+     (serialize/serializable database))))
+(println
+ (= (Datascript_runtime.Storage_value.Strong)
+    (Datascript_runtime.Serialization_value.ref_type
+     (serialize/serializable strong-database))))
+|}
+  in
+  let compile target =
+    compile_from_datascript_baseline target
+      (datascript_serialize_baseline target)
+      [ ("test/datascript/serialization_codec.cljc", source) ]
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs "current_datascript_serialize_typed_custom_codec"
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n"
+    native_source;
+  ignore (compile Lg.Target.Melange)
 
 let test_current_datascript_serialize_roundtrips_on_native () =
   let source =
@@ -4543,14 +8221,13 @@ let test_current_datascript_serialize_roundtrips_on_native () =
 
 (def database
   (db/init-db
-    [(db/datom 1 :name "Ivan")
-     (db/datom 1 :age 19)
-     (db/datom 1 :active true)
-     (db/datom 2 :name "Oleg")]
-    {:name {:db/index true}
-     :avatar {:db/valueType :db.type/ref
-              :db/isComponent true}}
-    {}))
+    (to-array
+     [(db/datom 1 :name "Ivan")
+      (db/datom 1 :age 19)
+      (db/datom 1 :active true)
+      (db/datom 2 :name "Oleg")])
+    {}
+    (db/default-options)))
 
 (def restored
   (-> database serialize/serializable serialize/from-serializable))
@@ -4595,25 +8272,1374 @@ let test_current_datascript_serialize_roundtrips_on_native () =
        (current_datascript_baseline Lg.Target.Melange)
        (current_datascript_serialize_sources () @ [ serialize_source ]))
 
-let current_datascript_conn_sources () =
-  let storage_source =
+let test_current_datascript_serialize_rejects_attached_storage () =
+  let source =
     {|
-(ns datascript.storage)
-(defn storage [_db] nil)
-(defn store [_db] nil)
-(defn maybe-adapt-storage [opts] opts)
-(defn restore-impl [_storage _opts] [nil []])
-(defn db-with-tail [db _tail] db)
-(defn store-impl! [_db _adapter _force?] nil)
-(defn storage-adapter [_db] nil)
-(defn store-tail [_db _tail] nil)
+(ns app.serialize-storage-rejection
+  (:require
+   [clojure.string :as str]
+   [datascript.db :as db]
+   [datascript.serialize :as serialize]
+   [me.tonsky.persistent-sorted-set :as set]))
+
+(def database
+  (db/empty-db None (db/default-options)))
+
+(def adapter
+  (set/make-storage
+   (fn [_address] nil)
+   (fn [_address] (Stdlib.ignore 0))
+   (fn [_node _previous-address] 1)
+   (fn [_addresses] (Stdlib.ignore 0))))
+
+(Stdlib.ignore (set/store (:eavt database) adapter))
+
+(println
+ (try
+   (do
+     (serialize/serializable database)
+     false)
+   (catch Invalid_argument error
+     (str/includes?
+      (Printexc.to_string error)
+      "serializable doesn't work with databases that have :storage"))))
 |}
   in
-  let path = "test/datascript/upstream/conn.cljc" in
-  [
-    ("test/datascript/upstream/storage_conn_stub.cljc", storage_source);
-    (path, read_file (Filename.concat (repo_root ()) path));
-  ]
+  let compile target =
+    compile_from_datascript_baseline target
+      (datascript_serialize_baseline target)
+      [ ("test/datascript/serialization_storage_rejection.cljc", source) ]
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs "current_datascript_serialize_rejects_attached_storage"
+    "true\n" native_source;
+  ignore (compile Lg.Target.Melange)
+
+let test_current_datascript_transaction_accepts_closed_raw_datoms () =
+  let source =
+    {|
+(ns app.transaction-closed-entries
+  (:require [datascript.db :as db]
+            [datascript.conn :as conn]))
+
+(def initial
+  (db/init-db
+   (to-array [])
+   (zipmap
+    [:friend]
+    [(zipmap
+      [:db/valueType]
+      [(Datascript_runtime.Data_value.Keyword
+        ":db.type/ref")])])
+   (db/default-options)))
+
+(def added
+  (conn/db-with
+   initial
+   [(db/tx-datom
+     (db/datom
+      1 :name "Ivan" (+ db/tx0 5) true))]))
+
+(def retracted
+  (conn/db-with
+   added
+   [(db/tx-datom
+     (db/datom
+      1 :name "Ivan" (+ db/tx0 6) false))]))
+
+(def entity-added
+  (conn/db-with
+   retracted
+   [(db/tx-entity
+     (zipmap
+      [:db/id :name]
+      [(Datascript_runtime.Data_value.Ref_to
+        (Datascript_runtime.Data_value.Entity_id 2))
+       (Datascript_runtime.Data_value.String "Oleg")]))]))
+
+(def nested-entity
+  (zipmap
+   [:db/id :name]
+   [(Datascript_runtime.Data_value.Ref_to
+     (Datascript_runtime.Data_value.Entity_id 4))
+    (Datascript_runtime.Data_value.String "Child")]))
+
+(def nested-added
+  (conn/db-with
+   entity-added
+   [(db/tx-entity
+     (zipmap
+      [:db/id :name :friend]
+      [(Datascript_runtime.Data_value.Ref_to
+        (Datascript_runtime.Data_value.Entity_id 3))
+       (Datascript_runtime.Data_value.String "Root")
+       (Datascript_runtime.Data_value.map_of_keyword_map
+        nested-entity)]))]))
+
+(defn ^:int match-count [database entity name]
+  (count
+   (db/search-vector
+    database
+    (Some entity)
+    (Some :name)
+    (Some (Datascript_runtime.Data_value.String name))
+    None)))
+
+(println (= 1 (match-count added 1 "Ivan")))
+(println (= 0 (match-count retracted 1 "Ivan")))
+(println (= 1 (match-count entity-added 2 "Oleg")))
+(println (= 1 (match-count nested-added 3 "Root")))
+(println (= 1 (match-count nested-added 4 "Child")))
+|}
+  in
+  let providers =
+    [
+      "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
+      "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+      "datascript/me/tonsky/persistent_sorted_set.cljc";
+      "test/datascript/upstream/util.cljc";
+      "test/datascript/upstream/schema.cljc";
+      "test/datascript/upstream/db.cljc";
+      "test/datascript/upstream/storage.cljc";
+      "test/datascript/upstream/conn.cljc";
+    ]
+    |> List.map (fun path ->
+           (path, read_file (Filename.concat (repo_root ()) path)))
+  in
+  let compile target =
+    let _, outputs =
+      compile_datascript_sources target Lg.Compiler.empty_state
+        (providers
+        @ [ ("test/datascript/transaction_closed_entries.cljc", source) ])
+    in
+    String.concat "\n" outputs
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs
+    "current_datascript_transaction_accepts_closed_raw_datoms"
+    "true\ntrue\ntrue\ntrue\ntrue\n" native_source;
+  ignore (compile Lg.Target.Melange)
+
+let test_current_datascript_transaction_supports_reverse_refs () =
+  let source =
+    {|
+(ns app.transaction-reverse-refs
+  (:require [datascript.db :as db]
+            [datascript.conn :as conn]))
+
+(def database
+  (db/init-db
+   (to-array [])
+   (zipmap
+    [:children :profile]
+    [(zipmap
+      [:db/valueType :db/cardinality]
+      [(Datascript_runtime.Data_value.Keyword ":db.type/ref")
+       (Datascript_runtime.Data_value.Keyword ":db.cardinality/many")])
+     (zipmap
+      [:db/valueType]
+      [(Datascript_runtime.Data_value.Keyword ":db.type/ref")])])
+   (db/default-options)))
+
+(def direct-reverse
+  (conn/db-with
+   database
+   [(db/tx-entity
+     (zipmap
+      [:db/id :name]
+      [(Datascript_runtime.Data_value.Ref_to
+        (Datascript_runtime.Data_value.Entity_id 1))
+       (Datascript_runtime.Data_value.String "Parent")]))
+    (db/tx-entity
+     (zipmap
+      [:db/id :name :_children]
+      [(Datascript_runtime.Data_value.Ref_to
+        (Datascript_runtime.Data_value.Entity_id 2))
+       (Datascript_runtime.Data_value.String "Child")
+       (Datascript_runtime.Data_value.Ref_to
+        (Datascript_runtime.Data_value.Entity_id 1))]))]))
+
+(def nested-parent
+  (zipmap
+   [:db/id :name]
+   [(Datascript_runtime.Data_value.Ref_to
+     (Datascript_runtime.Data_value.Entity_id 5))
+    (Datascript_runtime.Data_value.String "Owner")]))
+
+(def nested-reverse
+  (conn/db-with
+   direct-reverse
+   [(db/tx-entity
+     (zipmap
+      [:db/id :email :_profile]
+      [(Datascript_runtime.Data_value.Ref_to
+        (Datascript_runtime.Data_value.Entity_id 4))
+       (Datascript_runtime.Data_value.String "owner@example.com")
+       (Datascript_runtime.Data_value.map_of_keyword_map
+        nested-parent)]))]))
+
+(defn ^:string invalid-message []
+  (try
+    (let [_database
+          (conn/db-with
+           nested-reverse
+           [(db/tx-entity
+             (zipmap
+              [:db/id :_parent]
+              [(Datascript_runtime.Data_value.Ref_to
+                (Datascript_runtime.Data_value.Entity_id 6))
+               (Datascript_runtime.Data_value.Ref_to
+                (Datascript_runtime.Data_value.Entity_id 1))]))])]
+      "no error")
+    (catch (Invalid_argument message) (str message))))
+
+(println
+ (= 1
+    (count
+     (db/search-vector
+      direct-reverse
+      (Some 1)
+      (Some :children)
+      (Some (Datascript_runtime.Data_value.Ref 2))
+      None))))
+(println
+ (= 1
+    (count
+     (db/search-vector
+      nested-reverse
+      (Some 5)
+      (Some :profile)
+      (Some (Datascript_runtime.Data_value.Ref 4))
+      None))))
+(println
+ (= (invalid-message)
+    "Bad attribute :_parent: reverse attribute name requires {:db/valueType :db.type/ref} in schema"))
+|}
+  in
+  let providers =
+    [
+      "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
+      "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+      "datascript/me/tonsky/persistent_sorted_set.cljc";
+      "test/datascript/upstream/util.cljc";
+      "test/datascript/upstream/schema.cljc";
+      "test/datascript/upstream/db.cljc";
+      "test/datascript/upstream/storage.cljc";
+      "test/datascript/upstream/conn.cljc";
+    ]
+    |> List.map (fun path ->
+           (path, read_file (Filename.concat (repo_root ()) path)))
+  in
+  let compile target =
+    let _, outputs =
+      compile_datascript_sources target Lg.Compiler.empty_state
+        (providers
+        @ [ ("test/datascript/transaction_reverse_refs.cljc", source) ])
+    in
+    String.concat "\n" outputs
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs "current_datascript_transaction_supports_reverse_refs"
+    "true\ntrue\ntrue\n" native_source;
+  ignore (compile Lg.Target.Melange)
+
+let test_current_datascript_transaction_supports_operation_vectors () =
+  let source =
+    {|
+(ns app.transaction-operation-vectors
+  (:require [datascript.db :as db]
+            [datascript.conn :as conn]))
+
+(def database
+  (db/init-db
+   (to-array [])
+   {}
+   (db/default-options)))
+
+(def added
+  (conn/db-with
+   database
+   [[:db/add 1 :name "Ivan"]
+    [:db/add 1 :age 19]
+    [:db/add 2 :name "Oleg"]
+    [:db/add 3 :name "Old"]]))
+
+(def value-retracted
+  (conn/db-with added [[:db/retract 1 :name "Ivan"]]))
+
+(def attribute-retracted
+  (conn/db-with value-retracted [[:db.fn/retractAttribute 1 :age]]))
+
+(def entity-retracted
+  (conn/db-with attribute-retracted [[:db.fn/retractEntity 2]]))
+
+(def cas-updated
+  (conn/db-with entity-retracted [[:db.fn/cas 3 :name "Old" "New"]]))
+
+(defn ^:string failed-cas-message []
+  (try
+    (let [_database
+          (conn/db-with cas-updated
+                        [[:db.fn/cas 3 :name "Old" "Again"]])]
+      "no error")
+    (catch (Invalid_argument message) (str message))))
+
+(defn ^:int match-count [database entity attr value]
+  (count
+   (db/search-vector
+    database
+    (Some entity)
+    (Some attr)
+    (Some value)
+    None)))
+
+(println
+ (= 1
+    (match-count
+     added 1 :name
+     (Datascript_runtime.Data_value.String "Ivan"))))
+(println
+ (= 0
+    (match-count
+     value-retracted 1 :name
+     (Datascript_runtime.Data_value.String "Ivan"))))
+(println
+ (= 0
+    (match-count
+     attribute-retracted 1 :age
+     (Datascript_runtime.Data_value.Int 19))))
+(println
+ (= 0
+    (match-count
+     entity-retracted 2 :name
+     (Datascript_runtime.Data_value.String "Oleg"))))
+(println
+ (= 1
+    (match-count
+     cas-updated 3 :name
+     (Datascript_runtime.Data_value.String "New"))))
+(println
+ (= "Compare-and-set transaction failed"
+    (failed-cas-message)))
+|}
+  in
+  let providers =
+    [
+      "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
+      "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+      "datascript/me/tonsky/persistent_sorted_set.cljc";
+      "test/datascript/upstream/util.cljc";
+      "test/datascript/upstream/schema.cljc";
+      "test/datascript/upstream/db.cljc";
+      "test/datascript/upstream/storage.cljc";
+      "test/datascript/upstream/conn.cljc";
+    ]
+    |> List.map (fun path ->
+           (path, read_file (Filename.concat (repo_root ()) path)))
+  in
+  let compile target =
+    let _, outputs =
+      compile_datascript_sources target Lg.Compiler.empty_state
+        (providers
+        @ [ ("test/datascript/transaction_operation_vectors.cljc", source) ])
+    in
+    String.concat "\n" outputs
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs
+    "current_datascript_transaction_supports_operation_vectors"
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\n" native_source;
+  ignore (compile Lg.Target.Melange)
+
+let test_current_datascript_transaction_resolves_tempids_and_upserts () =
+  let source =
+    {|
+(ns app.transaction-tempids-and-upserts
+  (:require [datascript.db :as db]
+            [datascript.conn :as conn]))
+
+(def database
+  (db/init-db
+   (to-array [])
+   (zipmap
+    [:ref :name]
+    [(zipmap
+      [:db/valueType]
+      [(Datascript_runtime.Data_value.Keyword ":db.type/ref")])
+     (zipmap
+      [:db/unique]
+      [(Datascript_runtime.Data_value.Keyword
+        ":db.unique/identity")])])
+   (db/default-options)))
+
+(def negative-report
+  (conn/with
+   database
+   [[:db/add -1 :name "Ivan"]
+    [:db/add -2 :name "Petr"]
+    [:db/add -1 :ref -2]]))
+
+(def string-report
+  (conn/with
+   database
+   [[:db/add "A" :name "Anna"]
+    [:db/add "B" :name "Bob"]
+    [:db/add "B" :ref "A"]]))
+
+(def seeded
+  (conn/db-with database [[:db/add 1 :name "Ivan"]]))
+
+(def upsert-report
+  (conn/with
+   seeded
+   [[:db/add -1 :name "Ivan"]
+    [:db/add -1 :age 42]]))
+
+(def retry-report
+  (conn/with
+   database
+   [[:db/add -1 :age 42]
+    [:db/add -2 :likes "Pizza"]
+    [:db/add -1 :name "Merged"]
+    [:db/add -2 :name "Merged"]]))
+
+(defn ^:int match-count [database entity attr value]
+  (count
+   (db/search-vector
+    database
+    (Some entity)
+    (Some attr)
+    (Some value)
+    None)))
+
+(defn ^boolean same-retry-entity? []
+  (if-some
+    [name-datom
+     (first
+      (db/search-vector
+       (:db-after retry-report)
+       None
+       (Some :name)
+       (Some (Datascript_runtime.Data_value.String "Merged"))
+       None))]
+    (if-some
+      [age-datom
+       (first
+        (db/search-vector
+         (:db-after retry-report)
+         None
+         (Some :age)
+         (Some (Datascript_runtime.Data_value.Int 42))
+         None))]
+      (if-some
+        [likes-datom
+         (first
+          (db/search-vector
+           (:db-after retry-report)
+           None
+           (Some :likes)
+           (Some (Datascript_runtime.Data_value.String "Pizza"))
+           None))]
+        (and
+         (= (:e name-datom) (:e age-datom))
+         (= (:e name-datom) (:e likes-datom)))
+        false)
+      false)
+    false))
+
+(println
+ (= 1
+    (match-count
+     (:db-after negative-report)
+     1 :ref
+     (Datascript_runtime.Data_value.Ref 2))))
+(println
+ (= 1
+    (match-count
+     (:db-after string-report)
+     2 :ref
+     (Datascript_runtime.Data_value.Ref 1))))
+(println
+ (= 1
+    (match-count
+     (:db-after upsert-report)
+     1 :age
+     (Datascript_runtime.Data_value.Int 42))))
+(println
+ (if-some
+   [eid
+    (get
+     (:tempids upsert-report)
+     (Datascript_runtime.Data_value.Ref_to
+      (Datascript_runtime.Data_value.Entity_id -1)))]
+   (= 1 eid)
+   false))
+(println (same-retry-entity?))
+|}
+  in
+  let providers =
+    [
+      "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
+      "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+      "datascript/me/tonsky/persistent_sorted_set.cljc";
+      "test/datascript/upstream/util.cljc";
+      "test/datascript/upstream/schema.cljc";
+      "test/datascript/upstream/db.cljc";
+      "test/datascript/upstream/storage.cljc";
+      "test/datascript/upstream/conn.cljc";
+    ]
+    |> List.map (fun path ->
+           (path, read_file (Filename.concat (repo_root ()) path)))
+  in
+  let compile target =
+    let _, outputs =
+      compile_datascript_sources target Lg.Compiler.empty_state
+        (providers
+        @ [ ("test/datascript/transaction_tempids_upserts.cljc", source) ])
+    in
+    String.concat "\n" outputs
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs
+    "current_datascript_transaction_resolves_tempids_and_upserts"
+    "true\ntrue\ntrue\ntrue\ntrue\n" native_source;
+  ignore (compile Lg.Target.Melange)
+
+let test_current_datascript_transaction_preserves_unique_identity_edges () =
+  let source =
+    {|
+(ns app.transaction-unique-identity-edges
+  (:require [datascript.db :as db]
+            [datascript.conn :as conn]))
+
+(def schema
+  (zipmap
+   [:name :ref :other-ref]
+   [(zipmap
+     [:db/unique]
+     [(Datascript_runtime.Data_value.Keyword
+       ":db.unique/identity")])
+    (zipmap
+     [:db/unique :db/valueType]
+     [(Datascript_runtime.Data_value.Keyword
+       ":db.unique/identity")
+      (Datascript_runtime.Data_value.Keyword
+       ":db.type/ref")])
+    (zipmap
+     [:db/valueType]
+     [(Datascript_runtime.Data_value.Keyword
+       ":db.type/ref")])]))
+
+(def database
+  (conn/db-with
+   (db/init-db
+    (to-array [])
+    schema
+    (db/default-options))
+   [[:db/add 1 :name "Alice"]
+    [:db/add 2 :name "Bob"]
+    [:db/add 3 :ref 1]
+    [:db/add 4 :ref 2]]))
+
+(def ref-upsert
+  (conn/with
+   database
+   [[:db/add -1 :ref 1]
+    [:db/add -1 :age 36]]))
+
+(def lookup-ref-upsert
+  (conn/with
+   database
+   [[:db/add -1 :ref [:name "Bob"]]
+    [:db/add -1 :age 37]]))
+
+(def resolved-ref-tempid
+  (conn/with
+   database
+   [[:db/add "person" :name "Alice"]
+    [:db/add -1 :ref "person"]
+    [:db/add -1 :score 7]]))
+
+(def two-retries
+  (conn/db-with
+   database
+   [[:db/add 5 :other-ref "A"]
+    [:db/add 6 :other-ref "B"]
+    [:db/add "A" :name "Alice"]
+    [:db/add "B" :name "Bob"]]))
+
+(defn ^boolean has-value?
+  [database
+   ^int entity
+   ^:keyword attr
+   ^:Datascript_runtime.Data_value.t value]
+  (= 1
+     (count
+      (db/search-vector
+       database
+       (Some entity)
+       (Some attr)
+       (Some value)
+       None))))
+
+(defn ^:string conflicting-tempid-message []
+  (try
+    (let [_database
+          (conn/db-with
+           database
+           [[:db/add -1 :name "Alice"]
+            [:db/add -1 :age 35]
+            [:db/add -1 :name "Bob"]
+            [:db/add -1 :age 36]])]
+      "no error")
+    (catch (Invalid_argument message) (str message))))
+
+(println
+ (has-value?
+  (:db-after ref-upsert)
+  3 :age
+  (Datascript_runtime.Data_value.Int 36)))
+(println
+ (has-value?
+  (:db-after lookup-ref-upsert)
+  4 :age
+  (Datascript_runtime.Data_value.Int 37)))
+(println
+ (and
+  (has-value?
+   (:db-after resolved-ref-tempid)
+   3 :score
+   (Datascript_runtime.Data_value.Int 7))
+  (= 1
+     (get
+      (:tempids resolved-ref-tempid)
+      (Datascript_runtime.Data_value.Ref_to
+       (Datascript_runtime.Data_value.Temp_id "person"))))
+  (= 3
+     (get
+      (:tempids resolved-ref-tempid)
+      (Datascript_runtime.Data_value.Ref_to
+       (Datascript_runtime.Data_value.Entity_id -1))))))
+(println
+ (and
+  (has-value?
+   two-retries 5 :other-ref
+   (Datascript_runtime.Data_value.Ref 1))
+  (has-value?
+   two-retries 6 :other-ref
+   (Datascript_runtime.Data_value.Ref 2))))
+(println
+ (=
+  "Conflicting upsert: -1 resolves both to 1 and 2"
+  (conflicting-tempid-message)))
+|}
+  in
+  let providers =
+    [
+      "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
+      "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+      "datascript/me/tonsky/persistent_sorted_set.cljc";
+      "test/datascript/upstream/util.cljc";
+      "test/datascript/upstream/schema.cljc";
+      "test/datascript/upstream/db.cljc";
+      "test/datascript/upstream/storage.cljc";
+      "test/datascript/upstream/conn.cljc";
+    ]
+    |> List.map (fun path ->
+           (path, read_file (Filename.concat (repo_root ()) path)))
+  in
+  let compile target =
+    let _, outputs =
+      compile_datascript_sources target Lg.Compiler.empty_state
+        (providers
+        @ [ ("test/datascript/transaction_unique_identity_edges.cljc", source) ])
+    in
+    String.concat "\n" outputs
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs
+    "current_datascript_transaction_preserves_unique_identity_edges"
+    "true\ntrue\ntrue\ntrue\ntrue\n" native_source;
+  ignore (compile Lg.Target.Melange)
+
+let test_current_datascript_transaction_resolves_current_tx_and_preserves_order ()
+    =
+  let source =
+    {|
+(ns app.transaction-current-tx-and-order
+  (:require [datascript.db :as db]
+            [datascript.conn :as conn]))
+
+(def database
+  (db/init-db
+   (to-array [])
+   (zipmap
+    [:created-at]
+    [(zipmap
+      [:db/valueType]
+      [(Datascript_runtime.Data_value.Keyword
+        ":db.type/ref")])])
+   (db/default-options)))
+
+(def keyword-report
+  (conn/with
+   database
+   [[:db/add 1 :created-at :db/current-tx]
+    [:db/add :db/current-tx :prop "keyword"]]))
+
+(def datomic-report
+  (conn/with
+   database
+   [[:db/add 1 :created-at "datomic.tx"]
+    [:db/add "datomic.tx" :prop "datomic"]]))
+
+(def datascript-report
+  (conn/with
+   database
+   [[:db/add 1 :created-at "datascript.tx"]
+    [:db/add "datascript.tx" :prop "datascript"]]))
+
+(def datomic-next-report
+  (conn/with
+   (:db-after datomic-report)
+   [[:db/add "datomic.tx" :prop2 "next"]]))
+
+(defn ^boolean has-current-tx-datoms?
+  [^datascript.db/TxReport report ^:string label ^int txid]
+  (and
+   (= 1
+      (count
+       (db/search-vector
+        (:db-after report)
+        (Some 1)
+        (Some :created-at)
+        (Some (Datascript_runtime.Data_value.Ref txid))
+        None)))
+   (= 1
+      (count
+       (db/search-vector
+        (:db-after report)
+        (Some txid)
+        (Some :prop)
+        (Some (Datascript_runtime.Data_value.String label))
+        None)))))
+
+(defn ^boolean tempid-resolves?
+  [^datascript.db/TxReport report
+   ^:Datascript_runtime.Data_value.t key
+   ^int txid]
+  (if-some [actual (get (:tempids report) key)]
+    (= txid actual)
+    false))
+
+(def ordered-database
+  (conn/db-with
+   database
+   [[:db/add 10 :a1 1]
+    [:db/add 10 :a2 2]
+    [:db/add 10 :a3 3]
+    [:db/add 11 :a1 1]
+    [:db/add 11 :a2 2]
+    [:db/add 11 :a3 3]]))
+
+(def ordered-report
+  (conn/with
+   ordered-database
+   [[:db.fn/retractEntity 10]
+    [:db.fn/retractEntity 11]]))
+
+(defn ^boolean datom-position?
+  [^:vector<datascript.db/Datom> datoms
+   ^int index
+   ^int entity
+   ^:keyword attr]
+  (let [datom (nth datoms index)]
+    (and
+     (= entity (:e datom))
+     (= attr (:a datom))
+     (not (db/datom-added datom)))))
+
+(defn ^boolean ordered-retractions? []
+  (let [datoms (:tx-data ordered-report)]
+    (and
+     (= 6 (count datoms))
+     (datom-position? datoms 0 10 :a1)
+     (datom-position? datoms 1 10 :a2)
+     (datom-position? datoms 2 10 :a3)
+     (datom-position? datoms 3 11 :a1)
+     (datom-position? datoms 4 11 :a2)
+     (datom-position? datoms 5 11 :a3))))
+
+(def first-tx (+ db/tx0 1))
+(def second-tx (+ db/tx0 2))
+
+(println
+ (and
+  (has-current-tx-datoms? keyword-report "keyword" first-tx)
+  (tempid-resolves?
+   keyword-report
+   (Datascript_runtime.Data_value.Ref_to
+    (Datascript_runtime.Data_value.Current_tx))
+   first-tx)))
+(println
+ (and
+  (has-current-tx-datoms? datomic-report "datomic" first-tx)
+  (tempid-resolves?
+   datomic-report
+   (Datascript_runtime.Data_value.Ref_to
+    (Datascript_runtime.Data_value.Temp_id "datomic.tx"))
+   first-tx)))
+(println
+ (and
+  (has-current-tx-datoms? datascript-report "datascript" first-tx)
+  (tempid-resolves?
+   datascript-report
+   (Datascript_runtime.Data_value.Ref_to
+    (Datascript_runtime.Data_value.Temp_id "datascript.tx"))
+   first-tx)))
+(println
+ (= 1
+    (count
+     (db/search-vector
+      (:db-after datomic-next-report)
+      (Some second-tx)
+      (Some :prop2)
+      (Some (Datascript_runtime.Data_value.String "next"))
+      None))))
+(println (ordered-retractions?))
+|}
+  in
+  let providers =
+    [
+      "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
+      "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+      "datascript/me/tonsky/persistent_sorted_set.cljc";
+      "test/datascript/upstream/util.cljc";
+      "test/datascript/upstream/schema.cljc";
+      "test/datascript/upstream/db.cljc";
+      "test/datascript/upstream/storage.cljc";
+      "test/datascript/upstream/conn.cljc";
+    ]
+    |> List.map (fun path ->
+           (path, read_file (Filename.concat (repo_root ()) path)))
+  in
+  let compile target =
+    let _, outputs =
+      compile_datascript_sources target Lg.Compiler.empty_state
+        (providers
+        @ [ ("test/datascript/transaction_current_tx_order.cljc", source) ])
+    in
+    String.concat "\n" outputs
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs
+    "current_datascript_transaction_resolves_current_tx_and_preserves_order"
+    "true\ntrue\ntrue\ntrue\ntrue\n" native_source;
+  ignore (compile Lg.Target.Melange)
+
+let test_current_datascript_transaction_cascades_components () =
+  let source =
+    {|
+(ns app.transaction-components
+  (:require [datascript.db :as db]
+            [datascript.conn :as conn]))
+
+(defn ^:string invalid-component-message []
+  (try
+    (let [_database
+          (db/init-db
+           (to-array [])
+           (zipmap
+            [:profile]
+            [(zipmap
+              [:db/isComponent]
+              [(Datascript_runtime.Data_value.Bool true)])])
+           (db/default-options))]
+      "no error")
+    (catch (Invalid_argument message) (str message))))
+
+(defn ^:string invalid-component-flag-message []
+  (try
+    (let [_database
+          (db/init-db
+           (to-array [])
+           (zipmap
+            [:profile]
+            [(zipmap
+              [:db/isComponent :db/valueType]
+              [(Datascript_runtime.Data_value.String "aaa")
+               (Datascript_runtime.Data_value.Keyword
+                ":db.type/ref")])])
+           (db/default-options))]
+      "no error")
+    (catch (Invalid_argument message) (str message))))
+
+(def single-schema
+  (zipmap
+   [:profile]
+   [(zipmap
+     [:db/valueType :db/isComponent]
+     [(Datascript_runtime.Data_value.Keyword ":db.type/ref")
+      (Datascript_runtime.Data_value.Bool true)])]))
+
+(def single-database
+  (conn/db-with
+   (db/init-db
+    (to-array [])
+    single-schema
+    (db/default-options))
+   [[:db/add 1 :name "Ivan"]
+    [:db/add 1 :profile 3]
+    [:db/add 3 :email "@3"]]))
+
+(def entity-retracted
+  (conn/db-with
+   single-database
+   [[:db.fn/retractEntity 1]]))
+
+(def attribute-retracted
+  (conn/db-with
+   single-database
+   [[:db.fn/retractAttribute 1 :profile]]))
+
+(def many-schema
+  (zipmap
+   [:profile]
+   [(zipmap
+     [:db/valueType :db/cardinality :db/isComponent]
+     [(Datascript_runtime.Data_value.Keyword ":db.type/ref")
+      (Datascript_runtime.Data_value.Keyword ":db.cardinality/many")
+      (Datascript_runtime.Data_value.Bool true)])]))
+
+(def many-database
+  (conn/db-with
+   (db/init-db
+    (to-array [])
+    many-schema
+    (db/default-options))
+   [[:db/add 1 :name "Ivan"]
+    [:db/add 1 :profile 3]
+    [:db/add 1 :profile 4]
+    [:db/add 3 :email "@3"]
+    [:db/add 4 :email "@4"]]))
+
+(def many-retracted
+  (conn/db-with
+   many-database
+   [[:db.fn/retractAttribute 1 :profile]]))
+
+(defn ^boolean entity-empty? [database ^int entity]
+  (empty?
+   (db/search-vector
+    database
+    (Some entity)
+    None None None)))
+
+(println
+ (=
+  (invalid-component-message)
+  "Bad attribute specification for :profile: {:db/isComponent true} should also have {:db/valueType :db.type/ref}"))
+(println
+ (=
+  (invalid-component-flag-message)
+  "Bad attribute specification for {:profile {:db/isComponent \"aaa\"}}, expected one of #{true false}"))
+(println
+ (and
+  (entity-empty? entity-retracted 1)
+  (entity-empty? entity-retracted 3)))
+(println
+ (and
+  (= 1
+     (count
+      (db/search-vector
+       attribute-retracted
+       (Some 1)
+       (Some :name)
+       None None)))
+  (entity-empty? attribute-retracted 3)))
+(println
+ (and
+  (entity-empty? many-retracted 3)
+  (entity-empty? many-retracted 4)))
+|}
+  in
+  let providers =
+    [
+      "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
+      "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+      "datascript/me/tonsky/persistent_sorted_set.cljc";
+      "test/datascript/upstream/util.cljc";
+      "test/datascript/upstream/schema.cljc";
+      "test/datascript/upstream/db.cljc";
+      "test/datascript/upstream/storage.cljc";
+      "test/datascript/upstream/conn.cljc";
+    ]
+    |> List.map (fun path ->
+           (path, read_file (Filename.concat (repo_root ()) path)))
+  in
+  let compile target =
+    let _, outputs =
+      compile_datascript_sources target Lg.Compiler.empty_state
+        (providers
+        @ [ ("test/datascript/transaction_components.cljc", source) ])
+    in
+    String.concat "\n" outputs
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs "current_datascript_transaction_cascades_components"
+    "true\ntrue\ntrue\ntrue\ntrue\n" native_source;
+  ignore (compile Lg.Target.Melange)
+
+let test_current_datascript_transaction_maintains_tuples () =
+  let source =
+    {|
+(ns app.transaction-tuples
+  (:require [datascript.db :as db]
+            [datascript.conn :as conn]))
+
+(defn ^:Datascript_runtime.Data_value.t tuple-attrs
+  [^:vector<Datascript_runtime.Data_value.t> attrs]
+  (Datascript_runtime.Data_value.vector_of_vector attrs))
+
+(def schema
+  (zipmap
+   [:a+b :ref :name :ref+name]
+   [(zipmap
+     [:db/tupleAttrs]
+     [(tuple-attrs
+       [(Datascript_runtime.Data_value.Keyword ":a")
+        (Datascript_runtime.Data_value.Keyword ":b")])])
+    (zipmap
+     [:db/valueType]
+     [(Datascript_runtime.Data_value.Keyword ":db.type/ref")])
+    (zipmap
+     [:db/unique]
+     [(Datascript_runtime.Data_value.Keyword ":db.unique/identity")])
+    (zipmap
+     [:db/valueType :db/tupleAttrs :db/unique]
+     [(Datascript_runtime.Data_value.Keyword ":db.type/tuple")
+      (tuple-attrs
+       [(Datascript_runtime.Data_value.Keyword ":ref")
+        (Datascript_runtime.Data_value.Keyword ":name")])
+      (Datascript_runtime.Data_value.Keyword
+       ":db.unique/identity")])]))
+
+(def database
+  (db/init-db
+   (to-array [])
+   schema
+   (db/default-options)))
+
+(def added
+  (conn/db-with
+   database
+   [[:db/add 1 :a "a"]
+    [:db/add 1 :b "b"]
+    [:db/add 2 :name "Ivan"]
+    [:db/add 3 :ref 2]
+    [:db/add 3 :name "Petr"]]))
+
+(def updated
+  (conn/db-with added [[:db/add 1 :a "A"]]))
+
+(def retracted
+  (conn/db-with updated [[:db/retract 1 :b "b"]]))
+
+(def tuple-upserted
+  (conn/db-with
+   added
+   [[:db/add -1 :ref+name [2 "Petr"]]
+    [:db/add -1 :age 32]]))
+
+(defn ^:Datascript_runtime.Data_value.t tuple2
+  [^:option<Datascript_runtime.Data_value.t> left
+   ^:option<Datascript_runtime.Data_value.t> right]
+  (Datascript_runtime.Data_value.tuple_of_vector
+   [left right]))
+
+(defn ^boolean has-value?
+  [database
+   ^int entity
+   ^:keyword attr
+   ^:Datascript_runtime.Data_value.t value]
+  (= 1
+     (count
+      (db/search-vector
+       database
+       (Some entity)
+       (Some attr)
+       (Some value)
+       None))))
+
+(defn ^boolean direct-tuple-rejected? []
+  (try
+    (let [_database
+          (conn/db-with
+           added
+           [[:db/add 1 :a+b ["x" "b"]]])]
+      false)
+    (catch (Invalid_argument _) true)))
+
+(println
+ (has-value?
+  added 1 :a+b
+  (tuple2
+   (Some (Datascript_runtime.Data_value.String "a"))
+   (Some (Datascript_runtime.Data_value.String "b")))))
+(println
+ (has-value?
+  updated 1 :a+b
+  (tuple2
+   (Some (Datascript_runtime.Data_value.String "A"))
+   (Some (Datascript_runtime.Data_value.String "b")))))
+(println
+ (has-value?
+  retracted 1 :a+b
+  (tuple2
+   (Some (Datascript_runtime.Data_value.String "A"))
+   None)))
+(println
+ (has-value?
+  added 3 :ref+name
+  (tuple2
+   (Some (Datascript_runtime.Data_value.Ref 2))
+   (Some (Datascript_runtime.Data_value.String "Petr")))))
+(println
+ (has-value?
+  tuple-upserted 3 :age
+  (Datascript_runtime.Data_value.Int 32)))
+(println (direct-tuple-rejected?))
+|}
+  in
+  let providers =
+    [
+      "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
+      "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+      "datascript/me/tonsky/persistent_sorted_set.cljc";
+      "test/datascript/upstream/util.cljc";
+      "test/datascript/upstream/schema.cljc";
+      "test/datascript/upstream/db.cljc";
+      "test/datascript/upstream/storage.cljc";
+      "test/datascript/upstream/conn.cljc";
+    ]
+    |> List.map (fun path ->
+           (path, read_file (Filename.concat (repo_root ()) path)))
+  in
+  let compile target =
+    let _, outputs =
+      compile_datascript_sources target Lg.Compiler.empty_state
+        (providers
+        @ [ ("test/datascript/transaction_tuples.cljc", source) ])
+    in
+    String.concat "\n" outputs
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs "current_datascript_transaction_maintains_tuples"
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\n" native_source;
+  ignore (compile Lg.Target.Melange)
+
+let test_current_datascript_transaction_runs_transaction_functions () =
+  let source =
+    {|
+(ns app.transaction-functions
+  (:require [datascript.db :as db]
+            [datascript.conn :as conn]))
+
+(def database
+  (db/init-db
+   (to-array [])
+   {}
+   (db/default-options)))
+
+(def seeded
+  (conn/db-with
+   database
+   [[:db/add 1 :age 31]]))
+
+(defn ^:vector<datascript.db/tx-entry> birthday
+  [^datascript.db/DB current-db ^int entity]
+  (if (= 1
+         (count
+          (db/search-vector
+           current-db
+           (Some entity)
+           (Some :age)
+           (Some (Datascript_runtime.Data_value.Int 31))
+           None)))
+    [(db/tx-add
+      (Datascript_runtime.Data_value.Entity_id entity)
+      :age
+      (Datascript_runtime.Data_value.Int 32))
+     (db/tx-add
+      (Datascript_runtime.Data_value.Entity_id entity)
+      :had-birthday
+      (Datascript_runtime.Data_value.Bool true))]
+    []))
+
+(def named-result
+  (conn/db-with
+   seeded
+   [[:db.fn/call birthday 1]]))
+
+(def anonymous-result
+  (conn/db-with
+   named-result
+   [[:db.fn/call
+     (fn [^datascript.db/DB _current-db]
+       [(db/tx-add
+         (Datascript_runtime.Data_value.Entity_id 2)
+         :name
+         (Datascript_runtime.Data_value.String "Oleg"))])]]))
+
+(def ordered-result
+  (conn/db-with
+   seeded
+   [[:db.fn/call birthday 1]
+    [:db/add 1 :age 33]]))
+
+(defn ^:vector<datascript.db/tx-entry> fail-transaction
+  [^datascript.db/DB _current-db]
+  (raise (Invalid_argument "callback failed")))
+
+(defn ^:string callback-error []
+  (try
+    (let [_database
+          (conn/db-with
+           seeded
+           [[:db.fn/call fail-transaction]])]
+      "no error")
+    (catch (Invalid_argument message) (str message))))
+
+(defn ^boolean has-value?
+  [database
+   ^int entity
+   ^:keyword attr
+   ^:Datascript_runtime.Data_value.t value]
+  (= 1
+     (count
+      (db/search-vector
+       database
+       (Some entity)
+       (Some attr)
+       (Some value)
+       None))))
+
+(println
+ (and
+  (has-value?
+   named-result 1 :age
+   (Datascript_runtime.Data_value.Int 32))
+  (has-value?
+   named-result 1 :had-birthday
+   (Datascript_runtime.Data_value.Bool true))))
+(println
+ (has-value?
+  anonymous-result 2 :name
+  (Datascript_runtime.Data_value.String "Oleg")))
+(println
+ (has-value?
+  ordered-result 1 :age
+  (Datascript_runtime.Data_value.Int 33)))
+(println (= "callback failed" (callback-error)))
+|}
+  in
+  let providers =
+    [
+      "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
+      "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+      "datascript/me/tonsky/persistent_sorted_set.cljc";
+      "test/datascript/upstream/util.cljc";
+      "test/datascript/upstream/schema.cljc";
+      "test/datascript/upstream/db.cljc";
+      "test/datascript/upstream/storage.cljc";
+      "test/datascript/upstream/conn.cljc";
+    ]
+    |> List.map (fun path ->
+           (path, read_file (Filename.concat (repo_root ()) path)))
+  in
+  let compile target =
+    let _, outputs =
+      compile_datascript_sources target Lg.Compiler.empty_state
+        (providers
+        @ [ ("test/datascript/transaction_functions.cljc", source) ])
+    in
+    String.concat "\n" outputs
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs "current_datascript_transaction_runs_transaction_functions"
+    "true\ntrue\ntrue\ntrue\n" native_source;
+  ignore (compile Lg.Target.Melange)
+
+let test_current_datascript_transaction_rejects_invalid_inputs () =
+  let source =
+    {|
+(ns app.transaction-invalid-inputs
+  (:require [datascript.db :as db]
+            [datascript.conn :as conn]))
+
+(def database
+  (db/init-db
+   (to-array [])
+   {}
+   (db/default-options)))
+
+(defn ^:string bad-entity-message []
+  (try
+    (let [_database (conn/db-with database [42])]
+      "no error")
+    (catch (Invalid_argument message) (str message))))
+
+(defn ^:string unknown-operation-message []
+  (try
+    (let [_database
+          (conn/db-with
+           database
+           [["wat" 1 :name "value"]])]
+      "no error")
+    (catch (Invalid_argument message) (str message))))
+
+(println (bad-entity-message))
+(println (unknown-operation-message))
+|}
+  in
+  let providers =
+    [
+      "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
+      "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+      "datascript/me/tonsky/persistent_sorted_set.cljc";
+      "test/datascript/upstream/util.cljc";
+      "test/datascript/upstream/schema.cljc";
+      "test/datascript/upstream/db.cljc";
+      "test/datascript/upstream/storage.cljc";
+      "test/datascript/upstream/conn.cljc";
+    ]
+    |> List.map (fun path ->
+           (path, read_file (Filename.concat (repo_root ()) path)))
+  in
+  let compile target =
+    let _, outputs =
+      compile_datascript_sources target Lg.Compiler.empty_state
+        (providers
+        @ [ ("test/datascript/transaction_invalid_inputs.cljc", source) ])
+    in
+    String.concat "\n" outputs
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs "current_datascript_transaction_rejects_invalid_inputs"
+    "Bad entity type at 42, expected map or vector\n\
+     Unknown operation at [\"wat\" 1 :name \"value\"], expected :db/add, \
+     :db/retract, :db.fn/call, :db.fn/retractAttribute, \
+     :db.fn/retractEntity or an ident corresponding to an installed \
+     transaction function (e.g. {:db/ident <keyword> :db/fn <Ifn>}, usage of \
+     :db/ident requires {:db/unique :db.unique/identity} in schema)\n"
+    native_source;
+  ignore (compile Lg.Target.Melange)
+
+let current_datascript_conn_sources () =
+  [ "test/datascript/upstream/storage.cljc";
+    "test/datascript/upstream/conn.cljc" ]
+  |> List.map (fun path ->
+         (path, read_file (Filename.concat (repo_root ()) path)))
 
 let native_datascript_conn_baseline =
   lazy
@@ -4634,6 +9660,44 @@ let datascript_conn_baseline target =
 let test_current_datascript_conn_compiles_for_native_and_melange () =
   ignore (datascript_conn_baseline Lg.Target.Native);
   ignore (datascript_conn_baseline Lg.Target.Melange)
+
+let test_current_datascript_conn_propagates_database_options () =
+  let source =
+    {|
+(ns app.conn-options
+  (:require [datascript.conn :as conn]
+            [datascript.db :as db]
+            [me.tonsky.persistent-sorted-set :as set]))
+
+(def options
+  (db/options-with-ref-type
+   (db/default-options)
+   (Lg_runtime.Runtime_ref_type.Strong)))
+
+(def from-datoms
+  (conn/conn-from-datoms [] {} options))
+
+(def created
+  (conn/create-conn None options))
+
+(defn strong? [connection]
+  (= (Lg_runtime.Runtime_ref_type.Strong)
+     (set/set-ref-type
+      (:eavt (conn/current-db connection)))))
+
+(println (strong? from-datoms))
+(println (strong? created))
+|}
+  in
+  let compile target =
+    compile_from_datascript_baseline target
+      (datascript_conn_baseline target)
+      [ ("test/datascript/conn_options.cljc", source) ]
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs "current_datascript_conn_propagates_database_options"
+    "true\ntrue\n" native_source;
+  ignore (compile Lg.Target.Melange)
 
 let test_namespace_ignores_clojure_compiler_directives () =
   let source =
@@ -5521,6 +10585,18 @@ let test_user_macros_expand_syntax_quote_and_unquote () =
   assert_ocaml_runs "user_macros_expand_syntax_quote_and_unquote" "42\n"
     ocaml_source
 
+let test_user_macro_str_keeps_string_values_unquoted () =
+  let source =
+    {|
+(defmacro describe [value]
+  (str "value=" value))
+(println (describe [1 "two"]))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "user_macro_str_keeps_string_values_unquoted"
+    "value=[1 \"two\"]\n" ocaml_source
+
 let test_user_macros_track_helpers_passed_as_values () =
   let source =
     {|
@@ -5684,16 +10760,21 @@ let test_regex_match_alternatives_require_a_closed_sum () =
   in
   Lg.Compiler.compile_string source |> expect_error_contains "closed sum type"
 
-let test_unconstrained_contains_callbacks_reject_dynamic_fallback () =
+let test_contains_callbacks_use_static_membership_witnesses () =
   let source =
     {|
 (def schema-keys #{:db/ident :db/doc})
 (defn schema-entity? [entity]
   (some #(contains? entity %) schema-keys))
 (println (boolean (schema-entity? {:db/ident 1, :db/doc 2})))
+(println (boolean (schema-entity? {:other 1})))
 |}
   in
-  Lg.Compiler.compile_string source |> expect_error_contains "closed sum type"
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "contains_callbacks_use_static_membership_witnesses"
+    "true\nfalse\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_anonymous_function_rewrites_placeholders_inside_maps () =
   let source =
@@ -6500,6 +11581,19 @@ let test_recursive_record_array_fields_work_with_array_primitives () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "recursive_record_array_fields_work_with_array_primitives"
     "3:2\n" ocaml_source
+
+let test_defrecord_fields_can_reference_the_enclosing_record () =
+  let source =
+    {|
+(defrecord Counter [^:fn<Counter;int> read])
+(def counter
+  (Counter. (fn [_] 42)))
+(println ((.-read counter) counter))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "defrecord_fields_can_reference_the_enclosing_record"
+    "42\n" ocaml_source
 
 let test_parameterized_variants_instantiate_constructor_payloads () =
   let source =
@@ -7848,6 +12942,31 @@ let test_recursive_variants_support_nested_data_values () =
   assert_ocaml_runs "recursive_variants_support_nested_data_values" "1:1\n"
     ocaml_source
 
+let test_recursive_variants_support_callback_results () =
+  let source =
+    {|
+(defrecord Context [^int value])
+(type-variant entry
+  (Value :int)
+  (Call :fn<Context;vector<entry>>))
+(def context-value (Context. 41))
+(def call
+  (Call
+   (fn [^Context context]
+     [(Value (inc (:value context)))])))
+(println
+ (match call
+   (Value value) value
+   (Call callback)
+   (match (first (callback context-value))
+     (Some (Value value)) value
+     _ 0)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "recursive_variants_support_callback_results" "42\n"
+    ocaml_source
+
 let test_recursive_functions_use_sidecar_return_types () =
   let source =
     {|
@@ -7869,6 +12988,87 @@ let test_recursive_functions_use_sidecar_return_types () =
     failwith "recursive sidecar signatures must remain static";
   assert_ocaml_runs "recursive_functions_use_sidecar_return_types"
     "2\n" ocaml_source
+
+let test_adjacent_records_and_variants_support_mutual_recursion () =
+  let source =
+    {|
+(type-record node
+  (value :entry))
+(type-variant entry
+  (Scalar :int)
+  (Child :node))
+(def leaf
+  (record node
+    (value (Scalar 42))))
+(def parent
+  (record node
+    (value (Child leaf))))
+(println
+  (match (:value parent)
+    (Scalar value) value
+    (Child child)
+      (match (:value child)
+        (Scalar value) value
+        (Child _) 0)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "mutually recursive closed types must remain static";
+  assert_ocaml_runs "adjacent_records_and_variants_support_mutual_recursion"
+    "42\n" ocaml_source
+
+let test_mutually_recursive_deftypes_emit_methods_after_type_group () =
+  let source =
+    {|
+(ns sample.entity)
+(type-record compiler_mutual_database
+  (identity :int))
+(type-record compiler_mutual_state
+  (cached :ref<map<keyword;compiler_mutual_value>>))
+(declare compiler-mutual-nodes-equal?)
+(deftype compiler_mutual_node [^compiler_mutual_state state]
+  ICounted
+  (-count [_] 0))
+(deftype compiler_mutual_nodes
+  [^:vector<option<compiler_mutual_node>> items]
+  ICounted
+  (-count [_] (count items))
+  IEquiv
+  (-equiv [left ^compiler_mutual_nodes right]
+    (compiler-mutual-nodes-equal? left right)))
+(def compiler-mutual-marker 1)
+(type-record compiler_mutual_unrelated
+  (marker :int))
+(type-variant compiler_mutual_value
+  (Scalar :int)
+  (Reference :compiler_mutual_node)
+  (References :compiler_mutual_nodes))
+(defn compiler-mutual-nodes-equal?
+  [^compiler_mutual_nodes left
+   ^compiler_mutual_nodes right]
+  (= (count (.-items left))
+     (count (.-items right))))
+(defn compiler-mutual-node?
+  [^compiler_mutual_node _]
+  true)
+(def leaf
+  (compiler_mutual_node.
+    (record compiler_mutual_state
+      (cached (volatile! {})))))
+(def references
+  (References (compiler_mutual_nodes. [(Some leaf)])))
+(println
+  (match references
+    (References values) (count values)
+    _ 0))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "mutually recursive deftype methods must remain static";
+  assert_ocaml_runs "mutually_recursive_deftypes_emit_methods_after_type_group"
+    "1\n" ocaml_source
 
 let test_module_recursive_variants_export_constructors () =
   let source =
@@ -7976,6 +13176,40 @@ let test_typed_recursive_functions () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "typed_recursive_functions" "120:55\n" ocaml_source
 
+let test_recursive_option_array_return_is_inferred_from_static_branches () =
+  let source =
+    {|
+(type-record node [value]
+  (values :array<value>)
+  (address :ref<option<int>>))
+(defn make-node [values address]
+  (record node
+    (values values)
+    (address (volatile! address))))
+(defn new-node-state [values address]
+  (make-node values address))
+(defn collect [value depth]
+  (if (= depth 0)
+    nil
+    (if-some [nodes (collect value (dec depth))]
+      (array (new-node-state (array value) nil))
+      (if (= value depth)
+        (array (new-node-state (array value) nil))
+        nil))))
+(println
+  (str
+    (nil? (collect 1 0))
+    ":"
+    (some? (collect 1 1))))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "recursive_option_array_return_is_inferred_from_static_branches"
+    "true:true\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_typed_recursive_functions_require_valid_signatures () =
   Lg.Compiler.compile_string {|
 (defn bad [n] :int (bad n))
@@ -8023,6 +13257,32 @@ let test_annotated_multi_arity_defn_constrains_each_clause () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "annotated_multi_arity_defn_constrains_each_clause" "3\n"
     ocaml_source
+
+let test_generic_map_type_variables_use_static_operations () =
+  let source =
+    {|
+(type-record map-state [key value]
+  (values :map<key;value>))
+(signature lookup
+  [key value]
+  :fn<map-state<key;value>;key;option<value>>)
+(defn lookup [state key]
+  (get (:values state) key))
+(signature replace-and-remove
+  [key value]
+  :fn<map-state<key;value>;key;value;map-state<key;value>>)
+(defn replace-and-remove [state key value]
+  (record map-state
+    (values (dissoc (assoc (:values state) key value) key))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  List.iter
+    (fun operation ->
+      if string_contains_substring ocaml_source operation then
+        failwith
+          ("a rigid generic map key must not use " ^ operation))
+    [ "get_option_dynamic"; "assoc_dynamic"; "dissoc_dynamic" ]
 
 let test_annotated_set_of_closed_sum_stays_static () =
   let source =
@@ -8515,6 +13775,82 @@ let test_identity_function_is_polymorphic_at_call_sites () =
   assert_ocaml_runs "identity_function_is_polymorphic_at_call_sites"
     "42:Ada:true\n" ocaml_source
 
+let test_declared_type_scheme_is_rigid_within_each_call () =
+  Lg.Compiler.compile_string
+    {|
+(ns user)
+(signature user/same [value]
+  :fn<value;value;value>)
+(defn same [left _right] left)
+(def bad (same 1 "Ada"))
+|}
+  |> expect_error_contains "same called with incompatible arguments"
+
+let test_declared_type_scheme_instantiates_at_each_call () =
+  let source =
+    {|
+(ns user)
+(signature user/same [value]
+  :fn<value;value;value>)
+(defn same [left _right] left)
+(println
+  (str (same 42 7) ":" (same "Ada" "Grace") ":"
+       (same true false)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "generic declared functions must not use Runtime_dynamic";
+  assert_ocaml_runs "declared_type_scheme_instantiates_at_each_call"
+    "42:Ada:true\n" ocaml_source
+
+let test_declared_type_scheme_survives_incremental_compilation () =
+  let state, provider =
+    Lg.Compiler.compile_chunk Lg.Compiler.empty_state
+      {|
+(ns user)
+(signature user/same [value]
+  :fn<value;value;value>)
+(defn same [left _right] left)
+|}
+    |> expect_ok
+  in
+  let _, consumer =
+    Lg.Compiler.compile_chunk state
+      {|
+(ns user)
+(def number-result (same 42 7))
+(def string-result (same "Ada" "Grace"))
+|}
+    |> expect_ok
+  in
+  if
+    string_contains_substring provider "Runtime_dynamic"
+    || string_contains_substring consumer "Runtime_dynamic"
+  then failwith "incremental type schemes must remain static"
+
+let test_mutable_function_values_remain_monomorphic () =
+  Lg.Compiler.compile_string
+    {|
+(def cell (atom (fn [value] value)))
+(def number-result ((deref cell) 42))
+(def string-result ((deref cell) "Ada"))
+|}
+  |> expect_error_contains "expected of type"
+
+let test_inferred_type_scheme_interface_hides_solver_identity () =
+  let inferred =
+    Lg.Compiler.infer_interface {|(defn identity-value [value] value)|}
+    |> expect_ok
+  in
+  if
+    string_contains_substring inferred "let_fn_"
+    || string_contains_substring inferred "sequence_element_"
+    || string_contains_substring inferred "lg_deferred_"
+  then failwith "public interfaces must not expose solver-local identities";
+  if not (string_contains_substring inferred "'a -> 'a") then
+    failwith "inferred identity must expose one generalized type variable"
+
 let test_let_bound_identity_function_is_polymorphic_at_call_sites () =
   let source =
     {|
@@ -8538,8 +13874,175 @@ let test_conditional_function_is_polymorphic_at_call_sites () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "caller evidence must keep conditional parameters static";
   assert_ocaml_runs "conditional_function_is_polymorphic_at_call_sites"
     "42:Ada\n" ocaml_source
+
+let test_forward_function_dependencies_need_no_declare () =
+  let source =
+    {|
+(ns example.forward)
+(defn next-value [value]
+  (increment value))
+(defn increment [value]
+  (+ value 1))
+(println (next-value 41))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "forward_function_dependencies_need_no_declare"
+    "42\n" ocaml_source
+
+let test_mutually_recursive_functions_need_no_sidecar_signature () =
+  let source =
+    {|
+(defn even-value? [value]
+  (if (= value 0)
+    true
+    (odd-value? (- value 1))))
+(defn odd-value? [value]
+  (if (= value 0)
+    false
+    (even-value? (- value 1))))
+(println (str (even-value? 10) ":" (odd-value? 9)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "mutually_recursive_functions_need_no_sidecar_signature"
+    "true:true\n" ocaml_source
+
+let test_caller_evidence_flows_into_mutual_recursion () =
+  let source =
+    {|
+(defn choose-left [flag value]
+  (if flag
+    value
+    (choose-right flag value)))
+(defn choose-right [flag value]
+  (if flag
+    value
+    (choose-left flag value)))
+(println (String.length (choose-left true "Ada")))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "caller evidence must solve truthiness across the recursive SCC";
+  assert_ocaml_runs "caller_evidence_flows_into_mutual_recursion" "3\n"
+    ocaml_source
+
+let test_mutual_recursion_keeps_different_arities_separate () =
+  let source =
+    {|
+(defn advance-left [value remaining]
+  (if (= remaining 0)
+    value
+    (advance-right value remaining 2)))
+(defn advance-right [value remaining amount]
+  (advance-left (+ value amount) (- remaining 1)))
+(println (+ (advance-left 40 1) 0))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "SCC arities must retain independent static parameter types";
+  assert_ocaml_runs "mutual_recursion_keeps_different_arities_separate" "42\n"
+    ocaml_source
+
+let test_polymorphic_recursion_requires_explicit_interface () =
+  Lg.Compiler.compile_string
+    {|
+(defn expand-value [value remaining]
+  (if (= remaining 0)
+    value
+    (expand-value [value] (- remaining 1))))
+|}
+  |> expect_error_contains
+       "polymorphic recursion requires an explicit signature"
+
+let test_polymorphic_recursion_accepts_explicit_interface () =
+  let source =
+    {|
+(ns user)
+(signature user/nesting-depth [value]
+  :fn<value;int;int>)
+(defn nesting-depth [value remaining]
+  (if (= remaining 0)
+    0
+    (+ 1 (nesting-depth [value] (- remaining 1)))))
+(println (nesting-depth "x" 2))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "explicit polymorphic recursion must remain static";
+  assert_ocaml_runs "polymorphic_recursion_accepts_explicit_interface" "2\n"
+    ocaml_source
+
+let test_reduce_infers_callback_from_initializer_and_collection () =
+  let source =
+    {|
+(defn total-length [values]
+  (reduce
+    (fn [total value]
+      (+ total (String.length value)))
+    0
+    values))
+(println (total-length ["Ada" "OCaml"]))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "reduce callback inference must remain static";
+  assert_ocaml_runs "reduce_infers_callback_from_initializer_and_collection"
+    "8\n" ocaml_source
+
+let test_mapv_infers_callback_from_caller_collection_evidence () =
+  let source =
+    {|
+(defn lengths [values]
+  (mapv
+    (fn [value]
+      (String.length value))
+    values))
+(println (get (lengths ["Ada"]) 0))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "mapv callback inference must remain static";
+  assert_ocaml_runs "mapv_infers_callback_from_caller_collection_evidence"
+    "3\n" ocaml_source
+
+let test_unannotated_defrecord_fields_are_statically_polymorphic () =
+  let source =
+    {|
+(defrecord Box [value])
+(def int-box (Box. 42))
+(def string-box (Box. "Ada"))
+(println (str (:value int-box) ":" (:value string-box)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "generic record fields must remain static";
+  assert_ocaml_runs "unannotated_defrecord_fields_are_statically_polymorphic"
+    "42:Ada\n" ocaml_source
+
+let test_str_uses_static_printable_witnesses () =
+  let source =
+    {|
+(defn render [value] (str value))
+(println (str (render 42) ":" (render "Ada")))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "generic str must use static printable witnesses";
+  assert_ocaml_runs "str_uses_static_printable_witnesses" "42:Ada\n"
+    ocaml_source
 
 let test_conditional_function_type_relationship_is_checked_by_ocaml () =
   Lg.Compiler.compile_string
@@ -8810,8 +14313,11 @@ let test_generic_protocol_witness_evaluates_receiver_once () =
 let test_generic_protocol_witness_packs_seqable_arguments () =
   let source =
     {|
+(type-variant search-value
+  (SearchInt :int)
+  (SearchText :string))
 (defprotocol Search
-  (-search [database pattern] :int))
+  (-search [database ^:seqable<search-value> pattern] :int))
 (defn fsearch [database pattern]
   (-search database pattern))
 (defrecord SearchDb [token]
@@ -8820,7 +14326,11 @@ let test_generic_protocol_witness_packs_seqable_arguments () =
     (count pattern)))
 (def database (SearchDb. 0))
 (defn search-size [database]
-  (Search/-search database (mapv (fn [value] value) [1 "two"])))
+  (fsearch
+    database
+    (mapv
+      (fn [value] value)
+      [(SearchInt 1) (SearchText "two")])))
 (println (search-size database))
 |}
   in
@@ -8852,44 +14362,57 @@ let test_generic_protocol_witness_flows_through_sequence_callbacks () =
   assert_ocaml_runs "generic_protocol_witness_flows_through_sequence_callbacks"
     "(\"one\" \"two\")\n(\"missing\" \"missing\")\n" ocaml_source
 
-let test_generic_protocol_witness_supports_parser_style_recursion () =
+let test_closed_sum_protocol_witness_supports_parser_style_recursion () =
   let source =
     {|
 (type-record leaf (text :string))
+(type-variant walk-node
+  (WalkLeaf :leaf)
+  (WalkChildren :vector<walk-node>)
+  WalkOther)
 (defprotocol Traversable (walk-leaf [value] :string))
 (extend-type leaf Traversable (walk-leaf [value] (:text value)))
-(defn walk [value]
-  (cond
-    (satisfies? Traversable value) (Traversable/walk-leaf value)
-    (sequential? value) (apply str (map walk value))
-    :else "_"))
+(defn walk [^walk-node value]
+  (match value
+    (WalkLeaf leaf) (Traversable/walk-leaf leaf)
+    (WalkChildren values) (apply str (map walk values))
+    WalkOther "_"))
 (def value (record leaf (text "leaf")))
-(println (walk [value]))
-(println (walk [1 2]))
+(println (walk (WalkChildren [(WalkLeaf value)])))
+(println (walk (WalkChildren [WalkOther WalkOther])))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "generic_protocol_witness_supports_parser_style_recursion"
+  assert_ocaml_runs "closed_sum_protocol_witness_supports_parser_style_recursion"
     "leaf\n__\n" ocaml_source
 
-let test_generic_protocol_witness_carries_callbacks_through_recursion () =
+let test_closed_sum_protocol_witness_carries_callbacks_through_recursion () =
   let source =
     {|
 (type-record leaf (text :string))
+(type-variant walk-node
+  (WalkLeaf :leaf)
+  (WalkChild :walk-node))
 (defprotocol Traversable
-  (walk-with [value f]))
+  (walk-with [value f] :leaf))
 (extend-type leaf Traversable
   (walk-with [value f] (f value)))
-(defn walk [value f]
-  (cond
-    (satisfies? Traversable value) (Traversable/walk-with value f)
-    (sequential? value) (walk (first value) f)
-    :else (f value)))
+(defn walk [^walk-node value f]
+  (match value
+    (WalkLeaf leaf) (Traversable/walk-with leaf f)
+    (WalkChild child) (walk child f)))
 (def value (record leaf (text "leaf")))
-(def walked (walk [value] (fn [x] x)))
+(def walked
+  (walk
+    (WalkChild (WalkLeaf value))
+    (fn [^leaf x] x)))
+(println (:text walked))
 |}
   in
-  ignore (Lg.Compiler.compile_string source |> expect_ok);
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "closed_sum_protocol_witness_carries_callbacks_through_recursion"
+    "leaf\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -9147,6 +14670,40 @@ let test_cross_namespace_deftype_uses_custom_printer () =
   let native_source = compile Lg.Target.Native in
   assert_ocaml_runs "cross_namespace_deftype_uses_custom_printer"
     "#app/Datom [1 :name \"Ada\" 2 true]\n" native_source;
+  ignore (compile Lg.Target.Melange)
+
+let test_require_alias_resolves_variant_constructor_patterns () =
+  let provider_source =
+    {|
+(ns app.events)
+(type-variant event
+  (Visit :int :keyword))
+(def sample (Visit 1 :name))
+|}
+  in
+  let consumer_source =
+    {|
+(ns app.consumer
+  (:require [app.events :as events]))
+(defn describe [^app.events/event event]
+  (match event
+    (events/Visit entity attr) (str entity ":" attr)))
+(println (describe events/sample))
+|}
+  in
+  let compile target =
+    let state, provider_ocaml =
+      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state provider_source
+      |> expect_ok
+    in
+    let _, consumer_ocaml =
+      Lg.Compiler.compile_chunk ~target state consumer_source |> expect_ok
+    in
+    provider_ocaml ^ "\n" ^ consumer_ocaml
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs "require_alias_resolves_variant_constructor_patterns"
+    "1::name\n" native_source;
   ignore (compile Lg.Target.Melange)
 
 let test_static_function_returns_preserve_record_protocols () =
@@ -9630,6 +15187,30 @@ let test_defrecord_host_interfaces_support_overloaded_methods () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_defrecord_host_method_can_return_later_variant () =
+  let source =
+    {|
+(declare lookup-box)
+(defrecord LookupBox [^int payload]
+  ILookup
+  (-lookup [box ^:keyword key]
+    (lookup-box box key)))
+(type-variant lookup-result
+  (Found :int))
+(defn ^:option<lookup-result> lookup-box
+  [^LookupBox box ^:keyword key]
+  (if (= key :value)
+    (Some (Found (.-payload box)))
+    None))
+(println (= (Some (Found 42)) (:value (LookupBox. 42))))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "defrecord_host_method_can_return_later_variant" "true\n"
+    native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_expression_type_hints_do_not_replace_field_types () =
   let source =
     {|
@@ -9968,14 +15549,18 @@ let test_recursive_protocol_vectors_keep_static_protocol_elements () =
     {|
 (defprotocol IFrame
   (-run [this]))
-(defrecord ResultFrame [^int value]
-  IFrame
+(defrecord ResultFrame [^int value])
+(defrecord PairFrame [^int value])
+(type-variant frame
+  (ResultValue :ResultFrame)
+  (PairValue :PairFrame))
+(extend-type ResultFrame IFrame
   (-run [this]
-    [(ResultFrame. value)]))
-(defrecord PairFrame [^int value]
-  IFrame
+    [(ResultValue (ResultFrame. value))]))
+(extend-type PairFrame IFrame
   (-run [this]
-    [(ResultFrame. value) (PairFrame. value)]))
+    [(ResultValue (ResultFrame. value))
+     (PairValue (PairFrame. value))]))
 (defn run-frame [frame]
   (-run frame))
 (println (count (run-frame (PairFrame. 7))))
@@ -10675,6 +16260,22 @@ let test_defn_accepts_attribute_maps_and_return_hints () =
   assert_ocaml_runs "defn_accepts_attribute_maps_and_return_hints" "42\n"
     ocaml_source
 
+let test_inline_macros_can_distinguish_float_literals () =
+  let source =
+    {|
+(defn numeric-kind
+  {:inline
+   (fn [value]
+     (if (float? value) "float" "other"))}
+  [_]
+  "runtime")
+(println (str (numeric-kind 42.5) ":" (numeric-kind 42)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "inline_macros_can_distinguish_float_literals"
+    "float:other\n" ocaml_source
+
 let test_inline_attribute_expands_same_namespace_calls () =
   let source =
     {|
@@ -10688,6 +16289,99 @@ let test_inline_attribute_expands_same_namespace_calls () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "inline_attribute_expands_same_namespace_calls" "42\n"
     ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_inline_attributes_expand_namespace_alias_calls () =
+  let provider =
+    {|
+(ns app.inline-provider)
+(defn answer
+  {:inline (fn [] 42)}
+  []
+  0)
+|}
+  in
+  let consumer =
+    {|
+(ns app.inline-consumer
+  (:require [app.inline-provider :as provider]))
+(println (provider/answer))
+|}
+  in
+  let compile target =
+    let state, provider_ocaml =
+      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state provider
+      |> expect_ok
+    in
+    let _, consumer_ocaml =
+      Lg.Compiler.compile_chunk ~target state consumer |> expect_ok
+    in
+    provider_ocaml ^ "\n" ^ consumer_ocaml
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs "inline_attributes_expand_namespace_alias_calls" "42\n"
+    native_source;
+  ignore (compile Lg.Target.Melange)
+
+let test_inline_attributes_flow_through_public_def_aliases () =
+  let provider =
+    {|
+(ns app.inline-provider)
+(defn answer
+  {:inline (fn [] 42)}
+  []
+  0)
+|}
+  in
+  let facade =
+    {|
+(ns app.inline-facade
+  (:require [app.inline-provider :as provider]))
+(def answer provider/answer)
+|}
+  in
+  let consumer =
+    {|
+(ns app.inline-consumer
+  (:require [app.inline-facade :as facade]))
+(println (facade/answer))
+|}
+  in
+  let compile target =
+    let state, provider_ocaml =
+      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state provider
+      |> expect_ok
+    in
+    let state, facade_ocaml =
+      Lg.Compiler.compile_chunk ~target state facade |> expect_ok
+    in
+    let _, consumer_ocaml =
+      Lg.Compiler.compile_chunk ~target state consumer |> expect_ok
+    in
+    String.concat "\n" [ provider_ocaml; facade_ocaml; consumer_ocaml ]
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs "inline_attributes_flow_through_public_def_aliases" "42\n"
+    native_source;
+  ignore (compile Lg.Target.Melange)
+
+let test_macros_iterate_literal_map_entries () =
+  let source =
+    {|
+(defmacro increment-map [values]
+  (into
+   {}
+   (map
+    (fn [entry]
+      [(first entry)
+       (list 'inc (second entry))])
+    values)))
+(println (:answer (increment-map {:answer 41})))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "macros_iterate_literal_map_entries" "42\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -11751,6 +17445,44 @@ let test_get_dispatches_nullable_deftype_lookup_with_dynamic_keys () =
     "get_dispatches_nullable_deftype_lookup_with_dynamic_keys"
     "false:true:true:true\n"
     ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_keyword_lookup_dispatches_nullable_defrecord_ilookup () =
+  let source =
+    {|
+(defrecord LookupBox [^int value]
+  ILookup
+  (-lookup [box ^:keyword key]
+    (if (= key :computed) (:value box) nil)))
+(defn ^:option<LookupBox> maybe-box [^boolean present]
+  (if present (Some (LookupBox. 42)) None))
+(println (:computed (maybe-box true)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "keyword_lookup_dispatches_nullable_defrecord_ilookup"
+    "42\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_keyword_lookup_dispatches_nullable_static_maps () =
+  let source =
+    {|
+(defn ^:option<map<keyword;int>> maybe-map [^boolean present]
+  (if present (Some (zipmap [:answer] [42])) None))
+(def present?
+  (if-some [value (:answer (maybe-map true))]
+    (= value 42)
+    false))
+(println
+  (str present? ":"
+       (nil? (:answer (maybe-map false)))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "keyword_lookup_dispatches_nullable_static_maps"
+    "true:true\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -13152,10 +18884,11 @@ let test_doseq_infers_seqable_parameters () =
     nil)
   (get entries key))
 (println (consume-entries {:answer 42} :answer))
+(println (consume-entries {:other 7} :answer))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "doseq_infers_seqable_parameters" "42\n" ocaml_source;
+  assert_ocaml_runs "doseq_infers_seqable_parameters" "42\nnil\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -13636,34 +19369,37 @@ let test_references_preserve_state_across_dynamic_fields () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_truthy_guards_preserve_dynamic_numeric_parameters () =
+let test_truthy_guards_preserve_static_optional_numeric_parameters () =
   let source =
     {|
 (defn max-present [left right]
   (if (and right (> right left)) right left))
 (println (max-present 1 nil))
 (println (max-present 1 2))
+(println (max-present 1 0))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "truthy_guards_preserve_dynamic_numeric_parameters" "1\n2\n"
-    ocaml_source;
+  assert_ocaml_runs
+    "truthy_guards_preserve_static_optional_numeric_parameters"
+    "1\n2\n1\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_and_truthy_guard_narrows_nullable_ints () =
   let source =
     {|
-(defn positive-result [flag]
-  (let [value (when flag 1)]
+(defn positive-result [flag candidate]
+  (let [value (when flag candidate)]
     (and value (pos? value))))
 (println
-  (str (if (positive-result true) "yes" "no") ":"
-       (if (positive-result false) "yes" "no")))
+  (str (if (positive-result true 1) "yes" "no") ":"
+       (if (positive-result false 1) "yes" "no") ":"
+       (if (positive-result true -1) "yes" "no")))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "and_truthy_guard_narrows_nullable_ints" "yes:no\n"
+  assert_ocaml_runs "and_truthy_guard_narrows_nullable_ints" "yes:no:no\n"
     ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
@@ -14311,6 +20047,43 @@ let test_ocaml_seq_unfold_builds_typed_lazy_sequences () =
   Lg.Compiler.compile_string {|(seq-unfold (fn [x] (inc x)) 0)|}
   |> expect_error_contains
          "seq-unfold expects a state step function and initial state"
+
+let test_ocaml_chunked_seq_unfold_memoizes_only_chunk_boundaries () =
+  let source =
+    {|
+(def calls (atom 0))
+(def values
+  (seq-unfold-chunks
+    (fn [state]
+      (swap! calls inc)
+      (cond
+        (= state 0)
+        (Some (tuple (array-values 1 2) 0 2 (fn [] 1)))
+        (= state 1)
+        (Some (tuple (array-values 3 4) 1 2 (fn [] 2)))
+        :else nil))
+    0))
+(println (deref calls))
+(println (first values))
+(println (first values))
+(println (deref calls))
+(println (second values))
+(println (deref calls))
+(println (nth values 2))
+(println (deref calls))
+(println (count values))
+(println (deref calls))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  if
+    not (string_contains_substring native_source "unfold_chunks")
+  then failwith "chunked unfold must use the typed runtime helper";
+  assert_ocaml_runs
+    "ocaml_chunked_seq_unfold_memoizes_only_chunk_boundaries"
+    "0\n1\n1\n1\n2\n1\n4\n2\n3\n3\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_ocaml_unmemoized_seq_unfold_avoids_lazy_cache_layers () =
   let source =
@@ -15589,6 +21362,147 @@ let test_protocol_consumers_use_stable_later_implementation_returns () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_protocol_function_parameters_keep_nominal_record_types () =
+  let source =
+    {|
+(defrecord Datom [^int value])
+(defrecord DB [^int threshold])
+(defrecord FilteredDB
+  [^DB unfiltered-db
+   ^:fn<Datom;bool> pred])
+
+(defprotocol IFilteredView
+  (-filter-view
+    [database ^:fn<DB;Datom;bool> pred]
+    :FilteredDB))
+
+(extend-type DB
+  IFilteredView
+  (-filter-view
+    [database ^:fn<DB;Datom;bool> view-pred]
+    (FilteredDB.
+      database
+      (fn [^Datom datom]
+        (view-pred database datom)))))
+
+(extend-type FilteredDB
+  IFilteredView
+  (-filter-view
+    [filtered-db ^:fn<DB;Datom;bool> view-pred]
+    (let [original-pred (.-pred filtered-db)
+          original-db (.-unfiltered-db filtered-db)]
+      (FilteredDB.
+        original-db
+        (fn [^Datom datom]
+          (and
+            (original-pred datom)
+            (view-pred original-db datom)))))))
+
+(defn ^FilteredDB filter-view
+  [database ^:fn<DB;Datom;bool> pred]
+  (-filter-view database pred))
+
+(def base (DB. 10))
+(def once
+  (filter-view
+    base
+    (fn [^DB database ^Datom datom]
+      (> (.-value datom) (.-threshold database)))))
+(def twice
+  (filter-view
+    once
+    (fn [^DB database ^Datom datom]
+      (< (.-value datom) (+ (.-threshold database) 5)))))
+(println
+  (str
+    ((.-pred twice) (Datom. 12)) ":"
+    ((.-pred twice) (Datom. 16))))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "protocol_function_parameters_keep_nominal_record_types"
+    "true:false\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_cross_namespace_protocol_functions_keep_nominal_record_parameters () =
+  let provider =
+    {|
+(ns app.db)
+(defrecord Datom [^int value])
+(defrecord DB [^int threshold])
+(defrecord FilteredDB
+  [^app.db/DB unfiltered-db
+   ^:fn<app.db/Datom;bool> pred])
+(defprotocol IFilteredView
+  (-filter-view
+    [database ^:fn<app.db/DB;app.db/Datom;bool> pred]
+    :app.db/FilteredDB))
+(extend-type DB
+  IFilteredView
+  (-filter-view
+    [database ^:fn<app.db/DB;app.db/Datom;bool> view-pred]
+    (FilteredDB.
+      database
+      (fn [^app.db/Datom datom]
+        (view-pred database datom)))))
+|}
+  in
+  let consumer =
+    {|
+(ns app.core
+  (:require [app.db :as db]))
+(defn ^app.db/FilteredDB filter-view
+  [database ^:fn<app.db/DB;app.db/Datom;bool> pred]
+  (db/-filter-view database pred))
+(def filtered
+  (filter-view
+    (db/->DB 10)
+    (fn [^app.db/DB database ^app.db/Datom datom]
+      (> (.-value datom) (.-threshold database)))))
+(println ((.-pred filtered) (db/->Datom 12)))
+|}
+  in
+  let compile target =
+    let state, provider_ocaml =
+      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state provider
+      |> expect_ok
+    in
+    let _, consumer_ocaml =
+      Lg.Compiler.compile_chunk ~target state consumer |> expect_ok
+    in
+    provider_ocaml ^ "\n" ^ consumer_ocaml
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs
+    "cross_namespace_protocol_functions_keep_nominal_record_parameters"
+    "true\n" native_source;
+  ignore (compile Lg.Target.Melange)
+
+let test_protocol_function_parameters_reject_distinct_nominal_records () =
+  let source =
+    {|
+(defrecord Datom [^int value])
+(defrecord DB [^int threshold])
+(defrecord OtherDB [^int threshold])
+(defrecord FilteredDB [])
+(defprotocol IFilteredView
+  (-filter-view
+    [database ^:fn<DB;Datom;bool> pred]
+    :FilteredDB))
+(extend-type DB
+  IFilteredView
+  (-filter-view [_ _] (FilteredDB.)))
+(def database (DB. 10))
+(defn wrong-pred [^OtherDB other ^Datom datom]
+  (> (.-value datom) (.-threshold other)))
+(-filter-view database wrong-pred)
+|}
+  in
+  match Lg.Compiler.compile_string source with
+  | Ok _ -> failwith "distinct nominal callback parameters must be rejected"
+  | Error _ -> ()
+
 let test_deferred_initializers_run_before_first_ready_use () =
   let source =
     {|
@@ -15718,6 +21632,75 @@ let test_dependency_graph_orders_declared_protocol_dependencies () =
   in
   if not (List.exists (fun names -> List.sort String.compare names = [ "left"; "right" ]) components)
   then failwith "mutual recursion must form one strongly connected component"
+
+let test_dependency_graph_ignores_type_record_field_names () =
+  let open Lg.Ast in
+  let forms =
+    [
+      FList
+        [
+          FSymbol "type-record";
+          FSymbol "storage";
+          FVector [ FSymbol "value" ];
+          FList
+            [
+              FSymbol "restore";
+              FKeyword ":fn<int;option<value>>";
+            ];
+        ];
+      FList
+        [
+          FSymbol "defn";
+          FSymbol "restore-value";
+          FVector [ FSymbol "state" ];
+          FList [ FKeyword ":restore"; FSymbol "state" ];
+        ];
+      FList
+        [
+          FSymbol "defn";
+          FSymbol "restore";
+          FVector [ FSymbol "address" ];
+          FSymbol "address";
+        ];
+    ]
+  in
+  let order = Lg.Dependency_graph.stable_order forms in
+  let position index =
+    List.find_index (( = ) index) order |> Option.value ~default:max_int
+  in
+  if not (position 0 < position 1) then
+    failwith
+      "a type-record field name must not depend on a same-named function"
+
+let test_dependency_graph_orders_nested_type_annotation_dependencies () =
+  let open Lg.Ast in
+  let forms =
+    [
+      FList
+        [
+          FSymbol "type-variant";
+          FSymbol "entry";
+          FList
+            [
+              FSymbol "Call";
+              FKeyword ":fn<DB;vector<entry>>";
+            ];
+        ];
+      FList
+        [
+          FSymbol "defrecord";
+          FSymbol "DB";
+          FVector [ FSymbol "^int"; FSymbol "value" ];
+        ];
+    ]
+  in
+  let order = Lg.Dependency_graph.stable_order forms in
+  let position index =
+    List.find_index (( = ) index) order |> Option.value ~default:max_int
+  in
+  if not (position 1 < position 0) then
+    failwith
+      "nested type annotations must follow their nominal record dependencies"
 
 let test_dependency_graph_treats_declare_macro_as_declaration () =
   let open Lg.Ast in
@@ -15923,6 +21906,46 @@ let test_dependency_graph_loads_requires_before_runtime_macro_consumers () =
   then
     failwith
       "compile-time macros and requires must load before runtime macro consumers"
+
+let test_dependency_graph_orders_later_self_referred_macros_before_requires () =
+  let open Lg.Ast in
+  let forms =
+    [
+      FList [ FSymbol "namespace-scope"; FSymbol "app.core" ];
+      FList
+        [
+          FSymbol "require";
+          FVector
+            [
+              FSymbol "app.core";
+              FKeyword ":refer";
+              FVector [ FSymbol "validate" ];
+            ];
+        ];
+      FList
+        [
+          FSymbol "def";
+          FSymbol "result";
+          FList [ FSymbol "validate"; FInt 42 ];
+        ];
+      FList
+        [
+          FSymbol "defmacro";
+          FSymbol "validate";
+          FVector [ FSymbol "value" ];
+          FSymbol "value";
+        ];
+    ]
+  in
+  let order = Lg.Dependency_graph.stable_order forms in
+  let position index =
+    List.find_index (( = ) index) order |> Option.value ~default:max_int
+  in
+  if not (position 0 < position 3 && position 3 < position 1) then
+    failwith
+      "a self-referred macro must load before its namespace require clause";
+  if not (position 1 < position 2) then
+    failwith "a namespace require must load before its runtime consumer"
 
 let test_stabilization_ast_skips_mutual_function_bodies () =
   let open Lg.Ast in
@@ -16344,7 +22367,7 @@ let test_symbol_predicate_narrows_dynamic_value_in_then_branch () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_protocol_record_reconstruction_keeps_field_type_open () =
+let test_higher_order_protocol_traversal_requires_closed_sum () =
   let source =
     {|
 (defprotocol ITraversable
@@ -16373,41 +22396,46 @@ let test_protocol_record_reconstruction_keeps_field_type_open () =
   (when (symbol? form)
     (Variable. form)))
 
-(def variable (parse-variable 'name))
-(println
-  (str (some? (parse-placeholder '_)) ":"
-       (match variable (Some value) (:symbol value) None "missing") ":"
-       (nil? (parse-variable 42))))
 |}
   in
-  let native_source =
-    Lg.Compiler.compile_string ~target:Lg.Target.Native source |> expect_ok
-  in
-  assert_ocaml_runs "protocol_record_reconstruction_keeps_field_type_open"
-    "true:name:true\n" native_source;
-  ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+  Lg.Compiler.compile_string ~target:Lg.Target.Native source
+  |> expect_error_contains
+       "higher-order protocol traversal requires a closed sum type"
 
-let test_parser_alternatives_preserve_open_argument_type () =
+let test_parser_alternatives_use_closed_input_and_result_types () =
   let source =
     {|
-(defrecord Placeholder [])
-(defrecord Variable [symbol])
-(defrecord Constant [value])
+(type-variant parse-input
+  (InputSymbol :symbol)
+  (InputInt :int))
+
+(type-variant pattern-element
+  PlaceholderElement
+  (VariableElement :symbol)
+  (ConstantSymbolElement :symbol)
+  (ConstantIntElement :int))
 
 (defn parse-placeholder [form]
-  (when (= '_ form)
-    (Placeholder.)))
+  (match form
+    (InputSymbol symbol)
+      (when (= '_ symbol)
+        PlaceholderElement)
+    (InputInt _) nil))
 
 (defn parse-variable [form]
-  (when (and (symbol? form)
-             (= (first (name form)) \?))
-    (Variable. form)))
+  (match form
+    (InputSymbol symbol)
+      (when (= (first (name symbol)) \?)
+        (VariableElement symbol))
+    (InputInt _) nil))
 
 (defn parse-constant [form]
-  (when-not (and (symbol? form)
-                 (= (first (name form)) \?))
-    (Constant. form)))
+  (match form
+    (InputSymbol symbol)
+      (when-not (= (first (name symbol)) \?)
+        (ConstantSymbolElement symbol))
+    (InputInt value)
+      (ConstantIntElement value)))
 
 (defn parse-pattern-element [form]
   (or (parse-placeholder form)
@@ -16415,15 +22443,15 @@ let test_parser_alternatives_preserve_open_argument_type () =
       (parse-constant form)))
 
 (println
-  (str (some? (parse-pattern-element '_)) ":"
-       (some? (parse-pattern-element '?name)) ":"
-       (some? (parse-pattern-element 42))))
+  (str (some? (parse-pattern-element (InputSymbol '_))) ":"
+       (some? (parse-pattern-element (InputSymbol '?name))) ":"
+       (some? (parse-pattern-element (InputInt 42)))))
 |}
   in
   let native_source =
     Lg.Compiler.compile_string ~target:Lg.Target.Native source |> expect_ok
   in
-  assert_ocaml_runs "parser_alternatives_preserve_open_argument_type"
+  assert_ocaml_runs "parser_alternatives_use_closed_input_and_result_types"
     "true:true:true\n" native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
@@ -18270,17 +24298,23 @@ let test_map_key_evidence_preserves_generic_map_values () =
 (defn read-value [entity]
   (when (contains? entity :value)
     (:value entity)))
+(defn has-key? [container key]
+  (contains? container key))
 
 (println
   (str (read-cardinality {:db/ident :name :db/cardinality :one}) ":"
        (nil? (read-cardinality {:other :value})) ":"
        (read-value {:value 42}) ":"
        (nil? (read-value {:other 42}))))
+(println
+  (str (has-key? {:answer 42} :answer) ":"
+       (has-key? #{:answer} :answer) ":"
+       (has-key? #{} :answer)))
 |}
   in
   let native_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "map_key_evidence_preserves_generic_map_values"
-    ":one:true:42:true\n" native_source;
+    ":one:true:42:true\ntrue:true:false\n" native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -18868,6 +24902,8 @@ let test_destructuring_in_let_and_functions () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "structural destructuring must preserve static row values";
   assert_ocaml_runs "destructuring_in_let_and_functions"
     "Ada:36:true:10:20:3:Ada:36:true:10:20:3\n" ocaml_source
 
@@ -18958,21 +24994,20 @@ let test_heterogeneous_destructuring_requires_a_closed_sum () =
 |}
   |> expect_error_contains "define a sum type"
 
-let test_unresolved_defrecord_fields_require_static_annotations () =
-  Lg.Compiler.compile_string
-    {|
-(defrecord Box [value])
-(def box (Box. 42))
-|}
-  |> expect_error_contains
-       "defrecord field value requires a static type annotation";
-  Lg.Compiler.compile_string
+let test_unresolved_defrecord_fields_become_static_type_parameters () =
+  let source =
     {|
 (defrecord Pair [^:int left right])
 (def pair (Pair. 1 :answer))
+(println (str (.-left pair) ":" (.-right pair)))
 |}
-  |> expect_error_contains
-       "defrecord field right requires a static type annotation"
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "unresolved record fields must become static type parameters";
+  assert_ocaml_runs
+    "unresolved_defrecord_fields_become_static_type_parameters"
+    "1::answer\n" ocaml_source
 
 let test_annotated_returns_concretize_phantom_record_parameters () =
   let source =
@@ -19273,11 +25308,14 @@ let test_map_destructuring_as_preserves_open_map_access () =
   (or (:restored options) value))
 (println (restore-value {:value 42}))
 (println (restore-value {:value 42 :restored 7}))
+(println (restore-value {:value true :restored false}))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "map_destructuring_as_preserves_open_map_access" "42\n7\n"
-    ocaml_source;
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "map destructuring :as must stay static";
+  assert_ocaml_runs "map_destructuring_as_preserves_open_map_access"
+    "42\n7\ntrue\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -19465,6 +25503,8 @@ let test_let_destructuring_supports_nested_sequences () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "nested sequence destructuring must stay static";
   assert_ocaml_runs "let_destructuring_supports_nested_sequences" "1:2:3\n"
     ocaml_source;
   ignore
@@ -19472,7 +25512,7 @@ let test_let_destructuring_supports_nested_sequences () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
-let test_dynamic_vector_destructuring_uses_nil_for_missing_items () =
+let test_static_tuple_destructuring_uses_nil_for_missing_items () =
   let source =
     {|
 (let [[first second missing] [1 "two"]]
@@ -19480,7 +25520,9 @@ let test_dynamic_vector_destructuring_uses_nil_for_missing_items () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "dynamic_vector_destructuring_uses_nil_for_missing_items"
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "fixed sequence destructuring must stay static";
+  assert_ocaml_runs "static_tuple_destructuring_uses_nil_for_missing_items"
     "1:two:true\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
@@ -19772,6 +25814,46 @@ let test_cross_module_seqable_callback_preserves_vector_element_type () =
   let native_source = compile Lg.Target.Native in
   assert_ocaml_runs
     "cross_module_seqable_callback_preserves_vector_element_type" "true\n"
+    native_source;
+  ignore (compile Lg.Target.Melange)
+
+let test_variadic_nested_seqable_preserves_static_witness () =
+  let util_source =
+    {|
+(ns test.util)
+(defn concatv [& collections]
+  (loop [remaining collections
+         result []]
+    (if-some [values (first remaining)]
+      (let [appended
+            (loop [values-remaining (seq values)
+                   appended result]
+              (if-some [value (first values-remaining)]
+                (recur (next values-remaining) (conj appended value))
+                appended))]
+        (recur (next remaining) appended))
+      result)))
+|}
+  in
+  let app_source =
+    {|
+(ns test.app
+  (:require [test.util :as util]))
+(println (= [1 2 3] (util/concatv [1] [] [2 3])))
+|}
+  in
+  let compile target =
+    let state, util_ocaml =
+      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state util_source
+      |> expect_ok
+    in
+    let _, app_ocaml =
+      Lg.Compiler.compile_chunk ~target state app_source |> expect_ok
+    in
+    util_ocaml ^ "\n" ^ app_ocaml
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs "variadic_nested_seqable_preserves_static_witness" "true\n"
     native_source;
   ignore (compile Lg.Target.Melange)
 
@@ -20721,6 +26803,25 @@ let test_into_core_api () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "into_core_api" "[1 2 3]:(3 2 1):#{1 2 3}\n" ocaml_source
 
+let test_into_supports_typed_map_targets () =
+  let source =
+    {|
+(def source (zipmap [:a :b] [1 2]))
+(def target (zipmap [:seed] [0]))
+(def result (into target source))
+(println
+  (str (= 3 (count result)) ":"
+       (= 1 (get result :a)) ":"
+       (= 2 (get result :b)) ":"
+       (= 0 (get result :seed))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "into_supports_typed_map_targets" "true:true:true:true\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_into_accepts_inferred_seqable_parameters () =
   let source =
     {|
@@ -21279,7 +27380,7 @@ let test_reduce_preserves_refined_vector_element_types () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
-let test_set_literals_accept_dynamic_elements () =
+let test_set_literals_preserve_inferred_keyword_elements () =
   let source =
     {|
 (defrecord Holder [value])
@@ -21290,7 +27391,35 @@ let test_set_literals_accept_dynamic_elements () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "set_literals_accept_dynamic_elements" "true\n" ocaml_source;
+  assert_ocaml_runs "set_literals_preserve_inferred_keyword_elements" "true\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_set_literals_preserve_inferred_string_family_elements () =
+  let source =
+    {|
+(defrecord StringHolder [value])
+(defrecord SymbolHolder [value])
+
+(defn string-singleton [holder]
+  #{(.-value ^StringHolder holder)})
+
+(defn symbol-singleton [holder]
+  #{(.-value ^SymbolHolder holder)})
+
+(def strings (string-singleton (StringHolder. "answer")))
+(def symbols (symbol-singleton (SymbolHolder. 'answer)))
+
+(println
+  (str
+    (contains? strings "answer") ":"
+    (contains? symbols 'answer)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "set_literals_preserve_inferred_string_family_elements"
+    "true:true\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -21365,12 +27494,32 @@ let test_contains_infers_generic_membership_for_variable_keys () =
     {|
 (defn member? [collection value]
   (contains? collection value))
-(println (member? #{1 2} 2))
+(println
+  (str
+    (member? #{1 2} 2) ":"
+    (member? #{1 2} 3)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "contains_infers_generic_membership_for_variable_keys"
-    "true\n" ocaml_source;
+    "true:false\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_contains_freshens_generic_membership_across_set_modules () =
+  let source =
+    {|
+(defn member? [collection value]
+  (contains? collection value))
+(println
+  (str
+    (member? #{1 2} 2) ":"
+    (member? #{:name :age} :age)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "contains_freshens_generic_membership_across_set_modules"
+    "true:true\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -21401,7 +27550,17 @@ let test_sets_reject_nil_elements () =
 
 let test_set_of_rejects_types_without_comparators () =
   Lg.Compiler.compile_string {|(def xs (set-of :record))|}
-  |> expect_error "sets require a generated comparator for record"
+  |> expect_error "sets require a generated comparator for record";
+  Lg.Compiler.compile_string {|(def xs (set-of :opaque))|}
+  |> expect_error "sets require a generated comparator for opaque"
+
+let test_set_of_preserves_supported_host_comparator_aliases () =
+  let source = {|(println (empty? (set-of :ordering)))|} in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "set_of_preserves_supported_host_comparator_aliases"
+    "true\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_keyword_type_annotations_for_empty_collections () =
   let source =
@@ -21524,11 +27683,34 @@ let test_subvec_core_api () =
 (def xs [1 2 3 4])
 (def tail (subvec xs 1))
 (def middle (subvec xs 1 3))
-(println (str (pr-str tail) ":" (pr-str middle)))
+(defn tail-of [values]
+  (subvec values 1))
+(defn slice-of [values start end]
+  (subvec values start end))
+(defn tail-after-seq-ops [values]
+  (count values)
+  (nth values 0)
+  (subvec values 1))
+(println
+  (str
+    (pr-str tail)
+    ":"
+    (pr-str middle)
+    ":"
+    (pr-str (tail-of [5 6 7]))
+    ":"
+    (pr-str (tail-of [8]))
+    ":"
+    (pr-str (slice-of [9 10 11 12] 1 3))
+    ":"
+    (pr-str (tail-after-seq-ops [13 14 15]))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "subvec_core_api" "[2 3 4]:[2 3]\n" ocaml_source
+  assert_ocaml_runs "subvec_core_api"
+    "[2 3 4]:[2 3]:[6 7]:[]:[10 11]:[14 15]\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_subvec_rejects_non_vector_sources () =
   Lg.Compiler.compile_string {|(def x (subvec (list 1 2) 0))|}
@@ -21537,6 +27719,129 @@ let test_subvec_rejects_non_vector_sources () =
 let test_subvec_rejects_non_int_indexes () =
   Lg.Compiler.compile_string {|(def x (subvec [1 2] "0"))|}
   |> expect_error "subvec indexes must be int"
+
+let test_recursive_map_accumulator_specializes_from_static_consumer () =
+  let source =
+    {|
+(defn consume-entries [^:map<int;int> entries]
+  (get entries 2 -1))
+
+(defn map-pairs [values]
+  (loop [remaining values
+         entries {}]
+    (if-some [key (first remaining)]
+      (if-some [value (first (subvec remaining 1))]
+        (recur (subvec remaining 2) (assoc entries key value))
+        -2)
+      (consume-entries entries))))
+
+(defn ^:map<keyword;vector<int>> collect-values [^:vector<int> items]
+  (loop [remaining items
+         entries {}]
+    (if-some [item (first remaining)]
+      (recur
+        (subvec remaining 1)
+        (assoc entries :items (conj (get entries :items []) item)))
+      entries)))
+
+(defn ^:map<keyword;vector<int>> collect-current-section
+  [^:vector<int> items]
+  (loop [remaining items
+         entries {}
+         ^:option<keyword> section (Some :items)]
+    (if-some [item (first remaining)]
+      (if-some [section section]
+        (recur
+          (subvec remaining 1)
+          (assoc entries section (conj (get entries section []) item))
+          (Some section))
+        (recur (subvec remaining 1) entries None))
+      entries)))
+
+(println
+  (str
+    (map-pairs [1 10 2 20])
+    ":"
+    (pr-str (get (collect-values [1 2 3]) :items []))
+    ":"
+    (pr-str (get (collect-current-section [4 5]) :items []))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "recursive_map_accumulator_static_consumer"
+    "20:[1 2 3]:[4 5]\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_recursive_vector_accumulator_infers_from_typed_vector_operation () =
+  let source =
+    {|
+(defn node-address [node]
+  (if (>= node 0) (Some node) None))
+
+(defn node-child-count [node]
+  node)
+
+(defn node-child [_node idx _storage]
+  idx)
+
+(defn node-collect-addresses [node storage addresses]
+  (let [addresses
+        (match (node-address node)
+          (Some address) (Rrbvec.push_back addresses address)
+          None addresses)]
+    (loop [idx 0
+           addresses addresses]
+      (if (= idx (node-child-count node))
+        addresses
+        (recur
+          (inc idx)
+          (node-collect-addresses
+            (node-child node idx storage)
+            storage
+            addresses))))))
+
+(println (pr-str (node-collect-addresses 3 0 [])))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "recursive_vector_accumulator_conjoined_values"
+    "[3 0 1 0 2 0 1 0]\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_reduce_partition_callback_infers_static_accumulator_and_items () =
+  let source =
+    {|
+(type-record Item
+  (attr :keyword)
+  (value :int))
+
+(def items
+  [(record Item (attr :a) (value 1))
+   (record Item (attr :a) (value 2))
+   (record Item (attr :b) (value 3))])
+
+(declare build-cache)
+
+(defn build-cache [items]
+  (reduce
+    (fn [result part]
+      (if-some [item (first part)]
+        (assoc result (.-attr item) (.-value item))
+        result))
+    (hash-map)
+    (partition-by (fn [item] (.-attr item)) items)))
+
+(def cache (build-cache items))
+
+(println (str (get cache :a 0) ":" (get cache :b 0)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "reduce_partition_static_callback" "1:3\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_peek_rejects_unsupported_collections () =
   Lg.Compiler.compile_string {|(def x (peek (hash-set 1)))|}
@@ -25246,13 +31551,19 @@ let test_local_when_function_accepts_nullable_results () =
   (when present (->Item 41)))
 (let [project-when-present #(when % (:value %))]
   (println
-    (str (project-when-present (maybe-item true)) ":"
-         (nil? (project-when-present (maybe-item false))))))
+    (if-some [value (project-when-present (->Item 42))]
+      (= value 42)
+      false))
+  (println
+    (if-some [value (project-when-present (maybe-item true))]
+      (= value 41)
+      false))
+  (println (nil? (project-when-present (maybe-item false)))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "local_when_function_accepts_nullable_results" "41:true\n"
-    ocaml_source
+  assert_ocaml_runs "local_when_function_accepts_nullable_results"
+    "true\ntrue\ntrue\n" ocaml_source
 
 let test_discarded_function_values_use_ignore () =
   let source =
@@ -25344,6 +31655,8 @@ let tests =
       test_not_uses_static_clojure_truthiness );
     ( "nil predicates and truthiness use options",
       test_nil_predicates_and_truthiness_use_options );
+    ( "nil equality accepts annotated options",
+      test_nil_equality_accepts_annotated_options );
     ( "if-some and when-some bind option payloads",
       test_if_some_and_when_some_bind_option_payloads );
     ( "when-some binding constraints remain static",
@@ -25386,6 +31699,18 @@ let tests =
       test_type_relations_are_explicit_and_strict );
     ( "type solver preserves shared and independent variables",
       test_type_solver_preserves_shared_and_independent_variables );
+    ( "type schemes distinguish declared and inferred variables",
+      test_type_schemes_distinguish_declared_and_inferred_variables );
+    ( "type scheme instantiation preserves shared identity",
+      test_type_scheme_instantiation_preserves_shared_identity );
+    ( "inferred type scheme names are canonical",
+      test_inferred_type_scheme_names_are_canonical );
+    ( "inference holes do not collide with declared type names",
+      test_inference_holes_do_not_collide_with_declared_type_names );
+    ( "option record field callables remain static",
+      test_option_record_field_callables_remain_static );
+    ( "local function annotations resolve named records",
+      test_local_function_annotations_resolve_named_records );
     ( "empty type substitutions preserve type identity",
       test_empty_type_substitutions_preserve_type_identity );
     ( "unrelated type substitutions preserve type identity",
@@ -25473,8 +31798,8 @@ let tests =
     ( "sequence cons requires sum elements",
       test_sequence_cons_requires_sum_elements );
     ( "map updates require sum values", test_map_updates_require_sum_values );
-    ( "heterogeneous map literals require a declared sum type",
-      test_heterogeneous_map_literals_require_a_declared_sum_type );
+    ( "heterogeneous runtime maps require a declared sum type",
+      test_heterogeneous_runtime_maps_require_a_declared_sum_type );
     ( "merge keeps runtime maps static", test_merge_keeps_runtime_maps_static );
     ( "merge rejects heterogeneous runtime maps",
       test_merge_rejects_heterogeneous_runtime_maps );
@@ -25515,6 +31840,8 @@ let tests =
       test_protocol_elaboration_populates_typed_registry );
     ( "protocol implementation populates typed registry",
       test_protocol_implementation_populates_typed_registry );
+    ( "closed variants implement protocols without dynamic dispatch",
+      test_closed_variants_implement_protocols_without_dynamic_dispatch );
     ( "module protocols preserve typed registry state",
       test_module_protocols_preserve_typed_registry_state );
     ( "module elaboration populates typed registry",
@@ -25588,6 +31915,12 @@ let tests =
       test_namespace_rejects_import_clause );
     ( "require refers LG record types",
       test_require_refers_lg_record_types );
+    ( "empty defrecord suppresses unused type warning",
+      test_empty_defrecord_suppresses_unused_type_warning );
+    ( "incremental namespaces export declared function definitions",
+      test_incremental_namespaces_export_declared_function_definitions );
+    ( "namespace aliases do not depend on same named public definitions",
+      test_namespace_aliases_do_not_depend_on_same_named_public_definitions );
     ( "dynamically bound vars bind and restore portably",
       test_dynamically_bound_vars_bind_and_restore_portably );
     ( "binding static values avoids dynamic runtime",
@@ -25648,14 +31981,22 @@ let tests =
       test_dotimes_evaluates_bounds_once_and_returns_nil );
     ( "current DataScript chain compiles for Native and Melange",
       test_current_datascript_chain_compiles_for_native_and_melange );
+    ( "current DataScript filter protocol accepts nominal callback",
+      test_current_datascript_filter_protocol_accepts_nominal_callback );
     ( "DataScript make-array one arity behaves on Native and Melange",
       test_datascript_make_array_one_arity_behaves_on_native_and_melange );
     ( "current DataScript Entity behaves on Native",
       test_current_datascript_entity_behaves_on_native );
+    ( "current DataScript Entity navigates references",
+      test_current_datascript_entity_navigates_references );
+    ( "current DataScript Entity preserves identity and lookup edges",
+      test_current_datascript_entity_preserves_identity_and_lookup_edges );
     ( "current DataScript pull parser compiles for Native and Melange",
       test_current_datascript_pull_parser_compiles_for_native_and_melange );
     ( "current DataScript pull API compiles for Native and Melange",
       test_current_datascript_pull_api_compiles_for_native_and_melange );
+    ( "current DataScript pull accepts source and closed runtime patterns",
+      test_current_datascript_pull_accepts_source_and_closed_runtime_patterns );
     ( "current DataScript pull parser preserves schema semantics on Native",
       test_current_datascript_pull_parser_preserves_schema_semantics_on_native );
     ( "record equality uses Clojure function identity",
@@ -25671,12 +32012,102 @@ let tests =
       test_current_datascript_parser_collects_pattern_variables );
     ( "current DataScript query behaves on Native",
       test_current_datascript_query_behaves_on_native );
+    ( "current DataScript query deduplicates projection",
+      test_current_datascript_query_deduplicates_projection );
+    ( "current DataScript query supports with",
+      test_current_datascript_query_supports_with );
+    ( "current DataScript query supports core aggregates",
+      test_current_datascript_query_supports_core_aggregates );
+    ( "current DataScript query supports source-less inputs",
+      test_current_datascript_query_supports_source_less_inputs );
+    ( "current DataScript query supports explicit sources",
+      test_current_datascript_query_supports_explicit_sources );
+    ( "current DataScript query supports comparison predicates",
+      test_current_datascript_query_supports_comparison_predicates );
+    ( "current DataScript query supports function clauses",
+      test_current_datascript_query_supports_function_clauses );
+    ( "current DataScript query supports function result bindings",
+      test_current_datascript_query_supports_function_result_bindings );
+    ( "current DataScript query supports core arithmetic functions",
+      test_current_datascript_query_supports_core_arithmetic_functions );
+    ( "current DataScript query supports not clauses",
+      test_current_datascript_query_supports_not_clauses );
+    ( "current DataScript query supports not-join clauses",
+      test_current_datascript_query_supports_not_join_clauses );
+    ( "current DataScript query supports or clauses",
+      test_current_datascript_query_supports_or_clauses );
+    ( "current DataScript query supports or-join clauses",
+      test_current_datascript_query_supports_or_join_clauses );
+    ( "current DataScript query supports non-recursive rules",
+      test_current_datascript_query_supports_non_recursive_rules );
+    ( "current DataScript query supports recursive rules",
+      test_current_datascript_query_supports_recursive_rules );
+    ( "current DataScript query supports rule predicates and false arguments",
+      test_current_datascript_query_supports_rule_predicates_and_false_arguments
+    );
+    ( "current DataScript query supports deterministic aggregates",
+      test_current_datascript_query_supports_deterministic_aggregates );
+    ( "current DataScript query supports parameterized min and max",
+      test_current_datascript_query_supports_parameterized_min_max );
+    ( "current DataScript query supports random aggregates",
+      test_current_datascript_query_supports_random_aggregates );
+    ( "current DataScript query supports pull find",
+      test_current_datascript_query_supports_pull_find );
+    ( "current DataScript query supports variable pull pattern",
+      test_current_datascript_query_supports_variable_pull_pattern );
+    ( "current DataScript query supports single find element",
+      test_current_datascript_query_supports_single_find_element );
+    ( "current DataScript query supports literal find shapes",
+      test_current_datascript_query_supports_literal_find_shapes );
+    ( "current DataScript query supports return maps",
+      test_current_datascript_query_supports_return_maps );
+    ( "current DataScript query rejects invalid return maps",
+      test_current_datascript_query_rejects_invalid_return_maps );
+    ( "current DataScript query joins multiple patterns",
+      test_current_datascript_query_joins_multiple_patterns );
+    ( "current DataScript query supports scalar input",
+      test_current_datascript_query_supports_scalar_input );
+    ( "current DataScript query supports collection input",
+      test_current_datascript_query_supports_collection_input );
+    ( "current DataScript query supports tuple input",
+      test_current_datascript_query_supports_tuple_input );
+    ( "current DataScript query supports relation input",
+      test_current_datascript_query_supports_relation_input );
+    ( "current DataScript query supports programmatic query values",
+      test_current_datascript_query_supports_programmatic_query_values );
     ( "current DataScript serialize compiles for Native and Melange",
       test_current_datascript_serialize_compiles_for_native_and_melange );
+    ( "current DataScript serialize supports typed custom codec",
+      test_current_datascript_serialize_supports_typed_custom_codec );
     ( "current DataScript serialize roundtrips on Native",
       test_current_datascript_serialize_roundtrips_on_native );
+    ( "current DataScript serialize rejects attached storage",
+      test_current_datascript_serialize_rejects_attached_storage );
+    ( "current DataScript transaction accepts closed raw datoms",
+      test_current_datascript_transaction_accepts_closed_raw_datoms );
+    ( "current DataScript transaction supports reverse refs",
+      test_current_datascript_transaction_supports_reverse_refs );
+    ( "current DataScript transaction supports operation vectors",
+      test_current_datascript_transaction_supports_operation_vectors );
+    ( "current DataScript transaction resolves tempids and upserts",
+      test_current_datascript_transaction_resolves_tempids_and_upserts );
+    ( "current DataScript transaction preserves unique identity edges",
+      test_current_datascript_transaction_preserves_unique_identity_edges );
+    ( "current DataScript transaction resolves current tx and preserves order",
+      test_current_datascript_transaction_resolves_current_tx_and_preserves_order
+    );
+    ( "current DataScript transaction cascades components",
+      test_current_datascript_transaction_cascades_components );
+    ( "current DataScript transaction maintains tuples",
+      test_current_datascript_transaction_maintains_tuples );
+    ( "current DataScript transaction runs transaction functions",
+      test_current_datascript_transaction_runs_transaction_functions );
+    ( "current DataScript transaction rejects invalid inputs",
+      test_current_datascript_transaction_rejects_invalid_inputs );
     ( "current DataScript conn compiles for Native and Melange",
       test_current_datascript_conn_compiles_for_native_and_melange );
+    ( "current DataScript conn propagates database options",
+      test_current_datascript_conn_propagates_database_options );
     ( "namespace ignores Clojure compiler directives",
       test_namespace_ignores_clojure_compiler_directives );
     ( "System currentTimeMillis compiles for native",
@@ -25755,6 +32186,8 @@ let tests =
       test_top_level_definitions_accept_clojure_metadata );
     ( "user macros expand syntax quote and unquote",
       test_user_macros_expand_syntax_quote_and_unquote );
+    ( "user macro str keeps string values unquoted",
+      test_user_macro_str_keeps_string_values_unquoted );
     ( "user macros track helpers passed as values",
       test_user_macros_track_helpers_passed_as_values );
     ( "user macros receive portable namespace environment",
@@ -25781,8 +32214,8 @@ let tests =
       test_re_find_returns_clojure_match_values );
     ( "regex match alternatives require a closed sum",
       test_regex_match_alternatives_require_a_closed_sum );
-    ( "unconstrained contains callbacks reject dynamic fallback",
-      test_unconstrained_contains_callbacks_reject_dynamic_fallback );
+    ( "contains callbacks use static membership witnesses",
+      test_contains_callbacks_use_static_membership_witnesses );
     ( "anonymous functions rewrite placeholders inside maps",
       test_anonymous_function_rewrites_placeholders_inside_maps );
     ("ocaml keyword names are munged", test_ocaml_keyword_names_are_munged);
@@ -25906,6 +32339,8 @@ let tests =
       test_parameterized_records_instantiate_field_types );
     ( "recursive record array fields work with array primitives",
       test_recursive_record_array_fields_work_with_array_primitives );
+    ( "defrecord fields can reference the enclosing record",
+      test_defrecord_fields_can_reference_the_enclosing_record );
     ( "parameterized types compile inside modules",
       test_parameterized_types_compile_inside_modules );
     ( "parameterized record relationships are checked by OCaml",
@@ -26065,6 +32500,12 @@ let tests =
       test_ocaml_variants_reject_bad_declarations );
     ( "recursive variants support nested data values",
       test_recursive_variants_support_nested_data_values );
+    ( "recursive variants support callback results",
+      test_recursive_variants_support_callback_results );
+    ( "adjacent records and variants support mutual recursion",
+      test_adjacent_records_and_variants_support_mutual_recursion );
+    ( "mutually recursive deftypes emit methods after type group",
+      test_mutually_recursive_deftypes_emit_methods_after_type_group );
     ( "recursive functions use sidecar return types",
       test_recursive_functions_use_sidecar_return_types );
     ( "module recursive variants export constructors",
@@ -26082,12 +32523,16 @@ let tests =
     ( "typed function parameters reject bad bodies",
       test_typed_function_parameters_reject_bad_bodies );
     ( "typed recursive functions", test_typed_recursive_functions );
+    ( "recursive option array return is inferred from static branches",
+      test_recursive_option_array_return_is_inferred_from_static_branches );
     ( "typed recursive functions validate signatures",
       test_typed_recursive_functions_require_valid_signatures );
     ( "multi-arity defn dispatches fixed arities",
       test_multi_arity_defn_dispatches_fixed_arities );
     ( "annotated multi-arity defn constrains each clause",
       test_annotated_multi_arity_defn_constrains_each_clause );
+    ( "generic map type variables use static operations",
+      test_generic_map_type_variables_use_static_operations );
     ( "annotated set of closed sum stays static",
       test_annotated_set_of_closed_sum_stays_static );
     ( "return hint does not contextualize nested bindings",
@@ -26143,10 +32588,40 @@ let tests =
       test_unannotated_function_parameters_infer_from_body );
     ( "identity function is polymorphic at call sites",
       test_identity_function_is_polymorphic_at_call_sites );
+    ( "declared type scheme is rigid within each call",
+      test_declared_type_scheme_is_rigid_within_each_call );
+    ( "declared type scheme instantiates at each call",
+      test_declared_type_scheme_instantiates_at_each_call );
+    ( "declared type scheme survives incremental compilation",
+      test_declared_type_scheme_survives_incremental_compilation );
+    ( "mutable function values remain monomorphic",
+      test_mutable_function_values_remain_monomorphic );
+    ( "inferred type scheme interface hides solver identity",
+      test_inferred_type_scheme_interface_hides_solver_identity );
     ( "let-bound identity function is polymorphic at call sites",
       test_let_bound_identity_function_is_polymorphic_at_call_sites );
     ( "conditional function is polymorphic at call sites",
       test_conditional_function_is_polymorphic_at_call_sites );
+    ( "forward function dependencies need no declare",
+      test_forward_function_dependencies_need_no_declare );
+    ( "mutually recursive functions need no sidecar signature",
+      test_mutually_recursive_functions_need_no_sidecar_signature );
+    ( "caller evidence flows into mutual recursion",
+      test_caller_evidence_flows_into_mutual_recursion );
+    ( "mutual recursion keeps different arities separate",
+      test_mutual_recursion_keeps_different_arities_separate );
+    ( "polymorphic recursion requires explicit interface",
+      test_polymorphic_recursion_requires_explicit_interface );
+    ( "polymorphic recursion accepts explicit interface",
+      test_polymorphic_recursion_accepts_explicit_interface );
+    ( "reduce infers callback from initializer and collection",
+      test_reduce_infers_callback_from_initializer_and_collection );
+    ( "mapv infers callback from caller collection evidence",
+      test_mapv_infers_callback_from_caller_collection_evidence );
+    ( "unannotated defrecord fields are statically polymorphic",
+      test_unannotated_defrecord_fields_are_statically_polymorphic );
+    ( "str uses static printable witnesses",
+      test_str_uses_static_printable_witnesses );
     ( "conditional function type relationship is checked by OCaml",
       test_conditional_function_type_relationship_is_checked_by_ocaml );
     ( "unannotated function parameters reject bad int calls",
@@ -26186,10 +32661,10 @@ let tests =
       test_generic_protocol_witness_packs_seqable_arguments );
     ( "generic protocol witness flows through sequence callbacks",
       test_generic_protocol_witness_flows_through_sequence_callbacks );
-    ( "generic protocol witness supports parser-style recursion",
-      test_generic_protocol_witness_supports_parser_style_recursion );
-    ( "generic protocol witness carries callbacks through recursion",
-      test_generic_protocol_witness_carries_callbacks_through_recursion );
+    ( "closed-sum protocol witness supports parser-style recursion",
+      test_closed_sum_protocol_witness_supports_parser_style_recursion );
+    ( "closed-sum protocol witness carries callbacks through recursion",
+      test_closed_sum_protocol_witness_carries_callbacks_through_recursion );
     ( "recursive heterogeneous values require a closed sum",
       test_recursive_heterogeneous_values_require_a_closed_sum );
     ( "equality infers comparator return type",
@@ -26214,6 +32689,8 @@ let tests =
       test_nullable_deftype_uses_custom_printer );
     ( "cross-namespace deftype uses its custom printer",
       test_cross_namespace_deftype_uses_custom_printer );
+    ( "require aliases resolve variant constructor patterns",
+      test_require_alias_resolves_variant_constructor_patterns );
     ( "static function returns preserve record protocols",
       test_static_function_returns_preserve_record_protocols );
     ( "static deftype values do not gain map semantics",
@@ -26258,6 +32735,8 @@ let tests =
       test_defrecord_host_methods_support_declared_helpers );
     ( "defrecord host interfaces support overloaded methods",
       test_defrecord_host_interfaces_support_overloaded_methods );
+    ( "defrecord host method can return later variant",
+      test_defrecord_host_method_can_return_later_variant );
     ( "expression type hints do not replace field types",
       test_expression_type_hints_do_not_replace_field_types );
     ( "opaque records project safe fields without casts",
@@ -26326,8 +32805,16 @@ let tests =
       test_protocol_witness_results_unpack_concrete_sequence_returns );
     ( "defn accepts attribute maps and return hints",
       test_defn_accepts_attribute_maps_and_return_hints );
+    ( "inline macros can distinguish float literals",
+      test_inline_macros_can_distinguish_float_literals );
     ( "inline attributes expand same namespace calls",
       test_inline_attribute_expands_same_namespace_calls );
+    ( "inline attributes expand namespace alias calls",
+      test_inline_attributes_expand_namespace_alias_calls );
+    ( "inline attributes flow through public def aliases",
+      test_inline_attributes_flow_through_public_def_aliases );
+    ( "macros iterate literal map entries",
+      test_macros_iterate_literal_map_entries );
     ( "compare rejects dynamic scalar domains",
       test_compare_rejects_dynamic_scalar_domains );
     ( "class and type require static sum matching",
@@ -26460,6 +32947,10 @@ let tests =
     ("get supports vectors", test_get_supports_vectors);
     ( "get dispatches nullable deftype lookup with dynamic keys",
       test_get_dispatches_nullable_deftype_lookup_with_dynamic_keys );
+    ( "keyword lookup dispatches nullable defrecord ILookup",
+      test_keyword_lookup_dispatches_nullable_defrecord_ilookup );
+    ( "keyword lookup dispatches nullable static maps",
+      test_keyword_lookup_dispatches_nullable_static_maps );
     ( "get dispatches nullable deftype lookup with default",
       test_get_dispatches_nullable_deftype_lookup_with_default );
     ( "core assoc rejects open deftype fields",
@@ -26632,8 +33123,8 @@ let tests =
       test_forwarded_parameters_deduplicate_protocol_constraints );
     ( "references preserve state across dynamic fields",
       test_references_preserve_state_across_dynamic_fields );
-    ( "truthy guards preserve dynamic numeric parameters",
-      test_truthy_guards_preserve_dynamic_numeric_parameters );
+    ( "truthy guards preserve static optional numeric parameters",
+      test_truthy_guards_preserve_static_optional_numeric_parameters );
     ( "and truthy guard narrows nullable ints",
       test_and_truthy_guard_narrows_nullable_ints );
     ( "or nil guard narrows nullable records",
@@ -26705,6 +33196,8 @@ let tests =
       test_lazy_map_accepts_all_builtin_seqable_types );
     ( "OCaml Seq unfold builds typed lazy sequences",
       test_ocaml_seq_unfold_builds_typed_lazy_sequences );
+    ( "OCaml chunked Seq unfold memoizes only chunk boundaries",
+      test_ocaml_chunked_seq_unfold_memoizes_only_chunk_boundaries );
     ( "OCaml unmemoized Seq unfold avoids lazy cache layers",
       test_ocaml_unmemoized_seq_unfold_avoids_lazy_cache_layers );
     ( "OCaml Seq unfold contextualizes tuple state",
@@ -26835,6 +33328,12 @@ let tests =
       test_deftype_methods_flush_after_their_declared_dependencies );
     ( "protocol consumers use stable later implementation returns",
       test_protocol_consumers_use_stable_later_implementation_returns );
+    ( "protocol function parameters keep nominal record types",
+      test_protocol_function_parameters_keep_nominal_record_types );
+    ( "cross namespace protocol functions keep nominal record parameters",
+      test_cross_namespace_protocol_functions_keep_nominal_record_parameters );
+    ( "protocol function parameters reject distinct nominal records",
+      test_protocol_function_parameters_reject_distinct_nominal_records );
     ( "deferred initializers run before first ready use",
       test_deferred_initializers_run_before_first_ready_use );
     ( "deferred recursive calls bypass the holder wrapper",
@@ -26843,6 +33342,10 @@ let tests =
       test_declared_record_constructors_follow_record_dependencies );
     ( "dependency graph orders declared protocol dependencies",
       test_dependency_graph_orders_declared_protocol_dependencies );
+    ( "dependency graph ignores type-record field names",
+      test_dependency_graph_ignores_type_record_field_names );
+    ( "dependency graph orders nested type annotation dependencies",
+      test_dependency_graph_orders_nested_type_annotation_dependencies );
     ( "dependency graph treats declare macro as declaration",
       test_dependency_graph_treats_declare_macro_as_declaration );
     ( "dependency graph orders non-dash protocol methods before consumers",
@@ -26851,6 +33354,8 @@ let tests =
       test_dependency_graph_keeps_declarations_before_macro_consumers );
     ( "dependency graph loads requires before runtime macro consumers",
       test_dependency_graph_loads_requires_before_runtime_macro_consumers );
+    ( "dependency graph orders later self referred macros before requires",
+      test_dependency_graph_orders_later_self_referred_macros_before_requires );
     ( "stabilization ast skips mutual function bodies",
       test_stabilization_ast_skips_mutual_function_bodies );
     ( "declarations do not merge independent functions",
@@ -26877,10 +33382,10 @@ let tests =
       test_nested_keyword_lookup_preserves_nullable_map_evidence );
     ( "symbol predicate narrows dynamic value in then branch",
       test_symbol_predicate_narrows_dynamic_value_in_then_branch );
-    ( "protocol record reconstruction keeps field type open",
-      test_protocol_record_reconstruction_keeps_field_type_open );
-    ( "parser alternatives preserve open argument type",
-      test_parser_alternatives_preserve_open_argument_type );
+    ( "higher order protocol traversal requires closed sum",
+      test_higher_order_protocol_traversal_requires_closed_sum );
+    ( "parser alternatives use closed input and result types",
+      test_parser_alternatives_use_closed_input_and_result_types );
     ( "parser rule map allocates anonymous return record",
       test_parser_rule_map_allocates_anonymous_return_record );
     ( "rule vars projection preserves nominal argument type",
@@ -27085,8 +33590,8 @@ let tests =
       test_let_destructuring_accepts_generic_seqable_values );
     ( "heterogeneous destructuring requires a closed sum",
       test_heterogeneous_destructuring_requires_a_closed_sum );
-    ( "unresolved defrecord fields require static annotations",
-      test_unresolved_defrecord_fields_require_static_annotations );
+    ( "unresolved defrecord fields become static type parameters",
+      test_unresolved_defrecord_fields_become_static_type_parameters );
     ( "annotated returns concretize phantom record parameters",
       test_annotated_returns_concretize_phantom_record_parameters );
     ( "dynamic predicates do not erase concrete array elements",
@@ -27131,8 +33636,8 @@ let tests =
       test_destructuring_rejects_missing_map_fields );
     ( "let destructuring supports nested sequences",
       test_let_destructuring_supports_nested_sequences );
-    ( "dynamic vector destructuring uses nil for missing items",
-      test_dynamic_vector_destructuring_uses_nil_for_missing_items );
+    ( "static tuple destructuring uses nil for missing items",
+      test_static_tuple_destructuring_uses_nil_for_missing_items );
     ( "let bindings support value type hints",
       test_let_bindings_support_value_type_hints );
     ( "value type hints preserve nullable record values",
@@ -27151,6 +33656,8 @@ let tests =
       test_cross_module_fnil_conj_preserves_vector_element_type );
     ( "cross module seqable callback preserves vector element type",
       test_cross_module_seqable_callback_preserves_vector_element_type );
+    ( "variadic nested seqable preserves static witness",
+      test_variadic_nested_seqable_preserves_static_witness );
     ( "threaded keyword access preserves nested record inference",
       test_threaded_keyword_access_preserves_nested_record_inference );
     ( "destructuring rejects unsupported let sources",
@@ -27258,6 +33765,7 @@ let tests =
     ("empty core api works", test_empty_core_api);
     ("empty rejects unsupported values", test_empty_rejects_unsupported_values);
     ("into core api works", test_into_core_api);
+    ("into supports typed map targets", test_into_supports_typed_map_targets);
     ( "into accepts inferred seqable parameters",
       test_into_accepts_inferred_seqable_parameters );
     ( "Eduction applies map filter and cat transducers",
@@ -27312,8 +33820,10 @@ let tests =
       test_apply_accepts_concat_as_a_core_function );
     ( "reduce preserves refined vector element types",
       test_reduce_preserves_refined_vector_element_types );
-    ( "set literals accept dynamic elements",
-      test_set_literals_accept_dynamic_elements );
+    ( "set literals preserve inferred keyword elements",
+      test_set_literals_preserve_inferred_keyword_elements );
+    ( "set literals preserve inferred string family elements",
+      test_set_literals_preserve_inferred_string_family_elements );
     ( "sets support vectors with dynamic elements",
       test_sets_support_vectors_with_dynamic_elements );
     ( "sets support nested vectors with dynamic elements",
@@ -27324,12 +33834,16 @@ let tests =
       test_concat_rejects_nested_heterogeneous_vectors );
     ( "contains? infers generic membership for variable keys",
       test_contains_infers_generic_membership_for_variable_keys );
+    ( "contains? freshens generic membership across set modules",
+      test_contains_freshens_generic_membership_across_set_modules );
     ( "into rejects element type mismatch",
       test_into_rejects_element_type_mismatch );
     ("typed empty sets work", test_typed_empty_sets);
     ("sets reject nil elements", test_sets_reject_nil_elements);
     ( "set-of rejects types without comparators",
       test_set_of_rejects_types_without_comparators );
+    ( "set-of preserves supported host comparator aliases",
+      test_set_of_preserves_supported_host_comparator_aliases );
     ( "keyword type annotations for empty collections work",
       test_keyword_type_annotations_for_empty_collections );
     ("nth supports default values", test_nth_supports_default_values);
@@ -27345,6 +33859,12 @@ let tests =
     ("subvec core api works", test_subvec_core_api);
     ("subvec rejects non-vector sources", test_subvec_rejects_non_vector_sources);
     ("subvec rejects non-int indexes", test_subvec_rejects_non_int_indexes);
+    ( "recursive map accumulator specializes from static consumer",
+      test_recursive_map_accumulator_specializes_from_static_consumer );
+    ( "recursive vector accumulator infers from typed vector operation",
+      test_recursive_vector_accumulator_infers_from_typed_vector_operation );
+    ( "reduce partition callback infers static accumulator and items",
+      test_reduce_partition_callback_infers_static_accumulator_and_items );
     ( "peek rejects unsupported collections",
       test_peek_rejects_unsupported_collections );
     ("let rejects odd binding forms", test_let_rejects_odd_binding_forms);
@@ -27706,18 +34226,63 @@ let tests =
 let datascript_integration_tests =
   [
     "current DataScript chain compiles for Native and Melange";
+    "current DataScript filter protocol accepts nominal callback";
     "DataScript make-array one arity behaves on Native and Melange";
     "current DataScript Entity behaves on Native";
+    "current DataScript Entity navigates references";
+    "current DataScript Entity preserves identity and lookup edges";
     "current DataScript pull parser compiles for Native and Melange";
     "current DataScript pull API compiles for Native and Melange";
+    "current DataScript pull accepts source and closed runtime patterns";
     "current DataScript pull parser preserves schema semantics on Native";
     "current DataScript pull API behaves on Native";
     "current DataScript query compiles for Native and Melange";
     "current DataScript parser collects pattern variables";
     "current DataScript query behaves on Native";
+    "current DataScript query deduplicates projection";
+    "current DataScript query supports with";
+    "current DataScript query supports core aggregates";
+    "current DataScript query supports source-less inputs";
+    "current DataScript query supports comparison predicates";
+    "current DataScript query supports function clauses";
+    "current DataScript query supports function result bindings";
+    "current DataScript query supports core arithmetic functions";
+    "current DataScript query supports not clauses";
+    "current DataScript query supports not-join clauses";
+    "current DataScript query supports or clauses";
+    "current DataScript query supports or-join clauses";
+    "current DataScript query supports non-recursive rules";
+    "current DataScript query supports recursive rules";
+    "current DataScript query supports rule predicates and false arguments";
+    "current DataScript query supports deterministic aggregates";
+    "current DataScript query supports parameterized min and max";
+    "current DataScript query supports random aggregates";
+    "current DataScript query supports pull find";
+    "current DataScript query supports variable pull pattern";
+    "current DataScript query supports single find element";
+    "current DataScript query supports literal find shapes";
+    "current DataScript query supports return maps";
+    "current DataScript query rejects invalid return maps";
+    "current DataScript query joins multiple patterns";
+    "current DataScript query supports scalar input";
+    "current DataScript query supports collection input";
+    "current DataScript query supports tuple input";
+    "current DataScript query supports relation input";
+    "current DataScript query supports programmatic query values";
     "current DataScript serialize compiles for Native and Melange";
+    "current DataScript serialize supports typed custom codec";
     "current DataScript serialize roundtrips on Native";
+    "current DataScript serialize rejects attached storage";
+    "current DataScript transaction accepts closed raw datoms";
+    "current DataScript transaction supports reverse refs";
+    "current DataScript transaction supports operation vectors";
+    "current DataScript transaction resolves tempids and upserts";
+    "current DataScript transaction resolves current tx and preserves order";
+    "current DataScript transaction cascades components";
+    "current DataScript transaction maintains tuples";
+    "current DataScript transaction runs transaction functions";
     "current DataScript conn compiles for Native and Melange";
+    "current DataScript conn propagates database options";
   ]
 
 let unsupported_java_tests =

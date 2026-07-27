@@ -129,7 +129,82 @@
 
 (defn squuid-time-millis
   "Returns time that was used in [[squuid]] call, in milliseconds, rounded to the closest second."
-  [^:string uuid]
+  [#?(:clj ^:Lg_runtime.Runtime_uuid.t uuid
+      :cljs ^:string uuid)]
   (-> (subs (str uuid) 0 8)
-    (js/parseInt 16)
-    (* 1000)))
+      (js/parseInt 16)
+      (* 1000)))
+
+(defn distinct-by [f coll]
+  (loop [remaining (seq coll)
+         seen (transient #{})
+         result (transient [])]
+    (if-some [el (first remaining)]
+      (let [key (f el)]
+        (if (contains? seen key)
+          (recur (next remaining) seen result)
+          (recur
+           (next remaining)
+           (conj! seen key)
+           (conj! result el))))
+      (persistent! result))))
+
+(defn find [pred xs]
+  (loop [remaining (seq xs)]
+    (if-some [x (first remaining)]
+      (if (pred x)
+        x
+        (recur (next remaining)))
+      nil)))
+
+(defn single [coll]
+  (assert (nil? (next coll)) "Expected single element")
+  (first coll))
+
+(defn concatv [& xs]
+  (loop [remaining xs
+         result []]
+    (if-some [values (first remaining)]
+      (let [appended
+            (loop [values-remaining (seq values)
+                   appended result]
+              (if-some [value (first values-remaining)]
+                (recur (next values-remaining) (conj appended value))
+                appended))]
+        (recur (next remaining) appended))
+      result)))
+
+(defn zip
+  ([a b]
+   (mapv vector a b))
+  ([a b & rest]
+   (apply mapv vector a b rest)))
+
+(defn removem [key-pred m]
+  (persistent!
+   (reduce-kv
+    (fn [m k v]
+      (if (key-pred k)
+        m
+        (assoc! m k v)))
+    (transient (empty m))
+    m)))
+
+(def conjv
+  (fnil conj []))
+
+(def conjs
+  (fnil conj #{}))
+
+(defn reduce-indexed
+  "Same as reduce, but `f` takes [acc el idx]"
+  [f init xs]
+  (loop [remaining (seq xs)
+         acc init
+         idx 0]
+    (if-some [x (first remaining)]
+      (let [result (f acc x idx)]
+        (if (reduced? result)
+          result
+          (recur (next remaining) result (inc idx))))
+      acc)))

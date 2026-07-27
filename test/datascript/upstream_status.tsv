@@ -44,92 +44,92 @@ datascript/test/lru.cljc:test-cache	covered	test/datascript/upstream_tests/datas
 datascript/test/parser.cljc:bindings	covered	test/datascript/upstream_tests/datascript/test/parser.cljc	-
 datascript/test/parser.cljc:in	covered	test/datascript/upstream_tests/datascript/test/parser.cljc	-
 datascript/test/parser.cljc:with	covered	test/datascript/upstream_tests/datascript/test/parser.cljc	-
-datascript/test/parser_find.cljc:test-parse-find	missing	-	-
-datascript/test/parser_find.cljc:test-parse-aggregate	missing	-	-
-datascript/test/parser_find.cljc:test-parse-custom-aggregates	missing	-	-
-datascript/test/parser_find.cljc:test-parse-find-elements	missing	-	-
-datascript/test/parser_query.cljc:validation	missing	-	-
-datascript/test/parser_return_map.cljc:test-parse-return-map	missing	-	-
-datascript/test/parser_rules.cljc:clauses	missing	-	-
-datascript/test/parser_rules.cljc:rule-vars	missing	-	-
-datascript/test/parser_rules.cljc:branches	missing	-	-
-datascript/test/parser_where.cljc:pattern	missing	-	-
-datascript/test/parser_where.cljc:test-pred	missing	-	-
-datascript/test/parser_where.cljc:test-fn	missing	-	-
-datascript/test/parser_where.cljc:rule-expr	missing	-	-
-datascript/test/parser_where.cljc:not-clause	missing	-	-
-datascript/test/parser_where.cljc:or-clause	missing	-	-
-datascript/test/pull_api.cljc:test-pull-attr-spec	missing	-	-
-datascript/test/pull_api.cljc:test-pull-reverse-attr-spec	missing	-	-
-datascript/test/pull_api.cljc:test-pull-component-attr	missing	-	-
-datascript/test/pull_api.cljc:test-pull-wildcard	missing	-	-
-datascript/test/pull_api.cljc:test-pull-limit	missing	-	-
-datascript/test/pull_api.cljc:test-pull-default	missing	-	-
-datascript/test/pull_api.cljc:test-pull-as	missing	-	-
-datascript/test/pull_api.cljc:test-pull-attr-with-opts	missing	-	-
-datascript/test/pull_api.cljc:test-pull-map	missing	-	-
-datascript/test/pull_api.cljc:test-pull-recursion	missing	-	-
-datascript/test/pull_api.cljc:test-dual-recursion	missing	-	-
-datascript/test/pull_api.cljc:test-deep-recursion	missing	-	-
-datascript/test/pull_api.cljc:test-component-reverse	missing	-	-
-datascript/test/pull_api.cljc:test-lookup-ref-pull	missing	-	-
-datascript/test/pull_api.cljc:test-xform	missing	-	-
-datascript/test/pull_api.cljc:test-visitor	missing	-	-
-datascript/test/pull_api.cljc:test-pull-other-dbs	missing	-	-
-datascript/test/pull_parser.cljc:test-parse-pattern	missing	-	-
-datascript/test/query.cljc:test-joins	missing	-	-
-datascript/test/query.cljc:test-q-many	missing	-	-
-datascript/test/query.cljc:test-q-coll	missing	-	-
-datascript/test/query.cljc:test-q-in	missing	-	-
-datascript/test/query.cljc:test-bindings	missing	-	-
-datascript/test/query.cljc:test-nested-bindings	missing	-	-
-datascript/test/query.cljc:test-built-in-regex	missing	-	-
-datascript/test/query.cljc:test-built-in-get	missing	-	-
-datascript/test/query.cljc:test-join-unrelated	missing	-	-
-datascript/test/query.cljc:test-symbol-comparison	missing	-	-
-datascript/test/query.cljc:test-constant-substitution	missing	-	-
-datascript/test/query_aggregates.cljc:test-aggregates	missing	-	-
-datascript/test/query_find_specs.cljc:test-find-specs	missing	-	-
-datascript/test/query_fns.cljc:test-query-fns	missing	-	-
-datascript/test/query_fns.cljc:test-predicates	missing	-	-
-datascript/test/query_fns.cljc:test-exceptions	missing	-	-
-datascript/test/query_fns.cljc:test-issue-180	missing	-	-
-datascript/test/query_fns.cljc:test-symbol-resolution	missing	-	-
-datascript/test/query_fns.cljc:test-issue-445	missing	-	-
-datascript/test/query_not.cljc:test-not	missing	-	-
-datascript/test/query_not.cljc:test-not-join	missing	-	-
-datascript/test/query_not.cljc:test-default-source	missing	-	-
-datascript/test/query_not.cljc:test-impl-edge-cases	missing	-	-
-datascript/test/query_not.cljc:test-insufficient-bindings	missing	-	-
-datascript/test/query_or.cljc:test-or	missing	-	-
-datascript/test/query_or.cljc:test-or-join	missing	-	-
-datascript/test/query_or.cljc:test-default-source	missing	-	-
-datascript/test/query_or.cljc:test-const-substitution	missing	-	-
-datascript/test/query_or.cljc:test-errors	missing	-	-
-datascript/test/query_pull.cljc:test-basics	missing	-	-
-datascript/test/query_pull.cljc:test-var-pattern	missing	-	-
-datascript/test/query_pull.cljc:test-multiple-sources	missing	-	-
-datascript/test/query_pull.cljc:test-find-spec	missing	-	-
-datascript/test/query_pull.cljc:test-find-spec-input	missing	-	-
-datascript/test/query_pull.cljc:test-aggregates	missing	-	-
-datascript/test/query_pull.cljc:test-lookup-refs	missing	-	-
-datascript/test/query_return_map.cljc:test-find-specs	missing	-	-
-datascript/test/query_rules.cljc:test-rules	missing	-	-
-datascript/test/query_rules.cljc:test-false-arguments	missing	-	-
-datascript/test/query_rules.cljc:test-rule-performance-on-larger-datasets	missing	-	-
+datascript/test/parser_find.cljc:test-parse-find	covered	test/datascript/upstream_tests/datascript/test/parser_find.cljc	-
+datascript/test/parser_find.cljc:test-parse-aggregate	covered	test/datascript/upstream_tests/datascript/test/parser_find.cljc	-
+datascript/test/parser_find.cljc:test-parse-custom-aggregates	covered	test/datascript/upstream_tests/datascript/test/parser_find.cljc	-
+datascript/test/parser_find.cljc:test-parse-find-elements	covered	test/datascript/upstream_tests/datascript/test/parser_find.cljc	-
+datascript/test/parser_query.cljc:validation	covered	test/datascript/upstream_tests/datascript/test/parser_query.cljc	Closed DataValue query forms preserve all upstream validation branches and exact errors on Native and Melange.
+datascript/test/parser_return_map.cljc:test-parse-return-map	covered	test/datascript/upstream_tests/datascript/test/parser_return_map.cljc	Closed return-map variants preserve keys, syms, strs, find-shape checks, counts, and exact errors on Native and Melange.
+datascript/test/parser_rules.cljc:clauses	covered	test/datascript/upstream_tests/datascript/test/parser_rules.cljc	-
+datascript/test/parser_rules.cljc:rule-vars	covered	test/datascript/upstream_tests/datascript/test/parser_rules.cljc	-
+datascript/test/parser_rules.cljc:branches	covered	test/datascript/upstream_tests/datascript/test/parser_rules.cljc	-
+datascript/test/parser_where.cljc:pattern	covered	test/datascript/upstream_tests/datascript/test/parser_where.cljc	-
+datascript/test/parser_where.cljc:test-pred	covered	test/datascript/upstream_tests/datascript/test/parser_where.cljc	-
+datascript/test/parser_where.cljc:test-fn	covered	test/datascript/upstream_tests/datascript/test/parser_where.cljc	-
+datascript/test/parser_where.cljc:rule-expr	covered	test/datascript/upstream_tests/datascript/test/parser_where.cljc	-
+datascript/test/parser_where.cljc:not-clause	covered	test/datascript/upstream_tests/datascript/test/parser_where.cljc	-
+datascript/test/parser_where.cljc:or-clause	covered	test/datascript/upstream_tests/datascript/test/parser_where.cljc	-
+datascript/test/pull_api.cljc:test-pull-attr-spec	covered	test/datascript/upstream_tests/datascript/test/pull_api.cljc	-
+datascript/test/pull_api.cljc:test-pull-reverse-attr-spec	covered	test/datascript/upstream_tests/datascript/test/pull_api.cljc	-
+datascript/test/pull_api.cljc:test-pull-component-attr	covered	test/datascript/upstream_tests/datascript/test/pull_api.cljc	-
+datascript/test/pull_api.cljc:test-pull-wildcard	covered	test/datascript/upstream_tests/datascript/test/pull_api.cljc	-
+datascript/test/pull_api.cljc:test-pull-limit	covered	test/datascript/upstream_tests/datascript/test/pull_api.cljc	-
+datascript/test/pull_api.cljc:test-pull-default	covered	test/datascript/upstream_tests/datascript/test/pull_api.cljc	-
+datascript/test/pull_api.cljc:test-pull-as	covered	test/datascript/upstream_tests/datascript/test/pull_api.cljc	-
+datascript/test/pull_api.cljc:test-pull-attr-with-opts	covered	test/datascript/upstream_tests/datascript/test/pull_api.cljc	-
+datascript/test/pull_api.cljc:test-pull-map	covered	test/datascript/upstream_tests/datascript/test/pull_api.cljc	-
+datascript/test/pull_api.cljc:test-pull-recursion	covered	test/datascript/upstream_tests/datascript/test/pull_api.cljc	-
+datascript/test/pull_api.cljc:test-dual-recursion	covered	test/datascript/upstream_tests/datascript/test/pull_api.cljc	-
+datascript/test/pull_api.cljc:test-deep-recursion	covered	test/datascript/upstream_tests/datascript/test/pull_api.cljc	-
+datascript/test/pull_api.cljc:test-component-reverse	covered	test/datascript/upstream_tests/datascript/test/pull_api.cljc	-
+datascript/test/pull_api.cljc:test-lookup-ref-pull	covered	test/datascript/upstream_tests/datascript/test/pull_api.cljc	-
+datascript/test/pull_api.cljc:test-xform	covered	test/datascript/upstream_tests/datascript/test/pull_api.cljc	-
+datascript/test/pull_api.cljc:test-visitor	covered	test/datascript/upstream_tests/datascript/test/pull_api.cljc	-
+datascript/test/pull_api.cljc:test-pull-other-dbs	covered	test/datascript/upstream_tests/datascript/test/pull_api.cljc	-
+datascript/test/pull_parser.cljc:test-parse-pattern	covered	test/datascript/upstream_tests/datascript/test/pull_parser.cljc	-
+datascript/test/query.cljc:test-joins	covered	test/datascript/upstream_tests/datascript/test/query.cljc	-
+datascript/test/query.cljc:test-q-many	covered	test/datascript/upstream_tests/datascript/test/query.cljc	-
+datascript/test/query.cljc:test-q-coll	covered	test/datascript/upstream_tests/datascript/test/query.cljc	-
+datascript/test/query.cljc:test-q-in	covered	test/datascript/upstream_tests/datascript/test/query.cljc	-
+datascript/test/query.cljc:test-bindings	covered	test/datascript/upstream_tests/datascript/test/query.cljc	-
+datascript/test/query.cljc:test-nested-bindings	covered	test/datascript/upstream_tests/datascript/test/query.cljc	-
+datascript/test/query.cljc:test-built-in-regex	covered	test/datascript/upstream_tests/datascript/test/query.cljc	-
+datascript/test/query.cljc:test-built-in-get	covered	test/datascript/upstream_tests/datascript/test/query.cljc	-
+datascript/test/query.cljc:test-join-unrelated	covered	test/datascript/upstream_tests/datascript/test/query.cljc	-
+datascript/test/query.cljc:test-symbol-comparison	covered	test/datascript/upstream_tests/datascript/test/query.cljc	-
+datascript/test/query.cljc:test-constant-substitution	covered	test/datascript/upstream_tests/datascript/test/query.cljc	-
+datascript/test/query_aggregates.cljc:test-aggregates	covered	test/datascript/upstream_tests/datascript/test/query_aggregates.cljc	-
+datascript/test/query_find_specs.cljc:test-find-specs	covered	test/datascript/upstream_tests/datascript/test/query_find_specs.cljc	-
+datascript/test/query_fns.cljc:test-query-fns	covered	test/datascript/upstream_tests/datascript/test/query_fns.cljc	-
+datascript/test/query_fns.cljc:test-predicates	covered	test/datascript/upstream_tests/datascript/test/query_fns.cljc	-
+datascript/test/query_fns.cljc:test-exceptions	covered	test/datascript/upstream_tests/datascript/test/query_fns.cljc	-
+datascript/test/query_fns.cljc:test-issue-180	covered	test/datascript/upstream_tests/datascript/test/query_fns.cljc	-
+datascript/test/query_fns.cljc:test-symbol-resolution	covered	test/datascript/upstream_tests/datascript/test/query_fns.cljc	-
+datascript/test/query_fns.cljc:test-issue-445	covered	test/datascript/upstream_tests/datascript/test/query_fns.cljc	-
+datascript/test/query_not.cljc:test-not	covered	test/datascript/upstream_tests/datascript/test/query_not.cljc	-
+datascript/test/query_not.cljc:test-not-join	covered	test/datascript/upstream_tests/datascript/test/query_not.cljc	-
+datascript/test/query_not.cljc:test-default-source	covered	test/datascript/upstream_tests/datascript/test/query_not.cljc	-
+datascript/test/query_not.cljc:test-impl-edge-cases	covered	test/datascript/upstream_tests/datascript/test/query_not.cljc	-
+datascript/test/query_not.cljc:test-insufficient-bindings	covered	test/datascript/upstream_tests/datascript/test/query_not.cljc	-
+datascript/test/query_or.cljc:test-or	covered	test/datascript/upstream_tests/datascript/test/query_or.cljc	-
+datascript/test/query_or.cljc:test-or-join	covered	test/datascript/upstream_tests/datascript/test/query_or.cljc	-
+datascript/test/query_or.cljc:test-default-source	covered	test/datascript/upstream_tests/datascript/test/query_or.cljc	-
+datascript/test/query_or.cljc:test-const-substitution	covered	test/datascript/upstream_tests/datascript/test/query_or.cljc	-
+datascript/test/query_or.cljc:test-errors	covered	test/datascript/upstream_tests/datascript/test/query_or.cljc	-
+datascript/test/query_pull.cljc:test-basics	covered	test/datascript/upstream_tests/datascript/test/query_pull.cljc	-
+datascript/test/query_pull.cljc:test-var-pattern	covered	test/datascript/upstream_tests/datascript/test/query_pull.cljc	-
+datascript/test/query_pull.cljc:test-multiple-sources	covered	test/datascript/upstream_tests/datascript/test/query_pull.cljc	-
+datascript/test/query_pull.cljc:test-find-spec	covered	test/datascript/upstream_tests/datascript/test/query_pull.cljc	-
+datascript/test/query_pull.cljc:test-find-spec-input	covered	test/datascript/upstream_tests/datascript/test/query_pull.cljc	-
+datascript/test/query_pull.cljc:test-aggregates	covered	test/datascript/upstream_tests/datascript/test/query_pull.cljc	-
+datascript/test/query_pull.cljc:test-lookup-refs	covered	test/datascript/upstream_tests/datascript/test/query_pull.cljc	-
+datascript/test/query_return_map.cljc:test-find-specs	covered	test/datascript/upstream_tests/datascript/test/query_return_map.cljc	-
+datascript/test/query_rules.cljc:test-rules	covered	test/datascript/upstream_tests/datascript/test/query_rules.cljc	-
+datascript/test/query_rules.cljc:test-false-arguments	covered	test/datascript/upstream_tests/datascript/test/query_rules.cljc	-
+datascript/test/query_rules.cljc:test-rule-performance-on-larger-datasets	covered	test/datascript/upstream_tests/datascript/test/query_rules.cljc	-
 datascript/test/query_v3.cljc:test-validation	excluded	-	user-excluded
-datascript/test/serialize.cljc:test-pr-read	missing	-	-
-datascript/test/serialize.cljc:test-init-db	missing	-	-
-datascript/test/serialize.cljc:test-max-eid-from-refs	missing	-	-
-datascript/test/serialize.cljc:serialize	missing	-	-
-datascript/test/serialize.cljc:test-nan	missing	-	-
-datascript/test/storage.clj:test-basics	missing	-	-
-datascript/test/storage.clj:test-file-storage	missing	-	legacy smoke coverage does not match the exact upstream module
-datascript/test/storage.clj:test-gc	missing	-	legacy smoke coverage does not match the exact upstream module
-datascript/test/storage.clj:test-conn	missing	-	-
-datascript/test/storage.cljs:test-basics	missing	-	-
-datascript/test/storage.cljs:test-db-with-tail	missing	-	-
-datascript/test/storage.cljs:test-conn	missing	-	-
+datascript/test/serialize.cljc:test-pr-read	covered	test/datascript/upstream_tests/datascript/test/serialize.cljc	-
+datascript/test/serialize.cljc:test-init-db	covered	test/datascript/upstream_tests/datascript/test/serialize.cljc	-
+datascript/test/serialize.cljc:test-max-eid-from-refs	covered	test/datascript/upstream_tests/datascript/test/serialize.cljc	-
+datascript/test/serialize.cljc:serialize	covered	test/datascript/upstream_tests/datascript/test/serialize.cljc	-
+datascript/test/serialize.cljc:test-nan	covered	test/datascript/upstream_tests/datascript/test/serialize.cljc	-
+datascript/test/storage.clj:test-basics	covered	test/datascript/upstream_tests/datascript/test/storage.clj	Native covers empty, small, large, incremental, lazy restore, index caching, settings, and equality behavior; read-count assertions follow the shared upstream CLJS PSS control flow used by LG.
+datascript/test/storage.clj:test-file-storage	covered	test/datascript/upstream_tests/datascript/test/storage.clj	Native exercises every upstream format case through the concrete typed Storage_value codec boundary, both Strong and Weak policies, branching factors 32/64/512, and empty/small/large databases.
+datascript/test/storage.clj:test-gc	covered	test/datascript/upstream_tests/datascript/test/storage.clj	Native deterministically verifies live-address retention, orphan deletion, root/tail retention, and avoids relying on garbage-collector timing.
+datascript/test/storage.clj:test-conn	covered	test/datascript/upstream_tests/datascript/test/storage.clj	Native preserves initial storage, transaction tails, overflow flushes, restored transactions, garbage collection, and repeated connection restoration.
+datascript/test/storage.cljs:test-basics	covered	test/datascript/upstream_tests/datascript/test/storage.cljs	Melange covers empty, small, large, incremental, lazy restore, index caching, settings, and equality behavior with exact upstream CLJS read counts.
+datascript/test/storage.cljs:test-db-with-tail	covered	test/datascript/upstream_tests/datascript/test/storage.cljs	Melange replays cardinality-one tail datoms, restores stored tails, rejects conflicting unique groups atomically, and advances max transaction IDs.
+datascript/test/storage.cljs:test-conn	covered	test/datascript/upstream_tests/datascript/test/storage.cljs	Melange preserves initial storage, transaction tails, overflow flushes, restored transactions, and repeated connection restoration.
 datascript/test/transact.cljc:test-with	covered	test/datascript/upstream_tests/datascript/test/transact.cljc	-
 datascript/test/transact.cljc:test-with-datoms	covered	test/datascript/upstream_tests/datascript/test/transact.cljc	-
 datascript/test/transact.cljc:test-retract-fns	covered	test/datascript/upstream_tests/datascript/test/transact.cljc	-
@@ -149,22 +149,22 @@ datascript/test/transact.cljc:test-uncomparable-issue-356	covered	test/datascrip
 datascript/test/transact.cljc:test-compare-numbers-js-issue-404	covered	test/datascript/upstream_tests/datascript/test/transact.cljc	-
 datascript/test/transact.cljc:test-transitive-type-compare-issue-386	covered	test/datascript/upstream_tests/datascript/test/transact.cljc	-
 datascript/test/transact.cljc:test-db-fn-returning-entity-without-db-id-issue-474	covered	test/datascript/upstream_tests/datascript/test/transact.cljc	-
-datascript/test/tuples.cljc:test-schema	missing	-	-
-datascript/test/tuples.cljc:test-tx	missing	-	-
-datascript/test/tuples.cljc:test-ignore-correct	missing	-	-
-datascript/test/tuples.cljc:test-unique	missing	-	-
-datascript/test/tuples.cljc:test-upsert	missing	-	-
-datascript/test/tuples.cljc:test-upsert-by-tuple-components	missing	-	-
-datascript/test/tuples.cljc:test-lookup-refs	missing	-	-
-datascript/test/tuples.cljc:lookup-refs-in-tuple	missing	-	-
-datascript/test/tuples.cljc:test-validation	missing	-	-
-datascript/test/tuples.cljc:test-indexes	missing	-	-
-datascript/test/tuples.cljc:test-queries	missing	-	-
-datascript/test/upsert.cljc:test-upsert	missing	-	-
-datascript/test/upsert.cljc:test-redefining-ids	missing	-	-
-datascript/test/upsert.cljc:test-retries-order	missing	-	-
-datascript/test/upsert.cljc:test-upsert-string-tempid-ref	missing	-	-
-datascript/test/upsert.cljc:test-two-tempids-two-retries	missing	-	-
-datascript/test/upsert.cljc:test-vector-upsert	missing	-	-
-datascript/test/validation.cljc:test-with-validation	missing	-	-
-datascript/test/validation.cljc:test-unique	missing	-	-
+datascript/test/tuples.cljc:test-schema	covered	test/datascript/upstream_tests/datascript/test/tuples.cljc	Closed tuple schema values preserve upstream validation and error behavior on Native and Melange.
+datascript/test/tuples.cljc:test-tx	covered	test/datascript/upstream_tests/datascript/test/tuples.cljc	Derived tuple maintenance preserves upstream add, update, retract, and direct-modification behavior on Native and Melange.
+datascript/test/tuples.cljc:test-ignore-correct	covered	test/datascript/upstream_tests/datascript/test/tuples.cljc	Direct tuple assertions are ignored only when their source attributes already match, as upstream requires.
+datascript/test/tuples.cljc:test-unique	covered	test/datascript/upstream_tests/datascript/test/tuples.cljc	Unique tuple constraints and tuple update conflicts match upstream on Native and Melange.
+datascript/test/tuples.cljc:test-upsert	covered	test/datascript/upstream_tests/datascript/test/tuples.cljc	Tuple identity upserts, conflicts, and derived tuple updates match upstream on Native and Melange.
+datascript/test/tuples.cljc:test-upsert-by-tuple-components	covered	test/datascript/upstream_tests/datascript/test/tuples.cljc	Stable closed auto tempids preserve upstream retry behavior when tuple components resolve an existing entity.
+datascript/test/tuples.cljc:test-lookup-refs	covered	test/datascript/upstream_tests/datascript/test/tuples.cljc	Tuple lookup refs in transaction entity ids preserve upstream resolution, conflict, and update behavior.
+datascript/test/tuples.cljc:lookup-refs-in-tuple	covered	test/datascript/upstream_tests/datascript/test/tuples.cljc	Reference-valued tuple components accept numeric and nested lookup refs and resolve them as upstream does.
+datascript/test/tuples.cljc:test-validation	covered	test/datascript/upstream_tests/datascript/test/tuples.cljc	Partial and nil tuple values retain upstream direct-modification validation behavior.
+datascript/test/tuples.cljc:test-indexes	covered	test/datascript/upstream_tests/datascript/test/tuples.cljc	Tuple values preserve upstream EAVT, AEVT, AVET, and VAET index behavior.
+datascript/test/tuples.cljc:test-queries	covered	test/datascript/upstream_tests/datascript/test/tuples.cljc	Tuple constants, tuple lookup refs, tuple construction, and untuple binding match upstream query behavior.
+datascript/test/upsert.cljc:test-upsert	covered	test/datascript/upstream_tests/datascript/test/upsert.cljc	Closed entity refs and values preserve upstream upsert resolution, conflicts, retry behavior, refs, cardinality-many values, and current transaction handling on Native and Melange.
+datascript/test/upsert.cljc:test-redefining-ids	covered	test/datascript/upstream_tests/datascript/test/upsert.cljc	Repeated and conflicting tempid definitions preserve upstream allocation and error behavior on Native and Melange.
+datascript/test/upsert.cljc:test-retries-order	covered	test/datascript/upstream_tests/datascript/test/upsert.cljc	Retry state preserves upstream transaction ordering on Native and Melange.
+datascript/test/upsert.cljc:test-upsert-string-tempid-ref	covered	test/datascript/upstream_tests/datascript/test/upsert.cljc	String tempids used as ref values and later resolved by upsert match upstream on Native and Melange.
+datascript/test/upsert.cljc:test-two-tempids-two-retries	covered	test/datascript/upstream_tests/datascript/test/upsert.cljc	Multiple tempids and repeated upsert retries preserve upstream resolution state on Native and Melange.
+datascript/test/upsert.cljc:test-vector-upsert	covered	test/datascript/upstream_tests/datascript/test/upsert.cljc	Vector transaction upserts preserve upstream identity resolution on Native and Melange.
+datascript/test/validation.cljc:test-with-validation	covered	test/datascript/upstream_tests/datascript/test/validation.cljc	Closed tx-entry forms cover every representable upstream validation branch; malformed raw shapes are rejected statically, and Native/Melange preserve runtime errors.
+datascript/test/validation.cljc:test-unique	covered	test/datascript/upstream_tests/datascript/test/validation.cljc	Unique-value conflicts and non-conflicting attributes match upstream on Native and Melange.

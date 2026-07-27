@@ -1,0 +1,1791 @@
+arity	datascript.built-ins/add-values	1	fixed
+arity	datascript.built-ins/aggregate-function	1	fixed
+arity	datascript.built-ins/apply-comparison	2	fixed
+arity	datascript.built-ins/apply-pure-function	2	fixed
+arity	datascript.built-ins/average-aggregate?	1	fixed
+arity	datascript.built-ins/comparison-function	1	fixed
+arity	datascript.built-ins/count-aggregate?	1	fixed
+arity	datascript.built-ins/count-distinct-aggregate?	1	fixed
+arity	datascript.built-ins/data-map	1	fixed
+arity	datascript.built-ins/distinct-aggregate?	1	fixed
+arity	datascript.built-ins/get-else-function?	1	fixed
+arity	datascript.built-ins/get-some-function?	1	fixed
+arity	datascript.built-ins/maximum-aggregate?	1	fixed
+arity	datascript.built-ins/median-aggregate?	1	fixed
+arity	datascript.built-ins/minimum-aggregate?	1	fixed
+arity	datascript.built-ins/missing-function?	1	fixed
+arity	datascript.built-ins/ordered-values?	2	fixed
+arity	datascript.built-ins/pure-function	1	fixed
+arity	datascript.built-ins/random-aggregate?	1	fixed
+arity	datascript.built-ins/sample-aggregate?	1	fixed
+arity	datascript.built-ins/standard-deviation-aggregate?	1	fixed
+arity	datascript.built-ins/sum-aggregate?	1	fixed
+arity	datascript.built-ins/values-equal?	1	fixed
+arity	datascript.built-ins/variance-aggregate?	1	fixed
+arity	datascript.conn/-transact!	3	fixed
+arity	datascript.conn/conn-from-datoms	1	fixed
+arity	datascript.conn/conn-from-datoms	2	fixed
+arity	datascript.conn/conn-from-datoms	3	fixed
+arity	datascript.conn/conn-from-db	1	fixed
+arity	datascript.conn/conn?	1	fixed
+arity	datascript.conn/create-conn	0	fixed
+arity	datascript.conn/create-conn	1	fixed
+arity	datascript.conn/create-conn	2	fixed
+arity	datascript.conn/create-conn-closed	0	fixed
+arity	datascript.conn/create-conn-closed	1	fixed
+arity	datascript.conn/create-conn-closed	2	fixed
+arity	datascript.conn/current-db	1	fixed
+arity	datascript.conn/db-with	2	fixed
+arity	datascript.conn/db-with-closed	2	fixed
+arity	datascript.conn/listen!	2	fixed
+arity	datascript.conn/listen!	3	fixed
+arity	datascript.conn/listen!-closed	2	fixed
+arity	datascript.conn/listen!-closed	3	fixed
+arity	datascript.conn/reset-conn!	2	fixed
+arity	datascript.conn/reset-conn!	3	fixed
+arity	datascript.conn/reset-schema!	2	fixed
+arity	datascript.conn/restore-conn	1	fixed
+arity	datascript.conn/restore-conn	2	fixed
+arity	datascript.conn/run-callbacks	2	fixed
+arity	datascript.conn/store-after-transact!	2	fixed
+arity	datascript.conn/transact!	2	fixed
+arity	datascript.conn/transact!	3	fixed
+arity	datascript.conn/unlisten!	2	fixed
+arity	datascript.conn/unlisten!-closed	2	fixed
+arity	datascript.conn/with	2	fixed
+arity	datascript.conn/with	3	fixed
+arity	datascript.conn/with-closed	2	fixed
+arity	datascript.conn/with-closed	3	fixed
+arity	datascript.core/addresses	0	variadic
+arity	datascript.core/collect-garbage	1	fixed
+arity	datascript.core/conn-from-datoms	1	fixed
+arity	datascript.core/conn-from-datoms	2	fixed
+arity	datascript.core/conn-from-datoms	3	fixed
+arity	datascript.core/conn-from-db	1	fixed
+arity	datascript.core/conn?	1	fixed
+arity	datascript.core/create-conn	0	fixed
+arity	datascript.core/create-conn	1	fixed
+arity	datascript.core/create-conn	2	fixed
+arity	datascript.core/datom	3	fixed
+arity	datascript.core/datom	4	fixed
+arity	datascript.core/datom	5	fixed
+arity	datascript.core/datom?	1	fixed
+arity	datascript.core/datoms	2	fixed
+arity	datascript.core/datoms	3	fixed
+arity	datascript.core/datoms	4	fixed
+arity	datascript.core/datoms	5	fixed
+arity	datascript.core/datoms	6	fixed
+arity	datascript.core/datoms-closed	2	fixed
+arity	datascript.core/datoms-closed	3	fixed
+arity	datascript.core/datoms-closed	4	fixed
+arity	datascript.core/datoms-closed	5	fixed
+arity	datascript.core/datoms-closed	6	fixed
+arity	datascript.core/db	1	fixed
+arity	datascript.core/db-with	2	fixed
+arity	datascript.core/db?	1	fixed
+arity	datascript.core/empty-db	0	fixed
+arity	datascript.core/empty-db	1	fixed
+arity	datascript.core/empty-db	2	fixed
+arity	datascript.core/empty-db-closed	0	fixed
+arity	datascript.core/empty-db-closed	1	fixed
+arity	datascript.core/empty-db-closed	2	fixed
+arity	datascript.core/entid	2	fixed
+arity	datascript.core/entity	2	fixed
+arity	datascript.core/entity-closed	2	fixed
+arity	datascript.core/entity-db	1	fixed
+arity	datascript.core/filter	2	fixed
+arity	datascript.core/find-datom	2	fixed
+arity	datascript.core/find-datom	3	fixed
+arity	datascript.core/find-datom	4	fixed
+arity	datascript.core/find-datom	5	fixed
+arity	datascript.core/find-datom	6	fixed
+arity	datascript.core/find-datom-closed	2	fixed
+arity	datascript.core/find-datom-closed	3	fixed
+arity	datascript.core/find-datom-closed	4	fixed
+arity	datascript.core/find-datom-closed	5	fixed
+arity	datascript.core/find-datom-closed	6	fixed
+arity	datascript.core/from-serializable	1	fixed
+arity	datascript.core/from-serializable	2	fixed
+arity	datascript.core/index-component-value	1	fixed
+arity	datascript.core/index-range	4	fixed
+arity	datascript.core/index-range-closed	4	fixed
+arity	datascript.core/init-db	1	fixed
+arity	datascript.core/init-db	2	fixed
+arity	datascript.core/init-db	3	fixed
+arity	datascript.core/init-db-closed	1	fixed
+arity	datascript.core/init-db-closed	2	fixed
+arity	datascript.core/init-db-closed	3	fixed
+arity	datascript.core/init-db-invalid	1	fixed
+arity	datascript.core/is-filtered	1	fixed
+arity	datascript.core/listen!	2	fixed
+arity	datascript.core/listen!	3	fixed
+arity	datascript.core/pull	3	fixed
+arity	datascript.core/pull-many	3	fixed
+arity	datascript.core/q	1	variadic
+arity	datascript.core/reset-conn!	2	fixed
+arity	datascript.core/reset-conn!	3	fixed
+arity	datascript.core/reset-schema!	2	fixed
+arity	datascript.core/resolve-tempid	3	fixed
+arity	datascript.core/restore	1	fixed
+arity	datascript.core/restore	2	fixed
+arity	datascript.core/restore-conn	1	fixed
+arity	datascript.core/restore-conn	2	fixed
+arity	datascript.core/rseek-datoms	2	fixed
+arity	datascript.core/rseek-datoms	3	fixed
+arity	datascript.core/rseek-datoms	4	fixed
+arity	datascript.core/rseek-datoms	5	fixed
+arity	datascript.core/rseek-datoms	6	fixed
+arity	datascript.core/rseek-datoms-closed	2	fixed
+arity	datascript.core/rseek-datoms-closed	3	fixed
+arity	datascript.core/rseek-datoms-closed	4	fixed
+arity	datascript.core/rseek-datoms-closed	5	fixed
+arity	datascript.core/rseek-datoms-closed	6	fixed
+arity	datascript.core/schema	1	fixed
+arity	datascript.core/seek-datoms	2	fixed
+arity	datascript.core/seek-datoms	3	fixed
+arity	datascript.core/seek-datoms	4	fixed
+arity	datascript.core/seek-datoms	5	fixed
+arity	datascript.core/seek-datoms	6	fixed
+arity	datascript.core/seek-datoms-closed	2	fixed
+arity	datascript.core/seek-datoms-closed	3	fixed
+arity	datascript.core/seek-datoms-closed	4	fixed
+arity	datascript.core/seek-datoms-closed	5	fixed
+arity	datascript.core/seek-datoms-closed	6	fixed
+arity	datascript.core/serializable	1	fixed
+arity	datascript.core/serializable	2	fixed
+arity	datascript.core/settings	1	fixed
+arity	datascript.core/squuid	0	fixed
+arity	datascript.core/squuid	1	fixed
+arity	datascript.core/squuid-time-millis	1	fixed
+arity	datascript.core/storage	1	fixed
+arity	datascript.core/store	1	fixed
+arity	datascript.core/store	2	fixed
+arity	datascript.core/tempid	1	fixed
+arity	datascript.core/tempid	2	fixed
+arity	datascript.core/touch	1	fixed
+arity	datascript.core/transact	2	fixed
+arity	datascript.core/transact	3	fixed
+arity	datascript.core/transact!	2	fixed
+arity	datascript.core/transact!	3	fixed
+arity	datascript.core/transact-async	2	fixed
+arity	datascript.core/transact-async	3	fixed
+arity	datascript.core/unlisten!	2	fixed
+arity	datascript.core/with	2	fixed
+arity	datascript.core/with	3	fixed
+arity	datascript.core/with-schema	2	fixed
+arity	datascript.db/IDB/-attr-tuples	1	fixed
+arity	datascript.db/IDB/-attrs-by	2	fixed
+arity	datascript.db/IDB/-schema	1	fixed
+arity	datascript.db/IDB/-unfiltered-db	1	fixed
+arity	datascript.db/IDatabaseView/-database-view	1	fixed
+arity	datascript.db/IDatom/datom-added	1	fixed
+arity	datascript.db/IDatom/datom-get-idx	1	fixed
+arity	datascript.db/IDatom/datom-set-idx	2	fixed
+arity	datascript.db/IDatom/datom-tx	1	fixed
+arity	datascript.db/IFilteredView/-filter-view	2	fixed
+arity	datascript.db/IFilteredView/-filtered?	1	fixed
+arity	datascript.db/IIndexAccess/-datoms	6	fixed
+arity	datascript.db/IIndexAccess/-index-range	4	fixed
+arity	datascript.db/IIndexAccess/-rseek-datoms	6	fixed
+arity	datascript.db/IIndexAccess/-seek-datoms	6	fixed
+arity	datascript.db/ISearch/-search	2	fixed
+arity	datascript.db/add-upsert-resolution	4	fixed
+arity	datascript.db/add-value-eids	3	fixed
+arity	datascript.db/allocate-tx-entity	2	fixed
+arity	datascript.db/append-datoms-from	3	fixed
+arity	datascript.db/assoc-auto-tempids	2	fixed
+arity	datascript.db/attr->properties	2	fixed
+arity	datascript.db/attr-tuples	2	fixed
+arity	datascript.db/auto-tempid	0	fixed
+arity	datascript.db/auto-tempid?	1	fixed
+arity	datascript.db/case-tree	2	fixed
+arity	datascript.db/check-schema-update	2	fixed
+arity	datascript.db/check-value-tempids	1	fixed
+arity	datascript.db/class-compare	2	fixed
+arity	datascript.db/class-identical?	2	fixed
+arity	datascript.db/cmp	2	fixed
+arity	datascript.db/cmp-datoms-aevt	2	fixed
+arity	datascript.db/cmp-datoms-aevt-quick	2	fixed
+arity	datascript.db/cmp-datoms-avet	2	fixed
+arity	datascript.db/cmp-datoms-avet-quick	2	fixed
+arity	datascript.db/cmp-datoms-eav-quick	2	fixed
+arity	datascript.db/cmp-datoms-eavt	2	fixed
+arity	datascript.db/cmp-datoms-eavt-quick	2	fixed
+arity	datascript.db/collect-upsert-resolution	1	fixed
+arity	datascript.db/combine-cmp	0	variadic
+arity	datascript.db/combine-hashes	2	fixed
+arity	datascript.db/component?	2	fixed
+arity	datascript.db/components->pattern	8	fixed
+arity	datascript.db/current-tx-ref?	1	fixed
+arity	datascript.db/data-value-description	1	fixed
+arity	datascript.db/data-value-entity-form	1	fixed
+arity	datascript.db/data-value-entity-ref	1	fixed
+arity	datascript.db/data-value-lookup-ref?	2	fixed
+arity	datascript.db/data-value-tuple-items	1	fixed
+arity	datascript.db/data-values-description	1	fixed
+arity	datascript.db/database-datom-print-string	1	fixed
+arity	datascript.db/database-parts-print-string	2	fixed
+arity	datascript.db/database-print-string	1	fixed
+arity	datascript.db/database-view	1	fixed
+arity	datascript.db/database-view-component?	2	fixed
+arity	datascript.db/database-view-entid	2	fixed
+arity	datascript.db/database-view-identical?	2	fixed
+arity	datascript.db/database-view-identity-hash	1	fixed
+arity	datascript.db/database-view-multival?	2	fixed
+arity	datascript.db/database-view-numeric-eid-exists?	2	fixed
+arity	datascript.db/database-view-reduce-eavt-slice	6	fixed
+arity	datascript.db/database-view-ref?	2	fixed
+arity	datascript.db/database-view-search	5	fixed
+arity	datascript.db/database-view-search-vector	5	fixed
+arity	datascript.db/database-view-unfiltered-db	1	fixed
+arity	datascript.db/datom	3	fixed
+arity	datascript.db/datom	4	fixed
+arity	datascript.db/datom	5	fixed
+arity	datascript.db/datom->tx-entry	1	fixed
+arity	datascript.db/datom-attr	1	fixed
+arity	datascript.db/datom-bound	6	fixed
+arity	datascript.db/datom-closed	3	fixed
+arity	datascript.db/datom-closed	4	fixed
+arity	datascript.db/datom-closed	5	fixed
+arity	datascript.db/datom-from-edn-string	1	fixed
+arity	datascript.db/datom-from-reader	1	fixed
+arity	datascript.db/datom-hash	1	fixed
+arity	datascript.db/datom-print-string	1	fixed
+arity	datascript.db/datom-values-description	1	fixed
+arity	datascript.db/datom-vectors-equal?	2	fixed
+arity	datascript.db/datom?	1	fixed
+arity	datascript.db/db-count	1	fixed
+arity	datascript.db/db-equal?	2	fixed
+arity	datascript.db/db-from-edn-string	1	fixed
+arity	datascript.db/db-from-reader	1	fixed
+arity	datascript.db/db-hash	1	fixed
+arity	datascript.db/db-metadata	1	fixed
+arity	datascript.db/db-persistent!	1	fixed
+arity	datascript.db/db-transient	1	fixed
+arity	datascript.db/db?	1	fixed
+arity	datascript.db/declare+	1	variadic
+arity	datascript.db/default-options	0	fixed
+arity	datascript.db/defcomp	2	variadic
+arity	datascript.db/defn+	1	variadic
+arity	datascript.db/diff-databases	2	fixed
+arity	datascript.db/direct-tuple-match	4	fixed
+arity	datascript.db/effective-schema	1	fixed
+arity	datascript.db/empty-db	2	fixed
+arity	datascript.db/empty-entity-map	0	fixed
+arity	datascript.db/empty-queued-tuples	0	fixed
+arity	datascript.db/empty-tx-entries	0	fixed
+arity	datascript.db/empty-upsert-map	0	fixed
+arity	datascript.db/empty-upsert-resolution	0	fixed
+arity	datascript.db/empty-used-tempid-eids	0	fixed
+arity	datascript.db/empty-value-eids	0	fixed
+arity	datascript.db/entid	2	fixed
+arity	datascript.db/entid-some	2	fixed
+arity	datascript.db/entid-strict	2	fixed
+arity	datascript.db/entity-ref-key	1	fixed
+arity	datascript.db/existing-tx-eid	2	fixed
+arity	datascript.db/explode-attribute	5	fixed
+arity	datascript.db/explode-pass	6	fixed
+arity	datascript.db/filtered-database-print-string	1	fixed
+arity	datascript.db/filtered-db-count	1	fixed
+arity	datascript.db/filtered-db-datoms	1	fixed
+arity	datascript.db/filtered-db-equal?	2	fixed
+arity	datascript.db/filtered-db-hash	1	fixed
+arity	datascript.db/filtered-entid	2	fixed
+arity	datascript.db/find-datom	6	fixed
+arity	datascript.db/finish-transaction	1	fixed
+arity	datascript.db/flush-tuples	1	fixed
+arity	datascript.db/get-schema	1	fixed
+arity	datascript.db/ihash	1	fixed
+arity	datascript.db/implicit-schema-entry	0	fixed
+arity	datascript.db/incoming-reference-datoms	2	fixed
+arity	datascript.db/index-component-entity-ref	1	fixed
+arity	datascript.db/index-component-keyword	1	fixed
+arity	datascript.db/indexing?	2	fixed
+arity	datascript.db/init-db	2	fixed
+arity	datascript.db/init-db	3	fixed
+arity	datascript.db/init-db-with-schema-option	2	fixed
+arity	datascript.db/init-db-with-schema-option	3	fixed
+arity	datascript.db/int-compare	2	fixed
+arity	datascript.db/is-attr?	3	fixed
+arity	datascript.db/make-db-snapshot	6	fixed
+arity	datascript.db/mark-entity-used	2	fixed
+arity	datascript.db/merge-schema	2	fixed
+arity	datascript.db/multi-value?	3	fixed
+arity	datascript.db/multival?	2	fixed
+arity	datascript.db/non-empty-datoms	1	fixed
+arity	datascript.db/normalize-init-datom	2	fixed
+arity	datascript.db/numeric-eid-exists?	2	fixed
+arity	datascript.db/optional-data-value-description	1	fixed
+arity	datascript.db/options-assoc-storage	2	fixed
+arity	datascript.db/options-branching-factor	1	fixed
+arity	datascript.db/options-ref-type	1	fixed
+arity	datascript.db/options-storage	1	fixed
+arity	datascript.db/options-with-branching-factor	2	fixed
+arity	datascript.db/options-with-ref-type	2	fixed
+arity	datascript.db/options-with-storage	1	fixed
+arity	datascript.db/ordered-tx-entity	2	fixed
+arity	datascript.db/pr-db	3	fixed
+arity	datascript.db/queued-tuple-value	1	fixed
+arity	datascript.db/reduce-eavt-slice	6	fixed
+arity	datascript.db/ref?	2	fixed
+arity	datascript.db/reject-tempid-cas-operation	5	fixed
+arity	datascript.db/reject-tempid-operation	1	fixed
+arity	datascript.db/remove-schema	2	fixed
+arity	datascript.db/resolve-datom	7	fixed
+arity	datascript.db/resolve-tuple-refs	3	fixed
+arity	datascript.db/resolve-tx-entity	2	fixed
+arity	datascript.db/resolve-tx-value	3	fixed
+arity	datascript.db/restore-db	1	fixed
+arity	datascript.db/restore-db-from-storage	6	fixed
+arity	datascript.db/reverse-ref	1	fixed
+arity	datascript.db/reverse-ref?	1	fixed
+arity	datascript.db/schema-entry-value	1	fixed
+arity	datascript.db/schema-hash	1	fixed
+arity	datascript.db/schema-ident-value	1	fixed
+arity	datascript.db/schema-map	1	fixed
+arity	datascript.db/schema-tuple-arity	2	fixed
+arity	datascript.db/schema-tuple-attrs	2	fixed
+arity	datascript.db/search-ea	3	fixed
+arity	datascript.db/search-vector	5	fixed
+arity	datascript.db/seqable?	1	fixed
+arity	datascript.db/singleton-data-value	1	fixed
+arity	datascript.db/temp-entity-ref?	1	fixed
+arity	datascript.db/tempid-values-description	1	fixed
+arity	datascript.db/transact-add-entry	5	fixed
+arity	datascript.db/transact-cas-entry	5	fixed
+arity	datascript.db/transact-retract-entry	4	fixed
+arity	datascript.db/transact-tx-data	2	fixed
+arity	datascript.db/transact-tx-data-impl	2	fixed
+arity	datascript.db/transact-tx-data-loop	4	fixed
+arity	datascript.db/transact-tx-data-run	2	fixed
+arity	datascript.db/tuple-source?	2	fixed
+arity	datascript.db/tuple?	2	fixed
+arity	datascript.db/tx-add	3	fixed
+arity	datascript.db/tx-add-with-tx	4	fixed
+arity	datascript.db/tx-call	1	fixed
+arity	datascript.db/tx-cas	4	fixed
+arity	datascript.db/tx-cas-operation	5	fixed
+arity	datascript.db/tx-data	1	fixed
+arity	datascript.db/tx-data-count	1	fixed
+arity	datascript.db/tx-datom	1	fixed
+arity	datascript.db/tx-entity	1	fixed
+arity	datascript.db/tx-entity-form-assoc	3	fixed
+arity	datascript.db/tx-entity-ordered	2	fixed
+arity	datascript.db/tx-flush-tuples	0	fixed
+arity	datascript.db/tx-install-function	2	fixed
+arity	datascript.db/tx-invalid	1	fixed
+arity	datascript.db/tx-invoke-function	2	fixed
+arity	datascript.db/tx-nil	0	fixed
+arity	datascript.db/tx-retract	3	fixed
+arity	datascript.db/tx-retract-attribute	2	fixed
+arity	datascript.db/tx-retract-entity	1	fixed
+arity	datascript.db/tx-retract-entity-id	1	fixed
+arity	datascript.db/tx-retract-option	3	fixed
+arity	datascript.db/tx-set-tuple	3	fixed
+arity	datascript.db/unfiltered-db	1	fixed
+arity	datascript.db/update-rschema	1	fixed
+arity	datascript.db/update-schema	2	fixed
+arity	datascript.db/validate-attr	2	fixed
+arity	datascript.db/validate-datom	2	fixed
+arity	datascript.db/validate-indexed	6	fixed
+arity	datascript.db/validate-upsert-resolution	2	fixed
+arity	datascript.db/validate-upserts	2	fixed
+arity	datascript.db/validate-val	2	fixed
+arity	datascript.db/value-cmp	2	fixed
+arity	datascript.db/value-compare	2	fixed
+arity	datascript.db/with-datom	2	fixed
+arity	datascript.db/with-db-metadata	2	fixed
+arity	datascript.db/with-schema	2	fixed
+arity	datascript.impl.entity/datoms->cache	2	fixed
+arity	datascript.impl.entity/entity	2	fixed
+arity	datascript.impl.entity/entity-attr	3	fixed
+arity	datascript.impl.entity/entity-database-view	1	fixed
+arity	datascript.impl.entity/entity-print-string	1	fixed
+arity	datascript.impl.entity/entity-reference	2	fixed
+arity	datascript.impl.entity/entity-reference-option-member?	2	fixed
+arity	datascript.impl.entity/entity-reference-set	1	fixed
+arity	datascript.impl.entity/entity-reference-set-equal?	2	fixed
+arity	datascript.impl.entity/entity-value	3	fixed
+arity	datascript.impl.entity/entity-value-print-string	1	fixed
+arity	datascript.impl.entity/entity?	1	fixed
+arity	datascript.impl.entity/equiv-entity	2	fixed
+arity	datascript.impl.entity/hash-entity	1	fixed
+arity	datascript.impl.entity/lookup-backwards	3	fixed
+arity	datascript.impl.entity/lookup-entity	2	fixed
+arity	datascript.impl.entity/raw-entity-attr	3	fixed
+arity	datascript.impl.entity/touch	1	fixed
+arity	datascript.impl.entity/touch-components	2	fixed
+arity	datascript.impl.entity/touch-entity	1	fixed
+arity	datascript.inline/update	3	variadic
+arity	datascript.lru/ICache/-get	3	fixed
+arity	datascript.lru/assoc-lru	3	fixed
+arity	datascript.lru/cache	1	fixed
+arity	datascript.lru/cleanup-lru	1	fixed
+arity	datascript.lru/get-lru	2	fixed
+arity	datascript.lru/get-lru-default	3	fixed
+arity	datascript.lru/lru	1	fixed
+arity	datascript.parser/IFindElements/find-elements	1	fixed
+arity	datascript.parser/IFindVars/-find-vars	1	fixed
+arity	datascript.parser/ITraversable/-collect	3	fixed
+arity	datascript.parser/ITraversable/-collect-vars	2	fixed
+arity	datascript.parser/ITraversable/-postwalk	2	fixed
+arity	datascript.parser/add-rule-branch	2	fixed
+arity	datascript.parser/aggregate-constant-arguments	1	fixed
+arity	datascript.parser/aggregate-custom-variable-name	1	fixed
+arity	datascript.parser/aggregate-find-element	2	fixed
+arity	datascript.parser/aggregate-function-name	1	fixed
+arity	datascript.parser/aggregate?	1	fixed
+arity	datascript.parser/and-clause-clauses	1	fixed
+arity	datascript.parser/argument-constant	1	fixed
+arity	datascript.parser/argument-source-name	1	fixed
+arity	datascript.parser/argument-variable-name	1	fixed
+arity	datascript.parser/binding-collection-item	1	fixed
+arity	datascript.parser/binding-ignore?	1	fixed
+arity	datascript.parser/binding-scalar-variable	1	fixed
+arity	datascript.parser/binding-traversable	1	fixed
+arity	datascript.parser/binding-tuple-items	1	fixed
+arity	datascript.parser/binding-variable-names	1	fixed
+arity	datascript.parser/binding-vars	1	fixed
+arity	datascript.parser/callable-vars	1	fixed
+arity	datascript.parser/clause-has-input?	1	fixed
+arity	datascript.parser/clause-has-rule?	1	fixed
+arity	datascript.parser/clause-sources	1	fixed
+arity	datascript.parser/clause-traversable	1	fixed
+arity	datascript.parser/clause-vars	1	fixed
+arity	datascript.parser/clauses-have-input?	1	fixed
+arity	datascript.parser/clauses-have-rule?	1	fixed
+arity	datascript.parser/collect	2	fixed
+arity	datascript.parser/collect	3	fixed
+arity	datascript.parser/collect-vars-distinct	1	fixed
+arity	datascript.parser/collection-find	1	fixed
+arity	datascript.parser/collection-find-element	1	fixed
+arity	datascript.parser/collection-find?	1	fixed
+arity	datascript.parser/collection-input	1	fixed
+arity	datascript.parser/constant-argument	1	fixed
+arity	datascript.parser/custom-aggregate-find-element	2	fixed
+arity	datascript.parser/data-traversable	1	fixed
+arity	datascript.parser/data-value-items	1	fixed
+arity	datascript.parser/default-in	1	fixed
+arity	datascript.parser/default-pattern	1	fixed
+arity	datascript.parser/deftrecord	2	variadic
+arity	datascript.parser/distinct?	1	fixed
+arity	datascript.parser/explicit-input	1	fixed
+arity	datascript.parser/explicit-pattern-clause	2	fixed
+arity	datascript.parser/find-element-aggregate	1	fixed
+arity	datascript.parser/find-element-pull	1	fixed
+arity	datascript.parser/find-element-vars	1	fixed
+arity	datascript.parser/find-projection-variable-names	1	fixed
+arity	datascript.parser/find-spec-elements	1	fixed
+arity	datascript.parser/find-traversable	1	fixed
+arity	datascript.parser/find-variable-name	1	fixed
+arity	datascript.parser/find-variable-names	1	fixed
+arity	datascript.parser/find-vars	1	fixed
+arity	datascript.parser/flatten-rule-vars	1	fixed
+arity	datascript.parser/fn-arg-source-records	1	fixed
+arity	datascript.parser/fn-arg-variable-records	1	fixed
+arity	datascript.parser/fn-arg-vars	1	fixed
+arity	datascript.parser/greater-than-clause	2	fixed
+arity	datascript.parser/ignore-input	0	fixed
+arity	datascript.parser/input-binding-rules?	1	fixed
+arity	datascript.parser/input-binding-sources	1	fixed
+arity	datascript.parser/input-binding-vars	1	fixed
+arity	datascript.parser/join-rule-variable-names	1	fixed
+arity	datascript.parser/make-static-rules-input	0	fixed
+arity	datascript.parser/make-static-source-input	1	fixed
+arity	datascript.parser/make-static-value-input	1	fixed
+arity	datascript.parser/of-size?	2	fixed
+arity	datascript.parser/or-clause-display	1	fixed
+arity	datascript.parser/or-clause-join?	1	fixed
+arity	datascript.parser/or-clause-parts	1	fixed
+arity	datascript.parser/or-clause-source-name	1	fixed
+arity	datascript.parser/parse-aggregate	1	fixed
+arity	datascript.parser/parse-aggregate-custom	1	fixed
+arity	datascript.parser/parse-and	1	fixed
+arity	datascript.parser/parse-bind-coll	1	fixed
+arity	datascript.parser/parse-bind-ignore	1	fixed
+arity	datascript.parser/parse-bind-rel	1	fixed
+arity	datascript.parser/parse-bind-scalar	1	fixed
+arity	datascript.parser/parse-bind-tuple	1	fixed
+arity	datascript.parser/parse-binding	1	fixed
+arity	datascript.parser/parse-call	1	fixed
+arity	datascript.parser/parse-clause	1	fixed
+arity	datascript.parser/parse-clauses	1	fixed
+arity	datascript.parser/parse-constant	1	fixed
+arity	datascript.parser/parse-disjunction-clauses	1	fixed
+arity	datascript.parser/parse-find	1	fixed
+arity	datascript.parser/parse-find-coll	1	fixed
+arity	datascript.parser/parse-find-elem	1	fixed
+arity	datascript.parser/parse-find-elements	1	fixed
+arity	datascript.parser/parse-find-rel	1	fixed
+arity	datascript.parser/parse-find-scalar	1	fixed
+arity	datascript.parser/parse-find-tuple	1	fixed
+arity	datascript.parser/parse-fn	1	fixed
+arity	datascript.parser/parse-fn-arg	1	fixed
+arity	datascript.parser/parse-fn-args	1	fixed
+arity	datascript.parser/parse-in	1	fixed
+arity	datascript.parser/parse-not	1	fixed
+arity	datascript.parser/parse-not-join	1	fixed
+arity	datascript.parser/parse-or	1	fixed
+arity	datascript.parser/parse-or-join	1	fixed
+arity	datascript.parser/parse-pattern	1	fixed
+arity	datascript.parser/parse-pattern-el	1	fixed
+arity	datascript.parser/parse-pattern-elements	1	fixed
+arity	datascript.parser/parse-placeholder	1	fixed
+arity	datascript.parser/parse-plain-symbol	1	fixed
+arity	datascript.parser/parse-plain-variable	1	fixed
+arity	datascript.parser/parse-pred	1	fixed
+arity	datascript.parser/parse-pull-expr	1	fixed
+arity	datascript.parser/parse-query	1	fixed
+arity	datascript.parser/parse-required-variables	1	fixed
+arity	datascript.parser/parse-return-map	2	fixed
+arity	datascript.parser/parse-rule	1	fixed
+arity	datascript.parser/parse-rule-expr	1	fixed
+arity	datascript.parser/parse-rule-var-items	1	fixed
+arity	datascript.parser/parse-rule-vars	1	fixed
+arity	datascript.parser/parse-rules	1	fixed
+arity	datascript.parser/parse-rules-var	1	fixed
+arity	datascript.parser/parse-seq	2	fixed
+arity	datascript.parser/parse-src-var	1	fixed
+arity	datascript.parser/parse-tuple-el	1	fixed
+arity	datascript.parser/parse-tuple-elements	1	fixed
+arity	datascript.parser/parse-var-required	1	fixed
+arity	datascript.parser/parse-variable	1	fixed
+arity	datascript.parser/parse-variables	1	fixed
+arity	datascript.parser/parse-where	1	fixed
+arity	datascript.parser/parse-with	1	fixed
+arity	datascript.parser/pattern-attribute	1	fixed
+arity	datascript.parser/pattern-clause	1	fixed
+arity	datascript.parser/pattern-constant	1	fixed
+arity	datascript.parser/pattern-element-constant	1	fixed
+arity	datascript.parser/pattern-element-variable-symbol	1	fixed
+arity	datascript.parser/pattern-element-vars	1	fixed
+arity	datascript.parser/pattern-placeholder	0	fixed
+arity	datascript.parser/pattern-variable	1	fixed
+arity	datascript.parser/postwalk	2	fixed
+arity	datascript.parser/pull-find-element	2	fixed
+arity	datascript.parser/pull-pattern-value	1	fixed
+arity	datascript.parser/pull-pattern-variable-name	1	fixed
+arity	datascript.parser/pull-source-find-element	3	fixed
+arity	datascript.parser/pull-source-name	1	fixed
+arity	datascript.parser/pull-source-variable-find-element	3	fixed
+arity	datascript.parser/pull-variable-find-element	2	fixed
+arity	datascript.parser/pull-variable-name	1	fixed
+arity	datascript.parser/pull?	1	fixed
+arity	datascript.parser/query->map	1	fixed
+arity	datascript.parser/query-input-value-binding	1	fixed
+arity	datascript.parser/query-return-keys	2	fixed
+arity	datascript.parser/query-return-map	2	fixed
+arity	datascript.parser/query-return-strings	2	fixed
+arity	datascript.parser/query-return-symbols	2	fixed
+arity	datascript.parser/query-source-name	1	fixed
+arity	datascript.parser/query-traversable	1	fixed
+arity	datascript.parser/query-with	2	fixed
+arity	datascript.parser/relation-find	1	fixed
+arity	datascript.parser/relation-find-elements	1	fixed
+arity	datascript.parser/relation-find?	1	fixed
+arity	datascript.parser/return-map-count	1	fixed
+arity	datascript.parser/return-map-key-names	1	fixed
+arity	datascript.parser/return-map-keyword	1	fixed
+arity	datascript.parser/return-map-string-names	1	fixed
+arity	datascript.parser/return-map-symbol-names	1	fixed
+arity	datascript.parser/return-map-symbols	1	fixed
+arity	datascript.parser/return-map-type	1	fixed
+arity	datascript.parser/rule-branch-clauses	1	fixed
+arity	datascript.parser/rule-branch-parameter-names	1	fixed
+arity	datascript.parser/rule-branch-required-parameter-names	1	fixed
+arity	datascript.parser/rule-branches	2	fixed
+arity	datascript.parser/rule-clause-parts	1	fixed
+arity	datascript.parser/rule-clause-source-name	1	fixed
+arity	datascript.parser/rule-traversable	1	fixed
+arity	datascript.parser/rule-vars-arity	1	fixed
+arity	datascript.parser/rule-vars-display	1	fixed
+arity	datascript.parser/rule-vars-names	1	fixed
+arity	datascript.parser/rule-vars-required-names	1	fixed
+arity	datascript.parser/rule-vars-values	1	fixed
+arity	datascript.parser/scalar-input	1	fixed
+arity	datascript.parser/single-find	1	fixed
+arity	datascript.parser/single-find-element	1	fixed
+arity	datascript.parser/single-find?	1	fixed
+arity	datascript.parser/source	1	fixed
+arity	datascript.parser/source-argument	1	fixed
+arity	datascript.parser/source-values	1	fixed
+arity	datascript.parser/static-and-clause	1	fixed
+arity	datascript.parser/static-callable-name	1	fixed
+arity	datascript.parser/static-db-query	2	fixed
+arity	datascript.parser/static-db-query-clauses	2	fixed
+arity	datascript.parser/static-db-query-clauses-with-bindings	3	fixed
+arity	datascript.parser/static-db-query-clauses-with-inputs	3	fixed
+arity	datascript.parser/static-db-query-clauses-with-scalars	3	fixed
+arity	datascript.parser/static-db-query-with-bindings	3	fixed
+arity	datascript.parser/static-db-query-with-scalars	3	fixed
+arity	datascript.parser/static-function-clause	3	fixed
+arity	datascript.parser/static-input-binding	1	fixed
+arity	datascript.parser/static-input-binding-form	1	fixed
+arity	datascript.parser/static-input-rules?	1	fixed
+arity	datascript.parser/static-input-source-name	1	fixed
+arity	datascript.parser/static-not-clause	2	fixed
+arity	datascript.parser/static-not-join-clause	3	fixed
+arity	datascript.parser/static-or-clause	2	fixed
+arity	datascript.parser/static-or-clause-for-source	3	fixed
+arity	datascript.parser/static-or-join-clause	4	fixed
+arity	datascript.parser/static-or-join-clause-for-source	5	fixed
+arity	datascript.parser/static-predicate-clause	2	fixed
+arity	datascript.parser/static-query	2	fixed
+arity	datascript.parser/static-query-clauses-with-bindings	3	fixed
+arity	datascript.parser/static-query-clauses-with-inputs	3	fixed
+arity	datascript.parser/static-query-has-source?	1	fixed
+arity	datascript.parser/static-query-inputs	1	fixed
+arity	datascript.parser/static-query-patterns	1	fixed
+arity	datascript.parser/static-query-value-bindings	1	fixed
+arity	datascript.parser/static-query-with-bindings	3	fixed
+arity	datascript.parser/static-rule-branch	3	fixed
+arity	datascript.parser/static-rule-branch-with-vars	4	fixed
+arity	datascript.parser/static-rule-clause	2	fixed
+arity	datascript.parser/static-rule-variable	1	fixed
+arity	datascript.parser/static-rules	1	fixed
+arity	datascript.parser/static-source-not-clause	3	fixed
+arity	datascript.parser/static-source-not-join-clause	4	fixed
+arity	datascript.parser/static-source-or-clause	3	fixed
+arity	datascript.parser/static-source-or-join-clause	5	fixed
+arity	datascript.parser/static-source-rule-clause	3	fixed
+arity	datascript.parser/static-value-input-binding	1	fixed
+arity	datascript.parser/string-traversable	1	fixed
+arity	datascript.parser/take-source	1	fixed
+arity	datascript.parser/traversable-clause-value	1	fixed
+arity	datascript.parser/traversable-clause?	1	fixed
+arity	datascript.parser/traversable-kind	1	fixed
+arity	datascript.parser/traversable-variable-name	1	fixed
+arity	datascript.parser/tuple-find	1	fixed
+arity	datascript.parser/tuple-find-elements	1	fixed
+arity	datascript.parser/tuple-input	1	fixed
+arity	datascript.parser/validate-arity	2	fixed
+arity	datascript.parser/validate-or	2	fixed
+arity	datascript.parser/validate-query	3	fixed
+arity	datascript.parser/validate-static-query-sources	1	fixed
+arity	datascript.parser/variable-argument	1	fixed
+arity	datascript.parser/variable-callable-name	1	fixed
+arity	datascript.parser/variable-find-element	1	fixed
+arity	datascript.parser/variable-function-clause	3	fixed
+arity	datascript.parser/variable-predicate-clause	2	fixed
+arity	datascript.parser/variable-traversable	1	fixed
+arity	datascript.parser/variables-distinct?	1	fixed
+arity	datascript.parser/with-source	2	fixed
+arity	datascript.pull-api/IFrame/-merge	2	fixed
+arity	datascript.pull-api/IFrame/-run	2	fixed
+arity	datascript.pull-api/IFrame/-str	1	fixed
+arity	datascript.pull-api/add-default	2	fixed
+arity	datascript.pull-api/add-missing-value	2	fixed
+arity	datascript.pull-api/add-scalar-datom	3	fixed
+arity	datascript.pull-api/advance-attrs-state	3	fixed
+arity	datascript.pull-api/advance-reverse-state	2	fixed
+arity	datascript.pull-api/apply-attr-xform	2	fixed
+arity	datascript.pull-api/assoc-pulled-data	3	fixed
+arity	datascript.pull-api/assoc-pulled-value	3	fixed
+arity	datascript.pull-api/attr-at-index	2	fixed
+arity	datascript.pull-api/attr-in-range?	3	fixed
+arity	datascript.pull-api/attr-pattern	1	fixed
+arity	datascript.pull-api/attrs-frame	5	fixed
+arity	datascript.pull-api/attrs-state	5	fixed
+arity	datascript.pull-api/attrs-state-with	6	fixed
+arity	datascript.pull-api/auto-expanding?	1	fixed
+arity	datascript.pull-api/compact-child-result	1	fixed
+arity	datascript.pull-api/cursor-datom	1	fixed
+arity	datascript.pull-api/cursor-datom-exn	1	fixed
+arity	datascript.pull-api/cursor-from-datoms	1	fixed
+arity	datascript.pull-api/cursor-from-seq	1	fixed
+arity	datascript.pull-api/cursor-matches-attr?	2	fixed
+arity	datascript.pull-api/cycle-entity	1	fixed
+arity	datascript.pull-api/default-pull-options	0	fixed
+arity	datascript.pull-api/entity-ids-to-refs	1	fixed
+arity	datascript.pull-api/expanding-ref-frame	6	fixed
+arity	datascript.pull-api/finish-multival-attr	2	fixed
+arity	datascript.pull-api/finish-multival-ref	1	fixed
+arity	datascript.pull-api/first-frame	1	fixed
+arity	datascript.pull-api/frame-result	2	fixed
+arity	datascript.pull-api/merge-attr-value	3	fixed
+arity	datascript.pull-api/merge-attrs-result	2	fixed
+arity	datascript.pull-api/merge-frame	2	fixed
+arity	datascript.pull-api/merge-multival-ref-result	2	fixed
+arity	datascript.pull-api/merge-reverse-result	2	fixed
+arity	datascript.pull-api/missing-attr-state	3	fixed
+arity	datascript.pull-api/next-cursor	1	fixed
+arity	datascript.pull-api/next-multival-ref-state	1	fixed
+arity	datascript.pull-api/next-parent-datoms	2	fixed
+arity	datascript.pull-api/non-empty-cursor	1	fixed
+arity	datascript.pull-api/non-empty-many	1	fixed
+arity	datascript.pull-api/parse-opts	2	fixed
+arity	datascript.pull-api/parse-opts	3	fixed
+arity	datascript.pull-api/pull	3	fixed
+arity	datascript.pull-api/pull	4	fixed
+arity	datascript.pull-api/pull-forward-cursor	3	fixed
+arity	datascript.pull-api/pull-impl	2	fixed
+arity	datascript.pull-api/pull-many	3	fixed
+arity	datascript.pull-api/pull-many	4	fixed
+arity	datascript.pull-api/pull-many-parsed	3	fixed
+arity	datascript.pull-api/pull-many-source	3	fixed
+arity	datascript.pull-api/pull-many-source-with-options	4	fixed
+arity	datascript.pull-api/pull-options	1	fixed
+arity	datascript.pull-api/pull-parsed	3	fixed
+arity	datascript.pull-api/pull-parsed-with-options	4	fixed
+arity	datascript.pull-api/pull-source	3	fixed
+arity	datascript.pull-api/pull-source-with-options	4	fixed
+arity	datascript.pull-api/pulled-map-to-data	1	fixed
+arity	datascript.pull-api/pulled-to-data	1	fixed
+arity	datascript.pull-api/push-frame	2	fixed
+arity	datascript.pull-api/ref-datom-id	2	fixed
+arity	datascript.pull-api/ref-frame	6	fixed
+arity	datascript.pull-api/rest-frames	1	fixed
+arity	datascript.pull-api/result-frame-state	1	fixed
+arity	datascript.pull-api/reverse-attrs-frame	1	fixed
+arity	datascript.pull-api/run-attrs-frame	2	fixed
+arity	datascript.pull-api/run-frame	2	fixed
+arity	datascript.pull-api/run-multival-attr	3	fixed
+arity	datascript.pull-api/run-multival-attr-frame	1	fixed
+arity	datascript.pull-api/run-multival-ref-frame	2	fixed
+arity	datascript.pull-api/run-reverse-attrs-frame	2	fixed
+arity	datascript.pull-api/run-stack	2	fixed
+arity	datascript.pull-api/run-wildcard-attr	4	fixed
+arity	datascript.pull-api/skip-multival-attr	3	fixed
+arity	datascript.pull-api/skip-multival-ref	1	fixed
+arity	datascript.pull-api/start-attr-child	5	fixed
+arity	datascript.pull-api/visit	5	fixed
+arity	datascript.pull-parser/apply-source-option	2	fixed
+arity	datascript.pull-parser/attr-data	1	fixed
+arity	datascript.pull-parser/attr-expr-spec	2	fixed
+arity	datascript.pull-parser/attr-name-spec	1	fixed
+arity	datascript.pull-parser/attr-pattern	1	fixed
+arity	datascript.pull-parser/attr-pattern-wildcard	1	fixed
+arity	datascript.pull-parser/attribute	2	fixed
+arity	datascript.pull-parser/check	3	fixed
+arity	datascript.pull-parser/identity-value	1	fixed
+arity	datascript.pull-parser/invalid-attr-spec	1	fixed
+arity	datascript.pull-parser/legacy-default-spec	2	fixed
+arity	datascript.pull-parser/legacy-limit-spec	2	fixed
+arity	datascript.pull-parser/map-pattern-value	1	fixed
+arity	datascript.pull-parser/map-recursion-value	1	fixed
+arity	datascript.pull-parser/nested-pattern	2	fixed
+arity	datascript.pull-parser/next-attr-key	0	fixed
+arity	datascript.pull-parser/option-alias	1	fixed
+arity	datascript.pull-parser/option-alias-value	1	fixed
+arity	datascript.pull-parser/option-default	1	fixed
+arity	datascript.pull-parser/option-limit	1	fixed
+arity	datascript.pull-parser/option-unlimited	0	fixed
+arity	datascript.pull-parser/option-xform	1	fixed
+arity	datascript.pull-parser/parse-attr-expr	2	fixed
+arity	datascript.pull-parser/parse-attr-name	2	fixed
+arity	datascript.pull-parser/parse-attr-spec	2	fixed
+arity	datascript.pull-parser/parse-legacy-default-expr	2	fixed
+arity	datascript.pull-parser/parse-legacy-limit-expr	2	fixed
+arity	datascript.pull-parser/parse-map-spec	3	fixed
+arity	datascript.pull-parser/parse-pattern	2	fixed
+arity	datascript.pull-parser/parse-pattern-items	5	fixed
+arity	datascript.pull-parser/parse-pattern-view	2	fixed
+arity	datascript.pull-parser/pattern	2	fixed
+arity	datascript.pull-parser/raise-invalid-source	2	fixed
+arity	datascript.pull-parser/recursive-attribute	2	fixed
+arity	datascript.pull-parser/recursive-attribute-with-limit	3	fixed
+arity	datascript.pull-parser/recursive-pattern	4	fixed
+arity	datascript.pull-parser/replace-attr-data	2	fixed
+arity	datascript.pull-parser/source-alias	2	fixed
+arity	datascript.pull-parser/source-alias-value	2	fixed
+arity	datascript.pull-parser/source-attr-name	1	fixed
+arity	datascript.pull-parser/source-attribute	1	fixed
+arity	datascript.pull-parser/source-default	2	fixed
+arity	datascript.pull-parser/source-fragment-string	1	fixed
+arity	datascript.pull-parser/source-group	1	fixed
+arity	datascript.pull-parser/source-invalid	1	fixed
+arity	datascript.pull-parser/source-limit	2	fixed
+arity	datascript.pull-parser/source-nested	2	fixed
+arity	datascript.pull-parser/source-nested-options	3	fixed
+arity	datascript.pull-parser/source-operation	1	fixed
+arity	datascript.pull-parser/source-options	2	fixed
+arity	datascript.pull-parser/source-recursion	2	fixed
+arity	datascript.pull-parser/source-recursion-options	3	fixed
+arity	datascript.pull-parser/source-xform	2	fixed
+arity	datascript.pull-parser/upsert-attr	2	fixed
+arity	datascript.pull-parser/validate-invalid-attr-options	4	fixed
+arity	datascript.pull-parser/validate-source-limit	3	fixed
+arity	datascript.pull-parser/with-alias	2	fixed
+arity	datascript.pull-parser/with-alias-value	2	fixed
+arity	datascript.pull-parser/with-default	2	fixed
+arity	datascript.pull-parser/with-limit	2	fixed
+arity	datascript.pull-parser/with-pattern	2	fixed
+arity	datascript.pull-parser/with-recursion	2	fixed
+arity	datascript.pull-parser/with-xform	2	fixed
+arity	datascript.query/-aggregate	3	fixed
+arity	datascript.query/-collect	2	fixed
+arity	datascript.query/-collect	3	fixed
+arity	datascript.query/-collect-tuples	4	fixed
+arity	datascript.query/IBinding/in->rel	2	fixed
+arity	datascript.query/IContextResolve/-context-resolve	2	fixed
+arity	datascript.query/IPostProcess/-post-process	3	fixed
+arity	datascript.query/aggregate	3	fixed
+arity	datascript.query/attr?	1	fixed
+arity	datascript.query/bound-vars	1	fixed
+arity	datascript.query/check-bound	3	fixed
+arity	datascript.query/check-free-same	3	fixed
+arity	datascript.query/check-free-subset	3	fixed
+arity	datascript.query/collapse-rels	2	fixed
+arity	datascript.query/collect	2	fixed
+arity	datascript.query/collect-vars	1	fixed
+arity	datascript.query/dynamic-lookup-attrs	2	fixed
+arity	datascript.query/empty-rel	1	fixed
+arity	datascript.query/free-var?	1	fixed
+arity	datascript.query/hash-join	2	fixed
+arity	datascript.query/intersect-keys	2	fixed
+arity	datascript.query/join-tuples	4	fixed
+arity	datascript.query/limit-context	2	fixed
+arity	datascript.query/limit-rel	2	fixed
+arity	datascript.query/lookup-pattern	3	fixed
+arity	datascript.query/lookup-pattern-coll	3	fixed
+arity	datascript.query/lookup-pattern-db	3	fixed
+arity	datascript.query/lookup-ref?	1	fixed
+arity	datascript.query/matches-pattern?	2	fixed
+arity	datascript.query/normalize-pattern-clause	1	fixed
+arity	datascript.query/parse-rules	1	fixed
+arity	datascript.query/prod-rel	0	fixed
+arity	datascript.query/prod-rel	2	fixed
+arity	datascript.query/q	1	variadic
+arity	datascript.query/q-closed	2	fixed
+arity	datascript.query/q-db	2	fixed
+arity	datascript.query/remove-pairs	2	fixed
+arity	datascript.query/resolve-in	2	fixed
+arity	datascript.query/resolve-ins	3	fixed
+arity	datascript.query/resolve-pattern-lookup-refs	2	fixed
+arity	datascript.query/rule-gen-guards	2	fixed
+arity	datascript.query/rule?	2	fixed
+arity	datascript.query/same-keys?	2	fixed
+arity	datascript.query/source?	1	fixed
+arity	datascript.query/split-guards	2	fixed
+arity	datascript.query/substitute-constant	2	fixed
+arity	datascript.query/substitute-constants	2	fixed
+arity	datascript.query/subtract-rel	2	fixed
+arity	datascript.query/sum-rel	2	fixed
+arity	datascript.query/tuples->return-map	2	fixed
+arity	datascript.query/walk-collect	2	fixed
+arity	datascript.schema/is-system-keyword?	1	fixed
+arity	datascript.schema/schema-entity?	1	fixed
+arity	datascript.schema/schema?	1	fixed
+arity	datascript.schema/system-label?	2	fixed
+arity	datascript.serialize/freeze-kw	1	fixed
+arity	datascript.serialize/from-serializable	1	fixed
+arity	datascript.serialize/from-serializable	2	fixed
+arity	datascript.serialize/serializable	1	fixed
+arity	datascript.serialize/serializable	2	fixed
+arity	datascript.storage/IStorage/-delete	2	fixed
+arity	datascript.storage/IStorage/-list-addresses	1	fixed
+arity	datascript.storage/IStorage/-restore	2	fixed
+arity	datascript.storage/IStorage/-store	2	fixed
+arity	datascript.storage/IStorage/-store	3	fixed
+arity	datascript.storage/addresses	1	fixed
+arity	datascript.storage/collect-garbage	1	fixed
+arity	datascript.storage/db-with-tail	2	fixed
+arity	datascript.storage/default-options	0	fixed
+arity	datascript.storage/file-storage	1	fixed
+arity	datascript.storage/file-storage	2	fixed
+arity	datascript.storage/make-backend	4	fixed
+arity	datascript.storage/make-storage-adapter	2	fixed
+arity	datascript.storage/maybe-adapt-storage	1	fixed
+arity	datascript.storage/options	4	fixed
+arity	datascript.storage/restore	1	fixed
+arity	datascript.storage/restore	2	fixed
+arity	datascript.storage/restore-impl	2	fixed
+arity	datascript.storage/serializable-datom	1	fixed
+arity	datascript.storage/storage	1	fixed
+arity	datascript.storage/storage-adapter	1	fixed
+arity	datascript.storage/store	1	fixed
+arity	datascript.storage/store	2	fixed
+arity	datascript.storage/store-impl!	3	fixed
+arity	datascript.storage/store-tail	2	fixed
+arity	datascript.util/concatv	0	variadic
+arity	datascript.util/cond+	0	variadic
+arity	datascript.util/distinct-by	2	fixed
+arity	datascript.util/find	2	fixed
+arity	datascript.util/if+	3	fixed
+arity	datascript.util/raise	0	variadic
+arity	datascript.util/reduce-indexed	3	fixed
+arity	datascript.util/removem	2	fixed
+arity	datascript.util/single	1	fixed
+arity	datascript.util/some-of	0	fixed
+arity	datascript.util/some-of	1	fixed
+arity	datascript.util/some-of	1	variadic
+arity	datascript.util/squuid	0	fixed
+arity	datascript.util/squuid	1	fixed
+arity	datascript.util/squuid-time-millis	1	fixed
+arity	datascript.util/zip	2	fixed
+arity	datascript.util/zip	2	variadic
+option	datascript.serialize/from-serializable	:ref-type
+option	datascript.serialize/from-serializable	:thaw-fn
+option	datascript.serialize/from-serializable	:thaw-kw
+option	datascript.serialize/serializable	:freeze-fn
+option	datascript.serialize/serializable	:freeze-kw
+protocol	datascript.db/IDB	-attr-tuples
+protocol	datascript.db/IDB	-attrs-by
+protocol	datascript.db/IDB	-schema
+protocol	datascript.db/IDB	-unfiltered-db
+protocol	datascript.db/IDatabaseView	-database-view
+protocol	datascript.db/IDatom	datom-added
+protocol	datascript.db/IDatom	datom-get-idx
+protocol	datascript.db/IDatom	datom-set-idx
+protocol	datascript.db/IDatom	datom-tx
+protocol	datascript.db/IFilteredView	-filter-view
+protocol	datascript.db/IFilteredView	-filtered?
+protocol	datascript.db/IIndexAccess	-datoms
+protocol	datascript.db/IIndexAccess	-index-range
+protocol	datascript.db/IIndexAccess	-rseek-datoms
+protocol	datascript.db/IIndexAccess	-seek-datoms
+protocol	datascript.db/ISearch	-search
+protocol	datascript.lru/ICache	-get
+protocol	datascript.parser/IFindElements	find-elements
+protocol	datascript.parser/IFindVars	-find-vars
+protocol	datascript.parser/ITraversable	-collect
+protocol	datascript.parser/ITraversable	-collect-vars
+protocol	datascript.parser/ITraversable	-postwalk
+protocol	datascript.pull-api/IFrame	-merge
+protocol	datascript.pull-api/IFrame	-run
+protocol	datascript.pull-api/IFrame	-str
+protocol	datascript.query/IBinding	in->rel
+protocol	datascript.query/IContextResolve	-context-resolve
+protocol	datascript.query/IPostProcess	-post-process
+protocol	datascript.storage/IStorage	-delete
+protocol	datascript.storage/IStorage	-list-addresses
+protocol	datascript.storage/IStorage	-restore
+protocol	datascript.storage/IStorage	-store
+source-form	pull	vector
+source-form	query	map-or-vector
+source-form	query-input	scalar-collection-tuple-relation-source-rules
+source-form	schema	map
+source-form	serialization-options	map
+source-form	transaction	map-operation-vector-datom-function
+tagged-reader	datascript/DB
+tagged-reader	datascript/Datom
+var	datascript.built-ins/add-values
+var	datascript.built-ins/aggregate-function
+var	datascript.built-ins/aggregates
+var	datascript.built-ins/apply-comparison
+var	datascript.built-ins/apply-pure-function
+var	datascript.built-ins/average-aggregate?
+var	datascript.built-ins/comparison-function
+var	datascript.built-ins/count-aggregate?
+var	datascript.built-ins/count-distinct-aggregate?
+var	datascript.built-ins/data-map
+var	datascript.built-ins/distinct-aggregate?
+var	datascript.built-ins/get-else-function?
+var	datascript.built-ins/get-some-function?
+var	datascript.built-ins/maximum-aggregate?
+var	datascript.built-ins/median-aggregate?
+var	datascript.built-ins/minimum-aggregate?
+var	datascript.built-ins/missing-function?
+var	datascript.built-ins/ordered-values?
+var	datascript.built-ins/pure-function
+var	datascript.built-ins/query-fns
+var	datascript.built-ins/random-aggregate?
+var	datascript.built-ins/sample-aggregate?
+var	datascript.built-ins/standard-deviation-aggregate?
+var	datascript.built-ins/sum-aggregate?
+var	datascript.built-ins/values-equal?
+var	datascript.built-ins/variance-aggregate?
+var	datascript.conn/-transact!
+var	datascript.conn/conn-from-datoms
+var	datascript.conn/conn-from-db
+var	datascript.conn/conn?
+var	datascript.conn/create-conn
+var	datascript.conn/create-conn-closed
+var	datascript.conn/current-db
+var	datascript.conn/db-with
+var	datascript.conn/db-with-closed
+var	datascript.conn/listen!
+var	datascript.conn/listen!-closed
+var	datascript.conn/reset-conn!
+var	datascript.conn/reset-schema!
+var	datascript.conn/restore-conn
+var	datascript.conn/run-callbacks
+var	datascript.conn/store-after-transact!
+var	datascript.conn/transact!
+var	datascript.conn/unlisten!
+var	datascript.conn/unlisten!-closed
+var	datascript.conn/with
+var	datascript.conn/with-closed
+var	datascript.core/addresses
+var	datascript.core/collect-garbage
+var	datascript.core/conn-from-datoms
+var	datascript.core/conn-from-db
+var	datascript.core/conn?
+var	datascript.core/create-conn
+var	datascript.core/datom
+var	datascript.core/datom?
+var	datascript.core/datoms
+var	datascript.core/datoms-closed
+var	datascript.core/db
+var	datascript.core/db-with
+var	datascript.core/db?
+var	datascript.core/empty-db
+var	datascript.core/empty-db-closed
+var	datascript.core/entid
+var	datascript.core/entity
+var	datascript.core/entity-closed
+var	datascript.core/entity-db
+var	datascript.core/filter
+var	datascript.core/find-datom
+var	datascript.core/find-datom-closed
+var	datascript.core/from-serializable
+var	datascript.core/index-component-value
+var	datascript.core/index-range
+var	datascript.core/index-range-closed
+var	datascript.core/init-db
+var	datascript.core/init-db-closed
+var	datascript.core/init-db-invalid
+var	datascript.core/is-filtered
+var	datascript.core/listen!
+var	datascript.core/pull
+var	datascript.core/pull-many
+var	datascript.core/q
+var	datascript.core/reset-conn!
+var	datascript.core/reset-schema!
+var	datascript.core/resolve-tempid
+var	datascript.core/restore
+var	datascript.core/restore-conn
+var	datascript.core/rseek-datoms
+var	datascript.core/rseek-datoms-closed
+var	datascript.core/schema
+var	datascript.core/seek-datoms
+var	datascript.core/seek-datoms-closed
+var	datascript.core/serializable
+var	datascript.core/settings
+var	datascript.core/squuid
+var	datascript.core/squuid-time-millis
+var	datascript.core/storage
+var	datascript.core/store
+var	datascript.core/tempid
+var	datascript.core/touch
+var	datascript.core/transact
+var	datascript.core/transact!
+var	datascript.core/transact-async
+var	datascript.core/tx0
+var	datascript.core/unlisten!
+var	datascript.core/with
+var	datascript.core/with-schema
+var	datascript.db/*last-auto-tempid
+var	datascript.db/IDB
+var	datascript.db/IDatabaseView
+var	datascript.db/IDatom
+var	datascript.db/IFilteredView
+var	datascript.db/IIndexAccess
+var	datascript.db/ISearch
+var	datascript.db/add-upsert-resolution
+var	datascript.db/add-value-eids
+var	datascript.db/allocate-tx-entity
+var	datascript.db/append-datoms-from
+var	datascript.db/assoc-auto-tempids
+var	datascript.db/attr->properties
+var	datascript.db/attr-tuples
+var	datascript.db/auto-tempid
+var	datascript.db/auto-tempid?
+var	datascript.db/builtin-fn?
+var	datascript.db/case-tree
+var	datascript.db/check-schema-update
+var	datascript.db/check-value-tempids
+var	datascript.db/class-compare
+var	datascript.db/class-identical?
+var	datascript.db/cmp
+var	datascript.db/cmp-datoms-aevt
+var	datascript.db/cmp-datoms-aevt-quick
+var	datascript.db/cmp-datoms-avet
+var	datascript.db/cmp-datoms-avet-quick
+var	datascript.db/cmp-datoms-eav-quick
+var	datascript.db/cmp-datoms-eavt
+var	datascript.db/cmp-datoms-eavt-quick
+var	datascript.db/collect-upsert-resolution
+var	datascript.db/combine-cmp
+var	datascript.db/combine-hashes
+var	datascript.db/component?
+var	datascript.db/components->pattern
+var	datascript.db/current-tx-ref?
+var	datascript.db/data-value-description
+var	datascript.db/data-value-entity-form
+var	datascript.db/data-value-entity-ref
+var	datascript.db/data-value-lookup-ref?
+var	datascript.db/data-value-tuple-items
+var	datascript.db/data-values-description
+var	datascript.db/database-datom-print-string
+var	datascript.db/database-parts-print-string
+var	datascript.db/database-print-string
+var	datascript.db/database-view
+var	datascript.db/database-view-component?
+var	datascript.db/database-view-entid
+var	datascript.db/database-view-identical?
+var	datascript.db/database-view-identity-hash
+var	datascript.db/database-view-multival?
+var	datascript.db/database-view-numeric-eid-exists?
+var	datascript.db/database-view-reduce-eavt-slice
+var	datascript.db/database-view-ref?
+var	datascript.db/database-view-search
+var	datascript.db/database-view-search-vector
+var	datascript.db/database-view-unfiltered-db
+var	datascript.db/datom
+var	datascript.db/datom->tx-entry
+var	datascript.db/datom-attr
+var	datascript.db/datom-bound
+var	datascript.db/datom-closed
+var	datascript.db/datom-from-edn-string
+var	datascript.db/datom-from-reader
+var	datascript.db/datom-hash
+var	datascript.db/datom-print-string
+var	datascript.db/datom-values-description
+var	datascript.db/datom-vectors-equal?
+var	datascript.db/datom?
+var	datascript.db/db-count
+var	datascript.db/db-equal?
+var	datascript.db/db-from-edn-string
+var	datascript.db/db-from-reader
+var	datascript.db/db-hash
+var	datascript.db/db-metadata
+var	datascript.db/db-persistent!
+var	datascript.db/db-transient
+var	datascript.db/db?
+var	datascript.db/declare+
+var	datascript.db/default-options
+var	datascript.db/defcomp
+var	datascript.db/defn+
+var	datascript.db/diff-databases
+var	datascript.db/direct-tuple-match
+var	datascript.db/e0
+var	datascript.db/effective-schema
+var	datascript.db/emax
+var	datascript.db/empty-db
+var	datascript.db/empty-entity-ids
+var	datascript.db/empty-entity-map
+var	datascript.db/empty-queued-tuples
+var	datascript.db/empty-schema
+var	datascript.db/empty-schema-drafts
+var	datascript.db/empty-schema-entry
+var	datascript.db/empty-schema-idents
+var	datascript.db/empty-tx-entries
+var	datascript.db/empty-upsert-map
+var	datascript.db/empty-upsert-resolution
+var	datascript.db/empty-used-tempid-eids
+var	datascript.db/empty-value-eids
+var	datascript.db/entid
+var	datascript.db/entid-some
+var	datascript.db/entid-strict
+var	datascript.db/entity-ref-key
+var	datascript.db/existing-tx-eid
+var	datascript.db/explode-attribute
+var	datascript.db/explode-pass
+var	datascript.db/filtered-database-print-string
+var	datascript.db/filtered-db-count
+var	datascript.db/filtered-db-datoms
+var	datascript.db/filtered-db-equal?
+var	datascript.db/filtered-db-hash
+var	datascript.db/filtered-entid
+var	datascript.db/find-datom
+var	datascript.db/finish-transaction
+var	datascript.db/flush-tuples
+var	datascript.db/get-schema
+var	datascript.db/ihash
+var	datascript.db/implicit-schema
+var	datascript.db/implicit-schema-entry
+var	datascript.db/incoming-reference-datoms
+var	datascript.db/index-component-entity-ref
+var	datascript.db/index-component-keyword
+var	datascript.db/indexing?
+var	datascript.db/init-db
+var	datascript.db/init-db-with-schema-option
+var	datascript.db/int-compare
+var	datascript.db/is-attr?
+var	datascript.db/make-db-snapshot
+var	datascript.db/mark-entity-used
+var	datascript.db/merge-schema
+var	datascript.db/multi-value?
+var	datascript.db/multival?
+var	datascript.db/non-empty-datoms
+var	datascript.db/normalize-init-datom
+var	datascript.db/numeric-eid-exists?
+var	datascript.db/optional-data-value-description
+var	datascript.db/options-assoc-storage
+var	datascript.db/options-branching-factor
+var	datascript.db/options-ref-type
+var	datascript.db/options-storage
+var	datascript.db/options-with-branching-factor
+var	datascript.db/options-with-ref-type
+var	datascript.db/options-with-storage
+var	datascript.db/ordered-tx-entity
+var	datascript.db/pr-db
+var	datascript.db/queued-tuple-value
+var	datascript.db/reduce-eavt-slice
+var	datascript.db/ref?
+var	datascript.db/reject-tempid-cas-operation
+var	datascript.db/reject-tempid-operation
+var	datascript.db/remove-schema
+var	datascript.db/resolve-datom
+var	datascript.db/resolve-tuple-refs
+var	datascript.db/resolve-tx-entity
+var	datascript.db/resolve-tx-value
+var	datascript.db/restore-db
+var	datascript.db/restore-db-from-storage
+var	datascript.db/reverse-ref
+var	datascript.db/reverse-ref?
+var	datascript.db/schema-entry-value
+var	datascript.db/schema-hash
+var	datascript.db/schema-ident-value
+var	datascript.db/schema-map
+var	datascript.db/schema-tuple-arity
+var	datascript.db/schema-tuple-attrs
+var	datascript.db/search-ea
+var	datascript.db/search-vector
+var	datascript.db/seqable?
+var	datascript.db/singleton-data-value
+var	datascript.db/temp-entity-ref?
+var	datascript.db/tempid-values-description
+var	datascript.db/transact-add-entry
+var	datascript.db/transact-cas-entry
+var	datascript.db/transact-retract-entry
+var	datascript.db/transact-tx-data
+var	datascript.db/transact-tx-data-impl
+var	datascript.db/transact-tx-data-loop
+var	datascript.db/transact-tx-data-run
+var	datascript.db/tuple-source?
+var	datascript.db/tuple?
+var	datascript.db/tx-add
+var	datascript.db/tx-add-with-tx
+var	datascript.db/tx-call
+var	datascript.db/tx-cas
+var	datascript.db/tx-cas-operation
+var	datascript.db/tx-data
+var	datascript.db/tx-data-count
+var	datascript.db/tx-datom
+var	datascript.db/tx-entity
+var	datascript.db/tx-entity-form-assoc
+var	datascript.db/tx-entity-ordered
+var	datascript.db/tx-flush-tuples
+var	datascript.db/tx-install-function
+var	datascript.db/tx-invalid
+var	datascript.db/tx-invoke-function
+var	datascript.db/tx-nil
+var	datascript.db/tx-retract
+var	datascript.db/tx-retract-attribute
+var	datascript.db/tx-retract-entity
+var	datascript.db/tx-retract-entity-id
+var	datascript.db/tx-retract-option
+var	datascript.db/tx-set-tuple
+var	datascript.db/tx0
+var	datascript.db/txmax
+var	datascript.db/unfiltered-db
+var	datascript.db/update-rschema
+var	datascript.db/update-schema
+var	datascript.db/validate-attr
+var	datascript.db/validate-datom
+var	datascript.db/validate-indexed
+var	datascript.db/validate-upsert-resolution
+var	datascript.db/validate-upserts
+var	datascript.db/validate-val
+var	datascript.db/value-cmp
+var	datascript.db/value-compare
+var	datascript.db/with-datom
+var	datascript.db/with-db-metadata
+var	datascript.db/with-schema
+var	datascript.impl.entity/datoms->cache
+var	datascript.impl.entity/entity
+var	datascript.impl.entity/entity-attr
+var	datascript.impl.entity/entity-database-view
+var	datascript.impl.entity/entity-print-string
+var	datascript.impl.entity/entity-reference
+var	datascript.impl.entity/entity-reference-option-member?
+var	datascript.impl.entity/entity-reference-set
+var	datascript.impl.entity/entity-reference-set-equal?
+var	datascript.impl.entity/entity-value
+var	datascript.impl.entity/entity-value-print-string
+var	datascript.impl.entity/entity?
+var	datascript.impl.entity/equiv-entity
+var	datascript.impl.entity/hash-entity
+var	datascript.impl.entity/lookup-backwards
+var	datascript.impl.entity/lookup-entity
+var	datascript.impl.entity/raw-entity-attr
+var	datascript.impl.entity/touch
+var	datascript.impl.entity/touch-components
+var	datascript.impl.entity/touch-entity
+var	datascript.inline/update
+var	datascript.lru/ICache
+var	datascript.lru/assoc-lru
+var	datascript.lru/cache
+var	datascript.lru/cleanup-lru
+var	datascript.lru/get-lru
+var	datascript.lru/get-lru-default
+var	datascript.lru/lru
+var	datascript.parser/IFindElements
+var	datascript.parser/IFindVars
+var	datascript.parser/ITraversable
+var	datascript.parser/add-rule-branch
+var	datascript.parser/aggregate-constant-arguments
+var	datascript.parser/aggregate-custom-variable-name
+var	datascript.parser/aggregate-find-element
+var	datascript.parser/aggregate-function-name
+var	datascript.parser/aggregate?
+var	datascript.parser/and-clause-clauses
+var	datascript.parser/argument-constant
+var	datascript.parser/argument-source-name
+var	datascript.parser/argument-variable-name
+var	datascript.parser/binding-collection-item
+var	datascript.parser/binding-ignore?
+var	datascript.parser/binding-scalar-variable
+var	datascript.parser/binding-traversable
+var	datascript.parser/binding-tuple-items
+var	datascript.parser/binding-variable-names
+var	datascript.parser/binding-vars
+var	datascript.parser/callable-vars
+var	datascript.parser/clause-has-input?
+var	datascript.parser/clause-has-rule?
+var	datascript.parser/clause-sources
+var	datascript.parser/clause-traversable
+var	datascript.parser/clause-vars
+var	datascript.parser/clauses-have-input?
+var	datascript.parser/clauses-have-rule?
+var	datascript.parser/collect
+var	datascript.parser/collect-vars-distinct
+var	datascript.parser/collection-find
+var	datascript.parser/collection-find-element
+var	datascript.parser/collection-find?
+var	datascript.parser/collection-input
+var	datascript.parser/constant-argument
+var	datascript.parser/custom-aggregate-find-element
+var	datascript.parser/data-traversable
+var	datascript.parser/data-value-items
+var	datascript.parser/default-in
+var	datascript.parser/default-pattern
+var	datascript.parser/deftrecord
+var	datascript.parser/distinct?
+var	datascript.parser/explicit-input
+var	datascript.parser/explicit-pattern-clause
+var	datascript.parser/find-element-aggregate
+var	datascript.parser/find-element-pull
+var	datascript.parser/find-element-vars
+var	datascript.parser/find-projection-variable-names
+var	datascript.parser/find-spec-elements
+var	datascript.parser/find-traversable
+var	datascript.parser/find-variable-name
+var	datascript.parser/find-variable-names
+var	datascript.parser/find-vars
+var	datascript.parser/flatten-rule-vars
+var	datascript.parser/fn-arg-source-records
+var	datascript.parser/fn-arg-variable-records
+var	datascript.parser/fn-arg-vars
+var	datascript.parser/greater-than-clause
+var	datascript.parser/ignore-input
+var	datascript.parser/input-binding-rules?
+var	datascript.parser/input-binding-sources
+var	datascript.parser/input-binding-vars
+var	datascript.parser/join-rule-variable-names
+var	datascript.parser/make-static-rules-input
+var	datascript.parser/make-static-source-input
+var	datascript.parser/make-static-value-input
+var	datascript.parser/of-size?
+var	datascript.parser/or-clause-display
+var	datascript.parser/or-clause-join?
+var	datascript.parser/or-clause-parts
+var	datascript.parser/or-clause-source-name
+var	datascript.parser/parse-aggregate
+var	datascript.parser/parse-aggregate-custom
+var	datascript.parser/parse-and
+var	datascript.parser/parse-bind-coll
+var	datascript.parser/parse-bind-ignore
+var	datascript.parser/parse-bind-rel
+var	datascript.parser/parse-bind-scalar
+var	datascript.parser/parse-bind-tuple
+var	datascript.parser/parse-binding
+var	datascript.parser/parse-call
+var	datascript.parser/parse-clause
+var	datascript.parser/parse-clauses
+var	datascript.parser/parse-constant
+var	datascript.parser/parse-disjunction-clauses
+var	datascript.parser/parse-find
+var	datascript.parser/parse-find-coll
+var	datascript.parser/parse-find-elem
+var	datascript.parser/parse-find-elements
+var	datascript.parser/parse-find-rel
+var	datascript.parser/parse-find-scalar
+var	datascript.parser/parse-find-tuple
+var	datascript.parser/parse-fn
+var	datascript.parser/parse-fn-arg
+var	datascript.parser/parse-fn-args
+var	datascript.parser/parse-in
+var	datascript.parser/parse-not
+var	datascript.parser/parse-not-join
+var	datascript.parser/parse-or
+var	datascript.parser/parse-or-join
+var	datascript.parser/parse-pattern
+var	datascript.parser/parse-pattern-el
+var	datascript.parser/parse-pattern-elements
+var	datascript.parser/parse-placeholder
+var	datascript.parser/parse-plain-symbol
+var	datascript.parser/parse-plain-variable
+var	datascript.parser/parse-pred
+var	datascript.parser/parse-pull-expr
+var	datascript.parser/parse-query
+var	datascript.parser/parse-required-variables
+var	datascript.parser/parse-return-map
+var	datascript.parser/parse-rule
+var	datascript.parser/parse-rule-expr
+var	datascript.parser/parse-rule-var-items
+var	datascript.parser/parse-rule-vars
+var	datascript.parser/parse-rules
+var	datascript.parser/parse-rules-var
+var	datascript.parser/parse-seq
+var	datascript.parser/parse-src-var
+var	datascript.parser/parse-tuple-el
+var	datascript.parser/parse-tuple-elements
+var	datascript.parser/parse-var-required
+var	datascript.parser/parse-variable
+var	datascript.parser/parse-variables
+var	datascript.parser/parse-where
+var	datascript.parser/parse-with
+var	datascript.parser/pattern-attribute
+var	datascript.parser/pattern-clause
+var	datascript.parser/pattern-constant
+var	datascript.parser/pattern-element-constant
+var	datascript.parser/pattern-element-variable-symbol
+var	datascript.parser/pattern-element-vars
+var	datascript.parser/pattern-placeholder
+var	datascript.parser/pattern-variable
+var	datascript.parser/postwalk
+var	datascript.parser/pull-find-element
+var	datascript.parser/pull-pattern-value
+var	datascript.parser/pull-pattern-variable-name
+var	datascript.parser/pull-source-find-element
+var	datascript.parser/pull-source-name
+var	datascript.parser/pull-source-variable-find-element
+var	datascript.parser/pull-variable-find-element
+var	datascript.parser/pull-variable-name
+var	datascript.parser/pull?
+var	datascript.parser/query->map
+var	datascript.parser/query-input-value-binding
+var	datascript.parser/query-return-keys
+var	datascript.parser/query-return-map
+var	datascript.parser/query-return-strings
+var	datascript.parser/query-return-symbols
+var	datascript.parser/query-source-name
+var	datascript.parser/query-traversable
+var	datascript.parser/query-with
+var	datascript.parser/relation-find
+var	datascript.parser/relation-find-elements
+var	datascript.parser/relation-find?
+var	datascript.parser/return-map-count
+var	datascript.parser/return-map-key-names
+var	datascript.parser/return-map-keyword
+var	datascript.parser/return-map-string-names
+var	datascript.parser/return-map-symbol-names
+var	datascript.parser/return-map-symbols
+var	datascript.parser/return-map-type
+var	datascript.parser/rule-branch-clauses
+var	datascript.parser/rule-branch-parameter-names
+var	datascript.parser/rule-branch-required-parameter-names
+var	datascript.parser/rule-branches
+var	datascript.parser/rule-clause-parts
+var	datascript.parser/rule-clause-source-name
+var	datascript.parser/rule-traversable
+var	datascript.parser/rule-vars-arity
+var	datascript.parser/rule-vars-display
+var	datascript.parser/rule-vars-names
+var	datascript.parser/rule-vars-required-names
+var	datascript.parser/rule-vars-values
+var	datascript.parser/scalar-input
+var	datascript.parser/single-find
+var	datascript.parser/single-find-element
+var	datascript.parser/single-find?
+var	datascript.parser/source
+var	datascript.parser/source-argument
+var	datascript.parser/source-values
+var	datascript.parser/static-and-clause
+var	datascript.parser/static-callable-name
+var	datascript.parser/static-db-query
+var	datascript.parser/static-db-query-clauses
+var	datascript.parser/static-db-query-clauses-with-bindings
+var	datascript.parser/static-db-query-clauses-with-inputs
+var	datascript.parser/static-db-query-clauses-with-scalars
+var	datascript.parser/static-db-query-with-bindings
+var	datascript.parser/static-db-query-with-scalars
+var	datascript.parser/static-function-clause
+var	datascript.parser/static-input-binding
+var	datascript.parser/static-input-binding-form
+var	datascript.parser/static-input-rules?
+var	datascript.parser/static-input-source-name
+var	datascript.parser/static-not-clause
+var	datascript.parser/static-not-join-clause
+var	datascript.parser/static-or-clause
+var	datascript.parser/static-or-clause-for-source
+var	datascript.parser/static-or-join-clause
+var	datascript.parser/static-or-join-clause-for-source
+var	datascript.parser/static-predicate-clause
+var	datascript.parser/static-query
+var	datascript.parser/static-query-clauses-with-bindings
+var	datascript.parser/static-query-clauses-with-inputs
+var	datascript.parser/static-query-has-source?
+var	datascript.parser/static-query-inputs
+var	datascript.parser/static-query-patterns
+var	datascript.parser/static-query-value-bindings
+var	datascript.parser/static-query-with-bindings
+var	datascript.parser/static-rule-branch
+var	datascript.parser/static-rule-branch-with-vars
+var	datascript.parser/static-rule-clause
+var	datascript.parser/static-rule-variable
+var	datascript.parser/static-rules
+var	datascript.parser/static-source-not-clause
+var	datascript.parser/static-source-not-join-clause
+var	datascript.parser/static-source-or-clause
+var	datascript.parser/static-source-or-join-clause
+var	datascript.parser/static-source-rule-clause
+var	datascript.parser/static-value-input-binding
+var	datascript.parser/string-traversable
+var	datascript.parser/take-source
+var	datascript.parser/traversable-clause-value
+var	datascript.parser/traversable-clause?
+var	datascript.parser/traversable-kind
+var	datascript.parser/traversable-variable-name
+var	datascript.parser/tuple-find
+var	datascript.parser/tuple-find-elements
+var	datascript.parser/tuple-input
+var	datascript.parser/validate-arity
+var	datascript.parser/validate-or
+var	datascript.parser/validate-query
+var	datascript.parser/validate-static-query-sources
+var	datascript.parser/variable-argument
+var	datascript.parser/variable-callable-name
+var	datascript.parser/variable-find-element
+var	datascript.parser/variable-function-clause
+var	datascript.parser/variable-predicate-clause
+var	datascript.parser/variable-traversable
+var	datascript.parser/variables-distinct?
+var	datascript.parser/with-source
+var	datascript.pull-api/IFrame
+var	datascript.pull-api/add-default
+var	datascript.pull-api/add-missing-value
+var	datascript.pull-api/add-scalar-datom
+var	datascript.pull-api/advance-attrs-state
+var	datascript.pull-api/advance-reverse-state
+var	datascript.pull-api/apply-attr-xform
+var	datascript.pull-api/assoc-pulled-data
+var	datascript.pull-api/assoc-pulled-value
+var	datascript.pull-api/attr-at-index
+var	datascript.pull-api/attr-in-range?
+var	datascript.pull-api/attr-pattern
+var	datascript.pull-api/attrs-frame
+var	datascript.pull-api/attrs-state
+var	datascript.pull-api/attrs-state-with
+var	datascript.pull-api/auto-expanding?
+var	datascript.pull-api/compact-child-result
+var	datascript.pull-api/cursor-datom
+var	datascript.pull-api/cursor-datom-exn
+var	datascript.pull-api/cursor-from-datoms
+var	datascript.pull-api/cursor-from-seq
+var	datascript.pull-api/cursor-matches-attr?
+var	datascript.pull-api/cycle-entity
+var	datascript.pull-api/default-pull-options
+var	datascript.pull-api/entity-ids-to-refs
+var	datascript.pull-api/expanding-ref-frame
+var	datascript.pull-api/finish-multival-attr
+var	datascript.pull-api/finish-multival-ref
+var	datascript.pull-api/first-frame
+var	datascript.pull-api/frame-result
+var	datascript.pull-api/merge-attr-value
+var	datascript.pull-api/merge-attrs-result
+var	datascript.pull-api/merge-frame
+var	datascript.pull-api/merge-multival-ref-result
+var	datascript.pull-api/merge-reverse-result
+var	datascript.pull-api/missing-attr-state
+var	datascript.pull-api/next-cursor
+var	datascript.pull-api/next-multival-ref-state
+var	datascript.pull-api/next-parent-datoms
+var	datascript.pull-api/non-empty-cursor
+var	datascript.pull-api/non-empty-many
+var	datascript.pull-api/parse-opts
+var	datascript.pull-api/pull
+var	datascript.pull-api/pull-forward-cursor
+var	datascript.pull-api/pull-impl
+var	datascript.pull-api/pull-many
+var	datascript.pull-api/pull-many-parsed
+var	datascript.pull-api/pull-many-source
+var	datascript.pull-api/pull-many-source-with-options
+var	datascript.pull-api/pull-options
+var	datascript.pull-api/pull-parsed
+var	datascript.pull-api/pull-parsed-with-options
+var	datascript.pull-api/pull-source
+var	datascript.pull-api/pull-source-with-options
+var	datascript.pull-api/pulled-map-to-data
+var	datascript.pull-api/pulled-to-data
+var	datascript.pull-api/push-frame
+var	datascript.pull-api/ref-datom-id
+var	datascript.pull-api/ref-frame
+var	datascript.pull-api/rest-frames
+var	datascript.pull-api/result-frame-state
+var	datascript.pull-api/reverse-attrs-frame
+var	datascript.pull-api/run-attrs-frame
+var	datascript.pull-api/run-frame
+var	datascript.pull-api/run-multival-attr
+var	datascript.pull-api/run-multival-attr-frame
+var	datascript.pull-api/run-multival-ref-frame
+var	datascript.pull-api/run-reverse-attrs-frame
+var	datascript.pull-api/run-stack
+var	datascript.pull-api/run-wildcard-attr
+var	datascript.pull-api/skip-multival-attr
+var	datascript.pull-api/skip-multival-ref
+var	datascript.pull-api/start-attr-child
+var	datascript.pull-api/visit
+var	datascript.pull-parser/apply-source-option
+var	datascript.pull-parser/attr-data
+var	datascript.pull-parser/attr-expr-spec
+var	datascript.pull-parser/attr-key-counter
+var	datascript.pull-parser/attr-name-spec
+var	datascript.pull-parser/attr-pattern
+var	datascript.pull-parser/attr-pattern-wildcard
+var	datascript.pull-parser/attribute
+var	datascript.pull-parser/check
+var	datascript.pull-parser/default-db-id-attr
+var	datascript.pull-parser/default-pattern-component
+var	datascript.pull-parser/default-pattern-ref
+var	datascript.pull-parser/identity-value
+var	datascript.pull-parser/invalid-attr-spec
+var	datascript.pull-parser/legacy-default-spec
+var	datascript.pull-parser/legacy-limit-spec
+var	datascript.pull-parser/map-pattern-value
+var	datascript.pull-parser/map-recursion-value
+var	datascript.pull-parser/nested-pattern
+var	datascript.pull-parser/next-attr-key
+var	datascript.pull-parser/option-alias
+var	datascript.pull-parser/option-alias-value
+var	datascript.pull-parser/option-default
+var	datascript.pull-parser/option-limit
+var	datascript.pull-parser/option-unlimited
+var	datascript.pull-parser/option-xform
+var	datascript.pull-parser/parse-attr-expr
+var	datascript.pull-parser/parse-attr-name
+var	datascript.pull-parser/parse-attr-spec
+var	datascript.pull-parser/parse-legacy-default-expr
+var	datascript.pull-parser/parse-legacy-limit-expr
+var	datascript.pull-parser/parse-map-spec
+var	datascript.pull-parser/parse-pattern
+var	datascript.pull-parser/parse-pattern-items
+var	datascript.pull-parser/parse-pattern-view
+var	datascript.pull-parser/pattern
+var	datascript.pull-parser/raise-invalid-source
+var	datascript.pull-parser/recursive-attribute
+var	datascript.pull-parser/recursive-attribute-with-limit
+var	datascript.pull-parser/recursive-pattern
+var	datascript.pull-parser/replace-attr-data
+var	datascript.pull-parser/source-alias
+var	datascript.pull-parser/source-alias-value
+var	datascript.pull-parser/source-attr-name
+var	datascript.pull-parser/source-attribute
+var	datascript.pull-parser/source-default
+var	datascript.pull-parser/source-fragment-string
+var	datascript.pull-parser/source-group
+var	datascript.pull-parser/source-invalid
+var	datascript.pull-parser/source-limit
+var	datascript.pull-parser/source-nested
+var	datascript.pull-parser/source-nested-options
+var	datascript.pull-parser/source-operation
+var	datascript.pull-parser/source-options
+var	datascript.pull-parser/source-recursion
+var	datascript.pull-parser/source-recursion-options
+var	datascript.pull-parser/source-wildcard
+var	datascript.pull-parser/source-xform
+var	datascript.pull-parser/upsert-attr
+var	datascript.pull-parser/validate-invalid-attr-options
+var	datascript.pull-parser/validate-source-limit
+var	datascript.pull-parser/with-alias
+var	datascript.pull-parser/with-alias-value
+var	datascript.pull-parser/with-default
+var	datascript.pull-parser/with-limit
+var	datascript.pull-parser/with-pattern
+var	datascript.pull-parser/with-recursion
+var	datascript.pull-parser/with-xform
+var	datascript.query/-aggregate
+var	datascript.query/-collect
+var	datascript.query/-collect-tuples
+var	datascript.query/IBinding
+var	datascript.query/IContextResolve
+var	datascript.query/IPostProcess
+var	datascript.query/aggregate
+var	datascript.query/attr?
+var	datascript.query/bound-vars
+var	datascript.query/check-bound
+var	datascript.query/check-free-same
+var	datascript.query/check-free-subset
+var	datascript.query/collapse-rels
+var	datascript.query/collect
+var	datascript.query/collect-vars
+var	datascript.query/dynamic-lookup-attrs
+var	datascript.query/empty-rel
+var	datascript.query/free-var?
+var	datascript.query/hash-join
+var	datascript.query/intersect-keys
+var	datascript.query/join-tuples
+var	datascript.query/limit-context
+var	datascript.query/limit-rel
+var	datascript.query/lookup-pattern
+var	datascript.query/lookup-pattern-coll
+var	datascript.query/lookup-pattern-db
+var	datascript.query/lookup-ref?
+var	datascript.query/matches-pattern?
+var	datascript.query/normalize-pattern-clause
+var	datascript.query/parse-rules
+var	datascript.query/prod-rel
+var	datascript.query/q
+var	datascript.query/q-closed
+var	datascript.query/q-db
+var	datascript.query/remove-pairs
+var	datascript.query/resolve-in
+var	datascript.query/resolve-ins
+var	datascript.query/resolve-pattern-lookup-refs
+var	datascript.query/rule-gen-guards
+var	datascript.query/rule?
+var	datascript.query/same-keys?
+var	datascript.query/source?
+var	datascript.query/split-guards
+var	datascript.query/substitute-constant
+var	datascript.query/substitute-constants
+var	datascript.query/subtract-rel
+var	datascript.query/sum-rel
+var	datascript.query/tuples->return-map
+var	datascript.query/walk-collect
+var	datascript.schema/is-system-keyword?
+var	datascript.schema/schema-attr?
+var	datascript.schema/schema-entity?
+var	datascript.schema/schema-keys
+var	datascript.schema/schema?
+var	datascript.schema/system-label?
+var	datascript.schema/type?
+var	datascript.serialize/freeze-kw
+var	datascript.serialize/from-serializable
+var	datascript.serialize/serializable
+var	datascript.storage/IStorage
+var	datascript.storage/addresses
+var	datascript.storage/collect-garbage
+var	datascript.storage/db-with-tail
+var	datascript.storage/default-options
+var	datascript.storage/file-storage
+var	datascript.storage/make-backend
+var	datascript.storage/make-storage-adapter
+var	datascript.storage/maybe-adapt-storage
+var	datascript.storage/options
+var	datascript.storage/restore
+var	datascript.storage/restore-impl
+var	datascript.storage/serializable-datom
+var	datascript.storage/storage
+var	datascript.storage/storage-adapter
+var	datascript.storage/store
+var	datascript.storage/store-impl!
+var	datascript.storage/store-tail
+var	datascript.util/concatv
+var	datascript.util/cond+
+var	datascript.util/conjs
+var	datascript.util/conjv
+var	datascript.util/distinct-by
+var	datascript.util/find
+var	datascript.util/if+
+var	datascript.util/raise
+var	datascript.util/reduce-indexed
+var	datascript.util/removem
+var	datascript.util/single
+var	datascript.util/some-of
+var	datascript.util/squuid
+var	datascript.util/squuid-time-millis
+var	datascript.util/zip

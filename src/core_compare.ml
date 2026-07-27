@@ -50,15 +50,50 @@ let rec equality_expr ?env left right =
   | TOcaml "int", TInt ->
       Semantic_ir.Infix ("=", left.semantic_expr, right.semantic_expr)
   | TInt, TOcaml "int" -> equality_expr ?env right left
-  | TNullable _, TNil ->
+  | (TNullable left_inner | TOcaml_app ("option", [ left_inner ])),
+    (TNullable right_inner | TOcaml_app ("option", [ right_inner ]))
+    when Types.same_shape left_inner right_inner ->
+      let left_value = fresh_nullable_equality_name () in
+      let right_value = fresh_nullable_equality_name () in
+      Semantic_ir.Match
+        ( left.semantic_expr,
+          [
+            ( Semantic_ir.PConstructor ("None", None),
+              Semantic_ir.Match
+                ( right.semantic_expr,
+                  [
+                    ( Semantic_ir.PConstructor ("None", None),
+                      Semantic_ir.Bool true );
+                    ( Semantic_ir.PConstructor
+                        ("Some", Some Semantic_ir.PAny),
+                      Semantic_ir.Bool false );
+                  ] ) );
+            ( Semantic_ir.PConstructor
+                ("Some", Some (Semantic_ir.PVar left_value)),
+              Semantic_ir.Match
+                ( right.semantic_expr,
+                  [
+                    ( Semantic_ir.PConstructor ("None", None),
+                      Semantic_ir.Bool false );
+                    ( Semantic_ir.PConstructor
+                        ("Some", Some (Semantic_ir.PVar right_value)),
+                      equality_expr ?env
+                        (typed_ir left_inner
+                           (Semantic_ir.Ident left_value))
+                        (typed_ir right_inner
+                           (Semantic_ir.Ident right_value)) );
+                  ] ) );
+          ] )
+  | (TNullable _ | TOcaml_app ("option", [ _ ])), TNil ->
       Semantic_ir.Match
         ( left.semantic_expr,
           [ (Semantic_ir.PConstructor ("None", None), Semantic_ir.Bool true);
             ( Semantic_ir.PConstructor ("Some", Some Semantic_ir.PAny),
               Semantic_ir.Bool false );
           ] )
-  | TNil, TNullable _ -> equality_expr ?env right left
-  | TNullable inner, right_ty
+  | TNil, (TNullable _ | TOcaml_app ("option", [ _ ])) ->
+      equality_expr ?env right left
+  | (TNullable inner | TOcaml_app ("option", [ inner ])), right_ty
     when Types.assignable ~policy:Host_boundary ~expected:inner
            ~actual:right_ty ->
       let nullable_value = fresh_nullable_equality_name () in
@@ -71,7 +106,7 @@ let rec equality_expr ?env left right =
                 (typed_ir inner (Semantic_ir.Ident nullable_value))
                 right );
           ] )
-  | left_ty, TNullable inner
+  | left_ty, (TNullable inner | TOcaml_app ("option", [ inner ]))
     when Types.assignable ~policy:Host_boundary ~expected:inner
            ~actual:left_ty ->
       equality_expr ?env right left

@@ -1,386 +1,339 @@
 (ns datascript.test.storage
   (:require
-   [clojure.edn :as edn]
-   #_[clojure.java.io :as io]
-   [clojure.test :as t :refer [is are deftest testing]]
-   #_[cognitect.transit :as transit]
+   [clojure.test :refer [deftest is testing]]
+   [datascript.conn :as conn]
    [datascript.core :as d]
    [datascript.db :as db]
    [datascript.storage :as storage]
-   #_[datascript.test.core :as tdc]))
+   [datascript.test.storage-support :as support]))
 
-(defrecord Storage [*disk *reads *writes *deletes]
-  storage/IStorage
-  (-store [_ addr+data-seq _delete-addrs]
-    (doseq [[addr data] addr+data-seq]
-      (vswap! *disk assoc addr (pr-str data))
-      (when *writes (vswap! *writes conj addr))))
+(def strong (Lg_runtime.Runtime_ref_type.Strong))
 
-  (-restore [_ addr]
-    (when *reads
-      (vswap! *reads conj addr))
-    (-> @*disk (get addr) edn/read-string))
+(deftest test-maybe-adapt-storage
+  (testing "options without storage preserve tree settings"
+    (let [opts
+          (db/options-with-branching-factor
+           (db/options-with-ref-type (db/default-options) strong)
+           64)
+          adapted (storage/maybe-adapt-storage opts)]
+      (is (nil? (db/options-storage adapted)))
+      (is (= strong (db/options-ref-type adapted)))
+      (is (= 64 (db/options-branching-factor adapted)))))
 
-  #_(-list-addresses [_]
-                     (keys @*disk))
+  (testing "options with storage preserve backend and tree settings"
+    (let [memory (support/make-storage)
+          backend (support/backend memory)
+          opts (support/options memory 64 strong)
+          adapted (storage/maybe-adapt-storage opts)
+          adapted-twice (storage/maybe-adapt-storage adapted)]
+      (if-some [adapted-backend (db/options-storage adapted)]
+        (is
+         (Datascript_runtime.Storage_backend.equal
+          backend adapted-backend))
+        (is false))
+      (if-some [adapted-backend (db/options-storage adapted-twice)]
+        (is
+         (Datascript_runtime.Storage_backend.equal
+          backend adapted-backend))
+        (is false))
+      (is (= strong (db/options-ref-type adapted)))
+      (is (= 64 (db/options-branching-factor adapted)))))
 
-  #_(-delete [_ addrs-seq]
-             (doseq [addr addrs-seq]
-               (vswap! *disk dissoc addr)
-               (when *deletes
-                 (vswap! *deletes conj addr)))))
+  (testing "adapted options drive the real store and restore path"
+    (let [memory (support/make-storage)
+          opts
+          (storage/maybe-adapt-storage
+           (support/options memory 64 strong))
+          database (d/empty-db None opts)]
+      (is (= 5 (count @(:writes memory))))
+      (d/store database)
+      (is (= 5 (count @(:writes memory))))
+      (let [settings (d/settings (support/restore-database memory))]
+        (is (= strong (:ref-type settings)))
+        (is (= 64 (:branching-factor settings)))))))
 
-(defn make-storage [& [opts]]
-  (map->Storage
-   {:*disk    (volatile! {})
-    :*reads   (when (:stats opts)
-                (volatile! []))
-    :*writes  (when (:stats opts)
-                (volatile! []))
-    :*deletes (when (:stats opts)
-                (volatile! []))}))
+(deftest test-conn-from-datoms-preserves-options
+  (let [memory (support/make-storage)
+        backend (support/backend memory)
+        connection
+        (d/conn-from-datoms
+         [(db/datom
+           1 :name
+           (Datascript_runtime.Data_value.String "Ivan"))]
+         db/empty-schema
+         (support/options memory 64 strong))
+        database (conn/current-db connection)]
+    (if-some [database-backend (d/storage database)]
+      (is
+       (Datascript_runtime.Storage_backend.equal
+        backend database-backend))
+      (is false))
+    (is (pos? (count @(:writes memory))))
+    (let [settings (d/settings database)]
+      (is (= strong (:ref-type settings)))
+      (is (= 64 (:branching-factor settings))))
+    (is
+     (support/has-string?
+      (support/restore-database memory)
+      1 :name "Ivan"))))
 
-(defn reset-stats [storage]
-  (vreset! (:*reads storage) [])
-  (vreset! (:*writes storage) [])
-  (vreset! (:*deletes storage) []))
-
-(defn small-db [& [opts]]
-  (-> (d/empty-db nil (merge {:branching-factor 32, :ref-type :strong} opts))
-      (d/db-with [[:db/add 1 :name "Ivan"]
-                  [:db/add 2 :name "Oleg"]
-                  [:db/add 3 :name "Petr"]])))
-
-(defn large-db [& [opts]]
-  (d/db-with
-   (d/empty-db nil (merge {:branching-factor 32, :ref-type :strong} opts))
-   (map #(vector :db/add % :str (str %)) (range 1 1001))))
+(deftest test-istorage-protocol
+  (let [database (d/empty-db)
+        memory (support/make-storage)]
+    (is (satisfies? storage/IStorage memory))
+    (is (nil? (storage/-restore memory 999999)))
+    (d/store database memory)
+    (is (= 5 (count @(:writes memory))))
+    (is (db/db-equal? database (d/restore memory)))
+    (if-some [root (storage/-restore memory 0)]
+      (do
+        #?(:clj
+           (storage/-store memory [(tuple 999999 root)])
+           :cljs
+           (storage/-store memory [(tuple 999999 root)] []))
+        (is (some? (storage/-restore memory 999999)))
+        #?(:clj
+           (storage/-delete memory [999999])
+           :cljs
+           (storage/-store memory [] [999999]))
+        (is (nil? (storage/-restore memory 999999))))
+      (is false))))
 
 (deftest test-basics
   (testing "empty db"
-    (let [db      (d/empty-db)
-          storage (make-storage {:stats true})]
-      (d/store db storage)
-      (is (= 5 (count @(:*writes storage))))
-      (let [db' (d/restore storage)]
-        (is (= 2 (count @(:*reads storage))))   ;; read root + tail
-        (is (= db db'))                         ;; read eavt
-        (is (= 3 (count @(:*reads storage)))))))
+    (let [database (d/empty-db)
+          memory (support/make-storage)]
+      (d/store database (support/backend memory))
+      (is (= 5 (count @(:writes memory))))
+      (let [restored (support/restore-database memory)]
+        (is (= 2 (count @(:reads memory))))
+        (is (db/db-equal? database restored))
+        (is (= 3 (count @(:reads memory)))))))
 
   (testing "small db"
-    (let [db      (small-db)
-          storage (make-storage {:stats true})]
+    (let [database (support/small-database 32 strong)
+          memory (support/make-storage)]
       (testing "store"
-        (d/store db storage)
-        (is (= 0 (count @(:*reads storage))))
-        (is (= 5 (count @(:*writes storage)))))  ;; write root, tail + 1 level * 3 indexes
+        (d/store database (support/backend memory))
+        (is (= 0 (count @(:reads memory))))
+        (is (= 5 (count @(:writes memory)))))
       (testing "restore"
-        (let [db' (d/restore storage)]
-          (is (= 2 (count @(:*reads storage)))) ;; read root + tail
-          (is (= db db'))                       ;; read eavt
-          (is (= 3 (count @(:*reads storage))))
-          (vec (d/datoms db' :aevt))            ;; read aevt
-          (is (= 4 (count @(:*reads storage))))
-          (vec (d/datoms db' :avet))            ;; read avet
-          (is (= 5 (count @(:*reads storage)))))
+        (let [restored (support/restore-database memory)]
+          (is (= 2 (count @(:reads memory))))
+          (is (db/db-equal? database restored))
+          (is (= 3 (count @(:reads memory))))
+          (vec (d/datoms restored :aevt))
+          (is (= 4 (count @(:reads memory))))
+          (vec (d/datoms restored :avet))
+          (is (= 5 (count @(:reads memory)))))
 
         (testing "count"
-          (reset-stats storage)
-          (let [db' (d/restore storage)]
-            (count db')
-            (is (= 2 (count @(:*reads storage))))))
+          (support/reset-stats memory)
+          (let [restored (support/restore-database memory)]
+            (db/db-count restored)
+            (is (= 2 (count @(:reads memory))))))
 
         (testing "settings"
-          (let [db' (d/restore storage)]
-            (is (= {:branching-factor 32, :ref-type :strong} (d/settings db'))))))))
+          (let [settings (d/settings (support/restore-database memory))]
+            (is (= 32 (:branching-factor settings)))
+            (is (= strong (:ref-type settings))))))))
 
   (testing "large db"
-    (let [db      (large-db)
-          storage (make-storage {:stats true})]
-
+    (let [database (support/large-database 32 strong)
+          memory (support/make-storage)]
       (testing "store"
-        (d/store db storage)
-        (is (= 135 (count @(:*writes storage))))  ;; root, tail, avet root + 66 * 2 indexes
-
-        (d/store db)
-        (is (= 135 (count @(:*writes storage))))) ;; store nothing if nothing changed
+        (d/store database (support/backend memory))
+        (is (= 135 (count @(:writes memory))))
+        (d/store database)
+        (is (= 135 (count @(:writes memory)))))
 
       (testing "restore"
-        (let [db' (d/restore storage)]
-          (is (= 2 (count @(:*reads storage)))) ;; read root + tail
-
-          (is (= [1 :str "1"] (-> (d/datoms db' :eavt) first ((juxt :e :a :v)))))
-          ;; TODO: lazy compute the `till` path for set/-slice
-          (is (= 7 (count @(:*reads storage)))) ;; eavt root + 2 levels
-
-          (first (d/datoms db' :eavt))
-          (is (= 7 (count @(:*reads storage)))) ;; second time no read
-
-          (vec (d/datoms db' :eavt))
-          (is (= 68 (count @(:*reads storage))))
-
-          (vec (d/datoms db' :eavt))
-          (is (= 68 (count @(:*reads storage)))) ;; second time no read
-
-          (is (= db db'))
-          (is (= (:eavt db) (:eavt db')))
-          (is (= (:aevt db) (:aevt db')))
-          (is (= (:avet db) (:avet db')))))
+        (let [restored (support/restore-database memory)]
+          (is (= 2 (count @(:reads memory))))
+          (let [datom (first (d/datoms restored :eavt))]
+            (is (= 1 (.-e datom)))
+            (is (= :str (db/datom-attr datom)))
+            (is
+             (Datascript_runtime.Data_value.equal
+              (Datascript_runtime.Data_value.String "1")
+              (.-v datom))))
+          (is (= 7 (count @(:reads memory))))
+          (first (d/datoms restored :eavt))
+          (is (= 7 (count @(:reads memory))))
+          (vec (d/datoms restored :eavt))
+          (is (= 68 (count @(:reads memory))))
+          (vec (d/datoms restored :eavt))
+          (is (= 68 (count @(:reads memory))))
+          (is (db/db-equal? database restored))
+          (is
+           (db/datom-vectors-equal?
+            (vec (:eavt database)) (vec (:eavt restored))))
+          (is
+           (db/datom-vectors-equal?
+            (vec (:aevt database)) (vec (:aevt restored))))
+          (is
+           (db/datom-vectors-equal?
+            (vec (:avet database)) (vec (:avet restored))))))
 
       (testing "count"
-        (reset-stats storage)
-        (let [db' (d/restore storage)]
-          (= 1000 (count db'))
-          (is (= 2 (count @(:*reads storage))))))
+        (support/reset-stats memory)
+        (let [restored (support/restore-database memory)]
+          (is (= 1000 (db/db-count restored)))
+          (is (= 2 (count @(:reads memory))))))
 
       (testing "incremental store"
-        (reset-stats storage)
-        (let [db' (d/db-with db [[:db/add 1001 :str "1001"]])]
-          (d/store db')
-          (is (= 8 (count @(:*writes storage))))))) ;; root, tail + 3 leves * 2 indexes
-    ))
+        (support/reset-stats memory)
+        (let [updated
+              (d/db-with database [(support/add-string 1001 :str "1001")])]
+          (d/store updated)
+          (is (= 8 (count @(:writes memory)))))))))
+
+(defn ^:vector<Datascript_runtime.Data_value.t> attribute-values
+  [^datascript.db/DB database ^:keyword attr]
+  (mapv
+   (fn [^datascript.db/Datom datom] (.-v datom))
+   (d/datoms-closed
+    database
+    :avet
+    (Datascript_runtime.Data_value.Keyword (str attr)))))
 
 (deftest test-db-with-tail
-  (testing "db-with-tail retracts stale cardinality/one values when replaying tail datoms"
-    (let [schema {:block/updated-at {:db/index true}}
-          db     (-> (d/empty-db schema)
-                     (d/db-with [[:db/add 1 :block/updated-at 2]]))
-          tail   [[(db/datom 1 :block/updated-at 1772979060646 536870915 true)]
-                  [(db/datom 1 :block/updated-at 1772979061145 536870916 true)]]
-          db'    (storage/db-with-tail db tail)]
-      (is (= [1772979061145]
-             (mapv :v (d/datoms db' :avet :block/updated-at))))))
+  (testing "db-with-tail retracts stale cardinality/one values"
+    (let [database
+          (d/db-with
+           (d/empty-db (support/indexed-schema))
+           [(support/add-int 1 :block/updated-at 2)])
+          tail
+          [[(db/datom
+             1 :block/updated-at
+             (Datascript_runtime.Data_value.Int 1772979060646)
+             536870915 true)]
+           [(db/datom
+             1 :block/updated-at
+             (Datascript_runtime.Data_value.Int 1772979061145)
+             536870916 true)]]
+          restored (storage/db-with-tail database tail)]
+      (is
+       (=
+        [(Datascript_runtime.Data_value.Int 1772979061145)]
+        (attribute-values restored :block/updated-at)))))
 
-  (testing "restore replays stored tail without leaving stale cardinality/one values"
-    (let [schema  {:block/updated-at {:db/index true}}
-          storage (make-storage {:stats true})
-          db      (-> (d/empty-db schema {:storage          storage
-                                          :branching-factor 32
-                                          :ref-type         :strong})
-                      (d/db-with [[:db/add 1 :block/updated-at 2]]))
-          tail    [[(db/datom 1 :block/updated-at 1772979060646 536870915 true)]
-                   [(db/datom 1 :block/updated-at 1772979061145 536870916 true)]]]
-      (d/store db)
-      (storage/store-tail db tail)
-      (is (= [1772979061145]
-             (mapv :v (d/datoms (d/restore storage) :avet :block/updated-at))))))
+  (testing "restore replays stored tail"
+    (let [memory (support/make-storage)
+          opts (support/options memory 32 strong)
+          database
+          (d/db-with
+           (d/empty-db (Some (support/indexed-schema)) opts)
+           [(support/add-int 1 :block/updated-at 2)])
+          tail
+          [[(db/datom
+             1 :block/updated-at
+             (Datascript_runtime.Data_value.Int 1772979060646)
+             536870915 true)]
+           [(db/datom
+             1 :block/updated-at
+             (Datascript_runtime.Data_value.Int 1772979061145)
+             536870916 true)]]]
+      (d/store database)
+      (storage/store-tail database tail)
+      (is
+       (=
+        [(Datascript_runtime.Data_value.Int 1772979061145)]
+        (attribute-values
+         (support/restore-database memory)
+         :block/updated-at)))))
 
   (testing "restore drops tail groups rejected by unique constraints"
-    (let [schema  {:block/uuid  {:db/unique :db.unique/identity}
-                   :block/title {}}
-          storage (make-storage {:stats true})
-          db      (-> (d/empty-db schema {:storage          storage
-                                          :branching-factor 32
-                                          :ref-type         :strong})
-                      (d/db-with [[:db/add 1 :block/uuid "u1"]]))
-          tail    [[(db/datom 2 :block/uuid "u1" 536870915 true)
-                    (db/datom 2 :block/title "Title" 536870915 true)]
-                   [(db/datom 3 :block/title "Later" 536870916 true)]]]
-      (d/store db)
-      (storage/store-tail db tail)
-      (let [db' (d/restore storage)]
-        (is (= [1]
-               (mapv :e (d/datoms db' :avet :block/uuid "u1"))))
-        (is (= []
-               (mapv (juxt :e :a :v) (d/datoms db' :eavt 2))))
-        (is (= [[3 :block/title "Later"]]
-               (mapv (juxt :e :a :v) (d/datoms db' :eavt 3))))
-        (is (= 536870916 (:max-tx db')))))))
-
-;; Commented out test-gc test-file-storage tests and helpers b/c they are not implemented in cljs
-
-;; (defmacro with-dir [dir & body]
-;;   `(let [dir# ^java.io.File (io/file ~dir)]
-;;      (try
-;;        (.mkdirs dir#)
-;;        ~@body
-;;        (finally
-;;          (doseq [file# (reverse (file-seq dir#))]
-;;            (.delete ^java.io.File file#))))))
-
-;; (def temp-dir
-;;   "target/test_storage")
-
-;; (defn streaming-edn-storage [dir]
-;;   (d/file-storage dir))
-
-;; (defn inmemory-edn-storage [dir]
-;;   (d/file-storage dir
-;;     {:freeze-fn pr-str
-;;      :thaw-fn   edn/read-string}))
-
-;; (defn streaming-transit-json-storage [dir]
-;;   (d/file-storage dir
-;;     {:read-fn  (fn [is]
-;;                  (transit/read (transit/reader is :json)))
-;;      :write-fn (fn [os o]
-;;                  (transit/write (transit/writer os :json) o))}))
-
-;; (defn inmemory-transit-json-storage [dir]
-;;   (d/file-storage dir
-;;     {:freeze-fn tdc/transit-write-str
-;;      :thaw-fn tdc/transit-read-str}))
-
-;; (defn streaming-transit-msgpack-storage [dir]
-;;   (d/file-storage dir
-;;     {:read-fn  (fn [is]
-;;                  (transit/read (transit/reader is :msgpack)))
-;;      :write-fn (fn [os o]
-;;                  (transit/write (transit/writer os :msgpack) o))}))
-
-#_(deftest test-file-storage
-    (doseq [[format storage] [["streaming-edn"             (streaming-edn-storage temp-dir)]
-                              ["inmemory-edn"              (inmemory-edn-storage temp-dir)]
-                              ["streaming-transit-json"    (streaming-transit-json-storage temp-dir)]
-                              ["inmemory-transit-json"     (inmemory-transit-json-storage temp-dir)]
-                              ["streaming-transit-msgpack" (streaming-transit-msgpack-storage temp-dir)]]
-            ref       [:strong :weak]
-            order     [32 64 512]
-            :let      [opts {:branching-factor order, :ref-type ref}]
-            [size db] [["empty" (d/empty-db nil opts)
-                        "small" (small-db opts)
-                        "large" (large-db opts)]]]
-      (testing (str "storage: " format)
-        (testing (str "ref-type: " ref)
-          (testing (str "branching-factor: " order)
-            (testing (str "size: " size)
-              (with-dir temp-dir
-                (d/store db storage)
-                (let [db'     (d/restore storage)]
-                  (is (= db db'))
-                  (is (= (:eavt db) (:eavt db')))
-                  (is (= (:aevt db) (:aevt db')))
-                  (is (= (:avet db) (:avet db')))))))))))
-
-#_(deftest test-gc
-    (let [storage (make-storage {:stats true})]
-      (let [db (large-db {:storage storage})]
-        (d/store db)
-        (is (= 135 (count (d/addresses db))))
-        (is (= 135 (count (storage/-list-addresses storage))))
-        (is (= (d/addresses db) (set (storage/-list-addresses storage))))
-
-        (let [db' (d/db-with db [[:db/add 1001 :str "1001"]])]
-          (d/store db')
-          (is (> (count (storage/-list-addresses storage))
-                 (count (d/addresses db'))))
-
-        ;; no GC because both dbs are alive
-          (d/collect-garbage storage)
-          (is (= (into (set (d/addresses db))
-                       (set (d/addresses db')))
-                 (set (storage/-list-addresses storage))))
-          (is (= 0 (count @(:*deletes storage))))))
-
-    ;; if we lose other refs, GC will happen
-      (let [db'' (d/restore storage)]
-        (d/collect-garbage storage)
-        (is (= (d/addresses db'') (set (storage/-list-addresses storage))))
-        (is (= 6 (count @(:*deletes storage)))))
-
-      (testing "don’t delete currently stored db"
-        (System/gc)
-        (d/collect-garbage storage)
-        (is (pos? (count (storage/-list-addresses storage)))))))
+    (let [memory (support/make-storage)
+          opts (support/options memory 32 strong)
+          database
+          (d/db-with
+           (d/empty-db (Some (support/unique-schema)) opts)
+           [(support/add-string 1 :block/uuid "u1")])
+          tail
+          [[(db/datom
+             2 :block/uuid
+             (Datascript_runtime.Data_value.String "u1")
+             536870915 true)
+            (db/datom
+             2 :block/title
+             (Datascript_runtime.Data_value.String "Title")
+             536870915 true)]
+           [(db/datom
+             3 :block/title
+             (Datascript_runtime.Data_value.String "Later")
+             536870916 true)]]]
+      (d/store database)
+      (storage/store-tail database tail)
+      (let [restored (support/restore-database memory)]
+        (is (support/has-string? restored 1 :block/uuid "u1"))
+        (is (empty? (d/datoms restored :eavt 2)))
+        (is (support/has-string? restored 3 :block/title "Later"))
+        (is (= 536870916 (:max-tx restored)))))))
 
 (deftest test-conn
-  (let [storage (make-storage {:stats true})
-        conn    (d/create-conn nil {:storage          storage
-                                    :branching-factor 32
-                                    :ref-type         :strong})]
-    (is (= 5 (count @(:*writes storage)))) ;; initial store
+  (let [memory (support/make-storage)
+        connection
+        (d/create-conn None (support/options memory 32 strong))]
+    (is (= 5 (count @(:writes memory))))
 
-    (d/transact! conn [[:db/add 1 :name "Ivan"]])
-    (is (= 6 (count @(:*writes storage))))
-    (is (= @#'storage/tail-addr (last @(:*writes storage))))
+    (d/transact! connection [(support/add-string 1 :name "Ivan")])
+    (is (= 6 (count @(:writes memory))))
+    (is (= 1 (last @(:writes memory))))
 
-    ;; only writing tail
-    (d/transact! conn [[:db/add 2 :name "Oleg"]])
-    (is (= 7 (count @(:*writes storage))))
-    (is (= @#'storage/tail-addr (last @(:*writes storage))))
-    (is (= 2 (count (:tx-tail @(:atom conn)))))
-    (is (= 2 (count (apply concat (:tx-tail @(:atom conn))))))
+    (d/transact! connection [(support/add-string 2 :name "Oleg")])
+    (is (= 7 (count @(:writes memory))))
+    (is (= 1 (last @(:writes memory))))
+    (is (= 2 (support/tail-group-count connection)))
+    (is (= 2 (support/tail-datom-count connection)))
 
-    ;; bigger tx, still writing tail
-    (d/transact! conn (mapv #(vector :db/add % :name (str %)) (range 3 33)))
-    (is (= 8 (count @(:*writes storage))))
-    (is (= @#'storage/tail-addr (last @(:*writes storage))))
-    (is (= 3 (count (:tx-tail @(:atom conn)))))
-    (is (= 32 (count (apply concat (:tx-tail @(:atom conn))))))
+    (d/transact!
+     connection
+     (mapv
+      (fn [eid] (support/add-string eid :name (str eid)))
+      (range 3 33)))
+    (is (= 8 (count @(:writes memory))))
+    (is (= 1 (last @(:writes memory))))
+    (is (= 3 (support/tail-group-count connection)))
+    (is (= 32 (support/tail-datom-count connection)))
 
-    ;; tail overflows, flush db
-    (d/transact! conn [[:db/add 33 :name "Petr"]])
-    (is (= 16 (count @(:*writes storage))))
+    (d/transact! connection [(support/add-string 33 :name "Petr")])
+    (is (= 16 (count @(:writes memory))))
 
-    ;; and start over
-    (d/transact! conn [[:db/add 34 :name "Anna"]])
-    (is (= 17 (count @(:*writes storage))))
-    (is (= @#'storage/tail-addr (last @(:*writes storage))))
+    (d/transact! connection [(support/add-string 34 :name "Anna")])
+    (is (= 17 (count @(:writes memory))))
+    (is (= 1 (last @(:writes memory))))
 
-    ;; restore conn with tail
-    (let [conn' (d/restore-conn storage)]
-      (is (= @conn @conn'))
+    (let [restored (support/restore-connection memory)]
+      (is
+       (db/db-equal?
+        (conn/current-db connection)
+        (conn/current-db restored)))
 
-      ;; transact keeps working on restored conn
-      (d/transact! conn' [[:db/add 35 :name "Vera"]])
-      (is (= 18 (count @(:*writes storage))))
-      (is (= @#'storage/tail-addr (last @(:*writes storage))))
+      (d/transact! restored [(support/add-string 35 :name "Vera")])
+      (is (= 18 (count @(:writes memory))))
+      (is (= 1 (last @(:writes memory))))
 
-      ;; overflow keeps working on restored conn
-      (d/transact! conn' (mapv #(vector :db/add % :name (str %)) (range 36 80)))
-      (is (= 28 (count @(:*writes storage))))
-      (is (= @#'storage/tail-addr (last @(:*writes storage))))
+      (d/transact!
+       restored
+       (mapv
+        (fn [eid] (support/add-string eid :name (str eid)))
+        (range 36 80)))
+      (is (= 28 (count @(:writes memory))))
+      (is (= 1 (last @(:writes memory))))
 
-      ;; restore conn without tail
-      (let [conn'' (d/restore-conn storage)]
-        (is (= @conn' @conn''))
-
-        (d/transact! conn'' [[:db/add 80 :name "Ilya"]])
-        (is (= 29 (count @(:*writes storage))))
-        (is (= @#'storage/tail-addr (last @(:*writes storage))))
-
-        ;; gc on conn
-        #_(is (> (count (storage/-list-addresses storage))
-                 (count (d/addresses @(:db-last-stored (meta conn''))))))
-
-        #_(d/collect-garbage storage)
-        #_(is (= (count (storage/-list-addresses storage))
-                 (count (d/addresses @(:db-last-stored (meta conn''))))))
-
-        (let [conn''' (d/restore-conn storage)]
-          (is (= @conn'' @conn''')))))))
-
-
-; (t/test-ns *ns*)
-; (t/run-test-var #'test-conn)
-
-#_(comment
-  (let [serializable (with-open [is (io/input-stream (io/file "/Users/tonsky/ws/roam/db_3M.json_transit"))]
-                       (transit/read (transit/reader is :json)))]
-    (def db (d/from-serializable serializable {:branching-factor 512}))
-    (count db))
-
-  (count db)
-
-  (def storage
-    (streaming-edn-storage "target/db_streaming_edn")
-    #_(inmemory-edn-storage "target/db_inmemory_edn")
-    #_(streaming-transit-json-storage "target/db_streaming_transit_json")
-    #_(inmemory-transit-json-storage "target/db_inmemory_transit_json")
-    #_(streaming-transit-msgpack-storage "target/db_streaming_transit_msgpack"))
-
-  (d/store db storage)
-
-  (def db'
-    (d/restore storage))
-
-  (count (d/addresses db))
-  (count (d/addresses db'))
-  (count (storage/-list-addresses storage))
-  (d/collect-garbage storage)
-
-  (first (:eavt db'))
-
-  (->> (:eavt db')
-       (drop 5000)
-       (take 5000)))
+      (let [restored-again (support/restore-connection memory)]
+        (is
+         (db/db-equal?
+          (conn/current-db restored)
+          (conn/current-db restored-again)))
+        (d/transact!
+         restored-again
+         [(support/add-string 80 :name "Ilya")])
+        (is (= 29 (count @(:writes memory))))
+        (is (= 1 (last @(:writes memory))))
+        (let [restored-final (support/restore-connection memory)]
+          (is
+           (db/db-equal?
+            (conn/current-db restored-again)
+            (conn/current-db restored-final))))))))

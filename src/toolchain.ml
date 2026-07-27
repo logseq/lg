@@ -470,13 +470,21 @@ module Lg_frontend : FRONTEND = struct
     |> List.concat_map (fun located ->
            match located.Ast.form with
            | Ast.FList
-               (Ast.FSymbol "deftype" :: name :: fields :: (_ :: _ as methods))
+               (Ast.FSymbol (("deftype" | "defrecord") as definition)
+               :: name :: fields :: (_ :: _ as methods))
+             when
+               definition = "deftype"
+               || List.exists
+                    (function
+                      | Ast.FSymbol "ILookup" -> true
+                      | _ -> false)
+                    methods
              ->
                [
                  {
                    located with
                    Ast.form =
-                     Ast.FList [ Ast.FSymbol "deftype"; name; fields ];
+                     Ast.FList [ Ast.FSymbol definition; name; fields ];
                  };
                  {
                    located with
@@ -862,34 +870,11 @@ let recursive_definition_ast ast =
   let recursive_groups =
     Dependency_graph.recursive_groups ast
     |> List.filter_map (fun indices ->
-           let multi_indices =
-             List.filter
-               (fun index -> multi_arity_definition (List.nth ast index))
-               indices
-           in
-           let references left right =
-             let provided =
-               Dependency_graph.provided_names (List.nth ast right)
-             in
-             let symbols =
-               Dependency_graph.dependency_symbols (List.nth ast left)
-             in
-             List.exists (fun name -> List.mem name symbols) provided
-           in
-           let selected =
-             indices
-             |> List.filter (fun index ->
-                    List.mem index multi_indices
-                    || List.exists
-                         (fun multi ->
-                           references multi index && references index multi)
-                         multi_indices)
-           in
            if
-             List.length selected >= 2
+             List.length indices >= 2
              && List.for_all
                   (fun index -> plain_definition (List.nth ast index))
-                  selected
+                  indices
            then
              Some
                (List.stable_sort
@@ -897,7 +882,7 @@ let recursive_definition_ast ast =
                     Bool.compare
                       (multi_arity_definition (List.nth ast left))
                       (multi_arity_definition (List.nth ast right)))
-                  selected)
+                  indices)
            else None)
   in
   let normalize_definition = function
@@ -933,7 +918,12 @@ let stabilize_typecheck ?compile_evidence ~compile
     result
   in
   let binding_abi_equal (left : Types.binding) (right : Types.binding) =
-    Types.source_name left.ty = Types.source_name right.ty
+    (match (left.scheme, right.scheme) with
+    | Some left, Some right ->
+        Types.source_name (Type_solver.canonical_scheme_body left)
+        = Types.source_name (Type_solver.canonical_scheme_body right)
+    | None, None -> Types.source_name left.ty = Types.source_name right.ty
+    | Some _, None | None, Some _ -> false)
     && left.row_param_types = right.row_param_types
     && left.overload_row_param_types = right.overload_row_param_types
     && left.overload_targets = right.overload_targets

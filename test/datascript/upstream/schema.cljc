@@ -1,32 +1,34 @@
 (ns datascript.schema
-  (:require [clojure.string :as string]))
+  (:require
+   [clojure.string :as string]
+   [ocaml.package/datascript.runtime]))
 
 (def schema-keys #{:db/ident :db/isComponent :db/noHistory :db/valueType :db/cardinality :db/unique :db/index :db.install/_attribute :db/doc :db/tupleType :db/tupleTypes :db/tupleAttrs})
 
 (defonce schema-attr?
   #{:db/id :db/ident :db/isComponent :db/valueType :db/cardinality :db/unique :db/index :db/doc :db/tupleAttrs  :db/tupleType :db/tupleTypes})
 
-(defn ^boolean schema?
-  [^:map<keyword;Datascript_runtime.Data_value.t> entity]
+(defn schema?
+  [entity]
   (and
    (contains? entity :db/ident)
    (contains? entity :db/cardinality)))
 
-(defn ^boolean schema-entity?
-  [^:map<keyword;Datascript_runtime.Data_value.t> entity]
+(defn schema-entity?
+  [entity]
   (reduce
-   (fn [^boolean found ^:keyword key]
+   (fn [found key]
      (or found (contains? entity key)))
    false
    schema-keys))
 
-(defn ^boolean system-label? [^:string label ^:string prefix]
+(defn system-label? [label prefix]
   (or
    (string/starts-with? label (str prefix "/"))
    (string/starts-with? label (str prefix "."))))
 
-(defn ^boolean is-system-keyword?
-  [^Datascript_runtime.Data_value.t value]
+(defn is-system-keyword?
+  [value]
   (if-some [label (Datascript_runtime.Data_value.keyword_value value)]
     (system-label? label ":db")
     (match value

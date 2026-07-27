@@ -19,3 +19,7 @@ type t =
 
 val of_edn_string : string -> t
 val to_edn_string : t -> string
+val of_json_string : string -> t
+val to_json_string : t -> string
+val regex_valid : string -> bool
+val regex_find : string -> string -> bool

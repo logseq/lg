@@ -186,7 +186,7 @@ let rec to_seq_expr env collection =
   | Some (constraint_kind, declared_inner, value_ty) -> (
       let inner =
         match declared_inner with
-        | TUnknown | TVar _ when Types.is_dynamic value_ty ->
+        | TUnknown | TMeta _ | TVar _ when Types.is_dynamic value_ty ->
             Types.dynamic_constraint TUnknown
         | _ -> declared_inner
       in
@@ -292,6 +292,84 @@ let accepts_seqable env ty =
   | None ->
       Option.is_some
         (Core_protocols.find_seqable ty (Compiler_environment.protocols env))
+
+let accepts_contains = function
+  | TSet _ | TVector _ | TMap_keys | TRecord _ | TNamed_record _ -> true
+  | ty when Option.is_some (Types.dynamic_map_types ty) -> true
+  | ty -> Option.is_some (Types.contains_constraint_info ty)
+
+let contains_adapter argument =
+  let key_name = "__lg_contains_key" in
+  let key = Semantic_ir.Ident key_name in
+  let witness body =
+    Ok (Semantic_ir.Fun ([ Semantic_ir.PVar key_name ], body))
+  in
+  match Types.contains_constraint_info argument.ty with
+  | Some _ -> (
+      match Semantic_ir.unlocated argument.semantic_expr with
+      | Semantic_ir.Ident name
+        when not (identifier_holds_packed_constraint name) ->
+          Ok (Semantic_ir.Ident (name ^ "__contains"))
+      | _ ->
+          Ok
+            (Semantic_ir.Apply
+               (Semantic_ir.Ident "fst", [ argument.semantic_expr ])))
+  | None -> (
+      match argument.ty with
+      | TSet element_ty ->
+          Result.bind (Types.set_module_name element_ty) (fun set_module ->
+              witness
+                (apply (set_module ^ ".mem")
+                   [ key; argument.semantic_expr ]))
+      | TVector _ ->
+          witness
+            (Semantic_ir.Infix
+               ( "&&",
+                 Semantic_ir.Infix (">=", key, Semantic_ir.Int 0),
+                 Semantic_ir.Infix
+                   ( "<",
+                     key,
+                     apply "Rrbvec.length" [ argument.semantic_expr ] ) ))
+      | TMap_keys ->
+          witness
+            (apply "Lg_runtime.Core_set.String_set.mem"
+               [ key; argument.semantic_expr ])
+      | TRecord fields | TNamed_record { fields; _ } ->
+          let keys =
+            fields
+            |> List.map (fun (field : field) ->
+                   Semantic_ir.String field.keyword)
+            |> fun keys ->
+            apply "Lg_runtime.Core_set.String_set.of_list"
+              [ Semantic_ir.List keys ]
+          in
+          witness
+            (apply "Lg_runtime.Core_set.String_set.mem" [ key; keys ])
+      | map_ty when Option.is_some (Types.dynamic_map_types map_ty) ->
+          witness
+            (apply "Lg_runtime.Runtime_map.mem"
+               [ argument.semantic_expr; key ])
+      | ty ->
+          Error.error
+            ("contains? expects a map, set, or vector, got "
+           ^ Types.source_name ty))
+
+let contains_expr target key =
+  match Types.contains_constraint_info target.ty with
+  | None -> None
+  | Some (expected_key, _) ->
+      if
+        not
+          (Types.assignable ~policy:Host_boundary ~expected:expected_key
+             ~actual:key.ty)
+      then Some (Error.error "contains? key type does not match collection")
+      else
+        Some
+          (Result.map
+             (fun adapter ->
+               typed_ir TBool
+                 (Semantic_ir.Apply (adapter, [ key.semantic_expr ])))
+             (contains_adapter target))
 
 let element_type env collection =
   match to_seq_expr env collection with

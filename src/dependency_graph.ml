@@ -72,7 +72,144 @@ let rec symbols form =
   | FKeyword _ | FString _ | FRegex _ | FInt _ | FFloat _ | FChar _ | FBool _ ->
       []
 
+let type_annotation_builtins =
+  String_set.of_list
+    [
+      "array";
+      "bool";
+      "bytes";
+      "char";
+      "dynamic";
+      "float";
+      "fn";
+      "int";
+      "int64";
+      "keyword";
+      "list";
+      "map";
+      "option";
+      "ordering";
+      "overload";
+      "ref";
+      "result";
+      "seq";
+      "seqable";
+      "set";
+      "string";
+      "symbol";
+      "tuple";
+      "unit";
+      "vector";
+      "weak";
+    ]
+
+let type_annotation_symbols = function
+  | FKeyword annotation ->
+      let is_type_character = function
+        | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' | '-' | '.' | '/'
+        | '?' | '!' ->
+            true
+        | _ -> false
+      in
+      let add_token token tokens =
+        if token = "" || String_set.mem token type_annotation_builtins then
+          tokens
+        else
+          let local =
+            match String.rindex_opt token '/' with
+            | Some index ->
+                String.sub token (index + 1)
+                  (String.length token - index - 1)
+            | None -> token
+          in
+          if local = token then token :: tokens else local :: token :: tokens
+      in
+      let rec scan start index tokens =
+        if index < String.length annotation then
+          if is_type_character annotation.[index] then
+            scan start (index + 1) tokens
+          else
+            let token = String.sub annotation start (index - start) in
+            scan (index + 1) (index + 1) (add_token token tokens)
+        else
+          let token = String.sub annotation start (index - start) in
+          List.rev (add_token token tokens)
+      in
+      scan 0 0 []
+  | form -> symbols form
+
+let require_referred_symbols entries =
+  let rec options = function
+    | FKeyword (":refer" | ":refer-macros") :: FVector names :: rest ->
+        List.filter_map
+          (function FSymbol name -> Some name | _ -> None)
+          names
+        @ options rest
+    | _ :: rest -> options rest
+    | [] -> []
+  in
+  entries
+  |> List.concat_map (function
+       | FVector (_module_name :: spec_options) -> options spec_options
+       | _ -> [])
+
 let dependency_symbols = function
+  | FList (FSymbol "require" :: entries) -> require_referred_symbols entries
+  | FList
+      (FSymbol "type-record" :: _name :: FVector parameters :: field_forms) ->
+      let parameters =
+        parameters
+        |> List.filter_map (function FSymbol name -> Some name | _ -> None)
+        |> String_set.of_list
+      in
+      field_forms
+      |> List.concat_map (function
+           | FList (_field_name :: annotations) ->
+               List.concat_map type_annotation_symbols annotations
+           | form -> type_annotation_symbols form)
+      |> List.filter (fun name -> not (String_set.mem name parameters))
+  | FList (FSymbol "type-record" :: _name :: field_forms) ->
+      field_forms
+      |> List.concat_map (function
+           | FList (_field_name :: annotations) ->
+               List.concat_map type_annotation_symbols annotations
+           | form -> type_annotation_symbols form)
+  | FList
+      (FSymbol "type-variant" :: _name :: FVector parameters
+      :: constructor_forms) ->
+      let parameters =
+        parameters
+        |> List.filter_map (function FSymbol name -> Some name | _ -> None)
+        |> String_set.of_list
+      in
+      constructor_forms
+      |> List.concat_map (function
+           | FList (_constructor_name :: annotations) ->
+               List.concat_map type_annotation_symbols annotations
+           | _ -> [])
+      |> List.filter (fun name -> not (String_set.mem name parameters))
+  | FList (FSymbol "type-variant" :: _name :: constructor_forms) ->
+      constructor_forms
+      |> List.concat_map (function
+           | FList (_constructor_name :: annotations) ->
+               List.concat_map type_annotation_symbols annotations
+           | _ -> [])
+  | FList
+      [
+        FSymbol "type-alias";
+        _name;
+        FVector parameters;
+        manifest;
+      ] ->
+      let parameters =
+        parameters
+        |> List.filter_map (function FSymbol name -> Some name | _ -> None)
+        |> String_set.of_list
+      in
+      type_annotation_symbols manifest
+      |> List.filter (fun name -> not (String_set.mem name parameters))
+  | FList [ FSymbol "type-alias"; _name; manifest ] ->
+      type_annotation_symbols manifest
   | FList (FSymbol "declare+" :: FSymbol name :: _) -> [ "declare+"; name ]
   | FList (FSymbol "declare" :: names) ->
       List.filter_map
@@ -130,6 +267,7 @@ let method_names form =
 
 let rec provided_names = function
   | FList [ FSymbol "defn-signature"; definition ] -> provided_names definition
+  | FList (FSymbol "do" :: forms) -> List.concat_map provided_names forms
   | FList (FSymbol "declare+" :: FSymbol name :: _) -> [ name ]
   | FList (FSymbol "declare" :: names) ->
       List.filter_map (function FSymbol name -> Some name | _ -> None) names
@@ -140,6 +278,20 @@ let rec provided_names = function
   | FList
       (FSymbol ("deftype" | "defrecord") :: FSymbol name :: _ as forms) ->
       name :: ("->" ^ name) :: ("map->" ^ name) :: method_names (FList forms)
+  | FList (FSymbol "type-variant" :: FSymbol name :: declarations) ->
+      let constructors =
+        declarations
+        |> List.filter_map (function
+             | FSymbol constructor -> Some constructor
+             | FList (FSymbol constructor :: _) -> Some constructor
+             | FVector _ | FList _ | FMap _ | FCoreSymbol _ | FKeyword _
+             | FString _ | FRegex _ | FInt _ | FFloat _ | FChar _ | FBool _ ->
+                 None)
+      in
+      name :: constructors
+  | FList
+      (FSymbol ("type-alias" | "type-record") :: FSymbol name :: _) ->
+      [ name ]
   | FList
       (FSymbol ("def" | "defonce" | "defn" | "defn-") :: FSymbol name :: _)
     ->
@@ -316,21 +468,17 @@ let recursive_group_supported forms indices =
     indices
 
 let recursive_groups forms =
-  if not (has_declarations forms) then []
-  else
-    let _, components =
-      dependency_components ~ignore_declarations:true forms
-    in
-    components
-    |> List.map (List.map int_of_string)
-    |> List.filter (function
-         | _ :: _ :: _ as indices -> recursive_group_supported forms indices
-         | _ -> false)
-    |> List.map (List.sort Int.compare)
+  let _, components =
+    dependency_components ~ignore_declarations:true forms
+  in
+  components
+  |> List.map (List.map int_of_string)
+  |> List.filter (function
+       | _ :: _ :: _ as indices -> recursive_group_supported forms indices
+       | _ -> false)
+  |> List.map (List.sort Int.compare)
 
 let stable_order forms =
-  if not (has_declarations forms) then List.mapi (fun index _ -> index) forms
-  else
     let providers, components = dependency_components forms in
     let declaration_providers =
       declaration_provider_indices (indexed_forms forms)

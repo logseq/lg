@@ -1,31 +1,39 @@
 open Semantic_type
 
-type substitutions = (string * ty) list
+type variable =
+  | Metavariable of int
+  | Declared of string
+
+type substitutions = (variable * ty) list
 
 type conflict = {
   left : ty;
   right : ty;
 }
 
-let rec string_assoc_opt name = function
+let next_metavariable = ref 0
+
+let fresh ?location () =
+  let id = !next_metavariable in
+  incr next_metavariable;
+  TMeta { id; location }
+
+let rec variable_assoc_opt variable = function
   | [] -> None
   | (candidate, value) :: rest ->
-      if String.equal name candidate then Some value
-      else string_assoc_opt name rest
+      if candidate = variable then Some value
+      else variable_assoc_opt variable rest
 
-let string_mem_assoc name substitutions =
-  Option.is_some (string_assoc_opt name substitutions)
-
-let rec string_remove_assoc name = function
+let rec variable_remove_assoc variable = function
   | [] -> []
   | ((candidate, _) as entry) :: rest ->
-      if String.equal name candidate then rest
-      else entry :: string_remove_assoc name rest
+      if candidate = variable then rest
+      else entry :: variable_remove_assoc variable rest
 
-let rec string_mem name = function
+let rec variable_mem variable = function
   | [] -> false
-  | candidate :: _ when String.equal name candidate -> true
-  | _ :: rest -> string_mem name rest
+  | candidate :: _ when candidate = variable -> true
+  | _ :: rest -> variable_mem variable rest
 
 module Type_identity_table = Hashtbl.Make (struct
   type t = ty
@@ -47,6 +55,7 @@ let apply substitutions ty =
   | [] -> ty
   | _ ->
       let cache = Type_identity_table.create 32 in
+      let visiting = ref [] in
       let rec apply_ty ty =
         match Type_identity_table.find_opt cache ty with
         | Some mapped -> mapped
@@ -54,6 +63,14 @@ let apply substitutions ty =
             let mapped = apply_uncached ty in
             Type_identity_table.add cache ty mapped;
             mapped
+      and apply_replacement variable original replacement =
+        if variable_mem variable !visiting then original
+        else
+          let previous = !visiting in
+          visiting := variable :: previous;
+          let mapped = apply_ty replacement in
+          visiting := previous;
+          mapped
       and apply_uncached ty =
         let apply_inner build inner =
           let mapped = apply_ty inner in
@@ -64,10 +81,18 @@ let apply substitutions ty =
           if field_ty == field.ty then field else { field with ty = field_ty }
         in
         match ty with
-        | TVar name -> (
-            match string_assoc_opt name substitutions with
+        | TMeta { id; _ } -> (
+            match variable_assoc_opt (Metavariable id) substitutions with
             | None -> ty
-            | Some replacement -> apply_ty replacement)
+            | Some (TMeta replacement) when replacement.id = id -> ty
+            | Some replacement ->
+                apply_replacement (Metavariable id) ty replacement)
+        | TVar name -> (
+            match variable_assoc_opt (Declared name) substitutions with
+            | None -> ty
+            | Some (TVar candidate) when String.equal candidate name -> ty
+            | Some replacement ->
+                apply_replacement (Declared name) ty replacement)
         | TNullable inner -> apply_inner (fun inner -> TNullable inner) inner
         | TOcaml_app (name, arguments) ->
             let mapped = map_preserving_identity apply_ty arguments in
@@ -129,58 +154,76 @@ let apply substitutions ty =
       in
       apply_ty ty
 
-let rec occurs name ty =
+let rec occurs variable ty =
   match ty with
-  | TVar candidate -> candidate = name
+  | TMeta { id; _ } -> variable = Metavariable id
+  | TVar name -> variable = Declared name
   | TNullable inner | TArray inner | TRef inner | TList inner | TVector inner
   | TSet inner | TSeq inner ->
-      occurs name inner
+      occurs variable inner
   | TOcaml_app (_, arguments) | TTuple arguments ->
-      List.exists (occurs name) arguments
+      List.exists (occurs variable) arguments
   | TFn (parameters, return_ty) ->
-      List.exists (occurs name) parameters || occurs name return_ty
+      List.exists (occurs variable) parameters || occurs variable return_ty
   | TOverloaded_fn arities ->
       List.exists
         (fun arity ->
-          List.exists (occurs name) arity.fixed_params
-          || Option.fold ~none:false ~some:(occurs name) arity.rest_param
-          || occurs name arity.return_ty)
+          List.exists (occurs variable) arity.fixed_params
+          || Option.fold ~none:false ~some:(occurs variable) arity.rest_param
+          || occurs variable arity.return_ty)
         arities
   | TRecord fields ->
-      List.exists (fun (field : field) -> occurs name field.ty) fields
+      List.exists (fun (field : field) -> occurs variable field.ty) fields
   | TNamed_record { type_arguments; fields; _ } ->
-      List.exists (occurs name) type_arguments
-      || List.exists (fun (field : field) -> occurs name field.ty) fields
+      List.exists (occurs variable) type_arguments
+      || List.exists (fun (field : field) -> occurs variable field.ty) fields
   | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
   | TBool | TUnit | TNil | TUnknown | TOcaml _ ->
       false
 
-let bind substitutions name ty =
+let bind substitutions variable ty =
   let ty = apply substitutions ty in
-  if ty = TVar name then Ok substitutions
+  let variable_ty =
+    match variable with
+    | Metavariable id -> TMeta { id; location = None }
+    | Declared name -> TVar name
+  in
+  let same_variable =
+    match (variable, ty) with
+    | Metavariable id, TMeta meta -> id = meta.id
+    | Declared name, TVar candidate -> name = candidate
+    | _ -> false
+  in
+  if same_variable then Ok substitutions
   else if ty = TUnknown then Ok substitutions
-  else if occurs name ty then Error { left = TVar name; right = ty }
+  else if occurs variable ty then Error { left = variable_ty; right = ty }
   else
-    let replacement = [ (name, ty) ] in
+    let replacement = [ (variable, ty) ] in
     Ok
-      ((name, ty)
-      :: string_remove_assoc name
+      ((variable, ty)
+      :: variable_remove_assoc variable
            (List.map
-              (fun (variable, existing) ->
-                (variable, apply replacement existing))
+              (fun (existing_variable, existing) ->
+                (existing_variable, apply replacement existing))
               substitutions))
+
+let bind_meta substitutions meta ty =
+  bind substitutions (Metavariable meta.id) ty
 
 let rec variables ty =
   let union left right =
     List.fold_left
-      (fun names name -> if string_mem name names then names else name :: names)
+      (fun variables variable ->
+        if variable_mem variable variables then variables
+        else variable :: variables)
       left right
   in
   let variables_all types =
     List.fold_left (fun names ty -> union names (variables ty)) [] types
   in
   match ty with
-  | TVar name -> [ name ]
+  | TMeta { id; _ } -> [ Metavariable id ]
+  | TVar name -> [ Declared name ]
   | TNullable inner | TArray inner | TRef inner | TList inner | TVector inner
   | TSet inner | TSeq inner ->
       variables inner
@@ -201,8 +244,16 @@ let rec variables ty =
   | TBool | TUnit | TNil | TUnknown | TOcaml _ ->
       []
 
+let conflict_is_occurs conflict =
+  List.exists
+    (fun variable -> occurs variable conflict.right)
+    (variables conflict.left)
+  || List.exists
+       (fun variable -> occurs variable conflict.left)
+       (variables conflict.right)
+
 let rec is_open = function
-  | TUnknown | TVar _ -> true
+  | TUnknown | TMeta _ | TVar _ -> true
   | TNullable inner | TArray inner | TRef inner | TList inner | TVector inner
   | TSet inner | TSeq inner ->
       is_open inner
@@ -221,13 +272,13 @@ let rec is_open = function
   | TBool | TUnit | TNil | TOcaml _ ->
       false
 
-let force substitutions name ty =
-  let replacement = [ (name, ty) ] in
-  (name, ty)
-  :: string_remove_assoc name
+let force substitutions variable ty =
+  let replacement = [ (variable, ty) ] in
+  (variable, ty)
+  :: variable_remove_assoc variable
        (List.map
-          (fun (variable, existing) ->
-            (variable, apply replacement existing))
+          (fun (existing_variable, existing) ->
+            (existing_variable, apply replacement existing))
           substitutions)
 
 let matching_fields left right =
@@ -259,7 +310,24 @@ let rec unify substitutions left right =
     | TOcaml left_name, TOcaml right_name when String.equal left_name right_name ->
         Ok substitutions
     | TUnknown, _ | _, TUnknown -> Ok substitutions
-    | TVar name, ty | ty, TVar name -> bind substitutions name ty
+    | TMeta meta, ty | ty, TMeta meta -> bind_meta substitutions meta ty
+    | TVar name, ty | ty, TVar name ->
+        bind substitutions (Declared name) ty
+    | ( TOcaml_app ("__lg_truthy_constraint", [ left ]),
+        TOcaml_app ("__lg_truthy_constraint", [ right ]) ) ->
+        unify substitutions left right
+    | TOcaml_app ("__lg_truthy_constraint", [ value_ty ]), ty
+    | ty, TOcaml_app ("__lg_truthy_constraint", [ value_ty ]) ->
+        unify substitutions value_ty ty
+    | ( TOcaml_app ("__lg_printable_constraint", [ left ]),
+        TOcaml_app ("__lg_printable_constraint", [ right ]) ) ->
+        unify substitutions left right
+    | TOcaml_app ("__lg_printable_constraint", [ value_ty ]), ty
+    | ty, TOcaml_app ("__lg_printable_constraint", [ value_ty ]) ->
+        unify substitutions value_ty ty
+    | ( TOcaml_app ("__lg_symbol_predicate_constraint", [ left ]),
+        TOcaml_app ("__lg_symbol_predicate_constraint", [ right ]) ) ->
+        unify substitutions left right
     | TNullable left, TNullable right
     | TArray left, TArray right
     | TRef left, TRef right
@@ -305,6 +373,19 @@ let rec unify substitutions left right =
               (fun result (left, right) ->
                 Result.bind result (fun substitutions ->
                     unify substitutions left right))
+              (Ok substitutions) fields)
+    | ( TOcaml_app
+          ("Lg_runtime.Runtime_map.t", [ key_ty; value_ty ]),
+        (TRecord fields | TNamed_record { fields; nominal = false; _ }) )
+    | ( (TRecord fields | TNamed_record { fields; nominal = false; _ }),
+        TOcaml_app
+          ("Lg_runtime.Runtime_map.t", [ key_ty; value_ty ]) ) ->
+        Result.bind (unify substitutions key_ty TKeyword)
+          (fun substitutions ->
+            List.fold_left
+              (fun result (field : field) ->
+                Result.bind result (fun substitutions ->
+                    unify substitutions value_ty field.ty))
               (Ok substitutions) fields)
     | (TRecord left_fields | TNamed_record { fields = left_fields; _ }),
       (TRecord right_fields | TNamed_record { fields = right_fields; _ }) ->
@@ -352,3 +433,64 @@ let infer substitutions ~template ~actual = unify substitutions template actual
 let infer_all substitutions ~templates ~actuals =
   if List.length templates <> List.length actuals then Ok substitutions
   else unify_lists substitutions templates actuals
+
+let generalize ty =
+  let declared_names =
+    variables ty
+    |> List.filter_map (function
+         | Declared name -> Some name
+         | Metavariable _ -> None)
+  in
+  let inferred_name id =
+    let rec available suffix =
+      let name =
+        "g" ^ string_of_int id
+        ^ if suffix = 0 then "" else "_" ^ string_of_int suffix
+      in
+      if List.mem name declared_names then available (suffix + 1) else name
+    in
+    available 0
+  in
+  let quantified, substitutions =
+    variables ty
+    |> List.fold_left
+         (fun (quantified, substitutions) -> function
+           | Declared name ->
+               (Declared_variable name :: quantified, substitutions)
+           | Metavariable id ->
+               let name = inferred_name id in
+               ( Inferred_variable { metavariable_id = id; name }
+                 :: quantified,
+                 (Metavariable id, TVar name) :: substitutions ))
+         ([], [])
+  in
+  let quantified =
+    List.rev quantified
+  in
+  { quantified; body = apply substitutions ty }
+
+let instantiate scheme =
+  let substitutions =
+    List.map
+      (function
+        | Declared_variable name -> (Declared name, fresh ())
+        | Inferred_variable { name; _ } -> (Declared name, fresh ()))
+      scheme.quantified
+  in
+  apply substitutions scheme.body
+
+let canonical_scheme_body scheme =
+  let variable_name = function
+    | Declared_variable name -> ("declared", name)
+    | Inferred_variable { name; _ } -> ("inferred", name)
+  in
+  let substitutions =
+    List.mapi
+      (fun index variable ->
+        let category, name = variable_name variable in
+        ( Declared name,
+          TVar
+            ("__lg_scheme_" ^ category ^ "_" ^ string_of_int index) ))
+      scheme.quantified
+  in
+  apply substitutions scheme.body

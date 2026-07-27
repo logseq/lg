@@ -1,13 +1,14 @@
 (ns datascript.bench.datascript
   (:require
    [datascript.core :as d]
+   [datascript.db :as db]
    [datascript.bench.bench :as bench]
+   [datascript.lg.query :as query]
    [datascript.lg.query-types :as query-types]
    [datascript.parser :as parser]
+   [datascript.pull-api :as pull-api]
    [datascript.pull-parser :as pull-parser]
-   [ocaml.Lg_runtime.Runtime_edn :as runtime-edn]
-   [ocaml.melange-edn-native/Melange_edn_native :as native-edn]
-   #?(:native [ocaml.yojson/Yojson.Safe :as yojson])))
+   [ocaml.Lg_runtime.Runtime_edn :as runtime-edn]))
 
 (def ^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema
   (let [^:map<keyword;Datascript_runtime.Data_value.t> id-entry {}
@@ -461,7 +462,7 @@
         entity
         (assoc
          entity
-         :db/id (entity-ref-value 1)
+         :db/id (entity-ref-value 5)
          :profile
          (Datascript_runtime.Data_value.Map
           (list
@@ -475,7 +476,7 @@
     (match
      (first
       (d/datoms
-       database :eavt (entity-ref-value 1)
+       database :eavt (entity-ref-value 5)
        (Datascript_runtime.Data_value.Keyword ":profile")))
      None
      (Stdlib.failwith
@@ -483,9 +484,15 @@
      (Some datom)
      (if-some [child-eid
                (Datascript_runtime.Data_value.ref_value (.-v datom))]
-       (when-not (= 1 (entity-datom-count database child-eid))
-         (Stdlib.failwith
-          "Nested entity map did not transact the child entity"))
+       (let [child-datom-count
+             (entity-datom-count database child-eid)]
+         (when-not (= 1 child-datom-count)
+           (Stdlib.failwith
+            (str
+             "Nested entity map did not transact the child entity: eid="
+             child-eid
+             ", datoms="
+             child-datom-count))))
        (Stdlib.failwith
         "Nested entity map parent value is not a resolved ref")))))
 
@@ -728,7 +735,8 @@
 
 (defn query-inputs [^datascript.db/DB database]
   [(query-types/source-input
-    (query-types/database-source database))])
+    (query-types/database-source
+     (db/database-view database)))])
 
 (defn entity-pattern [^:keyword attr ^:string value-variable]
   [(parser/pattern-variable "?e")
@@ -832,9 +840,12 @@
 
 (defn bench-static-query [query ^:int expected ^:string benchmark-name]
   (let [inputs (query-inputs @*db100k)]
-    (assert-query-count (d/q query inputs) expected benchmark-name)
+    (assert-query-count
+     (query/q-closed query inputs)
+     expected
+     benchmark-name)
     (bench/bench
-     (d/q query inputs))))
+     (query/q-closed query inputs))))
 
 (defn bench-q1 []
   (bench-static-query q1 (expected-query-count false) "q1"))
@@ -851,7 +862,8 @@
 (defn bench-q5-shortcircuit []
   (let [inputs
         [(query-types/source-input
-          (query-types/database-source @*db100k))
+          (query-types/database-source
+           (db/database-view @*db100k)))
          (query-types/binding-input
           (query-types/scalar-binding
            (query-types/value-result
@@ -861,7 +873,7 @@
            (query-types/value-result
             (Datascript_runtime.Data_value.Int 35))))]]
     (bench/bench
-     (d/q q5-shortcircuit inputs))))
+     (query/q-closed q5-shortcircuit inputs))))
 
 (defn ^:int expected-high-salary-count []
   (reduce
@@ -892,7 +904,8 @@
 
 (defn qpred2-inputs []
   [(query-types/source-input
-    (query-types/database-source @*db100k))
+    (query-types/database-source
+     (db/database-view @*db100k)))
    (query-types/binding-input
     (query-types/scalar-binding
      (query-types/value-result
@@ -900,35 +913,35 @@
 
 (defn bench-qpred1 []
   (let [inputs (query-inputs @*db100k)]
-    (assert-predicate-output (d/q qpred1 inputs))
+    (assert-predicate-output (query/q-closed qpred1 inputs))
     (bench/bench
-     (d/q qpred1 inputs))))
+     (query/q-closed qpred1 inputs))))
 
 (defn bench-qpred2 []
   (let [inputs (qpred2-inputs)]
-    (assert-predicate-output (d/q qpred2 inputs))
+    (assert-predicate-output (query/q-closed qpred2 inputs))
     (bench/bench
-     (d/q qpred2 inputs))))
+     (query/q-closed qpred2 inputs))))
 
 (def *pull-db
   (delay
    (wide-db 4 5)))
 
-(defn pull-one-pattern [^datascript.db/DB database]
+(defn pull-one-pattern [^datascript.db/database-view database]
   (pull-parser/recursive-pattern
    database
    [:name]
    :follows
    false))
 
-(defn pull-many-pattern [^datascript.db/DB database]
+(defn pull-many-pattern [^datascript.db/database-view database]
   (pull-parser/recursive-pattern
    database
    [:db/id :last-name :alias :sex :age :salary]
    :follows
    false))
 
-(defn pull-wildcard-pattern [^datascript.db/DB database]
+(defn pull-wildcard-pattern [^datascript.db/database-view database]
   (pull-parser/recursive-pattern
    database
    []
@@ -939,13 +952,18 @@
   (Datascript_runtime.Data_value.Entity_id 1))
 
 (defn assert-pull-output
-  [^:option<map<keyword;Datascript_runtime.Data_value.t>> output]
+  [^:option<map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>>
+   output]
   (match output
     None
     (Stdlib.failwith
      "Pull benchmark did not return the root entity")
     (Some values)
-    (if-some [follows (get values :follows)]
+    (if-some
+      [follows
+       (get
+        values
+        (Datascript_runtime.Data_value.Keyword ":follows"))]
       (match
        (Datascript_runtime.Data_value.sequential_items follows)
        None
@@ -984,9 +1002,14 @@
    (Some value) value))
 
 (defn ^:Datascript_runtime.Data_value.t root-pulled-field
-  [^:map<keyword;Datascript_runtime.Data_value.t> entity
+  [^:map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>
+   entity
    ^:keyword field]
-  (if-some [value (get entity field)]
+  (if-some
+    [value
+     (get
+      entity
+      (Datascript_runtime.Data_value.Keyword (str field)))]
     value
     (Stdlib.failwith
      (str "Missing root pull field " field))))
@@ -1009,15 +1032,17 @@
 
 (defn assert-cycle-pull []
   (let [database (cycle-pull-db)
+        view (db/database-view database)
         pattern
         (pull-parser/recursive-pattern
-         database
+         view
          [:db/id :name]
          :follows
          false)]
     (match
-     (d/pull database pattern
-             (Datascript_runtime.Data_value.Entity_id 1))
+     (pull-api/pull-parsed
+      view pattern
+      (Datascript_runtime.Data_value.Entity_id 1))
      None
      (Stdlib.failwith
       "Cycle pull did not return the root entity")
@@ -1048,16 +1073,18 @@
 
 (defn assert-reverse-pull []
   (let [database (cycle-pull-db)
+        view (db/database-view database)
         reverse-attr
-        (pull-parser/attribute database :_follows)
+        (pull-parser/attribute view :_follows)
         pattern
         (pull-parser/pattern [reverse-attr reverse-attr] false)]
     (when-not (= 1 (count (:reverse-attrs pattern)))
       (Stdlib.failwith
        "Pull pattern did not replace a duplicate alias"))
     (match
-     (d/pull database pattern
-             (Datascript_runtime.Data_value.Entity_id 2))
+     (pull-api/pull-parsed
+      view pattern
+      (Datascript_runtime.Data_value.Entity_id 2))
      None
      (Stdlib.failwith
       "Reverse pull did not return the root entity")
@@ -1075,22 +1102,24 @@
 
 (defn assert-nested-reverse-pull []
   (let [database (cycle-pull-db)
+        view (db/database-view database)
         reverse-attr
-        (pull-parser/attribute database :_follows)
+        (pull-parser/attribute view :_follows)
         child-pattern
         (pull-parser/pattern
-         [(pull-parser/attribute database :db/id)
+         [(pull-parser/attribute view :db/id)
           reverse-attr]
          false)
         follows-attr
         (pull-parser/with-pattern
-         (pull-parser/attribute database :follows)
+         (pull-parser/attribute view :follows)
          child-pattern)
         pattern
         (pull-parser/pattern [follows-attr] false)]
     (match
-     (d/pull database pattern
-             (Datascript_runtime.Data_value.Entity_id 1))
+     (pull-api/pull-parsed
+      view pattern
+      (Datascript_runtime.Data_value.Entity_id 1))
      None
      (Stdlib.failwith
       "Nested reverse pull did not return the root entity")
@@ -1111,20 +1140,21 @@
 
 (defn assert-pull-options []
   (let [database (cycle-pull-db)
+        view (db/database-view database)
         default-attr
         (pull-parser/with-default
-         (pull-parser/attribute database :missing)
+         (pull-parser/attribute view :missing)
          (Datascript_runtime.Data_value.String "default"))
         present-xform
         (pull-parser/with-xform
-         (pull-parser/attribute database :name)
+         (pull-parser/attribute view :name)
          (fn
            [^:option<Datascript_runtime.Data_value.t> _value]
            (Some
             (Datascript_runtime.Data_value.String "present"))))
         missing-xform
         (pull-parser/with-xform
-         (pull-parser/attribute database :missing-xform)
+         (pull-parser/attribute view :missing-xform)
          (fn
            [^:option<Datascript_runtime.Data_value.t> value]
            (match value
@@ -1137,8 +1167,9 @@
          [default-attr present-xform missing-xform]
          false)]
     (match
-     (d/pull database pattern
-             (Datascript_runtime.Data_value.Entity_id 1))
+     (pull-api/pull-parsed
+      view pattern
+      (Datascript_runtime.Data_value.Entity_id 1))
      None
      (Stdlib.failwith
       "Pull options did not return the root entity")
@@ -1160,17 +1191,19 @@
          (Stdlib.failwith
           "Pull missing xform did not match upstream")))))
   (let [database (cycle-pull-db)
+        view (db/database-view database)
         recursive-attr
         (pull-parser/recursive-attribute-with-limit
-         database :follows 1)
+         view :follows 1)
         pattern
         (pull-parser/pattern
-         [(pull-parser/attribute database :name)
+         [(pull-parser/attribute view :name)
           recursive-attr]
          false)]
     (match
-     (d/pull database pattern
-             (Datascript_runtime.Data_value.Entity_id 1))
+     (pull-api/pull-parsed
+      view pattern
+      (Datascript_runtime.Data_value.Entity_id 1))
      None
      (Stdlib.failwith
       "Limited recursive pull did not return the root entity")
@@ -1186,13 +1219,14 @@
         (Stdlib.failwith
          "Recursive pull exceeded its upstream limit")))))
   (let [database @*pull-db
+        view (db/database-view database)
         follows-attr
         (pull-parser/with-limit
-         (pull-parser/attribute database :follows)
+         (pull-parser/attribute view :follows)
          (Some 2))
         pattern (pull-parser/pattern [follows-attr] false)]
     (match
-     (d/pull database pattern (benchmark-entity-ref))
+     (pull-api/pull-parsed view pattern (benchmark-entity-ref))
      None
      (Stdlib.failwith
       "Limited multival pull did not return the root entity")
@@ -1210,58 +1244,46 @@
 
 (defn bench-pull-one []
   (let [database @*pull-db
-        pattern (pull-one-pattern database)
+        view (db/database-view database)
+        pattern (pull-one-pattern view)
         entity-ref (benchmark-entity-ref)
-        output (d/pull database pattern entity-ref)]
+        output (pull-api/pull-parsed view pattern entity-ref)]
     (assert-pull-output output)
     (assert-cycle-pull)
     (assert-reverse-pull)
     (assert-nested-reverse-pull)
     (assert-pull-options)
     (bench/bench
-     (d/pull database pattern entity-ref))))
+     (pull-api/pull-parsed view pattern entity-ref))))
 
 (defn bench-pull-many []
   (let [database @*pull-db
-        pattern (pull-many-pattern database)
+        view (db/database-view database)
+        pattern (pull-many-pattern view)
         entity-ref (benchmark-entity-ref)
-        output (d/pull database pattern entity-ref)]
+        output (pull-api/pull-parsed view pattern entity-ref)]
     (assert-pull-output output)
     (bench/bench
-     (d/pull database pattern entity-ref))))
+     (pull-api/pull-parsed view pattern entity-ref))))
 
 (defn bench-pull-wildcard []
   (let [database @*pull-db
-        pattern (pull-wildcard-pattern database)
+        view (db/database-view database)
+        pattern (pull-wildcard-pattern view)
         entity-ref (benchmark-entity-ref)
-        output (d/pull database pattern entity-ref)]
+        output (pull-api/pull-parsed view pattern entity-ref)]
     (assert-pull-output output)
     (bench/bench
-     (d/pull database pattern entity-ref))))
+     (pull-api/pull-parsed view pattern entity-ref))))
 
 (defn benchmark-serialized-db []
   (d/serializable @*db100k))
 
 (defn json-write [value]
-  #?(:native
-     (yojson/to-string
-      (native-edn/to-json
-       (native-edn/of-edn-string
-        (runtime-edn/write-string value))))
-     :melange
-     (native-edn/to-json-string
-      (native-edn/of-edn-string
-       (runtime-edn/write-string value)))))
+  (runtime-edn/write-json-string value))
 
 (defn json-read [^:string source]
-  #?(:native
-     (runtime-edn/read-string
-      (native-edn/to-edn-string
-       (native-edn/of-json (yojson/from-string source))))
-     :melange
-     (runtime-edn/read-string
-      (native-edn/to-edn-string
-       (native-edn/of-json-string source)))))
+  (runtime-edn/read-json-string source))
 
 (defn benchmark-frozen-db []
   (json-write (benchmark-serialized-db)))

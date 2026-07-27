@@ -22,6 +22,11 @@ let compile_not args =
                 Semantic_ir.Apply
                   ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.truthy",
                     [ arg.semantic_expr ] ) )
+        | ty when Option.is_some (Types.truthy_constraint_info ty) ->
+            Semantic_ir.Prefix
+              ( "not",
+                Expression_support.truthiness_expression ty
+                  arg.semantic_expr )
         | TBool -> Semantic_ir.Prefix ("not", arg.semantic_expr)
         | TNil ->
             Semantic_ir.Sequence [ arg.semantic_expr; Semantic_ir.Bool true ]
@@ -123,6 +128,30 @@ let compile_nil_predicate name args expected_nil =
             Semantic_ir.Match
               ( arg.semantic_expr,
                 [ ( Semantic_ir.PConstructor ("None", None),
+                    Semantic_ir.Bool expected_nil );
+                  ( Semantic_ir.PConstructor
+                      ("Some", Some Semantic_ir.PAny),
+                    Semantic_ir.Bool (not expected_nil) );
+                ] )
+        | ty
+          when (match Types.seqable_constraint_info ty with
+               | Some
+                   ( (`Optional | `Optional_sequential),
+                     _,
+                     (TNullable _ | TOcaml_app ("option", [ _ ])) ) ->
+                   true
+               | _ -> false) ->
+            let stored_value =
+              match Semantic_ir.unlocated arg.semantic_expr with
+              | Semantic_ir.Ident _ -> arg.semantic_expr
+              | _ ->
+                  Semantic_ir.Apply
+                    (Semantic_ir.Ident "snd", [ arg.semantic_expr ])
+            in
+            Semantic_ir.Match
+              ( stored_value,
+                [
+                  ( Semantic_ir.PConstructor ("None", None),
                     Semantic_ir.Bool expected_nil );
                   ( Semantic_ir.PConstructor
                       ("Some", Some Semantic_ir.PAny),

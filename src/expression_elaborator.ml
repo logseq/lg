@@ -625,7 +625,7 @@ and compile_for scope env bindings body =
         match Env.find_opt (Names.scoped_key scope name) env with
         | Some binding -> (
             match Types.seqable_constraint_info binding.ty with
-            | Some (_, (TUnknown | TVar _), (TUnknown | TVar _)) -> true
+            | Some (_, (TUnknown | TMeta _ | TVar _), (TUnknown | TMeta _ | TVar _)) -> true
             | Some _ | None -> false)
         | None -> false)
     | _ -> false
@@ -868,7 +868,13 @@ and prepare_fn ?(param_type_overrides = []) ?variadic_rest_index
         |> List.mapi (fun index (_key, (binding : binding)) ->
                match List.nth_opt param_type_overrides index with
                | Some (Some ty) when not (Types.equal ty TUnknown) ->
-                   if refine_open_overrides then Some binding.ty else Some ty
+                   if refine_open_overrides then (
+                     if
+                       Types.source_name ty
+                       <> Types.source_name binding.ty
+                     then refined := true;
+                     Some binding.ty)
+                   else Some ty
                | _ -> (
                    match
                      List.find_opt
@@ -1105,7 +1111,18 @@ and prepare_multi_arity_fn ?(infer_state_return = false) ?signature ~ocaml_name
   | Error _ as err -> err
   | Ok parsed_clauses ->
       let initial_arities =
-        List.map (fun clause -> clause.initial_arity) parsed_clauses
+        let resolve =
+          Function_elaborator.infer_named_record scope env
+        in
+        List.map
+          (fun clause ->
+            {
+              fixed_params =
+                List.map resolve clause.initial_arity.fixed_params;
+              rest_param = Option.map resolve clause.initial_arity.rest_param;
+              return_ty = resolve clause.initial_arity.return_ty;
+            })
+          parsed_clauses
       in
       let initial_arities =
         match signature with
@@ -1344,7 +1361,7 @@ and prepare_multi_arity_fn ?(infer_state_return = false) ?signature ~ocaml_name
                       | Some ty
                         when not
                                (match ty with
-                               | TUnknown | TVar _ -> true
+                               | TUnknown | TMeta _ | TVar _ -> true
                                | _ -> false) ->
                           Some ty
                       | _ -> (
@@ -1461,6 +1478,7 @@ and lower_prepared_multi_arity (prepared : prepared_multi_arity_fn) =
         ({
            name = clause.target_name;
            identity = None;
+           type_annotation = None;
            expression = expression.semantic_expr;
          }
           : Lowered.recursive_value))
@@ -1494,6 +1512,7 @@ and prepare_recursive_fn ~ocaml_name scope env source_name return_ty params
         let param_tys = List.map Option.get explicit_param_tys in
         let self_binding =
           Types.binding ocaml_name (TFn (param_tys, return_ty))
+          |> Types.generalize_binding
         in
         let env =
           Env.add (Names.scoped_key scope source_name) self_binding env
@@ -1525,18 +1544,95 @@ and prepare_inferred_recursive_fn ?explicit_return_ty ~ocaml_name scope env
   match Destructure.parse_param_specs params with
   | Error _ as err -> err
   | Ok specs -> (
+      let recursion_parameter_tys =
+        List.map
+          (fun (spec : Destructure.param_spec) ->
+            Option.value spec.explicit_ty ~default:(Type_solver.fresh ()))
+          specs
+      in
+      let recursion_params =
+        List.map2
+          (fun (spec : Destructure.param_spec) ty ->
+            (spec.source_name, ty))
+          specs recursion_parameter_tys
+      in
+      let rec contains_polymorphic_self_call = function
+        | FList (FSymbol name :: arguments)
+          when (name = source_name
+               || name = Names.scoped_key scope source_name)
+               && List.length arguments = List.length recursion_parameter_tys ->
+            let actual_tys =
+              List.map
+                (fun argument ->
+                  Type_inference.returned_vector_type recursion_params argument
+                  |> Option.value
+                       ~default:
+                         (Type_inference.inferred_form_type recursion_params
+                            argument))
+                arguments
+            in
+            let result =
+              List.fold_left2
+                (fun result expected actual ->
+                  Result.bind result (fun substitutions ->
+                      if Types.equal actual TUnknown then Ok substitutions
+                      else Type_solver.unify substitutions expected actual))
+                (Ok []) recursion_parameter_tys actual_tys
+            in
+            (match result with
+            | Error conflict -> Type_solver.conflict_is_occurs conflict
+            | Ok _ ->
+                List.exists contains_polymorphic_self_call arguments)
+        | FList (FSymbol "fn" :: _) -> false
+        | FList forms | FVector forms ->
+            List.exists contains_polymorphic_self_call forms
+        | FMap pairs ->
+            List.exists
+              (fun (key, value) ->
+                contains_polymorphic_self_call key
+                || contains_polymorphic_self_call value)
+              pairs
+        | FInt _ | FFloat _ | FChar _ | FString _ | FRegex _ | FBool _
+        | FKeyword _ | FSymbol _ | FCoreSymbol _ ->
+            false
+      in
+      if List.exists contains_polymorphic_self_call body_forms then
+        Error.error
+          (source_name
+         ^ ": polymorphic recursion requires an explicit signature")
+      else
+      let predeclared_type =
+        Env.find_opt (Names.scoped_key scope source_name) env
+        |> Option.map (fun (binding : binding) -> binding.ty)
+      in
+      let predeclared_param_tys, predeclared_return_ty =
+        match predeclared_type with
+        | Some (TFn (parameter_tys, return_ty))
+          when List.length parameter_tys = List.length specs ->
+            (Some parameter_tys, Some return_ty)
+        | Some _ | None -> (None, None)
+      in
       let param_type_overrides =
         List.map (fun (spec : Destructure.param_spec) -> spec.explicit_ty) specs
       in
       let param_tys =
-        List.map
-          (fun (spec : Destructure.param_spec) ->
-            Option.value spec.explicit_ty ~default:TUnknown
-            |> Function_elaborator.infer_named_record scope env)
+        List.mapi
+          (fun index (spec : Destructure.param_spec) ->
+            match spec.explicit_ty with
+            | Some ty -> ty
+            | None ->
+                Option.bind predeclared_param_tys (fun types ->
+                    List.nth_opt types index)
+                |> Option.value ~default:(Type_solver.fresh ()))
           specs
+        |> List.map (Function_elaborator.infer_named_record scope env)
       in
       let self_return_ty =
-        Option.value explicit_return_ty ~default:TUnknown
+        match explicit_return_ty with
+        | Some ty -> ty
+        | None ->
+            Option.value predeclared_return_ty
+              ~default:(Type_solver.fresh ())
       in
       let self_binding =
         Types.binding ocaml_name (TFn (param_tys, self_return_ty))
@@ -1545,13 +1641,9 @@ and prepare_inferred_recursive_fn ?explicit_return_ty ~ocaml_name scope env
         Env.add (Names.scoped_key scope source_name) self_binding env
       in
       let inference_params =
-        specs
+        List.combine specs param_tys
         |> List.fold_left
-             (fun params (spec : Destructure.param_spec) ->
-               let ty =
-                 Option.value spec.explicit_ty ~default:TUnknown
-                 |> Function_elaborator.infer_named_record scope env
-               in
+             (fun params ((spec : Destructure.param_spec), ty) ->
                let params = (spec.source_name, ty) :: params in
                if spec.destructured then
                  Destructure.pattern_names spec.pattern
@@ -1595,7 +1687,7 @@ and prepare_inferred_recursive_fn ?explicit_return_ty ~ocaml_name scope env
                 match ty with
                 | TOcaml_app
                     ( name,
-                      [ element_ty; (TUnknown | TVar _) ] )
+                      [ element_ty; (TUnknown | TMeta _ | TVar _) ] )
                   when (name = Types.seqable_constraint_name
                        || name = Types.optional_seqable_constraint_name
                        || name = Types.optional_sequential_constraint_name)
@@ -1632,17 +1724,32 @@ and prepare_inferred_recursive_fn ?explicit_return_ty ~ocaml_name scope env
             let return_seed =
               match explicit_return_ty with
               | Some return_ty -> Some return_ty
-              | None ->
-                  List.combine specs self_param_tys
-                  |> List.find_map
-                       (fun ((spec : Destructure.param_spec), ty) ->
-                         match ty with
-                         | (TRecord _ | TNamed_record _)
-                           when List.mem spec.source_name tail_symbols ->
-                             Some
-                               (Function_elaborator.infer_named_record
-                                  ~allow_dynamic_fields:true scope env ty)
-                         | _ -> None)
+              | None -> (
+                  let params =
+                    List.map2
+                      (fun (spec : Destructure.param_spec) ty ->
+                        (spec.source_name, ty))
+                      specs self_param_tys
+                  in
+                  let returned_vector =
+                    match List.rev body_forms with
+                    | result :: _ ->
+                        Type_inference.returned_vector_type params result
+                    | [] -> None
+                  in
+                  match returned_vector with
+                  | Some _ as vector_ty -> vector_ty
+                  | None ->
+                      List.combine specs self_param_tys
+                      |> List.find_map
+                           (fun ((spec : Destructure.param_spec), ty) ->
+                             match ty with
+                             | (TRecord _ | TNamed_record _)
+                               when List.mem spec.source_name tail_symbols ->
+                                 Some
+                                   (Function_elaborator.infer_named_record
+                                      ~allow_dynamic_fields:true scope env ty)
+                             | _ -> None))
             in
             let return_seed_index =
               match explicit_return_ty with
@@ -1680,7 +1787,7 @@ and prepare_inferred_recursive_fn ?explicit_return_ty ~ocaml_name scope env
                       (Call_elaborator.adapt_value_to_type env return_ty
                          parts.body))
             in
-            let return_var = TVar ("recursive_return_" ^ ocaml_name) in
+            let return_var = Type_solver.fresh () in
             let initial_return_ty =
               Option.value return_seed ~default:return_var
             in
@@ -1856,7 +1963,7 @@ and compile_fn ?(param_type_overrides = []) scope env params body_forms =
       | Some (TFn (parameter_tys, _)), Ok specs
         when List.length parameter_tys = List.length specs ->
           List.map
-            (function TUnknown | TVar _ -> None | ty -> Some ty)
+            (function TUnknown | TMeta _ | TVar _ -> None | ty -> Some ty)
             parameter_tys
       | _ -> []
   in

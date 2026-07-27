@@ -42,7 +42,7 @@ let compile_args_for compile_expr scope env arg_forms =
   loop [] arg_forms
 
 let returns_truthy_value = function
-  | TBool | TUnknown | TVar _ -> true
+  | TBool | TUnknown | TMeta _ | TVar _ -> true
   | ty -> Types.is_dynamic ty
 
 let truthy_call return_ty fn arguments =
@@ -447,7 +447,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
         in
         let function_ = lookup_function scope env name in
         match function_ with
-        | Ok { ty = TOcaml "__declared_fn" | TUnknown | TVar _; _ } ->
+        | Ok { ty = TOcaml "__declared_fn" | TUnknown | TMeta _ | TVar _; _ } ->
             compile_deferred_call ()
         | Ok function_ when Types.is_dynamic function_.ty ->
             compile_deferred_call ()
@@ -519,9 +519,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
         :: FVector [ FSymbol accumulator; FSymbol element ]
         :: body_forms)
       when
-        (match accumulator_ty with
-        | TSet (TUnknown | TVar _) -> false
-        | _ -> true) ->
+        not (Type_solver.is_open accumulator_ty) ->
         let accumulator_binding =
           Types.binding (Names.sanitize_name accumulator) accumulator_ty
         in
@@ -560,10 +558,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
         :: (FVector [ _accumulator; _element ] as params)
         :: body_forms) ->
         compile_contextual_fn scope env
-          ~refine_open_overrides:
-            (match accumulator_ty with
-            | TSet (TUnknown | TVar _) -> true
-            | _ -> false)
+          ~refine_open_overrides:(Type_solver.is_open accumulator_ty)
           ~param_type_overrides:[ Some accumulator_ty; Some element_ty ]
           params body_forms
         |> fun result ->
@@ -575,7 +570,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
         compile_contextual_fn scope env ~name
           ~refine_open_overrides:
             (match accumulator_ty with
-            | TSet (TUnknown | TVar _) -> true
+            | TSet (TUnknown | TMeta _ | TVar _) -> true
             | _ -> false)
           ~param_type_overrides:[ Some accumulator_ty; Some element_ty ]
           params body_forms
@@ -1019,7 +1014,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                   | None
                     when Types.is_dynamic collection.ty
                          || (match collection.ty with
-                            | TUnknown | TVar _ -> true
+                            | TUnknown | TMeta _ | TVar _ -> true
                             | _ -> false) ->
                       TList inner
                   | None -> collection.ty
@@ -1496,7 +1491,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                                 ~expected:init.ty ~actual:result ->
                         let result_ty =
                           match (init.ty, result) with
-                          | TVector (TUnknown | TVar _), TVector _ -> result
+                          | TVector (TUnknown | TMeta _ | TVar _), TVector _ -> result
                           | _ -> init.ty
                         in
                         Ok
@@ -1592,7 +1587,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                     | TOcaml "option" ->
                         (return_ty, Semantic_ir.Ident "result")
                     | _ ->
-                        ( TOcaml_app ("option", [ return_ty ]),
+                        ( TNullable return_ty,
                           Semantic_ir.Constructor
                             ("Some", Some (Semantic_ir.Ident "result")) )
                   in
@@ -2039,7 +2034,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                             accumulator_ty,
                             Semantic_ir.unlocated init.semantic_expr )
                         with
-                        | ( TSet (TUnknown | TVar _),
+                        | ( TSet (TUnknown | TMeta _ | TVar _),
                             TSet element_ty,
                             Semantic_ir.Ident
                               "Lg_runtime.Runtime_poly_set.empty" ) ->
@@ -2052,7 +2047,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                                     Semantic_ir.Ident (set_module ^ ".empty");
                                 })
                               (Types.set_module_name element_ty)
-                        | ( TSet (TUnknown | TVar _),
+                        | ( TSet (TUnknown | TMeta _ | TVar _),
                             dynamic_ty,
                             Semantic_ir.Ident
                               "Lg_runtime.Runtime_poly_set.empty" )

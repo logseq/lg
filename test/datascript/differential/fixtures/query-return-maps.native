@@ -1,0 +1,8 @@
+keys=3
+syms=3
+strs=3
+tuple=present
+empty=0
+duplicate-key-maps=2
+arity-mismatch=rejected
+scalar-find=rejected

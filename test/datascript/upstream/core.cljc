@@ -67,7 +67,64 @@
              - Comparing entities just compares their ids. Be careful when comparing entities taken from different dbs or from different versions of the same db.
              - Accessed entity attributes are cached on entity itself (except backward references).
              - When printing, only cached attributes (the ones you have accessed before) are printed. See [[touch]]."}
-  entity de/entity)
+  entity-closed de/entity)
+
+(defn entity
+  {:inline
+   (fn [database source-ref]
+     (let [value-form
+           (fn [value]
+             (if (nil? value)
+               (list 'Datascript_runtime.Data_value.Nil)
+               (if (string? value)
+               (list
+                'Datascript_runtime.Data_value.String
+                value)
+               (if (keyword? value)
+                 (list
+                  'Datascript_runtime.Data_value.Keyword
+                  (str value))
+                 (if (= value true)
+                   (list
+                    'Datascript_runtime.Data_value.Bool
+                    true)
+                   (if (= value false)
+                     (list
+                      'Datascript_runtime.Data_value.Bool
+                      false)
+                     (if (or (symbol? value) (seq? value))
+                       value
+                       (list
+                        'Datascript_runtime.Data_value.Int
+                        value))))))))]
+       (list
+        'datascript.core/entity-closed
+        (list
+         'datascript.db/database-view
+         database)
+        (if (vector? source-ref)
+          (if (= 2 (count source-ref))
+            (list
+             'Datascript_runtime.Data_value.Lookup_ref
+             (str (first source-ref))
+             (value-form (second source-ref)))
+            (list
+             'Stdlib.invalid_arg
+             (str
+              "Lookup ref should contain 2 elements: "
+              source-ref)))
+          (if (keyword? source-ref)
+            (list
+             'Datascript_runtime.Data_value.Ident
+             (str source-ref))
+            (if (or (symbol? source-ref) (seq? source-ref))
+              source-ref
+              (list
+               'Datascript_runtime.Data_value.Entity_id
+               source-ref)))))))}
+  [^datascript.db/database-view database
+   ^:Datascript_runtime.Data_value.entity_ref entity-ref]
+  (entity-closed database entity-ref))
 
 (def ^{:arglists '([db eid])
        :doc "Given lookup ref `[unique-attr value]`, returns numberic entity id.
@@ -75,11 +132,11 @@
              If entity does not exist, returns `nil`."}
   entid db/entid)
 
-(defn ^datascript.db/DB entity-db
+(defn ^datascript.db/database-view entity-db
   "Returns a db that entity was created from."
   [^datascript.impl.entity/Entity entity]
   {:pre [(de/entity? entity)]}
-  (.-db entity))
+  (de/entity-database-view entity))
 
 (def ^{:tag datascript.impl.entity/Entity
        :arglists '([e])
@@ -141,7 +198,7 @@
 
 ; Creating DB
 
-(defn ^datascript.db/DB empty-db
+(defn ^datascript.db/DB empty-db-closed
   "Creates an empty database with an optional schema.
 
    Usage:
@@ -167,10 +224,35 @@
    (db/empty-db (Some schema) (db/default-options)))
   ([^:option<map<keyword;map<keyword;Datascript_runtime.Data_value.t>>> schema
     ^datascript.db/database-options opts]
-   (let [database (db/empty-db schema opts)]
+   (let [opts (storage/maybe-adapt-storage opts)
+         database (db/empty-db schema opts)]
      (when-some [backend (db/options-storage opts)]
-       (Stdlib.ignore (storage/store database backend)))
+     (Stdlib.ignore (storage/store database backend)))
      database)))
+
+(defn empty-db
+  {:inline
+   (fn [& arguments]
+     (case (count arguments)
+       0 (list 'datascript.core/empty-db-closed)
+       1 (list
+          'datascript.core/empty-db-closed
+          (list 'datascript.db/schema-map (first arguments)))
+       2 (list
+          'datascript.core/empty-db-closed
+          (if (map? (first arguments))
+            (list
+             'Some
+             (list 'datascript.db/schema-map (first arguments)))
+            (first arguments))
+          (second arguments))))}
+  ([]
+   (empty-db-closed))
+  ([^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema]
+   (empty-db-closed schema))
+  ([^:option<map<keyword;map<keyword;Datascript_runtime.Data_value.t>>> schema
+    ^datascript.db/database-options opts]
+   (empty-db-closed schema opts)))
 
 (def ^{:arglists '([x])
        :doc "Returns `true` if the given value is an immutable database, `false` otherwise."}
@@ -185,23 +267,115 @@
              See also [[init-db]]."}
   datom db/datom)
 
-(defn ^datascript.db/DB init-db
+(def ^{:arglists '([x])
+       :doc "Returns `true` if the given value is a datom, `false` otherwise."}
+  datom? db/datom?)
+
+(defn ^datascript.db/DB init-db-closed
   "Low-level fn for creating database quickly from a trusted sequence of datoms.
    Does no validation on inputs, so `datoms` must be well-formed and match schema.
    Used internally in db (de)serialization. See also [[datom]].
    For options, see [[empty-db]]"
-  ([^:vector<datascript.db/Datom> datoms]
-   (db/init-db (to-array datoms) db/empty-schema))
-  ([^:vector<datascript.db/Datom> datoms
+  ([^:seqable<datascript.db/Datom> datoms]
+   (db/init-db-with-schema-option (to-array datoms) None))
+  ([^:seqable<datascript.db/Datom> datoms
     ^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema]
    (db/init-db (to-array datoms) schema))
-  ([^:vector<datascript.db/Datom> datoms
+  ([^:seqable<datascript.db/Datom> datoms
     ^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema
     ^datascript.db/database-options opts]
-   (let [database (db/init-db (to-array datoms) schema opts)]
+   (let [opts (storage/maybe-adapt-storage opts)
+         database (db/init-db (to-array datoms) schema opts)]
      (when-some [backend (db/options-storage opts)]
        (Stdlib.ignore (storage/store database backend)))
      database)))
+
+(defn ^datascript.db/DB init-db-invalid [^:string message]
+  (Stdlib.invalid_arg message))
+
+(defn init-db
+  {:inline
+   (fn [datoms & rest]
+     (let [invalid-literal?
+           (and
+            (vector? datoms)
+            (if
+              (empty?
+               (filter
+                (fn [item]
+                  (or (vector? item) (map? item)))
+                datoms))
+              false
+              true))
+           value-form
+           (fn [value]
+             (if (keyword? value)
+               (list
+                'Datascript_runtime.Data_value.Keyword
+                (str value))
+               (if (string? value)
+                 (list
+                  'Datascript_runtime.Data_value.String
+                  value)
+                 (if (= value true)
+                   (list
+                    'Datascript_runtime.Data_value.Bool
+                    true)
+                   (if (= value false)
+                     (list
+                      'Datascript_runtime.Data_value.Bool
+                      false)
+                     (if (or (symbol? value) (seq? value))
+                       value
+                       (list
+                        'Datascript_runtime.Data_value.Int
+                        value)))))))
+           properties-form
+           (fn [properties]
+             (list
+              'zipmap
+              (vec (map first properties))
+              (vec
+               (map
+                (fn [property]
+                  (value-form (second property)))
+                properties))))
+           schema-form
+           (fn [schema]
+             (if (map? schema)
+               (if (empty? schema)
+                 schema
+                 (list
+                  'zipmap
+                  (vec (map first schema))
+                  (vec
+                   (map
+                    (fn [entry]
+                      (properties-form (second entry)))
+                    schema))))
+               schema))]
+       (if invalid-literal?
+         (list
+          'datascript.core/init-db-invalid
+          (str "init-db expects list of Datoms, got " datoms))
+         (if (empty? rest)
+           (list 'datascript.core/init-db-closed datoms)
+           (cons
+            'datascript.core/init-db-closed
+            (cons
+             datoms
+             (cons
+              (schema-form (first rest))
+              (next rest))))))))}
+  ([^:seqable<datascript.db/Datom> datoms]
+   (init-db-closed datoms))
+  ([^:seqable<datascript.db/Datom> datoms
+    ^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema]
+   (init-db-closed datoms schema))
+  ([^:seqable<datascript.db/Datom> datoms
+    ^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema
+    ^datascript.db/database-options opts]
+   (init-db-closed datoms schema opts)))
 
 (def ^{:arglists '([db] [db opts])
        :doc "Converts db into a data structure (not string!) that can be fed to serializer
@@ -260,12 +434,24 @@
 
 ; Changing DB
 
-(def ^{:arglists '([db tx-data] [db tx-data tx-meta])} with
-  "Same as [[transact!]], but applies to an immutable database value. Returns transaction report (see [[transact!]])."
-  conn/with)
+(defn with
+  {:inline
+   (fn [database tx-data & tx-meta]
+     (cons
+      'datascript.conn/with
+      (cons database (cons tx-data tx-meta))))}
+  ([database tx-data]
+   (conn/with database tx-data))
+  ([database
+    tx-data
+    ^:option<map<keyword;Datascript_runtime.Data_value.t>> tx-meta]
+   (conn/with database tx-data tx-meta)))
 
-(defn ^datascript.db/DB db-with
+(defn db-with
   "Applies transaction to an immutable db value, returning new immutable db value. Same as `(:db-after (with db tx-data))`."
+  {:inline
+   (fn [database tx-data]
+     (list 'datascript.conn/db-with database tx-data))}
   [^datascript.db/DB database
    ^:vector<datascript.db/tx-entry> tx-data]
   (conn/db-with database tx-data))
@@ -277,7 +463,7 @@
 
 ; Index lookups
 
-(defn ^:seq<datascript.db/Datom> datoms
+(defn ^:seq<datascript.db/Datom> datoms-closed
   "Index lookup. Returns a sequence of datoms (lazy iterator over actual DB index) which components (e, a, v) match passed arguments.
 
    Datoms are sorted in index sort order. Possible `index` values are: `:eavt`, `:aevt`, `:avet`.
@@ -354,7 +540,67 @@
   ([db index c0 c1 c2]    {:pre [(db/db? db)]} (db/-datoms db index c0  c1  c2  nil))
   ([db index c0 c1 c2 c3] {:pre [(db/db? db)]} (db/-datoms db index c0  c1  c2  c3)))
 
-(defn ^datascript.db/Datom find-datom
+(defn index-component-value
+  {:inline
+   (fn [value]
+     (let [value-form
+           (fn value-form [value]
+             (if (nil? value)
+               (list 'Datascript_runtime.Data_value.Nil)
+               (if (vector? value)
+                 (list
+                  'Datascript_runtime.Data_value.Ref_to
+                  (list
+                   'Datascript_runtime.Data_value.Lookup_ref
+                   (str (first value))
+                   (value-form (second value))))
+                 (if (string? value)
+                   (list
+                    'Datascript_runtime.Data_value.String
+                    value)
+                   (if (keyword? value)
+                     (list
+                      'Datascript_runtime.Data_value.Keyword
+                      (str value))
+                     (if (= value true)
+                       (list
+                        'Datascript_runtime.Data_value.Bool
+                        true)
+                       (if (= value false)
+                         (list
+                          'Datascript_runtime.Data_value.Bool
+                          false)
+                         (if (or (symbol? value) (seq? value))
+                           value
+                           (list
+                            'Datascript_runtime.Data_value.Int
+                            value)))))))))]
+       (value-form value)))}
+  [^:Datascript_runtime.Data_value.t value]
+  value)
+
+(defn datoms
+  {:inline
+   (fn [database index & components]
+     (cons
+      'datascript.core/datoms-closed
+      (cons
+       database
+       (cons
+        index
+        (vec
+         (map
+          (fn [component]
+            (list 'datascript.core/index-component-value component))
+          components))))))}
+  ([db index] (datoms-closed db index))
+  ([db index c0] (datoms-closed db index c0))
+  ([db index c0 c1] (datoms-closed db index c0 c1))
+  ([db index c0 c1 c2] (datoms-closed db index c0 c1 c2))
+  ([db index c0 c1 c2 c3]
+   (datoms-closed db index c0 c1 c2 c3)))
+
+(defn ^datascript.db/Datom find-datom-closed
   "Same as [[datoms]], but only returns single datom. Faster than `(first (datoms ...))`"
   ([db index]             {:pre [(db/db? db)]} (db/find-datom db index nil nil nil nil))
   ([db index c0]          {:pre [(db/db? db)]} (db/find-datom db index c0  nil nil nil))
@@ -362,11 +608,32 @@
   ([db index c0 c1 c2]    {:pre [(db/db? db)]} (db/find-datom db index c0  c1  c2  nil))
   ([db index c0 c1 c2 c3] {:pre [(db/db? db)]} (db/find-datom db index c0  c1  c2  c3)))
 
+(defn find-datom
+  {:inline
+   (fn [database index & components]
+     (cons
+      'datascript.core/find-datom-closed
+      (cons
+       database
+       (cons
+        index
+        (vec
+         (map
+          (fn [component]
+            (list 'datascript.core/index-component-value component))
+          components))))))}
+  ([db index] (find-datom-closed db index))
+  ([db index c0] (find-datom-closed db index c0))
+  ([db index c0 c1] (find-datom-closed db index c0 c1))
+  ([db index c0 c1 c2] (find-datom-closed db index c0 c1 c2))
+  ([db index c0 c1 c2 c3]
+   (find-datom-closed db index c0 c1 c2 c3)))
+
 (defn- ^:seq<datascript.db/Datom> seek-datoms*
   [db index c0 c1 c2 c3]
   (db/-seek-datoms db index c0 c1 c2 c3))
 
-(defn seek-datoms
+(defn seek-datoms-closed
   "Similar to [[datoms]], but will return datoms starting from specified components and including rest of the database until the end of the index.
 
    If no datom matches passed arguments exactly, iterator will start from first datom that could be considered “greater” in index order.
@@ -403,11 +670,32 @@
   ([db index c0 c1 c2]    {:pre [(db/db? db)]} (seek-datoms* db index c0  c1  c2  nil))
   ([db index c0 c1 c2 c3] {:pre [(db/db? db)]} (seek-datoms* db index c0  c1  c2  c3)))
 
+(defn seek-datoms
+  {:inline
+   (fn [database index & components]
+     (cons
+      'datascript.core/seek-datoms-closed
+      (cons
+       database
+       (cons
+        index
+        (vec
+         (map
+          (fn [component]
+            (list 'datascript.core/index-component-value component))
+          components))))))}
+  ([db index] (seek-datoms-closed db index))
+  ([db index c0] (seek-datoms-closed db index c0))
+  ([db index c0 c1] (seek-datoms-closed db index c0 c1))
+  ([db index c0 c1 c2] (seek-datoms-closed db index c0 c1 c2))
+  ([db index c0 c1 c2 c3]
+   (seek-datoms-closed db index c0 c1 c2 c3)))
+
 (defn- ^:seq<datascript.db/Datom> rseek-datoms*
   [db index c0 c1 c2 c3]
   (db/-rseek-datoms db index c0 c1 c2 c3))
 
-(defn rseek-datoms
+(defn rseek-datoms-closed
   "Same as [[seek-datoms]], but goes backwards until the beginning of the index."
   ([db index]             {:pre [(db/db? db)]} (rseek-datoms* db index nil nil nil nil))
   ([db index c0]          {:pre [(db/db? db)]} (rseek-datoms* db index c0  nil nil nil))
@@ -415,11 +703,32 @@
   ([db index c0 c1 c2]    {:pre [(db/db? db)]} (rseek-datoms* db index c0  c1  c2  nil))
   ([db index c0 c1 c2 c3] {:pre [(db/db? db)]} (rseek-datoms* db index c0  c1  c2  c3)))
 
+(defn rseek-datoms
+  {:inline
+   (fn [database index & components]
+     (cons
+      'datascript.core/rseek-datoms-closed
+      (cons
+       database
+       (cons
+        index
+        (vec
+         (map
+          (fn [component]
+            (list 'datascript.core/index-component-value component))
+          components))))))}
+  ([db index] (rseek-datoms-closed db index))
+  ([db index c0] (rseek-datoms-closed db index c0))
+  ([db index c0 c1] (rseek-datoms-closed db index c0 c1))
+  ([db index c0 c1 c2] (rseek-datoms-closed db index c0 c1 c2))
+  ([db index c0 c1 c2 c3]
+   (rseek-datoms-closed db index c0 c1 c2 c3)))
+
 (defn- ^:seq<datascript.db/Datom> index-range*
   [db attr start end]
   (db/-index-range db attr start end))
 
-(defn index-range
+(defn index-range-closed
   "Returns part of `:avet` index between `[_ attr start]` and `[_ attr end]` in AVET sort order.
 
    Same properties as [[datoms]].
@@ -446,6 +755,18 @@
   [db attr start end]
   {:pre [(db/db? db)]}
   (index-range* db attr start end))
+
+(defn index-range
+  {:inline
+   (fn [database attr start end]
+     (list
+      'datascript.core/index-range-closed
+      database
+      attr
+      (list 'datascript.core/index-component-value start)
+      (list 'datascript.core/index-component-value end)))}
+  [database attr start end]
+  (index-range-closed database attr start end))
 
 ;; Conn
 
@@ -478,7 +799,7 @@
    Returns nil if there’s no database yet in storage"
   conn/restore-conn)
 
-(def ^{:arglists '([conn tx-data] [conn tx-data tx-meta])} transact!
+(defn transact!
   "Applies transaction the underlying database value and atomically updates connection reference to point to the result of that transaction, new db value.
 
    Returns transaction report, a map:
@@ -563,13 +884,102 @@
       ; equivalent to
       (transact! conn [[:db/add  -1 :name   \"Oleg\"]
                        [:db/add 296 :friend -1]])"
-  conn/transact!)
+  {:inline
+   (fn [connection tx-data & tx-meta]
+     (let [value-form
+           (fn [value]
+             (if (keyword? value)
+               (list 'Datascript_runtime.Data_value.Keyword (str value))
+               (if (string? value)
+                 (list 'Datascript_runtime.Data_value.String value)
+                 (if (= value true)
+                   (list 'Datascript_runtime.Data_value.Bool true)
+                   (if (= value false)
+                     (list 'Datascript_runtime.Data_value.Bool false)
+                     (if (nil? value)
+                       (list 'Datascript_runtime.Data_value.Nil)
+                       (if (or (symbol? value) (seq? value))
+                         value
+                         (list
+                          'Datascript_runtime.Data_value.Int
+                          value))))))))
+           metadata-form
+           (fn [metadata]
+             (if (map? metadata)
+               (list
+                'zipmap
+                (vec (map first metadata))
+                (vec
+                 (map
+                  (fn [entry]
+                    (value-form (second entry)))
+                  metadata)))
+               metadata))]
+       (cons
+        'datascript.conn/transact!
+        (cons
+         connection
+         (cons
+          (list 'datascript.db/tx-data tx-data)
+          (if (empty? tx-meta)
+            tx-meta
+            (list (metadata-form (first tx-meta)))))))))}
+  ([^datascript.conn/Conn connection
+    ^:vector<datascript.db/tx-entry> tx-data]
+   (conn/transact! connection tx-data))
+  ([^datascript.conn/Conn connection
+    ^:vector<datascript.db/tx-entry> tx-data
+    ^:map<keyword;Datascript_runtime.Data_value.t> tx-meta]
+   (conn/transact! connection tx-data (Some tx-meta))))
 
-(defn ^datascript.db/DB reset-conn!
-  "Forces underlying `conn` value to become `db`. Will generate a tx-report that will remove everything from old value and insert everything from the new one."
+(defn reset-conn!
+  {:inline
+   (fn [connection database & metadata]
+     (let [value-form
+           (fn [value]
+             (if (keyword? value)
+               (list 'Datascript_runtime.Data_value.Keyword (str value))
+               (if (string? value)
+                 (list 'Datascript_runtime.Data_value.String value)
+                 (if (= value true)
+                   (list 'Datascript_runtime.Data_value.Bool true)
+                   (if (= value false)
+                     (list 'Datascript_runtime.Data_value.Bool false)
+                     (if (nil? value)
+                       (list 'Datascript_runtime.Data_value.Nil)
+                       (if (or (symbol? value) (seq? value))
+                         value
+                         (list
+                          'Datascript_runtime.Data_value.Int
+                          value))))))))
+           metadata-form
+           (fn [value]
+             (if (map? value)
+               (list
+                'Datascript_runtime.Data_value.map_of_keyword_map
+                (list
+                 'zipmap
+                 (vec (map first value))
+                 (vec
+                  (map
+                   (fn [entry]
+                     (value-form (second entry)))
+                   value))))
+               (if (or (symbol? value) (seq? value))
+                 value
+                 (value-form value))))]
+       (if (empty? metadata)
+         (list 'datascript.conn/reset-conn! connection database)
+         (list
+          'datascript.conn/reset-conn!
+          connection
+          database
+          (metadata-form (first metadata))))))}
   ([^datascript.conn/Conn connection ^datascript.db/DB database]
    (conn/reset-conn! connection database))
-  ([^datascript.conn/Conn connection ^datascript.db/DB database tx-meta]
+  ([^datascript.conn/Conn connection
+    ^datascript.db/DB database
+    ^:Datascript_runtime.Data_value.t tx-meta]
    (conn/reset-conn! connection database tx-meta)))
 
 (defn ^datascript.db/DB reset-schema!
@@ -628,7 +1038,9 @@
 
    Exists for Datomic API compatibility. Prefer using [[transact!]] if possible."
   ([conn tx-data] (transact conn tx-data nil))
-  ([conn tx-data tx-meta]
+  ([^datascript.conn/Conn conn
+    ^:vector<datascript.db/tx-entry> tx-data
+    ^:option<map<keyword;Datascript_runtime.Data_value.t>> tx-meta]
    {:pre [(conn? conn)]}
    (let [res (transact! conn tx-data tx-meta)]
      (future-call (fn [] res)))))
@@ -638,7 +1050,9 @@
 
    In CLJS, just calls [[transact!]] and returns a realized future."
   ([conn tx-data] (transact-async conn tx-data nil))
-  ([conn tx-data tx-meta]
+  ([^datascript.conn/Conn conn
+    ^:vector<datascript.db/tx-entry> tx-data
+    ^:option<map<keyword;Datascript_runtime.Data_value.t>> tx-meta]
    {:pre [(conn? conn)]}
    (future-call #(transact! conn tx-data tx-meta))))
 

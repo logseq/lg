@@ -19,7 +19,9 @@ type serialized_index = {
 type ref_type = Lg_runtime.Runtime_ref_type.t = Strong | Weak
 
 type serialized_root = {
-  schema : (string, (string, Data_value.t) Lg_runtime.Lg_map.t) Lg_runtime.Lg_map.t;
+  schema :
+    (string, (string, Data_value.t) Lg_runtime.Lg_map.t) Lg_runtime.Lg_map.t
+    option;
   max_eid : int;
   max_tx : int;
   eavt : int;

@@ -3,10 +3,1663 @@
     [clojure.test :as t :refer [is are deftest testing]]
     [datascript.core :as d]
     [datascript.db :as db]
-    [datascript.test.core :as tdc])
-  #?(:clj
-     (:import
-       [clojure.lang ExceptionInfo])))
+    [datascript.lg.query :as query]
+    [datascript.lg.query-types :as query-types]
+    [datascript.parser :as parser]
+    [datascript.test.core :as tdc]))
+
+(defn ^:Datascript_runtime.Data_value.t query-form-vector
+  [^:vector<Datascript_runtime.Data_value.t> values]
+  (Datascript_runtime.Data_value.vector_of_vector values))
+
+(defn ^:Datascript_runtime.Data_value.t query-form-list
+  [^:vector<Datascript_runtime.Data_value.t> values]
+  (Datascript_runtime.Data_value.List
+   (into (list) (reverse values))))
+
+(defn ^:Datascript_runtime.Data_value.t query-rule-branch
+  [^:string rule-name
+   ^:vector<Datascript_runtime.Data_value.t> parameters
+   ^:vector<Datascript_runtime.Data_value.t> clauses]
+  (query-form-vector
+   (vec
+    (concat
+     [(query-form-vector
+       (vec
+        (concat
+         [(Datascript_runtime.Data_value.Symbol rule-name)]
+         parameters)))]
+     clauses))))
+
+(defn ^datascript.lg.query-types/result query-int-result [^:int value]
+  (query-types/value-result
+   (Datascript_runtime.Data_value.Int value)))
+
+(defn ^:int query-result-int
+  [^datascript.lg.query-types/result result]
+  (match result
+    (Datascript_runtime.Query_value.Entity value) value
+    (Datascript_runtime.Query_value.Value
+     (Datascript_runtime.Data_value.Int value))
+    value
+    _ (Stdlib.invalid_arg "Expected an integer query result")))
+
+(defn ^:vector<vector<int>> relation-int-rows
+  [^datascript.lg.query-types/relation relation
+   ^:vector<string> variables]
+  (mapv
+   (fn [row]
+     (mapv
+      (fn [^:string variable]
+        (if-some [result
+                  (query-types/relation-result
+                   relation variable row)]
+          (query-result-int result)
+          (Stdlib.invalid_arg
+           (str "Missing relation variable " variable))))
+      variables))
+   (query-types/relation-rows relation)))
+
+(defn ^:vector<vector<Datascript_runtime.Data_value.t>>
+  relation-data-rows
+  [^datascript.lg.query-types/relation relation
+   ^:vector<string> variables]
+  (mapv
+   (fn [row]
+     (mapv
+      (fn [^:string variable]
+        (if-some [result
+                  (query-types/relation-result
+                   relation variable row)]
+          (query-types/result-pattern-value result)
+          (Stdlib.invalid_arg
+           (str "Missing relation variable " variable))))
+      variables))
+   (query-types/relation-rows relation)))
+
+(defn ^:vector<string> query-form-strings
+  [^:vector<Datascript_runtime.Data_value.t> values]
+  (mapv
+   (fn [^:Datascript_runtime.Data_value.t value]
+     (Datascript_runtime.Data_value.to_edn_string value))
+   values))
+
+(defn ^:array<datascript.lg.query-types/result> query-int-row
+  [^:vector<int> values]
+  (to-array (mapv query-int-result values)))
+
+(defn ^:vector<vector<int>> query-int-rows
+  [^:vector<array<datascript.lg.query-types/result>> rows]
+  (mapv
+   (fn [^:array<datascript.lg.query-types/result> row]
+     (mapv query-result-int row))
+   rows))
+
+(defn ^:option<Datascript_runtime.Data_value.t> sum-query-arguments
+  [^:vector<datascript.lg.query-types/result> arguments]
+  (Some
+   (Datascript_runtime.Data_value.Int
+    (reduce
+     (fn [^:int total result]
+       (+ total (query-result-int result)))
+     0
+     arguments))))
+
+(defn ^:vector<vector<int>> mapped-int-rows
+  [^:vector<map<string;datascript.lg.query-types/result>> rows
+   ^:vector<string> keys]
+  (mapv
+   (fn [^:map<string;datascript.lg.query-types/result> row]
+     (mapv
+      (fn [^:string key]
+        (if-some [value (get row key)]
+          (query-result-int value)
+          (Stdlib.invalid_arg
+           (str "Missing mapped result key " key))))
+      keys))
+   rows))
+
+(defn ^:option<int> optional-query-int
+  [^:option<datascript.lg.query-types/result> value]
+  (match value
+    None None
+    (Some result) (Some (query-result-int result))))
+
+(defn ^:option<int> absent-int []
+  None)
+
+(defn ^:option<datascript.lg.query-types/result>
+  absent-query-result
+  []
+  None)
+
+(defn ^:vector<vector<option<int>>> optional-int-rows
+  [^:vector<array<option<datascript.lg.query-types/result>>> rows]
+  (mapv
+   (fn [^:array<option<datascript.lg.query-types/result>> row]
+     (mapv optional-query-int row))
+   rows))
+
+(deftest test-public-form-predicates
+  (let [source (Datascript_runtime.Data_value.Symbol "$")
+        named-source (Datascript_runtime.Data_value.Symbol "$users")
+        variable (Datascript_runtime.Data_value.Symbol "?user")
+        empty-symbol (Datascript_runtime.Data_value.Symbol "")
+        attr (Datascript_runtime.Data_value.Keyword ":user/name")
+        string-attr (Datascript_runtime.Data_value.String "user/name")
+        value (Datascript_runtime.Data_value.Int 42)]
+    (is (query/source? source))
+    (is (query/source? named-source))
+    (is (not (query/source? variable)))
+    (is (not (query/source? empty-symbol)))
+    (is (not (query/source? attr)))
+    (is (query/free-var? variable))
+    (is (not (query/free-var? source)))
+    (is (not (query/free-var? empty-symbol)))
+    (is (not (query/free-var? attr)))
+    (is (query/attr? attr))
+    (is (query/attr? string-attr))
+    (is (not (query/attr? variable)))
+    (is (not (query/attr? (Datascript_runtime.Data_value.Nil))))
+    (is (query/lookup-ref? (query-form-vector [attr value])))
+    (is (query/lookup-ref? (query-form-list [string-attr value])))
+    (is (not (query/lookup-ref? (query-form-vector [attr]))))
+    (is (not (query/lookup-ref?
+              (query-form-vector [attr value value]))))
+    (is (not (query/lookup-ref?
+              (query-form-vector [variable value]))))
+    (is (not (query/lookup-ref?
+              (Datascript_runtime.Data_value.Nil))))))
+
+(deftest test-public-relation-utilities
+  (let [left {"?x" 0 "?shared" 1}
+        right {"?shared" 0 "?y" 1}
+        same-keys-different-indexes {"?shared" 8 "?x" 9}
+        left-relation
+        (query-types/relation left [] {})
+        right-relation
+        (query-types/relation right [] {})
+        context
+        (query-types/context
+         [left-relation right-relation]
+         {}
+         [])]
+    (is (= #{"?shared"} (query/intersect-keys left right)))
+    (is (= #{} (query/intersect-keys left {})))
+    (is (query/same-keys? left same-keys-different-indexes))
+    (is (not (query/same-keys? left right)))
+    (is (= #{"?x" "?shared" "?y"} (query/bound-vars context)))
+    (is (= #{}
+           (query/bound-vars
+           (query-types/context [] {} []))))))
+
+(deftest test-public-relation-algebra
+  (let [left
+        (query-types/relation
+         {"?x" 0}
+         [(array (query-int-result 1))
+          (array (query-int-result 2))]
+         {})
+        right
+        (query-types/relation
+         {"?y" 0}
+         [(array (query-int-result 10))
+          (array (query-int-result 20))]
+         {})
+        product (query/prod-rel left right)]
+    (is (= {} (query-types/relation-attrs (query/prod-rel))))
+    (is (= [[]]
+           (relation-int-rows (query/prod-rel) [])))
+    (is (= {"?x" 0 "?y" 1}
+           (query-types/relation-attrs product)))
+    (is (= [[1 10] [1 20] [2 10] [2 20]]
+           (relation-int-rows product ["?x" "?y"]))))
+  (let [left
+        (query-types/relation
+         {"?x" 0 "?shared" 1}
+         [(array (query-int-result 1) (query-int-result 7))
+          (array (query-int-result 2) (query-int-result 8))]
+         {})
+        right
+        (query-types/relation
+         {"?shared" 0 "?y" 1}
+         [(array (query-int-result 7) (query-int-result 70))
+          (array (query-int-result 9) (query-int-result 90))]
+         {})
+        joined (query/hash-join left right)
+        unrelated
+        (query-types/relation
+         {"?z" 0}
+         [(array (query-int-result 5))]
+         {})
+        collapsed (query/collapse-rels [unrelated left] right)]
+    (is (= {"?x" 0 "?shared" 1 "?y" 2}
+           (query-types/relation-attrs joined)))
+    (is (= [[1 7 70]]
+           (relation-int-rows joined ["?x" "?shared" "?y"])))
+    (is (= 2 (count collapsed)))
+    (is (= [[5]]
+           (relation-int-rows (nth collapsed 0) ["?z"])))
+    (is (= [[1 7 70]]
+           (relation-int-rows
+            (nth collapsed 1)
+            ["?x" "?shared" "?y"])))))
+
+(deftest test-public-relation-subtraction
+  (let [database
+        (datascript.db/database-view (d/empty-db))
+        left
+        (query-types/relation
+         {"?x" 0 "?y" 1}
+         [(array (query-int-result 1) (query-int-result 10))
+          (array (query-int-result 2) (query-int-result 20))
+          (array (query-int-result 3) (query-int-result 30))]
+         {"?x" database})
+        right
+        (query-types/relation
+         {"?y" 0 "?z" 1}
+         [(array (query-int-result 20) (query-int-result 200))
+          (array (query-int-result 99) (query-int-result 999))]
+         {})
+        subtracted (query/subtract-rel left right)
+        empty-right (query-types/relation {"?y" 0} [] {})
+        unrelated
+        (query-types/relation
+         {"?other" 0}
+         [(array (query-int-result 1))]
+         {})]
+    (is (= {"?x" 0 "?y" 1}
+           (query-types/relation-attrs subtracted)))
+    (is (= [[1 10] [3 30]]
+           (relation-int-rows subtracted ["?x" "?y"])))
+    (is
+     (some?
+      (query-types/relation-lookup-database
+       subtracted "?x")))
+    (is (= [[1 10] [2 20] [3 30]]
+           (relation-int-rows
+            (query/subtract-rel left empty-right)
+            ["?x" "?y"])))
+    (is (= []
+           (relation-int-rows
+            (query/subtract-rel left unrelated)
+            ["?x" "?y"])))
+    (is (= [[1 10] [2 20] [3 30]]
+           (relation-int-rows
+            (query/subtract-rel
+             left
+             (query-types/relation {"?other" 0} [] {}))
+            ["?x" "?y"])))))
+
+(deftest test-public-sum-rel
+  (let [left
+        (query-types/relation
+         {"?x" 0 "?y" 1}
+         [(array (query-int-result 1) (query-int-result 10))]
+         {})
+        exact-right
+        (query-types/relation
+         {"?x" 0 "?y" 1}
+         [(array (query-int-result 2) (query-int-result 20))]
+         {})
+        reordered-right
+        (query-types/relation
+         {"?y" 0 "?x" 1}
+         [(array (query-int-result 30) (query-int-result 3))]
+         {})
+        empty-other
+        (query-types/relation {"?other" 0} [] {})
+        different
+        (query-types/relation
+         {"?z" 0}
+         [(array (query-int-result 9))]
+         {})]
+    (is (= [[1 10] [2 20]]
+           (relation-int-rows
+            (query/sum-rel left exact-right)
+            ["?x" "?y"])))
+    (is (= [[1 10] [3 30]]
+           (relation-int-rows
+            (query/sum-rel left reordered-right)
+            ["?x" "?y"])))
+    (is (= [[1 10]]
+           (relation-int-rows
+            (query/sum-rel empty-other left)
+            ["?x" "?y"])))
+    (is (= [[1 10]]
+           (relation-int-rows
+            (query/sum-rel left empty-other)
+            ["?x" "?y"])))
+    (is
+     (thrown-msg?
+      "Can’t sum relations with different attrs: {\"?x\" 0, \"?y\" 1} and {\"?z\" 0}"
+      (query/sum-rel left different)))))
+
+(deftest test-public-empty-and-limited-relations
+  (let [binding
+        (parser/tuple-input
+         [(parser/scalar-input "?x")
+          (parser/tuple-input
+           [(parser/scalar-input "?y")
+            (parser/ignore-input)])])
+        empty-relation (query/empty-rel binding)
+        relation
+        (query-types/relation
+         {"?x" 0 "?y" 1 "?z" 2}
+         [(array
+           (query-int-result 1)
+           (query-int-result 2)
+           (query-int-result 3))]
+         {})]
+    (is (= {"?x" 0 "?y" 1}
+           (query-types/relation-attrs empty-relation)))
+    (is (= [] (query-types/relation-rows empty-relation)))
+    (if-some [limited (query/limit-rel relation #{"?x" "?z"})]
+      (do
+        (is (= {"?x" 0 "?z" 2}
+               (query-types/relation-attrs limited)))
+        (is (= [[1 3]]
+               (relation-int-rows limited ["?x" "?z"]))))
+      (is false))
+    (is (= None (query/limit-rel relation #{"?missing"})))))
+
+(deftest test-public-limit-context
+  (let [xy
+        (query-types/relation
+         {"?x" 0 "?y" 1}
+         [(array (query-int-result 1) (query-int-result 2))]
+         {})
+        z
+        (query-types/relation
+         {"?z" 0}
+         [(array (query-int-result 3))]
+         {})
+        sources {"$input" (query-types/relation-source [])}
+        context (query-types/context [xy z] sources [])
+        limited (query/limit-context context #{"?x"})
+        limited-relations (query-types/context-relations limited)]
+    (is (= 1 (count limited-relations)))
+    (is (= {"?x" 0}
+           (query-types/relation-attrs
+            (nth limited-relations 0))))
+    (is (= [[1]]
+           (relation-int-rows
+            (nth limited-relations 0)
+            ["?x"])))
+    (is (= sources (query-types/context-sources limited)))
+    (is (= [] (query-types/context-rules limited)))
+    (is (= []
+           (query-types/context-relations
+            (query/limit-context context (set-of :string)))))))
+
+(deftest test-public-variable-collection-and-binding-checks
+  (let [x (Datascript_runtime.Data_value.Symbol "?x")
+        y (Datascript_runtime.Data_value.Symbol "?y")
+        map-key (Datascript_runtime.Data_value.Symbol "?map-key")
+        set-value (Datascript_runtime.Data_value.Symbol "?set-value")
+        nested
+        (query-form-vector
+         [x
+          (query-form-list [y x])
+          (Datascript_runtime.Data_value.Map
+           (list
+            (tuple
+             map-key
+             (Datascript_runtime.Data_value.Set
+              (list set-value set-value)))))])
+        collected
+        (query/walk-collect
+         nested
+         (fn [value] (query/free-var? value)))]
+    (is (= ["?x" "?y" "?x" "?map-key" "?set-value" "?set-value"]
+           (mapv
+            (fn [value]
+              (Datascript_runtime.Data_value.to_edn_string value))
+            collected)))
+    (is (= #{"?x" "?y" "?map-key" "?set-value"}
+           (query/collect-vars nested)))
+    (is (= #{}
+           (query/collect-vars
+            (query-form-vector
+             [(Datascript_runtime.Data_value.Symbol "")
+              (Datascript_runtime.Data_value.Keyword ":name")
+              (Datascript_runtime.Data_value.Int 1)])))))
+  (let [form
+        (query-form-vector
+         [(Datascript_runtime.Data_value.Symbol "?x")
+          (Datascript_runtime.Data_value.Symbol "?y")])]
+    (query/check-bound #{"?x" "?y"} ["?y" "?x"] form)
+    (is
+     (thrown-msg?
+      "Insufficient bindings: #{?y} not bound in [?x ?y]"
+      (query/check-bound #{"?x"} ["?x" "?y"] form)))))
+
+(deftest test-public-free-variable-checks
+  (let [e (Datascript_runtime.Data_value.Symbol "?e")
+        x (Datascript_runtime.Data_value.Symbol "?x")
+        y (Datascript_runtime.Data_value.Symbol "?y")
+        branch-x
+        (query-form-vector
+         [e (Datascript_runtime.Data_value.Keyword ":a") x])
+        branch-x-reordered
+        (query-form-vector
+         [x (Datascript_runtime.Data_value.Keyword ":b") e])
+        branch-y
+        (query-form-vector
+         [e (Datascript_runtime.Data_value.Keyword ":b") y])
+        or-form
+        (query-form-list
+         [(Datascript_runtime.Data_value.Symbol "or")
+          branch-x
+          branch-y])]
+    (query/check-free-same
+     #{"?e"} [branch-x branch-x-reordered] or-form)
+    (is
+     (thrown-msg?
+      "All clauses in 'or' must use same set of free vars, had [#{?x} #{?y}] in (or [?e :a ?x] [?e :b ?y])"
+      (query/check-free-same
+       #{"?e"} [branch-x branch-y] or-form)))
+    (query/check-free-subset
+     #{"?e"} ["?e" "?x"] [branch-x branch-x-reordered])
+    (is
+     (thrown-msg?
+      "All clauses in 'or' must use same set of free vars, had #{?x} not bound in [?e :b ?y]"
+      (query/check-free-subset
+       #{"?e"} ["?e" "?x"] [branch-x branch-y])))))
+
+(deftest test-public-tuple-and-pattern-utilities
+  (let [left
+        (array
+         (query-int-result 1)
+         (query-int-result 2)
+         (query-int-result 3))
+        right
+        (array
+         (query-int-result 10)
+         (query-int-result 20))
+        joined
+        (query/join-tuples
+         left (array 2 0)
+         right (array 1))]
+    (is (= [3 1 20]
+           (mapv
+            (fn [^:int index]
+              (query-result-int (aget joined index)))
+            (range (Array.length joined))))))
+  (let [variable (Datascript_runtime.Data_value.Symbol "?x")
+        placeholder (Datascript_runtime.Data_value.Symbol "_")
+        one (Datascript_runtime.Data_value.Int 1)
+        two (Datascript_runtime.Data_value.Int 2)
+        three (Datascript_runtime.Data_value.Int 3)]
+    (is (query/matches-pattern?
+         [variable two placeholder]
+         [one two three]))
+    (is (not
+         (query/matches-pattern?
+          [variable three]
+          [one two])))
+    (is (query/matches-pattern? [one] [one two]))
+    (is (query/matches-pattern? [one two] [one]))
+    (is (query/matches-pattern? [] [one]))
+    (is (query/matches-pattern? [one] []))))
+
+(deftest test-public-pattern-normalization-and-pair-removal
+  (let [source (Datascript_runtime.Data_value.Symbol "$users")
+        entity (Datascript_runtime.Data_value.Symbol "?e")
+        attr (Datascript_runtime.Data_value.Keyword ":name")
+        ^:vector<Datascript_runtime.Data_value.t>
+        explicit [source entity attr]
+        ^:vector<Datascript_runtime.Data_value.t>
+        implicit [entity attr]]
+    (is (= ["$users" "?e" ":name"]
+           (query-form-strings
+            (query/normalize-pattern-clause explicit))))
+    (is (= ["$" "?e" ":name"]
+           (query-form-strings
+            (query/normalize-pattern-clause implicit))))
+    (is (= ["$"]
+           (query-form-strings
+            (query/normalize-pattern-clause [])))))
+  (let [same-symbol (Datascript_runtime.Data_value.Symbol "?x")
+        left-one (Datascript_runtime.Data_value.Int 1)
+        right-two (Datascript_runtime.Data_value.Int 2)
+        left-attr (Datascript_runtime.Data_value.Keyword ":left")
+        right-attr (Datascript_runtime.Data_value.Keyword ":right")
+        same-string (Datascript_runtime.Data_value.String "same")
+        ^:vector<Datascript_runtime.Data_value.t>
+        left
+        [same-symbol left-one left-attr same-string
+         (Datascript_runtime.Data_value.Int 99)]
+        ^:vector<Datascript_runtime.Data_value.t>
+        right
+        [same-symbol right-two right-attr same-string]
+        ^:tuple<vector<Datascript_runtime.Data_value.t>;vector<Datascript_runtime.Data_value.t>>
+        remaining
+        (query/remove-pairs left right)]
+    (is (= ["1" ":left"]
+           (query-form-strings (tuple-get remaining 0))))
+    (is (= ["2" ":right"]
+           (query-form-strings (tuple-get remaining 1))))))
+
+(deftest test-public-constant-substitution
+  (let [x (Datascript_runtime.Data_value.Symbol "?x")
+        same (Datascript_runtime.Data_value.Symbol "?same")
+        empty-variable
+        (Datascript_runtime.Data_value.Symbol "?empty")
+        shadowed
+        (Datascript_runtime.Data_value.Symbol "?shadowed")
+        nil-variable
+        (Datascript_runtime.Data_value.Symbol "?nil")
+        missing
+        (Datascript_runtime.Data_value.Symbol "?missing")
+        literal (Datascript_runtime.Data_value.Keyword ":name")
+        one-row
+        (query-types/relation
+         {"?x" 0 "?nil" 1}
+         [(array
+           (query-int-result 7)
+           (query-types/value-result
+            (Datascript_runtime.Data_value.Nil)))]
+         {})
+        repeated-value
+        (query-types/relation
+         {"?same" 0}
+         [(array (query-int-result 5))
+          (array (query-int-result 5))]
+         {})
+        empty-relation
+        (query-types/relation {"?empty" 0} [] {})
+        shadowing-empty
+        (query-types/relation {"?shadowed" 0} [] {})
+        shadowed-value
+        (query-types/relation
+         {"?shadowed" 0}
+         [(array (query-int-result 9))]
+         {})
+        context
+        (query-types/context
+         [one-row
+          repeated-value
+          empty-relation
+          shadowing-empty
+          shadowed-value]
+         {}
+         [])]
+    (if-some [value (query/substitute-constant context x)]
+      (is (= "7"
+             (Datascript_runtime.Data_value.to_edn_string value)))
+      (is false))
+    (if-some [value
+              (query/substitute-constant context nil-variable)]
+      (is (= "nil"
+             (Datascript_runtime.Data_value.to_edn_string value)))
+      (is false))
+    (is (= None (query/substitute-constant context literal)))
+    (is (= None (query/substitute-constant context missing)))
+    (is (= None (query/substitute-constant context same)))
+    (is (= None
+           (query/substitute-constant context empty-variable)))
+    (is (= None (query/substitute-constant context shadowed)))
+    (is (= ["7" "?same" "nil" ":name" "?missing"]
+           (query-form-strings
+            (query/substitute-constants
+             context
+             [x same nil-variable literal missing]))))))
+
+(deftest test-public-dynamic-lookup-attrs
+  (let [database
+        (datascript.db/database-view
+         (d/empty-db
+          {:friend {:db/valueType :db.type/ref}}))
+        entity (Datascript_runtime.Data_value.Symbol "?e")
+        attr-variable
+        (Datascript_runtime.Data_value.Symbol "?a")
+        value (Datascript_runtime.Data_value.Symbol "?v")
+        tx (Datascript_runtime.Data_value.Symbol "?tx")
+        ref-attr
+        (Datascript_runtime.Data_value.Keyword ":friend")
+        scalar-attr
+        (Datascript_runtime.Data_value.Keyword ":name")
+        ^:vector<Datascript_runtime.Data_value.t>
+        ref-pattern [entity ref-attr value tx]
+        ^:vector<Datascript_runtime.Data_value.t>
+        scalar-pattern [entity scalar-attr value tx]
+        ^:vector<Datascript_runtime.Data_value.t>
+        free-attr-pattern [entity attr-variable value tx]
+        ^:vector<Datascript_runtime.Data_value.t>
+        short-pattern [entity]]
+    (is (= #{"?e" "?v" "?tx"}
+           (query/dynamic-lookup-attrs database ref-pattern)))
+    (is (= #{"?e" "?tx"}
+           (query/dynamic-lookup-attrs database scalar-pattern)))
+    (is (= #{"?e" "?tx"}
+           (query/dynamic-lookup-attrs
+            database free-attr-pattern)))
+    (is (= #{"?e"}
+           (query/dynamic-lookup-attrs database short-pattern)))
+    (is (= #{}
+           (query/dynamic-lookup-attrs database [])))))
+
+(deftest test-public-pattern-lookup-ref-resolution
+  (let [database
+        (-> (d/empty-db
+             {:friend
+              {:db/valueType :db.type/ref
+               :db/unique :db.unique/identity}})
+            (d/db-with
+             [[:db/add 1 :db/ident :person/one]
+              [:db/add 1 :friend 2]
+              [:db/add 2 :friend 1]]))
+        database-source
+        (query-types/database-source
+         (datascript.db/database-view database))
+        relation-source (query-types/relation-source [])
+        friend (Datascript_runtime.Data_value.Keyword ":friend")
+        lookup-one
+        (query-form-vector
+         [friend (Datascript_runtime.Data_value.Int 1)])
+        lookup-two
+        (query-form-vector
+         [friend (Datascript_runtime.Data_value.Int 2)])
+        missing
+        (query-form-vector
+         [friend (Datascript_runtime.Data_value.Int 999)])
+        ^:vector<Datascript_runtime.Data_value.t>
+        pattern [lookup-two friend lookup-one lookup-two]
+        ^:vector<Datascript_runtime.Data_value.t>
+        ident-pattern
+        [(Datascript_runtime.Data_value.Keyword ":person/one")]]
+    (is (= ["1" ":friend" "2" "1"]
+           (query-form-strings
+            (query/resolve-pattern-lookup-refs
+             database-source pattern))))
+    (is (= ["1"]
+           (query-form-strings
+            (query/resolve-pattern-lookup-refs
+             database-source ident-pattern))))
+    (is (= ["[:friend 2]" ":friend" "[:friend 1]" "[:friend 2]"]
+           (query-form-strings
+            (query/resolve-pattern-lookup-refs
+             relation-source pattern))))
+    (is (= []
+           (query/resolve-pattern-lookup-refs
+            database-source [])))
+    (is
+     (thrown-msg?
+      "Nothing found for entity id [:friend 999]"
+      (query/resolve-pattern-lookup-refs
+       database-source
+       [missing])))))
+
+(deftest test-public-rule-parsing
+  (let [entity (Datascript_runtime.Data_value.Symbol "?e")
+        age (Datascript_runtime.Data_value.Symbol "?age")
+        age-clause
+        (query-form-vector
+         [entity
+          (Datascript_runtime.Data_value.Keyword ":age")
+          age])
+        name-clause
+        (query-form-vector
+         [entity
+          (Datascript_runtime.Data_value.Keyword ":name")
+          (Datascript_runtime.Data_value.Symbol "_")])
+        first-branch
+        (query-rule-branch "adult" [entity] [age-clause])
+        second-branch
+        (query-rule-branch "adult" [entity] [name-clause])
+        form-rules
+        (query/parse-rules
+         (query-form-vector [first-branch second-branch]))
+        string-rules
+        (query/parse-rules
+         (Datascript_runtime.Data_value.String
+          "[[[adult ?e] [?e :age 18]]]"))
+        empty-rules
+        (query/parse-rules (query-form-vector []))]
+    (is (= 1 (count form-rules)))
+    (if-some [branches (parser/rule-branches form-rules "adult")]
+      (is (= 2 (count branches)))
+      (is false))
+    (if-some [branches
+              (parser/rule-branches string-rules "adult")]
+      (is (= 1 (count branches)))
+      (is false))
+    (is (= 0 (count empty-rules))))
+  (let [x (Datascript_runtime.Data_value.Symbol "?x")
+        y (Datascript_runtime.Data_value.Symbol "?y")
+        placeholder-clause
+        (query-form-vector
+         [(Datascript_runtime.Data_value.Symbol "_")])
+        one-arg
+        (query-rule-branch
+         "rule" [x] [placeholder-clause])
+        two-args
+        (query-rule-branch
+         "rule" [x y] [placeholder-clause])]
+    (is
+     (thrown-msg?
+      "Arity mismatch for rule 'rule': [?x] vs. [?x ?y]"
+      (query/parse-rules
+       (query-form-vector [one-arg two-args]))))))
+
+(deftest test-public-rule-predicate
+  (let [entity (Datascript_runtime.Data_value.Symbol "?e")
+        placeholder-clause
+        (query-form-vector
+         [(Datascript_runtime.Data_value.Symbol "_")])
+        rules
+        (query/parse-rules
+         (query-form-vector
+          [(query-rule-branch
+            "adult" [entity] [placeholder-clause])]))
+        context (query-types/context [] {} rules)
+        known
+        (query-form-list
+         [(Datascript_runtime.Data_value.Symbol "adult")
+          entity])
+        sourced-known
+        (query-form-list
+         [(Datascript_runtime.Data_value.Symbol "$people")
+          (Datascript_runtime.Data_value.Symbol "adult")
+          entity])
+        variable-head
+        (query-form-list
+         [entity
+          (Datascript_runtime.Data_value.Keyword ":age")])
+        disjunction
+        (query-form-list
+         [(Datascript_runtime.Data_value.Symbol "or")
+          known])
+        unknown
+        (query-form-list
+         [(Datascript_runtime.Data_value.Symbol "missing")
+          entity])]
+    (is (not
+         (query/rule?
+          context
+          (Datascript_runtime.Data_value.Keyword ":age"))))
+    (is (not (query/rule? context variable-head)))
+    (is (not (query/rule? context disjunction)))
+    (is (query/rule? context known))
+    (is (query/rule? context sourced-known))
+    (is
+     (thrown-msg?
+      "Unknown rule 'missing in (missing ?e)"
+      (query/rule? context unknown)))))
+
+(deftest test-public-rule-guards
+  (let [a (Datascript_runtime.Data_value.Symbol "?a")
+        b (Datascript_runtime.Data_value.Symbol "?b")
+        old (Datascript_runtime.Data_value.Symbol "?old")
+        missing
+        (Datascript_runtime.Data_value.Symbol "?missing")
+        rule-clause
+        (query-form-list
+         [(Datascript_runtime.Data_value.Symbol "ancestor")
+          a b])
+        ^:map<string;vector<vector<Datascript_runtime.Data_value.t>>>
+        used-args
+        {"ancestor" [[a old] [old b]]}
+        ^:map<string;vector<vector<Datascript_runtime.Data_value.t>>>
+        empty-used-args {}
+        ^:vector<Datascript_runtime.Data_value.t>
+        guards (query/rule-gen-guards rule-clause used-args)]
+    (is (= ["[(-differ? ?b ?old)]"
+            "[(-differ? ?a ?old)]"]
+           (query-form-strings guards)))
+    (is (= []
+           (query/rule-gen-guards
+            rule-clause empty-used-args)))
+    (let [clauses
+          (query-form-vector
+           [(query-form-vector
+             [a
+              (Datascript_runtime.Data_value.Keyword ":name")
+              (Datascript_runtime.Data_value.String "A")])])
+          active-guard
+          (query-form-vector
+           [(query-form-list
+             [(Datascript_runtime.Data_value.Symbol "-differ?")
+              a])])
+          pending-guard
+          (query-form-vector
+           [(query-form-list
+             [(Datascript_runtime.Data_value.Symbol "-differ?")
+              missing])])
+          zero-variable-guard
+          (query-form-vector
+           [(query-form-list
+             [(Datascript_runtime.Data_value.Symbol "-differ?")])])
+          ^:vector<Datascript_runtime.Data_value.t>
+          guards-to-split
+          [active-guard pending-guard zero-variable-guard]
+          ^:tuple<vector<Datascript_runtime.Data_value.t>;vector<Datascript_runtime.Data_value.t>>
+          split
+          (query/split-guards
+           clauses
+           guards-to-split)]
+      (is (= ["[(-differ? ?a)]" "[(-differ?)]"]
+             (query-form-strings (tuple-get split 0))))
+      (is (= ["[(-differ? ?missing)]"]
+             (query-form-strings (tuple-get split 1)))))))
+
+(deftest test-public-aggregation
+  (let [color
+        (parser/variable-find-element "?color")
+        sum-x
+        (parser/aggregate-find-element
+         "sum"
+         [(parser/variable-argument "?x")])
+        count-x
+        (parser/aggregate-find-element
+         "count"
+         [(parser/variable-argument "?x")])
+        elements [color sum-x count-x]
+        context (query-types/context [] {} [])
+        rows
+        [(query-int-row [1 10 10])
+         (query-int-row [2 7 7])
+         (query-int-row [1 20 20])]]
+    (testing "-aggregate evaluates one complete group"
+      (is (= [[1 37 3]]
+             (query-int-rows
+              [(query/-aggregate elements context rows)]))))
+    (testing "aggregate groups by every non-aggregate find element"
+      (is (= [[1 30 2] [2 7 1]]
+             (query-int-rows
+              (query/aggregate elements context rows)))))
+    (testing "all-aggregate finds form one group"
+      (is (= [[37 3]]
+             (query-int-rows
+              (query/aggregate
+               [sum-x count-x]
+               context
+               [(query-int-row [10 10])
+                (query-int-row [7 7])
+                (query-int-row [20 20])])))))
+    (testing "empty result sets produce no groups"
+      (is (= []
+             (query/aggregate elements context [])))
+      (is (= 0
+             (count
+              (query/-aggregate elements context [])))))))
+
+(deftest test-public-aggregation-context-resolution
+  (let [limit-first
+        (query-types/relation
+         {"?limit" 0}
+         [(query-int-row [2])]
+         {})
+        limit-second
+        (query-types/relation
+         {"?limit" 0}
+         [(query-int-row [1])]
+         {})
+        callable
+        (query-types/relation
+         {"?aggregate" 0}
+         [(array
+           (query-types/callable-result
+            (query-types/callable sum-query-arguments)))]
+         {})
+        parameterized-max
+        (parser/aggregate-find-element
+         "max"
+         [(parser/variable-argument "?limit")
+          (parser/variable-argument "?x")])
+        custom-sum
+        (parser/custom-aggregate-find-element
+         "?aggregate"
+         [(parser/variable-argument "?x")])
+        rows
+        [(query-int-row [1])
+         (query-int-row [3])
+         (query-int-row [2])]]
+    (testing "aggregate parameters use the first matching context relation"
+      (let [result
+            (query/-aggregate
+             [parameterized-max]
+             (query-types/context
+              [limit-first limit-second]
+              {}
+              [])
+             rows)]
+        (if-some [value
+                  (query-types/result-value
+                   (nth result 0))]
+          (is (= "[2 3]"
+                 (Datascript_runtime.Data_value.to_edn_string value)))
+          (is false))))
+    (testing "custom aggregate callables resolve from context"
+      (is (= [[6]]
+             (query-int-rows
+              [(query/-aggregate
+                [custom-sum]
+                (query-types/context [callable] {} [])
+                rows)]))))
+    (testing "unbound aggregate parameters retain the upstream error"
+      (is
+       (thrown-msg?
+        "Aggregate parameters must be constants"
+        (query/-aggregate
+         [parameterized-max]
+         (query-types/context [] {} [])
+         rows))))))
+
+(deftest test-public-input-resolution
+  (let [database
+        (datascript.db/database-view (d/empty-db))
+        source-binding
+        (parser/static-input-binding-form
+         (parser/make-static-source-input "$people"))
+        rules-binding
+        (parser/static-input-binding-form
+         (parser/make-static-rules-input))
+        scalar-binding
+        (parser/static-input-binding-form
+         (parser/make-static-value-input
+          (parser/scalar-input "?x")))
+        tuple-binding
+        (parser/static-input-binding-form
+         (parser/make-static-value-input
+          (parser/tuple-input
+           [(parser/scalar-input "?y")
+            (parser/ignore-input)])))
+        collection-binding
+        (parser/static-input-binding-form
+         (parser/make-static-value-input
+          (parser/collection-input
+           (parser/scalar-input "?z"))))
+        rule-variable
+        (Datascript_runtime.Data_value.Symbol "?e")
+        placeholder-clause
+        (query-form-vector
+         [(Datascript_runtime.Data_value.Symbol "_")])
+        rules
+        (query/parse-rules
+         (query-form-vector
+          [(query-rule-branch
+            "known"
+            [rule-variable]
+            [placeholder-clause])]))
+        bindings
+        [source-binding
+         rules-binding
+         scalar-binding
+         tuple-binding
+         collection-binding]
+        inputs
+        [(query-types/source-input
+          (query-types/database-source database))
+         (query-types/rules-input rules)
+         (query-types/binding-input
+          (query-types/scalar-binding
+           (query-int-result 10)))
+         (query-types/binding-input
+          (query-types/collection-binding
+           [(query-types/scalar-binding
+             (query-int-result 20))
+            (query-types/scalar-binding
+             (query-int-result 999))]))
+         (query-types/binding-input
+          (query-types/collection-binding
+           [(query-types/scalar-binding
+             (query-int-result 30))
+            (query-types/scalar-binding
+             (query-int-result 40))]))]
+        resolved
+        (query/resolve-ins
+         (query-types/context [] {} [])
+         bindings
+         inputs)
+        relations (query-types/context-relations resolved)]
+    (testing "source and rules inputs update their dedicated context fields"
+      (if-some [source
+                (get
+                 (query-types/context-sources resolved)
+                 "$people")]
+        (is
+         (some?
+          (query-types/source-database source)))
+        (is false))
+      (is (= 1
+             (count (query-types/context-rules resolved)))))
+    (testing "value inputs append scalar, tuple, and collection relations"
+      (is (= 3 (count relations)))
+      (is (= [[10]]
+             (relation-int-rows
+              (nth relations 0)
+              ["?x"])))
+      (is (= [[20]]
+             (relation-int-rows
+              (nth relations 1)
+              ["?y"])))
+      (is (= [[30] [40]]
+             (relation-int-rows
+              (nth relations 2)
+              ["?z"]))))))
+
+(deftest test-public-single-input-resolution-and-count-errors
+  (let [existing
+        (query-types/relation
+         {"?existing" 0}
+         [(query-int-row [1])]
+         {})
+        scalar-binding
+        (parser/static-input-binding-form
+         (parser/make-static-value-input
+          (parser/scalar-input "?x")))
+        source-binding
+        (parser/static-input-binding-form
+         (parser/make-static-source-input "$people"))
+        input
+        (query-types/binding-input
+         (query-types/scalar-binding
+          (query-int-result 2)))
+        resolved
+        (query/resolve-in
+         (query-types/context [existing] {} [])
+         (tuple scalar-binding input))
+        relations (query-types/context-relations resolved)]
+    (testing "resolve-in preserves existing relations and appends one binding"
+      (is (= 2 (count relations)))
+      (is (= [[1]]
+             (relation-int-rows
+              (nth relations 0)
+              ["?existing"])))
+      (is (= [[2]]
+             (relation-int-rows
+              (nth relations 1)
+              ["?x"]))))
+    (testing "resolve-ins rejects extra inputs with upstream source forms"
+      (is
+       (thrown-msg?
+        "Extra inputs passed, expected: [$people ?x], got: 3"
+        (query/resolve-ins
+         (query-types/context [] {} [])
+         [source-binding scalar-binding]
+         [(query-types/source-input
+           (query-types/database-source
+            (datascript.db/database-view (d/empty-db))))
+          input
+          input]))))
+    (testing "resolve-ins rejects missing inputs with upstream source forms"
+      (is
+       (thrown-msg?
+        "Too few inputs passed, expected: [$people ?x], got: 1"
+        (query/resolve-ins
+         (query-types/context [] {} [])
+         [source-binding scalar-binding]
+         [(query-types/source-input
+           (query-types/database-source
+            (datascript.db/database-view
+             (d/empty-db))))]))))))
+
+(deftest test-public-pattern-lookup
+  (let [database
+        (datascript.db/database-view
+         (d/db-with
+          (d/empty-db
+           {:person/email
+            {:db/unique :db.unique/identity}})
+          [{:db/id 1
+            :person/email "ivan@example.com"
+            :person/name "Ivan"
+            :person/age 30}
+           {:db/id 2
+            :person/email "petr@example.com"
+            :person/name "Petr"
+            :person/age 40}]))
+        entity (Datascript_runtime.Data_value.Symbol "?e")
+        name (Datascript_runtime.Data_value.Symbol "?name")
+        wanted (Datascript_runtime.Data_value.Symbol "?wanted")
+        email-lookup
+        (query-form-vector
+         [(Datascript_runtime.Data_value.Keyword ":person/email")
+          (Datascript_runtime.Data_value.String
+           "petr@example.com")])
+        name-pattern
+        [entity
+         (Datascript_runtime.Data_value.Keyword ":person/name")
+         name]
+        context
+        (query-types/context
+         [(query-types/relation
+           {"?wanted" 0}
+           [(array
+             (query-types/value-result
+              (Datascript_runtime.Data_value.String "Ivan")))]
+           {})]
+         {}
+         [])]
+    (testing "lookup-pattern-db projects variables from indexed datoms"
+      (is
+       (=
+        [[(Datascript_runtime.Data_value.Int 1)
+          (Datascript_runtime.Data_value.String "Ivan")]
+         [(Datascript_runtime.Data_value.Int 2)
+          (Datascript_runtime.Data_value.String "Petr")]]
+        (relation-data-rows
+         (query/lookup-pattern-db
+          (query-types/context [] {} [])
+          database
+          name-pattern)
+         ["?e" "?name"]))))
+    (testing "context constants are substituted before DB lookup"
+      (is (= [[1]]
+             (relation-int-rows
+              (query/lookup-pattern-db
+               context
+               database
+               [entity
+                (Datascript_runtime.Data_value.Keyword
+                 ":person/name")
+                wanted])
+              ["?e"]))))
+    (testing "entity lookup refs resolve through the database"
+      (is (= [[40]]
+             (relation-int-rows
+              (query/lookup-pattern-db
+               (query-types/context [] {} [])
+               database
+               [email-lookup
+                (Datascript_runtime.Data_value.Keyword
+                 ":person/age")
+                (Datascript_runtime.Data_value.Symbol "?age")])
+              ["?age"]))))
+    (testing "lookup-pattern dispatches a closed database source"
+      (is (= [[1] [2]]
+             (relation-int-rows
+              (query/lookup-pattern
+               (query-types/context [] {} [])
+               (query-types/database-source database)
+               name-pattern)
+              ["?e"]))))
+    (testing "invalid DB pattern arity keeps the typed index error"
+      (is
+       (thrown-msg?
+        "DataScript patterns must contain one to five elements"
+        (query/lookup-pattern-db
+         (query-types/context [] {} [])
+         database
+         []))))))
+
+(deftest test-public-collection-pattern-lookup
+  (let [rows
+        [(query-int-row [1 1])
+         (query-int-row [1 2])
+         (query-int-row [2 2])
+         (query-int-row [2 2])]
+        repeated
+        [(Datascript_runtime.Data_value.Symbol "?x")
+         (Datascript_runtime.Data_value.Symbol "?x")]
+        context (query-types/context [] {} [])]
+    (testing "collection patterns enforce repeated-variable equality"
+      (is (= [[1] [2] [2]]
+             (relation-int-rows
+              (query/lookup-pattern-coll
+               context rows repeated)
+              ["?x"]))))
+    (testing "collection lookup preserves an empty relation schema"
+      (let [relation
+            (query/lookup-pattern-coll
+             context
+             []
+             [(Datascript_runtime.Data_value.Symbol "?x")])]
+        (is (= {"?x" 0}
+               (query-types/relation-attrs relation)))
+        (is (= []
+               (query-types/relation-rows relation)))))
+    (testing "lookup-pattern dispatches a closed relation source"
+      (is (= [[1] [2] [2]]
+             (relation-int-rows
+              (query/lookup-pattern
+               context
+               (query-types/relation-source rows)
+               repeated)
+              ["?x"]))))))
+
+(deftest test-public-tuples-to-return-map
+  (let [rows
+        [(query-int-row [1 10])
+         (query-int-row [1 10])
+         (query-int-row [2 20])]
+        keyword-map
+        (datascript.parser/ReturnKeys [:x :y])
+        symbol-map
+        (datascript.parser/ReturnSyms
+         [(symbol "x") (symbol "y")])
+        string-map
+        (datascript.parser/ReturnStrs ["x" "y"])]
+    (testing "keyword keys preserve tuple order and duplicates"
+      (if-some [mapped
+                (query-types/output-keyword-relation
+                 (query/tuples->return-map
+                  keyword-map rows))]
+        (is (= [[1 10] [1 10] [2 20]]
+               (mapped-int-rows mapped [":x" ":y"])))
+        (is false)))
+    (testing "symbol and string return maps keep their closed variants"
+      (if-some [mapped
+                (query-types/output-symbol-relation
+                 (query/tuples->return-map
+                  symbol-map rows))]
+        (is (= [[1 10] [1 10] [2 20]]
+               (mapped-int-rows mapped ["x" "y"])))
+        (is false))
+      (if-some [mapped
+                (query-types/output-string-relation
+                 (query/tuples->return-map
+                  string-map rows))]
+        (is (= [[1 10] [1 10] [2 20]]
+               (mapped-int-rows mapped ["x" "y"])))
+        (is false)))
+    (testing "row arity mismatch retains the upstream mapping failure"
+      (is
+       (thrown-msg?
+        "Return-map key count must match result row arity"
+        (query/tuples->return-map
+         keyword-map
+         [(query-int-row [1])]))))))
+
+(deftest test-public-post-process-protocol
+  (let [element
+        (datascript.parser/FindVariable
+         (datascript.parser/Variable. (symbol "?x")))
+        relation (datascript.parser/FindRel. [element])
+        collection (datascript.parser/FindColl. element)
+        scalar (datascript.parser/FindScalar. element)
+        tuple-result
+        (datascript.parser/FindTuple. [element element])
+        keyword-map
+        (datascript.parser/ReturnKeys [:x :y])
+        rows
+        [(query-int-row [1 10])
+         (query-int-row [2 20])]]
+    (testing "all upstream find records implement IPostProcess"
+      (is (satisfies? query/IPostProcess relation))
+      (is (satisfies? query/IPostProcess collection))
+      (is (satisfies? query/IPostProcess scalar))
+      (is (satisfies? query/IPostProcess tuple-result)))
+    (testing "relation output preserves rows and optional mapping"
+      (if-some [plain
+                (query-types/output-relation
+                 (query/-post-process relation None rows))]
+        (is (= [[1 10] [2 20]]
+               (query-int-rows plain)))
+        (is false))
+      (if-some [mapped
+                (query-types/output-keyword-relation
+                 (query/-post-process
+                  relation (Some keyword-map) rows))]
+        (is (= [[1 10] [2 20]]
+               (mapped-int-rows mapped [":x" ":y"])))
+        (is false)))
+    (testing "collection and scalar shapes ignore return-map"
+      (if-some [values
+                (query-types/output-collection
+                 (query/-post-process
+                  collection (Some keyword-map) rows))]
+        (is (= [1 2]
+               (mapv query-result-int values)))
+        (is false))
+      (if-some [scalar-output
+                (query-types/output-scalar
+                 (query/-post-process
+                  scalar (Some keyword-map) rows))]
+        (if-some [value scalar-output]
+          (is (= 1 (query-result-int value)))
+          (is false))
+        (is false))
+      (if-some [scalar-output
+                (query-types/output-scalar
+                 (query/-post-process scalar None []))]
+        (is (= None scalar-output))
+        (is false)))
+    (testing "tuple shape reads only the first tuple"
+      (if-some [tuple-output
+                (query-types/output-tuple
+                 (query/-post-process
+                  tuple-result None rows))]
+        (if-some [row tuple-output]
+          (is (= [1 10]
+                 (mapv query-result-int row)))
+          (is false))
+        (is false))
+      (if-some [mapped
+                (query-types/output-keyword-tuple
+                 (query/-post-process
+                  tuple-result
+                  (Some keyword-map)
+                  [(query-int-row [1 10])
+                   (query-int-row [999])]))]
+        (if-some [row mapped]
+          (is (= [[1 10]]
+                 (mapped-int-rows [row] [":x" ":y"])))
+          (is false))
+        (is false))
+      (if-some [tuple-output
+                (query-types/output-tuple
+                 (query/-post-process tuple-result None []))]
+        (is (= None tuple-output))
+        (is false)))))
+
+(deftest test-public-context-resolution-protocol
+  (let [database
+        (datascript.db/database-view (d/empty-db))
+        source
+        (query-types/database-source database)
+        first-x
+        (query-types/relation
+         {"?x" 0}
+         [(query-int-row [1])]
+         {})
+        second-x
+        (query-types/relation
+         {"?x" 0}
+         [(query-int-row [2])]
+         {})
+        context
+        (query-types/context
+         [first-x second-x]
+         {"$people" source}
+         [])
+        variable
+        (datascript.parser/Variable. (symbol "?x"))
+        missing-variable
+        (datascript.parser/Variable. (symbol "?missing"))
+        source-variable
+        (datascript.parser/SrcVar. (symbol "$people"))
+        missing-source
+        (datascript.parser/SrcVar. (symbol "$missing"))
+        sum-symbol
+        (datascript.parser/PlainSymbol. (symbol "sum"))
+        unknown-symbol
+        (datascript.parser/PlainSymbol.
+         (symbol "example/unknown"))
+        constant
+        (datascript.parser/Constant.
+         (Datascript_runtime.Data_value.Int 42))]
+    (testing "all parser resolver records implement IContextResolve"
+      (is (satisfies? query/IContextResolve variable))
+      (is (satisfies? query/IContextResolve source-variable))
+      (is (satisfies? query/IContextResolve sum-symbol))
+      (is (satisfies? query/IContextResolve constant)))
+    (testing "variables resolve from the first matching relation and row"
+      (match (query/-context-resolve variable context)
+        (Some (query/ContextResult result))
+        (is (= 1 (query-result-int result)))
+        _ (is false))
+      (is (= None
+             (query/-context-resolve
+              missing-variable context))))
+    (testing "sources resolve without erasing their closed source variant"
+      (match (query/-context-resolve source-variable context)
+        (Some (query/ContextSource resolved))
+        (is
+         (some?
+          (query-types/source-database resolved)))
+        _ (is false))
+      (is (= None
+             (query/-context-resolve
+              missing-source context))))
+    (testing "plain symbols resolve only through the typed aggregate registry"
+      (match (query/-context-resolve sum-symbol context)
+        (Some (query/ContextAggregate aggregate))
+        (is (datascript.built-ins/sum-aggregate? aggregate))
+        _ (is false))
+      (is (= None
+             (query/-context-resolve
+              unknown-symbol context))))
+    (testing "constants become closed query results"
+      (match (query/-context-resolve constant context)
+        (Some (query/ContextResult result))
+        (is (= 42 (query-result-int result)))
+        _ (is false)))))
+
+(deftest test-public-context-resolution-empty-first-relation
+  (let [empty-first
+        (query-types/relation {"?x" 0} [] {})
+        later
+        (query-types/relation
+         {"?x" 0}
+         [(query-int-row [9])]
+         {})
+        variable
+        (datascript.parser/Variable. (symbol "?x"))]
+    (is
+     (=
+      None
+      (query/-context-resolve
+       variable
+       (query-types/context
+        [empty-first later]
+        {}
+        []))))))
+
+(deftest test-public-collect
+  (let [left
+        (query-types/relation
+         {"?x" 0}
+         [(query-int-row [1])
+          (query-int-row [2])]
+         {})
+        right
+        (query-types/relation
+         {"?y" 0}
+         [(query-int-row [10])
+          (query-int-row [20])]
+         {})
+        irrelevant
+        (query-types/relation
+         {"?z" 0}
+         [(query-int-row [999])]
+         {})
+        context
+        (query-types/context
+         [left irrelevant right]
+         {}
+         [])]
+    (testing "zero relations retain one all-absent seed row"
+      (is (= [[(absent-int) (absent-int)]]
+             (optional-int-rows
+              (query/-collect
+               (query-types/context [] {} [])
+               ["?x" "?y"])))))
+    (testing "multiple relations fill requested columns in symbol order"
+      (is (= [[(Some 10) (Some 1)]
+              [(Some 20) (Some 1)]
+              [(Some 10) (Some 2)]
+              [(Some 20) (Some 2)]]
+             (optional-int-rows
+              (query/-collect context ["?y" "?x"])))))
+    (testing "unbound symbols remain option absence"
+      (is (= [[(Some 1) (absent-int)]
+              [(Some 2) (absent-int)]]
+             (optional-int-rows
+              (query/-collect
+               (query-types/context [left] {} [])
+               ["?x" "?missing"])))))
+    (testing "three-arity collect preserves the supplied accumulator"
+      (is (= [[(Some 100) (Some 1)]
+              [(Some 100) (Some 2)]]
+             (optional-int-rows
+              (query/-collect
+               [(array
+                 (Some (query-int-result 100))
+                 (absent-query-result))]
+               [left]
+               ["?seed" "?x"])))))
+    (testing "any empty relation short-circuits even when irrelevant"
+      (is (= []
+             (query/-collect
+              (query-types/context
+               [left
+                (query-types/relation {"?z" 0} [] {})]
+               {}
+               [])
+              ["?x"]))))))
+
+(deftest test-public-collect-tuples-and-uniqueness
+  (let [relation
+        (query-types/relation
+         {"?x" 0 "?y" 1}
+         [(query-int-row [1 2])
+          (query-int-row [1 2])]
+         {})
+        seed
+        [(array
+          (absent-query-result)
+          (Some (query-int-result 50))
+          (absent-query-result))]
+        copy-map (array (Some 1) (absent-int) (Some 0))]
+    (testing "-collect-tuples copies only mapped positions"
+      (is (= [[(Some 2) (Some 50) (Some 1)]
+              [(Some 2) (Some 50) (Some 1)]]
+             (optional-int-rows
+              (query/-collect-tuples
+               seed relation 3 copy-map)))))
+    (testing "-collect preserves duplicates while collect removes them"
+      (is (= [[(Some 1)] [(Some 1)]]
+             (optional-int-rows
+              (query/-collect
+               (query-types/context [relation] {} [])
+               ["?x"]))))
+      (is (= [[(Some 1)]]
+             (optional-int-rows
+              (query/collect
+               (query-types/context [relation] {} [])
+               ["?x"])))))
+    (testing "collect keeps first-seen order while removing duplicates"
+      (let [ordered
+            (query-types/relation
+             {"?x" 0}
+             [(query-int-row [2])
+              (query-int-row [1])
+              (query-int-row [2])]
+             {})]
+        (is (= [[(Some 2)] [(Some 1)]]
+               (optional-int-rows
+                (query/collect
+                 (query-types/context [ordered] {} [])
+                 ["?x"]))))))))
+
+(deftest test-public-binding-protocol
+  (let [ignored (parser/ignore-input)
+        scalar (parser/scalar-input "?x")
+        tuple-binding
+        (parser/tuple-input
+         [(parser/scalar-input "?x")
+          (parser/scalar-input "?y")])
+        collection-binding
+        (parser/collection-input
+         (parser/scalar-input "?x"))
+        scalar-value
+        (query-types/scalar-binding
+         (query-int-result 10))
+        tuple-value
+        (query-types/collection-binding
+         [(query-types/scalar-binding
+           (query-int-result 20))
+          (query-types/scalar-binding
+           (query-int-result 30))])
+        collection-value
+        (query-types/collection-binding
+         [(query-types/scalar-binding
+           (query-int-result 40))
+          (query-types/scalar-binding
+           (query-int-result 50))])]
+    (testing "all closed binding variants implement IBinding"
+      (is (satisfies? query/IBinding ignored))
+      (is (satisfies? query/IBinding scalar))
+      (is (satisfies? query/IBinding tuple-binding))
+      (is (satisfies? query/IBinding collection-binding)))
+    (testing "ignore produces the identity relation"
+      (let [relation (query/in->rel ignored scalar-value)]
+        (is (= {} (query-types/relation-attrs relation)))
+        (is (= [[]] (relation-int-rows relation [])))))
+    (testing "scalar, tuple, and collection bindings preserve upstream rows"
+      (is (= [[10]]
+             (relation-int-rows
+              (query/in->rel scalar scalar-value)
+              ["?x"])))
+      (is (= [[20 30]]
+             (relation-int-rows
+              (query/in->rel tuple-binding tuple-value)
+              ["?x" "?y"])))
+      (is (= [[40] [50]]
+             (relation-int-rows
+              (query/in->rel collection-binding collection-value)
+              ["?x"]))))
+    (testing "empty collections retain binding attributes with no rows"
+      (let [relation
+            (query/in->rel
+             collection-binding
+             (query-types/collection-binding []))]
+        (is (= {"?x" 0}
+               (query-types/relation-attrs relation)))
+        (is (= []
+               (query-types/relation-rows relation)))))))
+
+(deftest test-public-binding-edge-cases
+  (let [tuple-binding
+        (parser/tuple-input
+         [(parser/scalar-input "?x")
+          (parser/scalar-input "?y")])
+        extra-tuple-value
+        (query-types/collection-binding
+         [(query-types/scalar-binding
+           (query-int-result 1))
+          (query-types/scalar-binding
+           (query-int-result 2))
+          (query-types/scalar-binding
+           (query-int-result 999))])
+        short-tuple-value
+        (query-types/collection-binding
+         [(query-types/scalar-binding
+           (query-int-result 1))])
+        nested-binding
+        (parser/collection-input
+         (parser/tuple-input
+          [(parser/scalar-input "?x")
+           (parser/ignore-input)]))
+        nested-value
+        (query-types/collection-binding
+         [(query-types/collection-binding
+           [(query-types/scalar-binding
+             (query-int-result 3))
+            (query-types/scalar-binding
+             (query-int-result 30))])
+          (query-types/collection-binding
+           [(query-types/scalar-binding
+             (query-int-result 4))
+            (query-types/scalar-binding
+             (query-int-result 40))])])]
+    (testing "tuple bindings ignore extra input elements like upstream"
+      (is (= [[1 2]]
+             (relation-int-rows
+              (query/in->rel tuple-binding extra-tuple-value)
+              ["?x" "?y"]))))
+    (testing "nested collection and tuple bindings recurse through IBinding"
+      (is (= [[3] [4]]
+             (relation-int-rows
+              (query/in->rel nested-binding nested-value)
+              ["?x"]))))
+    (testing "tuple bindings reject too few elements"
+      (is
+       (thrown-msg?
+        "Tuple query input has too few values"
+        (query/in->rel tuple-binding short-tuple-value))))
+    (testing "collection bindings reject scalar values"
+      (is
+       (thrown-msg?
+        "Collection query input requires a Collection_binding"
+        (query/in->rel
+         (parser/collection-input
+          (parser/scalar-input "?x"))
+         (query-types/scalar-binding
+          (query-int-result 1))))))))
 
 (deftest test-joins
   (let [db (-> (d/empty-db)
@@ -14,25 +1667,29 @@
                          {:db/id 2, :name  "Petr", :age   37}
                          {:db/id 3, :name  "Ivan", :age   37}
                          {:db/id 4, :age 15}]))]
-    (is (= (d/q '[:find ?e
-                  :where [?e :name]] db)
-          #{[1] [2] [3]}))
-    (is (= (d/q '[:find  ?e ?v
-                  :where [?e :name "Ivan"]
-                  [?e :age ?v]] db)
-          #{[1 15] [3 37]}))
-    (is (= (d/q '[:find  ?e1 ?e2
-                  :where [?e1 :name ?n]
-                  [?e2 :name ?n]] db)
-          #{[1 1] [2 2] [3 3] [1 3] [3 1]}))
-    (is (= (d/q '[:find  ?e ?e2 ?n
-                  :where [?e :name "Ivan"]
-                  [?e :age ?a]
-                  [?e2 :age ?a]
-                  [?e2 :name ?n]] db)
-          #{[1 1 "Ivan"]
-            [3 3 "Ivan"]
-            [3 2 "Petr"]}))))
+    (is (tdc/query-relation?
+         (d/q '[:find ?e
+                :where [?e :name]] db)
+         [[1] [2] [3]]))
+    (is (tdc/query-relation?
+         (d/q '[:find  ?e ?v
+                :where [?e :name "Ivan"]
+                [?e :age ?v]] db)
+         [[1 15] [3 37]]))
+    (is (tdc/query-relation?
+         (d/q '[:find  ?e1 ?e2
+                :where [?e1 :name ?n]
+                [?e2 :name ?n]] db)
+         [[1 1] [2 2] [3 3] [1 3] [3 1]]))
+    (is (tdc/query-relation?
+         (d/q '[:find  ?e ?e2 ?n
+                :where [?e :name "Ivan"]
+                [?e :age ?a]
+                [?e2 :age ?a]
+                [?e2 :name ?n]] db)
+         [[1 1 "Ivan"]
+          [3 3 "Ivan"]
+          [3 2 "Petr"]]))))
 
 (deftest test-q-many
   (let [db (-> (d/empty-db {:aka {:db/cardinality :db.cardinality/many}})
@@ -42,74 +1699,88 @@
                          [:db/add 2 :name "Petr"]
                          [:db/add 2 :aka  "porosenok"]
                          [:db/add 2 :aka  "pi"]]))]
-    (is (= (d/q '[:find  ?n1 ?n2
-                  :where [?e1 :aka ?x]
-                  [?e2 :aka ?x]
-                  [?e1 :name ?n1]
-                  [?e2 :name ?n2]] db)
-          #{["Ivan" "Ivan"]
-            ["Petr" "Petr"]
-            ["Ivan" "Petr"]
-            ["Petr" "Ivan"]}))))
+    (is (tdc/query-relation?
+         (d/q '[:find  ?n1 ?n2
+                :where [?e1 :aka ?x]
+                [?e2 :aka ?x]
+                [?e1 :name ?n1]
+                [?e2 :name ?n2]] db)
+         [["Ivan" "Ivan"]
+          ["Petr" "Petr"]
+          ["Ivan" "Petr"]
+          ["Petr" "Ivan"]]))))
 
 (deftest test-q-coll
-  (let [db [[1 :name "Ivan"]
-            [1 :age  19]
-            [1 :aka  "dragon_killer_94"]
-            [1 :aka  "-=autobot=-"]]]
-    (is (= (d/q '[:find  ?n ?a
-                  :where [?e :aka "dragon_killer_94"]
-                  [?e :name ?n]
-                  [?e :age  ?a]] db)
-          #{["Ivan" 19]})))
+  (is (tdc/query-relation?
+       (d/q '[:find  ?n ?a
+              :where [?e :aka "dragon_killer_94"]
+              [?e :name ?n]
+              [?e :age  ?a]]
+            [[1 :name "Ivan"]
+             [1 :age  19]
+             [1 :aka  "dragon_killer_94"]
+             [1 :aka  "-=autobot=-"]])
+       [["Ivan" 19]]))
 
   (testing "Query over long tuples"
-    (let [db [[1 :name "Ivan" 945 :db/add]
-              [1 :age  39     999 :db/retract]]]
-      (is (= (d/q '[:find  ?e ?v
-                    :where [?e :name ?v]] db)
-            #{[1 "Ivan"]}))
-      (is (= (d/q '[:find  ?e ?a ?v ?t
-                    :where [?e ?a ?v ?t :db/retract]] db)
-            #{[1 :age 39 999]})))))
+    (is (tdc/query-relation?
+         (d/q '[:find  ?e ?v
+                :where [?e :name ?v]]
+              [[1 :name "Ivan" 945 :db/add]
+               [1 :age  39     999 :db/retract]])
+         [[1 "Ivan"]]))
+    (is (tdc/query-relation?
+         (d/q '[:find  ?e ?a ?v ?t
+                :where [?e ?a ?v ?t :db/retract]]
+              [[1 :name "Ivan" 945 :db/add]
+               [1 :age  39     999 :db/retract]])
+         [[1 :age 39 999]]))))
 
 (deftest test-q-in
   (let [db (-> (d/empty-db)
              (d/db-with [{:db/id 1, :name  "Ivan", :age   15}
                          {:db/id 2, :name  "Petr", :age   37}
-                         {:db/id 3, :name  "Ivan", :age   37}]))
-        query '{:find  [?e]
+                         {:db/id 3, :name  "Ivan", :age   37}]))]
+    (is (tdc/query-relation?
+         (d/q '{:find  [?e]
                 :in    [$ ?attr ?value]
-                :where [[?e ?attr ?value]]}]
-    (is (= (d/q query db :name "Ivan")
-          #{[1] [3]}))
-    (is (= (d/q query db :age 37)
-          #{[2] [3]}))
+                :where [[?e ?attr ?value]]}
+              db :name "Ivan")
+         [[1] [3]]))
+    (is (tdc/query-relation?
+         (d/q '{:find  [?e]
+                :in    [$ ?attr ?value]
+                :where [[?e ?attr ?value]]}
+              db :age 37)
+         [[2] [3]]))
 
     (testing "Named DB"
-      (is (= (d/q '[:find  ?a ?v
-                    :in    $db ?e
-                    :where [$db ?e ?a ?v]] db 1)
-            #{[:name "Ivan"]
-              [:age 15]})))
+      (is (tdc/query-relation?
+           (d/q '[:find  ?a ?v
+                  :in    $db ?e
+                  :where [$db ?e ?a ?v]] db 1)
+           [[:name "Ivan"]
+            [:age 15]])))
 
     (testing "DB join with collection"
-      (is (= (d/q '[:find  ?e ?email
-                    :in    $ $b
-                    :where [?e :name ?n]
-                    [$b ?n ?email]]
-               db
-               [["Ivan" "ivan@mail.ru"]
-                ["Petr" "petr@gmail.com"]])
-            #{[1 "ivan@mail.ru"]
-              [2 "petr@gmail.com"]
-              [3 "ivan@mail.ru"]})))
+      (is (tdc/query-relation?
+           (d/q '[:find  ?e ?email
+                  :in    $ $b
+                  :where [?e :name ?n]
+                  [$b ?n ?email]]
+                db
+                [["Ivan" "ivan@mail.ru"]
+                 ["Petr" "petr@gmail.com"]])
+           [[1 "ivan@mail.ru"]
+            [2 "petr@gmail.com"]
+            [3 "ivan@mail.ru"]])))
     
     (testing "Query without DB"
-      (is (= (d/q '[:find ?a ?b
-                    :in   ?a ?b]
-               10 20)
-            #{[10 20]})))
+      (is (tdc/query-relation?
+           (d/q '[:find ?a ?b
+                  :in   ?a ?b]
+                10 20)
+           [[10 20]])))
 
     (is (thrown-msg? "Extra inputs passed, expected: [], got: 1"
           (d/q '[:find ?e :where [(inc 1) ?e]] db)))
@@ -129,160 +1800,320 @@
                          {:db/id 2, :name  "Petr", :age   37}
                          {:db/id 3, :name  "Ivan", :age   37}]))]
     (testing "Relation binding"
-      (is (= (d/q '[:find  ?e ?email
-                    :in    $ [[?n ?email]]
-                    :where [?e :name ?n]]
-               db
-               [["Ivan" "ivan@mail.ru"]
-                ["Petr" "petr@gmail.com"]])
-            #{[1 "ivan@mail.ru"]
-              [2 "petr@gmail.com"]
-              [3 "ivan@mail.ru"]})))
+      (is (tdc/query-relation?
+           (d/q '[:find  ?e ?email
+                  :in    $ [[?n ?email]]
+                  :where [?e :name ?n]]
+                db
+                [["Ivan" "ivan@mail.ru"]
+                 ["Petr" "petr@gmail.com"]])
+           [[1 "ivan@mail.ru"]
+            [2 "petr@gmail.com"]
+            [3 "ivan@mail.ru"]])))
 
     (testing "Tuple binding"
-      (is (= (d/q '[:find  ?e
-                    :in    $ [?name ?age]
-                    :where [?e :name ?name]
-                    [?e :age ?age]]
-               db ["Ivan" 37])
-            #{[3]})))
+      (is (tdc/query-relation?
+           (d/q '[:find  ?e
+                  :in    $ [?name ?age]
+                  :where [?e :name ?name]
+                  [?e :age ?age]]
+                db ["Ivan" 37])
+           [[3]])))
 
     (testing "Collection binding"
-      (is (= (d/q '[:find  ?attr ?value
-                    :in    $ ?e [?attr ...]
-                    :where [?e ?attr ?value]]
-               db 1 [:name :age])
-            #{[:name "Ivan"] [:age 15]})))
+      (is (tdc/query-relation?
+           (d/q '[:find  ?attr ?value
+                  :in    $ ?e [?attr ...]
+                  :where [?e ?attr ?value]]
+                db 1 [:name :age])
+           [[:name "Ivan"] [:age 15]])))
 
     (testing "Empty coll handling"
-      (is (= (d/q '[:find ?id
-                    :in $ [?id ...]
-                    :where [?id :age _]]
-               [[1 :name "Ivan"]
-                [2 :name "Petr"]]
-               [])
-            #{}))
-      (is (= (d/q '[:find ?id
-                    :in $ [[?id]]
-                    :where [?id :age _]]
-               [[1 :name "Ivan"]
-                [2 :name "Petr"]]
-               [])
-            #{})))
+      (is (tdc/query-relation?
+           (d/q '[:find ?id
+                  :in $ [?id ...]
+                  :where [?id :age _]]
+                [[1 :name "Ivan"]
+                 [2 :name "Petr"]]
+                [])
+           []))
+      (is (tdc/query-relation?
+           (d/q '[:find ?id
+                  :in $ [[?id]]
+                  :where [?id :age _]]
+                [[1 :name "Ivan"]
+                 [2 :name "Petr"]]
+                [])
+           [])))
     
     (testing "Placeholders"
-      (is (= (d/q '[:find ?x ?z
-                    :in [?x _ ?z]]
-               [:x :y :z])
-            #{[:x :z]}))
-      (is (= (d/q '[:find ?x ?z
-                    :in [[?x _ ?z]]]
-               [[:x :y :z] [:a :b :c]])
-            #{[:x :z] [:a :c]})))
+      (is (tdc/query-relation?
+           (d/q '[:find ?x ?z
+                  :in [?x _ ?z]]
+                [:x :y :z])
+           [[:x :z]]))
+      (is (tdc/query-relation?
+           (d/q '[:find ?x ?z
+                  :in [[?x _ ?z]]]
+                [[:x :y :z] [:a :b :c]])
+           [[:x :z] [:a :c]])))
     
     (testing "Error reporting"
-      (is (thrown-with-msg? ExceptionInfo #"Cannot bind value :a to tuple \[\?a \?b\]"
+      (is (thrown-msg? "Cannot bind value :a to tuple [?a ?b]"
             (d/q '[:find ?a ?b :in [?a ?b]] :a)))
-      (is (thrown-with-msg? ExceptionInfo #"Cannot bind value :a to collection \[\?a \.\.\.\]"
+      (is (thrown-msg? "Cannot bind value :a to collection [?a ...]"
             (d/q '[:find ?a :in [?a ...]] :a)))
-      (is (thrown-with-msg? ExceptionInfo #"Not enough elements in a collection \[:a\] to bind tuple \[\?a \?b\]"
+      (is (thrown-msg? "Not enough elements in a collection [:a] to bind tuple [?a ?b]"
             (d/q '[:find ?a ?b :in [?a ?b]] [:a]))))))
-        
+
+(defn ^:int query-int [^query-types/result result]
+  (match result
+    (Datascript_runtime.Query_value.Value
+     (Datascript_runtime.Data_value.Int value))
+    value
+    _
+    (Stdlib.invalid_arg "Expected an integer query argument")))
+
+(defn ^:int data-int [^:Datascript_runtime.Data_value.t value]
+  (match value
+    (Datascript_runtime.Data_value.Int value) value
+    _ (Stdlib.invalid_arg "Expected an integer data value")))
+
+(defn ^:option<Datascript_runtime.Data_value.t> min-max-values
+  [^:vector<query-types/result> arguments]
+  (if-some [argument (first arguments)]
+    (match argument
+      (Datascript_runtime.Query_value.Value value)
+      (if-some [values
+                (Datascript_runtime.Data_value.sequential_items value)]
+        (Some
+         (Datascript_runtime.Data_value.vector_of_vector
+          [(Datascript_runtime.Data_value.Int
+            (reduce min (mapv data-int values)))
+           (Datascript_runtime.Data_value.Int
+            (reduce max (mapv data-int values)))]))
+        None)
+      _ None)
+    None))
+
+(defn ^:option<Datascript_runtime.Data_value.t> integer-range
+  [^:vector<query-types/result> arguments]
+  (if-some [minimum (first arguments)]
+    (if-some [maximum (first (subvec arguments 1))]
+      (Some
+       (Datascript_runtime.Data_value.vector_of_vector
+        (mapv
+         (fn [^:int value]
+           (Datascript_runtime.Data_value.Int value))
+         (range
+          (query-int minimum)
+          (query-int maximum)))))
+      None)
+    None))
+
+(defn ^:option<Datascript_runtime.Data_value.t> constant-five
+  [^:vector<query-types/result> _]
+  (Some (Datascript_runtime.Data_value.Int 5)))
+
 (deftest test-nested-bindings
-  (is (= (d/q '[:find  ?k ?v
-                :in    [[?k ?v] ...]
-                :where [(> ?v 1)]]
-           {:a 1, :b 2, :c 3})
-        #{[:b 2] [:c 3]}))
+  (is (tdc/query-relation?
+       (d/q '[:find  ?k ?v
+              :in    [[?k ?v] ...]
+              :where [(> ?v 1)]]
+            {:a 1, :b 2, :c 3})
+       [[:b 2] [:c 3]]))
 
-  (is (= (d/q '[:find  ?k ?min ?max
-                :in    [[?k ?v] ...] ?minmax
-                :where [(?minmax ?v) [?min ?max]]
-                [(> ?max ?min)]]
-           {:a [1 2 3 4]
-            :b [5 6 7]
-            :c [3]}
-           #(vector (reduce min %) (reduce max %)))
-        #{[:a 1 4] [:b 5 7]}))
+  (is (tdc/query-relation?
+       (d/q '[:find  ?k ?min ?max
+              :in    [[?k ?v] ...] ?minmax
+              :where [(?minmax ?v) [?min ?max]]
+              [(> ?max ?min)]]
+            {:a [1 2 3 4]
+             :b [5 6 7]
+             :c [3]}
+            min-max-values)
+       [[:a 1 4] [:b 5 7]]))
 
-  (is (= (d/q '[:find  ?k ?x
-                :in    [[?k [?min ?max]] ...] ?range
-                :where [(?range ?min ?max) [?x ...]]
-                [(even? ?x)]]
-           {:a [1 7]
-            :b [2 4]}
-           range)
-        #{[:a 2] [:a 4] [:a 6]
-          [:b 2]})))
+  (is (tdc/query-relation?
+       (d/q '[:find  ?k ?x
+              :in    [[?k [?min ?max]] ...] ?range
+              :where [(?range ?min ?max) [?x ...]]
+              [(even? ?x)]]
+            {:a [1 7]
+             :b [2 4]}
+            integer-range)
+       [[:a 2] [:a 4] [:a 6]
+        [:b 2]])))
 
 (deftest test-built-in-regex
-  (is (= (d/q '[:find  ?name
-                :in    [?name ...] ?key
-                :where [(re-pattern ?key) ?pattern]
-                [(re-find ?pattern ?name)]]
-           #{"abc" "abcX" "aXb"}
-           "X")
-        #{["abcX"] ["aXb"]})))
+  (is (tdc/query-relation?
+       (d/q '[:find  ?name
+              :in    [?name ...] ?key
+              :where [(re-pattern ?key) ?pattern]
+              [(re-find ?pattern ?name)]]
+            #{"abc" "abcX" "aXb"}
+            "X")
+       [["abcX"] ["aXb"]])))
 
 (deftest test-built-in-get
-  (is (= (d/q '[:find ?m ?m-value
-                :in [[?k ?m] ...] ?m-key
-                :where [(get ?m ?m-key) ?m-value]]
-           {:a {:b 1}
-            :c {:d 2}}
-           :d)
-        #{[{:d 2} 2]})))
+  (is (tdc/query-relation?
+       (d/q '[:find ?m ?m-value
+              :in [[?k ?m] ...] ?m-key
+              :where [(get ?m ?m-key) ?m-value]]
+            {:a {:b 1}
+             :c {:d 2}}
+            :d)
+       [[{:d 2} 2]])))
 
 (deftest ^{:doc "issue-385"} test-join-unrelated
-  (is (= #{}
-        (d/q '[:find ?name
-               :in $ ?my-fn
-               :where [?e :person/name ?name]
-               [(?my-fn) ?result]
-               [(< ?result 3)]]
-          (d/db-with (d/empty-db) [{:person/name "Joe"}])
-          (fn [] 5)))))
+  (is (tdc/query-relation?
+       (d/q '[:find ?name
+              :in $ ?my-fn
+              :where [?e :person/name ?name]
+              [(?my-fn) ?result]
+              [(< ?result 3)]]
+            (d/db-with (d/empty-db) [{:person/name "Joe"}])
+            constant-five)
+       [])))
 
 (deftest ^{:doc "issue-425"} test-symbol-comparison
-  (is (= [2]
-        (d/q
-          '[:find [?e ...]
-            :where [?e :s b]]
-          '[[1 :s a]
-            [2 :s b]])))
+  (is (tdc/query-collection?
+       (d/q
+         '[:find [?e ...]
+           :where [?e :s b]]
+         '[[1 :s a]
+           [2 :s b]])
+       [2]))
   (let [db (-> (d/empty-db)
-             (d/db-with '[{:db/id 1, :s a}
-                          {:db/id 2, :s b}]))]
-    (is (= [2]
-          (d/q
-            '[:find [?e ...]
-              :where [?e :s b]]
-            db)))))
+             (d/db-with
+              [{:db/id 1
+                :s (Datascript_runtime.Data_value.Symbol "a")}
+               {:db/id 2
+                :s (Datascript_runtime.Data_value.Symbol "b")}]))]
+    (is (tdc/query-collection?
+         (d/q
+           '[:find [?e ...]
+             :where [?e :s b]]
+           db)
+         [2]))))
 
 (deftest ^{:doc "issue-462"} test-constant-substitution
-  (let [cnt+q (fn [query db & sources]
-                (let [*cnt (volatile! 0)
-                      db'  (d/filter db
-                             (fn [db datom]
-                               (vswap! *cnt inc)
-                               true))
-                      res  (apply d/q query db' sources)]
-                  [@*cnt res]))
-        schema {:a {:db/index true}
-                :b {:db/index true}
-                :c {:db/index true}}
-        db     (-> (d/empty-db schema)
+  (let [db     (-> (d/empty-db {:a {:db/index true}
+                                :b {:db/index true}
+                                :c {:db/index true}})
                  (d/db-with
-                   (for [eid  (range 1 11)
-                         attr [:a :b :c]]
-                     [:db/add eid attr (str eid (name attr))])))]
-    (is (= [1 #{["5b"]}] (cnt+q '[:find ?v :where [5 :b ?v]] db)))
-    (is (= [1 #{[:b]}]   (cnt+q '[:find ?a :where [5 ?a "5b"]] db)))
-    (is (= [1 #{[5]}]    (cnt+q '[:find ?e :where [?e :b "5b"]] db)))
-    (is (= [1 #{[5 :b "5b"]}] (cnt+q '[:find ?e ?a ?v :in $ ?e ?a :where [?e ?a ?v]] db 5 :b)))
-    (is (= [2 #{[5 :b "5b"]}] (cnt+q '[:find ?e2 ?a ?v :in $ ?a ?v :where [?e ?a ?v] [?e2 ?a ?v]] db :b "5b")))
-    (is (= [3 #{[:a "5a"] [:b "5b"] [:c "5c"]}] (cnt+q '[:find ?a ?v :in $ ?e :where [?e ?a ?v]] db 5)))
-    (is (= [1 #{[5 :b]}] (cnt+q '[:find ?e ?a :where [?e ?a "5b"]] db)))
-    (is (= [1 #{[5 :b]}] (cnt+q '[:find ?e ?a :in $ ?v :where [?e ?a ?v]] db "5b")))
-    (is (= [1 #{[5 :b]}] (cnt+q '[:find ?e ?a :in $ [?v ...] :where [?e ?a ?v]] db ["5b"])))
-    (is (= [1 #{[5 :b]}] (cnt+q '[:find ?e ?a :where [(ground "5b") ?v] [?e ?a ?v]] db)))))
+                   (vec
+                    (for [eid  (range 1 11)
+                          attr [:a :b :c]]
+                      (db/tx-add
+                       (Datascript_runtime.Data_value.Entity_id eid)
+                       attr
+                       (Datascript_runtime.Data_value.String
+                        (str eid (name attr))))))))]
+    (let [counter (volatile! 0)
+          filtered (d/filter db
+                     (fn [_ _]
+                       (vswap! counter inc)
+                       true))
+          result (d/q '[:find ?v :where [5 :b ?v]] filtered)]
+      (is (= 1 @counter))
+      (is (tdc/query-relation? result [["5b"]])))
+    (let [counter (volatile! 0)
+          filtered (d/filter db
+                     (fn [_ _]
+                       (vswap! counter inc)
+                       true))
+          result (d/q '[:find ?a :where [5 ?a "5b"]] filtered)]
+      (is (= 1 @counter))
+      (is (tdc/query-relation? result [[:b]])))
+    (let [counter (volatile! 0)
+          filtered (d/filter db
+                     (fn [_ _]
+                       (vswap! counter inc)
+                       true))
+          result (d/q '[:find ?e :where [?e :b "5b"]] filtered)]
+      (is (= 1 @counter))
+      (is (tdc/query-relation? result [[5]])))
+    (let [counter (volatile! 0)
+          filtered (d/filter db
+                     (fn [_ _]
+                       (vswap! counter inc)
+                       true))
+          result
+          (d/q '[:find ?e ?a ?v
+                 :in $ ?e ?a
+                 :where [?e ?a ?v]]
+               filtered 5 :b)]
+      (is (= 1 @counter))
+      (is (tdc/query-relation? result [[5 :b "5b"]])))
+    (let [counter (volatile! 0)
+          filtered (d/filter db
+                     (fn [_ _]
+                       (vswap! counter inc)
+                       true))
+          result
+          (d/q '[:find ?e2 ?a ?v
+                 :in $ ?a ?v
+                 :where [?e ?a ?v]
+                        [?e2 ?a ?v]]
+               filtered :b "5b")]
+      (is (= 2 @counter))
+      (is (tdc/query-relation? result [[5 :b "5b"]])))
+    (let [counter (volatile! 0)
+          filtered (d/filter db
+                     (fn [_ _]
+                       (vswap! counter inc)
+                       true))
+          result
+          (d/q '[:find ?a ?v
+                 :in $ ?e
+                 :where [?e ?a ?v]]
+               filtered 5)]
+      (is (= 3 @counter))
+      (is (tdc/query-relation?
+           result
+           [[:a "5a"] [:b "5b"] [:c "5c"]])))
+    (let [counter (volatile! 0)
+          filtered (d/filter db
+                     (fn [_ _]
+                       (vswap! counter inc)
+                       true))
+          result (d/q '[:find ?e ?a :where [?e ?a "5b"]] filtered)]
+      (is (= 1 @counter))
+      (is (tdc/query-relation? result [[5 :b]])))
+    (let [counter (volatile! 0)
+          filtered (d/filter db
+                     (fn [_ _]
+                       (vswap! counter inc)
+                       true))
+          result
+          (d/q '[:find ?e ?a
+                 :in $ ?v
+                 :where [?e ?a ?v]]
+               filtered "5b")]
+      (is (= 1 @counter))
+      (is (tdc/query-relation? result [[5 :b]])))
+    (let [counter (volatile! 0)
+          filtered (d/filter db
+                     (fn [_ _]
+                       (vswap! counter inc)
+                       true))
+          result
+          (d/q '[:find ?e ?a
+                 :in $ [?v ...]
+                 :where [?e ?a ?v]]
+               filtered ["5b"])]
+      (is (= 1 @counter))
+      (is (tdc/query-relation? result [[5 :b]])))
+    (let [counter (volatile! 0)
+          filtered (d/filter db
+                     (fn [_ _]
+                       (vswap! counter inc)
+                       true))
+          result
+          (d/q '[:find ?e ?a
+                 :where [(ground "5b") ?v]
+                        [?e ?a ?v]]
+               filtered)]
+      (is (= 1 @counter))
+      (is (tdc/query-relation? result [[5 :b]])))))

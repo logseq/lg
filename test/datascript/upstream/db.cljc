@@ -31,6 +31,73 @@
 (def ^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> empty-schema
   {})
 
+(defn ^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> effective-schema
+  [^:option<map<keyword;map<keyword;Datascript_runtime.Data_value.t>>> maybe-schema]
+  (if-some [schema maybe-schema] schema empty-schema))
+
+(defn schema-map
+  {:inline
+   (fn [source]
+     (let [data-value
+           (fn data-value [value]
+             (cond
+               (nil? value)
+               (list 'Datascript_runtime.Data_value.Nil)
+
+               (string? value)
+               (list 'Datascript_runtime.Data_value.String value)
+
+               (keyword? value)
+               (list
+                'Datascript_runtime.Data_value.Keyword
+                (str value))
+
+               (= value true)
+               (list 'Datascript_runtime.Data_value.Bool true)
+
+               (= value false)
+               (list 'Datascript_runtime.Data_value.Bool false)
+
+               (float? value)
+               (list 'Datascript_runtime.Data_value.Float value)
+
+               (vector? value)
+               (list
+                'Datascript_runtime.Data_value.vector_of_vector
+                (list
+                 'vec
+                 (cons
+                  'list
+                  (map data-value value))))
+
+               (or (symbol? value) (seq? value))
+               value
+
+               :else
+               (list 'Datascript_runtime.Data_value.Int value)))]
+       (if (map? source)
+         (if (empty? source)
+           'datascript.db/empty-schema
+           (list
+            'zipmap
+            (vec (map first source))
+            (vec
+             (map
+              (fn [entry]
+                (let [properties (second entry)]
+                  (list
+                   'zipmap
+                   (vec (map first properties))
+                   (vec
+                    (map
+                     (fn [property]
+                       (data-value (second property)))
+                     properties)))))
+              source))))
+         source)))}
+  [^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> source]
+  source)
+
 (def ^:map<int;keyword> empty-schema-idents
   {})
 
@@ -73,11 +140,16 @@
    (defmacro defcomp [name args & body]
      `(defn ~name ~args ~@body)))
 
+(defn combine-hashes [left right]
+  (hash-combine left right))
+
 ;; ----------------------------------------------------------------------------
 
-(declare equiv-datom datom-hash datom-tx datom-added)
+(declare equiv-datom datom-hash)
 
 (defprotocol IDatom
+  (datom-tx [datom] :int)
+  (datom-added [datom] :bool)
   (datom-get-idx [datom] :int)
   (datom-set-idx [datom ^:int value] :unit))
 
@@ -88,6 +160,10 @@
                 ^:mutable ^int idx
                 ^:mutable ^int cached-hash]
   IDatom
+  (datom-tx [_]
+    (if (pos? tx) tx (- tx)))
+  (datom-added [_]
+    (pos? tx))
   (datom-get-idx [_] idx)
   (datom-set-idx [_ value]
     (set! idx value)
@@ -105,17 +181,28 @@
         value)
       cached-hash)))
 
-(defn datom-tx [^Datom d]
-  (let [tx (.-tx d)]
-    (if (pos? tx) tx (- tx))))
-
 (defn ^:keyword datom-attr [^Datom datom]
   (.-a datom))
 
-(defn datom-added [^Datom d]
-  (pos? (.-tx d)))
+(defn ^:string datom-print-string [^Datom datom]
+  (str
+   "#datascript/Datom ["
+   (.-e datom)
+   " "
+   (.-a datom)
+   " "
+   (Datascript_runtime.Data_value.to_edn_string (.-v datom))
+   " "
+   (datom-tx datom)
+   " "
+   (datom-added datom)
+   "]"))
 
-(defn ^Datom datom
+(defmethod print-method Datom
+  [^Datom datom ^:buffer writer]
+  (Buffer.add_string writer (datom-print-string datom)))
+
+(defn ^Datom datom-closed
   ([^:int e
     ^:keyword a
     ^:Datascript_runtime.Data_value.t v]
@@ -129,8 +216,69 @@
     ^:keyword a
     ^:Datascript_runtime.Data_value.t v
     ^:int tx
-    ^boolean added]
+   ^boolean added]
    (Datom. e a v (if added tx (- tx)) 0 0)))
+
+(defn datom
+  {:inline
+   (fn [e a v & rest]
+     (let [value
+           (if (string? v)
+             (list
+              'Datascript_runtime.Data_value.String
+              v)
+             (if (keyword? v)
+               (list
+                'Datascript_runtime.Data_value.Keyword
+                (str v))
+               (if (= v true)
+                 (list
+                  'Datascript_runtime.Data_value.Bool
+                  true)
+                 (if (= v false)
+                   (list
+                    'Datascript_runtime.Data_value.Bool
+                    false)
+                   (if (or (symbol? v) (seq? v))
+                     v
+                     (list
+                      'Datascript_runtime.Data_value.Int
+                      v))))))]
+       (cons
+        'datascript.db/datom-closed
+        (cons e (cons a (cons value rest))))))}
+  ([^:int e
+    ^:keyword a
+    ^:Datascript_runtime.Data_value.t v]
+   (datom-closed e a v))
+  ([^:int e
+    ^:keyword a
+    ^:Datascript_runtime.Data_value.t v
+    ^:int tx]
+   (datom-closed e a v tx))
+  ([^:int e
+    ^:keyword a
+    ^:Datascript_runtime.Data_value.t v
+    ^:int tx
+   ^boolean added]
+   (datom-closed e a v tx added)))
+
+(defn datom? [value]
+  (satisfies? IDatom value))
+
+(defn ^Datom datom-from-reader
+  [^:Datascript_runtime.Serialization_value.datom_reader_value value]
+  (datom-closed
+   (Datascript_runtime.Serialization_value.reader_datom_entity value)
+   (keyword
+    (Datascript_runtime.Serialization_value.reader_datom_attribute value))
+   (Datascript_runtime.Serialization_value.reader_datom_value value)
+   (Datascript_runtime.Serialization_value.reader_datom_transaction value)
+   (Datascript_runtime.Serialization_value.reader_datom_added value)))
+
+(defn ^Datom datom-from-edn-string [^:string source]
+  (datom-from-reader
+   (Datascript_runtime.Serialization_value.read_datom source)))
 
 (def ^:private attr-wildcard (keyword ""))
 (def ^:private value-wildcard (Datascript_runtime.Data_value.Nil))
@@ -213,6 +361,63 @@
        (< left# right#) int-compare-less
        (> left# right#) int-compare-greater
        :else int-compare-equal)))
+
+(defn- ^:string entity-ref-class-name
+  [^:Datascript_runtime.Data_value.entity_ref value]
+  (match value
+    (Datascript_runtime.Data_value.Entity_id _) "Number"
+    (Datascript_runtime.Data_value.Temp_id _) "String"
+    (Datascript_runtime.Data_value.Auto_tempid _) "datascript.db/AutoTempid"
+    Datascript_runtime.Data_value.Current_tx "cljs.core/Keyword"
+    (Datascript_runtime.Data_value.Ident _) "cljs.core/Keyword"
+    (Datascript_runtime.Data_value.Lookup_ref _ _) "cljs.core/PersistentVector"))
+
+(defn- ^:string data-value-class-name
+  [^:Datascript_runtime.Data_value.t value]
+  (match value
+    Datascript_runtime.Data_value.Nil "nil"
+    (Datascript_runtime.Data_value.Int _) "Number"
+    (Datascript_runtime.Data_value.Wide_int _) "Number"
+    (Datascript_runtime.Data_value.Float _) "Number"
+    (Datascript_runtime.Data_value.String _) "String"
+    (Datascript_runtime.Data_value.Symbol _) "cljs.core/Symbol"
+    (Datascript_runtime.Data_value.Bool _) "Boolean"
+    (Datascript_runtime.Data_value.Keyword _) "cljs.core/Keyword"
+    (Datascript_runtime.Data_value.Uuid _) "cljs.core/UUID"
+    (Datascript_runtime.Data_value.Instant _) "Date"
+    (Datascript_runtime.Data_value.Regex _) "RegExp"
+    (Datascript_runtime.Data_value.Ref _) "Number"
+    (Datascript_runtime.Data_value.List _) "cljs.core/List"
+    (Datascript_runtime.Data_value.Vector _) "cljs.core/PersistentVector"
+    (Datascript_runtime.Data_value.Map _) "cljs.core/PersistentArrayMap"
+    (Datascript_runtime.Data_value.Set _) "cljs.core/PersistentHashSet"
+    (Datascript_runtime.Data_value.Tuple _) "cljs.core/PersistentVector"
+    Datascript_runtime.Data_value.Tx_ref "cljs.core/Keyword"
+    (Datascript_runtime.Data_value.Ref_to entity-ref)
+    (entity-ref-class-name entity-ref)))
+
+(defn ^boolean class-identical?
+  [^:Datascript_runtime.Data_value.t left
+   ^:Datascript_runtime.Data_value.t right]
+  (= (data-value-class-name left) (data-value-class-name right)))
+
+(defn ^long class-compare
+  [^:Datascript_runtime.Data_value.t left
+   ^:Datascript_runtime.Data_value.t right]
+  (compare (data-value-class-name left) (data-value-class-name right)))
+
+(defn ^long ihash [^:Datascript_runtime.Data_value.t value]
+  (Datascript_runtime.Data_value.hash value))
+
+(defn ^boolean seqable? [^:Datascript_runtime.Data_value.t value]
+  (match value
+    Datascript_runtime.Data_value.Nil true
+    (Datascript_runtime.Data_value.List _) true
+    (Datascript_runtime.Data_value.Vector _) true
+    (Datascript_runtime.Data_value.Map _) true
+    (Datascript_runtime.Data_value.Set _) true
+    (Datascript_runtime.Data_value.Tuple _) true
+    _ false))
 
 (defn ^number value-compare
   [^:Datascript_runtime.Data_value.t x
@@ -304,7 +509,7 @@
 
 #?(:clj
    (defmacro validate-val [v at]
-     `(when (nil? ~v)
+     `(when (Datascript_runtime.Data_value.is_nil ~v)
         (let [at# ~at]
           (util/raise "Cannot store nil as a value at " at#
                       {:error :transact/syntax, :value nil, :context at#})))))
@@ -313,11 +518,7 @@
 
 (defprotocol ISearch
   (-search
-   [data
-    ^:option<int> e
-    ^:option<keyword> a
-    ^:option<Datascript_runtime.Data_value.t> v
-    ^:option<int> tx]
+   [data pattern]
    :seq<Datom>))
 
 (defprotocol IIndexAccess
@@ -387,14 +588,55 @@
 (defprotocol IDB
   (-schema
    [db]
-   :map<keyword;map<keyword;Datascript_runtime.Data_value.t>>)
+   :option<map<keyword;map<keyword;Datascript_runtime.Data_value.t>>>)
   (-attrs-by [db ^:keyword property] :set<keyword>)
   (-attr-tuples [db] :map<keyword;map<keyword;int>>)
   (-unfiltered-db [db] :datascript.db/DB))
 
 ;; ----------------------------------------------------------------------------
 
-(defrecord DB [^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema
+(type-record tx-entity-form
+  (values :map<keyword;Datascript_runtime.Data_value.t>)
+  (attrs :vector<keyword>))
+
+(type-variant tx-entry-of [db]
+  TxNil
+  (TxEntity :tx-entity-form)
+  (TxCall :fn<db;vector<tx-entry-of<db>>>)
+  (TxInstallFunction
+   :map<keyword;Datascript_runtime.Data_value.t>
+   :fn<db;Datascript_runtime.Data_value.t;vector<tx-entry-of<db>>>)
+  (TxInvokeFunction
+   :keyword
+   :vector<Datascript_runtime.Data_value.t>)
+  (TxInvalid :string)
+  (TxAdd :Datascript_runtime.Data_value.entity_ref
+         :keyword
+         :Datascript_runtime.Data_value.t
+         :option<int>)
+  (TxRetract :Datascript_runtime.Data_value.entity_ref
+             :keyword
+             :option<Datascript_runtime.Data_value.t>)
+  (TxCas :keyword
+         :Datascript_runtime.Data_value.entity_ref
+         :keyword
+         :option<Datascript_runtime.Data_value.t>
+         :Datascript_runtime.Data_value.t)
+  (TxRetractAttribute :Datascript_runtime.Data_value.entity_ref :keyword)
+  (TxRetractEntity :Datascript_runtime.Data_value.entity_ref)
+  (TxSetTuple :Datascript_runtime.Data_value.entity_ref
+              :keyword
+              :option<Datascript_runtime.Data_value.t>)
+  TxFlushTuples)
+
+(def ^:private next-db-identity (atom 0))
+
+(defn- ^int fresh-db-identity []
+  (swap! next-db-identity
+         (fn [current]
+           (inc current))))
+
+(defrecord DB [^:option<map<keyword;map<keyword;Datascript_runtime.Data_value.t>>> schema
                ^:map<int;keyword> schema-idents
                ^:map<int;map<keyword;Datascript_runtime.Data_value.t>> schema-drafts
                ^:set/btset<Datom;Datascript_runtime.Storage_backend.t;tuple<int;Datascript_runtime.Storage_value.t>> eavt
@@ -403,7 +645,10 @@
                ^:int max-eid
                ^:int max-tx
                ^datascript.db/ReverseSchema rschema
-               ^:ref<int> hash]
+               ^:map<keyword;fn<DB;Datascript_runtime.Data_value.t;vector<tx-entry-of<DB>>>> tx-functions
+               ^:int identity-hash
+               ^:ref<int> hash
+               ^:map<keyword;Datascript_runtime.Data_value.t> metadata]
   IDB
   (-schema [db] (.-schema db))
   (-attrs-by [db property]
@@ -421,13 +666,38 @@
   (-attr-tuples [db] (:attr-tuples (.-rschema db)))
   (-unfiltered-db [db] db)
 
+  IEmptyableCollection
+  (-empty [db]
+    (assoc
+     db
+     :schema-idents empty-schema-idents
+     :schema-drafts empty-schema-drafts
+     :eavt (empty (.-eavt db))
+     :aevt (empty (.-aevt db))
+     :avet (empty (.-avet db))
+     :max-eid e0
+     :max-tx tx0
+     :tx-functions {}
+     :identity-hash (fresh-db-identity)
+     :hash (atom 0)))
+
   ISearch
-  (-search [db
-            ^:option<int> e
-            ^:option<keyword> a
-            ^:option<Datascript_runtime.Data_value.t> v
-            ^:option<int> tx]
-           (let [eavt       (.-eavt db)
+  (-search [db ^Datom pattern]
+           (let [e          (if (= e0 (.-e pattern))
+                              None
+                              (Some (.-e pattern)))
+                 a          (if (= attr-wildcard (.-a pattern))
+                              None
+                              (Some (.-a pattern)))
+                 v          (if
+                              (Datascript_runtime.Data_value.is_nil
+                               (.-v pattern))
+                              None
+                              (Some (.-v pattern)))
+                 tx         (if (= tx0 (datom-tx pattern))
+                              None
+                              (Some (datom-tx pattern)))
+                 eavt       (.-eavt db)
                  aevt       (.-aevt db)
                  avet       (.-avet db)
                  pred       (fn [^:Datascript_runtime.Data_value.t candidate]
@@ -515,6 +785,98 @@
                            (resolve-datom db nil attr start nil e0 tx0)
                            (resolve-datom db nil attr end nil emax txmax))))
 
+(type-alias tx-entry :tx-entry-of<DB>)
+
+(defn ^datascript.db/DB with-db-metadata
+  [^datascript.db/DB database
+   ^:map<keyword;Datascript_runtime.Data_value.t> metadata]
+  (assoc database :metadata metadata))
+
+(defn ^:map<keyword;Datascript_runtime.Data_value.t> db-metadata
+  [^datascript.db/DB database]
+  (.-metadata database))
+
+(type-record database-diff
+  (only-left :option<vector<Datom>>)
+  (only-right :option<vector<Datom>>)
+  (both :option<vector<Datom>>))
+
+(defn ^:option<vector<Datom>> non-empty-datoms
+  [^:vector<Datom> datoms]
+  (if (empty? datoms)
+    None
+    (Some datoms)))
+
+(defn ^:vector<Datom> append-datoms-from
+  [^:vector<Datom> result
+   ^:vector<Datom> source
+   ^:int start-index]
+  (loop [result result
+         index start-index]
+    (if (< index (count source))
+      (recur (conj result (nth source index)) (inc index))
+      result)))
+
+(defn ^database-diff diff-databases
+  [^datascript.db/DB left ^datascript.db/DB right]
+  (let [^:vector<Datom> left-datoms
+        (vec (set/set-seq (.-eavt left)))
+        ^:vector<Datom> right-datoms
+        (vec (set/set-seq (.-eavt right)))]
+    (loop [left-index 0
+           right-index 0
+           ^:vector<Datom> only-left []
+           ^:vector<Datom> only-right []
+           ^:vector<Datom> both []]
+      (cond
+        (= left-index (count left-datoms))
+        (record database-diff
+          (only-left (non-empty-datoms only-left))
+          (only-right
+           (non-empty-datoms
+            (append-datoms-from
+             only-right right-datoms right-index)))
+          (both (non-empty-datoms both)))
+
+        (= right-index (count right-datoms))
+        (record database-diff
+          (only-left
+           (non-empty-datoms
+            (append-datoms-from
+             only-left left-datoms left-index)))
+          (only-right (non-empty-datoms only-right))
+          (both (non-empty-datoms both)))
+
+        :else
+        (let [left-datom (nth left-datoms left-index)
+              right-datom (nth right-datoms right-index)
+              comparison
+              (cmp-datoms-eav-quick left-datom right-datom)]
+          (cond
+            (= comparison 0)
+            (recur
+             (inc left-index)
+             (inc right-index)
+             only-left
+             only-right
+             (conj both left-datom))
+
+            (< comparison 0)
+            (recur
+             (inc left-index)
+             right-index
+             (conj only-left left-datom)
+             only-right
+             both)
+
+            :else
+            (recur
+             left-index
+             (inc right-index)
+             only-left
+             (conj only-right right-datom)
+             both)))))))
+
 (defn validate-indexed
   [^datascript.db/DB db
    ^:keyword index
@@ -538,6 +900,7 @@
 ;; ----------------------------------------------------------------------------
 (defrecord FilteredDB [^datascript.db/DB unfiltered-db
                        ^:fn<datascript.db/Datom;bool> pred
+                       ^:int identity-hash
                        ^:ref<int> hash]
   IDB
   (-schema [db]
@@ -553,8 +916,8 @@
                   (.-unfiltered-db db))
 
   ISearch
-  (-search [db e a v tx]
-           (filter (.-pred db) (-search (.-unfiltered-db db) e a v tx)))
+  (-search [db ^Datom pattern]
+           (filter (.-pred db) (-search (.-unfiltered-db db) pattern)))
 
   IIndexAccess
   (-datoms [db index c0 c1 c2 c3]
@@ -568,6 +931,76 @@
 
   (-index-range [db attr start end]
                 (filter (.-pred db) (-index-range (.-unfiltered-db db) attr start end))))
+
+(defn ^:string database-datom-print-string [^Datom datom]
+  (str
+   "["
+   (.-e datom)
+   " "
+   (.-a datom)
+   " "
+   (Datascript_runtime.Data_value.to_edn_string (.-v datom))
+   " "
+   (datom-tx datom)
+   "]"))
+
+(defn ^:string database-parts-print-string
+  [^:option<map<keyword;map<keyword;Datascript_runtime.Data_value.t>>> schema
+   ^:seq<Datom> datoms]
+  (str
+   "#datascript/DB {:schema "
+   (Datascript_runtime.Serialization_value.schema_to_string
+    schema)
+   ", :datoms ["
+   (reduce
+    (fn [^:string result ^Datom datom]
+      (let [printed (database-datom-print-string datom)]
+        (if (empty? result)
+          printed
+          (str result " " printed))))
+    ""
+    datoms)
+   "]}"))
+
+(defn ^:string database-print-string [database]
+  (database-parts-print-string
+   (-schema database)
+   (-datoms database :eavt nil nil nil nil)))
+
+(defn pr-db [database ^:buffer writer _opts]
+  (Buffer.add_string writer (database-print-string database)))
+
+(defn ^:string filtered-database-print-string
+  [^FilteredDB database]
+  (database-parts-print-string
+   (.-schema (.-unfiltered-db database))
+   (-datoms database :eavt nil nil nil nil)))
+
+(defmethod print-method DB
+  [^datascript.db/DB database ^:buffer writer]
+  (Buffer.add_string writer (database-print-string database)))
+
+(defmethod print-method FilteredDB
+  [^FilteredDB database ^:buffer writer]
+  (Buffer.add_string writer (filtered-database-print-string database)))
+
+(type-variant database-view
+  (DatabaseView :datascript.db/DB)
+  (FilteredDatabaseView :datascript.db/FilteredDB))
+
+(defprotocol IDatabaseView
+  (-database-view [db] :datascript.db/database-view))
+
+(extend-type DB
+  IDatabaseView
+  (-database-view [db] (DatabaseView db)))
+
+(extend-type FilteredDB
+  IDatabaseView
+  (-database-view [db] (FilteredDatabaseView db)))
+
+(defn ^database-view database-view [database]
+  (-database-view database))
 
 (defprotocol IFilteredView
   (-filtered? [db] :bool)
@@ -584,6 +1017,7 @@
      db
      (fn [^datascript.db/Datom datom]
        (view-pred db datom))
+     (fresh-db-identity)
      (atom 0))))
 
 (extend-type FilteredDB
@@ -600,15 +1034,23 @@
          (and
           (original-pred datom)
           (view-pred original-db datom)))
+       (fresh-db-identity)
        (atom 0)))))
+
+(defn- search-pattern
+  [^:option<int> e
+   ^:option<keyword> a
+   ^:option<Datascript_runtime.Data_value.t> v
+   ^:option<int> tx]
+  (datom-bound e a v tx e0 tx0))
 
 (defn- ^:option<Datom> fsearch
   [^datascript.db/DB data
    ^:option<int> e
    ^:option<keyword> a
-   ^:option<Datascript_runtime.Data_value.t> v
+  ^:option<Datascript_runtime.Data_value.t> v
    ^:option<int> tx]
-  (first (-search data e a v tx)))
+  (first (-search data (search-pattern e a v tx))))
 
 (defn ^:option<Datom> search-ea
   [^datascript.db/DB data ^:int eid ^:keyword attr]
@@ -649,7 +1091,7 @@
             (reduce
              (fn [^:int value ^Datom datom]
                (Hashtbl.hash (tuple value (datom-hash datom))))
-             (schema-hash (:schema database))
+             (schema-hash (effective-schema (:schema database)))
              (set/set-seq (.-eavt database)))]
         (reset! (:hash database) value)
         value)
@@ -679,7 +1121,7 @@
             (reduce
              (fn [^:int value ^Datom datom]
                (Hashtbl.hash (tuple value (datom-hash datom))))
-             (schema-hash (-schema database))
+             (schema-hash (effective-schema (-schema database)))
              (filtered-db-datoms database))]
         (reset! (:hash database) value)
         value)
@@ -712,6 +1154,22 @@
 
   ICounted
   (-count [^datascript.db/FilteredDB db] (filtered-db-count db)))
+
+(defn ^datascript.db/DB db-transient
+  [^datascript.db/DB database]
+  (assoc
+   database
+   :eavt (-as-transient (:eavt database))
+   :aevt (-as-transient (:aevt database))
+   :avet (-as-transient (:avet database))))
+
+(defn ^datascript.db/DB db-persistent!
+  [^datascript.db/DB database]
+  (assoc
+   database
+   :eavt (-persistent! (:eavt database))
+   :aevt (-persistent! (:aevt database))
+   :avet (-persistent! (:avet database))))
 
 ;; ----------------------------------------------------------------------------
 
@@ -815,6 +1273,23 @@
    (str "Bad attribute specification for " a
         ": " k " has an invalid value")))
 
+(defn- ^:string schema-bool-value-description
+  [^:Datascript_runtime.Data_value.t value]
+  (match value
+    (Datascript_runtime.Data_value.String string-value)
+    (str "\"" string-value "\"")
+    _ "<unsupported value>"))
+
+(defn- invalid-schema-bool-value
+  [^:keyword attr
+   ^:keyword key
+   ^:Datascript_runtime.Data_value.t value]
+  (Stdlib.invalid_arg
+   (str
+    "Bad attribute specification for {"
+    attr " {" key " " (schema-bool-value-description value)
+    "}}, expected one of #{true false}")))
+
 (defn- ^:option<keyword> schema-keyword
   [^:map<keyword;Datascript_runtime.Data_value.t> entry ^:keyword key]
   (if-some [value (get entry key)]
@@ -846,7 +1321,7 @@
   (when-some [value (get entry k)]
     (when-not
       (some? (Datascript_runtime.Data_value.bool_value value))
-      (invalid-schema-value a k))))
+      (invalid-schema-bool-value a k value))))
 
 (defn- validate-tuple-schema
   [^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema
@@ -863,7 +1338,7 @@
       (do
         (when (empty? attrs)
           (Stdlib.invalid_arg
-           (str a " :db/tupleAttrs cannot be empty")))
+           (str a " :db/tupleAttrs can’t be empty")))
 
         (doseq [attr-name attrs]
           (let [attr (keyword attr-name)
@@ -871,17 +1346,20 @@
             (when (contains? dependency :db/tupleAttrs)
               (Stdlib.invalid_arg
                (str a
-                    " :db/tupleAttrs cannot depend on another tuple attribute: "
+                    " :db/tupleAttrs can’t depend on another tuple attribute: "
                     attr)))
 
             (when (= (schema-keyword dependency :db/cardinality)
                      (Some :db.cardinality/many))
               (Stdlib.invalid_arg
                (str a
-                    " :db/tupleAttrs cannot depend on a many-valued attribute: "
+                    " :db/tupleAttrs can’t depend on :db.cardinality/many attribute: "
                     attr))))))
       (Stdlib.invalid_arg
-       (str a " :db/tupleAttrs must be a keyword vector or list")))))
+       (str
+        a
+        " :db/tupleAttrs must be a sequential collection, got: "
+        (Datascript_runtime.Data_value.to_edn_string tuple-value))))))
 
 (defn- validate-schema
   [^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema]
@@ -903,15 +1381,17 @@
        (when-not (= (schema-keyword entry :db/valueType)
                     (Some :db.type/ref))
          (Stdlib.invalid_arg
-          (str "Bad attribute specification for " a
-               ": :db/isComponent requires :db.type/ref"))))
+          (str
+           "Bad attribute specification for " a
+           ": {:db/isComponent true} should also have "
+           "{:db/valueType :db.type/ref}"))))
 
      (when (= (schema-keyword entry :db/valueType)
               (Some :db.type/tuple))
        (when-not (contains? entry :db/tupleAttrs)
          (Stdlib.invalid_arg
           (str "Bad attribute specification for " a
-               ": :db.type/tuple requires :db/tupleAttrs"))))
+               ": {:db/valueType :db.type/tuple} should also have :db/tupleAttrs"))))
 
      (validate-tuple-schema schema a entry)
      (Stdlib.ignore 0))
@@ -920,24 +1400,45 @@
 
 (type-record database-options
   (storage :option<Datascript_runtime.Storage_backend.t>)
-  (ref-type :Lg_runtime.Runtime_ref_type.t))
+  (ref-type :Lg_runtime.Runtime_ref_type.t)
+  (branching-factor :int))
 
 (defn ^database-options default-options []
   (record database-options
           (storage None)
-          (ref-type (Lg_runtime.Runtime_ref_type.Weak))))
+          (ref-type (Lg_runtime.Runtime_ref_type.Weak))
+          (branching-factor 32)))
 
 (defn ^database-options options-with-storage
   [^Datascript_runtime.Storage_backend.t storage]
   (record database-options
           (storage (Some storage))
-          (ref-type (Lg_runtime.Runtime_ref_type.Weak))))
+          (ref-type (Lg_runtime.Runtime_ref_type.Weak))
+          (branching-factor 32)))
+
+(defn ^database-options options-assoc-storage
+  [^database-options opts
+   ^Datascript_runtime.Storage_backend.t storage]
+  (record database-options
+          (storage (Some storage))
+          (ref-type (.-ref-type opts))
+          (branching-factor (.-branching-factor opts))))
 
 (defn ^database-options options-with-ref-type
   [^database-options opts ^:Lg_runtime.Runtime_ref_type.t ref-type]
   (record database-options
           (storage (.-storage opts))
-          (ref-type ref-type)))
+          (ref-type ref-type)
+          (branching-factor (.-branching-factor opts))))
+
+(defn ^database-options options-with-branching-factor
+  [^database-options opts ^:int branching-factor]
+  (when (< branching-factor 2)
+    (Stdlib.invalid_arg "Branching factor must be at least 2"))
+  (record database-options
+          (storage (.-storage opts))
+          (ref-type (.-ref-type opts))
+          (branching-factor branching-factor)))
 
 (defn ^:option<Datascript_runtime.Storage_backend.t> options-storage
   [^database-options opts]
@@ -947,20 +1448,25 @@
   [^database-options opts]
   (.-ref-type opts))
 
+(defn ^:int options-branching-factor [^database-options opts]
+  (.-branching-factor opts))
+
 (defn- empty-datom-set [comparator ^database-options opts]
-  (set/with-ref-type
-   (set/sorted-set-with-comparator
-    comparator
-    None)
-   (options-ref-type opts)))
+  (set/with-branching-factor
+   (set/with-ref-type
+    (set/sorted-set-with-comparator
+     comparator
+     None)
+    (options-ref-type opts))
+   (options-branching-factor opts)))
 
 (defn ^datascript.db/DB empty-db
   [^:option<map<keyword;map<keyword;Datascript_runtime.Data_value.t>>> maybe-schema
    ^database-options opts]
-  (let [schema (if-some [schema maybe-schema] schema empty-schema)]
+  (let [schema (effective-schema maybe-schema)]
   (validate-schema schema)
   (record DB
-          (schema schema)
+          (schema maybe-schema)
           (schema-idents empty-schema-idents)
           (schema-drafts empty-schema-drafts)
           (eavt (empty-datom-set cmp-datoms-eavt opts))
@@ -969,7 +1475,10 @@
           (max-eid e0)
           (max-tx tx0)
           (rschema (rschema (merge-schema implicit-schema schema)))
-          (hash (atom 0)))))
+          (tx-functions {})
+          (identity-hash (fresh-db-identity))
+          (hash (atom 0))
+          (metadata {}))))
 
 (defn- init-max-eid [rschema eavt avet]
   (let [max     (fn [^:int current ^:option<int> candidate]
@@ -1021,24 +1530,48 @@
    ^:array<Datom> datoms
    ^:int length
    ^database-options opts]
-  (set/from-sorted-array
-   comparator
-   datoms
-   length
-   None
-   (options-ref-type opts)))
+  (set/with-branching-factor
+   (set/from-sorted-array
+    comparator
+    datoms
+    length
+    None
+    (options-ref-type opts))
+   (options-branching-factor opts)))
 
-(defn ^datascript.db/DB init-db
+(defn ^Datom normalize-init-datom
+  [^ReverseSchema reverse-schema ^Datom source]
+  (if
+    (Lg_runtime.Core_set.String_set.mem
+     (datom-attr source)
+     (:ref-attrs reverse-schema))
+    (match (.-v source)
+      (Datascript_runtime.Data_value.Int eid)
+      (datom-closed
+       (.-e source)
+       (datom-attr source)
+       (Datascript_runtime.Data_value.Ref eid)
+       (datom-tx source)
+       (datom-added source))
+      _ source)
+    source))
+
+(defn ^datascript.db/DB init-db-with-schema-option
   ([^:array<Datom> datoms
-    ^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema]
-   (init-db datoms schema (default-options)))
+    ^:option<map<keyword;map<keyword;Datascript_runtime.Data_value.t>>> schema]
+   (init-db-with-schema-option datoms schema (default-options)))
   ([^:array<Datom> datoms
-    ^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema
+    ^:option<map<keyword;map<keyword;Datascript_runtime.Data_value.t>>> maybe-schema
     ^database-options opts]
+  (let [schema (effective-schema maybe-schema)]
   (validate-schema schema)
   (let [rschema     (rschema (merge-schema implicit-schema schema))
         indexed     (:indexed-attrs rschema)
-        arr         datoms
+        arr
+        (arrays/amap
+         (fn [^Datom datom]
+           (normalize-init-datom rschema datom))
+         datoms)
         _           (arrays/asort arr cmp-datoms-eavt-quick)
         eavt        (datom-set-from-sorted-array
                      cmp-datoms-eavt arr (arrays/alength arr) opts)
@@ -1046,10 +1579,10 @@
         aevt        (datom-set-from-sorted-array
                      cmp-datoms-aevt arr (arrays/alength arr) opts)
         avet-datoms (filter (fn [^Datom d]
-                             (Lg_runtime.Core_set.String_set.mem
+                           (Lg_runtime.Core_set.String_set.mem
                               (datom-attr d)
                               indexed))
-                           datoms)
+                           arr)
         avet-arr    (to-array avet-datoms)
         _           (arrays/asort avet-arr cmp-datoms-avet-quick)
         avet        (datom-set-from-sorted-array
@@ -1057,7 +1590,7 @@
         max-eid     (init-max-eid rschema eavt avet)
         max-tx      (init-max-tx arr)]
     (DB.
-     schema
+     maybe-schema
      empty-schema-idents
      empty-schema-drafts
      eavt
@@ -1066,10 +1599,38 @@
      max-eid
      max-tx
      rschema
-     (atom 0)))))
+     {}
+     (fresh-db-identity)
+     (atom 0)
+     {})))))
+
+(defn ^datascript.db/DB init-db
+  ([^:array<Datom> datoms
+    ^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema]
+   (init-db-with-schema-option datoms (Some schema)))
+  ([^:array<Datom> datoms
+    ^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema
+    ^database-options opts]
+   (init-db-with-schema-option datoms (Some schema) opts)))
+
+(defn ^datascript.db/DB db-from-reader
+  [^:Datascript_runtime.Serialization_value.database_reader_value value]
+  (let [datoms
+        (to-array
+         (map
+          datom-from-reader
+          (Datascript_runtime.Serialization_value.reader_database_datoms value)))]
+    (match
+     (Datascript_runtime.Serialization_value.reader_database_schema value)
+     (Some schema) (init-db datoms schema)
+     None (init-db-with-schema-option datoms None))))
+
+(defn ^datascript.db/DB db-from-edn-string [^:string source]
+  (db-from-reader
+   (Datascript_runtime.Serialization_value.read_database source)))
 
 (type-record db-snapshot
-  (schema :map<keyword;map<keyword;Datascript_runtime.Data_value.t>>)
+  (schema :option<map<keyword;map<keyword;Datascript_runtime.Data_value.t>>>)
   (schema-idents :option<map<int;keyword>>)
   (schema-drafts :option<map<int;map<keyword;Datascript_runtime.Data_value.t>>>)
   (rschema :option<datascript.db/ReverseSchema>)
@@ -1080,7 +1641,7 @@
   (max-tx :option<int>))
 
 (defn ^db-snapshot make-db-snapshot
-  [^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema
+  [^:option<map<keyword;map<keyword;Datascript_runtime.Data_value.t>>> schema
    ^:set/btset<Datom;Datascript_runtime.Storage_backend.t;tuple<int;Datascript_runtime.Storage_value.t>> eavt
    ^:set/btset<Datom;Datascript_runtime.Storage_backend.t;tuple<int;Datascript_runtime.Storage_value.t>> aevt
    ^:set/btset<Datom;Datascript_runtime.Storage_backend.t;tuple<int;Datascript_runtime.Storage_value.t>> avet
@@ -1099,7 +1660,8 @@
 
 (defn ^datascript.db/DB restore-db
   [^db-snapshot snapshot]
-  (let [schema (:schema snapshot)]
+  (let [schema (:schema snapshot)
+        schema-map (effective-schema schema)]
     (DB.
      schema
      (if-some [idents (:schema-idents snapshot)]
@@ -1115,11 +1677,14 @@
      (if-some [max-tx (:max-tx snapshot)] max-tx tx0)
      (if-some [reverse-schema (:rschema snapshot)]
        reverse-schema
-       (rschema (merge-schema implicit-schema schema)))
-     (atom 0))))
+       (rschema (merge-schema implicit-schema schema-map)))
+     {}
+     (fresh-db-identity)
+     (atom 0)
+     {})))
 
 (defn ^datascript.db/DB restore-db-from-storage
-  [^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema
+  [^:option<map<keyword;map<keyword;Datascript_runtime.Data_value.t>>> schema
    ^:set/btset<Datom;Datascript_runtime.Storage_backend.t;tuple<int;Datascript_runtime.Storage_value.t>> eavt
    ^:set/btset<Datom;Datascript_runtime.Storage_backend.t;tuple<int;Datascript_runtime.Storage_value.t>> aevt
    ^:set/btset<Datom;Datascript_runtime.Storage_backend.t;tuple<int;Datascript_runtime.Storage_value.t>> avet
@@ -1132,14 +1697,15 @@
   [^datascript.db/DB db
    ^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema]
   (assoc db
-         :schema        schema
+         :schema        (Some schema)
          :schema-idents empty-schema-idents
          :schema-drafts empty-schema-drafts
          :rschema       (rschema (merge-schema implicit-schema schema))
+         :identity-hash (fresh-db-identity)
          :hash          (atom 0)))
 
 (defn- ^:set/btset<Datom;Datascript_runtime.Storage_backend.t;tuple<int;Datascript_runtime.Storage_value.t>> typed-index
-  [^DB db index]
+  [^datascript.db/DB db index]
   (case index
     :eavt (.-eavt db)
     :aevt (.-aevt db)
@@ -1167,7 +1733,7 @@
   :fn<DB;int;keyword;option<Datascript_runtime.Data_value.t>;fn<result;Datom;result>;result;result>)
 
 (defn reduce-eavt-slice
-  [^DB db
+  [^datascript.db/DB db
    ^:int entity
    ^:keyword attr
    ^:option<Datascript_runtime.Data_value.t> value
@@ -1184,7 +1750,7 @@
    initial))
 
 (defn ^:vector<Datom> search-vector
-  [^DB db
+  [^datascript.db/DB db
    ^:option<int> e
    ^:option<keyword> a
    ^:option<Datascript_runtime.Data_value.t> v
@@ -1212,14 +1778,14 @@
          (Datascript_runtime.Data_value.equal (.-v datom) value))))
 
     _
-    (vec (-search db e a v tx))))
+    (vec (-search db (search-pattern e a v tx)))))
 
 ;; ----------------------------------------------------------------------------
 
 (declare entid-strict ref?)
 
 (defn ^Datom resolve-datom
-  [^DB db
+  [^datascript.db/DB db
    ^:option<Datascript_runtime.Data_value.entity_ref> e
    ^:option<keyword> a
    ^:option<Datascript_runtime.Data_value.t> v
@@ -1257,7 +1823,7 @@
      resolved-e a resolved-v resolved-tx default-e default-tx)))
 
 (defn components->pattern
-  [^DB db
+  [^datascript.db/DB db
    ^:keyword index
    ^:option<Datascript_runtime.Data_value.t> c0
    ^:option<Datascript_runtime.Data_value.t> c1
@@ -1292,7 +1858,7 @@
            default-tx)
     (Stdlib.invalid_arg (str "Unknown index " index))))
 
-(defn find-datom [^DB db index c0 c1 c2 c3]
+(defn find-datom [^datascript.db/DB db index c0 c1 c2 c3]
   (validate-indexed db index c0 c1 c2 c3)
   (let [set     (typed-index db index)
         cmp     (set/comparator set)
@@ -1313,35 +1879,77 @@
 (defn ^:map<keyword;map<Datascript_runtime.Data_value.t;int>> empty-upsert-map []
   {})
 
-(type-variant tx-entry
-  (TxEntity :map<keyword;Datascript_runtime.Data_value.t>)
-  (TxAdd :Datascript_runtime.Data_value.entity_ref
-         :keyword
-         :Datascript_runtime.Data_value.t
-         :option<int>)
-  (TxRetract :Datascript_runtime.Data_value.entity_ref
-             :keyword
-             :option<Datascript_runtime.Data_value.t>)
-  (TxCas :Datascript_runtime.Data_value.entity_ref
-         :keyword
-         :option<Datascript_runtime.Data_value.t>
-         :Datascript_runtime.Data_value.t)
-  (TxRetractAttribute :Datascript_runtime.Data_value.entity_ref :keyword)
-  (TxRetractEntity :Datascript_runtime.Data_value.entity_ref)
-  (TxSetTuple :Datascript_runtime.Data_value.entity_ref
-              :keyword
-              :option<Datascript_runtime.Data_value.t>)
-  TxFlushTuples)
+(def *last-auto-tempid (atom 0))
+
+(defn ^:Datascript_runtime.Data_value.entity_ref auto-tempid []
+  (Datascript_runtime.Data_value.Auto_tempid
+   (swap! *last-auto-tempid inc)))
+
+(defn ^boolean auto-tempid?
+  [^:Datascript_runtime.Data_value.entity_ref entity-ref]
+  (match entity-ref
+    (Datascript_runtime.Data_value.Auto_tempid _) true
+    _ false))
+
+(defn ^tx-entity-form ordered-tx-entity
+  [^:map<keyword;Datascript_runtime.Data_value.t> entity
+   ^:vector<keyword> attrs]
+  (record tx-entity-form
+    (values entity)
+    (attrs attrs)))
 
 (defn ^tx-entry tx-entity
   [^:map<keyword;Datascript_runtime.Data_value.t> entity]
-  (TxEntity entity))
+  (TxEntity
+   (ordered-tx-entity entity (vec (keys entity)))))
+
+(defn ^tx-entry tx-entity-ordered
+  [^:map<keyword;Datascript_runtime.Data_value.t> entity
+   ^:vector<keyword> attrs]
+  (TxEntity (ordered-tx-entity entity attrs)))
+
+(defn ^tx-entry tx-nil []
+  (TxNil))
+
+(defn ^tx-entry tx-call
+  [^:fn<DB;vector<tx-entry>> callback]
+  (TxCall callback))
+
+(defn ^tx-entry tx-install-function
+  [^:map<keyword;Datascript_runtime.Data_value.t> entity
+   ^:fn<DB;Datascript_runtime.Data_value.t;vector<tx-entry>> callback]
+  (TxInstallFunction entity callback))
+
+(defn ^tx-entry tx-invoke-function
+  [^:keyword ident
+   ^:vector<Datascript_runtime.Data_value.t> arguments]
+  (TxInvokeFunction ident arguments))
+
+(def builtin-fn?
+  #{:db.fn/call
+    :db.fn/cas
+    :db/cas
+    :db/add
+    :db/retract
+    :db.fn/retractAttribute
+    :db.fn/retractEntity
+    :db/retractEntity})
+
+(defn ^tx-entry tx-invalid [^:string message]
+  (TxInvalid message))
 
 (defn ^tx-entry tx-add
   [^:Datascript_runtime.Data_value.entity_ref entity
    ^:keyword attr
    ^:Datascript_runtime.Data_value.t value]
   (TxAdd entity attr value None))
+
+(defn ^tx-entry tx-add-with-tx
+  [^:Datascript_runtime.Data_value.entity_ref entity
+   ^:keyword attr
+   ^:Datascript_runtime.Data_value.t value
+   ^:int transaction]
+  (TxAdd entity attr value (Some transaction)))
 
 (defn ^tx-entry tx-retract-entity-id [^:int entity]
   (TxRetractEntity
@@ -1356,7 +1964,15 @@
    ^:keyword attr
    ^:option<Datascript_runtime.Data_value.t> old-value
    ^:Datascript_runtime.Data_value.t new-value]
-  (TxCas entity attr old-value new-value))
+  (TxCas :db.fn/cas entity attr old-value new-value))
+
+(defn ^tx-entry tx-cas-operation
+  [^:keyword operation
+   ^:Datascript_runtime.Data_value.entity_ref entity
+   ^:keyword attr
+   ^:option<Datascript_runtime.Data_value.t> old-value
+   ^:Datascript_runtime.Data_value.t new-value]
+  (TxCas operation entity attr old-value new-value))
 
 (defn ^tx-entry datom->tx-entry [^Datom datom]
   (let [entity-ref
@@ -1367,11 +1983,296 @@
       (TxAdd entity-ref attr value (Some (datom-tx datom)))
       (TxRetract entity-ref attr (Some value)))))
 
-(defn ^tx-entry tx-add
+(defn ^tx-entry tx-datom [^Datom datom]
+  (datom->tx-entry datom))
+
+(defn ^tx-entry tx-retract
   [^:Datascript_runtime.Data_value.entity_ref entity-ref
    ^:keyword attr
    ^:Datascript_runtime.Data_value.t value]
-  (TxAdd entity-ref attr value None))
+  (TxRetract entity-ref attr (Some value)))
+
+(defn ^tx-entry tx-retract-option
+  [^:Datascript_runtime.Data_value.entity_ref entity-ref
+   ^:keyword attr
+   ^:option<Datascript_runtime.Data_value.t> value]
+  (TxRetract entity-ref attr value))
+
+(defn ^tx-entry tx-retract-entity
+  [^:Datascript_runtime.Data_value.entity_ref entity-ref]
+  (TxRetractEntity entity-ref))
+
+(defn ^tx-entry tx-set-tuple
+  [^:Datascript_runtime.Data_value.entity_ref entity-ref
+   ^:keyword attr
+   ^:option<Datascript_runtime.Data_value.t> value]
+  (TxSetTuple entity-ref attr value))
+
+(defn ^tx-entry tx-flush-tuples []
+  (TxFlushTuples))
+
+(defn tx-data
+  {:inline
+   (fn [source]
+     (let [data-value
+           (fn data-value [value]
+             (if (map? value)
+               (list
+                'Datascript_runtime.Data_value.map_of_keyword_entries
+                (list
+                 'vec
+                 (cons
+                  'list
+                  (map
+                   (fn [entry]
+                     (list
+                      'tuple
+                      (str (first entry))
+                      (if (= (first entry) :db/id)
+                        (let [entity (second entry)]
+                          (list
+                           'Datascript_runtime.Data_value.Ref_to
+                           (if (string? entity)
+                             (list
+                              'Datascript_runtime.Data_value.Temp_id
+                              entity)
+                             (if (keyword? entity)
+                               (list
+                                'Datascript_runtime.Data_value.Ident
+                                (str entity))
+                               (if (vector? entity)
+                                 (list
+                                  'Datascript_runtime.Data_value.Lookup_ref
+                                  (str (first entity))
+                                  (data-value (second entity)))
+                                 (if
+                                  (or (symbol? entity) (seq? entity))
+                                   entity
+                                   (list
+                                    'Datascript_runtime.Data_value.Entity_id
+                                    entity)))))))
+                        (data-value (second entry)))))
+                   value))))
+               (if (vector? value)
+               (list
+                'Datascript_runtime.Data_value.vector_of_vector
+                (list
+                 'vec
+                 (cons
+                  'list
+                  (map
+                   (fn [item]
+                     (data-value item))
+                   value))))
+               (if (nil? value)
+                 (list 'Datascript_runtime.Data_value.Nil)
+                 (if (string? value)
+                   (list
+                    'Datascript_runtime.Data_value.String
+                    value)
+                   (if (keyword? value)
+                     (list
+                      'Datascript_runtime.Data_value.Keyword
+                      (str value))
+                     (if (= value true)
+                       (list
+                        'Datascript_runtime.Data_value.Bool
+                        true)
+                       (if (= value false)
+                         (list
+                          'Datascript_runtime.Data_value.Bool
+                          false)
+                         (if (float? value)
+                           (list
+                            'Datascript_runtime.Data_value.Float
+                            value)
+                         (if (or (symbol? value) (seq? value))
+                           value
+                           (list
+                           'Datascript_runtime.Data_value.Int
+                            value)))))))))))
+           entity-ref
+           (fn entity-ref [value]
+             (if (string? value)
+               (list
+                'Datascript_runtime.Data_value.Temp_id
+                value)
+               (if (keyword? value)
+                 (list
+                  'Datascript_runtime.Data_value.Ident
+                  (str value))
+                 (if (vector? value)
+                   (list
+                    'Datascript_runtime.Data_value.Lookup_ref
+                    (str (first value))
+                    (data-value (second value)))
+                   (if (or (symbol? value) (seq? value))
+                     value
+                     (list
+                      'Datascript_runtime.Data_value.Entity_id
+                      value))))))
+           tx-entry
+           (fn [entry]
+             (if (nil? entry)
+               (list 'datascript.db/tx-nil)
+               (if (vector? entry)
+               (let [operation (first entry)
+                     entity (second entry)
+                     attr (first (nnext entry))
+                     value (second (nnext entry))
+                     extra (first (nnext (nnext entry)))]
+                 (cond
+                   (= operation :db.fn/call)
+                   (list
+                    'datascript.db/tx-call
+                    (list
+                     'fn
+                     (vec
+                      (list
+                       '^datascript.db/DB
+                       'transaction-db))
+                     (cons
+                      (second entry)
+                      (cons
+                       'transaction-db
+                       (nnext entry)))))
+
+                   (= operation :db/add)
+                   (if (nil? extra)
+                     (list
+                      'datascript.db/tx-add
+                      (entity-ref entity)
+                      attr
+                      (data-value value))
+                     (list
+                      'datascript.db/tx-add-with-tx
+                      (entity-ref entity)
+                      attr
+                      (data-value value)
+                      extra))
+
+                   (= operation :db/retract)
+                   (list
+                    'datascript.db/tx-retract-option
+                    (entity-ref entity)
+                    attr
+                    (if (nil? value)
+                      'None
+                      (list
+                       'Some
+                       (data-value value))))
+
+                   (= operation :db.fn/retractAttribute)
+                   (list
+                    'datascript.db/tx-retract-attribute
+                    (entity-ref entity)
+                    attr)
+
+                   (or
+                    (= operation :db.fn/retractEntity)
+                    (= operation :db/retractEntity))
+                   (list
+                    'datascript.db/tx-retract-entity
+                    (entity-ref entity))
+
+                   (or
+                    (= operation :db.fn/cas)
+                    (= operation :db/cas))
+                   (list
+                    'datascript.db/tx-cas-operation
+                    operation
+                    (entity-ref entity)
+                    attr
+                    (if (nil? value)
+                      'None
+                      (list
+                       'Some
+                       (data-value value)))
+                    (data-value extra))
+
+                   (keyword? operation)
+                   (list
+                    'datascript.db/tx-invoke-function
+                    operation
+                    (list
+                     'vec
+                     (cons
+                      'list
+                      (map data-value (next entry)))))
+
+                   :else
+                   (list
+                    'datascript.db/tx-invalid
+                    (str
+                     "Unknown operation at " entry
+                     ", expected :db/add, :db/retract, :db.fn/call, "
+                     ":db.fn/retractAttribute, :db.fn/retractEntity "
+                     "or an ident corresponding to an installed "
+                     "transaction function (e.g. {:db/ident <keyword> "
+                     ":db/fn <Ifn>}, usage of :db/ident requires "
+                     "{:db/unique :db.unique/identity} in schema)"))))
+               (if (map? entry)
+                 (let [function-property
+                       (first
+                        (filter
+                         (fn [property]
+                           (= (first property) :db/fn))
+                         entry))
+                       properties
+                       (filter
+                        (fn [property]
+                          (if (= (first property) :db/fn)
+                            false
+                            true))
+                        entry)
+                       entity-form
+                       (list
+                        'zipmap
+                        (vec (map first properties))
+                        (vec
+                         (map
+                          (fn [property]
+                            (if (= (first property) :db/id)
+                              (list
+                               'Datascript_runtime.Data_value.Ref_to
+                               (entity-ref (second property)))
+                              (data-value (second property))))
+                          properties)))]
+                   (if (nil? function-property)
+                     (list
+                      'datascript.db/tx-entity-ordered
+                      entity-form
+                      (vec (map first properties)))
+                     (list
+                      'datascript.db/tx-install-function
+                      entity-form
+                      (second function-property))))
+                 (if (seq? entry)
+                   (let [constructor (first entry)]
+                     (if
+                      (or
+                       (= constructor 'd/datom)
+                       (= constructor 'db/datom)
+                       (= constructor 'datascript.core/datom)
+                       (= constructor 'datascript.db/datom))
+                       (list 'datascript.db/tx-datom entry)
+                       entry))
+                   (if (symbol? entry)
+                     entry
+                 (list
+                  'datascript.db/tx-invalid
+                  (str
+                   "Bad entity type at " entry
+                   ", expected map or vector"))))))))]
+       (if (vector? source)
+         (list
+          'vec
+          (cons
+           'list
+           (map tx-entry source)))
+         source)))}
+  [^:vector<tx-entry> source]
+  source)
 
 (defn ^:option<tuple<int;keyword;Datascript_runtime.Data_value.t>> add-upsert-resolution
   [^:option<tuple<int;keyword;Datascript_runtime.Data_value.t>> resolution
@@ -1384,13 +2285,20 @@
           existing-value (tuple-get existing 2)]
       (if (= existing-eid eid)
         resolution
-        (util/raise "Conflicting upserts: attribute " existing-attr
-                    " value " existing-value " resolves to " existing-eid
-                    ", but attribute " attr " value " value
-                    " resolves to " eid
-                    {:error     :transact/upsert
-                     :assertion (tuple existing-eid existing-attr existing-value)
-                     :conflict  (tuple eid attr value)})))
+        (Stdlib.invalid_arg
+         (str
+          "Conflicting upserts: ["
+          existing-attr
+          " "
+          (Datascript_runtime.Data_value.to_edn_string existing-value)
+          "] resolves to "
+          (Stdlib.string_of_int existing-eid)
+          ", but ["
+          attr
+          " "
+          (Datascript_runtime.Data_value.to_edn_string value)
+          "] resolves to "
+          (Stdlib.string_of_int eid)))))
     (Some (tuple eid attr value))))
 
 (defn ^:option<tuple<int;keyword;Datascript_runtime.Data_value.t>> empty-upsert-resolution []
@@ -1423,12 +2331,16 @@
    ^datascript.db/DB db-after
    ^:vector<Datom> tx-data
    ^:map<Datascript_runtime.Data_value.t;int> tempids
-   ^:map<keyword;Datascript_runtime.Data_value.t> tx-meta
+   ^:Datascript_runtime.Data_value.t tx-meta
    ^:map<int;map<keyword;vector<option<Datascript_runtime.Data_value.t>>>> queued-tuples
-   ^:map<int;Datascript_runtime.Data_value.t> value-tempids])
+   ^:map<int;Datascript_runtime.Data_value.t> value-tempids
+   ^:map<int;bool> used-tempid-eids])
 
 (defn ^:int tx-data-count [^TxReport report]
   (count (.-tx-data report)))
+
+(defn ^:map<int;bool> empty-used-tempid-eids []
+  {})
 
 (defn ^boolean is-attr?
   [^datascript.db/DB db ^:keyword attr ^:keyword property]
@@ -1454,6 +2366,9 @@
 (defn ^boolean component? [^datascript.db/DB db ^:keyword attr]
   (is-attr? db attr :db/isComponent))
 
+(defn ^boolean indexing? [^datascript.db/DB db ^:keyword attr]
+  (is-attr? db attr :db/index))
+
 (defn ^boolean tuple? [^datascript.db/DB db ^:keyword attr]
   (is-attr? db attr :db.type/tuple))
 
@@ -1478,8 +2393,13 @@
     (Datascript_runtime.Data_value.Entity_id eid)
     (if (pos? eid)
       (if (> eid emax)
-        (raise (Invalid_argument
-                "Entity id exceeds the supported range"))
+        (raise
+         (Invalid_argument
+          (str
+           "Highest supported entity id is "
+           (Stdlib.string_of_int emax)
+           ", got "
+           (Stdlib.string_of_int eid))))
         (Some eid))
       None)
     (Datascript_runtime.Data_value.Ident ident)
@@ -1494,17 +2414,189 @@
       (when-not (is-attr? db attr :db/unique)
         (raise
          (Invalid_argument
-          "Lookup ref attribute must be :db/unique")))
-      (let [value (if (tuple? db attr)
-                    (resolve-tuple-refs db attr value)
-                    value)]
-      (if-some [datom (fsearch db nil attr (Some value) nil)]
-        (Some (.-e datom))
-        None)))
+          (str
+           "Lookup ref attribute should be marked as :db/unique: ["
+           attr
+           " "
+           (Datascript_runtime.Data_value.to_edn_string value)
+           "]"))))
+      (if (tuple? db attr)
+        (let [value (resolve-tuple-refs db attr value)]
+          (if-some [datom (fsearch db nil attr (Some value) nil)]
+            (Some (.-e datom))
+            None))
+        (if (Datascript_runtime.Data_value.is_nil value)
+          None
+          (if-some [datom (fsearch db nil attr (Some value) nil)]
+            (Some (.-e datom))
+            None))))
     Datascript_runtime.Data_value.Current_tx
     None
     (Datascript_runtime.Data_value.Temp_id _)
+    None
+    (Datascript_runtime.Data_value.Auto_tempid _)
     None))
+
+(defn ^:option<int> filtered-entid
+  [^datascript.db/FilteredDB database
+   ^:Datascript_runtime.Data_value.entity_ref entity-ref]
+  (let [unfiltered (.-unfiltered-db database)]
+    (match entity-ref
+      (Datascript_runtime.Data_value.Entity_id _)
+      (entid unfiltered entity-ref)
+
+      (Datascript_runtime.Data_value.Ident ident)
+      (if-some
+        [datom
+         (first
+          (-search
+           database
+           (search-pattern
+            None
+            (Some :db/ident)
+            (Some (Datascript_runtime.Data_value.Keyword ident))
+            None)))]
+        (Some (.-e datom))
+        None)
+
+      (Datascript_runtime.Data_value.Lookup_ref attr-name _)
+      (if-some [eid (entid unfiltered entity-ref)]
+        (if-some
+          [_datom
+           (first
+            (-search
+             database
+             (search-pattern
+              (Some eid)
+              (Some (keyword attr-name))
+              None
+              None)))]
+          (Some eid)
+          None)
+        None)
+
+      Datascript_runtime.Data_value.Current_tx
+      None
+
+      (Datascript_runtime.Data_value.Temp_id _)
+      None
+
+      (Datascript_runtime.Data_value.Auto_tempid _)
+      None)))
+
+(defn ^:option<int> database-view-entid
+  [^database-view database
+   ^:Datascript_runtime.Data_value.entity_ref entity-ref]
+  (match database
+    (DatabaseView unfiltered)
+    (entid unfiltered entity-ref)
+    (FilteredDatabaseView filtered)
+    (filtered-entid filtered entity-ref)))
+
+(defn ^datascript.db/DB database-view-unfiltered-db
+  [^database-view database]
+  (match database
+    (DatabaseView unfiltered)
+    unfiltered
+    (FilteredDatabaseView filtered)
+    (.-unfiltered-db filtered)))
+
+(defn ^boolean database-view-ref?
+  [^database-view database ^:keyword attr]
+  (ref? (database-view-unfiltered-db database) attr))
+
+(defn ^boolean database-view-multival?
+  [^database-view database ^:keyword attr]
+  (multival? (database-view-unfiltered-db database) attr))
+
+(defn ^boolean database-view-component?
+  [^database-view database ^:keyword attr]
+  (component? (database-view-unfiltered-db database) attr))
+
+(signature datascript.db/database-view-search
+  :fn<database-view;option<int>;option<keyword>;option<Datascript_runtime.Data_value.t>;option<int>;option<seq<Datom>>>)
+
+(defn ^:option<seq<Datom>> database-view-search
+  [^database-view database
+   ^:option<int> entity
+   ^:option<keyword> attr
+   ^:option<Datascript_runtime.Data_value.t> value
+   ^:option<int> tx]
+  (match database
+    (DatabaseView unfiltered)
+    (-search unfiltered (search-pattern entity attr value tx))
+    (FilteredDatabaseView filtered)
+    (-search filtered (search-pattern entity attr value tx))))
+
+(defn ^:vector<Datom> database-view-search-vector
+  [^database-view database
+   ^:option<int> entity
+   ^:option<keyword> attr
+   ^:option<Datascript_runtime.Data_value.t> value
+   ^:option<int> tx]
+  (match database
+    (DatabaseView unfiltered)
+    (search-vector unfiltered entity attr value tx)
+    (FilteredDatabaseView _)
+    (if-some
+      [datoms
+       (database-view-search database entity attr value tx)]
+      (vec datoms)
+      [])))
+
+(defn ^boolean database-view-numeric-eid-exists?
+  [^database-view database ^:int eid]
+  (match database
+    (DatabaseView unfiltered)
+    (numeric-eid-exists? unfiltered eid)
+    (FilteredDatabaseView filtered)
+    (some?
+     (first
+      (-search
+       filtered
+       (search-pattern (Some eid) None None None))))))
+
+(defn ^int database-view-identity-hash
+  [^database-view database]
+  (match database
+    (DatabaseView unfiltered)
+    (:identity-hash unfiltered)
+    (FilteredDatabaseView filtered)
+    (:identity-hash filtered)))
+
+(defn ^boolean database-view-identical?
+  [^database-view left ^database-view right]
+  (match (tuple left right)
+    (tuple (DatabaseView left) (DatabaseView right))
+    (identical? left right)
+    (tuple
+     (FilteredDatabaseView left)
+     (FilteredDatabaseView right))
+    (identical? left right)
+    _
+    false))
+
+(signature datascript.db/database-view-reduce-eavt-slice
+  [result]
+  :fn<database-view;int;keyword;option<Datascript_runtime.Data_value.t>;fn<result;Datom;result>;result;result>)
+
+(defn database-view-reduce-eavt-slice
+  [^database-view database
+   ^:int entity
+   ^:keyword attr
+   ^:option<Datascript_runtime.Data_value.t> value
+   f
+   initial]
+  (match database
+    (DatabaseView unfiltered)
+    (reduce-eavt-slice unfiltered entity attr value f initial)
+    (FilteredDatabaseView filtered)
+    (reduce
+     f
+     initial
+     (-search
+      filtered
+      (search-pattern (Some entity) (Some attr) value None)))))
 
 (defn ^boolean numeric-eid-exists?
   [^datascript.db/DB db ^:int eid]
@@ -1521,8 +2613,20 @@
    ^:Datascript_runtime.Data_value.entity_ref entity-ref]
   (if-some [eid (entid db entity-ref)]
     eid
-    (raise (Invalid_argument
-            "Nothing found for entity reference"))))
+    (match entity-ref
+      (Datascript_runtime.Data_value.Lookup_ref attr-name value)
+      (raise
+       (Invalid_argument
+        (str
+         "Nothing found for entity id ["
+         (keyword attr-name)
+         " "
+         (Datascript_runtime.Data_value.to_edn_string value)
+         "]")))
+      _
+      (raise
+       (Invalid_argument
+        "Nothing found for entity reference")))))
 
 (defn ^:option<int> entid-some
   [^datascript.db/DB db
@@ -1533,7 +2637,7 @@
 
 (defn ^:vector<string> schema-tuple-attrs
   [^datascript.db/DB db ^:keyword tuple-attr]
-  (if-some [entry (get (:schema db) tuple-attr)]
+  (if-some [entry (get (effective-schema (:schema db)) tuple-attr)]
     (if-some [value (get entry :db/tupleAttrs)]
       (if-some [attrs
                 (Datascript_runtime.Data_value.keyword_items value)]
@@ -1549,8 +2653,16 @@
   [^:Datascript_runtime.Data_value.t value]
   (if-some [items (Datascript_runtime.Data_value.tuple_items value)]
     items
-    (raise (Invalid_argument
-            "Expected a DataScript tuple value"))))
+    (if-some [items
+              (Datascript_runtime.Data_value.sequential_items value)]
+      (mapv
+       (fn [^:Datascript_runtime.Data_value.t item]
+         (if (Datascript_runtime.Data_value.is_nil item)
+           None
+           (Some item)))
+       items)
+      (raise (Invalid_argument
+              "Expected a DataScript tuple value")))))
 
 (def ^:vector<int> empty-entity-ids
   [])
@@ -1559,7 +2671,10 @@
   [^datascript.db/DB db
    ^:keyword tuple-attr
    ^:Datascript_runtime.Data_value.t value]
-  (let [^:vector<string> attrs (schema-tuple-attrs db tuple-attr)
+  (let [value
+        (Datascript_runtime.Data_value.tuple_of_vector
+         (data-value-tuple-items value))
+        ^:vector<string> attrs (schema-tuple-attrs db tuple-attr)
         ^:vector<string> ref-attrs
         (Rrbvec.of_list
          (Lg_runtime.Lg_set.String_set.elements
@@ -1598,16 +2713,16 @@
                    :datom datom}))))
 
 (defn- current-tx ^long [^datascript.db/TxReport report]
-  (inc (.-max-tx (.-db-before report))))
+  (inc (:max-tx (:db-before report))))
 
 (defn- next-eid ^long [^datascript.db/DB db]
-  (inc (.-max-eid db)))
+  (inc (:max-eid db)))
 
 (defn- ^boolean tempid? [^:int eid]
   (neg? eid))
 
 (defn- ^boolean new-eid? [^datascript.db/DB db ^:int eid]
-  (and (> eid (.-max-eid db))
+  (and (> eid (:max-eid db))
        (< eid tx0))) ;; tx0 is max eid
 
 (defn- ^datascript.db/DB advance-max-eid
@@ -1625,7 +2740,7 @@
               "Schema :db/ident must be a keyword"))))
 
 (defn remove-schema [^datascript.db/DB db ^Datom datom]
-  (let [schema        (:schema db)
+  (let [schema        (effective-schema (:schema db))
         schema-idents (:schema-idents db)
         schema-drafts (:schema-drafts db)
         eid           (.-e datom)
@@ -1634,7 +2749,7 @@
       (let [ident (schema-ident-value (.-v datom))]
         (if-some [entry (get schema ident)]
           (assoc db
-                 :schema (dissoc schema ident)
+                 :schema (Some (dissoc schema ident))
                  :schema-idents (dissoc schema-idents eid)
                  :schema-drafts
                  (assoc schema-drafts eid (dissoc entry :db/ident)))
@@ -1644,7 +2759,7 @@
       (if-some [ident (get schema-idents eid)]
         (if-some [entry (get schema ident)]
           (assoc db :schema
-                 (assoc schema ident (dissoc entry attr)))
+                 (Some (assoc schema ident (dissoc entry attr))))
           (util/raise "Schema with attribute " ident " does not exist"
                       {:error :retract/schema
                        :attribute ident}))
@@ -1658,10 +2773,10 @@
 
 (defn ^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> get-schema
   [^datascript.db/DB db]
-  (:schema db))
+  (effective-schema (:schema db)))
 
 (defn update-schema [^datascript.db/DB db ^Datom datom]
-  (let [schema        (:schema db)
+  (let [schema        (effective-schema (:schema db))
         schema-idents (:schema-idents db)
         schema-drafts (:schema-drafts db)
         eid           (.-e datom)
@@ -1672,13 +2787,13 @@
             draft (or (get schema-drafts eid) empty-schema-entry)
             entry (assoc draft :db/ident value)]
         (assoc db
-               :schema (assoc schema ident entry)
+               :schema (Some (assoc schema ident entry))
                :schema-idents (assoc schema-idents eid ident)
                :schema-drafts (dissoc schema-drafts eid)))
       (if-some [ident (get schema-idents eid)]
         (let [entry (or (get schema ident) empty-schema-entry)]
           (assoc db :schema
-                 (assoc schema ident (assoc entry attr value))))
+                 (Some (assoc schema ident (assoc entry attr value)))))
         (let [draft (or (get schema-drafts eid) empty-schema-entry)]
           (assoc db :schema-drafts
                  (assoc schema-drafts eid (assoc draft attr value))))))))
@@ -1703,6 +2818,7 @@
         true      (update :aevt set/conj datom cmp-datoms-aevt-quick)
         indexing? (update :avet set/conj datom cmp-datoms-avet-quick)
         true      (advance-max-eid (.-e datom))
+        true      (assoc :identity-hash (fresh-db-identity))
         true      (assoc :hash (atom 0))
         schema?   (-> (update-schema datom)
                       update-rschema))
@@ -1711,13 +2827,14 @@
           true      (update :eavt set/disj removing cmp-datoms-eavt-quick)
           true      (update :aevt set/disj removing cmp-datoms-aevt-quick)
           indexing? (update :avet set/disj removing cmp-datoms-avet-quick)
+          true      (assoc :identity-hash (fresh-db-identity))
           true      (assoc :hash (atom 0))
           schema?   (-> (remove-schema datom) update-rschema))
         db))))
 
 (defn ^:int schema-tuple-arity
   [^datascript.db/DB db ^:keyword tuple-attr]
-  (if-some [entry (get (:schema db) tuple-attr)]
+  (if-some [entry (get (effective-schema (:schema db)) tuple-attr)]
     (if-some [value (get entry :db/tupleAttrs)]
       (match value
         (Datascript_runtime.Data_value.Vector attrs) (List.length attrs)
@@ -1803,38 +2920,41 @@
     (let [resolve
           (fn [^:keyword a ^:Datascript_runtime.Data_value.t v]
             (if (ref? db a)
-              (if-some
-                [entity-ref
-                 (Datascript_runtime.Data_value.entity_ref_value v)]
-                (if-some [eid (entid db entity-ref)]
-                  (if-some
-                    [datom
-                     (fsearch
-                      db nil a
-                      (Some (Datascript_runtime.Data_value.Ref eid))
-                      nil)]
-                    (Some (.-e datom))
-                    None)
-                  None)
-                None)
-              (if-some
-                [datom
-                 (fsearch db nil a (Some v) nil)]
-                (Some (.-e datom))
-                None)))
+              (let [entity-ref (data-value-entity-ref v)]
+                (if (temp-entity-ref? entity-ref)
+                  None
+                  (if-some [eid (entid db entity-ref)]
+                    (if-some
+                      [datom
+                       (fsearch
+                        db nil a
+                        (Some (Datascript_runtime.Data_value.Ref eid))
+                        nil)]
+                      (Some (.-e datom))
+                      None)
+                    None)))
+              (let [resolved
+                    (if (tuple? db a)
+                      (resolve-tuple-refs db a v)
+                      v)]
+                (if-some
+                  [datom
+                   (fsearch db nil a (Some resolved) nil)]
+                  (Some (.-e datom))
+                  None))))
           split
           (fn [^:keyword a
                ^:vector<Datascript_runtime.Data_value.t> vs]
-                    (reduce
-                     (fn
-                       [^:tuple<vector<Datascript_runtime.Data_value.t>;map<Datascript_runtime.Data_value.t;int>> acc
-                        ^:Datascript_runtime.Data_value.t v]
-                       (let [insert (tuple-get acc 0)
-                             upsert (tuple-get acc 1)]
-                         (if-some [e (resolve a v)]
-                           (tuple insert (assoc upsert v e))
-                           (tuple (conj insert v) upsert))))
-                     (tuple [] (empty-value-eids)) vs))]
+            (reduce
+             (fn
+               [^:tuple<vector<Datascript_runtime.Data_value.t>;map<Datascript_runtime.Data_value.t;int>> acc
+                ^:Datascript_runtime.Data_value.t v]
+               (let [insert (tuple-get acc 0)
+                     upsert (tuple-get acc 1)]
+                 (if-some [e (resolve a v)]
+                   (tuple insert (assoc upsert v e))
+                   (tuple (conj insert v) upsert))))
+             (tuple [] (empty-value-eids)) vs))]
       (reduce-kv
        (fn
          [^:tuple<map<keyword;Datascript_runtime.Data_value.t>;map<keyword;map<Datascript_runtime.Data_value.t;int>>> acc
@@ -1882,34 +3002,55 @@
        entity))
     (tuple entity (empty-upsert-map))))
 
-(defn ^:option<int> validate-upsert-resolution
+(defn- ^:string conflicting-upsert-message
+  [^:int upsert-id
+   ^:keyword attr
+   ^:Datascript_runtime.Data_value.t value
+   ^:int explicit-eid]
+  (str
+   "Conflicting upsert: ["
+   attr
+   " "
+   (Datascript_runtime.Data_value.to_edn_string value)
+   "] resolves to "
+   (Stdlib.string_of_int upsert-id)
+   ", but entity already has :db/id "
+   (Stdlib.string_of_int explicit-eid)))
+
+(defn- ^:option<int> validate-upsert-resolution-with-current-tx
   [^:map<keyword;Datascript_runtime.Data_value.t> entity
-   ^:option<tuple<int;keyword;Datascript_runtime.Data_value.t>> resolution]
+   ^:option<tuple<int;keyword;Datascript_runtime.Data_value.t>> resolution
+   ^:option<int> current-tx]
   (if-some [resolved resolution]
     (let [upsert-id (tuple-get resolved 0)
           attr      (tuple-get resolved 1)
           value     (tuple-get resolved 2)
-          eid-value (:db/id entity)]
-      (if-some
-        [entity-ref
-         (if-some [eid-value eid-value]
-           (Datascript_runtime.Data_value.entity_ref_value eid-value)
-           None)]
-        (match entity-ref
-          (Datascript_runtime.Data_value.Entity_id eid)
-          (when (and
-                 (not (tempid? eid))
-                 (not= upsert-id eid))
-            (util/raise "Conflicting upsert: attribute " attr " value " value
-                        " resolves to " (Int.to_string upsert-id)
-                        ", but entity already has :db/id " (Int.to_string eid)
-                        {:error     :transact/upsert
-                         :assertion (tuple upsert-id attr value)
-                         :conflict  {:db/id eid-value}}))
-          _ nil)
+          explicit-eid
+          (if-some [eid-value (get entity :db/id)]
+            (if-some
+              [entity-ref
+               (Datascript_runtime.Data_value.entity_ref_value eid-value)]
+              (match entity-ref
+                (Datascript_runtime.Data_value.Entity_id eid)
+                (if (tempid? eid) None (Some eid))
+                _ None)
+              (match eid-value
+                (Datascript_runtime.Data_value.Keyword ident)
+                (if (= ident ":db/current-tx") current-tx None)
+                _ None))
+            None)]
+      (if-some [eid explicit-eid]
+        (when (not= upsert-id eid)
+          (Stdlib.invalid_arg
+           (conflicting-upsert-message upsert-id attr value eid)))
         nil)
       (Some upsert-id))
     None))
+
+(defn ^:option<int> validate-upsert-resolution
+  [^:map<keyword;Datascript_runtime.Data_value.t> entity
+   ^:option<tuple<int;keyword;Datascript_runtime.Data_value.t>> resolution]
+  (validate-upsert-resolution-with-current-tx entity resolution None))
 
 (defn validate-upserts
   "Throws if not all upserts point to the same entity.
@@ -1918,8 +3059,44 @@
    ^:map<keyword;map<Datascript_runtime.Data_value.t;int>> upserts]
   (validate-upsert-resolution entity (collect-upsert-resolution upserts)))
 
+(defn- ^:option<int> validate-upserts-for-report
+  [^datascript.db/TxReport report
+   ^:map<keyword;Datascript_runtime.Data_value.t> entity
+   ^:map<keyword;map<Datascript_runtime.Data_value.t;int>> upserts]
+  (let [resolution (collect-upsert-resolution upserts)
+        result
+        (validate-upsert-resolution-with-current-tx
+         entity resolution (Some (current-tx report)))]
+    (if-some [resolved resolution]
+      (if-some [id-value (get entity :db/id)]
+        (if-some
+          [entity-ref
+           (Datascript_runtime.Data_value.entity_ref_value id-value)]
+          (let [explicit-eid
+                (match entity-ref
+                  (Datascript_runtime.Data_value.Ident _)
+                  (entid (:db-after report) entity-ref)
+                  (Datascript_runtime.Data_value.Lookup_ref _ _)
+                  (entid (:db-after report) entity-ref)
+                  _ None)]
+            (if-some [eid explicit-eid]
+              (let [upsert-id (tuple-get resolved 0)]
+                (when (not= upsert-id eid)
+                  (Stdlib.invalid_arg
+                   (conflicting-upsert-message
+                    upsert-id
+                    (tuple-get resolved 1)
+                    (tuple-get resolved 2)
+                    eid))))
+              nil))
+          nil)
+        nil)
+      nil)
+    result))
+
 (defn check-schema-update
-  [^:map<keyword;Datascript_runtime.Data_value.t> entity]
+  [_db
+   ^:map<keyword;Datascript_runtime.Data_value.t> entity]
   (when (ds/schema-entity? entity)
     (when-some [ident (get entity :db/ident)]
       (when (ds/is-system-keyword? ident)
@@ -1968,18 +3145,185 @@
         values
         (singleton-data-value value)))))
 
-(defn ^:Datascript_runtime.Data_value.entity_ref data-value-entity-ref
-  [^:Datascript_runtime.Data_value.t value]
+(defn- ^:Datascript_runtime.Data_value.entity_ref
+  data-value-entity-ref-with-error
+  [^:Datascript_runtime.Data_value.t value ^:string error-message]
   (if-some [entity-ref
             (Datascript_runtime.Data_value.entity_ref_value value)]
     entity-ref
-    (raise (Invalid_argument
-            "Expected a DataScript entity reference"))))
+    (if-some
+      [lookup-ref
+       (Datascript_runtime.Data_value.lookup_ref_value value)]
+      (Datascript_runtime.Data_value.Lookup_ref
+       (tuple-get lookup-ref 0)
+       (tuple-get lookup-ref 1))
+      (match value
+        (Datascript_runtime.Data_value.String tempid)
+        (Datascript_runtime.Data_value.Temp_id tempid)
+        (Datascript_runtime.Data_value.Keyword ident)
+        (if (= ident ":db/current-tx")
+          (Datascript_runtime.Data_value.Current_tx)
+          (Datascript_runtime.Data_value.Ident ident))
+        _
+        (raise (Invalid_argument error-message))))))
 
-(defn ^:option<map<keyword;Datascript_runtime.Data_value.t>>
-  data-value-entity-map
+(defn ^:Datascript_runtime.Data_value.entity_ref data-value-entity-ref
   [^:Datascript_runtime.Data_value.t value]
-  (Datascript_runtime.Data_value.keyword_map_value value))
+  (data-value-entity-ref-with-error
+   value
+   "Expected number or lookup ref for entity id"))
+
+(defn ^:option<tx-entity-form> data-value-entity-form
+  [^:Datascript_runtime.Data_value.t value]
+  (if-some [entries
+            (Datascript_runtime.Data_value.keyword_map_entries value)]
+    (Some
+     (reduce
+      (fn [^tx-entity-form entity
+           ^:tuple<string;Datascript_runtime.Data_value.t> entry]
+        (let [attr (keyword (tuple-get entry 0))]
+          (record tx-entity-form
+            (values
+             (assoc
+              (:values entity)
+              attr
+              (tuple-get entry 1)))
+            (attrs (conj (:attrs entity) attr)))))
+      (ordered-tx-entity (empty-entity-map) [])
+      entries))
+    None))
+
+(defn ^tx-entity-form tx-entity-form-assoc
+  [^tx-entity-form entity
+   ^:keyword attr
+   ^:Datascript_runtime.Data_value.t value]
+  (record tx-entity-form
+    (values (assoc (:values entity) attr value))
+    (attrs
+     (if (contains? (:values entity) attr)
+       (:attrs entity)
+       (conj (:attrs entity) attr)))))
+
+(defn- ^:Datascript_runtime.Data_value.t tx-entity-form-value
+  [^tx-entity-form entity]
+  (Datascript_runtime.Data_value.map_of_keyword_entries
+   (mapv
+    (fn [^:keyword attr]
+      (if-some [value (get (:values entity) attr)]
+        (tuple (str attr) value)
+        (raise
+         (Invalid_argument
+          "Transaction entity attribute is missing from its value map"))))
+    (:attrs entity))))
+
+(defn- ^:Datascript_runtime.Data_value.t assoc-auto-tempid-ref-value
+  [^:Datascript_runtime.Data_value.t value
+   ^boolean multiple?
+   ^:fn<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>
+   prepare]
+  (if multiple?
+    (if-some
+      [items (Datascript_runtime.Data_value.sequential_items value)]
+      (Datascript_runtime.Data_value.vector_of_vector
+       (mapv prepare items))
+      (if-some [items (Datascript_runtime.Data_value.set_items value)]
+        (Datascript_runtime.Data_value.set_of_vector
+         (mapv prepare items))
+        (prepare value)))
+    (prepare value)))
+
+(defn- ^:Datascript_runtime.Data_value.t assoc-auto-tempid-entity-value
+  [^datascript.db/DB db
+   ^:Datascript_runtime.Data_value.t value]
+  (if-some [source (data-value-entity-form value)]
+    (let [entity
+          (if (contains? (:values source) :db/id)
+            source
+            (tx-entity-form-assoc
+             source
+             :db/id
+             (Datascript_runtime.Data_value.Ref_to
+              (auto-tempid))))
+          prepare
+          (fn [^:Datascript_runtime.Data_value.t item]
+            (assoc-auto-tempid-entity-value db item))
+          prepared
+          (reduce
+           (fn [^tx-entity-form result ^:keyword attr]
+             (if (= attr :db/id)
+               result
+               (if-some [attr-value (get (:values result) attr)]
+                 (let [reverse? (reverse-ref? attr)
+                       straight-attr
+                       (if reverse? (reverse-ref attr) attr)]
+                   (if (or reverse? (ref? db straight-attr))
+                     (tx-entity-form-assoc
+                      result
+                      attr
+                      (assoc-auto-tempid-ref-value
+                       attr-value
+                       (if reverse?
+                         (some?
+                          (Datascript_runtime.Data_value.sequential_items
+                           attr-value))
+                         (multi-value? db straight-attr attr-value))
+                       prepare))
+                     result))
+                 result)))
+           entity
+           (:attrs entity))]
+      (tx-entity-form-value prepared))
+    value))
+
+(defn- ^tx-entity-form assoc-auto-tempid-entity-form
+  [^datascript.db/DB db
+   ^tx-entity-form entity]
+  (if-some
+    [prepared
+     (data-value-entity-form
+      (assoc-auto-tempid-entity-value
+       db
+       (tx-entity-form-value entity)))]
+    prepared
+    (raise
+     (Invalid_argument
+      "Prepared transaction entity must remain a keyword map"))))
+
+(defn- ^tx-entry assoc-auto-tempid-entry
+  [^datascript.db/DB db ^tx-entry entry]
+  (match entry
+    (TxEntity entity)
+    (TxEntity (assoc-auto-tempid-entity-form db entity))
+
+    (TxInstallFunction entity callback)
+    (let [prepared
+          (assoc-auto-tempid-entity-form
+           db
+           (ordered-tx-entity entity (vec (keys entity))))]
+      (TxInstallFunction (:values prepared) callback))
+
+    (TxAdd entity-ref attr value transaction)
+    (if (ref? db attr)
+      (TxAdd
+       entity-ref
+       attr
+       (assoc-auto-tempid-ref-value
+        value
+        (multi-value? db attr value)
+        (fn [^:Datascript_runtime.Data_value.t item]
+          (assoc-auto-tempid-entity-value db item)))
+       transaction)
+      entry)
+
+    _ entry))
+
+(defn ^:vector<tx-entry> assoc-auto-tempids
+  [^datascript.db/DB db
+   ^:vector<tx-entry> entries]
+  (mapv
+   (fn [^tx-entry entry]
+     (assoc-auto-tempid-entry db entry))
+   entries))
 
 (defn ^:vector<tx-entry> empty-tx-entries []
   [])
@@ -1998,7 +3342,10 @@
       (when (and reverse? (not (ref? db straight-a)))
         (raise
          (Invalid_argument
-          "Reverse attribute requires :db/valueType :db.type/ref")))
+          (str
+           "Bad attribute " attr
+           ": reverse attribute name requires "
+           "{:db/valueType :db.type/ref} in schema"))))
       (reduce
        (fn [^:vector<tx-entry> entries
             ^:Datascript_runtime.Data_value.t item]
@@ -2007,19 +3354,22 @@
           (if-some
             [nested
              (if (ref? db straight-a)
-               (data-value-entity-map item)
+               (data-value-entity-form item)
                None)]
-            (TxEntity
-             (assoc
-              nested
-              (reverse-ref attr)
-              (Datascript_runtime.Data_value.Ref_to entity-ref)))
+            (let [nested
+                  (tx-entity-form-assoc
+                   nested
+                   (reverse-ref attr)
+                   (Datascript_runtime.Data_value.Ref_to entity-ref))]
+              (tx-entity-ordered
+               (:values nested)
+               (:attrs nested)))
             (if reverse?
-              (TxAdd (data-value-entity-ref item)
-                     straight-a
-                     (Datascript_runtime.Data_value.Ref_to entity-ref)
-                     None)
-              (TxAdd entity-ref straight-a item None)))))
+              (tx-add
+               (data-value-entity-ref item)
+               straight-a
+               (Datascript_runtime.Data_value.Ref_to entity-ref))
+              (tx-add entity-ref straight-a item)))))
        entries
        (maybe-wrap-multival db attr value)))))
 
@@ -2027,26 +3377,31 @@
   [^datascript.db/DB db
    ^:Datascript_runtime.Data_value.entity_ref entity-ref
    ^:map<keyword;Datascript_runtime.Data_value.t> entity
+   ^:vector<keyword> attrs
    ^boolean tuple-pass?
    ^:vector<tx-entry> entries]
-  (reduce-kv
-   (fn [^:vector<tx-entry> entries
-        ^:keyword attr
-        ^:Datascript_runtime.Data_value.t value]
-     (if (= tuple-pass? (tuple? db attr))
-       (explode-attribute db entity-ref entries attr value)
+  (reduce
+   (fn [^:vector<tx-entry> entries ^:keyword attr]
+     (if-some [value (get entity attr)]
+       (if (= tuple-pass? (tuple? db attr))
+         (explode-attribute db entity-ref entries attr value)
+         entries)
        entries))
    entries
-   entity))
+   attrs))
 
 (defn- ^:vector<tx-entry> explode
   [^datascript.db/DB db
-   ^:map<keyword;Datascript_runtime.Data_value.t> entity]
+   ^:map<keyword;Datascript_runtime.Data_value.t> entity
+   ^:vector<keyword> attrs]
   (if-some [id-value (get entity :db/id)]
-    (let [entity-ref (data-value-entity-ref id-value)
-          entries (explode-pass db entity-ref entity false
+    (let [entity-ref
+          (data-value-entity-ref-with-error
+           id-value
+           "Expected number, string or lookup ref for :db/id")
+          entries (explode-pass db entity-ref entity attrs false
                                 (empty-tx-entries))]
-      (explode-pass db entity-ref entity true entries))
+      (explode-pass db entity-ref entity attrs true entries))
     (raise (Invalid_argument
             "Transaction entity requires :db/id"))))
 
@@ -2139,11 +3494,11 @@
               (= value current) entities
               (nil? value)
               (conj entities
-                    (TxSetTuple entity-ref tuple-attr None))
+                    (tx-set-tuple entity-ref tuple-attr None))
               :else
               (if-some [tuple-value value]
                 (conj entities
-                      (TxSetTuple
+                      (tx-set-tuple
                        entity-ref tuple-attr (Some tuple-value)))
                 entities))))
         entities
@@ -2154,6 +3509,35 @@
 (defn ^:Datascript_runtime.Data_value.t entity-ref-key
   [^:Datascript_runtime.Data_value.entity_ref entity-ref]
   (Datascript_runtime.Data_value.Ref_to entity-ref))
+
+(defn- ^:string direct-tuple-error
+  [^:keyword operation
+   ^:Datascript_runtime.Data_value.entity_ref entity-ref
+   ^:keyword attr
+   ^:Datascript_runtime.Data_value.t value]
+  (str
+   "Can’t modify tuple attrs directly: ["
+   operation
+   " "
+   (Datascript_runtime.Data_value.to_edn_string
+    (entity-ref-key entity-ref))
+   " "
+   attr
+   " "
+   (Datascript_runtime.Data_value.to_edn_string value)
+   "]"))
+
+(defn ^boolean current-tx-ref?
+  [^:Datascript_runtime.Data_value.entity_ref entity-ref]
+  (match entity-ref
+    Datascript_runtime.Data_value.Current_tx true
+    (Datascript_runtime.Data_value.Temp_id tempid)
+    (or
+     (= tempid "datomic.tx")
+     (= tempid "datascript.tx"))
+    (Datascript_runtime.Data_value.Ident ident)
+    (= ident ":db/current-tx")
+    _ false))
 
 (defn ^:tuple<datascript.db/TxReport;Datascript_runtime.Data_value.entity_ref> allocate-tx-entity
   [^datascript.db/TxReport report
@@ -2171,69 +3555,121 @@
                     tempids
                     (.-tx-meta report)
                     (.-queued-tuples report)
-                    (.-value-tempids report))]
+                    (.-value-tempids report)
+                    (.-used-tempid-eids report))]
         (tuple report (Datascript_runtime.Data_value.Entity_id eid))))))
 
 (defn ^:tuple<datascript.db/TxReport;Datascript_runtime.Data_value.entity_ref> resolve-tx-entity
   [^datascript.db/TxReport report
    ^:Datascript_runtime.Data_value.entity_ref entity-ref]
-  (match entity-ref
-    Datascript_runtime.Data_value.Current_tx
-    (tuple report
-           (Datascript_runtime.Data_value.Entity_id
-            (current-tx report)))
-    (Datascript_runtime.Data_value.Entity_id eid)
-    (if (pos? eid)
-      (tuple (update report :db-after advance-max-eid eid)
-             entity-ref)
-      (allocate-tx-entity report entity-ref))
-    (Datascript_runtime.Data_value.Temp_id _)
-    (allocate-tx-entity report entity-ref)
-    (Datascript_runtime.Data_value.Ident _)
-    (tuple report
-           (Datascript_runtime.Data_value.Entity_id
-            (entid-strict (:db-after report) entity-ref)))
-    (Datascript_runtime.Data_value.Lookup_ref _ _)
-    (tuple report
-           (Datascript_runtime.Data_value.Entity_id
-            (entid-strict (:db-after report) entity-ref)))))
+  (if (current-tx-ref? entity-ref)
+    (let [txid (current-tx report)]
+      (tuple
+       (assoc report :tempids
+              (assoc
+               (:tempids report)
+               (entity-ref-key entity-ref)
+               txid))
+       (Datascript_runtime.Data_value.Entity_id txid)))
+    (match entity-ref
+      (Datascript_runtime.Data_value.Entity_id eid)
+      (if (pos? eid)
+        (tuple (update report :db-after advance-max-eid eid)
+               entity-ref)
+        (allocate-tx-entity report entity-ref))
+      (Datascript_runtime.Data_value.Temp_id _)
+      (allocate-tx-entity report entity-ref)
+      (Datascript_runtime.Data_value.Auto_tempid _)
+      (allocate-tx-entity report entity-ref)
+      (Datascript_runtime.Data_value.Ident _)
+      (tuple report
+             (Datascript_runtime.Data_value.Entity_id
+              (entid-strict (:db-after report) entity-ref)))
+      (Datascript_runtime.Data_value.Lookup_ref _ _)
+      (tuple report
+             (Datascript_runtime.Data_value.Entity_id
+              (entid-strict (:db-after report) entity-ref)))
+      Datascript_runtime.Data_value.Current_tx
+      (raise (Invalid_argument "Unreachable current transaction reference")))))
 
 (defn ^:option<int> existing-tx-eid
   [^datascript.db/TxReport report
    ^:Datascript_runtime.Data_value.entity_ref entity-ref]
-  (match entity-ref
-    (Datascript_runtime.Data_value.Entity_id eid)
-    (if (pos? eid) (Some eid)
-        (get (:tempids report) (entity-ref-key entity-ref)))
-    (Datascript_runtime.Data_value.Temp_id _)
-    (get (:tempids report) (entity-ref-key entity-ref))
-    Datascript_runtime.Data_value.Current_tx
+  (if (current-tx-ref? entity-ref)
     (Some (current-tx report))
-    (Datascript_runtime.Data_value.Ident _)
-    (entid (:db-after report) entity-ref)
-    (Datascript_runtime.Data_value.Lookup_ref _ _)
-    (entid (:db-after report) entity-ref)))
+    (match entity-ref
+      (Datascript_runtime.Data_value.Entity_id eid)
+      (if (pos? eid) (Some eid)
+          (get (:tempids report) (entity-ref-key entity-ref)))
+      (Datascript_runtime.Data_value.Temp_id _)
+      (get (:tempids report) (entity-ref-key entity-ref))
+      (Datascript_runtime.Data_value.Auto_tempid _)
+      (get (:tempids report) (entity-ref-key entity-ref))
+      (Datascript_runtime.Data_value.Ident _)
+      (entid (:db-after report) entity-ref)
+      (Datascript_runtime.Data_value.Lookup_ref _ _)
+      (entid (:db-after report) entity-ref)
+      Datascript_runtime.Data_value.Current_tx
+      (Some (current-tx report)))))
 
 (defn ^boolean temp-entity-ref?
   [^:Datascript_runtime.Data_value.entity_ref entity-ref]
-  (match entity-ref
-    (Datascript_runtime.Data_value.Entity_id eid) (not (pos? eid))
-    (Datascript_runtime.Data_value.Temp_id _) true
-    _ false))
+  (if (current-tx-ref? entity-ref)
+    false
+    (match entity-ref
+      (Datascript_runtime.Data_value.Entity_id eid) (not (pos? eid))
+      (Datascript_runtime.Data_value.Temp_id _) true
+      (Datascript_runtime.Data_value.Auto_tempid _) true
+      _ false)))
 
 (defn reject-tempid-operation
   [^:Datascript_runtime.Data_value.entity_ref entity-ref]
   (when (temp-entity-ref? entity-ref)
     (raise
      (Invalid_argument
-      "Tempids are allowed in transaction add operations only"))))
+      "Tempids are allowed in :db/add only"))))
+
+(defn ^:string data-value-description
+  [^:Datascript_runtime.Data_value.t value]
+  (Datascript_runtime.Data_value.to_edn_string value))
+
+(defn ^:string optional-data-value-description
+  [^:option<Datascript_runtime.Data_value.t> value]
+  (if-some [value value]
+    (data-value-description value)
+    "nil"))
+
+(defn reject-tempid-cas-operation
+  [^:keyword operation
+   ^:Datascript_runtime.Data_value.entity_ref entity-ref
+   ^:keyword attr
+   ^:option<Datascript_runtime.Data_value.t> old-value
+   ^:Datascript_runtime.Data_value.t new-value]
+  (when (temp-entity-ref? entity-ref)
+    (raise
+     (Invalid_argument
+      (str
+       "Can't use tempid in '["
+       operation
+       " "
+       (data-value-description
+        (Datascript_runtime.Data_value.Ref_to entity-ref))
+       " "
+       attr
+       " "
+       (optional-data-value-description old-value)
+       " "
+       (data-value-description new-value)
+       "]'. Tempids are allowed in :db/add only")))))
 
 (defn ^datascript.db/TxReport mark-entity-used
   [^datascript.db/TxReport report
    ^:Datascript_runtime.Data_value.entity_ref resolved-ref]
   (let [eid (entid-strict (:db-after report) resolved-ref)]
-    (assoc report :value-tempids
-           (dissoc (:value-tempids report) eid))))
+    (assoc
+     report
+     :used-tempid-eids
+     (assoc (:used-tempid-eids report) eid true))))
 
 (defn ^:tuple<datascript.db/TxReport;Datascript_runtime.Data_value.t> resolve-tx-value
   [^datascript.db/TxReport report
@@ -2243,22 +3679,17 @@
     (if (ref? db attr)
       (let [entity-ref (data-value-entity-ref value)
             key (entity-ref-key entity-ref)
-            existing (if (temp-entity-ref? entity-ref)
-                       (get (:tempids report) key)
-                       None)
             result (resolve-tx-entity report entity-ref)
             report (tuple-get result 0)
             resolved-ref (tuple-get result 1)
             eid (entid-strict (:db-after report) resolved-ref)]
         (tuple
          (if (temp-entity-ref? entity-ref)
-           (if-some [_existing existing]
-             report
-             (assoc report :value-tempids
-                    (assoc
-                     (:value-tempids report)
-                     eid
-                     key)))
+           (assoc report :value-tempids
+                  (assoc
+                   (:value-tempids report)
+                   eid
+                   key))
            report)
          (Datascript_runtime.Data_value.Ref eid)))
       (tuple report
@@ -2271,48 +3702,49 @@
    ^:Datascript_runtime.Data_value.entity_ref entity-ref
    ^:keyword tuple-attr
    ^:Datascript_runtime.Data_value.t value]
-  (let [entity-result (resolve-tx-entity report entity-ref)
+  (let [attrs (schema-tuple-attrs (:db-after report) tuple-attr)
+        source-items (data-value-tuple-items value)]
+    (if (not= (count attrs) (count source-items))
+      (tuple report false)
+      (let [entity-result (resolve-tx-entity report entity-ref)
         report (tuple-get entity-result 0)
         resolved-ref (tuple-get entity-result 1)
         report (mark-entity-used report resolved-ref)
         db (:db-after report)
         eid (entid-strict db resolved-ref)
         value (resolve-tuple-refs db tuple-attr value)
-        attrs (schema-tuple-attrs db tuple-attr)
         items (data-value-tuple-items value)
         matches?
-        (if (= (count attrs) (count items))
-          (loop [index 0]
-            (if (< index (count attrs))
-              (if-some [item (nth items index)]
-                (if-some
-                  [datom
-                   (fsearch db eid
-                            (keyword (nth attrs index))
-                            nil nil)]
-                  (if (= item (.-v datom))
-                    (recur (inc index))
-                    false)
+        (loop [index 0]
+          (if (< index (count attrs))
+            (if-some [item (nth items index)]
+              (if-some
+                [datom
+                 (fsearch db eid
+                          (keyword (nth attrs index))
+                          nil nil)]
+                (if (= item (.-v datom))
+                  (recur (inc index))
                   false)
                 false)
-              true))
-          false)]
-    (tuple report matches?)))
+              false)
+            true))]
+        (tuple report matches?)))))
 
 (defn ^datascript.db/TxReport transact-add-entry
   [^datascript.db/TxReport report
    ^:Datascript_runtime.Data_value.entity_ref entity-ref
    ^:keyword attr
    ^:Datascript_runtime.Data_value.t value
-   ^:option<int> transaction]
+  ^:option<int> transaction]
   (let [temp-entity? (temp-entity-ref? entity-ref)
-        value-result (resolve-tx-value report attr value)
-        report (tuple-get value-result 0)
-        value (tuple-get value-result 1)
         entity-result (resolve-tx-entity report entity-ref)
         report (tuple-get entity-result 0)
         entity-ref (tuple-get entity-result 1)
         report (mark-entity-used report entity-ref)
+        value-result (resolve-tx-value report attr value)
+        report (tuple-get value-result 0)
+        value (tuple-get value-result 1)
         existing (if (is-attr? (:db-after report) attr
                                :db.unique/identity)
                    (fsearch (:db-after report) nil attr value nil)
@@ -2345,7 +3777,7 @@
       (reduce transact-retract-datom report
               (-search
                (:db-after report)
-               (Some eid) (Some attr) nil nil)))
+               (search-pattern (Some eid) (Some attr) nil nil))))
     report))
 
 (defn ^:vector<Datom> incoming-reference-datoms
@@ -2361,6 +3793,31 @@
    []
    (Lg_runtime.Lg_set.String_set.elements
     (-attrs-by db :db.type/ref))))
+
+(defn ^:string data-values-description
+  [^:vector<Datascript_runtime.Data_value.t> values]
+  (str
+   "("
+   (loop [index 0
+          description ""]
+     (if (< index (count values))
+       (let [separator (if (= index 0) "" " ")]
+         (recur
+          (inc index)
+          (str
+           description
+           separator
+           (data-value-description (nth values index)))))
+       description))
+   ")"))
+
+(defn ^:string datom-values-description
+  [^:vector<Datom> datoms]
+  (data-values-description
+   (mapv
+    (fn [^Datom datom]
+      (.-v datom))
+    datoms)))
 
 (defn ^datascript.db/TxReport transact-cas-entry
   [^datascript.db/TxReport report
@@ -2383,55 +3840,110 @@
             (Some (resolve-value value))
             None)
           new-value (resolve-value new-value)
+          datoms
+          (search-vector db (Some eid) (Some attr) nil nil)
+          current-description
+          (if (multival? db attr)
+            (datom-values-description datoms)
+            (if-some [datom (first datoms)]
+              (data-value-description (.-v datom))
+              "nil"))
           matches?
           (if (multival? db attr)
             (if-some [expected old-value]
-              (loop [datoms
-                     (search-vector db (Some eid) (Some attr) nil nil)
-                     index 0]
+              (loop [index 0]
                 (if (< index (count datoms))
                   (if (= (.-v (nth datoms index)) expected)
                     true
-                    (recur datoms (inc index)))
+                    (recur (inc index)))
                   false))
               false)
-            (let [current (fsearch db eid attr nil nil)]
-              (if-some [expected old-value]
-                (if-some [datom current]
-                  (= (.-v datom) expected)
-                  false)
-                (nil? current))))]
+            (if-some [expected old-value]
+              (if-some [datom (first datoms)]
+                (= (.-v datom) expected)
+                false)
+              (empty? datoms)))]
       (if matches?
         (transact-add
          report
          (Datascript_runtime.Data_value.Entity_id eid)
          attr new-value None)
-        (raise (Invalid_argument
-                "Compare-and-set transaction failed"))))
+        (raise
+         (Invalid_argument
+          (str
+           ":db.fn/cas failed on datom ["
+           eid
+           " "
+           attr
+           " "
+           current-description
+           "], expected "
+           (optional-data-value-description old-value))))))
     (raise (Invalid_argument
             "Compare-and-set entity does not exist"))))
 
+(defn ^:string tempid-values-description
+  [^:map<int;Datascript_runtime.Data_value.t> tempids]
+  (data-values-description (vec (vals tempids))))
+
+(defn- ^:map<Datascript_runtime.Data_value.t;int> remove-auto-tempids
+  [^:map<Datascript_runtime.Data_value.t;int> tempids]
+  (reduce-kv
+   (fn
+     [^:map<Datascript_runtime.Data_value.t;int> retained
+      ^:Datascript_runtime.Data_value.t key
+      ^:int eid]
+     (if-some
+       [entity-ref
+        (Datascript_runtime.Data_value.entity_ref_value key)]
+       (match entity-ref
+         (Datascript_runtime.Data_value.Auto_tempid _) retained
+         _ (assoc retained key eid))
+       (assoc retained key eid)))
+   {}
+   tempids))
+
+(defn ^datascript.db/TxReport check-value-tempids
+  [^datascript.db/TxReport report]
+  (let [unused-tempids
+        (reduce-kv
+         (fn
+           [^:map<int;Datascript_runtime.Data_value.t> unused
+            ^:int eid
+            ^boolean _used]
+           (dissoc unused eid))
+         (:value-tempids report)
+         (:used-tempid-eids report))]
+    (if (empty? unused-tempids)
+      report
+      (raise
+       (Invalid_argument
+        (str
+         "Tempids used only as value in transaction: "
+         (tempid-values-description unused-tempids)))))))
+
+(defn- ^datascript.db/DB finish-transaction-db
+  [^datascript.db/DB database]
+  (assoc
+   (assoc database :max-tx (inc (:max-tx database)))
+   :identity-hash
+   (fresh-db-identity)))
+
 (defn ^datascript.db/TxReport finish-transaction
   [^datascript.db/TxReport report]
-  (if (empty? (:value-tempids report))
-    (let [current (current-tx report)]
+  (let [report (check-value-tempids report)
+        current (current-tx report)]
+    (assoc
+     (assoc
+      report
+      :tempids
       (assoc
-       (assoc
-        report
-        :tempids
-        (assoc
-         (.-tempids report)
-         (entity-ref-key
-          (Datascript_runtime.Data_value.Current_tx))
-         current))
-       :db-after
-       (assoc
-        (.-db-after report)
-        :max-tx
-        (inc (.-max-tx (.-db-after report))))))
-    (raise
-     (Invalid_argument
-      "Tempids used only as values in transaction"))))
+       (remove-auto-tempids (:tempids report))
+       (entity-ref-key
+        (Datascript_runtime.Data_value.Current_tx))
+       current))
+     :db-after
+     (finish-transaction-db (:db-after report)))))
 
 (defn- ^:vector<tuple<vector<tx-entry>;int>> push-tx-continuation
   [^:vector<tuple<vector<tx-entry>;int>> continuations
@@ -2491,6 +4003,28 @@
        report generated entries next-index continuations))
     (tuple report entries next-index continuations)))
 
+(defn- ^datascript.db/TxReport mark-upserted-eid-used
+  [^datascript.db/TxReport report ^:int eid]
+  (assoc
+   report
+   :used-tempid-eids
+   (assoc (.-used-tempid-eids report) eid true)))
+
+(defn- ^datascript.db/TxReport bind-tempid-upsert
+  [^datascript.db/TxReport report
+   ^:Datascript_runtime.Data_value.entity_ref entity-ref
+   ^:int upserted-eid]
+  (let [key (entity-ref-key entity-ref)]
+    (if-some [existing (get (:tempids report) key)]
+      (if (= existing upserted-eid)
+        (mark-upserted-eid-used report upserted-eid)
+        (raise (Invalid_argument
+                "Conflicting upsert tempid resolution")))
+      (mark-upserted-eid-used
+       (assoc report :tempids
+              (assoc (:tempids report) key upserted-eid))
+       upserted-eid))))
+
 (defn- ^datascript.db/TxReport bind-upserted-entity
   [^datascript.db/TxReport report
    ^:Datascript_runtime.Data_value.entity_ref entity-ref
@@ -2501,23 +4035,11 @@
       (if (= eid upserted-eid)
         report
         (raise (Invalid_argument "Conflicting upsert entity id")))
-      (let [key (entity-ref-key entity-ref)]
-        (if-some [existing (get (:tempids report) key)]
-          (if (= existing upserted-eid)
-            report
-            (raise (Invalid_argument
-                    "Conflicting upsert tempid resolution")))
-          (assoc report :tempids
-                 (assoc (:tempids report) key upserted-eid)))))
+      (bind-tempid-upsert report entity-ref upserted-eid))
     (Datascript_runtime.Data_value.Temp_id _)
-    (let [key (entity-ref-key entity-ref)]
-      (if-some [existing (get (:tempids report) key)]
-        (if (= existing upserted-eid)
-          report
-          (raise (Invalid_argument
-                  "Conflicting upsert tempid resolution")))
-        (assoc report :tempids
-               (assoc (:tempids report) key upserted-eid))))
+    (bind-tempid-upsert report entity-ref upserted-eid)
+    (Datascript_runtime.Data_value.Auto_tempid _)
+    (bind-tempid-upsert report entity-ref upserted-eid)
     Datascript_runtime.Data_value.Current_tx
     (if (= (current-tx report) upserted-eid)
       report
@@ -2533,6 +4055,15 @@
       report
       (raise (Invalid_argument "Conflicting lookup-ref upsert")))))
 
+(defn- ^boolean tempid-upsert-retry-needed?
+  [^datascript.db/TxReport report
+   ^:Datascript_runtime.Data_value.entity_ref entity-ref
+   ^:int upserted-eid]
+  (if-some [existing
+            (get (:tempids report) (entity-ref-key entity-ref))]
+    (not= existing upserted-eid)
+    false))
+
 (defn- ^boolean upsert-retry-needed?
   [^datascript.db/TxReport report
    ^:Datascript_runtime.Data_value.entity_ref entity-ref
@@ -2541,16 +4072,38 @@
     (Datascript_runtime.Data_value.Entity_id eid)
     (if (pos? eid)
       false
-      (if-some [existing
-                (get (:tempids report) (entity-ref-key entity-ref))]
-        (not= existing upserted-eid)
-        false))
+      (tempid-upsert-retry-needed?
+       report entity-ref upserted-eid))
     (Datascript_runtime.Data_value.Temp_id _)
-    (if-some [existing
-              (get (:tempids report) (entity-ref-key entity-ref))]
-      (not= existing upserted-eid)
-      false)
+    (tempid-upsert-retry-needed?
+     report entity-ref upserted-eid)
+    (Datascript_runtime.Data_value.Auto_tempid _)
+    (tempid-upsert-retry-needed?
+     report entity-ref upserted-eid)
     _ false))
+
+(defn- ^:option<Datascript_runtime.Data_value.entity_ref>
+  temp-entity-ref-for-eid
+  [^datascript.db/TxReport report ^:int eid]
+  (reduce-kv
+   (fn
+     [^:option<Datascript_runtime.Data_value.entity_ref> found
+      ^:Datascript_runtime.Data_value.t key
+      ^:int resolved-eid]
+     (match found
+       (Some _) found
+       None
+       (if (= resolved-eid eid)
+         (if-some
+           [entity-ref
+            (Datascript_runtime.Data_value.entity_ref_value key)]
+           (if (temp-entity-ref? entity-ref)
+             (Some entity-ref)
+             None)
+           None)
+         None)))
+   None
+   (:tempids report)))
 
 (defn- ^:option<int> unique-upsert-eid
   [^datascript.db/TxReport report
@@ -2560,13 +4113,10 @@
     (if (is-attr? db attr :db.unique/identity)
       (let [resolved
             (if (ref? db attr)
-              (if-some
-                [entity-ref
-                 (Datascript_runtime.Data_value.entity_ref_value value)]
+              (let [entity-ref (data-value-entity-ref value)]
                 (if-some [eid (existing-tx-eid report entity-ref)]
                   (Some (Datascript_runtime.Data_value.Ref eid))
-                  None)
-                None)
+                  None))
               (Some
                (if (tuple? db attr)
                  (resolve-tuple-refs db attr value)
@@ -2577,6 +4127,22 @@
             None)
           None))
       None)))
+
+(defn- ^:option<tuple<Datascript_runtime.Data_value.entity_ref;int>>
+  tuple-upsert-retry
+  [^datascript.db/TxReport report
+   ^:Datascript_runtime.Data_value.entity_ref entity-ref
+   ^:keyword attr
+   ^:Datascript_runtime.Data_value.t value]
+  (if-some [upserted-eid (unique-upsert-eid report attr value)]
+    (if-some [current-eid (existing-tx-eid report entity-ref)]
+      (if (= current-eid upserted-eid)
+        None
+        (if-some [tempid (temp-entity-ref-for-eid report current-eid)]
+          (Some (tuple tempid upserted-eid))
+          None))
+      None)
+    None))
 
 (defn- ^:map<keyword;Datascript_runtime.Data_value.t> assoc-entity-id
   [^:map<keyword;Datascript_runtime.Data_value.t> entity ^:int eid]
@@ -2590,31 +4156,21 @@
   expand-entity-next
   [^datascript.db/TxReport report
    ^:map<keyword;Datascript_runtime.Data_value.t> entity
+   ^:vector<keyword> attrs
    ^:vector<tx-entry> entries
    ^:int next-index
    ^:vector<tuple<vector<tx-entry>;int>> continuations]
   (if-some [id-value (get entity :db/id)]
-    (if-some
-      [entity-ref
-       (Datascript_runtime.Data_value.entity_ref_value id-value)]
-      (let [resolved (resolve-tx-entity report entity-ref)
-            report (tuple-get resolved 0)
-            entity-ref (tuple-get resolved 1)
-            report (mark-entity-used report entity-ref)
-            entity
-            (assoc
-             entity
-             :db/id
-             (Datascript_runtime.Data_value.Ref_to entity-ref))]
-        (tuple
-         report
-         (explode (:db-after report) entity)
-         0
-         (push-tx-continuation
-          continuations entries next-index)))
-      (raise
-       (Invalid_argument
-        "Transaction entity has an invalid :db/id")))
+    (let [entity-ref
+          (data-value-entity-ref-with-error
+           id-value
+           "Expected number, string or lookup ref for :db/id")]
+      (tuple
+       report
+       (explode (:db-after report) entity attrs)
+       0
+       (push-tx-continuation
+        continuations entries next-index)))
     (raise
      (Invalid_argument "Transaction entity requires :db/id"))))
 
@@ -2625,7 +4181,10 @@
 
 (type-variant tx-run-result
   (TxFinished :datascript.db/TxReport)
-  (TxRetry :Datascript_runtime.Data_value.entity_ref :int))
+  (TxRetry
+   :datascript.db/TxReport
+   :Datascript_runtime.Data_value.entity_ref
+   :int))
 
 (defn ^tx-run-result transact-tx-data-loop
   [^datascript.db/TxReport report
@@ -2637,6 +4196,10 @@
             next-index (inc entry-index)
             ^tx-step-result step
             (match entry
+              TxNil
+              (TxStep
+               (tuple report entries next-index continuations))
+
               TxFlushTuples
               (let [queued (flush-tuples report)
                     report (assoc report :queued-tuples {})]
@@ -2648,19 +4211,99 @@
                   (push-tx-continuation
                    continuations entries next-index))))
 
-              (TxEntity entity)
-              (let [_ (check-schema-update entity)
+              (TxCall callback)
+              (TxStep
+               (continue-with-generated
+                report
+                (assoc-auto-tempids
+                 (:db-after report)
+                 (callback (:db-after report)))
+                entries
+                next-index
+                continuations))
+
+              (TxInstallFunction entity callback)
+              (if-some [ident-value (get entity :db/ident)]
+                (match ident-value
+                  (Datascript_runtime.Data_value.Keyword ident)
+                  (let [db (.-db-after report)
+                        functions (.-tx-functions db)
+                        report
+                        (assoc
+                         report
+                         :db-after
+                         (assoc
+                          db
+                          :tx-functions
+                          (assoc functions ident callback)))]
+                    (TxStep
+                     (continue-with-generated
+                      report
+                      (assoc-auto-tempids
+                       db
+                       [(tx-entity entity)])
+                      entries
+                      next-index
+                      continuations)))
+                  _
+                  (raise
+                   (Invalid_argument
+                    "Transaction function :db/ident must be a keyword")))
+                (raise
+                 (Invalid_argument
+                  "Transaction function entity requires :db/ident")))
+
+              (TxInvokeFunction ident arguments)
+              (let [db (.-db-after report)]
+                (if-some [callback (get (.-tx-functions db) ident)]
+                  (if (= 1 (count arguments))
+                    (TxStep
+                     (continue-with-generated
+                      report
+                      (callback db (nth arguments 0))
+                      entries
+                      next-index
+                      continuations))
+                    (raise
+                     (Invalid_argument
+                      (str
+                       "Transaction function " ident
+                       " expects one argument"))))
+                  (if-some
+                    [_entity
+                     (entid
+                      db
+                      (Datascript_runtime.Data_value.Ident ident))]
+                    (raise
+                     (Invalid_argument
+                      (str
+                       "Entity " ident
+                       " expected to have :db/fn attribute with fn? value")))
+                    (raise
+                     (Invalid_argument
+                      (str
+                       "Can’t find entity for transaction fn "
+                       ident))))))
+
+              (TxInvalid message)
+              (raise (Invalid_argument message))
+
+              (TxEntity entity-form)
+              (let [entity (:values entity-form)
+                    attrs (:attrs entity-form)
+                    _ (check-schema-update (.-db-after report) entity)
                     db (:db-after report)
                     upsert-result (resolve-upserts db entity)
                     entity (tuple-get upsert-result 0)
                     upserts (tuple-get upsert-result 1)
-                    upserted-eid (validate-upserts entity upserts)]
+                    upserted-eid
+                    (validate-upserts-for-report report entity upserts)]
                 (if-some [eid upserted-eid]
                   (if-some [id-value (get entity :db/id)]
-                    (if-some
-                      [entity-ref
-                       (Datascript_runtime.Data_value.entity_ref_value
-                        id-value)]
+                    (let [entity-ref
+                          (data-value-entity-ref-with-error
+                           id-value
+                           "Expected number, string or lookup ref for :db/id")]
                       (if (upsert-retry-needed?
                            report entity-ref eid)
                         (TxRestart entity-ref eid)
@@ -2670,36 +4313,50 @@
                               entity (assoc-entity-id entity eid)]
                           (TxStep
                            (expand-entity-next
-                            report entity entries next-index
-                            continuations))))
-                      (raise
-                       (Invalid_argument
-                        "Transaction entity has an invalid :db/id")))
+                            report entity attrs entries next-index
+                            continuations)))))
                     (TxStep
                      (expand-entity-next
                       report
                       (assoc-entity-id entity eid)
-                      entries next-index continuations)))
-                  (let [entity
-                        (if (contains? entity :db/id)
-                          entity
-                          (assoc-entity-id entity (next-eid db)))]
-                    (TxStep
-                     (expand-entity-next
-                      report entity entries next-index continuations)))))
+                      attrs entries next-index continuations)))
+                  (TxStep
+                   (expand-entity-next
+                    report entity attrs entries next-index
+                    continuations))))
 
               (TxAdd entity-ref attr value transaction)
               (if (tuple? (:db-after report) attr)
-                (let [result
-                      (direct-tuple-match
-                       report entity-ref attr value)
-                      report (tuple-get result 0)]
-                  (if (tuple-get result 1)
-                    (TxStep
-                     (tuple report entries next-index continuations))
-                    (raise
-                     (Invalid_argument
-                      "Cannot modify tuple attributes directly"))))
+                (if-some [upserted-eid
+                          (unique-upsert-eid report attr value)]
+                  (if (upsert-retry-needed?
+                       report entity-ref upserted-eid)
+                    (TxRestart entity-ref upserted-eid)
+                    (let [report
+                          (bind-upserted-entity
+                           report entity-ref upserted-eid)
+                          result
+                          (direct-tuple-match
+                           report entity-ref attr value)
+                          report (tuple-get result 0)]
+                      (if (tuple-get result 1)
+                        (TxStep
+                         (tuple report entries next-index continuations))
+                        (raise
+                         (Invalid_argument
+                          (direct-tuple-error
+                           :db/add entity-ref attr value))))))
+                  (let [result
+                        (direct-tuple-match
+                         report entity-ref attr value)
+                        report (tuple-get result 0)]
+                    (if (tuple-get result 1)
+                      (TxStep
+                       (tuple report entries next-index continuations))
+                      (raise
+                       (Invalid_argument
+                        (direct-tuple-error
+                         :db/add entity-ref attr value))))))
                 (if-some [upserted-eid
                           (unique-upsert-eid report attr value)]
                   (if (upsert-retry-needed?
@@ -2736,7 +4393,8 @@
                          (tuple report entries next-index continuations))
                         (raise
                          (Invalid_argument
-                          "Cannot modify tuple attributes directly"))))
+                          (direct-tuple-error
+                           :db/retract entity-ref attr tuple-value)))))
                     (raise
                      (Invalid_argument
                       "Cannot modify tuple attributes directly")))
@@ -2760,19 +4418,36 @@
                   report entity-ref entries next-index continuations)))
 
               (TxSetTuple entity-ref attr value)
-              (TxStep
-               (tuple
-                (if-some [tuple-value value]
-                  (transact-add-entry
-                   report entity-ref attr tuple-value None)
+              (if-some [tuple-value value]
+                (if-some
+                  [retry
+                   (tuple-upsert-retry
+                    report entity-ref attr tuple-value)]
+                  (TxRestart
+                   (tuple-get retry 0)
+                   (tuple-get retry 1))
+                  (TxStep
+                   (tuple
+                    (transact-add-entry
+                     report entity-ref attr tuple-value None)
+                    entries
+                    next-index
+                    continuations)))
+                (TxStep
+                 (tuple
                   (transact-retract-entry
-                   report entity-ref attr None))
-                entries
-                next-index
-                continuations))
+                   report entity-ref attr None)
+                  entries
+                  next-index
+                  continuations)))
 
-              (TxCas entity-ref attr old-value new-value)
-              (let [_ (reject-tempid-operation entity-ref)]
+              (TxCas operation entity-ref attr old-value new-value)
+              (let [_ (reject-tempid-cas-operation
+                       operation
+                       entity-ref
+                       attr
+                       old-value
+                       new-value)]
                 (TxStep
                  (tuple
                   (transact-cas-entry
@@ -2788,7 +4463,7 @@
            (tuple-get next 2)
            (tuple-get next 3))
           (TxRestart entity-ref eid)
-          (TxRetry entity-ref eid)))
+          (TxRetry report entity-ref eid)))
       (if-some [continuation (first continuations)]
         (transact-tx-data-loop
          report
@@ -2807,32 +4482,55 @@
    ^:vector<tx-entry> initial-entries]
   (transact-tx-data-loop initial-report initial-entries 0 []))
 
-(defn ^datascript.db/TxReport transact-tx-data-impl
+(defn- ^:string temp-entity-ref-description
+  [^:Datascript_runtime.Data_value.entity_ref entity-ref]
+  (match entity-ref
+    (Datascript_runtime.Data_value.Entity_id eid) (Stdlib.string_of_int eid)
+    (Datascript_runtime.Data_value.Temp_id tempid) tempid
+    (Datascript_runtime.Data_value.Auto_tempid auto-tempid)
+    (str
+     "#datascript/AutoTempid ["
+     (Stdlib.string_of_int auto-tempid)
+     "]")
+    _ (raise (Invalid_argument "Expected a transaction tempid"))))
+
+(defn- ^datascript.db/TxReport transact-tx-data-impl-with-upserts
   [^datascript.db/TxReport initial-report
-   ^:vector<tx-entry> initial-entries]
+   ^:vector<tx-entry> initial-entries
+   ^:map<Datascript_runtime.Data_value.t;int> upserted-tempids]
   (match
     (transact-tx-data-run initial-report initial-entries)
     (TxFinished report)
     report
-    (TxRetry entity-ref upserted-eid)
+    (TxRetry report entity-ref upserted-eid)
     (let [key (entity-ref-key entity-ref)]
-      (if-some [existing (get (:tempids initial-report) key)]
-        (if (= existing upserted-eid)
-          (raise
-           (Invalid_argument
-            "Upsert retry repeated without making progress"))
-          (raise
-           (Invalid_argument
-            "Conflicting upsert tempid resolution")))
-        (transact-tx-data-impl
+      (if-some [existing (get upserted-tempids key)]
+        (raise
+         (Invalid_argument
+          (str
+           "Conflicting upsert: "
+           (temp-entity-ref-description entity-ref)
+           " resolves both to " upserted-eid
+           " and " existing)))
+        (transact-tx-data-impl-with-upserts
          (assoc
           initial-report
           :tempids
-          (assoc (:tempids initial-report)
-                 key upserted-eid))
-         initial-entries)))))
+          (assoc (.-tempids report) key upserted-eid))
+         initial-entries
+         (assoc upserted-tempids key upserted-eid))))))
+
+(defn ^datascript.db/TxReport transact-tx-data-impl
+  [^datascript.db/TxReport initial-report
+   ^:vector<tx-entry> initial-entries]
+  (transact-tx-data-impl-with-upserts
+   initial-report
+   initial-entries
+   {}))
 
 (defn ^datascript.db/TxReport transact-tx-data
   [^datascript.db/TxReport report
    ^:vector<tx-entry> entries]
-  (transact-tx-data-impl report entries))
+  (transact-tx-data-impl
+   report
+   (assoc-auto-tempids (:db-before report) entries)))

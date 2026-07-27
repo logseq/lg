@@ -1,6 +1,7 @@
 type entity_ref =
   | Entity_id of int
   | Temp_id of string
+  | Auto_tempid of int
   | Current_tx
   | Ident of string
   | Lookup_ref of string * t
@@ -8,6 +9,7 @@ type entity_ref =
 and t =
   | Nil
   | Int of int
+  | Wide_int of int64
   | Float of float
   | String of string
   | Symbol of string
@@ -25,6 +27,64 @@ and t =
   | Tx_ref
   | Ref_to of entity_ref
 
+let quoted value = Printf.sprintf "%S" value
+
+let float_to_edn_string value =
+  if Float.is_nan value then "##NaN"
+  else if Float.is_infinite value then
+    if value > 0. then "##Inf" else "##-Inf"
+  else
+    let rendered = string_of_float value in
+    if String.ends_with ~suffix:"." rendered then rendered ^ "0" else rendered
+
+let render_sequence opening closing values =
+  opening ^ String.concat " " values ^ closing
+
+let rec to_edn_string = function
+  | Nil -> "nil"
+  | Int value -> string_of_int value
+  | Wide_int value -> Int64.to_string value
+  | Float value -> float_to_edn_string value
+  | String value -> quoted value
+  | Symbol value -> value
+  | Bool value -> string_of_bool value
+  | Keyword value -> value
+  | Uuid value -> "#uuid " ^ quoted value
+  | Instant value -> "#inst " ^ quoted (string_of_int value)
+  | Regex value -> "#\"" ^ String.escaped value ^ "\""
+  | Ref value -> string_of_int value
+  | List values ->
+      render_sequence "(" ")" (List.map to_edn_string values)
+  | Vector values ->
+      render_sequence "[" "]" (List.map to_edn_string values)
+  | Map entries ->
+      render_sequence
+        "{" "}"
+        (List.map
+           (fun (key, value) ->
+             to_edn_string key ^ " " ^ to_edn_string value)
+           entries)
+  | Set values ->
+      render_sequence "#{" "}" (List.map to_edn_string values)
+  | Tuple values ->
+      render_sequence
+        "[" "]"
+        (List.map
+           (function None -> "nil" | Some value -> to_edn_string value)
+           values)
+  | Tx_ref -> ":db/current-tx"
+  | Ref_to entity_ref -> entity_ref_to_edn_string entity_ref
+
+and entity_ref_to_edn_string = function
+  | Entity_id value -> string_of_int value
+  | Temp_id value -> quoted value
+  | Auto_tempid value ->
+      "#datascript/AutoTempid [" ^ string_of_int value ^ "]"
+  | Current_tx -> ":db/current-tx"
+  | Ident value -> value
+  | Lookup_ref (attr, value) ->
+      "[" ^ attr ^ " " ^ to_edn_string value ^ "]"
+
 let tuple_of_vector values = Tuple (Rrbvec.to_list values)
 let set_of_vector values = Set (Rrbvec.to_list values)
 let vector_of_vector values = Vector (Rrbvec.to_list values)
@@ -36,15 +96,137 @@ let vector_of_vector_with convert values =
 
 let is_nil = function Nil -> true | _ -> false
 
+let add values =
+  let total =
+    Rrbvec.fold_left
+      (fun total value ->
+        match (total, value) with
+        | None, _ -> None
+        | Some (`Int left), Int right -> Some (`Int (left + right))
+        | Some (`Int left), Wide_int right ->
+            Some (`Wide (Int64.add (Int64.of_int left) right))
+        | Some (`Int left), Float right ->
+            Some (`Float (float_of_int left +. right))
+        | Some (`Wide left), Int right ->
+            Some (`Wide (Int64.add left (Int64.of_int right)))
+        | Some (`Wide left), Wide_int right ->
+            Some (`Wide (Int64.add left right))
+        | Some (`Wide left), Float right ->
+            Some (`Float (Int64.to_float left +. right))
+        | Some (`Float left), Int right ->
+            Some (`Float (left +. float_of_int right))
+        | Some (`Float left), Wide_int right ->
+            Some (`Float (left +. Int64.to_float right))
+        | Some (`Float left), Float right -> Some (`Float (left +. right))
+        | Some _, _ -> None)
+      (Some (`Int 0)) values
+  in
+  match total with
+  | None -> None
+  | Some (`Int value) -> Some (Int value)
+  | Some (`Wide value) -> Some (Wide_int value)
+  | Some (`Float value) -> Some (Float value)
+
+let subtract_pair left right =
+  match (left, right) with
+  | Int left, Int right -> Some (Int (left - right))
+  | Int left, Wide_int right ->
+      Some (Wide_int (Int64.sub (Int64.of_int left) right))
+  | Wide_int left, Int right ->
+      Some (Wide_int (Int64.sub left (Int64.of_int right)))
+  | Wide_int left, Wide_int right -> Some (Wide_int (Int64.sub left right))
+  | Int left, Float right -> Some (Float (float_of_int left -. right))
+  | Wide_int left, Float right ->
+      Some (Float (Int64.to_float left -. right))
+  | Float left, Int right -> Some (Float (left -. float_of_int right))
+  | Float left, Wide_int right ->
+      Some (Float (left -. Int64.to_float right))
+  | Float left, Float right -> Some (Float (left -. right))
+  | _ -> None
+
+let negate = function
+  | Int value -> Some (Int (-value))
+  | Wide_int value -> Some (Wide_int (Int64.neg value))
+  | Float value -> Some (Float (-.value))
+  | _ -> None
+
+let subtract values =
+  match Rrbvec.to_list values with
+  | [] -> None
+  | [ value ] -> negate value
+  | first :: rest ->
+      List.fold_left
+        (fun result value -> Option.bind result (fun left -> subtract_pair left value))
+        (Some first) rest
+
+let multiply_pair left right =
+  match (left, right) with
+  | Int left, Int right -> Some (Int (left * right))
+  | Int left, Wide_int right ->
+      Some (Wide_int (Int64.mul (Int64.of_int left) right))
+  | Wide_int left, Int right ->
+      Some (Wide_int (Int64.mul left (Int64.of_int right)))
+  | Wide_int left, Wide_int right -> Some (Wide_int (Int64.mul left right))
+  | Int left, Float right -> Some (Float (float_of_int left *. right))
+  | Wide_int left, Float right ->
+      Some (Float (Int64.to_float left *. right))
+  | Float left, Int right -> Some (Float (left *. float_of_int right))
+  | Float left, Wide_int right ->
+      Some (Float (left *. Int64.to_float right))
+  | Float left, Float right -> Some (Float (left *. right))
+  | _ -> None
+
+let multiply values =
+  Rrbvec.fold_left
+    (fun result value ->
+      Option.bind result (fun left -> multiply_pair left value))
+    (Some (Int 1)) values
+
+let increment = function
+  | Int value -> Some (Int (value + 1))
+  | Wide_int value -> Some (Wide_int (Int64.succ value))
+  | Float value -> Some (Float (value +. 1.0))
+  | _ -> None
+
+let decrement = function
+  | Int value -> Some (Int (value - 1))
+  | Wide_int value -> Some (Wide_int (Int64.pred value))
+  | Float value -> Some (Float (value -. 1.0))
+  | _ -> None
+
 let map_of_keyword_map values =
   Map
     (Lg_runtime.Runtime_map.to_list values
+    |> List.map (fun (key, value) -> (Keyword key, value)))
+
+let map_of_keyword_entries entries =
+  Map
+    (Rrbvec.to_list entries
     |> List.map (fun (key, value) -> (Keyword key, value)))
 
 let map_of_keyword_map_with convert values =
   Map
     (Lg_runtime.Runtime_map.to_list values
     |> List.map (fun (key, value) -> (Keyword key, convert value)))
+
+let map_of_data_map values = Map (Lg_runtime.Runtime_map.to_list values)
+
+let map_of_data_map_with convert values =
+  Map
+    (Lg_runtime.Runtime_map.to_list values
+    |> List.map (fun (key, value) -> (key, convert value)))
+
+let regex_pattern = function
+  | String pattern ->
+      let _ = Lg_edn_backend.regex_valid pattern in
+      Some (Regex pattern)
+  | _ -> None
+
+let regex_find pattern source =
+  match (pattern, source) with
+  | Regex pattern, String source ->
+      Some (Lg_edn_backend.regex_find pattern source)
+  | _ -> None
 
 let keyword_map_get key = function
   | Map entries ->
@@ -65,6 +247,21 @@ let keyword_map_value = function
           | _ -> None)
         (Some Lg_runtime.Runtime_map.empty)
         entries
+  | _ -> None
+
+let keyword_map_entries = function
+  | Map entries ->
+      let rec collect result = function
+        | [] -> Some (Rrbvec.of_list (List.rev result))
+        | (Keyword key, value) :: rest ->
+            collect ((key, value) :: result) rest
+        | _ :: _ -> None
+      in
+      collect [] entries
+  | _ -> None
+
+let map_entries = function
+  | Map entries -> Some (Rrbvec.of_list entries)
   | _ -> None
 
 let string_vector values =
@@ -93,9 +290,21 @@ let set_items = function
   | Set values -> Some (Rrbvec.of_list values)
   | _ -> None
 
+let count_value = function
+  | Nil -> Some 0
+  | String value -> Some (String.length value)
+  | List values | Vector values | Set values -> Some (List.length values)
+  | Map entries -> Some (List.length entries)
+  | _ -> None
+
 let entity_ref_value = function
   | Ref_to entity_ref -> Some entity_ref
   | Int eid | Ref eid -> Some (Entity_id eid)
+  | _ -> None
+
+let lookup_ref_value = function
+  | List [ Keyword attr; value ] | Vector [ Keyword attr; value ] ->
+      Some (attr, value)
   | _ -> None
 
 let ref_value = function Ref eid -> Some eid | _ -> None
@@ -115,9 +324,17 @@ let tuple_entity_refs attrs ref_attrs value =
   List.fold_left2
     (fun refs attr item ->
       if List.mem attr ref_attrs then
-        match Option.bind item entity_ref_value with
-        | Some entity_ref -> entity_ref :: refs
-        | None -> invalid_arg "tuple ref item must be an entity reference"
+        match item with
+        | None -> refs
+        | Some value -> (
+            match entity_ref_value value with
+            | Some entity_ref -> entity_ref :: refs
+            | None -> (
+                match lookup_ref_value value with
+                | Some (attr, lookup_value) ->
+                    Lookup_ref (attr, lookup_value) :: refs
+                | None ->
+                    invalid_arg "tuple ref item must be an entity reference"))
       else refs)
     [] attrs items
   |> List.rev |> Rrbvec.of_list
@@ -178,11 +395,18 @@ let rec equal left right =
   | Int left, Int right | Ref left, Ref right | Instant left, Instant right ->
       left = right
   | Int left, Ref right | Ref left, Int right -> left = right
+  | Wide_int left, Wide_int right -> Int64.equal left right
+  | (Int left | Ref left), Wide_int right ->
+      Int64.equal (Int64.of_int left) right
+  | Wide_int left, (Int right | Ref right) ->
+      Int64.equal left (Int64.of_int right)
   | Float left, Float right -> Float.equal left right
   | Int left, Float right | Ref left, Float right ->
       Float.equal (float_of_int left) right
   | Float left, Int right | Float left, Ref right ->
       Float.equal left (float_of_int right)
+  | Wide_int left, Float right -> Float.equal (Int64.to_float left) right
+  | Float left, Wide_int right -> Float.equal left (Int64.to_float right)
   | String left, String right
   | Symbol left, Symbol right
   | Keyword left, Keyword right
@@ -217,11 +441,23 @@ and set_equal left right =
 and entity_ref_equal left right =
   match (left, right) with
   | Entity_id left, Entity_id right -> left = right
+  | Auto_tempid left, Auto_tempid right -> left = right
   | Temp_id left, Temp_id right | Ident left, Ident right -> String.equal left right
   | Current_tx, Current_tx -> true
   | Lookup_ref (left_attr, left_value), Lookup_ref (right_attr, right_value) ->
       String.equal left_attr right_attr && equal left_value right_value
   | _ -> false
+
+let map_get map key =
+  match map with
+  | Map entries ->
+      Some
+        (Option.value ~default:Nil
+           (List.find_map
+              (fun (candidate, value) ->
+                if equal candidate key then Some value else None)
+              entries))
+  | _ -> Some Nil
 
 let combine_hash seed value = (seed * 33) lxor value
 
@@ -234,6 +470,7 @@ let unordered_hash values =
 let rec hash = function
   | Nil -> 0
   | Int value | Ref value -> Hashtbl.hash (float_of_int value)
+  | Wide_int value -> Hashtbl.hash (Int64.to_float value)
   | Float value -> Hashtbl.hash value
   | String value -> Hashtbl.hash (0, value)
   | Symbol value -> Hashtbl.hash (1, value)
@@ -258,9 +495,10 @@ let rec hash = function
 and hash_entity_ref = function
   | Entity_id value -> Hashtbl.hash (0, value)
   | Temp_id value -> Hashtbl.hash (1, value)
-  | Current_tx -> Hashtbl.hash 2
-  | Ident value -> Hashtbl.hash (3, value)
-  | Lookup_ref (attr, value) -> Hashtbl.hash (4, attr, hash value)
+  | Auto_tempid value -> Hashtbl.hash (2, value)
+  | Current_tx -> Hashtbl.hash 3
+  | Ident value -> Hashtbl.hash (4, value)
+  | Lookup_ref (attr, value) -> Hashtbl.hash (5, attr, hash value)
 
 let identifier_offset value =
   if
@@ -352,7 +590,7 @@ let rank = function
   | Set _ -> 4
   | List _ | Vector _ | Tuple _ -> 5
   | Bool _ -> 6
-  | Int _ | Float _ | Ref _ -> 7
+  | Int _ | Wide_int _ | Float _ | Ref _ -> 7
   | String _ -> 8
   | Regex _ -> 9
   | Instant _ -> 10
@@ -365,11 +603,18 @@ let compare left right =
   | Int left, Int right | Ref left, Ref right | Instant left, Instant right ->
       Int.compare left right
   | Int left, Ref right | Ref left, Int right -> Int.compare left right
+  | Wide_int left, Wide_int right -> Int64.compare left right
+  | (Int left | Ref left), Wide_int right ->
+      Int64.compare (Int64.of_int left) right
+  | Wide_int left, (Int right | Ref right) ->
+      Int64.compare left (Int64.of_int right)
   | Float left, Float right -> Float.compare left right
   | Int left, Float right | Ref left, Float right ->
       Float.compare (float_of_int left) right
   | Float left, Int right | Float left, Ref right ->
       Float.compare left (float_of_int right)
+  | Wide_int left, Float right -> Float.compare (Int64.to_float left) right
+  | Float left, Wide_int right -> Float.compare left (Int64.to_float right)
   | String left, String right
   | Uuid left, Uuid right
   | Regex left, Regex right ->

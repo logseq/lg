@@ -11,6 +11,7 @@ type value =
   | Recur of value list
 
 and closure = {
+  name : string option;
   params : form list;
   body : form list;
   locals : locals;
@@ -50,6 +51,7 @@ let rec string_of_form = function
 
 let string_of_value = function
   | Form (FSymbol "nil") -> Ok ""
+  | Form (FString value) -> Ok value
   | Form form -> Ok (string_of_form form)
   | Closure _ | Macro_function _ | Builtin _ | Juxt _ | Volatile _ | Recur _ ->
       Error.error "str expects macro form values"
@@ -78,6 +80,8 @@ let rec sequence_forms = function
       in
       Ok (attach_metadata [] forms)
   | Form (FList forms) -> Ok forms
+  | Form (FMap entries) ->
+      Ok (List.map (fun (key, value) -> FVector [ key; value ]) entries)
   | Form (FSymbol "nil") -> Ok []
   | Form (FSymbol symbol) ->
       Error.error ("expected sequential macro value, got symbol " ^ symbol)
@@ -367,10 +371,21 @@ let rec eval context = function
               ]
       in
       eval context (expand initial steps)
+  | FList (FSymbol "fn" :: FSymbol name :: FVector params :: body) ->
+      Ok
+        (Closure
+           {
+             name = Some name;
+             params;
+             body;
+             locals = context.locals;
+             namespace = context.namespace;
+           })
   | FList (FSymbol "fn" :: FVector params :: body) ->
       Ok
         (Closure
            {
+             name = None;
              params;
              body;
              locals = context.locals;
@@ -585,7 +600,12 @@ and apply_value context callable args =
       match arg_forms with
       | Error _ as err -> err
       | Ok arg_forms -> (
-          match bind_params closure.locals closure.params arg_forms with
+          let closure_locals =
+            match closure.name with
+            | None -> closure.locals
+            | Some name -> (name, callable) :: closure.locals
+          in
+          match bind_params closure_locals closure.params arg_forms with
           | Error _ as err -> err
           | Ok locals ->
               eval_body
@@ -741,6 +761,22 @@ and eval_builtin context name arg_forms =
                     concatenate buffer rest)
           in
           concatenate (Buffer.create 32) values)
+  | "subs" -> (
+      match eval_args () with
+      | Ok [ Form (FString value); Form (FInt start); Form (FInt finish) ]
+        when start >= 0 && finish >= start && finish <= String.length value ->
+          Ok (Form (FString (String.sub value start (finish - start))))
+      | Ok _ ->
+          Error.error
+            "subs expects a string and valid start/end integer indexes"
+      | Error _ as error -> error)
+  | "namespace" ->
+      unary (function
+        | Form (FSymbol value) -> (
+            match String.index_opt value '/' with
+            | Some index -> Ok (Form (FString (String.sub value 0 index)))
+            | None -> Ok nil)
+        | _ -> Error.error "namespace expects a macro symbol")
   | "identity" | "num" -> unary (fun value -> Ok value)
   | "boolean" -> unary (fun value -> Ok (Form (FBool (truthy value))))
   | "string?" ->
@@ -748,6 +784,11 @@ and eval_builtin context name arg_forms =
           Ok
             (Form
                (FBool (match value with Form (FString _) -> true | _ -> false))))
+  | "float?" ->
+      unary (fun value ->
+          Ok
+            (Form
+               (FBool (match value with Form (FFloat _) -> true | _ -> false))))
   | "symbol?" ->
       unary (fun value ->
           Ok

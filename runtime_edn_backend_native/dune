@@ -3,4 +3,4 @@
  (public_name lg.edn-backend.native)
  (implements lg_edn_backend)
  (modes native byte)
- (libraries melange-edn-core))
+ (libraries melange-edn-native re))

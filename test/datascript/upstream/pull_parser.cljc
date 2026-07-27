@@ -1,9 +1,13 @@
 (ns ^:no-doc datascript.pull-parser
   (:require
+   [clojure.string :as str]
    [datascript.db :as db]))
 
+(type-alias pull-xform
+  :fn<option<Datascript_runtime.Data_value.t>;option<Datascript_runtime.Data_value.t>>)
+
 (type-record PullAttrData
-  (alias :keyword)
+  (alias :Datascript_runtime.Data_value.t)
   (recursion-key :int)
   (default :option<Datascript_runtime.Data_value.t>)
   (limit :option<int>)
@@ -11,8 +15,7 @@
   (recursion-limit :option<int>)
   (recursive :bool)
   (reverse :bool)
-  (xform
-   :option<fn<option<Datascript_runtime.Data_value.t>;option<Datascript_runtime.Data_value.t>>>)
+  (xform :option<pull-xform>)
   (multival :bool)
   (ref :bool)
   (component :bool))
@@ -39,10 +42,233 @@
   (reverse-attrs :vector<pull-attr>)
   (wildcard :bool))
 
+(type-record PullAttr
+  (as :Datascript_runtime.Data_value.t)
+  (default :option<Datascript_runtime.Data_value.t>)
+  (limit :option<int>)
+  (name :keyword)
+  (pattern :option<PullPattern>)
+  (recursion-limit :option<int>)
+  (recursive? :option<bool>)
+  (reverse? :option<bool>)
+  (xform :pull-xform)
+  (multival? :option<bool>)
+  (ref? :option<bool>)
+  (component? :option<bool>))
+
+(type-variant pull-source-option
+  (PullOptionAlias :Datascript_runtime.Data_value.t)
+  (PullOptionDefault :Datascript_runtime.Data_value.t)
+  (PullOptionLimit :option<int>)
+  (PullOptionXform :pull-xform))
+
+(type-variant pull-source-item
+  (PullSourceAttribute :keyword)
+  (PullSourceOptions
+   :keyword
+   :vector<pull-source-option>)
+  (PullSourceNested
+   :keyword
+   :vector<pull-source-item>)
+  (PullSourceNestedOptions
+   :keyword
+   :vector<pull-source-option>
+   :vector<pull-source-item>)
+  (PullSourceRecursion
+   :keyword
+   :option<int>)
+  (PullSourceRecursionOptions
+   :keyword
+   :vector<pull-source-option>
+   :option<int>)
+  (PullSourceGroup :vector<pull-source-item>)
+  (PullSourceInvalid :Datascript_runtime.Data_value.t)
+  PullSourceWildcard)
+
+(type-variant pull-attr-spec
+  (PullAttrNameSpec :keyword)
+  (PullAttrExprSpec
+   :pull-attr-spec
+   :vector<pull-source-option>)
+  (PullLegacyLimitSpec
+   :pull-attr-spec
+   :option<int>)
+  (PullLegacyDefaultSpec
+   :pull-attr-spec
+   :Datascript_runtime.Data_value.t)
+  (PullInvalidAttrSpec
+   :Datascript_runtime.Data_value.t))
+
+(type-variant pull-map-value
+  (PullMapPatternValue :vector<pull-source-item>)
+  (PullMapRecursionValue :option<int>))
+
+(defn ^pull-attr-spec attr-name-spec [^:keyword attr]
+  (PullAttrNameSpec attr))
+
+(defn ^pull-attr-spec attr-expr-spec
+  [^pull-attr-spec attr
+   ^:vector<pull-source-option> options]
+  (PullAttrExprSpec attr options))
+
+(defn ^pull-attr-spec legacy-limit-spec
+  [^pull-attr-spec attr ^:option<int> limit]
+  (PullLegacyLimitSpec attr limit))
+
+(defn ^pull-attr-spec legacy-default-spec
+  [^pull-attr-spec attr
+   ^:Datascript_runtime.Data_value.t default]
+  (PullLegacyDefaultSpec attr default))
+
+(defn ^pull-attr-spec invalid-attr-spec
+  [^:Datascript_runtime.Data_value.t fragment]
+  (PullInvalidAttrSpec fragment))
+
+(defn ^pull-map-value map-pattern-value
+  [^:vector<pull-source-item> pattern]
+  (PullMapPatternValue pattern))
+
+(defn ^pull-map-value map-recursion-value
+  [^:option<int> limit]
+  (PullMapRecursionValue limit))
+
+(defn ^pull-source-item source-attribute [^:keyword source-attr]
+  (PullSourceAttribute source-attr))
+
+(def ^pull-source-item source-wildcard PullSourceWildcard)
+
+(defn ^pull-source-item source-default
+  [^:keyword source-attr
+   ^:Datascript_runtime.Data_value.t default]
+  (PullSourceOptions
+   source-attr
+   [(PullOptionDefault default)]))
+
+(defn ^pull-source-item source-alias-value
+  [^:keyword source-attr
+   ^:Datascript_runtime.Data_value.t alias]
+  (PullSourceOptions
+   source-attr
+   [(PullOptionAlias alias)]))
+
+(defn source-alias
+  {:inline
+   (fn [source-attr alias]
+     (let [alias-form
+           (if (nil? alias)
+             (list 'Datascript_runtime.Data_value.Nil)
+             (if (string? alias)
+               (list
+                'Datascript_runtime.Data_value.String alias)
+               (if (keyword? alias)
+                 (list
+                  'Datascript_runtime.Data_value.Keyword
+                  (str alias))
+                 (if (or (symbol? alias) (seq? alias))
+                   alias
+                   (list
+                    'Datascript_runtime.Data_value.Int
+                    alias)))))]
+       (list
+        'datascript.pull-parser/source-alias-value
+        source-attr
+        alias-form)))}
+  [^:keyword source-attr
+   ^:Datascript_runtime.Data_value.t alias]
+  (source-alias-value source-attr alias))
+
+(defn ^pull-source-item source-limit
+  [^:keyword source-attr ^int limit]
+  (PullSourceOptions
+   source-attr
+   [(PullOptionLimit (Some limit))]))
+
+(defn ^pull-source-item source-xform
+  [^:keyword source-attr ^pull-xform xform]
+  (PullSourceOptions
+   source-attr
+   [(PullOptionXform xform)]))
+
+(defn ^pull-source-option option-alias-value
+  [^:Datascript_runtime.Data_value.t alias]
+  (PullOptionAlias alias))
+
+(defn option-alias
+  {:inline
+   (fn [alias]
+     (let [alias-form
+           (if (nil? alias)
+             (list 'Datascript_runtime.Data_value.Nil)
+             (if (string? alias)
+               (list
+                'Datascript_runtime.Data_value.String alias)
+               (if (keyword? alias)
+                 (list
+                  'Datascript_runtime.Data_value.Keyword
+                  (str alias))
+                 (if (or (symbol? alias) (seq? alias))
+                   alias
+                   (list
+                    'Datascript_runtime.Data_value.Int
+                    alias)))))]
+       (list
+        'datascript.pull-parser/option-alias-value
+        alias-form)))}
+  [^:Datascript_runtime.Data_value.t alias]
+  (option-alias-value alias))
+
+(defn ^pull-source-option option-default
+  [^:Datascript_runtime.Data_value.t default]
+  (PullOptionDefault default))
+
+(defn ^pull-source-option option-limit [^int limit]
+  (PullOptionLimit (Some limit)))
+
+(defn ^pull-source-option option-unlimited []
+  (PullOptionLimit None))
+
+(defn ^pull-source-option option-xform [^pull-xform xform]
+  (PullOptionXform xform))
+
+(defn ^pull-source-item source-options
+  [^:keyword source-attr
+   ^:vector<pull-source-option> options]
+  (PullSourceOptions source-attr options))
+
+(defn ^pull-source-item source-nested
+  [^:keyword source-attr
+   ^:vector<pull-source-item> source-pattern]
+  (PullSourceNested source-attr source-pattern))
+
+(defn ^pull-source-item source-nested-options
+  [^:keyword source-attr
+   ^:vector<pull-source-option> options
+   ^:vector<pull-source-item> source-pattern]
+  (PullSourceNestedOptions source-attr options source-pattern))
+
+(defn ^pull-source-item source-recursion
+  [^:keyword source-attr ^:option<int> limit]
+  (PullSourceRecursion source-attr limit))
+
+(defn ^pull-source-item source-recursion-options
+  [^:keyword source-attr
+   ^:vector<pull-source-option> options
+   ^:option<int> limit]
+  (PullSourceRecursionOptions source-attr options limit))
+
+(defn ^pull-source-item source-group
+  [^:vector<pull-source-item> items]
+  (PullSourceGroup items))
+
+(defn ^pull-source-item source-invalid
+  [^:Datascript_runtime.Data_value.t fragment]
+  (PullSourceInvalid fragment))
+
 (def ^pull-attr default-db-id-attr
   (PullAttribute
    (record PullAttrData
-    (alias :db/id)
+    (alias
+     (Datascript_runtime.Data_value.Keyword ":db/id"))
     (recursion-key 0)
     (default None)
     (limit None)
@@ -72,18 +298,20 @@
     (wildcard true)))
 
 (defn ^pull-attr attribute
-  [^datascript.db/DB database ^:keyword source-attr]
+  [^datascript.db/database-view database ^:keyword source-attr]
   (let [reverse (db/reverse-ref? source-attr)
         name (if reverse (db/reverse-ref source-attr) source-attr)
-        ref (db/ref? database name)
-        component (db/component? database name)
-        multival (db/multival? database name)]
+        ref (db/database-view-ref? database name)
+        component (db/database-view-component? database name)
+        multival (db/database-view-multival? database name)]
     (when (and reverse (not ref))
       (Stdlib.invalid_arg
        "Reverse pull attribute requires :db.type/ref"))
     (let [data
           (record PullAttrData
-            (alias source-attr)
+            (alias
+             (Datascript_runtime.Data_value.Keyword
+              (str source-attr)))
             (recursion-key (next-attr-key))
             (default None)
             (limit (if multival (Some 1000) None))
@@ -109,6 +337,10 @@
            (:wildcard default-pattern)))
         (PullAttribute data)))))
 
+(defn ^:option<Datascript_runtime.Data_value.t> identity-value
+  [^:option<Datascript_runtime.Data_value.t> value]
+  value)
+
 (defn ^PullAttrData attr-data [^pull-attr attr]
   (match attr
     (PullAttribute data) data
@@ -133,6 +365,24 @@
        (last-attr last-attr)
        (reverse-attrs reverse-attrs)
        (wildcard wildcard)))))
+
+(defn ^PullAttr parse-attr-name
+  [^datascript.db/database-view database ^:keyword source-attr]
+  (let [attr (attribute database source-attr)
+        data (attr-data attr)]
+    (record PullAttr
+      (as (.-alias data))
+      (default (.-default data))
+      (limit (.-limit data))
+      (name (.-name data))
+      (pattern (attr-pattern attr))
+      (recursion-limit (.-recursion-limit data))
+      (recursive? (if (.-recursive data) (Some true) None))
+      (reverse? (if (.-reverse data) (Some true) None))
+      (xform identity-value)
+      (multival? (if (.-multival data) (Some true) None))
+      (ref? (if (.-ref data) (Some true) None))
+      (component? (if (.-component data) (Some true) None)))))
 
 (defn ^boolean attr-pattern-wildcard [^pull-attr attr]
   (match attr
@@ -160,6 +410,39 @@
    attr
    (assoc (attr-data attr) :default (Some default))))
 
+(defn ^pull-attr with-alias-value
+  [^pull-attr attr
+   ^:Datascript_runtime.Data_value.t alias]
+  (replace-attr-data
+   attr
+   (assoc (attr-data attr) :alias alias)))
+
+(defn with-alias
+  {:inline
+   (fn [attr alias]
+     (let [alias-form
+           (if (nil? alias)
+             (list 'Datascript_runtime.Data_value.Nil)
+             (if (string? alias)
+               (list
+                'Datascript_runtime.Data_value.String alias)
+               (if (keyword? alias)
+                 (list
+                  'Datascript_runtime.Data_value.Keyword
+                  (str alias))
+                 (if (or (symbol? alias) (seq? alias))
+                   alias
+                   (list
+                    'Datascript_runtime.Data_value.Int
+                    alias)))))]
+       (list
+        'datascript.pull-parser/with-alias-value
+        attr
+        alias-form)))}
+  [^pull-attr attr
+   ^:Datascript_runtime.Data_value.t alias]
+  (with-alias-value attr alias))
+
 (defn ^pull-attr with-limit
   [^pull-attr attr ^:option<int> limit]
   (let [data (attr-data attr)]
@@ -178,17 +461,35 @@
 
 (defn ^pull-attr with-xform
   [^pull-attr attr
-   ^:fn<option<Datascript_runtime.Data_value.t>;option<Datascript_runtime.Data_value.t>> xform]
+   ^pull-xform xform]
   (replace-attr-data
    attr
    (assoc (attr-data attr) :xform (Some xform))))
 
-(defn ^pull-attr recursive-attribute
-  [^datascript.db/DB database ^:keyword source-attr]
-  (let [data (attr-data (attribute database source-attr))]
+(defn ^pull-attr apply-source-option
+  [^pull-attr attr ^pull-source-option option]
+  (match option
+    (PullOptionAlias alias)
+    (with-alias attr alias)
+    (PullOptionDefault default)
+    (with-default attr default)
+    (PullOptionLimit limit)
+    (with-limit attr limit)
+    (PullOptionXform xform)
+    (with-xform attr xform)))
+
+(defn ^pull-attr with-recursion
+  [^pull-attr attr ^:option<int> recursion-limit]
+  (let [data (attr-data attr)]
     (when-not (.-ref data)
       (Stdlib.invalid_arg
        "Recursive pull attribute requires :db.type/ref"))
+    (match recursion-limit
+      None (Stdlib.ignore 0)
+      (Some limit)
+      (when-not (pos? limit)
+        (Stdlib.invalid_arg
+         "Recursive pull limit must be positive")))
     (PullAttribute
      (record PullAttrData
       (alias (.-alias data))
@@ -196,7 +497,7 @@
       (default (.-default data))
       (limit (.-limit data))
       (name (.-name data))
-      (recursion-limit None)
+      (recursion-limit recursion-limit)
       (recursive true)
       (reverse (.-reverse data))
       (xform (.-xform data))
@@ -204,20 +505,112 @@
       (ref true)
       (component (.-component data))))))
 
+(signature datascript.pull-parser/parse-attr-expr
+  :fn<datascript.db/database-view;pull-attr-spec;option<pull-attr>>)
+(signature datascript.pull-parser/parse-legacy-limit-expr
+  :fn<datascript.db/database-view;pull-attr-spec;option<pull-attr>>)
+(signature datascript.pull-parser/parse-legacy-default-expr
+  :fn<datascript.db/database-view;pull-attr-spec;option<pull-attr>>)
+(signature datascript.pull-parser/parse-attr-spec
+  :fn<datascript.db/database-view;pull-attr-spec;option<pull-attr>>)
+(signature datascript.pull-parser/parse-map-spec
+  :fn<datascript.db/database-view;pull-attr-spec;pull-map-value;pull-attr>)
+(signature datascript.pull-parser/parse-pattern-view
+  :fn<datascript.db/database-view;vector<pull-source-item>;PullPattern>)
+
+(declare parse-attr-spec)
+(declare parse-pattern-view)
+
+(defn ^:option<pull-attr> parse-attr-expr
+  [^datascript.db/database-view database
+   ^pull-attr-spec attr-spec]
+  (match attr-spec
+    (PullAttrExprSpec base options)
+    (if-some [attr (parse-attr-spec database base)]
+      (Some (reduce apply-source-option attr options))
+      None)
+    _ None))
+
+(defn ^:option<pull-attr> parse-legacy-limit-expr
+  [^datascript.db/database-view database
+   ^pull-attr-spec attr-spec]
+  (match attr-spec
+    (PullLegacyLimitSpec base limit)
+    (if-some [attr (parse-attr-spec database base)]
+      (Some (with-limit attr limit))
+      None)
+    _ None))
+
+(defn ^:option<pull-attr> parse-legacy-default-expr
+  [^datascript.db/database-view database
+   ^pull-attr-spec attr-spec]
+  (match attr-spec
+    (PullLegacyDefaultSpec base default)
+    (if-some [attr (parse-attr-spec database base)]
+      (Some (with-default attr default))
+      None)
+    _ None))
+
+(defn ^:option<pull-attr> parse-attr-spec
+  [^datascript.db/database-view database
+   ^pull-attr-spec attr-spec]
+  (match attr-spec
+    (PullAttrNameSpec attr)
+    (Some (attribute database attr))
+    (PullAttrExprSpec _ _)
+    (parse-attr-expr database attr-spec)
+    (PullLegacyLimitSpec _ _)
+    (parse-legacy-limit-expr database attr-spec)
+    (PullLegacyDefaultSpec _ _)
+    (parse-legacy-default-expr database attr-spec)
+    (PullInvalidAttrSpec fragment)
+    (if-some
+      [_items
+       (Datascript_runtime.Data_value.sequential_items fragment)]
+      (do
+        (check
+         false
+         "[attr-name attr-option+] | ['limit attr-name (positive-num | nil)] | ['default attr-name any-val]"
+         fragment)
+        None)
+      None)))
+
+(defn ^pull-attr parse-map-spec
+  [^datascript.db/database-view database
+   ^pull-attr-spec attr-spec
+   ^pull-map-value value]
+  (let [attr
+        (match (parse-attr-spec database attr-spec)
+          None
+          (Stdlib.invalid_arg "Expected attr-name | attr-expr")
+          (Some attr) attr)]
+    (match value
+      (PullMapPatternValue source)
+      (with-pattern attr (parse-pattern-view database source))
+      (PullMapRecursionValue limit)
+      (with-recursion attr limit))))
+
+(defn- ^pull-attr required-attr-spec
+  [^datascript.db/database-view database
+   ^pull-attr-spec attr-spec]
+  (match (parse-attr-spec database attr-spec)
+    None (Stdlib.invalid_arg "Expected pull attribute")
+    (Some attr) attr))
+
+(defn ^pull-attr recursive-attribute
+  [^datascript.db/database-view database ^:keyword source-attr]
+  (with-recursion (attribute database source-attr) None))
+
 (defn ^pull-attr recursive-attribute-with-limit
-  [^datascript.db/DB database
+  [^datascript.db/database-view database
    ^:keyword source-attr
    ^int limit]
   (when-not (pos? limit)
     (Stdlib.invalid_arg
      "Recursive pull limit must be positive"))
-  (let [attr (recursive-attribute database source-attr)]
-    (replace-attr-data
-     attr
-     (assoc
-      (attr-data attr)
-      :recursion-limit
-      (Some limit)))))
+  (with-recursion
+   (attribute database source-attr)
+   (Some limit)))
 
 (defn ^:vector<pull-attr> upsert-attr
   [^:vector<pull-attr> attrs ^pull-attr attr]
@@ -225,7 +618,10 @@
     (loop [index 0]
       (if (= index (count attrs))
         (conj attrs attr)
-        (if (= alias (.-alias (attr-data (nth attrs index))))
+        (if
+          (Datascript_runtime.Data_value.equal
+           alias
+           (.-alias (attr-data (nth attrs index))))
           (assoc attrs index attr)
           (recur (inc index)))))))
 
@@ -279,7 +675,7 @@
   (pattern attrs wildcard))
 
 (defn ^PullPattern recursive-pattern
-  [^datascript.db/DB database
+  [^datascript.db/database-view database
    ^:vector<keyword> attrs
    ^:keyword recursive-attr
    ^boolean wildcard]
@@ -292,5 +688,366 @@
     (recursive-attribute database recursive-attr))
    wildcard))
 
-(defn ^PullPattern parse-pattern [^PullPattern pattern]
-  pattern)
+(defn ^:string source-fragment-string
+  [^:Datascript_runtime.Data_value.t fragment]
+  (Datascript_runtime.Data_value.to_edn_string fragment))
+
+(defn check
+  [^boolean condition
+   ^:string expected
+   ^:Datascript_runtime.Data_value.t fragment]
+  :unit
+  (when-not condition
+    (Stdlib.invalid_arg
+     (str
+      "Expected "
+      expected
+      ", got: "
+      (source-fragment-string fragment))))
+  (Stdlib.ignore 0))
+
+(type-variant source-operation-kind
+  SourceLimit
+  SourceDefault
+  SourceOther)
+
+(defn ^source-operation-kind source-operation
+  [^:Datascript_runtime.Data_value.t fragment]
+  (match fragment
+    (Datascript_runtime.Data_value.Symbol value)
+    (cond
+      (= value 'limit) SourceLimit
+      (= value 'default) SourceDefault
+      :else SourceOther)
+    (Datascript_runtime.Data_value.String value)
+    (cond
+      (= value "limit") SourceLimit
+      (= value "default") SourceDefault
+      :else SourceOther)
+    _ SourceOther))
+
+(defn ^:option<keyword> source-attr-name
+  [^:Datascript_runtime.Data_value.t fragment]
+  (match fragment
+    (Datascript_runtime.Data_value.Keyword value)
+    (Some value)
+    _
+    (if-some
+      [items
+       (Datascript_runtime.Data_value.sequential_items fragment)]
+      (if (empty? items)
+        None
+        (let [first-item (nth items 0)]
+          (match (source-operation first-item)
+            SourceLimit
+            (if (< (count items) 2)
+              None
+              (source-attr-name (nth items 1)))
+            SourceDefault
+            (if (< (count items) 2)
+              None
+              (source-attr-name (nth items 1)))
+            SourceOther
+            (source-attr-name first-item))))
+      None)))
+
+(defn validate-source-limit
+  [^datascript.db/database-view database
+   ^:keyword attr
+   ^:Datascript_runtime.Data_value.t limit]
+  :unit
+  (let [valid-limit
+        (match limit
+          (Datascript_runtime.Data_value.Nil) true
+          (Datascript_runtime.Data_value.Int value) (pos? value)
+          _ false)]
+    (when-not valid-limit
+      (Stdlib.invalid_arg
+       (str
+        "Expected (positive-number | nil), got: "
+        (source-fragment-string limit))))
+    (when-not (db/database-view-multival? database attr)
+      (Stdlib.invalid_arg
+       (str
+        "Expected limit attribute having :db.cardinality/many, got: "
+        attr))))
+  (Stdlib.ignore 0))
+
+(defn validate-invalid-attr-options
+  [^datascript.db/database-view database
+   ^:keyword attr
+   ^:vector<Datascript_runtime.Data_value.t> items
+   ^:Datascript_runtime.Data_value.t fragment]
+  :unit
+  (let [option-count (dec (count items))]
+    (when (odd? option-count)
+      (Stdlib.invalid_arg
+       (str
+        "Expected even number of opts, got: "
+        (source-fragment-string fragment))))
+    (loop [index 1]
+      (if (< index (count items))
+        (let [option (nth items index)
+              value (nth items (inc index))]
+          (match option
+            (Datascript_runtime.Data_value.Keyword option-name)
+            (cond
+              (= option-name :limit)
+              (validate-source-limit database attr value)
+              (= option-name :xform)
+              (match value
+                (Datascript_runtime.Data_value.Symbol symbol)
+                (when (= symbol 'unknown)
+                  (Stdlib.invalid_arg
+                   "Can't resolve symbol unknown"))
+                _ (Stdlib.ignore 0))
+              :else
+              (Stdlib.ignore 0))
+            _ (Stdlib.ignore 0))
+          (recur (+ index 2)))
+        (Stdlib.ignore 0))))
+  (Stdlib.ignore 0))
+
+(defn raise-invalid-source
+  [^datascript.db/database-view database
+   ^:Datascript_runtime.Data_value.t fragment]
+  :unit
+  (if-some [items
+            (Datascript_runtime.Data_value.sequential_items fragment)]
+    (if (empty? items)
+      (Stdlib.invalid_arg
+       (str
+        "Expected attr-name, got: "
+        (source-fragment-string fragment)))
+      (let [operation (source-operation (nth items 0))]
+        (match operation
+          SourceLimit
+          (if-not (= 3 (count items))
+            (Stdlib.invalid_arg
+             (str
+              "Expected ['limit attr-name (positive-number | nil)], got: "
+              (source-fragment-string fragment)))
+            (match (source-attr-name (nth items 1))
+              None
+              (Stdlib.invalid_arg
+               (str
+                "Expected attr-name, got: "
+                (source-fragment-string (nth items 1))))
+              (Some attr)
+              (validate-source-limit database attr (nth items 2))))
+
+          SourceDefault
+          (when-not (= 3 (count items))
+            (Stdlib.invalid_arg
+             (str
+              "Expected ['default attr-name any-value], got: "
+              (source-fragment-string fragment))))
+
+          SourceOther
+          (match (source-attr-name (nth items 0))
+            None
+            (Stdlib.invalid_arg
+             (str
+              "Expected attr-name, got: "
+              (source-fragment-string (nth items 0))))
+            (Some attr)
+            (validate-invalid-attr-options
+             database attr items fragment)))))
+    (match fragment
+      (Datascript_runtime.Data_value.Keyword value)
+      (let [attr value]
+        (when (and
+               (db/reverse-ref? attr)
+               (not
+                (db/database-view-ref?
+                 database
+                 (db/reverse-ref attr))))
+          (Stdlib.invalid_arg
+           (str
+            "Expected reverse attribute having :db.type/ref, got: "
+            attr))))
+
+      (Datascript_runtime.Data_value.Map _)
+      (let [entries
+            (match
+              (Datascript_runtime.Data_value.map_entries fragment)
+              None
+              (Stdlib.invalid_arg
+               "Expected serialized pull map entries")
+              (Some entries) entries)
+            entry (nth entries 0)
+            attr-form (tuple-get entry 0)
+            nested (tuple-get entry 1)]
+        (match (source-attr-name attr-form)
+          None
+          (Stdlib.invalid_arg
+           (str
+            "Expected attr-name | attr-expr, got: "
+            (source-fragment-string attr-form)))
+          (Some attr)
+          (do
+            (if-some
+              [attr-items
+               (Datascript_runtime.Data_value.sequential_items attr-form)]
+              (validate-invalid-attr-options
+               database attr attr-items attr-form)
+              (Stdlib.ignore 0))
+            (when-not (db/database-view-ref? database attr)
+              (Stdlib.invalid_arg
+               (str
+                "Expected attribute having :db.type/ref, got: "
+                (source-fragment-string attr-form))))
+            (when-not
+              (or
+               (if-some
+                 [_items
+                  (Datascript_runtime.Data_value.sequential_items nested)]
+                 true
+                 false)
+               (match nested
+                 (Datascript_runtime.Data_value.Int value)
+                 (pos? value)
+                 (Datascript_runtime.Data_value.Symbol value)
+                 (= value '...)
+                 (Datascript_runtime.Data_value.String value)
+                 (= value "...")
+                 _ false))
+              (Stdlib.invalid_arg
+               (str
+                "Expected pattern to be sequential?, got: "
+                (source-fragment-string nested)))))))
+
+      _
+      (Stdlib.invalid_arg
+       (str
+        "Expected pull pattern fragment, got: "
+        (source-fragment-string fragment)))))
+  (Stdlib.ignore 0))
+
+(defn ^PullPattern parse-pattern-items
+  [^datascript.db/database-view database
+   ^:vector<pull-source-item> items
+   ^int index
+   ^:vector<pull-attr> attrs
+   ^boolean wildcard]
+  (if (= index (count items))
+    (pattern attrs wildcard)
+    (match (nth items index)
+      PullSourceWildcard
+      (parse-pattern-items database items (inc index) attrs true)
+
+      (PullSourceGroup group-items)
+      (parse-pattern-items
+       database
+       (vec
+        (concat
+         group-items
+         (subvec items (inc index))))
+       0
+       attrs
+       wildcard)
+
+      (PullSourceInvalid fragment)
+      (do
+        (raise-invalid-source database fragment)
+        (pattern attrs wildcard))
+
+      (PullSourceAttribute source-attr)
+      (parse-pattern-items
+       database
+       items
+       (inc index)
+       (conj
+        attrs
+        (required-attr-spec
+         database
+         (attr-name-spec source-attr)))
+       wildcard)
+
+      (PullSourceOptions source-attr options)
+      (parse-pattern-items
+       database
+       items
+       (inc index)
+       (conj
+        attrs
+        (required-attr-spec
+         database
+         (attr-expr-spec
+          (attr-name-spec source-attr)
+          options)))
+       wildcard)
+
+      (PullSourceNested source-attr source-pattern)
+      (parse-pattern-items
+       database
+       items
+       (inc index)
+       (conj
+        attrs
+        (parse-map-spec
+         database
+         (attr-name-spec source-attr)
+         (map-pattern-value source-pattern)))
+       wildcard)
+
+      (PullSourceNestedOptions source-attr options source-pattern)
+      (parse-pattern-items
+       database
+       items
+       (inc index)
+       (conj
+        attrs
+        (parse-map-spec
+         database
+         (attr-expr-spec
+          (attr-name-spec source-attr)
+          options)
+         (map-pattern-value source-pattern)))
+       wildcard)
+
+      (PullSourceRecursion source-attr limit)
+      (parse-pattern-items
+       database
+       items
+       (inc index)
+       (conj
+        attrs
+        (parse-map-spec
+         database
+         (attr-name-spec source-attr)
+         (map-recursion-value limit)))
+       wildcard)
+
+      (PullSourceRecursionOptions source-attr options limit)
+      (parse-pattern-items
+       database
+       items
+       (inc index)
+       (conj
+        attrs
+        (parse-map-spec
+         database
+         (attr-expr-spec
+          (attr-name-spec source-attr)
+          options)
+         (map-recursion-value limit)))
+       wildcard))))
+
+(defn ^PullPattern parse-pattern-view
+  [^datascript.db/database-view database
+   ^:vector<pull-source-item> source]
+  (parse-pattern-items database source 0 [] false))
+
+(defn parse-pattern
+  {:inline
+   (fn [database source]
+     (list
+      'datascript.pull-parser/parse-pattern-view
+      (list
+       'datascript.db/database-view
+       database)
+      source))}
+  [^datascript.db/database-view database
+   ^:vector<pull-source-item> source]
+  (parse-pattern-view database source))

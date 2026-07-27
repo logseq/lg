@@ -3,6 +3,7 @@ include Semantic_type
 type binding = {
   ocaml_name : string;
   ty : ty;
+  scheme : scheme option;
   protocol_id : Protocol_id.t option;
   row_param_types : string option list;
   host_reference : host_reference option;
@@ -42,6 +43,7 @@ let binding ?(row_param_types = []) ?host_reference ?protocol_id
   {
     ocaml_name;
     ty;
+    scheme = None;
     protocol_id;
     row_param_types;
     host_reference;
@@ -54,12 +56,36 @@ let binding ?(row_param_types = []) ?host_reference ?protocol_id
     dynamically_bindable;
   }
 
+let generalize_binding (binding : binding) =
+  let scheme = Type_solver.generalize binding.ty in
+  match scheme.quantified with
+  | [] -> binding
+  | _ -> { binding with ty = scheme.body; scheme = Some scheme }
+
+let instantiate_binding (binding : binding) =
+  match binding.scheme with
+  | None -> binding
+  | Some scheme -> { binding with ty = Type_solver.instantiate scheme }
+
 let seqable_constraint_name = "__lg_seqable_constraint"
 let seqable_constraint element_ty =
   TOcaml_app (seqable_constraint_name, [ element_ty; TUnknown ])
 
 let seqable_constraint_with_value element_ty value_ty =
   TOcaml_app (seqable_constraint_name, [ element_ty; value_ty ])
+
+let contains_constraint_name = "__lg_contains_constraint"
+let contains_constraint key_ty =
+  TOcaml_app (contains_constraint_name, [ key_ty; TUnknown ])
+
+let contains_constraint_with_value key_ty value_ty =
+  TOcaml_app (contains_constraint_name, [ key_ty; value_ty ])
+
+let contains_constraint_info = function
+  | TOcaml_app (name, [ key_ty; value_ty ])
+    when name = contains_constraint_name ->
+      Some (key_ty, value_ty)
+  | _ -> None
 
 let optional_seqable_constraint_name = "__lg_optional_seqable_constraint"
 let optional_sequential_constraint_name = "__lg_optional_sequential_constraint"
@@ -69,6 +95,34 @@ let optional_seqable_constraint element_ty value_ty =
 
 let optional_sequential_constraint element_ty value_ty =
   TOcaml_app (optional_sequential_constraint_name, [ element_ty; value_ty ])
+
+let truthy_constraint_name = "__lg_truthy_constraint"
+let truthy_constraint value_ty =
+  TOcaml_app (truthy_constraint_name, [ value_ty ])
+
+let truthy_constraint_info = function
+  | TOcaml_app (name, [ value_ty ]) when name = truthy_constraint_name ->
+      Some value_ty
+  | _ -> None
+
+let printable_constraint_name = "__lg_printable_constraint"
+let printable_constraint value_ty =
+  TOcaml_app (printable_constraint_name, [ value_ty ])
+
+let printable_constraint_info = function
+  | TOcaml_app (name, [ value_ty ]) when name = printable_constraint_name ->
+      Some value_ty
+  | _ -> None
+
+let symbol_predicate_constraint_name = "__lg_symbol_predicate_constraint"
+let symbol_predicate_constraint value_ty =
+  TOcaml_app (symbol_predicate_constraint_name, [ value_ty ])
+
+let symbol_predicate_constraint_info = function
+  | TOcaml_app (name, [ value_ty ])
+    when name = symbol_predicate_constraint_name ->
+      Some value_ty
+  | _ -> None
 
 let dynamic_constraint_name = "__lg_open_value_constraint"
 let dynamic_constraint capability =
@@ -101,7 +155,7 @@ let rec contains_dynamic = function
   | TNamed_record record ->
       List.exists contains_dynamic record.type_arguments
   | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
-  | TBool | TUnit | TNil | TUnknown | TVar _ | TOcaml _ ->
+  | TBool | TUnit | TNil | TUnknown | TMeta _ | TVar _ | TOcaml _ ->
       false
 
 let normalize_nullable ty =
@@ -227,6 +281,16 @@ let rec constraint_value_type ty =
              || name = optional_seqable_constraint_name
              || name = optional_sequential_constraint_name ->
           constraint_value_type value_ty
+      | TOcaml_app (name, [ _key_ty; value_ty ])
+        when name = contains_constraint_name ->
+          constraint_value_type value_ty
+      | TOcaml_app (name, [ value_ty ]) when name = truthy_constraint_name ->
+          constraint_value_type value_ty
+      | TOcaml_app (name, [ value_ty ]) when name = printable_constraint_name ->
+          constraint_value_type value_ty
+      | TOcaml_app (name, [ value_ty ])
+        when name = symbol_predicate_constraint_name ->
+          constraint_value_type value_ty
       | value_ty -> value_ty)
 
 let protocol_witness_name value_name protocol_id =
@@ -274,6 +338,7 @@ let maybe_reduced_callback_element = function
 let rec equal left right =
   match (left, right) with
   | TUnknown, TUnknown -> true
+  | TMeta left, TMeta right -> left.id = right.id
   | TVar left, TVar right -> left = right
   | TInt, TOcaml "int" | TOcaml "int", TInt -> true
   | TInt, TInt
@@ -328,7 +393,9 @@ let is_numeric = function TInt | TFloat -> true | _ -> false
 let rec row_compatible ~expected ~actual =
   match (expected, actual) with
   | expected, actual when equal expected actual -> true
-  | TUnknown, _ | _, TUnknown | TVar _, _ | _, TVar _ -> true
+  | TUnknown, _ | _, TUnknown | TMeta _, _ | _, TMeta _ | TVar _, _
+  | _, TVar _ ->
+      true
   | TNullable expected, TNullable actual
   | TArray expected, TArray actual
   | TRef expected, TRef actual
@@ -404,7 +471,9 @@ type assignability_policy = Nominal | Structural | Host_boundary
 
 let classify_assignability ~expected ~actual =
   match (expected, actual) with
-  | TUnknown, _ | _, TUnknown | TVar _, _ | _, TVar _ -> Unknown
+  | TUnknown, _ | _, TUnknown | TMeta _, _ | _, TMeta _ | TVar _, _
+  | _, TVar _ ->
+      Unknown
   | _ ->
       if equal expected actual then Equal
       else if
@@ -493,12 +562,22 @@ let rec source_name = function
   | TNil -> "nil"
   | TNullable inner -> "nullable<" ^ source_name inner ^ ">"
   | TUnknown -> "any"
+  | TMeta _ -> "inference-variable"
   | TVar name -> "param/" ^ name
   | TOcaml name -> name
   | TOcaml_app (name, [ inner; _ ]) when name = seqable_constraint_name ->
       "seqable<" ^ source_name inner ^ ">"
+  | TOcaml_app (name, [ key_ty; _ ]) when name = contains_constraint_name ->
+      "contains<" ^ source_name key_ty ^ ">"
   | TOcaml_app (name, [ capability ]) when name = dynamic_constraint_name ->
       "dynamic<" ^ source_name capability ^ ">"
+  | TOcaml_app (name, [ value_ty ]) when name = truthy_constraint_name ->
+      "truthy<" ^ source_name value_ty ^ ">"
+  | TOcaml_app (name, [ value_ty ]) when name = printable_constraint_name ->
+      "printable<" ^ source_name value_ty ^ ">"
+  | TOcaml_app (name, [ value_ty ])
+    when name = symbol_predicate_constraint_name ->
+      "symbol-predicate<" ^ source_name value_ty ^ ">"
   | TOcaml_app (name, [ _witness_ty; value_ty ])
     when Option.is_some (protocol_constraint_id name) ->
       let protocol_name =
@@ -580,15 +659,27 @@ let rec ocaml_name = function
   | TNil -> "'a option"
   | TNullable inner -> ocaml_name inner ^ " option"
   | TUnknown -> "'a"
+  | TMeta _ -> "_"
   | TVar name -> "'" ^ name
   | TOcaml name -> name
   | TOcaml_app (name, []) -> name
   | TOcaml_app (name, [ _capability ]) when name = dynamic_constraint_name ->
       "Lg_runtime.Runtime_dynamic.t"
+  | TOcaml_app (name, [ value_ty ]) when name = truthy_constraint_name ->
+      "((" ^ ocaml_name value_ty ^ " -> bool) * " ^ ocaml_name value_ty ^ ")"
+  | TOcaml_app (name, [ value_ty ]) when name = printable_constraint_name ->
+      "((" ^ ocaml_name value_ty ^ " -> string) * " ^ ocaml_name value_ty ^ ")"
+  | TOcaml_app (name, [ value_ty ])
+    when name = symbol_predicate_constraint_name ->
+      "((" ^ ocaml_name value_ty ^ " -> string option) * "
+      ^ ocaml_name value_ty ^ ")"
   | TOcaml_app (name, [ inner; container ]) when name = seqable_constraint_name ->
       "((" ^ ocaml_name (constraint_value_type container) ^ " -> "
       ^ ocaml_name inner
       ^ " Seq.t) * " ^ ocaml_name container ^ ")"
+  | TOcaml_app (name, [ key_ty; value_ty ])
+    when name = contains_constraint_name ->
+      "((" ^ ocaml_name key_ty ^ " -> bool) * " ^ ocaml_name value_ty ^ ")"
   | TOcaml_app (name, [ inner; container ])
     when name = optional_seqable_constraint_name
          || name = optional_sequential_constraint_name ->
@@ -651,7 +742,7 @@ and overloaded_storage_type = function
       TTuple [ TFn (params, arity.return_ty); overloaded_storage_type rest ]
 
 and set_module_name = function
-  | TUnknown | TVar _ -> Ok "Lg_runtime.Runtime_poly_set"
+  | TUnknown | TMeta _ | TVar _ -> Ok "Lg_runtime.Runtime_poly_set"
   | TInt -> Ok "Lg_runtime.Core_set.Int_set"
   | TFloat -> Ok "Lg_runtime.Core_set.Float_set"
   | TString | TSymbol | TKeyword -> Ok "Lg_runtime.Core_set.String_set"
@@ -665,7 +756,7 @@ and set_module_name = function
   | TVector (TString | TSymbol | TKeyword) ->
       Ok "Lg_runtime.Core_set.String_vector_set"
   | TVector TBool -> Ok "Lg_runtime.Core_set.Bool_vector_set"
-  | TVector (TUnknown | TVar _) -> Ok "Lg_runtime.Runtime_poly_set"
+  | TVector (TUnknown | TMeta _ | TVar _) -> Ok "Lg_runtime.Runtime_poly_set"
   | TVector inner when is_dynamic inner ->
       Ok "Lg_runtime.Core_set.Dynamic_vector_set"
   | TVector (TVector inner) when is_dynamic inner ->
@@ -679,6 +770,7 @@ and set_module_name = function
   | TVector (TVector (TRecord _)) -> Ok "Lg_runtime.Runtime_poly_set"
   | TList (TRecord _) -> Ok "Lg_runtime.Runtime_poly_set"
   | TRecord _ -> Ok "Lg_runtime.Runtime_poly_set"
+  | TOcaml "int" -> Ok "Lg_runtime.Core_set.Int_set"
   | TOcaml name when String.starts_with ~prefix:"__lg_record:" name ->
       Ok "Lg_runtime.Runtime_poly_set"
   | TOcaml _ -> Ok "Lg_runtime.Runtime_poly_set"
@@ -733,8 +825,8 @@ let rec qualify_module_type module_path ty =
     if String.contains name '.' then name else module_path ^ "." ^ name
   in
   match ty with
-  | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword | TBool | TUnit | TNil | TUnknown
-  | TVar _ | TOcaml _ ->
+  | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
+  | TBool | TUnit | TNil | TUnknown | TMeta _ | TVar _ | TOcaml _ ->
       ty
   | TNullable inner -> TNullable (qualify_module_type module_path inner)
   | TOcaml_app (name, args) ->
@@ -798,8 +890,8 @@ let rec remap_module_type ~from_path ~to_path ty =
     | _ -> type_id
   in
   match ty with
-  | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword | TBool | TUnit | TNil | TUnknown
-  | TVar _ | TOcaml _ ->
+  | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
+  | TBool | TUnit | TNil | TUnknown | TMeta _ | TVar _ | TOcaml _ ->
       ty
   | TNullable inner ->
       TNullable (remap_module_type ~from_path ~to_path inner)
@@ -852,7 +944,7 @@ let rec refresh_named_record (fresh : named_record) ty =
   let refresh = refresh_named_record fresh in
   match ty with
   | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
-  | TBool | TUnit | TNil | TUnknown | TVar _ | TOcaml _ ->
+  | TBool | TUnit | TNil | TUnknown | TMeta _ | TVar _ | TOcaml _ ->
       ty
   | TNullable inner -> TNullable (refresh inner)
   | TOcaml_app (name, args) -> TOcaml_app (name, List.map refresh args)
@@ -899,11 +991,15 @@ let find_field keyword fields =
 let make_field ?location keyword ty =
   { keyword; ocaml_name = Names.keyword_to_ocaml_name keyword; ty; location }
 
-let make_record_extension_field () =
-  make_field record_extension_keyword record_extension_type
+let make_record_extension_field ?(ty = record_extension_type) () =
+  make_field record_extension_keyword ty
 
 let is_record_extension_field field =
   field.keyword = record_extension_keyword
+
+let is_static_record_source_field field =
+  is_record_extension_field field
+  && Option.is_none (dynamic_map_types field.ty)
 
 let find_record_extension_field fields =
   List.find_opt is_record_extension_field fields
@@ -943,7 +1039,7 @@ let instantiate_type_fields ~templates ~actuals ty =
     let instantiated = substitute_type_variables substitutions ty in
     let rec refine_open_type template actual =
       match (template, actual) with
-      | (TUnknown | TVar _), actual -> actual
+      | (TUnknown | TMeta _ | TVar _), actual -> actual
       | TNullable template, TNullable actual ->
           TNullable (refine_open_type template actual)
       | TNullable template, TOcaml_app ("option", [ actual ]) ->
@@ -996,8 +1092,8 @@ let instantiate_type_fields ~templates ~actuals ty =
 
 let instantiate_receiver_method_type receiver_ty method_ty =
   let rec specialize_return value_ty = function
-    | TSeq (TUnknown | TVar _) -> TSeq value_ty
-    | TOcaml_app (("Seq.t" | "Seq") as name, [ TUnknown | TVar _ ]) ->
+    | TSeq (TUnknown | TMeta _ | TVar _) -> TSeq value_ty
+    | TOcaml_app (("Seq.t" | "Seq") as name, [ TUnknown | TMeta _ | TVar _ ]) ->
         TOcaml_app (name, [ value_ty ])
     | TNullable return_ty ->
         TNullable (specialize_return value_ty return_ty)
@@ -1014,7 +1110,9 @@ let instantiate_receiver_method_type receiver_ty method_ty =
               infer_type_substitutions [] ~template:template_receiver
                 ~actual:receiver_ty
             in
-            (match List.assoc_opt parameter substitutions with
+            (match
+               List.assoc_opt (Type_solver.Declared parameter) substitutions
+             with
             | Some TUnknown | None -> None
             | Some ty -> Some ty)
         | _ -> None
@@ -1222,7 +1320,7 @@ let align_deferred_param_types value_type expression =
         ( List.mapi
             (fun index ty ->
               match (List.nth_opt names index, ty) with
-              | Some (Some name), (TUnknown | TVar _)
+              | Some (Some name), (TUnknown | TMeta _ | TVar _)
                 when List.mem name pinned ->
                   dynamic_constraint TUnknown
               | _ -> ty)

@@ -56,17 +56,22 @@ let record_inference_compatible env ~allow_expected_dynamic expected_fields
                    Protocol.type_satisfies env protocol_id actual.ty
                | None -> false
              in
-             let expected_seqable_compatible =
-               Option.is_some (Types.seqable_constraint_info expected.ty)
+            let expected_seqable_compatible =
+              Option.is_some (Types.seqable_constraint_info expected.ty)
                && Collection_capability.accepts_seqable env actual.ty
-             in
+            in
+            let expected_contains_compatible =
+              Option.is_some (Types.contains_constraint_info expected.ty)
+              && Collection_capability.accepts_contains actual.ty
+            in
              Types.is_dynamic actual.ty
-             || (match actual.ty with TUnknown | TVar _ -> true | _ -> false)
-             || (match expected.ty with TUnknown | TVar _ -> true | _ -> false)
+             || (match actual.ty with TUnknown | TMeta _ | TVar _ -> true | _ -> false)
+             || (match expected.ty with TUnknown | TMeta _ | TVar _ -> true | _ -> false)
              || expected_dynamic_compatible
              || open_type_compatible
              || expected_protocol_compatible
              || expected_seqable_compatible
+             || expected_contains_compatible
              || Types.equal expected.ty actual.ty
              || same_host_wrapper expected.ty actual.ty
              || Types.row_compatible ~expected:expected.ty ~actual:actual.ty)
@@ -194,7 +199,12 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
           }
         when List.length type_parameters = List.length arguments ->
           let substitutions = List.combine type_parameters arguments in
-          Types.substitute_type_variables substitutions manifest
+          Types.substitute_type_variables
+            (List.map
+               (fun (parameter, argument) ->
+                 (Type_solver.Declared parameter, argument))
+               substitutions)
+            manifest
           |> infer_named_record ~allow_dynamic_fields scope env
       | Some { kind = Alias; _ } -> TOcaml_app (name, arguments)
       | Some { kind = (Record | Variant); _ } | None ->
@@ -249,12 +259,14 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
             if String.starts_with ~prefix:"__record/" key then
               match binding.ty with
               | TNamed_record record ->
-                  if
+                  let compatible =
                     record_inference_compatible env
                       ~allow_expected_dynamic:allow_dynamic_fields fields
                       record.fields
                     || Types.row_compatible ~expected:(TRecord fields)
                          ~actual:binding.ty
+                  in
+                  if compatible
                   then Some record
                   else None
               | _ -> None
@@ -302,7 +314,8 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
   | inferred -> inferred
 
 let rec protocol_witness_constraint_type receiver_ty = function
-  | TUnknown | TVar _ -> Types.dynamic_constraint TUnknown
+  | TUnknown | TMeta _ -> TOcaml "_"
+  | TVar _ as ty -> ty
   | TNullable ty -> TNullable (protocol_witness_constraint_type receiver_ty ty)
   | TOcaml_app (name, arguments) ->
       TOcaml_app
@@ -328,7 +341,7 @@ let rec protocol_witness_constraint_type receiver_ty = function
   | ty -> ty
 
 and pattern_constraint_type = function
-  | TUnknown | TVar _ -> TOcaml "_"
+  | TUnknown | TMeta _ | TVar _ -> TOcaml "_"
   | TNullable ty -> TNullable (pattern_constraint_type ty)
   | TOcaml_app (name, [ witness_ty; value_ty ])
     when Option.is_some (Types.protocol_constraint_id name) ->
@@ -367,7 +380,7 @@ and pattern_constraint_type = function
   | ty -> ty
 
 let rec contains_open_type = function
-  | TUnknown | TVar _ -> true
+  | TUnknown | TMeta _ | TVar _ -> true
   | TNullable ty | TArray ty | TRef ty | TList ty | TVector ty | TSet ty
   | TSeq ty ->
       contains_open_type ty
@@ -386,7 +399,11 @@ let rec contains_open_type = function
         arities
   | TRecord fields ->
       List.exists (fun (field : field) -> contains_open_type field.ty) fields
-  | TNamed_record record -> List.exists contains_open_type record.type_arguments
+  | TNamed_record record ->
+      List.exists contains_open_type record.type_arguments
+      || List.exists
+           (fun (field : field) -> contains_open_type field.ty)
+           record.fields
   | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
   | TBool | TUnit | TNil | TOcaml _ ->
       false
@@ -410,7 +427,7 @@ let rec contains_structural_record = function
           || contains_structural_record arity.return_ty)
         arities
   | TNamed_record _ | TInt | TFloat | TChar | TString | TRegex | TMap_keys
-  | TSymbol | TKeyword | TBool | TUnit | TNil | TUnknown | TVar _ | TOcaml _ ->
+  | TSymbol | TKeyword | TBool | TUnit | TNil | TUnknown | TMeta _ | TVar _ | TOcaml _ ->
       false
 
 let shared_parameter_variables inferred =
@@ -444,6 +461,8 @@ let reconcile_shared_parameter_variables original resolved =
 
 let rec apply_row_constraint_type row_type_name = function
   | TRecord _ -> TOcaml (Types.ocaml_record_type_name row_type_name)
+  | TNamed_record { nominal = false; _ } ->
+      TOcaml (Types.ocaml_record_type_name row_type_name)
   | TOcaml_app (name, [ TRecord _; container ])
     when name = Types.seqable_constraint_name
          || name = Types.optional_seqable_constraint_name
@@ -567,6 +586,9 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
         Expression_support.dynamic_key_record_type env
       in
       let resolve_named_record = infer_named_record scope env in
+      let lookup_function_ty name =
+        Result.map resolve_named_record (lookup_function_ty name)
+      in
       match
         Type_inference.infer_params ~materialize_open_equality
           ~lookup_function_ty
@@ -690,9 +712,63 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
           let lookup_inferred name =
             inferred |> List.assoc_opt name |> Option.value ~default:TUnknown
           in
+          let rec refine_destructured_type pattern ty =
+            let refine_from_local name ty =
+              let inferred_ty = lookup_inferred name in
+              Type_solver.unify [] ty inferred_ty
+              |> Result.map (fun substitutions ->
+                     Type_solver.apply substitutions ty)
+              |> Result.value ~default:ty
+            in
+            match (pattern, ty) with
+            | Ast.FSymbol name, ty -> refine_from_local name ty
+            | ( Ast.FList
+                  [
+                    Ast.FSymbol "__type-hint";
+                    Ast.FSymbol _;
+                    pattern;
+                  ],
+                ty ) ->
+                refine_destructured_type pattern ty
+            | Ast.FMap pairs, TRecord fields -> (
+                match Destructure.parse_map_pattern pairs with
+                | Error _ -> ty
+                | Ok parsed ->
+                    let fields =
+                      List.map
+                        (fun (field : field) ->
+                          if Types.is_static_record_source_field field then
+                            match parsed.as_name with
+                            | Some name ->
+                                { field with ty = refine_from_local name field.ty }
+                            | None -> field
+                          else
+                            match
+                              List.find_opt
+                                (fun binding ->
+                                  binding.Destructure.keyword = field.keyword)
+                                parsed.field_bindings
+                            with
+                            | None -> field
+                            | Some binding ->
+                                {
+                                  field with
+                                  ty =
+                                    refine_destructured_type
+                                      binding.binding_pattern field.ty;
+                                })
+                        fields
+                    in
+                    TRecord fields)
+            | _, ty -> ty
+          in
           let infer_spec_ty (spec : Destructure.param_spec) =
             if spec.destructured then
-              Destructure.infer_pattern_type spec.pattern lookup_inferred
+              Result.map
+                (fun ty ->
+                  let ty = infer_named_record scope env ty in
+                  refine_destructured_type spec.pattern ty)
+                (Destructure.infer_pattern_type spec.pattern lookup_inferred)
             else Ok (lookup_inferred spec.source_name)
           in
           let rec build acc = function
@@ -905,7 +981,7 @@ let fn_code ?(row_param_type_names = []) parts =
             when name = Types.seqable_constraint_name
                  || name = Types.optional_seqable_constraint_name
                  || name = Types.optional_sequential_constraint_name ->
-              let element_ty = TVar ("sequence_element_" ^ string_of_int index) in
+              let element_ty = Type_solver.fresh () in
               Some
                 ( List.rev_append reversed
                     (TOcaml_app (name, [ element_ty; value_ty ]) :: rest),
@@ -933,6 +1009,38 @@ let fn_code ?(row_param_type_names = []) parts =
             capability_pattern ?value_type name value_ty;
           ]
     | None -> (
+        match Types.truthy_constraint_info ty with
+        | Some value_ty ->
+            Semantic_ir.PTuple
+              [
+                Semantic_ir.PVar (name ^ "__truthy");
+                capability_pattern ?value_type name value_ty;
+              ]
+        | None -> (
+            match Types.printable_constraint_info ty with
+            | Some value_ty ->
+                Semantic_ir.PTuple
+                  [
+                    Semantic_ir.PVar (name ^ "__print");
+                    capability_pattern ?value_type name value_ty;
+                  ]
+            | None -> (
+                match Types.symbol_predicate_constraint_info ty with
+                | Some value_ty ->
+                    Semantic_ir.PTuple
+                      [
+                        Semantic_ir.PVar (name ^ "__symbol");
+                        capability_pattern ?value_type name value_ty;
+                      ]
+                | None -> (
+        match Types.contains_constraint_info ty with
+        | Some (_, value_ty) ->
+            Semantic_ir.PTuple
+              [
+                Semantic_ir.PVar (name ^ "__contains");
+                capability_pattern ?value_type name value_ty;
+              ]
+        | None -> (
         match ty with
         | TOcaml_app (constraint_name, [ _element_ty; value_ty ])
           when constraint_name = Types.seqable_constraint_name
@@ -953,6 +1061,7 @@ let fn_code ?(row_param_type_names = []) parts =
                 if String.equal type_name "_" then pattern
                 else Semantic_ir.PConstraint (pattern, type_name))
               value_type)
+        ))))
   in
   let param_patterns =
     List.map2 (fun name ty -> (name, ty)) param_names param_tys
@@ -964,6 +1073,11 @@ let fn_code ?(row_param_type_names = []) parts =
              if
                Option.is_some (Types.protocol_constraint_info ty)
                || Option.is_some (Types.seqable_constraint_element ty)
+               || Option.is_some (Types.truthy_constraint_info ty)
+               || Option.is_some (Types.printable_constraint_info ty)
+               || Option.is_some
+                    (Types.symbol_predicate_constraint_info ty)
+               || Option.is_some (Types.contains_constraint_info ty)
              then
                let pattern_ty =
                  match row_type_name with
@@ -1009,6 +1123,12 @@ let fn_code ?(row_param_type_names = []) parts =
                     Option.is_some (Types.protocol_constraint_info binding.ty)
                     || Option.is_some
                          (Types.seqable_constraint_element binding.ty)
+                    || Option.is_some
+                         (Types.truthy_constraint_info binding.ty)
+                    || Option.is_some
+                         (Types.printable_constraint_info binding.ty)
+                    || Option.is_some
+                         (Types.symbol_predicate_constraint_info binding.ty)
                   then capability_pattern binding.ocaml_name binding.ty
                   else Semantic_ir.PVar binding.ocaml_name
                 in

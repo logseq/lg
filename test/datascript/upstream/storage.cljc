@@ -13,7 +13,61 @@
 (type-alias stored-value :Datascript_runtime.Storage_value.t)
 (type-alias storage-backend :Datascript_runtime.Storage_backend.t)
 
-(defn- -store
+(module StorageBoundary
+  (defprotocol ClosedStorage
+    (closed-storage [storage] :Datascript_runtime.Storage_backend.t))
+  (extend-type :Datascript_runtime.Storage_backend.t
+    ClosedStorage
+    (closed-storage [backend] backend)))
+
+#?(:clj
+   (defprotocol IStorage
+     (-store
+       [backend
+        ^:vector<tuple<int;stored_value>> address-data]
+       :unit)
+     (-restore
+       [backend ^:int address]
+       :option<stored_value>)
+     (-list-addresses
+       [backend]
+       :vector<int>)
+     (-delete
+       [backend ^:vector<int> addresses]
+       :unit))
+   :cljs
+   (defprotocol IStorage
+     (-store
+       [backend
+        ^:vector<tuple<int;stored_value>> address-data
+        ^:vector<int> delete-addresses]
+       :unit)
+     (-restore
+       [backend ^:int address]
+       :option<stored-value>)))
+
+#?(:clj
+   (extend-type :Datascript_runtime.Storage_backend.t
+     IStorage
+     (-store [backend address-data]
+       (Datascript_runtime.Storage_backend.store
+        backend address-data []))
+     (-restore [backend address]
+       (Datascript_runtime.Storage_backend.restore backend address))
+     (-list-addresses [backend]
+       (Datascript_runtime.Storage_backend.list_addresses backend))
+     (-delete [backend addresses]
+       (Datascript_runtime.Storage_backend.delete backend addresses)))
+   :cljs
+   (extend-type :Datascript_runtime.Storage_backend.t
+     IStorage
+     (-store [backend address-data delete-addresses]
+       (Datascript_runtime.Storage_backend.store
+        backend address-data delete-addresses))
+     (-restore [backend address]
+       (Datascript_runtime.Storage_backend.restore backend address))))
+
+(defn- store-backend
   [^storage-backend backend
    ^:vector<tuple<int;stored_value>> address-data
    ^:vector<int> delete-addresses]
@@ -21,17 +75,12 @@
   (Datascript_runtime.Storage_backend.store
    backend address-data delete-addresses))
 
-(defn- -restore
-  [^storage-backend backend ^:int address]
-  :option<stored_value>
-  (Datascript_runtime.Storage_backend.restore backend address))
-
-(defn- -list-addresses
+(defn- list-backend-addresses
   [^storage-backend backend]
   :vector<int>
   (Datascript_runtime.Storage_backend.list_addresses backend))
 
-(defn- -delete
+(defn- delete-backend-addresses
   [^storage-backend backend ^:vector<int> addresses]
   :unit
   (Datascript_runtime.Storage_backend.delete backend addresses))
@@ -43,6 +92,38 @@
    ^:fn<vector<int>;unit> delete-fn]
   (Datascript_runtime.Storage_backend.create
    store-fn restore-fn list-addresses-fn delete-fn))
+
+(defn- ^storage-backend adapt-storage [storage]
+  (if (satisfies? StorageBoundary/ClosedStorage storage)
+    (StorageBoundary/ClosedStorage/closed-storage storage)
+    (Datascript_runtime.Storage_backend.create
+     (fn [address-data delete-addresses]
+       #?(:clj
+          (do
+            (-store storage address-data)
+            (when (seq delete-addresses)
+              (-delete storage delete-addresses))
+            (Stdlib.ignore 0))
+          :cljs
+          (-store storage address-data delete-addresses)))
+     (fn [address]
+       (-restore storage address))
+     (fn [_ignored]
+       #?(:clj
+          (-list-addresses storage)
+          :cljs
+          []))
+     (fn [addresses]
+       #?(:clj
+          (-delete storage addresses)
+          :cljs
+          (Stdlib.ignore addresses))))))
+
+(defn ^datascript.db/database-options maybe-adapt-storage
+  [^datascript.db/database-options opts]
+  (if-some [storage (db/options-storage opts)]
+    (db/options-assoc-storage opts (adapt-storage storage))
+    opts))
 
 (defn- same-backend?
   [^storage-backend left ^storage-backend right]
@@ -285,7 +366,9 @@
         settings (set/settings (:eavt database))
         root
         (Datascript_runtime.Storage_value.serialized_root
-         (serialize-schema (:schema database))
+         (if-some [schema (:schema database)]
+           (Some (serialize-schema schema))
+           None)
          (:max-eid database)
          (:max-tx database)
          eavt-address
@@ -299,7 +382,7 @@
          (:ref-type settings))]
     (when (or force?
               (pos? (count entries)))
-      (-store
+      (store-backend
        (adapter-backend adapter)
        (conj
         entries
@@ -319,23 +402,24 @@
    (if-some [adapter (storage-adapter database)]
      (store-impl! database adapter false)
      (Stdlib.invalid_arg "Database has no associated storage")))
-  ([^datascript.db/DB database ^storage-backend backend]
-   (if-some [adapter (storage-adapter database)]
-     (let [current-backend (adapter-backend adapter)]
-       (if (same-backend? current-backend backend)
-         (store-impl! database adapter false)
-         (Stdlib.invalid_arg
-          "Database is already stored with another storage backend")))
-     (store-impl!
-      database
-      (make-storage-adapter backend (Stdlib.ignore 0))
-      false))))
+  ([^datascript.db/DB database storage]
+   (let [backend (adapt-storage storage)]
+     (if-some [adapter (storage-adapter database)]
+       (let [current-backend (adapter-backend adapter)]
+         (if (same-backend? current-backend backend)
+           (store-impl! database adapter false)
+           (Stdlib.invalid_arg
+            "Database is already stored with another storage backend")))
+       (store-impl!
+        database
+        (make-storage-adapter backend (Stdlib.ignore 0))
+        false)))))
 
 (defn store-tail
   [^datascript.db/DB database
    ^:vector<vector<datascript.db/Datom>> tail]
   (if-some [backend (storage database)]
-    (-store
+    (store-backend
      backend
      [(tuple
        tail-addr
@@ -350,14 +434,16 @@
   [comparator
    ^serialized-index metadata
    adapter
-   ^:Datascript_runtime.Storage_value.ref_type ref-type]
+   ^:Datascript_runtime.Storage_value.ref_type ref-type
+   ^:int branching-factor]
   (set/restore-by
    comparator
    (Datascript_runtime.Storage_value.index_address metadata)
    adapter
    (Datascript_runtime.Storage_value.index_shift metadata)
    (Datascript_runtime.Storage_value.index_count metadata)
-   ref-type))
+   ref-type
+   branching-factor))
 
 (declare db-with-tail)
 
@@ -379,25 +465,33 @@
            (Datascript_runtime.Storage_value.root_max_address root))
           adapter (make-storage-adapter backend (Stdlib.ignore 0))
           ref-type (Datascript_runtime.Storage_value.root_ref_type root)
+          branching-factor
+          (Datascript_runtime.Storage_value.root_branching_factor root)
           stored-database
           (db/restore-db-from-storage
-           (restore-schema
-            (Datascript_runtime.Storage_value.root_schema root))
+           (if-some
+             [schema
+              (Datascript_runtime.Storage_value.root_schema root)]
+             (Some (restore-schema schema))
+             None)
            (restore-index
             db/cmp-datoms-eavt
             (Datascript_runtime.Storage_value.root_eavt_metadata root)
             adapter
-            ref-type)
+            ref-type
+            branching-factor)
            (restore-index
             db/cmp-datoms-aevt
             (Datascript_runtime.Storage_value.root_aevt_metadata root)
             adapter
-            ref-type)
+            ref-type
+            branching-factor)
            (restore-index
             db/cmp-datoms-avet
             (Datascript_runtime.Storage_value.root_avet_metadata root)
             adapter
-            ref-type)
+            ref-type
+            branching-factor)
            (Datascript_runtime.Storage_value.root_max_eid root)
            (Datascript_runtime.Storage_value.root_max_tx root))
           restored-tail
@@ -423,7 +517,10 @@
           database' (assoc database :max-tx (dec tx))]
       (:db-after
        (db/transact-tx-data
-        (db/->TxReport database' database' [] {} {} {} {})
+        (db/->TxReport database' database' [] {}
+                       (Datascript_runtime.Data_value.Map (list))
+                       {} {}
+                       (db/empty-used-tempid-eids))
         (mapv db/datom->tx-entry datoms))))
     (catch _ (do database))))
 
@@ -442,14 +539,14 @@
    tail))
 
 (defn restore
-  ([^storage-backend backend]
-   (restore backend {}))
-  ([^storage-backend backend opts]
-   (if-some [result (restore-impl backend opts)]
+  ([storage]
+   (restore storage {}))
+  ([storage opts]
+   (if-some [result (restore-impl (adapt-storage storage) opts)]
      (:database result)
      nil)))
 
-(defn collect-garbage [^storage-backend backend]
+(defn- collect-garbage-backend [^storage-backend backend]
   (let [current (restore backend)
         databases
         (if-some [database current]
@@ -463,6 +560,13 @@
              result
              (conj result address)))
          []
-         (-list-addresses backend))]
-    (-delete backend unused)
+         (list-backend-addresses backend))]
+    (delete-backend-addresses backend unused)
     unused))
+
+#?(:clj
+   (defn collect-garbage [storage]
+     (collect-garbage-backend (adapt-storage storage)))
+   :cljs
+   (defn collect-garbage [^storage-backend backend]
+     (collect-garbage-backend backend)))

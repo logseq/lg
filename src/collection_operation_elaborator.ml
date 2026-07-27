@@ -42,7 +42,7 @@ let compile_args_for compile_expr scope env arg_forms =
   loop [] arg_forms
 
 let rec dynamicize_unknown = function
-  | TUnknown | TVar _ -> Types.dynamic_constraint TUnknown
+  | TUnknown | TMeta _ | TVar _ -> Types.dynamic_constraint TUnknown
   | TNullable ty -> TNullable (dynamicize_unknown ty)
   | TOcaml_app ("option", [ ty ]) ->
       TOcaml_app ("option", [ dynamicize_unknown ty ])
@@ -87,7 +87,6 @@ let runtime_map_operation key_ty operation =
   ^
   if
     Types.is_dynamic key_ty || Types.equal key_ty TUnknown
-    || match key_ty with TVar _ -> true | _ -> false
   then "_dynamic"
   else ""
 
@@ -95,7 +94,6 @@ let runtime_map_key_type declared actual =
   if
     Types.is_dynamic declared || Types.is_dynamic actual
     || Types.equal declared TUnknown
-    || match declared with TVar _ -> true | _ -> false
   then
     Types.dynamic_constraint TUnknown
   else declared
@@ -140,7 +138,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
   in
   let contextual_field_type env field_ty =
     match (field_ty, Env.expected_type env) with
-    | (TUnknown | TVar _), Some expected
+    | (TUnknown | TMeta _ | TVar _), Some expected
       when not
              (Types.equal expected TUnknown
              || match expected with TVar _ -> true | _ -> false) ->
@@ -176,6 +174,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
         | Some field ->
             let substitutions =
               List.combine record.type_parameters arguments
+              |> List.map (fun (parameter, argument) ->
+                     (Type_solver.Declared parameter, argument))
             in
             let field =
               {
@@ -197,9 +197,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
   in
   let unwrap_protocol_value value =
     let rec unwrap ty expression =
-      match Types.protocol_constraint_info ty with
-      | None -> (ty, expression)
-      | Some (_, _, value_ty) ->
+      match Types.contains_constraint_info ty with
+      | Some (_, value_ty) ->
           let expression =
             match Semantic_ir.unlocated expression with
             | Semantic_ir.Ident _ -> expression
@@ -207,6 +206,18 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                 Semantic_ir.Apply (Semantic_ir.Ident "snd", [ expression ])
           in
           unwrap value_ty expression
+      | None -> (
+          match Types.protocol_constraint_info ty with
+          | None -> (ty, expression)
+          | Some (_, _, value_ty) ->
+              let expression =
+                match Semantic_ir.unlocated expression with
+                | Semantic_ir.Ident _ -> expression
+                | _ ->
+                    Semantic_ir.Apply
+                      (Semantic_ir.Ident "snd", [ expression ])
+              in
+              unwrap value_ty expression)
     in
     let ty, semantic_expr = unwrap value.ty value.semantic_expr in
     { value with ty; semantic_expr }
@@ -517,7 +528,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                 Error.error
                   "conj requires a statically typed collection; define a sum \
                    type for heterogeneous elements"
-            | TList (TUnknown | TVar _) ->
+            | TList (TUnknown | TMeta _ | TVar _) ->
                 Ok
                   (typed_ir (TList value.ty)
                      (Semantic_ir.Cons
@@ -529,7 +540,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                       (value.semantic_expr, collection.semantic_expr)))
             | TList inner ->
                 heterogeneous_collection_type_error "list" [ inner; value.ty ]
-            | TSeq (TUnknown | TVar _) ->
+            | TSeq (TUnknown | TMeta _ | TVar _) ->
                 Ok
                   (typed_ir (TSeq value.ty)
                      (Semantic_ir.Apply
@@ -559,7 +570,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                 else
                   heterogeneous_collection_type_error "sequence"
                     [ inner; value.ty ]
-            | TVector (TUnknown | TVar _) ->
+            | TVector (TUnknown | TMeta _ | TVar _) ->
                 Ok
                   (typed_ir (TVector value.ty)
                      (Semantic_ir.Apply
@@ -600,7 +611,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
             | TVector inner ->
                 heterogeneous_collection_type_error "vector"
                   [ inner; value.ty ]
-            | TSet (TUnknown | TVar _) ->
+            | TSet (TUnknown | TMeta _ | TVar _) ->
                 let value_ty = value.ty in
                 Result.bind (set_module_name env value_ty) (fun set_module ->
                     Result.map
@@ -975,7 +986,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                         in
                         let protocol_lookup =
                           match record_ty with
-                          | TNamed_record ({ nominal = true; _ } as named) ->
+                          | TNamed_record named ->
                               let key =
                                 typed_ir TKeyword (Semantic_ir.String keyword)
                               in
@@ -1067,6 +1078,35 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                                         Some (Semantic_ir.PVar record_name) ),
                                   present );
                                 ] ))))
+                  | TOcaml_app
+                      ("Lg_runtime.Runtime_map.t", [ _; _ ]) as map_ty ->
+                      let map_name = "__lg_optional_map" in
+                      let map =
+                        typed_ir map_ty (Semantic_ir.Ident map_name)
+                      in
+                      let key =
+                        typed_ir TKeyword (Semantic_ir.String keyword)
+                      in
+                      Result.map
+                        (fun lookup ->
+                          let missing =
+                            if Types.is_dynamic lookup.ty then
+                              Semantic_ir.Ident
+                                "Lg_runtime.Runtime_dynamic.nil"
+                            else Semantic_ir.Constructor ("None", None)
+                          in
+                          typed_ir lookup.ty
+                            (Semantic_ir.Match
+                               ( target.semantic_expr,
+                                 [
+                                   ( Semantic_ir.PConstructor ("None", None),
+                                     missing );
+                                   ( Semantic_ir.PConstructor
+                                       ( "Some",
+                                         Some (Semantic_ir.PVar map_name) ),
+                                     lookup.semantic_expr );
+                                 ] )))
+                        (compile_runtime_map_get map key None)
                   | ty when Types.is_dynamic ty ->
                       let value_name = "__lg_optional_value" in
                       Ok
@@ -1089,7 +1129,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                                       ] );
                                 ] )))
                   | _ -> Error.error "get expects a map")
-              | TRecord fields | TNamed_record { fields; nominal = false; _ } -> (
+              | TRecord fields -> (
                   match find_field keyword fields with
                   | Some field ->
                       let field_ty = contextual_field_type env field.ty in
@@ -1105,7 +1145,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                           Ok
                             (typed_ir (TNullable TUnknown)
                                (Semantic_ir.Constructor ("None", None)))))
-              | TNamed_record { fields; nominal = true; _ } -> (
+              | TNamed_record { fields; _ } -> (
                   match find_field keyword fields with
                   | Some field ->
                       let field_ty = contextual_field_type env field.ty in
@@ -1142,7 +1182,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                           | _ -> assert false)))
               | ty when Types.is_dynamic ty ->
                   Ok (dynamic_lookup ty target)
-              | TUnknown | TVar _ ->
+              | TUnknown | TMeta _ | TVar _ ->
                   let field_ty =
                     Option.value (inferred_field_type env keyword)
                       ~default:(Types.dynamic_constraint TUnknown)
@@ -1272,7 +1312,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   |> List.filter (fun (field : field) ->
                       let unresolved_dynamic =
                         match Types.dynamic_constraint_info field.ty with
-                        | Some (TUnknown | TVar _) -> true
+                        | Some (TUnknown | TMeta _ | TVar _) -> true
                         | Some _ | None -> false
                       in
                       (not (Types.is_record_extension_field field))
@@ -1452,6 +1492,25 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                       Ok
                         (typed_ir field.ty
                            (Structural_map.field_expr target field))
+                  | Some
+                      ( {
+                          ty =
+                            (TNullable inner | TOcaml_app ("option", [ inner ]));
+                          _;
+                        } as field )
+                    when Types.equal inner default.ty ->
+                      let value_name = "__lg_lookup_default_value" in
+                      Ok
+                        (typed_ir inner
+                           (Semantic_ir.Match
+                              ( Structural_map.field_expr target field,
+                                [
+                                  ( Semantic_ir.PConstructor ("None", None),
+                                    default.semantic_expr );
+                                  ( Semantic_ir.PConstructor
+                                      ("Some", Some (Semantic_ir.PVar value_name)),
+                                    Semantic_ir.Ident value_name );
+                                ] )))
                   | Some field ->
                       Error.error
                       ("get default for " ^ keyword ^ " must be "
@@ -1852,7 +1911,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                    ^ Types.source_name target_ty
                    ^ " while compiling "
                    ^ Macro_expander.string_of_form target_form)
-              | (TUnknown | TVar _) -> (
+              | (TUnknown | TMeta _ | TVar _) -> (
                   match compile_vector_pairs [] pair_forms with
                   | Error _ as err -> err
                   | Ok [] -> assert false
@@ -2002,46 +2061,75 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                       | Error _ as err -> err
                       | Ok [] -> assert false
                       | Ok pairs ->
-                          let key_ty, value_ty =
+                          let declared_key_ty, declared_value_ty =
                             Option.get (Types.dynamic_map_types target_ty)
                           in
-                          let rec validate = function
-                            | [] -> Ok ()
-                            | (key, value) :: rest ->
-                                if
-                                  not
-                                    (Types.assignable ~policy:Host_boundary
-                                       ~expected:key_ty ~actual:key.ty)
-                                then
-                                  heterogeneous_collection_type_error "map keys"
-                                    [ key_ty; key.ty ]
-                                else if
-                                  not
-                                    (Types.assignable ~policy:Host_boundary
-                                       ~expected:value_ty ~actual:value.ty)
-                                then
-                                  heterogeneous_collection_type_error
-                                    "map values" [ value_ty; value.ty ]
-                                else validate rest
+                          let unresolved_component ty =
+                            Type_solver.is_open ty
+                            ||
+                            match Types.dynamic_constraint_info ty with
+                            | Some capability -> Type_solver.is_open capability
+                            | None -> false
                           in
-                          Result.map
-                            (fun () ->
-                              let expression =
-                                List.fold_left
-                                  (fun map (key, value) ->
-                                    apply
-                                      (runtime_map_operation
-                                         (runtime_map_key_type key_ty key.ty)
-                                         "assoc")
-                                      [
-                                        map;
-                                        key.semantic_expr;
-                                        value.semantic_expr;
-                                      ])
-                                  target.semantic_expr pairs
-                              in
-                              typed_ir target_ty expression)
-                            (validate pairs))))
+                          let specialize label declared select =
+                            if unresolved_component declared then
+                              merge_collection_types label
+                                (List.map select pairs)
+                            else Ok declared
+                          in
+                          Result.bind
+                            (specialize "map keys" declared_key_ty
+                               (fun (key, _) -> key.ty))
+                            (fun key_ty ->
+                              Result.bind
+                                (specialize "map values" declared_value_ty
+                                   (fun (_, value) -> value.ty))
+                                (fun value_ty ->
+                                  let rec validate = function
+                                    | [] -> Ok ()
+                                    | (key, value) :: rest ->
+                                        if
+                                          not
+                                            (Types.assignable
+                                               ~policy:Host_boundary
+                                               ~expected:key_ty ~actual:key.ty)
+                                        then
+                                          heterogeneous_collection_type_error
+                                            "map keys" [ key_ty; key.ty ]
+                                        else if
+                                          not
+                                            (Types.assignable
+                                               ~policy:Host_boundary
+                                               ~expected:value_ty
+                                               ~actual:value.ty)
+                                        then
+                                          heterogeneous_collection_type_error
+                                            "map values"
+                                            [ value_ty; value.ty ]
+                                        else validate rest
+                                  in
+                                  Result.map
+                                    (fun () ->
+                                      let expression =
+                                        List.fold_left
+                                          (fun map (key, value) ->
+                                            apply
+                                              (runtime_map_operation
+                                                 (runtime_map_key_type key_ty
+                                                    key.ty)
+                                                 "assoc")
+                                              [
+                                                map;
+                                                key.semantic_expr;
+                                                value.semantic_expr;
+                                              ])
+                                          target.semantic_expr pairs
+                                      in
+                                      typed_ir
+                                        (Types.dynamic_map key_ty value_ty)
+                                        expression)
+                                    (validate pairs)))
+                          )))
       | _ -> Error.error "assoc expects collection followed by key/value pairs"
     and compile_dissoc scope env arg_forms =
       match arg_forms with
@@ -2244,7 +2332,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
       if arg_forms = [] then
         Ok
         (typed_ir
-           (Types.dynamic_map TUnknown TUnknown)
+           (Types.dynamic_map (Type_solver.fresh ()) (Type_solver.fresh ()))
              (Semantic_ir.Ident "Lg_runtime.Runtime_map.empty"))
       else if List.length arg_forms mod 2 <> 0 then
         Error.error "hash-map expects keyword/value pairs"
@@ -2344,7 +2432,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
       | None -> Error.error "update expects a map"
       | Some (key_ty, value_ty) -> (
           let resolved_key_ty =
-            match key_ty with TUnknown | TVar _ -> key.ty | _ -> key_ty
+            match key_ty with TUnknown | TMeta _ | TVar _ -> key.ty | _ -> key_ty
           in
           if
             not
@@ -2376,7 +2464,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   (fun arguments ->
                     let resolved_value_ty =
                       match value_ty with
-                      | TUnknown | TVar _ -> return_ty
+                      | TUnknown | TMeta _ | TVar _ -> return_ty
                       | _ -> value_ty
                     in
                     if
@@ -2963,7 +3051,14 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
       in
       let compile_collection_contains target value =
         match (target.ty, value.ty) with
-      | TOcaml_app ("Lg_runtime.Runtime_transient.set", [ element_type ]), _
+        | target_ty, _
+          when Option.is_some (Types.contains_constraint_info target_ty) ->
+            Collection_capability.contains_expr target value
+            |> Option.value
+                 ~default:
+                   (Error.error
+                      "contains? expects a static membership witness")
+        | TOcaml_app ("Lg_runtime.Runtime_transient.set", [ element_type ]), _
           when Types.equal element_type TUnknown
                || Types.same_shape element_type value.ty ->
             let contains =

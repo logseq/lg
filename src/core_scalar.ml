@@ -44,10 +44,11 @@ let int_binary name args build_code =
 let compile_boolean name args =
   match one_arg name args with
   | Error _ as err -> err
-  | Ok arg -> (
-      match arg.ty with
-      | TBool -> Ok (typed_ir TBool arg.semantic_expr)
-      | _ -> Ok (typed_ir TBool (Semantic_ir.Bool true)))
+  | Ok arg ->
+      Ok
+        (typed_ir TBool
+           (Expression_support.truthiness_expression arg.ty
+              arg.semantic_expr))
 
 let apply name args = Semantic_ir.Apply (Semantic_ir.Ident name, args)
 let string_length expr = apply "String.length" [ expr ]

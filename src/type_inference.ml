@@ -60,6 +60,27 @@ let rec refine_type existing inferred =
       in
       Types.dynamic_constraint
         (refine_type existing_capability inferred_capability)
+  | existing, inferred
+    when Types.is_dynamic existing
+         && Option.fold ~none:false ~some:Type_solver.is_open
+              (Types.dynamic_constraint_info existing) ->
+      inferred
+  | existing, inferred
+    when Types.is_dynamic inferred
+         && Option.fold ~none:false ~some:Type_solver.is_open
+              (Types.dynamic_constraint_info inferred) ->
+      existing
+  | existing, inferred
+    when Option.is_some (Types.symbol_predicate_constraint_info existing)
+         && Types.is_dynamic inferred ->
+      existing
+  | existing, inferred
+    when Types.is_dynamic existing
+         && Option.is_some (Types.symbol_predicate_constraint_info inferred) ->
+      inferred
+  | _, inferred
+    when Option.is_some (Types.symbol_predicate_constraint_info inferred) ->
+      inferred
   | existing, inferred when Types.is_dynamic existing ->
       let capability =
         Types.dynamic_constraint_info existing |> Option.value ~default:TUnknown
@@ -98,6 +119,32 @@ let rec refine_type existing inferred =
 
 and refine_nonmatching_type existing inferred =
   match (existing, inferred) with
+  | existing, inferred
+    when Option.is_some (Types.contains_constraint_info existing)
+         && Option.is_some (Types.contains_constraint_info inferred) ->
+      let existing_key, existing_value =
+        Types.contains_constraint_info existing |> Option.get
+      in
+      let inferred_key, inferred_value =
+        Types.contains_constraint_info inferred |> Option.get
+      in
+      Types.contains_constraint_with_value
+        (refine_type existing_key inferred_key)
+        (refine_type existing_value inferred_value)
+  | existing, inferred
+    when Option.is_some (Types.contains_constraint_info existing) ->
+      let key_ty, value_ty =
+        Types.contains_constraint_info existing |> Option.get
+      in
+      Types.contains_constraint_with_value key_ty
+        (refine_type value_ty inferred)
+  | existing, inferred
+    when Option.is_some (Types.contains_constraint_info inferred) ->
+      let key_ty, value_ty =
+        Types.contains_constraint_info inferred |> Option.get
+      in
+      Types.contains_constraint_with_value key_ty
+        (refine_type existing value_ty)
   | TMap_keys, ((TRecord _ | TNamed_record _) as map_ty)
   | ((TRecord _ | TNamed_record _) as map_ty), TMap_keys ->
       map_ty
@@ -148,17 +195,36 @@ and refine_nonmatching_type existing inferred =
       | None -> existing)
   | existing, inferred
     when Option.is_some (Types.protocol_constraint_info inferred) -> (
-      match Types.protocol_constraint_info inferred with
-      | Some (_, _, value_ty) ->
-          Types.protocol_constraint_with_value inferred
-            (refine_type existing value_ty)
-      | None -> existing)
+      match existing with
+      | TUnknown | TMeta _ | TVar _ -> (
+          match Types.protocol_constraint_info inferred with
+          | Some (_, _, value_ty) ->
+              Types.protocol_constraint_with_value inferred
+                (refine_type existing value_ty)
+          | None -> existing)
+      | _ -> existing)
   | (TNullable _ | TOcaml_app ("option", [ _ ])), inferred
     when Option.is_some (Types.seqable_constraint_info inferred) ->
-      Types.dynamic_constraint TUnknown
+      let kind, element_ty, value_ty =
+        Types.seqable_constraint_info inferred |> Option.get
+      in
+      let value_ty = refine_type existing value_ty in
+      (match kind with
+      | `Required | `Optional ->
+          Types.optional_seqable_constraint element_ty value_ty
+      | `Optional_sequential ->
+          Types.optional_sequential_constraint element_ty value_ty)
   | existing, (TNullable _ | TOcaml_app ("option", [ _ ]))
     when Option.is_some (Types.seqable_constraint_info existing) ->
-      Types.dynamic_constraint TUnknown
+      let kind, element_ty, value_ty =
+        Types.seqable_constraint_info existing |> Option.get
+      in
+      let value_ty = refine_type value_ty inferred in
+      (match kind with
+      | `Required | `Optional ->
+          Types.optional_seqable_constraint element_ty value_ty
+      | `Optional_sequential ->
+          Types.optional_sequential_constraint element_ty value_ty)
   | TNullable existing, TNullable inferred ->
       Types.normalize_nullable (TNullable (refine_type existing inferred))
   | (TNullable existing | TOcaml_app ("option", [ existing ])), inferred
@@ -182,6 +248,12 @@ and refine_nonmatching_type existing inferred =
       TVector
         (refine_type existing
            (Option.get (Types.seqable_constraint_element inferred)))
+  | existing, TVector inferred
+    when Option.is_some (Types.seqable_constraint_element existing) ->
+      TVector
+        (refine_type
+           (Option.get (Types.seqable_constraint_element existing))
+           inferred)
   | TSeq existing, inferred
     when Option.is_some (Types.seqable_constraint_element inferred) ->
       TSeq
@@ -203,6 +275,21 @@ and refine_nonmatching_type existing inferred =
   | TSet element, TFn ([ predicate_arg ], TBool) ->
       TSet (refine_type element predicate_arg)
   | TSeq existing, TSeq inferred -> TSeq (refine_type existing inferred)
+  | TNamed_record existing, TNamed_record inferred
+    when Type_id.equal existing.type_id inferred.type_id ->
+      let type_arguments =
+        if
+          List.length existing.type_arguments
+          = List.length inferred.type_arguments
+        then List.map2 refine_type existing.type_arguments inferred.type_arguments
+        else existing.type_arguments
+      in
+      TNamed_record
+        {
+          existing with
+          type_arguments;
+          fields = merge_record_fields existing.fields inferred.fields;
+        }
   | (TRecord _ as structural), (TNamed_record _ as named)
     when Types.row_compatible ~expected:structural ~actual:named ->
       named
@@ -211,8 +298,8 @@ and refine_nonmatching_type existing inferred =
       named
   | TRecord existing, TRecord inferred ->
       TRecord (merge_record_fields existing inferred)
-  | TVar _, inferred -> inferred
-  | existing, TVar _ -> existing
+  | (TMeta _ | TVar _), inferred -> inferred
+  | existing, (TMeta _ | TVar _) -> existing
   | ( TFn (existing_params, existing_return),
       TFn (inferred_params, inferred_return) )
     when List.length existing_params = List.length inferred_params ->
@@ -244,11 +331,11 @@ let refine_returned_seqable_vector params branch other_ty =
       match string_assoc_opt name params with
       | Some current -> (
           match Types.seqable_constraint_info current with
-          | Some (`Required, current_element, (TUnknown | TVar _)) ->
+          | Some (`Required, current_element, (TUnknown | TMeta _ | TVar _)) ->
               let element_ty = refine_type current_element other_element in
               let element_ty =
                 match element_ty with
-                | TUnknown | TVar _ -> Types.dynamic_constraint TUnknown
+                | TUnknown | TMeta _ | TVar _ -> Types.dynamic_constraint TUnknown
                 | ty -> ty
               in
               replace_param name
@@ -277,22 +364,50 @@ let same_refinable_wrapper left right =
       List.length left_params = List.length right_params
   | _ -> false
 
-let constrain_symbol expected_ty params name =
+let is_edn_value_type = Edn_value_elaborator.is_value_type
+
+let edn_function_argument_compatible expected actual =
+  is_edn_value_type actual
+  && Option.is_some (Types.seqable_constraint_info expected)
+
+let edn_function_call_compatible callee call =
+  match (callee, call) with
+  | TFn (callee_params, _), TFn (call_params, _)
+    when List.length callee_params = List.length call_params ->
+      List.for_all2
+        (fun expected actual ->
+          Result.is_ok (Type_solver.unify [] expected actual)
+          || edn_function_argument_compatible expected actual)
+        callee_params call_params
+  | _ -> false
+
+let rec constrain_symbol expected_ty params name =
   match string_assoc_opt name params with
   | None -> Ok params
-  | Some (TFn (parameter_tys, return_ty))
-    when (match expected_ty with TFn _ -> true | _ -> false)
-         &&
-         (List.exists
-            (function
-              | TVar name -> String.starts_with ~prefix:"let_fn_" name
-              | _ -> false)
-            parameter_tys
-         || match return_ty with
-            | TVar name -> String.starts_with ~prefix:"let_fn_" name
-            | _ -> false) ->
-      Ok params
+  | Some (TFn _ as existing_ty)
+    when (match expected_ty with TFn _ -> true | _ -> false) ->
+      let scheme = Type_solver.generalize existing_ty in
+      if
+        List.exists
+          (function Declared_variable _ -> true | Inferred_variable _ -> false)
+          scheme.quantified
+      then
+        let instantiated = Type_solver.instantiate scheme in
+        (match Type_solver.unify [] instantiated expected_ty with
+        | Ok _ -> Ok params
+        | Error _
+          when edn_function_call_compatible instantiated expected_ty ->
+            Ok params
+        | Error _ ->
+            Error.error
+              (name ^ " called with incompatible arguments: expected "
+             ^ Types.source_name instantiated ^ ", got "
+             ^ Types.source_name expected_ty))
+      else constrain_monomorphic_symbol expected_ty params name existing_ty
   | Some existing_ty ->
+      constrain_monomorphic_symbol expected_ty params name existing_ty
+
+and constrain_monomorphic_symbol expected_ty params name existing_ty =
       let substitutions =
         Type_solver.unify [] existing_ty expected_ty
         |> Result.value ~default:[]
@@ -305,10 +420,54 @@ let constrain_symbol expected_ty params name =
       in
       let existing_ty = Type_solver.apply substitutions existing_ty in
       let expected_ty = Type_solver.apply substitutions expected_ty in
-      Ok (replace_param name (refine_type existing_ty expected_ty) params)
+      let refined = refine_type existing_ty expected_ty in
+      Ok (replace_param name refined params)
+
+let constrain_truthy_symbol params name =
+  match string_assoc_opt name params with
+  | Some ty when Option.is_some (Types.truthy_constraint_info ty) -> Ok params
+  | Some TUnknown ->
+      Ok
+        (replace_param name
+           (Types.truthy_constraint (Type_solver.fresh ()))
+           params)
+  | Some ((TMeta _ | TVar _) as value_ty) ->
+      Ok (replace_param name (Types.truthy_constraint value_ty) params)
+  | Some _ | None -> Ok params
+
+let constrain_printable_symbol params name =
+  match string_assoc_opt name params with
+  | Some ty when Option.is_some (Types.printable_constraint_info ty) ->
+      Ok params
+  | Some TUnknown ->
+      Ok
+        (replace_param name
+           (Types.printable_constraint (Type_solver.fresh ()))
+           params)
+  | Some ((TMeta _ | TVar _) as value_ty) ->
+      Ok (replace_param name (Types.printable_constraint value_ty) params)
+  | Some _ | None -> Ok params
+
+let constrain_symbol_predicate params name =
+  match string_assoc_opt name params with
+  | Some ty
+    when Option.is_some (Types.symbol_predicate_constraint_info ty) ->
+      Ok params
+  | Some TUnknown ->
+      Ok
+        (replace_param name
+           (Types.symbol_predicate_constraint (Type_solver.fresh ()))
+           params)
+  | Some ((TMeta _ | TVar _) as value_ty) ->
+      Ok
+        (replace_param name
+           (Types.symbol_predicate_constraint value_ty)
+           params)
+  | Some _ | None -> Ok params
 
 let rec materialize_dynamic_unknown = function
   | TUnknown -> Types.dynamic_constraint TUnknown
+  | ty when Types.is_dynamic ty -> ty
   | (TVar _ as type_parameter) -> type_parameter
   | TNullable inner -> TNullable (materialize_dynamic_unknown inner)
   | TArray inner -> TArray (materialize_dynamic_unknown inner)
@@ -367,7 +526,7 @@ let constrain_comparable_symbol params name =
 
 let constrain_seqable element_ty params name =
   let rec add_constraint = function
-    | TUnknown | TVar _ -> Types.seqable_constraint element_ty
+    | TUnknown | TMeta _ | TVar _ -> Types.seqable_constraint element_ty
     | TMap_keys ->
         Types.dynamic_map TKeyword (Types.dynamic_constraint TUnknown)
     | TRecord _ as map_ty ->
@@ -390,7 +549,9 @@ let constrain_seqable element_ty params name =
           Types.optional_seqable_constraint element_ty value_ty
         else Types.optional_sequential_constraint element_ty value_ty
     | TNamed_record { type_parameters = [ parameter ]; _ } as record_ty ->
-        Types.substitute_type_variables [ (parameter, element_ty) ] record_ty
+        Types.substitute_type_variables
+          [ (Type_solver.Declared parameter, element_ty) ]
+          record_ty
     | existing -> (
         match Types.protocol_constraint_info existing with
         | Some (_, _, value_ty) ->
@@ -402,15 +563,31 @@ let constrain_seqable element_ty params name =
   | None -> Ok params
   | Some existing -> Ok (replace_param name (add_constraint existing) params)
 
+let constrain_contains key_ty params name =
+  let add_constraint = function
+    | TUnknown | TMeta _ | TVar _ -> Types.contains_constraint key_ty
+    | existing -> (
+        match Types.contains_constraint_info existing with
+        | Some (existing_key, value_ty) ->
+            Types.contains_constraint_with_value
+              (refine_type existing_key key_ty)
+              value_ty
+        | None ->
+            Types.contains_constraint_with_value key_ty existing)
+  in
+  match string_assoc_opt name params with
+  | None -> Ok params
+  | Some existing -> Ok (replace_param name (add_constraint existing) params)
+
 let constrain_optional_seqable ?(sequential = false) element_ty params name =
   let make_optional element_ty value_ty =
     if sequential then Types.optional_sequential_constraint element_ty value_ty
     else Types.optional_seqable_constraint element_ty value_ty
   in
   let rec add_constraint = function
-    | TUnknown | TVar _ -> make_optional element_ty TUnknown
-    | TNullable _ | TOcaml_app ("option", [ _ ]) ->
-        Types.dynamic_constraint TUnknown
+    | TUnknown | TMeta _ | TVar _ -> make_optional element_ty TUnknown
+    | (TNullable _ | TOcaml_app ("option", [ _ ])) as value_ty ->
+        make_optional element_ty value_ty
     | TOcaml_app (constraint_name, [ existing_element; value_ty ])
       when constraint_name = Types.seqable_constraint_name
            || constraint_name = Types.optional_seqable_constraint_name
@@ -437,6 +614,12 @@ let constrain_optional_seqable ?(sequential = false) element_ty params name =
 
 let add_record_field_constraint name keyword field_ty params =
   let merge_nested_fields fields inferred_fields =
+    let statically_seqable = function
+      | TRecord _ | TNamed_record _ | TMap_keys
+      | TOcaml_app ("Lg_runtime.Runtime_map.t", [ _; _ ]) ->
+          true
+      | _ -> false
+    in
     let merge_nested fields (inferred : field) =
       match find_field inferred.keyword fields with
       | None -> Ok (inferred :: fields)
@@ -449,24 +632,14 @@ let add_record_field_constraint name keyword field_ty params =
                  fields)
       | Some _ when Types.equal inferred.ty TUnknown -> Ok fields
       | Some existing
-        when (match existing.ty with
-             | TRecord _ | TNamed_record _ ->
-                 Option.is_some
-                   (Types.seqable_constraint_info inferred.ty)
-             | TMap_keys ->
-                 Option.is_some
-                   (Types.seqable_constraint_info inferred.ty)
-             | _ -> false) ->
+        when statically_seqable existing.ty
+             && Option.is_some
+                  (Types.seqable_constraint_info inferred.ty) ->
           Ok fields
       | Some existing
-        when (match inferred.ty with
-             | TRecord _ | TNamed_record _ ->
-                 Option.is_some
-                   (Types.seqable_constraint_info existing.ty)
-             | TMap_keys ->
-                 Option.is_some
-                   (Types.seqable_constraint_info existing.ty)
-             | _ -> false) ->
+        when statically_seqable inferred.ty
+             && Option.is_some
+                  (Types.seqable_constraint_info existing.ty) ->
           Ok
             (inferred
             :: List.filter
@@ -489,13 +662,13 @@ let add_record_field_constraint name keyword field_ty params =
     | Some field when Types.equal field.ty field_ty -> Ok fields
     | Some field -> (
         match (field.ty, field_ty) with
-        | (TUnknown | TVar _), field_ty ->
+        | (TUnknown | TMeta _ | TVar _), field_ty ->
             Ok
               (make_field keyword field_ty
               :: List.filter
                    (fun candidate -> candidate.keyword <> keyword)
                    fields)
-        | _, (TUnknown | TVar _) -> Ok fields
+        | _, (TUnknown | TMeta _ | TVar _) -> Ok fields
         | TRef TUnknown, TRef value_ty ->
             Ok
               (make_field keyword (TRef value_ty)
@@ -562,7 +735,8 @@ let add_record_field_constraint name keyword field_ty params =
             Ok
               (make_field keyword
                  (Types.substitute_type_variables
-                    [ (parameter, element_ty) ] existing)
+                    [ (Type_solver.Declared parameter, element_ty) ]
+                    existing)
               :: List.filter
                    (fun candidate -> candidate.keyword <> keyword)
                    fields)
@@ -600,11 +774,18 @@ let add_record_field_constraint name keyword field_ty params =
              ^ " because it is already " ^ Types.source_name field.ty))
   in
   let rec add_constraint = function
-    | TUnknown | TVar _ -> Ok (TRecord [ make_field keyword field_ty ])
+    | TUnknown | TMeta _ | TVar _ -> Ok (TRecord [ make_field keyword field_ty ])
     | TMap_keys ->
         Ok
           (Types.dynamic_map TKeyword
              (Types.dynamic_constraint TUnknown))
+    | existing when Option.is_some (Types.contains_constraint_info existing) ->
+        let key_ty, value_ty =
+          Types.contains_constraint_info existing |> Option.get
+        in
+        Result.map
+          (Types.contains_constraint_with_value key_ty)
+          (add_constraint value_ty)
     | TNullable inner ->
         Result.map (fun inner -> TNullable inner) (add_constraint inner)
     | TOcaml_app ("option", [ inner ]) ->
@@ -619,7 +800,10 @@ let add_record_field_constraint name keyword field_ty params =
         | Some field -> (
             let constrained_parameters =
               Type_solver.variables field.ty
-              |> List.filter (fun name -> string_mem name record.type_parameters)
+              |> List.filter (function
+                   | Type_solver.Declared name ->
+                       string_mem name record.type_parameters
+                   | Type_solver.Metavariable _ -> false)
             in
             let inferred_ty =
               match
@@ -629,14 +813,36 @@ let add_record_field_constraint name keyword field_ty params =
                     { type_parameters = [ parameter ]; _ } as named,
                   Some element_ty ) ->
                   Types.substitute_type_variables
-                    [ (parameter, element_ty) ] named
+                    [ (Type_solver.Declared parameter, element_ty) ]
+                    named
               | (TRecord _ | TNamed_record _ | TMap_keys), Some _ ->
                   field.ty
               | _ -> stored_value_type field_ty
             in
             match (constrained_parameters, inferred_ty) with
+            | [], inferred_ty
+              when (match field.ty with
+                   | TUnknown | TMeta _ | TVar _ -> true
+                   | _ -> false)
+                   &&
+                   not
+                     (match inferred_ty with
+                     | TUnknown | TMeta _ | TVar _ -> true
+                     | _ -> false) ->
+                Result.map
+                  (fun fields -> TNamed_record { record with fields })
+                  (merge_fields record.fields)
             | [], _ -> Ok record_ty
-            | _, (TUnknown | TVar _) -> Ok record_ty
+            | _, (TUnknown | TMeta _ | TVar _) -> Ok record_ty
+            | _,
+              inferred_ty
+              when (match field.ty with
+                   | TOcaml_app ("Lg_runtime.Runtime_map.t", [ _; _ ]) ->
+                       true
+                   | _ -> false)
+                   && Option.is_some
+                        (Types.seqable_constraint_info inferred_ty) ->
+                Ok record_ty
             | _, inferred_ty -> (
             match Type_solver.unify [] field.ty inferred_ty with
             | Ok substitutions ->
@@ -654,6 +860,14 @@ let add_record_field_constraint name keyword field_ty params =
                   ("cannot infer " ^ keyword ^ " as "
                  ^ Types.source_name inferred_ty ^ " because it is already "
                  ^ Types.source_name field.ty))))
+    | ty when Option.is_some (Types.truthy_constraint_info ty) ->
+        let value_ty = Types.truthy_constraint_info ty |> Option.get in
+        let value_ty =
+          match value_ty with
+          | TNullable _ | TOcaml_app ("option", [ _ ]) -> value_ty
+          | value_ty -> TNullable value_ty
+        in
+        Result.map Types.truthy_constraint (add_constraint value_ty)
     | ty when Types.is_dynamic ty ->
         let capability =
           Types.dynamic_constraint_info ty |> Option.value ~default:TUnknown
@@ -734,7 +948,7 @@ let rec inferred_form_type params = function
   | FList [ FSymbol ("inc" | "dec" | "count"); _ ] -> TInt
   | FList [ FSymbol ("first" | "second" | "last"); FSymbol receiver ] -> (
       let normalize = function
-        | TUnknown | TVar _ -> Types.dynamic_constraint TUnknown
+        | TUnknown | TMeta _ | TVar _ -> Types.dynamic_constraint TUnknown
         | ty -> ty
       in
       match string_assoc_opt receiver params with
@@ -838,6 +1052,45 @@ let rec inferred_form_type params = function
           Types.seqable_constraint_element collection_ty
           |> Option.value ~default:TUnknown
       | None -> TUnknown)
+  | FList
+      [
+        FSymbol ("get" | "clojure.core/get");
+        FSymbol target;
+        _key;
+        default;
+      ] ->
+      let default_ty = inferred_form_type params default in
+      (match
+         string_assoc_opt target params
+         |> Option.map Types.constraint_value_type
+         |> fun target_ty -> Option.bind target_ty Types.dynamic_map_types
+       with
+      | Some (_, value_ty) -> refine_type value_ty default_ty
+      | None -> default_ty)
+  | FList
+      [
+        FSymbol ("get" | "clojure.core/get");
+        FSymbol target;
+        _key;
+      ] -> (
+      match
+        string_assoc_opt target params
+        |> Option.map Types.constraint_value_type
+        |> fun target_ty -> Option.bind target_ty Types.dynamic_map_types
+      with
+      | Some (_, value_ty) -> TNullable value_ty
+      | None -> TUnknown)
+  | FList (FSymbol "conj" :: target :: values) ->
+      let value_tys = List.map (inferred_form_type params) values in
+      let refine_element element_ty =
+        List.fold_left refine_type element_ty value_tys
+      in
+      (match inferred_form_type params target with
+      | TList element_ty -> TList (refine_element element_ty)
+      | TVector element_ty -> TVector (refine_element element_ty)
+      | TSet element_ty -> TSet (refine_element element_ty)
+      | TSeq element_ty -> TSeq (refine_element element_ty)
+      | target_ty -> target_ty)
   | FList (FSymbol ("get" | "clojure.core/get") :: _) -> TUnknown
   | FMap pairs ->
       let homogeneous_type forms =
@@ -891,6 +1144,18 @@ let rec returned_vector_type params = function
       match returned_vector_type params collection with
       | Some vector_ty -> Some vector_ty
       | None -> Some (TVector (Types.dynamic_constraint TUnknown)))
+  | FList [ FSymbol ("if" | "if-not"); _condition; then_form; else_form ] -> (
+      match
+        ( returned_vector_type params then_form,
+          returned_vector_type params else_form )
+      with
+      | Some left, Some right -> Some (refine_type left right)
+      | Some vector_ty, None | None, Some vector_ty -> Some vector_ty
+      | None, None -> None)
+  | FList (FSymbol "loop" :: _bindings :: body_forms) -> (
+      match List.rev body_forms with
+      | result :: _ -> returned_vector_type params result
+      | [] -> None)
   | FList (FSymbol ("let" | "let*" | "do") :: forms) -> (
       match List.rev forms with
       | result :: _ -> returned_vector_type params result
@@ -1058,7 +1323,7 @@ let rec rewrite_simple_aliases aliases = function
            pairs)
   | form -> form
 
-let infer_params ?(materialize_open_equality = false)
+let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     ?(observe_call = fun _ _ _ -> ())
     ~lookup_function_ty
     ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
@@ -1066,9 +1331,8 @@ let infer_params ?(materialize_open_equality = false)
   let unresolved_parameter_names =
     params
     |> List.filter_map (fun (name, ty) ->
-           match ty with TUnknown | TVar _ -> Some name | _ -> None)
+           match ty with TUnknown | TMeta _ | TVar _ -> Some name | _ -> None)
   in
-  let next_type_variable = ref 0 in
   let branch_depth = ref 0 in
   let branch_hint_symbols = ref [] in
   let with_branch inference =
@@ -1089,10 +1353,20 @@ let infer_params ?(materialize_open_equality = false)
     in
     List.map
       (fun (name, base_ty) ->
-        if string_mem name new_hints then (name, base_ty)
-        else
-          ( name,
-            string_assoc_opt name inferred |> Option.value ~default:base_ty ))
+        let inferred_ty =
+          string_assoc_opt name inferred |> Option.value ~default:base_ty
+        in
+        if string_mem name new_hints then
+          let restored_ty =
+            match
+              ( Types.truthy_constraint_info base_ty,
+                Types.truthy_constraint_info inferred_ty )
+            with
+            | Some _, Some _ -> inferred_ty
+            | _ -> base_ty
+          in
+          (name, restored_ty)
+        else (name, inferred_ty))
       base
   in
   let rec guarded_protocol_receivers = function
@@ -1147,19 +1421,14 @@ let infer_params ?(materialize_open_equality = false)
     |> fun inferred ->
     restore_guarded_protocol_receivers base inferred condition
   in
-  let fresh_type_variable prefix =
-    let index = !next_type_variable in
-    incr next_type_variable;
-    TVar (prefix ^ "_" ^ string_of_int index)
+  let fresh_type_variable _prefix =
+    Type_solver.fresh ()
   in
   let freshen_call_type name ty =
-    let prefix = "call_" ^ Names.sanitize_name name in
+    let _ = name in
     let substitutions =
       Type_solver.variables ty
-      |> List.map (fun variable ->
-             ( variable,
-               fresh_type_variable
-                 (prefix ^ "_" ^ Names.sanitize_name variable) ))
+      |> List.map (fun variable -> (variable, fresh_type_variable "call"))
     in
     Type_solver.apply substitutions ty
   in
@@ -1179,7 +1448,7 @@ let infer_params ?(materialize_open_equality = false)
                 (fun (spec : Destructure.param_spec) parameter_ty ->
                   let parameter_ty =
                     match parameter_ty with
-                    | TUnknown | TVar _ -> TUnknown
+                    | TUnknown | TMeta _ | TVar _ -> TUnknown
                     | ty -> ty
                   in
                   let destructured =
@@ -1216,7 +1485,7 @@ let infer_params ?(materialize_open_equality = false)
                     (infer_all function_params (List.rev reversed_prefix))
                     (fun params ->
                       match return_ty with
-                      | TUnknown | TVar _ -> infer_form params result
+                      | TUnknown | TMeta _ | TVar _ -> infer_form params result
                       | ty -> infer_expected ty params result)
             in
             Result.map
@@ -1262,10 +1531,23 @@ let infer_params ?(materialize_open_equality = false)
                       condition)
                   (with_branch (fun () ->
                        infer_expected expected_ty inferred else_form))))
+    | ( FList
+          [
+            FSymbol ("if-some" | "if-let");
+            FVector [ FSymbol _binding; _option_form ];
+            _then_form;
+            else_form;
+          ] as form ) ->
+        Result.bind (infer_form params form) (fun params ->
+            infer_expected expected_ty params else_form)
     | FList [ FSymbol "Some"; value ] -> (
         match expected_ty with
         | TNullable value_ty | TOcaml_app ("option", [ value_ty ]) ->
             infer_expected value_ty params value
+        | _ -> infer_form params value)
+    | FList [ FSymbol ("atom" | "volatile!"); value ] -> (
+        match expected_ty with
+        | TRef value_ty -> infer_expected value_ty params value
         | _ -> infer_form params value)
     | FVector values -> (
         let element_ty =
@@ -1449,9 +1731,15 @@ let infer_params ?(materialize_open_equality = false)
         infer_expected_all expected_ty params args
     | FList [ FKeyword keyword; FSymbol name ] ->
         add_record_field_constraint name keyword expected_ty params
+    | FList [ FKeyword keyword; FSymbol name; default ]
+      when Option.is_some (Types.printable_constraint_info expected_ty) ->
+        let field_ty = inferred_form_type params default in
+        Result.bind
+          (add_record_field_constraint name keyword (TNullable field_ty) params)
+          (fun params -> infer_expected field_ty params default)
     | FList [ FKeyword keyword; FSymbol name; default ] ->
         Result.bind
-          (add_record_field_constraint name keyword expected_ty params)
+          (add_record_field_constraint name keyword (TNullable expected_ty) params)
           (fun params -> infer_expected expected_ty params default)
     | FList
         [
@@ -1509,8 +1797,7 @@ let infer_params ?(materialize_open_equality = false)
             in
             Result.bind constrain_target (fun params ->
                 infer_expected TKeyword params key)
-        | None ->
-            infer_form params key)
+        | None -> infer_form params key)
     | FList [ FSymbol "get"; target; key ] ->
         let target_ty = inferred_form_type params target in
         if match target_ty with TVector _ -> true | _ -> false then
@@ -1639,23 +1926,57 @@ let infer_params ?(materialize_open_equality = false)
     in
     loop params forms
   and infer_truthy params = function
-    | FList (FSymbol ("and" | "or") :: conditions) ->
-        List.fold_left
-          (fun result condition ->
-            Result.bind result (fun params -> infer_truthy params condition))
-          (Ok params) conditions
-    | FSymbol name ->
-        constrain_symbol (Types.dynamic_constraint TUnknown) params name
+    | FList (FSymbol "and" :: conditions) ->
+        let optionalize_guard params = function
+          | FSymbol name -> (
+              match string_assoc_opt name params with
+              | Some ty -> (
+                  match Types.truthy_constraint_info ty with
+                  | Some (TNullable _ | TOcaml_app ("option", [ _ ])) ->
+                      params
+                  | Some value_ty ->
+                      replace_param name
+                        (Types.truthy_constraint (TNullable value_ty))
+                        params
+                  | None -> params)
+              | None -> params)
+          | _ -> params
+        in
+        let rec infer_conditions params = function
+          | [] -> Ok params
+          | [ condition ] -> infer_truthy params condition
+          | condition :: rest ->
+              Result.bind (infer_truthy params condition) (fun params ->
+                  infer_conditions (optionalize_guard params condition) rest)
+        in
+        infer_conditions params conditions
+    | FList (FSymbol "or" :: conditions) ->
+        (match List.rev conditions with
+        | [] -> Ok params
+        | last :: reversed_prefix ->
+            Result.bind (infer_truthy params last) (fun params ->
+                let result_ty = inferred_form_type params last in
+                List.fold_left
+                  (fun result condition ->
+                    Result.bind result (fun params ->
+                        match condition with
+                        | FList [ FKeyword keyword; FSymbol name ] ->
+                            add_record_field_constraint name keyword
+                              (TNullable result_ty) params
+                        | condition -> infer_truthy params condition))
+                  (Ok params) (List.rev reversed_prefix)))
+    | FSymbol name -> constrain_truthy_symbol params name
     | FList (FSymbol name :: args) when string_mem_assoc name params ->
         let parameter_types = List.map (inferred_form_type params) args in
         constrain_symbol (TFn (parameter_types, TBool)) params name
     | FList [ FKeyword keyword; FSymbol name ] ->
         add_record_field_constraint name keyword
-          (Types.dynamic_constraint TUnknown)
+          (TNullable (Type_solver.fresh ()))
           params
     | FList [ FKeyword keyword; FSymbol name; default ] ->
         let field_ty = inferred_form_type params default in
-        Result.bind (add_record_field_constraint name keyword field_ty params)
+        Result.bind
+          (add_record_field_constraint name keyword (TNullable field_ty) params)
           (fun params -> infer_expected field_ty params default)
     | FList
         [ FKeyword nested_keyword; FList [ FKeyword keyword; FSymbol name ] ] ->
@@ -1684,19 +2005,30 @@ let infer_params ?(materialize_open_equality = false)
               infer_bindings params rest)
       | ((FSymbol _ | FVector _ | FMap _) as pattern) :: collection :: rest ->
           let local_names = Destructure.pattern_names pattern in
-          let dynamic = Types.dynamic_constraint TUnknown in
+          let local_types =
+            List.map
+              (fun name ->
+                ( name,
+                  match pattern with
+                  | FSymbol _ -> TUnknown
+                  | FVector _ | FMap _ -> Type_solver.fresh ()
+                  | _ -> TUnknown ))
+              local_names
+          in
           let local_params =
-            List.map (fun name -> (name, dynamic)) local_names
+            local_types
             @ List.filter
                 (fun (name, _) -> not (string_mem name local_names))
                 params
           in
           Result.bind (infer_bindings local_params rest) (fun inferred ->
+              let lookup_local_ty name =
+                string_assoc_opt name inferred
+                |> Option.value ~default:TUnknown
+              in
               let element_ty =
-                Destructure.infer_pattern_type pattern (fun name ->
-                    string_assoc_opt name inferred
-                    |> Option.value ~default:dynamic)
-                |> Result.value ~default:dynamic
+                Destructure.infer_generator_pattern_type pattern lookup_local_ty
+                |> Result.value ~default:TUnknown
               in
               let outer_params =
                 List.map
@@ -1777,13 +2109,13 @@ let infer_params ?(materialize_open_equality = false)
                       (fun candidates expected actual ->
                         let candidate =
                           match expected with
-                          | TUnknown | TVar _ -> actual
+                          | TUnknown | TMeta _ | TVar _ -> actual
                           | expected -> expected
                         in
                         if
                           Types.equal candidate TUnknown
                           || (match candidate with
-                             | TVar _ -> true
+                             | TMeta _ | TVar _ -> true
                              | _ -> false)
                           || List.exists (Types.equal candidate) candidates
                         then candidates
@@ -1803,7 +2135,7 @@ let infer_params ?(materialize_open_equality = false)
             (function
               | TOcaml_app
                   ( constraint_name,
-                    [ (TUnknown | TVar _); value_ty ] )
+                    [ (TUnknown | TMeta _ | TVar _); value_ty ] )
                 when (constraint_name = Types.seqable_constraint_name
                      || constraint_name
                         = Types.optional_seqable_constraint_name
@@ -1827,7 +2159,7 @@ let infer_params ?(materialize_open_equality = false)
               in
               let unresolved =
                 Types.equal actual TUnknown
-                || match actual with TVar _ -> true | _ -> false
+                || match actual with TMeta _ | TVar _ -> true | _ -> false
               in
               if
                 unresolved
@@ -1906,7 +2238,7 @@ let infer_params ?(materialize_open_equality = false)
                   let actual = inferred_argument_type arg in
                   if
                     Types.equal actual TUnknown || Types.is_dynamic actual
-                    || match actual with TVar _ -> true | _ -> false
+                    || match actual with TMeta _ | TVar _ -> true | _ -> false
                   then substitutions
                   else
                     Types.infer_type_substitutions substitutions
@@ -1939,7 +2271,8 @@ let infer_params ?(materialize_open_equality = false)
         match Destructure.parse_param_specs params_form with
         | Ok [ (spec : Destructure.param_spec) ] -> (
             match spec.explicit_ty with
-            | Some ty when not (Types.equal ty TUnknown) -> ty
+            | Some ty when not (Types.equal ty TUnknown) ->
+                resolve_named_record ty
             | _ when not spec.destructured -> (
                 match infer_all [ (spec.source_name, TUnknown) ] body_forms with
                 | Ok inferred ->
@@ -1981,6 +2314,7 @@ let infer_params ?(materialize_open_equality = false)
               |> List.concat_map (fun (spec : Destructure.param_spec) ->
                      let source_ty =
                        Option.value spec.explicit_ty ~default:TUnknown
+                       |> resolve_named_record
                      in
                      let destructured =
                        if spec.destructured then
@@ -2076,6 +2410,20 @@ let infer_params ?(materialize_open_equality = false)
             Result.bind result (fun params ->
                 infer_sequence_form item_ty params collection))
           (Ok params) collections
+    | FList [ FSymbol "partition-by"; function_form; collection ] ->
+        let source_element_ty =
+          match element_ty with
+          | TList item_ty | TSeq item_ty -> item_ty
+          | _ -> inferred_unary_function_param params function_form
+        in
+        Result.bind
+          (infer_sequence_form source_element_ty params collection)
+          (fun params ->
+            infer_expected
+              (TFn
+                 ( [ source_element_ty ],
+                   fresh_type_variable "partition_key" ))
+              params function_form)
     | FList
         [
           FSymbol
@@ -2096,7 +2444,7 @@ let infer_params ?(materialize_open_equality = false)
         match item_types with
         | [] -> TUnknown
         | first :: rest
-          when not (match first with TUnknown | TVar _ -> true | _ -> false)
+          when not (match first with TUnknown | TMeta _ | TVar _ -> true | _ -> false)
                && List.for_all (Types.equal first) rest ->
             first
         | _ -> TUnknown)
@@ -2118,25 +2466,28 @@ let infer_params ?(materialize_open_equality = false)
             string_assoc_opt item inferred |> Option.value ~default:TUnknown
         | Error _ -> TUnknown)
     | _ -> TUnknown
-  and inferred_reducer_item params init = function
+  and inferred_reducer_types accumulator_ty = function
     | FSymbol name -> (
         match lookup_function_ty name with
-        | Ok (TFn ([ _; item_ty ], _)) -> item_ty
-        | _ -> TUnknown)
+        | Ok (TFn ([ accumulator_ty; item_ty ], _)) ->
+            (accumulator_ty, item_ty)
+        | _ -> (accumulator_ty, TUnknown))
     | FList
         (FSymbol "fn"
         :: FVector [ FSymbol accumulator; FSymbol item ]
         :: body_forms) -> (
-        let accumulator_ty = inferred_form_type params init in
         match
           infer_all
             [ (accumulator, accumulator_ty); (item, TUnknown) ]
             body_forms
          with
         | Ok inferred ->
-            string_assoc_opt item inferred |> Option.value ~default:TUnknown
-        | Error _ -> TUnknown)
-    | _ -> TUnknown
+            ( string_assoc_opt accumulator inferred
+              |> Option.value ~default:accumulator_ty,
+              string_assoc_opt item inferred |> Option.value ~default:TUnknown
+            )
+        | Error _ -> (accumulator_ty, TUnknown))
+    | _ -> (accumulator_ty, TUnknown)
   and inferred_kv_reducer_types params init = function
     | FSymbol name -> (
         match lookup_function_ty name with
@@ -2203,6 +2554,7 @@ let infer_params ?(materialize_open_equality = false)
                     |> List.concat_map (fun (spec : Destructure.param_spec) ->
                            let parameter_ty =
                              Option.value spec.explicit_ty ~default:TUnknown
+                             |> resolve_named_record
                            in
                            let destructured =
                              if spec.destructured then
@@ -2226,7 +2578,8 @@ let infer_params ?(materialize_open_equality = false)
                         List.map
                           (fun (spec : Destructure.param_spec) ->
                             match spec.explicit_ty with
-                            | Some ty when not (Types.equal ty TUnknown) -> ty
+                            | Some ty when not (Types.equal ty TUnknown) ->
+                                resolve_named_record ty
                             | _ when spec.destructured ->
                                 Destructure.infer_pattern_type spec.pattern
                                   (fun name ->
@@ -2407,7 +2760,7 @@ let infer_params ?(materialize_open_equality = false)
                           in
                           let infer_value =
                             match expected with
-                            | TUnknown | TVar _ -> infer_form params value
+                            | TUnknown | TMeta _ | TVar _ -> infer_form params value
                             | expected -> infer_expected expected params value
                           in
                           Result.bind infer_value (fun params ->
@@ -2440,7 +2793,7 @@ let infer_params ?(materialize_open_equality = false)
                                   (fresh_type_variable
                                      ("let_array_" ^ Names.sanitize_name name))
                             | ty when Types.equal ty TUnknown ->
-                              TVar ("let_" ^ Names.sanitize_name name)
+                                fresh_type_variable "let"
                             | ty -> ty
                           in
                           initial_locals ((name, ty) :: locals) rest
@@ -2455,13 +2808,39 @@ let infer_params ?(materialize_open_equality = false)
                       (fun inferred ->
                         let rec propagate params = function
                           | [] -> Ok params
+                          | ( name,
+                              FList
+                                [
+                                  FSymbol field_access;
+                                  FSymbol receiver;
+                                ] )
+                            :: rest
+                            when String.starts_with ~prefix:".-" field_access
+                                 && string_mem_assoc receiver params ->
+                              let expected =
+                                string_assoc_opt name params
+                                |> Option.value ~default:TUnknown
+                              in
+                              let keyword =
+                                ":"
+                                ^ String.sub field_access 2
+                                    (String.length field_access - 2)
+                              in
+                              (match expected with
+                              | TUnknown | TMeta _ | TVar _ ->
+                                  propagate params rest
+                              | _ ->
+                                  Result.bind
+                                    (add_record_field_constraint receiver
+                                       keyword expected params)
+                                    (fun params -> propagate params rest))
                           | (name, value) :: rest ->
                               let expected =
                                 string_assoc_opt name params
                                 |> Option.value ~default:TUnknown
                               in
                               (match expected with
-                              | TUnknown | TVar _ -> propagate params rest
+                              | TUnknown | TMeta _ | TVar _ -> propagate params rest
                               | expected ->
                                   Result.bind
                                     (infer_expected expected params value)
@@ -2496,7 +2875,7 @@ let infer_params ?(materialize_open_equality = false)
                         | Some TUnknown ->
                             fresh_type_variable
                               ("assoc_" ^ Names.sanitize_name value_name)
-                        | Some (TVar _ as ty) -> ty
+                        | Some ((TMeta _ | TVar _) as ty) -> ty
                         | Some ty -> ty
                         | None -> (
                             match lookup_function_ty value_name with
@@ -2556,7 +2935,7 @@ let infer_params ?(materialize_open_equality = false)
               let concrete_or_dynamic form =
                 match inferred_form_type params form with
                 | TUnknown -> Types.dynamic_constraint TUnknown
-                | (TVar _ as type_parameter) -> type_parameter
+                | ((TMeta _ | TVar _) as type_parameter) -> type_parameter
                 | ty -> ty
               in
               constrain_symbol
@@ -2591,7 +2970,7 @@ let infer_params ?(materialize_open_equality = false)
         Result.bind params (fun params ->
         let value_ty =
           match inferred_form_type params value with
-          | TUnknown | TVar _ -> Types.dynamic_constraint TUnknown
+          | TUnknown | TMeta _ | TVar _ -> Types.dynamic_constraint TUnknown
           | ty -> ty
         in
         Result.bind (infer_expected value_ty params value) (fun params ->
@@ -2604,7 +2983,7 @@ let infer_params ?(materialize_open_equality = false)
               | key ->
                   let key_ty =
                     match inferred_form_type params key with
-                    | TUnknown | TVar _ -> Types.dynamic_constraint TUnknown
+                    | TUnknown | TMeta _ | TVar _ -> Types.dynamic_constraint TUnknown
                     | ty -> ty
                   in
                   Types.dynamic_map key_ty
@@ -2620,11 +2999,61 @@ let infer_params ?(materialize_open_equality = false)
       | FBool _ -> Some TBool
       | _ -> None
     in
+    let variant_pattern = function
+      | FSymbol constructor -> (
+          match lookup_function_ty constructor with
+          | Ok (TFn ([], return_ty)) -> Some (return_ty, [])
+          | Ok ((TOcaml _ | TOcaml_app _ | TNamed_record _) as return_ty) ->
+              Some (return_ty, [])
+          | Ok _ | Error _ -> None)
+      | FList (FSymbol constructor :: payload_patterns) -> (
+          match lookup_function_ty constructor with
+          | Ok (TFn (payload_tys, return_ty))
+            when List.length payload_tys = List.length payload_patterns ->
+              let bindings =
+                List.map2
+                  (fun pattern ty ->
+                    match pattern with
+                    | FSymbol "_" -> None
+                    | FSymbol name -> Some (name, ty)
+                    | _ -> None)
+                  payload_patterns payload_tys
+                |> List.filter_map Fun.id
+              in
+              Some (return_ty, bindings)
+          | Ok _ | Error _ -> None)
+      | _ -> None
+    in
+    let target_needs_inference params =
+      match inferred_form_type params target with
+      | TUnknown | TMeta _ | TVar _ -> true
+      | _ -> false
+    in
+    let infer_variant_clause params expected_ty bindings result =
+      Result.bind (infer_expected expected_ty params target) (fun params ->
+          let local_names = List.map fst bindings in
+          let shadowed =
+            List.filter (fun (name, _) -> string_mem name local_names) params
+          in
+          let branch_params =
+            bindings
+            @ List.filter
+                (fun (name, _) -> not (string_mem name local_names))
+                params
+          in
+          Result.map
+            (fun inferred ->
+              shadowed
+              @ List.filter
+                  (fun (name, _) -> not (string_mem name local_names))
+                  inferred)
+            (infer_form branch_params result))
+    in
     let infer_option_clause params binding result =
       let initial_payload_ty =
         match inferred_form_type params target with
         | TNullable inner | TOcaml_app ("option", [ inner ]) -> inner
-        | _ -> TVar ("option_" ^ Names.sanitize_name binding)
+        | _ -> fresh_type_variable "option"
       in
       let shadowed = string_assoc_opt binding params in
       let branch_params =
@@ -2655,17 +3084,27 @@ let infer_params ?(materialize_open_equality = false)
           | Error _ as error -> error
           | Ok params -> infer_clauses params rest)
       | pattern :: result :: rest -> (
-          let params =
+          let inferred =
             match pattern_type pattern with
-            | Some expected_ty -> infer_expected expected_ty params target
-            | None -> infer_form params target
+            | Some expected_ty ->
+                Result.bind
+                  (infer_expected expected_ty params target)
+                  (fun params -> infer_form params result)
+            | None -> (
+                match
+                  if target_needs_inference params then
+                    variant_pattern pattern
+                  else None
+                with
+                | Some (expected_ty, bindings) ->
+                    infer_variant_clause params expected_ty bindings result
+                | None ->
+                    Result.bind (infer_form params target) (fun params ->
+                        infer_form params result))
           in
-          match params with
+          match inferred with
           | Error _ as err -> err
-          | Ok params -> (
-              match infer_form params result with
-              | Error _ as err -> err
-              | Ok params -> infer_clauses params rest))
+          | Ok params -> infer_clauses params rest)
     in
     Result.bind (infer_clauses params clauses) (fun params ->
         let rec result_forms results = function
@@ -2680,7 +3119,7 @@ let infer_params ?(materialize_open_equality = false)
           |> List.filter (fun ty ->
                  not (Types.equal ty TUnknown)
                  &&
-                 match ty with TVar _ -> false | _ -> true)
+                 match ty with TMeta _ | TVar _ -> false | _ -> true)
         in
         let concrete_types =
           result_types
@@ -2761,14 +3200,33 @@ let infer_params ?(materialize_open_equality = false)
                 branch_hint_symbols := name :: !branch_hint_symbols
             | _ -> ());
             infer_form params value)
-    | FList (FSymbol "record" :: _record_type :: field_forms) ->
-        let values =
-          List.filter_map
-            (function
-              | FList [ FSymbol _field_name; value ] -> Some value | _ -> None)
-            field_forms
+    | FList
+        (FSymbol "record" :: FSymbol record_type_name :: field_forms) ->
+        let record_fields =
+          resolve_named_record (TOcaml record_type_name)
+          |> Type_solver.generalize |> Type_solver.instantiate
+          |> Types.record_fields
         in
-        infer_all params values
+        List.fold_left
+          (fun result field_form ->
+            Result.bind result (fun params ->
+                match field_form with
+                | FList [ FSymbol field_name; value ] -> (
+                    match
+                      Option.bind record_fields (fun fields ->
+                          Types.find_field (":" ^ field_name) fields)
+                    with
+                    | Some field -> infer_expected field.ty params value
+                    | None -> infer_form params value)
+                | _ -> Ok params))
+          (Ok params) field_forms
+    | FList (FSymbol "record" :: _record_type :: field_forms) ->
+        infer_all params
+          (List.filter_map
+             (function
+               | FList [ FSymbol _field_name; value ] -> Some value
+               | _ -> None)
+             field_forms)
     | FList
         [
           FSymbol ("if-some" | "if-let");
@@ -2779,7 +3237,7 @@ let infer_params ?(materialize_open_equality = false)
         let initial_payload_ty =
           match inferred_form_type params option_form with
           | TNullable inner | TOcaml_app ("option", [ inner ]) -> inner
-          | _ -> TVar ("option_" ^ Names.sanitize_name binding)
+          | _ -> fresh_type_variable "option"
         in
         let shadowed = string_assoc_opt binding params in
         let branch_params =
@@ -2841,7 +3299,7 @@ let infer_params ?(materialize_open_equality = false)
         let initial_payload_ty =
           match inferred_form_type params option_form with
           | TNullable inner | TOcaml_app ("option", [ inner ]) -> inner
-          | _ -> TVar ("option_" ^ Names.sanitize_name binding)
+          | _ -> fresh_type_variable "option"
         in
         let shadowed = string_assoc_opt binding params in
         let branch_params =
@@ -2881,11 +3339,8 @@ let infer_params ?(materialize_open_equality = false)
         | Error _ as error -> error
         | Ok params ->
             infer_expected (Types.dynamic_constraint TUnknown) params metadata)
-    | FList (FSymbol ("and" | "or") :: conditions) ->
-        List.fold_left
-          (fun result condition ->
-            Result.bind result (fun params -> infer_truthy params condition))
-          (Ok params) conditions
+    | (FList (FSymbol ("and" | "or") :: _) as form) ->
+        infer_truthy params form
     | FList [ FSymbol "meta"; FSymbol value ] ->
         constrain_symbol (Types.dynamic_constraint TUnknown) params value
     | FList
@@ -2921,7 +3376,7 @@ let infer_params ?(materialize_open_equality = false)
           then Types.dynamic_constraint TUnknown
           else
             match string_assoc_opt predicate params with
-            | Some (TSet ((TUnknown | TVar _) as element_ty)) ->
+            | Some (TSet ((TUnknown | TMeta _ | TVar _) as element_ty)) ->
                 Option.value collection_element ~default:element_ty
             | Some (TSet element_ty) -> element_ty
             | Some (TFn ([ parameter_type ], _)) -> parameter_type
@@ -2939,10 +3394,12 @@ let infer_params ?(materialize_open_equality = false)
                 constrain_symbol (TSet predicate_type) params predicate
             | Some _ | None -> Ok params)
     | FList [ FSymbol predicate; FSymbol value ]
+      when has_source_name predicate "symbol?" ->
+        constrain_symbol_predicate params value
+    | FList [ FSymbol predicate; FSymbol value ]
       when List.exists
              (has_source_name predicate)
              [
-               "symbol?";
                "keyword?";
                "string?";
                "int?";
@@ -2986,7 +3443,7 @@ let infer_params ?(materialize_open_equality = false)
         in
         let key_ty =
           match inferred_form_type params key_form with
-          | TUnknown | TVar _ -> Types.dynamic_constraint TUnknown
+          | TUnknown | TMeta _ | TVar _ -> Types.dynamic_constraint TUnknown
           | ty -> ty
         in
         Result.bind
@@ -3070,7 +3527,7 @@ let infer_params ?(materialize_open_equality = false)
           (constrain_symbol (TRef referenced_ty) params reference)
           (fun params ->
             match value_ty with
-            | TUnknown | TVar _ -> infer_form params value
+            | TUnknown | TMeta _ | TVar _ -> infer_form params value
             | value_ty -> infer_expected value_ty params value)
     | FList
         [
@@ -3081,7 +3538,7 @@ let infer_params ?(materialize_open_equality = false)
         ] -> (
         let element_ty =
           match inferred_form_type params value with
-          | TUnknown | TVar _ -> Types.dynamic_constraint TUnknown
+          | TUnknown | TMeta _ | TVar _ -> Types.dynamic_constraint TUnknown
           | ty -> ty
         in
         let collection_ty =
@@ -3108,7 +3565,7 @@ let infer_params ?(materialize_open_equality = false)
         ] ->
         let inferred_or_dynamic form =
           match inferred_form_type params form with
-          | TUnknown | TVar _ -> Types.dynamic_constraint TUnknown
+          | TUnknown | TMeta _ | TVar _ -> Types.dynamic_constraint TUnknown
           | ty -> ty
         in
         let key_ty = inferred_or_dynamic key in
@@ -3132,7 +3589,7 @@ let infer_params ?(materialize_open_equality = false)
         ] ->
         let element_ty =
           match inferred_form_type params value with
-          | TUnknown | TVar _ -> Types.dynamic_constraint TUnknown
+          | TUnknown | TMeta _ | TVar _ -> Types.dynamic_constraint TUnknown
           | ty -> ty
         in
         let reference_ty =
@@ -3164,7 +3621,7 @@ let infer_params ?(materialize_open_equality = false)
     | FList [ FSymbol "dissoc!"; FSymbol collection; key ] ->
         let key_ty =
           match inferred_form_type params key with
-          | TUnknown | TVar _ -> Types.dynamic_constraint TUnknown
+          | TUnknown | TMeta _ | TVar _ -> Types.dynamic_constraint TUnknown
           | ty -> ty
         in
         let value_ty = Types.dynamic_constraint TUnknown in
@@ -3201,8 +3658,8 @@ let infer_params ?(materialize_open_equality = false)
         in
         let element_ty =
           match (set_element left, set_element right) with
-          | Some ((TUnknown | TVar _) as element_ty), None
-          | None, Some ((TUnknown | TVar _) as element_ty) ->
+          | Some ((TUnknown | TMeta _ | TVar _) as element_ty), None
+          | None, Some ((TUnknown | TMeta _ | TVar _) as element_ty) ->
               element_ty
           | Some element_ty, _ | _, Some element_ty -> element_ty
           | None, None -> fresh_type_variable "set_operation_item"
@@ -3237,7 +3694,7 @@ let infer_params ?(materialize_open_equality = false)
             | FList [ FSymbol "Some"; FSymbol value_name ] ->
                 let payload_ty =
                   match string_assoc_opt value_name params with
-                  | Some (TUnknown | TVar _) | None ->
+                  | Some (TUnknown | TMeta _ | TVar _) | None ->
                       fresh_type_variable
                         ("option_" ^ Names.sanitize_name value_name)
                   | Some ty -> ty
@@ -3255,8 +3712,11 @@ let infer_params ?(materialize_open_equality = false)
                   (fun params -> infer_form params value)))
     | FList [ FSymbol ("nil?" | "some?"); FSymbol value ] ->
         constrain_symbol (TOcaml_app ("option", [ TUnknown ])) params value
-    | FList [ FSymbol "count"; FSymbol collection ] ->
-        constrain_seqable TUnknown params collection
+    | FList [ FSymbol "count"; collection ] -> (
+        match collection with
+        | FSymbol name -> constrain_seqable TUnknown params name
+        | form ->
+            infer_expected (Types.seqable_constraint TUnknown) params form)
     | FList [ FSymbol "hash-unordered-coll"; FSymbol collection ] ->
         constrain_seqable TUnknown params collection
     | FList (FSymbol "merge" :: maps) ->
@@ -3378,8 +3838,20 @@ let infer_params ?(materialize_open_equality = false)
         Result.bind (constrain_symbol target_ty params target) (fun params ->
             Result.bind (infer_expected key_ty params key) (fun params ->
                 infer_all params (updater :: extra_arguments)))
-    | FList [ FSymbol "get"; FSymbol target; key ]
+    | FList [ FSymbol ("get" | "clojure.core/get"); FSymbol target; key ]
       when match key with FKeyword _ -> false | _ -> true -> (
+        let infer_map () =
+          let key_ty =
+            match inferred_form_type params key with
+            | TUnknown | TMeta _ | TVar _ -> Type_solver.fresh ()
+            | ty -> ty
+          in
+          Result.bind
+            (constrain_symbol
+               (Types.dynamic_map key_ty (Type_solver.fresh ()))
+               params target)
+            (fun params -> infer_expected key_ty params key)
+        in
         match
           string_assoc_opt target params
           |> Option.map Types.constraint_value_type
@@ -3388,8 +3860,8 @@ let infer_params ?(materialize_open_equality = false)
         | Some map_ty -> (
             match Types.dynamic_map_types map_ty with
             | Some (key_ty, _) -> infer_expected key_ty params key
-            | None -> infer_form params key)
-        | None -> infer_form params key)
+            | None -> infer_map ())
+        | None -> infer_map ())
     | FList [ FSymbol operation; FSymbol array ]
       when String.equal operation "Array.length"
            || has_source_name operation "alength" ->
@@ -3463,13 +3935,12 @@ let infer_params ?(materialize_open_equality = false)
         constrain_optional_seqable TUnknown params collection
     | FList [ FSymbol "sequential?"; FSymbol collection ] ->
         constrain_optional_seqable ~sequential:true
-          (Types.dynamic_constraint TUnknown)
-          params collection
+          TUnknown params collection
     | FList [ FSymbol "not-empty"; FSymbol collection ] ->
         constrain_optional_seqable TUnknown params collection
     | FList [ FSymbol "empty"; FSymbol collection ] -> (
         match string_assoc_opt collection params with
-        | Some (TUnknown | TVar _) ->
+        | Some (TUnknown | TMeta _ | TVar _) ->
             constrain_symbol (Types.dynamic_constraint TUnknown) params
               collection
         | Some ty when Option.is_some (Types.seqable_constraint_info ty) ->
@@ -3496,10 +3967,10 @@ let infer_params ?(materialize_open_equality = false)
           | Some
               (TFn
                 ( [ left; right ],
-                  (TInt | TOcaml "int" | TUnknown | TVar _) ))
+                  (TInt | TOcaml "int" | TUnknown | TMeta _ | TVar _) ))
             when Types.equal left right
                  && not (Types.equal left TUnknown)
-                 && (match left with TVar _ -> false | _ -> true) ->
+                 && (match left with TMeta _ | TVar _ -> false | _ -> true) ->
               left
           | _ -> TUnknown
         in
@@ -3521,7 +3992,7 @@ let infer_params ?(materialize_open_equality = false)
         let right_ty = inferred_form_type params right in
         let return_ty =
           match string_assoc_opt fn params with
-          | Some (TFn (_, (TUnknown | TVar _)))
+          | Some (TFn (_, (TUnknown | TMeta _ | TVar _)))
             when name = "uncurried-compare" ->
               TOcaml "int"
           | Some (TFn (_, return_ty)) -> return_ty
@@ -3534,17 +4005,17 @@ let infer_params ?(materialize_open_equality = false)
             | Some (TFn ([ left; right ], _))
               when Types.equal left right
                    && not (Types.equal left TUnknown)
-                   && (match left with TVar _ -> false | _ -> true) ->
+                   && (match left with TMeta _ | TVar _ -> false | _ -> true) ->
                 left
             | _ -> (
                 match (left_ty, right_ty) with
                 | ty, _
                   when not (Types.equal ty TUnknown)
-                       && (match ty with TVar _ -> false | _ -> true) ->
+                       && (match ty with TMeta _ | TVar _ -> false | _ -> true) ->
                     ty
                 | _, ty
                   when not (Types.equal ty TUnknown)
-                       && (match ty with TVar _ -> false | _ -> true) ->
+                       && (match ty with TMeta _ | TVar _ -> false | _ -> true) ->
                     ty
                 | _ -> fresh_type_variable "ordering_value")
           in
@@ -3574,10 +4045,14 @@ let infer_params ?(materialize_open_equality = false)
     | FList
         [
           FSymbol
-            ("first" | "second" | "last" | "seq" | "rest" | "next" | "empty?");
+            (("first" | "second" | "last" | "seq" | "rest" | "next" | "empty?")
+            as operation);
           FSymbol collection;
         ] ->
-        constrain_seqable TUnknown params collection
+        constrain_seqable
+          (fresh_type_variable
+             ("sequence_" ^ Names.sanitize_name operation ^ "_element"))
+          params collection
     | FList
         [
           FSymbol
@@ -3585,8 +4060,22 @@ let infer_params ?(materialize_open_equality = false)
           FList [ FKeyword keyword; FSymbol record ];
         ] ->
         add_record_field_constraint record keyword
-          (Types.dynamic_constraint TUnknown)
+          (Types.seqable_constraint
+             (fresh_type_variable
+                ("sequence_" ^ Names.sanitize_name keyword ^ "_element")))
           params
+    | FList
+        [
+          FSymbol
+            (("first" | "second" | "last" | "seq" | "rest" | "next" | "empty?")
+            as operation);
+          collection;
+        ] ->
+        infer_expected
+          (Types.seqable_constraint
+             (fresh_type_variable
+                ("sequence_" ^ Names.sanitize_name operation ^ "_element")))
+          params collection
     | FList [ FSymbol ("nthnext" | "nthrest"); FSymbol collection; count ] -> (
         match infer_expected TInt params count with
         | Error _ as err -> err
@@ -3658,7 +4147,7 @@ let infer_params ?(materialize_open_equality = false)
     | FList (FSymbol "apply" :: function_form :: arguments) ->
         let is_dynamic_function_type ty =
           Types.is_dynamic ty
-          || match ty with TUnknown | TVar _ -> true | _ -> false
+          || match ty with TUnknown | TMeta _ | TVar _ -> true | _ -> false
         in
         let dynamic_function =
           match function_form with
@@ -3678,7 +4167,7 @@ let infer_params ?(materialize_open_equality = false)
             match function_form with
             | FSymbol name -> (
                 match string_assoc_opt name params with
-                | Some (TUnknown | TVar _) ->
+                | Some (TUnknown | TMeta _ | TVar _) ->
                     constrain_symbol (Types.dynamic_constraint TUnknown) params
                       name
                 | _ -> Ok params)
@@ -3781,13 +4270,13 @@ let infer_params ?(materialize_open_equality = false)
         let inferred_element_ty = inferred_unary_function_param params fn in
         let inferred_element_ty =
           match inferred_element_ty with
-          | TUnknown | TVar _ ->
+          | TUnknown | TMeta _ | TVar _ ->
               inferred_literal_collection_item params collection
           | ty -> ty
         in
         let element_ty =
           match inferred_element_ty with
-          | TUnknown | TVar _ -> fresh_type_variable "unary_map_item"
+          | TUnknown | TMeta _ | TVar _ -> fresh_type_variable "unary_map_item"
           | ty -> ty
         in
         let infer_collection =
@@ -3812,7 +4301,7 @@ let infer_params ?(materialize_open_equality = false)
         let inferred_item_ty = inferred_map_indexed_item params fn in
         let item_ty =
           match inferred_item_ty with
-          | TUnknown | TVar _ -> fresh_type_variable "map_indexed_item"
+          | TUnknown | TMeta _ | TVar _ -> fresh_type_variable "map_indexed_item"
           | ty -> ty
         in
         Result.bind (constrain_seqable item_ty params collection) (fun params ->
@@ -3828,7 +4317,7 @@ let infer_params ?(materialize_open_equality = false)
         let inferred_element_ty = inferred_unary_function_param params fn in
         let element_ty =
           match inferred_element_ty with
-          | TUnknown | TVar _ -> fresh_type_variable "group_by_item"
+          | TUnknown | TMeta _ | TVar _ -> fresh_type_variable "group_by_item"
           | ty -> ty
         in
         Result.bind (infer_sequence_form element_ty params collection)
@@ -3847,7 +4336,7 @@ let infer_params ?(materialize_open_equality = false)
         in
         let element_ty =
           match inferred_element_ty with
-          | TUnknown | TVar _ -> fresh_type_variable "filterv_item"
+          | TUnknown | TMeta _ | TVar _ -> fresh_type_variable "filterv_item"
           | ty -> ty
         in
         Result.bind (infer_sequence_form element_ty params collection)
@@ -3869,7 +4358,7 @@ let infer_params ?(materialize_open_equality = false)
           collection_forms
           |> List.mapi (fun index collection ->
                  match collection_element_ty collection with
-                 | TUnknown | TVar _ ->
+                 | TUnknown | TMeta _ | TVar _ ->
                      List.nth_opt callback_tys index
                      |> Option.value ~default:TUnknown
                  | element_ty -> element_ty)
@@ -3898,10 +4387,7 @@ let infer_params ?(materialize_open_equality = false)
           match fn with
           | FSymbol name -> (
               match string_assoc_opt name params with
-              | Some ty ->
-                  Types.is_dynamic ty
-                  || Types.equal ty TUnknown
-                  || (match ty with TVar _ -> true | _ -> false)
+              | Some ty -> Types.is_dynamic ty
               | None -> (
                   match lookup_function_ty name with
                   | Ok (TFn ([ parameter_ty ], _)) ->
@@ -3929,9 +4415,9 @@ let infer_params ?(materialize_open_equality = false)
             match fn with
             | FSymbol name -> (
                 match string_assoc_opt name params with
-                | Some (TUnknown | TVar _) ->
+                | Some (TUnknown | TMeta _ | TVar _) ->
                     constrain_symbol
-                      (Types.dynamic_constraint TUnknown)
+                      (TFn ([ element_ty ], TUnknown))
                       params name
                 | Some _ | None -> infer_form params fn)
             | _ -> infer_expected (TFn ([ element_ty ], TUnknown)) params fn)
@@ -3964,16 +4450,39 @@ let infer_params ?(materialize_open_equality = false)
         in
         let accumulator_ty =
           match declared_accumulator_ty with
-          | TUnknown | TVar _ -> inferred_form_type params init
+          | TUnknown | TMeta _ | TVar _ -> (
+              match init with
+              | FList [ FSymbol "hash-map" ] ->
+                  Types.dynamic_map (Type_solver.fresh ())
+                    (Type_solver.fresh ())
+              | _ -> inferred_form_type params init)
           | ty -> ty
         in
+        let inferred_accumulator_ty, inferred_element_ty =
+          inferred_reducer_types accumulator_ty reducer
+        in
+        let accumulator_ty =
+          refine_type accumulator_ty inferred_accumulator_ty
+        in
         Result.bind (infer_expected accumulator_ty params init) (fun params ->
-            let inferred_element_ty =
-              inferred_reducer_item params init reducer
-            in
             let element_ty =
-              match declared_element_ty with
-              | TUnknown | TVar _ -> (
+              match (declared_element_ty, collection) with
+              | ( (TUnknown | TMeta _ | TVar _),
+                  FList
+                    [
+                      FSymbol "partition-by";
+                      function_form;
+                      _source_collection;
+                    ] ) ->
+                  let partition_item_ty =
+                    inferred_unary_function_param params function_form
+                  in
+                  let reducer_item_ty =
+                    Types.seqable_constraint_element inferred_element_ty
+                    |> Option.value ~default:TUnknown
+                  in
+                  TList (refine_type partition_item_ty reducer_item_ty)
+              | (TUnknown | TMeta _ | TVar _), _ -> (
                   match collection with
                   | FSymbol collection -> (
                       match string_assoc_opt collection params with
@@ -3981,16 +4490,15 @@ let infer_params ?(materialize_open_equality = false)
                           match
                             Types.seqable_constraint_element collection_ty
                           with
-                          | Some (TUnknown | TVar _) | None ->
+                          | Some (TUnknown | TMeta _ | TVar _) | None ->
                               inferred_element_ty
                           | Some element_ty -> element_ty)
                       | None -> inferred_element_ty)
                   | _ -> inferred_element_ty)
-              | ty -> ty
+              | ty, _ -> ty
             in
             Result.bind (infer_sequence_form element_ty params collection)
               (fun params ->
-                let accumulator_ty = inferred_form_type params init in
                 infer_expected
                   (TFn ([ accumulator_ty; element_ty ], TUnknown))
                   params reducer)))
@@ -4102,7 +4610,7 @@ let infer_params ?(materialize_open_equality = false)
             args
             |> List.filter_map (fun arg ->
                    match inferred_form_type params arg with
-                   | TUnknown | TVar _ -> None
+                   | TUnknown | TMeta _ | TVar _ -> None
                    | ty when Types.is_dynamic ty -> None
                    | ty -> Some ty)
             |> List.fold_left
@@ -4123,7 +4631,7 @@ let infer_params ?(materialize_open_equality = false)
                 || match arg with
                 | FSymbol name -> (
                     match string_assoc_opt name params with
-                    | Some (TUnknown | TVar _) -> true
+                    | Some (TUnknown | TMeta _ | TVar _) -> true
                     | Some _ | None -> false)
                 | _ -> false)
               args
@@ -4133,14 +4641,12 @@ let infer_params ?(materialize_open_equality = false)
               (function
                 | FSymbol name -> (
                     match string_assoc_opt name params with
-                    | Some (TUnknown | TVar _) -> true
+                    | Some (TUnknown | TMeta _ | TVar _) -> true
                     | Some _ | None -> false)
                 | _ -> false)
               args
           in
           match concrete with
-          | [ _ ] when materialize_open_equality && has_unresolved_symbol ->
-              Types.dynamic_constraint TUnknown
           | [ ty ] -> ty
           | _ :: _ :: _
             when List.exists
@@ -4160,11 +4666,23 @@ let infer_params ?(materialize_open_equality = false)
               args
               |> List.find_map (fun arg ->
                      match inferred_form_type params arg with
-                     | TVar _ as ty -> Some ty
+                     | (TMeta _ | TVar _) as ty -> Some ty
                      | _ -> None)
               |> Option.value ~default:(fresh_type_variable "equality")
         in
-        infer_expected_all expected_ty params args
+        if Types.equal expected_ty TSymbol then
+          List.fold_left
+            (fun result arg ->
+              Result.bind result (fun params ->
+                  match arg with
+                  | FSymbol name -> (
+                      match string_assoc_opt name params with
+                      | Some (TUnknown | TMeta _ | TVar _) ->
+                          constrain_symbol_predicate params name
+                      | Some _ | None -> infer_expected TSymbol params arg)
+                  | _ -> infer_expected TSymbol params arg))
+            (Ok params) args
+        else infer_expected_all expected_ty params args
     | FList
         [
           FSymbol "select-keys";
@@ -4194,10 +4712,25 @@ let infer_params ?(materialize_open_equality = false)
           FList
             [ FSymbol ("first" | "second" | "last"); collection ];
         ] ->
-        infer_sequence_form (TRecord [ make_field keyword TUnknown ]) params
-          collection
+        infer_sequence_form
+          (TRecord
+             [
+               make_field keyword
+                 (fresh_type_variable
+                    ("projected_" ^ Names.sanitize_name keyword));
+             ])
+          params collection
     | FList [ FKeyword keyword; FSymbol name ] ->
-        add_record_field_constraint name keyword TUnknown params
+        let field_ty =
+          match string_assoc_opt name params with
+          | Some ty
+            when Option.is_some (Types.contains_constraint_info ty) ->
+              TNullable
+                (fresh_type_variable
+                   ("field_" ^ Names.sanitize_name keyword))
+          | Some _ | None -> TUnknown
+        in
+        add_record_field_constraint name keyword field_ty params
     | FList [ FKeyword keyword; FSymbol name; default ] ->
         let field_ty = inferred_form_type params default in
         Result.bind (add_record_field_constraint name keyword field_ty params)
@@ -4215,14 +4748,34 @@ let infer_params ?(materialize_open_equality = false)
              params)
           (fun params -> infer_expected dynamic params key)
     | FList [ FSymbol "contains?"; FSymbol name; (FKeyword _ as key) ] -> (
-        match infer_expected TMap_keys params (FSymbol name) with
+        match constrain_contains TKeyword params name with
         | Error _ as err -> err
         | Ok params -> infer_expected TKeyword params key)
     | FList [ FSymbol "contains?"; FSymbol name; key ] -> (
-        let dynamic = Types.dynamic_constraint TUnknown in
-        match infer_expected dynamic params (FSymbol name) with
+        let collection_ty, key_ty =
+          match inferred_form_type params (FSymbol name) with
+          | TSet element_ty -> (TSet element_ty, element_ty)
+          | TVector element_ty -> (TVector element_ty, TInt)
+          | collection_ty -> (
+              match Types.dynamic_map_types collection_ty with
+              | Some (key_ty, _) -> (collection_ty, key_ty)
+              | None ->
+                  let key_ty =
+                    match inferred_form_type params key with
+                    | TUnknown | TMeta _ | TVar _ ->
+                        fresh_type_variable "contains_key"
+                    | key_ty -> key_ty
+                  in
+                  (Types.contains_constraint key_ty, key_ty))
+        in
+        let infer_collection =
+          match Types.contains_constraint_info collection_ty with
+          | Some _ -> constrain_contains key_ty params name
+          | None -> infer_expected collection_ty params (FSymbol name)
+        in
+        match infer_collection with
         | Error _ as error -> error
-        | Ok params -> infer_expected dynamic params key)
+        | Ok params -> infer_expected key_ty params key)
     | FList
         [ FSymbol ("get-in" | "clojure.core/get-in"); target; FVector keys ] ->
         infer_form params (Core_form_expansion.get_in target keys None)
@@ -4261,12 +4814,22 @@ let infer_params ?(materialize_open_equality = false)
         | None -> infer_all params (target :: keys))
     | FList (FSymbol ("assoc" | "clojure.core/assoc") :: target :: pairs) ->
         infer_assoc params target pairs
+    | FList (FSymbol "subvec" :: collection :: indexes)
+      when List.length indexes = 1 || List.length indexes = 2 ->
+        let element_ty =
+          match inferred_form_type params collection with
+          | TVector element_ty -> element_ty
+          | _ -> Type_solver.fresh ()
+        in
+        Result.bind
+          (infer_expected (TVector element_ty) params collection)
+          (fun params -> infer_expected_all TInt params indexes)
     | FList [ FSymbol ("transient" | "persistent!"); collection ] ->
         infer_expected (Types.dynamic_constraint TUnknown) params collection
     | FList (FSymbol "conj" :: target :: values) -> (
         let inferred_value_type value =
           match inferred_form_type params value with
-          | (TUnknown | TVar _) as unresolved -> (
+          | (TUnknown | TMeta _ | TVar _) as unresolved -> (
               match value with
               | FList (FSymbol name :: arguments) -> (
                   match lookup_function_ty name with
@@ -4315,15 +4878,15 @@ let infer_params ?(materialize_open_equality = false)
             infer_expected_all value_ty params values)
     | FList [ FSymbol "reduce-kv"; reducer; init; FSymbol name ] -> (
         let key_ty, value_ty = inferred_kv_reducer_types params init reducer in
-        let unresolved name = function
-          | TUnknown | TVar _ -> TVar name
+        let unresolved = function
+          | TUnknown | TMeta _ | TVar _ -> fresh_type_variable "map"
           | ty -> ty
         in
         match
           infer_expected
             (Types.dynamic_map
-               (unresolved "map_key" key_ty)
-               (unresolved "map_value" value_ty))
+               (unresolved key_ty)
+               (unresolved value_ty))
             params (FSymbol name)
         with
         | Error _ as error -> error
@@ -4331,18 +4894,18 @@ let infer_params ?(materialize_open_equality = false)
     | FList [ FSymbol "reduce-kv"; reducer; init; collection ]
       when
         (match inferred_form_type params collection with
-        | TUnknown | TVar _ -> true
+        | TUnknown | TMeta _ | TVar _ -> true
         | _ -> false) -> (
         let key_ty, value_ty = inferred_kv_reducer_types params init reducer in
-        let unresolved name = function
-          | TUnknown | TVar _ -> TVar name
+        let unresolved = function
+          | TUnknown | TMeta _ | TVar _ -> fresh_type_variable "map"
           | ty -> ty
         in
         match
           infer_expected
             (Types.dynamic_map
-               (unresolved "map_key" key_ty)
-               (unresolved "map_value" value_ty))
+               (unresolved key_ty)
+               (unresolved value_ty))
             params collection
         with
         | Error _ as error -> error
@@ -4351,12 +4914,13 @@ let infer_params ?(materialize_open_equality = false)
         List.fold_left
           (fun result arg ->
             Result.bind result (fun params ->
-                match inferred_form_type params arg with
-                | TUnknown | TVar _ ->
+                match arg with
+                | FSymbol name when string_mem_assoc name params ->
+                    constrain_printable_symbol params name
+                | _ ->
                     infer_expected
-                      (Types.dynamic_constraint TUnknown)
-                      params arg
-                | _ -> infer_form params arg))
+                      (Types.printable_constraint (Type_solver.fresh ()))
+                      params arg))
           (Ok params) args
     | FList [ FSymbol "ex-info"; message; data ] ->
         Result.bind (infer_expected TString params message) (fun params ->
@@ -4478,14 +5042,14 @@ let infer_params ?(materialize_open_equality = false)
             in
             let has_unknown =
               List.exists
-                (function TUnknown | TVar _ -> true | _ -> false)
+                (function TUnknown | TMeta _ | TVar _ -> true | _ -> false)
                 result_types
             in
             let concrete_types =
               result_types
               |> List.filter (fun ty ->
                      not (Types.equal ty TUnknown)
-                     && match ty with TVar _ -> false | _ -> true)
+                     && match ty with TMeta _ | TVar _ -> false | _ -> true)
               |> List.fold_left
                    (fun unique ty ->
                      if List.exists (Types.equal ty) unique then unique
@@ -4900,6 +5464,7 @@ let infer_params ?(materialize_open_equality = false)
               |> List.concat_map (fun (spec : Destructure.param_spec) ->
                      let source_ty =
                        Option.value spec.explicit_ty ~default:TUnknown
+                       |> resolve_named_record
                      in
                      let destructured =
                        if spec.destructured then
@@ -4955,7 +5520,7 @@ let infer_params ?(materialize_open_equality = false)
               match Types.seqable_constraint_element source_ty with
               | Some ty
                 when not (Types.equal ty TUnknown)
-                     && (match ty with TVar _ -> false | _ -> true) ->
+                     && (match ty with TMeta _ | TVar _ -> false | _ -> true) ->
                   ty
               | Some _ | None -> Types.dynamic_constraint TUnknown)
           | None -> Types.dynamic_constraint TUnknown
@@ -5109,7 +5674,15 @@ let infer_params ?(materialize_open_equality = false)
   in
   let rec stabilize remaining params =
     branch_hint_symbols := [];
-    Result.bind (infer_all params body_forms) (fun inferred ->
+    let infer_body =
+      match (expected_return_ty, List.rev body_forms) with
+      | Some expected, result :: reversed_prefix ->
+          Result.bind
+            (infer_all params (List.rev reversed_prefix))
+            (fun params -> infer_expected expected params result)
+      | Some _, [] | None, _ -> infer_all params body_forms
+    in
+    Result.bind infer_body (fun inferred ->
         Result.bind
           (List.fold_left
              (fun result form ->
@@ -5123,7 +5696,7 @@ let infer_params ?(materialize_open_equality = false)
               let ty =
                 if string_mem name !branch_hint_symbols then
                   match ty with
-                  | TUnknown | TVar _ -> Types.dynamic_constraint TUnknown
+                  | TUnknown | TMeta _ | TVar _ -> Types.dynamic_constraint TUnknown
                   | ty -> ty
                 else ty
               in
@@ -5133,4 +5706,10 @@ let infer_params ?(materialize_open_equality = false)
         if remaining = 0 || same_params params inferred then Ok inferred
         else stabilize (remaining - 1) inferred))
   in
-  stabilize 3 (constrain_maybe_reduced_callbacks params body_forms)
+  Result.map
+    (fun inferred ->
+      let names, types = List.split inferred in
+      match (Type_solver.generalize (TTuple types)).body with
+      | TTuple generalized -> List.combine names generalized
+      | _ -> assert false)
+    (stabilize 3 (constrain_maybe_reduced_callbacks params body_forms))

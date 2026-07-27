@@ -3,6 +3,7 @@ open Parsetree
 open Lowered
 
 module String_map = Map.Make (String)
+module String_set = Set.Make (String)
 
 let parse_expression ~context source =
   let lexbuf = Lexing.from_string source in
@@ -65,12 +66,40 @@ let rec core_type ?(type_variables = []) = function
   | Types.TNullable inner ->
       type_constructor "option" [ core_type ~type_variables inner ]
   | Types.TUnknown -> Ast_helper.Typ.var ~loc "a"
+  | Types.TMeta _ -> Ast_helper.Typ.any ~loc ()
   | Types.TVar name -> Ast_helper.Typ.var ~loc name
   | Types.TOcaml name ->
       Ast_helper.Typ.constr ~loc (lid (longident_of_string name)) []
   | Types.TOcaml_app (name, [ _capability ])
     when name = Types.dynamic_constraint_name ->
       type_constructor "Lg_runtime.Runtime_dynamic.t" []
+  | Types.TOcaml_app (name, [ value_ty ])
+    when name = Types.truthy_constraint_name ->
+      let value_ty = core_type ~type_variables value_ty in
+      Ast_helper.Typ.tuple ~loc
+        [
+          (None, Ast_helper.Typ.arrow ~loc Nolabel value_ty
+                   (type_constructor "bool" []));
+          (None, value_ty);
+        ]
+  | Types.TOcaml_app (name, [ value_ty ])
+    when name = Types.printable_constraint_name ->
+      let value_ty = core_type ~type_variables value_ty in
+      Ast_helper.Typ.tuple ~loc
+        [
+          (None, Ast_helper.Typ.arrow ~loc Nolabel value_ty
+                   (type_constructor "string" []));
+          (None, value_ty);
+        ]
+  | Types.TOcaml_app (name, [ value_ty ])
+    when name = Types.symbol_predicate_constraint_name ->
+      let value_ty = core_type ~type_variables value_ty in
+      Ast_helper.Typ.tuple ~loc
+        [
+          (None, Ast_helper.Typ.arrow ~loc Nolabel value_ty
+                   (type_constructor "option" [ type_constructor "string" [] ]));
+          (None, value_ty);
+        ]
   | Types.TOcaml_app (name, [ inner; container ])
     when name = Types.seqable_constraint_name ->
       let element = core_type ~type_variables inner in
@@ -198,12 +227,28 @@ let rec type_mentions name = function
           || Option.fold ~none:false ~some:(type_mentions name) arity.rest_param
           || type_mentions name arity.return_ty)
         arities
-  | Types.TRecord fields | Types.TNamed_record { fields; _ } ->
+  | Types.TRecord fields ->
       List.exists (fun (field : Types.field) -> type_mentions name field.ty) fields
+  | Types.TNamed_record record ->
+      record.type_name = name
+      || List.exists (type_mentions name) record.type_arguments
+      || List.exists
+           (fun (field : Types.field) -> type_mentions name field.ty)
+           record.fields
   | Types.TInt | Types.TFloat | Types.TChar | Types.TString | Types.TRegex
   | Types.TMap_keys | Types.TSymbol | Types.TKeyword | Types.TBool | Types.TUnit
-  | Types.TNil | Types.TUnknown | Types.TVar _ ->
+  | Types.TNil | Types.TUnknown | Types.TMeta _ | Types.TVar _ ->
       false
+
+let unused_type_warning_attribute location =
+  Ast_helper.Attr.mk ~loc:location
+    (Location.mkloc "warning" location)
+    (PStr
+       [
+         Ast_helper.Str.eval ~loc:location
+           (Ast_helper.Exp.constant ~loc:location
+              (Ast_helper.Const.string ~loc:location "-34"));
+       ])
 
 let record_type_definition type_name parameters fields location =
   let declaration_loc = declaration_location location in
@@ -218,6 +263,7 @@ let record_type_definition type_name parameters fields location =
   let type_declaration =
     if fields = [] then
       Ast_helper.Type.mk ~loc:declaration_loc
+        ~attrs:[ unused_type_warning_attribute declaration_loc ]
         ~params:(type_parameters parameters)
         ~manifest:(Ast_helper.Typ.constr ~loc:declaration_loc (lid (Longident.Lident "unit")) [])
         (named_loc type_name declaration_loc)
@@ -250,18 +296,9 @@ let polymorphic_holder_type_definition type_name field_name value_type
 
 let type_alias_definition type_name parameters manifest location =
   let declaration_loc = declaration_location location in
-  let warning_attribute =
-    Ast_helper.Attr.mk ~loc:declaration_loc
-      (Location.mkloc "warning" declaration_loc)
-      (PStr
-         [
-           Ast_helper.Str.eval ~loc:declaration_loc
-             (Ast_helper.Exp.constant ~loc:declaration_loc
-                (Ast_helper.Const.string ~loc:declaration_loc "-34"));
-         ])
-  in
   let type_declaration =
-    Ast_helper.Type.mk ~loc:declaration_loc ~attrs:[ warning_attribute ]
+    Ast_helper.Type.mk ~loc:declaration_loc
+      ~attrs:[ unused_type_warning_attribute declaration_loc ]
       ~params:(type_parameters parameters)
       ~manifest:(core_type manifest) (named_loc type_name declaration_loc)
   in
@@ -486,7 +523,7 @@ let rec collect_set_modules_from_type module_path modules = function
         modules record.type_arguments
   | Types.TInt | Types.TFloat | Types.TChar | Types.TString | Types.TRegex
   | Types.TMap_keys | Types.TSymbol | Types.TKeyword | Types.TBool | Types.TUnit
-  | Types.TNil | Types.TUnknown | Types.TVar _ | Types.TOcaml _ ->
+  | Types.TNil | Types.TUnknown | Types.TMeta _ | Types.TVar _ | Types.TOcaml _ ->
       modules
 
 let collect_set_modules_from_expression module_path modules expression =
@@ -714,6 +751,35 @@ let rec value_pattern_context = function
   | Ignore_pattern -> "top-level expression"
   | Located_value (_, _, pattern) -> value_pattern_context pattern
 
+let recursive_value_pattern_and_constraint name identity type_annotation =
+  let pattern =
+    match identity with
+    | None -> Named name
+    | Some (node_id, location) ->
+        Located_value (node_id, location, Named name)
+  in
+  let pattern = value_pattern pattern in
+  match type_annotation with
+  | None -> (pattern, None)
+  | Some ty ->
+      let type_variables =
+        Type_solver.variables ty
+        |> List.filter_map (function
+             | Type_solver.Declared name -> Some name
+             | Type_solver.Metavariable _ -> None)
+        |> List.sort_uniq String.compare
+      in
+      if type_variables = [] then (pattern, None)
+      else
+        let annotation =
+          core_type ~type_variables ty
+          |> Ast_helper.Typ.poly ~loc (List.map str type_variables)
+        in
+        ( pattern,
+          Some
+            (Pvc_constraint
+               { locally_abstract_univars = []; typ = annotation }) )
+
 let value_binding pattern expression =
   let context =
     value_pattern_context pattern
@@ -728,21 +794,18 @@ let value_binding pattern expression =
       in
       Ok [ Ast_helper.Str.value ~loc Nonrecursive [ binding ] ]
 
-let recursive_value_binding name identity expression =
+let recursive_value_binding name identity type_annotation semantic_expression =
   match
     Ocaml_ir.to_parsetree ~context:("recursive value " ^ name)
-      (Semantic_lowering.expression expression)
+      (Semantic_lowering.expression semantic_expression)
   with
   | Error _ as err -> err
   | Ok expression ->
-      let pattern =
-        match identity with
-        | None -> Named name
-        | Some (node_id, location) ->
-            Located_value (node_id, location, Named name)
+      let pattern, value_constraint =
+        recursive_value_pattern_and_constraint name identity type_annotation
       in
       let binding =
-        Ast_helper.Vb.mk ~loc (value_pattern pattern) expression
+        Ast_helper.Vb.mk ~loc ?value_constraint pattern expression
       in
       Ok [ Ast_helper.Str.value ~loc Recursive [ binding ] ]
 
@@ -756,14 +819,13 @@ let recursive_value_bindings bindings =
         with
         | Error _ as err -> err
         | Ok expression ->
-            let pattern =
-              match binding.identity with
-              | None -> Named binding.name
-              | Some (node_id, location) ->
-                  Located_value (node_id, location, Named binding.name)
+            let pattern, value_constraint =
+              recursive_value_pattern_and_constraint binding.name
+                binding.identity binding.type_annotation
             in
             compile
-              (Ast_helper.Vb.mk ~loc (value_pattern pattern) expression :: acc)
+              (Ast_helper.Vb.mk ~loc ?value_constraint pattern expression
+              :: acc)
               rest)
   in
   match compile [] bindings with
@@ -846,8 +908,8 @@ let remove_unused_anonymous_types structure =
 let rec structure_of_item_with_sets requested_sets module_path = function
   | Value_binding { pattern; expression } ->
       value_binding pattern expression
-  | Recursive_value_binding { name; identity; expression } ->
-      recursive_value_binding name identity expression
+  | Recursive_value_binding { name; identity; type_annotation; expression } ->
+      recursive_value_binding name identity type_annotation expression
   | Recursive_value_bindings bindings -> recursive_value_bindings bindings
   | Deferred_value_binding _ ->
       invalid_arg "deferred value binding was not ordered before lowering"
@@ -1060,10 +1122,114 @@ let rec structure_of_item_with_sets requested_sets module_path = function
         source
 
 and structure_of_items_with_sets ?(prune = true) requested_sets module_path items =
+  let recursive_type_item = function
+    | Type_def _ | Type_variant _ -> true
+    | _ -> false
+  in
+  let rec take_recursive_type_items acc = function
+    | item :: rest when recursive_type_item item ->
+        take_recursive_type_items (item :: acc) rest
+    | rest -> (List.rev acc, rest)
+  in
+  let type_item_name = function
+    | Type_def { type_name; _ } | Type_variant { type_name; _ } ->
+        type_name
+    | _ -> invalid_arg "expected a recursive type item"
+  in
+  let type_item_references = function
+    | Type_def { fields; _ } ->
+        List.map (fun (field : Types.field) -> field.ty) fields
+    | Type_variant { constructors; _ } ->
+        List.concat_map
+          (fun (constructor : variant_constructor) ->
+            constructor.payload_types)
+          constructors
+    | _ -> []
+  in
+  let mutually_recursive_group items =
+    let names = List.map type_item_name items in
+    let dependencies item =
+      let references = type_item_references item in
+      List.filter
+        (fun name ->
+          List.exists (fun reference -> type_mentions name reference) references)
+        names
+    in
+    let graph =
+      List.map
+        (fun item -> (type_item_name item, dependencies item))
+        items
+    in
+    let rec reachable visited source target =
+      if source = target then true
+      else if String_set.mem source visited then false
+      else
+        let visited = String_set.add source visited in
+        List.assoc_opt source graph
+        |> Option.value ~default:[]
+        |> List.exists (fun dependency ->
+               reachable visited dependency target)
+    in
+    match items with
+    | [] -> ([], [])
+    | first :: rest ->
+        let first_name = type_item_name first in
+        let mutually_recursive item =
+          let name = type_item_name item in
+          reachable String_set.empty first_name name
+          && reachable String_set.empty name first_name
+        in
+        let group, remaining = List.partition mutually_recursive rest in
+        (first :: group, remaining)
+  in
+  let compile_recursive_type_group items =
+    let rec compile declarations trailing_definitions = function
+      | [] ->
+          let declaration_loc =
+            match declarations with
+            | declaration :: _ -> declaration.ptype_loc
+            | [] -> loc
+          in
+          Ok
+            (Ast_helper.Str.type_ ~loc:declaration_loc Recursive
+               (List.rev declarations)
+            :: List.concat (List.rev trailing_definitions))
+      | item :: rest -> (
+          match structure_of_item_with_sets requested_sets module_path item with
+          | Error _ as err -> err
+          | Ok ({ pstr_desc = Pstr_type (_, [ declaration ]); _ } :: trailing) ->
+              compile (declaration :: declarations)
+                (trailing :: trailing_definitions) rest
+          | Ok _ ->
+              Error.error
+                "internal error: recursive type item did not emit one declaration")
+    in
+    compile [] [] items
+  in
   let rec loop acc = function
     | [] ->
         let structure = List.concat (List.rev acc) in
         Ok (if prune then remove_unused_anonymous_types structure else structure)
+    | Group grouped_items :: rest ->
+        loop acc (grouped_items @ rest)
+    | item :: rest when recursive_type_item item ->
+        let type_items, rest =
+          take_recursive_type_items [] (item :: rest)
+        in
+        let group, remaining_types =
+          mutually_recursive_group type_items
+        in
+        if List.length group < 2 then
+          (match structure_of_item_with_sets requested_sets module_path item with
+          | Error _ as err -> err
+          | Ok structure ->
+              loop (structure :: acc)
+                (List.tl type_items @ rest))
+        else
+          (match compile_recursive_type_group group with
+          | Error _ as err -> err
+          | Ok structure ->
+              loop (structure :: acc) (remaining_types @ rest))
     | item :: rest -> (
         match structure_of_item_with_sets requested_sets module_path item with
         | Error _ as err -> err
@@ -1141,16 +1307,92 @@ let structure_of_located_items_excluding excluded_sets items =
            not (String_map.mem module_name excluded_sets))
   in
   let prefix = missing_root_set_definitions requested_sets plain_items in
+  let rec flatten_group_items = function
+    | Group items -> List.concat_map flatten_group_items items
+    | item -> [ item ]
+  in
+  let type_item = function
+    | Type_def _ | Type_variant _ -> true
+    | _ -> false
+  in
+  let deferrable_type_region_item = function
+    | Type_def _ | Type_variant _ | Value_binding _
+    | Recursive_value_binding _ | Recursive_value_bindings _
+    | Deferred_value_binding _ | Comment _ ->
+        true
+    | Polymorphic_holder_type _ | Type_alias _ | Record_def _
+    | Projected_record_def _ | Module_def _ | Module_alias _
+    | Module_functor _ | Module_apply _ | Module_signature _
+    | Open_module _ | Include_module _ | Group _ ->
+        false
+  in
+  let split_type_region item =
+    let items = flatten_group_items item in
+    if List.for_all deferrable_type_region_item items then
+      let type_items, trailing_items = List.partition type_item items in
+      Some (type_items, trailing_items)
+    else None
+  in
+  let recursive_type_items item =
+    match split_type_region item with
+    | Some (( _ :: _ as type_items), trailing_items) ->
+        Some (type_items, trailing_items)
+    | Some ([], _) | None -> None
+  in
+  let rec take_recursive_type_items acc = function
+    | (location, item) :: rest -> (
+        match split_type_region item with
+        | Some (type_items, trailing_items) ->
+            take_recursive_type_items
+              ((location, type_items, trailing_items) :: acc)
+              rest
+        | None -> (List.rev acc, (location, item) :: rest))
+    | [] -> (List.rev acc, [])
+  in
   let rec loop acc = function
     | [] ->
         Ok
           (remove_unused_anonymous_types
              (prefix @ List.concat (List.rev acc)))
-    | (location, item) :: rest -> (
-        match structure_of_item_with_sets requested_sets [] item with
-        | Error _ as err -> err
-        | Ok structure ->
-            loop (relocate_structure location structure :: acc) rest)
+    | ((location, item) :: rest) as remaining -> (
+        match recursive_type_items item with
+        | Some _ ->
+            let located_type_items, rest =
+              take_recursive_type_items [] remaining
+            in
+            let type_items =
+              List.concat_map
+                (fun (_, type_items, _) -> type_items)
+                located_type_items
+            in
+            let trailing_items =
+              List.concat_map
+                (fun (_, _, trailing_items) -> trailing_items)
+                located_type_items
+            in
+            (match
+               structure_of_items_with_sets ~prune:false requested_sets []
+                 type_items
+             with
+            | Error _ as err -> err
+            | Ok type_structure -> (
+                match
+                  structure_of_items_with_sets ~prune:false requested_sets []
+                    trailing_items
+                with
+                | Error _ as err -> err
+                | Ok trailing_structure ->
+                    loop
+                      (relocate_structure location
+                         (type_structure @ trailing_structure)
+                      :: acc)
+                      rest))
+        | None -> (
+            match structure_of_item_with_sets requested_sets [] item with
+            | Error _ as err -> err
+            | Ok structure ->
+                loop (relocate_structure location structure :: acc)
+                  rest))
   in
   loop [] items
 

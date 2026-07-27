@@ -10,7 +10,7 @@
  (deps
   compiler_test_runner.bc
   ../src/lg.cma
- ../runtime/lg_runtime.cma
+  ../runtime/lg_runtime.cma
   ../vendor/rrbvec/rrbvec.cma)
  (libraries
   datascript_runtime
@@ -44,6 +44,62 @@
  (name runtime_seq_tests)
  (modules runtime_seq_tests)
  (libraries lg.runtime lg.edn-backend.native rrbvec))
+
+(test
+ (name runtime_seq_stack_tests)
+ (modules runtime_seq_stack_tests)
+ (libraries lg.runtime lg.edn-backend.native rrbvec))
+
+(test
+ (name runtime_edn_json_tests)
+ (modules runtime_edn_json_tests)
+ (libraries lg.runtime lg.edn-backend.native rrbvec))
+
+(rule
+ (target runtime_edn_json_tests_melange.ml)
+ (deps runtime_edn_json_tests.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(melange.emit
+ (target runtime-edn-json-tests-melange)
+ (alias runtime-edn-json-tests-melange)
+ (module_systems es6)
+ (modules runtime_edn_json_tests_melange)
+ (libraries lg.edn-backend.melange lg.runtime rrbvec))
+
+(rule
+ (alias runtest)
+ (deps
+  (alias runtime-edn-json-tests-melange)
+  runtime-edn-json-tests-melange/test/runtime_edn_json_tests_melange.js)
+ (action
+  (run
+   node
+   %{dep:runtime-edn-json-tests-melange/test/runtime_edn_json_tests_melange.js})))
+
+(rule
+ (target runtime_seq_stack_tests_melange.ml)
+ (deps runtime_seq_stack_tests.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(melange.emit
+ (target runtime-seq-stack-tests-melange)
+ (alias runtime-seq-stack-tests-melange)
+ (module_systems es6)
+ (modules runtime_seq_stack_tests_melange)
+ (libraries lg.edn-backend.melange lg.runtime rrbvec))
+
+(rule
+ (alias runtest)
+ (deps
+  (alias runtime-seq-stack-tests-melange)
+  runtime-seq-stack-tests-melange/test/runtime_seq_stack_tests_melange.js)
+ (action
+  (run
+   node
+   %{dep:runtime-seq-stack-tests-melange/test/runtime_seq_stack_tests_melange.js})))
 
 (rule
  (target lgc_native.ml)
@@ -79,11 +135,7 @@
  (alias lgc-melange)
  (module_systems es6)
  (modules lgc_melange)
- (libraries
-  lg.edn-backend
-  lg.edn-backend.melange
-  lg.runtime
-  rrbvec))
+ (libraries lg.edn-backend lg.edn-backend.melange lg.runtime rrbvec))
 
 (rule
  (target datascript_value_native.ml)
@@ -138,11 +190,7 @@
  (module_systems es6)
  (modules datascript_value_melange)
  (compile_flags -w -32-37)
- (libraries
-  lg.edn-backend
-  lg.edn-backend.melange
-  lg.runtime
-  rrbvec))
+ (libraries lg.edn-backend lg.edn-backend.melange lg.runtime rrbvec))
 
 (rule
  (target datascript_schema_upstream_native.ml)
@@ -181,11 +229,7 @@
  (module_systems es6)
  (modules datascript_schema_upstream_melange)
  (compile_flags -w -32-37)
- (libraries
-  lg.edn-backend
-  lg.edn-backend.melange
-  lg.runtime
-  rrbvec))
+ (libraries lg.edn-backend lg.edn-backend.melange lg.runtime rrbvec))
 
 (alias
  (name runtest)
@@ -226,7 +270,12 @@
  (modules datascript_lru_native)
  (flags
   (:standard -w -32-37))
- (libraries lg.runtime rrbvec lg-test.runtime lg-test.alcotest))
+ (libraries
+  lg.runtime
+  lg.edn-backend.native
+  rrbvec
+  lg-test.runtime
+  lg-test.alcotest))
 
 (rule
  (target datascript_lru_melange.ml)
@@ -259,7 +308,13 @@
  (module_systems es6)
  (modules datascript_lru_melange)
  (compile_flags -w -32-37)
- (libraries lg.runtime rrbvec lg-test.runtime lg-test.melange))
+ (libraries
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
 
 (rule
  (alias datascript-lru)
@@ -441,11 +496,7 @@
  (module_systems es6)
  (modules datascript_util_melange)
  (compile_flags -w -5-32-37-39)
- (libraries
-  lg.edn-backend
-  lg.edn-backend.melange
-  lg.runtime
-  rrbvec))
+ (libraries lg.edn-backend lg.edn-backend.melange lg.runtime rrbvec))
 
 (rule
  (alias datascript-util)
@@ -510,11 +561,7 @@
  (module_systems es6)
  (modules persistent_sorted_set_arrays_melange)
  (compile_flags -w -32-37)
- (libraries
-  lg.edn-backend
-  lg.edn-backend.melange
-  lg.runtime
-  rrbvec))
+ (libraries lg.edn-backend lg.edn-backend.melange lg.runtime rrbvec))
 
 (rule
  (alias runtest)
@@ -587,11 +634,7 @@
  (module_systems es6)
  (modules persistent_sorted_set_path_melange)
  (compile_flags -w -27-32-37-69)
- (libraries
-  lg.edn-backend
-  lg.edn-backend.melange
-  lg.runtime
-  rrbvec))
+ (libraries lg.edn-backend lg.edn-backend.melange lg.runtime rrbvec))
 
 (rule
  (alias runtest)
@@ -666,11 +709,7 @@
  (preprocess
   (pps melange.ppx))
  (compile_flags -w -27-32-37-69)
- (libraries
-  lg.edn-backend
-  lg.edn-backend.melange
-  lg.runtime
-  rrbvec))
+ (libraries lg.edn-backend lg.edn-backend.melange lg.runtime rrbvec))
 
 (rule
  (alias runtest)
@@ -745,11 +784,7 @@
  (preprocess
   (pps melange.ppx))
  (compile_flags -w -27-32-37-69)
- (libraries
-  lg.edn-backend
-  lg.edn-backend.melange
-  lg.runtime
-  rrbvec))
+ (libraries lg.edn-backend lg.edn-backend.melange lg.runtime rrbvec))
 
 (rule
  (alias runtest)
@@ -824,11 +859,7 @@
  (preprocess
   (pps melange.ppx))
  (compile_flags -w -27-32-37-69)
- (libraries
-  lg.edn-backend
-  lg.edn-backend.melange
-  lg.runtime
-  rrbvec))
+ (libraries lg.edn-backend lg.edn-backend.melange lg.runtime rrbvec))
 
 (rule
  (target persistent_sorted_set_storage_jsoo.ml)
@@ -913,11 +944,8 @@
  (name persistent_sorted_set_benchmark_native)
  (modules persistent_sorted_set_benchmark_native)
  (flags
- (:standard -w -27-32-37-69))
- (libraries
-  lg.edn-backend.native
-  lg.runtime
-  rrbvec))
+  (:standard -w -27-32-37-69))
+ (libraries lg.edn-backend.native lg.runtime rrbvec))
 
 (rule
  (target persistent_sorted_set_benchmark_melange.ml)
@@ -948,11 +976,7 @@
  (preprocess
   (pps melange.ppx))
  (compile_flags -w -27-32-37-69)
- (libraries
-  lg.edn-backend
-  lg.edn-backend.melange
-  lg.runtime
-  rrbvec))
+ (libraries lg.edn-backend lg.edn-backend.melange lg.runtime rrbvec))
 
 (rule
  (target persistent_sorted_set_benchmark_jsoo.ml)
@@ -993,6 +1017,9 @@
   datascript/upstream/schema.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
+  datascript/upstream/built_ins.cljc
+  datascript/upstream/pull_parser.cljc
+  datascript/upstream/pull_api.cljc
   datascript/lg/query_types.cljc
   datascript/lg/query.cljc
   datascript/upstream/storage.cljc
@@ -1013,6 +1040,9 @@
    %{dep:datascript/upstream/schema.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/upstream/built_ins.cljc}
+   %{dep:datascript/upstream/pull_parser.cljc}
+   %{dep:datascript/upstream/pull_api.cljc}
    %{dep:datascript/lg/query_types.cljc}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/storage.cljc}
@@ -1044,6 +1074,9 @@
   datascript/upstream/schema.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
+  datascript/upstream/built_ins.cljc
+  datascript/upstream/pull_parser.cljc
+  datascript/upstream/pull_api.cljc
   datascript/lg/query_types.cljc
   datascript/lg/query.cljc
   datascript/upstream/storage.cljc
@@ -1064,6 +1097,9 @@
    %{dep:datascript/upstream/schema.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/upstream/built_ins.cljc}
+   %{dep:datascript/upstream/pull_parser.cljc}
+   %{dep:datascript/upstream/pull_api.cljc}
    %{dep:datascript/lg/query_types.cljc}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/storage.cljc}
@@ -1180,11 +1216,11 @@
   datascript/upstream/schema.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
-  datascript/lg/query_types.cljc
-  datascript/upstream/entity.cljc
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
+  datascript/lg/query_types.cljc
+  datascript/upstream/entity.cljc
   datascript/lg/query.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/storage_file.cljc
@@ -1206,11 +1242,11 @@
    %{dep:datascript/upstream/schema.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
-   %{dep:datascript/lg/query_types.cljc}
-   %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
+   %{dep:datascript/lg/query_types.cljc}
+   %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/storage_file.cljc}
@@ -1226,7 +1262,13 @@
  (modules datascript_api_smoke_native)
  (flags
   (:standard -w -5-11-26-27-32-37-39-69))
- (libraries lg.runtime re rrbvec unix))
+ (libraries
+  datascript.runtime
+  lg.edn-backend.native
+  lg.runtime
+  re
+  rrbvec
+  unix))
 
 (rule
  (target datascript_api_smoke_melange.ml)
@@ -1238,11 +1280,11 @@
   datascript/upstream/schema.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
-  datascript/lg/query_types.cljc
-  datascript/upstream/entity.cljc
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
+  datascript/lg/query_types.cljc
+  datascript/upstream/entity.cljc
   datascript/lg/query.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/serialize.cljc
@@ -1263,11 +1305,11 @@
    %{dep:datascript/upstream/schema.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
-   %{dep:datascript/lg/query_types.cljc}
-   %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
+   %{dep:datascript/lg/query_types.cljc}
+   %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/serialize.cljc}
@@ -1285,7 +1327,13 @@
  (preprocess
   (pps melange.ppx))
  (compile_flags -w -5-11-26-27-32-37-39-69)
- (libraries lg.runtime rrbvec))
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  rrbvec))
 
 (rule
  (alias datascript-api-smoke)
@@ -1304,6 +1352,14 @@
    %{dep:datascript/api_smoke.expected})))
 
 (rule
+ (alias datascript-differential)
+ (deps
+  ../script/run_datascript_differential.sh
+  (source_tree datascript/differential))
+ (action
+  (run sh %{dep:../script/run_datascript_differential.sh})))
+
+(rule
  (target datascript_transact_native.ml)
  (deps
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
@@ -1313,12 +1369,12 @@
   datascript/upstream/schema.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
-  datascript/lg/query_types.cljc
-  datascript/lg/query.cljc
-  datascript/upstream/entity.cljc
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
+  datascript/lg/query_types.cljc
+  datascript/lg/query.cljc
+  datascript/upstream/entity.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/storage_file.cljc
   datascript/upstream/serialize.cljc
@@ -1346,12 +1402,12 @@
    %{dep:datascript/upstream/schema.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
-   %{dep:datascript/lg/query_types.cljc}
-   %{dep:datascript/lg/query.cljc}
-   %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
+   %{dep:datascript/lg/query_types.cljc}
+   %{dep:datascript/lg/query.cljc}
+   %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/storage_file.cljc}
    %{dep:datascript/upstream/serialize.cljc}
@@ -1370,7 +1426,18 @@
  (modules datascript_transact_native)
  (flags
   (:standard -w -5-11-26-27-32-37-39-69))
- (libraries datascript.runtime lg.runtime lg.edn-backend.native melange-edn-native melange-transit-native yojson re rrbvec unix lg-test.runtime lg-test.alcotest))
+ (libraries
+  datascript.runtime
+  lg.runtime
+  lg.edn-backend.native
+  melange-edn-native
+  melange-transit-native
+  yojson
+  re
+  rrbvec
+  unix
+  lg-test.runtime
+  lg-test.alcotest))
 
 (rule
  (target datascript_transact_melange.ml)
@@ -1382,12 +1449,12 @@
   datascript/upstream/schema.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
-  datascript/lg/query_types.cljc
-  datascript/lg/query.cljc
-  datascript/upstream/entity.cljc
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
+  datascript/lg/query_types.cljc
+  datascript/lg/query.cljc
+  datascript/upstream/entity.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/serialize.cljc
   datascript/upstream/conn.cljc
@@ -1413,12 +1480,12 @@
    %{dep:datascript/upstream/schema.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
-   %{dep:datascript/lg/query_types.cljc}
-   %{dep:datascript/lg/query.cljc}
-   %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
+   %{dep:datascript/lg/query_types.cljc}
+   %{dep:datascript/lg/query.cljc}
+   %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/serialize.cljc}
    %{dep:datascript/upstream/conn.cljc}
@@ -1440,6 +1507,7 @@
   (pps melange.ppx))
  (compile_flags -w -5-11-26-27-32-37-39-69)
  (libraries
+  datascript.runtime
   lg.edn-backend
   lg.edn-backend.melange
   lg.runtime
@@ -1476,12 +1544,12 @@
   datascript/upstream/schema.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
-  datascript/lg/query_types.cljc
-  datascript/lg/query.cljc
-  datascript/upstream/entity.cljc
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
+  datascript/lg/query_types.cljc
+  datascript/lg/query.cljc
+  datascript/upstream/entity.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/storage_file.cljc
   datascript/upstream/serialize.cljc
@@ -1544,12 +1612,12 @@
    %{dep:datascript/upstream/schema.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
-   %{dep:datascript/lg/query_types.cljc}
-   %{dep:datascript/lg/query.cljc}
-   %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
+   %{dep:datascript/lg/query_types.cljc}
+   %{dep:datascript/lg/query.cljc}
+   %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/storage_file.cljc}
    %{dep:datascript/upstream/serialize.cljc}
@@ -1605,7 +1673,18 @@
  (modules datascript_conn_native_base)
  (flags
   (:standard -w -5-11-26-27-32-37-39-69))
- (libraries datascript.runtime lg.runtime lg.edn-backend.native melange-edn-native melange-transit-native yojson re rrbvec unix lg-test.runtime lg-test.alcotest))
+ (libraries
+  datascript.runtime
+  lg.runtime
+  lg.edn-backend.native
+  melange-edn-native
+  melange-transit-native
+  yojson
+  re
+  rrbvec
+  unix
+  lg-test.runtime
+  lg-test.alcotest))
 
 (library
  (name datascript_conn_native_filter_test_lib)
@@ -1616,6 +1695,57 @@
   (:standard -w -5-11-26-27-32-37-39-69))
  (libraries datascript_conn_native_base_lib))
 
+(library
+ (name datascript_conn_native_conn_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_conn)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(library
+ (name datascript_conn_native_transact_retract_static_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_transact_retract_static)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_conn_native_transact_retract_static_runner)
+ (modes byte)
+ (modules datascript_conn_native_transact_retract_static_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_transact_retract_static_test_lib))
+
+(executable
+ (name datascript_conn_native_conn_runner)
+ (modes byte)
+ (modules datascript_conn_native_conn_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_conn_test_lib))
+
+(library
+ (name datascript_conn_native_listen_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_listen)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_conn_native_listen_runner)
+ (modes byte)
+ (modules datascript_conn_native_listen_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_listen_test_lib))
+
 (executable
  (name datascript_filter_native_runner)
  (modes byte)
@@ -1625,48 +1755,1871 @@
   datascript_conn_native_filter_test_lib))
 
 (library
+ (name datascript_conn_native_pull_api_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_pull_api)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_pull_api_native_runner)
+ (modes byte)
+ (modules datascript_pull_api_native_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_pull_api_test_lib))
+
+(library
+ (name datascript_conn_native_pull_parser_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_pull_parser)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_pull_parser_native_runner)
+ (modes byte)
+ (modules datascript_pull_parser_native_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_pull_parser_test_lib))
+
+(rule
+ (target datascript_pull_melange_base.ml)
+ (deps datascript_conn_melange_base.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(melange.emit
+ (target datascript-pull-melange)
+ (alias datascript-pull-melange)
+ (module_systems es6)
+ (modules
+  datascript_pull_melange_base
+  datascript_pull_melange_test_pull_api
+  datascript_pull_melange_test_pull_parser
+  datascript_pull_melange_runner)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -color never -w -5-11-26-27-32-37-39-69)
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
+
+(rule
+ (alias datascript-pull)
+ (deps
+  datascript_pull_api_native_runner.exe
+  datascript_pull_parser_native_runner.exe
+  (alias datascript-pull-melange)
+  datascript-pull-melange/test/datascript_pull_melange_runner.js)
+ (action
+  (progn
+   (run %{exe:datascript_pull_api_native_runner.exe})
+   (run %{exe:datascript_pull_parser_native_runner.exe})
+   (run
+    node
+    %{dep:datascript-pull-melange/test/datascript_pull_melange_runner.js}))))
+
+(library
+ (name datascript_conn_native_serialize_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_serialize)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries
+  datascript_conn_native_base_lib
+  yojson
+  melange-edn-native))
+
+(executable
+ (name datascript_serialize_native_runner)
+ (modes byte)
+ (modules datascript_serialize_native_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_serialize_test_lib))
+
+(rule
+ (target datascript_serialize_melange_base.ml)
+ (deps datascript_conn_melange_base.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(melange.emit
+ (target datascript-serialize-melange)
+ (alias datascript-serialize-melange)
+ (module_systems es6)
+ (modules
+  datascript_serialize_melange_base
+  datascript_serialize_melange_test
+  datascript_serialize_melange_runner)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -color never -w -5-11-26-27-32-37-39-69)
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
+
+(rule
+ (alias datascript-serialize)
+ (deps
+  datascript_serialize_native_runner.exe
+  (alias datascript-serialize-melange)
+  datascript-serialize-melange/test/datascript_serialize_melange_runner.js)
+ (action
+  (progn
+   (run %{exe:datascript_serialize_native_runner.exe})
+   (run
+    node
+    %{dep:datascript-serialize-melange/test/datascript_serialize_melange_runner.js}))))
+
+(library
+ (name datascript_conn_native_query_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_query)
+ (flags
+ (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_query_native_runner)
+ (modes byte)
+ (modules datascript_query_native_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_query_test_lib))
+
+(rule
+ (target datascript_query_melange_base.ml)
+ (deps datascript_conn_melange_base.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(melange.emit
+ (target datascript-query-melange)
+ (alias datascript-query-melange)
+ (module_systems es6)
+ (modules
+  datascript_query_melange_base
+  datascript_query_melange_test
+  datascript_query_melange_runner)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -color never -w -5-11-26-27-32-37-39-69)
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
+
+(rule
+ (alias datascript-query)
+ (deps
+  datascript_query_native_runner.exe
+  (alias datascript-query-melange)
+  datascript-query-melange/test/datascript_query_melange_runner.js)
+ (action
+  (progn
+   (run %{exe:datascript_query_native_runner.exe})
+   (run
+    node
+    %{dep:datascript-query-melange/test/datascript_query_melange_runner.js}))))
+
+(library
+ (name datascript_conn_native_query_aggregates_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_query_aggregates)
+ (flags
+ (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_query_aggregates_native_runner)
+ (modes byte)
+ (modules datascript_query_aggregates_native_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_query_aggregates_test_lib))
+
+(rule
+ (target datascript_query_aggregates_melange_base.ml)
+ (deps datascript_conn_melange_base.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(melange.emit
+ (target datascript-query-aggregates-melange)
+ (alias datascript-query-aggregates-melange)
+ (module_systems es6)
+ (modules
+  datascript_query_aggregates_melange_base
+  datascript_query_aggregates_melange_test
+  datascript_query_aggregates_melange_runner)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -color never -w -5-11-26-27-32-37-39-69)
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
+
+(rule
+ (alias datascript-query-aggregates)
+ (deps
+  datascript_query_aggregates_native_runner.exe
+  (alias datascript-query-aggregates-melange)
+  datascript-query-aggregates-melange/test/datascript_query_aggregates_melange_runner.js)
+ (action
+  (progn
+   (run %{exe:datascript_query_aggregates_native_runner.exe})
+   (run
+    node
+    %{dep:datascript-query-aggregates-melange/test/datascript_query_aggregates_melange_runner.js}))))
+
+(library
+ (name datascript_conn_native_query_fns_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_query_fns)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_query_fns_native_runner)
+ (modes byte)
+ (modules datascript_query_fns_native_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_query_fns_test_lib))
+
+(rule
+ (target datascript_query_fns_melange_base.ml)
+ (deps datascript_conn_melange_base.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(melange.emit
+ (target datascript-query-fns-melange)
+ (alias datascript-query-fns-melange)
+ (module_systems es6)
+ (modules
+  datascript_query_fns_melange_base
+  datascript_query_fns_melange_test
+  datascript_query_fns_melange_runner)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -color never -w -5-11-26-27-32-37-39-69)
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
+
+(rule
+ (alias datascript-query-fns)
+ (deps
+  datascript_query_fns_native_runner.exe
+  (alias datascript-query-fns-melange)
+  datascript-query-fns-melange/test/datascript_query_fns_melange_runner.js)
+ (action
+  (progn
+   (run %{exe:datascript_query_fns_native_runner.exe})
+   (run
+    node
+    %{dep:datascript-query-fns-melange/test/datascript_query_fns_melange_runner.js}))))
+
+(library
+ (name datascript_conn_native_query_not_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_query_not)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_query_not_native_runner)
+ (modes byte)
+ (modules datascript_query_not_native_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_query_not_test_lib))
+
+(rule
+ (target datascript_query_not_melange_base.ml)
+ (deps datascript_conn_melange_base.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(melange.emit
+ (target datascript-query-not-melange)
+ (alias datascript-query-not-melange)
+ (module_systems es6)
+ (modules
+  datascript_query_not_melange_base
+  datascript_query_not_melange_test
+  datascript_query_not_melange_runner)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -color never -w -5-11-26-27-32-37-39-69)
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
+
+(rule
+ (alias datascript-query-not)
+ (deps
+  datascript_query_not_native_runner.exe
+  (alias datascript-query-not-melange)
+  datascript-query-not-melange/test/datascript_query_not_melange_runner.js)
+ (action
+  (progn
+   (run %{exe:datascript_query_not_native_runner.exe})
+   (run
+    node
+    %{dep:datascript-query-not-melange/test/datascript_query_not_melange_runner.js}))))
+
+(library
+ (name datascript_conn_native_query_or_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_query_or)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_query_or_native_runner)
+ (modes byte)
+ (modules datascript_query_or_native_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_query_or_test_lib))
+
+(rule
+ (target datascript_query_or_melange_base.ml)
+ (deps datascript_conn_melange_base.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(melange.emit
+ (target datascript-query-or-melange)
+ (alias datascript-query-or-melange)
+ (module_systems es6)
+ (modules
+  datascript_query_or_melange_base
+  datascript_query_or_melange_test
+  datascript_query_or_melange_runner)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -color never -w -5-11-26-27-32-37-39-69)
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
+
+(rule
+ (alias datascript-query-or)
+ (deps
+  datascript_query_or_native_runner.exe
+  (alias datascript-query-or-melange)
+  datascript-query-or-melange/test/datascript_query_or_melange_runner.js)
+ (action
+  (progn
+   (run %{exe:datascript_query_or_native_runner.exe})
+   (run
+    node
+    %{dep:datascript-query-or-melange/test/datascript_query_or_melange_runner.js}))))
+
+(library
+ (name datascript_conn_native_query_pull_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_query_pull)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_query_pull_native_runner)
+ (modes byte)
+ (modules datascript_query_pull_native_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_query_pull_test_lib))
+
+(rule
+ (target datascript_query_pull_melange_base.ml)
+ (deps datascript_conn_melange_base.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(melange.emit
+ (target datascript-query-pull-melange)
+ (alias datascript-query-pull-melange)
+ (module_systems es6)
+ (modules
+  datascript_query_pull_melange_base
+  datascript_query_pull_melange_test
+  datascript_query_pull_melange_runner)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -color never -w -5-11-26-27-32-37-39-69)
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
+
+(rule
+ (alias datascript-query-pull)
+ (deps
+  datascript_query_pull_native_runner.exe
+  (alias datascript-query-pull-melange)
+  datascript-query-pull-melange/test/datascript_query_pull_melange_runner.js)
+ (action
+  (progn
+   (run %{exe:datascript_query_pull_native_runner.exe})
+   (run
+    node
+    %{dep:datascript-query-pull-melange/test/datascript_query_pull_melange_runner.js}))))
+
+(library
+ (name datascript_conn_native_query_rules_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_query_rules)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_query_rules_native_runner)
+ (modes byte)
+ (modules datascript_query_rules_native_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_query_rules_test_lib))
+
+(rule
+ (target datascript_query_rules_melange_base.ml)
+ (deps datascript_conn_melange_base.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(melange.emit
+ (target datascript-query-rules-melange)
+ (alias datascript-query-rules-melange)
+ (module_systems es6)
+ (modules
+  datascript_query_rules_melange_base
+  datascript_query_rules_melange_test
+  datascript_query_rules_melange_runner)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -color never -w -5-11-26-27-32-37-39-69)
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
+
+(rule
+ (alias datascript-query-rules)
+ (deps
+  datascript_query_rules_native_runner.exe
+  (alias datascript-query-rules-melange)
+  datascript-query-rules-melange/test/datascript_query_rules_melange_runner.js)
+ (action
+  (progn
+   (run %{exe:datascript_query_rules_native_runner.exe})
+   (run
+    node
+    %{dep:datascript-query-rules-melange/test/datascript_query_rules_melange_runner.js}))))
+
+(library
+ (name datascript_conn_native_parser_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_parser)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_parser_native_runner)
+ (modes byte)
+ (modules datascript_parser_native_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_parser_test_lib))
+
+(rule
+ (target datascript_parser_melange_base.ml)
+ (deps datascript_conn_melange_base.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(melange.emit
+ (target datascript-parser-melange)
+ (alias datascript-parser-melange)
+ (module_systems es6)
+ (modules
+  datascript_parser_melange_base
+  datascript_parser_melange_test
+  datascript_parser_melange_runner)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -color never -w -5-11-26-27-32-37-39-69)
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
+
+(rule
+ (alias datascript-parser)
+ (deps
+  datascript_parser_native_runner.exe
+  (alias datascript-parser-melange)
+  datascript-parser-melange/test/datascript_parser_melange_runner.js)
+ (action
+  (progn
+   (run %{exe:datascript_parser_native_runner.exe})
+   (run
+    node
+    %{dep:datascript-parser-melange/test/datascript_parser_melange_runner.js}))))
+
+(library
+ (name datascript_conn_native_ident_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_ident)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_ident_native_runner)
+ (modes byte)
+ (modules datascript_ident_native_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_ident_test_lib))
+
+(rule
+ (target datascript_ident_melange_base.ml)
+ (deps datascript_conn_melange_base.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(melange.emit
+ (target datascript-ident-melange)
+ (alias datascript-ident-melange)
+ (module_systems es6)
+ (modules
+  datascript_ident_melange_base
+  datascript_ident_melange_test
+  datascript_ident_melange_runner)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -color never -w -5-11-26-27-32-37-39-69)
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
+
+(rule
+ (alias datascript-ident)
+ (deps
+  datascript_ident_native_runner.exe
+  (alias datascript-ident-melange)
+  datascript-ident-melange/test/datascript_ident_melange_runner.js)
+ (action
+  (progn
+   (run %{exe:datascript_ident_native_runner.exe})
+   (run
+    node
+    %{dep:datascript-ident-melange/test/datascript_ident_melange_runner.js}))))
+
+(library
+ (name datascript_conn_native_components_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_components)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_components_native_runner)
+ (modes byte)
+ (modules datascript_components_native_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_components_test_lib))
+
+(rule
+ (target datascript_components_melange_base.ml)
+ (deps datascript_conn_melange_base.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(melange.emit
+ (target datascript-components-melange)
+ (alias datascript-components-melange)
+ (module_systems es6)
+ (modules
+  datascript_components_melange_base
+  datascript_components_melange_test
+  datascript_components_melange_runner)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -color never -w -5-11-26-27-32-37-39-69)
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
+
+(rule
+ (alias datascript-components)
+ (deps
+  datascript_components_native_runner.exe
+  (alias datascript-components-melange)
+  datascript-components-melange/test/datascript_components_melange_runner.js)
+ (action
+  (progn
+   (run %{exe:datascript_components_native_runner.exe})
+   (run
+    node
+    %{dep:datascript-components-melange/test/datascript_components_melange_runner.js}))))
+
+(library
+ (name datascript_conn_native_explode_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_explode)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_explode_native_runner)
+ (modes byte)
+ (modules datascript_explode_native_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_explode_test_lib))
+
+(rule
+ (target datascript_explode_melange_base.ml)
+ (deps datascript_conn_melange_base.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(melange.emit
+ (target datascript-explode-melange)
+ (alias datascript-explode-melange)
+ (module_systems es6)
+ (modules
+  datascript_explode_melange_base
+  datascript_explode_melange_test
+  datascript_explode_melange_runner)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -color never -w -5-11-26-27-32-37-39-69)
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
+
+(rule
+ (alias datascript-explode)
+ (deps
+  datascript_explode_native_runner.exe
+  (alias datascript-explode-melange)
+  datascript-explode-melange/test/datascript_explode_melange_runner.js)
+ (action
+  (progn
+   (run %{exe:datascript_explode_native_runner.exe})
+   (run
+    node
+    %{dep:datascript-explode-melange/test/datascript_explode_melange_runner.js}))))
+
+(library
+ (name datascript_conn_native_index_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_index)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_index_native_runner)
+ (modes byte)
+ (modules datascript_index_native_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_index_test_lib))
+
+(rule
+ (target datascript_index_melange_base.ml)
+ (deps datascript_conn_melange_base.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(melange.emit
+ (target datascript-index-melange)
+ (alias datascript-index-melange)
+ (module_systems es6)
+ (modules
+  datascript_index_melange_base
+  datascript_index_melange_test
+  datascript_index_melange_runner)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -color never -w -5-11-26-27-32-37-39-69)
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
+
+(rule
+ (alias datascript-index)
+ (deps
+  datascript_index_native_runner.exe
+  (alias datascript-index-melange)
+  datascript-index-melange/test/datascript_index_melange_runner.js)
+ (action
+  (progn
+   (run %{exe:datascript_index_native_runner.exe})
+   (run
+    node
+    %{dep:datascript-index-melange/test/datascript_index_melange_runner.js}))))
+
+(library
+ (name datascript_conn_native_entity_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_entity)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_entity_native_runner)
+ (modes byte)
+ (modules datascript_entity_native_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_entity_test_lib))
+
+(rule
+ (target datascript_entity_melange_base.ml)
+ (deps datascript_conn_melange_base.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(melange.emit
+ (target datascript-entity-melange)
+ (alias datascript-entity-melange)
+ (module_systems es6)
+ (modules
+  datascript_entity_melange_base
+  datascript_entity_melange_test
+  datascript_entity_melange_runner)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -color never -w -5-11-26-27-32-37-39-69)
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
+
+(rule
+ (alias datascript-entity)
+ (deps
+  datascript_entity_native_runner.exe
+  (alias datascript-entity-melange)
+  datascript-entity-melange/test/datascript_entity_melange_runner.js)
+ (action
+  (progn
+   (run %{exe:datascript_entity_native_runner.exe})
+   (run
+    node
+    %{dep:datascript-entity-melange/test/datascript_entity_melange_runner.js}))))
+
+(library
+ (name datascript_conn_native_issues_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_issues)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_issues_native_runner)
+ (modes byte)
+ (modules datascript_issues_native_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_issues_test_lib))
+
+(rule
+ (target datascript_issues_melange_base.ml)
+ (deps datascript_conn_melange_base.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(melange.emit
+ (target datascript-issues-melange)
+ (alias datascript-issues-melange)
+ (module_systems es6)
+ (modules
+  datascript_issues_melange_base
+  datascript_issues_melange_test
+  datascript_issues_melange_runner)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -color never -w -5-11-26-27-32-37-39-69)
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
+
+(rule
+ (alias datascript-issues)
+ (deps
+  datascript_issues_native_runner.exe
+  (alias datascript-issues-melange)
+  datascript-issues-melange/test/datascript_issues_melange_runner.js)
+ (action
+  (progn
+   (run %{exe:datascript_issues_native_runner.exe})
+   (run
+    node
+    %{dep:datascript-issues-melange/test/datascript_issues_melange_runner.js}))))
+
+(library
+ (name datascript_conn_native_db_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_db)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_db_native_runner)
+ (modes byte)
+ (modules datascript_db_native_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_db_test_lib))
+
+(rule
+ (target datascript_db_melange_base.ml)
+ (deps datascript_conn_melange_base.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(melange.emit
+ (target datascript-db-melange)
+ (alias datascript-db-melange)
+ (module_systems es6)
+ (modules
+  datascript_db_melange_base
+  datascript_db_melange_test
+  datascript_db_melange_runner)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -color never -w -5-11-26-27-32-37-39-69)
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
+
+(rule
+ (alias datascript-db)
+ (deps
+  datascript_db_native_runner.exe
+  (alias datascript-db-melange)
+  datascript-db-melange/test/datascript_db_melange_runner.js)
+ (action
+  (progn
+   (run %{exe:datascript_db_native_runner.exe})
+   (run
+    node
+    %{dep:datascript-db-melange/test/datascript_db_melange_runner.js}))))
+
+(library
+ (name datascript_conn_native_core_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_core)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_core_native_runner)
+ (modes byte)
+ (modules datascript_core_native_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_core_test_lib))
+
+(rule
+ (target datascript_core_melange_base.ml)
+ (deps datascript_conn_melange_base.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(melange.emit
+ (target datascript-core-melange)
+ (alias datascript-core-melange)
+ (module_systems es6)
+ (modules
+  datascript_core_melange_base
+  datascript_core_melange_test
+  datascript_core_melange_runner)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -color never -w -5-11-26-27-32-37-39-69)
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
+
+(rule
+ (alias datascript-core)
+ (deps
+  datascript_core_native_runner.exe
+  (alias datascript-core-melange)
+  datascript-core-melange/test/datascript_core_melange_runner.js)
+ (action
+  (progn
+   (run %{exe:datascript_core_native_runner.exe})
+   (run
+    node
+    %{dep:datascript-core-melange/test/datascript_core_melange_runner.js}))))
+
+(library
+ (name datascript_conn_native_lookup_refs_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_lookup_refs)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_lookup_refs_native_runner)
+ (modes byte)
+ (modules datascript_lookup_refs_native_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_lookup_refs_test_lib))
+
+(rule
+ (target datascript_lookup_refs_melange_base.ml)
+ (deps datascript_conn_melange_base.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(melange.emit
+ (target datascript-lookup-refs-melange)
+ (alias datascript-lookup-refs-melange)
+ (module_systems es6)
+ (modules
+  datascript_lookup_refs_melange_base
+  datascript_lookup_refs_melange_test
+  datascript_lookup_refs_melange_runner)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -color never -w -5-11-26-27-32-37-39-69)
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
+
+(rule
+ (alias datascript-lookup-refs)
+ (deps
+  datascript_lookup_refs_native_runner.exe
+  (alias datascript-lookup-refs-melange)
+  datascript-lookup-refs-melange/test/datascript_lookup_refs_melange_runner.js)
+ (action
+  (progn
+   (run %{exe:datascript_lookup_refs_native_runner.exe})
+   (run
+    node
+    %{dep:datascript-lookup-refs-melange/test/datascript_lookup_refs_melange_runner.js}))))
+
+(library
+ (name datascript_conn_native_parser_rules_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_parser_rules)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_parser_rules_native_runner)
+ (modes byte)
+ (modules datascript_parser_rules_native_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_parser_rules_test_lib))
+
+(rule
+ (target datascript_parser_rules_melange_base.ml)
+ (deps datascript_conn_melange_base.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(melange.emit
+ (target datascript-parser-rules-melange)
+ (alias datascript-parser-rules-melange)
+ (module_systems es6)
+ (modules
+  datascript_parser_rules_melange_base
+  datascript_parser_rules_melange_test
+  datascript_parser_rules_melange_runner)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -color never -w -5-11-26-27-32-37-39-69)
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
+
+(rule
+ (alias datascript-parser-rules)
+ (deps
+  datascript_parser_rules_native_runner.exe
+  (alias datascript-parser-rules-melange)
+  datascript-parser-rules-melange/test/datascript_parser_rules_melange_runner.js)
+ (action
+  (progn
+   (run %{exe:datascript_parser_rules_native_runner.exe})
+   (run
+    node
+    %{dep:datascript-parser-rules-melange/test/datascript_parser_rules_melange_runner.js}))))
+
+(library
+ (name datascript_conn_native_parser_where_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_parser_where)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_parser_where_native_runner)
+ (modes byte)
+ (modules datascript_parser_where_native_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_parser_where_test_lib))
+
+(rule
+ (target datascript_parser_where_melange_base.ml)
+ (deps datascript_conn_melange_base.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(melange.emit
+ (target datascript-parser-where-melange)
+ (alias datascript-parser-where-melange)
+ (module_systems es6)
+ (modules
+  datascript_parser_where_melange_base
+  datascript_parser_where_melange_test
+  datascript_parser_where_melange_runner)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -color never -w -5-11-26-27-32-37-39-69)
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
+
+(rule
+ (alias datascript-parser-where)
+ (deps
+  datascript_parser_where_native_runner.exe
+  (alias datascript-parser-where-melange)
+  datascript-parser-where-melange/test/datascript_parser_where_melange_runner.js)
+ (action
+  (progn
+   (run %{exe:datascript_parser_where_native_runner.exe})
+   (run
+    node
+    %{dep:datascript-parser-where-melange/test/datascript_parser_where_melange_runner.js}))))
+
+(library
+ (name datascript_conn_native_parser_find_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_parser_find)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_parser_find_native_runner)
+ (modes byte)
+ (modules datascript_parser_find_native_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_parser_find_test_lib))
+
+(rule
+ (target datascript_parser_find_melange_base.ml)
+ (deps datascript_conn_melange_base.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(melange.emit
+ (target datascript-parser-find-melange)
+ (alias datascript-parser-find-melange)
+ (module_systems es6)
+ (modules
+  datascript_parser_find_melange_base
+  datascript_parser_find_melange_test
+  datascript_parser_find_melange_runner)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -color never -w -5-11-26-27-32-37-39-69)
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
+
+(rule
+ (alias datascript-parser-find)
+ (deps
+  datascript_parser_find_native_runner.exe
+  (alias datascript-parser-find-melange)
+  datascript-parser-find-melange/test/datascript_parser_find_melange_runner.js)
+ (action
+  (progn
+   (run %{exe:datascript_parser_find_native_runner.exe})
+   (run
+    node
+    %{dep:datascript-parser-find-melange/test/datascript_parser_find_melange_runner.js}))))
+
+(library
+ (name datascript_conn_native_parser_query_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_parser_query)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_parser_query_native_runner)
+ (modes byte)
+ (modules datascript_parser_query_native_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_parser_query_test_lib))
+
+(rule
+ (target datascript_parser_query_melange_base.ml)
+ (deps datascript_conn_melange_base.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(melange.emit
+ (target datascript-parser-query-melange)
+ (alias datascript-parser-query-melange)
+ (module_systems es6)
+ (modules
+  datascript_parser_query_melange_base
+  datascript_parser_query_melange_test
+  datascript_parser_query_melange_runner)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -color never -w -5-11-26-27-32-37-39-69)
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
+
+(rule
+ (alias datascript-parser-query)
+ (deps
+  datascript_parser_query_native_runner.exe
+  (alias datascript-parser-query-melange)
+  datascript-parser-query-melange/test/datascript_parser_query_melange_runner.js)
+ (action
+  (progn
+   (run %{exe:datascript_parser_query_native_runner.exe})
+   (run
+    node
+    %{dep:datascript-parser-query-melange/test/datascript_parser_query_melange_runner.js}))))
+
+(library
+ (name datascript_conn_native_parser_return_map_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_parser_return_map)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_parser_return_map_native_runner)
+ (modes byte)
+ (modules datascript_parser_return_map_native_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_parser_return_map_test_lib))
+
+(rule
+ (target datascript_parser_return_map_melange_base.ml)
+ (deps datascript_conn_melange_base.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(melange.emit
+ (target datascript-parser-return-map-melange)
+ (alias datascript-parser-return-map-melange)
+ (module_systems es6)
+ (modules
+  datascript_parser_return_map_melange_base
+  datascript_parser_return_map_melange_test
+  datascript_parser_return_map_melange_runner)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -color never -w -5-11-26-27-32-37-39-69)
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
+
+(rule
+ (alias datascript-parser-return-map)
+ (deps
+  datascript_parser_return_map_native_runner.exe
+  (alias datascript-parser-return-map-melange)
+  datascript-parser-return-map-melange/test/datascript_parser_return_map_melange_runner.js)
+ (action
+  (progn
+   (run %{exe:datascript_parser_return_map_native_runner.exe})
+   (run
+    node
+    %{dep:datascript-parser-return-map-melange/test/datascript_parser_return_map_melange_runner.js}))))
+
+(library
+ (name datascript_conn_native_validation_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_validation)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_validation_native_runner)
+ (modes byte)
+ (modules datascript_validation_native_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_validation_test_lib))
+
+(rule
+ (target datascript_validation_melange_base.ml)
+ (deps datascript_conn_melange_base.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(melange.emit
+ (target datascript-validation-melange)
+ (alias datascript-validation-melange)
+ (module_systems es6)
+ (modules
+  datascript_validation_melange_base
+  datascript_validation_melange_test
+  datascript_validation_melange_runner)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -color never -w -5-11-26-27-32-37-39-69)
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
+
+(rule
+ (alias datascript-validation)
+ (deps
+  datascript_validation_native_runner.exe
+  (alias datascript-validation-melange)
+  datascript-validation-melange/test/datascript_validation_melange_runner.js)
+ (action
+  (progn
+   (run %{exe:datascript_validation_native_runner.exe})
+   (run
+    node
+    %{dep:datascript-validation-melange/test/datascript_validation_melange_runner.js}))))
+
+(library
+ (name datascript_conn_native_upsert_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_upsert)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_upsert_native_runner)
+ (modes byte)
+ (modules datascript_upsert_native_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_upsert_test_lib))
+
+(rule
+ (target datascript_upsert_melange_base.ml)
+ (deps datascript_conn_melange_base.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(melange.emit
+ (target datascript-upsert-melange)
+ (alias datascript-upsert-melange)
+ (module_systems es6)
+ (modules
+  datascript_upsert_melange_base
+  datascript_upsert_melange_test
+  datascript_upsert_melange_runner)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -color never -w -5-11-26-27-32-37-39-69)
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
+
+(rule
+ (alias datascript-upsert)
+ (deps
+  datascript_upsert_native_runner.exe
+  (alias datascript-upsert-melange)
+  datascript-upsert-melange/test/datascript_upsert_melange_runner.js)
+ (action
+  (progn
+   (run %{exe:datascript_upsert_native_runner.exe})
+   (run
+    node
+    %{dep:datascript-upsert-melange/test/datascript_upsert_melange_runner.js}))))
+
+(library
+ (name datascript_storage_native_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_storage_native_test)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_storage_native_runner)
+ (modes byte)
+ (modules datascript_storage_native_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_storage_native_test_lib))
+
+(rule
+ (target datascript_storage_melange_base.ml)
+ (deps datascript_conn_melange_base.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(melange.emit
+ (target datascript-storage-upstream-melange)
+ (alias datascript-storage-upstream-melange)
+ (module_systems es6)
+ (modules
+  datascript_storage_melange_base
+  datascript_storage_melange_test
+  datascript_storage_melange_runner)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -color never -w -5-11-26-27-32-37-39-69)
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
+
+(rule
+ (alias datascript-storage-upstream)
+ (deps
+  datascript_storage_native_runner.exe
+  (alias datascript-storage-upstream-melange)
+  datascript-storage-upstream-melange/test/datascript_storage_melange_runner.js)
+ (action
+  (progn
+   (run %{exe:datascript_storage_native_runner.exe})
+   (run
+    node
+    %{dep:datascript-storage-upstream-melange/test/datascript_storage_melange_runner.js}))))
+
+(library
+ (name datascript_conn_native_tuples_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_tuples)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_tuples_native_runner)
+ (modes byte)
+ (modules datascript_tuples_native_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_tuples_test_lib))
+
+(rule
+ (target datascript_tuples_melange_base.ml)
+ (deps datascript_conn_melange_base.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(melange.emit
+ (target datascript-tuples-melange)
+ (alias datascript-tuples-melange)
+ (module_systems es6)
+ (modules
+  datascript_tuples_melange_base
+  datascript_tuples_melange_test
+  datascript_tuples_melange_runner)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -color never -w -5-11-26-27-32-37-39-69)
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
+
+(rule
+ (alias datascript-tuples)
+ (deps
+  datascript_tuples_native_runner.exe
+  (alias datascript-tuples-melange)
+  datascript-tuples-melange/test/datascript_tuples_melange_runner.js)
+ (action
+  (progn
+   (run %{exe:datascript_tuples_native_runner.exe})
+   (run
+    node
+    %{dep:datascript-tuples-melange/test/datascript_tuples_melange_runner.js}))))
+
+(library
+ (name datascript_conn_native_query_find_specs_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_query_find_specs)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_query_find_specs_native_runner)
+ (modes byte)
+ (modules datascript_query_find_specs_native_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_query_find_specs_test_lib))
+
+(rule
+ (target datascript_query_find_specs_melange_base.ml)
+ (deps datascript_conn_melange_base.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(melange.emit
+ (target datascript-query-find-specs-melange)
+ (alias datascript-query-find-specs-melange)
+ (module_systems es6)
+ (modules
+  datascript_query_find_specs_melange_base
+  datascript_query_find_specs_melange_test
+  datascript_query_find_specs_melange_runner)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -color never -w -5-11-26-27-32-37-39-69)
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
+
+(rule
+ (alias datascript-query-find-specs)
+ (deps
+  datascript_query_find_specs_native_runner.exe
+  (alias datascript-query-find-specs-melange)
+  datascript-query-find-specs-melange/test/datascript_query_find_specs_melange_runner.js)
+ (action
+  (progn
+   (run %{exe:datascript_query_find_specs_native_runner.exe})
+   (run
+    node
+    %{dep:datascript-query-find-specs-melange/test/datascript_query_find_specs_melange_runner.js}))))
+
+(library
+ (name datascript_conn_native_query_return_map_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_query_return_map)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_query_return_map_native_runner)
+ (modes byte)
+ (modules datascript_query_return_map_native_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_query_return_map_test_lib))
+
+(rule
+ (target datascript_query_return_map_melange_base.ml)
+ (deps datascript_conn_melange_base.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(melange.emit
+ (target datascript-query-return-map-melange)
+ (alias datascript-query-return-map-melange)
+ (module_systems es6)
+ (modules
+  datascript_query_return_map_melange_base
+  datascript_query_return_map_melange_test
+  datascript_query_return_map_melange_runner)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -color never -w -5-11-26-27-32-37-39-69)
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
+
+(rule
+ (alias datascript-query-return-map)
+ (deps
+  datascript_query_return_map_native_runner.exe
+  (alias datascript-query-return-map-melange)
+  datascript-query-return-map-melange/test/datascript_query_return_map_melange_runner.js)
+ (action
+  (progn
+   (run %{exe:datascript_query_return_map_native_runner.exe})
+   (run
+    node
+    %{dep:datascript-query-return-map-melange/test/datascript_query_return_map_melange_runner.js}))))
+
+(library
+ (name datascript_conn_native_transact_test_lib)
+ (wrapped false)
+ (modes byte native)
+ (modules datascript_conn_native_test_transact)
+ (flags
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries datascript_conn_native_base_lib))
+
+(executable
+ (name datascript_conn_native_transact_runner)
+ (modes byte)
+ (modules datascript_conn_native_transact_runner)
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_transact_test_lib))
+
+(library
  (name datascript_conn_native_suite)
  (wrapped false)
  (modes byte native)
  (modules
   datascript_conn_native_test_lru
-  datascript_conn_native_test_transact
-  datascript_conn_native_test_conn
-  datascript_conn_native_test_listen
-  datascript_conn_native_test_ident
-  datascript_conn_native_test_components
-  datascript_conn_native_test_core
-  datascript_conn_native_test_db
-  datascript_conn_native_test_entity
-  datascript_conn_native_test_explode
-  datascript_conn_native_test_index
-  datascript_conn_native_test_issues
-  datascript_conn_native_test_lookup_refs
-  datascript_conn_native_test_parser
-  datascript_conn_native_test_parser_find
-  datascript_conn_native_test_parser_query
-  datascript_conn_native_test_parser_return_map
-  datascript_conn_native_test_parser_rules
-  datascript_conn_native_test_parser_where
-  datascript_conn_native_test_pull_api
-  datascript_conn_native_test_pull_parser
-  datascript_conn_native_test_query
-  datascript_conn_native_test_query_aggregates
-  datascript_conn_native_test_query_find_specs
-  datascript_conn_native_test_query_fns
-  datascript_conn_native_test_query_not
-  datascript_conn_native_test_query_or
-  datascript_conn_native_test_query_pull
-  datascript_conn_native_test_query_return_map
-  datascript_conn_native_test_query_rules
-  datascript_conn_native_test_serialize
-  datascript_conn_native_test_storage
-  datascript_conn_native_test_tuples
-  datascript_conn_native_test_upsert
-  datascript_conn_native_test_validation)
+  datascript_conn_native_test_storage)
  (flags
- (:standard -w -5-11-26-27-32-37-39-69))
- (libraries datascript_conn_native_base_lib datascript_conn_native_filter_test_lib datascript.runtime lg.runtime lg.edn-backend.native melange-edn-native melange-transit-native yojson re rrbvec unix lg-test.runtime lg-test.alcotest))
+  (:standard -w -5-11-26-27-32-37-39-69))
+ (libraries
+  datascript_conn_native_base_lib
+  datascript_conn_native_conn_test_lib
+  datascript_conn_native_listen_test_lib
+  datascript_conn_native_filter_test_lib
+  datascript_conn_native_pull_api_test_lib
+  datascript_conn_native_pull_parser_test_lib
+  datascript_conn_native_serialize_test_lib
+  datascript_conn_native_query_find_specs_test_lib
+  datascript_conn_native_query_aggregates_test_lib
+  datascript_conn_native_query_fns_test_lib
+  datascript_conn_native_query_test_lib
+  datascript_conn_native_query_not_test_lib
+  datascript_conn_native_query_or_test_lib
+  datascript_conn_native_query_pull_test_lib
+  datascript_conn_native_query_rules_test_lib
+  datascript_conn_native_query_return_map_test_lib
+  datascript_conn_native_parser_test_lib
+  datascript_conn_native_parser_find_test_lib
+  datascript_conn_native_parser_query_test_lib
+  datascript_conn_native_parser_return_map_test_lib
+  datascript_conn_native_parser_rules_test_lib
+  datascript_conn_native_parser_where_test_lib
+  datascript_conn_native_ident_test_lib
+  datascript_conn_native_components_test_lib
+  datascript_conn_native_explode_test_lib
+  datascript_conn_native_entity_test_lib
+  datascript_conn_native_index_test_lib
+  datascript_conn_native_issues_test_lib
+  datascript_conn_native_db_test_lib
+  datascript_conn_native_core_test_lib
+  datascript_conn_native_lookup_refs_test_lib
+  datascript_conn_native_transact_test_lib
+  datascript_conn_native_tuples_test_lib
+  datascript_conn_native_upsert_test_lib
+  datascript_conn_native_validation_test_lib
+  datascript.runtime
+  lg.runtime
+  lg.edn-backend.native
+  melange-edn-native
+  melange-transit-native
+  yojson
+  re
+  rrbvec
+  unix
+  lg-test.runtime
+  lg-test.alcotest))
 
 (executable
  (name datascript_conn_native)
@@ -1677,7 +3630,8 @@
 (rule
  (target datascript_conn_native_perf.ml)
  (deps datascript_conn_native.ml)
- (action (copy %{deps} %{target})))
+ (action
+  (copy %{deps} %{target})))
 
 (executable
  (name datascript_conn_native_perf)
@@ -1689,7 +3643,7 @@
  (name datascript_conn_native_tx_bench)
  (modes native)
  (modules datascript_conn_native_tx_bench)
- (libraries datascript_conn_native_suite unix))
+ (libraries datascript_conn_native_base_lib unix))
 
 (rule
  (target datascript_conn_melange.ml)
@@ -1702,12 +3656,12 @@
   datascript/upstream/schema.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
-  datascript/lg/query_types.cljc
-  datascript/lg/query.cljc
-  datascript/upstream/entity.cljc
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
+  datascript/lg/query_types.cljc
+  datascript/lg/query.cljc
+  datascript/upstream/entity.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/serialize.cljc
   datascript/upstream/conn.cljc
@@ -1769,12 +3723,12 @@
    %{dep:datascript/upstream/schema.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
-   %{dep:datascript/lg/query_types.cljc}
-   %{dep:datascript/lg/query.cljc}
-   %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
+   %{dep:datascript/lg/query_types.cljc}
+   %{dep:datascript/lg/query.cljc}
+   %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/serialize.cljc}
    %{dep:datascript/upstream/conn.cljc}
@@ -1923,12 +3877,12 @@
   datascript/upstream/schema.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
-  datascript/lg/query_types.cljc
-  datascript/lg/query.cljc
-  datascript/upstream/entity.cljc
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
+  datascript/lg/query_types.cljc
+  datascript/lg/query.cljc
+  datascript/upstream/entity.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/storage_file.cljc
   datascript/upstream/serialize.cljc
@@ -1956,12 +3910,12 @@
    %{dep:datascript/upstream/schema.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
-   %{dep:datascript/lg/query_types.cljc}
-   %{dep:datascript/lg/query.cljc}
-   %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
+   %{dep:datascript/lg/query_types.cljc}
+   %{dep:datascript/lg/query.cljc}
+   %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/storage_file.cljc}
    %{dep:datascript/upstream/serialize.cljc}
@@ -1980,7 +3934,18 @@
  (modules datascript_listen_native)
  (flags
   (:standard -w -5-11-26-27-32-37-39-69))
- (libraries lg.runtime melange-edn-native melange-transit-native yojson re rrbvec unix lg-test.runtime lg-test.alcotest))
+ (libraries
+  datascript.runtime
+  lg.edn-backend.native
+  lg.runtime
+  melange-edn-native
+  melange-transit-native
+  yojson
+  re
+  rrbvec
+  unix
+  lg-test.runtime
+  lg-test.alcotest))
 
 (rule
  (target datascript_listen_melange.ml)
@@ -1992,12 +3957,12 @@
   datascript/upstream/schema.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
-  datascript/lg/query_types.cljc
-  datascript/lg/query.cljc
-  datascript/upstream/entity.cljc
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
+  datascript/lg/query_types.cljc
+  datascript/lg/query.cljc
+  datascript/upstream/entity.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/serialize.cljc
   datascript/upstream/conn.cljc
@@ -2023,12 +3988,12 @@
    %{dep:datascript/upstream/schema.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
-   %{dep:datascript/lg/query_types.cljc}
-   %{dep:datascript/lg/query.cljc}
-   %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
+   %{dep:datascript/lg/query_types.cljc}
+   %{dep:datascript/lg/query.cljc}
+   %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/serialize.cljc}
    %{dep:datascript/upstream/conn.cljc}
@@ -2049,7 +4014,17 @@
  (preprocess
   (pps melange.ppx))
  (compile_flags -w -5-11-26-27-32-37-39-69)
- (libraries lg.runtime lg.runtime-melange-aliases rrbvec lg-test.runtime lg-test.melange))
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
 
 (rule
  (alias datascript-listen)
@@ -2074,12 +4049,12 @@
   datascript/upstream/schema.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
-  datascript/lg/query_types.cljc
-  datascript/lg/query.cljc
-  datascript/upstream/entity.cljc
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
+  datascript/lg/query_types.cljc
+  datascript/lg/query.cljc
+  datascript/upstream/entity.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/storage_file.cljc
   datascript/upstream/serialize.cljc
@@ -2107,12 +4082,12 @@
    %{dep:datascript/upstream/schema.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
-   %{dep:datascript/lg/query_types.cljc}
-   %{dep:datascript/lg/query.cljc}
-   %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
+   %{dep:datascript/lg/query_types.cljc}
+   %{dep:datascript/lg/query.cljc}
+   %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/storage_file.cljc}
    %{dep:datascript/upstream/serialize.cljc}
@@ -2131,7 +4106,18 @@
  (modules datascript_filter_native)
  (flags
   (:standard -w -5-11-26-27-32-37-39-69))
- (libraries lg.runtime melange-edn-native melange-transit-native yojson re rrbvec unix lg-test.runtime lg-test.alcotest))
+ (libraries
+  datascript.runtime
+  lg.edn-backend.native
+  lg.runtime
+  melange-edn-native
+  melange-transit-native
+  yojson
+  re
+  rrbvec
+  unix
+  lg-test.runtime
+  lg-test.alcotest))
 
 (rule
  (target datascript_filter_melange.ml)
@@ -2143,12 +4129,12 @@
   datascript/upstream/schema.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
-  datascript/lg/query_types.cljc
-  datascript/lg/query.cljc
-  datascript/upstream/entity.cljc
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
+  datascript/lg/query_types.cljc
+  datascript/lg/query.cljc
+  datascript/upstream/entity.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/serialize.cljc
   datascript/upstream/conn.cljc
@@ -2174,12 +4160,12 @@
    %{dep:datascript/upstream/schema.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
-   %{dep:datascript/lg/query_types.cljc}
-   %{dep:datascript/lg/query.cljc}
-   %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
+   %{dep:datascript/lg/query_types.cljc}
+   %{dep:datascript/lg/query.cljc}
+   %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/serialize.cljc}
    %{dep:datascript/upstream/conn.cljc}
@@ -2200,7 +4186,17 @@
  (preprocess
   (pps melange.ppx))
  (compile_flags -w -5-11-26-27-32-37-39-69)
- (libraries lg.runtime lg.runtime-melange-aliases rrbvec lg-test.runtime lg-test.melange))
+ (libraries
+  datascript.runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  melange-edn-melange
+  melange-transit-melange
+  rrbvec
+  lg-test.runtime
+  lg-test.melange))
 
 (rule
  (alias datascript-filter)

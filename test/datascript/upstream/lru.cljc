@@ -23,6 +23,10 @@
   [key value]
   :fn<lru-state<key;value>;key;option<value>>)
 
+(signature datascript.lru/get-lru-default
+  [key value]
+  :fn<lru-state<key;value>;key;value;value>)
+
 (defn cleanup-lru [lru]
   (if (> (count (:key-value lru)) (:limit lru))
     (let [key-value (:key-value lru)
@@ -73,6 +77,12 @@
 (defn get-lru [lru key]
   (get (:key-value lru) key))
 
+(defn get-lru-default [lru key not-found]
+  (get (:key-value lru) key not-found))
+
+(defprotocol ICache
+  (-get [this key compute-fn]))
+
 (type-record cache-state [key value]
   (impl :ref<lru-state<key;value>>))
 
@@ -80,19 +90,18 @@
   [key value]
   :fn<int;cache-state<key;value>>)
 
-(signature datascript.lru/-get
-  [key value]
-  :fn<cache-state<key;value>;key;fn<value>;value>)
-
 (defn cache [limit]
   (record cache-state
     (impl (volatile! (lru limit)))))
 
-(defn -get [cache key compute-fn]
-  (let [*impl (:impl cache)]
-    (if-some [cached (get-lru @*impl key)]
-      (do (vreset! *impl (assoc-lru @*impl key cached))
-        cached)
-      (let [computed (compute-fn)]
-        (vreset! *impl (assoc-lru @*impl key computed))
-        computed))))
+(extend-type cache-state
+  ICache
+  (-get [cache key compute-fn]
+    (let [*impl (:impl cache)]
+      (if-some [cached (get-lru @*impl key)]
+        (do
+          (vreset! *impl (assoc-lru @*impl key cached))
+          cached)
+        (let [computed (compute-fn)]
+          (vreset! *impl (assoc-lru @*impl key computed))
+          computed)))))

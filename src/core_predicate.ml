@@ -40,6 +40,21 @@ let compile name args =
       | "float?" | "double?" -> static_bool (Types.equal arg.ty TFloat)
       | "ratio?" | "decimal?" -> static_bool false
       | "symbol?"
+        when Option.is_some
+               (Types.symbol_predicate_constraint_info arg.ty) ->
+          let projected =
+            match Semantic_ir.unlocated arg.semantic_expr with
+            | Semantic_ir.Ident name ->
+                apply (name ^ "__symbol") [ arg.semantic_expr ]
+            | _ ->
+                apply "fst" [ arg.semantic_expr ]
+                |> fun projector ->
+                Semantic_ir.Apply
+                  ( projector,
+                    [ apply "snd" [ arg.semantic_expr ] ] )
+          in
+          bool (apply "Option.is_some" [ projected ])
+      | "symbol?"
         when Types.is_dynamic arg.ty || Types.equal arg.ty TUnknown ->
           bool
             (apply "Lg_runtime.Runtime_dynamic.is_symbol"

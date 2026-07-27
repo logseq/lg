@@ -1,0 +1,8 @@
+subtract=15
+negate=-5
+multiply=24
+empty-multiply=1
+increment=10
+decrement=8
+empty-subtract=invalid
+increment-arity=invalid
