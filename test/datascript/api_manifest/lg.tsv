@@ -1,12 +1,14 @@
 arity	datascript.built-ins/add-values	1	fixed
 arity	datascript.built-ins/aggregate-function	1	fixed
 arity	datascript.built-ins/apply-comparison	2	fixed
+arity	datascript.built-ins/apply-differ	1	fixed
 arity	datascript.built-ins/apply-pure-function	2	fixed
 arity	datascript.built-ins/average-aggregate?	1	fixed
 arity	datascript.built-ins/comparison-function	1	fixed
 arity	datascript.built-ins/count-aggregate?	1	fixed
 arity	datascript.built-ins/count-distinct-aggregate?	1	fixed
 arity	datascript.built-ins/data-map	1	fixed
+arity	datascript.built-ins/differ-function?	1	fixed
 arity	datascript.built-ins/distinct-aggregate?	1	fixed
 arity	datascript.built-ins/get-else-function?	1	fixed
 arity	datascript.built-ins/get-some-function?	1	fixed
@@ -496,6 +498,7 @@ arity	datascript.parser/default-in	1	fixed
 arity	datascript.parser/default-pattern	1	fixed
 arity	datascript.parser/deftrecord	2	variadic
 arity	datascript.parser/distinct?	1	fixed
+arity	datascript.parser/expand-rule-branch	3	fixed
 arity	datascript.parser/explicit-input	1	fixed
 arity	datascript.parser/explicit-pattern-clause	2	fixed
 arity	datascript.parser/find-element-aggregate	1	fixed
@@ -868,10 +871,12 @@ arity	datascript.query-v3/context-constants	1	fixed
 arity	datascript.query-v3/context-default-source-symbol	1	fixed
 arity	datascript.query-v3/context-empty?	1	fixed
 arity	datascript.query-v3/context-relations	1	fixed
+arity	datascript.query-v3/context-rules	1	fixed
 arity	datascript.query-v3/context-sources	1	fixed
 arity	datascript.query-v3/context-v3	2	fixed
 arity	datascript.query-v3/context-v3	3	fixed
 arity	datascript.query-v3/context-v3	4	fixed
+arity	datascript.query-v3/context-v3	5	fixed
 arity	datascript.query-v3/extract-rels	2	fixed
 arity	datascript.query-v3/get-f	3	fixed
 arity	datascript.query-v3/get-source	2	fixed
@@ -1100,12 +1105,14 @@ var	datascript.built-ins/add-values
 var	datascript.built-ins/aggregate-function
 var	datascript.built-ins/aggregates
 var	datascript.built-ins/apply-comparison
+var	datascript.built-ins/apply-differ
 var	datascript.built-ins/apply-pure-function
 var	datascript.built-ins/average-aggregate?
 var	datascript.built-ins/comparison-function
 var	datascript.built-ins/count-aggregate?
 var	datascript.built-ins/count-distinct-aggregate?
 var	datascript.built-ins/data-map
+var	datascript.built-ins/differ-function?
 var	datascript.built-ins/distinct-aggregate?
 var	datascript.built-ins/get-else-function?
 var	datascript.built-ins/get-some-function?
@@ -1521,6 +1528,7 @@ var	datascript.parser/default-in
 var	datascript.parser/default-pattern
 var	datascript.parser/deftrecord
 var	datascript.parser/distinct?
+var	datascript.parser/expand-rule-branch
 var	datascript.parser/explicit-input
 var	datascript.parser/explicit-pattern-clause
 var	datascript.parser/find-element-aggregate
@@ -1882,6 +1890,7 @@ var	datascript.query-v3/context-constants
 var	datascript.query-v3/context-default-source-symbol
 var	datascript.query-v3/context-empty?
 var	datascript.query-v3/context-relations
+var	datascript.query-v3/context-rules
 var	datascript.query-v3/context-sources
 var	datascript.query-v3/context-v3
 var	datascript.query-v3/empty-context
@@ -1911,6 +1920,7 @@ var	datascript.query-v3/resolve-pattern
 var	datascript.query-v3/resolve-pattern-coll
 var	datascript.query-v3/resolve-pattern-db
 var	datascript.query-v3/resolve-predicate
+var	datascript.query-v3/rule-seqid
 var	datascript.query-v3/singleton-rel
 var	datascript.query-v3/subarr
 var	datascript.query-v3/substitute-constants

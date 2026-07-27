@@ -399,6 +399,7 @@
     "get" (Some Get)
     "get-else" (Some GetElse)
     "get-some" (Some GetSome)
+    "-differ?" (Some Differ)
     "re-pattern" (Some RegexPattern)
     None))
 

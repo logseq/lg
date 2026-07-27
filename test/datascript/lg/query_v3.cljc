@@ -151,6 +151,18 @@
 (type-alias used-rule-arguments-v3
   :map<string;vector<vector<datascript.parser/pattern-element>>>)
 
+(type-record or-resolution-v3
+  (matched :bool)
+  (rows :vector<array<datascript.lg.query-types/result>>))
+
+(type-record clause-resolution-request-v3
+  (context :datascript.query-v3/query-context-v3)
+  (clauses :vector<datascript.parser/clause>))
+
+(type-record rule-resolution-request-v3
+  (context :datascript.query-v3/query-context-v3)
+  (clause :datascript.parser/clause))
+
 (type-record rule-frame-v3
   (prefix-clauses :vector<datascript.parser/clause>)
   (prefix-context :datascript.query-v3/query-context-v3)
@@ -1752,7 +1764,11 @@
                remaining-context
                remaining))))))))
 
-(declare resolve-clauses resolve-clause-closed resolve-or)
+(declare
+ resolve-clauses-state-v3
+ resolve-clause-closed
+ resolve-or
+ resolve-rule-request-v3)
 
 (defn ^query-context-v3 resolve-not
   [^query-context-v3 context ^datascript.parser/clause clause]
@@ -1767,11 +1783,13 @@
              variables)
             _ (check-bound context symbols display)
             nested-context
-            (resolve-clauses
-             (upd-default-source
-              (project-context context symbols)
-              clause)
-             clauses)]
+            (resolve-clauses-state-v3
+             (record clause-resolution-request-v3
+               (context
+                (upd-default-source
+                 (project-context context symbols)
+                 clause))
+               (clauses clauses)))]
         (subtract-contexts context nested-context symbols))
       _
       (Stdlib.invalid_arg
@@ -1799,6 +1817,28 @@
        []
        specimens))))
 
+(defn- ^or-resolution-v3 resolve-or-branches
+  [^query-context-v3 branch-context
+   ^:vector<datascript.parser/clause> branches
+   ^:vector<string> symbols]
+  (reduce
+   (fn [^or-resolution-v3 resolution
+        ^datascript.parser/clause branch]
+     (let [resolved
+           (resolve-clause-closed branch-context branch)]
+       (if (context-empty? resolved)
+         resolution
+         (record or-resolution-v3
+           (matched true)
+           (rows
+            (into
+             (:rows resolution)
+             (collect-context-rows resolved symbols)))))))
+   (record or-resolution-v3
+     (matched false)
+     (rows []))
+   branches))
+
 (defn ^query-context-v3 resolve-or
   [^query-context-v3 context ^datascript.parser/clause clause]
   (if (context-empty? context)
@@ -1817,41 +1857,25 @@
             (upd-default-source
              (project-context context symbols)
              clause)
-            contexts
-            (reduce
-             (fn [contexts branch]
-               (let [resolved
-                     (resolve-clause-closed
-                      branch-context branch)]
-                 (if (context-empty? resolved)
-                   contexts
-                   (conj contexts resolved))))
-             []
-             branches)]
-        (if (empty? contexts)
+            non-constants
+            (filterv
+             (fn [symbol]
+               (not
+                (contains?
+                 (context-constants context)
+                 symbol)))
+             symbols)
+            resolution
+            (resolve-or-branches
+             branch-context branches non-constants)]
+        (if (not (:matched resolution))
           EmptyContextV3
-          (let [non-constants
-                (filterv
-                 (fn [symbol]
-                   (not
-                    (contains?
-                     (context-constants context)
-                     symbol)))
-                 symbols)]
-            (if (empty? non-constants)
-              context
-              (let [rows
-                    (reduce
-                     (fn [rows branch-result]
-                       (into
-                        rows
-                        (collect-context-rows
-                         branch-result non-constants)))
-                     []
-                     contexts)
-                    relation
-                    (array-rel non-constants rows)]
-                (hash-join-rel context relation))))))
+          (if (empty? non-constants)
+            context
+            (let [relation
+                  (array-rel
+                   non-constants (:rows resolution))]
+              (hash-join-rel context relation)))))
       (Stdlib.invalid_arg
        "Expected a DataScript or clause"))))
 
@@ -1861,23 +1885,28 @@
     (parser/PatternClause _ _) (resolve-pattern context clause)
     (parser/PredicateClause _ _) (resolve-predicate context clause)
     (parser/FunctionClause _ _ _) (resolve-function context clause)
-    (parser/AndClause clauses) (resolve-clauses context clauses)
+    (parser/RuleClause _ _ _)
+    (resolve-rule-request-v3
+     (record rule-resolution-request-v3
+       (context context)
+       (clause clause)))
+    (parser/AndClause clauses)
+    (resolve-clauses-state-v3
+     (record clause-resolution-request-v3
+       (context context)
+       (clauses clauses)))
     (parser/NotClause _ _ _ _) (resolve-not context clause)
-    (parser/OrClause _ _ _ _ _) (resolve-or context clause)
-    _
-    (Stdlib.invalid_arg
-     "Query-v3 clause is not implemented yet")))
+    (parser/OrClause _ _ _ _ _) (resolve-or context clause)))
 
 (extend-type datascript.parser/clause
   IClause
   (-resolve-clause [clause context]
     (resolve-clause-closed context clause)))
 
-(defn ^query-context-v3 resolve-clauses
-  [^query-context-v3 context
-   ^:vector<datascript.parser/clause> clauses]
-  (loop [resolved context
-         remaining clauses]
+(defn- ^query-context-v3 resolve-clauses-state-v3
+  [^clause-resolution-request-v3 request]
+  (loop [resolved (:context request)
+         remaining (:clauses request)]
     (if (context-empty? resolved)
       resolved
       (if-some [clause (first remaining)]
@@ -1885,6 +1914,376 @@
          (-resolve-clause clause resolved)
          (subvec remaining 1))
         resolved))))
+
+(defn ^query-context-v3 resolve-clauses
+  [^query-context-v3 context
+   ^:vector<datascript.parser/clause> clauses]
+  (resolve-clauses-state-v3
+   (record clause-resolution-request-v3
+     (context context)
+     (clauses clauses))))
+
+(def rule-seqid (atom 0))
+
+(defn- ^:bool rule-pattern-elements-equal?
+  [^datascript.parser/pattern-element left
+   ^datascript.parser/pattern-element right]
+  (match (parser/pattern-element-variable-symbol left)
+    (Some left-variable)
+    (match (parser/pattern-element-variable-symbol right)
+      (Some right-variable)
+      (= (str left-variable) (str right-variable))
+      None false)
+    None
+    (match (parser/pattern-element-constant left)
+      (Some left-value)
+      (match (parser/pattern-element-constant right)
+        (Some right-value)
+        (Datascript_runtime.Data_value.equal
+         left-value right-value)
+        None false)
+      None
+      (and
+       (not
+        (some?
+         (parser/pattern-element-variable-symbol right)))
+       (not
+        (some?
+         (parser/pattern-element-constant right)))))))
+
+(defn-
+  ^:tuple<vector<datascript.parser/pattern-element>;vector<datascript.parser/pattern-element>>
+  remove-rule-argument-pairs
+  [^:vector<datascript.parser/pattern-element> left
+   ^:vector<datascript.parser/pattern-element> right]
+  (if (not (= (count left) (count right)))
+    (Stdlib.invalid_arg "Rule arity mismatch")
+    (reduce-kv
+     (fn [pair index left-argument]
+       (let [right-argument (nth right index)]
+         (if
+          (rule-pattern-elements-equal?
+           left-argument right-argument)
+           pair
+           (tuple
+            (conj (tuple-get pair 0) left-argument)
+            (conj (tuple-get pair 1) right-argument)))))
+     (tuple [] [])
+     left)))
+
+(defn- ^datascript.parser/fn-arg rule-argument-fn-arg
+  [^datascript.parser/pattern-element argument]
+  (match (parser/pattern-element-variable-symbol argument)
+    (Some variable)
+    (parser/variable-argument (str variable))
+    None
+    (match (parser/pattern-element-constant argument)
+      (Some value)
+      (parser/constant-argument value)
+      None
+      (parser/constant-argument
+       (Datascript_runtime.Data_value.Symbol "_")))))
+
+(defn- ^datascript.parser/clause rule-guard-clause
+  [^:vector<datascript.parser/pattern-element> current
+   ^:vector<datascript.parser/pattern-element> previous]
+  (let [different (remove-rule-argument-pairs current previous)
+        arguments
+        (into
+         (tuple-get different 0)
+         (tuple-get different 1))]
+    (parser/static-predicate-clause
+     "-differ?"
+     (mapv rule-argument-fn-arg arguments))))
+
+(defn- ^:vector<datascript.parser/clause> rule-gen-guards-v3
+  [^datascript.parser/clause clause
+   ^used-rule-arguments-v3 used-arguments]
+  (if-some [parts (parser/rule-clause-parts clause)]
+    (let [rule-name (tuple-get parts 0)
+          arguments (tuple-get parts 1)
+          previous-calls
+          (if-some [calls (get used-arguments rule-name)]
+            calls
+            [])]
+      (mapv
+       (fn [previous]
+         (rule-guard-clause arguments previous))
+       previous-calls))
+    (Stdlib.invalid_arg "Expected a DataScript rule clause")))
+
+(defn- ^:vector<string> clause-variable-symbols
+  [^:vector<datascript.parser/clause> clauses]
+  (reduce
+   (fn [symbols clause]
+     (reduce
+      (fn [symbols variable]
+        (let [symbol (str (.-symbol variable))]
+          (if (some? (some #(= % symbol) symbols))
+            symbols
+            (conj symbols symbol))))
+      symbols
+      (parser/clause-vars clause)))
+   []
+   clauses))
+
+(defn-
+  ^:tuple<vector<datascript.parser/clause>;vector<datascript.parser/clause>>
+  split-rule-guards-v3
+  [^:vector<datascript.parser/clause> clauses
+   ^:vector<datascript.parser/clause> guards]
+  (let [bound-symbols (set (clause-variable-symbols clauses))]
+    (reduce
+     (fn [split guard]
+       (let [active? 
+             (every?
+              (fn [variable]
+                (contains?
+                 bound-symbols
+                 (str (.-symbol variable))))
+              (parser/clause-vars guard))]
+         (if active?
+           (tuple
+            (conj (tuple-get split 0) guard)
+            (tuple-get split 1))
+           (tuple
+            (tuple-get split 0)
+            (conj (tuple-get split 1) guard)))))
+     (tuple [] [])
+     guards)))
+
+(defn- ^:bool trivial-rule-guard?
+  [^datascript.parser/clause clause]
+  (match clause
+    (parser/PredicateClause callable arguments)
+    (and
+     (empty? arguments)
+     (match (parser/static-callable-name callable)
+       (Some name) (= name "-differ?")
+       None false))
+    _ false))
+
+(defn- ^rule-clause-split-v3 split-first-rule-clause
+  [^:vector<datascript.parser/clause> clauses]
+  (loop [prefix []
+         remaining clauses]
+    (if-some [clause (first remaining)]
+      (if (some? (parser/rule-clause-parts clause))
+        (record rule-clause-split-v3
+          (prefix prefix)
+          (rule (Some clause))
+          (suffix (subvec remaining 1)))
+        (recur (conj prefix clause) (subvec remaining 1)))
+      (record rule-clause-split-v3
+        (prefix prefix)
+        (rule None)
+        (suffix [])))))
+
+(defn- ^:vector<string> rule-output-symbols
+  [^datascript.parser/clause clause]
+  (if-some [parts (parser/rule-clause-parts clause)]
+    (reduce
+     (fn [symbols argument]
+       (match (parser/pattern-element-variable-symbol argument)
+         (Some variable)
+         (let [symbol (str variable)]
+           (if (some? (some #(= % symbol) symbols))
+             symbols
+             (conj symbols symbol)))
+         None symbols))
+     []
+     (tuple-get parts 1))
+    (Stdlib.invalid_arg "Expected a DataScript rule clause")))
+
+(defn- ^:bool rule-argument-bound-v3?
+  [^query-context-v3 context
+   ^datascript.parser/pattern-element argument]
+  (match (parser/pattern-element-variable-symbol argument)
+    (Some variable)
+    (context-symbol-bound? context (str variable))
+    None
+    (some? (parser/pattern-element-constant argument))))
+
+(defn- ^:vector<datascript.parser/RuleBranch> rule-branches-for-call
+  [^query-context-v3 context
+   ^:string rule-name
+   ^:vector<datascript.parser/pattern-element> arguments]
+  (if-some [branches
+            (parser/rule-branches
+             (context-rules context) rule-name)]
+    (if-some [first-branch (first branches)]
+      (let [parameters
+            (parser/rule-branch-parameter-names first-branch)
+            required-count
+            (count
+             (parser/rule-branch-required-parameter-names
+              first-branch))]
+        (if (not (= (count parameters) (count arguments)))
+          (Stdlib.invalid_arg "Rule arity mismatch")
+          (if
+           (every?
+            (fn [index]
+              (rule-argument-bound-v3?
+               context (nth arguments index)))
+            (range required-count))
+            branches
+            (Stdlib.invalid_arg
+             "Insufficient bindings for required rule arguments"))))
+      (Stdlib.invalid_arg "Rule must contain a branch"))
+    (Stdlib.invalid_arg
+     (str
+      "Unknown rule '"
+      rule-name
+      " in "
+      (query-types/rule-call-description
+       rule-name arguments)))))
+
+(defn- ^:bool context-dead?
+  [^query-context-v3 context]
+  (or
+   (context-empty? context)
+   (some?
+    (some
+     (fn [relation]
+       (= 0 (-size relation)))
+     (context-relations context)))))
+
+(defn- ^:vector<datascript.parser/clause>
+  concat-rule-clauses-v3
+  [^:vector<datascript.parser/clause> left
+   ^:vector<datascript.parser/clause> right]
+  (reduce
+   (fn [clauses clause]
+     (conj clauses clause))
+   left
+   right))
+
+(defn- ^relation-v3 solve-rule-stack-v3
+  [^:vector<string> final-symbols
+   ^:vector<rule-frame-v3> stack
+   ^relation-v3 result]
+  (if-some [frame (first stack)]
+    (let [remaining-stack (subvec stack 1)
+          split
+          (split-first-rule-clause (:clauses frame))
+          prefix (:prefix split)]
+      (match (:rule split)
+        None
+        (let [resolved
+              (resolve-clauses-state-v3
+               (record clause-resolution-request-v3
+                 (context (:prefix-context frame))
+                 (clauses prefix)))]
+          (if (context-dead? resolved)
+            (solve-rule-stack-v3
+             final-symbols remaining-stack result)
+            (let [rows
+                  (query-types/distinct-rows
+                   (collect-to resolved final-symbols []))
+                  relation (array-rel final-symbols rows)]
+              (solve-rule-stack-v3
+               final-symbols
+               remaining-stack
+               (-union result relation)))))
+        (Some rule-clause)
+        (let [guards
+              (rule-gen-guards-v3
+               rule-clause (:used-arguments frame))
+              guard-split
+              (split-rule-guards-v3
+               (concat-rule-clauses-v3
+                (:prefix-clauses frame) prefix)
+               (concat-rule-clauses-v3
+                guards (:pending-guards frame)))
+              active-guards (tuple-get guard-split 0)
+              pending-guards (tuple-get guard-split 1)]
+          (if (some? (some trivial-rule-guard? active-guards))
+            (solve-rule-stack-v3
+             final-symbols remaining-stack result)
+            (let [prefix-clauses
+                  (concat-rule-clauses-v3
+                   prefix active-guards)
+                  prefix-context
+                  (resolve-clauses-state-v3
+                   (record clause-resolution-request-v3
+                     (context (:prefix-context frame))
+                     (clauses prefix-clauses)))]
+              (if (context-dead? prefix-context)
+                (solve-rule-stack-v3
+                 final-symbols remaining-stack result)
+                (if-some [parts
+                          (parser/rule-clause-parts
+                           rule-clause)]
+                  (let [rule-name (tuple-get parts 0)
+                        arguments (tuple-get parts 1)
+                        call-context
+                        (upd-default-source
+                         prefix-context rule-clause)
+                        branches
+                        (rule-branches-for-call
+                         call-context rule-name arguments)
+                        previous
+                        (if-some
+                          [calls
+                           (get
+                            (:used-arguments frame)
+                            rule-name)]
+                          calls
+                          [])
+                        used-arguments
+                        (assoc
+                         (:used-arguments frame)
+                         rule-name
+                         (conj previous arguments))
+                        seqid (swap! rule-seqid inc)
+                        frames
+                        (mapv
+                         (fn [branch]
+                           (record rule-frame-v3
+                             (prefix-clauses prefix-clauses)
+                             (prefix-context call-context)
+                             (clauses
+                              (concat-rule-clauses-v3
+                               (parser/expand-rule-branch
+                                branch arguments seqid)
+                               (:suffix split)))
+                             (used-arguments used-arguments)
+                             (pending-guards pending-guards)))
+                         branches)]
+                    (solve-rule-stack-v3
+                     final-symbols
+                     (into frames remaining-stack)
+                     result))
+                  (Stdlib.invalid_arg
+                   "Expected a DataScript rule clause"))))))))
+    (-alter-coll
+     result
+     query-types/distinct-rows)))
+
+(defn- ^relation-v3 solve-rule-v3
+  [^query-context-v3 context
+   ^datascript.parser/clause clause]
+  (let [final-symbols (rule-output-symbols clause)
+        initial-frame
+        (record rule-frame-v3
+          (prefix-clauses [])
+          (prefix-context context)
+          (clauses [clause])
+          (used-arguments {})
+          (pending-guards []))]
+    (solve-rule-stack-v3
+     final-symbols
+     [initial-frame]
+     (array-rel final-symbols []))))
+
+(defn- ^query-context-v3 resolve-rule-request-v3
+  [^rule-resolution-request-v3 request]
+  (let [context
+        (upd-default-source
+         (:context request) (:clause request))
+        relation
+        (solve-rule-v3 context (:clause request))]
+    (hash-join-rel context relation)))
 
 (defn collect-consts
   [^:vector<tuple<string;int>> symbols-indexed
