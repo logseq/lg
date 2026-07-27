@@ -851,6 +851,7 @@ arity	datascript.query-v3/IRelation/-symbols	1	fixed
 arity	datascript.query-v3/IRelation/-union	2	fixed
 arity	datascript.query-v3/arange	2	fixed
 arity	datascript.query-v3/array-rel	2	fixed
+arity	datascript.query-v3/check-bound	3	fixed
 arity	datascript.query-v3/coll-rel	2	fixed
 arity	datascript.query-v3/collect-args!	4	fixed
 arity	datascript.query-v3/concatv	0	variadic
@@ -873,6 +874,8 @@ arity	datascript.query-v3/join-unrelated	2	fixed
 arity	datascript.query-v3/mapa	2	fixed
 arity	datascript.query-v3/product	2	fixed
 arity	datascript.query-v3/product-all	1	fixed
+arity	datascript.query-v3/project-context	2	fixed
+arity	datascript.query-v3/project-rel	2	fixed
 arity	datascript.query-v3/related-rels	2	fixed
 arity	datascript.query-v3/resolve-pattern	2	fixed
 arity	datascript.query-v3/resolve-pattern-coll	2	fixed
@@ -880,6 +883,7 @@ arity	datascript.query-v3/resolve-pattern-db	2	fixed
 arity	datascript.query-v3/resolve-predicate	2	fixed
 arity	datascript.query-v3/singleton-rel	0	fixed
 arity	datascript.query-v3/subarr	3	fixed
+arity	datascript.query-v3/upd-default-source	2	fixed
 arity	datascript.query-v3/zip	2	fixed
 arity	datascript.query-v3/zip	2	variadic
 arity	datascript.query/-aggregate	3	fixed
@@ -1843,6 +1847,7 @@ var	datascript.pull-parser/with-xform
 var	datascript.query-v3/IRelation
 var	datascript.query-v3/arange
 var	datascript.query-v3/array-rel
+var	datascript.query-v3/check-bound
 var	datascript.query-v3/coll-rel
 var	datascript.query-v3/collect-args!
 var	datascript.query-v3/concatv
@@ -1865,6 +1870,8 @@ var	datascript.query-v3/lru-cache-size
 var	datascript.query-v3/mapa
 var	datascript.query-v3/product
 var	datascript.query-v3/product-all
+var	datascript.query-v3/project-context
+var	datascript.query-v3/project-rel
 var	datascript.query-v3/related-rels
 var	datascript.query-v3/resolve-pattern
 var	datascript.query-v3/resolve-pattern-coll
@@ -1872,6 +1879,7 @@ var	datascript.query-v3/resolve-pattern-db
 var	datascript.query-v3/resolve-predicate
 var	datascript.query-v3/singleton-rel
 var	datascript.query-v3/subarr
+var	datascript.query-v3/upd-default-source
 var	datascript.query-v3/zip
 var	datascript.query/*implicit-source*
 var	datascript.query/*lookup-attrs*

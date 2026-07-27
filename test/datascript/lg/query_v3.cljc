@@ -638,6 +638,53 @@
              relation)]
         (join-unrelated remaining-context joined)))))
 
+(defn ^:option<relation-v3> project-rel
+  [^relation-v3 relation ^:vector<string> symbols]
+  (let [relation-symbols (-symbols relation)
+        requested (set symbols)]
+    (if
+     (every?
+      (fn [symbol]
+        (contains? requested symbol))
+      relation-symbols)
+      (Some relation)
+      (if
+       (some?
+        (some
+         (fn [symbol]
+           (contains? requested symbol))
+         relation-symbols))
+        (Some (-project relation symbols))
+        None))))
+
+(defn ^query-context-v3 project-context
+  [^query-context-v3 context ^:vector<string> symbols]
+  (match context
+    EmptyContextV3 EmptyContextV3
+    (QueryContextV3 state)
+    (let [requested (set symbols)
+          constants
+          (reduce-kv
+           (fn [selected symbol value]
+             (if (contains? requested symbol)
+               (assoc selected symbol value)
+               selected))
+           {}
+           (:consts state))
+          relations
+          (reduce
+           (fn [selected relation]
+             (match (project-rel relation symbols)
+               None selected
+               (Some projected) (conj selected projected)))
+           []
+           (:rels state))]
+      (context-v3
+       relations
+       constants
+       (:sources state)
+       (:default-source-symbol state)))))
+
 (defn- ^:tuple<datascript.parser/query-source;vector<datascript.parser/pattern-element>>
   pattern-clause-parts
   [^datascript.parser/clause clause]
@@ -888,48 +935,62 @@
    []
    arguments))
 
-(defn- ^:bool context-variable-bound?
-  [^query-context-v3 context ^:string variable]
+(defn- ^:bool context-symbol-bound?
+  [^query-context-v3 context ^:string symbol]
   (or
-   (contains? (context-constants context) variable)
+   (contains? (context-constants context) symbol)
+   (contains? (context-sources context) symbol)
    (some?
     (some
      (fn [relation]
-       (contains? (relation-offset-map relation) variable))
+       (contains? (relation-offset-map relation) symbol))
      (context-relations context)))))
 
-(defn- ^:string predicate-variable-set-description
-  [^:vector<string> variables]
+(defn- ^:string query-symbol-set-description
+  [^:vector<string> symbols]
   (str
    "#{"
    (reduce-kv
-    (fn [description index variable]
+    (fn [description index symbol]
       (if (= index 0)
-        variable
-        (str description " " variable)))
+        symbol
+        (str description " " symbol)))
     ""
-    variables)
+    symbols)
    "}"))
 
-(defn- check-predicate-bindings
-  [^query-context-v3 context ^:vector<string> variables]
+(defn check-bound
+  [^query-context-v3 context
+   ^:vector<string> symbols
+   ^:string form]
   (let [missing
         (reduce
-         (fn [missing variable]
+         (fn [missing symbol]
            (if
             (or
-             (context-variable-bound? context variable)
-             (contains? (set missing) variable))
+             (context-symbol-bound? context symbol)
+             (some?
+              (some
+               (fn [missing-symbol]
+                 (= missing-symbol symbol))
+               missing)))
              missing
-             (conj missing variable)))
+             (conj missing symbol)))
          []
-         variables)]
+         symbols)]
     (if (empty? missing)
       (Stdlib.ignore 0)
       (Stdlib.invalid_arg
        (str
         "Insufficient bindings: "
-        (predicate-variable-set-description missing))))))
+        (query-symbol-set-description missing)
+        (if (= form "")
+          ""
+          (str " not bound in " form)))))))
+
+(defn- check-predicate-bindings
+  [^query-context-v3 context ^:vector<string> variables]
+  (check-bound context variables ""))
 
 (defn- ^:vector<datascript.lg.query-types/result>
   collected-predicate-arguments
@@ -1054,3 +1115,31 @@
               (filter-predicate-relation
                relation function bindings target)]
           (join-unrelated remaining-context filtered))))))
+
+(defn- ^query-context-v3 context-with-default-source
+  [^query-context-v3 context ^:string source-name]
+  (match context
+    EmptyContextV3 EmptyContextV3
+    (QueryContextV3 state)
+    (context-v3
+     (:rels state)
+     (:consts state)
+     (:sources state)
+     source-name)))
+
+(defn- ^:option<datascript.parser/query-source> clause-query-source
+  [^datascript.parser/clause clause]
+  (match clause
+    (parser/PatternClause source _) (Some source)
+    (parser/RuleClause source _ _) (Some source)
+    (parser/NotClause source _ _ _) (Some source)
+    (parser/OrClause source _ _ _ _) (Some source)
+    _ None))
+
+(defn ^query-context-v3 upd-default-source
+  [^query-context-v3 context ^datascript.parser/clause clause]
+  (if-some [source (clause-query-source clause)]
+    (if-some [source-name (parser/query-source-name source)]
+      (context-with-default-source context source-name)
+      context)
+    context))

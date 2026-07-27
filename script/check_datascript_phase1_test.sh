@@ -212,7 +212,15 @@ for query_v3_entry in \
   'var	datascript.query-v3/get-f' \
   'arity	datascript.query-v3/get-f	3	fixed' \
   'var	datascript.query-v3/resolve-predicate' \
-  'arity	datascript.query-v3/resolve-predicate	2	fixed'
+  'arity	datascript.query-v3/resolve-predicate	2	fixed' \
+  'var	datascript.query-v3/project-rel' \
+  'arity	datascript.query-v3/project-rel	2	fixed' \
+  'var	datascript.query-v3/project-context' \
+  'arity	datascript.query-v3/project-context	2	fixed' \
+  'var	datascript.query-v3/check-bound' \
+  'arity	datascript.query-v3/check-bound	3	fixed' \
+  'var	datascript.query-v3/upd-default-source' \
+  'arity	datascript.query-v3/upd-default-source	2	fixed'
 do
   expect_text "the LG manifest preserves query-v3 helper: $query_v3_entry" \
     "$lg_api_manifest" "^$query_v3_entry$"

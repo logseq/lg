@@ -1089,6 +1089,126 @@
         (catch (Invalid_argument message)
           (str message)))))))
 
+(deftest test-query-v3-project-relation-and-context
+  (let [xy
+        (query-v3/array-rel
+         ["?x" "?y"]
+         [(query-int-row [1 10])
+          (query-int-row [2 20])])
+        z
+        (query-v3/array-rel
+         ["?z"]
+         [(query-int-row [30])
+          (query-int-row [40])])
+        context
+        (query-v3/context-v3
+         [xy z]
+         {"?limit" (query-int-result 2)
+          "?drop" (query-int-result 99)}
+         {"$rows"
+          (query-types/relation-source
+           [(query-int-row [1])])}
+         "$rows")]
+    (match (query-v3/project-rel xy ["?x" "?y" "?extra"])
+      None (is false)
+      (Some unchanged)
+      (is (= ["?x" "?y"] (vec (query-v3/-symbols unchanged)))))
+    (match (query-v3/project-rel xy ["?z"])
+      None (is true)
+      (Some _) (is false))
+    (match (query-v3/project-rel xy ["?x"])
+      None (is false)
+      (Some projected)
+      (do
+       (is (= ["?x"] (vec (query-v3/-symbols projected))))
+       (is (= [1 2]
+              (mapv
+               (fn [row]
+                 (query-result-int
+                  ((query-v3/-getter projected "?x") row)))
+               (query-v3-rows projected))))))
+    (let [projected-context
+          (query-v3/project-context context ["?x" "?limit"])
+          relations
+          (query-v3-context-relations projected-context)
+          constants
+          (query-v3-context-constants projected-context)]
+      (is (= 1 (count relations)))
+      (is (= ["?x"] (vec (query-v3/-symbols (nth relations 0)))))
+      (is (= 1 (count constants)))
+      (is (= 2
+             (query-result-int
+              (get constants "?limit" (query-int-result 0)))))
+      (is (= "$rows"
+             (query-v3/context-default-source-symbol
+              projected-context)))
+      (is (= 1
+             (count
+              (query-v3/context-sources projected-context)))))
+    (is
+     (query-v3-empty-context?
+      (query-v3/project-context query-v3/empty-context ["?x"])))))
+
+(deftest test-query-v3-check-bound
+  (let [context
+        (query-v3/context-v3
+         [(query-v3/array-rel
+           ["?x"]
+           [(query-int-row [1])
+            (query-int-row [2])])]
+         {"?limit" (query-int-result 2)}
+         {"$rows"
+          (query-types/relation-source
+           [(query-int-row [1])])})]
+    (is (= (Stdlib.ignore 0)
+           (query-v3/check-bound
+            context
+            ["?x" "?limit" "$rows"]
+            "test form")))
+    (is
+     (=
+      "Insufficient bindings: #{?missing $missing} not bound in test form"
+      (try
+        (let [_result
+              (query-v3/check-bound
+               context
+               ["?missing" "$missing" "?missing"]
+               "test form")]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))))
+
+(deftest test-query-v3-update-default-source
+  (let [context
+        (query-v3/context-v3
+         []
+         {}
+         {"$" (query-types/relation-source [])
+          "$rows" (query-types/relation-source [])})
+        explicit
+        (parser/explicit-pattern-clause
+         "$rows"
+         [(parser/pattern-variable "?x")])
+        default
+        (parser/pattern-clause
+         [(parser/pattern-variable "?x")])
+        predicate
+        (parser/static-predicate-clause
+         ">"
+         [(parser/constant-argument
+           (Datascript_runtime.Data_value.Int 2))
+          (parser/constant-argument
+           (Datascript_runtime.Data_value.Int 1))])]
+    (is (= "$rows"
+           (query-v3/context-default-source-symbol
+            (query-v3/upd-default-source context explicit))))
+    (is (= "$"
+           (query-v3/context-default-source-symbol
+            (query-v3/upd-default-source context default))))
+    (is (= "$"
+           (query-v3/context-default-source-symbol
+            (query-v3/upd-default-source context predicate))))))
+
 (deftest test-public-tuple-key-helpers
   (let [attrs (query-types/index-attrs ["?x" "?y"])
         row (query-int-row [10 20])
