@@ -250,6 +250,26 @@ let numeric_float = function
   | Float value -> Some value
   | _ -> None
 
+let random_value values =
+  match Rrbvec.to_list values with
+  | [] -> Some (Float (Lg_runtime.Runtime_random.rand 1.0))
+  | [ bound ] ->
+      Option.map
+        (fun bound -> Float (Lg_runtime.Runtime_random.rand bound))
+        (numeric_float bound)
+  | _ -> None
+
+let random_int_value values =
+  match Rrbvec.to_list values with
+  | [ bound ] ->
+      Option.map
+        (fun bound ->
+          Int
+            (Lg_runtime.Runtime_random.rand bound
+            |> int_of_float))
+        (numeric_float bound)
+  | _ -> None
+
 let divide values =
   match Rrbvec.to_list values with
   | [] -> Some (Float Float.nan)

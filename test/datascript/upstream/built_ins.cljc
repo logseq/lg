@@ -530,6 +530,8 @@
     "max" (Some Maximum)
     "min" (Some Minimum)
     "compare" (Some Compare)
+    "rand" (Some Random)
+    "rand-int" (Some RandomInt)
     "keyword" (Some Keyword)
     "name" (Some Name)
     "namespace" (Some Namespace)
@@ -660,6 +662,10 @@
           left right)]
         (Some (Datascript_runtime.Data_value.Int comparison))
         None))
+    Random
+    (Datascript_runtime.Data_value.random_value values)
+    RandomInt
+    (Datascript_runtime.Data_value.random_int_value values)
     Keyword
     (Datascript_runtime.Data_value.keyword_from_values values)
     Name

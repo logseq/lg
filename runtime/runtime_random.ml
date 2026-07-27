@@ -4,15 +4,12 @@ let seed value =
   Lazy.force initialized;
   Random.init value
 
-let rand_int bound =
-  if bound <= 0 then invalid_arg "rand-int expects a positive bound";
-  Lazy.force initialized;
-  Random.int bound
-
 let rand bound =
-  if bound < 0. then invalid_arg "rand expects a non-negative bound";
   Lazy.force initialized;
-  Random.float bound
+  Random.float 1. *. bound
+
+let rand_int bound =
+  int_of_float (rand (float_of_int bound))
 
 let rand_nth values =
   match values with

@@ -85,6 +85,30 @@
     (Some None) true
     _ false))
 
+(defn scalar-output-float-in-range?
+  [^query-types/output output
+   ^:float lower
+   ^:float upper]
+  (match (query-types/output-scalar output)
+    (Some
+     (Some
+      (Datascript_runtime.Query_value.Value
+       (Datascript_runtime.Data_value.Float value))))
+    (and (<= lower value) (< value upper))
+    _ false))
+
+(defn scalar-output-int-in-range?
+  [^query-types/output output
+   ^:int lower
+   ^:int upper]
+  (match (query-types/output-scalar output)
+    (Some
+     (Some
+      (Datascript_runtime.Query_value.Value
+       (Datascript_runtime.Data_value.Int value))))
+    (and (<= lower value) (< value upper))
+    _ false))
+
 (deftest test-core-numeric-query-functions
   (testing "division preserves upstream arities and floating-point results"
     (is
@@ -659,6 +683,61 @@
              :where [(prn-str "a\nb" :k nil [1 "x"]) ?x]])
       (Datascript_runtime.Data_value.String
        "\"a\\nb\" :k nil [1 \"x\"]\n")))))
+
+(deftest test-core-random-query-functions
+  (testing "rand preserves zero, positive, and negative bounds"
+    (is
+     (scalar-output-float-in-range?
+      (d/q '[:find ?x .
+             :where [(rand) ?x]])
+      0.0 1.0))
+    (is
+     (scalar-output-float-in-range?
+      (d/q '[:find ?x .
+             :where [(rand 10) ?x]])
+      0.0 10.0))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(rand 0) ?x]])
+      (Datascript_runtime.Data_value.Float 0.0)))
+    (is
+     (scalar-output-float-in-range?
+      (d/q '[:find ?x .
+             :where [(rand -5) ?x]])
+      -5.0 0.0000000000000001))
+    (is
+     (thrown-msg?
+      "Invalid arguments for query function: rand"
+      (d/q '[:find ?x .
+             :where [(rand 1 2) ?x]]))))
+
+  (testing "rand-int truncates random values toward zero"
+    (is
+     (scalar-output-int-in-range?
+      (d/q '[:find ?x .
+             :where [(rand-int 7) ?x]])
+      0 7))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(rand-int 0) ?x]])
+      (Datascript_runtime.Data_value.Int 0)))
+    (is
+     (scalar-output-int-in-range?
+      (d/q '[:find ?x .
+             :where [(rand-int -5) ?x]])
+      -4 1))
+    (is
+     (scalar-output-int-in-range?
+      (d/q '[:find ?x .
+             :where [(rand-int 3.5) ?x]])
+      0 4))
+    (is
+     (thrown-msg?
+      "Invalid arguments for query function: rand-int"
+      (d/q '[:find ?x .
+             :where [(rand-int) ?x]])))))
 
 (deftest test-query-fns
   (testing "predicate without free variables"
