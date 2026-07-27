@@ -108,6 +108,17 @@
      (mapv query-result-int row))
    rows))
 
+(defn ^:vector<vector<string>> query-output-edn-rows
+  [^:vector<array<datascript.lg.query-types/result>> rows]
+  (mapv
+   (fn [^:array<datascript.lg.query-types/result> row]
+     (mapv
+      (fn [^datascript.lg.query-types/result result]
+        (Datascript_runtime.Data_value.to_edn_string
+         (query-types/result-pattern-value result)))
+      row))
+   rows))
+
 (defn ^:option<Datascript_runtime.Data_value.t> sum-query-arguments
   [^:vector<datascript.lg.query-types/result> arguments]
   (Some
@@ -2421,6 +2432,139 @@
       "Invalid arguments for query function: inc"
       (try
         (let [_output (query-v3/q invalid-arity-query)]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))))
+
+(deftest test-query-v3-database-function-get-else
+  (let [database
+        (db/database-view
+         (d/db-with
+          (d/empty-db)
+          [[:db/add 1 :age 42]
+           [:db/add 2 :name "Ada"]]))
+        query
+        (query-v3-function-query
+         (parser/relation-find ["?entity" "?age"])
+         [(parser/make-static-source-input "$")
+          (parser/make-static-value-input
+           (parser/collection-input
+            (parser/scalar-input "?entity")))]
+         (parser/static-function-clause
+          "get-else"
+          [(parser/source-argument "$")
+           (parser/variable-argument "?entity")
+           (parser/constant-argument
+            (Datascript_runtime.Data_value.Keyword ":age"))
+           (parser/constant-argument
+            (Datascript_runtime.Data_value.Int 99))]
+          (parser/scalar-input "?age")))
+        output
+        (query-v3/q
+         query
+         (query-types/source-input
+          (query-types/database-source database))
+         (query-v3-int-collection-input [1 2]))]
+    (is (= [[1 42] [2 99]]
+           (query-int-rows
+            (require-query-v3-relation-output output))))))
+
+(deftest test-query-v3-database-function-get-some
+  (let [database
+        (db/database-view
+         (d/db-with
+          (d/empty-db)
+          [[:db/add 1 :name "Ada"]
+           [:db/add 2 :age 42]
+           [:db/add 3 :other true]]))
+        query
+        (query-v3-function-query
+         (parser/relation-find
+          ["?entity" "?attribute" "?value"])
+         [(parser/make-static-source-input "$")
+          (parser/make-static-value-input
+           (parser/collection-input
+            (parser/scalar-input "?entity")))]
+         (parser/static-function-clause
+          "get-some"
+          [(parser/source-argument "$")
+           (parser/variable-argument "?entity")
+           (parser/constant-argument
+            (Datascript_runtime.Data_value.Keyword ":age"))
+           (parser/constant-argument
+            (Datascript_runtime.Data_value.Keyword ":name"))]
+          (parser/tuple-input
+           [(parser/scalar-input "?attribute")
+            (parser/scalar-input "?value")])))
+        output
+        (query-v3/q
+         query
+         (query-types/source-input
+          (query-types/database-source database))
+         (query-v3-int-collection-input [1 2 3]))]
+    (is
+     (=
+      [["1" ":name" "\"Ada\""]
+       ["2" ":age" "42"]]
+      (query-output-edn-rows
+       (require-query-v3-relation-output output))))))
+
+(deftest test-query-v3-database-function-errors
+  (let [database
+        (db/database-view
+         (d/db-with
+          (d/empty-db)
+          [[:db/add 1 :age 42]]))
+        nil-default-query
+        (query-v3-function-query
+         (parser/relation-find ["?value"])
+         [(parser/make-static-source-input "$")]
+         (parser/static-function-clause
+          "get-else"
+          [(parser/source-argument "$")
+           (parser/constant-argument
+            (Datascript_runtime.Data_value.Int 1))
+           (parser/constant-argument
+            (Datascript_runtime.Data_value.Keyword ":missing"))
+           (parser/constant-argument
+            (Datascript_runtime.Data_value.Nil))]
+          (parser/scalar-input "?value")))
+        relation-source-query
+        (query-v3-function-query
+         (parser/relation-find ["?value"])
+         [(parser/make-static-source-input "$")]
+         (parser/static-function-clause
+          "get-else"
+          [(parser/source-argument "$")
+           (parser/constant-argument
+            (Datascript_runtime.Data_value.Int 1))
+           (parser/constant-argument
+            (Datascript_runtime.Data_value.Keyword ":age"))
+           (parser/constant-argument
+            (Datascript_runtime.Data_value.Int 0))]
+          (parser/scalar-input "?value")))]
+    (is
+     (=
+      "get-else: nil default value is not supported"
+      (try
+        (let [_output
+              (query-v3/q
+               nil-default-query
+               (query-types/source-input
+                (query-types/database-source database)))]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "Predicate source is not a database: $"
+      (try
+        (let [_output
+              (query-v3/q
+               relation-source-query
+               (query-types/source-input
+                (query-types/relation-source
+                 [(query-int-row [1])])))]
           "no error")
         (catch (Invalid_argument message)
           (str message)))))))
