@@ -1285,15 +1285,25 @@
         (Stdlib.invalid_arg
          (str "Invalid arguments for query function: " name))))
     (PurePredicateV3 name function)
-    (if-some [value
-              (built-ins/apply-pure-function
-               function
-               (mapv
-                query-types/result-pattern-value
-                arguments))]
-      (Some value)
-      (Stdlib.invalid_arg
-       (str "Invalid arguments for query function: " name)))
+    (if
+     (or
+      (built-ins/get-else-function? function)
+      (built-ins/get-some-function? function))
+      (if-some [value
+                (query-types/database-function-value
+                 function arguments)]
+        (Some value)
+        (Stdlib.invalid_arg
+         (str "Invalid arguments for query function: " name)))
+      (if-some [value
+                (built-ins/apply-pure-function
+                 function
+                 (mapv
+                  query-types/result-pattern-value
+                  arguments))]
+        (Some value)
+        (Stdlib.invalid_arg
+         (str "Invalid arguments for query function: " name))))
     (VariablePredicateV3 _name callable)
     (query-types/invoke-callable callable arguments)))
 
