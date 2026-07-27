@@ -1,6 +1,8 @@
 (ns ^:no-doc datascript.query-v3
   (:require
+   [datascript.db :as db]
    [datascript.lg.query-types :as query-types]
+   [datascript.parser :as parser]
    [me.tonsky.persistent-sorted-set.arrays :as da]))
 
 (def ^:const lru-cache-size 100)
@@ -123,7 +125,9 @@
 
 (type-record query-context-state-v3
   (rels :vector<datascript.query-v3/relation-v3>)
-  (consts :map<string;datascript.lg.query-types/result>))
+  (consts :map<string;datascript.lg.query-types/result>)
+  (sources :map<string;datascript.lg.query-types/source>)
+  (default-source-symbol :string))
 
 (type-variant query-context-v3
   EmptyContextV3
@@ -132,12 +136,23 @@
 (def empty-context EmptyContextV3)
 
 (defn ^query-context-v3 context-v3
-  [^:vector<relation-v3> relations
-   ^:map<string;datascript.lg.query-types/result> constants]
-  (QueryContextV3
-   (record query-context-state-v3
-     (rels relations)
-     (consts constants))))
+  ([^:vector<relation-v3> relations
+    ^:map<string;datascript.lg.query-types/result> constants]
+   (context-v3 relations constants {}))
+  ([^:vector<relation-v3> relations
+    ^:map<string;datascript.lg.query-types/result> constants
+    ^:map<string;datascript.lg.query-types/source> sources]
+   (context-v3 relations constants sources "$"))
+  ([^:vector<relation-v3> relations
+    ^:map<string;datascript.lg.query-types/result> constants
+    ^:map<string;datascript.lg.query-types/source> sources
+    ^:string default-source-symbol]
+   (QueryContextV3
+    (record query-context-state-v3
+      (rels relations)
+      (consts constants)
+      (sources sources)
+      (default-source-symbol default-source-symbol)))))
 
 (defn ^:bool context-empty? [^query-context-v3 context]
   (match context
@@ -157,12 +172,29 @@
     EmptyContextV3 {}
     (QueryContextV3 state) (:consts state)))
 
+(defn ^:map<string;datascript.lg.query-types/source>
+  context-sources
+  [^query-context-v3 context]
+  (match context
+    EmptyContextV3 {}
+    (QueryContextV3 state) (:sources state)))
+
+(defn ^:string context-default-source-symbol
+  [^query-context-v3 context]
+  (match context
+    EmptyContextV3 "$"
+    (QueryContextV3 state) (:default-source-symbol state)))
+
 (defn- ^query-context-v3 context-with-relations
   [^query-context-v3 context ^:vector<relation-v3> relations]
   (match context
     EmptyContextV3 EmptyContextV3
     (QueryContextV3 state)
-    (context-v3 relations (:consts state))))
+    (context-v3
+     relations
+     (:consts state)
+     (:sources state)
+     (:default-source-symbol state))))
 
 (defn- ^query-context-v3 context-with-constants
   [^query-context-v3 context
@@ -170,7 +202,11 @@
   (match context
     EmptyContextV3 EmptyContextV3
     (QueryContextV3 state)
-    (context-v3 (:rels state) constants)))
+    (context-v3
+     (:rels state)
+     constants
+     (:sources state)
+     (:default-source-symbol state))))
 
 (defprotocol IRelation
   (-project
@@ -589,3 +625,175 @@
              join-symbols
              relation)]
         (join-unrelated remaining-context joined)))))
+
+(defn- ^:tuple<datascript.parser/query-source;vector<datascript.parser/pattern-element>>
+  pattern-clause-parts
+  [^datascript.parser/clause clause]
+  (match clause
+    (parser/PatternClause source pattern)
+    (tuple source pattern)
+    _
+    (Stdlib.invalid_arg "Expected a DataScript pattern clause")))
+
+(defn ^datascript.lg.query-types/source get-source
+  [^query-context-v3 context
+   ^datascript.parser/query-source query-source]
+  (let [source-name
+        (if-some [source-name
+                  (parser/query-source-name query-source)]
+          source-name
+          (context-default-source-symbol context))]
+    (if-some [source (get (context-sources context) source-name)]
+      source
+      (Stdlib.invalid_arg
+       (str "Source " source-name " is not defined")))))
+
+(defn- ^relation-v3 empty-pattern-relation
+  [^:vector<datascript.parser/pattern-element> pattern]
+  (coll-rel pattern []))
+
+(defn- ^relation-v3 resolve-pattern-db-closed
+  [^datascript.db/database-view database
+   ^:vector<datascript.parser/pattern-element> pattern]
+  (if (or (empty? pattern) (> (count pattern) 5))
+    (Stdlib.invalid_arg
+     "DataScript patterns must contain one to five elements")
+    (match
+     (tuple
+      (query-types/pattern-entity-constraint
+       database
+       (query-types/pattern-element-at pattern 0))
+      (query-types/pattern-attr-constraint
+       (query-types/pattern-element-at pattern 1))
+      (query-types/pattern-value-constraint
+       (query-types/pattern-element-at pattern 2))
+      (query-types/pattern-entity-constraint
+       database
+       (query-types/pattern-element-at pattern 3))
+      (query-types/pattern-added-constraint
+       (query-types/pattern-element-at pattern 4)))
+      (tuple
+       (Some entity)
+       (Some attr)
+       (Some value)
+       (Some tx)
+       (Some added))
+      (if-some
+        [resolved-value
+         (query-types/resolve-pattern-value-constraint
+          database attr value)]
+        (let [datoms
+              (db/database-view-search-vector
+               database entity attr resolved-value tx)
+              datoms
+              (if-some [added added]
+                (filterv
+                 (fn [datom]
+                   (= added (db/datom-added datom)))
+                 datoms)
+                datoms)]
+          (coll-rel
+           pattern
+           (mapv
+            (fn [datom]
+              (CollDatomRowV3 datom))
+            datoms)))
+        (empty-pattern-relation pattern))
+      _
+      (empty-pattern-relation pattern))))
+
+(defn ^relation-v3 resolve-pattern-db
+  [^datascript.db/database-view database
+   ^datascript.parser/clause clause]
+  (resolve-pattern-db-closed
+   database
+   (tuple-get (pattern-clause-parts clause) 1)))
+
+(defn- ^:bool pattern-result-equals?
+  [^datascript.lg.query-types/result result
+   ^:Datascript_runtime.Data_value.t constant]
+  (let [value
+        (match result
+          (Datascript_runtime.Query_value.Entity entity)
+          (Some (Datascript_runtime.Data_value.Int entity))
+          (Datascript_runtime.Query_value.Attr attr)
+          (Some (Datascript_runtime.Data_value.Keyword attr))
+          (Datascript_runtime.Query_value.Value value)
+          (Some value)
+          (Datascript_runtime.Query_value.Pull value)
+          (Some value)
+          (Datascript_runtime.Query_value.Added added)
+          (Some
+           (Datascript_runtime.Data_value.Keyword
+            (if added ":db/add" ":db/retract")))
+          _ None)]
+    (if-some [value value]
+      (Datascript_runtime.Data_value.equal value constant)
+      false)))
+
+(defn- ^:bool row-matches-pattern-constants?
+  [^:array<datascript.lg.query-types/result> row
+   ^:vector<datascript.parser/pattern-element> pattern]
+  (reduce-kv
+   (fn [matches index element]
+     (if matches
+       (if-some [constant
+                 (parser/pattern-element-constant element)]
+         (pattern-result-equals? (aget row index) constant)
+         true)
+       false))
+   true
+   pattern))
+
+(defn- ^relation-v3 resolve-pattern-coll-closed
+  [^datascript.lg.query-types/source source
+   ^:vector<datascript.parser/pattern-element> pattern]
+  (if-some [rows (query-types/source-rows source)]
+    (coll-rel
+     pattern
+     (mapv
+      (fn [row]
+        (CollQueryRowV3 row))
+      (filterv
+       (fn [row]
+         (row-matches-pattern-constants? row pattern))
+       rows)))
+    (Stdlib.invalid_arg
+     "Cannot match a DataScript database source as a collection")))
+
+(defn ^relation-v3 resolve-pattern-coll
+  [^datascript.lg.query-types/source source
+   ^datascript.parser/clause clause]
+  (resolve-pattern-coll-closed
+   source
+   (tuple-get (pattern-clause-parts clause) 1)))
+
+(defn- ^:vector<datascript.parser/pattern-element>
+  substitute-context-pattern
+  [^:map<string;datascript.lg.query-types/result> constants
+   ^:vector<datascript.parser/pattern-element> pattern]
+  (mapv
+   (fn [element]
+     (if-some [variable
+               (query-types/pattern-variable-name element)]
+       (if-some [value (get constants variable)]
+         (parser/pattern-constant
+          (query-types/result-pattern-value value))
+         element)
+       element))
+   pattern))
+
+(defn ^query-context-v3 resolve-pattern
+  [^query-context-v3 context ^datascript.parser/clause clause]
+  (let [parts (pattern-clause-parts clause)
+        query-source (tuple-get parts 0)
+        pattern
+        (substitute-context-pattern
+         (context-constants context)
+         (tuple-get parts 1))
+        source (get-source context query-source)
+        relation
+        (if-some [database (query-types/source-database source)]
+          (resolve-pattern-db-closed database pattern)
+          (resolve-pattern-coll-closed source pattern))]
+    (hash-join-rel context relation)))

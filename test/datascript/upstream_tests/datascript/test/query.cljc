@@ -275,6 +275,16 @@
        row)))
    []))
 
+(defn ^:vector<array<datascript.lg.query-types/result>>
+  query-v3-rows
+  [^datascript.query-v3/relation-v3 relation]
+  (query-v3/-fold
+   relation
+   (fn [^:vector<array<datascript.lg.query-types/result>> rows
+        ^:array<datascript.lg.query-types/result> row]
+     (conj rows row))
+   []))
+
 (deftest test-query-v3-array-relation
   (let [relation
         (query-v3/array-rel
@@ -734,6 +744,151 @@
        (query-v3/array-rel
         ["?x"]
         [(query-int-row [99])]))))))
+
+(deftest test-query-v3-context-sources
+  (let [database-value
+        (d/db-with
+         (d/empty-db)
+         [[:db/add 1 :name "Ada"]])
+        database (db/database-view database-value)
+        rows [(query-int-row [1 20])]
+        context
+        (query-v3/context-v3
+         []
+         {}
+         {"$" (query-types/database-source database)
+          "$rows" (query-types/relation-source rows)})]
+    (is
+     (some?
+      (query-types/source-database
+       (query-v3/get-source
+        context parser/DefaultSource))))
+    (is
+     (=
+      1
+      (match
+       (query-types/source-rows
+        (query-v3/get-source
+         context
+         (parser/ExplicitSource
+          (datascript.parser/SrcVar. (symbol "$rows")))))
+       None 0
+       (Some source-rows) (count source-rows))))
+    (is
+     (=
+      "Source $missing is not defined"
+      (try
+        (let [_source
+              (query-v3/get-source
+               context
+               (parser/ExplicitSource
+                (datascript.parser/SrcVar.
+                 (symbol "$missing"))))]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))))
+
+(deftest test-query-v3-resolve-pattern-db
+  (let [database-value
+        (d/db-with
+         (d/empty-db)
+         [[:db/add 1 :name "Ada"]
+          [:db/add 2 :name "Grace"]
+          [:db/add 3 :age 42]])
+        database (db/database-view database-value)
+        clause
+        (parser/pattern-clause
+         [(parser/pattern-variable "?e")
+          (parser/pattern-attribute :name)
+          (parser/pattern-variable "?name")])
+        relation (query-v3/resolve-pattern-db database clause)]
+    (is (= ["?e" "?name"] (vec (query-v3/-symbols relation))))
+    (is (= 2 (query-v3/-size relation)))
+    (is (= ["1" "2"]
+           (mapv
+            (fn [row]
+              (Datascript_runtime.Data_value.to_edn_string
+               (query-types/result-pattern-value
+                ((query-v3/-getter relation "?e") row))))
+            (query-v3-rows relation))))
+    (is (= ["\"Ada\"" "\"Grace\""]
+           (mapv
+            (fn [row]
+              (Datascript_runtime.Data_value.to_edn_string
+               (query-types/result-pattern-value
+                ((query-v3/-getter relation "?name") row))))
+            (query-v3-rows relation))))
+    (is (= 0
+           (query-v3/-size
+            (query-v3/resolve-pattern-db
+             database
+             (parser/pattern-clause
+              [(parser/pattern-variable "?e")
+               (parser/pattern-attribute :name)
+               (parser/pattern-constant
+                (Datascript_runtime.Data_value.String
+                 "Missing"))])))))))
+
+(deftest test-query-v3-resolve-pattern-relation-source
+  (let [rows
+        [(query-int-row [1 20 100])
+         (query-int-row [2 30 200])
+         (query-int-row [3 20 300])]
+        source (query-types/relation-source rows)
+        clause
+        (parser/explicit-pattern-clause
+         "$rows"
+         [(parser/pattern-variable "?x")
+          (parser/pattern-constant
+           (Datascript_runtime.Data_value.Int 20))
+          (parser/pattern-placeholder)])
+        relation
+        (query-v3/resolve-pattern-coll source clause)]
+    (is (= ["?x"] (vec (query-v3/-symbols relation))))
+    (is (= [[1 20 100] [3 20 300]]
+           (query-v3-int-rows relation)))
+    (let [repeated
+          (query-v3/resolve-pattern-coll
+           source
+           (parser/explicit-pattern-clause
+            "$rows"
+            [(parser/pattern-variable "?x")
+             (parser/pattern-variable "?x")]))]
+      (is (= [[1 20 100] [2 30 200] [3 20 300]]
+             (query-v3-int-rows repeated)))
+      (is (= 20
+             (query-result-int
+              ((query-v3/-getter repeated "?x")
+               (nth rows 0))))))))
+
+(deftest test-query-v3-resolve-pattern-context
+  (let [rows
+        [(query-int-row [1 10])
+         (query-int-row [2 20])
+         (query-int-row [3 30])]
+        existing
+        (query-v3/array-rel
+         ["?x" "?left"]
+         [(query-int-row [1 100])
+          (query-int-row [3 300])
+          (query-int-row [3 301])])
+        context
+        (query-v3/context-v3
+         [existing]
+         {"?wanted" (query-int-result 30)}
+         {"$rows" (query-types/relation-source rows)})
+        clause
+        (parser/explicit-pattern-clause
+         "$rows"
+         [(parser/pattern-variable "?x")
+          (parser/pattern-variable "?wanted")])
+        resolved (query-v3/resolve-pattern context clause)
+        relations (query-v3-context-relations resolved)]
+    (is (= 1 (count relations)))
+    (is (= ["?x" "?left"]
+           (vec (query-v3/-symbols (nth relations 0)))))
+    (is (= [[3 300] [3 301]]
+           (query-v3-int-rows (nth relations 0))))))
 
 (deftest test-public-tuple-key-helpers
   (let [attrs (query-types/index-attrs ["?x" "?y"])
