@@ -33,3 +33,5 @@ type-predicate-extra=ignored
 empty-predicate-empty=true
 empty-predicate-extra=ignored
 empty-scalar-error=ISeqable
+identity-empty=nil
+identity-extra=ignored

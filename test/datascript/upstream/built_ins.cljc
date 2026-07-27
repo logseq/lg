@@ -598,9 +598,7 @@
     values]
   (match function
     Identity
-    (if (= 1 (count values))
-      (nth values 0)
-      None)
+    (Some (first-value values))
     Add (add-values values)
     Subtract
     (Datascript_runtime.Data_value.subtract values)

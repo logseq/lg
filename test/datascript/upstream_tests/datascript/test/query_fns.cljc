@@ -592,6 +592,39 @@
         (catch (Invalid_argument message)
           (str message)))))))
 
+(deftest test-core-identity-query-functions-unary-invocation
+  (testing "identity aliases treat a missing argument as nil"
+    (is
+     (scalar-output-missing?
+      (d/q '[:find ?x .
+             :where [(identity) ?x]])))
+    (is
+     (scalar-output-missing?
+      (d/q '[:find ?x .
+             :where [(ground) ?x]])))
+    (is
+     (scalar-output-missing?
+      (d/q '[:find ?x .
+             :where [(untuple) ?x]]))))
+
+  (testing "identity aliases ignore extra arguments"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(identity 1 2) ?x]])
+      (Datascript_runtime.Data_value.Int 1)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(ground 1 2) ?x]])
+      (Datascript_runtime.Data_value.Int 1)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(untuple [1] [2]) ?x]])
+      (Datascript_runtime.Data_value.Vector
+       (list (Datascript_runtime.Data_value.Int 1)))))))
+
 (deftest test-core-collection-value-query-functions
   (testing "set preserves uniqueness and nil conversion"
     (is

@@ -3165,7 +3165,35 @@
      "untuple"
      (query-form-vector
       [(Datascript_runtime.Data_value.Int 1)
-       (Datascript_runtime.Data_value.String "a")])))))
+       (Datascript_runtime.Data_value.String "a")]))))
+  (is
+   (=
+    []
+    (query-v3-static-function-output-edn "identity" [])))
+  (is
+   (=
+    [["1"]]
+    (query-v3-static-function-output-edn
+     "identity"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.Int 1))
+      (parser/constant-argument
+       (Datascript_runtime.Data_value.Int 2))])))
+  (is
+   (=
+    []
+    (query-v3-static-function-output-edn "ground" [])))
+  (is
+   (=
+    [["[1]"]]
+    (query-v3-static-function-output-edn
+     "untuple"
+     [(parser/constant-argument
+       (query-form-vector
+        [(Datascript_runtime.Data_value.Int 1)]))
+      (parser/constant-argument
+       (query-form-vector
+        [(Datascript_runtime.Data_value.Int 2)]))]))))
 
 (deftest test-query-v3-ordered-collection-constructors
   (let [arguments
@@ -3236,30 +3264,9 @@
   (let [one
         [(parser/constant-argument
           (Datascript_runtime.Data_value.Int 1))]
-        two
-        [(parser/constant-argument
-          (Datascript_runtime.Data_value.Int 1))
-         (parser/constant-argument
-          (Datascript_runtime.Data_value.Int 2))]
         one-key
         [(parser/constant-argument
           (Datascript_runtime.Data_value.Keyword ":a"))]]
-    (is
-     (=
-      "Invalid arguments for query function: identity"
-      (query-v3-static-function-error "identity" [])))
-    (is
-     (=
-      "Invalid arguments for query function: identity"
-      (query-v3-static-function-error "identity" two)))
-    (is
-     (=
-      "Invalid arguments for query function: ground"
-      (query-v3-static-function-error "ground" [])))
-    (is
-     (=
-      "Invalid arguments for query function: untuple"
-      (query-v3-static-function-error "untuple" two)))
     (is
      (=
       "Invalid arguments for query function: hash-map"
