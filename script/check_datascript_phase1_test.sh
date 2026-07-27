@@ -207,6 +207,10 @@ for query_v3_entry in \
   'arity	datascript.query-v3/resolve-pattern-coll	2	fixed' \
   'var	datascript.query-v3/resolve-pattern' \
   'arity	datascript.query-v3/resolve-pattern	2	fixed' \
+  'var	datascript.query-v3/clause-syms' \
+  'arity	datascript.query-v3/clause-syms	1	fixed' \
+  'var	datascript.query-v3/substitute-constants' \
+  'arity	datascript.query-v3/substitute-constants	2	fixed' \
   'var	datascript.query-v3/collect-args!' \
   'arity	datascript.query-v3/collect-args!	4	fixed' \
   'var	datascript.query-v3/get-f' \

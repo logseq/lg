@@ -2082,6 +2082,74 @@
       (catch (Invalid_argument message)
         (str message))))))
 
+(defn ^datascript.parser/clause query-v3-substitution-clause []
+  (parser/static-and-clause
+   [(parser/pattern-clause
+     [(parser/pattern-variable "?entity")
+      (parser/pattern-attribute :score)
+      (parser/pattern-variable "?score")
+      (parser/pattern-variable "?entity")])
+    (parser/static-predicate-clause
+     ">"
+     [(parser/variable-argument "?score")
+      (parser/variable-argument "?limit")])]))
+
+(deftest test-query-v3-clause-symbols
+  (let [clause (query-v3-substitution-clause)]
+    (is (= #{"?entity" "?score" "?limit"}
+           (query-v3/clause-syms clause)))
+    (is
+     (=
+      #{"?entity" "?score" "?limit"}
+      (query-v3/clause-syms
+       (parser/static-not-clause
+        [clause]
+        "(not (and ...))"))))))
+
+(deftest test-query-v3-substitute-constants
+  (let [clause (query-v3-substitution-clause)
+        context
+        (query-v3/context-v3
+         []
+         {"?entity" (query-int-result 1)
+          "?limit" (query-int-result 10)})
+        substituted
+        (query-v3/substitute-constants clause context)
+        unchanged
+        (query-v3/substitute-constants
+         clause
+         (query-v3/context-v3 [] {}))]
+    (is (= #{"?score"}
+           (query-v3/clause-syms substituted)))
+    (is (= clause unchanged))
+    (is (= #{"?entity" "?score" "?limit"}
+           (query-v3/clause-syms clause)))))
+
+(deftest test-query-v3-substitute-constants-in-pattern-resolution
+  (let [rows
+        [(query-int-row [1 10])
+         (query-int-row [2 20])]
+        context
+        (query-v3/context-v3
+         []
+         {"?entity" (query-int-result 1)}
+         {"$rows" (query-types/relation-source rows)})
+        clause
+        (parser/explicit-pattern-clause
+         "$rows"
+         [(parser/pattern-variable "?entity")
+          (parser/pattern-variable "?value")])
+        resolved (query-v3/resolve-pattern context clause)
+        constants (query-v3-context-constants resolved)]
+    (is (= 0
+           (count (query-v3-context-relations resolved))))
+    (is (= 10
+           (query-result-int
+            (get constants "?value" (query-int-result 0)))))
+    (is (= 1
+           (query-result-int
+            (get constants "?entity" (query-int-result 0)))))))
+
 (deftest test-public-tuple-key-helpers
   (let [attrs (query-types/index-attrs ["?x" "?y"])
         row (query-int-row [10 20])

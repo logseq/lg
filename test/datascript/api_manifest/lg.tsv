@@ -854,6 +854,7 @@ arity	datascript.query-v3/arange	2	fixed
 arity	datascript.query-v3/array-rel	2	fixed
 arity	datascript.query-v3/bind	2	fixed
 arity	datascript.query-v3/check-bound	3	fixed
+arity	datascript.query-v3/clause-syms	1	fixed
 arity	datascript.query-v3/coll-rel	2	fixed
 arity	datascript.query-v3/collect-args!	4	fixed
 arity	datascript.query-v3/collect-consts	3	fixed
@@ -897,6 +898,7 @@ arity	datascript.query-v3/resolve-pattern-db	2	fixed
 arity	datascript.query-v3/resolve-predicate	2	fixed
 arity	datascript.query-v3/singleton-rel	0	fixed
 arity	datascript.query-v3/subarr	3	fixed
+arity	datascript.query-v3/substitute-constants	2	fixed
 arity	datascript.query-v3/subtract-contexts	3	fixed
 arity	datascript.query-v3/subtract-from-rel	3	fixed
 arity	datascript.query-v3/upd-default-source	2	fixed
@@ -1867,6 +1869,7 @@ var	datascript.query-v3/arange
 var	datascript.query-v3/array-rel
 var	datascript.query-v3/bind
 var	datascript.query-v3/check-bound
+var	datascript.query-v3/clause-syms
 var	datascript.query-v3/coll-rel
 var	datascript.query-v3/collect-args!
 var	datascript.query-v3/collect-consts
@@ -1908,6 +1911,7 @@ var	datascript.query-v3/resolve-pattern-db
 var	datascript.query-v3/resolve-predicate
 var	datascript.query-v3/singleton-rel
 var	datascript.query-v3/subarr
+var	datascript.query-v3/substitute-constants
 var	datascript.query-v3/subtract-contexts
 var	datascript.query-v3/subtract-from-rel
 var	datascript.query-v3/upd-default-source

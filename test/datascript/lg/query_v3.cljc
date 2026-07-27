@@ -945,29 +945,53 @@
    source
    (tuple-get (pattern-clause-parts clause) 1)))
 
-(defn- ^:vector<datascript.parser/pattern-element>
-  substitute-context-pattern
+(defn ^:set<string> clause-syms
+  [^datascript.parser/clause clause]
+  (reduce
+   (fn [symbols variable]
+     (conj symbols (str (.-symbol variable))))
+   (set-of :string)
+   (parser/clause-vars clause)))
+
+(defn- ^datascript.parser/traversable substitute-constant-node
   [^:map<string;datascript.lg.query-types/result> constants
-   ^:vector<datascript.parser/pattern-element> pattern]
-  (mapv
-   (fn [element]
-     (if-some [variable
-               (query-types/pattern-variable-name element)]
-       (if-some [value (get constants variable)]
-         (parser/pattern-constant
-          (query-types/result-pattern-value value))
-         element)
-       element))
-   pattern))
+   ^datascript.parser/traversable node]
+  (if-some [symbol
+            (parser/traversable-variable-name node)]
+    (if-some [value (get constants symbol)]
+      (parser/data-traversable
+       (query-types/result-pattern-value value))
+      node)
+    node))
+
+(defn ^datascript.parser/clause substitute-constants
+  [^datascript.parser/clause clause
+   ^query-context-v3 context]
+  (let [constants (context-constants context)]
+    (if
+     (some
+      (fn [symbol]
+        (contains? constants symbol))
+      (clause-syms clause))
+      (let [walked
+            (parser/postwalk
+             (parser/clause-traversable clause)
+             (fn [node]
+               (substitute-constant-node
+                constants node)))]
+        (if-some [substituted
+                  (parser/traversable-clause-value walked)]
+          substituted
+          (Stdlib.invalid_arg
+           "Constant substitution did not return a clause")))
+      clause)))
 
 (defn ^query-context-v3 resolve-pattern
   [^query-context-v3 context ^datascript.parser/clause clause]
-  (let [parts (pattern-clause-parts clause)
+  (let [substituted (substitute-constants clause context)
+        parts (pattern-clause-parts substituted)
         query-source (tuple-get parts 0)
-        pattern
-        (substitute-context-pattern
-         (context-constants context)
-         (tuple-get parts 1))
+        pattern (tuple-get parts 1)
         source (get-source context query-source)
         relation
         (if-some [database (query-types/source-database source)]
