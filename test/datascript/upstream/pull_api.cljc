@@ -872,9 +872,8 @@
                       (non-empty-cursor
                        (next-cursor cursor))))))))))))))
 
-(defn ^ReverseAttrsState advance-reverse-state
-  [^ReverseAttrsState state
-   ^:map<Datascript_runtime.Data_value.t;pulled-value> values]
+(defn advance-reverse-state
+  [state values]
   (let [attrs (.-attrs state)
         index (.-attr-index state)]
     (record ReverseAttrsState
@@ -887,8 +886,8 @@
       (attr-index (inc index))
       (id (.-id state)))))
 
-(defn ^:vector<frame> run-reverse-attrs-frame
-  [^PullContext context ^ReverseAttrsState state]
+(defn run-reverse-attrs-frame
+  [context state]
   (match (.-attr state)
     None
     [(ResultFrame

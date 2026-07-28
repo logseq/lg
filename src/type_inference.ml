@@ -672,6 +672,12 @@ let add_record_field_constraint name keyword field_ty params =
       (Ok fields) inferred_fields
   in
   let merge_fields fields =
+    let directly_seqable = function
+      | TList _ | TVector _ | TSeq _
+      | TOcaml_app ("Lg_runtime.Runtime_map.t", [ _; _ ]) ->
+          true
+      | _ -> false
+    in
     let replace_field_type ty =
       Ok
         (make_field keyword ty
@@ -769,12 +775,14 @@ let add_record_field_constraint name keyword field_ty params =
               :: List.filter
                    (fun candidate -> candidate.keyword <> keyword)
                    fields)
-        | (TVector _ as vector), seqable
-          when Option.is_some (Types.seqable_constraint_info seqable) ->
-            replace_field_type (refine_type vector seqable)
-        | seqable, (TVector _ as vector)
-          when Option.is_some (Types.seqable_constraint_info seqable) ->
-            replace_field_type (refine_type vector seqable)
+        | concrete, seqable
+          when directly_seqable concrete
+               && Option.is_some (Types.seqable_constraint_info seqable) ->
+            replace_field_type (refine_type concrete seqable)
+        | seqable, concrete
+          when directly_seqable concrete
+               && Option.is_some (Types.seqable_constraint_info seqable) ->
+            replace_field_type (refine_type concrete seqable)
         | existing, ((TRecord _ | TNamed_record _) as inferred)
           when Option.is_some (Types.seqable_constraint_info existing) ->
             Ok
