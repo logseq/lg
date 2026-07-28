@@ -4597,6 +4597,12 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         infer_expected
           (if Types.equal arg_ty (TOcaml "int") then TOcaml "int" else TInt)
           params arg
+    | FList [ FSymbol "double"; arg ] ->
+        let expected_ty =
+          if Types.equal (inferred_form_type params arg) TFloat then TFloat
+          else TInt
+        in
+        infer_expected expected_ty params arg
     | FList
         [
           FSymbol

@@ -21,8 +21,7 @@
 (def empty-path #?(:native 0 :cljs 0.0))
 
 (defn path-get
-  #?(:native [^:int path ^:int level]
-     :cljs [^:float path ^:int level])
+  [path level]
   #?(:native
      (if (< level max-safe-level)
        (bit-and (bit-shift-right path (* level bits-per-level)) bit-mask)
@@ -37,8 +36,7 @@
         bit-mask))))
 
 (defn path-set
-  #?(:native [^:int path ^:int level ^:int idx]
-     :cljs [^:float path ^:int level ^:int idx])
+  [path level idx]
   #?(:native
      (let [small? (and (< path max-safe-path) (< level max-safe-level))
            old (path-get path level)
@@ -57,35 +55,33 @@
         (Float.sub path (Float.mul (double old) factor))
         (Float.mul (double idx) factor)))))
 
-(defn path-inc #?(:native [^:int path] :cljs [^:float path])
+(defn path-inc [path]
   #?(:native (inc path) :cljs (Float.add path 1.0)))
 
-(defn path-dec #?(:native [^:int path] :cljs [^:float path])
+(defn path-dec [path]
   #?(:native (dec path) :cljs (Float.sub path 1.0)))
 
 (defn path-cmp
-  #?(:native [^:int path1 ^:int path2]
-     :cljs [^:float path1 ^:float path2])
+  [path1 path2]
   #?(:native (- path1 path2) :cljs (Float.sub path1 path2)))
 
 (defn path-lt
-  #?(:native [^:int path1 ^:int path2]
-     :cljs [^:float path1 ^:float path2])
-  (< path1 path2))
+  [path1 path2]
+  #?(:native (< path1 path2)
+     :cljs (< (Float.sub path1 path2) 0.0)))
 
 (defn path-lte
-  #?(:native [^:int path1 ^:int path2]
-     :cljs [^:float path1 ^:float path2])
-  (<= path1 path2))
+  [path1 path2]
+  #?(:native (<= path1 path2)
+     :cljs (<= (Float.sub path1 path2) 0.0)))
 
 (defn path-eq
-  #?(:native [^:int path1 ^:int path2]
-     :cljs [^:float path1 ^:float path2])
-  (= path1 path2))
+  [path1 path2]
+  #?(:native (= path1 path2)
+     :cljs (= (Float.sub path1 path2) 0.0)))
 
 (defn path-same-leaf
-  #?(:native [^:int path1 ^:int path2]
-     :cljs [^:float path1 ^:float path2])
+  [path1 path2]
   #?(:native
      (if (and (< path1 max-safe-path) (< path2 max-safe-path))
        (= (bit-shift-right path1 bits-per-level)
@@ -96,7 +92,7 @@
      (= (Float.floor (/ path1 32.0))
         (Float.floor (/ path2 32.0)))))
 
-(defn path-str #?(:native [^:int path] :cljs [^:float path])
+(defn path-str [path]
   #?(:native
      (loop [result []
             path path]

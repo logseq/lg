@@ -83,6 +83,9 @@ expect_text "the full pinned commit is recorded" "$upstream_doc" \
 expect_no_text "built-in algorithms contain no inline type hints" \
   test/datascript/upstream/built_ins.cljc \
   '\^(:[[:alpha:]]|[[:upper:]])'
+expect_no_text "PSS algorithms contain no inline type hints" \
+  datascript/me/tonsky/persistent_sorted_set.cljc \
+  '\^(:[[:alpha:]]|[[:upper:]])'
 
 for mapping in \
   'src/datascript/query.cljc.*test/datascript/lg/query.cljc' \
