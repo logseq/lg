@@ -197,6 +197,11 @@ expect_no_hints_between \
   test/datascript/upstream/pull_api.cljc \
   parse-opts pull \
   '\^(:[[:alpha:]]|[[:alpha:]])'
+expect_no_hints_between \
+  "pull public and pull-many helpers contain no local type hints" \
+  test/datascript/upstream/pull_api.cljc \
+  pull pull-many \
+  '\^(:[[:alpha:]]|[[:alpha:]])'
 
 for mapping in \
   'src/datascript/query.cljc.*test/datascript/lg/query.cljc' \

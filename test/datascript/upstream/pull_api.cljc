@@ -1518,51 +1518,32 @@
             source
             entity-ref
             (first options))))))}
-  ([^datascript.db/database-view database
-    ^:vector<datascript.pull-parser/pull-source-item> pattern
-    ^:Datascript_runtime.Data_value.entity_ref entity-ref]
+  ([database pattern entity-ref]
    (pull-source database pattern entity-ref))
-  ([^datascript.db/database-view database
-    ^:vector<datascript.pull-parser/pull-source-item> pattern
-    ^:Datascript_runtime.Data_value.entity_ref entity-ref
-    ^PullOptions options]
+  ([database pattern entity-ref options]
    (pull-source-with-options database pattern entity-ref options)))
 
-(defn
-  ^:vector<option<map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>>>
-  pull-many-parsed
-  [^datascript.db/database-view database
-   ^datascript.pull-parser/PullPattern pattern
-   ^:vector<Datascript_runtime.Data_value.entity_ref> entity-refs]
+(defn pull-many-parsed
+  [database pattern entity-refs]
   (mapv
    (fn [entity-ref]
      (pull-parsed database pattern entity-ref))
    entity-refs))
 
-(defn ^:vector<Datascript_runtime.Data_value.entity_ref>
-  entity-ids-to-refs
-  [^:vector<int> entity-ids]
+(defn entity-ids-to-refs
+  [entity-ids]
   (mapv
    (fn [entity-id]
      (Datascript_runtime.Data_value.Entity_id entity-id))
    entity-ids))
 
-(defn
-  ^:vector<option<map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>>>
-  pull-many-source
-  [^datascript.db/database-view database
-   ^:vector<datascript.pull-parser/pull-source-item> source
-  ^:vector<Datascript_runtime.Data_value.entity_ref> entity-refs]
+(defn pull-many-source
+  [database source entity-refs]
   (let [pattern (dpp/parse-pattern-view database source)]
     (pull-many-parsed database pattern entity-refs)))
 
-(defn
-  ^:vector<option<map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>>>
-  pull-many-source-with-options
-  [^datascript.db/database-view database
-   ^:vector<datascript.pull-parser/pull-source-item> source
-   ^:vector<Datascript_runtime.Data_value.entity_ref> entity-refs
-   ^PullOptions options]
+(defn pull-many-source-with-options
+  [database source entity-refs options]
   (let [pattern (dpp/parse-pattern-view database source)]
     (mapv
      (fn [entity-ref]
