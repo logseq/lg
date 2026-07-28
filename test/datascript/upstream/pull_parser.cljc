@@ -286,8 +286,8 @@
     (reverse-attrs [])
     (wildcard true)))
 
-(defn ^pull-attr attribute
-  [^datascript.db/database-view database ^:keyword source-attr]
+(defn attribute
+  [database source-attr]
   (let [reverse (db/reverse-ref? source-attr)
         name (if reverse (db/reverse-ref source-attr) source-attr)
         ref (db/database-view-ref? database name)
@@ -326,24 +326,24 @@
            (:wildcard default-pattern)))
         (PullAttribute data)))))
 
-(defn ^:option<Datascript_runtime.Data_value.t> identity-value
-  [^:option<Datascript_runtime.Data_value.t> value]
+(defn identity-value
+  [value]
   value)
 
-(defn ^PullAttrData attr-data [^pull-attr attr]
+(defn attr-data [attr]
   (match attr
     (PullAttribute data) data
     (PullNested data _ _ _ _ _) data))
 
-(defn ^pull-attr replace-attr-data
-  [^pull-attr attr ^PullAttrData data]
+(defn replace-attr-data
+  [attr data]
   (match attr
     (PullAttribute _) (PullAttribute data)
     (PullNested _ attrs first-attr last-attr reverse-attrs wildcard)
     (PullNested
      data attrs first-attr last-attr reverse-attrs wildcard)))
 
-(defn ^:option<PullPattern> attr-pattern [^pull-attr attr]
+(defn attr-pattern [attr]
   (match attr
     (PullAttribute _) None
     (PullNested _ attrs first-attr last-attr reverse-attrs wildcard)
