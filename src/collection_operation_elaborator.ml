@@ -2619,6 +2619,38 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                           in
                           let prepare_old expected argument =
                             match (expected, argument.ty, updater_row_type) with
+                            | ( TRecord row_fields,
+                                (TRecord actual_fields
+                                | TNamed_record { fields = actual_fields; _ }),
+                                Some type_name ) ->
+                                let rec project projected = function
+                                  | [] ->
+                                      Ok
+                                        (Semantic_ir.Record
+                                           (List.rev projected, Some type_name))
+                                  | (row_field : field) :: rest -> (
+                                      match
+                                        find_field row_field.keyword actual_fields
+                                      with
+                                      | None ->
+                                          Error.error
+                                            ("record argument is missing field "
+                                           ^ row_field.keyword)
+                                      | Some actual_field ->
+                                          let value =
+                                            typed_ir actual_field.ty
+                                              (Structural_map.field_expr argument
+                                                 actual_field)
+                                          in
+                                          Result.bind
+                                            (prepare row_field.ty value)
+                                            (fun value ->
+                                              project
+                                                ((row_field.ocaml_name, value)
+                                                :: projected)
+                                                rest))
+                                in
+                                project [] row_fields
                             | TRecord row_fields, dynamic_ty, Some type_name
                               when Types.is_dynamic dynamic_ty ->
                                 let rec unpack_fields unpacked = function

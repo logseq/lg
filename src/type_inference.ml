@@ -1360,11 +1360,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     ~lookup_function_ty
     ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
     ~resolve_named_record params body_forms =
-  let unresolved_parameter_names =
-    params
-    |> List.filter_map (fun (name, ty) ->
-           match ty with TUnknown | TMeta _ | TVar _ -> Some name | _ -> None)
-  in
   let branch_depth = ref 0 in
   let branch_hint_symbols = ref [] in
   let with_branch inference =
@@ -2960,15 +2955,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     in
     let infer_target =
       match (target, pairs) with
-      | FSymbol name, (FKeyword _ :: _ | []) ->
-          Result.map
-            (fun params ->
-              match string_assoc_opt name params with
-              | Some (TRecord _ as record_ty)
-                when string_mem name unresolved_parameter_names ->
-                  replace_param name (Types.dynamic_constraint record_ty) params
-              | Some _ | None -> params)
-            (infer_form params target)
+      | FSymbol _, (FKeyword _ :: _ | []) -> infer_form params target
       | FSymbol name, key_form :: value_form :: _ -> (
           let target_ty =
             string_assoc_opt name params |> Option.value ~default:TUnknown
@@ -3887,19 +3874,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         | None -> infer_all params extra_arguments
         | Some (field_ty, extra_tys, return_ty) -> (
             let field_ty = updated_value_type field_ty return_ty in
-            let row_updater =
-              match field_ty with
-              | TRecord _ | TNamed_record _ -> true
-              | _ -> false
-            in
-            let field_ty =
-              if row_updater then Types.dynamic_constraint field_ty
-              else field_ty
-            in
-            let extra_tys =
-              if row_updater then List.map materialize_dynamic_unknown extra_tys
-              else extra_tys
-            in
             match
               add_record_field_constraint target keyword field_ty params
             with
