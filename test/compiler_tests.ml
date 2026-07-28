@@ -18721,20 +18721,22 @@ let test_hash_dispatches_to_record_ihash () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_dynamic_hash_dispatches_to_deftype_ihash () =
+let test_nominal_record_fields_preserve_deftype_ihash () =
   let source =
     {|
 (deftype HashBox [^int value]
   IHash
   (-hash [this]
     (.-value this)))
-(defrecord Envelope [^:dynamic item])
+(defrecord Envelope [^HashBox item])
 (def box (:item (Envelope. (HashBox. 42))))
 (println (hash box))
 |}
   in
   let native_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "dynamic_hash_dispatches_to_deftype_ihash" "42\n"
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "nominal record fields must preserve static hash dispatch";
+  assert_ocaml_runs "nominal_record_fields_preserve_deftype_ihash" "42\n"
     native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
@@ -18763,20 +18765,29 @@ let test_numeric_double_equals_supports_mixed_numbers () =
   assert_ocaml_runs "numeric_double_equals_supports_mixed_numbers"
     "true:true:false\n" ocaml_source
 
-let test_case_supports_dynamic_keyword_and_string_targets () =
+let test_case_supports_closed_keyword_and_string_targets () =
   let source =
     {|
-(defn choose [^:dynamic value]
-  (case value
-    :answer 1
-    "answer" 2
-    0))
-(println (str (choose :answer) ":" (choose "answer") ":" (choose :missing)))
+(type-variant case-input
+  (KeywordValue :keyword)
+  (StringValue :string))
+(defn choose [^case-input value]
+  (match value
+    (KeywordValue keyword)
+      (case keyword :answer 1 0)
+    (StringValue text)
+      (case text "answer" 2 0)))
+(println
+  (str (choose (KeywordValue :answer)) ":"
+       (choose (StringValue "answer")) ":"
+       (choose (KeywordValue :missing))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "case_supports_dynamic_keyword_and_string_targets" "1:2:0\n"
-    ocaml_source
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "closed case targets must remain static";
+  assert_ocaml_runs "case_supports_closed_keyword_and_string_targets"
+    "1:2:0\n" ocaml_source
 
 let test_batched_numeric_scalar_core_functions_reject_unchecked_arity () =
   Lg.Compiler.compile_string {|(def x (unchecked-add 1))|}
@@ -33196,14 +33207,14 @@ let tests =
     ( "hash matches Clojure scalar and collection values",
       test_hash_matches_clojure_scalar_and_collection_values );
     ("hash dispatches to record IHash", test_hash_dispatches_to_record_ihash);
-    ( "dynamic hash dispatches to deftype IHash",
-      test_dynamic_hash_dispatches_to_deftype_ihash );
+    ( "nominal record fields preserve deftype IHash",
+      test_nominal_record_fields_preserve_deftype_ihash );
     ( "hash-unordered-coll uses static seqable capabilities",
       test_hash_unordered_coll_uses_static_seqable_capabilities );
     ( "numeric == supports mixed numbers",
       test_numeric_double_equals_supports_mixed_numbers );
-    ( "case supports dynamic keyword and string targets",
-      test_case_supports_dynamic_keyword_and_string_targets );
+    ( "case supports closed keyword and string targets",
+      test_case_supports_closed_keyword_and_string_targets );
     ( "batched numeric/scalar core functions reject unchecked arity",
       test_batched_numeric_scalar_core_functions_reject_unchecked_arity );
     ( "batched numeric/scalar core functions reject bad name arg",
