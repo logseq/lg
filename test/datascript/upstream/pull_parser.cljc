@@ -103,50 +103,46 @@
   (PullMapPatternValue :vector<pull-source-item>)
   (PullMapRecursionValue :option<int>))
 
-(defn ^pull-attr-spec attr-name-spec [^:keyword attr]
+(defn attr-name-spec [attr]
   (PullAttrNameSpec attr))
 
-(defn ^pull-attr-spec attr-expr-spec
-  [^pull-attr-spec attr
-   ^:vector<pull-source-option> options]
+(defn attr-expr-spec
+  [attr options]
   (PullAttrExprSpec attr options))
 
-(defn ^pull-attr-spec legacy-limit-spec
-  [^pull-attr-spec attr ^:option<int> limit]
+(defn legacy-limit-spec
+  [attr limit]
   (PullLegacyLimitSpec attr limit))
 
-(defn ^pull-attr-spec legacy-default-spec
-  [^pull-attr-spec attr
-   ^:Datascript_runtime.Data_value.t default]
+(defn legacy-default-spec
+  [attr default]
   (PullLegacyDefaultSpec attr default))
 
-(defn ^pull-attr-spec invalid-attr-spec
-  [^:Datascript_runtime.Data_value.t fragment]
+(defn invalid-attr-spec
+  [fragment]
   (PullInvalidAttrSpec fragment))
 
-(defn ^pull-map-value map-pattern-value
-  [^:vector<pull-source-item> pattern]
+(defn map-pattern-value
+  [pattern]
   (PullMapPatternValue pattern))
 
-(defn ^pull-map-value map-recursion-value
-  [^:option<int> limit]
+(defn map-recursion-value
+  [limit]
   (PullMapRecursionValue limit))
 
-(defn ^pull-source-item source-attribute [^:keyword source-attr]
+(defn source-attribute [source-attr]
   (PullSourceAttribute source-attr))
 
-(def ^pull-source-item source-wildcard PullSourceWildcard)
+(def source-wildcard PullSourceWildcard)
 
-(defn ^pull-source-item source-default
-  [^:keyword source-attr
-   ^:Datascript_runtime.Data_value.t default]
+(defn source-default
+  [source-attr default]
   (PullSourceOptions
    source-attr
    [(PullOptionDefault default)]))
 
-(defn ^pull-source-item source-alias-value
-  [^:keyword source-attr
-   ^:Datascript_runtime.Data_value.t alias]
+(defn source-alias-value
+  [source-attr alias]
   (PullSourceOptions
    source-attr
    [(PullOptionAlias alias)]))

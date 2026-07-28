@@ -216,6 +216,11 @@ expect_no_text \
   "pull constructor and frame signatures remain inferred" \
   test/datascript/upstream/pull_api.cljc \
   '^\(signature datascript\.pull-api/(pull-options|expanding-ref-frame|run-multival-ref-frame)[[:space:]]*$'
+expect_no_hints_between \
+  "pull parser source constructors contain no local type hints" \
+  test/datascript/upstream/pull_parser.cljc \
+  attr-name-spec source-alias \
+  '\^(:[[:alpha:]]|[[:alpha:]])'
 
 for mapping in \
   'src/datascript/query.cljc.*test/datascript/lg/query.cljc' \
