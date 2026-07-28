@@ -2,6 +2,7 @@ type 'db result =
   | Entity of int
   | Attr of string
   | Value of Data_value.t
+  | Metadata of Data_value.t * (Data_value.t * Data_value.t) list
   | Database of 'db
   | Pull of Data_value.t
   | Added of bool
@@ -49,6 +50,7 @@ val relation_source : 'db result array Rrbvec.t -> 'db source
 val entity : int -> 'db result
 val attr : string -> 'db result
 val value : Data_value.t -> 'db result
+val metadata : Data_value.t -> Data_value.t -> 'db result
 val database : 'db -> 'db result
 val pull : Data_value.t -> 'db result
 val added : bool -> 'db result
@@ -59,6 +61,7 @@ val invoke_callable : 'db callable -> 'db result Rrbvec.t -> Data_value.t option
 val source_database : 'db source -> 'db option
 val source_rows : 'db source -> 'db result array Rrbvec.t option
 val result_value : 'db result -> Data_value.t option
+val result_metadata : 'db result -> Data_value.t option
 val scalar_binding : 'db result -> 'db binding_value
 val collection_binding : 'db binding_value Rrbvec.t -> 'db binding_value
 val binding_result : 'db binding_value -> 'db result option

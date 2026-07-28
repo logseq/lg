@@ -472,6 +472,8 @@
     attr
     (Datascript_runtime.Query_value.Value value)
     (Datascript_runtime.Data_value.to_edn_string value)
+    (Datascript_runtime.Query_value.Metadata value _)
+    (Datascript_runtime.Data_value.to_edn_string value)
     (Datascript_runtime.Query_value.Database database)
     (database-view-print-string-v3 database)
     (Datascript_runtime.Query_value.Pull value)
@@ -1239,6 +1241,8 @@
           (Some (Datascript_runtime.Data_value.Keyword attr))
           (Datascript_runtime.Query_value.Value value)
           (Some value)
+          (Datascript_runtime.Query_value.Metadata value _)
+          (Some value)
           (Datascript_runtime.Query_value.Pull value)
           (Some value)
           (Datascript_runtime.Query_value.Added added)
@@ -1519,17 +1523,21 @@
     (PurePredicateV3 name function)
     (if (built-ins/complement-function? function)
       true
-      (if (built-ins/differ-function? function)
-        (built-ins/apply-differ
-         (mapv query-types/result-pattern-value arguments))
-        (if-some
-          [value
-           (built-ins/apply-pure-function
-            function
-            (mapv query-types/result-pattern-value arguments))]
-          (data-value-truthy? value)
-          (Stdlib.invalid_arg
-           (str "Invalid arguments for query predicate: " name)))))
+      (if (built-ins/metadata-function? function)
+        (data-value-truthy?
+         (query-types/result-pattern-value
+          (query-types/metadata-function-result arguments)))
+        (if (built-ins/differ-function? function)
+          (built-ins/apply-differ
+           (mapv query-types/result-pattern-value arguments))
+          (if-some
+            [value
+             (built-ins/apply-pure-function
+              function
+              (mapv query-types/result-pattern-value arguments))]
+            (data-value-truthy? value)
+            (Stdlib.invalid_arg
+             (str "Invalid arguments for query predicate: " name))))))
     (VariablePredicateV3 _name callable)
     (if-some [value (query-types/invoke-callable callable arguments)]
       (data-value-truthy? value)
@@ -1637,25 +1645,27 @@
     (PurePredicateV3 name function)
     (if (built-ins/complement-function? function)
       (Some (query-types/complement-result arguments))
-      (if
-       (or
-        (built-ins/get-else-function? function)
-        (built-ins/get-some-function? function))
-        (if-some [value
-                  (query-types/database-function-value
-                   function arguments)]
-          (Some (query-types/value-result value))
-          (Stdlib.invalid_arg
-           (str "Invalid arguments for query function: " name)))
-        (if-some [value
-                  (built-ins/apply-pure-function
-                   function
-                   (mapv
-                    query-types/result-pattern-value
-                    arguments))]
-          (Some (query-types/value-result value))
-          (Stdlib.invalid_arg
-           (str "Invalid arguments for query function: " name)))))
+      (if (built-ins/metadata-function? function)
+        (Some (query-types/metadata-function-result arguments))
+        (if
+         (or
+          (built-ins/get-else-function? function)
+          (built-ins/get-some-function? function))
+          (if-some [value
+                    (query-types/database-function-value
+                     function arguments)]
+            (Some (query-types/value-result value))
+            (Stdlib.invalid_arg
+             (str "Invalid arguments for query function: " name)))
+          (if-some [value
+                    (built-ins/apply-pure-function
+                     function
+                     (mapv
+                      query-types/result-pattern-value
+                      arguments))]
+            (Some (query-types/value-result value))
+            (Stdlib.invalid_arg
+             (str "Invalid arguments for query function: " name))))))
     (VariablePredicateV3 _name callable)
     (if-some [value
               (query-types/invoke-callable callable arguments)]

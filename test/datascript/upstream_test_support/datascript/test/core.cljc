@@ -29,6 +29,7 @@
     (Datascript_runtime.Query_value.Attr value)
     (Datascript_runtime.Data_value.Keyword value)
     (Datascript_runtime.Query_value.Value value) value
+    (Datascript_runtime.Query_value.Metadata value _) value
     (Datascript_runtime.Query_value.Pull value) value
     (Datascript_runtime.Query_value.Added value)
     (Datascript_runtime.Data_value.Bool value)

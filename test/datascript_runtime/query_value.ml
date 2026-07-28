@@ -2,6 +2,7 @@ type 'db result =
   | Entity of int
   | Attr of string
   | Value of Data_value.t
+  | Metadata of Data_value.t * (Data_value.t * Data_value.t) list
   | Database of 'db
   | Pull of Data_value.t
   | Added of bool
@@ -60,6 +61,9 @@ let relation_source rows = Relation_source rows
 let entity entity_id = Entity entity_id
 let attr attribute = Attr attribute
 let value value = Value value
+let metadata value = function
+  | Data_value.Map entries -> Metadata (value, entries)
+  | _ -> invalid_arg "Query metadata must be a map"
 let database database = Database database
 let pull result = Pull result
 let added added = Added added
@@ -81,7 +85,13 @@ let source_rows = function
   | Database_source _ -> None
   | Relation_source rows -> Some rows
 
-let result_value = function Value value -> Some value | _ -> None
+let result_value = function
+  | Value value | Metadata (value, _) -> Some value
+  | _ -> None
+
+let result_metadata = function
+  | Metadata (_, entries) -> Some (Data_value.Map entries)
+  | _ -> None
 
 let binding_result = function
   | Scalar_binding result -> Some result
@@ -251,6 +261,10 @@ let equal_result left right =
   | Entity left, Entity right -> left = right
   | Attr left, Attr right -> String.equal left right
   | Value left, Value right -> Data_value.equal left right
+  | Metadata (left, _), Metadata (right, _)
+  | Metadata (left, _), Value right
+  | Value left, Metadata (right, _) ->
+      Data_value.equal left right
   | Database left, Database right -> left == right
   | Pull left, Pull right -> Data_value.equal left right
   | Added left, Added right -> Bool.equal left right
@@ -261,6 +275,7 @@ let hash_result = function
   | Entity entity -> Hashtbl.hash (0, entity)
   | Attr attribute -> Hashtbl.hash (1, attribute)
   | Value value -> Hashtbl.hash (2, Data_value.hash value)
+  | Metadata (value, _) -> Hashtbl.hash (2, Data_value.hash value)
   | Database database -> Hashtbl.hash (3, database)
   | Pull value -> Hashtbl.hash (4, Data_value.hash value)
   | Added added -> Hashtbl.hash (5, added)
@@ -434,7 +449,7 @@ let aggregate_values rows index =
   rows |> Rrbvec.to_list
   |> List.map (fun row ->
          match row_get row index with
-         | Some (Value value) -> value
+         | Some (Value value) | Some (Metadata (value, _)) -> value
          | Some _ -> invalid_arg "aggregate input must be a DataScript value"
          | None -> invalid_arg "aggregate row index is out of bounds")
 

@@ -235,6 +235,21 @@ let test_query_sources_and_results_are_closed_sum_types () =
   assert (
     Query_value.result_value (Query_value.Value (Value.Int 7))
     = Some (Value.Int 7));
+  let metadata = Value.Map [ (Value.Keyword ":source", Value.String "query") ] in
+  let metadata_result = Query_value.metadata (Value.Int 7) metadata in
+  assert (Query_value.result_value metadata_result = Some (Value.Int 7));
+  assert (Query_value.result_metadata metadata_result = Some metadata);
+  assert (
+    Query_value.equal_result metadata_result
+      (Query_value.Value (Value.Int 7)));
+  assert (
+    try
+      ignore (Query_value.metadata (Value.Int 7) (Value.String "invalid"));
+      false
+    with
+    | Invalid_argument message ->
+        String.equal message "Query metadata must be a map"
+    | _ -> false);
   assert (Query_value.result_value (Query_value.Entity 7) = None)
 
 let test_query_relations_and_contexts_keep_static_fields () =

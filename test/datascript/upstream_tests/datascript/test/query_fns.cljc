@@ -704,6 +704,107 @@
       (catch (Invalid_argument message)
         (str message))))))
 
+(defn ^query-types/input metadata-query-input
+  [^:Datascript_runtime.Data_value.t value
+   ^:Datascript_runtime.Data_value.t metadata]
+  (query-types/binding-input
+   (query-types/scalar-binding
+    (query-types/metadata-result value metadata))))
+
+(defn ^datascript.parser/Query metadata-function-query []
+  (parser/static-query-clauses-with-inputs
+   (parser/single-find "?metadata")
+   [(parser/static-function-clause
+     "meta"
+     [(parser/variable-argument "?value")]
+     (parser/scalar-input "?metadata"))]
+   [(parser/make-static-value-input
+     (parser/scalar-input "?value"))]))
+
+(defn ^datascript.parser/Query metadata-preservation-query []
+  (parser/static-query-clauses-with-inputs
+   (parser/single-find "?value")
+   []
+   [(parser/make-static-value-input
+     (parser/scalar-input "?value"))]))
+
+(defn ^datascript.parser/Query metadata-predicate-query []
+  (parser/static-query-clauses-with-inputs
+   (parser/single-find "?value")
+   [(parser/static-predicate-clause
+     "meta"
+     [(parser/variable-argument "?value")])]
+   [(parser/make-static-value-input
+     (parser/scalar-input "?value"))]))
+
+(defn metadata-output-preserved?
+  [^query-types/output output
+   ^:Datascript_runtime.Data_value.t expected]
+  (match (query-types/output-scalar output)
+    (Some (Some result))
+    (match (query-types/result-metadata result)
+      (Some metadata)
+      (Datascript_runtime.Data_value.equal metadata expected)
+      None false)
+    _ false))
+
+(deftest test-core-meta-query-function
+  (let [value
+        (Datascript_runtime.Data_value.Vector
+         (list (Datascript_runtime.Data_value.Int 1)))
+        metadata
+        (Datascript_runtime.Data_value.Map
+         (list
+          (tuple
+           (Datascript_runtime.Data_value.Keyword ":source")
+           (Datascript_runtime.Data_value.String "query"))))
+        input (metadata-query-input value metadata)
+        query (metadata-function-query)
+        preservation-query (metadata-preservation-query)
+        predicate-query (metadata-predicate-query)]
+    (is
+     (scalar-output-value?
+      (query-types/execute-query query [input])
+      metadata))
+    (is
+     (scalar-output-value?
+      (query-v3/q query input)
+      metadata))
+    (is
+     (metadata-output-preserved?
+      (query-types/execute-query preservation-query [input])
+      metadata))
+    (is
+     (metadata-output-preserved?
+      (query-v3/q preservation-query input)
+      metadata))
+    (is
+     (metadata-output-preserved?
+      (query-types/execute-query predicate-query [input])
+      metadata))
+    (is
+     (metadata-output-preserved?
+      (query-v3/q predicate-query input)
+      metadata)))
+  (is
+   (scalar-output-missing?
+    (d/q '[:find ?metadata .
+           :where [(meta 1) ?metadata]])))
+  (is
+   (scalar-output-missing?
+    (d/q '[:find ?metadata .
+           :where [(meta) ?metadata]])))
+  (is
+   (scalar-output-missing?
+    (d/q '[:find ?metadata .
+           :where [(meta 1 :ignored) ?metadata]])))
+  (is
+   (scalar-output-missing?
+    (d/q '[:find ?value .
+           :where
+           [(meta)]
+           [(ground 1) ?value]]))))
+
 (deftest test-core-increment-and-decrement-query-functions
   (testing "missing arguments produce NaN and extra arguments are ignored"
     (is

@@ -237,6 +237,8 @@
   :fn<datascript.built-ins/query-function;bool>)
 (signature datascript.built-ins/complement-function?
   :fn<datascript.built-ins/query-function;bool>)
+(signature datascript.built-ins/metadata-function?
+  :fn<datascript.built-ins/query-function;bool>)
 (signature datascript.built-ins/apply-differ
   :fn<vector<Datascript_runtime.Data_value.t>;bool>)
 (signature datascript.built-ins/sum-aggregate?
@@ -545,6 +547,7 @@
     "rand" (Some Random)
     "rand-int" (Some RandomInt)
     "keyword" (Some Keyword)
+    "meta" (Some Metadata)
     "name" (Some Name)
     "namespace" (Some Namespace)
     "vector" (Some Vector)
@@ -685,6 +688,8 @@
     (Datascript_runtime.Data_value.random_int_value values)
     Keyword
     (Datascript_runtime.Data_value.keyword_from_values values)
+    Metadata
+    (Some (Datascript_runtime.Data_value.Nil))
     Name
     (Datascript_runtime.Data_value.name_value
      (if (= 0 (count values))
@@ -819,6 +824,11 @@
 (defn complement-function? [function]
   (match function
     Complement true
+    _ false))
+
+(defn metadata-function? [function]
+  (match function
+    Metadata true
     _ false))
 
 (defn ^:bool apply-differ

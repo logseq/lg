@@ -15,6 +15,7 @@ arity	datascript.built-ins/get-else-function?	1	fixed
 arity	datascript.built-ins/get-some-function?	1	fixed
 arity	datascript.built-ins/maximum-aggregate?	1	fixed
 arity	datascript.built-ins/median-aggregate?	1	fixed
+arity	datascript.built-ins/metadata-function?	1	fixed
 arity	datascript.built-ins/minimum-aggregate?	1	fixed
 arity	datascript.built-ins/missing-function?	1	fixed
 arity	datascript.built-ins/ordered-values?	2	fixed
@@ -1136,6 +1137,7 @@ var	datascript.built-ins/get-else-function?
 var	datascript.built-ins/get-some-function?
 var	datascript.built-ins/maximum-aggregate?
 var	datascript.built-ins/median-aggregate?
+var	datascript.built-ins/metadata-function?
 var	datascript.built-ins/minimum-aggregate?
 var	datascript.built-ins/missing-function?
 var	datascript.built-ins/ordered-values?

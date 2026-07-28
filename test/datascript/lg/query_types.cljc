@@ -49,7 +49,11 @@
   :fn<keyword;result>)
 (signature datascript.lg.query-types/value-result
   :fn<Datascript_runtime.Data_value.t;result>)
+(signature datascript.lg.query-types/metadata-result
+  :fn<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t;result>)
 (signature datascript.lg.query-types/result-value
+  :fn<result;option<Datascript_runtime.Data_value.t>>)
+(signature datascript.lg.query-types/result-metadata
   :fn<result;option<Datascript_runtime.Data_value.t>>)
 (signature datascript.lg.query-types/database-result
   :fn<datascript.db/database-view;result>)
@@ -68,6 +72,8 @@
 (signature datascript.lg.query-types/result-nil?
   :fn<result;bool>)
 (signature datascript.lg.query-types/complement-result
+  :fn<vector<result>;result>)
+(signature datascript.lg.query-types/metadata-function-result
   :fn<vector<result>;result>)
 (signature datascript.lg.query-types/function-binding-result
   :fn<datascript.parser/binding;result;binding-value>)
@@ -204,8 +210,17 @@
 (defn ^result value-result [^:Datascript_runtime.Data_value.t value]
   (Datascript_runtime.Query_value.value value))
 
+(defn ^result metadata-result
+  [^:Datascript_runtime.Data_value.t value
+   ^:Datascript_runtime.Data_value.t metadata]
+  (Datascript_runtime.Query_value.metadata value metadata))
+
 (defn ^:option<Datascript_runtime.Data_value.t> result-value [^result result]
   (Datascript_runtime.Query_value.result_value result))
+
+(defn ^:option<Datascript_runtime.Data_value.t> result-metadata
+  [^result result]
+  (Datascript_runtime.Query_value.result_metadata result))
 
 (defn ^result database-result [^datascript.db/database-view database]
   (Datascript_runtime.Query_value.database database))
@@ -653,6 +668,8 @@
     (Some (Datascript_runtime.Data_value.Entity_id entity))
     (Datascript_runtime.Query_value.Value value)
     (query-entity-ref value)
+    (Datascript_runtime.Query_value.Metadata value _)
+    (query-entity-ref value)
     _ None))
 
 (defn ^:vector<string> pull-pattern-variable-names
@@ -1096,6 +1113,13 @@
         (Some entity) (entity-result entity)
         None result)
       None result)
+    (Datascript_runtime.Query_value.Metadata value _)
+    (match (query-entity-ref value)
+      (Some entity-ref)
+      (match (datascript.db/database-view-entid database entity-ref)
+        (Some entity) (entity-result entity)
+        None result)
+      None result)
     _ result))
 
 (defn ^relation hash-join [^relation left ^relation right]
@@ -1110,6 +1134,7 @@
     (Datascript_runtime.Query_value.Attr attr)
     (Datascript_runtime.Data_value.Keyword attr)
     (Datascript_runtime.Query_value.Value value) value
+    (Datascript_runtime.Query_value.Metadata value _) value
     (Datascript_runtime.Query_value.Pull value) value
     (Datascript_runtime.Query_value.Added added)
     (Datascript_runtime.Data_value.Keyword
@@ -1188,6 +1213,11 @@
   (match value
     (Datascript_runtime.Query_value.Entity eid) (Some eid)
     (Datascript_runtime.Query_value.Value value)
+    (if-some [entity-ref
+              (query-entity-ref value)]
+      (datascript.db/database-view-entid database entity-ref)
+      None)
+    (Datascript_runtime.Query_value.Metadata value _)
     (if-some [entity-ref
               (query-entity-ref value)]
       (datascript.db/database-view-entid database entity-ref)
@@ -1603,6 +1633,8 @@
     (Datascript_runtime.Data_value.Entity_id entity)
     (Datascript_runtime.Query_value.Value value)
     (datascript.db/data-value-entity-ref value)
+    (Datascript_runtime.Query_value.Metadata value _)
+    (datascript.db/data-value-entity-ref value)
     _
     (Stdlib.invalid_arg "Expected a query entity reference")))
 
@@ -1936,6 +1968,13 @@
           (Stdlib.invalid_arg
            "Cannot read properties of undefined (reading 'cljs$core$IFn$_invoke$arity$1')")))))))
 
+(defn ^result metadata-function-result [^:vector<result> arguments]
+  (if-some [argument (first arguments)]
+    (if-some [metadata (result-metadata argument)]
+      (value-result metadata)
+      (value-result (Datascript_runtime.Data_value.Nil)))
+    (value-result (Datascript_runtime.Data_value.Nil))))
+
 (defn- static-function-built-in
   [function]
   (match function
@@ -1946,6 +1985,12 @@
   (match function
     (PureStaticPredicate pure)
     (built-ins/complement-function? pure)
+    (ComparisonStaticPredicate _) false))
+
+(defn- ^:bool static-metadata-function? [function]
+  (match function
+    (PureStaticPredicate pure)
+    (built-ins/metadata-function? pure)
     (ComparisonStaticPredicate _) false))
 
 (defn- static-function
@@ -1987,6 +2032,8 @@
          database sources relation constants arguments)
         (let [complement?
               (static-complement-function? function)
+              metadata?
+              (static-metadata-function? function)
               operands
               (mapv
                (fn [^:datascript.parser/fn-arg argument]
@@ -1998,28 +2045,34 @@
            (reduce
             (fn [^:vector<array<result>> rows ^:array<result> row]
               (let [matches?
-                    (if complement?
-                      (Some true)
-                      (let [results
-                            (mapv
-                             (fn [^predicate-operand operand]
-                               (predicate-operand-result row operand))
-                             operands)
-                            values
-                            (mapv result-pattern-value results)]
-                        (match function
-                          (ComparisonStaticPredicate comparison)
-                          (built-ins/apply-comparison
-                           comparison values)
-                          (PureStaticPredicate pure)
-                          (if (built-ins/differ-function? pure)
-                            (Some
-                             (built-ins/apply-differ values))
-                            (if-some [value
-                                      (apply-static-function
-                                       function values)]
-                              (Some (data-value-truthy? value))
-                              None)))))]
+                    (let [results
+                          (mapv
+                           (fn [^predicate-operand operand]
+                             (predicate-operand-result row operand))
+                           operands)]
+                      (if complement?
+                        (Some true)
+                        (if metadata?
+                          (Some
+                           (data-value-truthy?
+                            (result-pattern-value
+                             (metadata-function-result results))))
+                          (let [values
+                                (mapv result-pattern-value results)]
+                            (match function
+                              (ComparisonStaticPredicate comparison)
+                              (built-ins/apply-comparison
+                               comparison values)
+                              (PureStaticPredicate pure)
+                              (if (built-ins/differ-function? pure)
+                                (Some
+                                 (built-ins/apply-differ values))
+                                (if-some
+                                  [value
+                                   (apply-static-function
+                                    function values)]
+                                  (Some (data-value-truthy? value))
+                                  None)))))))]
                 (if-some [matches? matches?]
                   (if matches?
                     (conj rows row)
@@ -2083,6 +2136,8 @@
          arguments binding)
         (let [complement?
               (static-complement-function? function)
+              metadata?
+              (static-metadata-function? function)
               operands
               (mapv
                (fn [^:datascript.parser/fn-arg argument]
@@ -2100,13 +2155,15 @@
                        invocation
                        (if complement?
                          (Some (complement-result results))
-                         (let [values
-                               (mapv result-pattern-value results)]
-                           (if-some
-                             [value
-                              (apply-static-function function values)]
-                             (Some (value-result value))
-                             None)))]
+                         (if metadata?
+                           (Some (metadata-function-result results))
+                           (let [values
+                                 (mapv result-pattern-value results)]
+                             (if-some
+                               [value
+                                (apply-static-function function values)]
+                               (Some (value-result value))
+                               None))))]
                    (if-some [result invocation]
                      (if (result-nil? result)
                        output
