@@ -117,7 +117,7 @@ datascript/test/query_return_map.cljc:test-find-specs	covered	test/datascript/up
 datascript/test/query_rules.cljc:test-rules	covered	test/datascript/upstream_tests/datascript/test/query_rules.cljc	-
 datascript/test/query_rules.cljc:test-false-arguments	covered	test/datascript/upstream_tests/datascript/test/query_rules.cljc	-
 datascript/test/query_rules.cljc:test-rule-performance-on-larger-datasets	covered	test/datascript/upstream_tests/datascript/test/query_rules.cljc	-
-datascript/test/query_v3.cljc:test-validation	excluded	-	user-excluded
+datascript/test/query_v3.cljc:test-validation	covered	test/datascript/upstream_tests/datascript/test/query.cljc	Closed query inputs preserve upstream arity validation and exact binding-source errors on Native and Melange.
 datascript/test/serialize.cljc:test-pr-read	covered	test/datascript/upstream_tests/datascript/test/serialize.cljc	-
 datascript/test/serialize.cljc:test-init-db	covered	test/datascript/upstream_tests/datascript/test/serialize.cljc	-
 datascript/test/serialize.cljc:test-max-eid-from-refs	covered	test/datascript/upstream_tests/datascript/test/serialize.cljc	-
