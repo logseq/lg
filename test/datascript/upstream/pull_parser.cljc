@@ -169,24 +169,23 @@
         'datascript.pull-parser/source-alias-value
         source-attr
         alias-form)))}
-  [^:keyword source-attr
-   ^:Datascript_runtime.Data_value.t alias]
+  [source-attr alias]
   (source-alias-value source-attr alias))
 
-(defn ^pull-source-item source-limit
-  [^:keyword source-attr ^int limit]
+(defn source-limit
+  [source-attr limit]
   (PullSourceOptions
    source-attr
    [(PullOptionLimit (Some limit))]))
 
-(defn ^pull-source-item source-xform
-  [^:keyword source-attr ^pull-xform xform]
+(defn source-xform
+  [source-attr xform]
   (PullSourceOptions
    source-attr
    [(PullOptionXform xform)]))
 
-(defn ^pull-source-option option-alias-value
-  [^:Datascript_runtime.Data_value.t alias]
+(defn option-alias-value
+  [alias]
   (PullOptionAlias alias))
 
 (defn option-alias
@@ -210,57 +209,51 @@
        (list
         'datascript.pull-parser/option-alias-value
         alias-form)))}
-  [^:Datascript_runtime.Data_value.t alias]
+  [alias]
   (option-alias-value alias))
 
-(defn ^pull-source-option option-default
-  [^:Datascript_runtime.Data_value.t default]
+(defn option-default
+  [default]
   (PullOptionDefault default))
 
-(defn ^pull-source-option option-limit [^int limit]
+(defn option-limit [limit]
   (PullOptionLimit (Some limit)))
 
-(defn ^pull-source-option option-unlimited []
+(defn option-unlimited []
   (PullOptionLimit None))
 
-(defn ^pull-source-option option-xform [^pull-xform xform]
+(defn option-xform [xform]
   (PullOptionXform xform))
 
-(defn ^pull-source-item source-options
-  [^:keyword source-attr
-   ^:vector<pull-source-option> options]
+(defn source-options
+  [source-attr options]
   (PullSourceOptions source-attr options))
 
-(defn ^pull-source-item source-nested
-  [^:keyword source-attr
-   ^:vector<pull-source-item> source-pattern]
+(defn source-nested
+  [source-attr source-pattern]
   (PullSourceNested source-attr source-pattern))
 
-(defn ^pull-source-item source-nested-options
-  [^:keyword source-attr
-   ^:vector<pull-source-option> options
-   ^:vector<pull-source-item> source-pattern]
+(defn source-nested-options
+  [source-attr options source-pattern]
   (PullSourceNestedOptions source-attr options source-pattern))
 
-(defn ^pull-source-item source-recursion
-  [^:keyword source-attr ^:option<int> limit]
+(defn source-recursion
+  [source-attr limit]
   (PullSourceRecursion source-attr limit))
 
-(defn ^pull-source-item source-recursion-options
-  [^:keyword source-attr
-   ^:vector<pull-source-option> options
-   ^:option<int> limit]
+(defn source-recursion-options
+  [source-attr options limit]
   (PullSourceRecursionOptions source-attr options limit))
 
-(defn ^pull-source-item source-group
-  [^:vector<pull-source-item> items]
+(defn source-group
+  [items]
   (PullSourceGroup items))
 
-(defn ^pull-source-item source-invalid
-  [^:Datascript_runtime.Data_value.t fragment]
+(defn source-invalid
+  [fragment]
   (PullSourceInvalid fragment))
 
-(def ^pull-attr default-db-id-attr
+(def default-db-id-attr
   (PullAttribute
    (record PullAttrData
     (alias
@@ -277,7 +270,7 @@
     (ref false)
     (component false))))
 
-(def ^PullPattern default-pattern-ref
+(def default-pattern-ref
   (record PullPattern
     (attrs [default-db-id-attr])
     (first-attr None)
@@ -285,7 +278,7 @@
     (reverse-attrs [])
     (wildcard false)))
 
-(def ^PullPattern default-pattern-component
+(def default-pattern-component
   (record PullPattern
     (attrs [default-db-id-attr])
     (first-attr None)

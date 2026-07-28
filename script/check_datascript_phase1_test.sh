@@ -221,6 +221,11 @@ expect_no_hints_between \
   test/datascript/upstream/pull_parser.cljc \
   attr-name-spec source-alias \
   '\^(:[[:alpha:]]|[[:alpha:]])'
+expect_no_hints_between \
+  "pull parser source option constructors contain no local type hints" \
+  test/datascript/upstream/pull_parser.cljc \
+  source-alias attribute \
+  '\^(:[[:alpha:]]|[[:alpha:]])'
 
 for mapping in \
   'src/datascript/query.cljc.*test/datascript/lg/query.cljc' \
