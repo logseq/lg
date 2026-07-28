@@ -124,12 +124,22 @@ let protocol_receiver_type scope env = function
 
 let protocol_parameter_overrides receiver_ty = function
   | TFn (parameter_tys, _) ->
+      let instantiated_variables = ref [] in
+      let instantiate name =
+        match List.assoc_opt name !instantiated_variables with
+        | Some ty -> ty
+        | None ->
+            let ty = Type_solver.fresh () in
+            instantiated_variables := (name, ty) :: !instantiated_variables;
+            ty
+      in
       List.mapi
         (fun index ty ->
           if index = 0 then Some receiver_ty
           else
             match ty with
-            | TUnknown | TMeta _ | TVar _ -> None
+            | TUnknown | TMeta _ -> None
+            | TVar name -> Some (instantiate name)
             | ty -> Some ty)
         parameter_tys
   | _ -> [ Some receiver_ty ]

@@ -214,12 +214,13 @@ let declare_deref registry =
   |> add_or_fail
 
 let declare_compare_and_set registry =
+  let value = TVar "atom_value" in
   Protocol_registry.declare atom_id
     [
       {
         Protocol_registry.method_id =
           method_id atom_id "-compare-and-set!";
-        param_tys = [ TUnknown; TUnknown; TUnknown ];
+        param_tys = [ TUnknown; value; value ];
         return_ty = TBool;
       };
     ]

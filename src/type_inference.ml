@@ -3493,9 +3493,15 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             | Error _ as error -> error
             | Ok params -> constrain_comparable_symbol params right))
     | FList [ FSymbol ("identical?" | ".equals"); left; right ] ->
-        infer_expected_all
-          (Types.dynamic_constraint TUnknown)
-          params [ left; right ]
+        Result.bind (infer_all params [ left; right ]) (fun params ->
+            let left_ty = inferred_form_type params left in
+            let right_ty = inferred_form_type params right in
+            let identity_ty =
+              if not (Type_solver.is_open left_ty) then left_ty
+              else if not (Type_solver.is_open right_ty) then right_ty
+              else fresh_type_variable "identity"
+            in
+            infer_expected_all identity_ty params [ left; right ])
     | FList [ FSymbol "int"; FSymbol value ] ->
         constrain_symbol (Types.dynamic_constraint TUnknown) params value
     | FList
