@@ -897,12 +897,8 @@
         (source-fragment-string fragment)))))
   (Stdlib.ignore 0))
 
-(defn ^PullPattern parse-pattern-items
-  [^datascript.db/database-view database
-   ^:vector<pull-source-item> items
-   ^int index
-   ^:vector<pull-attr> attrs
-   ^boolean wildcard]
+(defn parse-pattern-items
+  [database ^:vector<pull-source-item> items index attrs wildcard]
   (if (= index (count items))
     (pattern attrs wildcard)
     (match (nth items index)
@@ -1007,9 +1003,8 @@
          (map-recursion-value limit)))
        wildcard))))
 
-(defn ^PullPattern parse-pattern-view
-  [^datascript.db/database-view database
-   ^:vector<pull-source-item> source]
+(defn parse-pattern-view
+  [database source]
   (parse-pattern-items database source 0 [] false))
 
 (defn parse-pattern
@@ -1021,6 +1016,5 @@
        'datascript.db/database-view
        database)
       source))}
-  [^datascript.db/database-view database
-   ^:vector<pull-source-item> source]
+  [database source]
   (parse-pattern-view database source))

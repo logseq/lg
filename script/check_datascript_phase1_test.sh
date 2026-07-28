@@ -273,6 +273,19 @@ expect_text \
   "pull parser check keeps its required closed fragment boundary" \
   test/datascript/upstream/pull_parser.cljc \
   '\^:Datascript_runtime\.Data_value\.t fragment'
+expect_no_text \
+  "pull parser pattern recursion contains only its required item boundary" \
+  test/datascript/upstream/pull_parser.cljc \
+  '\(defn \^PullPattern parse-pattern-items|\^datascript\.db/database-view database|\^int index|\^:vector<pull-attr> attrs|\^boolean wildcard'
+expect_text \
+  "pull parser pattern recursion keeps its required closed item boundary" \
+  test/datascript/upstream/pull_parser.cljc \
+  '\[database \^:vector<pull-source-item> items index attrs wildcard\]'
+expect_no_hints_between \
+  "pull parser pattern public helpers contain no local type hints" \
+  test/datascript/upstream/pull_parser.cljc \
+  parse-pattern-view __end_of_file__ \
+  '\^(:[[:alpha:]]|[[:alpha:]])'
 
 for mapping in \
   'src/datascript/query.cljc.*test/datascript/lg/query.cljc' \
