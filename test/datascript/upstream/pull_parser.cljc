@@ -506,9 +506,8 @@
 (declare parse-attr-spec)
 (declare parse-pattern-view)
 
-(defn ^:option<pull-attr> parse-attr-expr
-  [^datascript.db/database-view database
-   ^pull-attr-spec attr-spec]
+(defn parse-attr-expr
+  [database attr-spec]
   (match attr-spec
     (PullAttrExprSpec base options)
     (if-some [attr (parse-attr-spec database base)]
@@ -516,9 +515,8 @@
       None)
     _ None))
 
-(defn ^:option<pull-attr> parse-legacy-limit-expr
-  [^datascript.db/database-view database
-   ^pull-attr-spec attr-spec]
+(defn parse-legacy-limit-expr
+  [database attr-spec]
   (match attr-spec
     (PullLegacyLimitSpec base limit)
     (if-some [attr (parse-attr-spec database base)]
@@ -526,9 +524,8 @@
       None)
     _ None))
 
-(defn ^:option<pull-attr> parse-legacy-default-expr
-  [^datascript.db/database-view database
-   ^pull-attr-spec attr-spec]
+(defn parse-legacy-default-expr
+  [database attr-spec]
   (match attr-spec
     (PullLegacyDefaultSpec base default)
     (if-some [attr (parse-attr-spec database base)]
@@ -536,9 +533,8 @@
       None)
     _ None))
 
-(defn ^:option<pull-attr> parse-attr-spec
-  [^datascript.db/database-view database
-   ^pull-attr-spec attr-spec]
+(defn parse-attr-spec
+  [database attr-spec]
   (match attr-spec
     (PullAttrNameSpec attr)
     (Some (attribute database attr))
@@ -560,10 +556,8 @@
         None)
       None)))
 
-(defn ^pull-attr parse-map-spec
-  [^datascript.db/database-view database
-   ^pull-attr-spec attr-spec
-   ^pull-map-value value]
+(defn parse-map-spec
+  [database attr-spec value]
   (let [attr
         (match (parse-attr-spec database attr-spec)
           None
