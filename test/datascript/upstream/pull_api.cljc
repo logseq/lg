@@ -28,12 +28,12 @@
 (signature datascript.pull-api/pull-options
   :fn<pull-visitor;PullOptions>)
 
-(defn ^PullOptions pull-options
+(defn pull-options
   [visitor]
   (record PullOptions
     (visitor (Some visitor))))
 
-(defn ^PullOptions default-pull-options []
+(defn default-pull-options []
   (record PullOptions
     (visitor None)))
 

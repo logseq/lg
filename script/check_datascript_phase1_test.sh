@@ -143,6 +143,11 @@ expect_no_text "PSS algorithms contain no inline type hints" \
 expect_no_algorithm_hints "entity algorithms contain no local type hints" \
   test/datascript/upstream/entity.cljc \
   '\^(:[[:alpha:]]|[[:alpha:]])'
+expect_no_hints_between \
+  "pull option constructors contain no local type hints" \
+  test/datascript/upstream/pull_api.cljc \
+  pull-options pulled-to-data \
+  '\^(:[[:alpha:]]|[[:alpha:]])'
 expect_no_hints_between "pull cursor algorithms contain no local type hints" \
   test/datascript/upstream/pull_api.cljc \
   pulled-to-data visit \
