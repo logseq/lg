@@ -1522,8 +1522,7 @@ let rec compile scope env next_type = function
                   | Some "ILookup", "-lookup", _receiver :: arguments ->
                       Some receiver_ty
                       :: List.map
-                           (fun _ ->
-                             Some (Types.dynamic_constraint TUnknown))
+                           (fun _ -> Some (Type_solver.fresh ()))
                            arguments
                   | _ -> [ Some receiver_ty ]
                 in

@@ -227,6 +227,9 @@ and refine_nonmatching_type existing inferred =
           Types.optional_sequential_constraint element_ty value_ty)
   | TNullable existing, TNullable inferred ->
       Types.normalize_nullable (TNullable (refine_type existing inferred))
+  | TNullable existing, TOcaml_app ("option", [ inferred ])
+  | TOcaml_app ("option", [ existing ]), TNullable inferred ->
+      TOcaml_app ("option", [ refine_type existing inferred ])
   | (TNullable existing | TOcaml_app ("option", [ existing ])), inferred
     when Option.is_some (Types.protocol_constraint_info inferred) ->
       Types.normalize_nullable (TNullable (refine_type existing inferred))
@@ -552,6 +555,16 @@ let constrain_seqable element_ty params name =
         Types.substitute_type_variables
           [ (Type_solver.Declared parameter, element_ty) ]
           record_ty
+    | TVector existing_element ->
+        TVector (refine_type existing_element element_ty)
+    | TList existing_element ->
+        TList (refine_type existing_element element_ty)
+    | TSeq existing_element ->
+        TSeq (refine_type existing_element element_ty)
+    | TSet existing_element ->
+        TSet (refine_type existing_element element_ty)
+    | TArray existing_element ->
+        TArray (refine_type existing_element element_ty)
     | existing -> (
         match Types.protocol_constraint_info existing with
         | Some (_, _, value_ty) ->
@@ -947,17 +960,13 @@ let rec inferred_form_type params = function
       | _ -> TUnknown)
   | FList [ FSymbol ("inc" | "dec" | "count"); _ ] -> TInt
   | FList [ FSymbol ("first" | "second" | "last"); FSymbol receiver ] -> (
-      let normalize = function
-        | TUnknown | TMeta _ | TVar _ -> Types.dynamic_constraint TUnknown
-        | ty -> ty
-      in
       match string_assoc_opt receiver params with
       | Some ty -> (
           match Types.seqable_constraint_element ty with
-          | Some element_ty -> normalize element_ty
+          | Some element_ty -> element_ty
           | None -> (
               match Types.next_seq_element ty with
-              | Some element_ty -> normalize element_ty
+              | Some element_ty -> element_ty
               | None -> if Types.is_dynamic ty then ty else TUnknown))
       | None -> TUnknown)
   | FList [ FSymbol "next"; FSymbol receiver ] -> (

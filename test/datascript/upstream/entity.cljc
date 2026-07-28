@@ -26,15 +26,15 @@
    ^int eid
    ^entitystate state]
   ILookup
-  (-lookup [entity ^:keyword key]
+  (-lookup [entity key]
     (lookup-entity entity key))
   (-lookup
-   [entity ^:keyword key ^EntityValue not-found]
+   [entity key not-found]
    (match (lookup-entity entity key)
      (Some value) value
      None not-found))
   IAssociative
-  (-contains-key? [entity ^:keyword key]
+  (-contains-key? [entity key]
     (some? (lookup-entity entity key)))
   ISeqable
   (-seq [entity]
@@ -43,15 +43,15 @@
   (-count [entity]
     (count @(:cache (.-state (touch-entity entity)))))
   IFn
-  (-invoke [entity ^:keyword key]
+  (-invoke [entity key]
     (lookup-entity entity key))
   (-invoke
-   [entity ^:keyword key ^EntityValue not-found]
+   [entity key not-found]
    (match (lookup-entity entity key)
      (Some value) value
      None not-found))
   IEquiv
-  (-equiv [left ^Entity right]
+  (-equiv [left right]
     (equiv-entity left right))
   IHash
   (-hash [entity]
@@ -66,7 +66,7 @@
   (-count [_]
     (count items))
   IEquiv
-  (-equiv [left ^EntityReferenceSet right]
+  (-equiv [left right]
     (entity-reference-set-equal? left right)))
 
 (type-variant EntityValue
@@ -87,8 +87,7 @@
   :fn<vector<option<datascript.impl.entity/Entity>>;datascript.impl.entity/EntityReferenceSet>)
 
 (defn entity-reference-option-member?
-  [^:option<datascript.impl.entity/Entity> target
-   ^:vector<option<datascript.impl.entity/Entity>> values]
+  [target values]
   (if-some [candidate (first values)]
     (if
       (match target
@@ -116,8 +115,7 @@
     values)))
 
 (defn entity-reference-set-equal?
-  [^datascript.impl.entity/EntityReferenceSet left
-   ^datascript.impl.entity/EntityReferenceSet right]
+  [left right]
   (let [left-items (.-items left)
         right-items (.-items right)]
     (and
@@ -128,7 +126,7 @@
       left-items))))
 
 (defn entity-value-print-string
-  [^datascript.impl.entity/EntityValue value]
+  [value]
   (match value
     (EntityScalar scalar)
     (Datascript_runtime.Data_value.to_edn_string scalar)
@@ -148,7 +146,7 @@
      "}")))
 
 (defn entity-print-string
-  [^datascript.impl.entity/Entity entity]
+  [entity]
   (let [values
         (assoc
          @(:cache (.-state entity))
@@ -170,7 +168,7 @@
     (str "{" (str/join ", " entries) "}")))
 
 (defmethod print-method Entity
-  [^Entity entity ^:buffer writer]
+  [entity writer]
   (Buffer.add_string writer (entity-print-string entity)))
 
 (defn entity
@@ -189,7 +187,7 @@
       None)
     None))
 
-(defn entity? [^Entity _]
+(defn entity? [_]
   true)
 
 (defn entity-database-view

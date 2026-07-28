@@ -47,6 +47,29 @@ expect_no_text() {
   fi
 }
 
+expect_no_algorithm_hints() {
+  description=$1
+  path=$2
+  pattern=$3
+  if [ -f "$repo_root/$path" ] &&
+     ! awk '
+         NR == 1 { next }
+         /^[[:space:]]*\(deftype / { in_fields = 1; next }
+         in_fields {
+           if (index($0, "]") != 0) {
+             in_fields = 0
+           }
+           next
+         }
+         { print }
+       ' "$repo_root/$path" |
+       LC_ALL=C grep -Eq "$pattern"; then
+    pass "$description"
+  else
+    fail "$description"
+  fi
+}
+
 expect_success() {
   description=$1
   shift
@@ -86,6 +109,9 @@ expect_no_text "built-in algorithms contain no inline type hints" \
 expect_no_text "PSS algorithms contain no inline type hints" \
   datascript/me/tonsky/persistent_sorted_set.cljc \
   '\^(:[[:alpha:]]|[[:upper:]])'
+expect_no_algorithm_hints "entity algorithms contain no local type hints" \
+  test/datascript/upstream/entity.cljc \
+  '\^(:[[:alpha:]]|[[:alpha:]])'
 
 for mapping in \
   'src/datascript/query.cljc.*test/datascript/lg/query.cljc' \
