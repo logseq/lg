@@ -70,6 +70,29 @@ expect_no_algorithm_hints() {
   fi
 }
 
+expect_no_hints_between() {
+  description=$1
+  path=$2
+  start_name=$3
+  end_name=$4
+  pattern=$5
+  if [ -f "$repo_root/$path" ] &&
+     ! awk -v start_name="$start_name" -v end_name="$end_name" '
+         /^[[:space:]]*\(defn/ && index($0, start_name) != 0 {
+           in_range = 1
+         }
+         /^[[:space:]]*\(defn/ && index($0, end_name) != 0 {
+           in_range = 0
+         }
+         in_range { print }
+       ' "$repo_root/$path" |
+       LC_ALL=C grep -Eq "$pattern"; then
+    pass "$description"
+  else
+    fail "$description"
+  fi
+}
+
 expect_success() {
   description=$1
   shift
@@ -111,6 +134,10 @@ expect_no_text "PSS algorithms contain no inline type hints" \
   '\^(:[[:alpha:]]|[[:upper:]])'
 expect_no_algorithm_hints "entity algorithms contain no local type hints" \
   test/datascript/upstream/entity.cljc \
+  '\^(:[[:alpha:]]|[[:alpha:]])'
+expect_no_hints_between "pull cursor algorithms contain no local type hints" \
+  test/datascript/upstream/pull_api.cljc \
+  pulled-to-data visit \
   '\^(:[[:alpha:]]|[[:alpha:]])'
 
 for mapping in \

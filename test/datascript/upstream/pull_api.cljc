@@ -94,8 +94,8 @@
    :vector<datascript.pull-api/frame>)
   (-str [this] :string))
 
-(defn ^:Datascript_runtime.Data_value.t pulled-to-data
-  [^pulled-value value]
+(defn pulled-to-data
+  [value]
   (match value
     (PulledScalar value) value
     (PulledMany values)
@@ -110,28 +110,22 @@
 (signature datascript.pull-api/assoc-pulled-value
   :fn<map<Datascript_runtime.Data_value.t;pulled-value>;Datascript_runtime.Data_value.t;pulled-value;map<Datascript_runtime.Data_value.t;pulled-value>>)
 
-(defn ^:map<Datascript_runtime.Data_value.t;pulled-value>
-  assoc-pulled-value
-  [^:map<Datascript_runtime.Data_value.t;pulled-value> values
-   ^:Datascript_runtime.Data_value.t key
-   ^pulled-value value]
+(defn assoc-pulled-value
+  [values key value]
   (assoc values key value))
 
 (signature datascript.pull-api/assoc-pulled-data
   :fn<map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>;Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t;map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>>)
 
-(defn ^:map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>
-  assoc-pulled-data
-  [^:map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t> values
-   ^:Datascript_runtime.Data_value.t key
-   ^:Datascript_runtime.Data_value.t value]
+(defn assoc-pulled-data
+  [values key value]
   (assoc values key value))
 
-(defn ^:option<datascript.db/Datom> cursor-datom
-  [^DatomCursor cursor]
+(defn cursor-datom
+  [cursor]
   (.-current cursor))
 
-(defn ^DatomCursor next-cursor [^DatomCursor cursor]
+(defn next-cursor [cursor]
   (match (seq-uncons (.-remaining cursor))
     None
     (record DatomCursor
@@ -142,48 +136,45 @@
       (current (Some (tuple-get entry 0)))
       (remaining (tuple-get entry 1)))))
 
-(defn ^:option<DatomCursor> non-empty-cursor [^DatomCursor cursor]
+(defn non-empty-cursor [cursor]
   (match (cursor-datom cursor)
     None None
     (Some _) (Some cursor)))
 
-(defn ^ResultState frame-result
-  [^:option<pulled-value> value ^:option<DatomCursor> datoms]
+(defn frame-result
+  [value datoms]
   (record ResultState
     (value value)
     (datoms datoms)))
 
-(defn ^:option<pulled-value> non-empty-many
-  [^:vector<pulled-value> values]
+(defn non-empty-many
+  [values]
   (if (empty? values)
     None
     (Some (PulledMany values))))
 
-(defn ^frame finish-multival-attr
-  [^:vector<pulled-value> values
-   ^DatomCursor cursor]
+(defn finish-multival-attr
+  [values cursor]
   (ResultFrame
    (frame-result
     (non-empty-many values)
     (Some cursor))))
 
-(defn ^boolean cursor-matches-attr?
-  [^DatomCursor cursor ^:keyword attr]
+(defn cursor-matches-attr?
+  [cursor attr]
   (match (cursor-datom cursor)
     None false
     (Some datom) (= (.-a datom) attr)))
 
-(defn ^datascript.db/Datom cursor-datom-exn
-  [^DatomCursor cursor]
+(defn cursor-datom-exn
+  [cursor]
   (match (cursor-datom cursor)
     None
     (Stdlib.invalid_arg "Datom cursor is exhausted")
     (Some datom) datom))
 
-(defn ^frame skip-multival-attr
-  [^:vector<pulled-value> values
-   ^datascript.pull-parser/PullAttrData data
-   ^DatomCursor cursor]
+(defn skip-multival-attr
+  [values data cursor]
   (loop [cursor cursor]
     (if (cursor-matches-attr? cursor (.-name data))
       (recur (next-cursor cursor))
@@ -192,10 +183,8 @@
         (Some (PulledMany values))
         (Some cursor))))))
 
-(defn ^frame run-multival-attr
-  [^:vector<pulled-value> values
-   ^datascript.pull-parser/pull-attr attr
-   ^DatomCursor cursor]
+(defn run-multival-attr
+  [values attr cursor]
   (let [data (dpp/attr-data attr)]
     (loop [values values
            cursor cursor]
@@ -214,7 +203,7 @@
              (conj values (PulledScalar (.-v datom)))
              (next-cursor cursor))))))))
 
-(defn ^frame run-multival-attr-frame [^MultivalAttrState state]
+(defn run-multival-attr-frame [state]
   (run-multival-attr
    (.-values state)
    (.-attr state)
