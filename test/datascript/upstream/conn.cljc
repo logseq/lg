@@ -69,9 +69,7 @@
 (extend-type Conn
   IAtom
   (-compare-and-set!
-   [connection
-    ^datascript.db/DB old-database
-    ^datascript.db/DB new-database]
+   [connection old-database new-database]
    (let [state-atom (:atom connection)
          state @state-atom]
      (if (identical? (state-db state) old-database)
