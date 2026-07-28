@@ -22,7 +22,7 @@
 
 (def attr-key-counter (atom 0))
 
-(defn ^int next-attr-key []
+(defn next-attr-key []
   (swap! attr-key-counter inc))
 
 (type-variant pull-attr

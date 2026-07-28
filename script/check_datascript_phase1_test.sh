@@ -221,6 +221,10 @@ expect_no_hints_between \
   test/datascript/upstream/pull_parser.cljc \
   attr-name-spec source-alias \
   '\^(:[[:alpha:]]|[[:alpha:]])'
+expect_no_text \
+  "pull parser attribute key counter return is inferred" \
+  test/datascript/upstream/pull_parser.cljc \
+  '^\(defn \^int next-attr-key'
 expect_no_hints_between \
   "pull parser source option constructors contain no local type hints" \
   test/datascript/upstream/pull_parser.cljc \
