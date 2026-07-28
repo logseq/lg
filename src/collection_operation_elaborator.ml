@@ -2601,13 +2601,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                           (not (Types.is_dynamic field.ty))
                           && not (Types.equal ret field.ty)
                         in
-                        if
-                          type_change
-                          &&
-                          match target.ty with
-                          | TRecord _ -> false
-                          | _ -> true
-                        then
+                        if type_change then
                           Error.error
                             (Printf.sprintf
                                "cannot update %s as %s because it is already %s"
@@ -2718,12 +2712,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                                   Ok result.semantic_expr
                               in
                               Result.bind stored (fun stored ->
-                                  if type_change then
-                                    Structural_map.update_value_as target
-                                      fields keyword ret stored
-                                  else
-                                    Structural_map.update_value target fields
-                                      keyword field.ty stored))
+                                  Structural_map.update_value target fields
+                                    keyword field.ty stored))
                     | TFn _ ->
                         Error.error "update function argument count mismatch"
                       | _ -> Error.error "update expects a function"))
