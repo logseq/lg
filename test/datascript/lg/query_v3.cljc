@@ -820,6 +820,38 @@
     (Stdlib.invalid_arg
      "Source query input requires a Source_input")))
 
+(defn- ^:string binding-source
+  [^datascript.parser/binding binding]
+  (if (parser/binding-ignore? binding)
+    "_"
+    (if-some [variable (parser/binding-scalar-variable binding)]
+      variable
+      (if-some [items (parser/binding-tuple-items binding)]
+        (str
+         "["
+         (string/join " " (mapv binding-source items))
+         "]")
+        (if-some [item (parser/binding-collection-item binding)]
+          (str "[" (binding-source item) " ...]")
+          "_")))))
+
+(defn- ^:string static-input-source
+  [^datascript.parser/static-query-input input]
+  (if (parser/static-input-rules? input)
+    "%"
+    (if-some [source-name (parser/static-input-source-name input)]
+      source-name
+      (if-some [binding (parser/static-input-binding input)]
+        (binding-source binding)
+        "_"))))
+
+(defn- ^:string static-inputs-source
+  [^:vector<datascript.parser/static-query-input> inputs]
+  (str
+   "["
+   (string/join " " (mapv static-input-source inputs))
+   "]"))
+
 (defn ^query-context-v3 resolve-ins
   [^query-context-v3 context
    ^:vector<datascript.parser/static-query-input> descriptors
@@ -827,7 +859,9 @@
   (if (not (= (count descriptors) (count inputs)))
     (Stdlib.invalid_arg
      (str
-      "Wrong number of query inputs: "
+      "Wrong number of arguments for bindings "
+      (static-inputs-source descriptors)
+      ", "
       (count descriptors)
       " required, "
       (count inputs)

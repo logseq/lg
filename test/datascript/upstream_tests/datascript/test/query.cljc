@@ -2008,17 +2008,48 @@
     (is (= [[1] [2] [3]]
            (query-v3-int-rows (nth relations 0))))))
 
-(deftest test-query-v3-resolve-input-errors
+(deftest test-validation
   (let [context (query-v3/context-v3 [] {})]
     (is
      (=
-      "Wrong number of query inputs: 1 required, 0 provided"
+      "Wrong number of arguments for bindings [$], 1 required, 0 provided"
       (try
         (let [_resolved
               (query-v3/resolve-ins
                context
                [(parser/make-static-source-input "$")]
                [])]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "Wrong number of arguments for bindings [$ ?a], 2 required, 1 provided"
+      (try
+        (let [_resolved
+              (query-v3/resolve-ins
+               context
+               [(parser/make-static-source-input "$")
+                (parser/make-static-value-input
+                 (parser/scalar-input "?a"))]
+               [(query-types/source-input
+                 (query-types/relation-source []))])]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "Wrong number of arguments for bindings [$], 1 required, 2 provided"
+      (try
+        (let [_resolved
+              (query-v3/resolve-ins
+               context
+               [(parser/make-static-source-input "$")]
+               [(query-types/source-input
+                 (query-types/relation-source []))
+                (query-types/binding-input
+                 (query-types/scalar-binding
+                  (query-int-result 1)))])]
           "no error")
         (catch (Invalid_argument message)
           (str message)))))
