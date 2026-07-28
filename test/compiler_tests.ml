@@ -11894,17 +11894,18 @@ let test_collection_type_application_annotations_preserve_nested_elements () =
     "collection_type_application_annotations_preserve_nested_elements"
     "10:6:6\n" ocaml_source
 
-let test_map_type_annotations_preserve_key_and_value_types () =
+let test_map_type_annotations_preserve_closed_key_and_value_types () =
   let source =
     {|
-(defrecord Indexed [^:map<dynamic;int> attrs])
+(defrecord Indexed [^:map<keyword;int> attrs])
 (def indexed (Indexed. {:left 20 :right 22}))
 (println (+ ((:attrs indexed) :left) ((:attrs indexed) :right)))
 |}
   in
   let native_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "map_type_annotations_preserve_key_and_value_types" "42\n"
-    native_source;
+  assert_ocaml_runs
+    "map_type_annotations_preserve_closed_key_and_value_types"
+    "42\n" native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -22883,7 +22884,7 @@ let test_logical_or_with_throw_preserves_peer_type () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_equality_parameter_widens_across_keyword_and_string () =
+let test_equality_parameter_requires_a_closed_sum_for_keyword_and_string () =
   let source =
     {|
 (defn tx-id? [value]
@@ -22895,9 +22896,9 @@ let test_equality_parameter_widens_across_keyword_and_string () =
               (tx-id? :other)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "equality_parameter_widens_across_keyword_and_string"
-    "true:true:false\n" ocaml_source
+  Lg.Compiler.compile_string source
+  |> expect_error_contains
+       "= arguments must have the same type: string, keyword"
 
 let test_contextual_equality_callback_preserves_map_key_type () =
   let source =
@@ -32521,8 +32522,8 @@ let tests =
     ("concise standard type annotations", test_concise_standard_type_annotations);
     ( "collection type application annotations preserve nested elements",
       test_collection_type_application_annotations_preserve_nested_elements );
-    ( "map type annotations preserve key and value types",
-      test_map_type_annotations_preserve_key_and_value_types );
+    ( "map type annotations preserve closed key and value types",
+      test_map_type_annotations_preserve_closed_key_and_value_types );
     ( "type records resolve qualified nominals inside collections",
       test_type_records_resolve_qualified_nominals_inside_collections );
     ( "weak references support typed cache values",
@@ -33515,8 +33516,8 @@ let tests =
       test_external_protocol_implementation_prevents_field_misspecialization );
     ( "logical or with throw preserves peer type",
       test_logical_or_with_throw_preserves_peer_type );
-    ( "equality parameter widens across keyword and string",
-      test_equality_parameter_widens_across_keyword_and_string );
+    ( "equality parameter requires a closed sum for keyword and string",
+      test_equality_parameter_requires_a_closed_sum_for_keyword_and_string );
     ( "contextual equality callback preserves map key type",
       test_contextual_equality_callback_preserves_map_key_type );
     ( "recursive deftype helper requires closed sum results",
