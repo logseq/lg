@@ -39,6 +39,17 @@
         None))
     None))
 
+(defn ^:option<Datascript_runtime.Data_value.t> complement-truthiness
+  [^:vector<query-types/result> arguments]
+  (if-some [value (first arguments)]
+    (case (query-int value)
+      0 None
+      1 (Some (Datascript_runtime.Data_value.Nil))
+      2 (Some (Datascript_runtime.Data_value.Bool false))
+      3 (Some (Datascript_runtime.Data_value.Bool true))
+      (Some (Datascript_runtime.Data_value.Int 1)))
+    None))
+
 (defn ^:option<Datascript_runtime.Data_value.t> entity-age?
   [^:vector<query-types/result> arguments]
   (if-some [database-result (first arguments)]
@@ -624,6 +635,74 @@
              :where [(untuple [1] [2]) ?x]])
       (Datascript_runtime.Data_value.Vector
        (list (Datascript_runtime.Data_value.Int 1)))))))
+
+(deftest test-core-complement-query-function
+  (is
+   (scalar-output-value?
+    (d/q '[:find ?x .
+           :where
+           [(complement)]
+           [(ground 1) ?x]])
+    (Datascript_runtime.Data_value.Int 1)))
+  (is
+   (tdc/query-collection?
+    (d/q '[:find [?x ...]
+           :in [?x ...] ?predicate
+           :where
+           [(complement ?predicate) ?opposite]
+           [(?opposite ?x)]]
+         [1 2 3 4]
+         keep-even)
+    [1 3]))
+  (is
+   (tdc/query-collection?
+    (d/q '[:find [?x ...]
+           :in [?x ...] ?predicate
+           :where
+           [(complement ?predicate :ignored) ?opposite]
+           [(?opposite ?x)]]
+         [0 1 2 3 4]
+         complement-truthiness)
+    [0 1 2]))
+  (is
+   (=
+    "Cannot read properties of undefined (reading 'cljs$core$IFn$_invoke$arity$1')"
+    (try
+      (let [_result
+            (d/q '[:find ?x .
+                   :where
+                   [(complement) ?opposite]
+                   [(?opposite 1)]
+                   [(ground 1) ?x]])]
+        "no error")
+      (catch (Invalid_argument message)
+        (str message)))))
+  (is
+   (=
+    "Cannot read properties of null (reading 'cljs$core$IFn$_invoke$arity$1')"
+    (try
+      (let [_result
+            (d/q '[:find ?x .
+                   :where
+                   [(complement nil) ?opposite]
+                   [(?opposite 1)]
+                   [(ground 1) ?x]])]
+        "no error")
+      (catch (Invalid_argument message)
+        (str message)))))
+  (is
+   (=
+    "f.call is not a function"
+    (try
+      (let [_result
+            (d/q '[:find ?x .
+                   :where
+                   [(complement 1) ?opposite]
+                   [(?opposite 1)]
+                   [(ground 1) ?x]])]
+        "no error")
+      (catch (Invalid_argument message)
+        (str message))))))
 
 (deftest test-core-increment-and-decrement-query-functions
   (testing "missing arguments produce NaN and extra arguments are ignored"

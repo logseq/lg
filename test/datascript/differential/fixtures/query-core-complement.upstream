@@ -1,0 +1,7 @@
+predicate-callable-truthy=true
+complement-even=[1 3]
+clojure-truthiness=[0 1 2]
+extra-arguments-ignored=true
+missing-target-error-delayed=true
+nil-target-error-delayed=true
+non-callable-target-error-delayed=true

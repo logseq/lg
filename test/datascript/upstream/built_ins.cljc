@@ -235,6 +235,8 @@
   :fn<datascript.built-ins/query-function;bool>)
 (signature datascript.built-ins/differ-function?
   :fn<datascript.built-ins/query-function;bool>)
+(signature datascript.built-ins/complement-function?
+  :fn<datascript.built-ins/query-function;bool>)
 (signature datascript.built-ins/apply-differ
   :fn<vector<Datascript_runtime.Data_value.t>;bool>)
 (signature datascript.built-ins/sum-aggregate?
@@ -553,6 +555,7 @@
     "array-map" (Some HashMap)
     "and" (Some AndValues)
     "or" (Some OrValues)
+    "complement" (Some Complement)
     "identical?" (Some Identical)
     "count" (Some Count)
     "range" (Some Range)
@@ -811,6 +814,11 @@
 (defn differ-function? [function]
   (match function
     Differ true
+    _ false))
+
+(defn complement-function? [function]
+  (match function
+    Complement true
     _ false))
 
 (defn ^:bool apply-differ

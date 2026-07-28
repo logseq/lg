@@ -2135,13 +2135,19 @@
          (fn collect-callable-variables [variables form]
            (if (vector? form)
              (let [head (first form)]
-               (if (if (seq? head)
-                     (let [callable-name (first head)]
-                       (if (symbol? callable-name)
+               (if (seq? head)
+                 (let [callable-name (first head)]
+                   (if (if (symbol? callable-name)
                          (= (subs (str callable-name) 0 1) "?")
-                         false))
-                     false)
-                 (conj variables (str (first head)))
+                         false)
+                     (conj variables (str callable-name))
+                     (if (and
+                          (= (str callable-name) "complement")
+                          (symbol? (second head)))
+                       (conj variables (str (second head)))
+                       (reduce
+                        collect-callable-variables
+                        variables form))))
                  (reduce collect-callable-variables variables form)))
              (if (seq? form)
                (reduce collect-callable-variables variables form)

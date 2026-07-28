@@ -4011,6 +4011,52 @@
            (query-int-rows
             (require-query-v3-relation-output output))))))
 
+(deftest test-query-v3-function-clause-complement
+  (let [predicate-query
+        (parser/static-query-clauses-with-inputs
+         (parser/relation-find ["?x"])
+         [(parser/static-predicate-clause
+           "complement"
+           [])]
+         [(parser/make-static-value-input
+           (parser/collection-input
+            (parser/scalar-input "?x")))])
+        predicate-output
+        (query-v3/q
+         predicate-query
+         (query-v3-int-collection-input [1 2]))
+        query
+        (parser/static-query-clauses-with-inputs
+         (parser/relation-find ["?x"])
+         [(parser/static-function-clause
+           "complement"
+           [(parser/variable-argument "?predicate")]
+           (parser/scalar-input "?opposite"))
+          (parser/variable-predicate-clause
+           "?opposite"
+           [(parser/variable-argument "?x")])]
+         [(parser/make-static-value-input
+           (parser/scalar-input "?predicate"))
+          (parser/make-static-value-input
+           (parser/collection-input
+            (parser/scalar-input "?x")))])
+        output
+        (query-v3/q
+         query
+         (query-types/binding-input
+          (query-types/scalar-binding
+           (query-types/callable-result
+            (query-types/callable
+             even-query-argument))))
+         (query-v3-int-collection-input [1 2 3 4]))]
+    (is (= [[1] [2]]
+           (query-int-rows
+            (require-query-v3-relation-output
+             predicate-output))))
+    (is (= [[1] [3]]
+           (query-int-rows
+            (require-query-v3-relation-output output))))))
+
 (deftest test-query-v3-function-clause-binding-shapes
   (let [tuple-query
         (query-v3-function-query

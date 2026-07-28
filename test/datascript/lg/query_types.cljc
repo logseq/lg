@@ -27,7 +27,8 @@
 
 (type-variant predicate-operand
   (PredicateColumn :int)
-  (PredicateValue :Datascript_runtime.Data_value.t))
+  (PredicateResult
+   :Datascript_runtime.Query_value.result<datascript.db/database-view>))
 
 (type-variant static-predicate-function
   (ComparisonStaticPredicate :datascript.built-ins/query-function)
@@ -64,6 +65,12 @@
   :fn<result;option<callable>>)
 (signature datascript.lg.query-types/invoke-callable
   :fn<callable;vector<result>;option<Datascript_runtime.Data_value.t>>)
+(signature datascript.lg.query-types/result-nil?
+  :fn<result;bool>)
+(signature datascript.lg.query-types/complement-result
+  :fn<vector<result>;result>)
+(signature datascript.lg.query-types/function-binding-result
+  :fn<datascript.parser/binding;result;binding-value>)
 (signature datascript.lg.query-types/database-source
   :fn<datascript.db/database-view;source>)
 (signature datascript.lg.query-types/relation-source
@@ -1505,23 +1512,23 @@
         (if-some [result
                   (constant-relation-result
                    constants variable)]
-          (PredicateValue (result-pattern-value result))
+          (PredicateResult result)
           (Stdlib.invalid_arg
            (str "Predicate variable is not bound: " variable)))))
     (if-some [value (parser/argument-constant argument)]
-      (PredicateValue value)
+      (PredicateResult (value-result value))
       (Stdlib.invalid_arg
        "Static predicates do not accept a database source argument"))))
 
-(defn ^:Datascript_runtime.Data_value.t predicate-operand-value
+(defn ^result predicate-operand-result
   [^:array<result> row ^predicate-operand operand]
   (match operand
     (PredicateColumn index)
     (if-some [result (row-get row index)]
-      (result-pattern-value result)
+      result
       (Stdlib.invalid_arg
        "Predicate column is outside the relation row"))
-    (PredicateValue value) value))
+    (PredicateResult result) result))
 
 (defn ^datascript.db/database-view query-source-database
   [^datascript.db/database-view database
@@ -1723,15 +1730,22 @@
         items))
       (scalar-binding (value-result value)))))
 
-(defn ^binding-value function-binding-value
-  [^datascript.parser/binding binding
-   ^:Datascript_runtime.Data_value.t value]
+(defn ^binding-value function-binding-result
+  [^datascript.parser/binding binding ^result result]
   (if
    (or
     (parser/binding-ignore? binding)
     (some? (parser/binding-scalar-variable binding)))
-    (scalar-binding (value-result value))
-    (data-value-binding value)))
+    (scalar-binding result)
+    (if-some [value (result-value result)]
+      (data-value-binding value)
+      (Stdlib.invalid_arg
+       "A callable query function result requires a scalar binding"))))
+
+(defn ^binding-value function-binding-value
+  [^datascript.parser/binding binding
+   ^:Datascript_runtime.Data_value.t value]
+  (function-binding-result binding (value-result value)))
 
 (defn ^:map<string;int> function-result-attrs
   [^relation relation ^datascript.parser/binding binding]
@@ -1891,11 +1905,48 @@
       (Some boolean-value) boolean-value
       None true)))
 
+(defn ^:bool result-nil? [^result result]
+  (if-some [value (result-value result)]
+    (Datascript_runtime.Data_value.is_nil value)
+    false))
+
+(defn ^result complement-result [^:vector<result> arguments]
+  (let [target (first arguments)]
+    (callable-result
+     (callable
+      (fn [^:vector<result> invocation-arguments]
+        (if-some [target-result target]
+          (if-some [target-callable
+                    (result-callable target-result)]
+            (let [value
+                  (invoke-callable
+                   target-callable invocation-arguments)]
+              (Some
+               (Datascript_runtime.Data_value.Bool
+                (match value
+                  None true
+                  (Some value)
+                  (not (data-value-truthy? value))))))
+            (if-some [value (result-value target-result)]
+              (if (Datascript_runtime.Data_value.is_nil value)
+                (Stdlib.invalid_arg
+                 "Cannot read properties of null (reading 'cljs$core$IFn$_invoke$arity$1')")
+                (Stdlib.invalid_arg "f.call is not a function"))
+              (Stdlib.invalid_arg "f.call is not a function")))
+          (Stdlib.invalid_arg
+           "Cannot read properties of undefined (reading 'cljs$core$IFn$_invoke$arity$1')")))))))
+
 (defn- static-function-built-in
   [function]
   (match function
     (ComparisonStaticPredicate comparison) comparison
     (PureStaticPredicate pure) pure))
+
+(defn- ^:bool static-complement-function? [function]
+  (match function
+    (PureStaticPredicate pure)
+    (built-ins/complement-function? pure)
+    (ComparisonStaticPredicate _) false))
 
 (defn- static-function
   [name]
@@ -1934,7 +1985,9 @@
          (PureStaticPredicate _) false)
         (resolve-database-predicate
          database sources relation constants arguments)
-        (let [operands
+        (let [complement?
+              (static-complement-function? function)
+              operands
               (mapv
                (fn [^:datascript.parser/fn-arg argument]
                  (compile-predicate-argument
@@ -1944,25 +1997,30 @@
            relation
            (reduce
             (fn [^:vector<array<result>> rows ^:array<result> row]
-              (let [values
-                    (mapv
-                     (fn [^predicate-operand operand]
-                       (predicate-operand-value row operand))
-                     operands)]
-                (if-some [matches?
-                          (match function
-                            (ComparisonStaticPredicate comparison)
-                            (built-ins/apply-comparison
-                             comparison values)
-                            (PureStaticPredicate pure)
-                            (if (built-ins/differ-function? pure)
-                              (Some
-                               (built-ins/apply-differ values))
-                              (if-some [value
-                                        (apply-static-function
-                                         function values)]
-                                (Some (data-value-truthy? value))
-                                None)))]
+              (let [matches?
+                    (if complement?
+                      (Some true)
+                      (let [results
+                            (mapv
+                             (fn [^predicate-operand operand]
+                               (predicate-operand-result row operand))
+                             operands)
+                            values
+                            (mapv result-pattern-value results)]
+                        (match function
+                          (ComparisonStaticPredicate comparison)
+                          (built-ins/apply-comparison
+                           comparison values)
+                          (PureStaticPredicate pure)
+                          (if (built-ins/differ-function? pure)
+                            (Some
+                             (built-ins/apply-differ values))
+                            (if-some [value
+                                      (apply-static-function
+                                       function values)]
+                              (Some (data-value-truthy? value))
+                              None)))))]
+                (if-some [matches? matches?]
                   (if matches?
                     (conj rows row)
                     rows)
@@ -2023,7 +2081,9 @@
          database sources relation constants
          (static-function-built-in function)
          arguments binding)
-        (let [operands
+        (let [complement?
+              (static-complement-function? function)
+              operands
               (mapv
                (fn [^:datascript.parser/fn-arg argument]
                  (compile-predicate-argument
@@ -2032,21 +2092,31 @@
               resolved
               (reduce
                (fn [^:option<relation> output ^:array<result> row]
-                 (let [values
+                 (let [results
                        (mapv
                         (fn [^predicate-operand operand]
-                          (predicate-operand-value row operand))
-                        operands)]
-                   (if-some [value
-                             (apply-static-function function values)]
-                     (if (Datascript_runtime.Data_value.is_nil value)
+                          (predicate-operand-result row operand))
+                        operands)
+                       invocation
+                       (if complement?
+                         (Some (complement-result results))
+                         (let [values
+                               (mapv result-pattern-value results)]
+                           (if-some
+                             [value
+                              (apply-static-function function values)]
+                             (Some (value-result value))
+                             None)))]
+                   (if-some [result invocation]
+                     (if (result-nil? result)
                        output
                        (let [joined
                              (hash-join
                               (relation-with-rows relation [row])
                              (binding-relation
                                binding
-                               (function-binding-value binding value)))]
+                               (function-binding-result
+                                binding result)))]
                          (match output
                            None (Some joined)
                            (Some previous)

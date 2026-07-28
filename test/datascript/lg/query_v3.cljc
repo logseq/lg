@@ -1517,17 +1517,19 @@
         (Stdlib.invalid_arg
          (str "Invalid arguments for query predicate: " name))))
     (PurePredicateV3 name function)
-    (if (built-ins/differ-function? function)
-      (built-ins/apply-differ
-       (mapv query-types/result-pattern-value arguments))
-      (if-some
-        [value
-         (built-ins/apply-pure-function
-          function
-          (mapv query-types/result-pattern-value arguments))]
-        (data-value-truthy? value)
-        (Stdlib.invalid_arg
-         (str "Invalid arguments for query predicate: " name))))
+    (if (built-ins/complement-function? function)
+      true
+      (if (built-ins/differ-function? function)
+        (built-ins/apply-differ
+         (mapv query-types/result-pattern-value arguments))
+        (if-some
+          [value
+           (built-ins/apply-pure-function
+            function
+            (mapv query-types/result-pattern-value arguments))]
+          (data-value-truthy? value)
+          (Stdlib.invalid_arg
+           (str "Invalid arguments for query predicate: " name)))))
     (VariablePredicateV3 _name callable)
     (if-some [value (query-types/invoke-callable callable arguments)]
       (data-value-truthy? value)
@@ -1603,7 +1605,7 @@
                relation function bindings target)]
           (join-unrelated remaining-context filtered))))))
 
-(defn- ^:option<Datascript_runtime.Data_value.t>
+(defn- ^:option<datascript.lg.query-types/result>
   invoke-function
   [^predicate-function-v3 function
    ^:vector<datascript.lg.query-types/result> arguments]
@@ -1612,12 +1614,13 @@
     (if (built-ins/missing-function? function)
       (if (= 3 (count arguments))
         (Some
-         (Datascript_runtime.Data_value.Bool
-          (query-types/query-missing?
-           (query-types/query-database-result
-            (nth arguments 0))
-           (nth arguments 1)
-           (nth arguments 2))))
+         (query-types/value-result
+          (Datascript_runtime.Data_value.Bool
+           (query-types/query-missing?
+            (query-types/query-database-result
+             (nth arguments 0))
+            (nth arguments 1)
+            (nth arguments 2)))))
         (Stdlib.invalid_arg
          "Invalid arguments for query function: missing?"))
       (if-some [value
@@ -1626,31 +1629,38 @@
                  (mapv
                   query-types/result-pattern-value
                   arguments))]
-        (Some (Datascript_runtime.Data_value.Bool value))
+        (Some
+         (query-types/value-result
+          (Datascript_runtime.Data_value.Bool value)))
         (Stdlib.invalid_arg
          (str "Invalid arguments for query function: " name))))
     (PurePredicateV3 name function)
-    (if
-     (or
-      (built-ins/get-else-function? function)
-      (built-ins/get-some-function? function))
-      (if-some [value
-                (query-types/database-function-value
-                 function arguments)]
-        (Some value)
-        (Stdlib.invalid_arg
-         (str "Invalid arguments for query function: " name)))
-      (if-some [value
-                (built-ins/apply-pure-function
-                 function
-                 (mapv
-                  query-types/result-pattern-value
-                  arguments))]
-        (Some value)
-        (Stdlib.invalid_arg
-         (str "Invalid arguments for query function: " name))))
+    (if (built-ins/complement-function? function)
+      (Some (query-types/complement-result arguments))
+      (if
+       (or
+        (built-ins/get-else-function? function)
+        (built-ins/get-some-function? function))
+        (if-some [value
+                  (query-types/database-function-value
+                   function arguments)]
+          (Some (query-types/value-result value))
+          (Stdlib.invalid_arg
+           (str "Invalid arguments for query function: " name)))
+        (if-some [value
+                  (built-ins/apply-pure-function
+                   function
+                   (mapv
+                    query-types/result-pattern-value
+                    arguments))]
+          (Some (query-types/value-result value))
+          (Stdlib.invalid_arg
+           (str "Invalid arguments for query function: " name)))))
     (VariablePredicateV3 _name callable)
-    (query-types/invoke-callable callable arguments)))
+    (if-some [value
+              (query-types/invoke-callable callable arguments)]
+      (Some (query-types/value-result value))
+      None)))
 
 (defn-
   ^:tuple<query-context-v3;relation-v3>
@@ -1667,14 +1677,14 @@
   [^relation-v3 production
    ^:array<datascript.lg.query-types/result> row
    ^datascript.parser/binding binding
-   ^:Datascript_runtime.Data_value.t value]
+   ^datascript.lg.query-types/result result]
   (let [row-relation
         (array-rel (-symbols production) [row])
         binding-relation
         (bind
          binding
-         (query-types/function-binding-value
-          binding value))
+         (query-types/function-binding-result
+          binding result))
         shared
         (shared-symbols
          (-symbols row-relation)
@@ -1771,15 +1781,13 @@
                      row-target))]
                (match invocation
                  None output
-                 (Some value)
-                 (if
-                  (Datascript_runtime.Data_value.is_nil
-                   value)
+                 (Some result)
+                 (if (query-types/result-nil? result)
                    output
                    (add-function-output
                     output
                     (join-function-binding
-                     production row binding value))))))
+                     production row binding result))))))
            None
            (relation-tuples production))
           relation

@@ -5,6 +5,7 @@ arity	datascript.built-ins/apply-differ	1	fixed
 arity	datascript.built-ins/apply-pure-function	2	fixed
 arity	datascript.built-ins/average-aggregate?	1	fixed
 arity	datascript.built-ins/comparison-function	1	fixed
+arity	datascript.built-ins/complement-function?	1	fixed
 arity	datascript.built-ins/count-aggregate?	1	fixed
 arity	datascript.built-ins/count-distinct-aggregate?	1	fixed
 arity	datascript.built-ins/data-map	1	fixed
@@ -1125,6 +1126,7 @@ var	datascript.built-ins/apply-differ
 var	datascript.built-ins/apply-pure-function
 var	datascript.built-ins/average-aggregate?
 var	datascript.built-ins/comparison-function
+var	datascript.built-ins/complement-function?
 var	datascript.built-ins/count-aggregate?
 var	datascript.built-ins/count-distinct-aggregate?
 var	datascript.built-ins/data-map
