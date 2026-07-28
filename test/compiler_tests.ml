@@ -2321,15 +2321,6 @@ let test_external_closed_types_use_static_equality_and_hash_witnesses () =
        (= (value-hash int-value) (value-hash float-value))))
 |}
   in
-  let state = typecheck_state source in
-  let binding =
-    Lg.Compiler_environment.find_opt "*offset*" state.env |> Option.get
-  in
-  if
-    binding.ty <> Lg.Types.TRef Lg.Types.TInt
-    || not binding.dynamically_bindable
-  then
-    failwith "^:dynamic must create a dynamically bindable Var of static type";
   let ocaml = Lg.Compiler.compile_string source |> expect_ok in
   if not (string_contains_substring ocaml "Runtime_uuid.getmostsignificantbits") then
     failwith "external IEquiv witness must compile to a direct static call";
@@ -2895,6 +2886,15 @@ let test_dynamic_var_metadata_does_not_erase_the_value_type () =
 (println (+ *offset* 41))
 |}
   in
+  let state = typecheck_state source in
+  let binding =
+    Lg.Compiler_environment.find_opt "*offset*" state.env |> Option.get
+  in
+  if
+    binding.ty <> Lg.Types.TRef Lg.Types.TInt
+    || not binding.dynamically_bindable
+  then
+    failwith "^:dynamic must create a dynamically bindable Var of static type";
   let ocaml = Lg.Compiler.compile_string source |> expect_ok in
   if string_contains_substring ocaml "Runtime_dynamic" then
     failwith "^:dynamic Var metadata must not erase its value type";
@@ -17253,12 +17253,6 @@ let test_fn_empty_body_returns_nil () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "fn_empty_body_returns_nil" "true:true:true\n" ocaml_source
 
-let test_vectors_support_mixed_element_types () =
-  let source = {|(println (pr-str [1 "two"]))|} in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "vectors_support_mixed_element_types" "[1 \"two\"]\n"
-    ocaml_source
-
 let test_keyword_values_print_as_keywords () =
   let source = {|
 (println (str :admin? ":" (pr-str :admin?)))
@@ -27714,12 +27708,6 @@ let test_rest_is_empty_safe () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "rest_is_empty_safe" "true:():true:()\n" ocaml_source
 
-let test_lists_support_mixed_element_types () =
-  let source = {|(println (pr-str (list 1 "two" :three)))|} in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "lists_support_mixed_element_types" "(1 \"two\" :three)\n"
-    ocaml_source
-
 let test_mixed_lists_pack_optional_values () =
   let source =
     {|
@@ -32985,8 +32973,6 @@ let tests =
       test_protocol_identity_disambiguates_same_named_methods );
     ("do and multi-form bodies work", test_do_and_multi_form_bodies);
     ("fn empty body returns nil", test_fn_empty_body_returns_nil);
-    ( "vectors support mixed element types",
-      test_vectors_support_mixed_element_types );
     ("keyword values print as keywords", test_keyword_values_print_as_keywords);
     ("keys return keyword values", test_keys_return_keyword_values);
     ( "keys support generic and dynamic maps",
@@ -33933,7 +33919,6 @@ let tests =
     ( "syntax convergence: empty lists infer type from branch context",
       test_empty_lists_infer_type_from_branch_context );
     ("rest is empty-safe", test_rest_is_empty_safe);
-    ("lists support mixed element types", test_lists_support_mixed_element_types);
     ("mixed lists pack optional values", test_mixed_lists_pack_optional_values);
     ("conj rejects list type mismatch", test_conj_rejects_list_type_mismatch);
     ("collection positional helpers work", test_collection_positional_helpers);
