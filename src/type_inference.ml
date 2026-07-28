@@ -352,6 +352,8 @@ let refine_returned_seqable_vector params branch other_ty =
 let same_refinable_wrapper left right =
   match (left, right) with
   | TNullable _, TNullable _
+  | TNullable _, TOcaml_app ("option", [ _ ])
+  | TOcaml_app ("option", [ _ ]), TNullable _
   | TArray _, TArray _
   | TRef _, TRef _
   | TList _, TList _

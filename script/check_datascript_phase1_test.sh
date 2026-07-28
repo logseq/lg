@@ -172,6 +172,11 @@ expect_no_hints_between \
   test/datascript/upstream/pull_api.cljc \
   attrs-state-with run-wildcard-attr \
   '\^(:[[:alpha:]]|[[:alpha:]])'
+expect_no_hints_between \
+  "pull attribute runner contains no local type hints" \
+  test/datascript/upstream/pull_api.cljc \
+  run-wildcard-attr advance-reverse-state \
+  '\^(:[[:alpha:]]|[[:alpha:]])'
 
 for mapping in \
   'src/datascript/query.cljc.*test/datascript/lg/query.cljc' \

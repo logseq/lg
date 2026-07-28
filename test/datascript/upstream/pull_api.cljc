@@ -743,11 +743,8 @@
 
 (declare run-attrs-frame)
 
-(defn ^:vector<frame> run-wildcard-attr
-  [^PullContext context
-   ^AttrsState state
-   ^:option<datascript.pull-parser/pull-attr> explicit-attr
-   ^DatomCursor cursor]
+(defn run-wildcard-attr
+  [context state explicit-attr cursor]
   (match (cursor-datom cursor)
     None
     (run-attrs-frame
@@ -781,8 +778,8 @@
           (.-attr-index state)
           (non-empty-cursor (next-cursor cursor))))))))
 
-(defn ^:vector<frame> run-attrs-frame
-  [^PullContext context ^AttrsState state]
+(defn run-attrs-frame
+  [context state]
   (match (.-attr state)
     None
     (match (.-datoms state)
