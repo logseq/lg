@@ -93,6 +93,7 @@
         original @conn
         replacement (d/db-with original [[:db/add 1 :name "Ivan"]])
         rejected (d/db-with replacement [[:db/add 2 :name "Petr"]])
+        reset-database (d/db-with rejected [[:db/add 3 :name "Oleg"]])
         listener-calls (atom 0)
         _listener
         (d/listen!
@@ -104,7 +105,31 @@
     (is (identical? replacement @conn))
     (is (not (compare-and-set! conn original rejected)))
     (is (identical? replacement @conn))
-    (d/transact! conn [[:db/add 3 :name "Oleg"]])
+    (is (identical? reset-database (reset! conn reset-database)))
+    (is (identical? reset-database @conn))
+    (is
+     (identical?
+      replacement
+      (swap! conn (fn [_database] replacement))))
+    (is (identical? replacement @conn))
+    (is
+     (identical?
+      rejected
+      (swap!
+       conn
+       (fn [_database next-database] next-database)
+       rejected)))
+    (is (identical? rejected @conn))
+    (is
+     (identical?
+      reset-database
+      (swap!
+       conn
+       (fn [_database _ignored next-database] next-database)
+       replacement
+       reset-database)))
+    (is (identical? reset-database @conn))
+    (d/transact! conn [[:db/add 4 :name "Alexey"]])
     (is (= 1 @listener-calls))))
 
 (deftest test-js-static-adapter-basics

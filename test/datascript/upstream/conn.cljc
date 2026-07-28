@@ -127,6 +127,17 @@
     (reset! state-atom (state-with-db state database))
     database))
 
+(extend-type Conn
+  IReset
+  (-reset!
+   [connection ^datascript.db/DB database]
+   (reset-db! connection database))
+  ISwap
+  (-swap!
+   [connection
+    ^:fn<datascript.db/DB;datascript.db/DB> update-database]
+   (swap-db! connection update-database)))
+
 (defn ^datascript.db/TxReport with-closed
   ([^datascript.db/DB database ^:vector<datascript.db/tx-entry> tx-data]
    (with-closed database tx-data None))
