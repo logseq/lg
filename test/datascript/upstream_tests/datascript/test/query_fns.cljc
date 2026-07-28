@@ -1206,6 +1206,64 @@
         (catch (Invalid_argument message)
           (str message)))))))
 
+(deftest test-core-split-lines-query-function-coercion
+  (testing "split-lines stringifies missing, nil, and scalar values"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/split-lines) ?x]])
+      (Datascript_runtime.Data_value.Vector
+       (list (Datascript_runtime.Data_value.String "")))))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/split-lines nil) ?x]])
+      (Datascript_runtime.Data_value.Vector
+       (list (Datascript_runtime.Data_value.String "")))))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/split-lines 12) ?x]])
+      (Datascript_runtime.Data_value.Vector
+       (list (Datascript_runtime.Data_value.String "12")))))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/split-lines true) ?x]])
+      (Datascript_runtime.Data_value.Vector
+       (list (Datascript_runtime.Data_value.String "true")))))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/split-lines :a) ?x]])
+      (Datascript_runtime.Data_value.Vector
+       (list (Datascript_runtime.Data_value.String ":a"))))))
+
+  (testing "split-lines stringifies collection values"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/split-lines [1 2]) ?x]])
+      (Datascript_runtime.Data_value.Vector
+       (list (Datascript_runtime.Data_value.String "[1 2]")))))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(clojure.string/split-lines {:a 1}) ?x]])
+      (Datascript_runtime.Data_value.Vector
+       (list (Datascript_runtime.Data_value.String "{:a 1}"))))))
+
+  (testing "split-lines ignores extra arguments"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where
+             [(clojure.string/split-lines "a\nb" :ignored) ?x]])
+      (Datascript_runtime.Data_value.Vector
+       (list
+        (Datascript_runtime.Data_value.String "a")
+        (Datascript_runtime.Data_value.String "b")))))))
+
 (deftest test-core-string-query-functions
   (testing "case conversion, capitalization, and reversal preserve string results"
     (is

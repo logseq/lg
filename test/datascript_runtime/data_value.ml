@@ -805,13 +805,13 @@ let string_last_index_of values =
   | _ -> None
 
 let string_split_lines values =
-  match Rrbvec.to_list values with
-  | [ String source ] ->
-      Some
-        (Vector
-           (Lg_runtime.Runtime_string.split_lines source |> Rrbvec.to_list
-          |> List.map (fun value -> String value)))
-  | _ -> None
+  let value =
+    match Rrbvec.to_list values with value :: _ -> value | [] -> Nil
+  in
+  Some
+    (Vector
+       (Lg_runtime.Runtime_string.split_lines (to_clojure_string value)
+       |> Rrbvec.to_list |> List.map (fun value -> String value)))
 
 let string_replace all values =
   match Rrbvec.to_list values with
