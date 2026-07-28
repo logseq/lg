@@ -25,6 +25,8 @@ let transient_set_id = Protocol_id.create ~owner:[] ~name:"ITransientSet"
 let equiv_id = Protocol_id.create ~owner:[] ~name:"IEquiv"
 let hash_id = Protocol_id.create ~owner:[] ~name:"IHash"
 let deref_id = Protocol_id.create ~owner:[] ~name:"IDeref"
+let compare_and_set_id =
+  Protocol_id.create ~owner:[] ~name:"ICompareAndSet"
 let comparable_id = Protocol_id.create ~owner:[] ~name:"IComparable"
 
 let data_owner = [ "clojure.data" ]
@@ -210,6 +212,19 @@ let declare_deref registry =
     registry
   |> add_or_fail
 
+let declare_compare_and_set registry =
+  Protocol_registry.declare compare_and_set_id
+    [
+      {
+        Protocol_registry.method_id =
+          method_id compare_and_set_id "-compare-and-set!";
+        param_tys = [ TUnknown; TUnknown; TUnknown ];
+        return_ty = TBool;
+      };
+    ]
+    registry
+  |> add_or_fail
+
 let declare_data_protocols registry =
   let dynamic = Types.dynamic_constraint TUnknown in
   registry
@@ -304,7 +319,7 @@ let initial_registry =
   |> add_indexed (Receiver_id.Host_receiver "array")
        "Lg.Core_protocols.nth_host_array"
   |> declare_emptyable |> declare_collection_lifecycle_protocols |> declare_deref
-  |> declare_comparable_protocol
+  |> declare_compare_and_set |> declare_comparable_protocol
   |> declare_data_protocols
 
 let find_seqable receiver_ty registry =

@@ -3266,6 +3266,81 @@ let adapt_overloaded_callback env expected arg =
                 adapted_result))
   | _ -> Ok arg.semantic_expr
 
+let compile_compare_and_set scope env reference old_value new_value =
+  let type_error reference_ty =
+    Error.error
+      ("compare-and-set! expects a reference or ICompareAndSet, got "
+      ^ Types.source_name reference_ty)
+  in
+  match reference.ty with
+  | TRef referenced_ty ->
+      let reference_name = "__lg_cas_reference" in
+      let old_name = "__lg_cas_old" in
+      let new_name = "__lg_cas_new" in
+      Result.bind
+        (adapt_value_to_type env referenced_ty
+           (typed_ir old_value.ty (Semantic_ir.Ident old_name)))
+        (fun adapted_old ->
+          Result.map
+            (fun adapted_new ->
+              typed_ir TBool
+                (Semantic_ir.Let
+                   ( [
+                       (Semantic_ir.PVar reference_name, reference.semantic_expr);
+                       (Semantic_ir.PVar old_name, old_value.semantic_expr);
+                       (Semantic_ir.PVar new_name, new_value.semantic_expr);
+                     ],
+                     Semantic_ir.If
+                       ( Semantic_ir.Infix
+                           ( "==",
+                             Semantic_ir.Prefix
+                               ("!", Semantic_ir.Ident reference_name),
+                             adapted_old ),
+                         Semantic_ir.Sequence
+                           [
+                             Semantic_ir.Infix
+                               ( ":=",
+                                 Semantic_ir.Ident reference_name,
+                                 adapted_new );
+                             Semantic_ir.Bool true;
+                           ],
+                         Semantic_ir.Bool false ) )))
+            (adapt_value_to_type env referenced_ty
+               (typed_ir new_value.ty (Semantic_ir.Ident new_name))))
+  | reference_ty -> (
+      match
+        Protocol.lookup_protocol_marker scope env "ICompareAndSet"
+          "-compare-and-set!"
+      with
+      | None -> type_error reference_ty
+      | Some marker -> (
+          match
+            Protocol.lookup_marker_impl env marker "-compare-and-set!" reference_ty
+          with
+          | None -> type_error reference_ty
+          | Some
+              {
+                ty = TFn ([ receiver_ty; old_ty; new_ty ], TBool);
+                ocaml_name;
+                _;
+              } ->
+              Result.bind
+                (adapt_value_to_type env receiver_ty reference)
+                (fun receiver ->
+                  Result.bind
+                    (adapt_value_to_type env old_ty old_value)
+                    (fun old_value ->
+                      Result.map
+                        (fun new_value ->
+                          typed_ir TBool
+                            (Semantic_ir.Apply
+                               ( Semantic_ir.Ident ocaml_name,
+                                 [ receiver; old_value; new_value ] )))
+                        (adapt_value_to_type env new_ty new_value)))
+          | Some _ ->
+              Error.error
+                "ICompareAndSet/-compare-and-set! has an invalid signature"))
+
 let create ~compile_expr =
   let special_forms : Special_form_elaborator.t =
     Special_form_elaborator.create ~compile_expr ~dynamic_unpack
@@ -7297,6 +7372,12 @@ let create ~compile_expr =
             | Some _ -> Error.error ("set! expects a mutable target, got " ^ name)
             | None -> Error.error ("unknown set! target " ^ name))
         | _ -> Error.error "set! expects a target and value")
+    | "compare-and-set!" -> (
+        match compile_args () with
+        | Error _ as error -> error
+        | Ok [ reference; old_value; new_value ] ->
+            compile_compare_and_set scope env reference old_value new_value
+        | Ok _ -> Error.error "compare-and-set! expects 3 arguments")
     | ("reset!" | "vreset!") as reset_name -> (
         match compile_args () with
         | Error _ as err -> err

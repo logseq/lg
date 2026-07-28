@@ -3580,6 +3580,14 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         constrain_symbol (Types.weak_type TUnknown) params name
     | FList [ FSymbol "weak-ref"; value ] -> infer_form params value
     | FList
+        [ FSymbol "compare-and-set!"; reference; old_value; new_value ] -> (
+        match inferred_form_type params reference with
+        | TRef referenced_ty ->
+            Result.bind (infer_expected referenced_ty params old_value)
+              (fun params ->
+                infer_expected referenced_ty params new_value)
+        | _ -> infer_all params [ reference; old_value; new_value ])
+    | FList
         [ FSymbol ("reset!" | "vreset!"); FSymbol reference; value ] ->
         let value_ty = inferred_form_type params value in
         let referenced_ty =

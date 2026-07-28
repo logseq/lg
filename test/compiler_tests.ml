@@ -12263,6 +12263,36 @@ let test_custom_ideref_dispatches_nominal_return_values () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_custom_compare_and_set_dispatches () =
+  let source =
+    {|
+(type-record box (cell :ref<int>))
+(extend-type box
+  IDeref
+  (-deref [box] @(:cell box))
+  ICompareAndSet
+  (-compare-and-set! [box ^int old-value ^int new-value]
+    (let [cell (:cell box)]
+      (if (identical? @cell old-value)
+        (do
+          (reset! cell new-value)
+          true)
+        false))))
+(def value (record box (cell (atom 1))))
+(println
+  (str
+    (compare-and-set! value 1 2) ":"
+    @value ":"
+    (compare-and-set! value 1 3) ":"
+    @value))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "custom_compare_and_set_dispatches"
+    "true:2:false:2\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_nullable_custom_ideref_receivers_are_unwrapped () =
   let source =
     {|
@@ -32583,6 +32613,8 @@ let tests =
       test_ocaml_refs_support_read_and_assignment );
     ( "custom IDeref dispatches nominal return values",
       test_custom_ideref_dispatches_nominal_return_values );
+    ( "custom compare-and-set protocol dispatches",
+      test_custom_compare_and_set_dispatches );
     ( "nullable custom IDeref receivers are unwrapped",
       test_nullable_custom_ideref_receivers_are_unwrapped );
     ("concise standard type annotations", test_concise_standard_type_annotations);
