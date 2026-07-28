@@ -210,19 +210,14 @@
    (.-datoms state)))
 
 (defn visit
-  [^PullContext context
-   ^:keyword kind
-   ^:option<int> entity
-   ^:option<keyword> attr
-   ^:option<int> value]
-  :unit
+  [context kind entity attr value]
   (match (.-visitor context)
     None (Stdlib.ignore 0)
     (Some visitor)
     (Stdlib.ignore (visitor kind entity attr value))))
 
-(defn ^:option<DatomCursor> cursor-from-seq
-  [^:seq<datascript.db/Datom> datoms]
+(defn cursor-from-seq
+  [datoms]
   (match (seq-uncons datoms)
     None None
     (Some entry)
@@ -231,22 +226,20 @@
        (current (Some (tuple-get entry 0)))
        (remaining (tuple-get entry 1))))))
 
-(defn ^:option<DatomCursor> cursor-from-datoms
-  [^:option<seq<datascript.db/Datom>> datoms]
+(defn cursor-from-datoms
+  [datoms]
   (match datoms
     None None
     (Some datoms) (cursor-from-seq datoms)))
 
-(defn ^boolean attr-in-range?
-  [^:keyword attr ^:keyword from ^:keyword to]
+(defn attr-in-range?
+  [attr from to]
   (and
    (not (neg? (compare attr from)))
    (not (pos? (compare attr to)))))
 
-(defn ^:option<DatomCursor> pull-forward-cursor
-  [^datascript.db/database-view database
-   ^datascript.pull-parser/PullPattern pattern
-  ^int id]
+(defn pull-forward-cursor
+  [database pattern id]
   (if (:wildcard pattern)
     (cursor-from-datoms
      (db/database-view-search

@@ -4055,6 +4055,10 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               TFn ([ value_ty; value_ty ], TInt)
         in
         constrain_symbol fn_ty params fn
+    | FList [ FSymbol "seq-uncons"; FSymbol collection ] ->
+        constrain_symbol
+          (TSeq (fresh_type_variable "seq_uncons_element"))
+          params collection
     | FList
         [ FSymbol "vec"; FSymbol collection ] ->
         constrain_seqable (Types.dynamic_constraint TUnknown) params collection

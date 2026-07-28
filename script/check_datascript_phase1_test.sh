@@ -139,6 +139,11 @@ expect_no_hints_between "pull cursor algorithms contain no local type hints" \
   test/datascript/upstream/pull_api.cljc \
   pulled-to-data visit \
   '\^(:[[:alpha:]]|[[:alpha:]])'
+expect_no_hints_between \
+  "pull visitor and forward cursor algorithms contain no local type hints" \
+  test/datascript/upstream/pull_api.cljc \
+  visit attrs-state \
+  '\^(:[[:alpha:]]|[[:alpha:]])'
 
 for mapping in \
   'src/datascript/query.cljc.*test/datascript/lg/query.cljc' \
