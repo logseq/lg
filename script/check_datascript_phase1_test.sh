@@ -187,6 +187,11 @@ expect_no_hints_between \
   test/datascript/upstream/pull_api.cljc \
   run-frame first-frame \
   '\^(:[[:alpha:]]|[[:alpha:]])'
+expect_no_hints_between \
+  "pull stack execution helpers contain no local type hints" \
+  test/datascript/upstream/pull_api.cljc \
+  first-frame parse-opts \
+  '\^(:[[:alpha:]]|[[:alpha:]])'
 
 for mapping in \
   'src/datascript/query.cljc.*test/datascript/lg/query.cljc' \

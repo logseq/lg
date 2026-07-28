@@ -1054,18 +1054,24 @@
    {}
    values))
 
-(defn ^frame first-frame [^:list<frame> stack]
+(signature datascript.pull-api/first-frame
+  :fn<list<frame>;frame>)
+
+(defn first-frame [stack]
   (peek stack))
 
-(defn ^:list<frame> rest-frames [^:list<frame> stack]
+(signature datascript.pull-api/rest-frames
+  :fn<list<frame>;list<frame>>)
+
+(defn rest-frames [stack]
   (pop stack))
 
-(defn ^:option<ResultState> result-frame-state [^frame current]
+(defn result-frame-state [current]
   (match current
     (ResultFrame result) (Some result)
     _ None))
 
-(defn ^ResultState compact-child-result [^ResultState result]
+(defn compact-child-result [result]
   (record ResultState
     (value
      (match (.-value result)
@@ -1076,12 +1082,18 @@
        (Some (PulledScalar (pulled-to-data value)))))
     (datoms (.-datoms result))))
 
-(defn ^:list<frame> push-frame
-  [^:list<frame> stack ^frame value]
+(signature datascript.pull-api/push-frame
+  :fn<list<frame>;frame;list<frame>>)
+
+(defn push-frame
+  [stack value]
   (conj stack value))
 
-(defn ^:option<pulled-value> run-stack
-  [^PullContext context ^:list<frame> stack]
+(signature datascript.pull-api/run-stack
+  :fn<PullContext;list<frame>;option<pulled-value>>)
+
+(defn run-stack
+  [context stack]
   (let [current (first-frame stack)
         stack-before-current (rest-frames stack)]
     (match (result-frame-state current)
@@ -1106,13 +1118,8 @@
         stack-before-current
         (run-frame context current))))))
 
-(defn
-  ^:option<map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>>
-  pull-parsed-with-options
-  [^datascript.db/database-view database
-   ^datascript.pull-parser/PullPattern pattern
-   ^:Datascript_runtime.Data_value.entity_ref entity-ref
-   ^PullOptions options]
+(defn pull-parsed-with-options
+  [database pattern entity-ref options]
   (if-some [eid (db/database-view-entid database entity-ref)]
     (let [context
           (record PullContext
