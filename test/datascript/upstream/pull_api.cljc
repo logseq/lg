@@ -1895,13 +1895,8 @@
             source
             entity-refs
             (first options))))))}
-  ([^datascript.db/database-view database
-    ^:vector<datascript.pull-parser/pull-source-item> source
-    ^:vector<Datascript_runtime.Data_value.entity_ref> entity-refs]
+  ([database source entity-refs]
    (pull-many-source database source entity-refs))
-  ([^datascript.db/database-view database
-    ^:vector<datascript.pull-parser/pull-source-item> source
-    ^:vector<Datascript_runtime.Data_value.entity_ref> entity-refs
-    ^PullOptions options]
+  ([database source entity-refs options]
    (pull-many-source-with-options
     database source entity-refs options)))
