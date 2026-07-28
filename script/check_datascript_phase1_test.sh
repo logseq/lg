@@ -157,6 +157,11 @@ expect_no_hints_between \
   test/datascript/upstream/pull_api.cljc \
   attrs-state ref-datom-id \
   '\^(:[[:alpha:]]|[[:alpha:]])'
+expect_no_hints_between \
+  "pull multivalue reference frame algorithms contain no local type hints" \
+  test/datascript/upstream/pull_api.cljc \
+  ref-datom-id attr-at-index \
+  '\^(:[[:alpha:]]|[[:alpha:]])'
 
 for mapping in \
   'src/datascript/query.cljc.*test/datascript/lg/query.cljc' \

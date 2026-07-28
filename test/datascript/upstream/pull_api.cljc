@@ -401,15 +401,14 @@
            attr
            id)))))))
 
-(defn ^:option<int> ref-datom-id
-  [^datascript.pull-parser/PullAttrData data
-   ^datascript.db/Datom datom]
+(defn ref-datom-id
+  [data datom]
   (if (.-reverse data)
     (Some (.-e datom))
     (Datascript_runtime.Data_value.ref_value (.-v datom))))
 
-(defn ^MultivalRefAttrState next-multival-ref-state
-  [^MultivalRefAttrState state]
+(defn next-multival-ref-state
+  [state]
   (record MultivalRefAttrState
     (seen (.-seen state))
     (recursion-limits (.-recursion-limits state))
@@ -418,15 +417,15 @@
     (attr (.-attr state))
     (datoms (next-cursor (.-datoms state)))))
 
-(defn ^frame finish-multival-ref
-  [^MultivalRefAttrState state]
+(defn finish-multival-ref
+  [state]
   (ResultFrame
    (frame-result
     (non-empty-many (.-values state))
     (Some (.-datoms state)))))
 
-(defn ^frame skip-multival-ref
-  [^MultivalRefAttrState state]
+(defn skip-multival-ref
+  [state]
   (let [data (dpp/attr-data (.-attr state))]
     (match (cursor-datom (.-datoms state))
       None
@@ -444,8 +443,11 @@
            (PulledMany (.-values state)))
           (Some (.-datoms state))))))))
 
-(defn ^:vector<frame> run-multival-ref-frame
-  [^PullContext context ^MultivalRefAttrState state]
+(signature datascript.pull-api/run-multival-ref-frame
+  :fn<PullContext;MultivalRefAttrState;vector<frame>>)
+
+(defn run-multival-ref-frame
+  [context state]
   (let [data (dpp/attr-data (.-attr state))]
     (match (cursor-datom (.-datoms state))
       None
