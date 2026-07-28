@@ -3009,14 +3009,14 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                      | FKeyword _ -> Ok params
                      | key ->
                          infer_expected
-                           (Types.dynamic_constraint TUnknown)
+                           (Type_solver.fresh ())
                            params key))
                (Ok params)
         in
         Result.bind params (fun params ->
         let value_ty =
           match inferred_form_type params value with
-          | TUnknown | TMeta _ | TVar _ -> Types.dynamic_constraint TUnknown
+          | TUnknown | TMeta _ | TVar _ -> Type_solver.fresh ()
           | ty -> ty
         in
         Result.bind (infer_expected value_ty params value) (fun params ->
@@ -3029,11 +3029,10 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               | key ->
                   let key_ty =
                     match inferred_form_type params key with
-                    | TUnknown | TMeta _ | TVar _ -> Types.dynamic_constraint TUnknown
+                    | TUnknown | TMeta _ | TVar _ -> Type_solver.fresh ()
                     | ty -> ty
                   in
-                  Types.dynamic_map key_ty
-                    (Types.dynamic_constraint nested_ty))
+                  Types.dynamic_map key_ty nested_ty)
             keys value_ty
         in
         infer_expected target_ty params target)))

@@ -1952,6 +1952,11 @@ let function_has_host_int_return_boundary expected actual =
       && match actual_return with TUnknown | TMeta _ | TVar _ -> true | _ -> false)
   | _ -> false
 
+let record_adapter_source_name fallback expression =
+  match Semantic_ir.unlocated expression with
+  | Semantic_ir.Ident name -> name
+  | _ -> fallback
+
 let rec adapt_value_to_type env expected actual =
   let same_representation =
     match (expected, actual.ty) with
@@ -2050,7 +2055,10 @@ let rec adapt_value_to_type env expected actual =
       match expected with TRecord fields -> fields | _ -> assert false
     in
     let actual_fields = Types.record_fields actual.ty |> Option.get in
-    let source_name = "__lg_adapted_structural_record" in
+    let source_name =
+      record_adapter_source_name "__lg_adapted_structural_record"
+        actual.semantic_expr
+    in
     let source =
       {
         actual with
@@ -2126,7 +2134,9 @@ let rec adapt_value_to_type env expected actual =
       match expected with TNamed_record expected -> expected | _ -> assert false
     in
     let actual_fields = Types.record_fields actual.ty |> Option.get in
-    let source_name = "__lg_adapted_record" in
+    let source_name =
+      record_adapter_source_name "__lg_adapted_record" actual.semantic_expr
+    in
     let source =
       {
         actual with
