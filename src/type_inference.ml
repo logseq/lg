@@ -3588,6 +3588,13 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                 infer_expected referenced_ty params new_value)
         | _ -> infer_all params [ reference; old_value; new_value ])
     | FList
+        [ FSymbol ("reset!" | "vreset!"); FSymbol reference; value ]
+      when
+        (match string_assoc_opt reference params with
+        | Some (TRef _ | TUnknown | TMeta _ | TVar _) | None -> false
+        | Some _ -> true) ->
+        infer_form params value
+    | FList
         [ FSymbol ("reset!" | "vreset!"); FSymbol reference; value ] ->
         let value_ty = inferred_form_type params value in
         let referenced_ty =
@@ -3683,6 +3690,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                 let expected_argument =
                   match (expected, update_ty) with
                   | TRef _, TFn _ -> TUnknown
+                  | expected, _ when not (Types.is_dynamic expected) -> TUnknown
                   | _ -> Types.dynamic_constraint TUnknown
                 in
                 List.fold_left

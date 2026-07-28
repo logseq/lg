@@ -3266,6 +3266,12 @@ let adapt_overloaded_callback env expected arg =
                 adapted_result))
   | _ -> Ok arg.semantic_expr
 
+let protocol_implementation scope env protocol_name method_name receiver_ty =
+  Option.bind
+    (Protocol.lookup_protocol_marker scope env protocol_name method_name)
+    (fun marker ->
+      Protocol.lookup_marker_impl env marker method_name receiver_ty)
+
 let compile_compare_and_set scope env reference old_value new_value =
   let type_error reference_ty =
     Error.error
@@ -3309,35 +3315,129 @@ let compile_compare_and_set scope env reference old_value new_value =
                (typed_ir new_value.ty (Semantic_ir.Ident new_name))))
   | reference_ty -> (
       match
-        Protocol.lookup_protocol_marker scope env "IAtom" "-compare-and-set!"
+        protocol_implementation scope env "IAtom" "-compare-and-set!"
+          reference_ty
       with
       | None -> type_error reference_ty
-      | Some marker -> (
-          match
-            Protocol.lookup_marker_impl env marker "-compare-and-set!" reference_ty
-          with
-          | None -> type_error reference_ty
-          | Some
-              {
-                ty = TFn ([ receiver_ty; old_ty; new_ty ], TBool);
-                ocaml_name;
-                _;
-              } ->
+      | Some
+          {
+            ty = TFn ([ receiver_ty; old_ty; new_ty ], TBool);
+            ocaml_name;
+            _;
+          } ->
+          Result.bind
+            (adapt_value_to_type env receiver_ty reference)
+            (fun receiver ->
               Result.bind
-                (adapt_value_to_type env receiver_ty reference)
-                (fun receiver ->
-                  Result.bind
-                    (adapt_value_to_type env old_ty old_value)
-                    (fun old_value ->
-                      Result.map
-                        (fun new_value ->
-                          typed_ir TBool
-                            (Semantic_ir.Apply
-                               ( Semantic_ir.Ident ocaml_name,
-                                 [ receiver; old_value; new_value ] )))
-                        (adapt_value_to_type env new_ty new_value)))
-          | Some _ ->
-              Error.error "IAtom/-compare-and-set! has an invalid signature"))
+                (adapt_value_to_type env old_ty old_value)
+                (fun old_value ->
+                  Result.map
+                    (fun new_value ->
+                      typed_ir TBool
+                        (Semantic_ir.Apply
+                           ( Semantic_ir.Ident ocaml_name,
+                             [ receiver; old_value; new_value ] )))
+                    (adapt_value_to_type env new_ty new_value)))
+      | Some _ ->
+          Error.error "IAtom/-compare-and-set! has an invalid signature")
+
+let atom_state_type scope env receiver_ty =
+  match
+    protocol_implementation scope env "IDeref" "-deref" receiver_ty
+  with
+  | Some { ty = TFn ([ _ ], state_ty); _ } -> Some state_ty
+  | Some _ | None -> None
+
+let compile_protocol_reset scope env reset_name reference value =
+  let reference_ty = reference.ty in
+  let type_error () =
+    Error.error
+      (reset_name ^ " expects a reference or IReset as its first argument")
+  in
+  if reset_name <> "reset!" then type_error ()
+  else
+    match
+      protocol_implementation scope env "IReset" "-reset!" reference_ty
+    with
+    | None -> type_error ()
+    | Some
+        {
+          ty = TFn ([ receiver_ty; _ ], _);
+          ocaml_name;
+          _;
+        } -> (
+        match atom_state_type scope env reference_ty with
+        | None -> type_error ()
+        | Some state_ty ->
+            Result.bind
+              (adapt_value_to_type env receiver_ty reference)
+              (fun receiver ->
+                match adapt_value_to_type env state_ty value with
+                | Error _ ->
+                    Error.error
+                      "reset! value must match referenced type"
+                | Ok value ->
+                    Ok
+                      (typed_ir state_ty
+                         (Semantic_ir.Apply
+                            ( Semantic_ir.Ident ocaml_name,
+                              [ receiver; value ] )))))
+    | Some _ ->
+        Error.error "IReset/-reset! has an invalid signature"
+
+let compile_protocol_swap ~compile_expr scope env swap_name reference
+    function_form extra_forms =
+  let reference_ty = reference.ty in
+  let type_error () =
+    Error.error
+      (swap_name ^ " expects a reference or ISwap as its first argument")
+  in
+  if swap_name <> "swap!" then type_error ()
+  else
+    match
+      protocol_implementation scope env "ISwap" "-swap!" reference_ty
+    with
+    | None -> type_error ()
+    | Some
+        {
+          ty = TFn ([ receiver_ty; TFn ([ _ ], _) ], _);
+          ocaml_name;
+          _;
+        } -> (
+        match atom_state_type scope env reference_ty with
+        | None -> type_error ()
+        | Some state_ty ->
+            let value_name = "__lg_swap_value" in
+            let updater_env =
+              Env.add
+                (Names.scoped_key scope value_name)
+                (Types.binding value_name state_ty)
+                env
+            in
+            let updater_body =
+              FList
+                (function_form :: FSymbol value_name :: extra_forms)
+            in
+            Result.bind
+              (compile_expr scope updater_env updater_body)
+              (fun updater_body ->
+                Result.bind
+                  (adapt_value_to_type updater_env state_ty
+                     updater_body)
+                  (fun updater_body ->
+                    let updater =
+                      Semantic_ir.Fun
+                        ( [ Semantic_ir.PVar value_name ],
+                          updater_body )
+                    in
+                    Result.map
+                      (fun receiver ->
+                        typed_ir state_ty
+                          (Semantic_ir.Apply
+                             ( Semantic_ir.Ident ocaml_name,
+                               [ receiver; updater ] )))
+                      (adapt_value_to_type env receiver_ty reference))))
+    | Some _ -> Error.error "ISwap/-swap! has an invalid signature"
 
 let create ~compile_expr =
   let special_forms : Special_form_elaborator.t =
@@ -7455,9 +7555,8 @@ let create ~compile_expr =
                                     value.semantic_expr;
                         ]))
             | _ ->
-                Error.error
-                            (reset_name
-                           ^ " expects a reference as its first argument"))
+                compile_protocol_reset scope env reset_name reference
+                  value)
         | Ok _ -> Error.error (reset_name ^ " expects 2 arguments"))
     | ("swap!" | "vswap!") as swap_name -> (
         match arg_forms with
@@ -7556,9 +7655,8 @@ let create ~compile_expr =
                                ^ " requires a statically typed reference and \
                                   updater")
                 | _ ->
-                    Error.error
-                                (swap_name
-                               ^ " expects a reference as its first argument")))
+                    compile_protocol_swap ~compile_expr scope env
+                      swap_name reference function_form extra_forms))
         | _ ->
             Error.error
                         (swap_name

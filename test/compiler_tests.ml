@@ -12275,23 +12275,65 @@ let test_custom_compare_and_set_dispatches () =
     (let [cell (:cell box)]
       (if (identical? @cell old-value)
         (do
-          (reset! cell new-value)
-          true)
-        false))))
+            (reset! cell new-value)
+            true)
+          false)))
+  IReset
+  (-reset! [box ^int new-value]
+    (let [cell (:cell box)]
+      (reset! cell new-value)))
+  ISwap
+  (-swap! [box ^:fn<int;int> update-value]
+    (let [cell (:cell box)
+          new-value (update-value @cell)]
+      (reset! cell new-value))))
 (def value (record box (cell (atom 1))))
+(def evaluations (atom 0))
+(defn evaluated-value []
+  (do
+    (swap! evaluations inc)
+    value))
 (println
   (str
     (compare-and-set! value 1 2) ":"
     @value ":"
     (compare-and-set! value 1 3) ":"
-    @value))
+    @value ":"
+    (reset! value 4) ":"
+    @value ":"
+    (swap! value inc) ":"
+    @value ":"
+    (swap! value + 2) ":"
+    @value ":"
+    (swap! value + 3 4) ":"
+    @value ":"
+    (swap! (evaluated-value) + 1 2 3 4) ":"
+    @value ":"
+    @evaluations))
 |}
   in
   let native_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "custom_compare_and_set_dispatches"
-    "true:2:false:2\n" native_source;
+    "true:2:false:2:4:4:5:5:7:7:14:14:24:24:1\n" native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_custom_atom_protocol_rejects_invalid_reset_value () =
+  let source =
+    {|
+(type-record box (cell :ref<int>))
+(extend-type box
+  IDeref
+  (-deref [box] @(:cell box))
+  IReset
+  (-reset! [box ^int new-value]
+    (reset! (:cell box) new-value)))
+(def value (record box (cell (atom 1))))
+(reset! value "wrong")
+|}
+  in
+  expect_error_contains "expression was expected of type"
+    (Lg.Compiler.compile_string source)
 
 let test_nullable_custom_ideref_receivers_are_unwrapped () =
   let source =
@@ -32615,6 +32657,8 @@ let tests =
       test_custom_ideref_dispatches_nominal_return_values );
     ( "custom compare-and-set protocol dispatches",
       test_custom_compare_and_set_dispatches );
+    ( "custom atom protocol rejects invalid reset value",
+      test_custom_atom_protocol_rejects_invalid_reset_value );
     ( "nullable custom IDeref receivers are unwrapped",
       test_nullable_custom_ideref_receivers_are_unwrapped );
     ("concise standard type annotations", test_concise_standard_type_annotations);

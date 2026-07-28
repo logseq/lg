@@ -26,6 +26,8 @@ let equiv_id = Protocol_id.create ~owner:[] ~name:"IEquiv"
 let hash_id = Protocol_id.create ~owner:[] ~name:"IHash"
 let deref_id = Protocol_id.create ~owner:[] ~name:"IDeref"
 let atom_id = Protocol_id.create ~owner:[] ~name:"IAtom"
+let reset_id = Protocol_id.create ~owner:[] ~name:"IReset"
+let swap_id = Protocol_id.create ~owner:[] ~name:"ISwap"
 let comparable_id = Protocol_id.create ~owner:[] ~name:"IComparable"
 
 let data_owner = [ "clojure.data" ]
@@ -224,6 +226,32 @@ let declare_compare_and_set registry =
     registry
   |> add_or_fail
 
+let declare_reset registry =
+  let value = TVar "reset_value" in
+  Protocol_registry.declare reset_id
+    [
+      {
+        Protocol_registry.method_id = method_id reset_id "-reset!";
+        param_tys = [ TUnknown; value ];
+        return_ty = value;
+      };
+    ]
+    registry
+  |> add_or_fail
+
+let declare_swap registry =
+  let value = TVar "swap_value" in
+  Protocol_registry.declare swap_id
+    [
+      {
+        Protocol_registry.method_id = method_id swap_id "-swap!";
+        param_tys = [ TUnknown; TFn ([ value ], value) ];
+        return_ty = value;
+      };
+    ]
+    registry
+  |> add_or_fail
+
 let declare_data_protocols registry =
   let dynamic = Types.dynamic_constraint TUnknown in
   registry
@@ -318,7 +346,8 @@ let initial_registry =
   |> add_indexed (Receiver_id.Host_receiver "array")
        "Lg.Core_protocols.nth_host_array"
   |> declare_emptyable |> declare_collection_lifecycle_protocols |> declare_deref
-  |> declare_compare_and_set |> declare_comparable_protocol
+  |> declare_compare_and_set |> declare_reset |> declare_swap
+  |> declare_comparable_protocol
   |> declare_data_protocols
 
 let find_seqable receiver_ty registry =
