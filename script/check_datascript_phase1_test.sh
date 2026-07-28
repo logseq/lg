@@ -296,6 +296,7 @@ for mapping in \
   'src/datascript/db.cljc.*test/datascript/upstream/db.cljc' \
   'src/datascript/pull_api.cljc.*test/datascript/upstream/pull_api.cljc' \
   'src/datascript/impl/entity.cljc.*test/datascript/upstream/entity.cljc' \
+  'src/datascript/datafy.cljc.*test/datascript/lg/datafy.cljc' \
   'src/datascript/conn.cljc.*test/datascript/upstream/conn.cljc' \
   'src/datascript/storage.clj'
 do

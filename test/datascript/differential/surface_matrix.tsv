@@ -39,6 +39,7 @@ pull	cycle	recursive-component	parity	test/datascript/upstream_tests/datascript/
 pull	visitor	{:visitor callback}	parity	test/datascript/upstream_tests/datascript/test/pull_api.cljc
 pull	missing-entity	unknown-eid	parity	test/datascript/upstream_tests/datascript/test/pull_api.cljc
 pull	pull-many-parse-reuse	pattern-plus-eids	parity	test/datascript/upstream/pull_api.cljc
+entity	datafy-navigation	forward-reverse-many-chained	representation-only	test/datascript/upstream_tests/datascript/test/entity.cljc
 transaction	entity-map	{:db/id id :attr value}	parity	test/datascript/upstream_tests/datascript/test/transact.cljc
 transaction	add	[:db/add e a v]	parity	test/datascript/upstream_tests/datascript/test/transact.cljc
 transaction	retract	[:db/retract e a v]	parity	test/datascript/upstream_tests/datascript/test/transact.cljc

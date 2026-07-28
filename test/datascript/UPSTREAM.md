@@ -28,6 +28,7 @@ sh script/check_datascript_api_manifest.sh \
 | `src/datascript/db.cljc` | `test/datascript/upstream/db.cljc` |
 | `src/datascript/pull_api.cljc` | `test/datascript/upstream/pull_api.cljc` |
 | `src/datascript/impl/entity.cljc` | `test/datascript/upstream/entity.cljc` |
+| `src/datascript/datafy.cljc` | `test/datascript/lg/datafy.cljc` |
 | `src/datascript/conn.cljc` | `test/datascript/upstream/conn.cljc` |
 | `src/datascript/storage.clj` | `test/datascript/upstream/storage_file.cljc` |
 | `src/datascript/storage.cljs` | `test/datascript/upstream/storage.cljc` |

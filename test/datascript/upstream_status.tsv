@@ -3,7 +3,7 @@ datascript/test/components.cljc:test-components-multival	covered	test/datascript
 datascript/test/conn.cljc:test-ways-to-create-conn	covered	test/datascript/upstream_tests/datascript/test/conn.cljc	-
 datascript/test/conn.cljc:test-reset-conn!	covered	test/datascript/upstream_tests/datascript/test/conn.cljc	-
 datascript/test/core.cljc:test-protocols	covered	test/datascript/upstream_tests/datascript/test/core.cljc	-
-datascript/test/datafy.cljc:test-navigation	excluded	-	user-excluded
+datascript/test/datafy.cljc:test-navigation	covered	test/datascript/upstream_tests/datascript/test/entity.cljc	Closed navigation values and keys preserve upstream forward, reverse, namespaced, many-ref, indexed, and chained datafy behavior on Native and Melange.
 datascript/test/db.cljc:test-defrecord-updatable	covered	test/datascript/upstream_tests/datascript/test/db.cljc	-
 datascript/test/db.cljc:test-db-hash-cache	covered	test/datascript/upstream_tests/datascript/test/db.cljc	-
 datascript/test/db.cljc:test-uuid	covered	test/datascript/upstream_tests/datascript/test/db.cljc	-

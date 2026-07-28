@@ -2,6 +2,7 @@
   (:require
    [clojure.test :refer [deftest is testing]]
    [datascript.core :as d]
+   [datascript.datafy :as datafy]
    [datascript.db :as db]
    [datascript.impl.entity :as entity]
    [datascript.test.core :as tdc]))
@@ -141,6 +142,110 @@
   :Datascript_runtime.Data_value.t
   (Datascript_runtime.Data_value.set_of_vector
    (mapv string-value values)))
+
+(defn datafy-test-db []
+  (->
+   (d/empty-db
+    {:ref {:db/valueType :db.type/ref}
+     :namespace/ref {:db/valueType :db.type/ref}
+     :many/ref
+     {:db/valueType :db.type/ref
+      :db/cardinality :db.cardinality/many}})
+   (d/db-with
+    [{:db/id 1 :name "Parent1"}
+     {:db/id 2 :name "Child1" :ref 1 :namespace/ref 1}
+     {:db/id 3 :name "GrandChild1" :ref 2 :namespace/ref 2}
+     {:db/id 4 :name "Master" :many/ref [1 2 3]}])))
+
+(defn datafy-navigate
+  [^datascript.datafy/navigation-value navigation
+   ^:vector<datascript.datafy/navigation-key> path]
+  :datascript.datafy/navigation-value
+  (if-some [key (first path)]
+    (let [datafied (datafy/datafy navigation)
+          value (datafy/lookup datafied key)]
+      (recur
+       (datafy/nav datafied key value)
+       (subvec path 1)))
+    navigation))
+
+(defn datafy-scalar-equal?
+  [^datascript.datafy/navigation-value navigation
+   ^Datascript_runtime.Data_value.t expected]
+  (match (datafy/navigation-scalar navigation)
+    (Some actual)
+    (Datascript_runtime.Data_value.equal actual expected)
+    None false))
+
+(defn datafy-entity-id-at?
+  [^datascript.datafy/navigation-value navigation
+   ^:vector<datascript.datafy/navigation-key> path
+   ^:int expected]
+  (=
+   (Some expected)
+   (datafy/navigation-entity-id
+    (datafy-navigate navigation path))))
+
+(deftest test-navigation
+  (let [database (datafy-test-db)]
+    (if-some [source (entity-by-id database 3)]
+      (let [navigation (datafy/entity-navigation source)]
+        (is
+         (datafy-entity-id-at?
+          navigation
+          [(datafy/NavigationAttribute :ref)]
+          2))
+        (is
+         (datafy-entity-id-at?
+          navigation
+          [(datafy/NavigationAttribute :namespace/ref)]
+          2))
+        (is
+         (datafy-entity-id-at?
+          navigation
+          [(datafy/NavigationAttribute :ref)
+           (datafy/NavigationAttribute :namespace/ref)]
+          1))
+        (is
+         (datafy-entity-id-at?
+          navigation
+          [(datafy/NavigationAttribute :namespace/ref)
+           (datafy/NavigationAttribute :ref)
+           (datafy/NavigationAttribute :_ref)
+           (datafy/NavigationIndex 0)
+           (datafy/NavigationAttribute :namespace/_ref)
+           (datafy/NavigationIndex 0)]
+          3))
+        (is
+         (=
+          [1 2 3]
+          (sort
+           (datafy/navigation-entity-ids
+            (datafy-navigate
+             navigation
+             [(datafy/NavigationAttribute :many/_ref)
+              (datafy/NavigationIndex 0)
+              (datafy/NavigationAttribute :many/ref)])))))
+        (is
+         (datafy-scalar-equal?
+          (datafy-navigate
+           navigation
+           [(datafy/NavigationAttribute :name)])
+          (string-value "GrandChild1")))
+        (is
+         (nil?
+          (datafy/navigation-entity-id
+           (datafy-navigate
+            navigation
+            [(datafy/NavigationAttribute :missing)]))))
+        (is
+         (nil?
+          (datafy/navigation-entity-id
+           (datafy-navigate
+            navigation
+            [(datafy/NavigationAttribute :_ref)
+             (datafy/NavigationIndex 99)])))))
+      (is false))))
 
 (deftest test-entity
   (let [database

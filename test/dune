@@ -1243,6 +1243,7 @@
   datascript/upstream/pull_api.cljc
   datascript/lg/query_types.cljc
   datascript/upstream/entity.cljc
+  datascript/lg/datafy.cljc
   datascript/lg/query.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/storage_file.cljc
@@ -1270,6 +1271,7 @@
    %{dep:datascript/upstream/pull_api.cljc}
    %{dep:datascript/lg/query_types.cljc}
    %{dep:datascript/upstream/entity.cljc}
+   %{dep:datascript/lg/datafy.cljc}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/storage_file.cljc}
@@ -1309,6 +1311,7 @@
   datascript/upstream/pull_api.cljc
   datascript/lg/query_types.cljc
   datascript/upstream/entity.cljc
+  datascript/lg/datafy.cljc
   datascript/lg/query.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/serialize.cljc
@@ -1335,6 +1338,7 @@
    %{dep:datascript/upstream/pull_api.cljc}
    %{dep:datascript/lg/query_types.cljc}
    %{dep:datascript/upstream/entity.cljc}
+   %{dep:datascript/lg/datafy.cljc}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/serialize.cljc}

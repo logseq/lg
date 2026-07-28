@@ -14,6 +14,7 @@
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
+  datascript/lg/datafy.cljc
   datascript/lg/query_types.cljc
   datascript/lg/query.cljc
   datascript/lg/query_v3.cljc
@@ -55,6 +56,7 @@
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
+   %{dep:datascript/lg/datafy.cljc}
    %{dep:datascript/lg/query_types.cljc}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/lg/query_v3.cljc}
@@ -89,6 +91,7 @@
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
+  datascript/lg/datafy.cljc
   datascript/lg/query_types.cljc
   datascript/lg/query.cljc
   datascript/lg/query_v3.cljc
@@ -127,6 +130,7 @@
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
+   %{dep:datascript/lg/datafy.cljc}
    %{dep:datascript/lg/query_types.cljc}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/lg/query_v3.cljc}

@@ -171,7 +171,8 @@
    closed-option-surface))
 
 (def lg-source-paths
-  ["test/datascript/lg/js.cljc"
+  ["test/datascript/lg/datafy.cljc"
+   "test/datascript/lg/js.cljc"
    "test/datascript/lg/query.cljc"
    "test/datascript/lg/query_v3.cljc"
    "test/datascript/upstream/built_ins.cljc"

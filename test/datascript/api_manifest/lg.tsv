@@ -178,6 +178,13 @@ arity	datascript.core/unlisten!	2	fixed
 arity	datascript.core/with	2	fixed
 arity	datascript.core/with	3	fixed
 arity	datascript.core/with-schema	2	fixed
+arity	datascript.datafy/datafy	1	fixed
+arity	datascript.datafy/entity-navigation	1	fixed
+arity	datascript.datafy/lookup	2	fixed
+arity	datascript.datafy/nav	3	fixed
+arity	datascript.datafy/navigation-entity-id	1	fixed
+arity	datascript.datafy/navigation-entity-ids	1	fixed
+arity	datascript.datafy/navigation-scalar	1	fixed
 arity	datascript.db/IDB/-attr-tuples	1	fixed
 arity	datascript.db/IDB/-attrs-by	2	fixed
 arity	datascript.db/IDB/-schema	1	fixed
@@ -1232,6 +1239,13 @@ var	datascript.core/tx0
 var	datascript.core/unlisten!
 var	datascript.core/with
 var	datascript.core/with-schema
+var	datascript.datafy/datafy
+var	datascript.datafy/entity-navigation
+var	datascript.datafy/lookup
+var	datascript.datafy/nav
+var	datascript.datafy/navigation-entity-id
+var	datascript.datafy/navigation-entity-ids
+var	datascript.datafy/navigation-scalar
 var	datascript.db/*last-auto-tempid
 var	datascript.db/IDB
 var	datascript.db/IDatabaseView
