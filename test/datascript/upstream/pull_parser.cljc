@@ -426,12 +426,11 @@
         'datascript.pull-parser/with-alias-value
         attr
         alias-form)))}
-  [^pull-attr attr
-   ^:Datascript_runtime.Data_value.t alias]
+  [attr alias]
   (with-alias-value attr alias))
 
-(defn ^pull-attr with-limit
-  [^pull-attr attr ^:option<int> limit]
+(defn with-limit
+  [attr limit]
   (let [data (attr-data attr)]
     (when-not (.-multival data)
       (Stdlib.invalid_arg
@@ -446,15 +445,14 @@
      attr
      (assoc data :limit limit))))
 
-(defn ^pull-attr with-xform
-  [^pull-attr attr
-   ^pull-xform xform]
+(defn with-xform
+  [attr xform]
   (replace-attr-data
    attr
    (assoc (attr-data attr) :xform (Some xform))))
 
-(defn ^pull-attr apply-source-option
-  [^pull-attr attr ^pull-source-option option]
+(defn apply-source-option
+  [attr option]
   (match option
     (PullOptionAlias alias)
     (with-alias attr alias)
@@ -465,8 +463,8 @@
     (PullOptionXform xform)
     (with-xform attr xform)))
 
-(defn ^pull-attr with-recursion
-  [^pull-attr attr ^:option<int> recursion-limit]
+(defn with-recursion
+  [attr recursion-limit]
   (let [data (attr-data attr)]
     (when-not (.-ref data)
       (Stdlib.invalid_arg
