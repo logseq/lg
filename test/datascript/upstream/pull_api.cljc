@@ -478,15 +478,14 @@
                 (.-attr state)
                 id)])))))))
 
-(defn ^:option<datascript.pull-parser/pull-attr> attr-at-index
-  [^:vector<datascript.pull-parser/pull-attr> attrs ^int index]
+(defn attr-at-index
+  [attrs index]
   (if (< index (count attrs))
     (Some (nth attrs index))
     None))
 
-(defn ^:option<DatomCursor> next-parent-datoms
-  [^:option<DatomCursor> child-datoms
-   ^:option<DatomCursor> parent-datoms]
+(defn next-parent-datoms
+  [child-datoms parent-datoms]
   (match child-datoms
     (Some datoms) (Some datoms)
     None
@@ -495,9 +494,8 @@
       (Some datoms)
       (non-empty-cursor (next-cursor datoms)))))
 
-(defn ^:option<pulled-value> apply-attr-xform
-  [^datascript.pull-parser/pull-attr attr
-   ^:option<pulled-value> value]
+(defn apply-attr-xform
+  [attr value]
   (match (.-xform (dpp/attr-data attr))
     None value
     (Some xform)
@@ -511,19 +509,16 @@
         (Some value)
         (Some (PulledScalar value))))))
 
-(defn ^:map<Datascript_runtime.Data_value.t;pulled-value>
-  merge-attr-value
-  [^:map<Datascript_runtime.Data_value.t;pulled-value> values
-   ^datascript.pull-parser/pull-attr attr
-   ^:option<pulled-value> value]
+(defn merge-attr-value
+  [values attr value]
   (match (apply-attr-xform attr value)
     None values
     (Some value)
     (assoc-pulled-value
      values (.-alias (dpp/attr-data attr)) value)))
 
-(defn ^frame merge-attrs-result
-  [^AttrsState state ^ResultState result]
+(defn merge-attrs-result
+  [state result]
   (match (.-attr state)
     None
     (Stdlib.invalid_arg
@@ -560,8 +555,11 @@
            (.-datoms state)))
          (id (.-id state)))))))
 
-(defn ^frame merge-multival-ref-result
-  [^MultivalRefAttrState state ^ResultState result]
+(signature datascript.pull-api/merge-multival-ref-result
+  :fn<MultivalRefAttrState;ResultState;frame>)
+
+(defn merge-multival-ref-result
+  [state result]
   (MultivalRefAttrFrame
    (record MultivalRefAttrState
      (seen (.-seen state))
@@ -574,8 +572,8 @@
      (attr (.-attr state))
      (datoms (next-cursor (.-datoms state))))))
 
-(defn ^frame merge-reverse-result
-  [^ReverseAttrsState state ^ResultState result]
+(defn merge-reverse-result
+  [state result]
   (match (.-attr state)
     None
     (Stdlib.invalid_arg
@@ -598,7 +596,7 @@
          (attr-index (inc index))
          (id (.-id state)))))))
 
-(defn ^frame merge-frame [^frame parent ^ResultState result]
+(defn merge-frame [parent result]
   (match parent
     (AttrsFrame state)
     (merge-attrs-result state result)

@@ -162,6 +162,11 @@ expect_no_hints_between \
   test/datascript/upstream/pull_api.cljc \
   ref-datom-id attr-at-index \
   '\^(:[[:alpha:]]|[[:alpha:]])'
+expect_no_hints_between \
+  "pull result merging algorithms contain no local type hints" \
+  test/datascript/upstream/pull_api.cljc \
+  attr-at-index attrs-state-with \
+  '\^(:[[:alpha:]]|[[:alpha:]])'
 
 for mapping in \
   'src/datascript/query.cljc.*test/datascript/lg/query.cljc' \
