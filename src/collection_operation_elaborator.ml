@@ -1779,9 +1779,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                         | None -> assert false)
                 | None
                   when (match target.ty with
-                       | TNamed_record { nominal = true; _ } -> true
-                       | _ -> false)
-                  ->
+                       | TNamed_record _ -> true
+                       | _ -> false) ->
                     Error.error ("unknown record field " ^ keyword)
                 | _ ->
                     Result.bind (Structural_map.assoc target fields keyword value)

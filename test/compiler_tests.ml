@@ -18114,7 +18114,7 @@ let test_defrecord_is_closed_and_rejects_extension_fields () =
 |}
   |> expect_error_contains "unknown record field"
 
-let test_named_record_calls_accept_structural_extension_fields () =
+let test_named_record_extensions_require_explicit_fields () =
   let open Lg.Types in
   let value_field = make_field ":value" TInt in
   let extensible_report =
@@ -18161,31 +18161,18 @@ let test_named_record_calls_accept_structural_extension_fields () =
       "structural constraints with unknown fields must reject closed named records";
   let source =
     {|
-(defprotocol HasValue
-  (value-of [value]))
-(defrecord Value [number]
-  HasValue
-  (value-of [value] (:number value)))
-(defrecord Report [^Value value])
-(defn check-report [report]
-  (value-of (:value report)))
-(defn process-report [initial-report]
+(defrecord Report [^:int value])
+(defn process-report [^Report initial-report]
   (loop [report initial-report
          remaining 1]
-    (let [_current (value-of (:value report))]
-      (if (zero? remaining)
-        (check-report report)
-        (recur (assoc report :extra 1) (dec remaining))))))
-(println (process-report (Report. (Value. 42))))
+    (if (zero? remaining)
+      (:value report)
+      (recur (assoc report :extra 1) (dec remaining)))))
+(println (process-report (Report. 42)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "named_record_calls_accept_structural_extension_fields"
-    "42\n" ocaml_source;
-  ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
-  ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+  Lg.Compiler.compile_string source
+  |> expect_error_contains "unknown record field"
 
 let test_assoc_in_updates_nested_maps () =
   let source =
@@ -33281,8 +33268,8 @@ let tests =
       test_defrecord_field_hints_reject_unknown_record_types );
     ( "defrecord is closed and rejects extension fields",
       test_defrecord_is_closed_and_rejects_extension_fields );
-    ( "named record calls accept structural extension fields",
-      test_named_record_calls_accept_structural_extension_fields );
+    ( "named record extensions require explicit fields",
+      test_named_record_extensions_require_explicit_fields );
     ( "update preserves named records with opaque fields",
       test_update_preserves_named_records_with_opaque_fields );
     ("assoc-in updates nested maps", test_assoc_in_updates_nested_maps);
