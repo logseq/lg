@@ -18606,16 +18606,25 @@ let test_batched_core_functions_work () =
     "true:true:true:true:true:true:false:5:-2:3:1:4:1:7:4:-1:8:4:true:false:true:false:true:false:true:false:true:false:true:false\n"
     ocaml_source
 
-let test_seqable_predicate_checks_dynamic_values_at_runtime () =
+let test_seqable_predicate_checks_closed_sum_values () =
   let source =
     {|
-(defn seqable-value? [^:dynamic value]
-  (seqable? value))
-(println (str (seqable-value? [1 2]) ":" (seqable-value? 1)))
+(type-variant seqable-input
+  (Values :vector<int>)
+  (Scalar :int))
+(defn seqable-value? [^seqable-input value]
+  (match value
+    (Values values) (seqable? values)
+    (Scalar scalar) (seqable? scalar)))
+(println
+  (str (seqable-value? (Values [1 2])) ":"
+       (seqable-value? (Scalar 1))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "seqable_predicate_checks_dynamic_values_at_runtime"
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "closed seqable values must remain static";
+  assert_ocaml_runs "seqable_predicate_checks_closed_sum_values"
     "true:false\n" ocaml_source
 
 let test_batched_core_functions_reject_non_int_arguments () =
@@ -21282,23 +21291,26 @@ let test_generic_first_can_seed_a_dynamic_reduce () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_optional_record_dynamic_fields_use_runtime_nil () =
+let test_optional_record_fields_keep_precise_types () =
   let source =
     {|
-(defrecord Entry [^:dynamic value])
+(defrecord Entry [^:int value])
 
 (defn duplicate-first-value []
-  (let [value (:value (first [(Entry. 7)]))
-        values (transient [value])]
-    (if (some? value)
-      (persistent! (conj! values value))
+  (let [entry (first [(Entry. 7)])
+        values (transient (vector-of :int))]
+    (if-some [present entry]
+      (let [value (:value present)]
+        (persistent! (conj! (conj! values value) value)))
       (persistent! values))))
 
 (println (pr-str (duplicate-first-value)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "optional_record_dynamic_fields_use_runtime_nil"
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "precise optional record fields must remain static";
+  assert_ocaml_runs "optional_record_fields_keep_precise_types"
     "[7 7]\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
@@ -33167,8 +33179,8 @@ let tests =
     ( "conditional forms accept truthy params",
       test_conditional_forms_accept_truthy_params );
     ("batched core functions work", test_batched_core_functions_work);
-    ( "seqable predicate checks dynamic values at runtime",
-      test_seqable_predicate_checks_dynamic_values_at_runtime );
+    ( "seqable predicate checks closed sum values",
+      test_seqable_predicate_checks_closed_sum_values );
     ( "batched core functions reject non-int arguments",
       test_batched_core_functions_reject_non_int_arguments );
     ( "batched core functions reject bad arities",
@@ -33428,8 +33440,8 @@ let tests =
       test_first_returns_nil_for_empty_collections );
     ( "generic first can seed a dynamic reduce",
       test_generic_first_can_seed_a_dynamic_reduce );
-    ( "optional record dynamic fields use runtime nil",
-      test_optional_record_dynamic_fields_use_runtime_nil );
+    ( "optional record fields keep precise types",
+      test_optional_record_fields_keep_precise_types );
     ( "rseq dispatches to reversible protocol",
       test_rseq_dispatches_to_reversible_protocol );
     ( "deftype protocol methods support multiple arities",
