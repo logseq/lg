@@ -5266,15 +5266,27 @@ let create ~compile_expr =
             let constructor_fields =
               Types.record_constructor_fields record.fields
             in
-            match compile_args () with
+            let rec compile_constructor_args compiled fields forms =
+              match (fields, forms) with
+              | [], [] -> Ok (List.rev compiled)
+              | (field : field) :: fields, form :: forms ->
+                  Result.bind
+                    (compile_expr scope
+                       (Env.with_expected_type (Some field.ty) env)
+                       form)
+                    (fun argument ->
+                      compile_constructor_args (argument :: compiled) fields
+                        forms)
+              | _ ->
+                  Error.error
+                    (constructor_name ^ " expects "
+                   ^ string_of_int (List.length constructor_fields)
+                   ^ " arguments")
+            in
+            match
+              compile_constructor_args [] constructor_fields arg_forms
+            with
             | Error _ as err -> err
-                          | Ok args
-                            when List.length args <> List.length constructor_fields
-                            ->
-                Error.error
-                  (constructor_name ^ " expects "
-                 ^ string_of_int (List.length constructor_fields)
-                 ^ " arguments")
                           | Ok args -> (
                 let is_empty_dynamic_map arg =
                                 match

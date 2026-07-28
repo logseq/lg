@@ -18206,20 +18206,18 @@ let test_assoc_in_updates_nested_maps () =
 let test_assoc_in_preserves_named_records_with_references () =
   let source =
     {|
-(defrecord State [^:dynamic schema root])
+(defrecord State [^:map<keyword;int> schema ^:ref<option<int>> root])
 (def initial (State. {:old 1} (volatile! nil)))
 (defn update-state [db key value]
-  (let [schema (or (:schema db) {})]
-    (if (schema key)
-      (-> db (assoc-in [:schema key] value))
-      (-> db (assoc-in [:schema key] value)))))
+  (assoc-in db [:schema key] value))
 (def result (update-state initial :answer 42))
 (println (get (:schema result) :answer))
+(println (nil? @(:root result)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "assoc_in_preserves_named_records_with_references" "42\n"
-    ocaml_source;
+  assert_ocaml_runs "assoc_in_preserves_named_records_with_references"
+    "42\ntrue\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
   ignore
