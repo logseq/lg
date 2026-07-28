@@ -27535,40 +27535,42 @@ let test_set_literals_preserve_inferred_string_family_elements () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_sets_support_vectors_with_dynamic_elements () =
+let test_sets_support_closed_transaction_operations () =
   let source =
     {|
+(type-variant operation
+  (RetractEntity :int))
 (defrecord Holder [value])
 (defn operation [holder]
-  [:db.fn/retractEntity (.-value ^Holder holder)])
+  (RetractEntity (.-value ^Holder holder)))
 (def holder (Holder. 42))
 (def operations (hash-set (operation holder) (operation holder)))
 (println
   (str (count operations) ":"
-       (contains? operations [:db.fn/retractEntity (.-value ^Holder holder)])))
+       (contains? operations (RetractEntity (.-value ^Holder holder)))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "sets_support_vectors_with_dynamic_elements" "1:true\n"
-    ocaml_source;
+  assert_ocaml_runs "sets_support_closed_transaction_operations"
+    "1:true\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_sets_support_nested_vectors_with_dynamic_elements () =
+let test_sets_support_closed_row_records () =
   let source =
     {|
 (defrecord Holder [value])
 (defn row [holder]
-  [[(.-value ^Holder holder) 1]
-   [(.-value ^Holder holder) 2]])
+  {:key (.-value ^Holder holder)
+   :first-position 1
+   :second-position 2})
 (def holder (Holder. :answer))
 (def rows (hash-set (row holder) (row holder)))
 (println (str (count rows) ":" (contains? rows (row holder))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "sets_support_nested_vectors_with_dynamic_elements"
-    "1:true\n" ocaml_source;
+  assert_ocaml_runs "sets_support_closed_row_records" "1:true\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -33938,10 +33940,9 @@ let tests =
       test_set_literals_preserve_inferred_keyword_elements );
     ( "set literals preserve inferred string family elements",
       test_set_literals_preserve_inferred_string_family_elements );
-    ( "sets support vectors with dynamic elements",
-      test_sets_support_vectors_with_dynamic_elements );
-    ( "sets support nested vectors with dynamic elements",
-      test_sets_support_nested_vectors_with_dynamic_elements );
+    ( "sets support closed transaction operations",
+      test_sets_support_closed_transaction_operations );
+    ("sets support closed row records", test_sets_support_closed_row_records);
     ( "cons and conj reject heterogeneous vectors",
       test_cons_and_conj_reject_heterogeneous_vectors );
     ( "concat rejects nested heterogeneous vectors",
