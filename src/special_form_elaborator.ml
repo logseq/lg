@@ -674,16 +674,59 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
             in
             loop [ first_expr ] rest))
   and compile_map scope env pairs =
-    if
+    match Option.bind (Env.expected_type env) Types.dynamic_map_types with
+    | Some (key_ty, value_ty) ->
+        let compile_entry (key_form, value_form) =
+          Result.bind
+            (compile_expr scope
+               (Env.with_expected_type (Some key_ty) env)
+               key_form)
+            (fun key ->
+              Result.map
+                (fun value ->
+                  Semantic_ir.Tuple
+                    [
+                      coerce_expression_to_type key_ty key.ty key.semantic_expr;
+                      coerce_expression_to_type value_ty value.ty
+                        value.semantic_expr;
+                    ])
+                (compile_expr scope
+                   (Env.with_expected_type (Some value_ty) env)
+                   value_form))
+        in
+        let rec compile_entries entries = function
+          | [] ->
+              Ok
+                (typed_ir (Types.dynamic_map key_ty value_ty)
+                   (Semantic_ir.Apply
+                      ( Semantic_ir.Ident "Lg_runtime.Runtime_map.of_list",
+                        [ Semantic_ir.List (List.rev entries) ] )))
+          | pair :: rest ->
+              Result.bind (compile_entry pair) (fun entry ->
+                  compile_entries (entry :: entries) rest)
+        in
+        let keywords =
+          List.filter_map
+            (fun (key, _value) ->
+              match key with FKeyword keyword -> Some (keyword, ()) | _ -> None)
+            pairs
+        in
+        let validate_keywords =
+          if List.length keywords = List.length pairs then
+            Structural_map.validate_unique_keywords keywords
+          else Ok ()
+        in
+        Result.bind validate_keywords (fun () -> compile_entries [] pairs)
+    | None when
       List.exists
         (fun (key, _value) -> match key with FKeyword _ -> false | _ -> true)
         pairs
-    then
+      ->
       let arguments =
         List.concat_map (fun (key, value) -> [ key; value ]) pairs
       in
       compile_expr scope env (FList (FSymbol "hash-map" :: arguments))
-    else
+    | None ->
     let compile_pair = function
       | FKeyword keyword, value_form -> (
           match compile_expr scope env value_form with

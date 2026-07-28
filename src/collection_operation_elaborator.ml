@@ -2591,6 +2591,17 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                           instantiate_updater param_tys ret extra_args
                         in
                         let param_tys, ret =
+                          match param_tys with
+                          | value_param :: _ ->
+                              let instantiate ty =
+                                Types.instantiate_type
+                                  ~templates:[ value_param ]
+                                  ~actuals:[ field.ty ] ty
+                              in
+                              (List.map instantiate param_tys, instantiate ret)
+                          | [] -> (param_tys, ret)
+                        in
+                        let param_tys, ret =
                           if Types.is_dynamic field.ty
                           then
                             ( List.map dynamicize_unknown param_tys,

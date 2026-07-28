@@ -18024,7 +18024,7 @@ let test_update_preserves_named_records_with_opaque_fields () =
 (type-record database
   (root :ref<option<tree<int>>>)
   (max-eid :int)
-  (schema :dynamic))
+  (schema :map<keyword;int>))
 (defprotocol IDB
   (valid-db? [db] :bool))
 (extend-type database IDB
@@ -18047,7 +18047,7 @@ let test_update_preserves_named_records_with_opaque_fields () =
 (defn checked-db [db valid?]
   (if valid?
     (update-in db [:schema] keep-schema)
-    (throw (ex-info "invalid db" {:error :invalid-db}))))
+    (Stdlib.invalid_arg "invalid db")))
 (defn with-datom [db datom]
   (satisfies? IDB db)
   (let [schema? true]
@@ -18066,7 +18066,7 @@ let test_update_preserves_named_records_with_opaque_fields () =
   (record database
     (root (volatile! (Some (record tree (item 7)))))
     (max-eid 1)
-    (schema {})))
+    (schema {:version 9})))
 (def initial-report (TxReport. initial-db))
 (def updated
   (allocate-eid initial-report 42))
@@ -18078,11 +18078,12 @@ let test_update_preserves_named_records_with_opaque_fields () =
    (match (deref (:root db))
      (Some root) (:item root)
      None 0)])
+(println (get (:schema db) :version 0))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "update_preserves_named_records_with_opaque_fields"
-    "[42 7]\n" ocaml_source;
+    "[42 7]\n9\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
   ignore
