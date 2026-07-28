@@ -1819,10 +1819,24 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
               else
                 match target.ty with
                 | TNamed_record ({ nominal = true; _ } as record) -> (
-                    match compile_vector_pairs [] pair_forms with
+                    let rec validate_declared_fields = function
+                      | [] -> Ok ()
+                      | FKeyword keyword :: _value :: rest -> (
+                          match find_field keyword record.fields with
+                          | Some _ -> validate_declared_fields rest
+                          | None ->
+                              Error.error ("unknown record field " ^ keyword))
+                      | _ ->
+                          Error.error
+                            "assoc on a deftype requires declared keyword fields"
+                    in
+                    match validate_declared_fields pair_forms with
                     | Error _ as err -> err
-                    | Ok [] -> assert false
-                  | Ok ((first_key, first_value) :: remaining_pairs) -> (
+                    | Ok () -> (
+                        match compile_vector_pairs [] pair_forms with
+                        | Error _ as err -> err
+                        | Ok [] -> assert false
+                        | Ok ((first_key, first_value) :: remaining_pairs) -> (
                         let lookup_method current key value =
                           match
                             compile_deftype_method scope env record "assoc"
@@ -1856,8 +1870,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                                 Result.bind
                                   (adapt_dynamic_fields record.fields pairs)
                                   (assoc_record_pairs target))
-                      )
-                  )
+                      )))
                 | TRecord fields | TNamed_record { fields; _ } -> (
                     match compile_record_pairs [] pair_forms with
                     | Error _ as err -> err

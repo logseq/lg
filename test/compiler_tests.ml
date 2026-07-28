@@ -17773,7 +17773,7 @@ let test_deftype_method_parameters_shadow_fields () =
   (-assoc [_ key value]
     (if (= key :value)
       (Box. value)
-      (throw (IllegalArgumentException. "unknown key")))))
+      (Stdlib.invalid_arg "unknown key"))))
 (println (.-value (assoc (Box. 1) :value 2)))
 |}
   in
