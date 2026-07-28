@@ -17710,6 +17710,25 @@ let test_assoc_supports_vector_indexes () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "assoc_supports_vector_indexes" "[10 2 30]\n" ocaml_source
 
+let test_assoc_infers_vector_parameter_from_integer_index () =
+  let source =
+    {|
+(type-variant item
+  (Item :int))
+(defn upsert [xs value]
+  (match value
+    (Item _)
+    (loop [index 0]
+      (if (= index (count xs))
+        (conj xs value)
+        (assoc xs index value)))))
+(println (count (upsert [(Item 1) (Item 2)] (Item 3))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "assoc_infers_vector_parameter_from_integer_index"
+    "2\n" ocaml_source
+
 let test_assoc_rejects_vector_value_type_mismatch () =
   Lg.Compiler.compile_string {|(def x (assoc [1 2] 0 "one"))|}
   |> expect_error "assoc vector value must match element type"
@@ -33125,6 +33144,8 @@ let tests =
     ("assoc supports multiple pairs", test_assoc_supports_multiple_pairs);
     ("assoc rejects odd key value pairs", test_assoc_rejects_odd_key_value_pairs);
     ("assoc supports vector indexes", test_assoc_supports_vector_indexes);
+    ( "assoc infers vector parameter from integer index",
+      test_assoc_infers_vector_parameter_from_integer_index );
     ( "assoc rejects vector value type mismatch",
       test_assoc_rejects_vector_value_type_mismatch );
     ( "assoc rejects vector non-int indexes",

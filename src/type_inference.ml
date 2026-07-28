@@ -2941,9 +2941,12 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                       | Ok params -> infer_pairs params rest))
               | None -> infer_pairs params rest))
       | key_form :: value_form :: rest -> (
-          match
-            Types.dynamic_map_types (inferred_form_type params target)
-          with
+          let expected_pair =
+            match inferred_form_type params target with
+            | TVector element_ty -> Some (TInt, element_ty)
+            | target_ty -> Types.dynamic_map_types target_ty
+          in
+          match expected_pair with
           | Some (key_ty, value_ty) ->
               Result.bind (infer_expected key_ty params key_form) (fun params ->
                   Result.bind
@@ -2967,10 +2970,27 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               | Some _ | None -> params)
             (infer_form params target)
       | FSymbol name, key_form :: value_form :: _ -> (
+          let target_ty =
+            string_assoc_opt name params |> Option.value ~default:TUnknown
+          in
           match
-            Option.bind (string_assoc_opt name params) Types.dynamic_map_types
+            ( inferred_form_type params key_form,
+              Types.seqable_constraint_element target_ty,
+              Types.dynamic_map_types target_ty )
           with
-          | Some _ ->
+          | TInt, Some element_ty, None ->
+              let value_ty = inferred_form_type params value_form in
+              let element_ty =
+                if Types.is_dynamic element_ty then
+                  match value_ty with
+                  | TUnknown | TMeta _ | TVar _ ->
+                      fresh_type_variable "assoc_vector"
+                  | value_ty -> value_ty
+                else refine_type element_ty value_ty
+              in
+              constrain_symbol
+                (TVector element_ty) params name
+          | _, _, Some _ ->
               let concrete_or_dynamic form =
                 match inferred_form_type params form with
                 | TUnknown -> Types.dynamic_constraint TUnknown
@@ -2982,7 +3002,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                    (concrete_or_dynamic key_form)
                    (concrete_or_dynamic value_form))
                 params name
-          | None ->
+          | _, _, None ->
               constrain_symbol (Types.dynamic_constraint TUnknown) params name)
       | FSymbol name, _ ->
           constrain_symbol (Types.dynamic_constraint TUnknown) params name

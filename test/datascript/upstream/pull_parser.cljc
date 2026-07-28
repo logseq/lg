@@ -569,21 +569,18 @@
       (PullMapRecursionValue limit)
       (with-recursion attr limit))))
 
-(defn- ^pull-attr required-attr-spec
-  [^datascript.db/database-view database
-   ^pull-attr-spec attr-spec]
+(defn- required-attr-spec
+  [database attr-spec]
   (match (parse-attr-spec database attr-spec)
     None (Stdlib.invalid_arg "Expected pull attribute")
     (Some attr) attr))
 
-(defn ^pull-attr recursive-attribute
-  [^datascript.db/database-view database ^:keyword source-attr]
+(defn recursive-attribute
+  [database source-attr]
   (with-recursion (attribute database source-attr) None))
 
-(defn ^pull-attr recursive-attribute-with-limit
-  [^datascript.db/database-view database
-   ^:keyword source-attr
-   ^int limit]
+(defn recursive-attribute-with-limit
+  [database source-attr limit]
   (when-not (pos? limit)
     (Stdlib.invalid_arg
      "Recursive pull limit must be positive"))
@@ -591,8 +588,8 @@
    (attribute database source-attr)
    (Some limit)))
 
-(defn ^:vector<pull-attr> upsert-attr
-  [^:vector<pull-attr> attrs ^pull-attr attr]
+(defn upsert-attr
+  [attrs attr]
   (let [alias (.-alias (attr-data attr))]
     (loop [index 0]
       (if (= index (count attrs))
@@ -604,28 +601,31 @@
           (assoc attrs index attr)
           (recur (inc index)))))))
 
-(defn ^PullPattern pattern
-  [^:vector<pull-attr> attrs ^boolean wildcard]
+(signature datascript.pull-parser/pattern
+  :fn<vector<pull-attr>;bool;PullPattern>)
+
+(defn pattern
+  [attrs wildcard]
   (let [attrs (reduce upsert-attr [] attrs)
         attrs
         (if (and
              wildcard
              (not
               (some
-               (fn [^pull-attr attr]
+               (fn [attr]
                  (= :db/id (.-name (attr-data attr))))
                attrs)))
           (conj attrs default-db-id-attr)
           attrs)
         key-fn
-        (fn [^pull-attr attr]
+        (fn [attr]
           (.-name (attr-data attr)))
         forward-attrs
         (vec
          (sort-by
           key-fn
           (filter
-           (fn [^pull-attr attr]
+           (fn [attr]
              (not (.-reverse (attr-data attr))))
            attrs)))
         reverse-attrs
@@ -633,13 +633,13 @@
          (sort-by
           key-fn
           (filter
-           (fn [^pull-attr attr]
+           (fn [attr]
              (.-reverse (attr-data attr)))
            attrs)))
         datom-attrs
         (vec
          (filter
-          (fn [^pull-attr attr]
+          (fn [attr]
             (not (= :db/id (.-name (attr-data attr)))))
           forward-attrs))]
     (record PullPattern
@@ -649,19 +649,16 @@
       (reverse-attrs reverse-attrs)
       (wildcard wildcard))))
 
-(defn ^PullPattern nested-pattern
-  [^:vector<pull-attr> attrs ^boolean wildcard]
+(defn nested-pattern
+  [attrs wildcard]
   (pattern attrs wildcard))
 
-(defn ^PullPattern recursive-pattern
-  [^datascript.db/database-view database
-   ^:vector<keyword> attrs
-   ^:keyword recursive-attr
-   ^boolean wildcard]
+(defn recursive-pattern
+  [database attrs recursive-attr wildcard]
   (pattern
    (conj
     (mapv
-     (fn [^:keyword attr]
+     (fn [attr]
        (attribute database attr))
      attrs)
     (recursive-attribute database recursive-attr))
