@@ -23062,18 +23062,19 @@ let test_dynamic_maps_preserve_nominal_function_parameters () =
   assert_ocaml_runs "dynamic_maps_preserve_nominal_function_parameters" "-1\n"
     ocaml_source
 
-let test_dynamic_functions_preserve_ocaml_parameters () =
+let test_static_functions_preserve_ocaml_parameters () =
   let source =
     {|
-(defn write-option [^:dynamic opts ^:out_channel output]
-  ((get opts :writer) output "ok"))
+(defrecord WriteOptions [^:fn<out_channel;string;unit> writer])
+(defn write-option [^WriteOptions opts ^:out_channel output]
+  ((:writer opts) output "ok"))
 (let [path (Filename.temp_file "lg-dynamic-host-" "")
       output (Stdlib.open_out_bin path)
       _written
       (write-option
-       {:writer
+       (WriteOptions.
         (fn [^:out_channel output ^:string value]
-          (Stdlib.output_string output value))}
+          (Stdlib.output_string output value)))
        output)
       _closed (Stdlib.close_out output)
       input (Stdlib.open_in_bin path)
@@ -23085,7 +23086,9 @@ let test_dynamic_functions_preserve_ocaml_parameters () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "dynamic_functions_preserve_ocaml_parameters" "ok\n"
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "static host callbacks must not use Runtime_dynamic";
+  assert_ocaml_runs "static_functions_preserve_ocaml_parameters" "ok\n"
     ocaml_source
 
 let test_dynamic_maps_preserve_propagated_nominal_function_parameters () =
@@ -33558,8 +33561,8 @@ let tests =
       test_static_higher_order_parameters_accept_nominal_callbacks );
     ( "dynamic maps preserve nominal function parameters",
       test_dynamic_maps_preserve_nominal_function_parameters );
-    ( "dynamic functions preserve OCaml parameters",
-      test_dynamic_functions_preserve_ocaml_parameters );
+    ( "static functions preserve OCaml parameters",
+      test_static_functions_preserve_ocaml_parameters );
     ( "dynamic maps preserve propagated nominal function parameters",
       test_dynamic_maps_preserve_propagated_nominal_function_parameters );
     ( "dynamic map parameters preserve nominal function values",
