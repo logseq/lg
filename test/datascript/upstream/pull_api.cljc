@@ -294,12 +294,11 @@
                 datoms))
               None)))))))
 
-(defn ^AttrsState attrs-state
-  [^PullContext context
-   ^:set<int> seen
-   ^:map<int;int> recursion-limits
-  ^datascript.pull-parser/PullPattern pattern
-   ^int id]
+(signature datascript.pull-api/attrs-state
+  :fn<PullContext;set<int>;map<int;int>;datascript.pull-parser/PullPattern;int;AttrsState>)
+
+(defn attrs-state
+  [context seen recursion-limits pattern id]
   (let [database (.-db context)
         datoms (pull-forward-cursor database pattern id)]
     (when (:wildcard pattern)
@@ -317,26 +316,25 @@
       (datoms datoms)
       (id id))))
 
-(defn ^frame attrs-frame
-  [^PullContext context
-   ^:set<int> seen
-   ^:map<int;int> recursion-limits
-   ^datascript.pull-parser/PullPattern pattern
-   ^int id]
+(signature datascript.pull-api/attrs-frame
+  :fn<PullContext;set<int>;map<int;int>;datascript.pull-parser/PullPattern;int;frame>)
+
+(defn attrs-frame
+  [context seen recursion-limits pattern id]
   (AttrsFrame
    (attrs-state
     context seen recursion-limits pattern id)))
 
-(defn ^datascript.pull-parser/PullPattern attr-pattern
-  [^datascript.pull-parser/pull-attr attr]
+(defn attr-pattern
+  [attr]
   (match (dpp/attr-pattern attr)
     (Some pattern) pattern
     None
     (Stdlib.invalid_arg
      "Pull reference attribute requires a nested pattern")))
 
-(defn ^boolean auto-expanding?
-  [^datascript.pull-parser/pull-attr attr]
+(defn auto-expanding?
+  [attr]
   (let [data (dpp/attr-data attr)]
     (or
      (.-recursive data)
@@ -344,9 +342,8 @@
       (.-component data)
       (dpp/attr-pattern-wildcard attr)))))
 
-(defn ^pulled-value cycle-entity [^int id]
-  (let [^:map<Datascript_runtime.Data_value.t;pulled-value>
-        values {}]
+(defn cycle-entity [id]
+  (let [values {}]
     (PulledEntity
      (assoc-pulled-value
       values
@@ -354,13 +351,11 @@
       (PulledScalar
        (Datascript_runtime.Data_value.Int id))))))
 
-(defn ^frame expanding-ref-frame
-  [^PullContext context
-   ^:set<int> seen
-   ^:map<int;int> recursion-limits
-   ^datascript.pull-parser/PullPattern pattern
-   ^datascript.pull-parser/pull-attr attr
-   ^int id]
+(signature datascript.pull-api/expanding-ref-frame
+  :fn<PullContext;set<int>;map<int;int>;datascript.pull-parser/PullPattern;datascript.pull-parser/pull-attr;int;frame>)
+
+(defn expanding-ref-frame
+  [context seen recursion-limits pattern attr id]
   (attrs-frame
    context
    (conj seen id)
@@ -370,13 +365,8 @@
      (attr-pattern attr))
    id))
 
-(defn ^frame ref-frame
-  [^PullContext context
-   ^:set<int> seen
-   ^:map<int;int> recursion-limits
-   ^datascript.pull-parser/PullPattern pattern
-   ^datascript.pull-parser/pull-attr attr
-   ^int id]
+(defn ref-frame
+  [context seen recursion-limits pattern attr id]
   (let [data (dpp/attr-data attr)]
     (if-not (auto-expanding? attr)
       (attrs-frame

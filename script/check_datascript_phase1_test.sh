@@ -78,11 +78,19 @@ expect_no_hints_between() {
   pattern=$5
   if [ -f "$repo_root/$path" ] &&
      ! awk -v start_name="$start_name" -v end_name="$end_name" '
-         /^[[:space:]]*\(defn/ && index($0, start_name) != 0 {
-           in_range = 1
-         }
-         /^[[:space:]]*\(defn/ && index($0, end_name) != 0 {
-           in_range = 0
+         /^[[:space:]]*\(defn-?[[:space:]]/ {
+           function_name = $0
+           sub(/^[[:space:]]*\(defn-?[[:space:]]+/, "", function_name)
+           if (function_name ~ /^\^/) {
+             sub(/^[^[:space:]]+[[:space:]]+/, "", function_name)
+           }
+           sub(/[[:space:]].*$/, "", function_name)
+           if (function_name == start_name) {
+             in_range = 1
+           }
+           if (function_name == end_name) {
+             in_range = 0
+           }
          }
          in_range { print }
        ' "$repo_root/$path" |
@@ -143,6 +151,11 @@ expect_no_hints_between \
   "pull visitor and forward cursor algorithms contain no local type hints" \
   test/datascript/upstream/pull_api.cljc \
   visit attrs-state \
+  '\^(:[[:alpha:]]|[[:alpha:]])'
+expect_no_hints_between \
+  "pull attrs and reference frame algorithms contain no local type hints" \
+  test/datascript/upstream/pull_api.cljc \
+  attrs-state ref-datom-id \
   '\^(:[[:alpha:]]|[[:alpha:]])'
 
 for mapping in \
