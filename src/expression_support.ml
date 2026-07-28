@@ -650,7 +650,7 @@ let record_type_application type_name arguments =
   let type_name = Types.ocaml_record_type_name type_name in
   let argument_name = function
     | TUnknown | TMeta _ | TVar _ -> "_"
-    | argument -> Types.ocaml_name argument
+    | argument -> Types.ocaml_type_argument_name argument
   in
   match arguments with
   | [] -> type_name

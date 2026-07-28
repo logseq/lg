@@ -725,11 +725,15 @@ let rec ocaml_name = function
       let type_name = ocaml_record_type_name record.type_name in
       match record.type_arguments with
       | [] -> type_name
-      | [ argument ] -> ocaml_name argument ^ " " ^ type_name
+      | [ argument ] -> ocaml_type_argument_name argument ^ " " ^ type_name
       | arguments ->
           "("
           ^ String.concat ", " (List.map ocaml_name arguments)
           ^ ") " ^ type_name)
+
+and ocaml_type_argument_name = function
+  | TFn _ as ty -> "(" ^ ocaml_name ty ^ ")"
+  | ty -> ocaml_name ty
 
 and overloaded_storage_type = function
   | [] -> TUnit
