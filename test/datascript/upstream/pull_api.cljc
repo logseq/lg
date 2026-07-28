@@ -1141,13 +1141,13 @@
          "Root pull result is not an entity")))
     None))
 
-(defn ^ParsedPullOptions parse-opts
-  ([^datascript.db/database-view database
-    ^:vector<datascript.pull-parser/pull-source-item> pattern]
+(signature datascript.pull-api/parse-opts
+  :overload<fn<datascript.db/database-view;vector<datascript.pull-parser/pull-source-item>;ParsedPullOptions>;fn<datascript.db/database-view;vector<datascript.pull-parser/pull-source-item>;PullOptions;ParsedPullOptions>>)
+
+(defn parse-opts
+  ([database pattern]
    (parse-opts database pattern (default-pull-options)))
-  ([^datascript.db/database-view database
-    ^:vector<datascript.pull-parser/pull-source-item> pattern
-    ^PullOptions options]
+  ([database pattern options]
    (record ParsedPullOptions
      (context
       (record PullContext
@@ -1155,11 +1155,8 @@
         (visitor (.-visitor options))))
      (pattern (dpp/parse-pattern-view database pattern)))))
 
-(defn
-  ^:option<map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>>
-  pull-impl
-  [^ParsedPullOptions parsed
-   ^:Datascript_runtime.Data_value.entity_ref entity-ref]
+(defn pull-impl
+  [parsed entity-ref]
   (let [context (.-context parsed)]
     (pull-parsed-with-options
      (.-db context)
@@ -1168,34 +1165,27 @@
      (record PullOptions
        (visitor (.-visitor context))))))
 
-(defn
-  ^:option<map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>>
-  pull-parsed
-  [^datascript.db/database-view database
-   ^datascript.pull-parser/PullPattern pattern
-   ^:Datascript_runtime.Data_value.entity_ref entity-ref]
+(defn pull-parsed
+  [database pattern entity-ref]
   (pull-parsed-with-options
    database pattern entity-ref (default-pull-options)))
 
-(defn
-  ^:option<map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>>
-  pull-source-with-options
-  [^datascript.db/database-view database
-   ^:vector<datascript.pull-parser/pull-source-item> pattern
-   ^:Datascript_runtime.Data_value.entity_ref entity-ref
-   ^PullOptions options]
+(signature datascript.pull-api/pull-source-with-options
+  :fn<datascript.db/database-view;vector<datascript.pull-parser/pull-source-item>;Datascript_runtime.Data_value.entity_ref;PullOptions;option<map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>>>)
+
+(defn pull-source-with-options
+  [database pattern entity-ref options]
   (pull-parsed-with-options
    database
    (dpp/parse-pattern-view database pattern)
    entity-ref
    options))
 
-(defn
-  ^:option<map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>>
-  pull-source
-  [^datascript.db/database-view database
-   ^:vector<datascript.pull-parser/pull-source-item> pattern
-   ^:Datascript_runtime.Data_value.entity_ref entity-ref]
+(signature datascript.pull-api/pull-source
+  :fn<datascript.db/database-view;vector<datascript.pull-parser/pull-source-item>;Datascript_runtime.Data_value.entity_ref;option<map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>>>)
+
+(defn pull-source
+  [database pattern entity-ref]
   (pull-parsed
    database
    (dpp/parse-pattern-view database pattern)
