@@ -47,7 +47,7 @@ let rec data_value_to_edn = function
       Lg_edn_backend.List (Array.of_list (List.map data_value_to_edn values))
   | Data_value.Vector values ->
       Lg_edn_backend.Vector (Array.of_list (List.map data_value_to_edn values))
-  | Data_value.Map entries ->
+  | Data_value.Map entries | Data_value.Hash_map entries ->
       Lg_edn_backend.Map
         (Array.of_list
            (List.map
@@ -64,6 +64,8 @@ let rec data_value_to_edn = function
                 | None -> Lg_edn_backend.Nil
                 | Some value -> data_value_to_edn value)
               values))
+  | Data_value.Runtime_type _ ->
+      invalid_arg "Runtime type values cannot be serialized"
   | Data_value.Tx_ref ->
       Lg_edn_backend.Tagged ("datascript/tx-ref", Lg_edn_backend.Nil)
   | Data_value.Ref_to entity_ref ->

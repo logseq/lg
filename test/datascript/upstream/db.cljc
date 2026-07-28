@@ -362,39 +362,9 @@
        (> left# right#) int-compare-greater
        :else int-compare-equal)))
 
-(defn- ^:string entity-ref-class-name
-  [^:Datascript_runtime.Data_value.entity_ref value]
-  (match value
-    (Datascript_runtime.Data_value.Entity_id _) "Number"
-    (Datascript_runtime.Data_value.Temp_id _) "String"
-    (Datascript_runtime.Data_value.Auto_tempid _) "datascript.db/AutoTempid"
-    Datascript_runtime.Data_value.Current_tx "cljs.core/Keyword"
-    (Datascript_runtime.Data_value.Ident _) "cljs.core/Keyword"
-    (Datascript_runtime.Data_value.Lookup_ref _ _) "cljs.core/PersistentVector"))
-
 (defn- ^:string data-value-class-name
   [^:Datascript_runtime.Data_value.t value]
-  (match value
-    Datascript_runtime.Data_value.Nil "nil"
-    (Datascript_runtime.Data_value.Int _) "Number"
-    (Datascript_runtime.Data_value.Wide_int _) "Number"
-    (Datascript_runtime.Data_value.Float _) "Number"
-    (Datascript_runtime.Data_value.String _) "String"
-    (Datascript_runtime.Data_value.Symbol _) "cljs.core/Symbol"
-    (Datascript_runtime.Data_value.Bool _) "Boolean"
-    (Datascript_runtime.Data_value.Keyword _) "cljs.core/Keyword"
-    (Datascript_runtime.Data_value.Uuid _) "cljs.core/UUID"
-    (Datascript_runtime.Data_value.Instant _) "Date"
-    (Datascript_runtime.Data_value.Regex _) "RegExp"
-    (Datascript_runtime.Data_value.Ref _) "Number"
-    (Datascript_runtime.Data_value.List _) "cljs.core/List"
-    (Datascript_runtime.Data_value.Vector _) "cljs.core/PersistentVector"
-    (Datascript_runtime.Data_value.Map _) "cljs.core/PersistentArrayMap"
-    (Datascript_runtime.Data_value.Set _) "cljs.core/PersistentHashSet"
-    (Datascript_runtime.Data_value.Tuple _) "cljs.core/PersistentVector"
-    Datascript_runtime.Data_value.Tx_ref "cljs.core/Keyword"
-    (Datascript_runtime.Data_value.Ref_to entity-ref)
-    (entity-ref-class-name entity-ref)))
+  (Datascript_runtime.Data_value.class_name value))
 
 (defn ^boolean class-identical?
   [^:Datascript_runtime.Data_value.t left

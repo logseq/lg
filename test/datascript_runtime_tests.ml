@@ -46,7 +46,7 @@ let test_map_and_set_equality_ignore_insertion_order () =
       ]
   in
   let second_map =
-    Value.Map
+    Value.Hash_map
       [
         (Value.Keyword ":age", Value.Int 36);
         (Value.Keyword ":name", Value.String "Ada");
@@ -215,6 +215,62 @@ let test_keyword_collections_are_validated_statically () =
       (Value.Vector [ Value.Keyword ":user/name"; Value.String ":user/email" ])
     = None);
   assert (Value.keyword_items (Value.Int 1) = None)
+
+let test_runtime_types_are_closed_values () =
+  assert (
+    Value.runtime_type_value (Value.Int 1)
+    = Value.Runtime_type Value.Number_type);
+  assert (
+    Value.runtime_type_value (Value.Float 1.5)
+    = Value.Runtime_type Value.Number_type);
+  assert (
+    Value.runtime_type_value (Value.List [])
+    = Value.Runtime_type Value.Empty_list_type);
+  assert (
+    Value.runtime_type_value (Value.List [ Value.Int 1 ])
+    = Value.Runtime_type Value.List_type);
+  assert (
+    Value.runtime_type_value
+      (Value.Map
+         [
+           (Value.Keyword ":a", Value.Int 1);
+           (Value.Keyword ":b", Value.Int 2);
+           (Value.Keyword ":c", Value.Int 3);
+           (Value.Keyword ":d", Value.Int 4);
+           (Value.Keyword ":e", Value.Int 5);
+           (Value.Keyword ":f", Value.Int 6);
+           (Value.Keyword ":g", Value.Int 7);
+           (Value.Keyword ":h", Value.Int 8);
+           (Value.Keyword ":i", Value.Int 9);
+         ])
+    = Value.Runtime_type Value.Array_map_type);
+  assert (
+    Value.runtime_type_value
+      (Value.Map [ (Value.Keyword ":a", Value.Int 1) ])
+    = Value.Runtime_type Value.Array_map_type);
+  assert (
+    Value.runtime_type_value
+      (Value.Hash_map [ (Value.Keyword ":a", Value.Int 1) ])
+    = Value.Runtime_type Value.Hash_map_type);
+  assert (
+    Value.runtime_type_value
+      (Value.as_array_map
+         (Value.Hash_map [ (Value.Keyword ":a", Value.Int 1) ]))
+    = Value.Runtime_type Value.Array_map_type);
+  assert (
+    Value.runtime_type_value (Value.Runtime_type Value.Number_type)
+    = Value.Runtime_type Value.Function_type);
+  assert (
+    Value.identical_value
+      (Rrbvec.of_list
+         [
+           Value.runtime_type_value (Value.Int 1);
+           Value.runtime_type_value (Value.Float 1.5);
+         ])
+    = Some (Value.Bool true));
+  assert (
+    Value.to_edn_string (Value.Runtime_type Value.Number_type)
+    = "#object[Number]")
 
 let test_query_sources_and_results_are_closed_sum_types () =
   let db = "database" in
@@ -589,6 +645,16 @@ let test_serialization_uses_a_closed_typed_facade () =
       encoded_keyword
     = Value.Keyword ":user/name");
   let encoder = Serialization_value.create_encoder () in
+  assert (
+    try
+      ignore
+        (Serialization_value.encode_value encoder
+           (Value.Runtime_type Value.Number_type));
+      false
+    with
+    | Invalid_argument message ->
+        String.equal message "Runtime type values cannot be serialized"
+    | _ -> false);
   let first_keyword =
     Serialization_value.encode_value encoder
       (Value.Keyword ":user/name")
@@ -626,6 +692,7 @@ let () =
   test_ref_values_are_extracted_statically ();
   test_tuple_refs_are_resolved_statically ();
   test_keyword_collections_are_validated_statically ();
+  test_runtime_types_are_closed_values ();
   test_query_sources_and_results_are_closed_sum_types ();
   test_query_relations_and_contexts_keep_static_fields ();
   test_query_rows_use_static_integer_indexes ();

@@ -24,6 +24,7 @@ arity	datascript.built-ins/random-aggregate?	1	fixed
 arity	datascript.built-ins/sample-aggregate?	1	fixed
 arity	datascript.built-ins/standard-deviation-aggregate?	1	fixed
 arity	datascript.built-ins/sum-aggregate?	1	fixed
+arity	datascript.built-ins/value-type-function?	1	fixed
 arity	datascript.built-ins/values-equal?	1	fixed
 arity	datascript.built-ins/variance-aggregate?	1	fixed
 arity	datascript.conn/-transact!	3	fixed
@@ -1147,6 +1148,7 @@ var	datascript.built-ins/random-aggregate?
 var	datascript.built-ins/sample-aggregate?
 var	datascript.built-ins/standard-deviation-aggregate?
 var	datascript.built-ins/sum-aggregate?
+var	datascript.built-ins/value-type-function?
 var	datascript.built-ins/values-equal?
 var	datascript.built-ins/variance-aggregate?
 var	datascript.conn/-transact!

@@ -6,6 +6,26 @@ type entity_ref =
   | Ident of string
   | Lookup_ref of string * t
 
+and runtime_type =
+  | Boolean_type
+  | Number_type
+  | String_type
+  | Symbol_type
+  | Keyword_type
+  | Uuid_type
+  | Instant_type
+  | Regex_type
+  | Empty_list_type
+  | List_type
+  | Vector_type
+  | Set_type
+  | Array_map_type
+  | Hash_map_type
+  | Auto_tempid_type
+  | Function_type
+  | Database_type
+  | Filtered_database_type
+
 and t =
   | Nil
   | Int of int
@@ -22,8 +42,10 @@ and t =
   | List of t list
   | Vector of t list
   | Map of (t * t) list
+  | Hash_map of (t * t) list
   | Set of t list
   | Tuple of t option list
+  | Runtime_type of runtime_type
   | Tx_ref
   | Ref_to of entity_ref
 
@@ -50,6 +72,26 @@ let float_to_javascript_string value =
 let render_sequence opening closing values =
   opening ^ String.concat " " values ^ closing
 
+let runtime_type_to_edn_string = function
+  | Boolean_type -> "#object[Boolean]"
+  | Number_type -> "#object[Number]"
+  | String_type -> "#object[String]"
+  | Symbol_type -> "cljs.core/Symbol"
+  | Keyword_type -> "cljs.core/Keyword"
+  | Uuid_type -> "cljs.core/UUID"
+  | Instant_type -> "#object[Date]"
+  | Regex_type -> "#object[RegExp]"
+  | Empty_list_type -> "cljs.core/EmptyList"
+  | List_type -> "cljs.core/List"
+  | Vector_type -> "cljs.core/PersistentVector"
+  | Set_type -> "cljs.core/PersistentHashSet"
+  | Array_map_type -> "cljs.core/PersistentArrayMap"
+  | Hash_map_type -> "cljs.core/PersistentHashMap"
+  | Auto_tempid_type -> "datascript.db/AutoTempid"
+  | Function_type -> "#object[Function]"
+  | Database_type -> "datascript.db/DB"
+  | Filtered_database_type -> "datascript.db/FilteredDB"
+
 let rec to_edn_string = function
   | Nil -> "nil"
   | Int value -> string_of_int value
@@ -67,7 +109,7 @@ let rec to_edn_string = function
       render_sequence "(" ")" (List.map to_edn_string values)
   | Vector values ->
       render_sequence "[" "]" (List.map to_edn_string values)
-  | Map entries ->
+  | Map entries | Hash_map entries ->
       render_sequence
         "{" "}"
         (List.map
@@ -82,6 +124,7 @@ let rec to_edn_string = function
         (List.map
            (function None -> "nil" | Some value -> to_edn_string value)
            values)
+  | Runtime_type runtime_type -> runtime_type_to_edn_string runtime_type
   | Tx_ref -> ":db/current-tx"
   | Ref_to entity_ref -> entity_ref_to_edn_string entity_ref
 
@@ -103,7 +146,8 @@ let to_clojure_string = function
   | Float value -> float_to_javascript_string value
   | Bool value -> string_of_bool value
   | Regex value -> value
-  | (List _ | Vector _ | Map _ | Set _ | Tuple _ | Tx_ref | Ref_to _) as value ->
+  | (List _ | Vector _ | Map _ | Hash_map _ | Set _ | Tuple _
+    | Runtime_type _ | Tx_ref | Ref_to _) as value ->
       to_edn_string value
 
 let rec to_print_string = function
@@ -118,7 +162,7 @@ let rec to_print_string = function
       render_sequence "(" ")" (List.map to_print_string values)
   | Vector values ->
       render_sequence "[" "]" (List.map to_print_string values)
-  | Map entries ->
+  | Map entries | Hash_map entries ->
       render_sequence
         "{" "}"
         (List.map
@@ -133,6 +177,7 @@ let rec to_print_string = function
         (List.map
            (function None -> "nil" | Some value -> to_print_string value)
            values)
+  | Runtime_type runtime_type -> runtime_type_to_edn_string runtime_type
   | Tx_ref -> ":db/current-tx"
   | Ref_to entity_ref -> entity_ref_to_print_string entity_ref
 
@@ -329,6 +374,7 @@ let identical left right =
   | Nil, Nil -> true
   | Bool left, Bool right -> Bool.equal left right
   | String left, String right -> String.equal left right
+  | Runtime_type left, Runtime_type right -> left = right
   | (Int _ | Wide_int _ | Float _ | Ref _),
     (Int _ | Wide_int _ | Float _ | Ref _) ->
       identical_number left right
@@ -506,8 +552,8 @@ let increment = function
   | Symbol value | Keyword value | Uuid value ->
       Some (String (value ^ "1"))
   | Regex pattern -> Some (String ("/" ^ pattern ^ "/1"))
-  | (List _ | Vector _ | Map _ | Set _ | Tuple _ | Instant _ | Tx_ref
-    | Ref_to _) as value ->
+  | (List _ | Vector _ | Map _ | Hash_map _ | Set _ | Tuple _
+    | Runtime_type _ | Instant _ | Tx_ref | Ref_to _) as value ->
       Some (String (to_print_string value ^ "1"))
 
 let decrement = function
@@ -524,30 +570,98 @@ let decrement = function
            | Some value -> value -. 1.0
            | None -> Float.nan))
   | Symbol _ | Keyword _ | Uuid _ | Regex _ | List _ | Vector _ | Map _
-  | Set _ | Tuple _ | Tx_ref | Ref_to _ ->
+  | Hash_map _ | Set _ | Tuple _ | Runtime_type _ | Tx_ref | Ref_to _ ->
       Some (Float Float.nan)
 
+let runtime_type_value = function
+  | Nil -> Nil
+  | Bool _ -> Runtime_type Boolean_type
+  | Int _ | Wide_int _ | Float _ | Ref _ ->
+      Runtime_type Number_type
+  | String _ -> Runtime_type String_type
+  | Symbol _ -> Runtime_type Symbol_type
+  | Keyword _ -> Runtime_type Keyword_type
+  | Uuid _ -> Runtime_type Uuid_type
+  | Instant _ -> Runtime_type Instant_type
+  | Regex _ -> Runtime_type Regex_type
+  | List [] -> Runtime_type Empty_list_type
+  | List (_ :: _) -> Runtime_type List_type
+  | Vector _ | Tuple _ -> Runtime_type Vector_type
+  | Map _ -> Runtime_type Array_map_type
+  | Hash_map _ -> Runtime_type Hash_map_type
+  | Set _ -> Runtime_type Set_type
+  | Runtime_type _ -> Runtime_type Function_type
+  | Tx_ref -> Runtime_type Keyword_type
+  | Ref_to entity_ref -> (
+      match entity_ref with
+      | Entity_id _ -> Runtime_type Number_type
+      | Auto_tempid _ -> Runtime_type Auto_tempid_type
+      | Current_tx -> Runtime_type Keyword_type
+      | Temp_id _ -> Runtime_type String_type
+      | Ident _ -> Runtime_type Keyword_type
+      | Lookup_ref _ -> Runtime_type Vector_type)
+
+let function_runtime_type_value () = Runtime_type Function_type
+
+let database_runtime_type_value filtered =
+  Runtime_type (if filtered then Filtered_database_type else Database_type)
+
+let class_name value =
+  match runtime_type_value value with
+  | Nil -> "nil"
+  | Runtime_type Boolean_type -> "Boolean"
+  | Runtime_type Number_type -> "Number"
+  | Runtime_type String_type -> "String"
+  | Runtime_type Symbol_type -> "cljs.core/Symbol"
+  | Runtime_type Keyword_type -> "cljs.core/Keyword"
+  | Runtime_type Uuid_type -> "cljs.core/UUID"
+  | Runtime_type Instant_type -> "Date"
+  | Runtime_type Regex_type -> "RegExp"
+  | Runtime_type Empty_list_type -> "cljs.core/EmptyList"
+  | Runtime_type List_type -> "cljs.core/List"
+  | Runtime_type Vector_type -> "cljs.core/PersistentVector"
+  | Runtime_type Set_type -> "cljs.core/PersistentHashSet"
+  | Runtime_type Array_map_type -> "cljs.core/PersistentArrayMap"
+  | Runtime_type Hash_map_type -> "cljs.core/PersistentHashMap"
+  | Runtime_type Auto_tempid_type -> "datascript.db/AutoTempid"
+  | Runtime_type Function_type -> "Function"
+  | Runtime_type Database_type -> "datascript.db/DB"
+  | Runtime_type Filtered_database_type -> "datascript.db/FilteredDB"
+  | _ -> assert false
+
+let map_from_entries entries =
+  if List.length entries <= 8 then Map entries else Hash_map entries
+
 let map_of_keyword_map values =
-  Map
+  map_from_entries
     (Lg_runtime.Runtime_map.to_list values
     |> List.map (fun (key, value) -> (Keyword key, value)))
 
 let map_of_keyword_entries entries =
-  Map
+  map_from_entries
     (Rrbvec.to_list entries
     |> List.map (fun (key, value) -> (Keyword key, value)))
 
 let map_of_keyword_map_with convert values =
-  Map
+  map_from_entries
     (Lg_runtime.Runtime_map.to_list values
     |> List.map (fun (key, value) -> (Keyword key, convert value)))
 
-let map_of_data_map values = Map (Lg_runtime.Runtime_map.to_list values)
+let map_of_data_map values =
+  map_from_entries (Lg_runtime.Runtime_map.to_list values)
 
 let map_of_data_map_with convert values =
-  Map
+  map_from_entries
     (Lg_runtime.Runtime_map.to_list values
     |> List.map (fun (key, value) -> (key, convert value)))
+
+let as_array_map = function
+  | Map entries | Hash_map entries -> Map entries
+  | _ -> invalid_arg "Expected a map value"
+
+let as_hash_map = function
+  | Map entries | Hash_map entries -> Hash_map entries
+  | _ -> invalid_arg "Expected a map value"
 
 let regex_pattern = function
   | String pattern ->
@@ -652,7 +766,8 @@ let query_search_text = function
   | Float value -> Some (float_to_javascript_string value)
   | Bool value -> Some (string_of_bool value)
   | Regex value -> Some ("/" ^ value ^ "/")
-  | (List _ | Vector _ | Map _ | Set _ | Tuple _ | Tx_ref | Ref_to _) as value ->
+  | (List _ | Vector _ | Map _ | Hash_map _ | Set _ | Tuple _
+    | Runtime_type _ | Tx_ref | Ref_to _) as value ->
       Some (to_edn_string value)
   | Instant _ -> None
 
@@ -706,7 +821,7 @@ let join_items = function
   | List values | Vector values | Set values -> Some values
   | Tuple values ->
       Some (List.map (function None -> Nil | Some value -> value) values)
-  | Map entries ->
+  | Map entries | Hash_map entries ->
       Some (List.map (fun (key, value) -> Vector [ key; value ]) entries)
   | _ -> None
 
@@ -791,7 +906,8 @@ let string_escape values =
     String (Buffer.contents result)
   in
   match Rrbvec.to_list values with
-  | [ String source; Map entries ] -> Some (escape source entries)
+  | [ String source; (Map entries | Hash_map entries) ] ->
+      Some (escape source entries)
   | _ -> None
 
 let string_last_index_of values =
@@ -842,7 +958,7 @@ let string_split values =
   | _ -> None
 
 let keyword_map_get key = function
-  | Map entries ->
+  | Map entries | Hash_map entries ->
       List.find_map
         (function
           | Keyword candidate, value when String.equal candidate key -> Some value
@@ -851,7 +967,7 @@ let keyword_map_get key = function
   | _ -> None
 
 let keyword_map_value = function
-  | Map entries ->
+  | Map entries | Hash_map entries ->
       List.fold_left
         (fun result (key, value) ->
           match (result, key) with
@@ -863,7 +979,7 @@ let keyword_map_value = function
   | _ -> None
 
 let keyword_map_entries = function
-  | Map entries ->
+  | Map entries | Hash_map entries ->
       let rec collect result = function
         | [] -> Some (Rrbvec.of_list (List.rev result))
         | (Keyword key, value) :: rest ->
@@ -874,7 +990,7 @@ let keyword_map_entries = function
   | _ -> None
 
 let map_entries = function
-  | Map entries -> Some (Rrbvec.of_list entries)
+  | Map entries | Hash_map entries -> Some (Rrbvec.of_list entries)
   | _ -> None
 
 let string_vector values =
@@ -957,7 +1073,7 @@ let count_value = function
   | Nil -> Some 0
   | String value -> Some (String.length value)
   | List values | Vector values | Set values -> Some (List.length values)
-  | Map entries -> Some (List.length entries)
+  | Map entries | Hash_map entries -> Some (List.length entries)
   | Tuple values -> Some (List.length values)
   | _ -> None
 
@@ -1078,7 +1194,9 @@ let rec equal left right =
   | Regex left, Regex right ->
       String.equal left right
   | Bool left, Bool right -> Bool.equal left right
-  | Map left, Map right -> map_equal left right
+  | Runtime_type left, Runtime_type right -> left = right
+  | (Map left | Hash_map left), (Map right | Hash_map right) ->
+      map_equal left right
   | Set left, Set right -> set_equal left right
   | Ref_to left, Ref_to right -> entity_ref_equal left right
   | _ -> (
@@ -1134,7 +1252,7 @@ let set_value = function
   | Set values -> Some (Set values)
   | String value -> Some (Set (unique_values (string_character_values value)))
   | List values | Vector values -> Some (Set (unique_values values))
-  | Map entries ->
+  | Map entries | Hash_map entries ->
       Some
         (Set
            (unique_values
@@ -1158,11 +1276,11 @@ let contains_key collection key =
   | String value -> Some (index_in_bounds (String.length value) key)
   | Vector values -> Some (index_in_bounds (List.length values) key)
   | Tuple values -> Some (index_in_bounds (List.length values) key)
-  | Map entries ->
+  | Map entries | Hash_map entries ->
       Some (List.exists (fun (candidate, _) -> equal candidate key) entries)
   | Set values -> Some (List.exists (equal key) values)
   | List _ | Symbol _ | Bool _ | Keyword _ | Uuid _ | Instant _ | Regex _
-  | Int _ | Wide_int _ | Float _ | Ref _ | Tx_ref | Ref_to _ ->
+  | Runtime_type _ | Int _ | Wide_int _ | Float _ | Ref _ | Tx_ref | Ref_to _ ->
       Some false
 
 let get_or_default collection key default =
@@ -1174,7 +1292,7 @@ let get_or_default collection key default =
   in
   match collection with
   | Nil -> Some default
-  | Map entries ->
+  | Map entries | Hash_map entries ->
       Some
         (Option.value ~default
            (List.find_map
@@ -1190,7 +1308,8 @@ let get_or_default collection key default =
         (Option.value ~default
            (List.find_opt (fun candidate -> equal candidate key) values))
   | List _ | String _ | Symbol _ | Bool _ | Keyword _ | Uuid _ | Instant _
-  | Regex _ | Int _ | Wide_int _ | Float _ | Ref _ | Tx_ref | Ref_to _ ->
+  | Regex _ | Runtime_type _ | Int _ | Wide_int _ | Float _ | Ref _ | Tx_ref
+  | Ref_to _ ->
       Some default
 
 let map_get map key = get_or_default map key Nil
@@ -1219,14 +1338,15 @@ let rec hash = function
   | Tuple values ->
       ordered_hash
         (List.map (function None -> 0 | Some value -> hash value) values)
-  | Map entries ->
+  | Map entries | Hash_map entries ->
       unordered_hash
         (List.map
            (fun (key, value) -> ordered_hash [ hash key; hash value ])
            entries)
   | Set values -> unordered_hash (List.map hash values)
-  | Tx_ref -> Hashtbl.hash 7
-  | Ref_to entity_ref -> Hashtbl.hash (8, hash_entity_ref entity_ref)
+  | Runtime_type runtime_type -> Hashtbl.hash (7, runtime_type)
+  | Tx_ref -> Hashtbl.hash 8
+  | Ref_to entity_ref -> Hashtbl.hash (9, hash_entity_ref entity_ref)
 
 and hash_entity_ref = function
   | Entity_id value -> Hashtbl.hash (0, value)
@@ -1322,7 +1442,7 @@ let rank = function
   | Nil -> 0
   | Keyword _ -> 1
   | Symbol _ -> 2
-  | Map _ -> 3
+  | Map _ | Hash_map _ -> 3
   | Set _ -> 4
   | List _ | Vector _ | Tuple _ -> 5
   | Bool _ -> 6
@@ -1331,8 +1451,9 @@ let rank = function
   | Regex _ -> 9
   | Instant _ -> 10
   | Uuid _ -> 11
-  | Tx_ref -> 12
-  | Ref_to _ -> 13
+  | Runtime_type _ -> 12
+  | Tx_ref -> 13
+  | Ref_to _ -> 14
 
 let compare left right =
   match (left, right) with
@@ -1358,7 +1479,10 @@ let compare left right =
   | Symbol left, Symbol right | Keyword left, Keyword right ->
       compare_identifier left right
   | Bool left, Bool right -> Bool.compare left right
-  | Map _, Map _ | Set _, Set _ -> Int.compare (hash left) (hash right)
+  | Runtime_type left, Runtime_type right -> Stdlib.compare left right
+  | (Map _ | Hash_map _), (Map _ | Hash_map _)
+  | Set _, Set _ ->
+      Int.compare (hash left) (hash right)
   | Ref_to left, Ref_to right -> Stdlib.compare left right
   | _ -> (
       match (sequence left, sequence right) with

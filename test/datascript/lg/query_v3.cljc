@@ -1499,6 +1499,34 @@
       (Some value) value
       None true)))
 
+(defn- ^:bool query-result-truthy-v3?
+  [^datascript.lg.query-types/result result]
+  (if-some [value (query-types/result-value result)]
+    (data-value-truthy? value)
+    true))
+
+(defn- ^:option<datascript.lg.query-types/result>
+  pure-function-result-v3
+  [^datascript.built-ins/query-function function
+   ^:vector<datascript.lg.query-types/result> arguments]
+  (if (built-ins/complement-function? function)
+    (Some (query-types/complement-result arguments))
+    (if (built-ins/metadata-function? function)
+      (Some (query-types/metadata-function-result arguments))
+      (if (built-ins/value-type-function? function)
+        (Some (query-types/value-type-function-result arguments))
+        (let [values
+              (mapv query-types/result-pattern-value arguments)]
+          (if (built-ins/differ-function? function)
+            (Some
+             (query-types/value-result
+              (Datascript_runtime.Data_value.Bool
+               (built-ins/apply-differ values))))
+            (if-some [value
+                      (built-ins/apply-pure-function function values)]
+              (Some (query-types/value-result value))
+              None)))))))
+
 (defn- ^:bool invoke-predicate
   [^predicate-function-v3 function
    ^:vector<datascript.lg.query-types/result> arguments]
@@ -1521,23 +1549,10 @@
         (Stdlib.invalid_arg
          (str "Invalid arguments for query predicate: " name))))
     (PurePredicateV3 name function)
-    (if (built-ins/complement-function? function)
-      true
-      (if (built-ins/metadata-function? function)
-        (data-value-truthy?
-         (query-types/result-pattern-value
-          (query-types/metadata-function-result arguments)))
-        (if (built-ins/differ-function? function)
-          (built-ins/apply-differ
-           (mapv query-types/result-pattern-value arguments))
-          (if-some
-            [value
-             (built-ins/apply-pure-function
-              function
-              (mapv query-types/result-pattern-value arguments))]
-            (data-value-truthy? value)
-            (Stdlib.invalid_arg
-             (str "Invalid arguments for query predicate: " name))))))
+    (if-some [result (pure-function-result-v3 function arguments)]
+      (query-result-truthy-v3? result)
+      (Stdlib.invalid_arg
+       (str "Invalid arguments for query predicate: " name)))
     (VariablePredicateV3 _name callable)
     (if-some [value (query-types/invoke-callable callable arguments)]
       (data-value-truthy? value)
@@ -1643,29 +1658,21 @@
         (Stdlib.invalid_arg
          (str "Invalid arguments for query function: " name))))
     (PurePredicateV3 name function)
-    (if (built-ins/complement-function? function)
-      (Some (query-types/complement-result arguments))
-      (if (built-ins/metadata-function? function)
-        (Some (query-types/metadata-function-result arguments))
-        (if
-         (or
-          (built-ins/get-else-function? function)
-          (built-ins/get-some-function? function))
-          (if-some [value
-                    (query-types/database-function-value
-                     function arguments)]
-            (Some (query-types/value-result value))
-            (Stdlib.invalid_arg
-             (str "Invalid arguments for query function: " name)))
-          (if-some [value
-                    (built-ins/apply-pure-function
-                     function
-                     (mapv
-                      query-types/result-pattern-value
-                      arguments))]
-            (Some (query-types/value-result value))
-            (Stdlib.invalid_arg
-             (str "Invalid arguments for query function: " name))))))
+    (if
+     (or
+      (built-ins/get-else-function? function)
+      (built-ins/get-some-function? function))
+      (if-some [value
+                (query-types/database-function-value
+                 function arguments)]
+        (Some (query-types/value-result value))
+        (Stdlib.invalid_arg
+         (str "Invalid arguments for query function: " name)))
+      (if-some [result
+                (pure-function-result-v3 function arguments)]
+        (Some result)
+        (Stdlib.invalid_arg
+         (str "Invalid arguments for query function: " name))))
     (VariablePredicateV3 _name callable)
     (if-some [value
               (query-types/invoke-callable callable arguments)]

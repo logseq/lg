@@ -45,6 +45,7 @@
   List
   Set
   HashMap
+  ArrayMap
   Count
   Range
   NotEmpty
@@ -142,7 +143,7 @@
    'list List
    'set Set
    'hash-map HashMap
-   'array-map HashMap
+   'array-map ArrayMap
    'count Count
    'range Range
    'not-empty NotEmpty
@@ -238,6 +239,8 @@
 (signature datascript.built-ins/complement-function?
   :fn<datascript.built-ins/query-function;bool>)
 (signature datascript.built-ins/metadata-function?
+  :fn<datascript.built-ins/query-function;bool>)
+(signature datascript.built-ins/value-type-function?
   :fn<datascript.built-ins/query-function;bool>)
 (signature datascript.built-ins/apply-differ
   :fn<vector<Datascript_runtime.Data_value.t>;bool>)
@@ -550,12 +553,13 @@
     "meta" (Some Metadata)
     "name" (Some Name)
     "namespace" (Some Namespace)
+    "type" (Some ValueType)
     "vector" (Some Vector)
     "tuple" (Some Tuple)
     "list" (Some List)
     "set" (Some Set)
     "hash-map" (Some HashMap)
-    "array-map" (Some HashMap)
+    "array-map" (Some ArrayMap)
     "and" (Some AndValues)
     "or" (Some OrValues)
     "complement" (Some Complement)
@@ -690,6 +694,12 @@
     (Datascript_runtime.Data_value.keyword_from_values values)
     Metadata
     (Some (Datascript_runtime.Data_value.Nil))
+    ValueType
+    (Some
+     (Datascript_runtime.Data_value.runtime_type_value
+      (if (= 0 (count values))
+        (Datascript_runtime.Data_value.Nil)
+        (nth values 0))))
     Name
     (Datascript_runtime.Data_value.name_value
      (if (= 0 (count values))
@@ -720,7 +730,13 @@
     Identical
     (Datascript_runtime.Data_value.identical_value values)
     HashMap
-    (data-map values)
+    (if-some [map (data-map values)]
+      (Some (Datascript_runtime.Data_value.as_hash_map map))
+      None)
+    ArrayMap
+    (if-some [map (data-map values)]
+      (Some (Datascript_runtime.Data_value.as_array_map map))
+      None)
     Count
     (Some
      (Datascript_runtime.Data_value.Int
@@ -829,6 +845,11 @@
 (defn metadata-function? [function]
   (match function
     Metadata true
+    _ false))
+
+(defn value-type-function? [function]
+  (match function
+    ValueType true
     _ false))
 
 (defn ^:bool apply-differ

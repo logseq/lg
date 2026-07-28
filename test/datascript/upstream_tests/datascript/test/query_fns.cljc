@@ -805,6 +805,208 @@
            [(meta)]
            [(ground 1) ?value]]))))
 
+(defn ^query-types/input query-value-input
+  [^:Datascript_runtime.Data_value.t value]
+  (query-types/binding-input
+   (query-types/scalar-binding
+    (query-types/value-result value))))
+
+(defn ^datascript.parser/Query type-equality-query []
+  (parser/static-query-clauses-with-inputs
+   (parser/single-find "?same")
+   [(parser/static-function-clause
+     "type"
+     [(parser/variable-argument "?left")]
+     (parser/scalar-input "?left-type"))
+    (parser/static-function-clause
+     "type"
+     [(parser/variable-argument "?right")]
+     (parser/scalar-input "?right-type"))
+    (parser/static-function-clause
+     "="
+     [(parser/variable-argument "?left-type")
+      (parser/variable-argument "?right-type")]
+     (parser/scalar-input "?same"))]
+   [(parser/make-static-value-input
+     (parser/scalar-input "?left"))
+    (parser/make-static-value-input
+     (parser/scalar-input "?right"))]))
+
+(defn ^datascript.parser/Query map-type-equality-query []
+  (let [key
+        (parser/constant-argument
+         (Datascript_runtime.Data_value.Keyword ":a"))
+        value
+        (parser/constant-argument
+         (Datascript_runtime.Data_value.Int 1))]
+    (parser/static-query-clauses-with-inputs
+     (parser/single-find "?same")
+     [(parser/static-function-clause
+       "array-map" [key value]
+       (parser/scalar-input "?array-map"))
+      (parser/static-function-clause
+       "hash-map" [key value]
+       (parser/scalar-input "?hash-map"))
+      (parser/static-function-clause
+       "type"
+       [(parser/variable-argument "?array-map")]
+       (parser/scalar-input "?array-type"))
+      (parser/static-function-clause
+       "type"
+       [(parser/variable-argument "?hash-map")]
+       (parser/scalar-input "?hash-type"))
+      (parser/static-function-clause
+       "="
+       [(parser/variable-argument "?array-type")
+        (parser/variable-argument "?hash-type")]
+       (parser/scalar-input "?same"))]
+     [])))
+
+(deftest test-core-type-query-function
+  (is
+   (scalar-output-value?
+    (d/q '[:find ?type .
+           :where [(type 1) ?type]])
+    (Datascript_runtime.Data_value.runtime_type_value
+     (Datascript_runtime.Data_value.Int 0))))
+  (is
+   (scalar-output-value?
+    (d/q '[:find ?same .
+           :where
+           [(type 1) ?integer-type]
+           [(type 1.5) ?float-type]
+           [(= ?integer-type ?float-type) ?same]])
+    (Datascript_runtime.Data_value.Bool true)))
+  (is
+   (scalar-output-value?
+    (d/q '[:find ?same .
+           :where
+           [(type 1) ?integer-type]
+           [(type 1.5) ?float-type]
+           [(identical? ?integer-type ?float-type) ?same]])
+    (Datascript_runtime.Data_value.Bool true)))
+  (let [query (type-equality-query)
+        empty-list
+        (query-value-input
+         (Datascript_runtime.Data_value.List (list)))
+        non-empty-list
+        (query-value-input
+         (Datascript_runtime.Data_value.List
+          (list (Datascript_runtime.Data_value.Int 1))))]
+    (is
+     (scalar-output-value?
+      (query-types/execute-query query [empty-list non-empty-list])
+      (Datascript_runtime.Data_value.Bool false)))
+    (is
+     (scalar-output-value?
+      (query-v3/q query empty-list non-empty-list)
+      (Datascript_runtime.Data_value.Bool false))))
+  (is
+   (scalar-output-value?
+    (d/q '[:find ?same .
+           :where
+           [(type []) ?empty-type]
+           [(type [1]) ?vector-type]
+           [(= ?empty-type ?vector-type) ?same]])
+    (Datascript_runtime.Data_value.Bool true)))
+  (is
+   (scalar-output-value?
+    (d/q '[:find ?same .
+           :where
+           [(array-map :a 1) ?array-map]
+           [(hash-map :a 1) ?hash-map]
+           [(type ?array-map) ?array-type]
+           [(type ?hash-map) ?hash-type]
+           [(= ?array-type ?hash-type) ?same]])
+    (Datascript_runtime.Data_value.Bool false)))
+  (let [query (map-type-equality-query)]
+    (is
+     (scalar-output-value?
+      (query-types/execute-query query [])
+      (Datascript_runtime.Data_value.Bool false)))
+    (is
+     (scalar-output-value?
+      (query-v3/q query)
+      (Datascript_runtime.Data_value.Bool false))))
+  (is
+   (scalar-output-value?
+    (d/q '[:find ?same .
+           :where
+           [(hash-map :a 1) ?hash-map]
+           [(identity ?hash-map) ?same-map]
+           [(type ?hash-map) ?hash-type]
+           [(type ?same-map) ?same-map-type]
+           [(= ?hash-type ?same-map-type) ?same]])
+    (Datascript_runtime.Data_value.Bool true)))
+  (is
+   (scalar-output-value?
+    (d/q '[:find ?same .
+           :where
+           [(hash-map :a 1) ?inner]
+           [(hash-map :nested ?inner) ?outer]
+           [(get ?outer :nested) ?nested]
+           [(type ?inner) ?inner-type]
+           [(type ?nested) ?nested-type]
+           [(= ?inner-type ?nested-type) ?same]])
+    (Datascript_runtime.Data_value.Bool true)))
+  (is
+   (scalar-output-value?
+    (d/q '[:find ?same .
+           :where
+           [(array-map :a 1 :b 2 :c 3 :d 4 :e 5
+                       :f 6 :g 7 :h 8 :i 9) ?large-array-map]
+           [(array-map :a 1) ?small-array-map]
+           [(type ?large-array-map) ?large-type]
+           [(type ?small-array-map) ?small-type]
+           [(= ?large-type ?small-type) ?same]])
+    (Datascript_runtime.Data_value.Bool true)))
+  (is
+   (scalar-output-value?
+    (d/q '[:find ?same .
+           :where
+           [(type {:a 1}) ?literal-type]
+           [(array-map :a 1) ?array-map]
+           [(type ?array-map) ?array-type]
+           [(= ?literal-type ?array-type) ?same]])
+    (Datascript_runtime.Data_value.Bool true)))
+  (is
+   (scalar-output-value?
+    (d/q '[:find ?same .
+           :where
+           [(type {:a 1 :b 2 :c 3 :d 4 :e 5
+                   :f 6 :g 7 :h 8 :i 9}) ?literal-type]
+           [(hash-map :a 1) ?hash-map]
+           [(type ?hash-map) ?hash-type]
+           [(= ?literal-type ?hash-type) ?same]])
+    (Datascript_runtime.Data_value.Bool true)))
+  (is
+   (scalar-output-missing?
+    (d/q '[:find ?type .
+           :where [(type nil) ?type]])))
+  (is
+   (scalar-output-missing?
+    (d/q '[:find ?type .
+           :where [(type) ?type]])))
+  (is
+   (scalar-output-value?
+    (d/q '[:find ?type .
+           :where [(type 1 :ignored) ?type]])
+    (Datascript_runtime.Data_value.runtime_type_value
+     (Datascript_runtime.Data_value.Int 0))))
+  (is
+   (scalar-output-value?
+    (d/q '[:find ?value .
+           :where
+           [(type 1)]
+           [(ground 1) ?value]])
+    (Datascript_runtime.Data_value.Int 1)))
+  (is
+   (scalar-output-missing?
+    (d/q '[:find ?value .
+           :where
+           [(type nil)]
+           [(ground 1) ?value]]))))
+
 (deftest test-core-increment-and-decrement-query-functions
   (testing "missing arguments produce NaN and extra arguments are ignored"
     (is

@@ -6,6 +6,26 @@ type entity_ref =
   | Ident of string
   | Lookup_ref of string * t
 
+and runtime_type =
+  | Boolean_type
+  | Number_type
+  | String_type
+  | Symbol_type
+  | Keyword_type
+  | Uuid_type
+  | Instant_type
+  | Regex_type
+  | Empty_list_type
+  | List_type
+  | Vector_type
+  | Set_type
+  | Array_map_type
+  | Hash_map_type
+  | Auto_tempid_type
+  | Function_type
+  | Database_type
+  | Filtered_database_type
+
 and t =
   | Nil
   | Int of int
@@ -22,8 +42,10 @@ and t =
   | List of t list
   | Vector of t list
   | Map of (t * t) list
+  | Hash_map of (t * t) list
   | Set of t list
   | Tuple of t option list
+  | Runtime_type of runtime_type
   | Tx_ref
   | Ref_to of entity_ref
 
@@ -60,6 +82,10 @@ val prn_str : t Rrbvec.t -> t option
 val substring : t Rrbvec.t -> t option
 val increment : t -> t option
 val decrement : t -> t option
+val runtime_type_value : t -> t
+val function_runtime_type_value : unit -> t
+val database_runtime_type_value : bool -> t
+val class_name : t -> string
 val map_of_keyword_map : (string, t) Lg_runtime.Runtime_map.t -> t
 val map_of_keyword_entries : (string * t) Rrbvec.t -> t
 val map_of_keyword_map_with :
@@ -67,6 +93,8 @@ val map_of_keyword_map_with :
 val map_of_data_map : (t, t) Lg_runtime.Runtime_map.t -> t
 val map_of_data_map_with :
   ('value -> t) -> (t, 'value) Lg_runtime.Runtime_map.t -> t
+val as_array_map : t -> t
+val as_hash_map : t -> t
 val map_get : t -> t -> t option
 val get_or_default : t -> t -> t -> t option
 val regex_pattern : t -> t option
