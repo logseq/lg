@@ -371,11 +371,17 @@
        items)
       (pull-pattern-error parsed))))
 
+(signature datascript.js/pull-string
+  :fn<datascript.db/DB;string;Datascript_runtime.Data_value.entity_ref;option<map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>>>)
+
 (defn- pull-string [database pattern entity-ref]
   (pull-api/pull-source
    (db/database-view database)
    (pull-source-pattern pattern)
    entity-ref))
+
+(signature datascript.js/pull-many-string
+  :fn<datascript.db/DB;string;vector<Datascript_runtime.Data_value.entity_ref>;vector<option<map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>>>>)
 
 (defn- pull-many-string [database pattern entity-refs]
   (pull-api/pull-many-source
