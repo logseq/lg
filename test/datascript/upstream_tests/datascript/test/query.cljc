@@ -2828,6 +2828,45 @@
        [(parser/constant-argument empty-set)
         (parser/constant-argument non-empty-map)])))))
 
+(deftest test-query-v3-collection-unary-invocation
+  (let [one (Datascript_runtime.Data_value.Int 1)
+        empty-vector (query-form-vector [])
+        non-empty-vector (query-form-vector [one])]
+    (is
+     (=
+      [["#{}"]]
+      (query-v3-static-function-output-edn "set" [])))
+    (is
+     (=
+      [["#{\"a\" \"b\"}"]]
+      (query-v3-static-function-output-edn
+       "set"
+       [(parser/constant-argument
+         (Datascript_runtime.Data_value.String "aba"))
+        (parser/constant-argument empty-vector)])))
+    (is
+     (=
+      [["0"]]
+      (query-v3-static-function-output-edn "count" [])))
+    (is
+     (=
+      [["1"]]
+      (query-v3-static-function-output-edn
+       "count"
+       [(parser/constant-argument non-empty-vector)
+        (parser/constant-argument empty-vector)])))
+    (is
+     (=
+      []
+      (query-v3-static-function-output-edn "not-empty" [])))
+    (is
+     (=
+      [["[1]"]]
+      (query-v3-static-function-output-edn
+       "not-empty"
+       [(parser/constant-argument non-empty-vector)
+        (parser/constant-argument empty-vector)])))))
+
 (deftest test-query-v3-contains-collections-and-indexes
   (let [attr (Datascript_runtime.Data_value.Keyword ":a")
         missing (Datascript_runtime.Data_value.Keyword ":missing")
@@ -2875,22 +2914,37 @@
     (is (= [["false"]]
            (query-v3-contains-output-edn
             (Datascript_runtime.Data_value.Nil)
-            attr)))))
+            attr)))
+    (is
+     (=
+      [["false"]]
+      (query-v3-static-function-output-edn "contains?" [])))
+    (is
+     (=
+      [["false"]]
+      (query-v3-static-function-output-edn
+       "contains?"
+       [(parser/constant-argument data-map)])))
+    (is
+     (=
+      [["true"]]
+      (query-v3-static-function-output-edn
+       "contains?"
+       [(parser/constant-argument data-map)
+        (parser/constant-argument attr)
+        (parser/constant-argument missing)])))
+    (is
+     (=
+      [["false"]]
+      (query-v3-static-function-output-edn
+       "contains?"
+       [(parser/constant-argument
+         (query-form-list [one]))
+        (parser/constant-argument
+         (Datascript_runtime.Data_value.Int 0))])))))
 
 (deftest test-query-v3-collection-predicate-errors
-  (let [invalid-list-query
-        (query-v3-function-query
-         (parser/relation-find ["?result"])
-         []
-         (parser/static-function-clause
-          "contains?"
-          [(parser/constant-argument
-            (query-form-list
-             [(Datascript_runtime.Data_value.Int 1)]))
-           (parser/constant-argument
-            (Datascript_runtime.Data_value.Int 0))]
-          (parser/scalar-input "?result")))
-        invalid-value-query
+  (let [invalid-value-query
         (query-v3-function-query
          (parser/relation-find ["?result"])
          []
@@ -2898,37 +2952,12 @@
           "empty?"
           [(parser/constant-argument
             (Datascript_runtime.Data_value.Int 1))]
-          (parser/scalar-input "?result")))
-        invalid-arity-query
-        (query-v3-function-query
-         (parser/relation-find ["?result"])
-         []
-         (parser/static-function-clause
-          "contains?"
-          [(parser/constant-argument
-            (query-form-vector []))]
           (parser/scalar-input "?result")))]
-    (is
-     (=
-      "Invalid arguments for query function: contains?"
-      (try
-        (let [_output (query-v3/q invalid-list-query)]
-          "no error")
-        (catch (Invalid_argument message)
-          (str message)))))
     (is
      (=
       "1 is not ISeqable"
       (try
         (let [_output (query-v3/q invalid-value-query)]
-          "no error")
-        (catch (Invalid_argument message)
-          (str message)))))
-    (is
-     (=
-      "Invalid arguments for query function: contains?"
-      (try
-        (let [_output (query-v3/q invalid-arity-query)]
           "no error")
         (catch (Invalid_argument message)
           (str message)))))))

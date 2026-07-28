@@ -366,6 +366,47 @@
     (Datascript_runtime.Data_value.Nil)
     (nth values 0)))
 
+(defn- second-value
+  [values]
+  (if (<= (count values) 1)
+    (Datascript_runtime.Data_value.Nil)
+    (nth values 1)))
+
+(defn- require-seqable-count
+  [value]
+  (if-some [count
+            (Datascript_runtime.Data_value.count_value value)]
+    count
+    (Stdlib.invalid_arg
+     (str
+      (Datascript_runtime.Data_value.to_edn_string value)
+      " is not ISeqable"))))
+
+(defn- counted-type-name
+  [value]
+  (match value
+    (Datascript_runtime.Data_value.Int _) "number"
+    (Datascript_runtime.Data_value.Wide_int _) "number"
+    (Datascript_runtime.Data_value.Float _) "number"
+    (Datascript_runtime.Data_value.Ref _) "number"
+    (Datascript_runtime.Data_value.Bool _) "boolean"
+    (Datascript_runtime.Data_value.Symbol _) "cljs.core/Symbol"
+    (Datascript_runtime.Data_value.Keyword _) "cljs.core/Keyword"
+    (Datascript_runtime.Data_value.Uuid _) "cljs.core/UUID"
+    _ "object"))
+
+(defn- require-counted-value
+  [value]
+  (if-some [count
+            (Datascript_runtime.Data_value.count_value value)]
+    count
+    (Stdlib.invalid_arg
+     (str
+      "No protocol method ICounted.-count defined for type "
+      (counted-type-name value)
+      ": "
+      (Datascript_runtime.Data_value.to_edn_string value)))))
+
 (defn apply-comparison
   [function
     values]
@@ -444,19 +485,11 @@
       _ (Some false))
     Empty
     (let [value (first-value values)]
-      (if-some [count
-                (Datascript_runtime.Data_value.count_value value)]
-        (Some (= count 0))
-        (Stdlib.invalid_arg
-         (str
-          (Datascript_runtime.Data_value.to_edn_string value)
-          " is not ISeqable"))))
+      (Some (= (require-seqable-count value) 0)))
     Contains
-    (if (= 2 (count values))
-      (Datascript_runtime.Data_value.contains_key
-       (nth values 0)
-       (nth values 1))
-      None)
+    (Datascript_runtime.Data_value.contains_key
+     (first-value values)
+     (second-value values))
     Blank
     (Some
      (Datascript_runtime.Data_value.string_blank
@@ -661,9 +694,14 @@
     List
     (Some (Datascript_runtime.Data_value.list_of_vector values))
     Set
-    (if (= 1 (count values))
-      (Datascript_runtime.Data_value.set_value (nth values 0))
-      None)
+    (let [value (first-value values)]
+      (if-some [set
+                (Datascript_runtime.Data_value.set_value value)]
+        (Some set)
+        (Stdlib.invalid_arg
+         (str
+          (Datascript_runtime.Data_value.to_edn_string value)
+          " is not ISeqable"))))
     AndValues (Some (and-values values))
     OrValues (Some (or-values values))
     Identical
@@ -671,26 +709,17 @@
     HashMap
     (data-map values)
     Count
-    (if (= 1 (count values))
-      (if-some [value
-                (Datascript_runtime.Data_value.count_value
-                 (nth values 0))]
-        (Some (Datascript_runtime.Data_value.Int value))
-        None)
-      None)
+    (Some
+     (Datascript_runtime.Data_value.Int
+      (require-counted-value (first-value values))))
     Range
     (Datascript_runtime.Data_value.range_value values)
     NotEmpty
-    (if (= 1 (count values))
-      (if-some [value
-                (Datascript_runtime.Data_value.count_value
-                 (nth values 0))]
-        (Some
-         (if (= value 0)
-           (Datascript_runtime.Data_value.Nil)
-           (nth values 0)))
-        None)
-      None)
+    (let [value (first-value values)]
+      (Some
+       (if (= (require-seqable-count value) 0)
+         (Datascript_runtime.Data_value.Nil)
+         value)))
     StringValue
     (Datascript_runtime.Data_value.string_value values)
     Substring

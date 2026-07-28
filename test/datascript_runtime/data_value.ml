@@ -1104,26 +1104,37 @@ and entity_ref_equal left right =
       String.equal left_attr right_attr && equal left_value right_value
   | _ -> false
 
+let unique_values values =
+  List.rev
+    (List.fold_left
+       (fun unique value ->
+         if List.exists (equal value) unique then unique else value :: unique)
+       [] values)
+
+let string_character_values source =
+  let rec loop index values =
+    if index = String.length source then List.rev values
+    else
+      let length = utf8_character_length_at source index in
+      loop (index + length)
+        (String (String.sub source index length) :: values)
+  in
+  loop 0 []
+
 let set_value = function
   | Nil -> Some (Set [])
   | Set values -> Some (Set values)
-  | List values | Vector values ->
+  | String value -> Some (Set (unique_values (string_character_values value)))
+  | List values | Vector values -> Some (Set (unique_values values))
+  | Map entries ->
       Some
         (Set
-           (List.fold_left
-              (fun unique value ->
-                if List.exists (equal value) unique then unique
-                else unique @ [ value ])
-              [] values))
+           (unique_values
+              (List.map (fun (key, value) -> Vector [ key; value ]) entries)))
   | Tuple values ->
       Some
         (Set
-           (List.fold_left
-              (fun unique value ->
-                let value = Option.value ~default:Nil value in
-                if List.exists (equal value) unique then unique
-                else unique @ [ value ])
-              [] values))
+           (unique_values (List.map (Option.value ~default:Nil) values)))
   | _ -> None
 
 let index_in_bounds length = function
@@ -1142,8 +1153,9 @@ let contains_key collection key =
   | Map entries ->
       Some (List.exists (fun (candidate, _) -> equal candidate key) entries)
   | Set values -> Some (List.exists (equal key) values)
-  | List _ -> None
-  | _ -> None
+  | List _ | Symbol _ | Bool _ | Keyword _ | Uuid _ | Instant _ | Regex _
+  | Int _ | Wide_int _ | Float _ | Ref _ | Tx_ref | Ref_to _ ->
+      Some false
 
 let get_or_default collection key default =
   let indexed values =

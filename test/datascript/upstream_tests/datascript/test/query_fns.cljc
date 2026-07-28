@@ -724,6 +724,136 @@
       (d/q '[:find ?x .
              :where [(dec [1 2]) ?x]])))))
 
+(deftest test-core-set-unary-query-function
+  (testing "set treats a missing argument as nil and ignores extras"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(set) ?x]])
+      (Datascript_runtime.Data_value.Set (list))))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(set [1 1] [2]) ?x]])
+      (Datascript_runtime.Data_value.Set
+       (list (Datascript_runtime.Data_value.Int 1)))))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(set "aba") ?x]])
+      (Datascript_runtime.Data_value.Set
+       (list
+        (Datascript_runtime.Data_value.String "a")
+        (Datascript_runtime.Data_value.String "b")))))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(set {:a 1}) ?x]])
+      (Datascript_runtime.Data_value.Set
+       (list
+        (Datascript_runtime.Data_value.Vector
+         (list
+          (Datascript_runtime.Data_value.Keyword ":a")
+          (Datascript_runtime.Data_value.Int 1)))))))
+    (is
+     (=
+      "1 is not ISeqable"
+      (try
+        (let [_output
+              (d/q '[:find ?x .
+                     :where [(set 1) ?x]])]
+          "no error")
+        (catch (Invalid_argument message)
+               (str message)))))))
+
+(deftest test-core-count-unary-query-function
+  (testing "count treats a missing argument as nil and ignores extras"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(count) ?x]])
+      (Datascript_runtime.Data_value.Int 0)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(count [1 2] [3]) ?x]])
+      (Datascript_runtime.Data_value.Int 2)))
+    (is
+     (=
+      "No protocol method ICounted.-count defined for type number: 1"
+      (try
+        (let [_output
+              (d/q '[:find ?x .
+                     :where [(count 1) ?x]])]
+          "no error")
+        (catch (Invalid_argument message)
+               (str message)))))
+    (is
+     (=
+      "No protocol method ICounted.-count defined for type boolean: true"
+      (try
+        (let [_output
+              (d/q '[:find ?x .
+                     :where [(count true) ?x]])]
+          "no error")
+        (catch (Invalid_argument message)
+               (str message)))))))
+
+(deftest test-core-not-empty-unary-query-function
+  (testing "not-empty treats a missing argument as nil and ignores extras"
+    (is
+     (scalar-output-missing?
+      (d/q '[:find ?x .
+             :where [(not-empty) ?x]])))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(not-empty [1] []) ?x]])
+      (Datascript_runtime.Data_value.Vector
+       (list (Datascript_runtime.Data_value.Int 1)))))
+    (is
+     (scalar-output-missing?
+      (d/q '[:find ?x .
+             :where [(not-empty "") ?x]])))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(not-empty "a") ?x]])
+      (Datascript_runtime.Data_value.String "a")))
+    (is
+     (=
+      "1 is not ISeqable"
+      (try
+        (let [_output
+              (d/q '[:find ?x .
+                     :where [(not-empty 1) ?x]])]
+          "no error")
+        (catch (Invalid_argument message)
+               (str message)))))))
+
+(deftest test-core-contains-query-function-invocation
+  (testing "contains? defaults missing arguments and ignores extras"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(contains?) ?x]])
+      (Datascript_runtime.Data_value.Bool false)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(contains? {:a 1}) ?x]])
+      (Datascript_runtime.Data_value.Bool false)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(contains? {:a 1} :a :ignored) ?x]])
+      (Datascript_runtime.Data_value.Bool true)))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(contains? 1 0) ?x]])
+      (Datascript_runtime.Data_value.Bool false)))))
+
 (deftest test-core-collection-value-query-functions
   (testing "set preserves uniqueness and nil conversion"
     (is

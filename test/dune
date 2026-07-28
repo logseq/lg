@@ -1238,6 +1238,7 @@
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
   datascript/upstream/built_ins.cljc
+  datascript/upstream/lru.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
   datascript/lg/query_types.cljc
@@ -1264,6 +1265,7 @@
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
+   %{dep:datascript/upstream/lru.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
    %{dep:datascript/lg/query_types.cljc}
@@ -1302,6 +1304,7 @@
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
   datascript/upstream/built_ins.cljc
+  datascript/upstream/lru.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
   datascript/lg/query_types.cljc
@@ -1327,6 +1330,7 @@
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
+   %{dep:datascript/upstream/lru.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
    %{dep:datascript/lg/query_types.cljc}
