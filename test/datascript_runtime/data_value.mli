@@ -121,3 +121,4 @@ val compare : t -> t -> int
 val compare_query_values : t -> t -> int option
 val hash : t -> int
 val to_edn_string : t -> string
+val to_clojure_string : t -> string

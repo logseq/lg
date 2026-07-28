@@ -3319,6 +3319,11 @@
 
 (deftest test-query-v3-map-constructors
   (let [empty-arguments []
+        nil-key-arguments
+        [(parser/constant-argument
+          (Datascript_runtime.Data_value.Nil))
+         (parser/constant-argument
+          (Datascript_runtime.Data_value.Int 1))]
         duplicate-key-arguments
         [(parser/constant-argument
           (Datascript_runtime.Data_value.Keyword ":a"))
@@ -3340,6 +3345,11 @@
        "hash-map" duplicate-key-arguments)))
     (is
      (=
+      [["{nil 1}"]]
+      (query-v3-static-function-output-edn
+       "hash-map" nil-key-arguments)))
+    (is
+     (=
       [["{}"]]
       (query-v3-static-function-output-edn
        "array-map" empty-arguments)))
@@ -3347,7 +3357,12 @@
      (=
       [["{:a 2}"]]
       (query-v3-static-function-output-edn
-       "array-map" duplicate-key-arguments)))))
+       "array-map" duplicate-key-arguments)))
+    (is
+     (=
+      [["{nil 1}"]]
+      (query-v3-static-function-output-edn
+       "array-map" nil-key-arguments)))))
 
 (deftest test-query-v3-constructor-errors
   (let [one
@@ -3355,15 +3370,44 @@
           (Datascript_runtime.Data_value.Int 1))]
         one-key
         [(parser/constant-argument
-          (Datascript_runtime.Data_value.Keyword ":a"))]]
+          (Datascript_runtime.Data_value.Keyword ":a"))]
+        string-key
+        [(parser/constant-argument
+          (Datascript_runtime.Data_value.String "a"))]
+        nil-key
+        [(parser/constant-argument
+          (Datascript_runtime.Data_value.Nil))]
+        three
+        [(parser/constant-argument
+          (Datascript_runtime.Data_value.Keyword ":a"))
+         (parser/constant-argument
+          (Datascript_runtime.Data_value.Int 1))
+         (parser/constant-argument
+          (Datascript_runtime.Data_value.Keyword ":b"))]]
     (is
      (=
-      "Invalid arguments for query function: hash-map"
+      "No value supplied for key: :a"
       (query-v3-static-function-error "hash-map" one-key)))
     (is
      (=
-      "Invalid arguments for query function: array-map"
+      "No value supplied for key: :b"
+      (query-v3-static-function-error "hash-map" three)))
+    (is
+     (=
+      "No value supplied for key: a"
+      (query-v3-static-function-error "hash-map" string-key)))
+    (is
+     (=
+      "No value supplied for key: :a"
       (query-v3-static-function-error "array-map" one-key)))
+    (is
+     (=
+      "No value supplied for key: :b"
+      (query-v3-static-function-error "array-map" three)))
+    (is
+     (=
+      "No value supplied for key: "
+      (query-v3-static-function-error "array-map" nil-key)))
     (is
      (=
       [["(1)"]]

@@ -931,6 +931,89 @@
         (catch (Invalid_argument message)
           (str message)))))))
 
+(deftest test-core-map-constructor-query-function-invocation
+  (testing "map constructors preserve nil keys and last-write-wins values"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(hash-map nil 1) ?x]])
+      (Datascript_runtime.Data_value.Map
+       (list
+        (tuple
+         (Datascript_runtime.Data_value.Nil)
+         (Datascript_runtime.Data_value.Int 1))))))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(array-map :a 1 :a 2) ?x]])
+      (Datascript_runtime.Data_value.Map
+       (list
+        (tuple
+         (Datascript_runtime.Data_value.Keyword ":a")
+         (Datascript_runtime.Data_value.Int 2)))))))
+
+  (testing "map constructors report the final key for every odd arity"
+    (is
+     (=
+      "No value supplied for key: :a"
+      (try
+        (let [_output
+              (d/q '[:find ?x .
+                     :where [(hash-map :a) ?x]])]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "No value supplied for key: :b"
+      (try
+        (let [_output
+              (d/q '[:find ?x .
+                     :where [(hash-map :a 1 :b) ?x]])]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "No value supplied for key: a"
+      (try
+        (let [_output
+              (d/q '[:find ?x .
+                     :where [(hash-map "a") ?x]])]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "No value supplied for key: :a"
+      (try
+        (let [_output
+              (d/q '[:find ?x .
+                     :where [(array-map :a) ?x]])]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "No value supplied for key: :b"
+      (try
+        (let [_output
+              (d/q '[:find ?x .
+                     :where [(array-map :a 1 :b) ?x]])]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "No value supplied for key: "
+      (try
+        (let [_output
+              (d/q '[:find ?x .
+                     :where [(array-map nil) ?x]])]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))))
+
 (deftest test-core-collection-value-query-functions
   (testing "set preserves uniqueness and nil conversion"
     (is

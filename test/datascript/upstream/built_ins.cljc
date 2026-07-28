@@ -624,7 +624,11 @@
           None)
         (Some
          (Datascript_runtime.Data_value.map_of_data_map entries))))
-    None))
+    (Stdlib.invalid_arg
+     (str
+      "No value supplied for key: "
+      (Datascript_runtime.Data_value.to_clojure_string
+       (nth values (- (count values) 1)))))))
 
 (defn apply-pure-function
   [function
