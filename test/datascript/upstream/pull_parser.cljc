@@ -664,8 +664,8 @@
     (recursive-attribute database recursive-attr))
    wildcard))
 
-(defn ^:string source-fragment-string
-  [^:Datascript_runtime.Data_value.t fragment]
+(defn source-fragment-string
+  [fragment]
   (Datascript_runtime.Data_value.to_edn_string fragment))
 
 (defn check
@@ -687,8 +687,8 @@
   SourceDefault
   SourceOther)
 
-(defn ^source-operation-kind source-operation
-  [^:Datascript_runtime.Data_value.t fragment]
+(defn source-operation
+  [fragment]
   (match fragment
     (Datascript_runtime.Data_value.Symbol value)
     (cond
@@ -702,8 +702,11 @@
       :else SourceOther)
     _ SourceOther))
 
-(defn ^:option<keyword> source-attr-name
-  [^:Datascript_runtime.Data_value.t fragment]
+(signature datascript.pull-parser/source-attr-name
+  :fn<Datascript_runtime.Data_value.t;option<keyword>>)
+
+(defn source-attr-name
+  [fragment]
   (match fragment
     (Datascript_runtime.Data_value.Keyword value)
     (Some value)
@@ -728,9 +731,7 @@
       None)))
 
 (defn validate-source-limit
-  [^datascript.db/database-view database
-   ^:keyword attr
-   ^:Datascript_runtime.Data_value.t limit]
+  [database attr limit]
   :unit
   (let [valid-limit
         (match limit
@@ -750,10 +751,7 @@
   (Stdlib.ignore 0))
 
 (defn validate-invalid-attr-options
-  [^datascript.db/database-view database
-   ^:keyword attr
-   ^:vector<Datascript_runtime.Data_value.t> items
-   ^:Datascript_runtime.Data_value.t fragment]
+  [database attr items fragment]
   :unit
   (let [option-count (dec (count items))]
     (when (odd? option-count)
@@ -785,8 +783,7 @@
   (Stdlib.ignore 0))
 
 (defn raise-invalid-source
-  [^datascript.db/database-view database
-   ^:Datascript_runtime.Data_value.t fragment]
+  [database fragment]
   :unit
   (if-some [items
             (Datascript_runtime.Data_value.sequential_items fragment)]

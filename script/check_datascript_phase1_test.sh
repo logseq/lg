@@ -251,6 +251,28 @@ expect_no_hints_between \
   test/datascript/upstream/pull_parser.cljc \
   required-attr-spec source-fragment-string \
   '\^(:[[:alpha:]]|[[:alpha:]])'
+expect_no_hints_between \
+  "pull parser source rendering contains no local type hints" \
+  test/datascript/upstream/pull_parser.cljc \
+  source-fragment-string check \
+  '\^(:[[:alpha:]]|[[:alpha:]])'
+expect_no_hints_between \
+  "pull parser source validation helpers contain no local type hints" \
+  test/datascript/upstream/pull_parser.cljc \
+  source-operation parse-pattern-items \
+  '\^(:[[:alpha:]]|[[:alpha:]])'
+expect_text \
+  "pull parser check keeps its required closed condition boundary" \
+  test/datascript/upstream/pull_parser.cljc \
+  '\[\^boolean condition'
+expect_text \
+  "pull parser check keeps its required closed message boundary" \
+  test/datascript/upstream/pull_parser.cljc \
+  '\^:string expected'
+expect_text \
+  "pull parser check keeps its required closed fragment boundary" \
+  test/datascript/upstream/pull_parser.cljc \
+  '\^:Datascript_runtime\.Data_value\.t fragment'
 
 for mapping in \
   'src/datascript/query.cljc.*test/datascript/lg/query.cljc' \
