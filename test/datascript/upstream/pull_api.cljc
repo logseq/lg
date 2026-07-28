@@ -943,8 +943,8 @@
                 (attr attr)
                 (datoms cursor)))]))))))
 
-(defn ^:vector<frame> run-frame
-  [^PullContext context ^frame current]
+(defn run-frame
+  [context current]
   (match current
     (AttrsFrame state)
     (run-attrs-frame context state)
@@ -958,15 +958,15 @@
     (Stdlib.invalid_arg
      "ResultFrame cannot be run")))
 
-(defn- ^ResultState frame-result-state-exn [^frame result]
+(defn- frame-result-state-exn [result]
   (match result
     (ResultFrame state) state
     _
     (Stdlib.invalid_arg
      "Frame merge requires a ResultFrame")))
 
-(defn- ^:string pull-attr-string
-  [^datascript.pull-parser/pull-attr attr]
+(defn- pull-attr-string
+  [attr]
   (let [data (dpp/attr-data attr)
         alias (.-alias data)]
     (match alias
@@ -975,9 +975,8 @@
       _
       (Datascript_runtime.Data_value.to_edn_string alias))))
 
-(defn- ^:string remaining-attrs-string
-  [^:vector<datascript.pull-parser/pull-attr> attrs
-   ^int index]
+(defn- remaining-attrs-string
+  [attrs index]
   (if (< index (count attrs))
     (str/join
      " "
@@ -986,7 +985,7 @@
       (subvec attrs index)))
     ""))
 
-(defn- ^:string frame-string [^frame current]
+(defn- frame-string [current]
   (match current
     (ResultFrame state)
     (str
@@ -1045,10 +1044,8 @@
   (-str [current]
     (frame-string current)))
 
-(defn
-  ^:map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>
-  pulled-map-to-data
-  [^:map<Datascript_runtime.Data_value.t;pulled-value> values]
+(defn pulled-map-to-data
+  [values]
   (reduce-kv
    (fn
      [result key value]

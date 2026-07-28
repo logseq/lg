@@ -182,6 +182,11 @@ expect_no_hints_between \
   test/datascript/upstream/pull_api.cljc \
   advance-reverse-state run-frame \
   '\^(:[[:alpha:]]|[[:alpha:]])'
+expect_no_hints_between \
+  "pull frame dispatch helpers contain no local type hints" \
+  test/datascript/upstream/pull_api.cljc \
+  run-frame first-frame \
+  '\^(:[[:alpha:]]|[[:alpha:]])'
 
 for mapping in \
   'src/datascript/query.cljc.*test/datascript/lg/query.cljc' \
