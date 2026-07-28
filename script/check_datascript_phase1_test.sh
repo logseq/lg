@@ -167,6 +167,11 @@ expect_no_hints_between \
   test/datascript/upstream/pull_api.cljc \
   attr-at-index attrs-state-with \
   '\^(:[[:alpha:]]|[[:alpha:]])'
+expect_no_hints_between \
+  "pull attribute state helpers contain no local type hints" \
+  test/datascript/upstream/pull_api.cljc \
+  attrs-state-with run-wildcard-attr \
+  '\^(:[[:alpha:]]|[[:alpha:]])'
 
 for mapping in \
   'src/datascript/query.cljc.*test/datascript/lg/query.cljc' \

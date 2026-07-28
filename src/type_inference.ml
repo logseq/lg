@@ -670,6 +670,13 @@ let add_record_field_constraint name keyword field_ty params =
       (Ok fields) inferred_fields
   in
   let merge_fields fields =
+    let replace_field_type ty =
+      Ok
+        (make_field keyword ty
+        :: List.filter
+             (fun candidate -> candidate.keyword <> keyword)
+             fields)
+    in
     match find_field keyword fields with
     | None -> Ok (make_field keyword field_ty :: fields)
     | Some field when Types.equal field.ty field_ty -> Ok fields
@@ -760,6 +767,12 @@ let add_record_field_constraint name keyword field_ty params =
               :: List.filter
                    (fun candidate -> candidate.keyword <> keyword)
                    fields)
+        | (TVector _ as vector), seqable
+          when Option.is_some (Types.seqable_constraint_info seqable) ->
+            replace_field_type (refine_type vector seqable)
+        | seqable, (TVector _ as vector)
+          when Option.is_some (Types.seqable_constraint_info seqable) ->
+            replace_field_type (refine_type vector seqable)
         | existing, ((TRecord _ | TNamed_record _) as inferred)
           when Option.is_some (Types.seqable_constraint_info existing) ->
             Ok

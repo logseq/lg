@@ -608,13 +608,8 @@
     (Stdlib.invalid_arg
      "Frame does not accept a child result")))
 
-(defn ^AttrsState attrs-state-with
-  [^AttrsState state
-   ^:map<Datascript_runtime.Data_value.t;pulled-value> values
-   ^:option<datascript.pull-parser/pull-attr> attr
-   ^:option<datascript.pull-parser/pull-attr> resume-attr
-   ^int attr-index
-   ^:option<DatomCursor> datoms]
+(defn attrs-state-with
+  [state values attr resume-attr attr-index datoms]
   (record AttrsState
     (seen (.-seen state))
     (recursion-limits (.-recursion-limits state))
@@ -627,10 +622,8 @@
     (datoms datoms)
     (id (.-id state))))
 
-(defn ^AttrsState advance-attrs-state
-  [^AttrsState state
-   ^:map<Datascript_runtime.Data_value.t;pulled-value> values
-   ^:option<DatomCursor> datoms]
+(defn advance-attrs-state
+  [state values datoms]
   (let [index (.-attr-index state)]
     (attrs-state-with
      state
@@ -640,7 +633,7 @@
      (inc index)
      datoms)))
 
-(defn ^frame reverse-attrs-frame [^AttrsState state]
+(defn reverse-attrs-frame [state]
   (let [attrs (:reverse-attrs (.-pattern state))]
     (ReverseAttrsFrame
      (record ReverseAttrsState
@@ -653,12 +646,8 @@
        (attr-index 1)
        (id (.-id state))))))
 
-(defn ^:vector<frame> start-attr-child
-  [^PullContext context
-   ^AttrsState state
-   ^datascript.pull-parser/pull-attr attr
-   ^:option<datascript.pull-parser/pull-attr> resume-attr
-   ^DatomCursor cursor]
+(defn start-attr-child
+  [context state attr resume-attr cursor]
   (let [data (dpp/attr-data attr)
         parent
         (AttrsFrame
@@ -708,20 +697,15 @@
         (Stdlib.invalid_arg
          "Scalar attribute does not start a child frame")))))
 
-(defn ^:map<Datascript_runtime.Data_value.t;pulled-value>
-  add-scalar-datom
-  [^:map<Datascript_runtime.Data_value.t;pulled-value> values
-   ^datascript.pull-parser/pull-attr attr
-   ^datascript.db/Datom datom]
+(defn add-scalar-datom
+  [values attr datom]
   (merge-attr-value
    values
    attr
    (Some (PulledScalar (.-v datom)))))
 
-(defn ^:map<Datascript_runtime.Data_value.t;pulled-value>
-  add-default
-  [^:map<Datascript_runtime.Data_value.t;pulled-value> values
-   ^datascript.pull-parser/pull-attr attr]
+(defn add-default
+  [values attr]
   (let [data (dpp/attr-data attr)]
     (match (.-default data)
       None values
@@ -731,10 +715,8 @@
        (.-alias data)
        (PulledScalar value)))))
 
-(defn ^:map<Datascript_runtime.Data_value.t;pulled-value>
-  add-missing-value
-  [^:map<Datascript_runtime.Data_value.t;pulled-value> values
-   ^datascript.pull-parser/pull-attr attr]
+(defn add-missing-value
+  [values attr]
   (let [data (dpp/attr-data attr)]
     (match (.-default data)
       (Some value)
@@ -745,10 +727,8 @@
       None
       (merge-attr-value values attr None))))
 
-(defn ^AttrsState missing-attr-state
-  [^PullContext context
-   ^AttrsState state
-   ^datascript.pull-parser/pull-attr attr]
+(defn missing-attr-state
+  [context state attr]
   (let [data (dpp/attr-data attr)]
     (visit
      context
