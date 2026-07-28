@@ -212,6 +212,10 @@ expect_no_hints_between \
   test/datascript/upstream/pull_api.cljc \
   pull-many __end_of_file__ \
   '\^(:[[:alpha:]]|[[:alpha:]])'
+expect_no_text \
+  "pull constructor and frame signatures remain inferred" \
+  test/datascript/upstream/pull_api.cljc \
+  '^\(signature datascript\.pull-api/(pull-options|expanding-ref-frame|run-multival-ref-frame)[[:space:]]*$'
 
 for mapping in \
   'src/datascript/query.cljc.*test/datascript/lg/query.cljc' \

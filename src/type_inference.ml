@@ -1466,6 +1466,13 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
   in
   let rec infer_expected expected_ty params = function
     | FSymbol name -> constrain_symbol expected_ty params name
+    | FList (FSymbol "conj" :: target :: values) -> (
+        match expected_ty with
+        | TList element_ty | TVector element_ty | TSet element_ty
+        | TSeq element_ty ->
+            Result.bind (infer_expected expected_ty params target)
+              (fun params -> infer_expected_all element_ty params values)
+        | _ -> infer_all params (target :: values))
     | FList
         (FSymbol "fn" :: FSymbol _name :: (FVector _ as fn_params)
         :: body_forms) ->

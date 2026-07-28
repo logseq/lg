@@ -25,9 +25,6 @@
   (context :datascript.pull-api/PullContext)
   (pattern :datascript.pull-parser/PullPattern))
 
-(signature datascript.pull-api/pull-options
-  :fn<pull-visitor;PullOptions>)
-
 (defn pull-options
   [visitor]
   (record PullOptions
@@ -351,9 +348,6 @@
       (PulledScalar
        (Datascript_runtime.Data_value.Int id))))))
 
-(signature datascript.pull-api/expanding-ref-frame
-  :fn<PullContext;set<int>;map<int;int>;datascript.pull-parser/PullPattern;datascript.pull-parser/pull-attr;int;frame>)
-
 (defn expanding-ref-frame
   [context seen recursion-limits pattern attr id]
   (attrs-frame
@@ -442,9 +436,6 @@
           (Some
            (PulledMany (.-values state)))
           (Some (.-datoms state))))))))
-
-(signature datascript.pull-api/run-multival-ref-frame
-  :fn<PullContext;MultivalRefAttrState;vector<frame>>)
 
 (defn run-multival-ref-frame
   [context state]
