@@ -12271,7 +12271,7 @@ let test_custom_compare_and_set_dispatches () =
   IDeref
   (-deref [box] @(:cell box))
   IAtom
-  (-compare-and-set! [box ^int old-value ^int new-value]
+  (-compare-and-set! [box old-value new-value]
     (let [cell (:cell box)]
       (if (identical? @cell old-value)
         (do
@@ -12279,11 +12279,11 @@ let test_custom_compare_and_set_dispatches () =
             true)
           false)))
   IReset
-  (-reset! [box ^int new-value]
+  (-reset! [box new-value]
     (let [cell (:cell box)]
       (reset! cell new-value)))
   ISwap
-  (-swap! [box ^:fn<int;int> update-value]
+  (-swap! [box update-value]
     (let [cell (:cell box)
           new-value (update-value @cell)]
       (reset! cell new-value))))
@@ -12326,7 +12326,7 @@ let test_custom_atom_protocol_rejects_invalid_reset_value () =
   IDeref
   (-deref [box] @(:cell box))
   IReset
-  (-reset! [box ^int new-value]
+  (-reset! [box new-value]
     (reset! (:cell box) new-value)))
 (def value (record box (cell (atom 1))))
 (reset! value "wrong")
@@ -12334,6 +12334,37 @@ let test_custom_atom_protocol_rejects_invalid_reset_value () =
   in
   expect_error_contains "expression was expected of type"
     (Lg.Compiler.compile_string source)
+
+let test_custom_atom_protocol_infers_closed_record_state () =
+  let source =
+    {|
+(type-record database (value :int))
+(type-record database-box (cell :ref<database>))
+(extend-type database-box
+  IDeref
+  (-deref [box] @(:cell box))
+  IAtom
+  (-compare-and-set! [box old-database new-database]
+    (let [cell (:cell box)]
+      (if (identical? @cell old-database)
+        (do
+          (reset! cell new-database)
+          true)
+        false))))
+(def first-database (record database (value 1)))
+(def second-database (record database (value 2)))
+(def value (record database-box (cell (atom first-database))))
+(println
+  (str
+    (compare-and-set! value first-database second-database) ":"
+    (:value @value)))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "custom_atom_protocol_infers_closed_record_state" "true:2\n"
+    native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_nullable_custom_ideref_receivers_are_unwrapped () =
   let source =
@@ -32659,6 +32690,8 @@ let tests =
       test_custom_compare_and_set_dispatches );
     ( "custom atom protocol rejects invalid reset value",
       test_custom_atom_protocol_rejects_invalid_reset_value );
+    ( "custom atom protocol infers closed record state",
+      test_custom_atom_protocol_infers_closed_record_state );
     ( "nullable custom IDeref receivers are unwrapped",
       test_nullable_custom_ideref_receivers_are_unwrapped );
     ("concise standard type annotations", test_concise_standard_type_annotations);

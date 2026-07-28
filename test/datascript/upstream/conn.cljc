@@ -112,16 +112,16 @@
           (listeners listeners)
           (skip-store? (state-skip-store? state))))
 
-(defn- ^datascript.db/DB swap-db!
-  [^Conn conn ^:fn<datascript.db/DB;datascript.db/DB> f]
+(defn- swap-db!
+  [conn f]
   (let [state-atom (:atom conn)
         state @state-atom
         database (f (state-db state))]
     (reset! state-atom (state-with-db state database))
     database))
 
-(defn- ^datascript.db/DB reset-db!
-  [^Conn conn ^datascript.db/DB database]
+(defn- reset-db!
+  [conn database]
   (let [state-atom (:atom conn)
         state @state-atom]
     (reset! state-atom (state-with-db state database))
@@ -130,12 +130,11 @@
 (extend-type Conn
   IReset
   (-reset!
-   [connection ^datascript.db/DB database]
+   [connection database]
    (reset-db! connection database))
   ISwap
   (-swap!
-   [connection
-    ^:fn<datascript.db/DB;datascript.db/DB> update-database]
+   [connection update-database]
    (swap-db! connection update-database)))
 
 (defn ^datascript.db/TxReport with-closed
