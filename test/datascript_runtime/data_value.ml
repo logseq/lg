@@ -493,7 +493,7 @@ let substring values =
       Option.bind (int_argument start) (fun start ->
           Option.bind (int_argument finish) (fun finish ->
               extract source start finish))
-  | _ -> None
+  | values -> invalid_arg ("Invalid arity: " ^ string_of_int (List.length values))
 
 let increment = function
   | Int value -> Some (Int (value + 1))
@@ -553,7 +553,7 @@ let regex_pattern = function
   | String pattern ->
       let _ = Lg_edn_backend.regex_valid pattern in
       Some (Regex pattern)
-  | _ -> None
+  | _ -> invalid_arg "re-find must match against a string."
 
 let regex_match_value match_result =
   let captures = match_result.Lg_edn_backend.captures in

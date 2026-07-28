@@ -8,3 +8,6 @@ re-seq=("1" "22")
 re-seq-captures=(["a1" "a" "1"] ["b22" "b" "22"])
 re-seq-missing=nil
 re-seq-zero-width=("" "" "")
+re-pattern-extra=#"a"
+re-pattern-missing-error="re-find must match against a string."
+re-pattern-number-error="re-find must match against a string."

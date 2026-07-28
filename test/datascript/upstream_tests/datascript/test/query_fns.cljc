@@ -1114,6 +1114,98 @@
              :where [(get nil :a 9) ?x]])
       (Datascript_runtime.Data_value.Int 9)))))
 
+(deftest test-core-fixed-arity-query-function-errors
+  (testing "get reports every unsupported arity"
+    (is
+     (=
+      "Invalid arity: 0"
+      (try
+        (let [_output
+              (d/q '[:find ?x .
+                     :where [(get) ?x]])]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "Invalid arity: 1"
+      (try
+        (let [_output
+              (d/q '[:find ?x .
+                     :where [(get {:a 1}) ?x]])]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "Invalid arity: 4"
+      (try
+        (let [_output
+              (d/q '[:find ?x .
+                     :where [(get {:a 1} :a 9 10) ?x]])]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message))))))
+
+  (testing "subs reports every unsupported arity"
+    (is
+     (=
+      "Invalid arity: 0"
+      (try
+        (let [_output
+              (d/q '[:find ?x .
+                     :where [(subs) ?x]])]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "Invalid arity: 1"
+      (try
+        (let [_output
+              (d/q '[:find ?x .
+                     :where [(subs "abc") ?x]])]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "Invalid arity: 4"
+      (try
+        (let [_output
+              (d/q '[:find ?x .
+                     :where [(subs "abc" 0 1 2) ?x]])]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message))))))
+
+  (testing "re-pattern uses its first argument and validates missing values"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(re-pattern "a" "ignored") ?x]])
+      (Datascript_runtime.Data_value.Regex "a")))
+    (is
+     (=
+      "re-find must match against a string."
+      (try
+        (let [_output
+              (d/q '[:find ?x .
+                     :where [(re-pattern) ?x]])]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "re-find must match against a string."
+      (try
+        (let [_output
+              (d/q '[:find ?x .
+                     :where [(re-pattern 1) ?x]])]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))))
+
 (deftest test-core-string-query-functions
   (testing "case conversion, capitalization, and reversal preserve string results"
     (is

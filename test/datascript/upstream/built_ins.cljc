@@ -740,7 +740,8 @@
          (nth values 0)
          (nth values 1)
          (nth values 2))
-        None))
+        (Stdlib.invalid_arg
+         (str "Invalid arity: " (count values)))))
     PrStr
     (Datascript_runtime.Data_value.pr_str values)
     PrintStr
@@ -756,9 +757,8 @@
     RegexSequence
     (Datascript_runtime.Data_value.regex_sequence_value values)
     RegexPattern
-    (if (= 1 (count values))
-      (Datascript_runtime.Data_value.regex_pattern (nth values 0))
-      None)
+    (Datascript_runtime.Data_value.regex_pattern
+     (first-value values))
     LowerCase
     (Datascript_runtime.Data_value.string_lower_case values)
     UpperCase
