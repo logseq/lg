@@ -17,7 +17,7 @@
   (-deref [connection]
     (:db @(:atom connection))))
 
-(defn- ^Conn make-conn
+(defn- make-conn
   [^datascript.db/DB database
    ^:vector<vector<datascript.db/Datom>> tx-tail
    ^:option<datascript.db/DB> db-last-stored]
@@ -32,30 +32,30 @@
     (record Conn
             (atom state-atom))))
 
-(defn- ^datascript.db/DB state-db [^conn-state state]
+(defn- state-db [^conn-state state]
   (:db state))
 
-(defn- ^:vector<vector<datascript.db/Datom>> state-tx-tail
+(defn- state-tx-tail
   [^conn-state state]
   (:tx-tail state))
 
-(defn- ^:option<datascript.db/DB> state-db-last-stored [^conn-state state]
+(defn- state-db-last-stored [^conn-state state]
   (:db-last-stored state))
 
-(defn- ^:map<Datascript_runtime.Data_value.t;fn<datascript.db/TxReport;unit>> state-listeners
+(defn- state-listeners
   [^conn-state state]
   (:listeners state))
 
-(defn- ^boolean state-skip-store? [^conn-state state]
+(defn- state-skip-store? [^conn-state state]
   (:skip-store? state))
 
-(defn- ^:Datascript_runtime.Data_value.t tx-meta-value
+(defn- tx-meta-value
   [^:option<map<keyword;Datascript_runtime.Data_value.t>> tx-meta]
   (if-some [metadata tx-meta]
     (Datascript_runtime.Data_value.map_of_keyword_map metadata)
     (Datascript_runtime.Data_value.Nil)))
 
-(defn ^datascript.db/DB current-db [^Conn conn]
+(defn current-db [^Conn conn]
   (state-db @(:atom conn)))
 
 (defn- state-with-db [^conn-state state ^datascript.db/DB database]
