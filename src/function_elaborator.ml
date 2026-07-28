@@ -570,7 +570,7 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
               | _ -> (
                   match List.nth_opt param_type_overrides index with
                   | Some (Some ty) when not (Types.equal ty TUnknown) -> ty
-                  | _ -> TUnknown)
+                  | _ -> Type_solver.fresh ())
             in
                let destructured =
                  if spec.destructured then

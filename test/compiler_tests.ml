@@ -13790,6 +13790,40 @@ let test_unannotated_function_parameters_infer_from_body () =
   assert_ocaml_runs "unannotated_function_parameters_infer_from_body"
     "42:true\n" ocaml_source
 
+let test_unannotated_compare_parameters_share_one_inferred_type () =
+  let source =
+    {|
+(defn compare-values [left right] (compare left right))
+(println (compare-values 1 2))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "unannotated_compare_parameters_share_one_inferred_type"
+    "-1\n" ocaml_source;
+  Lg.Compiler.compile_string
+    {|
+(defn compare-values [left right] (compare left right))
+(def invalid (compare-values 1 "2"))
+|}
+  |> expect_error_contains "compare-values called with incompatible arguments"
+
+let test_mapv_vector_shares_one_inferred_element_type () =
+  let source =
+    {|
+(defn zip-values [left right] (mapv vector left right))
+(println (count (zip-values [1 2] [3 4])))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "mapv_vector_shares_one_inferred_element_type"
+    "2\n" ocaml_source;
+  Lg.Compiler.compile_string
+    {|
+(defn zip-values [left right] (mapv vector left right))
+(def invalid (zip-values [1] ["two"]))
+|}
+  |> expect_error_contains "expected of type int Rrbvec.t"
+
 let test_identity_function_is_polymorphic_at_call_sites () =
   let source =
     {|
@@ -13797,7 +13831,15 @@ let test_identity_function_is_polymorphic_at_call_sites () =
 (println (str (identity-value 42) ":" (identity-value "Ada") ":" (identity-value true)))
 |}
   in
+  let state = typecheck_state source in
+  let binding =
+    Lg.Compiler_environment.find_opt "identity-value" state.env |> Option.get
+  in
+  if Option.is_none binding.scheme then
+    failwith "unannotated identity must have a generalized type scheme";
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "polymorphic identity calls must remain static";
   assert_ocaml_runs "identity_function_is_polymorphic_at_call_sites"
     "42:Ada:true\n" ocaml_source
 
@@ -32651,6 +32693,10 @@ let tests =
       test_private_defn_rejects_invalid_declarations );
     ( "unannotated function parameters infer from body",
       test_unannotated_function_parameters_infer_from_body );
+    ( "unannotated compare parameters share one inferred type",
+      test_unannotated_compare_parameters_share_one_inferred_type );
+    ( "mapv vector shares one inferred element type",
+      test_mapv_vector_shares_one_inferred_element_type );
     ( "identity function is polymorphic at call sites",
       test_identity_function_is_polymorphic_at_call_sites );
     ( "declared type scheme is rigid within each call",

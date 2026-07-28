@@ -3423,9 +3423,16 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         constrain_symbol (Types.dynamic_constraint TUnknown) params value
     | FList
         [ FSymbol ("compare" | "ordering-compare"); FSymbol left; FSymbol right ] -> (
-        match constrain_comparable_symbol params left with
-        | Error _ as error -> error
-        | Ok params -> constrain_comparable_symbol params right)
+        match (string_assoc_opt left params, string_assoc_opt right params) with
+        | Some (TUnknown | TMeta _ | TVar _),
+          Some (TUnknown | TMeta _ | TVar _) ->
+            infer_expected_all
+              (fresh_type_variable "comparison")
+              params [ FSymbol left; FSymbol right ]
+        | _ -> (
+            match constrain_comparable_symbol params left with
+            | Error _ as error -> error
+            | Ok params -> constrain_comparable_symbol params right))
     | FList [ FSymbol ("identical?" | ".equals"); left; right ] ->
         infer_expected_all
           (Types.dynamic_constraint TUnknown)
@@ -4362,6 +4369,16 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                      List.nth_opt callback_tys index
                      |> Option.value ~default:TUnknown
                  | element_ty -> element_ty)
+        in
+        let element_tys =
+          match (fn, element_tys) with
+          | FSymbol "vector", element_tys
+            when List.for_all
+                   (function TUnknown | TMeta _ | TVar _ -> true | _ -> false)
+                   element_tys ->
+              let element_ty = fresh_type_variable "vector_element" in
+              List.map (fun _ -> element_ty) element_tys
+          | _ -> element_tys
         in
         let function_ty = TFn (element_tys, TUnknown) in
         let rec constrain_collections params element_tys collections =
