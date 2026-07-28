@@ -912,28 +912,36 @@ let name_from_text value =
 let keyword_from_values values =
   match Rrbvec.to_list values with
   | [ Keyword _ as value ] -> Some value
-  | [ String value ] | [ Symbol value ] -> Some (Keyword (":" ^ value))
-  | [ Nil ] -> Some Nil
+  | [ String value ] -> Some (Keyword (":" ^ value))
   | [ _ ] -> Some Nil
-  | [ String namespace; String name ] ->
-      Some (Keyword (":" ^ namespace ^ "/" ^ name))
-  | [ Nil; String name ] -> Some (Keyword (":" ^ name))
-  | [ _; _ ] -> None
-  | _ -> None
+  | [ Nil; name ] -> Some (Keyword (":" ^ to_clojure_string name))
+  | [ namespace; name ] ->
+      Some
+        (Keyword
+           (":"
+           ^ to_clojure_string namespace
+           ^ "/"
+           ^ to_clojure_string name))
+  | values -> invalid_arg ("Invalid arity: " ^ string_of_int (List.length values))
+
+let unsupported_named operation value =
+  invalid_arg
+    ("Doesn't support " ^ operation ^ ": " ^ to_clojure_string value)
 
 let name_value = function
   | String value -> Some (String value)
   | (Keyword _ | Symbol _) as value ->
       Option.map (fun text -> String (name_from_text text)) (named_text value)
-  | _ -> None
+  | value -> unsupported_named "name" value
 
 let namespace_value value =
-  Option.map
-    (fun text ->
-      match String.index_opt text '/' with
-      | Some index -> String (String.sub text 0 index)
-      | None -> Nil)
-    (named_text value)
+  match named_text value with
+  | Some text ->
+      Some
+        (match String.index_opt text '/' with
+        | Some index -> String (String.sub text 0 index)
+        | None -> Nil)
+  | None -> unsupported_named "namespace" value
 
 let bool_value = function Bool value -> Some value | _ -> None
 

@@ -854,6 +854,83 @@
              :where [(contains? 1 0) ?x]])
       (Datascript_runtime.Data_value.Bool false)))))
 
+(deftest test-core-named-query-function-invocation
+  (testing "name and namespace ignore extra arguments"
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(name :person/name :ignored) ?x]])
+      (Datascript_runtime.Data_value.String "name")))
+    (is
+     (scalar-output-value?
+      (d/q '[:find ?x .
+             :where [(namespace :person/name :ignored) ?x]])
+      (Datascript_runtime.Data_value.String "person"))))
+
+  (testing "name and namespace preserve upstream unsupported-value errors"
+    (is
+     (=
+      "Doesn't support name: "
+      (try
+        (let [_output
+              (d/q '[:find ?x .
+                     :where [(name) ?x]])]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "Doesn't support name: 1"
+      (try
+        (let [_output
+              (d/q '[:find ?x .
+                     :where [(name 1) ?x]])]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "Doesn't support namespace: "
+      (try
+        (let [_output
+              (d/q '[:find ?x .
+                     :where [(namespace) ?x]])]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "Doesn't support namespace: person/name"
+      (try
+        (let [_output
+              (d/q '[:find ?x .
+                     :where [(namespace "person/name") ?x]])]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message))))))
+
+  (testing "keyword reports its exact supported arities"
+    (is
+     (=
+      "Invalid arity: 0"
+      (try
+        (let [_output
+              (d/q '[:find ?x .
+                     :where [(keyword) ?x]])]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "Invalid arity: 3"
+      (try
+        (let [_output
+              (d/q '[:find ?x .
+                     :where [(keyword "person" "name" "ignored") ?x]])]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))))
+
 (deftest test-core-collection-value-query-functions
   (testing "set preserves uniqueness and nil conversion"
     (is

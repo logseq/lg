@@ -2976,7 +2976,7 @@
        "keyword" string-value)))
     (is
      (=
-      [[":person/name"]]
+      []
       (query-v3-static-unary-function-output-edn
        "keyword" symbol-value)))
     (is
@@ -3005,7 +3005,6 @@
     (is
      (=
       [["\"person/name\""]
-       ["person/name"]
        [":person/name"]]
       (query-v3-static-predicate-output-edn
        "keyword"
@@ -3042,7 +3041,16 @@
      [(parser/constant-argument
        (Datascript_runtime.Data_value.String ""))
       (parser/constant-argument
-       (Datascript_runtime.Data_value.String "name"))]))))
+       (Datascript_runtime.Data_value.String "name"))])))
+  (is
+   (=
+    [[":person/name"]]
+    (query-v3-static-function-output-edn
+     "keyword"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.Symbol "person"))
+      (parser/constant-argument
+       (Datascript_runtime.Data_value.Symbol "name"))]))))
 
 (deftest test-query-v3-name-built-in
   (is
@@ -3075,7 +3083,16 @@
     [["\"plain\""]]
     (query-v3-static-unary-function-output-edn
      "name"
-     (Datascript_runtime.Data_value.Keyword ":plain")))))
+     (Datascript_runtime.Data_value.Keyword ":plain"))))
+  (is
+   (=
+    [["\"name\""]]
+    (query-v3-static-function-output-edn
+     "name"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.Keyword ":person/name"))
+      (parser/constant-argument
+       (Datascript_runtime.Data_value.Keyword ":ignored"))]))))
 
 (deftest test-query-v3-namespace-built-in
   (is
@@ -3101,19 +3118,30 @@
     [["\"\""]]
     (query-v3-static-unary-function-output-edn
      "namespace"
-     (Datascript_runtime.Data_value.Keyword ":/name")))))
+     (Datascript_runtime.Data_value.Keyword ":/name"))))
+  (is
+   (=
+    [["\"person\""]]
+    (query-v3-static-function-output-edn
+     "namespace"
+     [(parser/constant-argument
+       (Datascript_runtime.Data_value.Keyword ":person/name"))
+      (parser/constant-argument
+       (Datascript_runtime.Data_value.Keyword ":ignored"))]))))
 
 (deftest test-query-v3-named-built-in-errors
-  (let [invalid-keyword-query
+  (let [invalid-keyword-extra-query
         (query-v3-function-query
          (parser/relation-find ["?result"])
          []
          (parser/static-function-clause
           "keyword"
           [(parser/constant-argument
-            (Datascript_runtime.Data_value.Symbol "person"))
+            (Datascript_runtime.Data_value.String "person"))
            (parser/constant-argument
-            (Datascript_runtime.Data_value.Symbol "name"))]
+            (Datascript_runtime.Data_value.String "name"))
+           (parser/constant-argument
+            (Datascript_runtime.Data_value.String "ignored"))]
           (parser/scalar-input "?result")))
         invalid-name-query
         (query-v3-function-query
@@ -3140,18 +3168,34 @@
          (parser/static-function-clause
           "keyword"
           []
+          (parser/scalar-input "?result")))
+        missing-name-query
+        (query-v3-function-query
+         (parser/relation-find ["?result"])
+         []
+         (parser/static-function-clause
+          "name"
+          []
+          (parser/scalar-input "?result")))
+        missing-namespace-query
+        (query-v3-function-query
+         (parser/relation-find ["?result"])
+         []
+         (parser/static-function-clause
+          "namespace"
+          []
           (parser/scalar-input "?result")))]
     (is
      (=
-      "Invalid arguments for query function: keyword"
+      "Invalid arity: 3"
       (try
-        (let [_output (query-v3/q invalid-keyword-query)]
+        (let [_output (query-v3/q invalid-keyword-extra-query)]
           "no error")
         (catch (Invalid_argument message)
           (str message)))))
     (is
      (=
-      "Invalid arguments for query function: name"
+      "Doesn't support name: 1"
       (try
         (let [_output (query-v3/q invalid-name-query)]
           "no error")
@@ -3159,7 +3203,7 @@
           (str message)))))
     (is
      (=
-      "Invalid arguments for query function: namespace"
+      "Doesn't support namespace: person/name"
       (try
         (let [_output (query-v3/q invalid-namespace-query)]
           "no error")
@@ -3167,9 +3211,25 @@
           (str message)))))
     (is
      (=
-      "Invalid arguments for query function: keyword"
+      "Invalid arity: 0"
       (try
         (let [_output (query-v3/q invalid-arity-query)]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "Doesn't support name: "
+      (try
+        (let [_output (query-v3/q missing-name-query)]
+          "no error")
+        (catch (Invalid_argument message)
+          (str message)))))
+    (is
+     (=
+      "Doesn't support namespace: "
+      (try
+        (let [_output (query-v3/q missing-namespace-query)]
           "no error")
         (catch (Invalid_argument message)
           (str message)))))))

@@ -679,14 +679,15 @@
     Keyword
     (Datascript_runtime.Data_value.keyword_from_values values)
     Name
-    (if (= 1 (count values))
-      (Datascript_runtime.Data_value.name_value (nth values 0))
-      None)
+    (Datascript_runtime.Data_value.name_value
+     (if (= 0 (count values))
+       (Datascript_runtime.Data_value.Nil)
+       (nth values 0)))
     Namespace
-    (if (= 1 (count values))
-      (Datascript_runtime.Data_value.namespace_value
-       (nth values 0))
-      None)
+    (Datascript_runtime.Data_value.namespace_value
+     (if (= 0 (count values))
+       (Datascript_runtime.Data_value.Nil)
+       (nth values 0)))
     Vector
     (Some (Datascript_runtime.Data_value.vector_of_vector values))
     Tuple
