@@ -764,7 +764,7 @@ let allocate_anonymous_record ~owner env next_type fields =
       in
       let record =
         match
-          Types.named_record ~type_id ~type_name ~set_module_name
+          Types.named_record ~type_id ~extensible:true ~type_name ~set_module_name
             ~type_parameters:(anonymous_record_type_parameters fields)
             fields
         with

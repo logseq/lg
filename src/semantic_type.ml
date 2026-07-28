@@ -43,6 +43,7 @@ and field = {
 and named_record = {
   type_id : Type_id.t;
   nominal : bool;
+  extensible : bool;
   type_name : string;
   type_parameters : string list;
   type_arguments : ty list;

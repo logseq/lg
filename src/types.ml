@@ -799,13 +799,14 @@ let type_id_of_name type_name =
   | [] -> Type_id.create ~owner:[] ~name:type_name
   | name :: owner -> Type_id.create ~owner:(List.rev owner) ~name
 
-let named_record ?(type_parameters = []) ?type_id ?(nominal = false) ~type_name
-    ~set_module_name fields =
+let named_record ?(type_parameters = []) ?type_id ?(nominal = false)
+    ?(extensible = false) ~type_name ~set_module_name fields =
   let type_id = Option.value type_id ~default:(type_id_of_name type_name) in
   TNamed_record
     {
       type_id;
       nominal;
+      extensible;
       type_name;
       type_parameters;
       type_arguments = List.map (fun parameter -> TVar parameter) type_parameters;
@@ -866,6 +867,7 @@ let rec qualify_module_type module_path ty =
       TNamed_record
         { type_id = record.type_id;
           nominal = record.nominal;
+          extensible = record.extensible;
           type_name;
           type_parameters = record.type_parameters;
           type_arguments =
