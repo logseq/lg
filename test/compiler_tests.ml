@@ -20985,26 +20985,27 @@ let test_sequence_navigation_accepts_all_seqable_types () =
   assert_ocaml_runs "sequence_navigation_accepts_all_seqable_types"
     "(1 2 3)\n(2 3)\n(2 3)\n2\n(3)\n()\n(5 6)\nb\n8\n" ocaml_source
 
-let test_dynamic_boundaries_preserve_named_record_seqability () =
+let test_named_record_parameters_preserve_seqability () =
   let source =
     {|
-(deftype Datom [fields]
+(deftype Datom [^:list<int> fields]
   ISeqable
   (-seq [_] fields))
 (def value (Datom. (list 1 2 3)))
-(defn vec-dynamic [^:dynamic values]
+(defn vec-values [^Datom values]
   (vec values))
-(println (pr-str (vec-dynamic value)))
+(println (pr-str (vec-values value)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "dynamic_boundaries_preserve_named_record_seqability"
-    "[1 2 3]\n"
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "named record Seqability must remain static";
+  assert_ocaml_runs "named_record_parameters_preserve_seqability" "[1 2 3]\n"
     ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_dynamic_boundaries_preserve_parameterized_record_seqability () =
+let test_parameterized_record_parameters_preserve_seqability () =
   let source =
     {|
 (type-record bag [a]
@@ -21014,14 +21015,16 @@ let test_dynamic_boundaries_preserve_parameterized_record_seqability () =
   (-seq [bag] (array-seq (:values bag))))
 (def value
   (record bag (marker "numbers") (values (array 1 2 3))))
-(defn first-dynamic [^:dynamic values]
+(defn first-value [^bag values]
   (first values))
-(println (pr-str (first-dynamic value)))
+(println (pr-str (first-value value)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "parameterized record Seqability must remain static";
   assert_ocaml_runs
-    "dynamic_boundaries_preserve_parameterized_record_seqability" "1\n"
+    "parameterized_record_parameters_preserve_seqability" "1\n"
     ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
@@ -33406,10 +33409,10 @@ let tests =
       test_logseq_datascript_style_wrappers_use_collection_capabilities );
     ( "sequence navigation accepts all Seqable types",
       test_sequence_navigation_accepts_all_seqable_types );
-    ( "dynamic boundaries preserve named record Seqability",
-      test_dynamic_boundaries_preserve_named_record_seqability );
-    ( "dynamic boundaries preserve parameterized record Seqability",
-      test_dynamic_boundaries_preserve_parameterized_record_seqability );
+    ( "named record parameters preserve Seqability",
+      test_named_record_parameters_preserve_seqability );
+    ( "parameterized record parameters preserve Seqability",
+      test_parameterized_record_parameters_preserve_seqability );
     ( "sequential destructuring accepts deftype Seqable values",
       test_sequential_destructuring_accepts_deftype_seqable_values );
     ( "optional sequential capabilities forward none",
