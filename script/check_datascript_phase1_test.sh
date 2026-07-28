@@ -35,6 +35,18 @@ expect_text() {
   fi
 }
 
+expect_no_text() {
+  description=$1
+  path=$2
+  pattern=$3
+  if [ -f "$repo_root/$path" ] &&
+     ! LC_ALL=C grep -Eq "$pattern" "$repo_root/$path"; then
+    pass "$description"
+  else
+    fail "$description"
+  fi
+}
+
 expect_success() {
   description=$1
   shift
@@ -68,6 +80,9 @@ expect_text "the upstream repository URL is exact" "$upstream_doc" \
   'https://github\.com/logseq/datascript(\.git)?'
 expect_text "the full pinned commit is recorded" "$upstream_doc" \
   '3f141af97b70e1f14c65eaa119acd822ebece37e'
+expect_no_text "built-in algorithms contain no inline type hints" \
+  test/datascript/upstream/built_ins.cljc \
+  '\^(:[[:alpha:]]|[[:upper:]])'
 
 for mapping in \
   'src/datascript/query.cljc.*test/datascript/lg/query.cljc' \

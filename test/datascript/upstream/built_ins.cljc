@@ -321,8 +321,8 @@
     "clojure.string/ends-with?" (Some EndsWith)
     None))
 
-(defn- ^:bool data-value-truthy?
-  [^:Datascript_runtime.Data_value.t value]
+(defn- data-value-truthy?
+  [value]
   (if (Datascript_runtime.Data_value.is_nil value)
     false
     (match (Datascript_runtime.Data_value.bool_value value)
@@ -599,8 +599,8 @@
     "clojure.string/trimr" (Some TrimRight)
     None))
 
-(defn- ^:Datascript_runtime.Data_value.t and-values
-  [^:vector<Datascript_runtime.Data_value.t> values]
+(defn- and-values
+  [values]
   (loop [remaining values
          result (Datascript_runtime.Data_value.Bool true)]
     (if-some [value (first remaining)]
@@ -609,8 +609,8 @@
         value)
       result)))
 
-(defn- ^:Datascript_runtime.Data_value.t or-values
-  [^:vector<Datascript_runtime.Data_value.t> values]
+(defn- or-values
+  [values]
   (loop [remaining values
          result (Datascript_runtime.Data_value.Nil)]
     (if-some [value (first remaining)]
@@ -852,8 +852,8 @@
     ValueType true
     _ false))
 
-(defn ^:bool apply-differ
-  [^:vector<Datascript_runtime.Data_value.t> values]
+(defn apply-differ
+  [values]
   (let [middle (quot (count values) 2)
         left (subvec values 0 middle)
         right (subvec values middle)]
@@ -861,7 +861,7 @@
      (and
       (= (count left) (count right))
       (every?
-       (fn [^:int index]
+       (fn [index]
          (Datascript_runtime.Data_value.equal
           (nth left index)
           (nth right index)))
