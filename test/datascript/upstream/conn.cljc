@@ -9,10 +9,27 @@
   (tx-tail :vector<vector<datascript.db/Datom>>)
   (db-last-stored :option<datascript.db/DB>)
   (listeners :map<Datascript_runtime.Data_value.t;fn<datascript.db/TxReport;unit>>)
+  (identity-hash :int)
   (skip-store? :bool))
+
+(def ^:private next-conn-identity (atom 0))
+
+(defn- ^int fresh-conn-identity []
+  (swap! next-conn-identity
+         (fn [current]
+           (inc current))))
+
+(defn- state-identity-hash [^conn-state state]
+  (:identity-hash state))
 
 (defrecord Conn
   [^:ref<conn-state> atom]
+  IEquiv
+  (-equiv [connection other]
+    (identical? connection other))
+  IHash
+  (-hash [connection]
+    (state-identity-hash @(:atom connection)))
   IDeref
   (-deref [connection]
     (:db @(:atom connection))))
@@ -28,6 +45,7 @@
                  (tx-tail tx-tail)
                  (db-last-stored db-last-stored)
                  (listeners {})
+                 (identity-hash (fresh-conn-identity))
                  (skip-store? false)))]
     (record Conn
             (atom state-atom))))
@@ -64,6 +82,7 @@
           (tx-tail (state-tx-tail state))
           (db-last-stored (state-db-last-stored state))
           (listeners (state-listeners state))
+          (identity-hash (state-identity-hash state))
           (skip-store? (state-skip-store? state))))
 
 (extend-type Conn
@@ -89,6 +108,7 @@
           (tx-tail tx-tail)
           (db-last-stored db-last-stored)
           (listeners (state-listeners state))
+          (identity-hash (state-identity-hash state))
           (skip-store? (state-skip-store? state))))
 
 (defn- state-with-tail
@@ -98,6 +118,7 @@
           (tx-tail tx-tail)
           (db-last-stored (state-db-last-stored state))
           (listeners (state-listeners state))
+          (identity-hash (state-identity-hash state))
           (skip-store? (state-skip-store? state))))
 
 (defn- state-with-listeners
@@ -108,6 +129,7 @@
           (tx-tail (state-tx-tail state))
           (db-last-stored (state-db-last-stored state))
           (listeners listeners)
+          (identity-hash (state-identity-hash state))
           (skip-store? (state-skip-store? state))))
 
 (defn- swap-db!

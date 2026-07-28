@@ -132,6 +132,22 @@
     (d/transact! conn [[:db/add 4 :name "Alexey"]])
     (is (= 1 @listener-calls))))
 
+(deftest test-conn-identity-and-hash
+  (let [left (d/create-conn)
+        right (d/create-conn)
+        left-hash (hash left)
+        right-hash (hash right)]
+    (is (= left left))
+    (is (not (= left right)))
+    (is (not (= left-hash right-hash)))
+    (reset! left @right)
+    (is (not (= left right)))
+    (is (= left-hash (hash left)))
+    (swap! left (fn [database] database))
+    (is (= left-hash (hash left)))
+    (d/transact! left [[:db/add 1 :name "Ivan"]])
+    (is (= left-hash (hash left)))))
+
 (deftest test-js-static-adapter-basics
   (let [database (d/init-db datoms)
         conn (js/conn_from_db database)
