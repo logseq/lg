@@ -355,8 +355,8 @@
        (reverse-attrs reverse-attrs)
        (wildcard wildcard)))))
 
-(defn ^PullAttr parse-attr-name
-  [^datascript.db/database-view database ^:keyword source-attr]
+(defn parse-attr-name
+  [database source-attr]
   (let [attr (attribute database source-attr)
         data (attr-data attr)]
     (record PullAttr
@@ -373,13 +373,13 @@
       (ref? (if (.-ref data) (Some true) None))
       (component? (if (.-component data) (Some true) None)))))
 
-(defn ^boolean attr-pattern-wildcard [^pull-attr attr]
+(defn attr-pattern-wildcard [attr]
   (match attr
     (PullAttribute _) false
     (PullNested _ _ _ _ _ wildcard) wildcard))
 
-(defn ^pull-attr with-pattern
-  [^pull-attr attr ^PullPattern pattern]
+(defn with-pattern
+  [attr pattern]
   (let [data (attr-data attr)]
     (when-not (.-ref data)
       (Stdlib.invalid_arg
@@ -392,16 +392,14 @@
      (:reverse-attrs pattern)
      (:wildcard pattern))))
 
-(defn ^pull-attr with-default
-  [^pull-attr attr
-   ^:Datascript_runtime.Data_value.t default]
+(defn with-default
+  [attr default]
   (replace-attr-data
    attr
    (assoc (attr-data attr) :default (Some default))))
 
-(defn ^pull-attr with-alias-value
-  [^pull-attr attr
-   ^:Datascript_runtime.Data_value.t alias]
+(defn with-alias-value
+  [attr alias]
   (replace-attr-data
    attr
    (assoc (attr-data attr) :alias alias)))

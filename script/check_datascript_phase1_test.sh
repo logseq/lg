@@ -231,6 +231,11 @@ expect_no_hints_between \
   test/datascript/upstream/pull_parser.cljc \
   attribute parse-attr-name \
   '\^(:[[:alpha:]]|[[:alpha:]])'
+expect_no_hints_between \
+  "pull parser attribute modifiers contain no local type hints" \
+  test/datascript/upstream/pull_parser.cljc \
+  parse-attr-name with-alias \
+  '\^(:[[:alpha:]]|[[:alpha:]])'
 
 for mapping in \
   'src/datascript/query.cljc.*test/datascript/lg/query.cljc' \
