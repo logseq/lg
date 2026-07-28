@@ -67,7 +67,7 @@
           (skip-store? (state-skip-store? state))))
 
 (extend-type Conn
-  ICompareAndSet
+  IAtom
   (-compare-and-set!
    [connection
     ^datascript.db/DB old-database

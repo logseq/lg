@@ -3269,7 +3269,7 @@ let adapt_overloaded_callback env expected arg =
 let compile_compare_and_set scope env reference old_value new_value =
   let type_error reference_ty =
     Error.error
-      ("compare-and-set! expects a reference or ICompareAndSet, got "
+      ("compare-and-set! expects a reference or IAtom, got "
       ^ Types.source_name reference_ty)
   in
   match reference.ty with
@@ -3309,8 +3309,7 @@ let compile_compare_and_set scope env reference old_value new_value =
                (typed_ir new_value.ty (Semantic_ir.Ident new_name))))
   | reference_ty -> (
       match
-        Protocol.lookup_protocol_marker scope env "ICompareAndSet"
-          "-compare-and-set!"
+        Protocol.lookup_protocol_marker scope env "IAtom" "-compare-and-set!"
       with
       | None -> type_error reference_ty
       | Some marker -> (
@@ -3338,8 +3337,7 @@ let compile_compare_and_set scope env reference old_value new_value =
                                  [ receiver; old_value; new_value ] )))
                         (adapt_value_to_type env new_ty new_value)))
           | Some _ ->
-              Error.error
-                "ICompareAndSet/-compare-and-set! has an invalid signature"))
+              Error.error "IAtom/-compare-and-set! has an invalid signature"))
 
 let create ~compile_expr =
   let special_forms : Special_form_elaborator.t =

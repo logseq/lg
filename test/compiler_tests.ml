@@ -12270,7 +12270,7 @@ let test_custom_compare_and_set_dispatches () =
 (extend-type box
   IDeref
   (-deref [box] @(:cell box))
-  ICompareAndSet
+  IAtom
   (-compare-and-set! [box ^int old-value ^int new-value]
     (let [cell (:cell box)]
       (if (identical? @cell old-value)

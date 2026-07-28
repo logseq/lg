@@ -25,8 +25,7 @@ let transient_set_id = Protocol_id.create ~owner:[] ~name:"ITransientSet"
 let equiv_id = Protocol_id.create ~owner:[] ~name:"IEquiv"
 let hash_id = Protocol_id.create ~owner:[] ~name:"IHash"
 let deref_id = Protocol_id.create ~owner:[] ~name:"IDeref"
-let compare_and_set_id =
-  Protocol_id.create ~owner:[] ~name:"ICompareAndSet"
+let atom_id = Protocol_id.create ~owner:[] ~name:"IAtom"
 let comparable_id = Protocol_id.create ~owner:[] ~name:"IComparable"
 
 let data_owner = [ "clojure.data" ]
@@ -213,11 +212,11 @@ let declare_deref registry =
   |> add_or_fail
 
 let declare_compare_and_set registry =
-  Protocol_registry.declare compare_and_set_id
+  Protocol_registry.declare atom_id
     [
       {
         Protocol_registry.method_id =
-          method_id compare_and_set_id "-compare-and-set!";
+          method_id atom_id "-compare-and-set!";
         param_tys = [ TUnknown; TUnknown; TUnknown ];
         return_ty = TBool;
       };
