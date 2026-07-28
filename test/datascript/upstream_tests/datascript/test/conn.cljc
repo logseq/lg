@@ -88,6 +88,25 @@
               tx-data))))
       (is false))))
 
+(deftest test-conn-compare-and-set!
+  (let [conn (d/create-conn)
+        original @conn
+        replacement (d/db-with original [[:db/add 1 :name "Ivan"]])
+        rejected (d/db-with replacement [[:db/add 2 :name "Petr"]])
+        listener-calls (atom 0)
+        _listener
+        (d/listen!
+         conn
+         :compare-and-set
+         (fn [_report]
+           (swap! listener-calls inc)))]
+    (is (compare-and-set! conn original replacement))
+    (is (identical? replacement @conn))
+    (is (not (compare-and-set! conn original rejected)))
+    (is (identical? replacement @conn))
+    (d/transact! conn [[:db/add 3 :name "Oleg"]])
+    (is (= 1 @listener-calls))))
+
 (deftest test-js-static-adapter-basics
   (let [database (d/init-db datoms)
         conn (js/conn_from_db database)

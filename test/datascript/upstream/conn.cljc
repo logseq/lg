@@ -66,6 +66,21 @@
           (listeners (state-listeners state))
           (skip-store? (state-skip-store? state))))
 
+(extend-type Conn
+  ICompareAndSet
+  (-compare-and-set!
+   [connection
+    ^datascript.db/DB old-database
+    ^datascript.db/DB new-database]
+   (let [state-atom (:atom connection)
+         state @state-atom]
+     (if (identical? (state-db state) old-database)
+       (compare-and-set!
+        state-atom
+        state
+        (state-with-db state new-database))
+       false))))
+
 (defn- state-with-storage
   [^conn-state state
    ^datascript.db/DB database
