@@ -26453,18 +26453,34 @@ let test_anonymous_record_fields_parameterize_polymorphic_sets () =
   assert_ocaml_runs "anonymous_record_fields_parameterize_polymorphic_sets" "1\n"
     ocaml_source
 
-let test_dynamic_record_sets_disambiguate_element_types () =
+let test_anonymous_record_sets_disambiguate_element_types () =
   let source =
     {|
 (def user {:name "Ada"})
 (def wider-user {:name "Petr" :age 42})
-(defn consume [^:dynamic value] value)
-(println (count (consume (hash-set user))))
+(def users (hash-set user))
+(println (str (count users) ":" (:age wider-user)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "dynamic_record_sets_disambiguate_element_types" "1\n"
-    ocaml_source
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "anonymous record sets must retain a static element type";
+  assert_ocaml_runs "anonymous_record_sets_disambiguate_element_types"
+    "1:42\n" ocaml_source
+
+let test_first_supports_static_polymorphic_sets () =
+  let source =
+    {|
+(def user {:name "Ada"})
+(def users (hash-set user))
+(println (some? (first users)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "first_supports_static_polymorphic_sets" "true\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_empty_transduced_vector_sets_preserve_element_shape () =
   let source =
@@ -33851,8 +33867,10 @@ let tests =
     ("sets support named records", test_sets_support_named_records);
     ( "anonymous record fields parameterize polymorphic sets",
       test_anonymous_record_fields_parameterize_polymorphic_sets );
-    ( "dynamic record sets disambiguate element types",
-      test_dynamic_record_sets_disambiguate_element_types );
+    ( "anonymous record sets disambiguate element types",
+      test_anonymous_record_sets_disambiguate_element_types );
+    ( "first supports static polymorphic sets",
+      test_first_supports_static_polymorphic_sets );
     ( "empty transduced vector sets preserve element shape",
       test_empty_transduced_vector_sets_preserve_element_shape );
     ( "into requires a sum for distinct record types",

@@ -21,6 +21,8 @@ let of_seq values = Seq.fold_left (fun set value -> add value set) empty values
 
 let elements set = set
 let cardinal = List.length
+let is_empty = function [] -> true | _ -> false
+let min_elt = function value :: _ -> value | [] -> raise Not_found
 
 let subset left right = List.for_all (fun value -> mem value right) left
 
