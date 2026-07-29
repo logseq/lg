@@ -1675,7 +1675,9 @@ let rec compile scope env next_type = function
                                 List.map
                                   (fun (spec : Destructure.param_spec) ->
                                     Option.value spec.explicit_ty
-                                      ~default:(Type_solver.fresh ()))
+                                      ~default:(Type_solver.fresh ())
+                                    |> Function_elaborator.infer_named_record
+                                         scope env)
                                   specs
                               in
                               TFn (parameter_tys, Type_solver.fresh ())
@@ -1740,6 +1742,24 @@ let rec compile scope env next_type = function
                     compile_methods env next_type
                       (List.rev_append methods bindings)
                       rest))
+      in
+      let refine_predeclared_bindings env predeclared_ty actual_ty =
+        match Type_solver.unify [] predeclared_ty actual_ty with
+        | Error _ ->
+            Error.error
+              "recursive function implementation does not match its inferred \
+               signature"
+        | Ok substitutions ->
+            Ok
+              (Env.fold
+                 (fun key (binding : binding) env ->
+                   Env.add key
+                     {
+                       binding with
+                       ty = Type_solver.apply substitutions binding.ty;
+                     }
+                     env)
+                 env env)
       in
       let rec compile_definitions env next_type row_items bindings = function
         | [] ->
@@ -1869,29 +1889,41 @@ let rec compile scope env next_type = function
                   fn_code ~row_param_type_names:row_param_types parts
                 in
                 let binding =
-                  binding_of_expr ~row_param_types ocaml_name expr
+                  Types.binding ~row_param_types
+                    ?return_param_index:expr.return_param_index ocaml_name
+                    (Types.align_deferred_param_types expr.ty expr.semantic_expr)
                 in
-                let env = Env.add (Names.scoped_key scope name) binding env in
-                let rows =
-                  return_type_items @ local_type_items
-                  @ row_type_items row_param_types param_tys
+                let refined_env =
+                  match predeclared_type with
+                  | Some predeclared_ty ->
+                      refine_predeclared_bindings env predeclared_ty expr.ty
+                  | None -> Ok env
                 in
-                let recursive_binding =
-                  {
-                    name = ocaml_name;
-                    identity =
-                      Source_context.find name_form
-                      |> Option.map (fun location ->
-                             (Source_node_id.of_location location, location));
-                    type_annotation =
-                      recursive_type_annotation scope env name;
-                    expression = expr.semantic_expr;
-                  }
-                in
-                compile_definitions env next_type
-                  (List.rev_append rows row_items)
-                  (recursive_binding :: bindings)
-                  rest)
+                Result.bind refined_env (fun env ->
+                    let env =
+                      Env.add (Names.scoped_key scope name) binding env
+                    in
+                    let rows =
+                      return_type_items @ local_type_items
+                      @ row_type_items row_param_types param_tys
+                    in
+                    let recursive_binding =
+                      {
+                        name = ocaml_name;
+                        identity =
+                          Source_context.find name_form
+                          |> Option.map (fun location ->
+                                 ( Source_node_id.of_location location,
+                                   location ));
+                        type_annotation =
+                          recursive_type_annotation scope env name;
+                        expression = expr.semantic_expr;
+                      }
+                    in
+                    compile_definitions env next_type
+                      (List.rev_append rows row_items)
+                      (recursive_binding :: bindings)
+                      rest))
         | _ :: _ ->
             Error.error
               "recursive definition groups only support functions and deftype methods"

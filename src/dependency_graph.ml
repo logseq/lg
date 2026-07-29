@@ -318,7 +318,7 @@ let has_declarations forms =
 
 let indexed_forms forms = List.mapi (fun index form -> (index, form)) forms
 
-let provider_indices indexed =
+let provider_indices ?(ignore_declarations = false) indexed =
   let protocol_methods =
     List.fold_left
       (fun methods (_, form) ->
@@ -345,14 +345,19 @@ let provider_indices indexed =
   in
   List.fold_left
     (fun providers (index, form) ->
-      List.fold_left
-        (fun providers name ->
-          let existing =
-            String_map.find_opt name providers |> Option.value ~default:[]
-          in
-          String_map.add name (index :: existing) providers)
-        providers
-        (provided_names form @ implementation_method_names form))
+      match form with
+      | FList (FSymbol ("declare" | "declare+") :: _)
+        when ignore_declarations ->
+          providers
+      | _ ->
+          List.fold_left
+            (fun providers name ->
+              let existing =
+                String_map.find_opt name providers |> Option.value ~default:[]
+              in
+              String_map.add name (index :: existing) providers)
+            providers
+            (provided_names form @ implementation_method_names form))
     String_map.empty indexed
 
 let declaration_provider_indices indexed =
@@ -443,7 +448,7 @@ let form_dependencies ?(ignore_declarations = false) providers
 
 let dependency_components ?(ignore_declarations = false) forms =
   let indexed = indexed_forms forms in
-  let providers = provider_indices indexed in
+  let providers = provider_indices ~ignore_declarations indexed in
   let declaration_providers = declaration_provider_indices indexed in
   let components =
     indexed

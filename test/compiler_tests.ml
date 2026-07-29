@@ -10417,7 +10417,7 @@ let test_forward_declared_functions_work_as_collection_callbacks () =
 (declare touch)
 (defn touch-all [^:vector<Item> values]
   (map touch values))
-(defn ^Item touch [^Item value]
+(defn touch [^Item value]
   (do
     (count (touch-all []))
     value))
@@ -10426,6 +10426,8 @@ let test_forward_declared_functions_work_as_collection_callbacks () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "forward-declared record callbacks must remain static";
   assert_ocaml_runs "forward_declared_functions_work_as_collection_callbacks"
     "2:1\n" ocaml_source;
   ignore
