@@ -5790,11 +5790,22 @@ let create ~compile_expr =
         | Error _ as error -> error
                   | Ok [ message; data ] when Types.equal message.ty TString
                     -> (
-            match
-                        pack_dynamic_value env
-                          (Types.dynamic_constraint TUnknown)
-                          data
-            with
+            let packed_data =
+              match arg_forms with
+              | [ _message; FMap [] ] ->
+                  (* The empty map is constructed directly inside ex-info's
+                     documented open runtime field. No static collection
+                     crosses the dynamic boundary. *)
+                  Ok
+                    (Semantic_ir.Apply
+                       ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.map",
+                         [ Semantic_ir.List [] ] ))
+              | _ ->
+                  pack_dynamic_value env
+                    (Types.dynamic_constraint TUnknown)
+                    data
+            in
+            match packed_data with
             | Error _ as error -> error
             | Ok data ->
                 Ok

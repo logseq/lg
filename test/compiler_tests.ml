@@ -10502,7 +10502,13 @@ let test_destructured_row_parameter_stays_structural () =
       {
         ty =
           Lg.Types.TFn
-            ([ Lg.Types.TNullable (Lg.Types.TRecord fields) ], _);
+            ( [
+                Lg.Types.TNullable
+                  (Lg.Types.TRecord fields
+                  | Lg.Types.TNamed_record
+                      { nominal = false; fields; _ });
+              ],
+              _ );
         _;
       }
     when Option.is_some (Lg.Types.find_field ":visitor" fields) ->
@@ -22707,16 +22713,16 @@ let test_parser_rule_map_allocates_anonymous_return_record () =
     {|
 (defrecord PlainSymbol [symbol])
 (defrecord RuleVars [required free])
-(defrecord Rule [name branches])
+(defrecord RuleForm [name vars clauses])
 
 (defn parse-plain-symbol [form]
   (when (symbol? form)
     (PlainSymbol. form)))
 
 (defn parse-rule-vars [forms]
-  (RuleVars. [] []))
+  (RuleVars. [1] [2]))
 
-(defn ^:dynamic parse-clauses [_forms]
+(defn parse-clauses [_forms]
   [1])
 
 (defn parse-seq [parse-element forms]
@@ -22729,9 +22735,9 @@ let test_parser_rule_map_allocates_anonymous_return_record () =
     forms))
 
 (defn parse-rule [form]
-  (let [name (first form)
-        vars (second form)
-        clauses (nth form 2)
+  (let [name (:name form)
+        vars (:vars form)
+        clauses (:clauses form)
         name* (or (parse-plain-symbol name)
                   (throw (ex-info "missing name" {})))
         vars* (parse-rule-vars vars)
@@ -22743,7 +22749,7 @@ let test_parser_rule_map_allocates_anonymous_return_record () =
 (println
   (:symbol
     (:name
-      (parse-rule ['query ['?x] [['?x :name "Ada"]]]))))
+      (parse-rule (RuleForm. 'query ['?x] [1])))))
 |}
   in
   let native_source =

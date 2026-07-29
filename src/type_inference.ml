@@ -4530,7 +4530,9 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               | FList [ FSymbol "hash-map" ] ->
                   Types.dynamic_map (Type_solver.fresh ())
                     (Type_solver.fresh ())
-              | _ -> inferred_form_type params init)
+              | _ ->
+                  returned_vector_type params init
+                  |> Option.value ~default:(inferred_form_type params init))
           | ty -> ty
         in
         let inferred_accumulator_ty, inferred_element_ty =
