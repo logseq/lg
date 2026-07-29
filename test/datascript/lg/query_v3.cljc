@@ -237,25 +237,15 @@
    [clause  context]
    :datascript.query-v3/query-context-v3))
 
-(defn ^query-context-v3 context-v3
-  ([^:vector<relation-v3> relations
-    ^:map<string;datascript.lg.query-types/result> constants]
+(defn context-v3
+  ([relations constants]
    (context-v3 relations constants {}))
-  ([^:vector<relation-v3> relations
-    ^:map<string;datascript.lg.query-types/result> constants
-    ^:map<string;datascript.lg.query-types/source> sources]
+  ([relations constants sources]
    (context-v3 relations constants sources "$"))
-  ([^:vector<relation-v3> relations
-    ^:map<string;datascript.lg.query-types/result> constants
-    ^:map<string;datascript.lg.query-types/source> sources
-    ^:string default-source-symbol]
+  ([relations constants sources default-source-symbol]
    (context-v3
     relations constants sources [] default-source-symbol))
-  ([^:vector<relation-v3> relations
-    ^:map<string;datascript.lg.query-types/result> constants
-    ^:map<string;datascript.lg.query-types/source> sources
-    ^:vector<datascript.parser/Rule> rules
-    ^:string default-source-symbol]
+  ([relations constants sources rules default-source-symbol]
    (QueryContextV3
     (record query-context-state-v3
       (rels relations)
@@ -264,45 +254,43 @@
       (rules rules)
       (default-source-symbol default-source-symbol)))))
 
-(defn ^:bool context-empty? [^query-context-v3 context]
+(defn context-empty? [context]
   (match context
     EmptyContextV3 true
     (QueryContextV3 _) false))
 
-(defn ^:vector<relation-v3> context-relations
-  [^query-context-v3 context]
+(defn context-relations
+  [context]
   (match context
     EmptyContextV3 []
     (QueryContextV3 state) (:rels state)))
 
-(defn ^:map<string;datascript.lg.query-types/result>
-  context-constants
-  [^query-context-v3 context]
+(defn context-constants
+  [context]
   (match context
     EmptyContextV3 {}
     (QueryContextV3 state) (:consts state)))
 
-(defn ^:map<string;datascript.lg.query-types/source>
-  context-sources
-  [^query-context-v3 context]
+(defn context-sources
+  [context]
   (match context
     EmptyContextV3 {}
     (QueryContextV3 state) (:sources state)))
 
-(defn ^:vector<datascript.parser/Rule> context-rules
-  [^query-context-v3 context]
+(defn context-rules
+  [context]
   (match context
     EmptyContextV3 []
     (QueryContextV3 state) (:rules state)))
 
-(defn ^:string context-default-source-symbol
-  [^query-context-v3 context]
+(defn context-default-source-symbol
+  [context]
   (match context
     EmptyContextV3 "$"
     (QueryContextV3 state) (:default-source-symbol state)))
 
-(defn- ^query-context-v3 context-with-relations
-  [^query-context-v3 context ^:vector<relation-v3> relations]
+(defn- context-with-relations
+  [context relations]
   (match context
     EmptyContextV3 EmptyContextV3
     (QueryContextV3 state)
@@ -313,9 +301,8 @@
      (:rules state)
      (:default-source-symbol state))))
 
-(defn- ^query-context-v3 context-with-constants
-  [^query-context-v3 context
-   ^:map<string;datascript.lg.query-types/result> constants]
+(defn- context-with-constants
+  [context constants]
   (match context
     EmptyContextV3 EmptyContextV3
     (QueryContextV3 state)
@@ -326,9 +313,8 @@
      (:rules state)
      (:default-source-symbol state))))
 
-(defn- ^query-context-v3 context-with-sources
-  [^query-context-v3 context
-   ^:map<string;datascript.lg.query-types/source> sources]
+(defn- context-with-sources
+  [context sources]
   (match context
     EmptyContextV3 EmptyContextV3
     (QueryContextV3 state)
@@ -339,9 +325,8 @@
      (:rules state)
      (:default-source-symbol state))))
 
-(defn- ^query-context-v3 context-with-rules
-  [^query-context-v3 context
-   ^:vector<datascript.parser/Rule> rules]
+(defn- context-with-rules
+  [context rules]
   (match context
     EmptyContextV3 EmptyContextV3
     (QueryContextV3 state)
