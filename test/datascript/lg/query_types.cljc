@@ -2498,8 +2498,8 @@
      (range (count left)))
     false))
 
-(defn ^boolean rule-call-arguments-equal?
-  [^rule-call-argument left ^rule-call-argument right]
+(defn rule-call-arguments-equal?
+  [left right]
   (match left
     (RuleCallVariable left-name left-values)
     (match right
@@ -2515,8 +2515,8 @@
        left-value right-value)
       _ false)))
 
-(defn ^boolean rule-calls-equal?
-  [^rule-call left ^rule-call right]
+(defn rule-calls-equal?
+  [left right]
   (match left
     (RuleCall left-name left-arguments)
     (match right
@@ -2526,19 +2526,17 @@
        (= (count left-arguments)
           (count right-arguments))
        (every?
-        (fn [^:int index]
+        (fn [index]
           (rule-call-arguments-equal?
            (nth left-arguments index)
            (nth right-arguments index)))
         (range (count left-arguments)))))))
 
-(defn ^relation empty-rule-call-relation
-  [^relation relation
-   ^:vector<datascript.parser/pattern-element> arguments]
+(defn empty-rule-call-relation
+  [relation arguments]
   (let [attrs
         (reduce
-         (fn [^:map<string;int> attrs
-              ^datascript.parser/pattern-element argument]
+         (fn [attrs argument]
            (if-some [variable (pattern-variable-name argument)]
              (if (contains? attrs variable)
                attrs
@@ -2602,7 +2600,7 @@
           (and
            (<= required-count (count arguments))
            (every?
-            (fn [^:int index]
+            (fn [index]
               (rule-argument-bound?
                relation constants (nth arguments index)))
             (range required-count)))
@@ -2614,7 +2612,7 @@
          "Insufficient bindings for required rule arguments")
         (if
          (some
-          (fn [^rule-call previous]
+          (fn [previous]
             (rule-calls-equal? call previous))
           rule-path)
           (empty-rule-call-relation relation arguments)
@@ -2627,8 +2625,7 @@
                    arguments first-branch)
                   result
                   (reduce
-                   (fn [^relation result
-                        ^datascript.parser/RuleBranch branch]
+                   (fn [result branch]
                      (sum-relation
                       result
                       (resolve-rule-branch
