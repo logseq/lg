@@ -367,10 +367,7 @@
          (array (require-row-result row index)))
        rows))))))
 
-(defn ^result apply-minimum-aggregate
-  [^:vector<Datascript_runtime.Data_value.t> parameters
-   ^:vector<array<result>> rows
-   ^:int index]
+(defn apply-minimum-aggregate [parameters rows index]
   (if (empty? parameters)
     (Datascript_runtime.Query_value.aggregate_minimum rows index)
     (if (= 1 (count parameters))
@@ -384,10 +381,7 @@
         (Stdlib.invalid_arg "min aggregate parameter is missing"))
       (Stdlib.invalid_arg "min aggregate expects zero or one parameter"))))
 
-(defn ^result apply-maximum-aggregate
-  [^:vector<Datascript_runtime.Data_value.t> parameters
-   ^:vector<array<result>> rows
-   ^:int index]
+(defn apply-maximum-aggregate [parameters rows index]
   (if (empty? parameters)
     (Datascript_runtime.Query_value.aggregate_maximum rows index)
     (if (= 1 (count parameters))
@@ -401,10 +395,7 @@
         (Stdlib.invalid_arg "max aggregate parameter is missing"))
       (Stdlib.invalid_arg "max aggregate expects zero or one parameter"))))
 
-(defn ^result apply-random-aggregate
-  [^:vector<Datascript_runtime.Data_value.t> parameters
-   ^:vector<array<result>> rows
-   ^:int index]
+(defn apply-random-aggregate [parameters rows index]
   (if (empty? parameters)
     (Datascript_runtime.Query_value.aggregate_random rows index)
     (if (= 1 (count parameters))
@@ -418,10 +409,7 @@
         (Stdlib.invalid_arg "rand aggregate parameter is missing"))
       (Stdlib.invalid_arg "rand aggregate expects zero or one parameter"))))
 
-(defn ^result apply-sample-aggregate
-  [^:vector<Datascript_runtime.Data_value.t> parameters
-   ^:vector<array<result>> rows
-   ^:int index]
+(defn apply-sample-aggregate [parameters rows index]
   (if (= 1 (count parameters))
     (if-some [parameter (first parameters)]
       (match parameter
@@ -433,11 +421,7 @@
       (Stdlib.invalid_arg "sample aggregate parameter is missing"))
     (Stdlib.invalid_arg "sample aggregate expects one parameter")))
 
-(defn ^result apply-built-in-aggregate
-  [^datascript.built-ins/built-in-aggregate-function function
-   ^:vector<Datascript_runtime.Data_value.t> parameters
-   ^:vector<array<result>> rows
-   ^:int index]
+(defn apply-built-in-aggregate [function parameters rows index]
   (cond
     (built-ins/sum-aggregate? function)
     (Datascript_runtime.Query_value.aggregate_sum rows index)
