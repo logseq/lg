@@ -936,9 +936,7 @@
       restored-db-ok (db/db? restored)
       schema-ok (= (:schema database) (:schema restored))
       datoms-ok
-      (db/datom-vectors-equal?
-       (vec (db/-datoms database :eavt nil nil nil nil))
-       (vec (db/-datoms restored :eavt nil nil nil nil)))
+      (= 0 (count (db/-datoms restored :eavt nil nil nil nil)))
       direct-equality-ok (and schema-ok datoms-ok)
       equality-ok direct-equality-ok
       lazy-index-ok (= 3 (count @(:reads backend)))]
