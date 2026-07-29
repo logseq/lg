@@ -312,6 +312,14 @@ let select_keys map keys = select_keys_by find assoc map keys
 let select_keys_dynamic map keys =
   select_keys_by find_dynamic assoc_dynamic map keys
 
+let select_options lookup keys =
+  Seq.fold_left
+    (fun selected key ->
+      match lookup key with
+      | Some value -> assoc selected key value
+      | None -> selected)
+    empty keys
+
 let count map = map.size
 
 let fold_left fn accumulator map =

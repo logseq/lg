@@ -2961,21 +2961,71 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
             typed_ir (Types.dynamic_map TKeyword dynamic) selected)
           (add_known selected keywords)
       in
+      let select_lookup_record target record keywords =
+        let key_name = "__lg_select_keys_lookup_key" in
+        let key = typed_ir TKeyword (Semantic_ir.Ident key_name) in
+        let lookup =
+          match
+            compile_deftype_method scope env record "valAt" [ target; key ]
+          with
+          | Some _ as result -> result
+          | None ->
+              compile_deftype_method scope env record "-lookup" [ target; key ]
+        in
+        Option.map
+          (fun lookup ->
+            match lookup.ty with
+            | TNullable value_ty
+            | TOcaml_app ("option", [ value_ty ]) ->
+                Ok
+                  (typed_ir
+                     (Types.dynamic_map TKeyword value_ty)
+                     (apply "Lg_runtime.Runtime_map.select_options"
+                        [
+                          Semantic_ir.Fun
+                            ([ Semantic_ir.PVar key_name ], lookup.semantic_expr);
+                          apply "List.to_seq"
+                            [
+                              Semantic_ir.List
+                                (List.map
+                                   (fun keyword ->
+                                     Semantic_ir.String keyword)
+                                   keywords);
+                            ];
+                        ]))
+            | _ ->
+                Error.error
+                  "select-keys requires ILookup to return an option")
+          lookup
+      in
       match arg_forms with
       | [ target_form; keys_form ] -> (
           match compile_expr scope env target_form with
           | Error _ as error -> error
           | Ok target -> (
               match (target.ty, keys_form) with
-              | (TRecord fields | TNamed_record { fields; _ }), FVector key_forms
-                ->
+              | TNamed_record ({ fields; _ } as record), FVector key_forms ->
                   Result.bind (parse_keywords key_forms) (fun keywords ->
                       match Types.find_record_extension_field fields with
                       | Some extension_field ->
                           select_open_record target fields keywords
                             extension_field
+                      | None
+                        when List.exists
+                               (fun keyword ->
+                                 Option.is_none (find_field keyword fields))
+                               keywords -> (
+                          match
+                            select_lookup_record target record keywords
+                          with
+                          | Some result -> result
+                          | None ->
+                              Structural_map.select_keys target fields keywords)
                       | None ->
                           Structural_map.select_keys target fields keywords)
+              | TRecord fields, FVector key_forms ->
+                  Result.bind (parse_keywords key_forms) (fun keywords ->
+                      Structural_map.select_keys target fields keywords)
               | (TRecord _ | TNamed_record _), _ ->
                   Error.error "select-keys expects a vector of keywords"
               | target_ty, _ -> (

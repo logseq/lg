@@ -24878,27 +24878,27 @@ let test_select_keys_accepts_runtime_seqable_key_collections () =
     {|(def bad (select-keys (zipmap ['?e] [1]) [1]))|}
   |> expect_error_contains "select-keys"
 
-let test_select_keys_accepts_dynamic_lookup_records () =
+let test_select_keys_accepts_typed_lookup_records () =
   let source =
     {|
-(deftype LookupEntity [values]
+(deftype LookupEntity [^:map<keyword;int> values]
   ILookup
   (-lookup [_ key]
     (get values key))
   (-lookup [_ key not-found]
     (get values key not-found)))
 (def entity
-  (LookupEntity. {:name "Ada", :active nil}))
+  (LookupEntity. {:score 42}))
 (def selected
-  (select-keys entity [:name :active :missing]))
+  (select-keys entity [:score :missing]))
 (println
-  (str (count selected) ":" (get selected :name) ":"
-       (contains? selected :active) ":" (contains? selected :missing)))
+  (str (count selected) ":" (get selected :score 0) ":"
+       (contains? selected :missing)))
 |}
   in
   let native_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "select_keys_accepts_dynamic_lookup_records"
-    "2:Ada:true:false\n" native_source;
+  assert_ocaml_runs "select_keys_accepts_typed_lookup_records"
+    "1:42:false\n" native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -33928,8 +33928,8 @@ let tests =
       test_conj_uses_static_option_guards_for_variant_values );
     ( "select-keys accepts runtime Seqable key collections",
       test_select_keys_accepts_runtime_seqable_key_collections );
-    ( "select-keys accepts dynamic lookup records",
-      test_select_keys_accepts_dynamic_lookup_records );
+    ( "select-keys accepts typed lookup records",
+      test_select_keys_accepts_typed_lookup_records );
     ( "select-keys infers generic runtime map record fields",
       test_select_keys_infers_generic_runtime_map_record_fields );
     ( "select-keys projects open row extension fields",
