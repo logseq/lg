@@ -1623,17 +1623,16 @@
        (function-result-attrs relation binding)
        (relation-lookup-databases relation)))))
 
-(defn ^:string join-query-parts [^:vector<string> parts]
+(defn join-query-parts [^:vector<string> parts]
   (if-some [first-part (first parts)]
     (reduce
-     (fn [^:string result ^:string part]
+     (fn [result part]
        (str result " " part))
      first-part
      (subvec parts 1))
     ""))
 
-(defn ^:string query-argument-description
-  [^datascript.parser/fn-arg argument]
+(defn query-argument-description [argument]
   (if-some [variable (parser/argument-variable-name argument)]
     variable
     (if-some [source (parser/argument-source-name argument)]
@@ -1642,8 +1641,8 @@
         (Datascript_runtime.Data_value.to_edn_string value)
         ""))))
 
-(defn ^:string query-call-description
-  [^:string name ^:vector<datascript.parser/fn-arg> arguments]
+(defn query-call-description
+  [name arguments]
   (let [parts
         (vec
          (cons name (mapv query-argument-description arguments)))]
