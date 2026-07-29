@@ -489,6 +489,8 @@ option	datascript.query-v3/resolve-or	:free
 option	datascript.query-v3/resolve-or	:required
 option	datascript.query-v3/resolve-or	:rule-vars
 option	datascript.query-v3/resolve-or	:source
+option	datascript.serialize/from-serializable	:branching-factor
+option	datascript.serialize/from-serializable	:ref-type
 option	datascript.serialize/from-serializable	:thaw-fn
 option	datascript.serialize/from-serializable	:thaw-kw
 option	datascript.storage/restore-impl	:aevt

@@ -93,14 +93,29 @@
     (filter vector? arglists)))
 
 (defn option-keys [form]
-  (->> (tree-seq coll? seq form)
-       (keep (fn [node]
-               (when (map? node)
-                 (or (:keys node) (get node 'keys)))))
-       (mapcat identity)
-       (map #(str ":" %))
-       distinct
-       sort))
+  (let [nodes (tree-seq coll? seq form)
+        destructured
+        (->> nodes
+             (keep (fn [node]
+                     (when (map? node)
+                       (or (:keys node) (get node 'keys)))))
+             (mapcat identity))
+        selected
+        (->> nodes
+             (keep (fn [node]
+                     (let [keys (when (seq? node) (nth node 2 nil))]
+                       (when (and (seq? node)
+                                  (#{'select-keys
+                                     'clojure.core/select-keys}
+                                   (first node))
+                                  (vector? keys)
+                                  (every? keyword? keys))
+                         keys))))
+             (mapcat identity))]
+    (->> (concat destructured selected)
+         (map #(if (keyword? %) (str %) (str ":" %)))
+         distinct
+         sort)))
 
 (defn definition-entries [namespace form]
   (when (seq? form)

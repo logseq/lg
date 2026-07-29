@@ -343,6 +343,15 @@ done
 expect_file "the upstream API manifest is checked in" "$api_manifest"
 expect_file "the LG API manifest is checked in" "$lg_api_manifest"
 expect_file "the upstream API manifest generator exists" "$generate_script"
+for serialization_option in branching-factor ref-type; do
+  expect_success \
+    "the manifest generator discovers upstream serialization option: $serialization_option" \
+    sh -c 'cd "$1" &&
+      bb "$2" "$3" |
+      grep -Fqx "option	datascript.serialize/from-serializable	:$4"' \
+    sh "$repo_root" "$generate_script" "$repo_root/../datascript" \
+    "$serialization_option"
+done
 if [ -f "$repo_root/$generate_script" ] &&
    [ -f "$repo_root/$lg_api_manifest" ]; then
   expect_success "the LG API manifest is reproducible from LG sources" \
