@@ -1591,17 +1591,11 @@
    (relation-attrs relation)
    (parser/binding-variable-names binding)))
 
-(defn ^relation resolve-database-function
-  [^datascript.db/database-view database
-   ^:map<string;source> sources
-   ^relation relation
-   ^relation constants
-   ^datascript.built-ins/query-function function
-   ^:vector<datascript.parser/fn-arg> arguments
-   ^datascript.parser/binding binding]
+(defn resolve-database-function
+  [database sources relation constants function arguments binding]
   (let [resolved
         (reduce
-         (fn [^:option<relation> output ^:array<result> row]
+         (fn [output row]
            (let [values
                  (callable-arguments
                   database sources relation constants row arguments)]
