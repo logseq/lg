@@ -16,6 +16,12 @@ if [ "$query_hint_count" -gt "$query_hint_limit" ]; then
   exit 1
 fi
 
+if rg -q '^\(defn- (concat-two|concatv-closed)\b' \
+  test/datascript/lg/query_v3.cljc; then
+  echo "DataScript query-v3 must use the upstream concatv implementation directly" >&2
+  exit 1
+fi
+
 parser_hint_limit=77
 parser_hint_count=$(count_inline_hints test/datascript/upstream/parser.cljc)
 if [ "$parser_hint_count" -gt "$parser_hint_limit" ]; then

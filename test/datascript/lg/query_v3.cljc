@@ -37,26 +37,16 @@
 (defn subarr [arr start end]
   (da/aslice arr start end))
 
-(signature datascript.query-v3/concat-two
-  :fn<vector<Datascript_runtime.Data_value.t>;vector<Datascript_runtime.Data_value.t>;vector<Datascript_runtime.Data_value.t>>)
-
-(defn- concat-two [left right]
-  (into left right))
-
-(signature datascript.query-v3/concatv-closed
-  :fn<vector<vector<Datascript_runtime.Data_value.t>>;vector<Datascript_runtime.Data_value.t>>)
-
-(defn- concatv-closed [xs]
-  (reduce concat-two [] xs))
-
 (defn concatv
   {:inline
    (fn [& xs]
-     (list
-      'datascript.query-v3/concatv-closed
-      (vec xs)))}
-  [&  xs]
-  (concatv-closed (vec xs)))
+     (reduce
+      (fn [result input]
+        (list 'clojure.core/into result input))
+      []
+      xs))}
+  [& ^:list<vector<Datascript_runtime.Data_value.t>> xs]
+  (into [] cat xs))
 
 (signature datascript.query-v3/zip-pair
   :fn<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t;vector<Datascript_runtime.Data_value.t>>)
@@ -1256,7 +1246,7 @@
       (Datascript_runtime.Data_value.equal value constant)
       false)))
 
-(defn- ^:bool row-matches-pattern-constants?
+(defn- row-matches-pattern-constants?
   [^:array<datascript.lg.query-types/result> row
    ^:vector<datascript.parser/pattern-element> pattern]
   (reduce-kv
