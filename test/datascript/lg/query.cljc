@@ -683,28 +683,6 @@
       (query-types/value-result
        (.-value constant))))))
 
-(defn- empty-collect-row
-  [length]
-  (Array.make length None))
-
-(defn- collect-copy-map
-  [attrs
-    symbols]
-  (to-array
-   (mapv
-    (fn [symbol]
-      (get attrs symbol))
-    symbols)))
-
-(defn- relation-has-collect-symbol?
-  [relation
-    symbols]
-  (let [attrs (query-types/relation-attrs relation)]
-    (some
-     (fn [symbol]
-       (contains? attrs symbol))
-     symbols)))
-
 (defn -collect-tuples
   [acc
     relation
@@ -717,7 +695,7 @@
   ([context
      symbols]
    (-collect
-    [(empty-collect-row (count symbols))]
+    [(Array.make (count symbols) None)]
     (query-types/context-relations context)
     symbols))
   ([acc
@@ -726,18 +704,25 @@
    (if-some [relation (first relations)]
      (if (empty? (query-types/relation-rows relation))
        []
-       (if (relation-has-collect-symbol? relation symbols)
-         (-collect
-          (-collect-tuples
-           acc
-           relation
-           (count symbols)
-           (collect-copy-map
-            (query-types/relation-attrs relation)
-            symbols))
-          (subvec relations 1)
-          symbols)
-         (-collect acc (subvec relations 1) symbols)))
+       (let [attrs (query-types/relation-attrs relation)]
+         (if
+          (some
+           (fn [symbol]
+             (contains? attrs symbol))
+           symbols)
+           (-collect
+            (-collect-tuples
+             acc
+             relation
+             (count symbols)
+             (to-array
+              (mapv
+               (fn [symbol]
+                 (get attrs symbol))
+               symbols)))
+            (subvec relations 1)
+            symbols)
+           (-collect acc (subvec relations 1) symbols))))
      acc)))
 
 (defn collect

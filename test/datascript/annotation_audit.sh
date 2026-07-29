@@ -23,6 +23,12 @@ if rg -q "$query_v3_adapter_pattern" \
   exit 1
 fi
 
+query_adapter_pattern='^\(defn- (empty-collect-row|collect-copy-map|relation-has-collect-symbol\?)([[:space:]]|$)'
+if rg -q "$query_adapter_pattern" test/datascript/lg/query.cljc; then
+  echo "DataScript query must not retain redundant collection adapter helpers" >&2
+  exit 1
+fi
+
 parser_hint_limit=77
 parser_hint_count=$(count_inline_hints test/datascript/upstream/parser.cljc)
 if [ "$parser_hint_count" -gt "$parser_hint_limit" ]; then
