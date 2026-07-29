@@ -759,9 +759,8 @@
     (Stdlib.invalid_arg
      "Pattern variables and indexes must have the same length")))
 
-(defn ^:option<option<int>> pattern-entity-constraint
-  [^datascript.db/database-view database
-   ^:option<datascript.parser/pattern-element> element]
+(defn pattern-entity-constraint
+  [database ^:option<datascript.parser/pattern-element> element]
   (match element
     None (Some None)
     (Some PatternPlaceholder) (Some None)
@@ -795,8 +794,7 @@
       None None
       (Some attr) (Some (Some attr)))))
 
-(defn ^:option<option<Datascript_runtime.Data_value.t>>
-  pattern-value-constraint
+(defn pattern-value-constraint
   [^:option<datascript.parser/pattern-element> element]
   (match element
     None (Some None)
@@ -805,11 +803,7 @@
     (Some (PatternConstant value))
     (Some (Some value))))
 
-(defn ^:option<option<Datascript_runtime.Data_value.t>>
-  resolve-pattern-value-constraint
-  [^datascript.db/database-view database
-   ^:option<keyword> attr
-   ^:option<Datascript_runtime.Data_value.t> value]
+(defn resolve-pattern-value-constraint [database attr value]
   (if-some [attr attr]
     (if (datascript.db/database-view-ref? database attr)
       (if-some [value value]
@@ -826,7 +820,7 @@
       (Some value))
     (Some value)))
 
-(defn ^:option<option<bool>> pattern-added-constraint
+(defn pattern-added-constraint
   [^:option<datascript.parser/pattern-element> element]
   (match element
     None (Some None)
@@ -838,21 +832,18 @@
       (Some ":db/retract") (Some (Some false))
       _ None)))
 
-(defn ^:option<string> pattern-variable-name
-  [^datascript.parser/pattern-element element]
+(defn pattern-variable-name [element]
   (if-some [variable
             (parser/pattern-element-variable-symbol element)]
     (Some (str variable))
     None))
 
-(defn ^:option<datascript.parser/pattern-element> pattern-element-at
-  [^:vector<datascript.parser/pattern-element> pattern ^:int index]
+(defn pattern-element-at [pattern index]
   (if (< index (count pattern))
     (nth pattern index)
     None))
 
-(defn ^:tuple<vector<string>;vector<int>> pattern-projection
-  [^:vector<datascript.parser/pattern-element> pattern]
+(defn pattern-projection [pattern]
   (loop [remaining pattern
          index 0
          variables []
@@ -871,14 +862,10 @@
          indexes))
       (tuple variables indexes))))
 
-(defn ^:map<string;datascript.db/database-view> pattern-lookup-databases
-  [^datascript.db/database-view database
-   ^:vector<datascript.parser/pattern-element> pattern
-   ^:option<keyword> attr]
+(defn pattern-lookup-databases [database pattern attr]
   (let [databases
         (reduce
-         (fn [^:map<string;datascript.db/database-view> databases
-              ^:int index]
+         (fn [^:map<string;datascript.db/database-view> databases index]
            (if-some [element (pattern-element-at pattern index)]
              (if-some [variable (pattern-variable-name element)]
                (assoc databases variable database)
@@ -896,9 +883,7 @@
         databases)
       databases)))
 
-(defn ^relation lookup-db-pattern
-  [^datascript.db/database-view database
-   ^:vector<datascript.parser/pattern-element> pattern]
+(defn lookup-db-pattern [database pattern]
   (if (or (empty? pattern) (> (count pattern) 5))
     (Stdlib.invalid_arg "DataScript patterns must contain one to five elements")
     (match
@@ -932,7 +917,7 @@
             filtered
             (if-some [added added]
               (filterv
-               (fn [^datascript.db/Datom datom]
+               (fn [datom]
                  (= added (datascript.db/datom-added datom)))
                datoms)
               datoms)
