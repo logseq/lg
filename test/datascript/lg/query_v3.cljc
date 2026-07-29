@@ -1911,7 +1911,7 @@
       [])))
 
 (defn- collect-constant-specimen
-  [context ^:vector<string> symbols]
+  [context symbols]
   (to-array
    (mapv
     (fn [symbol]
@@ -1997,10 +1997,10 @@
          []
          specimens)))))
 
-(defn- ^collected-key-v3 relation-row-key
-  [^relation-v3 relation
-   ^:array<datascript.lg.query-types/result> row
-   ^:vector<string> symbols]
+(defn- relation-row-key
+  [relation
+   row
+   symbols]
   (if (= 1 (count symbols))
     (SingleCollectedKeyV3
      ((-getter relation (nth symbols 0)) row))
@@ -2010,10 +2010,10 @@
         ((-getter relation symbol) row))
       symbols))))
 
-(defn ^relation-v3 subtract-from-rel
-  [^relation-v3 relation
-   ^:vector<string> symbols
-   ^:vector<collected-key-v3> excluded]
+(defn subtract-from-rel
+  [relation
+   symbols
+   excluded]
   (-alter-coll
    relation
    (fn [rows]
@@ -2025,10 +2025,10 @@
           (relation-row-key relation row symbols))))
       rows))))
 
-(defn ^query-context-v3 subtract-contexts
-  [^query-context-v3 context
-   ^query-context-v3 excluded-context
-   ^:vector<string> symbols]
+(defn subtract-contexts
+  [context
+   excluded-context
+   symbols]
   (if (context-empty? context)
     EmptyContextV3
     (if (context-empty? excluded-context)
@@ -2881,6 +2881,6 @@
       'datascript.query-v3/q-closed
       query
       (vec inputs)))}
-  [^datascript.parser/Query query
-   & ^:list<datascript.lg.query-types/input> inputs]
+  [query
+   & inputs]
   (q-closed query (vec inputs)))
