@@ -1725,11 +1725,11 @@
     (Datascript_runtime.Data_value.is_nil value)
     false))
 
-(defn ^result complement-result [^:vector<result> arguments]
+(defn complement-result [arguments]
   (let [target (first arguments)]
     (callable-result
      (callable
-      (fn [^:vector<result> invocation-arguments]
+      (fn [invocation-arguments]
         (if-some [target-result target]
           (if-some [target-callable
                     (result-callable target-result)]
@@ -1800,8 +1800,8 @@
     (PureStaticPredicate pure)
     (built-ins/apply-pure-function pure values)))
 
-(defn- ^:option<result> static-function-result
-  [function ^:vector<result> results]
+(defn- static-function-result
+  [function results]
   (match function
     (ComparisonStaticPredicate comparison)
     (if-some [matches?
