@@ -1128,10 +1128,7 @@
            variables indexes))
         (tuple variables indexes)))))
 
-(defn ^:option<relation> resolve-bound-entity-pattern
-  [^datascript.db/database-view database
-   ^relation input-relation
-   ^:vector<datascript.parser/pattern-element> pattern]
+(defn resolve-bound-entity-pattern [database input-relation pattern]
   (if-some [entity-element (pattern-element-at pattern 0)]
     (if-some [entity-variable
               (pattern-variable-name entity-element)]
@@ -1161,8 +1158,7 @@
                 indexes (to-array (tuple-get projection 1))
                 rows
                 (reduce
-                 (fn [^:vector<array<result>> rows
-                      ^:array<result> row]
+                 (fn [^:vector<array<result>> rows row]
                    (if-some
                      [entity-result
                       (row-get row entity-index)]
@@ -1190,8 +1186,7 @@
                                  None)
                                None)
                              append-datom
-                             (fn [^:vector<array<result>> rows
-                                  ^datascript.db/Datom datom]
+                             (fn [^:vector<array<result>> rows datom]
                                (if
                                  (if-some [expected added]
                                    (= expected
@@ -1240,10 +1235,7 @@
       None)
     None))
 
-(defn ^relation resolve-db-pattern
-  [^datascript.db/database-view database
-   ^relation input-relation
-   ^:vector<datascript.parser/pattern-element> pattern]
+(defn resolve-db-pattern [database input-relation pattern]
   (if-some [resolved
             (resolve-bound-entity-pattern
              database input-relation pattern)]
