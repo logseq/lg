@@ -1659,8 +1659,13 @@ let rec compile scope env next_type = function
                    (FSymbol ("defn" | "defn-") :: FSymbol name
                    :: (FVector _ as params) :: _) ->
                    let key = Names.scoped_key scope name in
-                   if Option.is_some (Env.find_opt key env) then env
-                   else
+                   (match Env.find_opt key env with
+                   | Some (binding : binding)
+                     when not
+                            (Types.equal binding.ty
+                               (TOcaml "__declared_fn")) ->
+                       env
+                   | Some _ | None ->
                      Env.add key
                        (Types.binding
                           (Names.ocaml_binding_name scope name)
@@ -1675,7 +1680,7 @@ let rec compile scope env next_type = function
                               in
                               TFn (parameter_tys, Type_solver.fresh ())
                           | Error _ -> TOcaml "__declared_fn"))
-                       env
+                       env)
                | _ -> env)
              env
       in

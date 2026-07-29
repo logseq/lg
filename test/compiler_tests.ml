@@ -22508,6 +22508,11 @@ let test_typecheck_skips_replay_without_new_stabilization_evidence () =
 let test_recursive_declared_nullable_sequence_supports_not_empty () =
   let source =
     {|
+(type-variant parser-node
+  MissingNode
+  (ValueNode :int)
+  (GroupNode :vector<parser-node>))
+
 (declare parse-node parse-nodes)
 
 (defn parse-seq [parse-element forms]
@@ -22526,10 +22531,10 @@ let test_recursive_declared_nullable_sequence_supports_not_empty () =
       0)))
 
 (defn parse-node [form]
-  (cond
-    (nil? form) nil
-    (sequential? form) (parse-group form)
-    :else form))
+  (match form
+    MissingNode nil
+    (ValueNode value) value
+    (GroupNode forms) (parse-group forms)))
 
 (defn parse-nodes [forms]
   (parse-seq parse-node forms))
@@ -22539,9 +22544,10 @@ let test_recursive_declared_nullable_sequence_supports_not_empty () =
   let consumer =
     {|
 (println
-  (str (parse-group [1 2]) ":"
+  (str (parse-group [(ValueNode 1) (ValueNode 2)]) ":"
        (parse-group []) ":"
-       (parse-group [nil])))
+       (parse-group [MissingNode]) ":"
+       (parse-group [(GroupNode [(ValueNode 1) (ValueNode 2)])])))
 |}
   in
   let compile target =
@@ -22557,8 +22563,10 @@ let test_recursive_declared_nullable_sequence_supports_not_empty () =
   let native_source =
     compile Lg.Target.Native
   in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "recursive parser sequences must remain statically typed";
   assert_ocaml_runs "recursive_declared_nullable_sequence_supports_not_empty"
-    "2:0:0\n" native_source;
+    "2:0:0:1\n" native_source;
   ignore (compile Lg.Target.Melange)
 
 let test_nested_keyword_lookup_preserves_nullable_map_evidence () =
